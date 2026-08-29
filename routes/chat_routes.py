@@ -342,6 +342,33 @@ def _resolve_request_workspace(request, raw_value) -> tuple:
     return workspace, (requested if not workspace else "")
 
 
+def _project_workspace(request, session_id) -> str:
+    """The workspace bound by this chat's project, if it has one.
+
+    A project's folder beats whatever the browser posted. The workspace pill is
+    global localStorage state, so before projects existed, switching chats left
+    the agent confined to the previous folder until you remembered to change it
+    by hand. Resolving it from the session server-side makes confinement follow
+    the conversation instead of the tab.
+
+    Gated exactly like the posted value: a caller who may not use the
+    workspace-backed tools gets nothing here either.
+    """
+    session_id = str(session_id or "").strip()
+    if not session_id:
+        return ""
+    from src.tool_security import owner_is_admin_or_single_user
+    owner = get_current_user(request)
+    if not owner_is_admin_or_single_user(owner):
+        return ""
+    from services.projects import workspace_for_session
+    from src.tool_execution import vet_workspace
+    # Re-vet at use time rather than trusting the stored path: it was vetted
+    # when the project was saved, but the folder can be deleted, or swapped for
+    # a symlink, at any point afterwards.
+    return vet_workspace(workspace_for_session(session_id, owner)) or ""
+
+
 _ABS_PATH_RE = re.compile(r"(?<!\S)(~?/[^\"'\s`<>]+)")
 _LOCAL_FILE_TASK_RE = re.compile(
     r"\b(?:file|folder|directory|path|workspace|repo|project|movie|video|"
@@ -982,6 +1009,12 @@ def setup_chat_routes(
         workspace, workspace_rejected = _resolve_request_workspace(
             request, form_data.get("workspace")
         )
+        # A project bound to this chat's sidebar folder owns the workspace.
+        # Chats that belong to no project fall through to the posted value, so
+        # everything outside projects behaves exactly as it did before.
+        _project_ws = _project_workspace(request, session)
+        if _project_ws:
+            workspace, workspace_rejected = _project_ws, ""
         # Plan mode is a modifier on agent mode — it only makes sense with tools.
         if plan_mode:
             chat_mode = "agent"

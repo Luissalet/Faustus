@@ -313,6 +313,28 @@ async def auto_name_session(session_manager, sess):
         logger.error(f"Auto-name failed for {sess.id}: {e}\n{traceback.format_exc()}")
 
 
+def project_system_prompt(sess, owner, preset_prompt):
+    """Prepend the project's standing context to whatever the preset says.
+
+    Order matters: the project goes first because it is the ground truth about
+    where the work lives and what the standing rules are, while the preset is a
+    per-chat style knob the user flips. A chat that belongs to no project gets
+    the preset's value back untouched.
+
+    Never raises. A broken projects.json must cost the user their project
+    context, not their message.
+    """
+    try:
+        from services.projects import instructions_for_session
+        block = instructions_for_session(getattr(sess, "id", None), owner)
+    except Exception as e:  # noqa: BLE001 - hot path
+        logger.debug("project context unavailable: %s", e)
+        block = ""
+    if not block:
+        return preset_prompt
+    return f"{block}\n\n{preset_prompt}" if preset_prompt else block
+
+
 def extract_preset(chat_handler, preset_id) -> PresetInfo:
     """Extract preset parameters via chat_handler."""
     temperature, max_tokens, system_prompt, char_name = (
@@ -725,7 +747,7 @@ async def build_chat_context(
         use_web=use_web and not skip_web,
         use_memory=mem_enabled,
         time_filter=time_filter,
-        preset_system_prompt=preset.system_prompt,
+        preset_system_prompt=project_system_prompt(sess, user, preset.system_prompt),
         owner=user,
         character_name=preset.character_name,
         agent_mode=agent_mode,

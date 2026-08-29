@@ -14,6 +14,9 @@ const API_BASE = window.location.origin;
 const _FOLDER_SVG = '<svg class="workspace-row-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>';
 let _modal = null;
 let _curPath = '';
+// Set only while the browser is open on someone else's behalf (the project
+// editor). Null means "Use this folder" binds the workspace, as it always has.
+let _onPick = null;
 
 export function getWorkspace() {
   return Storage.get(KEYS.WORKSPACE, '') || '';
@@ -172,6 +175,15 @@ function _getModal() {
     }
   });
   _modal.querySelector('#workspace-use').addEventListener('click', () => {
+    // Borrowed by the project editor: with a picker callback the chosen folder
+    // is handed back instead of being bound globally.
+    if (_onPick) {
+      const cb = _onPick;
+      _onPick = null;
+      closeWorkspaceBrowser();
+      cb(_curPath);
+      return;
+    }
     setWorkspace(_curPath);
     if (uiModule && uiModule.showToast) uiModule.showToast(`Workspace set: ${_basename(_curPath)}`);
     closeWorkspaceBrowser();
@@ -182,7 +194,13 @@ function _getModal() {
   return _modal;
 }
 
-export async function openWorkspaceBrowser() {
+/**
+ * @param {?function(string):void} onPick When given, "Use this folder" hands
+ *   the chosen path to this callback instead of binding it as the workspace.
+ *   The project editor uses it to fill its folder field.
+ */
+export async function openWorkspaceBrowser(onPick = null) {
+  _onPick = typeof onPick === 'function' ? onPick : null;
   const modal = _getModal();
   modal.style.display = 'flex';
   try {
@@ -194,6 +212,7 @@ export async function openWorkspaceBrowser() {
 
 export function closeWorkspaceBrowser() {
   if (_modal) _modal.style.display = 'none';
+  _onPick = null;
 }
 
 export function initWorkspace() {

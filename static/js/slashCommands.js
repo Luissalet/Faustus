@@ -18,6 +18,7 @@ import spinnerModule from './spinner.js';
 import themeModule from './theme.js';
 import documentModule from './document.js?v=20260815approvalsave1';
 import workspaceModule from './workspace.js';
+import projectsModule from './projects.js';
 import settingsModule from './settings.js';
 import cookbookModule from './cookbook.js';
 import { EVAL_PROMPTS } from './compare/index.js';
@@ -1284,6 +1285,87 @@ async function _cmdWorkspace(args, ctx) {
     return true;
   }
   slashReply('Usage: <code>/workspace</code> · <code>set /path</code> · <code>clear</code> · <code>pick</code>');
+  return true;
+}
+
+// Projects: a chat folder + a folder on disk + standing instructions +
+// a Markdown memory kept inside that folder.
+async function _cmdProject(args, ctx) {
+  const sub = (args[0] || '').toLowerCase();
+
+  if (sub === 'new' || sub === 'create' || sub === 'add') {
+    projectsModule.openProjectsPanel();
+    return true;
+  }
+  if (sub === 'open' || sub === 'settings' || sub === 'edit' || sub === 'panel') {
+    projectsModule.openProjectsPanel();
+    return true;
+  }
+
+  if (sub === 'list' || sub === 'ls' || sub === 'all') {
+    const all = await projectsModule.loadProjects(true);
+    if (!all.length) {
+      slashReply('No projects yet. <code>/project new</code> creates one.');
+      return true;
+    }
+    slashReply(all.map(p =>
+      `<strong>${uiModule.esc(p.name)}</strong> — folder <code>${uiModule.esc(p.folder)}</code> → <code>${uiModule.esc(p.workspace || 'not bound')}</code>`
+    ).join('<br>'));
+    return true;
+  }
+
+  const active = projectsModule.getActiveProject();
+
+  if (sub === 'memory' || sub === 'mem') {
+    if (!active) { slashReply('This chat is not in a project.'); return true; }
+    try {
+      const { dir, files } = await projectsModule.listMemory(active.id);
+      if (!files.length) {
+        slashReply(`No memory files yet in <code>${uiModule.esc(dir)}</code>.`);
+        return true;
+      }
+      slashReply(
+        `Memory for <strong>${uiModule.esc(active.name)}</strong> in <code>${uiModule.esc(dir)}</code>:<br>` +
+        files.map(f => `<code>${uiModule.esc(f.name)}</code> — ${f.size} bytes`).join('<br>')
+      );
+    } catch (e) {
+      slashReply(`Could not read the project memory: ${uiModule.esc(String(e.message || e))}`);
+    }
+    return true;
+  }
+
+  if (sub === 'context' || sub === 'preview' || sub === 'prompt') {
+    if (!active) { slashReply('This chat is not in a project.'); return true; }
+    try {
+      const { block, chars } = await projectsModule.previewProject(active.id);
+      slashReply(
+        `Standing context for <strong>${uiModule.esc(active.name)}</strong> — ${chars} characters on every turn:` +
+        `<pre style="white-space:pre-wrap;max-height:340px;overflow:auto">${uiModule.esc(block)}</pre>`
+      );
+    } catch (e) {
+      slashReply(`Could not build the preview: ${uiModule.esc(String(e.message || e))}`);
+    }
+    return true;
+  }
+
+  if (!sub || sub === 'show' || sub === 'status' || sub === 'info') {
+    if (!active) {
+      slashReply(
+        'This chat is not in a project. Move it to a project\'s folder from the chat menu, ' +
+        'or run <code>/project new</code>.'
+      );
+      return true;
+    }
+    slashReply(
+      `Project: <strong>${uiModule.esc(active.name)}</strong><br>` +
+      `Folder: <code>${uiModule.esc(active.workspace || 'not bound')}</code><br>` +
+      `Chats grouped under: <code>${uiModule.esc(active.folder)}</code><br>` +
+      '<code>/project context</code> shows exactly what the model is being told.'
+    );
+    return true;
+  }
+
+  slashReply('Usage: <code>/project</code> · <code>list</code> · <code>new</code> · <code>memory</code> · <code>context</code>');
   return true;
 }
 
@@ -5795,6 +5877,14 @@ const COMMANDS = {
     handler: _cmdWorkspace,
     noUserBubble: true,
     usage: '/workspace [set <path> | clear | pick]',
+  },
+  project: {
+    alias: ['proj'],
+    category: 'Agent',
+    help: 'Chat folder + project folder + instructions + memory, as one thing',
+    handler: _cmdProject,
+    noUserBubble: true,
+    usage: '/project [list | new | memory | context]',
   },
   memory: {
     alias: ['m'],

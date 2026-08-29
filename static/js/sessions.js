@@ -1876,6 +1876,15 @@ export async function selectSession(id, { keepSidebar = false, showLoading = tru
       const presetsModule = window.presetsModule || (await import('./presets.js')).default;
       if (presetsModule && presetsModule.onSessionSwitch) presetsModule.onSessionSwitch(id);
     } catch (e) {}
+    // Point the workspace pill at this chat's project, if it has one. The
+    // backend resolves confinement from the session on its own — this only
+    // keeps the UI from claiming the previous project's folder.
+    try {
+      const projectsModule = window.projectsModule || (await import('./projects.js')).default;
+      if (projectsModule && projectsModule.onSessionSwitch) {
+        projectsModule.onSessionSwitch(id, _meta ? _meta.folder : null);
+      }
+    } catch (e) {}
     const meta = sessions.find(s => s.id === id);
 
     // Detach any in-flight stream to background instead of aborting
