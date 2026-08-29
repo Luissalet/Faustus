@@ -1294,7 +1294,8 @@ async function _cmdProject(args, ctx) {
   const sub = (args[0] || '').toLowerCase();
 
   if (sub === 'new' || sub === 'create' || sub === 'add') {
-    projectsModule.openProjectsPanel();
+    await projectsModule.openProjectsPanel();
+    projectsModule.openDetail(null);   // straight to the empty form
     return true;
   }
   if (sub === 'open' || sub === 'settings' || sub === 'edit' || sub === 'panel') {

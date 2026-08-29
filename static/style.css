@@ -41399,3 +41399,223 @@ body.settings-sidebar-resize-active {
     display: none;
   }
 }
+
+/* ── Projects ─────────────────────────────────────────────────────────────
+   Gallery of project cards + the project detail view. Everything is drawn
+   with the existing theme variables (--bg/--fg/--panel/--border/--accent)
+   so it follows every theme preset without a per-theme override. */
+
+.projects-toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.projects-toolbar .memory-search-input {
+  flex: 1 1 180px;
+  min-width: 140px;
+}
+.projects-new-btn {
+  background: var(--accent, var(--fg));
+  color: var(--bg);
+  border: none;
+  border-radius: 7px;
+  padding: 7px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.projects-new-btn:hover { filter: brightness(1.12); }
+
+.projects-grid {
+  display: grid;
+  /* auto-fill rather than auto-fit: one project should look like one card,
+     not a card stretched across the whole panel. */
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 12px;
+}
+
+.project-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 104px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  cursor: pointer;
+  transition: border-color 0.12s ease, transform 0.12s ease;
+}
+.project-card:hover {
+  border-color: var(--accent, var(--fg));
+  transform: translateY(-1px);
+}
+.project-card-name {
+  font-weight: 600;
+  font-size: 14px;
+  margin-bottom: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.project-card-sub {
+  font-size: 11px;
+  opacity: 0.55;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.project-card-meta {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-top: 14px;
+  font-size: 11px;
+  opacity: 0.6;
+  min-width: 0;
+}
+.project-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+}
+.project-chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.project-chip svg { flex: 0 0 auto; opacity: 0.8; }
+
+.projects-empty {
+  grid-column: 1 / -1;
+  padding: 34px 18px;
+  text-align: center;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  font-size: 12px;
+  opacity: 0.7;
+  line-height: 1.6;
+}
+
+/* ── detail view ───────────────────────────────────────────────────── */
+
+.project-detail-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+.project-back-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: inherit;
+  font-family: inherit;
+  font-size: 12px;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+.project-back-btn:hover { border-color: var(--accent, var(--fg)); }
+.project-detail-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-field { margin-bottom: 14px; }
+.project-field > label {
+  display: block;
+  font-size: 11px;
+  opacity: 0.6;
+  margin-bottom: 5px;
+}
+.project-field .styled-prompt-input,
+.project-field textarea {
+  width: 100%;
+  box-sizing: border-box;
+}
+.project-field textarea {
+  resize: vertical;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.project-hint {
+  font-size: 11px;
+  opacity: 0.55;
+  margin: 6px 0 0;
+  line-height: 1.5;
+}
+.project-row { display: flex; gap: 6px; align-items: stretch; }
+.project-row .styled-prompt-input { flex: 1; }
+
+.project-section-title {
+  font-size: 12px;
+  font-weight: 600;
+  margin: 22px 0 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.project-section-title .project-count { opacity: 0.5; font-weight: normal; }
+
+.project-memory-row,
+.project-chat-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  margin-bottom: 6px;
+  font-size: 12px;
+  background: var(--panel);
+}
+.project-memory-row .grow,
+.project-chat-row .grow {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.project-memory-row .project-file-size { opacity: 0.5; font-size: 11px; }
+.project-chat-row { cursor: pointer; }
+.project-chat-row:hover { border-color: var(--accent, var(--fg)); }
+
+.project-memory-editor {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 260px;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.project-detail-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.project-detail-actions .project-danger { margin-left: auto; }
+
+@media (max-width: 640px) {
+  .projects-grid { grid-template-columns: 1fr; }
+  .projects-toolbar .memory-search-input { flex-basis: 100%; }
+}
