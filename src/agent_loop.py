@@ -3693,6 +3693,32 @@ async def stream_agent_loop(
                         _mention_resolution.get("resolved"),
                         _mention_resolution.get("missing"),
                         _mention_resolution.get("ambiguous"))
+    # Code references pasted in the message (src/code_refs.py): a traceback,
+    # a pytest failure line or a Node stack already names the file AND the
+    # line. The windows around those frames go in right beside the @ mentions —
+    # same untrusted wrapper, same position (after the repo map, before the
+    # user's turn) — so the model reads the failing code instead of spending
+    # two 30 s rounds of grep + read_file rediscovering what the paste said.
+    # Files already inlined whole by a mention are skipped, not repeated.
+    if workspace and not guide_only:
+        try:
+            from src import code_refs as _code_refs
+            _code_ref_ctx = await asyncio.to_thread(
+                _code_refs.turn_context, workspace, _last_user,
+                exclude=list(_mention_resolution.get("resolved") or []),
+            )
+        except Exception as _cr_err:
+            logger.debug("[code-refs] build failed: %s", _cr_err)
+            _code_ref_ctx = None
+        if _code_ref_ctx and _code_ref_ctx.get("text"):
+            messages = _insert_before_latest_user(
+                messages,
+                untrusted_context_message("code the pasted error points at",
+                                          _code_ref_ctx["text"], arm_tool_gate=False),
+            )
+            logger.info("[code-refs] windows=%s outside=%s",
+                        [f"{r.path}:{r.line}" for r in _code_ref_ctx.get("refs") or []],
+                        _code_ref_ctx.get("outside"))
     _ody_qwen_finetune_model = _is_odysseus_qwen_model(model)
     # The caller's temperature survives for non-qwen routes; the qwen cap is
     # applied per candidate (here for the primary, in the candidate request

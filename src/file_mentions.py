@@ -31,11 +31,16 @@ logger = logging.getLogger(__name__)
 # a mention starts a token, it never sits tight against a word character.
 MENTION_RE = re.compile(
     r'(?<![\w@/\\.-])@(?:"([^"\n]{1,300})"|([A-Za-z0-9_.][\w./\\-]{0,299}))'
+    # …optionally followed by the line the user cares about: `@src/app.py:42`
+    # or `@src/app.py:120-160`. The path class has no ":", so before this the
+    # line number was silently dropped and the whole file was inlined instead.
+    r'(?::(\d{1,7})(?:-(\d{1,7}))?)?'
 )
 
 _MAX_RESULTS = 200
 _DEFAULT_INLINE_CHARS = 6000
 _MAX_INLINE_FILE_CHARS = 12000
+_MENTION_LINE_RADIUS = 12          # context around a bare `@file.py:42`
 _BINARY_SNIFF = 4000
 
 # Ranked ahead of everything else when the query is empty, so the bare "@"
@@ -262,8 +267,43 @@ def _add(lst: List[str], item: str) -> None:
 
 
 def strip_markers(text: str) -> str:
-    """`@src/x.py` → `src/x.py`, for prompts that read better without the sigil."""
-    return MENTION_RE.sub(lambda m: (m.group(1) or m.group(2) or ""), text or "")
+    """`@src/x.py` → `src/x.py`, for prompts that read better without the sigil.
+
+    A `:42` / `:120-160` suffix is kept: it is what the user is pointing at.
+    """
+    def _sub(m: "re.Match[str]") -> str:
+        body = m.group(1) or m.group(2) or ""
+        if m.group(3):
+            body += ":" + m.group(3) + ("-" + m.group(4) if m.group(4) else "")
+        return body
+    return MENTION_RE.sub(_sub, text or "")
+
+
+def extract_ranges(text: str) -> Dict[str, Tuple[int, int]]:
+    """`@src/app.py:42` / `@src/app.py:120-160` → {key: (first, last)}.
+
+    Keyed by the normalised mention AND by its basename, so the caller can look
+    a span up with whatever the index resolved the mention to.
+    """
+    out: Dict[str, Tuple[int, int]] = {}
+    if not text or "@" not in text:
+        return out
+    for m in MENTION_RE.finditer(text):
+        if not m.group(3):
+            continue
+        raw = (m.group(1) or m.group(2) or "").strip()
+        while raw and raw[-1] in ".,;:!?":
+            raw = raw[:-1]
+        if not raw:
+            continue
+        first = int(m.group(3))
+        last = int(m.group(4)) if m.group(4) else first
+        if last < first:
+            first, last = last, first
+        key = _normalise_rel(raw).lower()
+        out.setdefault(key, (first, last))
+        out.setdefault(key.rsplit("/", 1)[-1], (first, last))
+    return out
 
 
 # ── the reference block the agent loop injects ────────────────────────────
@@ -312,9 +352,32 @@ def _read_head(abs_path: str, budget: int) -> Optional[str]:
     return txt
 
 
+def _window(abs_path: str, span: Tuple[int, int], budget: int) -> Optional[str]:
+    """The lines of `span` only, numbered — src/code_refs.py owns the renderer.
+
+    Imported lazily: code_refs imports THIS module for its helpers, so a
+    top-level import here would be a cycle.
+    """
+    try:
+        from src.code_refs import window as _win
+        first, last = span
+        body = (_win(abs_path, [first, last], radius=0, budget_chars=budget)
+                if last > first
+                else _win(abs_path, first, radius=_MENTION_LINE_RADIUS,
+                          budget_chars=budget))
+        return body or None
+    except Exception:                                     # pragma: no cover
+        return None
+
+
 def context_text(workspace: str, resolution: Dict[str, List[str]],
-                 inline_chars: Optional[int] = None) -> str:
-    """The block injected before the user's turn. '' when there is nothing to say."""
+                 inline_chars: Optional[int] = None,
+                 ranges: Optional[Dict[str, Tuple[int, int]]] = None) -> str:
+    """The block injected before the user's turn. '' when there is nothing to say.
+
+    `ranges` (from `extract_ranges`) narrows a mention to the lines it named:
+    `@src/app.py:120-160` inlines that window instead of the whole file.
+    """
     resolved = list(resolution.get("resolved") or [])
     missing = list(resolution.get("missing") or [])
     ambiguous = list(resolution.get("ambiguous") or [])
@@ -359,7 +422,13 @@ def context_text(workspace: str, resolution: Dict[str, List[str]],
         # Inline only whole files that fit in what is left of the budget: a
         # 200-char head of a 12 kB file is noise, and the point of inlining is
         # to save the model a read_file round it would otherwise still need.
-        fits = (not secret) and (not escapes) and 0 <= size <= min(budget, _MAX_INLINE_FILE_CHARS)
+        span = None
+        if ranges:
+            span = ranges.get(rel.lower()) or ranges.get(rel.rsplit("/", 1)[-1].lower())
+        # A named line wins over the size rule: the point of `@src/app.py:900`
+        # is precisely that the file is too big to hand over whole.
+        fits = (not secret) and (not escapes) and (
+            span is not None or 0 <= size <= min(budget, _MAX_INLINE_FILE_CHARS))
         note = ""
         if escapes:
             note = (" — this name is a link that resolves outside the workspace; "
@@ -368,10 +437,14 @@ def context_text(workspace: str, resolution: Dict[str, List[str]],
             note = " — contents not included here; read_file it if you need them"
         elif size > 0 and not fits and budget > 0:
             note = " — too large to inline here, read_file it"
+        elif span:
+            note = (f" — lines {span[0]}-{span[1]} below" if span[1] > span[0]
+                    else f" — around line {span[0]} below")
         lines.append(f"- {rel}" + (f" ({size} bytes)" if size >= 0 else "") + note)
         if fits:
             # Read the RESOLVED path: it is the one just proven contained.
-            body = _read_head(real_path or abs_path, _MAX_INLINE_FILE_CHARS)
+            body = (_window(real_path or abs_path, span, max(200, budget)) if span
+                    else _read_head(real_path or abs_path, _MAX_INLINE_FILE_CHARS))
             if body is not None:
                 budget -= len(body)
                 lang = os.path.splitext(rel)[1].lstrip(".") or ""
@@ -398,4 +471,4 @@ def turn_context(workspace: str, user_text: str) -> Tuple[str, Dict[str, List[st
     if not enabled() or not workspace or not user_text:
         return "", {"resolved": [], "missing": [], "ambiguous": []}
     res = resolve(workspace, user_text)
-    return context_text(workspace, res), res
+    return context_text(workspace, res, ranges=extract_ranges(user_text)), res

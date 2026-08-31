@@ -199,3 +199,49 @@ def test_the_secret_pattern_covers_the_usual_suspects():
     for rel in ("src/environment.py", "docs/keyboard.md", "pemberton.txt",
                 "src/keys.py", "credentials_helper.go"):
         assert not fm._SECRET_NAME_RE.search(rel), rel
+
+
+# ── `@path:line` / `@path:start-end` (src/code_refs.py renders the window) ──
+
+def _big(tmp_path, rel="src/big.py", n=400):
+    p = tmp_path / rel
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text("".join(f"line_{i}\n" for i in range(1, n + 1)), encoding="utf-8")
+    from src import agent_harness
+    agent_harness._index_cache.clear()
+    return p
+
+
+def test_a_line_suffix_does_not_change_which_file_a_mention_resolves_to(tmp_path):
+    _big(tmp_path)
+    assert fm.extract("mira @src/big.py:42 porfa") == ["src/big.py"]
+    assert fm.resolve(str(tmp_path), "@src/big.py:120-160")["resolved"] == ["src/big.py"]
+
+
+def test_extract_ranges_reads_a_line_and_a_span(tmp_path):
+    got = fm.extract_ranges("@src/big.py:42 y @other/x.py:160-120 y @plain.py")
+    assert got["src/big.py"] == (42, 42)
+    assert got["other/x.py"] == (120, 160)          # reversed span is normalised
+    assert "plain.py" not in got
+
+
+def test_strip_markers_keeps_the_line_the_user_pointed_at():
+    assert fm.strip_markers("@src/big.py:42 y @a/b.py:10-20") == "src/big.py:42 y a/b.py:10-20"
+
+
+def test_a_mention_with_a_line_inlines_that_window_not_the_whole_file(tmp_path):
+    _big(tmp_path)
+    text, _ = fm.turn_context(str(tmp_path), "revisa @src/big.py:120-160")
+    assert "> 120 | line_120" in text and "160 | line_160" in text
+    assert "line_1\n" not in text and "line_399" not in text
+    assert "lines 120-160" in text
+
+
+def test_a_mention_with_a_line_wins_over_the_too_large_to_inline_rule(tmp_path):
+    _big(tmp_path, n=20000)                         # far over _MAX_INLINE_FILE_CHARS
+    text, _ = fm.turn_context(str(tmp_path), "@src/big.py:9000")
+    assert "> 9000 | line_9000" in text
+    assert "too large to inline" not in text
+    # A bare mention of the same file still refuses to inline it whole.
+    plain, _ = fm.turn_context(str(tmp_path), "@src/big.py")
+    assert "too large to inline" in plain and "line_9000" not in plain

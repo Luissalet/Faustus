@@ -173,6 +173,13 @@ DEFAULT_SETTINGS = {
     # read_file. 0 inline chars = list the paths only.
     "agent_file_mentions": True,
     "agent_file_mention_inline_chars": 6000,
+    # `path:line` references pasted into the message (src/code_refs.py):
+    # tracebacks, pytest failures and Node stacks already name the file AND
+    # the line, so the lines around each frame ride along with the turn and
+    # the model does not spend two rounds of grep + read_file rediscovering
+    # what the paste said. 0 chars = list the frames only.
+    "agent_code_refs": True,
+    "agent_code_ref_chars": 4000,
     # Tails an edit/regenerate would otherwise delete, kept aside so they can
     # be put back (src/chat_versions.py, /versions).
     "chat_versions": True,

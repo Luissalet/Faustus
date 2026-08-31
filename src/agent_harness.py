@@ -357,6 +357,15 @@ _MISSING_ACK_RE = re.compile(
 )
 
 
+def _is_vendor_frame(path: str) -> bool:
+    """Dependency / stdlib / frozen frame (src/code_refs.py owns the pattern)."""
+    try:
+        from src.code_refs import is_vendor_frame
+        return bool(is_vendor_frame(path))
+    except Exception:                                     # pragma: no cover
+        return False
+
+
 def extract_path_tokens(text: str) -> List[str]:
     """Path-like tokens mentioned in prose (de-duplicated, order kept)."""
     out: List[str] = []
@@ -762,6 +771,12 @@ class TurnLedger:
         created = {_norm(p).rsplit("/", 1)[-1] for p in self.mutated_paths()}
         out: List[str] = []
         for tok in extract_path_tokens(self.user_text):
+            # A pasted traceback names dependency/stdlib frames the user never
+            # "named" and that the index deliberately skips (node_modules,
+            # site-packages, venv). Counted as missing, they fired
+            # check_target_substitution on a turn where nothing was substituted.
+            if _is_vendor_frame(tok):
+                continue
             if path_exists_in_workspace(self.workspace, tok):
                 continue
             if _norm(tok).rsplit("/", 1)[-1] in created:
