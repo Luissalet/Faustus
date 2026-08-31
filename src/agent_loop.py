@@ -6111,6 +6111,7 @@ async def stream_agent_loop(
                                 checkpoint_sha=(_ledger.checkpoint or {}).get("sha") if isinstance(_ledger.checkpoint, dict) else None,
                                 user_text=_last_user, endpoint_url=endpoint_url, model=model, headers=headers,
                                 reviewer_model=_reviewer_model, tests=_ledger.tests,
+                                workload=workload,
                             )
                             _ledger.review = _auto_review.compact(_rev)
                         except Exception as _rv_err:

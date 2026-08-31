@@ -272,7 +272,7 @@ def test_review_turn_calls_the_model_with_one_attempt_and_handles_empty(ws, data
     res = asyncio.run(ar.review_turn(workspace=str(ws), changed=["src/calc.py"], checkpoint_sha="abc",
                                      user_text="fix add", endpoint_url="http://127.0.0.1:11434/v1",
                                      model="qwen3.5:9b", reviewer_model=None, tests={"ran": True, "ok": True, "summary": "1 passed"}))
-    assert seen["max_retries"] >= 1 and seen["model"] == "qwen3.5:9b" and seen["workload"] == "background"
+    assert seen["max_retries"] >= 1 and seen["model"] == "qwen3.5:9b" and seen["workload"] == "foreground"
     assert "<diff>" in seen["prompt"] and "return a * b" in seen["prompt"] and "1 passed" in seen["prompt"]
     assert res["verdict"] == "issues" and res["findings"][0]["line"] == 2 and res["diff_chars"] > 0
     msg = ar.fix_message(res)

@@ -18,6 +18,7 @@ goes on.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -215,6 +216,7 @@ async def review_turn(
     reviewer_model: Optional[str] = None,
     tests: Optional[Dict[str, Any]] = None,
     timeout_s: Optional[float] = None,
+    workload: str = "foreground",
 ) -> Dict[str, Any]:
     """Run the review. Always returns a dict; `error` is set when it could not run."""
     t0 = time.time()
@@ -245,12 +247,25 @@ async def review_turn(
         from src.llm_core import llm_call_async
         # max_retries is the number of *attempts* (0 would never call the
         # model and return None — seen live: verdict "unparsed", summary "None").
-        raw = await llm_call_async(
-            url=endpoint_url, model=reviewer,
-            messages=[{"role": "user", "content": _prompt(user_text, diff, files, tests)}],
-            headers=headers, temperature=0.1, max_tokens=1200, timeout=int(timeout),
-            max_retries=1, workload="background",
+        # The review is part of the user's turn: "foreground" — a "background"
+        # call waits behind the local-model gate while the chat is active,
+        # i.e. forever, since this very turn is what keeps the chat active.
+        # Hard bound on the whole call (HTTP timeout + gate wait): a review must
+        # never hang the turn it belongs to.
+        raw = await asyncio.wait_for(
+            llm_call_async(
+                url=endpoint_url, model=reviewer,
+                messages=[{"role": "user", "content": _prompt(user_text, diff, files, tests)}],
+                headers=headers, temperature=0.1, max_tokens=1200, timeout=int(timeout),
+                max_retries=1, workload=workload or "foreground",
+            ),
+            timeout=timeout + 30,
         )
+    except asyncio.TimeoutError:
+        logger.warning("[review] reviewer %s did not answer within %ss", reviewer, int(timeout) + 30)
+        result.update(error=f"review timed out after {int(timeout) + 30} s", verdict="error")
+        result["duration_s"] = round(time.time() - t0, 1)
+        return result
     except Exception as e:
         logger.warning("[review] reviewer %s failed: %s", reviewer, e)
         result.update(error=f"{type(e).__name__}: {e}"[:300], verdict="error")
