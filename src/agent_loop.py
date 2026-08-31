@@ -6071,13 +6071,15 @@ async def stream_agent_loop(
                                 _tres = await asyncio.to_thread(
                                     _ptests.run_for_turn, workspace, _ledger.mutated_paths(),
                                     override=_hopts.get("test_command"),
+                                    checkpoint_sha=(_ledger.checkpoint or {}).get("sha") if isinstance(_ledger.checkpoint, dict) else None,
                                 )
                                 _ledger.tests = _ptests.compact(_tres)
                         except Exception as _pt_err:
                             logger.debug("[harness] project tests failed to run: %s", _pt_err)
                             _tres = None
                         if (_tres and _tres.get("ran") and _tres.get("ok") is False
-                                and not _tres.get("inconclusive") and _ledger.tests_fix_rounds < _tests_max_fix):
+                                and not _tres.get("inconclusive") and not _tres.get("pre_existing_only")
+                                and _ledger.tests_fix_rounds < _tests_max_fix):
                             _ledger.tests_fix_rounds += 1
                             logger.warning("[harness] round %s project tests FAILED (%s) — one fix round",
                                            round_num, _tres.get("summary"))
@@ -6095,7 +6097,7 @@ async def stream_agent_loop(
                             yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
                             continue
                         if _tres and _tres.get("ran") and _tres.get("ok") is False and not _tres.get("inconclusive"):
-                            _note = "tests_failed:" + str(_tres.get("summary") or "")[:80]
+                            _note = ("tests_pre_existing:" if _tres.get("pre_existing_only") else "tests_failed:") + str(_tres.get("summary") or "")[:80]
                             if _note not in _ledger.notes:
                                 _ledger.notes.append(_note)
                     # ── (5) Independent review of the diff (src/auto_review.py):

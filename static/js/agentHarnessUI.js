@@ -382,7 +382,12 @@ function _testsLine(t) {
     ? ` (related: ${t.related_files.map(f => `<code>${esc(f.split('/').pop())}</code>`).join(', ')})` : '';
   if (t.inconclusive) return `<div class="harness-foot harness-tests is-inconclusive">⚠ Tests inconclusive — ${esc(t.summary || 'could not run')}${scope} · <code>${esc(label)}</code></div>`;
   if (t.ok) return `<div class="harness-foot harness-tests is-ok">✓ Project tests passed: ${esc(t.summary || 'ok')}${scope} · <code>${esc(label)}</code> · ${esc(String(t.duration_s || 0))}s</div>`;
-  const fails = (t.failures || []).slice(0, 6).map(f => `<li><code>${esc(f)}</code></li>`).join('');
+  const pre = new Set(t.pre_existing || []);
+  const fails = (t.failures || []).slice(0, 6).map(f => `<li><code>${esc(f)}</code>${pre.has(f) ? ' <span class="harness-muted">(pre-existing: failed before this change too)</span>' : ''}</li>`).join('');
+  if (t.pre_existing_only) {
+    return `<div class="harness-foot harness-tests is-warn">⚠ Project tests failing, but they failed <b>before this change too</b> (checked against the checkpoint): ${esc(t.summary || 'failed')}${scope} · <code>${esc(label)}</code></div>` +
+      (fails ? `<ul class="harness-list">${fails}</ul>` : '');
+  }
   return `<div class="harness-foot harness-tests is-fail">✗ Project tests FAILED: ${esc(t.summary || 'failed')}${scope} · <code>${esc(label)}</code></div>` +
     (fails ? `<ul class="harness-list">${fails}</ul>` : '') +
     (t.output_tail ? `<details class="harness-details"><summary>Output</summary><pre class="harness-pre">${esc(t.output_tail)}</pre></details>` : '');
@@ -558,6 +563,7 @@ export function renderHarnessSummary(json, { messageId = null } = {}) {
     empty_round_nudge: r => `round ${esc(r)} was empty (no text, no tool) — nudged`,
     target_substituted: p => `you named <code>${esc(p)}</code> (does not exist) — the model changed other files; it was asked to say so explicitly`,
     tests_failed: s => `<b>⚠ the project's tests still fail</b> after the fix round: ${esc(s)}`,
+    tests_pre_existing: s => `the project's tests fail, but they already failed before this change (checked at the checkpoint): ${esc(s)}`,
     review_defects: n => `<b>⚠ the reviewer still sees ${esc(n)} likely defect${String(n) === '1' ? '' : 's'}</b> after the fix round — check the findings above`,
     review_disputed: n => `the reviewer flagged ${esc(n)} point${String(n) === '1' ? '' : 's'}; the agent checked them and disagreed (nothing changed) — its answer says why`,
   };

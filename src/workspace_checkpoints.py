@@ -441,6 +441,40 @@ def restore(workspace: str, sha: str, paths: Optional[Iterable[str]] = None) -> 
     return result
 
 
+def export_tree(workspace: str, sha: str, dest: str) -> bool:
+    """Materialise checkpoint `sha` under `dest` (a fresh directory): the
+    tracked files as they were, nothing else. Used to run the project's tests
+    against the pre-turn state ("did this fail before my change?")."""
+    if not workspace or not sha or not dest or not git_available():
+        return False
+    import zipfile
+    root = _norm_root(workspace)
+    try:
+        os.makedirs(dest, exist_ok=True)
+    except OSError:
+        return False
+    zip_path = os.path.join(dest, "__checkpoint__.zip")
+    proc = _run(root, ["archive", "--format=zip", "-o", zip_path, sha], timeout=_GIT_TIMEOUT * 3, check=True)
+    if proc is None or proc.returncode != 0 or not os.path.isfile(zip_path):
+        return False
+    try:
+        with zipfile.ZipFile(zip_path) as z:
+            for member in z.infolist():
+                name = member.filename.replace("\\", "/")
+                if name.startswith("/") or ".." in name.split("/"):
+                    continue
+                z.extract(member, dest)
+    except (OSError, zipfile.BadZipFile) as e:
+        logger.debug("[checkpoint] export of %s failed: %s", sha[:10], e)
+        return False
+    finally:
+        try:
+            os.remove(zip_path)
+        except OSError:
+            pass
+    return True
+
+
 def list_checkpoints(workspace: str, limit: int = 30) -> List[Dict[str, Any]]:
     if not workspace or not git_available():
         return []

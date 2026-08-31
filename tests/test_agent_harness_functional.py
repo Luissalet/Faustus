@@ -229,6 +229,33 @@ def test_auto_review_flags_a_defect_then_accepts_the_fix(project, monkeypatch):
     assert scorecard.load()[-1]["review"] == "ok"
 
 
+def test_pre_existing_test_failures_do_not_cost_a_fix_round(project, monkeypatch):
+    """The project already had a failing test before the turn; the agent's
+    change is fine → tests are reported as failing-but-pre-existing, no fix
+    round, and the turn ends verified with a note."""
+    import pathlib
+    ws = pathlib.Path(project)
+    (ws / "tests" / "test_other.py").write_text(
+        "import os, sys\nsys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))\n"
+        "from src.calc import add\n\n\ndef test_always_broken():\n    assert add(1, 1) == 99\n", encoding="utf-8")
+    _patch_common(monkeypatch, settings={"agent_project_tests": True}, tool_exec=_real_edit(project))
+    calls = _scripted_stream(monkeypatch, [
+        (_edit_call("src/calc.py", "return a - b", "return a + b"), "tool_calls"),
+        ("He corregido src/calc.py.", "stop"),
+    ])
+    events = _run(project)
+    statuses = [e["status"] for e in events if e.get("type") == "harness_check"]
+    assert "tests_failed" not in statuses and statuses[-1] == "verified"
+    assert calls["n"] == 2
+    verified = next(e for e in events if e.get("type") == "harness_check" and e["status"] == "verified")
+    t = verified["tests"]
+    assert t["ok"] is False and t["pre_existing_only"] is True and t["new_failures"] == []
+    assert any("test_always_broken" in f for f in t["pre_existing"])
+    summary = next(e for e in events if e.get("type") == "harness_summary")["data"]
+    assert any(n.startswith("tests_pre_existing:") for n in summary["notes"])
+    assert summary["tests_fix_rounds"] == 0
+
+
 def test_review_dispute_when_the_agent_disagrees_and_changes_nothing(project, monkeypatch):
     """A grounded error finding gets its fix round; the agent checks, disagrees
     and edits nothing → the review is marked disputed (no red 'defects' note)."""

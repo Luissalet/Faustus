@@ -219,6 +219,53 @@ def test_run_for_turn_pass_fail_and_fix_message(ws, settings):
     assert pt.run_for_turn(str(ws), ["src/calc.py"]) is None
 
 
+@pytest.mark.skipif(not _HAS_GIT, reason="git not on PATH")
+def test_export_tree_materialises_the_checkpoint(ws, data_dir, tmp_path):
+    from src import workspace_checkpoints as wc
+    cp = wc.checkpoint(str(ws))
+    (ws / "src" / "calc.py").write_text("def add(a, b):\n    return a + b\n", encoding="utf-8")
+    dest = tmp_path / "export"
+    assert wc.export_tree(str(ws), cp["sha"], str(dest)) is True
+    assert (dest / "src" / "calc.py").read_bytes() == b"def add(a, b):\n    return a - b\n"   # the OLD content
+    assert (dest / "tests" / "test_calc.py").is_file() and not (dest / "__checkpoint__.zip").exists()
+    assert wc.export_tree(str(ws), "0" * 40, str(tmp_path / "nope")) is False
+
+
+@pytest.mark.skipif(not _HAS_GIT, reason="git not on PATH")
+def test_failures_are_split_into_new_and_pre_existing(ws, data_dir, settings):
+    """A test that already failed at the checkpoint is reported as pre-existing;
+    when every failure is pre-existing the run is flagged (no fix round)."""
+    from src import project_tests as pt
+    from src import workspace_checkpoints as wc
+    settings["agent_project_tests"] = True
+    # A second test (tied to calc.py only by import) that fails regardless of
+    # calc.py: pre-existing and exempt.
+    (ws / "tests" / "test_api_extra.py").write_text(
+        "import os, sys\nsys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))\n"
+        "from src.calc import add\n\n\ndef test_broken_before():\n    assert add(0, 0) == 99\n", encoding="utf-8")
+    cp = wc.checkpoint(str(ws))
+    # The turn: fixes add() — test_calc passes now, test_broken_before still fails.
+    (ws / "src" / "calc.py").write_text("def add(a, b):\n    return a + b\n", encoding="utf-8")
+    res = pt.run_for_turn(str(ws), ["src/calc.py"], checkpoint_sha=cp["sha"])
+    assert res["ok"] is False and res["pre_existing_only"] is True
+    assert [pt._failure_id(f) for f in res["pre_existing"]] == ["tests/test_api_extra.py::test_broken_before"]
+    assert res["new_failures"] == [] and res["baseline"]["ran"] is True and res["baseline"]["ok"] is False
+    assert "pre-existing" in res["summary"]
+    msg = pt.failure_message(res)
+    assert "already failed before your change" in msg and "test_broken_before" in msg
+    c = pt.compact(res)
+    assert c["pre_existing_only"] is True and c["baseline"]["ok"] is False
+    # The turn breaks add() instead: test_calc (tied by NAME to calc.py) fails
+    # before and after → never exempt, the fix round happens.
+    (ws / "src" / "calc.py").write_text("def add(a, b):\n    return a * b\n", encoding="utf-8")
+    res = pt.run_for_turn(str(ws), ["src/calc.py"], checkpoint_sha=cp["sha"])
+    assert res["ok"] is False and not res.get("pre_existing_only")
+    assert res["pre_existing"] and res["exempt"] == []
+    settings["agent_project_tests_baseline"] = False
+    res = pt.run_for_turn(str(ws), ["src/calc.py"], checkpoint_sha=cp["sha"])
+    assert "baseline" not in res and res["new_failures"] == res["failures"]
+
+
 def test_run_tests_timeout_is_inconclusive(ws):
     from src import project_tests as pt
     spec = {"kind": "custom", "shell": f'"{sys.executable}" -c "import time; time.sleep(30)"', "label": "sleep"}

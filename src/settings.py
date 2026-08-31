@@ -149,6 +149,10 @@ DEFAULT_SETTINGS = {
     "agent_project_tests_scope": "related",
     "agent_project_tests_timeout_seconds": 300,
     "agent_project_tests_fix_rounds": 1,
+    # After a failing run, re-run the same test files against the turn's
+    # checkpoint to tell new failures from pre-existing ones (no fix round
+    # when everything was already failing before the change).
+    "agent_project_tests_baseline": True,
     "agent_project_test_command": "",
     # Independent, tool-less review of the turn's diff (src/auto_review.py):
     # "off", "same" (this chat's model) or a model name on the same endpoint.

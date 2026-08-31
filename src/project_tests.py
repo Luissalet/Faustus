@@ -287,8 +287,11 @@ def run_tests(
     changed: Optional[Iterable[str]] = None,
     scope: str = "related",
     timeout_s: Optional[float] = None,
+    test_files: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
-    """Run the detected command. Returns a verdict dict (see module docstring)."""
+    """Run the detected command. Returns a verdict dict (see module docstring).
+    `test_files` forces the exact pytest files to run (relative to `workspace`;
+    missing ones are dropped) — used for the baseline run at the checkpoint."""
     t0 = time.time()
     try:
         timeout = float(timeout_s if timeout_s is not None else _setting("agent_project_tests_timeout_seconds", DEFAULT_TIMEOUT_S) or DEFAULT_TIMEOUT_S)
@@ -311,7 +314,18 @@ def run_tests(
         if not argv:
             result["summary"] = "no command"
             return result
-        if spec.get("kind") == "pytest" and scope == "related" and changed is not None:
+        if spec.get("kind") == "pytest" and test_files is not None:
+            rel = [f for f in test_files if os.path.isfile(os.path.join(workspace, *f.split("/")))]
+            if not rel:
+                result["summary"] = "none of the test files exist at this state"
+                result["inconclusive"] = True
+                return result
+            # The baseline must see EVERY failure of these files, not stop at
+            # the first one (-x) like the post-turn run does.
+            argv = [a for a in argv if a != "-x"] + ["--"] + rel
+            result["scope"] = "related"
+            result["related_files"] = rel
+        elif spec.get("kind") == "pytest" and scope == "related" and changed is not None:
             rel = related_test_files(workspace, changed)
             if rel:
                 argv = argv + ["--"] + rel
@@ -459,8 +473,82 @@ def parse_output(kind: str, exit_code: Optional[int], out: str) -> Dict[str, Any
 # Glue for the agent loop
 # ---------------------------------------------------------------------------
 
-def run_for_turn(workspace: str, changed: Iterable[str], *, override: Optional[str] = None) -> Optional[Dict[str, Any]]:
-    """Detect + run. None when the feature is off or no runner exists."""
+def _failure_id(item: str) -> str:
+    return (item or "").split(" — ", 1)[0].strip()
+
+
+def _name_related_test(rel: str, changed: Iterable[str]) -> bool:
+    """True when the test file is tied to a changed file by NAME (test_<stem>*.py,
+    <stem>_test.py) or is itself one of the changed files — i.e. the test the
+    user most plausibly asked about. Pre-existing failures there still get the
+    fix round: "fix add()" fails before and after a wrong fix, and that is not
+    'somebody else's broken test'."""
+    low = rel.replace("\\", "/").rsplit("/", 1)[-1].lower()
+    for raw in changed:
+        if not raw:
+            continue
+        crel = raw.replace("\\", "/")
+        if crel.lower().endswith("/" + rel.lower()) or crel.lower() == rel.lower():
+            return True
+        base = crel.rsplit("/", 1)[-1]
+        stem = (base.rsplit(".", 1)[0] if "." in base else base).lower()
+        if stem and (low in (f"test_{stem}.py", f"{stem}_test.py") or low.startswith(f"test_{stem}_") or low.startswith(f"test_{stem}.")):
+            return True
+    return False
+
+
+def compare_with_baseline(workspace: str, checkpoint_sha: Optional[str], spec: Dict[str, Any],
+                          res: Dict[str, Any], changed: Optional[Iterable[str]] = None) -> Dict[str, Any]:
+    """Tests failed after the turn: run the SAME test files against the
+    checkpoint tree (exported to a temp dir) and split the failures into
+    `new_failures` (caused by this change) and `pre_existing` (failed before
+    too). A pre-existing failure in a test file that is not tied by name to
+    the changed files is *exempt*: when every failure is exempt the run is
+    flagged `pre_existing_only` and costs no fix round. Only for pytest with a
+    known test-file list; never raises."""
+    res.setdefault("new_failures", list(res.get("failures") or []))
+    res.setdefault("pre_existing", [])
+    changed = list(changed or [])
+    if not checkpoint_sha or spec.get("kind") != "pytest" or not res.get("related_files"):
+        return res
+    if not bool(_setting("agent_project_tests_baseline", True)):
+        return res
+    import tempfile
+    try:
+        from src import workspace_checkpoints as wc
+    except Exception:
+        return res
+    tmp = tempfile.mkdtemp(prefix="odysseus-baseline-")
+    try:
+        if not wc.export_tree(workspace, checkpoint_sha, tmp):
+            res["baseline"] = {"ran": False, "summary": "checkpoint export failed"}
+            return res
+        base_spec = dict(spec)
+        base = run_tests(tmp, base_spec, test_files=list(res.get("related_files") or []))
+        res["baseline"] = compact(base)
+        if not base.get("ran") or base.get("inconclusive"):
+            return res
+        before = {_failure_id(f) for f in (base.get("failures") or [])}
+        cur = list(res.get("failures") or [])
+        res["pre_existing"] = [f for f in cur if _failure_id(f) in before]
+        res["new_failures"] = [f for f in cur if _failure_id(f) not in before]
+        exempt = [f for f in res["pre_existing"]
+                  if not _name_related_test(_failure_id(f).split("::", 1)[0], changed)]
+        res["exempt"] = exempt
+        if cur and not res["new_failures"] and len(exempt) == len(cur):
+            res["pre_existing_only"] = True
+            res["summary"] = (res.get("summary") or "failed") + " — all failing before this change too (pre-existing)"
+    except Exception as e:  # noqa: BLE001
+        logger.debug("[project-tests] baseline comparison failed: %s", e)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return res
+
+
+def run_for_turn(workspace: str, changed: Iterable[str], *, override: Optional[str] = None,
+                 checkpoint_sha: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Detect + run. None when the feature is off or no runner exists. With a
+    checkpoint, failures are compared against the pre-turn state."""
     if not workspace:
         return None
     if not bool(_setting("agent_project_tests", True)):
@@ -473,6 +561,10 @@ def run_for_turn(workspace: str, changed: Iterable[str], *, override: Optional[s
     res = run_tests(workspace, spec, changed=list(changed), scope=scope)
     logger.info("[harness] project tests (%s, %s): ok=%s %s in %ss", spec.get("kind"), res.get("scope"),
                 res.get("ok"), res.get("summary"), res.get("duration_s"))
+    if res.get("ran") and res.get("ok") is False and not res.get("inconclusive"):
+        res = compare_with_baseline(workspace, checkpoint_sha, spec, res, changed=list(changed))
+        if res.get("pre_existing_only"):
+            logger.info("[harness] project tests: every failure is pre-existing (failed at the checkpoint too)")
     return res
 
 
@@ -484,8 +576,13 @@ def failure_message(res: Dict[str, Any]) -> str:
         + (f", scope: {', '.join(res.get('related_files') or [])}" if res.get("related_files") else "") + "):",
         f"Result: {res.get('summary') or 'failed'}",
     ]
+    pre = list(res.get("pre_existing") or [])
     for f in (res.get("failures") or [])[:8]:
-        lines.append(f"- {f}")
+        tag = " (this one already failed before your change)" if f in pre else ""
+        lines.append(f"- {f}{tag}")
+    if pre:
+        lines.append("A test that already failed before your change may be what the user asked you to fix, or "
+                     "someone else's broken test: decide from the request. If it is unrelated, leave it and say so.")
     tail = (res.get("output_tail") or "").strip()
     if tail:
         lines.append("Output (tail):")
@@ -504,7 +601,8 @@ def compact(res: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     if not res:
         return None
     keys = ("ran", "kind", "label", "scope", "ok", "exit_code", "timed_out", "duration_s",
-            "summary", "failures", "inconclusive", "command", "related_files")
+            "summary", "failures", "inconclusive", "command", "related_files",
+            "new_failures", "pre_existing", "pre_existing_only", "exempt", "baseline")
     out = {k: res.get(k) for k in keys if k in res}
     out["output_tail"] = (res.get("output_tail") or "")[-1500:]
     return out
