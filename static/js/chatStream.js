@@ -254,8 +254,13 @@ export function notifyStreamComplete(sessionId, query) {
   var isOtherSession = sessionModule && sessionModule.getCurrentSessionId() !== sessionId;
   if (!isHidden && !isOtherSession) return;
   if (!('Notification' in window) || Notification.permission !== 'granted') return;
-  var body = query ? 'Response to "' + query.substring(0, 60) + '" is ready' : 'Your chat response has completed';
-  var notification = new Notification('Response Complete', {
+  // Parked on an approval / question → say so (the user has to come back).
+  var waiting = false;
+  try { waiting = !!(sessionModule && sessionModule.sessionActivityStatus && sessionModule.sessionActivityStatus(sessionId) === 'approval'); } catch (_) {}
+  var body = waiting
+    ? (query ? 'The agent needs your approval to continue "' + query.substring(0, 60) + '"' : 'The agent needs your approval to continue')
+    : (query ? 'Response to "' + query.substring(0, 60) + '" is ready' : 'Your chat response has completed');
+  var notification = new Notification(waiting ? 'Odysseus needs your approval' : 'Response Complete', {
     body: body,
     tag: 'stream-' + sessionId,
   });

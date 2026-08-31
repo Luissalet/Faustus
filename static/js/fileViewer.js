@@ -46,6 +46,8 @@ function _ensurePanel() {
     `<button type="button" class="fv-btn" data-fv="diff" title="Changes vs. git HEAD">Diff</button>` +
     `<button type="button" class="fv-btn fv-icon" data-fv="copy" title="Copy contents"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>` +
     `<button type="button" class="fv-btn fv-icon" data-fv="reveal" title="Show in folder"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></button>` +
+    `<button type="button" class="fv-btn fv-icon" data-fv="editor" title="Open in editor (VS Code)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></button>` +
+    `<button type="button" class="fv-btn fv-icon fv-danger" data-fv="revert" title="Revert this file's changes (git checkout)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></button>` +
     `<button type="button" class="fv-btn fv-icon" data-fv="raw" title="Open raw in a new tab"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></button>` +
     `<button type="button" class="fv-btn fv-icon fv-close" data-fv="close" title="Close">×</button>` +
     `</div></div>` +
@@ -61,6 +63,8 @@ function _ensurePanel() {
     else if (a === 'diff') { _state.mode = 'diff'; _loadDiff().then(_render); }
     else if (a === 'copy') _copy();
     else if (a === 'reveal') _reveal();
+    else if (a === 'editor') _openEditor();
+    else if (a === 'revert') _revert();
     else if (a === 'raw') _openRaw();
   });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !el.hidden) close(); });
@@ -159,6 +163,41 @@ async function _reveal() {
   try {
     const q = `workspace=${encodeURIComponent(_state.workspace || '')}&path=${encodeURIComponent(_state.path || '')}`;
     await fetch(`${API_BASE}/api/workspace/reveal?${q}`, { method: 'POST', credentials: 'same-origin' });
+  } catch (_) {}
+}
+
+async function _openEditor() {
+  try {
+    const q = `workspace=${encodeURIComponent(_state.workspace || '')}&path=${encodeURIComponent(_state.path || '')}`;
+    const r = await fetch(`${API_BASE}/api/workspace/open_editor?${q}`, { method: 'POST', credentials: 'same-origin' });
+    const meta = _panel && _panel.querySelector('.fv-meta');
+    if (meta) meta.textContent = r.ok ? `Opened in ${(await r.json()).editor || 'editor'}` : `Could not open the editor (HTTP ${r.status})`;
+  } catch (_) {}
+}
+
+async function _revert() {
+  const name = String(_state.path || '').split(/[\\/]/).pop();
+  let ok = false;
+  try {
+    ok = window.uiModule && window.uiModule.styledConfirm
+      ? await window.uiModule.styledConfirm(`Revert all changes to ${name}? (git checkout — an untracked new file is deleted)`, { confirmText: 'Revert', danger: true })
+      : window.confirm(`Revert all changes to ${name}?`);
+  } catch (_) { ok = window.confirm(`Revert all changes to ${name}?`); }
+  if (!ok) return;
+  try {
+    const q = `workspace=${encodeURIComponent(_state.workspace || '')}&path=${encodeURIComponent(_state.path || '')}`;
+    const r = await fetch(`${API_BASE}/api/workspace/revert?${q}`, { method: 'POST', credentials: 'same-origin' });
+    const meta = _panel && _panel.querySelector('.fv-meta');
+    if (!r.ok) {
+      let msg = `HTTP ${r.status}`; try { msg = (await r.json()).detail || msg; } catch (_) {}
+      if (meta) meta.textContent = `Revert failed: ${msg}`;
+      return;
+    }
+    const res = await r.json();
+    if (res.action === 'deleted_untracked') { _state.data = { error: `${name} was a new file and has been deleted.` }; _state.diff = null; _render(); return; }
+    _state.diff = null;
+    await _load();
+    if (meta) meta.textContent = (res.action === 'restored' ? 'Restored from git HEAD · ' : 'No changes to revert · ') + meta.textContent;
   } catch (_) {}
 }
 

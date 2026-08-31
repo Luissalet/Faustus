@@ -67,3 +67,23 @@ def test_non_admin_is_refused(monkeypatch, repo):
     app.include_router(wr.setup_workspace_routes())
     c = TestClient(app)
     assert c.get("/api/workspace/file", params={"workspace": str(repo), "path": "src/a.py"}).status_code == 403
+
+
+def test_revert_restores_tracked_and_deletes_untracked(client, repo):
+    r = client.post("/api/workspace/revert", params={"workspace": str(repo), "path": "src/a.py"})
+    assert r.status_code == 200 and r.json()["action"] == "restored"
+    assert (repo / "src" / "a.py").read_text(encoding="utf-8") == "x = 1\n"
+    r = client.post("/api/workspace/revert", params={"workspace": str(repo), "path": "new.txt"})
+    assert r.status_code == 200 and r.json()["action"] == "deleted_untracked"
+    assert not (repo / "new.txt").exists()
+    r = client.post("/api/workspace/revert", params={"workspace": str(repo), "path": "src/a.py"})
+    assert r.json()["action"] == "unchanged"
+
+
+def test_revert_refuses_outside_git(client, tmp_path):
+    ws = tmp_path / "plain"
+    ws.mkdir()
+    (ws / "f.txt").write_text("x", encoding="utf-8")
+    r = client.post("/api/workspace/revert", params={"workspace": str(ws), "path": "f.txt"})
+    assert r.status_code == 400
+    assert (ws / "f.txt").exists()

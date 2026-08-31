@@ -223,4 +223,77 @@ def setup_workspace_routes():
             raise HTTPException(status_code=500, detail=str(e))
         return {"ok": True}
 
+    @router.post("/open_editor")
+    def open_in_editor(
+        request: Request,
+        workspace: str = Query(default=""),
+        path: str = Query(default=""),
+        line: int = Query(default=0),
+    ):
+        """Open the file in VS Code (`code -g file:line`) when it is installed
+        on the Odysseus host; falls back to the OS default handler."""
+        owner = get_current_user(request)
+        if not owner_is_admin_or_single_user(owner):
+            raise HTTPException(status_code=403, detail="Admin-only")
+        target = _confine(workspace, path)
+        if not os.path.isfile(target):
+            raise HTTPException(status_code=404, detail="not found")
+        import shutil, subprocess, sys as _sys
+        code = shutil.which("code") or shutil.which("code.cmd") or shutil.which("codium")
+        try:
+            if code:
+                subprocess.Popen([code, "-g", f"{target}:{max(1, int(line or 1))}"],
+                                 shell=os.name == "nt" and code.lower().endswith(".cmd"))
+                return {"ok": True, "editor": os.path.basename(code)}
+            if os.name == "nt":
+                os.startfile(target)  # type: ignore[attr-defined]
+            elif _sys.platform == "darwin":
+                subprocess.Popen(["open", target])
+            else:
+                subprocess.Popen(["xdg-open", target])
+        except OSError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+        return {"ok": True, "editor": "default"}
+
+    @router.post("/revert")
+    def revert_file(
+        request: Request,
+        workspace: str = Query(default=""),
+        path: str = Query(default=""),
+    ):
+        """Undo the working-tree changes of one file with git: `git checkout --
+        <file>` for a tracked file, delete for an untracked one. Refuses when the
+        folder is not a git repo (no safe baseline to restore)."""
+        owner = get_current_user(request)
+        if not owner_is_admin_or_single_user(owner):
+            raise HTTPException(status_code=403, detail="Admin-only")
+        target = _confine(workspace, path)
+        root = os.path.realpath(os.path.expanduser(workspace))
+        import subprocess
+        try:
+            probe = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=root, capture_output=True,
+                                   text=True, encoding="utf-8", errors="replace", timeout=8)
+        except (OSError, subprocess.SubprocessError):
+            probe = None
+        if not probe or probe.returncode != 0:
+            raise HTTPException(status_code=400, detail="not a git repository — nothing to revert to")
+        top = os.path.realpath(probe.stdout.strip())
+        rel = os.path.relpath(target, top).replace(os.sep, "/")
+        st = subprocess.run(["git", "status", "--porcelain", "--", rel], cwd=top, capture_output=True,
+                            text=True, encoding="utf-8", errors="replace", timeout=8)
+        code = (st.stdout or "")[:2].strip()
+        if not code:
+            return {"ok": True, "action": "unchanged"}
+        if code.startswith("?"):
+            try:
+                os.remove(target)
+            except OSError as e:
+                raise HTTPException(status_code=500, detail=str(e))
+            return {"ok": True, "action": "deleted_untracked"}
+        r = subprocess.run(["git", "checkout", "--", rel], cwd=top, capture_output=True,
+                           text=True, encoding="utf-8", errors="replace", timeout=15)
+        if r.returncode != 0:
+            raise HTTPException(status_code=500, detail=(r.stderr or "git checkout failed")[:300])
+        return {"ok": True, "action": "restored"}
+
     return router
