@@ -187,8 +187,13 @@ def test_related_test_files_scopes_by_stem(ws):
     from src import project_tests as pt
     (ws / "tests" / "test_other.py").write_text("def test_x():\n    pass\n", encoding="utf-8")
     (ws / "tests" / "test_calc_edge.py").write_text("def test_y():\n    pass\n", encoding="utf-8")
+    # Related by content too: a test that imports the changed module without
+    # carrying its name (the bench's tests/test_api.py exercising server.py).
+    (ws / "tests" / "test_api.py").write_text("from src.calc import add\n\ndef test_api():\n    assert add(2, 2) == 4\n", encoding="utf-8")
+    (ws / "tests" / "test_unrelated.py").write_text("import json\n\ndef test_z():\n    assert json.dumps(1) == '1'\n", encoding="utf-8")
     rel = pt.related_test_files(str(ws), [str(ws / "src" / "calc.py")])
-    assert sorted(rel) == ["tests/test_calc.py", "tests/test_calc_edge.py"]
+    assert sorted(rel) == ["tests/test_api.py", "tests/test_calc.py", "tests/test_calc_edge.py"]
+    assert set(rel[:2]) == {"tests/test_calc.py", "tests/test_calc_edge.py"}   # name matches first
     # A changed test file is itself in scope; an unknown module scopes nothing.
     assert pt.related_test_files(str(ws), ["tests/test_other.py"]) == ["tests/test_other.py"]
     assert pt.related_test_files(str(ws), ["src/nothing_here.py"]) == []

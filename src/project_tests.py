@@ -174,10 +174,39 @@ def detect_test_command(workspace: str, override: Optional[str] = None) -> Optio
 # Scoping: which tests relate to the changed files
 # ---------------------------------------------------------------------------
 
+_IMPORT_SCAN_MAX_FILES = 400
+_IMPORT_SCAN_MAX_BYTES = 96_000
+
+
+def _imports_any(path: str, stems: List[str]) -> bool:
+    """True when the test file imports / names one of the changed modules
+    (`import server`, `from src.calc import add`, `importlib.import_module("server")`,
+    `server.app`)."""
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            text = f.read(_IMPORT_SCAN_MAX_BYTES)
+    except OSError:
+        return False
+    low = text.lower()
+    for s in stems:
+        if s not in low:
+            continue
+        if re.search(r"(?:^|\n)\s*(?:from\s+[\w.]*\b" + re.escape(s) + r"\b[\w.]*\s+import|import\s+[\w.]*\b" + re.escape(s) + r"\b)", low):
+            return True
+        if re.search(r"import_module\(\s*['\"][\w.]*\b" + re.escape(s) + r"\b", low):
+            return True
+        if re.search(r"\b" + re.escape(s) + r"\.[a-z_]", low):
+            return True
+    return False
+
+
 def related_test_files(workspace: str, changed: Iterable[str], limit: int = 12) -> List[str]:
     """Test files (relative, forward slashes) that relate to the changed paths:
-    the changed test files themselves + `test_<stem>*.py` / `<stem>_test.py` /
-    `tests/**/*<stem>*.py` for every changed source module."""
+    the changed test files themselves + `test_<stem>*.py` / `<stem>_test.py`
+    for every changed source module + test files that import / name the
+    changed module (a `tests/test_api.py` exercising `server.py` — seen on the
+    bench: the name-only match ran test_server.py and missed the failing
+    test_api.py)."""
     if not workspace:
         return []
     stems: List[str] = []
@@ -206,6 +235,8 @@ def related_test_files(workspace: str, changed: Iterable[str], limit: int = 12) 
     roots = [d for d in ("tests", "test") if os.path.isdir(os.path.join(workspace, d))]
     if not roots:
         roots = ["."]
+    by_content: List[str] = []
+    scanned = 0
     for d in roots:
         try:
             for dirpath, dirnames, filenames in os.walk(os.path.join(workspace, d)):
@@ -214,16 +245,21 @@ def related_test_files(workspace: str, changed: Iterable[str], limit: int = 12) 
                     if not _TEST_FILE_RE.search(fn):
                         continue
                     low = fn.lower()
+                    rel = os.path.relpath(os.path.join(dirpath, fn), workspace).replace(os.sep, "/")
                     if any(low in (f"test_{s}.py", f"{s}_test.py") or low.startswith(f"test_{s}_") or low.startswith(f"test_{s}.") for s in stems):
-                        rel = os.path.relpath(os.path.join(dirpath, fn), workspace).replace(os.sep, "/")
                         if rel not in out:
                             out.append(rel)
-                        if len(out) >= limit:
-                            return out
+                    elif scanned < _IMPORT_SCAN_MAX_FILES:
+                        scanned += 1
+                        if _imports_any(os.path.join(dirpath, fn), stems) and rel not in by_content:
+                            by_content.append(rel)
                 if d == ".":
                     break  # top-level only when there is no tests dir
         except OSError:
             continue
+    for rel in by_content:
+        if rel not in out:
+            out.append(rel)
     return out[:limit]
 
 
