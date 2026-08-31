@@ -126,6 +126,9 @@ export function initFileMentions(textarea, opts = {}) {
 
   const hide = () => {
     if (timer) { clearTimeout(timer); timer = null; }
+    // Invalidate whatever lookup is in flight. Without this a slow response
+    // calls show() after the hide and leaves a popup floating over the page.
+    seq++;
     if (!visible) return;
     visible = false;
     ctx = null;
@@ -141,7 +144,10 @@ export function initFileMentions(textarea, opts = {}) {
   };
 
   const load = async (workspace, query) => {
-    const key = query.toLowerCase();
+    // The workspace belongs in the key: it is in the URL but changing it never
+    // reloads the page, so keying on the query alone replayed project A's files
+    // for "@src" in project B — and inserted a path that does not exist there.
+    const key = `${workspace}\u0000${query.toLowerCase()}`;
     if (cache.has(key)) return cache.get(key);
     const url = `/api/workspace/files?workspace=${encodeURIComponent(workspace)}`
               + `&q=${encodeURIComponent(query)}&limit=${MAX_VISIBLE}`;
@@ -202,7 +208,13 @@ export function initFileMentions(textarea, opts = {}) {
   textarea.addEventListener('input', refresh);
   textarea.addEventListener('click', refresh);
   textarea.addEventListener('focus', refresh);
-  textarea.addEventListener('blur', () => { setTimeout(hide, 120); });
+  textarea.addEventListener('blur', () => {
+    // Drop the in-flight lookup now; the delayed hide only exists so a click on
+    // a row (mousedown -> insert) still lands.
+    seq++;
+    if (timer) { clearTimeout(timer); timer = null; }
+    setTimeout(hide, 120);
+  });
   // The composer is wired from a dynamic import, so text can already be in it
   // by the time we get here — someone typing into a cold page, or a restored
   // draft. Without this first pass the picker stays shut until the next
@@ -236,7 +248,11 @@ export function initFileMentions(textarea, opts = {}) {
     if (row && popup.contains(row) && row.dataset.rel) {
       e.preventDefault();
       insert(row.dataset.rel);
+      return;
     }
+    // Click outside -> close. There was no such branch, so a popup that
+    // outlived its blur just stayed on screen until the next keystroke.
+    if (e.target !== textarea && !popup.contains(e.target)) hide();
   });
 }
 

@@ -41,7 +41,14 @@ export function splitMentions(text) {
   return out;
 }
 
-function _workspace() {
+// The bound workspace, memoized. `decorate()` asks for it once per message and
+// the sweep runs on every streaming tick, so an uncached localStorage read +
+// JSON.parse here is a synchronous cost paid hundreds of times a second — and
+// most of all with no workspace bound, the default, where nothing is decorated
+// and the answer is therefore never remembered.
+let _wsCache = null;    // null = not read yet ('' is a valid "none bound")
+
+function _readWorkspace() {
   try {
     if (window.workspaceModule && window.workspaceModule.getWorkspace) {
       const w = window.workspaceModule.getWorkspace();
@@ -53,6 +60,14 @@ function _workspace() {
     catch (_) { return raw; }
   } catch (_) { return ''; }
 }
+
+function _workspace() {
+  if (_wsCache === null) _wsCache = _readWorkspace();
+  return _wsCache;
+}
+
+/** Forget the memoized workspace (workspace.js fires odysseus:workspace-change). */
+export function invalidateWorkspace() { _wsCache = null; }
 
 /** Decorate the mentions inside one rendered message body. Idempotent. */
 export function decorate(bodyEl) {
@@ -91,20 +106,48 @@ export function decorate(bodyEl) {
   return made;
 }
 
+// Kept so the observer can actually be stopped — the anonymous one it replaced
+// outlived every teardown.
+let _observer = null;
+
+export function stopMentionChips() {
+  if (_observer) { try { _observer.disconnect(); } catch (_) {} _observer = null; }
+}
+
 export function initMentionChips(root) {
   const box = root || document.getElementById('chat-history');
   if (!box || box._mentionChipsWired) return;
   box._mentionChipsWired = true;
 
+  let sweepPending = false;
   const sweep = () => {
+    sweepPending = false;
+    // With no workspace bound (the default) no chip can be made, so skip the
+    // whole-transcript querySelectorAll instead of re-deciding per message.
+    if (!_workspace()) return;
     box.querySelectorAll('.msg-user .body').forEach(b => { try { decorate(b); } catch (_) {} });
+  };
+  // The streaming renderer rewrites innerHTML several times a second and each
+  // rewrite is a mutation burst; coalesce them into one sweep per frame.
+  const scheduleSweep = () => {
+    if (sweepPending) return;
+    sweepPending = true;
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(sweep);
+    else setTimeout(sweep, 16);
   };
   sweep();
   // Messages arrive from streaming, history loads and session switches; one
   // observer covers all three without hooking each render path.
+  stopMentionChips();
   try {
-    new MutationObserver(() => sweep()).observe(box, { childList: true, subtree: true });
-  } catch (_) {}
+    _observer = new MutationObserver(scheduleSweep);
+    _observer.observe(box, { childList: true, subtree: true });
+  } catch (_) { _observer = null; }
+  // Binding a workspace makes previously-skipped messages decoratable.
+  document.addEventListener('odysseus:workspace-change', () => {
+    invalidateWorkspace();
+    scheduleSweep();
+  });
 
   box.addEventListener('click', (ev) => {
     const chip = ev.target && ev.target.closest ? ev.target.closest('.mention-chip') : null;
@@ -119,4 +162,4 @@ export function initMentionChips(root) {
   });
 }
 
-export default { initMentionChips, decorate, splitMentions, mentionPath };
+export default { initMentionChips, stopMentionChips, decorate, splitMentions, mentionPath, invalidateWorkspace };

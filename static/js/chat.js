@@ -941,6 +941,17 @@ import modelControls from './modelControls.js';
   export function init(apiBase) {
     API_BASE = apiBase;
     initSlashCommands({ apiBase, isStreaming: () => !!_getForegroundStreamState() });
+    // Switching chats retargets every queued message: bump the epoch so items
+    // typed in an unsaved chat stop matching, and repaint the "Queued" bubbles
+    // that belong to the chat now on screen (sessions.js wipes #chat-history
+    // right after this event, so repaint again once that render has landed).
+    document.addEventListener('odysseus:session-switch', () => {
+      _sessionEpoch++;
+      const repaint = () => { try { _repaintQueuedBubbles(); } catch (_) {} };
+      repaint();
+      setTimeout(repaint, 300);
+      setTimeout(repaint, 900);
+    });
     // Reliability harness cards + Progress panel, model controls popover and
     // the live system-usage widget (ollama ps / nvidia-smi).
     try { agentHarnessUI.init(apiBase); } catch (_e) { console.warn('agentHarnessUI init', _e); }
@@ -1065,10 +1076,34 @@ import modelControls from './modelControls.js';
 
   const _queuedAgentRequests = [];
   let _queuedDrainTimer = null;
-  let _queuedPromoteTimer = null;
   let _queuedRequestSeq = 0;
   let _queuedBubbleHost = null;
   let _pendingApprovedPlan = '';
+  // Bumped on every session switch. A message queued in a brand-new chat has no
+  // session id yet, so "is this still the chat it was typed in?" is answered by
+  // the epoch instead.
+  let _sessionEpoch = 0;
+  // Promotion retries are per item and bounded: a wedged stream must hand the
+  // message back to the visible queue, not spin forever and swallow it.
+  const _QUEUED_PROMOTE_MAX_TRIES = 45;   // ~10s at 220ms
+
+  function _queueSessionId() {
+    try { return (sessionModule && sessionModule.getCurrentSessionId && sessionModule.getCurrentSessionId()) || null; }
+    catch (_) { return null; }
+  }
+
+  /**
+   * Is `item` still addressed to the chat currently on screen?
+   *
+   * handleChatSubmit() resolves the destination from getCurrentSessionId(), so
+   * sending a queued message while the user is in another chat posts it into
+   * *that* thread (the original stream keeps running in the background).
+   */
+  function _isQueueItemHere(item) {
+    if (!item) return false;
+    if (item.sessionId) return item.sessionId === _queueSessionId();
+    return item.epoch === _sessionEpoch;
+  }
 
   function _extractPlanText(text) {
     const raw = String(text || '').trim();
@@ -1164,17 +1199,56 @@ import modelControls from './modelControls.js';
     const idx = _queuedAgentRequests.findIndex(item => item.id === id);
     if (idx < 0) return null;
     const [item] = _queuedAgentRequests.splice(idx, 1);
+    if (item && item.promoteTimer) { clearTimeout(item.promoteTimer); item.promoteTimer = null; }
     if (item && item.el && item.el.parentNode) item.el.remove();
     return item;
   }
 
-  function _setComposerAndSend(message) {
+  /** Put a taken-out item back in the queue (and back on screen if we are in
+   *  its chat). Used whenever a promote/drain could not actually send. */
+  function _requeueQueuedRequest(item, note) {
+    if (!item) return;
+    if (item.promoteTimer) { clearTimeout(item.promoteTimer); item.promoteTimer = null; }
+    item.tries = 0;
+    if (_queuedAgentRequests.some(q => q.id === item.id)) return;
+    if (item.el && item.el.parentNode) item.el.remove();
+    item.el = _isQueueItemHere(item) ? _createQueuedBubble(item) : null;
+    _queuedAgentRequests.push(item);
+    if (note) { try { uiModule.showToast && uiModule.showToast(note); } catch (_) {} }
+  }
+
+  /** #chat-history is wiped on a session switch, taking the queued bubbles with
+   *  it. Re-create the ones that belong to the chat now on screen. Idempotent. */
+  function _repaintQueuedBubbles() {
+    if (!document.getElementById('chat-history')) return;
+    if (_queuedBubbleHost && !_queuedBubbleHost.isConnected) _queuedBubbleHost = null;
+    for (const item of _queuedAgentRequests) {
+      if (!_isQueueItemHere(item)) {
+        if (item.el && item.el.parentNode) item.el.remove();
+        item.el = null;
+        continue;
+      }
+      if (item.el && item.el.isConnected) continue;
+      item.el = _createQueuedBubble(item);
+    }
+  }
+
+  function _setComposerAndSend(message, pin) {
+    // `pin` ties the send to the chat the text was typed in. Without it a queued
+    // message is delivered to whatever chat happens to be open when the original
+    // stream ends, i.e. the wrong one.
+    if (pin && !_isQueueItemHere(pin)) return false;
     const input = uiModule.el('message');
     if (!input) return false;
     input.value = message;
     input.dispatchEvent(new Event('input', { bubbles: true }));
     if (uiModule.autoResize) uiModule.autoResize(input);
     setTimeout(() => {
+      // Re-check: the user can switch chats inside this tick.
+      if (pin && !_isQueueItemHere(pin)) {
+        _requeueQueuedRequest(pin);
+        return;
+      }
       handleChatSubmit({ preventDefault() {} }).catch(err => {
         console.error('queued send failed', err);
         try { uiModule.showError && uiModule.showError('Queued send failed: ' + (err?.message || err)); } catch (_) {}
@@ -1185,23 +1259,34 @@ import modelControls from './modelControls.js';
 
   function _sendQueuedWhenIdle(item) {
     if (!item) return;
+    item.tries = 0;
     const trySend = () => {
+      item.promoteTimer = null;
+      if (!_isQueueItemHere(item)) { _requeueQueuedRequest(item); return; }
       if (isStreaming || _sendInFlight) {
-        _queuedPromoteTimer = setTimeout(trySend, 220);
+        if (++item.tries > _QUEUED_PROMOTE_MAX_TRIES) {
+          // The stream never went idle. Show the message again instead of
+          // leaving it in a timer nobody will ever fire.
+          _requeueQueuedRequest(item, 'Still busy — your message is back in the queue');
+          return;
+        }
+        item.promoteTimer = setTimeout(trySend, 220);
         return;
       }
-      _queuedPromoteTimer = null;
-      _setComposerAndSend(item.message);
+      if (!_setComposerAndSend(item.message, item)) _requeueQueuedRequest(item);
     };
-    if (_queuedPromoteTimer) clearTimeout(_queuedPromoteTimer);
-    _queuedPromoteTimer = setTimeout(trySend, 320);
+    // One timer per item: a second promote used to clearTimeout() the first
+    // one's, and that item was already out of the array and off the DOM.
+    if (item.promoteTimer) clearTimeout(item.promoteTimer);
+    item.promoteTimer = setTimeout(trySend, 320);
   }
 
   function _promoteQueuedRequest(id) {
     const item = _removeQueuedRequest(id);
     if (!item) return;
+    if (!_isQueueItemHere(item)) { _requeueQueuedRequest(item); return; }
     if (!isStreaming && !_sendInFlight) {
-      _setComposerAndSend(item.message);
+      if (!_setComposerAndSend(item.message, item)) _requeueQueuedRequest(item);
       return;
     }
     try { uiModule.showToast && uiModule.showToast('Sending queued request now'); } catch (_) {}
@@ -1218,7 +1303,11 @@ import modelControls from './modelControls.js';
   function _queueAgentRequest(message) {
     const msg = String(message || '').trim();
     if (!msg) return false;
-    const item = { id: `q${++_queuedRequestSeq}`, message: msg, createdAt: Date.now(), el: null };
+    // sessionId + epoch pin the message to the chat it was typed in.
+    const item = {
+      id: `q${++_queuedRequestSeq}`, message: msg, createdAt: Date.now(), el: null,
+      sessionId: _queueSessionId(), epoch: _sessionEpoch, promoteTimer: null, tries: 0,
+    };
     item.el = _createQueuedBubble(item);
     _queuedAgentRequests.push(item);
     try { uiModule.showToast && uiModule.showToast(_queuedAgentRequests.length === 1 ? 'Queued for after this response' : `${_queuedAgentRequests.length} requests queued`); } catch (_) {}
@@ -1249,10 +1338,12 @@ import modelControls from './modelControls.js';
     _queuedDrainTimer = setTimeout(() => {
       _queuedDrainTimer = null;
       if (isStreaming || _sendInFlight || !_queuedAgentRequests.length) return;
-      const next = _queuedAgentRequests[0];
+      // Only what belongs to the chat on screen. A message queued in chat A
+      // stays queued while the user is in chat B, instead of being posted there.
+      const next = _queuedAgentRequests.find(_isQueueItemHere);
       if (!next) return;
       _removeQueuedRequest(next.id);
-      _setComposerAndSend(next.message);
+      if (!_setComposerAndSend(next.message, next)) _requeueQueuedRequest(next);
     }, 180);
   }
 
@@ -5748,6 +5839,12 @@ import modelControls from './modelControls.js';
    * we surface it as an Undo, because an answer a local model spent minutes on
    * should not vanish because the question got reworded. `/versions` lists them
    * later, so the toast is a convenience, not the only way back.
+   *
+   * Returns {ok, version, error}. `ok:false` means the server still holds every
+   * message the caller was about to delete: "success with no version to undo"
+   * ({ok:true, version:null}) and "the request failed" must not look alike, or
+   * the caller wipes the bubbles on screen while the model keeps answering the
+   * old messages — and they all come back on reload.
    */
   async function _truncateWithVersion(sessionId, keepCount, reason) {
     let saved = null;
@@ -5757,10 +5854,14 @@ import modelControls from './modelControls.js';
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ keep_count: keepCount, reason: reason || 'edit' })
       });
-      if (r.ok) saved = (await r.json()).version || null;
+      if (!r.ok) {
+        console.warn('truncate failed', r.status);
+        return { ok: false, version: null, error: `server returned ${r.status}` };
+      }
+      saved = (await r.json()).version || null;
     } catch (err) {
       console.warn('truncate failed', err);
-      return null;
+      return { ok: false, version: null, error: (err && err.message) || String(err) };
     }
     if (saved && uiModule && uiModule.showToast) {
       const n = saved.count || 0;
@@ -5779,7 +5880,14 @@ import modelControls from './modelControls.js';
         },
       });
     }
-    return saved;
+    return { ok: true, version: saved };
+  }
+
+  /** Shared wording for "the server would not trim this chat, so nothing was
+   *  changed" — the three destructive callers must all bail the same way. */
+  function _truncateFailedMessage(what, res) {
+    const why = res && res.error ? ` (${res.error})` : '';
+    return `${what} failed — the server kept this chat unchanged${why}. Nothing was sent.`;
   }
 
 /**
@@ -5838,7 +5946,14 @@ import modelControls from './modelControls.js';
 
       const keepCount = msgIndex;
       try {
-        await _truncateWithVersion(sessionId, keepCount, 'edit');
+        const trimmed = await _truncateWithVersion(sessionId, keepCount, 'edit');
+        if (!trimmed || !trimmed.ok) {
+          // Server-side history is intact: deleting these bubbles now would
+          // only hide messages the model still sees.
+          if (uiModule) uiModule.showError(_truncateFailedMessage('Edit', trimmed));
+          bodyEl.innerHTML = originalHTML;
+          return;
+        }
 
         // Remove DOM elements from msgIndex onward
         for (let i = allMsgs.length - 1; i >= msgIndex; i--) {
@@ -5924,7 +6039,12 @@ import modelControls from './modelControls.js';
         // Regenerate flows intentionally trim history to this point before
         // resubmitting. The plain "Resend message" action must not do this.
         const keepCount = msgIndex;
-        await _truncateWithVersion(sessionId, keepCount, 'regenerate');
+        const trimmed = await _truncateWithVersion(sessionId, keepCount, 'regenerate');
+        if (!trimmed || !trimmed.ok) {
+          // Nothing was trimmed server-side, so nothing may be removed here.
+          if (uiModule) uiModule.showError(_truncateFailedMessage('Resend', trimmed));
+          return;
+        }
 
         // Drop the AI replies after the user message but KEEP the user bubble
         // itself (so its photo stays visible). Then suppress the new user
@@ -6036,7 +6156,13 @@ import modelControls from './modelControls.js';
     const keepCount = userIndex;
 
     try {
-      await _truncateWithVersion(sessionId, keepCount, 'regenerate');
+      const trimmed = await _truncateWithVersion(sessionId, keepCount, 'regenerate');
+      if (!trimmed || !trimmed.ok) {
+        // The old answer is still stored: leave the transcript alone rather
+        // than regenerating on top of a history the server never trimmed.
+        if (uiModule) uiModule.showError(_truncateFailedMessage('Regenerate', trimmed));
+        return;
+      }
 
       for (let i = allMsgs.length - 1; i > aiIndex; i--) {
         allMsgs[i].remove();

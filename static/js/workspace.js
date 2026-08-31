@@ -66,6 +66,13 @@ export function setWorkspace(path) {
   if (path) Storage.set(KEYS.WORKSPACE, path);
   else Storage.remove(KEYS.WORKSPACE);
   syncWorkspaceIndicator(path || '');
+  // Switching workspaces never reloads the page, so panels that memoize the
+  // bound folder (mentionChips) have no other way to learn it changed.
+  try {
+    document.dispatchEvent(new CustomEvent('odysseus:workspace-change', {
+      detail: { workspace: path || '' },
+    }));
+  } catch (_) {}
 }
 
 /**

@@ -19,6 +19,9 @@ let _progressEl = null;
 let _progressCollapsed = false;
 let _currentSessionId = null;
 let _lastTodosBySession = new Map();
+// The cache is only a paint-instantly convenience; keep it from growing with
+// every chat the user ever opens in this tab.
+const _PROGRESS_CACHE_MAX = 24;
 let _filesBySession = new Map();     // sessionId → Map(path → workspace) of files edited in that chat
 let _queueCard = null;
 
@@ -647,9 +650,13 @@ function _rerunWorker(button) {
   let task;
   try { task = JSON.parse(button.dataset.rerunWorker || '{}'); } catch (_) { return; }
   if (!task.instruction) return;
-  let model = '';
-  try { model = (window.prompt('Model for this worker (empty = same as the chat):', task.model || '') || '').trim(); } catch (_) { model = ''; }
-  if (model === null) return;
+  // Cancel returns null. Normalizing it to '' before the check made the guard
+  // below dead code, so Cancel re-delegated the worker anyway — another GPU
+  // generation, and its files rewritten.
+  let raw = '';
+  try { raw = window.prompt('Model for this worker (empty = same as the chat):', task.model || ''); } catch (_) { raw = ''; }
+  if (raw === null) return;
+  const model = String(raw == null ? '' : raw).trim();
   const sc = window.slashCommandsModule;
   if (sc && typeof sc.delegateTasks === 'function') {
     sc.delegateTasks([{ name: task.name, instruction: task.instruction, files: task.files || [], model }], { parallel: false });
@@ -756,11 +763,22 @@ const STATUS_ICON = { pending: '○', in_progress: '◉', completed: '✓' };
 // Objectives that imply a file change (EN/ES) — used for the "no write" tag.
 const CHANGE_TODO_RE = /\b(?:add|create|implement|fix|update|remove|delete|refactor|rename|write|edit|modify|change|wire|hook|patch|install|configure|a[ñn]adir|a[ñn]ade|agregar|crear|crea|implementar|implementa|arreglar|arregla|corregir|corrige|actualizar|actualiza|eliminar|elimina|borrar|borra|modificar|modifica|cambiar|cambia|escribir|escribe|editar|edita|refactorizar|renombrar|configurar|instalar)\b/i;
 
+function _rememberTodos(sessionId, todos) {
+  if (!sessionId) return;
+  _lastTodosBySession.delete(sessionId);           // re-insert => most recent last
+  _lastTodosBySession.set(sessionId, todos);
+  while (_lastTodosBySession.size > _PROGRESS_CACHE_MAX) {
+    const oldest = _lastTodosBySession.keys().next().value;
+    if (oldest === undefined) break;
+    _lastTodosBySession.delete(oldest);
+  }
+}
+
 export function renderProgress(todos, { sessionId = null } = {}) {
   const el = _ensureProgressEl();
   const list = el.querySelector('.agent-progress-list');
   const count = el.querySelector('.agent-progress-count');
-  if (sessionId) _lastTodosBySession.set(sessionId, todos);
+  if (sessionId) _rememberTodos(sessionId, todos);
   if (!Array.isArray(todos) || !todos.length) {
     list.innerHTML = '';
     count.textContent = '';
@@ -826,9 +844,12 @@ export async function restoreProgress(sessionId) {
   _queueCard = null;
   if (!sessionId) { clearProgress(); return; }
   const cached = _lastTodosBySession.get(sessionId);
-  if (cached) { renderProgress(cached, { sessionId }); return; }
-  clearProgress();
-  _renderFiles(sessionId);
+  // Paint the cache first so the panel does not flash empty on the way back...
+  if (cached) renderProgress(cached, { sessionId });
+  else { clearProgress(); _renderFiles(sessionId); }
+  // ...but ALWAYS re-ask the server. progress_update events are dropped for
+  // background chats (chat.js), so the cache is frozen at whatever was on
+  // screen when the user left — the "still says 1/5 after it finished" bug.
   try {
     const r = await fetch(`${API_BASE}/api/agent/progress/${encodeURIComponent(sessionId)}`, { credentials: 'same-origin' });
     if (!r.ok) return;
