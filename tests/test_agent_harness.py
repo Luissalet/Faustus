@@ -139,7 +139,7 @@ def test_detect_language():
 
 
 def test_qwen_coder_function_markup_is_parsed_and_stripped():
-    from src.tool_parsing import parse_tool_blocks, strip_tool_blocks
+    from src.agent_tools import parse_tool_blocks, strip_tool_blocks
     leaked = (
         "Let me check the existing skills first:\n\n"
         "<function=manage_skills>\n<parameter=action>\nlist\n</parameter>\n</function>\n</tool_call>"
