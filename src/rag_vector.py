@@ -113,6 +113,21 @@ class VectorRAG:
             self._healthy = False
             return False
 
+    def reconnect(self) -> bool:
+        """Re-establish the ChromaDB connection in place (FAUSTUS).
+
+        Called by src/service_recovery once the container is back. Re-runs the
+        initializer on *this* object, so every holder — chat processor, routes,
+        personal docs — sees a healthy store again without restarting Faustus.
+        """
+        try:
+            from src.chroma_client import reset_client
+            reset_client()
+        except Exception:
+            pass
+        self._initialize_system()
+        return self.healthy
+
     def _embed(self, texts: List[str]) -> List[List[float]]:
         if not self._lanes:
             return []

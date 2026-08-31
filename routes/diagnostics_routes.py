@@ -1,5 +1,6 @@
 """Diagnostics routes — /api/db/stats, /api/rag/stats, /api/test/youtube, /api/test-research."""
 
+import asyncio
 import logging
 import os
 from typing import Dict, Any
@@ -27,7 +28,27 @@ def setup_diagnostics_routes(
         ntfy, and provider endpoints. Non-intrusive probes — safe to poll."""
         require_admin(request)
         from src.service_health import collect_service_health
-        return await collect_service_health(rag_manager, memory_vector)
+        from src.service_hints import attach_hints
+        return attach_hints(await collect_service_health(rag_manager, memory_vector))
+
+    @router.post("/api/diagnostics/services/reconnect")
+    async def reconnect_services(request: Request) -> Dict[str, Any]:
+        """Re-establish the ChromaDB-backed stores, then re-probe (FAUSTUS).
+
+        This is the panel's Reconnect button. It recovers the "Docker Desktop
+        was closed, so RAG quietly went keyword-only" case in place, without a
+        restart. Admin-only, idempotent, and safe to press twice.
+        """
+        require_admin(request)
+        from src.service_health import collect_service_health
+        from src.service_hints import attach_hints
+        from src.service_recovery import reconnect_vector_stores
+        recovery = await asyncio.to_thread(
+            reconnect_vector_stores, rag_manager, memory_vector)
+        report = attach_hints(
+            await collect_service_health(rag_manager, memory_vector))
+        report["recovery"] = recovery
+        return report
 
     @router.get("/api/diagnostics/logs")
     async def get_diagnostics_logs(request: Request, limit: int = 200) -> Dict[str, Any]:

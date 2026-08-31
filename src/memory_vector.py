@@ -56,6 +56,22 @@ class MemoryVectorStore:
         except Exception as e:
             logger.error(f"MemoryVectorStore init failed: {e}")
 
+    def reconnect(self) -> bool:
+        """Re-establish the ChromaDB connection in place (FAUSTUS).
+
+        The store is held by the memory provider and the chat processor, so
+        recovery has to happen on the existing instance rather than by building
+        a new one nobody would be pointing at.
+        """
+        try:
+            from src.chroma_client import reset_client
+            reset_client()
+        except Exception:
+            pass
+        self._healthy = False
+        self._initialize()
+        return self.healthy
+
     @property
     def healthy(self) -> bool:
         return self._healthy

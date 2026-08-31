@@ -42761,3 +42761,169 @@ body:has(.sidebar.right-side) .project-active-pill { right: 12px; }
 .mention-chip:focus-visible {
   border-color: var(--accent, #6ea8fe);
 }
+
+
+/* ============================================================
+   Service health (FAUSTUS)
+   Degraded-state readout: one dot in the user bar plus a panel that says what
+   broke and what to do about it. Deliberately at the end of the file — the
+   type selectors near the top (`button { height: 32px }`, `button:hover`)
+   outrank single-class rules, so every button here restates height and hover
+   at a specificity that actually wins.
+   ============================================================ */
+
+.svc-health-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 7px;
+}
+.svc-health-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-muted);
+  box-shadow: 0 0 0 2px transparent;
+}
+.svc-health-chip[data-status="ok"] .svc-health-dot { background: var(--green); }
+.svc-health-chip[data-status="degraded"] .svc-health-dot { background: var(--warn); }
+.svc-health-chip[data-status="down"] .svc-health-dot { background: var(--red); }
+.svc-health-count {
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--fg);
+  opacity: .85;
+}
+
+.svc-health-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 4000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, .45);
+  padding: 20px;
+}
+.svc-health-panel {
+  width: min(560px, 100%);
+  max-height: min(76vh, 720px);
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, .45);
+  overflow: hidden;
+}
+.svc-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.svc-panel-title { margin: 0; font-size: 14px; font-weight: 700; color: var(--fg); }
+.svc-panel-stamp { font-size: 11px; color: var(--color-muted); margin-left: auto; }
+.svc-panel-close {
+  height: auto;
+  min-height: 24px;
+  padding: 0 8px;
+  font-size: 18px;
+  line-height: 1;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--fg);
+}
+.svc-panel-close:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--fg) 12%, transparent);
+  border-color: var(--border);
+}
+.svc-panel-body { padding: 8px 14px 12px; overflow-y: auto; }
+
+.svc-row {
+  padding: 10px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+}
+.svc-row:last-child { border-bottom: none; }
+.svc-row-head { display: flex; align-items: center; gap: 8px; }
+.svc-row-name { font-size: 13px; font-weight: 600; color: var(--fg); }
+.svc-pill {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--fg);
+}
+.svc-pill-ok { color: var(--green); border-color: color-mix(in srgb, var(--green) 45%, transparent); }
+.svc-pill-degraded { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+.svc-pill-down { color: var(--red); border-color: color-mix(in srgb, var(--red) 45%, transparent); }
+.svc-pill-disabled { color: var(--color-muted); }
+.svc-row-detail { font-size: 12px; color: var(--color-muted); margin-top: 4px; }
+.svc-row-hint {
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+  border-left: 2px solid var(--warn);
+}
+.svc-row-hint-text { font-size: 12px; color: var(--fg); line-height: 1.45; }
+.svc-row-cmd { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.svc-row-cmd-text {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11.5px;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 6px;
+  user-select: all;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+.svc-copy-btn,
+.svc-foot-btn {
+  height: auto;
+  min-height: 26px;
+  padding: 4px 10px;
+  font-size: 11.5px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  cursor: pointer;
+}
+.svc-copy-btn:hover:not(:disabled),
+.svc-foot-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--fg) 14%, var(--bg));
+  border-color: var(--fg);
+}
+.svc-panel-foot {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border);
+}
+.svc-foot-btn-primary {
+  background: color-mix(in srgb, var(--accent, var(--red)) 88%, var(--bg));
+  border-color: color-mix(in srgb, var(--accent, var(--red)) 88%, var(--bg));
+  color: var(--bg);
+  font-weight: 600;
+}
+.svc-foot-btn-primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent, var(--red)) 86%, var(--fg));
+  border-color: color-mix(in srgb, var(--accent, var(--red)) 86%, var(--fg));
+  color: var(--bg);
+}
+.svc-foot-btn:disabled { opacity: .6; cursor: default; }
+
+@media (max-width: 768px) {
+  .svc-health-panel { width: 100%; max-height: 86vh; }
+}
