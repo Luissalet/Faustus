@@ -155,3 +155,47 @@ def test_turn_context_returns_nothing_without_a_workspace():
 
 def test_strip_markers_leaves_a_readable_sentence():
     assert fm.strip_markers("fix @src/a.py now") == "fix src/a.py now"
+
+
+# ── dotfiles and secrets ──────────────────────────────────────────────────
+
+def test_a_dotfile_resolves_instead_of_losing_its_dot(tmp_path):
+    """lstrip("./") strips a character set, so ".env" became "env" and was
+    reported as a file that does not exist."""
+    (tmp_path / ".env").write_text("KEY=1\n", encoding="utf-8")
+    (tmp_path / ".gitignore").write_text("*.pyc\n", encoding="utf-8")
+    (tmp_path / "app.py").write_text("x = 1\n", encoding="utf-8")
+    from src import agent_harness
+    agent_harness._index_cache.clear()
+    res = fm.resolve(str(tmp_path), "mira @.env y @.gitignore y @./app.py")
+    assert res["resolved"] == [".env", ".gitignore", "app.py"]
+    assert res["missing"] == []
+
+
+def test_secret_looking_files_are_named_but_never_inlined(tmp_path):
+    (tmp_path / ".env").write_text("OPENAI_API_KEY=sk-verysecret\n", encoding="utf-8")
+    (tmp_path / "certs").mkdir()
+    (tmp_path / "certs" / "server.pem").write_text("-----BEGIN PRIVATE KEY-----\n", encoding="utf-8")
+    (tmp_path / "app.py").write_text("x = 1\n", encoding="utf-8")
+    from src import agent_harness
+    agent_harness._index_cache.clear()
+    res = fm.resolve(str(tmp_path), "@.env @certs/server.pem @app.py")
+    text = fm.context_text(str(tmp_path), res, inline_chars=8000)
+    # The paths are there — the model still knows which files are meant.
+    assert ".env" in text and "certs/server.pem" in text
+    # Their contents are not.
+    assert "sk-verysecret" not in text
+    assert "BEGIN PRIVATE KEY" not in text
+    assert "read_file it if you need them" in text
+    # An ordinary file in the same turn still rides along.
+    assert "x = 1" in text
+
+
+def test_the_secret_pattern_covers_the_usual_suspects():
+    for rel in (".env", ".env.local", "app/.env", ".netrc", ".npmrc",
+                "certs/server.pem", "keys/id_rsa", "a/b/private.key",
+                "secrets.yaml", "config/secrets.json", "store.p12", "creds/credentials"):
+        assert fm._SECRET_NAME_RE.search(rel), rel
+    for rel in ("src/environment.py", "docs/keyboard.md", "pemberton.txt",
+                "src/keys.py", "credentials_helper.go"):
+        assert not fm._SECRET_NAME_RE.search(rel), rel

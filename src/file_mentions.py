@@ -54,6 +54,17 @@ _VENDOR_RE = re.compile(
     r"dist|build|__pycache__|migrations?|locales?|i18n)(?:/|$)|\.min\.\w+$",
     re.I,
 )
+# Never inlined into the prompt, even when mentioned: the path is listed so the
+# model knows which file is meant, but the secret does not ride along into a
+# request (and its logs) that the user only meant as "this file". read_file
+# still works — reading a secret should be a deliberate act, not a side effect
+# of naming it.
+_SECRET_NAME_RE = re.compile(
+    r"(?:^|/)(?:\.env(?:\.[\w-]+)?|\.netrc|\.npmrc|\.pypirc|\.htpasswd|"
+    r"id_[a-z0-9]+|credentials|secrets?\.(?:ya?ml|json|toml|ini)|"
+    r"[^/]*\.(?:pem|key|pfx|p12|jks|keystore|ppk))$",
+    re.I,
+)
 _NOISE_NAMES = {
     "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "poetry.lock",
     "Cargo.lock", "composer.lock", "go.sum",
@@ -213,7 +224,7 @@ def resolve(workspace: str, text: str) -> Dict[str, List[str]]:
         by_base.setdefault(f.rsplit("/", 1)[-1].lower(), []).append(f)
     exact = set(files)
     for raw in mentions:
-        rel = raw.replace("\\", "/").lstrip("./")
+        rel = _normalise_rel(raw)
         if rel in exact:
             _add(out["resolved"], rel)
             continue
@@ -231,6 +242,18 @@ def resolve(workspace: str, text: str) -> Dict[str, List[str]]:
                 continue
         _add(out["missing"], raw)
     return out
+
+
+def _normalise_rel(raw: str) -> str:
+    """`@.\\src\\a.py` → `src/a.py`, and crucially `@.env` → `.env`.
+
+    lstrip("./") strips a *character set*, so it ate the dot of every dotfile:
+    ".env" became "env" and was reported as a file that does not exist.
+    """
+    rel = str(raw or "").replace("\\", "/")
+    while rel.startswith("./"):
+        rel = rel[2:]
+    return rel.lstrip("/")
 
 
 def _add(lst: List[str], item: str) -> None:
@@ -293,9 +316,12 @@ def context_text(workspace: str, resolution: Dict[str, List[str]],
         # Inline only whole files that fit in what is left of the budget: a
         # 200-char head of a 12 kB file is noise, and the point of inlining is
         # to save the model a read_file round it would otherwise still need.
-        fits = 0 <= size <= min(budget, _MAX_INLINE_FILE_CHARS)
+        secret = bool(_SECRET_NAME_RE.search(rel))
+        fits = (not secret) and 0 <= size <= min(budget, _MAX_INLINE_FILE_CHARS)
         note = ""
-        if size > 0 and not fits and budget > 0:
+        if secret:
+            note = " — contents not included here; read_file it if you need them"
+        elif size > 0 and not fits and budget > 0:
             note = " — too large to inline here, read_file it"
         lines.append(f"- {rel}" + (f" ({size} bytes)" if size >= 0 else "") + note)
         if fits:
