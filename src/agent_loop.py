@@ -5673,6 +5673,9 @@ async def stream_agent_loop(
                 "temperature_capped": _temperature_capped_from,
                 "max_tokens": max_tokens,
                 "think": (gen_overrides or {}).get("think") if isinstance(gen_overrides, dict) else None,
+                # Wall-clock for the model call — with output_tokens gives tok/s.
+                "elapsed_s": round(time.time() - _round_start, 2),
+                "reasoning_chars": len(round_reasoning),
             }) + "\n\n"
         )
 

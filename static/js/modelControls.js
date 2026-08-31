@@ -147,6 +147,13 @@ function _ensurePill() {
 }
 
 function _fmtTemp(v) { return v == null ? 'auto' : Number(v).toFixed(2).replace(/0$/, ''); }
+// Generation speed of the last round (output tokens / wall-clock of the call).
+// Reasoning tokens are not counted by every provider, so this is a floor.
+function _tokPerSec(r) {
+  if (!r || !r.output_tokens || !r.elapsed_s || r.elapsed_s < 1) return null;
+  const v = r.output_tokens / r.elapsed_s;
+  return v >= 10 ? String(Math.round(v)) : v.toFixed(1);
+}
 function _fmtTok(v) { if (v == null) return '—'; if (!v) return '∞'; return v >= 1024 ? `${Math.round(v / 1024)}k` : String(v); }
 
 export function refresh() {
@@ -159,6 +166,8 @@ export function refresh() {
   if (eff.think !== 'auto') bits.push(eff.think ? 'think on' : 'think off');
   if (loaded && loaded.context_length) bits.push(`ctx ${_fmtTok(loaded.context_length)}`);
   if (eff.finish_reason && eff.finish_reason !== 'stop' && eff.finish_reason !== 'tool_calls') bits.push(eff.finish_reason);
+  const tps = _tokPerSec(_lastRound);
+  if (tps != null) bits.push(`${tps} tok/s`);
   pill.querySelector('.mc-text').textContent = bits.join(' · ');
   pill.classList.toggle('has-pinned', Object.keys(getOverridesForSession(sid)).length > 0);
   if (_pop && !_pop.hidden) _renderPopover();
@@ -230,6 +239,7 @@ function _renderPopover() {
     rows.push(`<div class="mc-row mc-muted">last round #${eff.round}: finish_reason=<b>${esc(eff.finish_reason || '?')}</b>` +
       (eff.tools_sent != null ? ` · ${eff.tools_sent} tool schemas${eff.native_tools === false ? ' (text mode)' : ''}` : '') +
       (_lastRound.temperature != null ? ` · used T ${_fmtTemp(_lastRound.temperature)}${_lastRound.temperature_capped ? ' (capped from ' + _fmtTemp(_lastRound.temperature_capped) + ')' : ''}` : '') +
+      (_lastRound.elapsed_s ? ` · ${_lastRound.elapsed_s}s${_lastRound.output_tokens ? `, ${_lastRound.output_tokens} out tokens (${_tokPerSec(_lastRound) || '?'} tok/s)` : ''}${_lastRound.reasoning_chars ? `, ${_lastRound.reasoning_chars} reasoning chars` : ''}` : '') +
       `</div>`);
   }
   rows.push(`<label class="mc-row"><span>Temperature <b id="mc-temp-val">${_fmtTemp(tempVal)}</b> <span class="mc-muted">${ov.temperature != null ? 'pinned' : (eff.temperatureSource === 'capped' ? 'capped for local agent' : 'preset / auto')}</span></span>` +
