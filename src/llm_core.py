@@ -2275,6 +2275,19 @@ async def llm_call_async(
     return_model_metadata: bool = False,
 ) -> str | tuple[str, str]:
     """Asynchronous LLM call using httpx with connection pooling, timeout, retry logic, and performance logging."""
+    # Same reroute as stream_llm: Ollama's /v1 ignores `think`, so a
+    # thinking-capable model (qwen3.5, gemma…) would spend the whole
+    # num_predict budget reasoning and return an empty `content` (seen live:
+    # the diff reviewer answered nothing in 17 s). The native /api/chat
+    # honours think=false.
+    _native_think_off = False
+    _routed = _route_for_gen_overrides(url, None, model)
+    if _routed != url:
+        caps = _ollama_model_caps(url, model)
+        _native_think_off = caps is not None and "thinking" in caps
+        logger.info("Ollama /v1 -> native /api/chat for %s (non-streaming call, think=%s)", model,
+                    False if _native_think_off else None)
+        url = _routed
     provider = _detect_provider(url)
     messages_copy = _sanitize_llm_messages(messages)
 
@@ -2376,6 +2389,8 @@ async def llm_call_async(
             model, messages_copy, temperature, max_tokens,
             stream=False, num_ctx=get_context_length(url, model),
         )
+        if _native_think_off:
+            payload["think"] = False
     else:
         target_url = _normalize_openai_chat_url(url)
         h = _provider_headers(provider, headers)

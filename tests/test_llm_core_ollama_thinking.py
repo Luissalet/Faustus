@@ -290,3 +290,56 @@ class TestThinkOverrideRouting:
         assert captured["url"].endswith("/api/chat")
         assert "think" not in captured["json"]          # Ollama would reject it
         assert captured["json"]["options"]["top_k"] == 20
+
+
+class TestNonStreamingCallReroute:
+    """llm_call_async (titles, memory extraction, the diff reviewer) gets the
+    same /v1 → /api/chat reroute for thinking-capable models: on /v1 `think`
+    is ignored and the model spends num_predict reasoning, returning an
+    empty `content` (seen live with qwen3.5:9b as the auto-review reviewer)."""
+
+    def _run(self, monkeypatch, caps, url="http://127.0.0.1:11434/v1", model="qwen3.5:9b"):
+        captured = {}
+
+        class _Resp:
+            status_code = 200
+            is_success = True
+            text = ""
+
+            def json(self):
+                if captured["url"].endswith("/api/chat"):
+                    return {"model": model, "message": {"role": "assistant", "content": "native ok"}, "done": True}
+                return {"model": model, "choices": [{"message": {"role": "assistant", "content": "v1 ok"}}]}
+
+        class _Client:
+            async def post(self, url, headers=None, **kw):
+                captured["url"] = url
+                captured["json"] = kw.get("json") or {}
+                return _Resp()
+
+        monkeypatch.setattr(llm_core, "_get_http_client", lambda: _Client())
+        monkeypatch.setattr(llm_core, "_is_host_dead", lambda u: False)
+        monkeypatch.setattr(llm_core, "note_model_activity", lambda *a, **k: None)
+        monkeypatch.setattr(llm_core, "_clear_host_dead", lambda *a, **k: None)
+        monkeypatch.setattr(llm_core, "get_context_length", lambda u, m: 32768)
+        monkeypatch.setattr(llm_core, "_ollama_model_caps", lambda u, m: caps)
+        monkeypatch.setattr(llm_core, "_get_cached_response", lambda k: None)
+        monkeypatch.setattr(llm_core, "_set_cached_response", lambda *a, **k: None)
+        out = asyncio.run(llm_core.llm_call_async(url, model, [{"role": "user", "content": "review this"}], max_retries=1))
+        return out, captured
+
+    def test_thinking_model_goes_native_with_think_false(self, monkeypatch):
+        out, captured = self._run(monkeypatch, frozenset({"completion", "tools", "thinking"}))
+        assert captured["url"].endswith("/api/chat") and captured["json"].get("think") is False
+        assert captured["json"]["stream"] is False and captured["json"]["options"]["num_ctx"] == 32768
+        assert out == "native ok"
+
+    def test_non_thinking_model_and_unknown_caps_keep_v1(self, monkeypatch):
+        out, captured = self._run(monkeypatch, frozenset({"completion", "tools"}), model="qwen3-coder:30b")
+        assert captured["url"].endswith("/v1/chat/completions") and out == "v1 ok"
+        out, captured = self._run(monkeypatch, None)
+        assert captured["url"].endswith("/v1/chat/completions") and captured["json"].get("think") is False
+
+    def test_other_servers_are_untouched(self, monkeypatch):
+        out, captured = self._run(monkeypatch, frozenset({"thinking"}), url="http://127.0.0.1:8080/v1")
+        assert captured["url"] == "http://127.0.0.1:8080/v1/chat/completions"
