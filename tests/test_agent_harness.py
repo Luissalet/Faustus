@@ -199,3 +199,12 @@ def test_ledger_counts_worker_mutations_as_evidence(tmp_path):
     assert "server.py" in ledger.mutated_paths()
     check = ledger.check_completion("Los workers han modificado server.py y el frontend queda pendiente.")
     assert check["ok"], check
+
+
+def test_narrative_first_person_is_not_a_claim():
+    story = ("He creado un personaje que vive en un faro. Al final hemos terminado la cena y "
+             "todo está listo para la boda; ella dijo: hecho.")
+    assert h.find_mutation_claims(story) == []
+    # …but the same verbs about code still count
+    assert h.find_mutation_claims("He creado la función renderCounter en el fichero projects.js.")
+    assert h.find_mutation_claims("I've added the handler to the component.")

@@ -193,15 +193,46 @@ def detect_language(text: str) -> str:
     return "es" if es_hits > en_hits else "en"
 
 
+# A mutation claim only counts when it is about something technical: a
+# file/path, code, a UI element, a command… "He creado un personaje" in a
+# story, or "hemos terminado la reunión", must never trip the harness.
+_TECH_CONTEXT_RE = re.compile(
+    r"(?:`[^`\n]+`|"
+    r"\b(?:file|files|path|folder|directory|repo|code|function|method|class|component|"
+    r"button|route|endpoint|api|test|tests|script|module|import|variable|config|schema|"
+    r"migration|css|html|js|javascript|typescript|python|json|yaml|markdown|readme|"
+    r"stylesheet|handler|listener|hook|template|query|database|table|column|commit|patch|diff|"
+    r"implementation|feature|fix|bug|changes?|update|refactor|logic|frontend|backend|server|client|"
+    r"page|view|menu|form|layout|style|styles|counter|element|dom|ui|"
+    r"fichero|ficheros|archivo|archivos|ruta|rutas|carpeta|directorio|c[oó]digo|funci[oó]n|"
+    r"funciones|m[eé]todo|clase|componente|bot[oó]n|botones|tarjeta|tarjetas|endpoint|"
+    r"pruebas?|script|m[oó]dulo|variable|configuraci[oó]n|esquema|migraci[oó]n|estilos?|"
+    r"plantilla|consulta|base\s+de\s+datos|tabla|columna|parche|cambios?|implementaci[oó]n|"
+    r"l[oó]gica|interfaz|frontend|backend|servidor|cliente|p[aá]gina|vista|men[uú]|formulario)\b)",
+    re.IGNORECASE,
+)
+
+
 def find_mutation_claims(text: str, limit: int = 4) -> List[str]:
-    """Return up to `limit` distinct snippets that read as 'I changed X'."""
+    """Return up to `limit` distinct snippets that read as 'I changed X' *about
+    something technical* (see _TECH_CONTEXT_RE). Narrative first person is
+    ignored."""
     out: List[str] = []
     seen: Set[str] = set()
     body = text or ""
+    has_paths = bool(PATH_TOKEN_RE.search(body))
+    # A bare "Done." / "Hecho." reply is a completion claim by itself.
+    terse = len(body.strip()) < 200
     for pat in MUTATION_CLAIM_PATTERNS:
         for m in pat.finditer(body):
             start = max(0, m.start() - 20)
             snippet = body[start:m.end() + 60].replace("\n", " ").strip()
+            # Context window: the sentence-ish region around the match.
+            ctx_start = max(0, m.start() - 160)
+            ctx = body[ctx_start:m.end() + 160]
+            standalone = pat.pattern.startswith("^")  # bare "Done." style lines
+            if not (has_paths or (terse and standalone) or _TECH_CONTEXT_RE.search(ctx)):
+                continue
             key = m.group(0).strip().lower()
             if key in seen:
                 continue
