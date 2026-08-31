@@ -1364,6 +1364,76 @@ async function _cmdAgentsMd(args) {
   return true;
 }
 
+// /checkpoints [n] — the last shadow checkpoints of the bound workspace, each
+// with "what differs now" and a Restore button (every file that differs goes
+// back to that snapshot; files created since are deleted). /checkpoints reset
+// deletes the shadow repo (frees disk, loses the baselines).
+async function _cmdCheckpoints(args) {
+  const ws = _boundWorkspacePath();
+  if (!ws) { slashReply('Bind a workspace folder first (the folder icon next to the composer).'); return true; }
+  const a = (args || []).map(x => String(x).toLowerCase());
+  const escd = t => String(t || '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  if (a[0] === 'reset') {
+    const ok = window.uiModule && window.uiModule.styledConfirm
+      ? await window.uiModule.styledConfirm('Delete every checkpoint of this workspace? "Restore to before this turn" stops working for past turns.', { confirmText: 'Delete', danger: true })
+      : window.confirm('Delete every checkpoint of this workspace?');
+    if (!ok) return true;
+    try {
+      const r = await fetch(`${API_BASE}/api/workspace/checkpoint/reset?workspace=${encodeURIComponent(ws)}`, { method: 'POST', credentials: 'same-origin' });
+      slashReply(r.ok ? 'Checkpoints deleted.' : `Could not delete the checkpoints (HTTP ${r.status}).`);
+    } catch (e) { slashReply(`Could not delete the checkpoints: ${e}`); }
+    return true;
+  }
+  const limit = Number.isFinite(parseInt(a[0], 10)) ? Math.max(1, Math.min(parseInt(a[0], 10), 50)) : 10;
+  try {
+    const r = await fetch(`${API_BASE}/api/workspace/checkpoint/list?workspace=${encodeURIComponent(ws)}&limit=${limit}`, { credentials: 'same-origin' });
+    if (!r.ok) { slashReply(`Checkpoints unavailable (HTTP ${r.status}).`); return true; }
+    const list = (await r.json()).checkpoints || [];
+    if (!list.length) { slashReply(`No checkpoints yet for <code>${escd(ws)}</code> — one is taken before the first change of every agent turn.`); return true; }
+    const rows = list.map(c => {
+      const when = c.ts ? new Date(c.ts * 1000).toLocaleString() : '';
+      const payload = escd(JSON.stringify({ sha: c.sha, workspace: ws }));
+      return `<li><code>${escd(String(c.sha).slice(0, 10))}</code> · ${escd(when)}${c.label ? ` · ${escd(c.label)}` : ''} <button type="button" class="harness-btn harness-btn-mini" data-cp-diff="${payload}">What differs now</button> <button type="button" class="harness-btn harness-btn-mini harness-btn-danger" data-cp-restore="${payload}">⟲ Restore here</button></li>`;
+    }).join('');
+    slashReply(`<div class="checkpoint-list"><p><b>Checkpoints of</b> <code>${escd(ws)}</code> (newest first; <code>/checkpoints 30</code>, <code>/checkpoints reset</code>):</p><ul class="harness-list">${rows}</ul></div>`);
+  } catch (e) { slashReply(`Checkpoints unavailable: ${e}`); }
+  return true;
+}
+
+async function _cpAction(button, kind) {
+  let p;
+  try { p = JSON.parse(button.dataset[kind === 'diff' ? 'cpDiff' : 'cpRestore'] || '{}'); } catch (_) { return; }
+  if (!p.sha || !p.workspace) return;
+  const qs = `workspace=${encodeURIComponent(p.workspace)}&sha=${encodeURIComponent(p.sha)}`;
+  const note = (text) => { let n = button.parentElement.querySelector('.cp-note'); if (!n) { n = document.createElement('div'); n.className = 'cp-note harness-muted'; button.parentElement.appendChild(n); } n.textContent = text; };
+  try {
+    if (kind === 'diff') {
+      const r = await fetch(`${API_BASE}/api/workspace/checkpoint/changes?${qs}`, { credentials: 'same-origin' });
+      const d = r.ok ? await r.json() : { changed: [] };
+      const ch = d.changed || [];
+      note(ch.length ? `${ch.length} file${ch.length === 1 ? '' : 's'} differ: ${ch.slice(0, 12).map(c => `${c.status} ${c.path}`).join(', ')}${ch.length > 12 ? ', …' : ''}` : 'nothing differs from this checkpoint');
+      return;
+    }
+    const ok = window.uiModule && window.uiModule.styledConfirm
+      ? await window.uiModule.styledConfirm(`Put every file that differs back to checkpoint ${String(p.sha).slice(0, 10)}? Files created since are deleted.`, { confirmText: 'Restore', danger: true })
+      : window.confirm('Restore this checkpoint?');
+    if (!ok) return;
+    button.disabled = true;
+    const r = await fetch(`${API_BASE}/api/workspace/checkpoint/restore?${qs}`, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: 'null' });
+    if (!r.ok) { note(`restore failed (HTTP ${r.status})`); button.disabled = false; return; }
+    const res = await r.json();
+    note(`restored ${(res.restored || []).length}, deleted ${(res.deleted || []).length}${(res.failed || []).length ? `, failed ${res.failed.length}` : ''}`);
+    button.textContent = '⟲ Restored';
+  } catch (e) { note(`failed: ${e}`); button.disabled = false; }
+}
+
+document.addEventListener('click', (ev) => {
+  const t = ev.target && ev.target.closest ? ev.target.closest('[data-cp-diff],[data-cp-restore]') : null;
+  if (!t) return;
+  ev.preventDefault();
+  _cpAction(t, t.hasAttribute('data-cp-diff') ? 'diff' : 'restore');
+});
+
 async function _cmdScorecard(args) {
   const a = (args || []).map(x => String(x).toLowerCase());
   if (a[0] === 'clear' || a[0] === 'reset') {
@@ -6072,6 +6142,14 @@ const COMMANDS = {
     handler: _cmdAgents,
     noUserBubble: true,
     usage: '/agents [--review] [--serial] [a.py] task one | {model} task two',
+  },
+  checkpoints: {
+    alias: ['checkpoint', 'snapshots'],
+    category: 'Agent',
+    help: 'List the shadow checkpoints of the bound workspace; see what differs now and restore to any of them ("reset" deletes them)',
+    handler: _cmdCheckpoints,
+    noUserBubble: true,
+    usage: '/checkpoints [n | reset]',
   },
   agentsmd: {
     alias: ['agents-md', 'instructions'],

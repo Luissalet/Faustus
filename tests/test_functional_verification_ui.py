@@ -110,6 +110,8 @@ def test_slash_commands_agents_v2_and_scorecard():
     assert "scorecard: {" in SLASH_JS and "/api/scorecard/table?days=" in SLASH_JS
     assert "a.includes('here')" in SLASH_JS and "&workspace=${encodeURIComponent(ws)}" in SLASH_JS
     assert "agentsmd: {" in SLASH_JS and "/api/workspace/instructions/draft" in SLASH_JS and "usage: '/agentsmd [write]'" in SLASH_JS
+    assert "checkpoints: {" in SLASH_JS and "/api/workspace/checkpoint/list?workspace=" in SLASH_JS
+    assert "data-cp-restore" in SLASH_JS and "/api/workspace/checkpoint/restore?" in SLASH_JS and "/api/workspace/checkpoint/changes?" in SLASH_JS
     assert "window.slashCommandsModule = slashCommands" in SLASH_JS
 
 
