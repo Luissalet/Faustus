@@ -42932,7 +42932,18 @@ body:has(.sidebar.right-side) .project-active-pill { right: 12px; }
   border-color: color-mix(in srgb, var(--accent, var(--red)) 86%, var(--fg));
   color: var(--bg);
 }
-.svc-foot-btn:disabled { opacity: .6; cursor: default; }
+/* A disabled primary button used to keep its --bg text on a faded purple
+   fill: at .6 opacity the label washed out to nothing exactly while it said
+   "Reconnecting…", i.e. the one moment it had something to say. Give the
+   disabled state its own readable palette instead. (0,2,0) beats the
+   single-class primary rule above. */
+.svc-foot-btn:disabled {
+  opacity: 1;
+  background: color-mix(in srgb, var(--fg) 8%, var(--bg));
+  border-color: var(--border);
+  color: var(--color-muted, #888);
+  cursor: default;
+}
 
 @media (max-width: 768px) {
   .svc-health-panel { width: 100%; max-height: 86vh; }
