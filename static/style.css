@@ -42443,3 +42443,35 @@ body:has(.sidebar.right-side) .project-active-pill { right: 12px; }
 .harness-badge.is-verified { color: var(--color-success, #4caf50); }
 .harness-badge.is-unverified { color: var(--red, #e06c75); font-weight: 600; }
 .harness-badge.is-neutral { color: var(--color-muted, #888); }
+
+/* ── File viewer (review panel for edited files) ───────────────────────── */
+.file-viewer-panel {
+  position: fixed; top: 0; right: 0; bottom: 0; width: min(46vw, 760px); z-index: 60;
+  background: var(--panel, var(--bg)); color: var(--fg); border-left: 1px solid var(--border);
+  box-shadow: -8px 0 28px rgba(0,0,0,.28); display: flex; flex-direction: column; font-size: 12.5px;
+}
+.fv-head { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+.fv-title { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; overflow: hidden; }
+.fv-kicker { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; opacity: .6; flex-shrink: 0; }
+.fv-crumbs { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: var(--mono, ui-monospace, monospace); font-size: 12px; }
+.fv-crumb { opacity: .7; } .fv-crumb.is-last { opacity: 1; font-weight: 600; } .fv-sep { opacity: .4; margin: 0 4px; }
+.fv-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.fv-btn { background: transparent; border: 1px solid var(--border); color: var(--fg); border-radius: 6px; padding: 3px 8px; cursor: pointer; font-size: 12px; opacity: .85; }
+.fv-btn:hover { opacity: 1; background: color-mix(in srgb, var(--fg) 8%, transparent); }
+.fv-btn.active { background: color-mix(in srgb, var(--accent-primary, var(--red)) 18%, transparent); border-color: var(--accent-primary, var(--red)); opacity: 1; }
+.fv-btn.fv-icon { padding: 3px 6px; display: inline-flex; align-items: center; }
+.fv-btn.done { border-color: var(--green, #7bd88f); color: var(--green, #7bd88f); }
+.fv-close { font-size: 16px; line-height: 1; }
+.fv-meta { padding: 4px 12px; font-size: 11px; opacity: .65; border-bottom: 1px solid var(--border); }
+.fv-body { flex: 1; overflow: auto; }
+.fv-code { margin: 0; padding: 10px 12px 24px; font-family: var(--mono, ui-monospace, monospace); font-size: 12px; line-height: 1.45; white-space: pre; tab-size: 4; }
+.fv-line { display: block; }
+.fv-ln { display: inline-block; width: 3.2em; margin-right: 10px; text-align: right; opacity: .35; user-select: none; }
+.fv-add { background: color-mix(in srgb, var(--green, #7bd88f) 14%, transparent); }
+.fv-del { background: color-mix(in srgb, var(--red, #e06c75) 14%, transparent); }
+.fv-hunk { opacity: .6; }
+.harness-file { font-family: var(--mono, ui-monospace, monospace); font-size: 11.5px; padding: 1px 6px; border: 1px solid var(--border); border-radius: 6px; text-decoration: none; color: var(--fg); background: color-mix(in srgb, var(--fg) 5%, transparent); }
+.harness-file:hover { border-color: var(--accent-primary, var(--red)); }
+.harness-files { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; }
+.harness-muted { opacity: .55; font-size: 11px; }
+@media (max-width: 900px) { .file-viewer-panel { width: 100vw; } }

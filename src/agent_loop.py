@@ -5921,6 +5921,7 @@ async def stream_agent_loop(
                             "type": "harness_check", "status": "verified", "round": round_num,
                             "mutations": _ledger.mutated_paths(),
                             "static_checks": _ledger.static_checks,
+                            "workspace": workspace or None,
                         }) + "\n\n"
                     )
 
@@ -6930,6 +6931,7 @@ async def stream_agent_loop(
             _git_summary = await asyncio.to_thread(_harness.git_change_summary, workspace)
         _hsum = _ledger.summary(_git_summary)
         _hsum["round_count"] = len(round_texts)
+        _hsum["workspace"] = workspace or None
         logger.info("[harness] turn summary: stop=%s tools=%s mutations=%s failed=%s rejections=%s",
                     _hsum["stop_reason"], _hsum["tool_calls"], _hsum["mutations"],
                     _hsum["failed_calls"], _hsum["rejections"])

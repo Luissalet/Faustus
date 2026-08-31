@@ -63,6 +63,13 @@ function _card(kind, title, bodyHtml, { open = false } = {}) {
   return node;
 }
 
+// Clickable file chip → fileViewer.js (data-open-file is handled globally).
+function _fileChip(path, workspace, mode) {
+  const p = String(path || '');
+  const base = p.split(/[\\/]/).pop();
+  return `<a href="#" class="harness-file" data-open-file="${esc(p)}"${workspace ? ` data-open-workspace="${esc(workspace)}"` : ''}${mode ? ` data-open-mode="${mode}"` : ''} title="${esc(p)} — click to review">${esc(base)}</a>`;
+}
+
 const REASON_TEXT = {
   claims_without_mutation: 'The model described changes as done, but no write tool (edit_file / write_file / apply_patch) succeeded this turn.',
   fabricated_paths: 'It mentioned files that do not exist in the workspace and were never returned by any tool.',
@@ -129,7 +136,7 @@ export function renderHarnessCheck(json) {
     const checks = Array.isArray(json.static_checks) ? json.static_checks : [];
     const checked = checks.filter(c => c.ok).length;
     const body = [];
-    if (files.length) body.push(`<div class="harness-foot">${files.map(f => `<code>${esc(f)}</code>`).join(' ')}</div>`);
+    if (files.length) body.push(`<div class="harness-foot harness-files">${files.map(f => _fileChip(f, json.workspace, 'diff')).join(' ')}</div>`);
     if (checked) body.push(`<div class="harness-foot">Syntax check passed: ${checks.filter(c => c.ok).map(c => `<code>${esc(c.path)}</code>`).join(' ')}</div>`);
     _card('verified',
       files.length ? `Verified: ${files.length} file${files.length === 1 ? '' : 's'} changed${checked ? ` · ${checked} syntax-checked` : ''}` : 'Verified against the tool log',
@@ -146,7 +153,7 @@ export function renderHarnessSummary(json) {
   const stop = d.stop_reason || 'complete';
   const parts = [];
   parts.push(`${tools} tool call${tools === 1 ? '' : 's'}${failed ? ` (${failed} failed)` : ''}`);
-  parts.push(files.length ? `${files.length} file${files.length === 1 ? '' : 's'} changed` : 'no files changed');
+  parts.push(files.length ? `Edited ${files.length} file${files.length === 1 ? '' : 's'}` : 'no files changed');
   if (git && typeof git.changed_count === 'number') {
     parts.push(git.changed_count ? `git: ${git.changed_count} path${git.changed_count === 1 ? '' : 's'} dirty${git.shortstat ? ` (${git.shortstat.trim()})` : ''}` : 'git: clean');
   }
@@ -158,7 +165,7 @@ export function renderHarnessSummary(json) {
     awaiting_user: 'waiting for you', length: 'cut off',
   }[stop] || stop;
   const details = [];
-  if (files.length) details.push(`<div><b>Changed:</b> ${files.map(f => `<code>${esc(f)}</code>`).join(' ')}</div>`);
+  if (files.length) details.push(`<div class="harness-files"><b>Edited:</b> ${files.map(f => _fileChip(f, d.workspace, 'diff')).join(' ')} <span class="harness-muted">— click a file to review it (contents / diff / open folder)</span></div>`);
   if (git && git.changed && git.changed.length) {
     details.push(`<div><b>git status:</b><pre class="harness-pre">${esc(git.changed.map(c => `${c.status.padEnd(2)} ${c.path}`).join('\n'))}</pre></div>`);
   }
@@ -186,7 +193,7 @@ export function renderHarnessSummary(json) {
   const rewrote = notes.some(n => String(n).startsWith('whole_file_rewrite:'));
   if (rewrote) parts.push('⚠ whole-file rewrite');
   const kind = stop === 'complete_unverified' ? 'unverified' : (files.length ? 'verified' : 'summary');
-  _card(kind, `Turn summary · ${parts.join(' · ')} · ${stopLabel}`, details.join(''));
+  _card(kind, `Turn summary · ${parts.join(' · ')} · ${stopLabel}`, details.join(''), { open: files.length > 0 });
 }
 
 // ── Sub-agent board (delegate_agents) ────────────────────────────────────────

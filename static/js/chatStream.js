@@ -279,11 +279,14 @@ export function insertStreamDoneToast(sessionId, query) {
   var sess = sessions.find(function(s) { return s.id === sessionId; });
   var name = sess ? sess.name : 'another session';
   var preview = query ? '"' + query.substring(0, 50) + (query.length > 50 ? '...' : '') + '"' : '';
+  // A run parked on an approval / question is not "ready": say what it needs.
+  var waiting = false;
+  try { waiting = !!(sessionModule && sessionModule.sessionActivityStatus && sessionModule.sessionActivityStatus(sessionId) === 'approval'); } catch (_) {}
   var div = document.createElement('div');
-  div.className = 'msg msg-system stream-done-toast';
+  div.className = 'msg msg-system stream-done-toast' + (waiting ? ' needs-approval' : '');
   div.innerHTML = '<div class="body">'
-    + '<span class="stream-done-indicator">●</span>'
-    + '<span>Response ready in <strong>' + (name || 'session').replace(/</g, '&lt;') + '</strong>'
+    + '<span class="stream-done-indicator">' + (waiting ? '\u270B' : '\u25CF') + '</span>'
+    + '<span>' + (waiting ? 'Waiting for your approval in ' : 'Response ready in ') + '<strong>' + (name || 'session').replace(/</g, '&lt;') + '</strong>'
     + (preview ? ' &mdash; ' + preview.replace(/</g, '&lt;') : '')
     + '</span>'
     + '</div>';

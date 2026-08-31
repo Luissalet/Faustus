@@ -111,4 +111,115 @@ def setup_workspace_routes():
             ),
         }
 
+    # ── File viewer for the chat's "Edited N files" cards ─────────────────
+    _FILE_VIEW_MAX = 400_000
+
+    def _confine(workspace: str, path: str) -> str:
+        from src.tool_execution import vet_workspace, _resolve_tool_path_in_roots
+        root = vet_workspace(workspace or "")
+        if not root:
+            raise HTTPException(status_code=400, detail="workspace is not a valid folder")
+        try:
+            return _resolve_tool_path_in_roots([root], path, root)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    @router.get("/file")
+    def read_workspace_file(
+        request: Request,
+        workspace: str = Query(default=""),
+        path: str = Query(default=""),
+    ):
+        """Text of one file inside the bound workspace (review panel). Same
+        admin gate and path confinement as the agent's read_file."""
+        owner = get_current_user(request)
+        if not owner_is_admin_or_single_user(owner):
+            raise HTTPException(status_code=403, detail="Workspace files are admin-only")
+        target = _confine(workspace, path)
+        if not os.path.isfile(target):
+            raise HTTPException(status_code=404, detail="file not found")
+        size = os.path.getsize(target)
+        try:
+            with open(target, "rb") as f:
+                raw = f.read(_FILE_VIEW_MAX + 1)
+        except OSError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+        truncated = len(raw) > _FILE_VIEW_MAX
+        raw = raw[:_FILE_VIEW_MAX]
+        binary = b"\x00" in raw[:8000]
+        text = "" if binary else raw.decode("utf-8", errors="replace")
+        root = os.path.realpath(os.path.expanduser(workspace))
+        rel = os.path.relpath(target, root).replace(os.sep, "/")
+        return {
+            "path": target, "rel": rel, "workspace": root, "size": size,
+            "binary": binary, "truncated": truncated, "text": text,
+            "lines": (text.count("\n") + (1 if text and not text.endswith("\n") else 0)) if text else 0,
+            "mtime": os.path.getmtime(target),
+        }
+
+    @router.get("/file_diff")
+    def workspace_file_diff(
+        request: Request,
+        workspace: str = Query(default=""),
+        path: str = Query(default=""),
+    ):
+        """`git diff` of one file against HEAD (working tree), or the whole file
+        as added when it is untracked / the folder is not a git repo."""
+        owner = get_current_user(request)
+        if not owner_is_admin_or_single_user(owner):
+            raise HTTPException(status_code=403, detail="Workspace files are admin-only")
+        target = _confine(workspace, path)
+        root = os.path.realpath(os.path.expanduser(workspace))
+        import subprocess
+        try:
+            probe = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=root,
+                                   capture_output=True, text=True, timeout=8)
+        except (OSError, subprocess.SubprocessError):
+            probe = None
+        if not probe or probe.returncode != 0:
+            return {"git": False, "diff": "", "status": None}
+        top = os.path.realpath(probe.stdout.strip())
+        rel = os.path.relpath(target, top).replace(os.sep, "/")
+        try:
+            st = subprocess.run(["git", "status", "--porcelain", "--", rel], cwd=top,
+                                capture_output=True, text=True, timeout=8)
+            code = (st.stdout or "")[:2].strip() or None
+            if code and code.startswith("?"):
+                diff = subprocess.run(["git", "diff", "--no-index", "--", "/dev/null" if os.name != "nt" else "NUL", rel],
+                                      cwd=top, capture_output=True, text=True, timeout=8)
+            else:
+                diff = subprocess.run(["git", "diff", "--", rel], cwd=top, capture_output=True, text=True, timeout=8)
+            text = diff.stdout or ""
+        except (OSError, subprocess.SubprocessError) as e:
+            raise HTTPException(status_code=500, detail=str(e))
+        if len(text) > _FILE_VIEW_MAX:
+            text = text[:_FILE_VIEW_MAX] + "\n… diff truncated"
+        return {"git": True, "diff": text, "status": code, "rel": rel}
+
+    @router.post("/reveal")
+    def reveal_in_folder(
+        request: Request,
+        workspace: str = Query(default=""),
+        path: str = Query(default=""),
+    ):
+        """Open the OS file manager with the file selected (Odysseus runs on
+        the same machine as the browser in the local setup)."""
+        owner = get_current_user(request)
+        if not owner_is_admin_or_single_user(owner):
+            raise HTTPException(status_code=403, detail="Admin-only")
+        target = _confine(workspace, path)
+        if not os.path.exists(target):
+            raise HTTPException(status_code=404, detail="not found")
+        import subprocess, sys as _sys
+        try:
+            if os.name == "nt":
+                subprocess.Popen(["explorer", "/select,", target])
+            elif _sys.platform == "darwin":
+                subprocess.Popen(["open", "-R", target])
+            else:
+                subprocess.Popen(["xdg-open", os.path.dirname(target)])
+        except OSError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+        return {"ok": True}
+
     return router

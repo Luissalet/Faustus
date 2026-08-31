@@ -37,6 +37,7 @@ import {
 import { createTerminalStreamError, isRecoverableStreamError } from './chatStreamErrors.js';
 import { loadPanel } from './panels.js';
 import agentHarnessUI from './agentHarnessUI.js';
+import fileViewer from './fileViewer.js';
 import modelControls from './modelControls.js';
 
   const RESEARCH_TIMEOUT_MS = 360000;
@@ -815,6 +816,7 @@ import modelControls from './modelControls.js';
     // Reliability harness cards + Progress panel, model controls popover and
     // the live system-usage widget (ollama ps / nvidia-smi).
     try { agentHarnessUI.init(apiBase); } catch (_e) { console.warn('agentHarnessUI init', _e); }
+    try { fileViewer.init(apiBase); } catch (_e) { console.warn('fileViewer init', _e); }
     try { modelControls.init(apiBase, { getSessionId: () => sessionModule.getCurrentSessionId() }); } catch (_e) { console.warn('modelControls init', _e); }
     import('./sysUsage.js').then(mod => { try { mod.default.init(apiBase); } catch (_e) { console.warn('sysUsage init', _e); } }).catch(() => {});
     // Initialize email inbox
