@@ -142,6 +142,9 @@ def test_detached_resume_surfaces_fallback_then_provider_alias_before_reload():
         "function hasActiveStream() { return false; } function _shortModel(v) { return v; } function _applyModelColor() {}",
         "function _setRoleModelLabel(role, requested, actual) { labels.push({requested, actual}); role.textContent = requested + ' -> ' + actual; }",
         "function _streamDisplayText(v) { return v; } function _showDocumentWritingStatus() {} function _finishDocumentWritingStatus() {} function _metricsCostRecordId() { return 'run'; }",
+        # live tool timeline of a re-attached run (chat.js helpers next to resumeStream)
+        "function _settleToolNode() {} function _resumeThreadBefore() { return null; } function _liveToolNode() { return null; } function _toolNodeTail() {}",
+        "const agentHarnessUI = { renderSubagentEvent() {}, handleStreamEvent() {} };",
         "const events = [",
         "  'data: {\"type\":\"fallback\",\"selected_model\":\"selected-model\",\"answered_by\":\"fallback-model\",\"reason\":\"429\"}\\n\\n',",
         "  'data: {\"type\":\"model_actual\",\"model\":\"provider/fallback-alias\"}\\n\\n',",
@@ -199,6 +202,9 @@ def test_detached_resume_renders_preoutput_error_without_empty_reload():
         "const _resumingStreams = new Set(); const _streamRunIds = new Map(); const API_BASE = '';",
         "function hasActiveStream() { return false; } function _shortModel(v) { return v; } function _applyModelColor() {}",
         "function _streamDisplayText(v) { return v; } function _showDocumentWritingStatus() {} function _finishDocumentWritingStatus() {} function _metricsCostRecordId() { return 'run'; }",
+        # live tool timeline of a re-attached run (chat.js helpers next to resumeStream)
+        "function _settleToolNode() {} function _resumeThreadBefore() { return null; } function _liveToolNode() { return null; } function _toolNodeTail() {}",
+        "const agentHarnessUI = { renderSubagentEvent() {}, handleStreamEvent() {} };",
         "const encoded = new TextEncoder().encode('event: error\\ndata: {\"status\":401,\"error\":\"invalid key <img src=x>\"}\\n\\n');",
         "let reads = 0; const reader = { async read() { return reads++ === 0 ? {done:false, value:encoded} : {done:true}; }, async cancel() {} };",
         "async function fetch() { return { ok:true, body:{getReader(){return reader;}}, headers:{get(){return 'run-1';}} }; }",
@@ -282,3 +288,74 @@ def test_foreground_terminal_error_reloads_saved_partial_without_typewriter_race
     assert "json.type === 'agent_terminal'" in CHAT_JS
     assert "_canonicalTerminalSaved = true" in CHAT_JS
     assert "await sessionModule.selectSession(streamSessionId, { showLoading: false })" in terminal_catch
+
+
+@pytest.mark.skipif(not _HAS_NODE, reason="node binary not on PATH")
+def test_detached_resume_renders_live_tool_timeline_then_reloads():
+    """Re-attaching to a run mid-tool shows the tool card, the sub-agent board and
+    the harness cards live (not a blind spinner), then reloads the canonical
+    record because the reply is rich."""
+    source = "\n".join([
+        "class Element {",
+        "  constructor(tag = 'div') { this.tag = tag; this.children = []; this.parentNode = null; this.style = {}; this.textContent = ''; this._html = ''; this.classList = { remove() {}, add() {}, contains() { return false; } }; }",
+        "  appendChild(child) { child.parentNode = this; this.children.push(child); return child; }",
+        "  remove() { if (!this.parentNode) return; this.parentNode.children = this.parentNode.children.filter(c => c !== this); this.parentNode = null; }",
+        "  set innerHTML(value) {",
+        "    this._html = value;",
+        "    if (value.includes('stream-content')) {",
+        "      this._role = new Element('div'); this._role.parentNode = this;",
+        "      this._body = new Element('div'); this._body.parentNode = this;",
+        "      this._content = new Element('div'); this._body.appendChild(this._content);",
+        "    }",
+        "  }",
+        "  get innerHTML() { return this._html; }",
+        "  querySelector(selector) { if (selector === '.role') return this._role || null; if (selector === '.body') return this._body || null; if (selector === '.stream-content') return this._content || null; return null; }",
+        "}",
+        "const box = new Element('main');",
+        "const document = { getElementById(id) { return id === 'chat-history' ? box : null; }, createElement(tag) { return new Element(tag); } };",
+        "const window = {};",
+        "let selectCalls = 0; const calls = [];",
+        "const sessionModule = { getSessions() { return [{id: 's1', model: 'm'}]; }, getCurrentSessionId() { return 's1'; }, selectSession() { selectCalls += 1; }, loadSessions() {}, clearAwaitingApproval(id) { calls.push(['clearApproval', id]); }, markAwaitingApproval(id) { calls.push(['markApproval', id]); } };",
+        "const uiModule = { esc(value) { return String(value); }, scrollHistory() {} };",
+        "const spinnerModule = { create() { return { element: null, createElement() { this.element = new Element('spinner'); return this.element; }, start() {}, destroy() { if (this.element) this.element.remove(); } }; } };",
+        "const markdownModule = { normalizeThinkingMarkup(v) { return v; }, mdToHtml(v) { return v; }, squashOutsideCode(v) { return v; } };",
+        "const documentModule = null; const chatRenderer = { recordSessionMetricsCost() {}, addMessage() {} };",
+        "const _resumingStreams = new Set(); const _streamRunIds = new Map(); const API_BASE = '';",
+        "function hasActiveStream() { return false; } function _shortModel(v) { return v; } function _applyModelColor() {}",
+        "function _streamDisplayText(v) { return v; } function _showDocumentWritingStatus() {} function _finishDocumentWritingStatus() {} function _metricsCostRecordId() { return 'run'; }",
+        "const thread = new Element('thread'); let liveThreadRemoved = false; thread.remove = () => { liveThreadRemoved = true; };",
+        "function _resumeThreadBefore(msg) { msg._resumeThread = thread; thread.parentNode = box; return thread; }",
+        "function _liveToolNode(t, tool, cmd) { calls.push(['live', tool, cmd]); return { tool }; }",
+        "function _settleToolNode(node, ok, output) { if (node) calls.push(['settle', node.tool, ok, output]); }",
+        "function _toolNodeTail(node, tail) { calls.push(['tail', node && node.tool, tail]); }",
+        "const agentHarnessUI = { renderSubagentEvent(j) { calls.push(['board', j.subagent.event]); }, handleStreamEvent(j) { calls.push(['harness', j.type]); } };",
+        "const events = [",
+        "  'data: {\"type\":\"tool_start\",\"tool\":\"delegate_agents\",\"command\":\"{}\",\"round\":0,\"approved\":true}\\n\\n',",
+        "  'data: {\"type\":\"tool_progress\",\"tool\":\"delegate_agents\",\"subagent\":{\"id\":\"w\",\"event\":\"started\"}}\\n\\n',",
+        "  'data: {\"type\":\"tool_progress\",\"tool\":\"bash\",\"tail\":\"npm test…\"}\\n\\n',",
+        "  'data: {\"type\":\"tool_output\",\"tool\":\"delegate_agents\",\"output\":\"report\",\"exit_code\":0}\\n\\n',",
+        "  'data: {\"type\":\"harness_summary\",\"data\":{\"stop_reason\":\"complete\"}}\\n\\n',",
+        "  'data: {\"delta\":\"All done.\"}\\n\\n',",
+        "  'data: [DONE]\\n\\n',",
+        "].join('');",
+        "const encoded = new TextEncoder().encode(events); let reads = 0;",
+        "const reader = { async read() { return reads++ === 0 ? {done:false, value:encoded} : {done:true}; }, async cancel() {} };",
+        "async function fetch() { return { ok:true, body:{getReader(){return reader;}}, headers:{get(){return 'run-1';}} }; }",
+        _resume_function_source(),
+        "await resumeStream('s1');",
+        "console.log(JSON.stringify({calls, selectCalls, liveThreadRemoved, holderCount: box.children.length}));",
+    ])
+
+    assert _run_node(source) == {
+        "calls": [
+            ["live", "delegate_agents", "{}"],
+            ["clearApproval", "s1"],
+            ["board", "started"],
+            ["tail", "delegate_agents", "npm test…"],
+            ["settle", "delegate_agents", True, "report"],
+            ["harness", "harness_summary"],
+        ],
+        "selectCalls": 1,          # rich reply → canonical reload
+        "liveThreadRemoved": True,  # the live timeline never duplicates the reloaded thread
+        "holderCount": 0,
+    }

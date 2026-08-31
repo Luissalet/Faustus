@@ -617,6 +617,130 @@ import modelControls from './modelControls.js';
     }
   }
 
+  // Human labels for tool cards (shared by the live send path and the
+  // re-attached run timeline below).
+  const _TOOL_LABELS = {
+    'web_search': 'Searching',
+    'bash': 'Running',
+    'python': 'Running',
+    'read_document': 'Reading',
+    'edit_file': 'Editing',
+    'read_file': 'Reading',
+    'write_file': 'Writing',
+    'apply_patch': 'Patching',
+    'create_document': 'Writing',
+    'edit_document': 'Editing',
+    'update_document': 'Rewriting',
+    'suggest_document': 'Reviewing',
+    'list_files': 'Browsing',
+    'glob': 'Finding files',
+    'grep': 'Searching code',
+    'ls': 'Browsing',
+    'todowrite': 'Planning',
+    'delegate_agents': 'Delegating',
+    'image_gen': 'Generating',
+    'generate_image': 'Generating',
+    'manage_memory': 'Remembering',
+    'save_memory': 'Remembering',
+    'search_memory': 'Recalling',
+    'manage_session': 'Organizing',
+    'deep_research': 'Researching',
+    'list_models': 'Browsing',
+    'ui_control': 'Adjusting',
+  };
+
+  // ── Live tool timeline for a re-attached (detached) run ────────────────────
+  // resumeStream() re-attaches to a run that kept going server-side while the
+  // user was in another chat. Text deltas render in place; these helpers give
+  // the tool calls, the harness cards and the sub-agent board the same live
+  // timeline the original tab had, instead of a blind spinner until the
+  // canonical reload at the end of the run.
+  function _resumeThreadBefore(msg) {
+    const chatBox = document.getElementById('chat-history');
+    if (!chatBox || !msg) return null;
+    let thread = msg._resumeThread;
+    if (thread && thread.isConnected) return thread;
+    thread = document.createElement('div');
+    thread.className = 'agent-thread streaming';
+    const prev = msg.previousElementSibling;
+    if (prev && (prev.classList.contains('msg') || prev.classList.contains('agent-thread'))) thread.classList.add('has-top');
+    chatBox.insertBefore(thread, msg);
+    msg._resumeThread = thread;
+    return thread;
+  }
+
+  function _animateToolNode(node) {
+    const waveEl = node.querySelector('.agent-thread-wave');
+    if (waveEl) {
+      const frames = ['▁▂▃', '▂▃▄', '▃▄▅', '▄▅▆', '▅▆▇', '▆▅▄', '▅▄▃', '▄▃▂'];
+      let i = 0;
+      node._waveInterval = setInterval(() => { i = (i + 1) % frames.length; waveEl.textContent = frames[i]; }, 100);
+    }
+    node._startTime = Date.now();
+    node._elapsedTicker = setInterval(() => {
+      const hdr = node.querySelector('.agent-thread-header');
+      if (!hdr) return;
+      let el = hdr.querySelector('.agent-thread-elapsed');
+      if (!el) {
+        el = document.createElement('span');
+        el.className = 'agent-thread-elapsed';
+        const icon = hdr.querySelector('.agent-thread-icon');
+        if (icon && icon.nextSibling) hdr.insertBefore(el, icon.nextSibling);
+        else hdr.appendChild(el);
+      }
+      const s = (Date.now() - node._startTime) / 1000;
+      el.textContent = s < 60 ? `${s.toFixed(2)}s` : `${Math.floor(s / 60)}m ${(s % 60).toFixed(2).padStart(5, '0')}s`;
+    }, 50);
+  }
+
+  function _liveToolNode(thread, tool, cmd) {
+    const key = String(tool || '').toLowerCase();
+    const label = _TOOL_LABELS[key] || tool || 'tool';
+    const node = document.createElement('div');
+    node.className = 'agent-thread-node running';
+    const cmdHtml = cmd ? `<pre class="agent-thread-cmd">${uiModule.esc(cmd)}</pre>` : '';
+    node.innerHTML = `<div class="agent-thread-dot"></div><div class="agent-thread-header"><span class="agent-thread-icon">▶</span><span class="agent-thread-tool">${uiModule.esc(label)}</span><span class="agent-thread-wave">▁▂▃</span></div><div class="agent-thread-content">${cmdHtml}</div>`;
+    thread.appendChild(node);
+    _animateToolNode(node);
+    uiModule.scrollHistory();
+    return node;
+  }
+
+  function _settleToolNode(node, ok, output) {
+    if (!node) return;
+    if (node._waveInterval) { clearInterval(node._waveInterval); node._waveInterval = null; }
+    if (node._elapsedTicker) { clearInterval(node._elapsedTicker); node._elapsedTicker = null; }
+    node.classList.remove('running');
+    if (!ok) node.classList.add('error');
+    const icon = node.querySelector('.agent-thread-icon');
+    if (icon) icon.textContent = ok ? '✓' : '✗';
+    const wave = node.querySelector('.agent-thread-wave');
+    if (wave) wave.remove();
+    const tail = node.querySelector('.agent-thread-tail');
+    if (tail) tail.remove();
+    const out = String(output || '');
+    if (out.trim()) {
+      const content = node.querySelector('.agent-thread-content');
+      if (content) content.insertAdjacentHTML('beforeend', `<details class="agent-tool-output"><summary>Output</summary><pre>${uiModule.esc(out.length > 6000 ? out.slice(0, 6000) + '\n…' : out)}</pre></details>`);
+    }
+  }
+
+  function _toolNodeTail(node, tailStr) {
+    if (!node) return;
+    const t = String(tailStr || '').trim();
+    if (!t) return;
+    let tailEl = node.querySelector('.agent-thread-tail');
+    if (!tailEl) {
+      tailEl = document.createElement('pre');
+      tailEl.className = 'agent-thread-tail';
+      tailEl.style.cssText = 'margin:4px 0 0;padding:6px 8px;font-size:11px;background:rgba(0,0,0,0.18);border-radius:4px;max-height:140px;overflow:auto;white-space:pre-wrap;opacity:0.85;';
+      const content = node.querySelector('.agent-thread-content');
+      if (content) content.appendChild(tailEl);
+    }
+    tailEl.textContent = t;
+    tailEl.scrollTop = tailEl.scrollHeight;
+  }
+
   let currentAccumulated = ''; // Track accumulated text across function scope
   let currentHolder = null; // Track current message holder
   let currentSpinner = null; // Track current spinner for stop cleanup
@@ -2274,29 +2398,7 @@ import modelControls from './modelControls.js';
       // Tool-aware thinking spinner
       let _lastToolName = '';
       const _searchIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="vertical-align:-2px;margin-right:4px"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>';
-      const _toolLabels = {
-        'web_search': 'Searching',
-        'bash': 'Running',
-        'python': 'Running',
-        'read_document': 'Reading',
-        'edit_file': 'Editing',
-        'read_file': 'Reading',
-        'write_file': 'Writing',
-        'create_document': 'Writing',
-        'edit_document': 'Editing',
-        'update_document': 'Rewriting',
-        'suggest_document': 'Reviewing',
-        'list_files': 'Browsing',
-        'image_gen': 'Generating',
-        'generate_image': 'Generating',
-        'manage_memory': 'Remembering',
-        'save_memory': 'Remembering',
-        'search_memory': 'Recalling',
-        'manage_session': 'Organizing',
-        'deep_research': 'Researching',
-        'list_models': 'Browsing',
-        'ui_control': 'Adjusting',
-      };
+      const _toolLabels = _TOOL_LABELS;
       const _toolIcons = {
         'web_search': _searchIcon,
       };
@@ -5061,10 +5163,17 @@ import modelControls from './modelControls.js';
     // full canonical render, which is rebuilt from the saved DB record on reload.
     // Plain text replies can be finalized in place without a reload.
     let rich = false;
+    let resumeToolNode = null;   // running tool card of the live timeline
 
     const cleanup = () => {
       try { spinner.destroy(); } catch (_) {}
+      _settleToolNode(resumeToolNode, true, '');
+      resumeToolNode = null;
+      if (holder._resumeThread) holder._resumeThread.classList.remove('streaming');
       _resumingStreams.delete(sessionId);
+    };
+    const removeLiveTimeline = () => {
+      if (holder._resumeThread && holder._resumeThread.parentNode) holder._resumeThread.remove();
     };
 
     const renderDelta = () => {
@@ -5180,8 +5289,35 @@ import modelControls from './modelControls.js';
               metricsData._costRecordId = _metricsCostRecordId(resumeRunId, json);
             }
             if (metricsData) displayMetrics(holder, metricsData);
-          } else if (json.type === 'tool_start' || json.type === 'tool_output' ||
-                     json.type === 'tool_progress' || json.type === 'agent_step' ||
+          } else if (json.type === 'tool_start') {
+            // Live timeline while re-attached: the tool call shows up as a
+            // running card (like in the tab that sent the message), instead
+            // of a blind spinner until the run finishes.
+            rich = true;
+            try { spinner.destroy(); } catch (_) {}
+            _settleToolNode(resumeToolNode, true, '');
+            const thread = _resumeThreadBefore(holder);
+            resumeToolNode = thread ? _liveToolNode(thread, json.tool, json.command || '') : null;
+            if (json.approved) { try { sessionModule.clearAwaitingApproval && sessionModule.clearAwaitingApproval(sessionId); } catch (_) {} }
+          } else if (json.type === 'tool_output') {
+            rich = true;
+            _settleToolNode(resumeToolNode, json.exit_code === 0 || json.exit_code == null, json.output);
+            resumeToolNode = null;
+          } else if (json.type === 'tool_progress') {
+            rich = true;
+            if (json.subagent) { try { agentHarnessUI.renderSubagentEvent(json); } catch (_) {} }
+            else if (json.tail) _toolNodeTail(resumeToolNode, json.tail);
+          } else if (json.type === 'harness_check' || json.type === 'harness_summary' || json.type === 'progress_update') {
+            rich = true;
+            try { agentHarnessUI.handleStreamEvent(json, { sessionId }); } catch (_) {}
+          } else if (json.type === 'ask_user') {
+            rich = true;
+            const kind = (json.data || {}).kind;
+            try {
+              if (kind === 'tool_approval') sessionModule.markAwaitingApproval && sessionModule.markAwaitingApproval(sessionId);
+              else sessionModule.markAwaitingQuestion && sessionModule.markAwaitingQuestion(sessionId);
+            } catch (_) {}
+          } else if (json.type === 'agent_step' ||
                      json.type === 'web_sources' || json.type === 'rag_sources' ||
                      json.type === 'research_progress' || json.type === 'research_sources' ||
                      json.type === 'research_findings' || json.type === 'research_done') {
@@ -5196,7 +5332,7 @@ import modelControls from './modelControls.js';
 
     cleanup();
     if (docFenceOpened) _finishDocumentWritingStatus(holder, true);
-    if (leftSession) { if (holder.parentNode) holder.remove(); return true; }
+    if (leftSession) { removeLiveTimeline(); if (holder.parentNode) holder.remove(); return true; }
 
     const onThisSession = sessionModule.getCurrentSessionId &&
                           sessionModule.getCurrentSessionId() === sessionId;
@@ -5217,6 +5353,7 @@ import modelControls from './modelControls.js';
     // canonical single message (markdown + footer actions + metrics) using the
     // same renderer history does. No history refetch, no end-of-stream flicker.
     if (onThisSession && !rich && roundText.trim()) {
+      removeLiveTimeline();
       if (holder.parentNode) holder.remove();
       const model = meta && meta.model;
       const meta_ = metricsData ? Object.assign({ model }, metricsData) : { model };
@@ -5228,6 +5365,7 @@ import modelControls from './modelControls.js';
     // Rich response (tools, sources, docs, multi-round) or user moved on:
     // reload from the DB for the full canonical render.
     if (holder._docWritingThread && holder._docWritingThread.parentNode) holder._docWritingThread.remove();
+    removeLiveTimeline();
     if (holder.parentNode) holder.remove();
     if (metricsData) {
       chatRenderer.recordSessionMetricsCost(metricsData, sessionId);
