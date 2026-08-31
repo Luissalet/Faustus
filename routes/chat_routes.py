@@ -342,6 +342,47 @@ def _resolve_request_workspace(request, raw_value) -> tuple:
     return workspace, (requested if not workspace else "")
 
 
+def _parse_delegate_tasks(raw) -> Optional[Dict[str, Any]]:
+    """`delegate_tasks` form field from the /agents slash command: a JSON object
+    {"tasks": [{"name", "instruction"}...], "parallel": bool}. Returns None
+    when absent or malformed (the request then behaves as a normal message)."""
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw) if isinstance(raw, str) else raw
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    tasks = data.get("tasks")
+    if not isinstance(tasks, list) or not tasks:
+        return None
+    clean = []
+    for t in tasks[:4]:
+        if isinstance(t, dict) and str(t.get("instruction") or "").strip():
+            clean.append({
+                "name": str(t.get("name") or t["instruction"])[:60],
+                "instruction": str(t["instruction"]).strip()[:4000],
+            })
+        elif isinstance(t, str) and t.strip():
+            clean.append({"name": t.strip()[:60], "instruction": t.strip()[:4000]})
+    if not clean:
+        return None
+    return {"tasks": clean, "parallel": bool(data.get("parallel", True))}
+
+
+def _delegation_instruction(payload: Dict[str, Any]) -> str:
+    """Model-facing text for a /agents send. The persisted user message stays
+    the compact line the user saw; only the model gets this."""
+    return (
+        "Delegate this work to parallel sub-agents by calling the delegate_agents tool "
+        "EXACTLY ONCE with these arguments (do not do the tasks yourself, do not rewrite them):\n"
+        + json.dumps(payload, ensure_ascii=False)
+        + "\nWhen the tool returns, report to the user only what its evidence says: which files "
+        "each worker changed, failures, and what still needs doing."
+    )
+
+
 def _parse_gen_overrides(raw) -> Dict[str, Any]:
     """Validate the per-session generation overrides sent by the chat UI.
 
@@ -1471,6 +1512,9 @@ def setup_chat_routes(
         # Per-session generation overrides from the chat model controls
         # (temperature, max_tokens, top_p, think, ...). Validated here; the
         # sampling extras are forwarded to llm_core as gen_overrides.
+        _delegate_tasks = _parse_delegate_tasks(
+            form_data.get("delegate_tasks") or (body or {}).get("delegate_tasks")
+        )
         _gen_overrides = _parse_gen_overrides(
             form_data.get("gen_overrides") or (body or {}).get("gen_overrides")
         )
@@ -2439,6 +2483,18 @@ def setup_chat_routes(
                     if isinstance(message, str) and "delegate_agents" in message:
                         _forced_tools = set(_forced_tools or set())
                         _forced_tools.add("delegate_agents")
+                    if _delegate_tasks and not tool_approval_continuation:
+                        _forced_tools = set(_forced_tools or set())
+                        _forced_tools.add("delegate_agents")
+                        # The user saw (and history keeps) the compact line; the
+                        # model gets the explicit delegation instruction.
+                        _instr = _delegation_instruction(_delegate_tasks)
+                        messages = list(messages)
+                        for _mi in range(len(messages) - 1, -1, -1):
+                            if messages[_mi].get("role") == "user":
+                                messages[_mi] = dict(messages[_mi])
+                                messages[_mi]["content"] = _instr
+                                break
 
                     async for chunk in stream_agent_loop(
                         sess.endpoint_url,

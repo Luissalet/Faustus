@@ -1269,9 +1269,13 @@ function _cmdAgents(args) {
   }
   const tasks = parts.map((p, i) => ({ name: p.length > 40 ? p.slice(0, 38) + '…' : p, instruction: p }));
   const payload = JSON.stringify({ tasks, parallel: true });
-  const msg = `Delegate this work to parallel sub-agents by calling the delegate_agents tool EXACTLY ONCE with these arguments (do not do the tasks yourself, do not rewrite them):\n${payload}\nWhen the tool returns, report to the user only what its evidence says: which files each worker changed, failures, and what still needs doing.`;
+  // The chat bubble shows a compact line; the full delegation instruction
+  // travels as the `delegate_tasks` form field and the server swaps it in for
+  // the model only (routes/chat_routes.py), so history stays readable.
+  const msg = `🤖 ${tasks.length} sub-agent${tasks.length === 1 ? '' : 's'}: ${parts.join('  |  ')}`;
   const msgInput = document.getElementById('message');
   if (!msgInput) return true;
+  try { window.__odysseusDelegateTasks = payload; } catch (_) {}
   msgInput.value = msg;
   // Delegation only makes sense with tools: force agent mode for this send.
   try {

@@ -256,6 +256,8 @@ function _ensureProgressEl() {
 }
 
 const STATUS_ICON = { pending: '○', in_progress: '◉', completed: '✓' };
+// Objectives that imply a file change (EN/ES) — used for the "no write" tag.
+const CHANGE_TODO_RE = /\b(?:add|create|implement|fix|update|remove|delete|refactor|rename|write|edit|modify|change|wire|hook|patch|install|configure|a[ñn]adir|a[ñn]ade|agregar|crear|crea|implementar|implementa|arreglar|arregla|corregir|corrige|actualizar|actualiza|eliminar|elimina|borrar|borra|modificar|modifica|cambiar|cambia|escribir|escribe|editar|edita|refactorizar|renombrar|configurar|instalar)\b/i;
 
 export function renderProgress(todos, { sessionId = null } = {}) {
   const el = _ensureProgressEl();
@@ -272,8 +274,13 @@ export function renderProgress(todos, { sessionId = null } = {}) {
   list.innerHTML = todos.map((t, i) => {
     const st = t.status || 'pending';
     const unverified = st === 'completed' && t.verified === false;
-    const cls = `agent-progress-item is-${st}${unverified ? ' is-unverified' : ''}`;
-    const tag = unverified ? `<span class="agent-progress-tag" title="Marked done, but no tool succeeded since the previous update">unverified</span>` : '';
+    // A change-type objective ticked off without any successful write since
+    // the previous update: the tick may be premature.
+    const noWrite = st === 'completed' && !unverified && t.mutation_backed === false && CHANGE_TODO_RE.test(t.content || '');
+    const cls = `agent-progress-item is-${st}${unverified ? ' is-unverified' : ''}${noWrite ? ' is-nowrite' : ''}`;
+    let tag = '';
+    if (unverified) tag = `<span class="agent-progress-tag" title="Marked done, but no tool succeeded since the previous update">unverified</span>`;
+    else if (noWrite) tag = `<span class="agent-progress-tag is-nowrite" title="Marked done, but no file was changed since the previous update">no write</span>`;
     return `<li class="${cls}"><span class="agent-progress-num">${i + 1}</span><span class="agent-progress-icon">${STATUS_ICON[st] || '○'}</span><span class="agent-progress-text">${esc(t.content)}</span>${tag}</li>`;
   }).join('');
   el.hidden = false;

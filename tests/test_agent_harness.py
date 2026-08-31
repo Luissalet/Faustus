@@ -241,3 +241,28 @@ def test_bare_done_with_no_tool_activity_is_still_rejected():
     # A failed tool call is not evidence either.
     ledger.record("edit_file", '{"path": "x.js", "old_string": "a", "new_string": "b"}', {"error": "not found", "exit_code": 1}, 1)
     assert "claims_without_mutation" in ledger.check_completion("Listo.")["reasons"]
+
+
+def test_finishing_an_investigation_is_not_a_change_claim():
+    """'I have completed the review' / 'He terminado el análisis' end a
+    read-only task; only completing an *implementation* is a mutation claim."""
+    for text in (
+        "He terminado la revisión del código: el botón ya existe en projects.js.",
+        "I have completed the analysis of the code. No changes were needed.",
+        "Completé la lectura de los ficheros del proyecto.",
+        "Terminé de revisar el código; no hay cambios.",
+    ):
+        assert h.find_mutation_claims(text) == [], text
+    for text in (
+        "I have completed the implementation of the delete button.",
+        "He terminado de implementar el endpoint en server.py.",
+    ):
+        assert h.find_mutation_claims(text), text
+
+
+def test_rejection_message_offers_already_exists_branch():
+    ledger = h.TurnLedger(None, "add the delete button")
+    ledger.record("read_file", '{"path": "static/js/projects.js"}', {"output": "x", "exit_code": 0}, 1)
+    check = ledger.check_completion("I've added the delete button in the component.")
+    msg = ledger.rejection_message(check)
+    assert "ALREADY exists" in msg and "citing the file and lines" in msg

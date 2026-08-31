@@ -220,6 +220,31 @@ _TECH_CONTEXT_RE = re.compile(
 )
 
 
+# "I have completed the review / He terminado el análisis": finishing an
+# investigation is not a change. Applied to completion-type verbs only.
+_COMPLETION_VERB_RE = re.compile(
+    r"\b(?:completed|finished|resolved|done|complet[ae]d[oa]s?|terminad[oa]s?|finalizad[oa]s?|"
+    r"complet[eé]|termin[eé]|finalic[eé]|list[oa]s?)\b",
+    re.IGNORECASE,
+)
+_INVESTIGATION_OBJECT_RE = re.compile(
+    r"\b(?:review(?:ing)?|analy[sz](?:is|ing|e)|investigat(?:ion|ing|e)|explor(?:ation|ing|e)|"
+    r"inspect(?:ion|ing)|read(?:ing)?|search(?:ing)?|research|audit(?:ing)?|assessment|diagnos(?:is|ing)|"
+    r"revisi[oó]n|revisar|an[aá]lisis|analizar|investigaci[oó]n|investigar|exploraci[oó]n|explorar|"
+    r"inspecci[oó]n|inspeccionar|lectura|leer|b[uú]squeda|buscar|auditor[ií]a|auditar|diagn[oó]stico|"
+    r"evaluaci[oó]n|evaluar|comprobaci[oó]n|comprobar|verificaci[oó]n|verificar)\b",
+    re.IGNORECASE,
+)
+
+
+def _finishes_an_investigation(match_text: str, following: str) -> bool:
+    """True for "completed the analysis"-style matches: a completion verb whose
+    object (next ~50 chars) is an investigation, not a change."""
+    if not _COMPLETION_VERB_RE.search(match_text):
+        return False
+    return bool(_INVESTIGATION_OBJECT_RE.search(following[:50]))
+
+
 def find_mutation_claims(text: str, limit: int = 4, include_bare_done: bool = True) -> List[str]:
     """Return up to `limit` distinct snippets that read as 'I changed X' *about
     something technical* (see _TECH_CONTEXT_RE). Narrative first person is
@@ -242,6 +267,8 @@ def find_mutation_claims(text: str, limit: int = 4, include_bare_done: bool = Tr
             ctx = body[ctx_start:m.end() + 160]
             standalone = pat.pattern.startswith("^")  # bare "Done." style lines
             if not (has_paths or (terse and standalone) or _TECH_CONTEXT_RE.search(ctx)):
+                continue
+            if _finishes_an_investigation(m.group(0), body[m.end():m.end() + 50]):
                 continue
             key = m.group(0).strip().lower()
             if key in seen:
@@ -674,9 +701,11 @@ class TurnLedger:
         lines.append(
             "Nothing you described has happened. Do not apologize and do not restate the plan. "
             "Either (a) DO the work now — discover real files with glob/grep/ls, read them, then "
-            "change them with edit_file / apply_patch / write_file — or (b) if you cannot, reply "
-            "with ONE sentence saying that no changes were made and why. Never present unexecuted "
-            "work as done."
+            "change them with edit_file / apply_patch / write_file; or (b) if what was asked "
+            "ALREADY exists in the code, say exactly that, citing the file and lines you saw in a "
+            "tool result — do not describe it as something you did; or (c) if you cannot do it, "
+            "reply with ONE sentence saying that no changes were made and why. Never present "
+            "unexecuted work as done."
         )
         return "\n".join(lines)
 

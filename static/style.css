@@ -42318,6 +42318,7 @@ body:has(.sidebar.right-side) .project-active-pill { right: 12px; }
 .agent-progress-item.is-completed .agent-progress-text { text-decoration: line-through; opacity: .75; }
 .agent-progress-item.is-unverified .agent-progress-icon { color: var(--warn, #f0ad4e); }
 .agent-progress-tag { margin-left: auto; font-size: 10px; color: var(--warn, #f0ad4e); border: 1px solid var(--warn, #f0ad4e); border-radius: 8px; padding: 0 5px; flex-shrink: 0; }
+.agent-progress-tag.is-nowrite { color: var(--text-muted, #8a8f98); border-color: var(--text-muted, #8a8f98); }
 @keyframes agent-progress-pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
 
 /* Model controls pill + popover */

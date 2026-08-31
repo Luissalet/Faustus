@@ -1942,6 +1942,13 @@ import modelControls from './modelControls.js';
         const _gen = modelControls.getOverridesForSession(streamSessionId);
         if (_gen && Object.keys(_gen).length) fd.append('gen_overrides', JSON.stringify(_gen));
       } catch (_) {}
+      // /agents: one-shot delegation payload (see slashCommands._cmdAgents).
+      try {
+        if (window.__odysseusDelegateTasks && !approvalForSend) {
+          fd.append('delegate_tasks', String(window.__odysseusDelegateTasks));
+        }
+        window.__odysseusDelegateTasks = null;
+      } catch (_) {}
 
 
       // Superseded during preflight (uploads, document saves): a newer send
