@@ -269,9 +269,11 @@ async def collect_fit(model: str, target_ctx: Optional[int] = None) -> Dict[str,
 
     total_bytes = int((gpu.get("mem_total") or 0) * 1024 * 1024)
     used_bytes = int((gpu.get("mem_used") or 0) * 1024 * 1024)
-    # What Ollama itself holds does not count as "someone else's".
-    ollama_dedicated = int(((usage.get("gpu_mem") or {}).get("ollama") or {}).get("dedicated") or 0)
-    others = max(0, used_bytes - ollama_dedicated)
+    # What Ollama itself holds does not count as "someone else's". Take that
+    # from `ollama ps` rather than the WDDM counter: the counter reports a
+    # commitment that can outlive what is actually resident on the card.
+    ours = sum(int(m.get("size_vram") or 0) for m in (usage.get("ollama") or {}).get("models") or [])
+    others = max(0, used_bytes - ours)
 
     result = vram_fit.plan(
         vram_total_bytes=total_bytes,

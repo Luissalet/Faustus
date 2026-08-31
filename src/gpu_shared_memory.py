@@ -66,8 +66,13 @@ def warn_threshold_bytes() -> int:
     return DEFAULT_WARN_BYTES
 
 
-def _read_counter(path: str) -> Dict[str, int]:
-    """{instance name: value} for one wildcard counter path, via PDH."""
+def _read_counters(paths: List[str]) -> Dict[str, Dict[str, int]]:
+    """{path: {instance name: value}} for several wildcard counter paths.
+
+    One query for all of them: opening a PDH query and collecting the GPU
+    counter set is the expensive part (~150 ms), and the widget polls this
+    every 1.5 s while a model generates.
+    """
     import ctypes
     from ctypes import wintypes
 
@@ -87,35 +92,42 @@ def _read_counter(path: str) -> Dict[str, int]:
     if rc_of(pdh.PdhOpenQueryW(None, 0, ctypes.byref(query))) != 0:
         raise OSError("PdhOpenQueryW failed")
     try:
-        counter = wintypes.LPVOID()
-        rc = rc_of(pdh.PdhAddEnglishCounterW(query, path, 0, ctypes.byref(counter)))
-        if rc != 0:
-            raise OSError(f"PdhAddEnglishCounterW({path}) failed: {rc:#010x}")
+        counters = {}
+        for path in paths:
+            handle = wintypes.LPVOID()
+            rc = rc_of(pdh.PdhAddEnglishCounterW(query, path, 0, ctypes.byref(handle)))
+            if rc != 0:
+                raise OSError(f"PdhAddEnglishCounterW({path}) failed: {rc:#010x}")
+            counters[path] = handle
         rc = rc_of(pdh.PdhCollectQueryData(query))
         if rc != 0:
             raise OSError(f"PdhCollectQueryData failed: {rc:#010x}")
-        size = ctypes.c_uint32(0)
-        count = ctypes.c_uint32(0)
-        rc = rc_of(pdh.PdhGetFormattedCounterArrayW(
-            counter, PDH_FMT_LARGE, ctypes.byref(size), ctypes.byref(count), None
-        ))
-        if rc == 0 or count.value == 0:
-            return {}
-        if rc != PDH_MORE_DATA:
-            raise OSError(f"PdhGetFormattedCounterArrayW sizing failed: {rc:#010x}")
-        buf = ctypes.create_string_buffer(size.value)
-        rc = rc_of(pdh.PdhGetFormattedCounterArrayW(
-            counter, PDH_FMT_LARGE, ctypes.byref(size), ctypes.byref(count), buf
-        ))
-        if rc != 0:
-            raise OSError(f"PdhGetFormattedCounterArrayW failed: {rc:#010x}")
-        items = ctypes.cast(
-            buf, ctypes.POINTER(PDH_FMT_COUNTERVALUE_ITEM_W * count.value)
-        ).contents
-        out: Dict[str, int] = {}
-        for item in items:
-            if item.szName:
-                out[item.szName] = int(item.FmtValue.largeValue)
+
+        out: Dict[str, Dict[str, int]] = {}
+        for path, handle in counters.items():
+            values: Dict[str, int] = {}
+            out[path] = values
+            size = ctypes.c_uint32(0)
+            count = ctypes.c_uint32(0)
+            rc = rc_of(pdh.PdhGetFormattedCounterArrayW(
+                handle, PDH_FMT_LARGE, ctypes.byref(size), ctypes.byref(count), None
+            ))
+            if rc == 0 or count.value == 0:
+                continue
+            if rc != PDH_MORE_DATA:
+                raise OSError(f"PdhGetFormattedCounterArrayW sizing failed: {rc:#010x}")
+            buf = ctypes.create_string_buffer(size.value)
+            rc = rc_of(pdh.PdhGetFormattedCounterArrayW(
+                handle, PDH_FMT_LARGE, ctypes.byref(size), ctypes.byref(count), buf
+            ))
+            if rc != 0:
+                raise OSError(f"PdhGetFormattedCounterArrayW failed: {rc:#010x}")
+            items = ctypes.cast(
+                buf, ctypes.POINTER(PDH_FMT_COUNTERVALUE_ITEM_W * count.value)
+            ).contents
+            for item in items:
+                if item.szName:
+                    values[item.szName] = int(item.FmtValue.largeValue)
         return out
     finally:
         pdh.PdhCloseQuery(query)
@@ -123,8 +135,9 @@ def _read_counter(path: str) -> Dict[str, int]:
 
 def _rows() -> List[Dict[str, Any]]:
     """Per (pid, adapter) dedicated/shared bytes, from the WDDM counters."""
-    shared = _read_counter(_SHARED_PATH)
-    dedicated = _read_counter(_DEDICATED_PATH)
+    counters = _read_counters([_SHARED_PATH, _DEDICATED_PATH])
+    shared = counters.get(_SHARED_PATH, {})
+    dedicated = counters.get(_DEDICATED_PATH, {})
     by_key: Dict[tuple, Dict[str, Any]] = {}
     for source, values in (("shared", shared), ("dedicated", dedicated)):
         for name, value in values.items():
@@ -176,6 +189,10 @@ def _collect_uncached() -> Dict[str, Any]:
         "ollama": {
             "pids": sorted(pids),
             "shared": ollama_shared,
+            # WDDM commitment, not what nvidia-smi calls "used": Windows can
+            # evict a committed allocation and still count it here. Good enough
+            # to see that Ollama holds the card, not precise enough to do
+            # arithmetic with — the fit advisor uses `ollama ps` for that.
             "dedicated": ollama_dedicated,
             # The whole point of the module: weights paging over PCIe while
             # every other gauge still looks fine.

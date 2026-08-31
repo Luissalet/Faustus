@@ -2670,6 +2670,8 @@ def setup_chat_routes(
                                     # reliability harness (src/agent_harness.py)
                                     "round_info", "harness_check", "harness_summary",
                                     "progress_update",
+                                    # context ledger (src/context_ledger.py)
+                                    "context_ledger",
                                     # multi-agent delegation
                                     "subagent_event",
                                 ):

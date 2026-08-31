@@ -840,6 +840,43 @@ export async function restoreProgress(sessionId) {
   } catch (_) { /* offline / no progress yet */ }
 }
 
+
+// ── context ledger (FAUSTUS) ────────────────────────────────────────────────
+// "The local model ignored my instructions" is usually not a model problem: it
+// is 9k of tool schemas, skills and documents spent before the question. This
+// card puts the number on screen at the round it happens.
+
+function _fmtTok(n) {
+  const v = Number(n) || 0;
+  return v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(v);
+}
+
+export function renderContextLedger(json) {
+  const d = json.data || {};
+  const sections = Array.isArray(d.sections) ? d.sections : [];
+  if (!sections.length) return;
+  const head = d.context_length
+    ? `Context ${_fmtTok(d.total)} / ${_fmtTok(d.context_length)} · ${d.context_pct}% of the window`
+    : `Context ${_fmtTok(d.total)} tokens`;
+  const rows = sections.map(s => (
+    `<li class="ctx-row"><span class="ctx-row-label">${esc(s.label)}</span>` +
+    `<span class="ctx-row-tok">${_fmtTok(s.tokens)}</span>` +
+    `<span class="ctx-row-pct">${esc(String(s.pct))}%</span></li>`
+  )).join('');
+  const advice = (d.advice || []).map(a => (
+    `<div class="harness-foot ctx-advice ctx-advice-${esc(a.level || 'info')}">${esc(a.text)}</div>`
+  )).join('');
+  const slim = d.tool_slim && d.tool_slim.slimmed
+    ? `<div class="harness-foot ctx-advice ctx-advice-info">Tool prose trimmed to fit the window: ` +
+      `${_fmtTok(d.tool_slim.before)} → ${_fmtTok(d.tool_slim.after)} tokens ` +
+      `(descriptions capped at ${esc(String(d.tool_slim.limit))} chars, no tool removed).</div>`
+    : '';
+  const warn = (d.advice || []).some(a => a.level === 'warn');
+  _card(warn ? 'context-warn' : 'context', head,
+        `<ul class="harness-list ctx-ledger">${rows}</ul>${slim}${advice}`,
+        { open: warn, icon: '🧮' });
+}
+
 // ── event wiring ─────────────────────────────────────────────────────────────
 
 export function handleStreamEvent(json, { sessionId = null } = {}) {
@@ -850,6 +887,7 @@ export function handleStreamEvent(json, { sessionId = null } = {}) {
       renderHarnessSummary(json); return true;
     case 'progress_update': renderProgress(json.todos || [], { sessionId }); return true;
     case 'queue_status': renderQueueStatus(json); return true;
+    case 'context_ledger': renderContextLedger(json); return true;
     case 'tool_progress':
       if (json.subagent) { renderSubagentEvent(json); return true; }
       return false;

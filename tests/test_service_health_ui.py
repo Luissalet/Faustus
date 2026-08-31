@@ -25,9 +25,13 @@ class TestPageLoadsIt:
         assert 'class="user-bar-actions"' in HTML
         assert "#sidebar-user-bar .user-bar-actions" in JS
 
-    def test_stylesheet_version_was_bumped_with_the_new_css(self):
-        """A stale ?v= means Luis sees none of this without a hard reload."""
-        assert "style.css?v=20260831servicehealth1" in HTML
+    def test_stylesheet_is_versioned_at_all(self):
+        """A stale ?v= means none of this new CSS is seen without a hard reload,
+        so the rule is: touch style.css -> bump the token. The token itself
+        moves with every CSS change, so pin only the shape."""
+        m = re.search(r"style\.css\?v=([A-Za-z0-9_.-]+)", HTML)
+        assert m, "style.css must be served with a cache-busting ?v="
+        assert m.group(1) != "20260831projectsframing", "version not bumped"
 
 
 class TestModuleBehaviour:

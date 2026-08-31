@@ -4636,6 +4636,8 @@ async def stream_agent_loop(
     _pinned_fallback_route = None
     _last_route_request_messages = _initial_route_request_messages
     _last_route_context_length = _initial_route_context_length
+    # Last context ledger pushed to the client (FAUSTUS) — see src/context_ledger.
+    _context_ledger_sent = None
 
     # Loop-breaker state. Small models (e.g. deepseek-v4-flash) can get
     # stuck firing the same tool call over and over with no text — burns
@@ -5145,6 +5147,18 @@ async def stream_agent_loop(
         if round_num == 1 and not _approved_result_injected:
             _active_route_state["request_messages"] = _initial_route_request_messages
         all_tool_schemas = _tool_schemas_for_route(_active_route_state)
+        # Small windows only (FAUSTUS): shorten tool prose so the schemas stop
+        # eating a 4k/8k/16k context. Never drops a tool — see src/tool_slimming.
+        _slim_report = {"slimmed": False}
+        try:
+            from src.tool_slimming import slim_tool_schemas
+            all_tool_schemas, _slim_report = slim_tool_schemas(
+                all_tool_schemas,
+                context_length=_last_route_context_length or context_length,
+                enabled=bool(get_setting("agent_tool_schema_slim", True)),
+            )
+        except Exception as _slim_err:
+            logger.debug("[tool-slim] skipped: %s", _slim_err)
         agent_stream_timeout = int(get_setting("agent_stream_timeout_seconds", 300) or 300)
         # Local runners can sit silent for minutes while they prefill a long
         # prompt (qwen3-coder-next on a 12 GB card: ~280 s for 14k tokens). The
@@ -5297,6 +5311,32 @@ async def stream_agent_loop(
                 output_tokens=round_output_tokens,
                 usage_source=usage_source,
             ))
+        # --- Context ledger (FAUSTUS): what is eating the window this round.
+        # Roadmap's "agent prompt/context bloat" starts as a measurement problem:
+        # tool schemas, skills, memory and documents are spent before the user's
+        # question, and nothing said so. Never allowed to break a round.
+        try:
+            from src.context_ledger import build_ledger, should_emit, summary_line
+            _ledger_now = build_ledger(
+                messages,
+                all_tool_schemas,
+                context_length=_last_route_context_length or context_length,
+                model=model,
+            )
+            if _slim_report.get("slimmed"):
+                _ledger_now["tool_slim"] = _slim_report
+            if should_emit(_context_ledger_sent, _ledger_now):
+                _context_ledger_sent = _ledger_now
+                logger.info("[context-ledger] round=%s %s",
+                            round_num, summary_line(_ledger_now))
+                yield ("data: " + json.dumps({
+                    "type": "context_ledger",
+                    "round": round_num,
+                    "data": _ledger_now,
+                }) + "\n\n")
+        except Exception as _cl_err:
+            logger.debug("[context-ledger] skipped: %s", _cl_err)
+
         logger.info(
             "[agent-timing] round_start round=%s model=%s endpoint=%s prompt_tokens=%s tools=%s native_tools=%s timeout=%s",
             round_num,
