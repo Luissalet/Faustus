@@ -1,9 +1,12 @@
 # routes/session_routes.py
+import io
+import os
 import re
-import html
 import json
 import uuid
+import zipfile
 from datetime import datetime
+from urllib.parse import quote as _urlquote
 from fastapi import APIRouter, Form, HTTPException, Response, Request
 import logging
 
@@ -22,6 +25,128 @@ def _sanitize_export_filename(name: str) -> str:
     name = name if isinstance(name, str) else ""
     name = re.sub(r"[^A-Za-z0-9._-]", "_", name)
     return name[:128]
+
+
+def _export_download_name(name: str) -> str:
+    """Strip everything that could break out of the header or the filesystem
+    while KEEPING non-ASCII characters intact.
+
+    The ASCII-only ``_sanitize_export_filename`` is still what guards the
+    user-supplied ``?filename=`` parameter. This one guards the name the
+    renderer *derived* (usually from the chat title), which legitimately
+    contains accents, spaces and CJK; those survive here and are carried by
+    the RFC 5987 ``filename*`` parameter instead of being mangled to "_".
+    """
+    name = name if isinstance(name, str) else ""
+    name = re.sub(r"[\x00-\x1f\x7f]", "", name)       # CR/LF header injection
+    name = re.sub(r'[\\/"]', "_", name)               # path + quote escapes
+    name = name.strip().lstrip(".")
+    return name[:180] or "export"
+
+
+def _content_disposition(name: str) -> str:
+    """An ``attachment`` header both halves of the world can read.
+
+    Old code emitted a bare, unquoted, unencoded ``filename=`` — a chat named
+    "Informe 2026" produced ``filename=Informe 2026.md``, whose unquoted space
+    truncates the name at "Informe" in every browser, and a non-Latin-1 byte
+    made Starlette raise outright. RFC 6266 says: quote the ASCII fallback and
+    add ``filename*=UTF-8''<pct-encoded>`` for the real name.
+    """
+    safe = _export_download_name(name)
+    ascii_fallback = _sanitize_export_filename(safe) or "export"
+    return (
+        'attachment; filename="%s"; filename*=UTF-8\'\'%s'
+        % (ascii_fallback, _urlquote(safe, safe=""))
+    )
+
+
+def _env_int(key: str, default: int) -> int:
+    try:
+        value = int(str(os.environ.get(key, "")).strip())
+    except (TypeError, ValueError):
+        return default
+    return value if value > 0 else default
+
+
+# Batch-export ceilings. A 500-chat PDF export is a process-killer: every
+# renderer output is held in RAM at once while the zip is built, so both the
+# count and the accumulated payload are capped and refused with a 400 rather
+# than being allowed to OOM the server.
+EXPORT_BATCH_MAX_SESSIONS = _env_int("EXPORT_BATCH_MAX_SESSIONS", 100)
+EXPORT_BATCH_MAX_BYTES = _env_int("EXPORT_BATCH_MAX_BYTES", 200 * 1024 * 1024)
+
+
+def _unique_zip_name(name: str, taken: set) -> str:
+    """Two chats can share a title, and a zip entry can't. Suffix -2, -3, …
+    before the extension so 'Notes.pdf' and 'Notes.pdf' become
+    'Notes.pdf' and 'Notes-2.pdf' rather than one silently overwriting the
+    other (zipfile happily writes duplicate members; readers keep the last)."""
+    candidate = _export_download_name(name)
+    if candidate not in taken:
+        taken.add(candidate)
+        return candidate
+    stem, dot, ext = candidate.rpartition(".")
+    if not dot:
+        stem, ext = candidate, ""
+    n = 2
+    while True:
+        alt = f"{stem}-{n}{dot}{ext}" if dot else f"{stem}-{n}"
+        if alt not in taken:
+            taken.add(alt)
+            return alt
+        n += 1
+
+
+def _md_cell(value) -> str:
+    """Escape a value for a Markdown table cell."""
+    text = "" if value is None else str(value)
+    text = text.replace("\r", " ").replace("\n", " ")
+    return text.replace("|", "\\|").strip() or "—"
+
+
+def _build_export_index(entries, failures, fmt: str) -> str:
+    """The zip's index.md: what is inside, and what failed to render."""
+    lines = [
+        "# Exported conversations",
+        "",
+        f"*{len(entries)} conversation(s) exported as `{fmt}` on "
+        f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.*",
+        "",
+        "| # | Conversation | Model | Last activity | Messages | File |",
+        "| --- | --- | --- | --- | --- | --- |",
+    ]
+    for i, e in enumerate(entries, 1):
+        lines.append(
+            "| {n} | {name} | {model} | {date} | {count} | `{file}` |".format(
+                n=i,
+                name=_md_cell(e.get("name")),
+                model=_md_cell(e.get("model")),
+                date=_md_cell(e.get("date")),
+                count=_md_cell(e.get("message_count")),
+                file=_md_cell(e.get("filename")),
+            )
+        )
+    if failures:
+        lines += [
+            "",
+            "## Could not be exported",
+            "",
+            f"{len(failures)} conversation(s) failed to render as `{fmt}`. The "
+            "zip carries a `.txt` with the error in place of each one, so the "
+            "rest of the batch still made it out.",
+            "",
+        ]
+        for f in failures:
+            lines.append(
+                "- **{name}** → `{file}`: {err}".format(
+                    name=_md_cell(f.get("name")),
+                    file=_md_cell(f.get("filename")),
+                    err=_md_cell(f.get("error")),
+                )
+            )
+    lines.append("")
+    return "\n".join(lines)
 
 
 # Blind-compare helper sessions are created with this name prefix. Their real
@@ -840,11 +965,44 @@ def setup_session_routes(
         finally:
             db.close()
 
+    def _export_module():
+        """Import the exporter lazily.
+
+        Renderers pull in optional heavy deps (reportlab, python-docx); doing
+        this at module import would make every session route depend on them.
+        """
+        from src import chat_export
+        return chat_export
+
+    def _resolve_fmt(fmt: str, chat_export):
+        """Normalise and validate ?fmt=. An unknown format is a 400 naming the
+        valid ones — the old route silently fell through to markdown, so
+        `?fmt=pdf` (before PDF existed) handed back a .md file pretending to
+        be what was asked for."""
+        candidate = (fmt or "").strip().lower().lstrip(".")
+        if not candidate:
+            candidate = "md"
+        if candidate not in chat_export.SUPPORTED_FORMATS:
+            raise HTTPException(
+                400,
+                "Unsupported export format '%s'. Valid formats: %s"
+                % (candidate, ", ".join(chat_export.SUPPORTED_FORMATS)),
+            )
+        return candidate
+
+    def _render_one(chat_export, session, fmt: str, filename: str = ""):
+        """build_transcript + render, with ExportUnavailable left to the caller."""
+        transcript = chat_export.build_transcript(session)
+        return chat_export.render(transcript, fmt, filename=filename)
+
     @router.get("/session/{sid}/export")
     def export_session(request: Request, sid: str, fmt: str = "md", filename: str = ""):
-        """Export conversation history as a downloadable file.
+        """Export one conversation as a downloadable file.
 
-        Supported formats: md (markdown), txt (plain text), json, html
+        Formats: md, txt, json, html, pdf, docx — all rendered by
+        ``src/chat_export.py`` from the shared block model, so every format
+        sees the same transcript (tool calls and attachments included) instead
+        of the four hand-rolled string builders that used to live here.
         """
         _verify_session_owner(request, sid)
         try:
@@ -852,82 +1010,175 @@ def setup_session_routes(
         except KeyError:
             raise HTTPException(404, f"Session {sid} not found")
 
-        safe_name = re.sub(r'[^\w\-_]', '_', session.name)
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = _sanitize_export_filename(filename)
+        chat_export = _export_module()
+        fmt = _resolve_fmt(fmt, chat_export)
+        # The caller-supplied name stays ASCII-sanitised (it lands in a header
+        # and, on the client, on a filesystem). The name the renderer derives
+        # from the chat title does not — see _content_disposition.
+        requested = _sanitize_export_filename(filename)
 
-        if fmt == "json":
-            import json as _json
-            data = {
-                "name": session.name,
-                "model": session.model,
-                "exported": datetime.now().isoformat(),
-                "messages": [{"role": m.role, "content": m.content} for m in session.history],
-            }
-            out_name = filename or f"conversation_{safe_name}_{timestamp}.json"
-            return Response(
-                content=_json.dumps(data, indent=2, ensure_ascii=False),
-                media_type="application/json",
-                headers={"Content-Disposition": f"attachment; filename={out_name}"},
-            )
+        try:
+            result = _render_one(chat_export, session, fmt, requested)
+        except chat_export.ExportUnavailable as e:
+            # A missing optional dependency is not a server fault: 503 with the
+            # message verbatim, which names the package to install.
+            raise HTTPException(503, str(e))
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception("Export of session %s as %s failed", sid, fmt)
+            raise HTTPException(500, f"Could not export this conversation as {fmt}: {e}")
 
-        if fmt == "txt":
-            lines = []
-            for m in session.history:
-                lines.append(f"[{m.role.upper()}]")
-                lines.append(_content_to_text(m.content))
-                lines.append("")
-            out_name = filename or f"conversation_{safe_name}_{timestamp}.txt"
-            return Response(
-                content="\n".join(lines),
-                media_type="text/plain",
-                headers={"Content-Disposition": f"attachment; filename={out_name}"},
-            )
-
-        if fmt == "html":
-            safe_title = html.escape(session.name or "")
-            html_parts = [
-                "<!DOCTYPE html><html><head>",
-                f"<meta charset='utf-8'><title>{safe_title}</title>",
-                "<style>body{font-family:monospace;max-width:800px;margin:2rem auto;padding:0 1rem;background:#111;color:#ddd}",
-                ".msg{margin:1rem 0;padding:0.8rem;border-radius:6px;border:1px solid #333}",
-                ".user{background:#1a1a2e}.ai{background:#1a2e1a}",
-                ".role{font-weight:bold;margin-bottom:0.4rem;opacity:0.7;text-transform:uppercase;font-size:0.85em}",
-                "pre{background:#000;padding:0.5rem;border-radius:4px;overflow-x:auto}</style></head><body>",
-                f"<h1>{safe_title}</h1>",
-            ]
-            for m in session.history:
-                cls = "user" if m.role == "user" else "ai"
-                content = _content_to_text(m.content).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-                content = content.replace("\n", "<br>")
-                html_parts.append(f'<div class="msg {cls}"><div class="role">{m.role}</div>{content}</div>')
-            html_parts.append("</body></html>")
-            out_name = filename or f"conversation_{safe_name}_{timestamp}.html"
-            return Response(
-                content="\n".join(html_parts),
-                media_type="text/html",
-                headers={"Content-Disposition": f"attachment; filename={out_name}"},
-            )
-
-        # Default: markdown
-        markdown_lines = []
-        markdown_lines.append(f"# Conversation: {session.name}")
-        markdown_lines.append(f"*Exported on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*")
-        markdown_lines.append(f"*Model: {session.model}*")
-        markdown_lines.append("\n---\n")
-        for message in session.history:
-            role = message.role.upper()
-            content = _content_to_text(message.content)
-            markdown_lines.append(f"### {role}")
-            markdown_lines.append(f"{content}\n")
-            markdown_lines.append("---\n")
-        if len(markdown_lines) > 3:
-            markdown_lines.pop()
-        out_name = filename or f"conversation_{safe_name}_{timestamp}.md"
+        out_name = result.filename or requested or f"conversation_{sid}.{fmt}"
         return Response(
-            content="\n".join(markdown_lines),
-            media_type="text/markdown",
-            headers={"Content-Disposition": f"attachment; filename={out_name}"},
+            content=result.content,
+            media_type=result.media_type or "application/octet-stream",
+            headers={"Content-Disposition": _content_disposition(out_name)},
+        )
+
+    @router.get("/sessions/export")
+    def export_sessions_batch(
+        request: Request,
+        fmt: str = "md",
+        project: str = "",
+        folder: str = "",
+        ids: str = "",
+        filename: str = "",
+    ):
+        """Export a whole project / folder / id-list as one .zip.
+
+        The zip carries one file per conversation plus an `index.md` listing
+        them. Membership is the same rule the project routes use (a chat is in
+        a project when its `folder` column equals the project's folder), and
+        the owner scope is the same `owner_filter` the session list uses — no
+        second implementation of either.
+        """
+        user = effective_user(request)
+        if not user and not _auth_disabled():
+            raise HTTPException(401, "Authentication required")
+
+        chat_export = _export_module()
+        fmt = _resolve_fmt(fmt, chat_export)
+
+        id_list = [p.strip() for p in (ids or "").split(",") if p.strip()]
+        project_id = (project or "").strip()
+        folder_name = (folder or "").strip()
+        if not (project_id or folder_name or id_list):
+            raise HTTPException(
+                400, "Nothing selected: pass project=<id>, folder=<name> or ids=a,b,c"
+            )
+        # Cap the id list before it becomes an IN (...) of unbounded width; the
+        # row cap below would catch it anyway, but not before the query ran.
+        if len(id_list) > EXPORT_BATCH_MAX_SESSIONS:
+            raise HTTPException(
+                400,
+                "Too many conversations selected (%d); the cap is %d per export."
+                % (len(id_list), EXPORT_BATCH_MAX_SESSIONS),
+            )
+
+        scope_label = "chats"
+        if project_id:
+            from services.projects import get_store
+            row = get_store().get(project_id, user)
+            if not row:
+                raise HTTPException(404, f"Project {project_id} not found")
+            # Same membership rule as DELETE /api/projects/{id}/sessions.
+            folder_name = row.get("folder") or ""
+            if not folder_name:
+                # Without a folder there is no membership rule to apply, and
+                # falling through would silently export every chat the user has.
+                raise HTTPException(
+                    400, f"Project {project_id} has no folder, so it groups no chats"
+                )
+            scope_label = row.get("name") or folder_name
+        elif folder_name:
+            scope_label = folder_name
+
+        db = SessionLocal()
+        try:
+            q = db.query(
+                DbSession.id, DbSession.name, DbSession.model, DbSession.folder,
+                DbSession.message_count, DbSession.updated_at, DbSession.created_at,
+                DbSession.last_message_at,
+            ).filter(DbSession.archived == False)  # noqa: E712
+            q = owner_filter(q, DbSession, user)
+            if folder_name:
+                q = q.filter(DbSession.folder == folder_name)
+            if id_list:
+                q = q.filter(DbSession.id.in_(id_list))
+            rows = q.order_by(DbSession.updated_at.desc()).all()
+        finally:
+            db.close()
+
+        if not rows:
+            raise HTTPException(404, "No conversations matched this selection")
+        if len(rows) > EXPORT_BATCH_MAX_SESSIONS:
+            raise HTTPException(
+                400,
+                "This selection has %d conversations; a single export is capped at "
+                "%d. Narrow the selection (or raise EXPORT_BATCH_MAX_SESSIONS)."
+                % (len(rows), EXPORT_BATCH_MAX_SESSIONS),
+            )
+
+        entries, failures = [], []
+        taken = set()
+        total_bytes = 0
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for row in rows:
+                title = row.name or row.id
+                when = row.last_message_at or row.updated_at or row.created_at
+                error = ""
+                try:
+                    session = session_manager.get_session(row.id)
+                    result = _render_one(chat_export, session, fmt)
+                    payload = result.content
+                    member = _unique_zip_name(result.filename or f"{title}.{fmt}", taken)
+                except chat_export.ExportUnavailable as e:
+                    # Global, not per-chat: reportlab/python-docx is missing, so
+                    # every remaining conversation would fail the same way. Fail
+                    # the whole batch with the installable message instead of
+                    # zipping N identical error notes.
+                    raise HTTPException(503, str(e))
+                except Exception as e:  # noqa: BLE001 - one bad chat must not sink the batch
+                    logger.warning("Batch export: session %s failed as %s: %s", row.id, fmt, e)
+                    error = f"{type(e).__name__}: {e}"
+                    member = _unique_zip_name(f"{title}.error.txt", taken)
+                    payload = (
+                        f"{title}\n\nThis conversation could not be exported as "
+                        f"{fmt}.\n\n{error}\n"
+                    ).encode("utf-8")
+
+                total_bytes += len(payload)
+                if total_bytes > EXPORT_BATCH_MAX_BYTES:
+                    raise HTTPException(
+                        400,
+                        "This export exceeds the %d MB limit for a single batch. "
+                        "Export fewer conversations, or pick a lighter format."
+                        % (EXPORT_BATCH_MAX_BYTES // (1024 * 1024)),
+                    )
+                zf.writestr(member, payload)
+                if error:
+                    failures.append({"name": title, "filename": member, "error": error})
+                else:
+                    entries.append({
+                        "name": title,
+                        "model": _public_model(row.name, row.model),
+                        "date": when.strftime("%Y-%m-%d %H:%M") if when else "",
+                        "message_count": row.message_count or 0,
+                        "filename": member,
+                    })
+            zf.writestr("index.md", _build_export_index(entries, failures, fmt))
+
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        out_name = (
+            _sanitize_export_filename(filename)
+            or _export_download_name(f"{scope_label}_{fmt}_{stamp}.zip")
+        )
+        return Response(
+            content=buf.getvalue(),
+            media_type="application/zip",
+            headers={"Content-Disposition": _content_disposition(out_name)},
         )
     
     @router.post("/sessions/save")

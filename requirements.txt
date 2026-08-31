@@ -22,6 +22,15 @@ youtube-transcript-api
 # Markdown rendering for research reports (src/visual_report.py).
 # Imported at module-top so it's a hard core dep, not optional.
 markdown
+# PDF export of chat transcripts (src/chat_export_pdf.py). Pure Python and
+# BSD-licensed, which is why it beat the alternatives: WeasyPrint needs
+# Pango/cairo/gdk-pixbuf as native libraries (they aren't there in the Windows
+# portable build) and a headless Chromium is ~150 MB plus a second process.
+# 4.0+ for Table(splitInRow=...), so a tall row splits across pages.
+reportlab>=4.0
+# DOCX export of chat transcripts (src/chat_export_docx.py). MIT, pure Python,
+# no Word/COM automation involved - it writes the OOXML package directly.
+python-docx
 # HTML sanitizer for rendered research reports (src/visual_report.py). Report
 # content is untrusted (LLM output over crawled pages) and report pages run
 # under a relaxed CSP, so the rendered HTML is allowlist-sanitized.

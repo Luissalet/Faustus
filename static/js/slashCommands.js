@@ -25,6 +25,7 @@ import cookbookModule from './cookbook.js';
 import { EVAL_PROMPTS } from './compare/index.js';
 import { PROVIDER_DEVICE_FLOWS, formatDeviceFlowError, runProviderDeviceFlow } from './providerDeviceFlow.js';
 import { getSettings } from './appConfig.js';
+import { EXPORT_FORMAT_IDS, exportSession, exportSessionsZip } from './chatExport.js';
 
 // ── Module state ──────────────────────────────────────────────────────
 
@@ -1195,7 +1196,8 @@ async function _cmdSessionClear(args, ctx) {
 
 async function _cmdSessionExport(args, ctx) {
   if (!ctx.sid) { slashReply('No active session'); return true; }
-  // Parse linux-style: cat > file.json, cat > notes.txt, cat > chat.html
+  const _esc = (v) => (ctx?.esc ? ctx.esc(String(v)) : String(v));
+  // Parse linux-style: cat > file.json, cat > notes.txt, cat > chat.pdf
   let filename = '';
   let fmt = 'md';
   const raw = args.join(' ').trim();
@@ -1203,15 +1205,47 @@ async function _cmdSessionExport(args, ctx) {
   if (redir) {
     filename = redir[1].trim();
     const ext = filename.split('.').pop().toLowerCase();
-    if (['json','txt','html','md'].includes(ext)) fmt = ext;
+    if (EXPORT_FORMAT_IDS.includes(ext)) fmt = ext;
   } else if (raw) {
     const a = raw.toLowerCase();
-    if (['json','txt','html','md'].includes(a)) fmt = a;
+    if (EXPORT_FORMAT_IDS.includes(a)) {
+      fmt = a;
+    } else {
+      // Say so instead of silently handing back markdown, which is what the
+      // old route did for every format it did not recognise.
+      slashReply(`Unknown export format "${_esc(a)}". Try: ${EXPORT_FORMAT_IDS.join(', ')}`);
+      return true;
+    }
   }
-  const params = new URLSearchParams({ fmt });
-  if (filename) params.set('filename', filename);
-  window.open(`${API_BASE}/api/session/${ctx.sid}/export?${params}`, '_blank');
-  slashReply(`Exporting as .${fmt}${filename ? ' → ' + filename : ''}...`);
+  slashReply(`Exporting as .${_esc(fmt)}${filename ? ' &rarr; ' + _esc(filename) : ''}...`);
+  await exportSession(ctx.sid, fmt, {
+    filename,
+    onError: (msg) => slashReply(_esc(msg)),
+  });
+  return true;
+}
+
+async function _cmdSessionExportAll(args, ctx) {
+  const _esc = (v) => (ctx?.esc ? ctx.esc(String(v)) : String(v));
+  const argv = args.map(a => String(a || '').trim()).filter(Boolean);
+  let fmt = 'md';
+  const fmtIdx = argv.findIndex(a => EXPORT_FORMAT_IDS.includes(a.toLowerCase()));
+  if (fmtIdx >= 0) fmt = argv.splice(fmtIdx, 1)[0].toLowerCase();
+  let folder = argv.join(' ').trim();
+  if (!folder) {
+    const sessions = sessionModule.getSessions();
+    const current = ctx.sid ? sessions.find(s => s.id === ctx.sid) : null;
+    folder = (current && current.folder) || '';
+  }
+  if (!folder) {
+    slashReply('This chat is not in a folder. Usage: <code>/chats export-all &lt;folder&gt; [pdf]</code>');
+    return true;
+  }
+  slashReply(`Zipping folder "${_esc(folder)}" as .${_esc(fmt)}...`);
+  await exportSessionsZip({ folder }, fmt, {
+    onError: (msg) => slashReply(_esc(msg)),
+    onDone: (name) => slashReply(`Downloaded <code>${_esc(name)}</code>`),
+  });
   return true;
 }
 
@@ -6362,7 +6396,8 @@ const COMMANDS = {
       'sort':        { handler: _cmdSessionSort,        alias: [],                 help: 'Auto-sort into folders',      usage: '/chats sort' },
       'info':        { handler: _cmdSessionInfo,        alias: ['stat'],           help: 'Show chat details',           usage: '/chats info' },
       'clear':       { handler: _cmdSessionClear,       alias: [],                 help: 'Clear chat display',          usage: '/chats clear' },
-      'export':      { handler: _cmdSessionExport,      alias: ['cat'],            help: 'Download as markdown',        usage: '/chats export' }
+      'export':      { handler: _cmdSessionExport,      alias: ['cat'],            help: 'Download this chat (md/txt/json/html/pdf/docx)', usage: '/chats export [fmt|> file.pdf]' },
+      'export-all':  { handler: _cmdSessionExportAll,   alias: ['zip'],            help: 'Download a whole folder as a .zip', usage: '/chats export-all [folder] [fmt]' }
     }
   },
   toggle: {
@@ -6903,6 +6938,8 @@ export const LEGACY_ALIASES = {
   'info':        { parent: 'chats', sub: 'info' },
   'clear':       { parent: 'chats', sub: 'clear' },
   'export':      { parent: 'chats', sub: 'export' },
+  'export-all':  { parent: 'chats', sub: 'export-all' },
+  'zip':         { parent: 'chats', sub: 'export-all' },
   'web':         { parent: 'toggle', sub: 'web' },
   'bash':        { parent: 'toggle', sub: 'bash' },
   'research':    { parent: 'toggle', sub: 'research' },

@@ -1017,11 +1017,24 @@ def test_email_thread_rendering_sanitizes_body_html():
 
 
 def test_session_html_export_escapes_name():
+    """The chat name must never reach an export as live markup.
+
+    The hand-rolled HTML builder that used to live in the export route (with
+    its `safe_title = html.escape(...)`) is gone: every format now renders in
+    src/chat_export.py from the shared block model. So the invariant here is
+    that the route builds no markup at all — it hands the session to the
+    renderer and returns its bytes. Escaping inside the renderer is pinned by
+    tests/test_chat_export.py (the XSS-payload cases), which is where the
+    markup now lives.
+    """
     src = Path(__file__).resolve().parents[1] / "routes" / "session_routes.py"
     text = src.read_text(encoding="utf-8")
-    assert "safe_title = html.escape(session.name" in text
-    assert "<title>{session.name}" not in text
-    assert "<h1>{session.name}</h1>" not in text
+    export_route = text.split('@router.get("/session/{sid}/export")', 1)[1]
+    export_route = export_route.split('@router.get("/sessions/export")', 1)[0]
+    assert "chat_export.build_transcript" in text or "_render_one(" in export_route
+    for markup in ("<title>", "<h1>", "<div", "<body", "<!DOCTYPE"):
+        assert markup not in export_route, markup
+    assert "session.name" not in export_route
 
 
 def test_mcp_oauth_page_escapes_reflected_values():

@@ -8,6 +8,7 @@ import { providerLogo } from './providers.js';
 import { initModelPicker, updateModelPicker } from './modelPicker.js?v=20260722ctxheader1';
 import themeModule from './theme.js';
 import spinnerModule from './spinner.js';
+import { exportSession, exportSessionsZip, openExportFormatMenu } from './chatExport.js';
 
 const API_BASE = window.location.origin;
 
@@ -555,6 +556,18 @@ async function moveToFolder(sessionId, folderName) {
   renderSessionList();
 }
 
+const _EXPORT_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
+
+/** Run an export and report the outcome through the sidebar's own toasts —
+ *  a 400/503 from the server must be visible, not a silent no-op. */
+async function _runExport(run, startingLabel) {
+  if (startingLabel) uiModule.showToast(startingLabel);
+  await run({
+    onError: (msg) => uiModule.showError(msg),
+    onDone: (name) => uiModule.showToast(`Downloaded ${name}`),
+  });
+}
+
 /** Build the "Move to folder" submenu for a session dropdown. */
 function buildFolderSubmenu(sessionId, currentFolder, dropdown) {
   const folders = getFolderNames();
@@ -989,9 +1002,25 @@ function createSessionItem(s) {
     }
   }
 
+  // Export this chat — a format picker, not a fixed markdown download.
+  const exportItem = document.createElement('div');
+  exportItem.className = 'dropdown-item-compact session-export-item';
+  exportItem.innerHTML = _icon(_EXPORT_ICON) + '<span>Export</span><span class="dropdown-shortcut">▸</span>';
+  exportItem.addEventListener('click', (e) => {
+    e.stopPropagation();
+    dropdown.style.display = 'none';
+    openExportFormatMenu(exportItem, (f) => {
+      _runExport(
+        (cbs) => exportSession(s.id, f.id, cbs),
+        `Exporting “${s.name || 'chat'}” as ${f.label}…`,
+      );
+    });
+  });
+
   // Copy & Move to folder
   const folderItem = buildFolderSubmenu(s.id, s.folder, dropdown);
   dropdown.appendChild(copyItem);
+  dropdown.appendChild(exportItem);
   dropdown.appendChild(folderItem);
 
   // Separator before destructive actions
@@ -1451,6 +1480,30 @@ function _renderSessionListImpl() {
     countSpan.textContent = `(${folders[folderName].length})`;
     header.appendChild(countSpan);
 
+    // Export the whole folder as one .zip (one file per chat + index.md).
+    const exportFolderBtn = document.createElement('button');
+    exportFolderBtn.className = 'folder-delete-btn folder-export-btn';
+    exportFolderBtn.innerHTML = _EXPORT_ICON;
+    exportFolderBtn.title = `Export "${folderName}" as a .zip`;
+    // .folder-delete-btn:hover paints red (it means "destructive"); this one
+    // is not, and an inline colour outranks that rule without touching the
+    // stylesheet.
+    exportFolderBtn.addEventListener('mouseenter', () => {
+      exportFolderBtn.style.color = 'var(--accent-primary, var(--fg))';
+    });
+    exportFolderBtn.addEventListener('mouseleave', () => { exportFolderBtn.style.color = ''; });
+    exportFolderBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openExportFormatMenu(exportFolderBtn, (f) => {
+        const count = folders[folderName].length;
+        _runExport(
+          (cbs) => exportSessionsZip({ folder: folderName }, f.id, cbs),
+          `Zipping ${count} chat${count !== 1 ? 's' : ''} from \u201c${folderName}\u201d as ${f.label}\u2026`,
+        );
+      });
+    });
+    header.appendChild(exportFolderBtn);
+
     // Delete folder button
     const deleteBtn = document.createElement('button');
     deleteBtn.className = 'folder-delete-btn';
@@ -1781,8 +1834,10 @@ function _updateBulkCount() {
   const count = _selectedIds.size;
   const archiveBtn = document.getElementById('session-bulk-archive');
   const deleteBtn = document.getElementById('session-bulk-delete');
+  const exportBtn = document.getElementById('session-bulk-export');
   if (archiveBtn) { archiveBtn.disabled = count === 0; archiveBtn.style.opacity = count === 0 ? '0.2' : ''; }
   if (deleteBtn) { deleteBtn.disabled = count === 0; deleteBtn.style.opacity = count === 0 ? '0.2' : ''; }
+  if (exportBtn) { exportBtn.disabled = count === 0; exportBtn.style.opacity = count === 0 ? '0.2' : ''; }
 }
 
 function _initBulkSelect() {
@@ -1796,6 +1851,30 @@ function _initBulkSelect() {
   }
   const cancelBtn = document.getElementById('session-bulk-cancel');
   if (cancelBtn) cancelBtn.addEventListener('click', () => _exitSelectMode());
+
+  // "Export selected" — built here rather than in index.html so the whole
+  // export feature lives in one place. Sends the picked ids to the batch
+  // endpoint, which answers with a single .zip.
+  const archiveBtn0 = document.getElementById('session-bulk-archive');
+  if (archiveBtn0 && !document.getElementById('session-bulk-export')) {
+    const exportBtn = document.createElement('button');
+    exportBtn.className = 'session-bulk-btn';
+    exportBtn.id = 'session-bulk-export';
+    exportBtn.title = 'Export selected as a .zip';
+    exportBtn.innerHTML = _EXPORT_ICON;
+    exportBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (_selectedIds.size === 0) return;
+      const ids = [..._selectedIds];
+      openExportFormatMenu(exportBtn, (f) => {
+        _runExport(
+          (cbs) => exportSessionsZip({ ids }, f.id, cbs),
+          `Zipping ${ids.length} chat${ids.length !== 1 ? 's' : ''} as ${f.label}…`,
+        );
+      });
+    });
+    archiveBtn0.parentNode.insertBefore(exportBtn, archiveBtn0);
+  }
 
   // Select from funnel dropdown
   const selectFromDropdown = document.getElementById('session-select-from-dropdown');

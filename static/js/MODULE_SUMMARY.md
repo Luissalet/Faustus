@@ -96,6 +96,7 @@ The largest and most central subsystem. Chat submission → backend SSE → prog
 | Module | Responsibility |
 |---|---|
 | **`sessions.js`** | Chat session list loading, creation, switching, renaming, archiving, library modal, and direct-chat creation. Tracks current session, streaming/research indicators in the sidebar. |
+| **`chatExport.js`** | The client for both export endpoints: one chat (`/api/session/{id}/export`) and a project/folder/selection as a `.zip` (`/api/sessions/export`). Owns the format list (md, txt, json, html, pdf, docx), the fetch + Blob download (so a 400/503 is read and shown instead of opening a blank tab), and the shared format-picker menu. Used by `sessions.js`, `projects.js` and `slashCommands.js`. |
 | **`workspace.js`** | Workspace folder path management for shell/file tool confinement. |
 | **`search-chat.js`** | In-chat history search. |
 | **`skills.js`** | Client-side skill library UI (load, edit, delete, test, and audit status display). |

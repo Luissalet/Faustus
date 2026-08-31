@@ -34,6 +34,9 @@ _IMPORT_REWRITES = {
     ),
     "import themeModule from './theme.js';": "import themeModule from './theme.mjs';",
     "import spinnerModule from './spinner.js';": "import spinnerModule from './spinner.mjs';",
+    "import { exportSession, exportSessionsZip, openExportFormatMenu } from './chatExport.js';": (
+        "import { exportSession, exportSessionsZip, openExportFormatMenu } from './chatExport.mjs';"
+    ),
 }
 
 _STUBS = {
@@ -71,6 +74,13 @@ export default ui;
     ),
     "theme.mjs": "export default {};\n",
     "spinner.mjs": "export default {};\n",
+    # Chat export is not part of the bootstrap seam; the sidebar only needs
+    # these names to resolve so sessions.js can be imported at all.
+    "chatExport.mjs": (
+        "export const exportSession = async () => true;\n"
+        "export const exportSessionsZip = async () => true;\n"
+        "export const openExportFormatMenu = () => null;\n"
+    ),
 }
 
 _HARNESS = r"""

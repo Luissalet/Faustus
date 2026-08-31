@@ -8,6 +8,7 @@
 import Storage from './storage.js';
 import uiModule from './ui.js';
 import workspaceModule from './workspace.js';
+import { exportSessionsZip, openExportFormatMenu } from './chatExport.js';
 
 const API = `${window.location.origin}/api/projects`;
 const AUTO_KEY = 'odysseus-project-workspace';
@@ -32,6 +33,7 @@ const ICON = {
   arrow: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>',
   send: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>',
   memory: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5a3 3 0 1 0-6 0 4 4 0 0 0-2.5 6 4 4 0 0 0 .5 6.5A4 4 0 0 0 12 18Z"/><path d="M12 5a3 3 0 1 1 6 0 4 4 0 0 1 2.5 6 4 4 0 0 1-.5 6.5A4 4 0 0 1 12 18Z"/></svg>',
+  download: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
   trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>',
 };
 
@@ -528,6 +530,7 @@ function hubHtml(project) {
         </span>
         <span class="project-hub-actions">
           <button type="button" class="project-icon-btn${project.pinned ? ' active' : ''}" id="project-pin" aria-label="${project.pinned ? 'Unpin project' : 'Pin project'}" title="${project.pinned ? 'Unpin' : 'Pin'}">${ICON.pin}</button>
+          <button type="button" class="project-icon-btn" id="project-export" aria-label="Export every chat in this project" title="Export every chat as a .zip">${ICON.download}</button>
           <button type="button" class="project-icon-btn" id="project-settings" aria-label="Project settings" title="Project settings">${ICON.edit}</button>
           <button type="button" class="project-icon-btn" id="project-archive" aria-label="${project.archived ? 'Restore project' : 'Archive project'}" title="${project.archived ? 'Restore' : 'Archive'}">${ICON.archive}</button>
         </span>
@@ -597,6 +600,7 @@ export function openDetail(project) {
   host.innerHTML = hubHtml(project);
 
   $('project-back')?.addEventListener('click', renderGallery);
+  $('project-export')?.addEventListener('click', (event) => exportProject(project, event.currentTarget));
   $('project-settings')?.addEventListener('click', () => openSettings(project));
   $('project-edit-instructions')?.addEventListener('click', () => openSettings(project, 'project-instructions'));
   $('project-edit-context')?.addEventListener('click', () => openSettings(project, 'project-workspace'));
@@ -830,6 +834,22 @@ function openSettings(project, focusId = '') {
   });
   if (focusId) setTimeout(() => $(focusId)?.focus(), 0);
   else setTimeout(() => $('project-name')?.focus(), 0);
+}
+
+/** Download every chat in this project as one .zip (a file per chat plus an
+ *  index.md). The server refuses selections past its ceilings with a 400 and
+ *  a missing PDF/DOCX dependency with a 503; both messages land in showError
+ *  rather than in a blank tab. */
+function exportProject(project, anchorEl) {
+  if (!project?.id) return;
+  openExportFormatMenu(anchorEl || document.body, async (fmt) => {
+    const count = chatsIn(project).length;
+    uiModule.showToast?.(`Zipping ${count} chat${count !== 1 ? 's' : ''} from “${project.name}” as ${fmt.label}…`);
+    await exportSessionsZip({ project: project.id }, fmt.id, {
+      onError: (msg) => uiModule.showError?.(msg),
+      onDone: (name) => uiModule.showToast?.(`Downloaded ${name}`),
+    });
+  });
 }
 
 async function setProjectFlags(project, updates, toast) {
