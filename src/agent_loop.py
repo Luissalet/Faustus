@@ -1383,7 +1383,8 @@ _RETRY_CONTINUATION_RE = re.compile(
 _COOKBOOK_CONTEXT_RE = re.compile(
     r"\b(?:cookbook|serve|serving|served|launch|start|preset|vllm|sglang|"
     r"llama\.?cpp|ollama|download|cached models?|model servers?|running models?|"
-    r"gpu box|workstation|server|qwen|gemma|llama|mistral|minimax)\b",
+    # server(?!\.\w): the machine, not server.py / server.js (see _classify_agent_request)
+    r"gpu box|workstation|server(?!\.\w)|qwen|gemma|llama|mistral|minimax)\b",
     re.IGNORECASE,
 )
 def _is_explicit_continuation(text: str) -> bool:
@@ -1481,7 +1482,12 @@ def _classify_agent_request(messages: List[Dict], last_user: str) -> Dict[str, o
     def has(*patterns: str) -> bool:
         return any(re.search(p, q) for p in patterns)
 
-    if has(r"\b(cookbook|serve|serving|served|launch|start|preset|vllm|sglang|llama\.?cpp|ollama|download|downloading|pull|cached models?|running models?|model servers?|models? (?:are )?running|what models?|model picker|gpu box|workstation|server|qwen|gemma|llama|mistral|minimax)\b"):
+    # "server" here means a machine that serves models — never a source file.
+    # Without the (?!\.\w) guard, "añade a server.py una función health()" was
+    # classified as a Cookbook turn and unioned in all 13 model-serving tools
+    # (server.py, server.js, server.ts are among the commonest filenames there
+    # are). Measured on that request: 13 extra tool schemas for nothing.
+    if has(r"\b(cookbook|serve|serving|served|launch|start|preset|vllm|sglang|llama\.?cpp|ollama|download|downloading|pull|cached models?|running models?|model servers?|models? (?:are )?running|what models?|model picker|gpu box|workstation|server(?!\.\w)|qwen|gemma|llama|mistral|minimax)\b"):
         domains.add("cookbook")
     if has(r"\b(emails?|mails?|gmail|inbox|reply|forward|cc|bcc|send email|compose email|draft email|message chris|message him|message her)\b"):
         domains.add("email")
