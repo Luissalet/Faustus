@@ -22,7 +22,7 @@ from src.llm_core import (
     stream_llm,
     stream_llm_with_fallback,
 )
-from src.agent_loop import stream_agent_loop
+from src.agent_loop import stream_agent_loop, _looks_like_workspace_coding_request
 from src import agent_runs
 from src.model_context import estimate_tokens
 from src.context_compactor import (
@@ -1400,6 +1400,22 @@ def setup_chat_routes(
                     _workspace_agent_intent = True
                     allow_bash = "true"
                     logger.info("chat→agent auto-escalation: explicit path workspace=%s", workspace)
+            # A bound workspace plus a coding request (any language the
+            # heuristic knows — the intent classifier above is English-only)
+            # means "work in this repo": in plain chat the model has no file
+            # tools and can only narrate edits it never made.
+            if (
+                chat_mode == "chat"
+                and workspace
+                and isinstance(message, str)
+                and not tool_approval_id
+                and _looks_like_workspace_coding_request(message)
+            ):
+                chat_mode = "agent"
+                auto_escalated = True
+                _workspace_agent_intent = True
+                allow_bash = "true"
+                logger.info("chat→agent auto-escalation: workspace-bound coding request")
         except SessionNotFoundError as e:
             raise HTTPException(404, str(e))
         except (ValueError, ValidationError):

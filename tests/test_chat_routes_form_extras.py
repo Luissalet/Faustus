@@ -38,3 +38,21 @@ def test_delegation_instruction_names_the_tool_once_and_keeps_tasks():
     assert "Tarea uno" in text and "Tarea dos" in text
     # Evidence-based reporting is part of the instruction.
     assert "evidence" in text
+
+
+def test_workspace_bound_coding_chat_is_escalated_to_agent():
+    """Plain chat + bound workspace + a coding request (any language the
+    heuristic knows) must run the agent loop: without tools the model can only
+    narrate edits it never made."""
+    from pathlib import Path
+    from src.agent_loop import _looks_like_workspace_coding_request as looks
+    src = (Path(__file__).resolve().parent.parent / "routes" / "chat_routes.py").read_text(encoding="utf-8")
+    block = src[src.index("workspace-bound coding request"):]
+    assert "_looks_like_workspace_coding_request(message)" in src
+    assert 'chat_mode == "chat"' in src[src.index("_looks_like_workspace_coding_request(message)") - 400:src.index("_looks_like_workspace_coding_request(message)")]
+    # the heuristic itself is multilingual
+    assert looks("Añade a la interfaz botones para eliminar proyectos y chats en sus tarjetas")
+    assert looks("Corrige el bug de static/js/cards.js")
+    assert looks("Fix the failing test in the repo")
+    assert not looks("¿Qué tal estás hoy?")
+    assert not looks("Explain what a closure is")
