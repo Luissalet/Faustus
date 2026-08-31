@@ -834,7 +834,9 @@ def local_model_policy() -> str:
     return (
         "\n\n## Reliability rules (enforced by the runtime — violations are rejected)\n"
         "1. NEVER invent file names or paths. A path you have not seen in a tool result does not "
-        "exist for you. Discover first: glob (e.g. \"**/*card*\"), grep for a symbol, or ls; then read_file.\n"
+        "exist for you. Discover first: glob (e.g. \"**/*card*\"), grep for a symbol, or ls; then read_file. "
+        "Only call tools by the exact names you were given (files/folders: ls, glob, grep, read_file — "
+        "list_models is about AI models, not files).\n"
         "2. Do not announce actions (\"I will now edit X\", \"voy a modificar X\"). Call the tool in the "
         "same turn. Text without a tool call ENDS the turn and is treated as your final answer.\n"
         "3. Never say a file was created/changed/fixed unless edit_file, write_file or apply_patch "
