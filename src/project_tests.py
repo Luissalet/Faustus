@@ -283,8 +283,8 @@ def run_tests(
                 result["related_files"] = rel
         result["command"] = " ".join(shlex.quote(a) if " " in a else a for a in argv)
     kwargs: Dict[str, Any] = dict(
-        cwd=workspace, capture_output=True, text=True, encoding="utf-8", errors="replace",
-        timeout=timeout, env=_clean_env(), stdin=subprocess.DEVNULL,
+        cwd=workspace, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8",
+        errors="replace", env=_clean_env(), stdin=subprocess.DEVNULL,
     )
     if os.name != "nt":
         kwargs["start_new_session"] = True
@@ -292,29 +292,57 @@ def run_tests(
         kwargs["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
     try:
         if shell_cmd is not None:
-            proc = subprocess.run(shell_cmd, shell=True, **kwargs)
+            proc = subprocess.Popen(shell_cmd, shell=True, **kwargs)
         else:
-            proc = subprocess.run(argv, **kwargs)
-        out = (proc.stdout or "") + (("\n" + proc.stderr) if proc.stderr else "")
-        result.update(ran=True, exit_code=proc.returncode)
-    except subprocess.TimeoutExpired as e:
-        out = ""
-        for part in (e.stdout, e.stderr):
-            if part:
-                out += part.decode("utf-8", "replace") if isinstance(part, bytes) else str(part)
-        result.update(ran=True, timed_out=True, exit_code=None, ok=False, inconclusive=True,
-                      summary=f"timed out after {int(timeout)} s")
+            proc = subprocess.Popen(argv, **kwargs)
     except (OSError, subprocess.SubprocessError) as e:
         result.update(ran=False, summary=f"could not run: {e}"[:300], inconclusive=True)
         result["duration_s"] = round(time.time() - t0, 1)
         return result
+    exit_code: Optional[int] = None
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout)
+        exit_code = proc.returncode
+        result.update(ran=True, exit_code=exit_code)
+    except subprocess.TimeoutExpired:
+        # Kill the whole tree: with shell=True (custom commands) the direct
+        # child is a shell, and on Windows killing it leaves the real test
+        # process running — and holding the pipes — until it finishes on its own.
+        _kill_tree(proc)
+        try:
+            stdout, stderr = proc.communicate(timeout=15)
+        except (subprocess.TimeoutExpired, OSError, ValueError):
+            stdout, stderr = "", ""
+        result.update(ran=True, timed_out=True, exit_code=None, ok=False, inconclusive=True,
+                      summary=f"timed out after {int(timeout)} s")
+    out = (stdout or "") + (("\n" + stderr) if stderr else "")
     result["duration_s"] = round(time.time() - t0, 1)
     out = out[-OUTPUT_CAP:]
     result["output_tail"] = out[-TAIL_CHARS:].strip()
     if not result["timed_out"]:
-        parsed = parse_output(spec.get("kind") or "", proc.returncode, out)
+        parsed = parse_output(spec.get("kind") or "", exit_code, out)
         result.update(parsed)
     return result
+
+
+def _kill_tree(proc: "subprocess.Popen") -> None:
+    """Best-effort kill of `proc` and everything it spawned."""
+    try:
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)], capture_output=True, timeout=20,
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        else:
+            import signal
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            except (ProcessLookupError, PermissionError, OSError):
+                pass
+    except (OSError, subprocess.SubprocessError, ValueError) as e:
+        logger.debug("[project-tests] kill tree failed: %s", e)
+    try:
+        proc.kill()
+    except (OSError, ProcessLookupError):
+        pass
 
 
 # ---------------------------------------------------------------------------

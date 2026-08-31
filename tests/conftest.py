@@ -29,11 +29,14 @@ os.environ.setdefault("PYTHONUTF8", "1")
 # that exercise shell snippets need a real POSIX shell: put Git for Windows'
 # bash first when it is installed (bash -n, pipes, `||` chains all work there).
 if os.name == "nt":
+    # usr\bin (the real MSYS bash + coreutils) before bin\bash.exe: the latter
+    # is a launcher that puts Git's own usr\bin in front of PATH again, which
+    # would shadow the fake `cat`/`python3` shims some tests prepend to PATH.
     _git_bash_dirs = [
-        os.path.join(os.environ.get("ProgramFiles", r"C:\Program Files"), "Git", "bin"),
         os.path.join(os.environ.get("ProgramFiles", r"C:\Program Files"), "Git", "usr", "bin"),
-        os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Git", "bin"),
+        os.path.join(os.environ.get("ProgramFiles", r"C:\Program Files"), "Git", "bin"),
         os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Git", "usr", "bin"),
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Git", "bin"),
     ]
     _git_bash_exe = ""
     for _d in _git_bash_dirs:

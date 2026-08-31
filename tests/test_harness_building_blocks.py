@@ -37,17 +37,22 @@ def settings(monkeypatch):
     return values
 
 
+def _w(path, text):
+    """Write LF text as-is (Path.write_text would turn it into CRLF on Windows)."""
+    path.write_bytes(text.encode("utf-8"))
+
+
 @pytest.fixture
 def ws(tmp_path):
     root = tmp_path / "ws"
     (root / "src").mkdir(parents=True)
     (root / "tests").mkdir()
-    (root / "src" / "calc.py").write_text("def add(a, b):\n    return a - b\n", encoding="utf-8")
-    (root / "src" / "__init__.py").write_text("", encoding="utf-8")
-    (root / "tests" / "test_calc.py").write_text(
-        "import os, sys\nsys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))\n"
-        "from src.calc import add\n\n\ndef test_add():\n    assert add(1, 2) == 3\n", encoding="utf-8")
-    (root / "README.md").write_text("# demo\n", encoding="utf-8")
+    _w(root / "src" / "calc.py", "def add(a, b):\n    return a - b\n")
+    _w(root / "src" / "__init__.py", "")
+    _w(root / "tests" / "test_calc.py",
+       "import os, sys\nsys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))\n"
+       "from src.calc import add\n\n\ndef test_add():\n    assert add(1, 2) == 3\n")
+    _w(root / "README.md", "# demo\n")
     return root
 
 
