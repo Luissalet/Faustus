@@ -907,7 +907,17 @@ def test_cached_model_scan_does_not_launch_ollama_cli_on_windows(tmp_path):
     )
 
     assert marker.exists() is False
-    assert all(m.get("backend") != "ollama" for m in json.loads(proc.stdout))
+    # The scanner may still list models it got from a *running* Ollama server
+    # (the read-only /api/tags query is fine — only the CLI launch is guarded);
+    # on a developer machine with Ollama up those rows are legitimate.
+    import urllib.request
+    try:
+        with urllib.request.urlopen("http://127.0.0.1:11434/api/tags", timeout=1):
+            ollama_server_up = True
+    except Exception:
+        ollama_server_up = False
+    if not ollama_server_up:
+        assert all(m.get("backend") != "ollama" for m in json.loads(proc.stdout))
 
 
 def test_cached_model_scan_uses_huggingface_cache_env(tmp_path):

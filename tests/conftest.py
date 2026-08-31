@@ -35,10 +35,31 @@ if os.name == "nt":
         os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Git", "bin"),
         os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Git", "usr", "bin"),
     ]
+    _git_bash_exe = ""
     for _d in _git_bash_dirs:
         if _d and os.path.isfile(os.path.join(_d, "bash.exe")):
             os.environ["PATH"] = _d + os.pathsep + os.environ.get("PATH", "")
+            _git_bash_exe = os.path.join(_d, "bash.exe")
             break
+    # PATH order is not enough for `subprocess.run(["bash", ...])`: CreateProcess
+    # searches System32 (the WSL stub) BEFORE the PATH directories. Resolve a
+    # bare `bash` argv[0] to Git Bash for the test session so shell-snippet
+    # tests run the same POSIX shell they run on Linux/macOS.
+    if _git_bash_exe:
+        import subprocess as _subprocess
+
+        _orig_popen_init = _subprocess.Popen.__init__
+
+        def _popen_init(self, args, *a, **kw):
+            try:
+                if (isinstance(args, (list, tuple)) and args and isinstance(args[0], str)
+                        and args[0].lower() in ("bash", "bash.exe") and not kw.get("shell")):
+                    args = [_git_bash_exe, *list(args[1:])]
+            except Exception:
+                pass
+            return _orig_popen_init(self, args, *a, **kw)
+
+        _subprocess.Popen.__init__ = _popen_init
 
 # Pre-import real heavy modules BEFORE any test file's module-level stubs can
 # replace them with MagicMock. Some test files (e.g. test_llm_core_sanitize_*)

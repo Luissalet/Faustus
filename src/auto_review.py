@@ -243,18 +243,29 @@ async def review_turn(
         timeout = float(DEFAULT_TIMEOUT_S)
     try:
         from src.llm_core import llm_call_async
+        # max_retries is the number of *attempts* (0 would never call the
+        # model and return None — seen live: verdict "unparsed", summary "None").
         raw = await llm_call_async(
             url=endpoint_url, model=reviewer,
             messages=[{"role": "user", "content": _prompt(user_text, diff, files, tests)}],
             headers=headers, temperature=0.1, max_tokens=1200, timeout=int(timeout),
-            max_retries=0, workload="background",
+            max_retries=1, workload="background",
         )
     except Exception as e:
         logger.warning("[review] reviewer %s failed: %s", reviewer, e)
         result.update(error=f"{type(e).__name__}: {e}"[:300], verdict="error")
         result["duration_s"] = round(time.time() - t0, 1)
         return result
-    result.update(_parse(raw if isinstance(raw, str) else str(raw)))
+    if isinstance(raw, tuple):
+        raw = raw[0]
+    if not isinstance(raw, str) or not raw.strip():
+        result.update(error="the reviewer returned an empty answer", verdict="error")
+        result["duration_s"] = round(time.time() - t0, 1)
+        logger.warning("[review] reviewer %s returned an empty answer", reviewer)
+        return result
+    result.update(_parse(raw))
+    if result["verdict"] == "unparsed":
+        logger.warning("[review] %s: answer was not a JSON object: %r", reviewer, raw[:300])
     result["duration_s"] = round(time.time() - t0, 1)
     logger.info("[review] %s: verdict=%s findings=%d in %ss", reviewer, result["verdict"],
                 len(result["findings"]), result["duration_s"])

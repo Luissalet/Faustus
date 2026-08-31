@@ -391,6 +391,24 @@ def _norm(p: str) -> str:
     return p.replace("\\", "/").lower().strip("/ ")
 
 
+def workspace_relative(workspace: Optional[str], path: str) -> str:
+    """`path` relative to the workspace (forward slashes) when it resolves inside
+    it; unchanged otherwise. Models sometimes pass absolute paths
+    (D:\\proj\\server.py): chips, audit rows and review-mode keys are nicer and
+    stable when every consumer sees the same relative form."""
+    if not workspace or not path or not os.path.isabs(path):
+        return path
+    try:
+        root = os.path.realpath(workspace)
+        real = os.path.realpath(path)
+    except (OSError, ValueError):
+        return path
+    root_cmp, real_cmp = (root.lower(), real.lower()) if os.name == "nt" else (root, real)
+    if real_cmp == root_cmp or not real_cmp.startswith(root_cmp.rstrip(os.sep) + os.sep):
+        return path
+    return os.path.relpath(real, root).replace(os.sep, "/")
+
+
 def path_exists_in_workspace(workspace: str, token: str) -> bool:
     """True if `token` names an existing file: as given (abs or relative to the
     workspace), or by basename anywhere in the index."""
@@ -548,7 +566,7 @@ class TurnLedger:
     # -- recording ----------------------------------------------------------
     def record(self, tool: str, content: str, result: Dict[str, Any], round_num: int = 0) -> Dict[str, Any]:
         ok = _result_ok(result)
-        paths = _paths_from_args(tool, content)
+        paths = [workspace_relative(self.workspace, p) for p in _paths_from_args(tool, content)]
         kind = "read"
         if tool in FILE_MUTATION_TOOLS:
             kind = "mutation"
@@ -569,7 +587,7 @@ class TurnLedger:
             for sub in result.get("subagents") or []:
                 if not isinstance(sub, dict):
                     continue
-                sub_paths = [p for p in (sub.get("mutations") or []) if isinstance(p, str)]
+                sub_paths = [workspace_relative(self.workspace, p) for p in (sub.get("mutations") or []) if isinstance(p, str)]
                 if sub_paths:
                     self.events.append({
                         "round": round_num, "tool": "delegate_agents:" + str(sub.get("name") or "worker"),
