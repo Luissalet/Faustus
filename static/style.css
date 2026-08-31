@@ -42477,3 +42477,7 @@ body:has(.sidebar.right-side) .project-active-pill { right: 12px; }
 @media (max-width: 900px) { .file-viewer-panel { width: 100vw; } }
 .harness-files-row { margin: 4px 0 2px; padding: 4px 6px; }
 .fv-btn.fv-danger:hover { border-color: var(--red, #e06c75); color: var(--red, #e06c75); }
+.agent-progress-files { border-top: 1px solid var(--border); padding: 6px 8px 8px; }
+.agent-progress-files-head { font-size: 11px; opacity: .7; margin-bottom: 4px; }
+.agent-progress-files-count { opacity: .8; }
+.agent-progress-panel.collapsed .agent-progress-files { display: none; }

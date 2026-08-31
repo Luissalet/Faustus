@@ -2329,8 +2329,13 @@ export function displayMetrics(messageElement, metrics) {
           ? `🛡 Edited ${files.length} file${files.length === 1 ? '' : 's'}`
           : `🛡 ${hz.tool_calls || 0} tool${hz.tool_calls === 1 ? '' : 's'}`;
       // Restored history: the edited files stay reviewable — click the badge
-      // to toggle the chips (each opens the file viewer).
+      // to toggle the chips (each opens the file viewer). Also feed the
+      // "Files edited in this chat" section of the Progress panel.
       if (files.length) {
+        try {
+          const sid = window.sessionModule && window.sessionModule.getCurrentSessionId && window.sessionModule.getCurrentSessionId();
+          if (sid && window.agentHarnessUI && window.agentHarnessUI.noteMutations) window.agentHarnessUI.noteMutations(sid, files, hz.workspace || null);
+        } catch (_) {}
         badge.style.cursor = 'pointer';
         badge.addEventListener('click', (e) => {
           e.stopPropagation();

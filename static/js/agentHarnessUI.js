@@ -15,6 +15,7 @@ let _progressEl = null;
 let _progressCollapsed = false;
 let _currentSessionId = null;
 let _lastTodosBySession = new Map();
+let _filesBySession = new Map();     // sessionId → Map(path → workspace) of files edited in that chat
 
 const PROGRESS_KEY = 'odysseus-progress-collapsed';
 
@@ -285,7 +286,8 @@ function _ensureProgressEl() {
     `<button type="button" class="agent-progress-toggle" title="Collapse / expand" aria-label="Collapse or expand progress"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></button>` +
     `<span class="agent-progress-title">Progress</span><span class="agent-progress-count"></span>` +
     `<button type="button" class="agent-progress-close" title="Hide" aria-label="Hide progress">×</button>` +
-    `</div><ol class="agent-progress-list"></ol>`;
+    `</div><ol class="agent-progress-list"></ol>` +
+    `<div class="agent-progress-files" hidden><div class="agent-progress-files-head">Files edited in this chat <span class="agent-progress-files-count"></span></div><div class="agent-progress-files-list harness-files"></div></div>`;
   host.appendChild(el);
   el.querySelector('.agent-progress-toggle').addEventListener('click', () => {
     _progressCollapsed = !_progressCollapsed;
@@ -309,8 +311,9 @@ export function renderProgress(todos, { sessionId = null } = {}) {
   const count = el.querySelector('.agent-progress-count');
   if (sessionId) _lastTodosBySession.set(sessionId, todos);
   if (!Array.isArray(todos) || !todos.length) {
-    el.hidden = true;
     list.innerHTML = '';
+    count.textContent = '';
+    _renderFiles(sessionId || _currentSessionId);
     return;
   }
   const done = todos.filter(t => t.status === 'completed').length;
@@ -328,6 +331,33 @@ export function renderProgress(todos, { sessionId = null } = {}) {
     return `<li class="${cls}"><span class="agent-progress-num">${i + 1}</span><span class="agent-progress-icon">${STATUS_ICON[st] || '○'}</span><span class="agent-progress-text">${esc(t.content)}</span>${tag}</li>`;
   }).join('');
   el.hidden = false;
+  _renderFiles(sessionId || _currentSessionId);
+}
+
+/** Files the agent edited in this chat, across turns (chips → file viewer). */
+export function noteMutations(sessionId, files, workspace) {
+  if (!sessionId || !Array.isArray(files) || !files.length) return;
+  let m = _filesBySession.get(sessionId);
+  if (!m) { m = new Map(); _filesBySession.set(sessionId, m); }
+  for (const f of files) if (f) m.set(String(f), workspace || m.get(String(f)) || null);
+  if (sessionId === _currentSessionId) _renderFiles(sessionId);
+}
+
+function _renderFiles(sessionId) {
+  const el = _ensureProgressEl();
+  const box = el.querySelector('.agent-progress-files');
+  if (!box) return;
+  const m = sessionId ? _filesBySession.get(sessionId) : null;
+  const hasTodos = el.querySelector('.agent-progress-list').children.length > 0;
+  if (!m || !m.size) {
+    box.hidden = true;
+    if (!hasTodos) el.hidden = true;
+    return;
+  }
+  box.hidden = false;
+  box.querySelector('.agent-progress-files-count').textContent = `(${m.size})`;
+  box.querySelector('.agent-progress-files-list').innerHTML = [...m.entries()].map(([f, ws]) => _fileChip(f, ws, 'diff')).join(' ');
+  el.hidden = false;
 }
 
 export function clearProgress() {
@@ -335,6 +365,8 @@ export function clearProgress() {
     _progressEl.hidden = true;
     const list = _progressEl.querySelector('.agent-progress-list');
     if (list) list.innerHTML = '';
+    const box = _progressEl.querySelector('.agent-progress-files');
+    if (box) box.hidden = true;
   }
 }
 
@@ -344,6 +376,7 @@ export async function restoreProgress(sessionId) {
   const cached = _lastTodosBySession.get(sessionId);
   if (cached) { renderProgress(cached, { sessionId }); return; }
   clearProgress();
+  _renderFiles(sessionId);
   try {
     const r = await fetch(`${API_BASE}/api/agent/progress/${encodeURIComponent(sessionId)}`, { credentials: 'same-origin' });
     if (!r.ok) return;
@@ -360,7 +393,9 @@ export async function restoreProgress(sessionId) {
 export function handleStreamEvent(json, { sessionId = null } = {}) {
   switch (json.type) {
     case 'harness_check': renderHarnessCheck(json); return true;
-    case 'harness_summary': renderHarnessSummary(json); return true;
+    case 'harness_summary':
+      try { const d = json.data || {}; noteMutations(sessionId || _currentSessionId, d.mutations || [], d.workspace || null); } catch (_) {}
+      renderHarnessSummary(json); return true;
     case 'progress_update': renderProgress(json.todos || [], { sessionId }); return true;
     case 'tool_progress':
       if (json.subagent) { renderSubagentEvent(json); return true; }
@@ -377,6 +412,6 @@ export function init(apiBase) {
   });
 }
 
-const agentHarnessUI = { init, handleStreamEvent, renderHarnessCheck, renderHarnessSummary, renderProgress, restoreProgress, clearProgress, renderSubagentEvent };
+const agentHarnessUI = { init, handleStreamEvent, renderHarnessCheck, renderHarnessSummary, renderProgress, restoreProgress, clearProgress, renderSubagentEvent, noteMutations };
 window.agentHarnessUI = agentHarnessUI;
 export default agentHarnessUI;
