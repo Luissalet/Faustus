@@ -5605,6 +5605,10 @@ async def stream_agent_loop(
                         _ledger.rejections += 1
                         if "intent_without_action" in _check["reasons"]:
                             _ledger.intent_nudges += 1
+                            # Share the cap with the legacy intent supervisor
+                            # below so a stalled model gets 2 nudges total,
+                            # not 2 + 2.
+                            _intent_nudge_count += 1
                         logger.warning(
                             "[harness] round %s REJECTED (%s) attempt %s/%s claims=%s bad_paths=%s intent=%r",
                             round_num, ",".join(_check["reasons"]), _ledger.rejections,
