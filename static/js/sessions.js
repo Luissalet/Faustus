@@ -364,8 +364,13 @@ async function _syncActivityFromServer() {
         _completedSessions.add(sid);
       }
     }
+    const beforeRunning = new Set(_serverRunning);
     _serverRunning.clear();
     for (const sid of running) _serverRunning.add(sid);
+    // Sessions entering/leaving "running" may need a row (or lose one): the
+    // list caps at SIDEBAR_MAX_VISIBLE and activity rows are pulled above it.
+    let changed = beforeRunning.size !== running.size;
+    if (!changed) for (const sid of running) if (!beforeRunning.has(sid)) { changed = true; break; }
     // A running chat this tab does not list yet (a sub-agent worker chat
     // created server-side, or a chat started from another tab): refresh the
     // list once per unknown id so its dot has a row to sit on.
@@ -373,6 +378,8 @@ async function _syncActivityFromServer() {
     if (unknown.length) {
       for (const sid of unknown) _activityUnknownSeen.add(sid);
       loadSessions().catch(() => {});
+    } else if (changed) {
+      renderSessionList();
     }
     // Approvals: the server is the source of truth for tool approvals; keep
     // locally-marked ask_user questions until the user opens that chat.
@@ -1226,6 +1233,18 @@ function _appendFavoriteSessionItems(frag, items) {
 }
 
 let _renderRAF = null;
+/** A chat that is working, waiting for the user or finished-unread must stay
+ *  visible even when it sorts below the "Show N more" fold (a sub-agent worker
+ *  chat, a run started from another tab): its status dot needs a row. */
+function _pushActivitySessions(all, visible, limit) {
+  if (_showAllSessions) return;
+  const seen = new Set(visible.map(s => s.id));
+  for (let i = limit; i < all.length; i++) {
+    const s = all[i];
+    if (!seen.has(s.id) && sessionActivityStatus(s.id)) { visible.push(s); seen.add(s.id); }
+  }
+}
+
 export function renderSessionList() {
   // Debounce rapid re-renders within the same frame
   if (_renderRAF) cancelAnimationFrame(_renderRAF);
@@ -1294,6 +1313,7 @@ function _renderSessionListImpl() {
     const visible = allFlat.slice(0, limit);
     const activeIdx = allFlat.findIndex(s => s.id === currentSessionId);
     if (!_showAllSessions && activeIdx >= limit) visible.push(allFlat[activeIdx]);
+    _pushActivitySessions(allFlat, visible, limit);
 
     const visibleFavorites = visible.filter(s => s.is_important);
     const visibleRegular = visible.filter(s => !s.is_important);
@@ -1482,6 +1502,7 @@ function _renderSessionListImpl() {
   if (!_showAllSessions && activeInUnfiled >= limit) {
     visibleUnfiled.push(unfiled[activeInUnfiled]);
   }
+  _pushActivitySessions(unfiled, visibleUnfiled, limit);
 
   // Wrap in "Unsorted" folder if real folders exist
   let unfiledTarget = _frag;
@@ -1589,6 +1610,8 @@ function _postRenderSessionList(list) {
   _initSwipeToDelete(list);
   initDragSort();
   _showSwipeHint(list);
+  // Fresh rows have no status classes yet — paint the activity dots now.
+  try { _updateResearchDots(); } catch (_) {}
 }
 
 function _initKeyboardNav(list) {
