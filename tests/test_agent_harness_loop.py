@@ -33,6 +33,9 @@ def _patch_common(monkeypatch, tool_result=None):
     monkeypatch.setattr(al, "get_setting", lambda key, default=None: default, raising=False)
     monkeypatch.setattr(al, "get_mcp_manager", lambda: None, raising=False)
     monkeypatch.setattr(al, "estimate_tokens", lambda *a, **k: 10, raising=False)
+    # No owner in these tests → the public (non-admin) block list would disable
+    # edit_file; we want the tool to run so the ledger sees a real mutation.
+    monkeypatch.setattr(al, "blocked_tools_for_owner", lambda owner: set(), raising=False)
 
     async def _fake_exec(block, *a, **k):
         if tool_result is not None:
