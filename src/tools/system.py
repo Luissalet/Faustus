@@ -541,6 +541,38 @@ _APP_API_BLOCKLIST_PREFIXES = (
     "/api/admin",          # admin one-shots (wipe etc.)
     "/api/shell",          # host shell execution must stay behind named command tooling
     "/api/backup/restore", # destructive restore
+    # ── /api/workspace: the whole tree, on purpose ────────────────────────
+    # WHY THE WHOLE PREFIX, not just the destructive verbs:
+    #
+    # 1. THE APPROVAL GATE. `app_api` loops back with the internal-tool token,
+    #    which skips BOTH auth and the per-tool approval gate the user sees for
+    #    write_file/bash. /api/workspace is the UI's file-mutation surface:
+    #    POST /revert, /checkpoint/restore, /checkpoint/reset, /commit,
+    #    /instructions/{remember,draft} and /review/{id}/decide delete files,
+    #    roll the workspace back, throw away every checkpoint baseline, commit
+    #    to the user's own repo and write AGENTS.md — the file that steers
+    #    every future turn. Reaching them through app_api hands a hallucinating
+    #    or prompt-injected model exactly the destructive power the gate exists
+    #    to hold back. POST /open_editor and /reveal launch host GUI processes,
+    #    which is host control, like /api/shell.
+    #
+    # 2. THE READ ROUTES ARE A CONFINEMENT BYPASS, so there is no useful line
+    #    to draw below the prefix. GET /browse, /files, /file, /file_diff,
+    #    /vet, /checkpoint/* all take the workspace/path as a *client*
+    #    parameter and only vet it with vet_workspace() (any directory that is
+    #    not a filesystem root or a sensitive dir). The agent's own read_file /
+    #    list_files are confined to the ACTIVE project roots by
+    #    _resolve_tool_path_in_roots; hitting these endpoints instead lets the
+    #    model name any folder on the host and read/enumerate it — the same
+    #    exfiltration primitive the workspace confinement exists to prevent.
+    #    /browse does not even go through vet_workspace: it walks any path.
+    #
+    # Nothing the model legitimately needs lives here: the workspace endpoints
+    # are the browser UI's (static/js/workspace.js, fileViewer.js,
+    # fileMentions.js), and the agent has named, gated, confined tools for
+    # reading and writing files. Documented tool surfaces (agent_loop.py) never
+    # point at /api/workspace either.
+    "/api/workspace",
 )
 
 # (method, prefix) pairs to refuse specifically. Used for endpoints
@@ -667,6 +699,13 @@ async def do_app_api(content: str, owner: Optional[str] = None) -> Dict:
     if not path.startswith("/"):
         path = "/" + path
     if any(path.startswith(p) for p in _APP_API_BLOCKLIST_PREFIXES):
+        if path.startswith("/api/workspace"):
+            return {"error": f"Path blocked for safety: {path}. /api/workspace is the browser UI's own surface: "
+                             "its POSTs (revert, checkpoint restore/reset, commit, instructions, open_editor, reveal) "
+                             "skip the tool-approval gate, and its GETs take an arbitrary client-supplied folder, "
+                             "which bypasses workspace confinement. Use the named file tools (read_file, list_files, "
+                             "write_file, edit_file) — they are confined to the project roots and go through the gate.",
+                    "exit_code": 1}
         return {"error": f"Path blocked for safety: {path}. Sensitive endpoints are off-limits via app_api.", "exit_code": 1}
 
     method = (args.get("method") or "GET").upper()

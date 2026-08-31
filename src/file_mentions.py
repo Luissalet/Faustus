@@ -268,6 +268,36 @@ def strip_markers(text: str) -> str:
 
 # ── the reference block the agent loop injects ────────────────────────────
 
+def _contained(real_path: str, root: str) -> bool:
+    """Is `real_path` (already realpath'd) inside `root`?
+
+    Reuses tool_execution._path_is_within_root — the resolver every file tool
+    already trusts (commonpath over normcase'd paths, so it is right on Windows
+    too). Imported lazily to keep this module's import graph stdlib-only; the
+    fallback repeats the minimum rather than failing open.
+    """
+    try:
+        from src.tool_execution import _path_is_within_root
+        return bool(_path_is_within_root(real_path, root))
+    except Exception:                                     # pragma: no cover
+        try:
+            a, b = os.path.normcase(real_path), os.path.normcase(os.path.realpath(root))
+            return os.path.commonpath([a, b]) == b
+        except (ValueError, OSError):
+            return False
+
+
+def _sensitive(real_path: str) -> bool:
+    """tool_execution's deny-list (.ssh/, credentials, *.pem, …) on the RESOLVED
+    path. `_SECRET_NAME_RE` above only looks at the mention's own name, which a
+    symlink chooses freely."""
+    try:
+        from src.tool_execution import _is_sensitive_path
+        return bool(_is_sensitive_path(real_path))
+    except Exception:                                     # pragma: no cover
+        return False
+
+
 def _read_head(abs_path: str, budget: int) -> Optional[str]:
     try:
         with open(abs_path, "rb") as fh:
@@ -309,23 +339,39 @@ def context_text(workspace: str, resolution: Dict[str, List[str]],
     budget = inline_chars
     for rel in resolved[:20]:
         abs_path = os.path.join(root, *rel.split("/")) if root else ""
+        # RESOLVE BEFORE READING. The index comes from os.walk, which reports a
+        # symlink-to-a-file as an ordinary file, and every filter above matches
+        # on the mention's *name*. So `notas.md` could be a link to
+        # ~/.aws/credentials and its whole content would ride into the prompt —
+        # and on to the model endpoint, which may well be remote. Name the file
+        # (the user did point at it) but never inline what the link resolves to
+        # outside the workspace, or to something the file tools deny-list.
         try:
-            size = os.path.getsize(abs_path)
+            real_path = os.path.realpath(abs_path) if abs_path else ""
+        except (OSError, ValueError):                     # pragma: no cover
+            real_path = ""
+        escapes = bool(root) and (not real_path or not _contained(real_path, root))
+        secret = bool(_SECRET_NAME_RE.search(rel)) or (bool(real_path) and _sensitive(real_path))
+        try:
+            size = -1 if escapes else os.path.getsize(real_path or abs_path)
         except OSError:
             size = -1
         # Inline only whole files that fit in what is left of the budget: a
         # 200-char head of a 12 kB file is noise, and the point of inlining is
         # to save the model a read_file round it would otherwise still need.
-        secret = bool(_SECRET_NAME_RE.search(rel))
-        fits = (not secret) and 0 <= size <= min(budget, _MAX_INLINE_FILE_CHARS)
+        fits = (not secret) and (not escapes) and 0 <= size <= min(budget, _MAX_INLINE_FILE_CHARS)
         note = ""
-        if secret:
+        if escapes:
+            note = (" — this name is a link that resolves outside the workspace; "
+                    "contents not included here")
+        elif secret:
             note = " — contents not included here; read_file it if you need them"
         elif size > 0 and not fits and budget > 0:
             note = " — too large to inline here, read_file it"
         lines.append(f"- {rel}" + (f" ({size} bytes)" if size >= 0 else "") + note)
         if fits:
-            body = _read_head(abs_path, _MAX_INLINE_FILE_CHARS)
+            # Read the RESOLVED path: it is the one just proven contained.
+            body = _read_head(real_path or abs_path, _MAX_INLINE_FILE_CHARS)
             if body is not None:
                 budget -= len(body)
                 lang = os.path.splitext(rel)[1].lstrip(".") or ""
