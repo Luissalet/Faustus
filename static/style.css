@@ -42475,3 +42475,4 @@ body:has(.sidebar.right-side) .project-active-pill { right: 12px; }
 .harness-files { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; }
 .harness-muted { opacity: .55; font-size: 11px; }
 @media (max-width: 900px) { .file-viewer-panel { width: 100vw; } }
+.harness-files-row { margin: 4px 0 2px; padding: 4px 6px; }

@@ -6986,7 +6986,7 @@ async def stream_agent_loop(
             k: _hsum.get(k) for k in (
                 "stop_reason", "mutations", "tool_calls", "failed_calls", "rejections",
                 "length_continues", "finish_reasons", "git", "notes", "progress", "language",
-                "static_checks",
+                "static_checks", "workspace",
             )
         }
     yield f"data: {json.dumps({'type': 'metrics', 'data': metrics})}\n\n"

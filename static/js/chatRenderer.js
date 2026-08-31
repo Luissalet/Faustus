@@ -2326,8 +2326,23 @@ export function displayMetrics(messageElement, metrics) {
       badge.textContent = unverified
         ? '🛡 unverified'
         : files.length
-          ? `🛡 ${files.length} file${files.length === 1 ? '' : 's'} changed`
+          ? `🛡 Edited ${files.length} file${files.length === 1 ? '' : 's'}`
           : `🛡 ${hz.tool_calls || 0} tool${hz.tool_calls === 1 ? '' : 's'}`;
+      // Restored history: the edited files stay reviewable — click the badge
+      // to toggle the chips (each opens the file viewer).
+      if (files.length) {
+        badge.style.cursor = 'pointer';
+        badge.addEventListener('click', (e) => {
+          e.stopPropagation();
+          let row = footer.parentElement && footer.parentElement.querySelector(':scope > .harness-files-row');
+          if (row) { row.remove(); return; }
+          row = document.createElement('div');
+          row.className = 'harness-files-row harness-files';
+          const esc2 = (t) => String(t ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+          row.innerHTML = files.map(f => `<a href="#" class="harness-file" data-open-file="${esc2(f)}"${hz.workspace ? ` data-open-workspace="${esc2(hz.workspace)}"` : ''} data-open-mode="diff" title="${esc2(f)} — click to review">${esc2(String(f).split(/[\\/]/).pop())}</a>`).join(' ');
+          footer.parentElement.appendChild(row);
+        });
+      }
       const stopLabels = { complete: 'finished', complete_unverified: 'finished — claims NOT backed by tool evidence', rounds_exhausted: 'step limit', budget_exceeded: 'tool budget', loop_breaker: 'loop breaker', intent_nudge_exhausted: 'stalled', awaiting_user: 'waiting for approval/answer' };
       const parts = [
         `Harness: ${stopLabels[hz.stop_reason] || hz.stop_reason || '?'}`,
