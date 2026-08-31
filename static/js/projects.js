@@ -712,6 +712,10 @@ function settingsHtml(project, isNew) {
             <input type="text" id="project-test-command" value="${esc(value.test_command || '')}" placeholder="pytest -x -q tests/" spellcheck="false" maxlength="400" />
             <label for="project-review-model">Reviewer model <span>Optional — “same” = this chat's model, or a model on the same endpoint (e.g. qwen3-coder-next:q4_K_M); empty = global setting</span></label>
             <input type="text" id="project-review-model" value="${esc(value.review_model || '')}" placeholder="same" spellcheck="false" maxlength="200" />
+            <div class="project-agentsmd-row">
+              <button type="button" class="projects-secondary-btn" id="project-draft-agentsmd" title="Write an AGENTS.md in the folder from what the runtime detects (languages, layout, test command) — it is injected into every agent turn; never overwrites an existing one">Draft AGENTS.md in the folder</button>
+              <small id="project-draft-agentsmd-note"></small>
+            </div>
           </fieldset>
           <div class="project-form-actions">
             <button type="button" class="projects-secondary-btn" id="project-settings-cancel">Cancel</button>
@@ -808,6 +812,22 @@ function openSettings(project, focusId = '') {
 
   $('project-settings-archive')?.addEventListener('click', () => setArchived(_draft, !_draft.archived));
   $('project-delete')?.addEventListener('click', () => removeProject(_draft));
+  $('project-draft-agentsmd')?.addEventListener('click', async () => {
+    const ws = String($('project-workspace')?.value || '').trim();
+    const note = $('project-draft-agentsmd-note');
+    if (!ws) { if (note) note.textContent = 'Set the workspace folder first.'; return; }
+    const lang = (navigator.language || '').toLowerCase().startsWith('es') ? 'es' : 'en';
+    try {
+      const r = await fetch('/api/workspace/instructions/draft', {
+        method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspace: ws, write: true, language: lang }),
+      });
+      const d = r.ok ? await r.json() : {};
+      if (!r.ok) { if (note) note.textContent = `Could not draft (HTTP ${r.status}).`; return; }
+      if (note) note.textContent = d.written ? `AGENTS.md written (${(d.facts && d.facts.test_command) ? 'test command detected' : 'no test runner detected'}) — edit it in the folder.`
+        : (d.exists ? `The folder already has ${basename(d.existing || 'an instructions file')}; nothing written.` : 'Nothing written.');
+    } catch (error) { if (note) note.textContent = `Could not draft: ${error}`; }
+  });
   if (focusId) setTimeout(() => $(focusId)?.focus(), 0);
   else setTimeout(() => $('project-name')?.focus(), 0);
 }

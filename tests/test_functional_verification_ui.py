@@ -96,6 +96,7 @@ def test_projects_expose_agent_knobs_and_activity():
     for key in ("trusted", "trusted_agents", "review_mode", "checkpoints", "run_tests"):
         assert f"['{key}', " in PROJECTS_JS, key
     assert "project-test-command" in PROJECTS_JS and "project-review-model" in PROJECTS_JS
+    assert 'id="project-draft-agentsmd"' in PROJECTS_JS and "'/api/workspace/instructions/draft'" in PROJECTS_JS and "write: true" in PROJECTS_JS
     assert "data-agent-flag" in PROJECTS_JS
     assert "export const projectAudit = (id, limit = 100) => req(`/${id}/audit?limit=${encodeURIComponent(limit)}`);" in PROJECTS_JS
     assert "async function renderAudit(project)" in PROJECTS_JS and "data-audit-session" in PROJECTS_JS
