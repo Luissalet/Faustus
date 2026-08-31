@@ -42575,3 +42575,23 @@ body:has(.sidebar.right-side) .project-active-pill { right: 12px; }
 .project-audit-badge.is-bad { color: var(--red, #e06c75); border-color: var(--red, #e06c75); }
 .project-audit-badge.is-warn { color: var(--warn, #f0ad4e); border-color: var(--warn, #f0ad4e); }
 .project-audit-target { outline: 2px solid var(--accent-primary, var(--red)); outline-offset: 4px; border-radius: 8px; transition: outline-color 1s ease; }
+
+/* ── "@" workspace file mentions (static/js/fileMentions.js) ─────────────
+   Reuses the slash-command popup chrome; only the row layout differs: the
+   filename leads and its folder trails in muted text, so a list of same-named
+   files in different folders stays scannable. */
+.file-mention-popup .slash-ac-row {
+  justify-content: flex-start;
+}
+.file-mention-popup .slash-ac-token {
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  flex: 0 0 auto;
+}
+.file-mention-popup .slash-ac-help {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl;          /* keep the deepest folder visible when it elides */
+  text-align: left;
+}

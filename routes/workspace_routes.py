@@ -77,6 +77,30 @@ def setup_workspace_routes():
             "selectable": vet_workspace(target) is not None,
         }
 
+    @router.get("/files")
+    def files(
+        request: Request,
+        workspace: str = Query(default=""),
+        q: str = Query(default=""),
+        limit: int = Query(default=12),
+    ):
+        """Ranked workspace files for the composer's `@` picker.
+
+        ADMIN-ONLY for the same reason as /browse: it enumerates paths on the
+        host. Reads the cached workspace index, so a keystroke costs a sort,
+        not a walk.
+        """
+        owner = get_current_user(request)
+        if not owner_is_admin_or_single_user(owner):
+            raise HTTPException(status_code=403, detail="Workspace browsing is admin-only")
+        from src.tool_execution import vet_workspace
+        root = vet_workspace(workspace or "")
+        if not root:
+            return {"files": [], "workspace": "", "error": "workspace is not a valid folder"}
+        from src import file_mentions
+        rows = file_mentions.search(root, q, limit=min(max(int(limit or 12), 1), 50))
+        return {"workspace": root, "q": q, "files": rows}
+
     @router.get("/vet")
     def vet(request: Request, path: str = Query(default="")):
         """Validate a workspace path without binding it.
@@ -384,6 +408,28 @@ def setup_workspace_routes():
                 except OSError as e:
                     raise HTTPException(status_code=500, detail=f"could not write AGENTS.md: {e}")
         return d
+
+    @router.post("/instructions/remember")
+    async def instructions_remember(request: Request):
+        """Body: {"workspace": "...", "text": "..."} — append one standing rule
+        to the project's instructions file (Claude Code's "#" shortcut).
+
+        Creates AGENTS.md when the project has none; never rewrites existing
+        content, and a rule already in the file is reported as a duplicate
+        rather than added twice."""
+        _admin_only(request)
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        if not isinstance(body, dict):
+            body = {}
+        root = _vetted_root(str(body.get("workspace") or ""))
+        from src import project_instructions as pi
+        res = pi.remember(root, str(body.get("text") or ""))
+        if res.get("error"):
+            raise HTTPException(status_code=400, detail=res["error"])
+        return res
 
     @router.get("/checkpoint/status")
     def checkpoint_status(request: Request, workspace: str = Query(default="")):

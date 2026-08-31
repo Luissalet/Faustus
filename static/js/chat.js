@@ -957,6 +957,14 @@ import modelControls from './modelControls.js';
       if (ta && mod.initSlashAutocomplete) mod.initSlashAutocomplete(ta);
     }).catch(() => {});
 
+    // "@" opens the workspace file picker (static/js/fileMentions.js). The
+    // paths it inserts are re-resolved server-side, so the model is handed the
+    // file the user actually pointed at instead of guessing from prose.
+    import('./fileMentions.js').then(mod => {
+      const ta = document.getElementById('message');
+      if (ta && mod.initFileMentions) mod.initFileMentions(ta);
+    }).catch(() => {});
+
     // ArrowUp on the composer recalls previous user prompts from this chat.
     const _wireArrowUpRecall = (composer) =>
       wireArrowUpRecall(composer, () => getUserMessagesFromChatHistory(), {

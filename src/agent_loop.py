@@ -3624,6 +3624,31 @@ async def stream_agent_loop(
                 messages,
                 untrusted_context_message("repository map", _repo_map_text, arm_tool_gate=False),
             )
+    # @file mentions (src/file_mentions.py): the paths the user picked in the
+    # composer, resolved against the workspace index and injected right before
+    # their message — closest to the request, after the repo map, because these
+    # are the files they actually meant. Small ones ride along inline so the
+    # model does not spend a 30 s round on read_file to see them.
+    _mention_resolution: Dict[str, List[str]] = {}
+    if workspace and not guide_only:
+        try:
+            from src import file_mentions as _file_mentions
+            _mention_text, _mention_resolution = await asyncio.to_thread(
+                _file_mentions.turn_context, workspace, _last_user
+            )
+        except Exception as _fm_err:
+            logger.debug("[file-mentions] build failed: %s", _fm_err)
+            _mention_text, _mention_resolution = "", {}
+        if _mention_text:
+            messages = _insert_before_latest_user(
+                messages,
+                untrusted_context_message("files the user pointed at with @",
+                                          _mention_text, arm_tool_gate=False),
+            )
+            logger.info("[file-mentions] resolved=%s missing=%s ambiguous=%s",
+                        _mention_resolution.get("resolved"),
+                        _mention_resolution.get("missing"),
+                        _mention_resolution.get("ambiguous"))
     _ody_qwen_finetune_model = _is_odysseus_qwen_model(model)
     # The caller's temperature survives for non-qwen routes; the qwen cap is
     # applied per candidate (here for the primary, in the candidate request

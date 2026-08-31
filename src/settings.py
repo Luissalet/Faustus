@@ -167,6 +167,12 @@ DEFAULT_SETTINGS = {
     "agent_project_instructions_max_chars": 6000,
     "agent_repo_map": True,
     "agent_repo_map_tokens": 1500,
+    # "@" file mentions from the composer (src/file_mentions.py): the paths the
+    # user picked are re-resolved server-side and handed to the model, and small
+    # mentioned files ride along inline so it does not spend a round on
+    # read_file. 0 inline chars = list the paths only.
+    "agent_file_mentions": True,
+    "agent_file_mention_inline_chars": 6000,
     # Per-model scorecard of agent turns (src/scorecard.py, /scorecard).
     "agent_scorecard": True,
     # Detached runs: on-disk replay log (survives restarts) and the task
