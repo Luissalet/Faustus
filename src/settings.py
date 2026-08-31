@@ -132,6 +132,49 @@ DEFAULT_SETTINGS = {
     # `compute_input_token_budget`.
     "agent_input_token_hard_max": 200_000,
     "agent_stream_timeout_seconds": 300,
+    # ── Reliability harness (src/agent_harness.py and friends) ──
+    # Claims-vs-evidence checks, syntax check, fabricated-path detection.
+    "agent_harness_checks": True,
+    # Shadow snapshot of the workspace before the first change of a turn
+    # (src/workspace_checkpoints.py): "restore to before this turn" + per-file
+    # diffs without the user's git. Repo size cap and per-file size cap in MB.
+    "agent_checkpoints": True,
+    "agent_checkpoint_max_repo_mb": 2048,
+    "agent_checkpoint_max_file_mb": 8,
+    # Run the project's own tests after a turn that changed files
+    # (src/project_tests.py): pytest / npm test / cargo / go / make, detected;
+    # "related" runs only the test files that name a changed module (pytest),
+    # "all" runs the whole suite. One bounded fix round when they fail.
+    "agent_project_tests": True,
+    "agent_project_tests_scope": "related",
+    "agent_project_tests_timeout_seconds": 300,
+    "agent_project_tests_fix_rounds": 1,
+    "agent_project_test_command": "",
+    # Independent, tool-less review of the turn's diff (src/auto_review.py):
+    # "off", "same" (this chat's model) or a model name on the same endpoint.
+    "agent_auto_review": "off",
+    "agent_auto_review_timeout_seconds": 180,
+    "agent_auto_review_fix_round": True,
+    "agent_auto_review_fix_rounds": 1,
+    # Standing instructions from the repo (AGENTS.md / CLAUDE.md / …) in the
+    # system prompt, and the repository map (files + symbols) before the
+    # user's message (src/project_instructions.py, src/repo_map.py).
+    "agent_project_instructions": True,
+    "agent_project_instructions_max_chars": 6000,
+    "agent_repo_map": True,
+    "agent_repo_map_tokens": 1500,
+    # Per-model scorecard of agent turns (src/scorecard.py, /scorecard).
+    "agent_scorecard": True,
+    # Detached runs: on-disk replay log (survives restarts) and the task
+    # queue — local endpoints share one lane, N runs at a time (1 = one GPU,
+    # one generation); 0 = unlimited. API endpoints queue only when their
+    # concurrency is > 0.
+    "agent_runs_persist": True,
+    "agent_runs_keep_hours": 48,
+    "agent_queue_local_concurrency": 1,
+    "agent_queue_api_concurrency": 0,
+    # delegate_agents: add a reviewer worker after the others by default.
+    "agent_subagent_reviewer": False,
     # Extra directory roots that read_file / write_file may access, in
     # addition to the built-in project data/ and system temp dirs. Each
     # entry is an absolute path. Sensitive subpaths (.ssh, .gnupg, shell
