@@ -1,5 +1,8 @@
 # src/app_helpers.py
 import base64
+import hashlib
+import re
+import time
 import logging
 import os
 
@@ -46,7 +49,56 @@ def serve_html_with_nonce(request: Request, file_path: str) -> HTMLResponse:
         raise HTTPException(500, "Internal server error")
     nonce = getattr(request.state, "csp_nonce", "")
     html = html.replace("{{CSP_NONCE}}", nonce)
+    html = substitute_asset_versions(html, os.path.dirname(file_path))
     return HTMLResponse(html)
+
+
+# ── content-hashed asset versions (FAUSTUS) ──────────────────────────────────
+# `style.css?v=20260831projectsframing` was a hand-typed token, and a hand-typed
+# token gets forgotten: CSS shipped, nobody saw it without Ctrl+Shift+R, and the
+# bug looked like "the layout fix did not work". `{{ASSET_V:style.css}}` in the
+# template becomes a hash of the file's current bytes, so the URL changes when —
+# and only when — the file does.
+#
+# JS keeps its literal tokens on purpose: those same strings appear inside
+# `import ... from './x.js?v=…'` in other modules, and a mismatch there loads the
+# module twice under two URLs.
+
+_ASSET_VERSION_RE = re.compile(r"\{\{ASSET_V:([A-Za-z0-9_./-]+)\}\}")
+_asset_version_cache: dict = {}
+# Fallback when a referenced asset cannot be read: changes once per process, so
+# a broken path degrades to "busted on restart" rather than "cached forever".
+_ASSET_VERSION_FALLBACK = f"boot{int(time.time())}"
+
+
+def asset_version(path: str) -> str:
+    """Short content hash of a file, cached until its mtime/size changes."""
+    try:
+        stat = os.stat(path)
+        key = (path, stat.st_mtime_ns, stat.st_size)
+        cached = _asset_version_cache.get(path)
+        if cached and cached[0] == key:
+            return cached[1]
+        with open(path, "rb") as fh:
+            digest = hashlib.sha1(fh.read()).hexdigest()[:10]
+        _asset_version_cache[path] = (key, digest)
+        return digest
+    except OSError:
+        return _ASSET_VERSION_FALLBACK
+
+
+def substitute_asset_versions(html: str, base_dir: str) -> str:
+    """Replace {{ASSET_V:<relative path>}} with that file's content hash."""
+    def _one(match):
+        rel = match.group(1)
+        if ".." in rel.split("/"):
+            return _ASSET_VERSION_FALLBACK
+        target = os.path.join(base_dir, *rel.split("/"))
+        if not inside_base_dir(base_dir, target):
+            return _ASSET_VERSION_FALLBACK
+        return asset_version(target)
+
+    return _ASSET_VERSION_RE.sub(_one, html)
 
 
 def inside_base_dir(base_dir: str, path: str) -> bool:

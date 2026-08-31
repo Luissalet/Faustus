@@ -25,13 +25,11 @@ class TestPageLoadsIt:
         assert 'class="user-bar-actions"' in HTML
         assert "#sidebar-user-bar .user-bar-actions" in JS
 
-    def test_stylesheet_is_versioned_at_all(self):
-        """A stale ?v= means none of this new CSS is seen without a hard reload,
-        so the rule is: touch style.css -> bump the token. The token itself
-        moves with every CSS change, so pin only the shape."""
-        m = re.search(r"style\.css\?v=([A-Za-z0-9_.-]+)", HTML)
-        assert m, "style.css must be served with a cache-busting ?v="
-        assert m.group(1) != "20260831projectsframing", "version not bumped"
+    def test_stylesheet_version_is_derived_from_the_file(self):
+        """Hand-typed ?v= tokens got forgotten, so new CSS was invisible without
+        a hard reload. The token is now the file's content hash — see
+        src/app_helpers.substitute_asset_versions."""
+        assert "style.css?v={{ASSET_V:style.css}}" in HTML
 
 
 class TestModuleBehaviour:
