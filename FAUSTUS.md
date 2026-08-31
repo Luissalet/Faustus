@@ -4,7 +4,7 @@
 
 - Base del fork: commit upstream `c9dd68d8` (27-08-2026, "refactor(docs): separate Pages site source").
 - Ramas: `feat/projects` (principal, `D:\LocalAI\odysseus`) y `feat/reliability` (desarrollo, worktree `D:\LocalAI\odysseus-dev`, instancia de pruebas en el puerto 7001). La rama de desarrollo se fusiona en la principal por fast-forward.
-- Cifras a 31-08-2026 (18:05): **107 commits**, 339 ficheros tocados, **+23.049 líneas** (−816); 25 módulos nuevos (14 de backend, 3 de rutas, 8 de frontend) + `scripts/faustus_rename.py`, 31 ficheros de tests nuevos. Suite completa: **6.028 tests en verde en Windows** (partía de 178 fallos ambientales) y 6.081 en Linux; e2e Playwright **10/10** en Windows y Linux.
+- Cifras a 31-08-2026 (20:40): **117 commits**, 386 ficheros tocados, **+28.084 líneas** (−835); 33 módulos nuevos (20 de backend, 3 de rutas, 10 de frontend) + `scripts/faustus_rename.py`, 46 ficheros de tests nuevos. Suite completa: **6.218 tests en verde en Windows**, 66 saltados, 5 min 15 s (partía de 178 fallos ambientales); e2e Playwright **10/10** verificado en la tanda anterior.
 - Máquina de referencia: RTX 4070 Ti 12 GB, 128 GB RAM, Windows 11, Ollama 0.33.x; modelos `qwen3-coder:30b`, `qwen3.5:9b`, `qwen3.8:27b`, `qwen3-coder-next`.
 
 ---
@@ -224,6 +224,68 @@ Odysseus se identifica con un glifo de **velero** (dos velas y una ola) que sigu
 
 ### Verificación
 El SVG vive **inline en cuatro sitios**, cada uno con su escapado distinto — data: URI url-encoded en el `<link rel=icon>`, concatenación de strings JS en el script de arranque, template literal en `theme.js::_updateFavicon`, y HTML plano en la pantalla de bienvenida — y no hay build que los mantenga sincronizados. Sustituir el dibujo con una regex **se comió las comillas dobles** del literal del script de arranque: un error de sintaxis que deja la página en blanco y que **los 262 tests de Python seguían pasando**. De ahí `tests/test_faustus_mark.py` (15 tests): parsea el SVG de los cuatro sitios como XML y compara la geometría, comprueba que el glifo viejo ya no aparece, que los dos registros de iconos por ruta siguen en sync, que existen los assets y que las rutas de notificación resuelven — y pasa **cada bloque `<script>` inline de `index.html` por `node --check`**, que es lo único que habría cazado el fallo real.
+
+---
+
+---
+
+## 8. Deuda del roadmap upstream (31-08-2026, noche)
+
+El `ROADMAP.md` de Odysseus es una lista de "help wanted" con 30 puntos. Se hizo una **criba explícita**: todo lo que existe para que el proyecto funcione en máquinas ajenas (smoke tests de instalación en macOS/Linux/Docker/WSL, Cookbook multiplataforma y SGLang, ranking de descargas, auditoría de proveedores cloud, accesibilidad, tours de primer arranque, pulido móvil, hardening multiusuario, LDAP) **queda fuera** — este fork corre en un PC, el de Luis. Lo que sí se implementó son los siete puntos que afectan a usar Faustus a diario con modelos locales. Cada uno se eligió porque *ya había mordido* o porque el roadmap lo marca como alta prioridad para modelos pequeños.
+
+### 8.1 Salud de los servicios: el informe que nadie pedía
+
+`GET /api/diagnostics/services` existía en upstream desde hace meses, con sus sondas de ChromaDB, SearXNG, ntfy, email y endpoints — y **cero llamadas desde el frontend** (`grep` en `static/`: ni una). Ese es exactamente el fallo del roadmap ("better degraded-state reporting"): cuando Docker se cierra, ChromaDB se va con él, el RAG de documentos y la memoria vectorial caen a coincidencia por palabras **en silencio** y las respuestas simplemente empeoran.
+
+- `src/service_hints.py`: tabla de pistas accionables por categoría de fallo, sin secretos (nada se interpola desde el `meta` de la sonda, que puede llevar URLs con credenciales). Incluye el caso peor: `chromadb` en estado `disabled`, que significa "los almacenes no se llegaron a crear al arrancar" y por tanto keyword-only para toda la sesión.
+- `src/service_recovery.py` + `VectorRAG.reconnect()` / `MemoryVectorStore.reconnect()`: reinicialización **sobre el objeto existente**. Crear una instancia nueva no serviría: el chat processor, el proveedor de memoria y media docena de rutas guardan la referencia vieja. Con esto se recupera "cerré Docker" sin reiniciar Faustus.
+- `POST /api/diagnostics/services/reconnect` y pistas adjuntas al GET.
+- `static/js/serviceHealth.js`: punto en la barra de usuario (verde/ámbar/rojo), sondeo cada 60 s y al volver a la pestaña, **aviso una sola vez en la transición ok → degradado**, y panel con qué está roto, qué hacer y el comando para copiar.
+
+### 8.2 Libro de contexto y adelgazado de herramientas
+
+Punto nº1 del roadmap para modelos locales ("agent prompt/context bloat"). La mitad que faltaba no era un recortador, era **una medición**: nadie podía decir que 9k de una ventana de 32k eran esquemas de herramientas antes de escribir una palabra.
+
+- `src/context_ledger.py`: reparto por secciones (sistema, esquemas de tools, instrucciones, skills, memorias, documentos, web, resultados de herramientas, historial, tu mensaje) de los mensajes exactos que se van a enviar, más una línea de consejo cuando una sección se desmadra para la ventana en juego. Se emite como evento `context_ledger` (ronda 1, y luego sólo si crece un 25 % o se pasa del 75 %), lo reenvía `chat_routes` y lo pinta `agentHarnessUI` como tarjeta.
+- `src/tool_slimming.py`: **sólo en ventanas de 4k/8k/16k**, recorta la prosa de los esquemas (descripciones de herramienta y de parámetros) hasta que caben en ~15 % de la ventana. Nunca elimina una herramienta — quitar la que el modelo necesitaba es un fallo indepurable — y nunca muta los esquemas globales, que son singletons compartidos entre peticiones. Se apaga con `agent_tool_schema_slim`.
+
+### 8.3 Copias de seguridad que demuestran que restaurarían
+
+El roadmap pide "backup/restore guide and helper flow for `data/`". El CLI (`scripts/odysseus-backup`) ya existía; lo que faltaba es que **nadie ejecuta un CLI a mano**, y la máquina sin copia siempre es la que lo tiene todo dentro.
+
+- `src/backup_service.py`: mismo formato tar.gz que el CLI (entradas bajo `data/`, intercambiables), snapshot automático cada `backup_interval_hours` conservando `backup_keep`, y **verificación real**: se reabre el archivo, se validan los miembros y se extrae *sólo* los `.db` a un temporal para pasarles `PRAGMA integrity_check`. Una copia que no restauraría se detecta el día que se hace, no el día que hace falta.
+- `GET/POST /api/backup/snapshots|snapshot|verify` (admin, ruta confinada al directorio de copias) y `/backup` en el compositor. **No hay endpoint de restauración a propósito**: sobrescribir `data/` con la app corriendo y las bases abiertas convierte un problema en dos; la API devuelve el comando exacto.
+- Dos bugs de Windows que cazaron los tests: (1) un `.db` que no es SQLite hacía que `.backup()` lanzara y **se filtraran las dos conexiones**, así que `TemporaryDirectory` moría con `WinError 32` y se llevaba por delante la copia entera — un fichero basura bastaba para dejar el sistema sin backups (el CLI de upstream tiene la misma forma); (2) un tar.gz truncado sale por `EOFError`/`zlib.error`, que no son `TarError` ni `OSError`, así que el camino de "archivo corrupto" escapaba como 500 en vez de informar.
+
+### 8.4 Notas al agente
+
+"Todos should be assignable to an agent from the UI." El agente ya tenía `manage_notes`; faltaba el gesto. `static/js/noteToAgent.js` añade un botón a la tarjeta de nota que compone el prompt nombrando la nota por id, listando **sólo los ítems abiertos con su índice real**, y pidiendo que haga el trabajo de verdad y vaya marcando cada ítem con `manage_notes` — así se actualiza la lista que estás mirando, no una copia. Se envía por el camino normal del chat, con lo que siguen aplicando el modo agente, el workspace vinculado y la cola de la GPU.
+
+### 8.5 Inyección de prompt: atacar el envoltorio
+
+La auditoría que ya había (`test_prompt_injection_audit.py`) comprueba que el contenido recuperado **entra** en el envoltorio. Esta ataca el envoltorio mismo. Los marcadores de guarda se neutralizaban con dos `str.replace()` literales, así que `<<<end untrusted source data>>>`, un ángulo de más o un carácter de ancho cero metido dentro de la palabra pasaban enteros y podían cerrar el bloque antes de tiempo.
+
+- Detección insensible a mayúsculas, tolerante a espacios/guiones bajos/ángulos extra, y repetida hasta punto fijo para que un marcador partido no se recomponga.
+- Se eliminan antes los portadores invisibles: **bloque de etiquetas Unicode** (E0000–E007F, que codifica una frase entera que se renderiza como nada), espacio de ancho cero, uniones de palabra y BOM. **No** se tocan ZWNJ, ZWJ ni las marcas bidi: el persa y los emojis compuestos los necesitan, y destrozar un documento es un bug por derecho propio.
+- El intento queda **registrado en los metadatos** del mensaje en vez de pasar en silencio, y las etiquetas se capan a 200 caracteres.
+
+### 8.6 Guardarraíles de CSS y versión por hash
+
+`static/style.css` son 42.000 líneas que empiezan con reglas de tipo que ganan a las clases de cualquier componente nuevo (ver [[faustus-css-gotchas]]). Dos medidas:
+
+- El `?v=` de la hoja era un token escrito a mano: cada cambio de CSS necesitaba una segunda edición para verse, y olvidarla produce el peor parte de bugs posible ("tu arreglo no ha hecho nada"). Ahora `index.html` lleva `{{ASSET_V:style.css}}` y `src/app_helpers` lo sustituye por el **hash del contenido**, así que la URL cambia cuando cambia el fichero y sólo entonces. El JS conserva sus tokens literales: esas mismas cadenas aparecen dentro de `import … from './x.js?v=…'` y desincronizarlas carga el módulo dos veces.
+- `tests/test_css_guardrails.py` congela las tres trampas: nada de nuevos selectores de tipo globales, toda clase de botón que se pinta el fondo debe declarar su propio `:hover` (el `button:hover` global gana a la regla base de una clase), y `-webkit-line-clamp` no se extiende (ya no recorta en el Chrome actual). Los infractores existentes van en listas explícitas de deuda, y un test avisa cuando una de esas listas se queda obsoleta.
+
+### 8.7 Deep Research a la medida de la tarjeta
+
+Los siete números de `research_*` vienen ajustados para un modelo alojado y rápido. En una GPU local eso lanza varias extracciones contra la misma tarjeta, todas revientan el timeout de 90 s y la investigación termina sin contenido — que se lee como "la web no tenía nada", no como un problema de ajustes.
+
+- `src/research_presets.py`: perfiles por VRAM (`tight` <10 GB, `mid` 10–16, `roomy` 17–32, `big` 33+) con presupuesto de tokens, concurrencia de extracción y timeouts; el hardware se detecta con `services.hwfit` y, si falla, se cae al perfil conservador diciéndolo. `apply_patch` escribe **sólo** las claves que le pertenecen, para que "aplicar preset" no sea un endpoint de escritura arbitraria de ajustes disfrazado.
+- **Bloqueadores**, la otra mitad: búsqueda desactivada, SearXNG elegido sin instancia que responda (el caso real de este PC: `search_url` vacío y el contenedor sin levantar), un proveedor con clave y la clave vacía, o ningún modelo. Cada uno con su arreglo de un clic, siempre **opt-in**, nunca como efecto colateral del preset.
+- `GET/POST /api/research/preset[/apply]` y `/researchfit` en el compositor (`/research` ya estaba cogido por el panel).
+
+### Verificación
+**175 tests nuevos en 15 ficheros** (46 ficheros tocados, +4.780 líneas). Además de los de unidad, los de cableado: cada función nueva tiene un test que comprueba que **está enchufada**, porque el fallo que abre esta sección — un endpoint perfecto que nadie llama — es la forma más silenciosa de no entregar nada. Y los tres bugs reales de esta tanda (las dos conexiones SQLite filtradas, el `zlib.error` del tar truncado, el `?v=` olvidado) los encontraron los tests, no el uso.
 
 ---
 

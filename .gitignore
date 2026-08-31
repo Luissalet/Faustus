@@ -120,3 +120,6 @@ compound.config.json
 *.error.log
 _scratch/
 /odysseus/
+
+# Snapshots de data/ (scripts/odysseus-backup y src/backup_service) — pueden ser cientos de MB.
+backups/
