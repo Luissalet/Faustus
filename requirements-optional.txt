@@ -13,7 +13,7 @@
 faster-whisper
 
 # Local text-to-speech via Kokoro-82M for the "local" TTS provider.
-# Kokoro 0.9.4 declares Python >=3.10,<3.13; Odysseus itself requires 3.11+,
+# Kokoro 0.9.4 declares Python >=3.10,<3.13; Faustus itself requires 3.11+,
 # so pip installs these extras on 3.11-3.12 and deliberately skips them on
 # Python 3.13+ (including the Python 3.14 container image). Kokoro declares
 # torch; the local provider still

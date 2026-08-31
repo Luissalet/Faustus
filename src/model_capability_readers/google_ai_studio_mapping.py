@@ -1,7 +1,7 @@
 """Google AI Studio / Gemini native Models API capability mapping.
 
 This module maps already-fetched `models.list` and `models.get` payloads into
-Odysseus' canonical model capability shape. It performs no network I/O and
+Faustus' canonical model capability shape. It performs no network I/O and
 does not infer model capabilities from model IDs, display names, or product
 families. Only fields explicitly returned by Google's Model resource are
 mapped here.

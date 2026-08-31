@@ -217,7 +217,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p = argparse.ArgumentParser(
         prog="odysseus-calendar",
-        description="Shell-friendly wrapper around the Odysseus calendar.",
+        description="Shell-friendly wrapper around the Faustus calendar.",
         parents=[common],
     )
     sub = p.add_subparsers(dest="cmd", required=True)

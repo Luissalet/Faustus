@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Small Odysseus scoped API helper for Codex terminal sessions."""
+"""Small Faustus scoped API helper for Codex terminal sessions."""
 
 from __future__ import annotations
 
@@ -44,7 +44,7 @@ def _config() -> tuple[str, str] | None:
     if not token:
         missing.append("ODYSSEUS_API_TOKEN")
     if missing:
-        print(f"missing {', '.join(missing)}; create a Codex Agent token in Odysseus Settings", file=sys.stderr)
+        print(f"missing {', '.join(missing)}; create a Codex Agent token in Faustus Settings", file=sys.stderr)
         return None
     return base_url, token
 
@@ -178,7 +178,7 @@ def main() -> int:
     if not path.startswith("/"):
         path = "/" + path
     if not path.startswith("/api/codex/"):
-        print("refusing non-/api/codex path; use scoped Odysseus integration endpoints only", file=sys.stderr)
+        print("refusing non-/api/codex path; use scoped Faustus integration endpoints only", file=sys.stderr)
         return 2
 
     config = _config()

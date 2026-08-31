@@ -17,10 +17,10 @@ services:
     volumes:
       - ${APP_DATA_DIR:-./data}:/app/data:z
       - ${APP_LOGS_DIR:-./logs}:/app/logs:z
-      # Cookbook remote-server SSH identity. Odysseus can generate a key here;
+      # Cookbook remote-server SSH identity. Faustus can generate a key here;
       # add the shown public key to each remote server's authorized_keys.
       - ${APP_DATA_DIR:-./data}/ssh:/app/.ssh:z
-      # Cookbook local model cache. Inside Docker, "Local" means the Odysseus
+      # Cookbook local model cache. Inside Docker, "Local" means the Faustus
       # container, so persist its HuggingFace cache under ./data/huggingface.
       - ${APP_DATA_DIR:-./data}/huggingface:/app/.cache/huggingface:z
       # Cookbook-installed Python CLIs/packages (vLLM, llama-cpp-python, etc.)
@@ -77,7 +77,7 @@ services:
       # Externally reachable origin for MCP OAuth callbacks. The container
       # always listens on 7000 and cannot see the host port map above, so
       # remote MCP OAuth needs this set whenever the browser reaches
-      # Odysseus on anything other than http://localhost:7000.
+      # Faustus on anything other than http://localhost:7000.
       - OAUTH_REDIRECT_BASE_URL=${OAUTH_REDIRECT_BASE_URL:-}
       - TAVILY_API_KEY=${TAVILY_API_KEY:-}
       - SERPER_API_KEY=${SERPER_API_KEY:-}

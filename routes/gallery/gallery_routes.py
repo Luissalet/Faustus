@@ -1417,7 +1417,7 @@ def setup_gallery_routes() -> APIRouter:
             except httpx.TimeoutException:
                 raise HTTPException(504, "OpenAI inpaint timed out (120s)")
 
-        # Self-hosted diffusion server path. Newer Odysseus image
+        # Self-hosted diffusion server path. Newer Faustus image
         # wrappers expose the OpenAI-compatible /v1/images/edits
         # multipart route even when they are local/self-hosted. Older
         # diffusion_server.py exposes /v1/images/inpaint as JSON. Try the
@@ -1478,7 +1478,7 @@ def setup_gallery_routes() -> APIRouter:
                         # A plain SD/SDXL checkpoint often exposes
                         # generation only at /images/edits.
                         # That does not mean the endpoint cannot inpaint:
-                        # Odysseus diffusion_server.py has a dedicated
+                        # Faustus diffusion_server.py has a dedicated
                         # /images/inpaint route that can derive/fallback to
                         # inpaint, img2img crop+composite, or txt2img
                         # crop+composite. Fall through to that route instead

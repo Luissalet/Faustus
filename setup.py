@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Odysseus — first-time setup script.
+"""Faustus — first-time setup script.
 
 Creates data directories, initializes the database, and sets up an
 initial admin user. Safe to re-run (skips what already exists).
@@ -237,7 +237,7 @@ def check_arch():
 
 
 def main():
-    print("\n=== Odysseus Setup ===\n")
+    print("\n=== Faustus Setup ===\n")
 
     # Load .env so pre-seeded ODYSSEUS_ADMIN_USER / ODYSSEUS_ADMIN_PASSWORD (and
     # other deployment vars) are honored on native installs, not just when they

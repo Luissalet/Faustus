@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create/remove the switchable 'Demo' EmailAccount in Odysseus.
+"""Create/remove the switchable 'Demo' EmailAccount in Faustus.
 
 Mirrors the existing local-Dovecot account (localhost:31143, STARTTLS) but points
 at the throwaway demo@odysseus.local mailbox. Password is stored Fernet-encrypted

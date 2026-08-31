@@ -264,7 +264,7 @@ export function notifyStreamComplete(sessionId, query, outcome) {
     : unverified
       ? 'The agent finished' + (query ? ' "' + query.substring(0, 60) + '"' : '') + ' but its claims are NOT backed by tool evidence — review before trusting it'
       : (query ? 'Response to "' + query.substring(0, 60) + '" is ready' : 'Your chat response has completed') + (files ? ' · edited ' + files + ' file' + (files === 1 ? '' : 's') : '');
-  var notification = new Notification(waiting ? 'Odysseus needs your approval' : (unverified ? 'Odysseus finished — unverified' : 'Response Complete'), {
+  var notification = new Notification(waiting ? 'Faustus needs your approval' : (unverified ? 'Faustus finished — unverified' : 'Response Complete'), {
     body: body,
     tag: 'stream-' + sessionId,
   });

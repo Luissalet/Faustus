@@ -141,7 +141,7 @@ async def _create_bash_subprocess(command: str, **kwargs):
         if not bash:
             raise RuntimeError(
                 "Git Bash is required for the Bash tool on Windows; "
-                "install Git for Windows and restart Odysseus"
+                "install Git for Windows and restart Faustus"
             )
         return await asyncio.create_subprocess_exec(bash, "-c", command, **kwargs)
     # Own session/process group so a stuck command's whole tree can be killed.

@@ -256,7 +256,7 @@ def setup_companion_routes() -> APIRouter:
   <div class="row"><strong>Port:</strong> <code>{html.escape(str(port))}</code></div>
   <div class="row"><strong>Token:</strong> <code>{html.escape(raw_token)}</code></div>
   <div class="row"><strong>Payload:</strong> <code>{html.escape(payload_json)}</code></div>
-  <p class="warn">Shown once. This grants chat access to your Odysseus; revoke it
+  <p class="warn">Shown once. This grants chat access to your Faustus; revoke it
   in Settings &rarr; API tokens (id <code>{html.escape(token_id)}</code>). The
   device must be on the same network, and the server must bind to your LAN.</p>
 </div></body></html>"""

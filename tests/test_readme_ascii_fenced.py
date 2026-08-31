@@ -23,10 +23,11 @@ def _fenced_segments(text: str):
 
 
 def test_readme_opens_with_wordmark_title():
-    # The README must still open with a recognizable Odysseus title: now the
-    # centered wordmark image rather than an H1 / ASCII banner.
-    head = "\n".join(README.read_text(encoding="utf-8").splitlines()[:15])
-    assert 'alt="Odysseus"' in head, "README must open with the Odysseus wordmark image"
+    # The README opens with the fork's title (Faustus) and, right after the
+    # fork notice, the upstream wordmark image rather than an ASCII banner.
+    head = "\n".join(README.read_text(encoding="utf-8").splitlines()[:25])
+    assert head.startswith("# Faustus"), "README must open with the Faustus title"
+    assert 'alt="Odysseus"' in head, "README must keep the upstream wordmark image near the top"
 
 
 def test_reintroduced_ascii_banner_stays_fenced():

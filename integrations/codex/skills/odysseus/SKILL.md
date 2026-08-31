@@ -1,25 +1,25 @@
 ---
 name: odysseus
-description: Use when the user asks Codex to read or write Odysseus data (todos, email, calendar, memory, documents) or to launch/monitor/stop a Cookbook model-serve task through the scoped Codex Agent API. Requires ODYSSEUS_URL and ODYSSEUS_API_TOKEN.
+description: Use when the user asks Codex to read or write Faustus data (todos, email, calendar, memory, documents) or to launch/monitor/stop a Cookbook model-serve task through the scoped Codex Agent API. Requires ODYSSEUS_URL and ODYSSEUS_API_TOKEN.
 ---
 
-# Odysseus
+# Faustus
 
-Use this skill when a user asks to interact with Odysseus from Codex.
+Use this skill when a user asks to interact with Faustus from Codex.
 
 ## Configuration
 
 Expect these environment variables:
 
-- `ODYSSEUS_URL`: Base URL for the user's Odysseus instance, for example `http://127.0.0.1:7000`.
-- `ODYSSEUS_API_TOKEN`: Scoped API token created in Odysseus Settings > Integrations > Add Integration > Codex Agent.
+- `ODYSSEUS_URL`: Base URL for the user's Faustus instance, for example `http://127.0.0.1:7000`.
+- `ODYSSEUS_API_TOKEN`: Scoped API token created in Faustus Settings > Integrations > Add Integration > Codex Agent.
 
-If either value is missing, do not guess credentials. Tell the user to create a Codex Agent token in Odysseus Settings and expose both values to the terminal session.
+If either value is missing, do not guess credentials. Tell the user to create a Codex Agent token in Faustus Settings and expose both values to the terminal session.
 
 ## When to use what
 
 - **Reminder ("remind me at 5pm to do X")** → TODO with `due_date`. The due_date IS the reminder — it fires a notification automatically via the user's configured channel (browser/email/ntfy). **Do NOT create a calendar event for a reminder.** Creating a calendar event named "Reminder" does NOT trigger a notification — it's just a time block on the calendar.
-- **Calendar event ("meeting at 3pm", "dentist Tuesday 10am")** → calendar event. Use for scheduled time blocks, meetings, appointments, recurring schedules. These show up on the calendar grid; reminders for them are configured separately in Odysseus settings.
+- **Calendar event ("meeting at 3pm", "dentist Tuesday 10am")** → calendar event. Use for scheduled time blocks, meetings, appointments, recurring schedules. These show up on the calendar grid; reminders for them are configured separately in Faustus settings.
 - **Note / freeform info ("note that the wifi password is ...")** → memory or todo without a due_date (depending on whether it's a fact about the user or an action item).
 - **Persistent fact / preference about the user** → memory.
 
@@ -27,10 +27,10 @@ If the user says "reminder" + a time, default to TODO with due_date. Only switch
 
 ## Safety
 
-- All Odysseus data access MUST go through the scoped HTTP API under `/api/codex/*`.
+- All Faustus data access MUST go through the scoped HTTP API under `/api/codex/*`.
 - Check `/api/codex/capabilities` before using a tool surface.
 - Treat `403` as an intentional Settings restriction. Do not work around it.
-- Do not use SSH, Docker, direct Python imports, SQLite queries, MCP internals, browser cookies, or local files to read/write Odysseus user data.
+- Do not use SSH, Docker, direct Python imports, SQLite queries, MCP internals, browser cookies, or local files to read/write Faustus user data.
 - Do not call helpers like `do_manage_notes`, email MCP internals, or database sessions directly for user data, even if shell access exists.
 - Never send email directly unless the user explicitly asks to send and the token has a send-capable scope.
 - Keep actions scoped to the token owner.
@@ -102,13 +102,13 @@ python3 integrations/codex/scripts/odysseus_api.py POST /api/codex/memory '{"tex
 
 ## Email draft + send
 
-- Prefer `POST /api/codex/emails/draft-document` for Codex-written email replies. It creates an editable Odysseus Document with `language: "email"` and does not touch IMAP/send.
+- Prefer `POST /api/codex/emails/draft-document` for Codex-written email replies. It creates an editable Faustus Document with `language: "email"` and does not touch IMAP/send.
 - `POST /api/codex/emails/draft` — body matches `SendEmailRequest` (`to`, `cc`, `bcc`, `subject`, `body`, `body_html`, `attachments`, `account_id`, `in_reply_to`, `references`). Requires `email:draft` (or `email:send`).
 - `POST /api/codex/emails/send` — same body. Requires `email:send`. Never send without explicit user instruction.
 
 ## Cookbook serve (debug a failing model launch)
 
-The Cookbook surface lets you reproduce what a human would do in Odysseus → Cookbook: read which serves are running, tail their tmux output to see why they crashed, edit the launch command, relaunch, kill a stuck one. Use this when the user is debugging a model server that won't come up (compute-capability errors, OOM, missing kernels, wrong attention backend, etc.).
+The Cookbook surface lets you reproduce what a human would do in Faustus → Cookbook: read which serves are running, tail their tmux output to see why they crashed, edit the launch command, relaunch, kill a stuck one. Use this when the user is debugging a model server that won't come up (compute-capability errors, OOM, missing kernels, wrong attention backend, etc.).
 
 - `GET /api/codex/cookbook/tasks` — list active serve/download/install tasks (sessionId, type, status, repo_id, remoteHost, payload._cmd). Requires `cookbook:read`.
 - `GET /api/codex/cookbook/servers` — list configured servers (name, host, port, env type + path, model dirs). Requires `cookbook:read`.
@@ -139,4 +139,4 @@ python3 ~/plugins/odysseus/scripts/odysseus_api.py cookbook serve \
 
 ## Forbidden Bypass Pattern
 
-If you are about to reach the Odysseus host/container, import app internals, query the database, or call MCP helper modules directly, stop. Those paths bypass Odysseus Settings and token scopes. Ask the user to enable the relevant Codex Agent tool toggle instead.
+If you are about to reach the Faustus host/container, import app internals, query the database, or call MCP helper modules directly, stop. Those paths bypass Faustus Settings and token scopes. Ask the user to enable the relevant Codex Agent tool toggle instead.

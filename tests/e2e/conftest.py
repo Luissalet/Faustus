@@ -1,6 +1,6 @@
 """End-to-end browser tests (Playwright) for the key agent flows.
 
-Opt-in: they start a real Odysseus server (temp data dir, localhost bypass,
+Opt-in: they start a real Faustus server (temp data dir, localhost bypass,
 no auth) plus a scripted fake model endpoint, and drive the UI in headless
 Chromium. Run with:
 

@@ -1,7 +1,7 @@
 """mcp_oauth.py — generic OAuth for remote (Streamable HTTP) MCP servers.
 
 Bridges the mcp SDK's OAuthClientProvider (RFC 9728 discovery, Dynamic Client
-Registration, authorization-code + PKCE, token refresh) to Odysseus's web
+Registration, authorization-code + PKCE, token refresh) to Faustus's web
 callback route. Tokens and the dynamic registration persist per-server,
 encrypted, so the interactive flow runs only once.
 """
@@ -37,9 +37,9 @@ def _resolve_redirect_base() -> str:
 # OAuth redirect URI registered with every authorization server via DCR. Loopback
 # is allowed for native/desktop clients (RFC 8252); remote users finish via the
 # paste-back flow. Deployments whose externally reachable origin differs from the
-# port Odysseus binds — reverse proxy, public domain, or Docker, whose host port
+# port Faustus binds — reverse proxy, public domain, or Docker, whose host port
 # map is invisible inside the container — must set OAUTH_REDIRECT_BASE_URL (or
-# APP_PUBLIC_URL), otherwise the redirect never lands back on Odysseus.
+# APP_PUBLIC_URL), otherwise the redirect never lands back on Faustus.
 _REDIRECT_BASE = _resolve_redirect_base()
 REDIRECT_URI = f"{_REDIRECT_BASE}/api/mcp/oauth/callback"
 
@@ -154,7 +154,7 @@ class DbTokenStorage:
 
 def build_provider(server_id: str, url: str, on_redirect=None):
     """Construct an OAuthClientProvider that drives the browser flow via the
-    Odysseus callback route.
+    Faustus callback route.
 
     on_redirect(authorization_url): optional sync callback invoked the moment
     the authorization URL is known (after discovery + DCR). The manager uses it
@@ -165,7 +165,7 @@ def build_provider(server_id: str, url: str, on_redirect=None):
     from mcp.shared.auth import OAuthClientMetadata
 
     client_metadata = OAuthClientMetadata(
-        client_name="Odysseus",
+        client_name="Faustus",
         redirect_uris=[REDIRECT_URI],
         grant_types=["authorization_code", "refresh_token"],
         response_types=["code"],

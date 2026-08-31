@@ -223,7 +223,7 @@ def setup_workspace_routes():
         workspace: str = Query(default=""),
         path: str = Query(default=""),
     ):
-        """Open the OS file manager with the file selected (Odysseus runs on
+        """Open the OS file manager with the file selected (Faustus runs on
         the same machine as the browser in the local setup)."""
         owner = get_current_user(request)
         if not owner_is_admin_or_single_user(owner):
@@ -251,7 +251,7 @@ def setup_workspace_routes():
         line: int = Query(default=0),
     ):
         """Open the file in VS Code (`code -g file:line`) when it is installed
-        on the Odysseus host; falls back to the OS default handler."""
+        on the Faustus host; falls back to the OS default handler."""
         owner = get_current_user(request)
         if not owner_is_admin_or_single_user(owner):
             raise HTTPException(status_code=403, detail="Admin-only")

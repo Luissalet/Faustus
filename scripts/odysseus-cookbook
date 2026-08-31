@@ -500,7 +500,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p = argparse.ArgumentParser(
         prog="odysseus-cookbook",
-        description="Shell-friendly wrapper around the Odysseus cookbook (model download + serve).",
+        description="Shell-friendly wrapper around the Faustus cookbook (model download + serve).",
         parents=[common],
     )
     sub = p.add_subparsers(dest="cmd", required=True)

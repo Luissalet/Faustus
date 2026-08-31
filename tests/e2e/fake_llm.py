@@ -1,6 +1,6 @@
 """A scripted OpenAI-compatible model server for the end-to-end tests.
 
-Serves POST /v1/chat/completions (streaming SSE, the shape Odysseus's
+Serves POST /v1/chat/completions (streaming SSE, the shape Faustus's
 llm_core consumes) and answers each call of a chat with the next scripted
 response. Tool calls are emitted as fenced blocks in the text (the format the
 agent loop parses for local models), e.g.

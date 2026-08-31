@@ -572,7 +572,7 @@ def stop(session_id: str, expected_run_id: Optional[str] = None) -> bool:
 # ---------------------------------------------------------------------------
 
 _INTERRUPTED: Dict[str, Dict[str, Any]] = {}
-INTERRUPTED_NOTE = "[Interrupted: Odysseus was restarted while this task was running. What it had produced is kept above; send \"continue\" to pick it up.]"
+INTERRUPTED_NOTE = "[Interrupted: Faustus was restarted while this task was running. What it had produced is kept above; send \"continue\" to pick it up.]"
 
 
 def _read_log(path: str) -> Dict[str, Any]:

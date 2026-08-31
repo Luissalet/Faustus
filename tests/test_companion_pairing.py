@@ -156,7 +156,7 @@ def test_parse_companion_base_url_accepts_v1_client_addresses(value, expected):
         "http://odysseus.local:65536",
         "http://odysseus.local:07000",
         "HTTP://odysseus.local:7000",
-        "http://Odysseus.local:7000",
+        "http://Faustus.local:7000",
         " http://odysseus.local",
         "http://odysseus.local ",
         "http://odysseus\\local",

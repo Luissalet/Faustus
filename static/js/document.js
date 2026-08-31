@@ -3297,8 +3297,8 @@ import { bindMenuDismiss, dismissOrRemove } from './escMenuStack.js';
       _afterOdysseusAttachmentsAdded(1, label || data.filename);
       if (!opts.keepOpen) _closeOdysseusAttachMenu();
     } catch (err) {
-      console.error('Failed to attach Odysseus item:', err);
-      if (uiModule) uiModule.showError('Failed to attach from Odysseus');
+      console.error('Failed to attach Faustus item:', err);
+      if (uiModule) uiModule.showError('Failed to attach from Faustus');
     }
   }
 
@@ -3346,8 +3346,8 @@ import { bindMenuDismiss, dismissOrRemove } from './escMenuStack.js';
       _afterOdysseusAttachmentsAdded(added, zip ? 'odysseus-attachments.zip' : undefined);
       _closeOdysseusAttachMenu();
     } catch (err) {
-      console.error('Failed to attach selected Odysseus items:', err);
-      if (uiModule) uiModule.showError(added ? `Attached ${added}, then failed` : 'Failed to attach from Odysseus');
+      console.error('Failed to attach selected Faustus items:', err);
+      if (uiModule) uiModule.showError(added ? `Attached ${added}, then failed` : 'Failed to attach from Faustus');
       _renderComposeAttachments();
     } finally {
       if (btn) {
@@ -3421,7 +3421,7 @@ import { bindMenuDismiss, dismissOrRemove } from './escMenuStack.js';
       }
       _syncOdysseusAttachSelection(menu);
     } catch (err) {
-      console.error('Failed to load Odysseus attach items:', err);
+      console.error('Failed to load Faustus attach items:', err);
       list.innerHTML = '<div class="email-odysseus-attach-empty">Could not load</div>';
     }
   }

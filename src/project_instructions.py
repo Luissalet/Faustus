@@ -2,7 +2,7 @@
 
 Coding agents have converged on a convention: a Markdown file at the root of
 the repository (AGENTS.md, CLAUDE.md, …) that tells the agent how the project
-works — conventions, how to run the tests, what not to touch. Odysseus injects
+works — conventions, how to run the tests, what not to touch. Faustus injects
 that file into the system prompt of every turn that has a workspace, so a
 local model does not have to rediscover (or invent) the rules each time.
 

@@ -699,7 +699,7 @@ function settingsHtml(project, isNew) {
           </div>
           <div class="project-field">
             <label for="project-instructions">Instructions <span>Optional</span></label>
-            <textarea id="project-instructions" rows="10" maxlength="10000" placeholder="How should Odysseus work in this project?">${esc(value.instructions)}</textarea>
+            <textarea id="project-instructions" rows="10" maxlength="10000" placeholder="How should Faustus work in this project?">${esc(value.instructions)}</textarea>
             <p id="project-cost">Sent with every message in this project.</p>
           </div>
           <fieldset class="project-field project-agent-fields">
@@ -966,7 +966,7 @@ async function openContextPreview(project) {
           <div><h2>Model context</h2><p>${Number(chars || 0).toLocaleString()} characters sent before each message${extras.length ? ' — ' + extras.join('; ') : ''}</p></div>
         </header>
         <div class="project-editor-card">
-          <p class="project-context-explainer">This is the exact project block Odysseus prepends to the chat. It combines work roots, instructions, chat lookup guidance and the short memory index.</p>
+          <p class="project-context-explainer">This is the exact project block Faustus prepends to the chat. It combines work roots, instructions, chat lookup guidance and the short memory index.</p>
           <textarea class="project-memory-editor project-context-preview" readonly spellcheck="false">${esc(block || '')}</textarea>
         </div>
       </div>`;

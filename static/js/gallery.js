@@ -2629,7 +2629,7 @@ export function openGallery() {
   const _bulkActionsBtn = document.getElementById('gallery-bulk-actions');
   function _showGalleryBulkMenu(anchor) {
     document.querySelectorAll('.gallery-bulk-menu').forEach(dismissOrRemove);
-    // Standard Odysseus dropdown (.dropdown + dropdown-item-compact) so it
+    // Standard Faustus dropdown (.dropdown + dropdown-item-compact) so it
     // matches every other menu in the app. Positioned fixed at the button.
     const dropdown = document.createElement('div');
     dropdown.className = 'dropdown gallery-bulk-menu';

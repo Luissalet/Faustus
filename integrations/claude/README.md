@@ -1,10 +1,10 @@
-# Odysseus Claude Code Integration
+# Faustus Claude Code Integration
 
-This directory contains the Claude Code skill bundle for Odysseus.
+This directory contains the Claude Code skill bundle for Faustus.
 
 ## User Flow
 
-1. Open Odysseus Settings > Integrations.
+1. Open Faustus Settings > Integrations.
 2. Add a Claude Agent.
 3. Copy the full setup commands shown after the generated token.
 4. Toggle the tools Claude is allowed to use.
@@ -31,6 +31,6 @@ environment.
 
 ## Scope enforcement
 
-The token is scope-gated. Every tool surface is checked server-side in Odysseus,
+The token is scope-gated. Every tool surface is checked server-side in Faustus,
 so even if Claude tries to call a forbidden endpoint, it gets `403` until the
 user enables the matching toggle in Settings > Integrations > Claude Agent.

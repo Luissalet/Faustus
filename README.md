@@ -1,3 +1,11 @@
+# Faustus
+
+**Faustus** es el fork personal de Luis de Odysseus: la misma base (chat, agentes, investigación, documentos, correo, notas, calendario, modelos locales) más una capa propia de fiabilidad y autonomía del agente — arnés de evidencia, checkpoints y "volver a antes de este turno", tests del proyecto tras cada cambio, auto-revisión del diff, sub-agentes con ficheros exclusivos, cola de GPU y runs persistentes, scorecard de modelos, auditoría por proyecto y una suite de tests que pasa en Windows. Todo lo que añade el fork está documentado en [`FAUSTUS.md`](FAUSTUS.md).
+
+El resto de este README es la documentación del proyecto original (Odysseus), que sigue siendo válida: los identificadores internos, variables de entorno (`ODYSSEUS_*`), rutas y comandos no cambian.
+
+---
+
 <p align="center">
   <img src="assets/branding/odysseus-wordmark.png" alt="Odysseus" width="238">
 </p>

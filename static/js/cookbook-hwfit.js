@@ -1030,7 +1030,7 @@ function _renderHwVisibilityWarning(sys) {
   box.querySelector('[data-hw-action="copy"]')?.addEventListener('click', () => {
     // Keep diagnostics copy/paste friendly for GitHub issues and Docker support.
     const text = [
-      'Odysseus Cookbook hardware diagnostics',
+      'Faustus Cookbook hardware diagnostics',
       `probe_scope=${sys?.probe_scope || ''}`,
       `containerized=${sys?.containerized === true}`,
       `backend=${sys?.backend || ''}`,

@@ -1284,7 +1284,7 @@ async def do_edit_image(
         return f"/api/generated-image/{filename}", _save_edited_image_to_gallery(filename)
 
     async def _try_local_img2img_fallback(client: httpx.AsyncClient) -> Optional[Dict[str, Any]]:
-        """Try Odysseus' local diffusion img2img endpoint.
+        """Try Faustus' local diffusion img2img endpoint.
 
         Some self-hosted SD/SDXL endpoints expose text-to-image plus
         `/images/harmonize`/img2img, but not OpenAI's multipart

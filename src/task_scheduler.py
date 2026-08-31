@@ -851,7 +851,7 @@ class TaskScheduler:
             if gate_foreground:
                 waiting = db.query(TaskRun).filter(TaskRun.id == run_id).first()
                 if waiting and waiting.status == "queued":
-                    waiting.result = "Queued — waiting for Odysseus to be idle…"
+                    waiting.result = "Queued — waiting for Faustus to be idle…"
                     db.commit()
                 from src.interactive_gate import wait_for_interactive_quiet
                 await wait_for_interactive_quiet(f"scheduled task {task.name}")
@@ -901,7 +901,7 @@ class TaskScheduler:
                         await asyncio.sleep(0.25)
                         if has_foreground_activity():
                             foreground_cancel["hit"] = True
-                            logger.info("Task '%s' interrupted because Odysseus became active", task.name)
+                            logger.info("Task '%s' interrupted because Faustus became active", task.name)
                             if current_task:
                                 current_task.cancel()
                             return
@@ -947,7 +947,7 @@ class TaskScheduler:
                 return
             except asyncio.CancelledError:
                 msg = (
-                    "Paused because Odysseus became active"
+                    "Paused because Faustus became active"
                     if foreground_cancel.get("hit")
                     else "Stopped by user"
                 )
@@ -2277,11 +2277,11 @@ class TaskScheduler:
         stopped = self._mark_run_aborted(task_id) or stopped
         return stopped
 
-    async def stop_background_tasks_for_foreground(self, *, reason: str = "Odysseus became active") -> int:
+    async def stop_background_tasks_for_foreground(self, *, reason: str = "Faustus became active") -> int:
         """Cancel all in-process scheduler tasks because the user is active.
 
         This is intentionally blunt for scheduled/background work: when the
-        user opens or uses Odysseus, foreground interaction wins immediately.
+        user opens or uses Faustus, foreground interaction wins immediately.
         Manual force-runs can be restarted by the user; automatic jobs will be
         deferred by their cancellation path instead of stealing the app.
         """

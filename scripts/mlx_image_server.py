@@ -2,7 +2,7 @@
 """OpenAI-compatible image API wrapper for MLX image models.
 
 This is intentionally small: it exposes the same `/v1/images/generations`
-shape Odysseus already uses for local image endpoints, then delegates to the
+shape Faustus already uses for local image endpoints, then delegates to the
 MLX image CLI for the actual generation. Text MLX models still use
 `mlx_lm.server`; image MLX models should use this wrapper.
 """
@@ -45,7 +45,7 @@ class HarmonizeRequest(BaseModel):
     strength: float = 0.35
 
 
-app = FastAPI(title="Odysseus MLX Image Server")
+app = FastAPI(title="Faustus MLX Image Server")
 _args: argparse.Namespace
 
 
@@ -120,14 +120,14 @@ def _unsupported_swift_mlx_runtime(model: str) -> HTTPException:
     if _is_ddcolor(model):
         return HTTPException(
             503,
-            "DDColor MLX models require an Odysseus-compatible mlx-ddcolor-swift bridge. "
+            "DDColor MLX models require an Faustus-compatible mlx-ddcolor-swift bridge. "
             "Build/install a bridge binary named odysseus-mlx-colorize or mlx-ddcolor-serve "
             "on the Apple Silicon host PATH. Upstream currently ships Swift libraries and "
             "smoke executables, not a stable colorize CLI.",
         )
     return HTTPException(
         503,
-        "LaMa / MI-GAN MLX inpainting models require an Odysseus-compatible mlx-lama-swift bridge. "
+        "LaMa / MI-GAN MLX inpainting models require an Faustus-compatible mlx-lama-swift bridge. "
         "Build/install a bridge binary named odysseus-mlx-inpaint or mlx-lama-serve "
         "on the Apple Silicon host PATH. Upstream currently ships Swift libraries and "
         "smoke executables, not a stable image-edit CLI.",
@@ -233,7 +233,7 @@ def _run_inpaint_bridge(model: str, image_raw: bytes, mask_raw: bytes | None, ou
     if not mask_raw:
         raise HTTPException(
             422,
-            "LaMa / MI-GAN inpainting requires an image mask. Use the editor inpaint/object-removal tool so Odysseus can send the mask.",
+            "LaMa / MI-GAN inpainting requires an image mask. Use the editor inpaint/object-removal tool so Faustus can send the mask.",
         )
     bridge = _resolve_bridge(["odysseus-mlx-inpaint", "mlx-lama-serve"])
     if not bridge:

@@ -189,7 +189,7 @@ REASONING_CONTROL_BUDGET = "reasoning_budget"  # Token budget control, e.g. thin
 REASONING_CONTROL_EFFORT = "reasoning_effort"  # Graded effort control, e.g. low/medium/high.
 
 # Canonical reasoning control values describe what the provider control accepts.
-# Odysseus runtime preferences can also use auto/on/off, but that is a separate
+# Faustus runtime preferences can also use auto/on/off, but that is a separate
 # layer that later code resolves into these provider-specific controls.
 REASONING_CONTROL_VALUE_ON = "on"  # Provider supports explicitly requesting reasoning on.
 REASONING_CONTROL_VALUE_OFF = "off"  # Provider supports explicitly requesting reasoning off.

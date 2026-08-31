@@ -1,13 +1,13 @@
 #Requires -Version 5.1
 <#
-  Build a portable Windows distribution for Odysseus.
+  Build a portable Windows distribution for Faustus.
 
   Output layout:
-    dist\Odysseus\Odysseus.exe
-    dist\Odysseus\static\...
-    dist\Odysseus\scripts\...
-    dist\Odysseus\mcp_servers\...
-    dist\Odysseus\services\hwfit\data\...
+    dist\Faustus\Faustus.exe
+    dist\Faustus\static\...
+    dist\Faustus\scripts\...
+    dist\Faustus\mcp_servers\...
+    dist\Faustus\services\hwfit\data\...
 
   The app then keeps using its normal filesystem layout when frozen.
 
@@ -63,10 +63,10 @@ $dataArgs = @(
     "--add-data", ".env.example;.env.example"
 )
 
-& $pyExe -m PyInstaller --noconfirm --clean --onedir --noconsole --icon=static/icon.ico --name Odysseus @dataArgs launcher.py
+& $pyExe -m PyInstaller --noconfirm --clean --onedir --noconsole --icon=static/icon.ico --name Faustus @dataArgs launcher.py
 if ($LASTEXITCODE -ne 0) { Fail "PyInstaller build failed." }
 
 Write-Host ""
 Write-Host "Build complete." -ForegroundColor Green
-Write-Host "Portable app folder: $PSScriptRoot\dist\Odysseus" -ForegroundColor Green
+Write-Host "Portable app folder: $PSScriptRoot\dist\Faustus" -ForegroundColor Green
 Write-Host "Distribute the whole folder (or zip it) so static assets and scripts stay with the exe." -ForegroundColor Green

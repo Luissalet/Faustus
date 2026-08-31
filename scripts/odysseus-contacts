@@ -119,7 +119,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p = argparse.ArgumentParser(
         prog="odysseus-contacts",
-        description="Shell-friendly wrapper around the Odysseus contacts (CardDAV) feature.",
+        description="Shell-friendly wrapper around the Faustus contacts (CardDAV) feature.",
         parents=[common],
     )
     sub = p.add_subparsers(dest="cmd", required=True)

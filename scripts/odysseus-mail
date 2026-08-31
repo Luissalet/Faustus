@@ -347,7 +347,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p = argparse.ArgumentParser(
         prog="odysseus-mail",
-        description="Shell-friendly wrapper around the Odysseus email backend.",
+        description="Shell-friendly wrapper around the Faustus email backend.",
         parents=[common],
     )
     sub = p.add_subparsers(dest="cmd", required=True)

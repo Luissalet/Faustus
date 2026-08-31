@@ -307,7 +307,7 @@ export function handleCommand(name, args) {
     }
     case 'think': case 'thinking': {
       if (!a || a === 'show') { const t = _effective(sid).think; return `Thinking: <b>${t === 'auto' ? 'auto' : (t ? 'on' : 'off')}</b>.`; }
-      if (a === 'auto' || a === 'reset') { setOverride('think', null); return 'Thinking: auto (Odysseus decides per model).'; }
+      if (a === 'auto' || a === 'reset') { setOverride('think', null); return 'Thinking: auto (Faustus decides per model).'; }
       if (a === 'on' || a === 'off') { setOverride('think', a === 'on'); return `Thinking <b>${a}</b> for this chat (applies to models that support it).`; }
       return 'Usage: <code>/think on|off|auto</code>.';
     }

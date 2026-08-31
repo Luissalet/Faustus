@@ -1,4 +1,4 @@
-// Odysseus UI — startup shell sequencing
+// Faustus UI — startup shell sequencing
 // ES6 module — no application dependencies, DOM only.
 //
 // Revealing the application shell, retiring the boot loader, settling the

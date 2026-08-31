@@ -282,7 +282,7 @@ function _bindEvents() {
     });
   }
 
-  // Delay the lightweight unread badge check so opening Odysseus doesn't
+  // Delay the lightweight unread badge check so opening Faustus doesn't
   // compete with the initial chat/session paint. The full email list now loads
   // only when the inbox is actually opened.
   setTimeout(_refreshUnreadCount, 8000);

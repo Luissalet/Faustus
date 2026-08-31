@@ -175,7 +175,7 @@ def _fetch_hf_image_collection_models() -> list[dict[str, Any]]:
     for slug, mlx_only in [(slug, False) for slug in HF_IMAGE_COLLECTIONS] + [(slug, True) for slug in HF_MLX_IMAGE_COLLECTIONS]:
         url = f"https://huggingface.co/api/collections/{slug}"
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "Odysseus-Cookbook/1.0"})
+            req = urllib.request.Request(url, headers={"User-Agent": "Faustus-Cookbook/1.0"})
             with urllib.request.urlopen(req, timeout=2.5) as resp:
                 data = json.loads(resp.read().decode("utf-8", "replace"))
         except Exception:
@@ -201,7 +201,7 @@ def _hf_model_search(query: str, limit: int = 10) -> list[dict[str, Any]]:
         "limit": str(limit),
     })
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "Odysseus-Cookbook/1.0"})
+        req = urllib.request.Request(url, headers={"User-Agent": "Faustus-Cookbook/1.0"})
         with urllib.request.urlopen(req, timeout=2.5) as resp:
             data = json.loads(resp.read().decode("utf-8", "replace"))
         return data if isinstance(data, list) else []
