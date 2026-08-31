@@ -413,6 +413,7 @@ function chatRowsHtml(project) {
   return chats.slice(0, 12).map(chat => `
     <div class="project-chat-row-wrap">
       <button type="button" class="project-chat-row" data-session="${esc(chat.id)}">
+        <span class="session-status" data-session-status="${esc(chat.id)}"></span>
         <span class="project-chat-icon">${ICON.chat}</span>
         <span class="grow"><strong>${esc(chat.name || 'Untitled')}</strong><small>${esc(chat.summary || chat.last_message || 'Open conversation')}</small></span>
         <time>${relativeTime(chat.updated_at || chat.created_at)}</time>

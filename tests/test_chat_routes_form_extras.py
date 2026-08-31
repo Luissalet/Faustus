@@ -56,3 +56,32 @@ def test_workspace_bound_coding_chat_is_escalated_to_agent():
     assert looks("Fix the failing test in the repo")
     assert not looks("¿Qué tal estás hoy?")
     assert not looks("Explain what a closure is")
+
+
+def test_activity_snapshot_helpers():
+    """Sidebar activity dots: detached runs + pending approvals in one call."""
+    from src import agent_runs
+    from src.tool_approvals import ToolApprovalStore
+
+    class _R:
+        def __init__(self, status):
+            self.status = status
+    saved = dict(agent_runs._RUNS)
+    try:
+        agent_runs._RUNS.clear()
+        agent_runs._RUNS.update({"a": _R("running"), "b": _R("done"), "c": _R("running")})
+        assert sorted(agent_runs.active_session_ids()) == ["a", "c"]
+    finally:
+        agent_runs._RUNS.clear()
+        agent_runs._RUNS.update(saved)
+
+    from src.tool_capabilities import capabilities_for_action
+    store = ToolApprovalStore()
+    content = '{"path": "x", "old_string": "a", "new_string": "b"}'
+    store.create(owner="luis", session_id="s1", origin_run_id="r1", tool_name="edit_file",
+                 content=content, workspace=None, external_untrusted_context_seen=True,
+                 capabilities=capabilities_for_action("edit_file", content))
+    assert store.pending_session_ids(owner="luis") == ["s1"]
+    assert store.pending_session_ids(owner="someone-else") == []
+    store.retire_for_session(owner="luis", session_id="s1")
+    assert store.pending_session_ids(owner="luis") == []

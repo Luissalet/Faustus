@@ -2906,6 +2906,7 @@ import modelControls from './modelControls.js';
                 continue;
               }
               if (json.type === 'tool_approval_resolved') {
+                try { sessionModule.clearAwaitingApproval && sessionModule.clearAwaitingApproval(streamSessionId); } catch (_) {}
                 _cancelThinkingTimer();
                 _removeThinkingSpinner();
                 if (spinner && spinner.element) spinner.destroy();
@@ -3518,6 +3519,7 @@ import modelControls from './modelControls.js';
                 if (holder && json.id) holder.dataset.dbId = json.id;
 
               } else if (json.type === 'tool_start') {
+                try { if (json.approved) sessionModule.clearAwaitingApproval && sessionModule.clearAwaitingApproval(streamSessionId); } catch (_) {}
                 _closeOpenThinkingMarkup(_isBg);
                 if (_isBg) continue;
                 _cancelThinkingTimer();
@@ -3835,6 +3837,13 @@ import modelControls from './modelControls.js';
                 chatStream.handleUIControl(json.data || {});
 
               } else if (json.type === 'ask_user') {
+                // Sidebar hand: the chat is parked until the user answers —
+                // tool approval or a question — whether or not it is on screen.
+                try {
+                  const _ak = (json.data && json.data.kind) || '';
+                  if (_ak === 'tool_approval') sessionModule.markAwaitingApproval && sessionModule.markAwaitingApproval(streamSessionId);
+                  else sessionModule.markAwaitingQuestion && sessionModule.markAwaitingQuestion(streamSessionId);
+                } catch (_) {}
                 if (_isBg) continue;
                 // The agent posed a multiple-choice question; the turn has ended.
                 // Use the shared history renderer so the live and restored

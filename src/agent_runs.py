@@ -18,7 +18,7 @@ import asyncio
 import json
 import logging
 import uuid
-from typing import AsyncGenerator, Dict, Optional
+from typing import AsyncGenerator, Dict, Optional, List
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +93,11 @@ def _schedule_evict(session_id: str, expected_run: Optional[_Run] = None) -> Non
 def is_active(session_id: str) -> bool:
     r = _RUNS.get(session_id)
     return bool(r and r.status == "running")
+
+
+def active_session_ids() -> List[str]:
+    """Sessions with a detached run still going (sidebar activity dots)."""
+    return [sid for sid, r in list(_RUNS.items()) if r.status == "running"]
 
 
 def get_status(session_id: str) -> Optional[str]:

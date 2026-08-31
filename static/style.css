@@ -1527,21 +1527,51 @@ body.bg-pattern-sparkles {
       flex-shrink: 0;
       position: relative;
     }
+    /* Cowork-style activity states on the provider dot:
+       working = grey dot blinking · finished-unread = solid blue dot ·
+       waiting for the user (approval / question) = hand. */
     .session-star.processing {
-      animation: research-pulse 1.5s ease-in-out infinite;
+      background: color-mix(in srgb, var(--fg) 45%, transparent);
+      border-color: transparent;
+      animation: status-blink 1.1s ease-in-out infinite;
+    }
+    .session-star.processing svg { display: none; }
+    @keyframes status-blink {
+      0%, 100% { opacity: 0.25; }
+      50% { opacity: 1; }
     }
     .session-star.notify {
-      animation: research-done-pulse 1.2s ease-in-out 5;
+      animation: research-done-pulse 1.2s ease-in-out 3;
       opacity: 1;
-      /* Bigger, solid status dot so "research done" reads clearly. Use the
-         defined accent (bare --accent is undefined here → no colour). */
-      width: 14px; height: 14px;
-      background: var(--accent-primary, var(--red));
-      border-color: var(--accent-primary, var(--red));
+      width: 11px; height: 11px;
+      background: var(--status-unread, #3b82f6);
+      border-color: var(--status-unread, #3b82f6);
     }
     /* The dot doubles as the provider-logo holder; hide that logo in the
        done state so the solid notif dot doesn't collide with the SVG behind it. */
     .session-star.notify svg { display: none; }
+    .session-star.approval {
+      background: transparent; border-color: transparent; opacity: 1;
+    }
+    .session-star.approval svg { display: none; }
+    .session-star.approval::after {
+      content: '\270B'; /* ✋ */
+      position: absolute; left: -2px; top: -4px;
+      font-size: 12px; line-height: 1;
+      filter: saturate(1.2);
+    }
+    .list-item.needs-approval { border-left-color: var(--warn, #f0ad4e); }
+    /* Project hub / recents rows */
+    .session-status {
+      display: inline-block; width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0;
+      border: 1.5px solid color-mix(in srgb, var(--fg) 22%, transparent); position: relative;
+      margin-right: 6px; vertical-align: middle;
+    }
+    .session-status.processing { background: color-mix(in srgb, var(--fg) 45%, transparent); border-color: transparent; animation: status-blink 1.1s ease-in-out infinite; }
+    .session-status.notify { background: var(--status-unread, #3b82f6); border-color: var(--status-unread, #3b82f6); }
+    .session-status.approval { border-color: transparent; }
+    .session-status.approval::after { content: '\270B'; position: absolute; left: -2px; top: -4px; font-size: 11px; line-height: 1; }
+    #chats-notif-dot.approval { background: var(--warn, #f0ad4e) !important; }
     @keyframes research-done-pulse {
       0%, 100% { transform: scale(1); opacity: 1; }
       50% { transform: scale(1.5); opacity: 0.7; }

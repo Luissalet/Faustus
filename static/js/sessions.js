@@ -276,6 +276,126 @@ async function _cleanupIncognitoSessions() {
 const _researchingSessions = new Set();
 const _streamingSessions = new Set();   // Background chat streams (not polled against research API)
 const _completedSessions = new Set();   // Sessions with completed background streams
+// ── Cowork-style activity state ──────────────────────────────────────────────
+// grey blinking dot = working (running stream), blue dot = finished but not
+// read yet, hand = parked on a question / tool approval. Fed by the streams
+// this tab owns AND by the server (`/api/chat/activity`: detached runs +
+// pending approvals), so it survives reloads and other tabs.
+const _approvalSessions = new Set();    // Sessions waiting for the user (approval card / ask_user)
+const _serverRunning = new Set();        // Last server snapshot of running sessions
+const VIEWED_KEY = 'odysseus-session-viewed';
+let _activityTimer = null;
+let _activityFailures = 0;
+
+function _viewedMap() {
+  try { return JSON.parse(localStorage.getItem(VIEWED_KEY) || '{}') || {}; } catch (_) { return {}; }
+}
+
+/** Remember that the user is looking at this chat now (unread detection). */
+export function noteSessionViewed(sessionId) {
+  if (!sessionId) return;
+  const m = _viewedMap();
+  m[sessionId] = Date.now();
+  const keys = Object.keys(m);
+  if (keys.length > 400) {
+    keys.sort((a, b) => (m[a] || 0) - (m[b] || 0));
+    for (const k of keys.slice(0, keys.length - 400)) delete m[k];
+  }
+  try { localStorage.setItem(VIEWED_KEY, JSON.stringify(m)); } catch (_) {}
+}
+
+function _parseServerTime(v) {
+  if (!v) return 0;
+  let str = String(v);
+  // Naive ISO timestamps from the server are UTC.
+  if (!/[zZ]|[+-]\d\d:?\d\d$/.test(str)) str += 'Z';
+  const t = Date.parse(str);
+  return Number.isFinite(t) ? t : 0;
+}
+
+/** A chat the user has opened before in this browser, whose last message is
+ *  newer than that visit and which is not on screen right now. */
+function _isUnreadByTime(s) {
+  if (!s || !s.id || s.id === currentSessionId) return false;
+  const viewed = _viewedMap()[s.id];
+  if (!viewed) return false;
+  const lm = _parseServerTime(s.last_message_at || s.updated_at);
+  return lm > viewed + 3000;
+}
+
+export function markAwaitingApproval(sessionId) {
+  if (!sessionId) return;
+  _approvalSessions.add(sessionId);
+  _updateResearchDots();
+  _updateRailNotifs();
+}
+
+export function clearAwaitingApproval(sessionId) {
+  if (!sessionId) return;
+  if (_approvalSessions.delete(sessionId)) {
+    _updateResearchDots();
+    _updateRailNotifs();
+  }
+}
+
+/** Status of a chat for the sidebar / project lists. */
+export function sessionActivityStatus(sessionId) {
+  if (_approvalSessions.has(sessionId)) return 'approval';
+  if (_researchingSessions.has(sessionId) || _streamingSessions.has(sessionId) || _serverRunning.has(sessionId)) return 'running';
+  if (_completedSessions.has(sessionId)) return 'done';
+  const s = sessions.find(x => x.id === sessionId);
+  if (s && _isUnreadByTime(s)) return 'done';
+  return '';
+}
+
+async function _syncActivityFromServer() {
+  try {
+    const r = await fetch(`${API_BASE}/api/chat/activity`, { credentials: 'same-origin' });
+    if (!r.ok) { _activityFailures += 1; return; }
+    const data = await r.json();
+    _activityFailures = 0;
+    const running = new Set(Array.isArray(data.running) ? data.running : []);
+    const awaiting = new Set(Array.isArray(data.awaiting_approval) ? data.awaiting_approval : []);
+    // A run this tab was not watching that just finished → finished-unread,
+    // unless it is the chat on screen (the user sees the answer arrive).
+    for (const sid of _serverRunning) {
+      if (!running.has(sid) && !_streamingSessions.has(sid) && sid !== currentSessionId) {
+        _completedSessions.add(sid);
+      }
+    }
+    _serverRunning.clear();
+    for (const sid of running) _serverRunning.add(sid);
+    // Approvals: the server is the source of truth for tool approvals; keep
+    // locally-marked ask_user questions until the user opens that chat.
+    _serverAwaitingSet = awaiting;
+    for (const sid of awaiting) _approvalSessions.add(sid);
+    for (const sid of [..._approvalSessions]) {
+      if (!awaiting.has(sid) && !_localQuestionSessions.has(sid)) _approvalSessions.delete(sid);
+    }
+    _updateResearchDots();
+    _updateRailNotifs();
+  } catch (_) {
+    _activityFailures += 1;
+  }
+}
+const _localQuestionSessions = new Set(); // ask_user questions (not tool approvals) seen by this tab
+let _serverAwaitingSet = new Set();
+function _serverAwaiting(sid) { return _serverAwaitingSet.has(sid); }
+
+export function markAwaitingQuestion(sessionId) {
+  if (!sessionId) return;
+  _localQuestionSessions.add(sessionId);
+  markAwaitingApproval(sessionId);
+}
+
+function _startActivitySync() {
+  if (_activityTimer) return;
+  _syncActivityFromServer();
+  _activityTimer = setInterval(() => {
+    if (document.hidden && _activityFailures > 3) return;
+    _syncActivityFromServer();
+  }, 6000);
+}
 let _researchPollTimer = null;
 
 // Session list keyboard navigation state
@@ -1820,6 +1940,7 @@ export async function loadSessions() {
         _autoCreateInProgress = false;
       }
     }
+    _startActivitySync();
     return true;
   } catch (error) {
     console.error('Error in loadSessions:', error);
@@ -2115,6 +2236,11 @@ export async function selectSession(id, { keepSidebar = false, showLoading = tru
 
     // Stop pulsing notification — user is now viewing this session
     clearStreamComplete(id);
+    noteSessionViewed(id);
+    // A question (ask_user) is answered by looking at it; a pending tool
+    // approval keeps its hand until the server says it was resolved.
+    if (_localQuestionSessions.delete(id) && !_serverAwaiting(id)) clearAwaitingApproval(id);
+    _startActivitySync();
 
     // Re-attach any background stream
     try {
@@ -2614,19 +2740,41 @@ window.addEventListener('hashchange', () => {
 function _updateResearchDots() {
   document.querySelectorAll('.session-star[data-session-id]').forEach(function(star) {
     var sid = star.dataset.sessionId;
-    var isRunning = _researchingSessions.has(sid) || _streamingSessions.has(sid);
-    var isCompleted = _completedSessions.has(sid) && !isRunning;
+    var st = sessionActivityStatus(sid);
+    var isRunning = st === 'running';
+    var isCompleted = st === 'done';
+    var isApproval = st === 'approval';
     var listItem = star.closest('.list-item');
     star.classList.toggle('processing', isRunning);
     star.classList.toggle('notify', isCompleted);
-    if (listItem) listItem.classList.toggle('stream-complete', isCompleted);
-
-    if (isRunning || isCompleted) {
+    star.classList.toggle('approval', isApproval);
+    star.title = isApproval ? 'Waiting for you (approval / question)' : (isRunning ? 'Working…' : (isCompleted ? 'Finished — not read yet' : ''));
+    if (listItem) {
+      listItem.classList.toggle('stream-complete', isCompleted);
+      listItem.classList.toggle('needs-approval', isApproval);
+    }
+    if (isRunning || isCompleted || isApproval) {
       star.style.opacity = '1';
     } else {
       star.style.opacity = '';
     }
   });
+  // Project hub / recents rows (projects.js) carry a status slot too.
+  document.querySelectorAll('.session-status[data-session-status]').forEach(function(el) {
+    var st = sessionActivityStatus(el.dataset.sessionStatus);
+    el.classList.toggle('processing', st === 'running');
+    el.classList.toggle('notify', st === 'done');
+    el.classList.toggle('approval', st === 'approval');
+    el.title = st === 'approval' ? 'Waiting for you (approval / question)' : (st === 'running' ? 'Working…' : (st === 'done' ? 'Finished — not read yet' : ''));
+  });
+  // Collapsed "Chats" section: light its dot while anything needs attention.
+  var sessSection = document.getElementById('sessions-section');
+  var dot = document.getElementById('chats-notif-dot');
+  if (dot && sessSection && sessSection.classList.contains('collapsed')) {
+    var attention = _approvalSessions.size > 0 || _completedSessions.size > 0 || sessions.some(_isUnreadByTime);
+    dot.style.display = attention ? 'inline-block' : dot.style.display;
+    dot.classList.toggle('approval', _approvalSessions.size > 0);
+  }
 }
 
 function _startResearchPolling() {
@@ -2696,8 +2844,10 @@ function _clearRunningState(sessionId) {
 export function markStreamComplete(sessionId) {
   _researchingSessions.delete(sessionId);
   _streamingSessions.delete(sessionId);
+  _serverRunning.delete(sessionId);
   // Don't pulse if user is already viewing this session — they can see the response
   if (currentSessionId === sessionId) {
+    noteSessionViewed(sessionId);
     _updateResearchDots();
     _updateRailNotifs();
     return;
@@ -3737,6 +3887,11 @@ const sessionModule = {
   clearStreaming,
   markStreamComplete,
   clearStreamComplete,
+  markAwaitingApproval,
+  clearAwaitingApproval,
+  markAwaitingQuestion,
+  sessionActivityStatus,
+  noteSessionViewed,
   openLibrary,
   closeLibrary,
   openArchive,

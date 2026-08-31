@@ -2843,6 +2843,30 @@ def setup_chat_routes(
         return {"stopped": stopped}
 
     # ------------------------------------------------------------------ #
+    # GET /api/chat/activity — sidebar status dots in one call: sessions with a
+    # detached run still going and sessions parked on an approval card. The
+    # client keeps "finished but unread" itself (it knows what was viewed).
+    # ------------------------------------------------------------------ #
+    @router.get("/api/chat/activity")
+    async def chat_activity(request: Request) -> Dict[str, Any]:
+        owner = effective_user(request)
+        running: List[str] = []
+        try:
+            for sid in agent_runs.active_session_ids():
+                try:
+                    _verify_session_owner(request, sid, session_manager)
+                except HTTPException:
+                    continue  # another user's run (or a vanished session)
+                running.append(sid)
+        except Exception:
+            running = []
+        try:
+            awaiting = tool_approval_store.pending_session_ids(owner=owner)
+        except Exception:
+            awaiting = []
+        return {"running": running, "awaiting_approval": awaiting, "ts": time.time()}
+
+    # ------------------------------------------------------------------ #
     # GET /api/chat/stream_status — check if a stream is active for a session
     # ------------------------------------------------------------------ #
     @router.get("/api/chat/stream_status/{session_id}")

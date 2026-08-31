@@ -473,6 +473,18 @@ class ToolApprovalStore:
             allow_remaining_actions=True,
         )
 
+    def pending_session_ids(self, *, owner: Any) -> list[str]:
+        """Sessions of this owner that are parked on an approval card."""
+        now = time.time()
+        normalized_owner = _normalized_owner(owner)
+        with self._lock:
+            self._purge_expired_locked(now)
+            return sorted({
+                pending.session_id
+                for pending in self._pending.values()
+                if pending.owner == normalized_owner and pending.session_id
+            })
+
     def peek(self, approval_id: Any) -> PendingToolApproval | None:
         now = time.time()
         with self._lock:
