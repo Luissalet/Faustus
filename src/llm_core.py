@@ -3144,10 +3144,16 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
         return f'data: {json.dumps({"type": "tool_calls", "calls": calls})}\n\n'
 
     def _emit_finish():
+        """Provider finish_reason as a typed event (the agent loop uses it to
+        auto-continue on 'length'). Nothing is emitted when the provider never
+        sent one and no tool call was accumulated — an empty stream stays a
+        bare [DONE], as before."""
         reason = _finish_reason
         if _tc_acc and reason in (None, "stop"):
             reason = "tool_calls"
-        return f'data: {json.dumps({"type": "finish", "finish_reason": reason or "stop"})}\n\n'
+        if reason is None:
+            return None
+        return f'data: {json.dumps({"type": "finish", "finish_reason": reason})}\n\n'
 
     def _format_routed_content(parts: List[Tuple[str, bool]]) -> List[str]:
         nonlocal _first_content_sent
@@ -3191,7 +3197,9 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                         tc_event = _emit_tool_calls()
                         if tc_event:
                             yield tc_event
-                        yield _emit_finish()
+                        fin_event = _emit_finish()
+                        if fin_event:
+                            yield fin_event
                         yield "data: [DONE]\n\n"
                         return
 
@@ -3425,7 +3433,9 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
             tc_event = _emit_tool_calls()
             if tc_event:
                 yield tc_event
-            yield _emit_finish()
+            fin_event = _emit_finish()
+            if fin_event:
+                yield fin_event
             yield "data: [DONE]\n\n"
 
     except (httpx.ConnectError, httpx.ConnectTimeout) as e:

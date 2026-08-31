@@ -2634,7 +2634,6 @@ def _build_system_prompt(
     if not suppress_local_context and (
         workspace
         or (relevant_tools and (set(relevant_tools) & _HARNESS_RULE_TOOLS))
-        or (not relevant_tools and not compact)
     ):
         try:
             from src.settings import get_setting as _gs
@@ -4847,6 +4846,12 @@ async def stream_agent_loop(
             _ledger.record(approved.tool_name, approved.content, approved_result, 0)
             if approved.tool_name == "todowrite" and isinstance(approved_result, dict) and isinstance(approved_result.get("todos"), list) and not approved_result.get("error"):
                 _annotated_todos = _ledger.record_progress(approved_result["todos"], 0)
+                try:
+                    from src.agent_tools.coding_tools import save_todos as _save_todos
+                    if session_id:
+                        _save_todos(session_id, _annotated_todos)
+                except Exception:
+                    pass
                 yield "data: " + json.dumps({"type": "progress_update", "round": 0, "todos": _annotated_todos}) + "\n\n"
         except Exception as _ledger_err:
             logger.debug("[harness] ledger record (approved) failed: %s", _ledger_err)
@@ -6191,6 +6196,12 @@ async def stream_agent_loop(
                 _ledger.record(block.tool_type, block.content, result, round_num)
                 if block.tool_type == "todowrite" and isinstance(result, dict) and isinstance(result.get("todos"), list) and not result.get("error"):
                     _annotated_todos = _ledger.record_progress(result["todos"], round_num)
+                    try:
+                        from src.agent_tools.coding_tools import save_todos as _save_todos
+                        if session_id:
+                            _save_todos(session_id, _annotated_todos)
+                    except Exception:
+                        pass
                     yield (
                         "data: " + json.dumps({
                             "type": "progress_update", "round": round_num,

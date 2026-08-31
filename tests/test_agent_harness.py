@@ -220,3 +220,24 @@ def test_unknown_paths_after_real_discovery_are_noted_not_rejected(tmp_path):
     # …but presenting it as done without a mutation is still rejected.
     check2 = ledger.check_completion("He creado utils.py con los helpers.")
     assert "claims_without_mutation" in check2["reasons"] and "fabricated_paths" in check2["reasons"]
+
+
+def test_bare_done_after_readonly_tool_work_is_a_report_not_a_claim():
+    """'Done.' after a successful non-mutating tool (bash printf, read_file…)
+    is honest; only a change *description* without a write is rejected."""
+    ledger = h.TurnLedger(None, "Run one tool and report back.")
+    ledger.record("bash", '{"command": "printf ok"}', {"output": "ok", "exit_code": 0}, 1)
+    assert ledger.check_completion("done")["ok"]
+    assert ledger.check_completion("Hecho.")["ok"]
+    # …but describing edits that never happened is still a lie.
+    bad = ledger.check_completion("Done. I've added the button in the component.")
+    assert "claims_without_mutation" in bad["reasons"]
+
+
+def test_bare_done_with_no_tool_activity_is_still_rejected():
+    ledger = h.TurnLedger(None, "add the delete button")
+    check = ledger.check_completion("Done.")
+    assert "claims_without_mutation" in check["reasons"]
+    # A failed tool call is not evidence either.
+    ledger.record("edit_file", '{"path": "x.js", "old_string": "a", "new_string": "b"}', {"error": "not found", "exit_code": 1}, 1)
+    assert "claims_without_mutation" in ledger.check_completion("Listo.")["reasons"]

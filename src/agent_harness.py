@@ -97,6 +97,13 @@ _EN_PP = (
     r"inserted|replaced|adjusted|extended|wired(?:\s+up)?|hooked(?:\s+up)?)"
 )
 
+# A reply that is nothing but "Done." / "Hecho." — a completion claim with no
+# content. Counted as a mutation claim only when the model did *nothing* this
+# turn (see TurnLedger.check_completion): after real tool work it is a report.
+_BARE_DONE_ES = re.compile(r"^\s*(?:hecho|listo|completado|terminado)[.!]?\s*$", re.IGNORECASE | re.MULTILINE)
+_BARE_DONE_EN = re.compile(r"^\s*(?:done|all\s+set|completed|finished)[.!]?\s*$", re.IGNORECASE | re.MULTILINE)
+BARE_DONE_PATTERNS = (_BARE_DONE_ES, _BARE_DONE_EN)
+
 MUTATION_CLAIM_PATTERNS: List[re.Pattern] = [
     # Spanish — perfect / preterite / passive / "está listo"
     re.compile(r"\b(?:he|hemos)\s+" + _ES_PP, re.IGNORECASE),
@@ -105,14 +112,14 @@ MUTATION_CLAIM_PATTERNS: List[re.Pattern] = [
     re.compile(r"\b(?:creé|añadí|agregué|modifiqué|actualicé|implementé|eliminé|borré|cambié|edité|escribí|corregí|arreglé|apliqué|moví|renombré|refactoricé|integré|completé|terminé|finalicé|solucioné|reparé|configuré|instalé|guardé)\b", re.IGNORECASE),
     re.compile(r"\b(?:los\s+)?cambios\s+(?:han\s+sido\s+|fueron\s+|están\s+)?" + _ES_PP, re.IGNORECASE),
     re.compile(r"\b(?:todo|la\s+funcionalidad|la\s+implementación|el\s+código|la\s+tarea)\s+(?:ya\s+)?(?:está|queda)\s+(?:completamente\s+|totalmente\s+)?(?:list[oa]|implementad[oa]|integrad[oa]|hech[oa]|completad[oa]|terminad[oa])", re.IGNORECASE),
-    re.compile(r"^\s*(?:hecho|listo|completado|terminado)[.!]?\s*$", re.IGNORECASE | re.MULTILINE),
+    _BARE_DONE_ES,
     # English
     re.compile(r"\bI(?:'ve|\s+have)\s+(?:now\s+|also\s+|successfully\s+|just\s+)?" + _EN_PP, re.IGNORECASE),
     re.compile(r"\bI\s+(?:then\s+|also\s+|now\s+)?" + r"(?:created|added|modified|updated|implemented|removed|deleted|changed|edited|wrote|fixed|applied|moved|renamed|refactored|integrated|completed|finished|patched|inserted|replaced)\b", re.IGNORECASE),
     re.compile(r"\b(?:has|have)\s+been\s+(?:successfully\s+)?" + _EN_PP, re.IGNORECASE),
     re.compile(r"\b(?:is|are)\s+now\s+(?:fully\s+|completely\s+)?(?:implemented|complete|done|ready|in\s+place|integrated|working|fixed|updated)\b", re.IGNORECASE),
     re.compile(r"\b(?:the\s+)?(?:implementation|feature|changes?|fix|task|work)\s+(?:is|are)\s+(?:now\s+)?(?:complete|done|ready|finished|in\s+place)\b", re.IGNORECASE),
-    re.compile(r"^\s*(?:done|all\s+set|completed|finished)[.!]?\s*$", re.IGNORECASE | re.MULTILINE),
+    _BARE_DONE_EN,
     re.compile(r"^\s*(?:[-*•]\s*)?(?:✅|✓|☑|\[x\])\s+\S", re.MULTILINE),
     re.compile(r"^\s*(?:[-*•]\s*)?(?:Added|Created|Modified|Updated|Implemented|Removed|Deleted|Fixed|Wired|Hooked)\b", re.MULTILINE),
     re.compile(r"^\s*(?:[-*•]\s*)?(?:Añadid[oa]|Cread[oa]|Modificad[oa]|Actualizad[oa]|Implementad[oa]|Eliminad[oa]|Corregid[oa]|Añadí|Creé|Modifiqué|Actualicé|Implementé|Eliminé)\b", re.MULTILINE),
@@ -213,10 +220,11 @@ _TECH_CONTEXT_RE = re.compile(
 )
 
 
-def find_mutation_claims(text: str, limit: int = 4) -> List[str]:
+def find_mutation_claims(text: str, limit: int = 4, include_bare_done: bool = True) -> List[str]:
     """Return up to `limit` distinct snippets that read as 'I changed X' *about
     something technical* (see _TECH_CONTEXT_RE). Narrative first person is
-    ignored."""
+    ignored. With include_bare_done=False the content-free "Done." / "Hecho."
+    lines are skipped (only claims that describe a change are returned)."""
     out: List[str] = []
     seen: Set[str] = set()
     body = text or ""
@@ -224,6 +232,8 @@ def find_mutation_claims(text: str, limit: int = 4) -> List[str]:
     # A bare "Done." / "Hecho." reply is a completion claim by itself.
     terse = len(body.strip()) < 200
     for pat in MUTATION_CLAIM_PATTERNS:
+        if not include_bare_done and pat in BARE_DONE_PATTERNS:
+            continue
         for m in pat.finditer(body):
             start = max(0, m.start() - 20)
             snippet = body[start:m.end() + 60].replace("\n", " ").strip()
@@ -596,7 +606,12 @@ class TurnLedger:
         reasons: List[str] = []
         is_question = bool(_QUESTION_TAIL_RE.search(body.rstrip()))
         if claims and not self.effects:
-            reasons.append("claims_without_mutation")
+            # "Done." after real (read-only / shell) tool work is a report of
+            # whatever ran, not a fabricated edit: reject only when the text
+            # describes changes, or when nothing at all was executed.
+            did_something = any(e["ok"] for e in self.events)
+            if not did_something or find_mutation_claims(body, include_bare_done=False):
+                reasons.append("claims_without_mutation")
         if bad_paths:
             # Unknown paths are a hallucination when the model presents work as
             # done, or when it reasons about a filesystem it never looked at

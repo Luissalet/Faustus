@@ -2285,6 +2285,10 @@ def test_multi_round_agent_pins_answering_fallback_for_the_run(monkeypatch):
     monkeypatch.setattr(agent_loop, "get_setting", lambda key, default=None: default)
     monkeypatch.setattr(agent_loop, "get_mcp_manager", lambda: None)
     monkeypatch.setattr(agent_loop, "estimate_tokens", lambda *args, **kwargs: 10)
+    # The bash call must really run: with the public block list active the tool
+    # is blocked, the model's "done" is then an unbacked completion claim and the
+    # reliability harness (src/agent_harness.py) adds rejection rounds.
+    monkeypatch.setattr(agent_loop, "blocked_tools_for_owner", lambda owner: set())
     monkeypatch.setattr(
         agent_loop,
         "_agent_route_tool_mode",
@@ -2880,6 +2884,10 @@ def test_agent_metrics_attribute_usage_to_each_answering_route(monkeypatch):
     monkeypatch.setattr(agent_loop, "get_setting", lambda key, default=None: default)
     monkeypatch.setattr(agent_loop, "get_mcp_manager", lambda: None)
     monkeypatch.setattr(agent_loop, "estimate_tokens", lambda *args, **kwargs: 10)
+    # The bash call must really run: with the public block list active the tool
+    # is blocked, the model's "done" is then an unbacked completion claim and the
+    # reliability harness (src/agent_harness.py) adds rejection rounds.
+    monkeypatch.setattr(agent_loop, "blocked_tools_for_owner", lambda owner: set())
     monkeypatch.setattr(
         agent_loop,
         "_agent_route_tool_mode",

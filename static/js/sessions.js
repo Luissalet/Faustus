@@ -2247,6 +2247,13 @@ export function createDirectChat(url, modelId, endpointId, opts = {}) {
   document.querySelectorAll('.list-item.active-session, .session-item.active').forEach(el => {
     el.classList.remove('active-session', 'active');
   });
+  // A brand-new chat has no agent Progress / model-controls state yet: tell the
+  // loosely-coupled panels to clear (they also listen to selectSession).
+  try {
+    document.dispatchEvent(new CustomEvent('odysseus:session-switch', {
+      detail: { id: null, model: modelId || null, folder: null, pending: true },
+    }));
+  } catch (e) {}
 
   // Close document panel — new chat has no docs
   if (window.documentModule && window.documentModule.isPanelOpen()) {

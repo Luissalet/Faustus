@@ -14,6 +14,17 @@ def _safe_session_id(value: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]+", "_", value)[:120] or "current"
 
 
+def save_todos(session_id: str, todos: List[Dict[str, Any]]) -> None:
+    """Persist an (annotated) todo list for a chat — used by the agent loop to
+    store the harness 'verified' flags alongside the model's statuses so the
+    Progress panel restores exactly what was shown."""
+    sid = _safe_session_id(str(session_id or "current"))
+    os.makedirs(_TODO_DIR, exist_ok=True)
+    path = os.path.join(_TODO_DIR, f"{sid}.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump({"todos": todos}, f, ensure_ascii=False, indent=2)
+
+
 class TodoWriteTool:
     async def execute(self, content: str, ctx: dict) -> dict:
         try:

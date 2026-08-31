@@ -125,3 +125,41 @@ def test_truncated_output_is_auto_continued(tmp_path, monkeypatch):
     assert calls["n"] == 2
     infos = [e for e in events if e.get("type") == "round_info"]
     assert [i["finish_reason"] for i in infos] == ["length", "stop"]
+
+
+def test_todowrite_progress_is_annotated_and_persisted(tmp_path, monkeypatch):
+    """A todo marked completed without any successful tool since the previous
+    snapshot is flagged verified=False, streamed as progress_update and saved
+    to data/agent_todos/<session>.json (what the Progress panel restores)."""
+    import src.agent_tools.coding_tools as ct
+    monkeypatch.setattr(ct, "_TODO_DIR", str(tmp_path / "agent_todos"))
+    _patch_common(monkeypatch)
+    # execute_tool_block is faked: return the todos like the real tool does.
+    todos1 = [{"id": "1", "content": "Leer projects.js", "status": "in_progress"},
+              {"id": "2", "content": "Añadir botón", "status": "pending"}]
+    todos2 = [{"id": "1", "content": "Leer projects.js", "status": "completed"},
+              {"id": "2", "content": "Añadir botón", "status": "in_progress"}]
+    seq = iter([todos1, todos2])
+
+    async def _fake_exec(block, *a, **k):
+        if block.tool_type == "todowrite":
+            return ("todowrite", {"output": "ok", "todos": next(seq)})
+        return (block.tool_type, {"output": "ok", "exit_code": 0})
+    monkeypatch.setattr(al, "execute_tool_block", _fake_exec, raising=False)
+
+    tw1 = "```todowrite\n" + json.dumps({"todos": todos1}) + "\n```"
+    tw2 = "```todowrite\n" + json.dumps({"todos": todos2}) + "\n```"
+    _scripted_stream(monkeypatch, [(tw1, "tool_calls"), (tw2, "tool_calls"), ("No he cambiado ficheros.", "stop")])
+    gen = al.stream_agent_loop(
+        "http://127.0.0.1:11434/v1", "qwen3-coder:30b",
+        [{"role": "user", "content": "Añade un botón de borrar en las tarjetas de proyectos"}],
+        max_rounds=6, relevant_tools={"read_file", "edit_file", "glob", "todowrite"},
+        workspace=str(tmp_path), session_id="sess-progress",
+    )
+    events = _events(_collect(gen))
+    ups = [e for e in events if e.get("type") == "progress_update"]
+    assert len(ups) == 2, [e.get("type") for e in events]
+    done = [t for t in ups[1]["todos"] if t["status"] == "completed"]
+    assert done and done[0]["verified"] is False  # completed with zero tool evidence in between
+    saved = json.loads((tmp_path / "agent_todos" / "sess-progress.json").read_text(encoding="utf-8"))
+    assert saved["todos"] == ups[1]["todos"]
