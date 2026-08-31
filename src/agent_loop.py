@@ -3575,7 +3575,12 @@ async def stream_agent_loop(
     # shipped default) fabricate paths and "done" narratives far more often.
     # Cap unless the user pinned a temperature for this session.
     _temperature_capped_from = None
-    if not temperature_explicit and not _ody_qwen_finetune_model:
+    # Scope: turns where the model is expected to act on a codebase (a bound
+    # workspace, or a coding-looking request). Creative/agent chats without a
+    # workspace keep the preset temperature; a pinned per-chat temperature
+    # (model controls) always wins.
+    _cap_scope = bool(workspace) or _looks_like_workspace_coding_request(_last_user)
+    if not temperature_explicit and not _ody_qwen_finetune_model and _cap_scope:
         try:
             from src.model_context import is_local_endpoint as _is_local_ep
             _cap = float(get_setting("agent_local_temperature_cap", 0.4) or 0)
@@ -4557,6 +4562,7 @@ async def stream_agent_loop(
     _HARNESS_MAX_LENGTH_CONTINUES = 2
     _ledger = _harness.TurnLedger(workspace, _last_user)
     _harness_final_note = ""
+    _todo_nudged = False
     _round_finish_reason = None
     _harness_scope_active = bool(workspace) or _looks_like_workspace_coding_request(_last_user)
 
@@ -6653,6 +6659,27 @@ async def stream_agent_loop(
                              tool_results, tool_result_texts, used_native, round_num,
                              round_reasoning=round_reasoning,
                              tool_result_records=tool_result_records)
+
+        # Progress discipline: a multi-step workspace task that is several tool
+        # calls in without a todowrite list gets one nudge, so the Progress
+        # panel (and the model's own plan) exists before the edits pile up.
+        if (
+            _harness_enabled and _harness_scope_active and not _todo_nudged
+            and _ledger.progress is None and len(_ledger.events) >= 4
+            and "todowrite" not in disabled_tools
+            and ("todowrite" in _tool_names_sent or not _is_api_model)
+        ):
+            _todo_nudged = True
+            messages.append({
+                "role": "user",
+                "content": (
+                    "[Harness check — automatic message from the runtime, not from the user] "
+                    "You are several tool calls into a multi-step task without a task list. Call "
+                    "todowrite ONCE now with the concrete objectives (one in_progress, the rest pending), "
+                    "then continue the work. Update it as objectives are verifiably completed."
+                ),
+            })
+            logger.info("[harness] todowrite nudge injected on round %s", round_num)
 
         # Emit agent_step event
         yield (
