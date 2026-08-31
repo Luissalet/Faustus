@@ -54,9 +54,17 @@ REVIEWER_NAME = "reviewer"
 class FileLockRegistry:
     def __init__(self, workspace: Optional[str]):
         self.workspace = os.path.realpath(workspace) if workspace else None
-        self.owner: Dict[str, str] = {}      # normalised path → worker name
+        # Owners are keyed by the run's ID (`sa{i}-{hex}`), never by its name:
+        # the name comes from the MODEL, and two tasks that happened to share a
+        # name were one owner — so they never blocked each other.
+        self.owner: Dict[str, str] = {}      # normalised path → worker key
         self.display: Dict[str, str] = {}    # normalised path → path as first seen
+        self.names: Dict[str, str] = {}      # worker key → human label (run.name)
         self.conflicts: List[Dict[str, str]] = []
+
+    def label(self, worker: str) -> str:
+        """The name to SHOW for a worker key (the key itself if unregistered)."""
+        return self.names.get(worker, worker)
 
     def norm(self, path: str) -> Optional[str]:
         if not path:
@@ -104,6 +112,10 @@ class FileLockRegistry:
     def owned_by(self, worker: str) -> List[str]:
         return [self.display[k] for k, w in self.owner.items() if w == worker]
 
+    def owned_by_others(self, worker: str) -> List[str]:
+        """Paths reserved by ANY worker other than `worker`."""
+        return [self.display[k] for k, w in self.owner.items() if w != worker]
+
 
 class _LockGuard:
     __slots__ = ("registry", "worker", "bypass")
@@ -118,12 +130,24 @@ _LOCK_CTX: contextvars.ContextVar[Optional[_LockGuard]] = contextvars.ContextVar
 _WRITE_TOOLS = frozenset({"write_file", "edit_file", "apply_patch"})
 
 
-def _targets(tool: str, content: Any) -> List[str]:
+def _targets(tool: str, content: Any) -> Optional[List[str]]:
+    """Paths a write tool will touch, or **None** when they cannot be determined.
+
+    `tool_capabilities._write_targets` returns None with fail-CLOSED semantics
+    ("an undeterminable target is not inside anything") — typically an
+    `apply_patch` that DELETES a file, or arguments that did not parse.
+    Flattening that None into `[]` here inverted it: `[]` means "nothing to
+    block" and the write went through, so worker B could delete the very file
+    worker A had reserved. Keep the two apart.
+    """
     try:
         from src.tool_capabilities import _write_targets
-        return list(_write_targets(tool, content) or [])
+        targets = _write_targets(tool, content)
     except Exception:
-        return []
+        return None
+    if targets is None:
+        return None
+    return [str(t) for t in targets if t]
 
 
 def write_block_reason(tool: Any, content: Any) -> Optional[str]:
@@ -132,17 +156,36 @@ def write_block_reason(tool: Any, content: Any) -> Optional[str]:
     guard = _LOCK_CTX.get()
     if guard is None or guard.bypass or not isinstance(tool, str) or tool not in _WRITE_TOOLS:
         return None
+    reg = guard.registry
     targets = _targets(tool, content)
+    if targets is None:
+        # Undeterminable target. Refuse only while another worker actually has
+        # something to lose — a lone worker (or the first to move) is free.
+        others = reg.owned_by_others(guard.worker)
+        if not others:
+            return None
+        reg.conflicts.append({"worker": reg.label(guard.worker), "owner": "(several)",
+                              "path": f"{tool}: undetermined target"})
+        logger.warning("delegate_agents: refused %s from %s — target not determinable while %s are locked",
+                       tool, reg.label(guard.worker), others[:8])
+        return (
+            f"{tool}: this call's target file(s) could not be determined (a patch that deletes a file, "
+            "or arguments this server could not parse) and other sub-agents in this delegation have "
+            f"reserved files ({', '.join(others[:8])}). Refused: a write whose target is unknown could "
+            "clobber or delete a file another worker owns. Re-issue the change as an explicit "
+            "write_file/edit_file naming ONE path you own, and describe any change another worker's "
+            "file needs in your final report instead."
+        )
     if not targets:
         return None
-    other = guard.registry.blocked_by(guard.worker, targets)
+    other = reg.blocked_by(guard.worker, targets)
     if not other:
         return None
-    mine = guard.registry.owned_by(guard.worker)
-    guard.registry.conflicts.append({"worker": guard.worker, "owner": other, "path": targets[0]})
+    mine = reg.owned_by(guard.worker)
+    reg.conflicts.append({"worker": reg.label(guard.worker), "owner": reg.label(other), "path": targets[0]})
     return (
-        f"{tool}: '{targets[0]}' is owned by sub-agent '{other}' in this delegation — another worker "
-        "is editing it and two writers would clobber each other. Do NOT modify it. Finish your own "
+        f"{tool}: '{targets[0]}' is owned by sub-agent '{reg.label(other)}' in this delegation — another "
+        "worker is editing it and two writers would clobber each other. Do NOT modify it. Finish your own "
         "part" + (f" (your files: {', '.join(mine[:8])})" if mine else "") + " and, in your final "
         "report, describe exactly what change that file needs so the coordinator can apply it."
     )
@@ -157,7 +200,8 @@ def note_write_result(tool: Any, content: Any, result: Any) -> None:
         return
     if result.get("exit_code") not in (None, 0):
         return
-    guard.registry.claim(guard.worker, _targets(tool, content))
+    # None = undeterminable: claim nothing (there is nothing to claim).
+    guard.registry.claim(guard.worker, _targets(tool, content) or [])
 
 
 # ---------------------------------------------------------------------------
@@ -165,12 +209,19 @@ def note_write_result(tool: Any, content: Any, result: Any) -> None:
 # ---------------------------------------------------------------------------
 
 _ACTIVE_WORKERS: Dict[str, asyncio.Task] = {}   # child session id → the worker's task
+_WORKER_RUNS: Dict[str, "SubagentRun"] = {}     # child session id → its SubagentRun
 
 
 def stop_worker(child_session_id: str) -> bool:
     task = _ACTIVE_WORKERS.get(child_session_id)
     if task is None or task.done():
         return False
+    # Mark the cancellation as targeting THIS worker. Without the flag, `one()`
+    # cannot tell it apart from the coordinator's own cancellation (Stop), and
+    # swallowing the latter let the delegation carry on after Stop.
+    run = _WORKER_RUNS.get(child_session_id)
+    if run is not None:
+        run.stop_requested = True
     task.cancel()
     return True
 
@@ -308,6 +359,9 @@ class SubagentRun:
         self.files: List[str] = list(task.get("files") or [])
         self.role = role
         self.stopped_by_user = False
+        # Set by stop_worker(): "the cancellation about to arrive targets ME",
+        # as opposed to the coordinator being cancelled (the user pressed Stop).
+        self.stop_requested = False
         self.session_id: Optional[str] = None
         self.text = ""
         self.tool_calls = 0
@@ -360,11 +414,13 @@ async def _run_subagent(
     from core.models import ChatMessage
 
     # Exclusive files: pre-claim the declared ones, then first-writer-wins.
+    # The lock key is run.id (unique), not run.name (written by the model).
     if locks is not None:
-        taken = locks.claim(run.name, run.files) if run.files else []
+        locks.names[run.id] = run.name
+        taken = locks.claim(run.id, run.files) if run.files else []
         if taken:
             logger.info("delegate_agents: %s wanted %s but they belong to another worker", run.name, taken)
-        _LOCK_CTX.set(_LockGuard(locks, run.name, bypass=(run.role == "reviewer")))
+        _LOCK_CTX.set(_LockGuard(locks, run.id, bypass=(run.role == "reviewer")))
 
     sm = get_session_manager()
     parent_name = ""
@@ -563,19 +619,24 @@ def _build_report_text(runs: List[SubagentRun], workspace: Optional[str], locks:
             lines.append("   worker report: " + _short(r.text, 900))
     # Two workers writing the same file is the classic parallel-agent failure:
     # the later write may have clobbered the earlier one. Call it out.
+    # Deduplicated by run.id: two tasks the model gave the SAME name used to
+    # collapse into one "worker" here and the warning never appeared.
+    by_id = {r.id: r for r in runs}
     seen: Dict[str, List[str]] = {}
     for r in runs:
         for p in r.mutations:
             key = str(p).replace("\\", "/").lower()
-            seen.setdefault(key, [])
-            if r.name not in seen[key]:
-                seen[key].append(r.name)
-    overlaps = {k: v for k, v in seen.items() if len(v) > 1 and not (locks is not None and REVIEWER_NAME in [n.lower() for n in v])}
+            ids = seen.setdefault(key, [])
+            if r.id not in ids:
+                ids.append(r.id)
+    overlaps = {k: v for k, v in seen.items()
+                if len(v) > 1 and not (locks is not None
+                                       and any(by_id[i].role == "reviewer" for i in v))}
     if overlaps:
         lines.append("")
         lines.append("WARNING — files changed by MORE THAN ONE worker (review for clobbered edits):")
-        for k, names in list(overlaps.items())[:10]:
-            lines.append(f"   {k}: " + ", ".join(names))
+        for k, ids in list(overlaps.items())[:10]:
+            lines.append(f"   {k}: " + ", ".join(by_id[i].name for i in ids))
     if locks is not None and locks.conflicts:
         lines.append("")
         lines.append("File-lock refusals (a worker tried to write a file owned by another; the write was blocked, "
@@ -658,16 +719,26 @@ class DelegateAgentsTool:
                 await emit({"event": "error", "message": run.error})
                 await emit({"event": "done", **run.report(), "final_text": _short(run.text, 300)})
             except asyncio.CancelledError:
-                # Stopped from the UI (stop_worker): the transcript was saved by
-                # _run_subagent's finally; report it as stopped, not as a crash.
+                # Two very different cancellations land here:
+                #  * stop_worker() cancelled THIS worker — the coordinator keeps
+                #    going with the rest, so report it as stopped and carry on;
+                #  * the COORDINATOR was cancelled (the user pressed Stop) and
+                #    the cancellation propagated into the worker we are running.
+                #    Swallowing that one made the sequential loop resume and
+                #    launch the next worker — and the reviewer — after Stop.
+                # `run.stop_requested` (set by stop_worker) tells them apart.
+                # The transcript was already saved by _run_subagent's finally.
                 run.stopped_by_user = True
                 run.error = None
                 run.stop_reason = "stopped"
                 run.finished = run.finished or time.time()
+                if not run.stop_requested:
+                    raise
                 await emit({"event": "done", **run.report(), "final_text": _short(run.text, 300) or "(stopped by the user)"})
             finally:
                 if run.session_id:
                     _ACTIVE_WORKERS.pop(run.session_id, None)
+                    _WORKER_RUNS.pop(run.session_id, None)
 
         def _launch(run: SubagentRun, max_rounds: Optional[int] = None) -> asyncio.Task:
             task = asyncio.create_task(one(run, max_rounds))
@@ -678,6 +749,7 @@ class DelegateAgentsTool:
                     if run.session_id:
                         if not task.done():
                             _ACTIVE_WORKERS[run.session_id] = task
+                            _WORKER_RUNS[run.session_id] = run
                         return
                     await asyncio.sleep(0.05)
             asyncio.create_task(_register())
@@ -690,6 +762,12 @@ class DelegateAgentsTool:
             for r in runs:
                 try:
                     await _launch(r)
+                except asyncio.CancelledError:
+                    # The coordinator was cancelled (Stop). CancelledError is a
+                    # BaseException, so `except Exception` below already lets it
+                    # through — this is here so a future refactor cannot quietly
+                    # turn Stop back into "start the next worker".
+                    raise
                 except Exception:
                     pass
         # Optional reviewer: one more worker over the whole result, after the
@@ -711,6 +789,8 @@ class DelegateAgentsTool:
                                                "model": args.get("reviewer_model") or "", "files": []}, role="reviewer")
             try:
                 await _launch(reviewer, max_rounds=max(6, min(args["max_rounds"], 16)))
+            except asyncio.CancelledError:
+                raise
             except Exception:
                 pass
             runs.append(reviewer)

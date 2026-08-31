@@ -18,8 +18,10 @@ from __future__ import annotations
 
 import logging
 import os
+import stat
 import threading
 import time
+import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -244,6 +246,38 @@ def normalise_rule(text: str) -> str:
     return t
 
 
+def _atomic_write(path: str, text: str) -> None:
+    """Replace `path` with `text` atomically (sibling temp file, fsync,
+    os.replace) — same pattern as core.atomic_io / services.review_state.
+
+    This is the USER's own AGENTS.md and it goes into the system prompt of every
+    turn: truncating it with `open(path, "w")` to add one bullet meant a crash,
+    an OOM kill or a full disk mid-write left the repository with a truncated or
+    empty instructions file. `newline=""` writes the bytes exactly as built (the
+    caller already joined with the file's own line ending, CRLF included), and
+    the original permission bits are carried over.
+
+    Raises OSError on failure, leaving the original file untouched.
+    """
+    directory = os.path.dirname(path) or "."
+    tmp = os.path.join(directory, f".{os.path.basename(path)}.{uuid.uuid4().hex}.tmp")
+    try:
+        with open(tmp, "w", encoding="utf-8", newline="") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        try:
+            os.chmod(tmp, stat.S_IMODE(os.stat(path).st_mode))
+        except OSError:
+            pass                      # new file, or a filesystem without modes
+        os.replace(tmp, path)
+    finally:
+        try:
+            os.unlink(tmp)            # no-op once os.replace has moved it
+        except OSError:
+            pass
+
+
 def remember(workspace: str, text: str, *, heading: str = REMEMBER_HEADING) -> Dict[str, Any]:
     """Append one standing rule to the workspace's instructions file.
 
@@ -298,8 +332,7 @@ def remember(workspace: str, text: str, *, heading: str = REMEMBER_HEADING) -> D
         lines += [heading, "", bullet]
     out = nl.join(lines) + nl
     try:
-        with open(path, "w", encoding="utf-8", newline="") as f:
-            f.write(out)
+        _atomic_write(path, out)
     except OSError as e:
         return {"error": f"could not write {os.path.basename(path)}: {e}"}
     invalidate(root)

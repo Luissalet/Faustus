@@ -94,6 +94,34 @@ def _reject_compact_during_active_run(session_id: str) -> None:
         raise HTTPException(409, "Session has an active run; try compacting after it finishes")
 
 
+def _stop_runs_for_deleted_sessions(session_ids=None) -> int:
+    """Stop the agent runs of sessions that are about to be deleted.
+
+    A deleted chat used to leave its run going: it kept executing tools and
+    writing files, it held its queue-lane slot (with
+    `agent_queue_local_concurrency=1` that blocks every other chat) and it was
+    unstoppable from the UI, because /api/chat/activity and /api/chat/stop 404
+    once the session no longer exists.
+
+    `session_ids=None` means "every run there is" — the delete-all route.
+    Best effort: a chat must still be deletable if this fails.
+    """
+    try:
+        from src import agent_runs
+    except Exception as exc:                       # pragma: no cover - import guard
+        logger.warning("Could not import agent_runs to stop deleted sessions: %s", exc)
+        return 0
+    ids = list(agent_runs.active_session_ids()) if session_ids is None else list(session_ids)
+    stopped = 0
+    for sid in ids:
+        try:
+            if agent_runs.stop_for_session(sid, reason="session_deleted"):
+                stopped += 1
+        except Exception as exc:
+            logger.warning("Could not stop the run of deleted session %s: %s", sid, exc)
+    return stopped
+
+
 def _verify_session_owner(request: Request, session_id: str, session_manager=None):
     """Verify the current user owns the session, honoring single-user modes.
 
@@ -596,6 +624,8 @@ def setup_session_routes(
                 finally:
                     db.close()
 
+                # The chat is going away: its run must not keep running.
+                _stop_runs_for_deleted_sessions([sid])
                 if session_manager.delete_session(sid):
                     deleted_count += 1
             except Exception:
@@ -619,6 +649,11 @@ def setup_session_routes(
             finally:
                 db.close()
 
+            # Stop the run FIRST: once the session row is gone the run is
+            # unreachable from the UI but still executing tools and holding
+            # its queue lane.
+            _stop_runs_for_deleted_sessions([sid])
+
             # Delete the session and all its messages
             if session_manager.delete_session(sid):
                 return {"status": "deleted"}
@@ -641,6 +676,10 @@ def setup_session_routes(
         """Admin only: permanently delete ALL sessions and their messages."""
         from core.middleware import require_admin
         require_admin(request)
+
+        # Every chat is going away — stop every run first (None = all of them,
+        # which also covers in-memory-only sessions and sub-agent workers).
+        _stop_runs_for_deleted_sessions()
 
         db = SessionLocal()
         try:

@@ -136,6 +136,7 @@ class _RunLog:
         self.session_id = session_id
         self._f = None
         self._pending = 0
+        self._orphaned = False
         self._lock = threading.Lock()
         try:
             os.makedirs(os.path.dirname(self.path), exist_ok=True)
@@ -146,10 +147,32 @@ class _RunLog:
             logger.debug("[agent-run] log unavailable for %s: %s", session_id, e)
             self._f = None
 
+    def orphan(self) -> None:
+        """Detach this log from its file: the run it belongs to was replaced and
+        a NEW _RunLog now owns `self.path` (same session → same file name, and
+        it opened the file with "w"). Anything this one wrote afterwards — its
+        remaining events, and above all its `finish()` status line — landed
+        INSIDE the new run's log, which then read back as terminal (so
+        `recover_interrupted_runs` skipped the live run) or as a mix of both
+        runs' text. Every later write is a no-op and the descriptor is closed.
+        """
+        with self._lock:
+            self._orphaned = True
+            try:
+                if self._f is not None:
+                    self._f.close()
+            except OSError:
+                pass
+            self._f = None
+
     def _write(self, obj: dict, flush: bool) -> None:
-        if self._f is None:
+        if self._f is None or self._orphaned:
             return
         with self._lock:
+            # Re-check inside the lock: orphan() may have closed the file
+            # between the fast path above and here.
+            if self._f is None or self._orphaned:
+                return
             try:
                 self._f.write(json.dumps(obj, ensure_ascii=False) + "\n")
                 self._pending += 1
@@ -478,6 +501,15 @@ def start(session_id: str, agen: AsyncGenerator[str, None], lane: Optional[str] 
             prev_task = prev.task   # new run awaits this before it starts writing
         if prev.evict_task and not prev.evict_task.done():
             prev.evict_task.cancel()
+        # The replay log is named after the SESSION, so the _RunLog built below
+        # truncates the very file `prev` still has open. Retire the old one
+        # first: from here on its writes (including the finish() its cancelled
+        # _drain is about to emit) must not reach the new run's log.
+        if prev.log is not None:
+            try:
+                prev.log.orphan()
+            except Exception as e:      # pragma: no cover - best effort
+                logger.debug("[agent-run] could not orphan the previous log: %s", e)
     run = _Run(lane=lane, label=label)
     _RUNS[session_id] = run
     if persistence_enabled():
@@ -565,6 +597,71 @@ def stop(session_id: str, expected_run_id: Optional[str] = None) -> bool:
         run.task.cancel()
         return True
     return False
+
+
+def _cancel_anywhere(task: "asyncio.Task") -> bool:
+    """Cancel `task` from whatever thread we are on.
+
+    FastAPI runs `def` routes in a threadpool, and asyncio tasks are not
+    thread-safe: a bare `task.cancel()` from there can be lost. Hop through the
+    task's own loop when we are not already on it.
+    """
+    try:
+        loop = task.get_loop()
+    except Exception:                                     # pragma: no cover
+        loop = None
+    try:
+        running = asyncio.get_running_loop()
+    except RuntimeError:
+        running = None
+    if loop is not None and running is not loop:
+        try:
+            loop.call_soon_threadsafe(task.cancel)
+            return True
+        except RuntimeError:                              # loop already closed
+            return False
+    task.cancel()
+    return True
+
+
+def stop_for_session(session_id: str, reason: str = "session_deleted") -> bool:
+    """Stop whatever run `session_id` currently has, without knowing its run_id.
+
+    `stop()` stays fail-closed on purpose: a stale browser tab must never cancel
+    the run that replaced its own. A server-side caller that is DESTROYING the
+    session has no such ambiguity — there is no newer run left to protect — so
+    it gets this explicit entry point instead of a relaxed `stop()`.
+
+    Deleting a chat used to leave its run executing tools and writing files: it
+    kept its queue-lane slot (with `agent_queue_local_concurrency=1` that blocks
+    every other chat) and was unreachable from the UI, because /api/chat/activity
+    and /api/chat/stop 404 once the session is gone.
+
+    Returns True when there was something to stop. Safe to call off the event
+    loop.
+    """
+    was_busy = session_id in _EXTERNAL_BUSY      # a sub-agent worker chat
+    run = _RUNS.pop(session_id, None)
+    clear_busy(session_id)
+    _INTERRUPTED.pop(session_id, None)
+    if run is None:
+        return was_busy
+    was_running = run.status == "running"
+    if was_running:
+        run.status = "stopped"
+    # Close the replay log with a terminal status: the session is gone, so a
+    # restart must not "recover" it into a chat that no longer exists.
+    if run.log is not None:
+        try:
+            run.log.finish("stopped")
+        except Exception:                                 # pragma: no cover
+            pass
+    if run.task is not None and not run.task.done():
+        _cancel_anywhere(run.task)
+    if run.evict_task is not None and not run.evict_task.done():
+        _cancel_anywhere(run.evict_task)
+    logger.info("[agent-run] run of session %s stopped (%s)", session_id, reason)
+    return True
 
 
 # ---------------------------------------------------------------------------

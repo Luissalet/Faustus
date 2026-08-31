@@ -16,12 +16,22 @@ import logging
 import os
 import threading
 import time
+import uuid
+from collections import deque
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
 _LOCK = threading.Lock()
 MAX_ENTRIES_READ = 5000
+
+# Rotation. The file is append-only and the project page reads it whole on
+# every request (load(), then files_index() reads it again), so an unbounded
+# log turns into per-request latency. Past ROTATE_MAX_BYTES the file is
+# rewritten with only its newest ROTATE_KEEP_LINES lines — atomically (tmp +
+# os.replace), so a crash mid-rotation can never leave a truncated audit trail.
+ROTATE_MAX_BYTES = 8 * 1024 * 1024
+ROTATE_KEEP_LINES = MAX_ENTRIES_READ
 
 
 def _dir() -> str:
@@ -45,6 +55,37 @@ def _safe_key(key: str) -> str:
 
 def path_for(key: str) -> str:
     return os.path.join(_dir(), _safe_key(key) + ".jsonl")
+
+
+def _rotate_if_needed(path: str) -> bool:
+    """Trim an oversized append-only JSONL to its newest ROTATE_KEEP_LINES
+    lines. The caller holds `_LOCK`. Best effort: returns False and leaves the
+    file untouched on any error."""
+    try:
+        if ROTATE_MAX_BYTES <= 0 or os.path.getsize(path) <= ROTATE_MAX_BYTES:
+            return False
+    except OSError:
+        return False
+    tmp = f"{path}.tmp.{uuid.uuid4().hex}"
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            tail = deque(f, maxlen=max(1, int(ROTATE_KEEP_LINES)))
+        with open(tmp, "w", encoding="utf-8") as out:
+            for line in tail:
+                out.write(line if line.endswith("\n") else line + "\n")
+            out.flush()
+            os.fsync(out.fileno())
+        os.replace(tmp, path)
+        logger.info("[audit] rotated %s — kept the newest %d entries", os.path.basename(path), len(tail))
+        return True
+    except (OSError, ValueError) as e:
+        logger.debug("[audit] rotation of %s failed: %s", path, e)
+        return False
+    finally:
+        try:
+            os.unlink(tmp)          # no-op after a successful os.replace
+        except OSError:
+            pass
 
 
 def record(
@@ -85,9 +126,13 @@ def record(
         entry.update(extra)
     try:
         os.makedirs(_dir(), exist_ok=True)
+        p = path_for(key)
         with _LOCK:
-            with open(path_for(key), "a", encoding="utf-8") as f:
+            with open(p, "a", encoding="utf-8") as f:
                 f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+            # Rotate AFTER the append so the entry we just wrote is always in
+            # the retained tail.
+            _rotate_if_needed(p)
         return entry
     except (OSError, TypeError, ValueError) as e:
         logger.debug("[audit] write failed: %s", e)
@@ -98,7 +143,11 @@ def load(key: str, limit: int = 200) -> List[Dict[str, Any]]:
     p = path_for(key)
     if not os.path.isfile(p):
         return []
-    rows: List[Dict[str, Any]] = []
+    # deque(maxlen=…) drops the oldest row in O(1). The previous
+    # `rows = rows[-MAX_ENTRIES_READ:]` INSIDE the loop copied the whole
+    # retained window once per line — quadratic, and the endpoint reads the
+    # file twice per request (load + files_index).
+    keep = deque(maxlen=MAX_ENTRIES_READ)
     try:
         with open(p, "r", encoding="utf-8", errors="replace") as f:
             for line in f:
@@ -106,13 +155,12 @@ def load(key: str, limit: int = 200) -> List[Dict[str, Any]]:
                 if not line:
                     continue
                 try:
-                    rows.append(json.loads(line))
+                    keep.append(json.loads(line))
                 except ValueError:
                     continue
-                if len(rows) > MAX_ENTRIES_READ:
-                    rows = rows[-MAX_ENTRIES_READ:]
     except OSError:
         return []
+    rows: List[Dict[str, Any]] = list(keep)
     rows.reverse()  # newest first
     return rows[: max(1, int(limit))]
 

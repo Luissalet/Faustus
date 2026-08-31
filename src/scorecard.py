@@ -19,12 +19,20 @@ import logging
 import os
 import threading
 import time
+import uuid
+from collections import deque
 from typing import Any, Dict, Iterable, List, Optional
 
 logger = logging.getLogger(__name__)
 
 _LOCK = threading.Lock()
 _MAX_TASK_CHARS = 120
+
+# Rotation: scorecard.jsonl is append-only and `load()` walks it whole on every
+# /scorecard render. Past ROTATE_MAX_BYTES it is rewritten with only its newest
+# ROTATE_KEEP_LINES lines, atomically (tmp + os.replace).
+ROTATE_MAX_BYTES = 8 * 1024 * 1024
+ROTATE_KEEP_LINES = 20000
 
 
 def _path() -> str:
@@ -108,6 +116,36 @@ def build_entry(
     return entry
 
 
+def _rotate_if_needed(path: str) -> bool:
+    """Trim an oversized append-only JSONL to its newest ROTATE_KEEP_LINES
+    lines. The caller holds `_LOCK`. Best effort: never raises."""
+    try:
+        if ROTATE_MAX_BYTES <= 0 or os.path.getsize(path) <= ROTATE_MAX_BYTES:
+            return False
+    except OSError:
+        return False
+    tmp = f"{path}.tmp.{uuid.uuid4().hex}"
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            tail = deque(f, maxlen=max(1, int(ROTATE_KEEP_LINES)))
+        with open(tmp, "w", encoding="utf-8") as out:
+            for line in tail:
+                out.write(line if line.endswith("\n") else line + "\n")
+            out.flush()
+            os.fsync(out.fileno())
+        os.replace(tmp, path)
+        logger.info("[scorecard] rotated the log — kept the newest %d turns", len(tail))
+        return True
+    except (OSError, ValueError) as e:
+        logger.debug("[scorecard] rotation failed: %s", e)
+        return False
+    finally:
+        try:
+            os.unlink(tmp)          # no-op after a successful os.replace
+        except OSError:
+            pass
+
+
 def record(entry: Dict[str, Any]) -> bool:
     if not bool(_setting("agent_scorecard", True)):
         return False
@@ -122,6 +160,8 @@ def record(entry: Dict[str, Any]) -> bool:
         with _LOCK:
             with open(path, "a", encoding="utf-8") as f:
                 f.write(line + "\n")
+            # After the append, so the line we just wrote is in the kept tail.
+            _rotate_if_needed(path)
         return True
     except (OSError, TypeError, ValueError) as e:
         logger.debug("[scorecard] write failed: %s", e)
@@ -133,7 +173,10 @@ def load(days: Optional[float] = None, limit: int = 20000) -> List[Dict[str, Any
     if not os.path.isfile(path):
         return []
     cutoff = time.time() - float(days) * 86400 if days else None
-    out: List[Dict[str, Any]] = []
+    # deque(maxlen=limit): only the newest `limit` rows are ever held. The
+    # previous version parsed the WHOLE file into a list and sliced at the end,
+    # so a long-lived log cost its full size in memory on every render.
+    keep = deque(maxlen=max(1, int(limit)))
     try:
         with open(path, "r", encoding="utf-8", errors="replace") as f:
             for line in f:
@@ -146,10 +189,10 @@ def load(days: Optional[float] = None, limit: int = 20000) -> List[Dict[str, Any
                     continue
                 if cutoff and float(e.get("ts") or 0) < cutoff:
                     continue
-                out.append(e)
+                keep.append(e)
     except OSError:
         return []
-    return out[-limit:]
+    return list(keep)
 
 
 def _rate(num: int, den: int) -> Optional[float]:

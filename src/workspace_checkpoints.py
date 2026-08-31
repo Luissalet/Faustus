@@ -274,7 +274,10 @@ def checkpoint(workspace: str, label: str = "") -> Optional[Dict[str, Any]]:
             cap = 2048.0
         if cap and os.path.isdir(gd) and _dir_size_mb(gd) > cap:
             logger.warning("[checkpoint] shadow repo for %s exceeds %s MB — resetting", root, cap)
-            reset(root)
+            # _reset_locked, NOT reset(): we already hold _lock_for(root) and
+            # it is a plain, non-reentrant threading.Lock — calling the public
+            # reset() here deadlocked the workspace forever.
+            _reset_locked(root)
         if not _ensure_repo(root):
             return None
         add = _run(root, ["add", "-A", "--ignore-errors", "--", "."], timeout=_GIT_TIMEOUT * 3, check=True)
@@ -496,22 +499,32 @@ def list_checkpoints(workspace: str, limit: int = 30) -> List[Dict[str, Any]]:
     return out
 
 
+def _reset_locked(root: str) -> bool:
+    """Body of `reset()` WITHOUT the per-workspace lock.
+
+    `root` must already be normalised and the caller must already hold
+    `_lock_for(root)` (or be sure nobody else can). Callers that run inside a
+    locked section use this; everything else uses `reset()`.
+    """
+    gd = shadow_dir(root)
+    _EXCLUDE_CACHE.pop(gd, None)
+    if not os.path.isdir(gd):
+        return True
+    try:
+        _rmtree_force(gd)
+        return True
+    except OSError as e:
+        logger.warning("[checkpoint] reset of %s failed: %s", gd, e)
+        return False
+
+
 def reset(workspace: str) -> bool:
     """Delete the shadow repo of a workspace (frees disk; loses old baselines)."""
     if not workspace:
         return False
     root = _norm_root(workspace)
-    gd = shadow_dir(root)
     with _lock_for(root):
-        _EXCLUDE_CACHE.pop(gd, None)
-        if not os.path.isdir(gd):
-            return True
-        try:
-            _rmtree_force(gd)
-            return True
-        except OSError as e:
-            logger.warning("[checkpoint] reset of %s failed: %s", gd, e)
-            return False
+        return _reset_locked(root)
 
 
 def _rmtree_force(path: str) -> None:

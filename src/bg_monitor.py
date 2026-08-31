@@ -110,34 +110,52 @@ async def _run_followup(rec: dict) -> bool:
     # history + save_sessions(); a concurrent live turn does the same, and with
     # no per-session lock the two interleave (reordered/clobbered messages).
     # Defer — return False so we retry on the next tick once the turn finishes.
+    # `active_session_ids()` covers detached runs AND externally-marked busy
+    # sessions (sub-agent workers, and the follow-up below), so two writers on
+    # one session can no longer slip past each other.
+    agent_runs = None
     try:
         from src import agent_runs
-        if agent_runs.is_active(sess.id):
+        if sess.id in agent_runs.active_session_ids():
             logger.info("bg-followup: session %s busy (live turn) — deferring job %s", sess.id, rec.get("id"))
             return False
     except Exception:
-        pass
+        agent_runs = None
 
-    context = sess.get_context_messages()
-    context.append(_background_result_message(rec))
+    # Announce ourselves for the length of the run: the check above is only
+    # half a mutex if nobody ever sets the flag.
+    if agent_runs is not None:
+        try:
+            agent_runs.mark_busy(sess.id)
+        except Exception:
+            agent_runs = None
+    try:
+        context = sess.get_context_messages()
+        context.append(_background_result_message(rec))
 
-    full, tool_events = await _drain_agent(sess, context)
+        full, tool_events = await _drain_agent(sess, context)
 
-    # Persist ONLY the assistant continuation so it renders as a normal agent
-    # turn — a standard chat bubble plus `tool_events` that the frontend
-    # rebuilds into the usual agent-thread tool cards (chatRenderer:1494). The
-    # trigger isn't saved as its own message (it'd be an out-of-place bubble);
-    # the raw job output is stashed in metadata for traceability instead.
-    sm.add_message(sess.id, ChatMessage(
-        "assistant", full,
-        metadata={
-            "tool_events": tool_events,
-            "model": sess.model,
-            "bg_job_id": rec["id"],
-            "bg_result": bg_jobs.result_text(rec)[:4000],
-        },
-    ))
-    sm.save_sessions()
+        # Persist ONLY the assistant continuation so it renders as a normal agent
+        # turn — a standard chat bubble plus `tool_events` that the frontend
+        # rebuilds into the usual agent-thread tool cards (chatRenderer:1494). The
+        # trigger isn't saved as its own message (it'd be an out-of-place bubble);
+        # the raw job output is stashed in metadata for traceability instead.
+        sm.add_message(sess.id, ChatMessage(
+            "assistant", full,
+            metadata={
+                "tool_events": tool_events,
+                "model": sess.model,
+                "bg_job_id": rec["id"],
+                "bg_result": bg_jobs.result_text(rec)[:4000],
+            },
+        ))
+        sm.save_sessions()
+    finally:
+        if agent_runs is not None:
+            try:
+                agent_runs.clear_busy(sess.id)
+            except Exception:
+                pass
     logger.info("bg-followup: auto-continued session %s for job %s (%d chars, %d tools)",
                 sess.id, rec["id"], len(full), len(tool_events))
     return True
