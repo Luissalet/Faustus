@@ -42276,3 +42276,107 @@ body:has(.sidebar.right-side) .project-active-pill { right: 12px; }
   .project-memory-editor { min-height: 330px; }
   .project-active-pill { right: 35px; max-width: 105px; }
 }
+
+/* ── Reliability harness cards, Progress panel, model controls, usage widget ── */
+.agent-thread-node.harness-node .agent-thread-tool { font-style: italic; }
+.agent-thread-node.harness-node .harness-body { display: none; font-size: 0.86em; opacity: 0.9; padding: 4px 0 2px 0; }
+.agent-thread-node.harness-node.expanded .harness-body { display: block; }
+.agent-thread-node.harness-rejected .agent-thread-dot,
+.agent-thread-node.harness-unverified .agent-thread-dot { background: var(--red, #e06c75); }
+.agent-thread-node.harness-rejected .agent-thread-tool { color: var(--warn, #f0ad4e); }
+.agent-thread-node.harness-unverified .agent-thread-tool { color: var(--red, #e06c75); font-weight: 600; }
+.agent-thread-node.harness-verified .agent-thread-dot { background: var(--color-success, #4caf50); }
+.agent-thread-node.harness-verified .agent-thread-tool { color: var(--color-success, #4caf50); }
+.agent-thread-node.harness-continue .agent-thread-tool { color: var(--color-muted, #888); }
+.agent-thread-node.harness-summary .agent-thread-tool { color: var(--color-muted, #888); font-style: normal; }
+.harness-list { margin: 2px 0 4px 16px; padding: 0; }
+.harness-list li { margin: 2px 0; }
+.harness-foot { margin-top: 4px; }
+.harness-pre { margin: 2px 0; padding: 4px 6px; font-size: 0.85em; background: var(--hl-bg, rgba(0,0,0,.2)); border-radius: 4px; max-height: 140px; overflow: auto; }
+
+/* Progress panel (agent todowrite list) */
+.agent-progress-panel {
+  position: absolute; top: 44px; right: 14px; z-index: 30; width: 300px; max-width: calc(100% - 28px);
+  background: var(--panel); color: var(--fg); border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 6px 24px rgba(0,0,0,.28); font-size: 12.5px; overflow: hidden;
+}
+.agent-progress-head { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+.agent-progress-title { font-weight: 600; flex: 1; }
+.agent-progress-count { opacity: .7; font-variant-numeric: tabular-nums; }
+.agent-progress-toggle, .agent-progress-close { background: transparent; border: 0; color: var(--fg); cursor: pointer; opacity: .7; padding: 2px 4px; line-height: 1; }
+.agent-progress-toggle svg { transition: transform .15s; }
+.agent-progress-panel.collapsed .agent-progress-toggle svg { transform: rotate(-90deg); }
+.agent-progress-panel.collapsed .agent-progress-list { display: none; }
+.agent-progress-list { list-style: none; margin: 0; padding: 4px 0; max-height: 45vh; overflow: auto; }
+.agent-progress-item { display: flex; align-items: flex-start; gap: 7px; padding: 4px 10px; line-height: 1.35; }
+.agent-progress-num { width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--border); font-size: 10px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px; opacity: .8; }
+.agent-progress-icon { width: 12px; flex-shrink: 0; text-align: center; }
+.agent-progress-item.is-pending { opacity: .7; }
+.agent-progress-item.is-in_progress .agent-progress-num { border-color: var(--color-accent, #00aaff); color: var(--color-accent, #00aaff); }
+.agent-progress-item.is-in_progress .agent-progress-icon { color: var(--color-accent, #00aaff); animation: agent-progress-pulse 1.2s ease-in-out infinite; }
+.agent-progress-item.is-completed .agent-progress-icon { color: var(--color-success, #4caf50); }
+.agent-progress-item.is-completed .agent-progress-text { text-decoration: line-through; opacity: .75; }
+.agent-progress-item.is-unverified .agent-progress-icon { color: var(--warn, #f0ad4e); }
+.agent-progress-tag { margin-left: auto; font-size: 10px; color: var(--warn, #f0ad4e); border: 1px solid var(--warn, #f0ad4e); border-radius: 8px; padding: 0 5px; flex-shrink: 0; }
+@keyframes agent-progress-pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+
+/* Model controls pill + popover */
+.model-controls-pill {
+  display: inline-flex; align-items: center; gap: 4px; margin-right: 6px; padding: 2px 8px; font-size: 11px;
+  border-radius: 999px; border: 1px solid var(--border); background: transparent; color: var(--fg); opacity: .8; cursor: pointer; white-space: nowrap;
+}
+.model-controls-pill:hover { opacity: 1; }
+.model-controls-pill.has-pinned { border-color: var(--color-accent, #00aaff); }
+.model-controls-pop {
+  position: fixed; z-index: 1000; background: var(--panel); color: var(--fg); border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 8px 30px rgba(0,0,0,.35); padding: 10px 12px; font-size: 12.5px;
+}
+.model-controls-pop .mc-row { display: flex; flex-direction: column; gap: 4px; margin: 6px 0; }
+.model-controls-pop .mc-head { flex-direction: row; justify-content: space-between; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.model-controls-pop .mc-muted { opacity: .65; font-size: 11.5px; }
+.model-controls-pop .mc-caps { flex-direction: row; gap: 6px; flex-wrap: wrap; }
+.model-controls-pop .mc-cap { font-size: 11px; border: 1px solid var(--border); border-radius: 8px; padding: 0 6px; opacity: .75; }
+.model-controls-pop .mc-cap.on { border-color: var(--color-success, #4caf50); opacity: 1; }
+.model-controls-pop input[type=range] { width: 100%; }
+.model-controls-pop input[type=number] { width: 100%; box-sizing: border-box; background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; }
+.model-controls-pop .mc-seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.model-controls-pop .mc-seg button { background: transparent; color: var(--fg); border: 0; padding: 3px 10px; cursor: pointer; opacity: .7; }
+.model-controls-pop .mc-seg button.on { background: color-mix(in srgb, var(--color-accent, #00aaff) 25%, transparent); opacity: 1; }
+.model-controls-pop .mc-actions { flex-direction: row; justify-content: space-between; align-items: center; }
+.model-controls-pop .mc-btn { background: transparent; color: var(--fg); border: 1px solid var(--border); border-radius: 6px; padding: 3px 8px; cursor: pointer; }
+.model-controls-pop .mc-hint code { font-size: 11px; }
+
+/* System usage pill + panel */
+.sys-usage-pill {
+  display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px; font-size: 11px; border-radius: 999px;
+  border: 1px solid var(--border); background: transparent; color: var(--fg); opacity: .85; cursor: pointer; white-space: nowrap; margin-right: 8px;
+  font-variant-numeric: tabular-nums;
+}
+.sys-usage-pill.warm { border-color: var(--warn, #f0ad4e); }
+.sys-usage-pill.hot { border-color: var(--red, #e06c75); }
+.sys-usage-pill.unavailable { opacity: .5; }
+.su-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--color-muted, #888); }
+.su-dot.busy { background: var(--color-success, #4caf50); animation: agent-progress-pulse 1s ease-in-out infinite; }
+.sys-usage-panel {
+  position: absolute; top: 44px; left: 14px; z-index: 30; width: 340px; max-width: calc(100% - 28px);
+  background: var(--panel); color: var(--fg); border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 6px 24px rgba(0,0,0,.28); font-size: 12px; padding: 8px 10px; max-height: 70vh; overflow: auto;
+}
+.su-section { padding: 4px 0 6px; border-bottom: 1px solid var(--border); }
+.su-section:last-of-type { border-bottom: 0; }
+.su-h { font-weight: 600; margin-bottom: 3px; }
+.su-row { display: grid; grid-template-columns: 62px 1fr auto; gap: 6px; align-items: center; margin: 2px 0; }
+.su-label { opacity: .7; }
+.su-val { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.su-meter { height: 6px; border-radius: 3px; background: rgba(127,127,127,.25); overflow: hidden; }
+.su-meter span { display: block; height: 100%; background: var(--color-accent, #00aaff); }
+.su-meter.warm span { background: var(--warn, #f0ad4e); }
+.su-meter.hot span { background: var(--red, #e06c75); }
+.su-model { margin: 4px 0; }
+.su-model-name { font-weight: 600; }
+.su-muted { opacity: .65; }
+.su-foot { margin-top: 4px; font-size: 11px; }
+@media (max-width: 768px) {
+  .agent-progress-panel { top: auto; bottom: 120px; right: 8px; width: 260px; }
+  .sys-usage-pill .su-text { max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
+}

@@ -157,3 +157,20 @@ def test_qwen_coder_function_markup_is_parsed_and_stripped():
     blocks2 = parse_tool_blocks(leaked2, skip_fenced=True)
     assert len(blocks2) == 1 and blocks2[0].tool_type == "read_file"
     assert "static/js/projects.js" in blocks2[0].content
+
+
+def test_static_check_files(tmp_path):
+    good = tmp_path / "ok.py"
+    good.write_text("x = 1\n", encoding="utf-8")
+    bad = tmp_path / "bad.py"
+    bad.write_text("def broken(:\n  pass\n", encoding="utf-8")
+    badjson = tmp_path / "c.json"
+    badjson.write_text("{oops}", encoding="utf-8")
+    other = tmp_path / "notes.md"
+    other.write_text("# hi", encoding="utf-8")
+    res = h.static_check_files(["ok.py", "bad.py", "c.json", "notes.md", "missing.py"], str(tmp_path))
+    by = {r["path"]: r for r in res}
+    assert by["ok.py"]["ok"] is True
+    assert by["bad.py"]["ok"] is False and by["bad.py"]["error"]
+    assert by["c.json"]["ok"] is False
+    assert "notes.md" not in by and "missing.py" not in by

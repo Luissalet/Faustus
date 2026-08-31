@@ -1885,6 +1885,13 @@ export async function selectSession(id, { keepSidebar = false, showLoading = tru
         projectsModule.onSessionSwitch(id, _meta ? _meta.folder : null);
       }
     } catch (e) {}
+    // Let loosely-coupled panels (agent Progress, model controls) follow the
+    // active chat without importing sessions.js.
+    try {
+      document.dispatchEvent(new CustomEvent('odysseus:session-switch', {
+        detail: { id, model: _meta ? _meta.model : null, folder: _meta ? _meta.folder : null },
+      }));
+    } catch (e) {}
     const meta = sessions.find(s => s.id === id);
 
     // Detach any in-flight stream to background instead of aborting

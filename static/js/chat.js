@@ -36,6 +36,8 @@ import {
 } from './chatModelProvenance.js';
 import { createTerminalStreamError, isRecoverableStreamError } from './chatStreamErrors.js';
 import { loadPanel } from './panels.js';
+import agentHarnessUI from './agentHarnessUI.js';
+import modelControls from './modelControls.js';
 
   const RESEARCH_TIMEOUT_MS = 360000;
   const DEFAULT_TIMEOUT_MS = 120000;
@@ -810,6 +812,11 @@ import { loadPanel } from './panels.js';
   export function init(apiBase) {
     API_BASE = apiBase;
     initSlashCommands({ apiBase, isStreaming: () => !!_getForegroundStreamState() });
+    // Reliability harness cards + Progress panel, model controls popover and
+    // the live system-usage widget (ollama ps / nvidia-smi).
+    try { agentHarnessUI.init(apiBase); } catch (_e) { console.warn('agentHarnessUI init', _e); }
+    try { modelControls.init(apiBase, { getSessionId: () => sessionModule.getCurrentSessionId() }); } catch (_e) { console.warn('modelControls init', _e); }
+    import('./sysUsage.js').then(mod => { try { mod.default.init(apiBase); } catch (_e) { console.warn('sysUsage init', _e); } }).catch(() => {});
     // Initialize email inbox
     emailInbox.init(documentModule);
     // Wire the slash-command autocomplete popup on the chat composer. The
@@ -1929,6 +1936,12 @@ import { loadPanel } from './panels.js';
       if (presetsModule.getSelectedPreset()) {
         fd.append('preset_id', presetsModule.getSelectedPreset());
       }
+      // Per-session generation overrides (temperature, max_tokens, top_p,
+      // thinking…) pinned from the model-controls popover / slash commands.
+      try {
+        const _gen = modelControls.getOverridesForSession(streamSessionId);
+        if (_gen && Object.keys(_gen).length) fd.append('gen_overrides', JSON.stringify(_gen));
+      } catch (_) {}
 
 
       // Superseded during preflight (uploads, document saves): a newer send
@@ -2868,7 +2881,7 @@ import { loadPanel } from './panels.js';
                 if (spinner && spinner.element) spinner.destroy();
                 break;
               }
-              if (json.delta || json.type === 'agent_prep' || json.type === 'tool_approval_resolved' || json.type === 'generated_image' || json.type === 'tool_start' || json.type === 'tool_output' || json.type === 'tool_progress' || json.type === 'agent_step' || json.type === 'loop_breaker_triggered' || json.type === 'intent_nudge_exhausted' || json.type === 'doc_stream_open' || json.type === 'doc_stream_delta' || json.type === 'research_progress') {
+              if (json.delta || json.type === 'agent_prep' || json.type === 'tool_approval_resolved' || json.type === 'generated_image' || json.type === 'tool_start' || json.type === 'tool_output' || json.type === 'tool_progress' || json.type === 'agent_step' || json.type === 'loop_breaker_triggered' || json.type === 'intent_nudge_exhausted' || json.type === 'doc_stream_open' || json.type === 'doc_stream_delta' || json.type === 'research_progress' || json.type === 'harness_check' || json.type === 'progress_update' || json.type === 'round_info') {
                 clearResponseTimeout();
                 clearProcessingProbe();
                 clearFirstTokenWaitTimers();
@@ -3898,6 +3911,28 @@ import { loadPanel } from './panels.js';
                 budgetDiv.textContent = `Tool budget reached (${json.used}/${json.limit} calls). Agent stopped.`;
                 const chatBox = document.getElementById('chat-history');
                 chatBox.appendChild(budgetDiv);
+
+              } else if (json.type === 'round_info') {
+                // Per-round provider facts (finish_reason, tool calls) — kept
+                // for the model-controls readout; no chat chrome per round.
+                if (_isBg) continue;
+                try { modelControls.noteRoundInfo(json); } catch (_) {}
+
+              } else if (json.type === 'harness_check' || json.type === 'harness_summary') {
+                // Reliability harness verdicts (src/agent_harness.py).
+                if (_isBg) continue;
+                _cancelThinkingTimer();
+                _removeThinkingSpinner();
+                if (json.type === 'harness_check' && json.status !== 'verified') {
+                  // A rejection/continue means the model will speak again:
+                  // close the current bubble so the next round starts fresh.
+                  _finalizeRoundRender();
+                }
+                try { agentHarnessUI.handleStreamEvent(json, { sessionId: streamSessionId }); } catch (_e) { console.warn('harness ui', _e); }
+
+              } else if (json.type === 'progress_update') {
+                if (_isBg) continue;
+                try { agentHarnessUI.handleStreamEvent(json, { sessionId: streamSessionId }); } catch (_e) { console.warn('progress ui', _e); }
 
               } else if (json.type === 'loop_breaker_triggered' || json.type === 'intent_nudge_exhausted') {
                 if (_isBg) continue;

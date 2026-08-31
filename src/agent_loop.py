@@ -5537,8 +5537,14 @@ async def stream_agent_loop(
                 "tool_blocks": [b.tool_type for b in tool_blocks][:12],
                 "text_chars": len(round_response),
                 "tools_sent": len(_tool_names_sent),
+                "native_tools": bool(_is_api_model),
                 "input_tokens": _round_real_input_tokens or None,
                 "output_tokens": _round_real_output_tokens or None,
+                # Effective generation settings for this round (model controls readout).
+                "temperature": temperature,
+                "temperature_capped": _temperature_capped_from,
+                "max_tokens": max_tokens,
+                "think": (gen_overrides or {}).get("think") if isinstance(gen_overrides, dict) else None,
             }) + "\n\n"
         )
 
@@ -5626,10 +5632,51 @@ async def stream_agent_loop(
                         }) + "\n\n"
                     )
                 elif _ledger.rejections or _ledger.effects:
+                    # ── (3) Post-mutation syntax check. The model says it is done
+                    # and changed files: make sure they at least parse before the
+                    # turn ends. One bounded round-trip to fix what broke.
+                    _syntax_failed = []
+                    if _ledger.mutations and workspace and _ledger.syntax_rejections < 1:
+                        try:
+                            _checks = await asyncio.to_thread(
+                                _harness.static_check_files, _ledger.mutated_paths(), workspace
+                            )
+                            _ledger.static_checks = _checks
+                            _syntax_failed = [c for c in _checks if not c.get("ok")]
+                        except Exception as _sc_err:
+                            logger.debug("[harness] static check failed: %s", _sc_err)
+                    if _syntax_failed:
+                        _ledger.syntax_rejections += 1
+                        logger.warning("[harness] round %s syntax errors in changed files: %s", round_num,
+                                       [(c["path"], c["error"]) for c in _syntax_failed])
+                        if round_response.strip():
+                            messages.append({"role": "assistant", "content": round_response})
+                        messages.append({
+                            "role": "user",
+                            "content": (
+                                "[Harness check — automatic message from the runtime, not from the user] "
+                                "A syntax check of the files you changed FAILED:\n- "
+                                + "\n- ".join(f"{c['path']}: {c['error']}" for c in _syntax_failed)
+                                + "\nRead the affected region with read_file (offset/limit), fix it with "
+                                "edit_file, and only then finish. Do not describe the fix — apply it."
+                            ),
+                        })
+                        yield (
+                            "data: " + json.dumps({
+                                "type": "harness_check", "status": "syntax_error", "round": round_num,
+                                "errors": [{"path": c["path"], "error": c["error"]} for c in _syntax_failed],
+                                "attempt": _ledger.syntax_rejections, "max_attempts": 1,
+                                "mutations": _ledger.mutated_paths(),
+                            }) + "\n\n"
+                        )
+                        full_response += "\n\n"
+                        yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
+                        continue
                     yield (
                         "data: " + json.dumps({
                             "type": "harness_check", "status": "verified", "round": round_num,
                             "mutations": _ledger.mutated_paths(),
+                            "static_checks": _ledger.static_checks,
                         }) + "\n\n"
                     )
 
@@ -6673,6 +6720,7 @@ async def stream_agent_loop(
             k: _hsum.get(k) for k in (
                 "stop_reason", "mutations", "tool_calls", "failed_calls", "rejections",
                 "length_continues", "finish_reasons", "git", "notes", "progress", "language",
+                "static_checks",
             )
         }
     yield f"data: {json.dumps({'type': 'metrics', 'data': metrics})}\n\n"

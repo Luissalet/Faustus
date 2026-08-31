@@ -438,6 +438,8 @@ class TurnLedger:
         self.finish_reasons: List[Optional[str]] = []
         self.stop_reason: str = "complete"
         self.notes: List[str] = []
+        self.static_checks: List[Dict[str, Any]] = []
+        self.syntax_rejections = 0
         # The user's own message may name real files; those count as observed.
         for tok in extract_path_tokens(self.user_text):
             self.observed_paths.add(_norm(tok))
@@ -655,6 +657,7 @@ class TurnLedger:
             "notes": self.notes,
             "git": git,
             "progress": self.progress,
+            "static_checks": self.static_checks,
         }
 
 
@@ -733,3 +736,115 @@ def local_model_policy() -> str:
         "7. Keep narration minimal: tools first, then a short factual summary in the user's language "
         "listing exactly which files changed (from the tool results, not from memory)."
     )
+
+
+# ---------------------------------------------------------------------------
+# Post-mutation static checks
+# ---------------------------------------------------------------------------
+
+_CHECK_TIMEOUT = 20.0
+
+
+def _check_python(path: str) -> Optional[str]:
+    import sys
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-m", "py_compile", path],
+            capture_output=True, text=True, timeout=_CHECK_TIMEOUT,
+        )
+    except (OSError, subprocess.SubprocessError) as e:
+        return None if isinstance(e, OSError) else f"py_compile timed out"
+    if proc.returncode == 0:
+        return None
+    err = (proc.stderr or proc.stdout or "").strip()
+    return err.splitlines()[-1][:300] if err else "py_compile failed"
+
+
+def _check_javascript(path: str) -> Optional[str]:
+    import shutil
+    import tempfile
+    node = shutil.which("node")
+    if not node:
+        return None  # cannot check — not an error
+    target = path
+    tmp = None
+    try:
+        # ES modules (import/export) fail `node --check` on a .js name because
+        # Node parses it as CommonJS; check a .mjs copy instead.
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            head = f.read(200000)
+        if re.search(r"^\s*(?:import\s|export\s)", head, re.MULTILINE) and not path.endswith((".mjs", ".cjs")):
+            fd, tmp = tempfile.mkstemp(suffix=".mjs")
+            with os.fdopen(fd, "w", encoding="utf-8") as tf:
+                tf.write(head)
+            target = tmp
+        proc = subprocess.run([node, "--check", target], capture_output=True, text=True, timeout=_CHECK_TIMEOUT)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    finally:
+        if tmp:
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+    if proc.returncode == 0:
+        return None
+    err = (proc.stderr or proc.stdout or "").strip()
+    # Keep the location + message lines, drop the stack noise.
+    lines = [l for l in err.splitlines() if l.strip() and not l.strip().startswith("at ") and "node:internal" not in l]
+    text = " | ".join(lines[:4])[:400]
+    return text.replace(target, os.path.basename(path)) if text else "node --check failed"
+
+
+def _check_json(path: str) -> Optional[str]:
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            json.load(f)
+    except json.JSONDecodeError as e:
+        return f"invalid JSON: {e}"[:300]
+    except OSError:
+        return None
+    return None
+
+
+_CHECKERS = {
+    ".py": _check_python,
+    ".js": _check_javascript, ".mjs": _check_javascript, ".cjs": _check_javascript,
+    ".json": _check_json,
+}
+
+
+def static_check_files(paths: Iterable[str], workspace: Optional[str] = None, limit: int = 12) -> List[Dict[str, Any]]:
+    """Cheap syntax checks for files the agent just changed. Returns one entry
+    per checked file: {"path", "ok", "error"}. Files without a checker, or
+    that no longer exist, are skipped. Never raises."""
+    results: List[Dict[str, Any]] = []
+    seen: Set[str] = set()
+    for raw in paths:
+        if len(results) >= limit:
+            break
+        if not raw:
+            continue
+        p = raw
+        try:
+            if not os.path.isabs(p) and workspace:
+                p = os.path.join(workspace, p)
+            p = os.path.realpath(p)
+        except (OSError, ValueError):
+            continue
+        key = _norm(p)
+        if key in seen or not os.path.isfile(p):
+            continue
+        seen.add(key)
+        ext = os.path.splitext(p)[1].lower()
+        checker = _CHECKERS.get(ext)
+        if not checker:
+            continue
+        try:
+            err = checker(p)
+        except Exception as e:  # never break the turn
+            logger.debug("static check failed for %s: %s", p, e)
+            continue
+        display = os.path.relpath(p, workspace).replace(os.sep, "/") if workspace and _norm(p).startswith(_norm(os.path.realpath(workspace))) else p
+        results.append({"path": display, "ok": err is None, "error": err})
+    return results

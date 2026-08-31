@@ -1256,6 +1256,14 @@ async function _cmdToggleDoc(args, ctx) {
 
 // Workspace: confine the agent's file/shell tools to a folder. Not a boolean -
 // show / set <path> / clear / pick (open the directory browser).
+function _cmdModelControls(name, args) {
+  const mod = window.modelControls;
+  if (!mod) { slashReply('Model controls not loaded yet.'); return true; }
+  const reply = mod.handleCommand(name, args || []);
+  if (reply) slashReply(reply);
+  return true;
+}
+
 async function _cmdWorkspace(args, ctx) {
   const sub = (args[0] || '').toLowerCase();
   const rest = args.slice(1).join(' ').trim();
@@ -5878,6 +5886,62 @@ const COMMANDS = {
     handler: _cmdWorkspace,
     noUserBubble: true,
     usage: '/workspace [set <path> | clear | pick]',
+  },
+  gen: {
+    alias: ['model-settings'],
+    category: 'Agent',
+    help: 'Show / reset generation settings pinned for this chat',
+    handler: (args) => _cmdModelControls('gen', args),
+    noUserBubble: true,
+    usage: '/gen [open | reset]',
+  },
+  temp: {
+    alias: ['temperature'],
+    category: 'Agent',
+    help: 'Pin the sampling temperature for this chat',
+    handler: (args) => _cmdModelControls('temp', args),
+    noUserBubble: true,
+    usage: '/temp 0.3 | auto',
+  },
+  maxtokens: {
+    alias: ['max_tokens'],
+    category: 'Agent',
+    help: 'Pin the max output tokens for this chat (0 = unlimited)',
+    handler: (args) => _cmdModelControls('maxtokens', args),
+    noUserBubble: true,
+    usage: '/maxtokens 8192 | auto',
+  },
+  topp: {
+    alias: ['top_p'],
+    category: 'Agent',
+    help: 'Pin top-p for this chat',
+    handler: (args) => _cmdModelControls('topp', args),
+    noUserBubble: true,
+    usage: '/topp 0.9 | auto',
+  },
+  think: {
+    alias: ['thinking'],
+    category: 'Agent',
+    help: 'Force thinking on/off for models that support it',
+    handler: (args) => _cmdModelControls('think', args),
+    noUserBubble: true,
+    usage: '/think on | off | auto',
+  },
+  usage: {
+    alias: ['sys', 'gpu'],
+    category: 'Agent',
+    help: 'Toggle the live GPU / Ollama / RAM usage widget',
+    handler: (args) => {
+      const mod = window.sysUsage;
+      if (!mod) { slashReply('Usage widget not loaded yet.'); return true; }
+      const a = (args[0] || '').toLowerCase();
+      if (a === 'on' || a === 'show') mod.setVisible(true);
+      else if (a === 'off' || a === 'hide') mod.setVisible(false);
+      else mod.toggle();
+      return true;
+    },
+    noUserBubble: true,
+    usage: '/usage [on | off]',
   },
   project: {
     alias: ['proj'],
