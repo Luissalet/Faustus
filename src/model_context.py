@@ -7,6 +7,7 @@ Provides token estimation for context usage tracking.
 
 import ipaddress
 import logging
+import os
 import sys
 from typing import Dict, List, Optional, Tuple
 
@@ -393,6 +394,61 @@ def _proxy_catalog_context(endpoint_url: str, model: str) -> Optional[int]:
     return None
 
 
+# Last context window seen loaded per (ollama base, model). When the model is
+# not resident right now, this is the best evidence of how it WILL be loaded
+# (the runner keeps the same num_ctx across loads unless the user changes it).
+_ollama_ctx_seen: Dict[Tuple[str, str], int] = {}
+
+
+def _looks_like_ollama_url(url: str) -> bool:
+    u = (url or "").lower()
+    return ":11434" in u or "/api/chat" in u or "ollama" in u
+
+
+def _ollama_base(url: str) -> str:
+    base = url.split("/v1")[0] if "/v1" in url else url.split("/api/")[0]
+    return base.rstrip("/")
+
+
+def _ollama_model_matches(loaded: str, wanted: str) -> bool:
+    a = (loaded or "").strip().lower()
+    b = (wanted or "").strip().lower().split("/")[-1]
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    # "qwen3-coder:30b" vs "qwen3-coder" / implicit ":latest"
+    return a.split(":")[0] == b.split(":")[0] and (":" not in b or ":" not in a or a.endswith(":latest") or b.endswith(":latest"))
+
+
+def _ollama_runtime_context(endpoint_url: str, model: str) -> Optional[int]:
+    """The context window Ollama is actually serving `model` with.
+
+    1. /api/ps → `context_length` of the resident model (exact).
+    2. Otherwise the last value seen loaded for this model.
+    3. Otherwise OLLAMA_CONTEXT_LENGTH from the environment, if set.
+    None when nothing is known (caller falls back to the model-card table)."""
+    base = _ollama_base(endpoint_url)
+    key = (base, (model or "").lower())
+    try:
+        r = httpx.get(f"{base}/api/ps", timeout=REQUEST_TIMEOUT)
+        if r.is_success:
+            for m in (r.json().get("models") or []):
+                if _ollama_model_matches(m.get("name") or m.get("model") or "", model):
+                    ctx = m.get("context_length")
+                    if isinstance(ctx, int) and ctx > 0:
+                        _ollama_ctx_seen[key] = ctx
+                        return ctx
+    except Exception as e:
+        logger.debug(f"ollama /api/ps probe failed: {e}")
+    if key in _ollama_ctx_seen:
+        return _ollama_ctx_seen[key]
+    env_ctx = os.environ.get("OLLAMA_CONTEXT_LENGTH", "").strip()
+    if env_ctx.isdigit() and int(env_ctx) > 0:
+        return int(env_ctx)
+    return None
+
+
 def _query_context_length(endpoint_url: str, model: str) -> Tuple[int, bool]:
     """Query the model API for context length. Returns (context_length, known) where
     ``known`` is False only for the bare DEFAULT_CONTEXT fallback."""
@@ -417,8 +473,19 @@ def _query_context_length(endpoint_url: str, model: str) -> Tuple[int, bool]:
             return api_ctx, True
         return DEFAULT_CONTEXT, False
 
+    # Ollama: the window that matters is the one the runner LOADED (num_ctx),
+    # not the model card maximum. qwen3-coder advertises 262k/131k but Ollama
+    # serves it at OLLAMA_CONTEXT_LENGTH (4k default) — trusting the table made
+    # the agent think it had 128k, so long tool outputs were silently truncated
+    # from the front, the system prompt fell off, and the model hallucinated.
+    if is_local_endpoint(endpoint_url) and _looks_like_ollama_url(endpoint_url):
+        ollama_ctx = _ollama_runtime_context(endpoint_url, model)
+        if ollama_ctx:
+            logger.info(f"Ollama runtime context for {model}: {ollama_ctx}")
+            return ollama_ctx, True
+
     # Try llama.cpp /slots endpoint first — reports actual serving context
-    if is_local_endpoint(endpoint_url):
+    if is_local_endpoint(endpoint_url) and not _looks_like_ollama_url(endpoint_url):
         try:
             base = endpoint_url.split("/v1")[0] if "/v1" in endpoint_url else endpoint_url.rsplit("/", 1)[0]
             r = httpx.get(f"{base}/slots", timeout=REQUEST_TIMEOUT)

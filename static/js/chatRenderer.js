@@ -2313,6 +2313,38 @@ export function displayMetrics(messageElement, metrics) {
       footer.appendChild(ctxDiv);
       footer.appendChild(ctxRing);
     }
+    // Reliability harness verdict (persisted in metrics.harness) — survives
+    // reload so an old answer still shows whether its claims were backed by
+    // tool evidence.
+    const hz = metrics.harness;
+    if (hz && typeof hz === 'object' && (hz.stop_reason || (hz.mutations && hz.mutations.length) || hz.tool_calls)) {
+      footer.querySelectorAll('.harness-badge, .harness-divider').forEach(el => el.remove());
+      const files = Array.isArray(hz.mutations) ? hz.mutations : [];
+      const unverified = hz.stop_reason === 'complete_unverified';
+      const badge = document.createElement('span');
+      badge.className = `harness-badge ${unverified ? 'is-unverified' : (files.length ? 'is-verified' : 'is-neutral')}`;
+      badge.textContent = unverified
+        ? '🛡 unverified'
+        : files.length
+          ? `🛡 ${files.length} file${files.length === 1 ? '' : 's'} changed`
+          : `🛡 ${hz.tool_calls || 0} tool${hz.tool_calls === 1 ? '' : 's'}`;
+      const stopLabels = { complete: 'finished', complete_unverified: 'finished — claims NOT backed by tool evidence', rounds_exhausted: 'step limit', budget_exceeded: 'tool budget', loop_breaker: 'loop breaker', intent_nudge_exhausted: 'stalled', awaiting_user: 'waiting for approval/answer' };
+      const parts = [
+        `Harness: ${stopLabels[hz.stop_reason] || hz.stop_reason || '?'}`,
+        `${hz.tool_calls || 0} tool calls${hz.failed_calls ? ` (${hz.failed_calls} failed)` : ''}`,
+        files.length ? `changed: ${files.join(', ')}` : 'no files changed',
+      ];
+      if (hz.rejections) parts.push(`${hz.rejections} rejection(s)`);
+      if (hz.git && typeof hz.git.changed_count === 'number') parts.push(`git: ${hz.git.changed_count ? hz.git.changed_count + ' dirty' : 'clean'}`);
+      badge.title = parts.join(' · ');
+      const hzDiv = document.createElement('span');
+      hzDiv.textContent = ' | ';
+      hzDiv.style.color = 'var(--color-muted-alt)';
+      hzDiv.style.pointerEvents = 'none';
+      hzDiv.className = 'harness-divider';
+      footer.appendChild(hzDiv);
+      footer.appendChild(badge);
+    }
   } else {
     messageElement.appendChild(metricsContainer);
     if (ctxRing) messageElement.appendChild(ctxRing);

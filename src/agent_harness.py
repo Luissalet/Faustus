@@ -594,12 +594,21 @@ class TurnLedger:
         bad_paths = self.unverified_paths(body)
         intent = find_intent_announcement(body)
         reasons: List[str] = []
+        is_question = bool(_QUESTION_TAIL_RE.search(body.rstrip()))
         if claims and not self.effects:
             reasons.append("claims_without_mutation")
-        if bad_paths and (claims or not _QUESTION_TAIL_RE.search(body.rstrip())):
-            # Mentioning fabricated paths is only tolerable inside a question
-            # ("should I create X.vue?"); anywhere else it is a hallucination.
-            reasons.append("fabricated_paths")
+        if bad_paths:
+            # Unknown paths are a hallucination when the model presents work as
+            # done, or when it reasons about a filesystem it never looked at
+            # (no tool ran this turn). After real discovery, a stray unknown
+            # name is usually a future/hypothetical file ("we could add
+            # utils.js"): record it, do not reject.
+            if claims or (not self.events and not is_question):
+                reasons.append("fabricated_paths")
+            else:
+                note = "unverified_mentions:" + ",".join(bad_paths)
+                if note not in self.notes:
+                    self.notes.append(note)
         if intent and not claims:
             reasons.append("intent_without_action")
         return {

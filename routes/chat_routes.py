@@ -1409,6 +1409,24 @@ def setup_chat_routes(
             no_memory = True
             use_rag = "false"
             search_context = None
+        # Workspace coding turns: personal memories are noise here and local
+        # models weave them into the work (a facts blob about the user's other
+        # projects made qwen3-coder call the demo app by another project's
+        # name). Skip memory retrieval for those turns; setting-controlled.
+        if (
+            not no_memory
+            and workspace
+            and chat_mode == "agent"
+            and isinstance(message, str)
+        ):
+            try:
+                from src.settings import get_setting as _gs_mem
+                from src.agent_loop import _looks_like_workspace_coding_request as _is_coding
+                if _gs_mem("agent_workspace_no_memory", True) and _is_coding(message):
+                    no_memory = True
+                    logger.info("[gen-overrides] workspace coding turn: memory retrieval skipped")
+            except Exception:
+                pass
         pre_context_tool_policy = build_effective_tool_policy(
             last_user_message=message,
         )

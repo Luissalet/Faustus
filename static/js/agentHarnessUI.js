@@ -72,7 +72,11 @@ const REASON_TEXT = {
 export function renderHarnessCheck(json) {
   const status = json.status;
   if (status === 'auto_continue') {
-    _card('continue', `Output cut off by max_tokens — continuing automatically (${json.attempt}/${json.max_attempts})`, '');
+    if (json.reason === 'rounds') {
+      _card('continue', `Step limit (${json.round}) reached mid-task — continuing automatically with one more cycle`, '');
+    } else {
+      _card('continue', `Output cut off by max_tokens — continuing automatically (${json.attempt}/${json.max_attempts})`, '');
+    }
     return;
   }
   const reasons = Array.isArray(json.reasons) ? json.reasons : [];

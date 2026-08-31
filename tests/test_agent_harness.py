@@ -208,3 +208,15 @@ def test_narrative_first_person_is_not_a_claim():
     # …but the same verbs about code still count
     assert h.find_mutation_claims("He creado la función renderCounter en el fichero projects.js.")
     assert h.find_mutation_claims("I've added the handler to the component.")
+
+
+def test_unknown_paths_after_real_discovery_are_noted_not_rejected(tmp_path):
+    (tmp_path / "server.py").write_text("x", encoding="utf-8")
+    ledger = h.TurnLedger(str(tmp_path), "revisa el backend")
+    ledger.record("read_file", "server.py", {"output": "import os", "exit_code": 0}, 1)
+    check = ledger.check_completion("server.py define las rutas. Se podría añadir un utils.py para helpers.")
+    assert check["ok"], check
+    assert any(n.startswith("unverified_mentions:") and "utils.py" in n for n in ledger.notes)
+    # …but presenting it as done without a mutation is still rejected.
+    check2 = ledger.check_completion("He creado utils.py con los helpers.")
+    assert "claims_without_mutation" in check2["reasons"] and "fabricated_paths" in check2["reasons"]

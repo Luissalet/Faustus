@@ -4864,7 +4864,50 @@ async def stream_agent_loop(
         )
         _approved_result_injected = True
 
-    for round_num in range(1, max_rounds + 1):
+    # Round budget. Hitting the cap mid-task used to end the turn with a
+    # "Continue" button the user had to click (the model re-reads "you hit the
+    # step limit, continue"). With agent_auto_continue_cycles > 0 (default 1)
+    # the harness injects that checkpoint itself and grants another cycle of
+    # max_rounds, once; the button still appears when the extra cycle runs out.
+    _rounds_budget = max_rounds
+    try:
+        _auto_cycles_left = int(get_setting("agent_auto_continue_cycles", 1) or 0) if _harness_enabled else 0
+    except (TypeError, ValueError):
+        _auto_cycles_left = 0
+    round_num = 0
+    while True:
+        round_num += 1
+        if round_num > _rounds_budget:
+            if _auto_cycles_left > 0:
+                _auto_cycles_left -= 1
+                _rounds_budget += max_rounds
+                logger.info("[harness] step limit (%s) reached mid-task — auto-continuing with %s more rounds",
+                            round_num - 1, max_rounds)
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "[Harness check — automatic message from the runtime, not from the user] "
+                        f"You used the {round_num - 1}-step budget and the task is not finished. "
+                        f"You have {max_rounds} more steps. Continue from EXACTLY where you left off; "
+                        "do not repeat work already done, do not re-read files you already read. "
+                        "Finish the remaining objectives and then report only what the tools show."
+                    ),
+                })
+                _ledger.notes.append(f"auto_continue_rounds@{round_num - 1}")
+                yield (
+                    "data: " + json.dumps({
+                        "type": "harness_check", "status": "auto_continue", "reason": "rounds",
+                        "round": round_num - 1, "attempt": 1, "max_attempts": 1,
+                    }) + "\n\n"
+                )
+                full_response += "\n\n"
+            else:
+                # Every allowed round ran WITHOUT a "done" break: the agent kept
+                # working until it ran out of rounds — offer Continue instead of
+                # stopping silently. Covers all exhaustion paths (verifier /
+                # harness `continue` on the final round included).
+                _exhausted_rounds = True
+                break
         round_response = ""
         round_reasoning = ""  # reasoning_content deltas (DeepSeek-thinking, vLLM --reasoning-parser)
         native_tool_calls = []  # populated if model uses function calling
@@ -6583,21 +6626,13 @@ async def stream_agent_loop(
 
         # Separator in accumulated response
         full_response += "\n\n"
-    else:
-        # The for-loop completed every allowed round WITHOUT an early `break`
-        # (a `break` fires on "done", budget, or error). Reaching this `else`
-        # means the agent kept working until it ran out of rounds — so offer
-        # Continue instead of stopping silently. This catches ALL exhaustion
-        # paths, including a verifier `continue` on the final round (the old
-        # bottom-of-loop flag missed those).
-        _exhausted_rounds = True
 
     # If the loop hit the round cap while still working, tell the client so it
     # can show a "Continue" affordance instead of the turn just stopping.
     if _exhausted_rounds:
         logger.info("[agent] round cap (%d) reached mid-task — emitting rounds_exhausted", max_rounds)
         _ledger.stop_reason = "rounds_exhausted"
-        yield f'data: {json.dumps({"type": "rounds_exhausted", "rounds": max_rounds})}\n\n'
+        yield f'data: {json.dumps({"type": "rounds_exhausted", "rounds": _rounds_budget})}\n\n'
 
     # If the response is completely empty and no tools were executed,
     # yield a fallback message so the user is not left hanging.
