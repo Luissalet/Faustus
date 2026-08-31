@@ -42278,7 +42278,7 @@ body:has(.sidebar.right-side) .project-active-pill { right: 12px; }
 }
 
 /* ── Reliability harness cards, Progress panel, model controls, usage widget ── */
-.agent-thread-node.harness-node .agent-thread-tool { font-style: italic; }
+.agent-thread-node.harness-node .agent-thread-tool { font-style: italic; text-transform: none; letter-spacing: normal; font-weight: 500; }
 .agent-thread-node.harness-node .harness-body { display: none; font-size: 0.86em; opacity: 0.9; padding: 4px 0 2px 0; }
 .agent-thread-node.harness-node.expanded .harness-body { display: block; }
 .agent-thread-node.harness-rejected .agent-thread-dot,

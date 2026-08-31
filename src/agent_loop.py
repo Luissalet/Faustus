@@ -4932,6 +4932,18 @@ async def stream_agent_loop(
             _active_route_state["request_messages"] = _initial_route_request_messages
         all_tool_schemas = _tool_schemas_for_route(_active_route_state)
         agent_stream_timeout = int(get_setting("agent_stream_timeout_seconds", 300) or 300)
+        # Local runners can sit silent for minutes while they prefill a long
+        # prompt (qwen3-coder-next on a 12 GB card: ~280 s for 14k tokens). The
+        # per-read inactivity timeout must outlast that or the turn dies with a
+        # generic "Model request failed" right before the first token.
+        try:
+            from src.model_context import is_local_endpoint as _is_local_ep_t
+            if _is_local_ep_t(endpoint_url):
+                _local_floor = int(get_setting("agent_local_stream_timeout_seconds", 900) or 0)
+                if _local_floor > agent_stream_timeout:
+                    agent_stream_timeout = _local_floor
+        except Exception:
+            pass
 
         _tool_names_sent = [t.get("function", {}).get("name") for t in (all_tool_schemas or []) if t.get("function")]
         logger.info(f"[agent-debug] round={round_num} model={model} _is_api_model={_is_api_model} tools_sent={len(_tool_names_sent)} tool_names={_tool_names_sent[:15]} relevant_tools={sorted(_relevant_tools)[:15] if _relevant_tools else 'ALL'}")
@@ -5601,6 +5613,29 @@ async def stream_agent_loop(
                 "think": (gen_overrides or {}).get("think") if isinstance(gen_overrides, dict) else None,
             }) + "\n\n"
         )
+
+        if not tool_blocks and _harness_enabled and _force_answer and not plan_mode:
+            # Forced final answer (loop-breaker / memory clamp): the model has
+            # no tools left to fix anything, so do not bounce it — but never
+            # let unsupported "done" claims pass as verified either.
+            _fa_text = _strip_think_blocks(cleaned_round).strip()
+            if _fa_text and (_harness_scope_active or _ledger.events):
+                try:
+                    _fa_check = _ledger.check_completion(_fa_text)
+                except Exception:
+                    _fa_check = {"ok": True, "reasons": []}
+                if not _fa_check["ok"] and ("claims_without_mutation" in _fa_check["reasons"] or "fabricated_paths" in _fa_check["reasons"]):
+                    _ledger.stop_reason = "complete_unverified"
+                    _ledger.notes.append("unverified_claims_forced:" + ",".join(_fa_check["reasons"]))
+                    _harness_final_note = _ledger.user_note(_fa_check, final=True)
+                    yield (
+                        "data: " + json.dumps({
+                            "type": "harness_check", "status": "unverified",
+                            "reasons": _fa_check["reasons"], "claims": _fa_check.get("claims", []),
+                            "bad_paths": _fa_check.get("bad_paths", []), "round": round_num,
+                            "mutations": _ledger.mutated_paths(),
+                        }) + "\n\n"
+                    )
 
         if not tool_blocks and _harness_enabled and not _force_answer and not plan_mode:
             _hc_text = _strip_think_blocks(cleaned_round).strip()

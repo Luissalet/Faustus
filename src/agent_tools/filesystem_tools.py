@@ -125,7 +125,32 @@ class EditFileTool:
             return {"error": f"edit_file: {path}: {e}", "exit_code": 1}
 
         if status == "not_found":
-            return {"error": f"edit_file: old_string not found in {path}. Read the file and match it exactly.", "exit_code": 1}
+            # Local models mostly miss by whitespace/indentation or by quoting a
+            # paraphrase. Point at the closest real region so the retry can copy
+            # it verbatim instead of guessing again.
+            hint = ""
+            try:
+                import difflib
+                probe = next((ln for ln in old.splitlines() if ln.strip()), old.strip())[:200]
+                file_lines = original.splitlines()
+                best_ratio, best_idx = 0.0, -1
+                for i, line in enumerate(file_lines):
+                    if not line.strip():
+                        continue
+                    r = difflib.SequenceMatcher(None, probe.strip(), line.strip()).ratio()
+                    if r > best_ratio:
+                        best_ratio, best_idx = r, i
+                if best_idx >= 0 and best_ratio >= 0.55:
+                    lo, hi = max(0, best_idx - 1), min(len(file_lines), best_idx + 3)
+                    excerpt = "\n".join(f"{n + 1}: {file_lines[n]}" for n in range(lo, hi))
+                    hint = (f" Closest match (similarity {best_ratio:.2f}) is around line {best_idx + 1}:\n{excerpt}\n"
+                            "Copy the exact text from the file (indentation and quotes included) into old_string, "
+                            "or read_file with offset/limit around that line first.")
+                elif original.strip():
+                    hint = " Nothing similar found — the text you quoted is not in this file; read_file it before editing."
+            except Exception:
+                hint = ""
+            return {"error": f"edit_file: old_string not found in {path}.{hint}", "exit_code": 1}
         if status.startswith("not_unique"):
             n = status.split(":", 1)[1]
             return {"error": f"edit_file: old_string is not unique in {path} ({n} matches). Add surrounding context or set replace_all=true.", "exit_code": 1}
