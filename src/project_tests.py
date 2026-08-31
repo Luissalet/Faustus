@@ -70,6 +70,34 @@ def _python_for(workspace: str) -> Optional[str]:
     return None
 
 
+def _fallback_python() -> Optional[str]:
+    """A real interpreter for `-m pytest` when the project has no venv, or None.
+
+    Never `sys.executable` in the frozen build: there it is the app's own
+    Faustus.exe, which ignores `-m` and boots a second copy of the application
+    (splash + tray + another server) instead of running pytest — see
+    agent_harness.host_python()."""
+    try:
+        from src.agent_harness import host_python
+        py = host_python()
+    except Exception:                                   # pragma: no cover
+        py = None if getattr(sys, "frozen", False) else sys.executable
+    if py:
+        return py
+    names = ("python", "python3") if os.name == "nt" else ("python3", "python")
+    for name in names:
+        found = shutil.which(name)
+        if not found:
+            continue
+        try:
+            if os.path.realpath(found) == os.path.realpath(sys.executable):
+                continue                                # that is the frozen app again
+        except (OSError, ValueError):                   # pragma: no cover
+            pass
+        return found
+    return None
+
+
 def _has_pytest_config(workspace: str) -> bool:
     if os.path.isfile(os.path.join(workspace, "pytest.ini")):
         return True
@@ -147,10 +175,18 @@ def detect_test_command(workspace: str, override: Optional[str] = None) -> Optio
     if _has_pytest_config(workspace) or _has_python_tests(workspace):
         py = _python_for(workspace)
         if py is None:
-            py = sys.executable
+            py = _fallback_python()
             kind_note = "host python"
         else:
             kind_note = "project venv"
+        if py is None:
+            # Frozen build with no real interpreter anywhere: "could not run"
+            # (inconclusive in run_tests), never "your change broke the tests".
+            return {
+                "kind": "pytest", "python": None, "note": "no interpreter", "argv": [],
+                "label": "pytest -x -q",
+                "unavailable": "no Python interpreter available to run pytest",
+            }
         return {
             "kind": "pytest", "python": py, "note": kind_note,
             "argv": [py, "-m", "pytest", "-x", "-q", "--no-header", "-p", "no:cacheprovider", "--color=no"],
@@ -312,7 +348,10 @@ def run_tests(
     else:
         argv = list(spec.get("argv") or [])
         if not argv:
-            result["summary"] = "no command"
+            # Nothing runnable (e.g. no interpreter for pytest): that is
+            # "could not verify", not a failing suite.
+            result["summary"] = str(spec.get("unavailable") or "no command")
+            result["inconclusive"] = True
             return result
         if spec.get("kind") == "pytest" and test_files is not None:
             rel = [f for f in test_files if os.path.isfile(os.path.join(workspace, *f.split("/")))]
@@ -402,6 +441,9 @@ def _kill_tree(proc: "subprocess.Popen") -> None:
 _PYTEST_SUMMARY_RE = re.compile(r"^=*\s*((?:\d+ \w+(?:, )?)+) in [\d.]+s\s*(?:\(.*\))?\s*=*\s*$", re.M)
 _PYTEST_FAILED_RE = re.compile(r"^(?:FAILED|ERROR) (\S+)(?: - (.*))?$", re.M)
 _PYTEST_IMPORT_RE = re.compile(r"(ModuleNotFoundError|ImportError|No module named)", re.M)
+# `python -m pytest` without pytest exits 1 with a message that never contains
+# the word "error" — it used to be scored as "your changes broke the tests".
+_PYTEST_MISSING_RE = re.compile(r"No module named ['\"]?pytest\b", re.M)
 _JEST_RE = re.compile(r"^Tests:\s+(.*)$", re.M)
 _MOCHA_RE = re.compile(r"^\s*(\d+) (passing|failing|pending)\b", re.M)
 _VITEST_RE = re.compile(r"^\s*Tests\s+(.*)$", re.M)
@@ -436,6 +478,12 @@ def parse_output(kind: str, exit_code: Optional[int], out: str) -> Dict[str, Any
         if not ok and not failures and _PYTEST_IMPORT_RE.search(out) and "error" in out.lower():
             inconclusive = True
             summary = summary or "import error during collection (environment?)"
+        if _PYTEST_MISSING_RE.search(out):
+            # Any exit code: the runner itself never started, so nothing was
+            # verified — never charge the agent a fix round for it.
+            inconclusive = True
+            summary = "pytest is not installed in the project's interpreter"
+            failures = []
     elif kind == "npm":
         m = _JEST_RE.search(out) or _VITEST_RE.search(out)
         if m:

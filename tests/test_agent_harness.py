@@ -1,5 +1,7 @@
 import json
 import os
+import shutil
+import sys
 
 import pytest
 
@@ -455,3 +457,125 @@ def test_a_mention_of_a_file_that_really_is_missing_still_fires(tmp_path):
                {"output": "Edited", "exit_code": 0}, 1)
     chk = led.check_target_substitution("Hecho, arreglado.")
     assert chk and chk["missing"] == ["static/js/cards.js"]
+
+
+# ---------------------------------------------------------------------------
+# Post-mutation static checks (regressions)
+# ---------------------------------------------------------------------------
+
+def _big_js(tmp_path, name, tail=""):
+    """A syntactically VALID ES module well over the old 200 000-char cap.
+
+    The bulk sits inside one function so that cutting the file at 200 000
+    chars leaves an unterminated block — exactly what happened to the repo's
+    own chat.js / document.js ("Unexpected end of input")."""
+    body = "\n".join(f"  const a{i} = {i};" for i in range(20000))
+    p = tmp_path / name
+    p.write_text("export const first = 1;\nexport function pad() {\n" + body
+                 + "\n  return first;\n}\n" + tail, encoding="utf-8")
+    assert p.stat().st_size > 250_000
+    return p
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node not on PATH")
+def test_large_es_module_is_not_reported_as_a_syntax_error(tmp_path):
+    """Regression: the .mjs copy used for `node --check` was truncated at
+    200 000 chars, so every larger .js file was cut mid-file and node reported
+    a bogus 'Unexpected end of input' (9 real files in this repo, chat.js
+    among them) — one wasted mandatory fix round on a perfect file."""
+    _big_js(tmp_path, "big.js")
+    res = h.static_check_files(["big.js"], str(tmp_path))
+    assert len(res) == 1
+    assert res[0]["ok"] is True, res[0]["error"]
+    assert h._check_javascript(str(tmp_path / "big.js")) is None
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node not on PATH")
+def test_large_es_module_with_a_real_syntax_error_still_fails(tmp_path):
+    _big_js(tmp_path, "broken.js", tail="function broken( {\n")
+    res = h.static_check_files(["broken.js"], str(tmp_path))
+    assert len(res) == 1 and res[0]["ok"] is False and res[0]["error"]
+
+
+def test_javascript_over_the_safety_cap_is_not_checkable_not_broken(tmp_path):
+    """Above the safety cap the file is 'not checkable' (None), never an error."""
+    huge = tmp_path / "huge.js"
+    huge.write_bytes(b"export const a = ;\n" + (b"const filler = 1;\n" * 350_000))
+    assert huge.stat().st_size > 5_000_000
+    assert h._check_javascript(str(huge)) is None
+
+
+def test_static_checks_are_skipped_in_a_frozen_build(tmp_path, monkeypatch):
+    """In the PyInstaller build `sys.executable` is Faustus.exe: it ignores
+    `-m py_compile` and relaunches the whole app (splash + tray + a second
+    server), so py_compile never ran and EVERY edited .py was reported broken.
+    Frozen → 'not checkable' (None), never a syntax error."""
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    assert h.host_python() is None
+
+    def _never(*a, **kw):  # pragma: no cover - must not be reached
+        raise AssertionError(f"subprocess must not be spawned in a frozen build: {a}")
+
+    monkeypatch.setattr(h.subprocess, "run", _never)
+    bad = tmp_path / "bad.py"
+    bad.write_text("def broken(:\n    pass\n", encoding="utf-8")
+    assert h._check_python(str(bad)) is None
+    res = h.static_check_files(["bad.py"], str(tmp_path))
+    assert len(res) == 1 and res[0]["ok"] is True and res[0]["error"] is None
+
+
+def test_host_python_is_the_interpreter_when_not_frozen():
+    assert h.host_python() == sys.executable
+
+
+def test_json_with_a_utf8_bom_is_valid(tmp_path):
+    """PowerShell 5.1 (Out-File / Set-Content) and Notepad write a BOM; a
+    perfectly valid package.json came back as 'invalid JSON: Unexpected UTF-8
+    BOM' and cost a fix round."""
+    p = tmp_path / "package.json"
+    p.write_bytes(b"\xef\xbb\xbf" + b'{"name": "demo", "version": "1.0.0"}')
+    assert h._check_json(str(p)) is None
+    res = h.static_check_files(["package.json"], str(tmp_path))
+    assert len(res) == 1 and res[0]["ok"] is True, res[0]
+    # …and a BOM does not make broken JSON valid.
+    bad = tmp_path / "bad.json"
+    bad.write_bytes(b"\xef\xbb\xbf" + b"{oops}")
+    assert h._check_json(str(bad))
+
+
+# ---------------------------------------------------------------------------
+# Mutation detection in shell commands (regressions)
+# ---------------------------------------------------------------------------
+
+def test_arrows_inside_arguments_are_not_redirections():
+    """`grep -rn "old -> new" src/app.py` was counted as a mutation: the
+    unanchored redirect alternative matched the `>` of `->`. A read-only turn
+    then 'proved' a false 'I modified src/app.py' and triggered the syntax
+    check, the whole test suite and an LLM review pass."""
+    assert not h.shell_command_looks_mutating('grep -rn "old -> new" src/app.py')
+    assert not h.shell_command_looks_mutating('rg "foo=>bar" x.py')
+    assert not h.shell_command_looks_mutating("""python -c 'print("a -> b")'""")
+    assert not h.shell_command_looks_mutating('grep -n "() =>" static/js/chat.js')
+    assert not h.shell_command_looks_mutating("grep -rn 'a -> b' .")
+    # Text inside quotes is an argument, not a command.
+    assert not h.shell_command_looks_mutating('grep -rn "echo x > out.txt" docs/')
+    # The cases that already worked keep working.
+    assert h.shell_command_looks_mutating("echo x > out.txt")
+    assert h.shell_command_looks_mutating("cat a >> b.log")
+    assert h.shell_command_looks_mutating("sed -i 's/a/b/' x.py")
+    assert h.shell_command_looks_mutating("git commit -am msg")
+    assert not h.shell_command_looks_mutating("ls > /dev/null")
+    assert not h.shell_command_looks_mutating("python -m py_compile x.py 2>&1")
+    assert not h.shell_command_looks_mutating("ls -la src")
+
+
+def test_a_readonly_grep_does_not_verify_a_false_mutation_claim(tmp_path):
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "app.py").write_text("x = 1\n", encoding="utf-8")
+    ledger = h.TurnLedger(str(tmp_path), "busca 'old -> new' en el proyecto")
+    ledger.record("bash", json.dumps({"command": 'grep -rn "old -> new" src/app.py'}),
+                  {"output": "12: old -> new", "exit_code": 0}, 1)
+    assert ledger.mutated_paths() == []
+    check = ledger.check_completion("He modificado src/app.py para renombrar la función.")
+    assert not check["ok"]
+    assert "claims_without_mutation" in check["reasons"]

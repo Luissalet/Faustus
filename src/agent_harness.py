@@ -27,8 +27,11 @@ import difflib
 import json
 import logging
 import os
+from collections import OrderedDict
 import re
+import shutil
 import subprocess
+import sys
 import time
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
@@ -69,13 +72,43 @@ _MUTATING_SHELL_RE = re.compile(
     r"python3?\s+(?:-m\s+pip|setup\.py)|make\b|cargo\s+(?:build|add|install)|go\s+(?:build|mod|install)|"
     r"chmod|chown|ln\s|patch\b|truncate|dd\s|"
     r"Set-Content|Add-Content|Out-File|New-Item|Remove-Item|Move-Item|Copy-Item|Rename-Item)"
-    r"|(?:>>?\s*(?!/dev/null\b)[\w./\\~-]+)",
+    # A redirection, but never the `>` of an arrow: `grep -rn "old -> new" x.py`
+    # and `rg "foo=>bar"` are read-only (and quoted text is stripped below).
+    r"|(?:(?<![-=])>>?\s*(?!/dev/null\b)[\w./\\~-]+)",
     re.IGNORECASE,
 )
 
 
+def _strip_quoted(command: str) -> str:
+    """Blank out single/double-quoted runs so text *inside an argument* cannot
+    look like a redirection or a mutating verb (`grep -rn "rm -rf" docs/`).
+    Backslash escapes are honoured inside double quotes only (POSIX), and never
+    outside them — a bare backslash is a Windows path separator, not an escape."""
+    out: List[str] = []
+    quote = ""
+    i, n = 0, len(command)
+    while i < n:
+        ch = command[i]
+        if quote:
+            if ch == "\\" and quote == '"' and i + 1 < n:
+                i += 2
+                continue
+            if ch == quote:
+                quote = ""
+            i += 1
+            continue
+        if ch in ("'", '"'):
+            quote = ch
+            out.append(" ")
+            i += 1
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
 def shell_command_looks_mutating(command: str) -> bool:
-    return bool(_MUTATING_SHELL_RE.search(command or ""))
+    return bool(_MUTATING_SHELL_RE.search(_strip_quoted(command or "")))
 
 
 # ---------------------------------------------------------------------------
@@ -351,12 +384,43 @@ def extract_path_tokens(text: str) -> List[str]:
 # Workspace file index (for path grounding + suggestions)
 # ---------------------------------------------------------------------------
 
-_index_cache: Dict[str, Tuple[float, List[str]]] = {}
+# Bounded LRU, not a plain dict. Each entry can hold up to _INDEX_MAX_FILES
+# (60 000) relative paths — several MB — and the key is a directory the CLIENT
+# names: /api/workspace/files is designed to fire on every keystroke of the `@`
+# picker and will index whatever root it is handed. An unbounded dict therefore
+# grows RSS for the life of the process, one root at a time, and the TTL does
+# not help: an expired entry is overwritten, never dropped. 16 roots is far more
+# than the handful anyone works in and keeps the worst case bounded.
+_INDEX_CACHE_MAX = 16
+_index_cache: "OrderedDict[str, Tuple[float, List[str]]]" = OrderedDict()
+
+
+def _index_cache_touch(root: str) -> None:
+    """Mark `root` as most-recently-used (no-op if the cache was swapped for a
+    plain dict, as some tests do)."""
+    try:
+        _index_cache.move_to_end(root)
+    except (AttributeError, KeyError):
+        pass
+
+
+def _index_cache_store(root: str, entry: Tuple[float, List[str]]) -> None:
+    """Insert as most-recently-used and evict the least-recently-used roots."""
+    _index_cache.pop(root, None)          # re-insert so it lands at the end
+    _index_cache[root] = entry
+    while len(_index_cache) > _INDEX_CACHE_MAX:
+        try:
+            _index_cache.popitem(last=False)      # OrderedDict: oldest first
+        except TypeError:                         # a plain dict stand-in
+            _index_cache.pop(next(iter(_index_cache)), None)
+        except KeyError:                          # pragma: no cover - emptied
+            break
 
 
 def workspace_file_index(workspace: str, max_files: int = _INDEX_MAX_FILES) -> List[str]:
     """Relative paths (forward slashes) of files under `workspace`, cached for a
-    few seconds. Skips vendored/build dirs. Never raises."""
+    few seconds (bounded LRU: at most _INDEX_CACHE_MAX roots). Skips
+    vendored/build dirs. Never raises."""
     if not workspace:
         return []
     try:
@@ -366,6 +430,7 @@ def workspace_file_index(workspace: str, max_files: int = _INDEX_MAX_FILES) -> L
     now = time.time()
     cached = _index_cache.get(root)
     if cached and now - cached[0] < _INDEX_TTL_S:
+        _index_cache_touch(root)          # a hit is a use: keep it out of the LRU tail
         return cached[1]
     files: List[str] = []
     try:
@@ -381,7 +446,7 @@ def workspace_file_index(workspace: str, max_files: int = _INDEX_MAX_FILES) -> L
         pass
     except OSError as e:
         logger.debug("workspace index failed for %s: %s", root, e)
-    _index_cache[root] = (now, files)
+    _index_cache_store(root, (now, files))
     return files
 
 
@@ -981,13 +1046,34 @@ def local_model_policy() -> str:
 # ---------------------------------------------------------------------------
 
 _CHECK_TIMEOUT = 20.0
+# Hard ceiling for the `node --check` copy: above it the file is "not
+# checkable" (None), never an error. Only a safety valve — the previous 200 000
+# char cap *truncated* real files and invented "Unexpected end of input".
+_JS_CHECK_MAX_BYTES = 5_000_000
+
+
+def host_python() -> Optional[str]:
+    """A real interpreter that can be invoked as `<py> -m <module>`, or None.
+
+    In the frozen PyInstaller build `sys.executable` is the application's own
+    executable (dist\\Faustus\\Faustus.exe): it ignores `-m` and relaunches the
+    whole app (splash, tray icon, a second server on 7000) instead of running
+    the module, so it must never be used that way. Same pattern as
+    src/runtime_paths.py. Callers that can fall back to another interpreter
+    (see project_tests) look one up themselves; callers that cannot treat None
+    as "not checkable"."""
+    if getattr(sys, "frozen", False):
+        return None
+    return sys.executable
 
 
 def _check_python(path: str) -> Optional[str]:
-    import sys
+    py = host_python()
+    if not py:
+        return None  # frozen build: no real interpreter — not checkable, not an error
     try:
         proc = subprocess.run(
-            [sys.executable, "-m", "py_compile", path],
+            [py, "-m", "py_compile", path],
             capture_output=True, text=True, timeout=_CHECK_TIMEOUT,
         )
     except (OSError, subprocess.SubprocessError) as e:
@@ -999,22 +1085,28 @@ def _check_python(path: str) -> Optional[str]:
 
 
 def _check_javascript(path: str) -> Optional[str]:
-    import shutil
     import tempfile
     node = shutil.which("node")
     if not node:
         return None  # cannot check — not an error
+    try:
+        if os.path.getsize(path) > _JS_CHECK_MAX_BYTES:
+            return None  # too big to copy/parse safely — not checkable, not an error
+    except OSError:
+        return None
     target = path
     tmp = None
     try:
         # ES modules (import/export) fail `node --check` on a .js name because
-        # Node parses it as CommonJS; check a .mjs copy instead.
+        # Node parses it as CommonJS; check a .mjs copy instead. The copy must
+        # be the WHOLE file: a truncated one ends mid-statement and node then
+        # reports "Unexpected end of input" on a perfectly valid file.
         with open(path, "r", encoding="utf-8", errors="replace") as f:
-            head = f.read(200000)
-        if re.search(r"^\s*(?:import\s|export\s)", head, re.MULTILINE) and not path.endswith((".mjs", ".cjs")):
+            text = f.read()
+        if re.search(r"^\s*(?:import\s|export\s)", text, re.MULTILINE) and not path.endswith((".mjs", ".cjs")):
             fd, tmp = tempfile.mkstemp(suffix=".mjs")
-            with os.fdopen(fd, "w", encoding="utf-8") as tf:
-                tf.write(head)
+            os.close(fd)
+            shutil.copyfile(path, tmp)   # byte-exact, no re-encoding
             target = tmp
         proc = subprocess.run([node, "--check", target], capture_output=True, text=True, timeout=_CHECK_TIMEOUT)
     except (OSError, subprocess.SubprocessError):
@@ -1036,7 +1128,9 @@ def _check_javascript(path: str) -> Optional[str]:
 
 def _check_json(path: str) -> Optional[str]:
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        # utf-8-sig: PowerShell 5.1 (Out-File / Set-Content) and Notepad write a
+        # BOM, and a BOM is not a JSON syntax error.
+        with open(path, "r", encoding="utf-8-sig") as f:
             json.load(f)
     except json.JSONDecodeError as e:
         return f"invalid JSON: {e}"[:300]
