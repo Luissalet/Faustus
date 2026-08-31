@@ -4,7 +4,7 @@
 
 - Base del fork: commit upstream `c9dd68d8` (27-08-2026, "refactor(docs): separate Pages site source").
 - Ramas: `feat/projects` (principal, `D:\LocalAI\odysseus`) y `feat/reliability` (desarrollo, worktree `D:\LocalAI\odysseus-dev`, instancia de pruebas en el puerto 7001). La rama de desarrollo se fusiona en la principal por fast-forward.
-- Cifras a 31-08-2026 (16:00): **86 commits**, ~180 ficheros tocados, **+19.000 líneas**; 20 módulos nuevos (12 de backend, 3 de rutas, 5 de frontend) + `scripts/faustus_rename.py`, 21 ficheros de tests nuevos. Suite completa: **5.939 tests en verde en Windows** (partía de 178 fallos ambientales) y 5.992 en Linux; e2e Playwright 3/3 en Windows y Linux.
+- Cifras a 31-08-2026 (16:00): **89 commits**, ~180 ficheros tocados, **+19.000 líneas**; 20 módulos nuevos (12 de backend, 3 de rutas, 5 de frontend) + `scripts/faustus_rename.py`, 21 ficheros de tests nuevos. Suite completa: **5.939 tests en verde en Windows** (partía de 178 fallos ambientales) y 5.992 en Linux; e2e Playwright 3/3 en Windows y Linux.
 - Máquina de referencia: RTX 4070 Ti 12 GB, 128 GB RAM, Windows 11, Ollama 0.33.x; modelos `qwen3-coder:30b`, `qwen3.5:9b`, `qwen3.8:27b`, `qwen3-coder-next`.
 
 ---
@@ -108,6 +108,7 @@ Para comparar: qwen3-coder:30b hacía t6 en 133–279 s. `qwen3.5:9b` (7,5 GB en
 - **`scripts/faustus_rename.py`** (`--check`): vuelve a aplicar la marca visible tras un merge del proyecto original; tests que fijan la marca en la UI, los identificadores intactos y la idempotencia del script.
 - Scripts `.bat` del PC renombrados (`Start/Stop/Restart-Faustus.bat`, los antiguos como atajos).
 - **`/scorecard here`**: la tabla por modelo filtrada al workspace vinculado; las paradas en la puerta de aprobación ya no cuentan como turnos ni como "preguntas" (inflaban ambos).
+- **`/checkpoints [n | reset]`**: los últimos checkpoints del workspace con "qué difiere ahora" y **Restore here** (volver varios turnos atrás sin el git del usuario).
 - Cifras tras esta pasada: suite Linux **5992 passed**, Windows **5939 passed / 0 failed**, e2e Playwright **3/3 en el PC**. En vivo (qwen3.5:9b): t7 con fallo nuevo clasificado contra el checkpoint → ronda de arreglo → verified en 51 s; t6 con un test roto preexistente → sin ronda de arreglo, verified en 68 s; matriz t1/t4/t5/t8: 59 s / 12 s / 3 s / 102 s. Scorecard real del día (`/scorecard`), 13 turnos de qwen3.5:9b: 100 % verificados, 0 % preguntas (en t8 —petición ambigua— este modelo arregla en vez de preguntar; qwen3-coder:30b preguntaba), tests OK 91 % (11 ejecuciones), revisión OK 44 % (9, antes del filtro de evidencia), mediana 40 s, 29 tok/s.
 
 ## 5. Renombrado a Faustus (31-08-2026)
