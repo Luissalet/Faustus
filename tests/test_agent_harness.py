@@ -98,6 +98,17 @@ def test_question_with_unknown_paths_is_allowed(tmp_path):
     assert check["ok"], check
 
 
+def test_stderr_to_dev_null_is_not_a_mutation():
+    """Seen live: `find … | xargs grep … 2>/dev/null` was recorded as a mutation
+    of 'cards.js' (the redirect matched the write pattern) and the turn summary
+    listed a file change that never happened."""
+    assert not h.shell_command_looks_mutating('find . -name "*.js" | xargs grep -l "cards.js" 2>/dev/null || echo none')
+    assert not h.shell_command_looks_mutating("ls > /dev/null")
+    assert not h.shell_command_looks_mutating("python -m py_compile x.py 2>&1")
+    assert h.shell_command_looks_mutating("echo x > out.txt")
+    assert h.shell_command_looks_mutating("cat a >> b.log")
+
+
 def test_shell_mutation_detection():
     assert h.shell_command_looks_mutating("sed -i 's/a/b/' x.py")
     assert h.shell_command_looks_mutating("git commit -am msg")

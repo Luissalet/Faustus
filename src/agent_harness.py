@@ -69,7 +69,7 @@ _MUTATING_SHELL_RE = re.compile(
     r"python3?\s+(?:-m\s+pip|setup\.py)|make\b|cargo\s+(?:build|add|install)|go\s+(?:build|mod|install)|"
     r"chmod|chown|ln\s|patch\b|truncate|dd\s|"
     r"Set-Content|Add-Content|Out-File|New-Item|Remove-Item|Move-Item|Copy-Item|Rename-Item)"
-    r"|(?:>>?\s*[\w./\\~-]+)",
+    r"|(?:>>?\s*(?!/dev/null\b)[\w./\\~-]+)",
     re.IGNORECASE,
 )
 
