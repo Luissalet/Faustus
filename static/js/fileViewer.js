@@ -17,7 +17,19 @@ function esc(s) {
 }
 
 function _workspaceFallback() {
-  try { return (window.workspaceModule && window.workspaceModule.getWorkspace && window.workspaceModule.getWorkspace()) || ''; } catch (_) { return ''; }
+  // The bound workspace lives in localStorage ('odysseus-workspace', see
+  // static/js/workspace.js); older persisted answers carry no workspace.
+  try {
+    if (window.workspaceModule && window.workspaceModule.getWorkspace) {
+      const w = window.workspaceModule.getWorkspace();
+      if (w) return w;
+    }
+  } catch (_) {}
+  try {
+    const raw = localStorage.getItem('odysseus-workspace');
+    if (!raw) return '';
+    try { const v = JSON.parse(raw); return typeof v === 'string' ? v : (v && v.path) || ''; } catch (_) { return raw; }
+  } catch (_) { return ''; }
 }
 
 function _ensurePanel() {
