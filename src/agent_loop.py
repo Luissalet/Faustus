@@ -74,6 +74,37 @@ logger = logging.getLogger(__name__)
 _BROWSER_MCP_PREFIX = "mcp__builtin_browser__"
 
 
+# A browser turn always has to open a page, so a retrieval hit on one of these
+# means the request really is about the browser. Everything else in the
+# Playwright set (console messages, network requests, screenshots) only makes
+# sense once a session exists, so on its own it is a semantic near-miss.
+_BROWSER_MCP_SESSION_TOOLS = frozenset({
+    "mcp__builtin_browser__browser_navigate",
+    "mcp__builtin_browser__browser_navigate_back",
+    "mcp__builtin_browser__browser_tabs",
+    "mcp__builtin_browser__browser_snapshot",
+})
+
+
+def _browser_intent_is_real(names: Set[str]) -> bool:
+    """Whether a browser hit deserves the whole Playwright toolset.
+
+    Route-level intent names the server itself ("builtin_browser") and is taken
+    at its word. A set that only carries qualified tool names came from the
+    semantic tool index, and one peripheral hit is not intent: "add a health()
+    endpoint that returns {"status": "ok"}" retrieved
+    browser_console_messages, whose expansion added 28 tool schemas and took
+    the prompt from ~12k to ~38k tokens on a 9B model — slower first token, and
+    the project's own AGENTS.md rules diluted to a rounding error.
+    """
+    if "builtin_browser" in names:
+        return True
+    browser = {n for n in names if n.startswith(_BROWSER_MCP_PREFIX)}
+    if not browser:
+        return False
+    return bool(browser & _BROWSER_MCP_SESSION_TOOLS) or len(browser) > 1
+
+
 def _expand_browser_mcp_tools(tool_names: Set[str], mcp_mgr) -> Set[str]:
     """Expand browser intent to every connected Playwright MCP tool.
 
@@ -81,11 +112,18 @@ def _expand_browser_mcp_tools(tool_names: Set[str], mcp_mgr) -> Set[str]:
     browser_click vs browser_mouse_down). Route-level intent only needs to say
     "browser"; the final prompt/schema set should use the names the connected
     MCP server actually exposed.
+
+    Only when the turn is actually about the browser — see
+    _browser_intent_is_real. A lone peripheral hit keeps just the tool the
+    index returned rather than pulling in the whole set.
     """
     names = set(tool_names or set())
     if not mcp_mgr:
         return names
-    if not any(name == "builtin_browser" or name.startswith(_BROWSER_MCP_PREFIX) for name in names):
+    if not _browser_intent_is_real(names):
+        if any(n.startswith(_BROWSER_MCP_PREFIX) for n in names):
+            logger.info("[tool-rag] single peripheral browser tool kept unexpanded: %s",
+                        sorted(n for n in names if n.startswith(_BROWSER_MCP_PREFIX)))
         return names
     try:
         for tool in mcp_mgr.get_all_tools():

@@ -173,8 +173,16 @@ Dos pruebas contra el modelo real, sobre `agent-bench/demo-app`:
 - **t9a — mencionar el fichero correcto** (`En @static/js/sessions.js cambia el texto del botón de borrar…`): **22 s, 2 rondas, 2 herramientas**, editó exactamente `sessions.js` y nada más, verificado. **Cero rondas de exploración**: no hubo `ls`, `glob` ni `grep`, porque el fichero venía ya en el contexto.
 - **t9b — mencionar un fichero que no existe** (`Arregla el bug de @static/js/cards.js…`): es literalmente el fallo t4 de la mañana, en el que el modelo metía un arreglo especulativo en `projects.js` y lo presentaba como la corrección. Ahora, en **8 s, cero herramientas y cero cambios**: *"El archivo `@static/js/cards.js` no existe en este workspace… ¿Estás buscando en `projects.js` la función que renderiza las tarjetas?"*, con la lista de los ficheros JS que sí existen. El arnés ya no tiene que corregir nada a posteriori porque el error no llega a ocurrir.
 
+### 6.8 Un hallazgo de la auditoría: 28 herramientas de navegador por una falsa alarma
+
+Comprobando en vivo que una regla escrita con `#` llega al prompt (llega: `project_instructions.block()` la inyecta, y el modelo de 9B simplemente la ignoró), salió a la luz por qué la ignoró. La petición *"Añade a server.py una función health() que devuelva {"status": "ok"}"* salió con **75 herramientas y ~38.000 tokens de prompt**, frente a las 31 y ~12.000 de la misma tarea con una mención `@`.
+
+Causa: el índice semántico de herramientas emparejó *"health"* / *"status ok"* con `browser_console_messages` (y con el dominio "cookbook" de servir modelos). Ese único acierto marginal disparaba `_expand_browser_mcp_tools()`, que **añade las 28 herramientas del navegador Playwright** — pensado para cuando la ruta declara intención de navegador, no para un vecino semántico. Resultado: 10,8 s hasta el primer token y las reglas del propio AGENTS.md diluidas al 0,1 % del prompt.
+
+Arreglo (`_browser_intent_is_real()`): se expande cuando la ruta nombra el servidor (`builtin_browser`, la vía prevista), cuando aparece una herramienta que **abre sesión** (`navigate`, `tabs`, `snapshot`) o cuando hay **dos o más** herramientas de navegador. Un solo acierto periférico se conserva tal cual, sin expandir — `browser_console_messages` sin navegador abierto no sirve de nada, pero costaba 28 esquemas. 9 tests.
+
 ### Verificación
-80 tests nuevos en 4 ficheros (`test_file_mentions.py`, `test_file_mentions_routes_js.py`, `test_project_instructions_remember.py`, `test_composer_sigils_js.py`), incluidos los de contrato entre el popup y el resolutor del servidor (lo que inserta el popup es lo que el servidor resuelve) y los de node para los predicados del compositor. Suite completa en verde antes y después.
+89 tests nuevos en 4 ficheros (`test_file_mentions.py`, `test_file_mentions_routes_js.py`, `test_project_instructions_remember.py`, `test_composer_sigils_js.py`), incluidos los de contrato entre el popup y el resolutor del servidor (lo que inserta el popup es lo que el servidor resuelve) y los de node para los predicados del compositor. Suite completa en verde antes y después.
 
 ---
 
