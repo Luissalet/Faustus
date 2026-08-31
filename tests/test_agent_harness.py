@@ -312,3 +312,19 @@ def test_spanish_coding_request_is_not_low_signal():
     for text in ("hola", "gracias", "Explica qué es un closure"):
         r = al._classify_agent_request([{"role": "user", "content": text}], text)
         assert r["low_signal"], text
+
+
+def test_whole_file_rewrite_is_noted(tmp_path):
+    ledger = h.TurnLedger(str(tmp_path), "arregla el fallo al borrar")
+    # a write_file that replaced an existing file and dropped many lines
+    ledger.record("write_file", '{"path": "static/js/app.js", "content": "x"}',
+                  {"output": "Wrote 10 bytes", "exit_code": 0,
+                   "diff": {"text": "...", "added": 1, "removed": 42, "new_file": False, "file": "app.js"}}, 1)
+    assert "whole_file_rewrite:static/js/app.js" in ledger.notes
+    assert ledger.mutated_paths() == ["static/js/app.js"]  # still real evidence
+    # a new file, or a rewrite that keeps the content, is not flagged
+    ledger.record("write_file", '{"path": "new.py", "content": "x"}',
+                  {"output": "Wrote", "exit_code": 0, "diff": {"added": 3, "removed": 0, "new_file": True}}, 2)
+    ledger.record("write_file", '{"path": "kept.js", "content": "x"}',
+                  {"output": "Wrote", "exit_code": 0, "diff": {"added": 12, "removed": 1, "new_file": False}}, 3)
+    assert [n for n in ledger.notes if n.startswith("whole_file_rewrite")] == ["whole_file_rewrite:static/js/app.js"]

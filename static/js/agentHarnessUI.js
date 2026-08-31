@@ -168,6 +168,23 @@ export function renderHarnessSummary(json) {
   if (Array.isArray(d.finish_reasons) && d.finish_reasons.length) {
     details.push(`<div><b>finish_reason per round:</b> ${d.finish_reasons.map(r => esc(r || '?')).join(' → ')}</div>`);
   }
+  // Runtime notes worth a human glance (whole-file rewrites, cut-offs, unknown paths).
+  const notes = Array.isArray(d.notes) ? d.notes : [];
+  const NOTE_TEXT = {
+    whole_file_rewrite: p => `<b>⚠ whole-file rewrite</b> of <code>${esc(p)}</code> (write_file dropped ≥5 lines) — review the diff`,
+    think_cutoff: r => `thinking cut off in round ${esc(r)}, rest of the turn ran with thinking off`,
+    unverified_mentions: p => `mentions paths never seen in a tool result: <code>${esc(p)}</code>`,
+    auto_continue_rounds: r => `step limit reached at round ${esc(r)}, one extra cycle granted`,
+    empty_round_nudge: r => `round ${esc(r)} was empty (no text, no tool) — nudged`,
+  };
+  const noteLines = notes.map(n => {
+    const [k, ...rest] = String(n).split(/[:@]/);
+    const fn = NOTE_TEXT[k];
+    return fn ? fn(rest.join(':')) : esc(String(n));
+  });
+  if (noteLines.length) details.push(`<div><b>Notes:</b><ul class="harness-list">${noteLines.map(l => `<li>${l}</li>`).join('')}</ul></div>`);
+  const rewrote = notes.some(n => String(n).startsWith('whole_file_rewrite:'));
+  if (rewrote) parts.push('⚠ whole-file rewrite');
   const kind = stop === 'complete_unverified' ? 'unverified' : (files.length ? 'verified' : 'summary');
   _card(kind, `Turn summary · ${parts.join(' · ')} · ${stopLabel}`, details.join(''));
 }

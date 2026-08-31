@@ -558,6 +558,15 @@ class TurnLedger:
                     for p in sub_paths:
                         self.observed_paths.add(_norm(p))
             invalidate_index(self.workspace)
+        if ok and tool == "write_file" and isinstance(result, dict):
+            # Whole-file rewrite of an existing file: real work, but the most
+            # common way a local model silently drops code it did not remember.
+            d = result.get("diff") if isinstance(result.get("diff"), dict) else None
+            if d and not d.get("new_file") and (int(d.get("removed") or 0) >= 5):
+                for p in paths[:1]:
+                    note = f"whole_file_rewrite:{p}"
+                    if note not in self.notes:
+                        self.notes.append(note)
         if ok:
             for p in paths:
                 self.observed_paths.add(_norm(p))
@@ -850,7 +859,13 @@ def local_model_policy() -> str:
         "6. Before finishing a coding task, re-read the changed region (read_file with offset/limit) "
         "or run a check (py_compile, node --check, tests) and report only what the tools showed.\n"
         "7. Keep narration minimal: tools first, then a short factual summary in the user's language "
-        "listing exactly which files changed (from the tool results, not from memory)."
+        "listing exactly which files changed (from the tool results, not from memory).\n"
+        "8. If the request is ambiguous (which bug? which file? which behaviour?) and the code you "
+        "read shows no concrete defect, do NOT guess a fix: call ask_user with the specific question "
+        "(or the 2-3 candidate interpretations). Never rewrite code you have not shown to be wrong.\n"
+        "9. Change existing files with edit_file (exact old_string → new_string). write_file is for "
+        "NEW files or when the user asked for a full rewrite; a whole-file rewrite from memory drops "
+        "code you did not remember."
     )
 
 
