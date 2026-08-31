@@ -1168,15 +1168,35 @@ def _uploaded_files_context_message(uploaded_files: Optional[List[Dict]]) -> Opt
 _WORKSPACE_CODE_ACTION_RE = re.compile(
     r"\b(?:fix|debug|implement|add|remove|change|update|refactor|wire|hook|"
     r"test|verify|run|build|lint|compile|commit|branch|merge|review|"
-    r"download|save|rename|move|copy|extract|convert|open|inspect|read)\b",
+    r"download|save|rename|move|copy|extract|convert|open|inspect|read|"
+    # Spanish (the heuristic was English-only, so a bound workspace plus a
+    # Spanish request like "añade botones a la interfaz" never entered code
+    # mode and the tool RAG handed the model session/notes tools instead of
+    # file tools — the direct cause of "I implemented X" hallucinations).
+    r"añad[ea]|añadir|agreg[ao]|agregar|cre[ao]|crear|implement[ao]|implementar|"
+    r"arregl[ao]|arreglar|corrig[eo]|corregir|modific[ao]|modificar|cambi[ao]|cambiar|"
+    r"elimin[ao]|eliminar|borr[ao]|borrar|quit[ao]|quitar|actualiz[ao]|actualizar|"
+    r"refactoriz[ao]|refactorizar|muev[eo]|mover|renombr[ao]|renombrar|revis[ao]|revisar|"
+    r"le[eo]|leer|busc[ao]|buscar|ejecut[ao]|ejecutar|prueb[ao]|probar|compil[ao]|compilar|"
+    r"instal[ao]|instalar|escrib[eo]|escribir|programa|desarroll[ao]|desarrollar|"
+    r"integr[ao]|integrar|conect[ao]|conectar|repar[ao]|reparar|soluciona|solucionar|"
+    r"depur[ao]|depurar|mejor[ao]|mejorar|optimiz[ao]|optimizar|ajust[ao]|ajustar|"
+    r"pon(?:er|le|e)|mete|meter|haz|hacer)\b",
     re.IGNORECASE,
 )
 _WORKSPACE_CODE_TARGET_RE = re.compile(
     r"\b(?:repo|project|codebase|app|frontend|backend|ui|css|js|javascript|"
     r"typescript|python|route|api|component|module|function|class|file|test|"
     r"bug|error|traceback|regression|failing|failure|branch|commit|folder|"
-    r"directory|path|movie|video|subtitle|subtitles|srt|vtt|ass|ffmpeg)\b"
-    r"|(?:~?/[^\"'\s`<>]+)",
+    r"directory|path|movie|video|subtitle|subtitles|srt|vtt|ass|ffmpeg|"
+    # Spanish targets
+    r"interfaz|bot[oó]n|botones|tarjetas?|archivos?|ficheros?|carpetas?|c[oó]digo|"
+    r"proyecto|funci[oó]n|funciones|clases?|componentes?|rutas?|endpoints?|tests?|"
+    r"pruebas?|errores?|estilos?|html|script|scripts|m[oó]dulos?|servidor|"
+    r"base\s+de\s+datos|pantalla|vistas?|men[uú]|formulario|p[aá]ginas?|"
+    r"panel|ventana|sidebar|barra|galer[ií]a|modal|dise[ñn]o|layout|"
+    r"programa|aplicaci[oó]n|web|p[aá]gina|chats?|sesiones?|usuarios?)\b"
+    r"|(?:~?/[^\"'\s`<>]+)|(?:[A-Za-z]:\\[^\s\"']+)",
     re.IGNORECASE,
 )
 _EXPLICIT_WORKSPACE_REFERENCE_RE = re.compile(
@@ -3470,8 +3490,15 @@ async def stream_agent_loop(
     _is_teacher_run: bool = False,
     history_session=None,
     defer_context_shaping: bool = False,
+    temperature_explicit: bool = False,
+    gen_overrides: Optional[Dict] = None,
 ) -> AsyncGenerator[str, None]:
     """Streaming agent loop generator.
+
+    ``temperature_explicit`` marks a temperature the user set for this session
+    (chat model controls); it disables the local-model agent temperature cap.
+    ``gen_overrides`` carries extra sampling params (top_p, think, ...) that
+    llm_core forwards to the provider.
 
     Yields SSE events:
       - data: {"delta": "text"}                             (text chunks)
@@ -3542,6 +3569,22 @@ async def stream_agent_loop(
     _requested_temperature = temperature
     if _ody_qwen_finetune_model:
         temperature = _ody_qwen_temperature_cap(temperature)
+    # Local models doing tool work at chat-preset temperatures (1.0 is the
+    # shipped default) fabricate paths and "done" narratives far more often.
+    # Cap unless the user pinned a temperature for this session.
+    _temperature_capped_from = None
+    if not temperature_explicit and not _ody_qwen_finetune_model:
+        try:
+            from src.model_context import is_local_endpoint as _is_local_ep
+            _cap = float(get_setting("agent_local_temperature_cap", 0.4) or 0)
+            if _cap > 0 and _is_local_ep(endpoint_url) and temperature is not None and temperature > _cap:
+                _temperature_capped_from = temperature
+                temperature = _cap
+                _requested_temperature = _cap
+                logger.info("[harness] local agent temperature capped %.2f -> %.2f (agent_local_temperature_cap)",
+                            _temperature_capped_from, _cap)
+        except Exception as _cap_err:
+            logger.debug("temperature cap skipped: %s", _cap_err)
     _ody_memory_identity_turn = _looks_like_memory_identity_turn(_last_user)
     _intent = _classify_agent_request(messages, _last_user)
     _low_signal_turn = bool(_intent.get("low_signal"))
@@ -4003,6 +4046,17 @@ async def stream_agent_loop(
         ):
             _relevant_tools = set(_WORKSPACE_TERMINUS_TOOLS)
             logger.info("[tool-rag] Workspace file/terminal request; using Odysseus Terminus toolset")
+        elif workspace and not _active_document_relevant and not active_email:
+            # A bound workspace is the user's declared intent to work in that
+            # folder. Whatever the retriever picked (it is English-biased and
+            # happily returns session/notes tools for "eliminar chats"), the
+            # file/shell tools must be reachable or the model narrates edits
+            # it cannot make. Union, so a genuine email/calendar ask keeps its
+            # tools too.
+            _missing = _WORKSPACE_TERMINUS_TOOLS - set(_relevant_tools)
+            if _missing:
+                _relevant_tools.update(_WORKSPACE_TERMINUS_TOOLS)
+                logger.info("[tool-rag] Workspace bound; adding file/terminal tools: %s", sorted(_missing))
 
     # If this turn targets the open document, keep editing tools available
     # regardless of which selection path (RAG, keyword, caller-provided) ran.
@@ -4986,6 +5040,7 @@ async def stream_agent_loop(
             fallback_on_empty=fallback_on_empty,
             candidate_request_factory=_candidate_request,
             candidate_route_descriptors=_candidate_route_descriptors,
+            gen_overrides=gen_overrides or None,
         ):
             if not _round_first_event_logged:
                 _round_first_event_logged = True

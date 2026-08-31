@@ -342,6 +342,60 @@ def _resolve_request_workspace(request, raw_value) -> tuple:
     return workspace, (requested if not workspace else "")
 
 
+def _parse_gen_overrides(raw) -> Dict[str, Any]:
+    """Validate the per-session generation overrides sent by the chat UI.
+
+    Accepts a JSON string (FormData) or a dict (JSON body). Unknown keys and
+    out-of-range values are dropped silently; a malformed payload yields {}.
+    """
+    if not raw:
+        return {}
+    data = raw
+    if isinstance(raw, str):
+        try:
+            data = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return {}
+    if not isinstance(data, dict):
+        return {}
+    out: Dict[str, Any] = {}
+    try:
+        if data.get("temperature") not in (None, ""):
+            t = float(data["temperature"])
+            if 0.0 <= t <= 2.0:
+                out["temperature"] = t
+        if data.get("max_tokens") not in (None, ""):
+            mt = int(data["max_tokens"])
+            if 0 <= mt <= 262144:
+                out["max_tokens"] = mt
+        if data.get("top_p") not in (None, ""):
+            tp = float(data["top_p"])
+            if 0.0 < tp <= 1.0:
+                out["top_p"] = tp
+        if data.get("top_k") not in (None, ""):
+            tk = int(data["top_k"])
+            if 0 <= tk <= 1000:
+                out["top_k"] = tk
+        if data.get("num_ctx") not in (None, ""):
+            nc = int(data["num_ctx"])
+            if 512 <= nc <= 1048576:
+                out["num_ctx"] = nc
+        if data.get("seed") not in (None, ""):
+            out["seed"] = int(data["seed"])
+        if data.get("repeat_penalty") not in (None, ""):
+            rp = float(data["repeat_penalty"])
+            if 0.5 <= rp <= 2.0:
+                out["repeat_penalty"] = rp
+        if "think" in data and data.get("think") not in (None, ""):
+            v = data["think"]
+            out["think"] = bool(v) if not isinstance(v, str) else v.strip().lower() in ("1", "true", "on", "yes")
+        if data.get("reasoning_effort") in ("low", "medium", "high", "none"):
+            out["reasoning_effort"] = data["reasoning_effort"]
+    except (TypeError, ValueError):
+        pass
+    return out
+
+
 def _project_workspace(request, session_id) -> str:
     """The workspace bound by this chat's project, if it has one.
 
@@ -1396,6 +1450,22 @@ def setup_chat_routes(
             persist_user_message=not tool_approval_continuation,
         )
 
+        # Per-session generation overrides from the chat model controls
+        # (temperature, max_tokens, top_p, think, ...). Validated here; the
+        # sampling extras are forwarded to llm_core as gen_overrides.
+        _gen_overrides = _parse_gen_overrides(
+            form_data.get("gen_overrides") or (body or {}).get("gen_overrides")
+        )
+        _temperature_explicit = False
+        if _gen_overrides:
+            if "temperature" in _gen_overrides:
+                ctx.preset.temperature = _gen_overrides.pop("temperature")
+                _temperature_explicit = True
+            if "max_tokens" in _gen_overrides:
+                ctx.preset.max_tokens = _gen_overrides.pop("max_tokens")
+            logger.info("[gen-overrides] session=%s temperature=%s max_tokens=%s extra=%s",
+                        session, ctx.preset.temperature, ctx.preset.max_tokens, _gen_overrides)
+
         _research_flags = {"do": do_research}  # Mutable container for generator scope
 
         # Query active document — prefer explicit ID from frontend, fall back to session lookup
@@ -1993,6 +2063,7 @@ def setup_chat_routes(
                         fallback_on_empty=_foreground_policy.fallback_on_empty,
                         candidate_request_factory=_chat_request_factory,
                         candidate_route_descriptors=_foreground_route_descriptors,
+                        gen_overrides=_gen_overrides or None,
                     ):
                         if chunk.startswith("data: ") and not chunk.startswith("data: [DONE]"):
                             try:
@@ -2384,6 +2455,8 @@ def setup_chat_routes(
                         defer_context_shaping=_foreground_policy.enabled,
                         external_untrusted_context_seen=external_untrusted_context_seen,
                         exact_approval=exact_tool_approval,
+                        temperature_explicit=_temperature_explicit,
+                        gen_overrides=_gen_overrides or None,
                     ):
                         if chunk.startswith("data: ") and not chunk.startswith("data: [DONE]"):
                             try:

@@ -894,6 +894,82 @@ def _parse_xml_invoke(name, body) -> Optional[ToolBlock]:
     return function_call_to_tool_block(tool_name, json.dumps(params))
 
 
+# Qwen3-Coder (and Qwen3-Coder-Next) native text format, as produced by the
+# model's own chat template:
+#   <tool_call>
+#   <function=read_file>
+#   <parameter=path>
+#   static/js/projects.js
+#   </parameter>
+#   </function>
+#   </tool_call>
+# Ollama parses it into structured tool_calls ONLY when the wrapper is intact;
+# a dropped/garbled <tool_call> opener leaves the whole call in `content` as
+# text — the turn then "ends" with the model having done nothing (observed on
+# qwen3-coder:30b via /v1). Parse it here so the call still executes.
+_QWEN_FUNCTION_RE = re.compile(
+    r"<function\s*=\s*[\"']?([A-Za-z0-9_.:\-]+)[\"']?\s*>(.*?)(?:</function>|(?=<function\s*=)|\Z)",
+    re.DOTALL | re.IGNORECASE,
+)
+_QWEN_PARAM_RE = re.compile(
+    r"<parameter\s*=\s*[\"']?([A-Za-z0-9_.\-]+)[\"']?\s*>(.*?)(?:</parameter>|(?=<parameter\s*=)|(?=</function>)|\Z)",
+    re.DOTALL | re.IGNORECASE,
+)
+
+
+def _coerce_qwen_param(value: str):
+    """Qwen writes every parameter as text; recover JSON scalars/objects so
+    integer/bool/array schemas (offset, limit, replace_all, todos) validate."""
+    v = value.strip()
+    if v == "":
+        return v
+    low = v.lower()
+    if low in ("true", "false"):
+        return low == "true"
+    if re.fullmatch(r"-?\d+", v):
+        try:
+            return int(v)
+        except ValueError:
+            return v
+    if v[:1] in ("{", "["):
+        try:
+            return json.loads(v)
+        except json.JSONDecodeError:
+            return v
+    return v
+
+
+def _iter_qwen_function_calls(text: str):
+    """Yield (tool_name, params_dict) for each <function=…> block in `text`."""
+    for m in _QWEN_FUNCTION_RE.finditer(text or ""):
+        name = (m.group(1) or "").strip()
+        body = m.group(2) or ""
+        if not name:
+            continue
+        params = {}
+        for pm in _QWEN_PARAM_RE.finditer(body):
+            pname = (pm.group(1) or "").strip()
+            if pname:
+                params[pname] = _coerce_qwen_param(pm.group(2) or "")
+        yield name, params
+
+
+def _parse_qwen_function_call(name: str, params: dict) -> Optional[ToolBlock]:
+    tool_name = name.lower()
+    from src.tool_schemas import function_call_to_tool_block
+    return function_call_to_tool_block(tool_name, json.dumps(params, ensure_ascii=False))
+
+
+def _strip_qwen_function_markup(text: str) -> str:
+    """Remove leaked <function=…> call markup (and dangling wrappers) from
+    display text."""
+    if "<function" not in (text or "").lower():
+        return text
+    out = _QWEN_FUNCTION_RE.sub("", text)
+    out = re.sub(r"</?tool_call>", "", out, flags=re.IGNORECASE)
+    return out
+
+
 def _parse_xml_direct_tool(name, body) -> Optional[ToolBlock]:
     """Parse direct XML tool tags inside <tool_call>.
 
@@ -1431,6 +1507,15 @@ def parse_tool_blocks(text: str, skip_fenced: bool = False) -> List[ToolBlock]:
                 if block:
                     blocks.append(block)
 
+    # Pattern 3b: Qwen3-Coder <function=name><parameter=key>…</parameter></function>
+    # leaked as text (wrapper missing or mangled). Explicit markup, never an
+    # illustrative example, so it stays active even with skip_fenced.
+    if not blocks and "<function" in text.lower() and "<parameter" in text.lower():
+        for q_name, q_params in _iter_qwen_function_calls(text):
+            block = _parse_qwen_function_call(q_name, q_params)
+            if block:
+                blocks.append(block)
+
     # Pattern 4: <tool_code> blocks (MiniMax-M2.5 style)
     if not blocks:
         for _ms, inner_start, inner_end, _me in _iter_delimited(
@@ -1523,5 +1608,7 @@ def strip_tool_blocks(text: str, skip_fenced: bool = False) -> str:
     cleaned = _PLAIN_UI_OPEN_PANEL_RE.sub("", cleaned)
     # Strip bare <invoke> blocks not wrapped in <tool_call>
     cleaned = _strip_bare_invoke_markup(cleaned)
+    # Qwen3-Coder <function=…> markup that leaked as text (Pattern 3b).
+    cleaned = _strip_qwen_function_markup(cleaned)
     cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
     return cleaned.strip()

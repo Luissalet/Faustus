@@ -136,3 +136,24 @@ def test_progress_verification():
 def test_detect_language():
     assert h.detect_language("Quiero también botones para borrar los chats") == "es"
     assert h.detect_language("Please add a delete button to the cards") == "en"
+
+
+def test_qwen_coder_function_markup_is_parsed_and_stripped():
+    from src.tool_parsing import parse_tool_blocks, strip_tool_blocks
+    leaked = (
+        "Let me check the existing skills first:\n\n"
+        "<function=manage_skills>\n<parameter=action>\nlist\n</parameter>\n</function>\n</tool_call>"
+    )
+    blocks = parse_tool_blocks(leaked, skip_fenced=True)
+    assert len(blocks) == 1 and blocks[0].tool_type == "manage_skills"
+    assert "list" in blocks[0].content
+    shown = strip_tool_blocks(leaked, skip_fenced=True)
+    assert "<function" not in shown and "</tool_call>" not in shown
+    # Real path-tool call with typed params
+    leaked2 = (
+        "<tool_call>\n<function=read_file>\n<parameter=path>\nstatic/js/projects.js\n</parameter>\n"
+        "<parameter=offset>\n10\n</parameter>\n<parameter=limit>\n40\n</parameter>\n</function>\n</tool_call>"
+    )
+    blocks2 = parse_tool_blocks(leaked2, skip_fenced=True)
+    assert len(blocks2) == 1 and blocks2[0].tool_type == "read_file"
+    assert "static/js/projects.js" in blocks2[0].content

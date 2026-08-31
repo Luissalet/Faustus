@@ -2556,11 +2556,69 @@ def _stream_target_url(url: str) -> str:
     return _normalize_openai_chat_url(url)
 
 
+# Sampling/runtime knobs a user may pin per chat session (model controls in
+# the chat UI / slash commands). Only these keys are honoured; anything else is
+# dropped so a client cannot smuggle arbitrary provider fields.
+GEN_OVERRIDE_KEYS = frozenset({"top_p", "top_k", "seed", "think", "num_ctx", "repeat_penalty",
+                               "presence_penalty", "frequency_penalty", "reasoning_effort"})
+
+
+def _clean_gen_overrides(overrides: Optional[Dict]) -> Dict:
+    out: Dict = {}
+    if not isinstance(overrides, dict):
+        return out
+    for k, v in overrides.items():
+        if k not in GEN_OVERRIDE_KEYS or v is None or v == "":
+            continue
+        try:
+            if k in ("top_p", "repeat_penalty", "presence_penalty", "frequency_penalty"):
+                out[k] = float(v)
+            elif k in ("top_k", "seed", "num_ctx"):
+                out[k] = int(v)
+            elif k == "think":
+                out[k] = bool(v) if not isinstance(v, str) else v.strip().lower() in ("1", "true", "on", "yes")
+            elif k == "reasoning_effort":
+                if str(v) in ("low", "medium", "high", "none"):
+                    out[k] = str(v)
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def _apply_gen_overrides_openai(payload: Dict, overrides: Dict, url: str) -> None:
+    """Apply pinned sampling params to an OpenAI-compatible payload."""
+    for k in ("top_p", "seed", "presence_penalty", "frequency_penalty"):
+        if k in overrides:
+            payload[k] = overrides[k]
+    if "reasoning_effort" in overrides:
+        payload["reasoning_effort"] = overrides["reasoning_effort"]
+    # Ollama's /v1 surface accepts these Ollama-only knobs at the top level.
+    if _is_ollama_openai_compat_url(url):
+        if "think" in overrides:
+            payload["think"] = overrides["think"]
+        for k in ("top_k", "repeat_penalty"):
+            if k in overrides:
+                payload[k] = overrides[k]
+
+
+def _apply_gen_overrides_ollama(payload: Dict, overrides: Dict) -> None:
+    """Apply pinned sampling params to a native Ollama /api/chat payload."""
+    options = payload.setdefault("options", {})
+    for k in ("top_p", "top_k", "seed", "num_ctx", "repeat_penalty", "presence_penalty", "frequency_penalty"):
+        if k in overrides:
+            options[k] = overrides[k]
+    if "think" in overrides:
+        payload["think"] = overrides["think"]
+    if not options:
+        payload.pop("options", None)
+
+
 async def stream_llm(url: str, model: str, messages: List[Dict], temperature: float = LLMConfig.DEFAULT_TEMPERATURE,
                      max_tokens: int = LLMConfig.DEFAULT_MAX_TOKENS, headers: Optional[Dict] = None,
                      timeout: int = LLMConfig.STREAM_TIMEOUT, prompt_type: Optional[str] = None,
                      tools: Optional[List[Dict]] = None, session_id: Optional[str] = None,
-                     tool_choice_none: bool = False, workload: str = "foreground"):
+                     tool_choice_none: bool = False, workload: str = "foreground",
+                     gen_overrides: Optional[Dict] = None):
     target_url = _stream_target_url(url)
     async with _local_model_slot(target_url, model, workload):
         async for chunk in _stream_llm_inner(
@@ -2575,6 +2633,7 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
             tools=tools,
             session_id=session_id,
             tool_choice_none=tool_choice_none,
+            gen_overrides=gen_overrides,
         ):
             yield chunk
 
@@ -2583,7 +2642,8 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                             max_tokens: int = LLMConfig.DEFAULT_MAX_TOKENS, headers: Optional[Dict] = None,
                             timeout: int = LLMConfig.STREAM_TIMEOUT, prompt_type: Optional[str] = None,
                             tools: Optional[List[Dict]] = None, session_id: Optional[str] = None,
-                            tool_choice_none: bool = False):
+                            tool_choice_none: bool = False, gen_overrides: Optional[Dict] = None):
+    _overrides = _clean_gen_overrides(gen_overrides)
     """Stream LLM responses with improved error handling.
 
     Yields SSE chunks:
@@ -2622,6 +2682,8 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
             model, messages_copy, temperature, max_tokens,
             stream=True, tools=tools, num_ctx=get_context_length(url, model),
         )
+        if _overrides:
+            _apply_gen_overrides_ollama(payload, _overrides)
     elif provider == "chatgpt-subscription":
         target_url = _normalize_chatgpt_subscription_url(url)
         h = _provider_headers(provider, headers)
@@ -2656,6 +2718,8 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
         # <think> blocks. Ollama /v1 accepts "think": false as a top-level param.
         if _is_ollama_openai_compat_url(url) and _supports_thinking(model):
             payload["think"] = False
+        if _overrides:
+            _apply_gen_overrides_openai(payload, _overrides, url)
         _apply_local_cache_affinity(payload, url, session_id)
         _apply_local_generation_stability(payload, target_url, model)
         _scrub_openai_chat_tool_reasoning(payload, target_url, model)
