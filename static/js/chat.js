@@ -2927,8 +2927,11 @@ import modelControls from './modelControls.js';
                 bgDone.accumulated = accumulated;
                 if (_isBg) {
                   try {
-                    _notifyStreamComplete(streamSessionId, streamQuery);
-                    _insertStreamDoneToast(streamSessionId, streamQuery);
+                    // Harness outcome for the toast: unverified answer / files edited.
+                    var _hz = (bgDone.metrics && bgDone.metrics.harness) || null;
+                    var _outcome = _hz ? { unverified: _hz.stop_reason === 'complete_unverified', files: (_hz.mutations || []).length } : null;
+                    _notifyStreamComplete(streamSessionId, streamQuery, _outcome);
+                    _insertStreamDoneToast(streamSessionId, streamQuery, _outcome);
                   } catch (toastErr) {
                     console.warn('[bg-stream] Toast/notification error:', toastErr);
                   }

@@ -9677,6 +9677,11 @@ body.fullwidth-chat .chat-history {
   0%, 100% { opacity: 0.4; }
   50% { opacity: 1; }
 }
+/* Background-run outcome toasts: parked on an approval / finished unverified */
+.msg.stream-done-toast.needs-approval { border-left-color: var(--warn, #f0ad4e); background: color-mix(in srgb, var(--warn, #f0ad4e) 8%, transparent); }
+.msg.stream-done-toast.needs-approval .stream-done-indicator { color: var(--warn, #f0ad4e); animation: none; }
+.msg.stream-done-toast.is-unverified { border-left-color: var(--red, #e06c75); background: color-mix(in srgb, var(--red, #e06c75) 7%, transparent); }
+.msg.stream-done-toast.is-unverified .stream-done-indicator { color: var(--red, #e06c75); animation: none; }
 
 /* ===== AGENT MULTI-BUBBLE ===== */
 .msg.msg-tool {

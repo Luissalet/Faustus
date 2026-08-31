@@ -41,3 +41,16 @@ def test_resumed_runs_render_the_live_tool_timeline():
         assert needle in resume, needle
     # the chat route forwards live progress (the sub-agent board depended on it)
     assert '"tool_progress",' in ROUTES.split('"tool_start", "tool_output", "agent_step",', 1)[1][:1200]
+
+
+def test_background_finish_toast_carries_the_harness_outcome():
+    """A background chat that finished UNVERIFIED (claims not backed by tool
+    evidence) must not be announced as a plain 'Response ready'."""
+    stream_js = Path("static/js/chatStream.js").read_text(encoding="utf-8")
+    assert "function insertStreamDoneToast(sessionId, query, outcome)" in stream_js
+    assert "function notifyStreamComplete(sessionId, query, outcome)" in stream_js
+    assert "Finished (UNVERIFIED) in " in stream_js and "not backed by tool evidence" in stream_js
+    assert "edited ' + files + ' file'" in stream_js
+    done = CHAT_JS.split("if (data === '[DONE]') {", 1)[1][:2500]
+    assert "_hz.stop_reason === 'complete_unverified'" in done
+    assert "_insertStreamDoneToast(streamSessionId, streamQuery, _outcome)" in done

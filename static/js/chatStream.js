@@ -249,7 +249,7 @@ export function handleUIControl(uiData) {
 /**
  * Notify user when a background stream completes.
  */
-export function notifyStreamComplete(sessionId, query) {
+export function notifyStreamComplete(sessionId, query, outcome) {
   var isHidden = document.hidden;
   var isOtherSession = sessionModule && sessionModule.getCurrentSessionId() !== sessionId;
   if (!isHidden && !isOtherSession) return;
@@ -257,10 +257,14 @@ export function notifyStreamComplete(sessionId, query) {
   // Parked on an approval / question → say so (the user has to come back).
   var waiting = false;
   try { waiting = !!(sessionModule && sessionModule.sessionActivityStatus && sessionModule.sessionActivityStatus(sessionId) === 'approval'); } catch (_) {}
+  var unverified = !!(outcome && outcome.unverified);
+  var files = (outcome && outcome.files) || 0;
   var body = waiting
     ? (query ? 'The agent needs your approval to continue "' + query.substring(0, 60) + '"' : 'The agent needs your approval to continue')
-    : (query ? 'Response to "' + query.substring(0, 60) + '" is ready' : 'Your chat response has completed');
-  var notification = new Notification(waiting ? 'Odysseus needs your approval' : 'Response Complete', {
+    : unverified
+      ? 'The agent finished' + (query ? ' "' + query.substring(0, 60) + '"' : '') + ' but its claims are NOT backed by tool evidence — review before trusting it'
+      : (query ? 'Response to "' + query.substring(0, 60) + '" is ready' : 'Your chat response has completed') + (files ? ' · edited ' + files + ' file' + (files === 1 ? '' : 's') : '');
+  var notification = new Notification(waiting ? 'Odysseus needs your approval' : (unverified ? 'Odysseus finished — unverified' : 'Response Complete'), {
     body: body,
     tag: 'stream-' + sessionId,
   });
@@ -277,7 +281,7 @@ export function notifyStreamComplete(sessionId, query) {
 /**
  * Insert a clickable in-chat toast when a background stream finishes.
  */
-export function insertStreamDoneToast(sessionId, query) {
+export function insertStreamDoneToast(sessionId, query, outcome) {
   var box = document.getElementById('chat-history');
   if (!box) return;
   var sessions = sessionModule ? sessionModule.getSessions() : [];
@@ -287,12 +291,19 @@ export function insertStreamDoneToast(sessionId, query) {
   // A run parked on an approval / question is not "ready": say what it needs.
   var waiting = false;
   try { waiting = !!(sessionModule && sessionModule.sessionActivityStatus && sessionModule.sessionActivityStatus(sessionId) === 'approval'); } catch (_) {}
+  // Harness outcome of the finished turn (from its metrics): an answer whose
+  // claims the runtime could not back is flagged, edited files are counted.
+  var unverified = !waiting && !!(outcome && outcome.unverified);
+  var files = (outcome && outcome.files) || 0;
+  var lead = waiting ? 'Waiting for your approval in ' : (unverified ? 'Finished (UNVERIFIED) in ' : 'Response ready in ');
+  var tail = waiting ? '' : (unverified ? ' — its claims are not backed by tool evidence' : (files ? ' — edited ' + files + ' file' + (files === 1 ? '' : 's') : ''));
   var div = document.createElement('div');
-  div.className = 'msg msg-system stream-done-toast' + (waiting ? ' needs-approval' : '');
+  div.className = 'msg msg-system stream-done-toast' + (waiting ? ' needs-approval' : '') + (unverified ? ' is-unverified' : '');
   div.innerHTML = '<div class="body">'
-    + '<span class="stream-done-indicator">' + (waiting ? '\u270B' : '\u25CF') + '</span>'
-    + '<span>' + (waiting ? 'Waiting for your approval in ' : 'Response ready in ') + '<strong>' + (name || 'session').replace(/</g, '&lt;') + '</strong>'
+    + '<span class="stream-done-indicator">' + (waiting ? '\u270B' : (unverified ? '\u26A0' : '\u25CF')) + '</span>'
+    + '<span>' + lead + '<strong>' + (name || 'session').replace(/</g, '&lt;') + '</strong>'
     + (preview ? ' &mdash; ' + preview.replace(/</g, '&lt;') : '')
+    + tail
     + '</span>'
     + '</div>';
   div.addEventListener('click', function() {
