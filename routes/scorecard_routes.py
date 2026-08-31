@@ -39,12 +39,23 @@ def setup_scorecard_routes() -> APIRouter:
         return {"days": days, "models": rows, "entries": recent, "total": len(entries)}
 
     @router.get("/table")
-    def scorecard_table(request: Request, days: float = Query(default=30), language: str = Query(default="en")) -> Dict[str, Any]:
-        """Markdown table for the /scorecard slash command."""
+    def scorecard_table(request: Request, days: float = Query(default=30), language: str = Query(default="en"),
+                        workspace: str = Query(default="")) -> Dict[str, Any]:
+        """Markdown table for the /scorecard slash command; `workspace` limits
+        the turns to one folder (`/scorecard here`)."""
         _admin_only(request)
         from src import scorecard as sc
-        rows = sc.aggregate(sc.load(days=days if days and days > 0 else None), only_workspace=False)
-        return {"markdown": sc.render_table(rows, language=language), "models": len(rows)}
+        entries = sc.load(days=days if days and days > 0 else None)
+        if workspace:
+            import os
+            want = os.path.realpath(os.path.expanduser(workspace))
+            if os.name == "nt":
+                want = want.lower()
+            entries = [e for e in entries if e.get("workspace")
+                       and (os.path.realpath(str(e["workspace"])).lower() if os.name == "nt" else os.path.realpath(str(e["workspace"]))) == want]
+        rows = sc.aggregate(entries, only_workspace=False)
+        return {"markdown": sc.render_table(rows, language=language), "models": len(rows), "turns": len(entries),
+                "workspace": workspace or None}
 
     @router.delete("")
     def clear_scorecard(request: Request) -> Dict[str, Any]:

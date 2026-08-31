@@ -455,6 +455,34 @@ def test_scorecard_record_aggregate_and_table(data_dir, settings):
     assert sc.record(e1) is False
 
 
+def test_scorecard_table_route_filters_by_workspace(data_dir, settings, tmp_path):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    import routes.scorecard_routes as sr
+    from src import scorecard as sc
+    settings["agent_scorecard"] = True
+    ws_a, ws_b = tmp_path / "a", tmp_path / "b"
+    ws_a.mkdir(); ws_b.mkdir()
+    h = {"stop_reason": "complete", "mutations": ["x.py"], "notes": []}
+    sc.record(sc.build_entry(session_id="1", model="m1", endpoint_label="l", workspace=str(ws_a), user_text="t", duration_s=1, rounds=1, harness=h))
+    sc.record(sc.build_entry(session_id="2", model="m2", endpoint_label="l", workspace=str(ws_b), user_text="t", duration_s=1, rounds=1, harness=h))
+    sc.record(sc.build_entry(session_id="3", model="m1", endpoint_label="l", workspace=str(ws_b), user_text="t", duration_s=1, rounds=1, harness=h))
+    import src.auth_helpers as ah
+    import src.tool_security as ts
+    app = FastAPI()
+    app.include_router(sr.setup_scorecard_routes())
+    c = TestClient(app)
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(sr, "get_current_user", lambda request: "admin")
+        mp.setattr(sr, "owner_is_admin_or_single_user", lambda owner: True)
+        all_rows = c.get("/api/scorecard/table").json()
+        assert all_rows["models"] == 2 and all_rows["turns"] == 3
+        only_b = c.get("/api/scorecard/table", params={"workspace": str(ws_b)}).json()
+        assert only_b["turns"] == 2 and only_b["models"] == 2 and only_b["workspace"] == str(ws_b)
+        only_a = c.get("/api/scorecard/table", params={"workspace": str(ws_a) + os.sep}).json()
+        assert only_a["turns"] == 1 and "`m1`" in only_a["markdown"] and "`m2`" not in only_a["markdown"]
+
+
 # ---------------------------------------------------------------------------
 # project_audit
 # ---------------------------------------------------------------------------

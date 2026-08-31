@@ -1373,17 +1373,23 @@ async function _cmdScorecard(args) {
     } catch (e) { slashReply(`Could not clear the scorecard: ${e}`); }
     return true;
   }
-  const days = Number.isFinite(parseFloat(a[0])) ? parseFloat(a[0]) : 30;
+  // `/scorecard here` (or `project`) = only the turns of the bound workspace.
+  const here = a.includes('here') || a.includes('project') || a.includes('workspace');
+  const nums = a.filter(x => Number.isFinite(parseFloat(x)));
+  const days = nums.length ? parseFloat(nums[0]) : 30;
   const lang = (navigator.language || '').toLowerCase().startsWith('es') ? 'es' : 'en';
+  const ws = here ? _boundWorkspacePath() : '';
+  if (here && !ws) { slashReply('Bind a workspace folder first to filter the scorecard by project.'); return true; }
   try {
-    const r = await fetch(`${API_BASE}/api/scorecard/table?days=${encodeURIComponent(days)}&language=${lang}`, { credentials: 'same-origin' });
+    const r = await fetch(`${API_BASE}/api/scorecard/table?days=${encodeURIComponent(days)}&language=${lang}${ws ? `&workspace=${encodeURIComponent(ws)}` : ''}`, { credentials: 'same-origin' });
     if (!r.ok) { slashReply(`Scorecard unavailable (HTTP ${r.status}).`); return true; }
     const data = await r.json();
     const md = data.markdown || '';
     let html = '';
     try { html = window.marked ? window.marked.parse(md) : ''; } catch (_) { html = ''; }
     if (!html) html = `<pre>${md.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))}</pre>`;
-    slashReply(`<div class="scorecard-table"><p><b>Model scorecard</b> — agent turns of the last ${days} day${days === 1 ? '' : 's'} (verified = the harness confirmed the claims; asks = the model asked you instead of guessing; tests / review = project tests and the independent diff review when they ran). <code>/scorecard 7</code>, <code>/scorecard clear</code>.</p>${html}</div>`);
+    const scope = ws ? ` in <code>${ws.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))}</code>` : '';
+    slashReply(`<div class="scorecard-table"><p><b>Model scorecard</b> — ${data.turns != null ? `${data.turns} agent turn${data.turns === 1 ? '' : 's'}` : 'agent turns'}${scope} of the last ${days} day${days === 1 ? '' : 's'} (verified = the harness confirmed the claims; asks = the model asked you instead of guessing; tests / review = project tests and the independent diff review when they ran). <code>/scorecard 7</code>, <code>/scorecard here</code>, <code>/scorecard clear</code>.</p>${html}</div>`);
   } catch (e) { slashReply(`Scorecard unavailable: ${e}`); }
   return true;
 }
@@ -6081,7 +6087,7 @@ const COMMANDS = {
     help: 'Per-model reliability table of your agent turns (verified rate, questions, tests, review, time)',
     handler: _cmdScorecard,
     noUserBubble: true,
-    usage: '/scorecard [days | clear]',
+    usage: '/scorecard [days] [here] | clear',
   },
   usage: {
     alias: ['sys', 'gpu'],
