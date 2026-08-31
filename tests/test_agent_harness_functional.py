@@ -195,7 +195,8 @@ def test_auto_review_flags_a_defect_then_accepts_the_fix(project, monkeypatch):
                   tool_exec=_real_edit(project))
     reviews = iter([
         json.dumps({"verdict": "issues", "summary": "wrong operator",
-                    "findings": [{"severity": "error", "file": "src/calc.py", "line": 2, "issue": "add() multiplies"}]}),
+                    "findings": [{"severity": "error", "file": "src/calc.py", "line": 2, "issue": "add() multiplies",
+                                  "evidence": "return a * b"}]}),
         json.dumps({"verdict": "ok", "summary": "looks right", "findings": []}),
     ])
     seen_prompts = []
@@ -226,6 +227,57 @@ def test_auto_review_flags_a_defect_then_accepts_the_fix(project, monkeypatch):
     assert summary["review_fix_rounds"] == 1 and summary["review"]["model"] == "qwen3-coder:30b"
     from src import scorecard
     assert scorecard.load()[-1]["review"] == "ok"
+
+
+def test_review_dispute_when_the_agent_disagrees_and_changes_nothing(project, monkeypatch):
+    """A grounded error finding gets its fix round; the agent checks, disagrees
+    and edits nothing → the review is marked disputed (no red 'defects' note)."""
+    _patch_common(monkeypatch, settings={"agent_project_tests": False, "agent_auto_review": "same"},
+                  tool_exec=_real_edit(project))
+    calls_n = {"n": 0}
+
+    async def _fake_llm(url, model, messages, **kwargs):
+        calls_n["n"] += 1
+        return json.dumps({"verdict": "issues", "summary": "wrong operator?",
+                           "findings": [{"severity": "error", "file": "src/calc.py", "line": 2, "issue": "should subtract",
+                                         "evidence": "return a + b"}]})
+    import src.llm_core as lc
+    monkeypatch.setattr(lc, "llm_call_async", _fake_llm, raising=False)
+    _scripted_stream(monkeypatch, [
+        (_edit_call("src/calc.py", "return a - b", "return a + b"), "tool_calls"),
+        ("He corregido src/calc.py: ahora suma.", "stop"),
+        ("El revisor se equivoca: la petición pide sumar, así que no cambio nada.", "stop"),
+    ])
+    events = _run(project)
+    statuses = [e["status"] for e in events if e.get("type") == "harness_check"]
+    assert "review_issues" in statuses and statuses[-1] == "verified"
+    verified = next(e for e in events if e.get("type") == "harness_check" and e["status"] == "verified")
+    assert verified["review"]["disputed"] is True and verified["review"]["findings"][0]["grounded"] is True
+    summary = next(e for e in events if e.get("type") == "harness_summary")["data"]
+    assert summary["review_fix_rounds"] == 1
+    assert any(n.startswith("review_disputed:1") for n in summary["notes"]) and not any(n.startswith("review_defects") for n in summary["notes"])
+
+
+def test_ungrounded_review_errors_do_not_cost_a_fix_round(project, monkeypatch):
+    _patch_common(monkeypatch, settings={"agent_project_tests": False, "agent_auto_review": "same"},
+                  tool_exec=_real_edit(project))
+
+    async def _fake_llm(url, model, messages, **kwargs):
+        return json.dumps({"verdict": "issues", "summary": "imagined",
+                           "findings": [{"severity": "error", "file": "src/calc.py", "line": 7, "issue": "a button placed after",
+                                         "evidence": "<button>Refresh</button>"}]})
+    import src.llm_core as lc
+    monkeypatch.setattr(lc, "llm_call_async", _fake_llm, raising=False)
+    calls = _scripted_stream(monkeypatch, [
+        (_edit_call("src/calc.py", "return a - b", "return a + b"), "tool_calls"),
+        ("He corregido src/calc.py.", "stop"),
+    ])
+    events = _run(project)
+    statuses = [e["status"] for e in events if e.get("type") == "harness_check"]
+    assert "review_issues" not in statuses and statuses[-1] == "verified"
+    assert calls["n"] == 2   # no fix round was requested
+    verified = next(e for e in events if e.get("type") == "harness_check" and e["status"] == "verified")
+    assert verified["review"]["verdict"] == "ok" and verified["review"]["ungrounded"] == 1
 
 
 def test_review_mode_flag_reaches_the_card_and_metrics(project, monkeypatch):

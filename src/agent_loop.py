@@ -6118,8 +6118,18 @@ async def stream_agent_loop(
                             logger.debug("[harness] auto-review failed: %s", _rv_err)
                             _rev = None
                         _rev_errors = [f for f in ((_rev or {}).get("findings") or []) if f.get("severity") == "error"]
+                        if _rev_errors and _ledger.review_fix_rounds >= 1 and len(_ledger.mutations) == _ledger.review_mutations_at_fix:
+                            # The fix round changed nothing: the agent looked and disagreed
+                            # (its answer says why). Not a defect count to alarm about.
+                            if isinstance(_ledger.review, dict):
+                                _ledger.review["disputed"] = True
+                            _note = "review_disputed:" + str(len(_rev_errors))
+                            if _note not in _ledger.notes:
+                                _ledger.notes.append(_note)
+                            _rev_errors = []
                         if _rev_errors and _ledger.review_fix_rounds < _review_max_fix:
                             _ledger.review_fix_rounds += 1
+                            _ledger.review_mutations_at_fix = len(_ledger.mutations)
                             logger.warning("[harness] round %s review flagged %d defect(s) — one fix round",
                                            round_num, len(_rev_errors))
                             if round_response.strip():

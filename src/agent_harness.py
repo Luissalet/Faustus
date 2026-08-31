@@ -558,6 +558,7 @@ class TurnLedger:
         self.review: Optional[Dict[str, Any]] = None       # auto_review.compact()
         self.review_runs = 0
         self.review_fix_rounds = 0
+        self.review_mutations_at_fix = -1     # len(mutations) when the review fix round started
         self.asked_user = False
         # The user's own message may name real files; those count as observed.
         for tok in extract_path_tokens(self.user_text):

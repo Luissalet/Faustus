@@ -396,7 +396,9 @@ function _reviewLine(r) {
   const errs = findings.filter(f => f.severity === 'error').length;
   const items = findings.slice(0, 8).map(f => `<li class="is-${esc(f.severity || 'warning')}"><b>${esc(f.severity || 'warning')}</b> <code>${esc(f.file || '?')}${f.line ? ':' + esc(f.line) : ''}</code> — ${esc(f.issue || '')}</li>`).join('');
   if (r.verdict === 'ok' && !findings.length) return `<div class="harness-foot harness-review is-ok">✓ Independent review (${esc(r.model || '')}): no obvious defects${r.summary ? ` — <em>${esc(r.summary)}</em>` : ''} · ${esc(String(r.duration_s || 0))}s</div>`;
-  return `<div class="harness-foot harness-review ${errs ? 'is-fail' : 'is-warn'}">${errs ? '✗' : '⚠'} Independent review (${esc(r.model || '')}): ${findings.length} finding${findings.length === 1 ? '' : 's'}${errs ? ` (${errs} likely defect${errs === 1 ? '' : 's'})` : ''}${r.summary ? ` — <em>${esc(r.summary)}</em>` : ''}</div>` +
+  const disputed = r.disputed ? ' · <b>the agent checked and disagreed</b> (nothing changed — see its answer)' : '';
+  const ungrounded = r.ungrounded ? ` · ${r.ungrounded} not located in the diff` : '';
+  return `<div class="harness-foot harness-review ${errs && !r.disputed ? 'is-fail' : 'is-warn'}">${errs && !r.disputed ? '✗' : '⚠'} Independent review (${esc(r.model || '')}): ${findings.length} finding${findings.length === 1 ? '' : 's'}${errs ? ` (${errs} likely defect${errs === 1 ? '' : 's'})` : ''}${r.summary ? ` — <em>${esc(r.summary)}</em>` : ''}${disputed}${ungrounded}</div>` +
     (items ? `<ul class="harness-list harness-findings">${items}</ul>` : '');
 }
 
@@ -557,6 +559,7 @@ export function renderHarnessSummary(json, { messageId = null } = {}) {
     target_substituted: p => `you named <code>${esc(p)}</code> (does not exist) — the model changed other files; it was asked to say so explicitly`,
     tests_failed: s => `<b>⚠ the project's tests still fail</b> after the fix round: ${esc(s)}`,
     review_defects: n => `<b>⚠ the reviewer still sees ${esc(n)} likely defect${String(n) === '1' ? '' : 's'}</b> after the fix round — check the findings above`,
+    review_disputed: n => `the reviewer flagged ${esc(n)} point${String(n) === '1' ? '' : 's'}; the agent checked them and disagreed (nothing changed) — its answer says why`,
   };
   const noteLines = notes.map(n => {
     const [k, ...rest] = String(n).split(/[:@]/);

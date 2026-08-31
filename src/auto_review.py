@@ -159,10 +159,50 @@ def _prompt(user_text: str, diff: str, files: List[str], tests: Optional[Dict[st
         "Answer with ONLY a JSON object, no prose before or after:\n"
         '{"verdict": "ok" | "issues", "summary": "<one sentence>", '
         '"findings": [{"severity": "error" | "warning", "file": "<path>", "line": <int or null>, '
+        '"evidence": "<one line copied VERBATIM from the diff (without the leading + or -), or, for something the request asks for and the diff does not do, the exact words of the request>", '
         '"issue": "<what is wrong and why, one or two sentences>"}]}\n'
         'Use "error" only for defects that will break the code or clearly violate the request; '
-        'everything else is "warning". An empty findings list with verdict "ok" is a valid answer.'
+        'everything else is "warning". A finding whose evidence is neither in the diff nor in the '
+        'request is discarded. An empty findings list with verdict "ok" is a valid answer.'
     )
+
+
+_WS_RE = re.compile(r"\s+")
+
+
+def _norm_line(text: str) -> str:
+    return _WS_RE.sub(" ", (text or "").strip()).strip("+- ").lower()
+
+
+def ground_findings(findings: List[Dict[str, Any]], diff: str, user_text: str = "") -> Dict[str, Any]:
+    """Keep only what the reviewer can point at. A finding whose `evidence`
+    is neither a line of the diff nor a phrase of the request (whitespace- and
+    case-insensitive) is *ungrounded*: it is kept for the user but demoted to a
+    warning, so it never costs a fix round. Small local reviewers invent defects
+    about code they did not see (qwen3.5:9b flagged a button "placed after"
+    the other one, then argued with itself in the finding text)."""
+    lines = {_norm_line(l) for l in (diff or "").splitlines() if l[:1] in "+-" and not l.startswith(("+++", "---"))}
+    lines.discard("")
+    normalized_diff = _norm_line(diff)
+    normalized_request = _norm_line(user_text)
+    out: List[Dict[str, Any]] = []
+    ungrounded = 0
+    for f in findings:
+        ev = _norm_line(f.get("evidence") or "")
+        grounded = bool(ev) and (
+            ev in lines
+            or (len(ev) >= 12 and ev in normalized_diff)
+            or (len(ev) >= 8 and normalized_request and ev in normalized_request)
+        )
+        g = dict(f)
+        g["grounded"] = grounded
+        if not grounded:
+            ungrounded += 1
+            if g.get("severity") == "error":
+                g["severity"] = "warning"
+                g["demoted"] = True
+        out.append(g)
+    return {"findings": out, "ungrounded": ungrounded}
 
 
 def _parse(raw: str) -> Dict[str, Any]:
@@ -197,8 +237,10 @@ def _parse(raw: str) -> Dict[str, Any]:
         issue = str(f.get("issue") or f.get("message") or "").strip()
         if not issue:
             continue
+        evidence = f.get("evidence")
         findings.append({"severity": sev, "file": str(f.get("file") or "").strip()[:300],
-                         "line": line, "issue": issue[:600]})
+                         "line": line, "issue": issue[:600],
+                         "evidence": str(evidence).strip()[:300] if isinstance(evidence, (str, int, float)) and str(evidence).strip() else ""})
     verdict = str(data.get("verdict") or "").lower().strip()
     if verdict not in ("ok", "issues"):
         verdict = "issues" if findings else "ok"
@@ -284,6 +326,16 @@ async def review_turn(
     result.update(_parse(raw))
     if result["verdict"] == "unparsed":
         logger.warning("[review] %s: answer was not a JSON object: %r", reviewer, raw[:300])
+    else:
+        grounded = ground_findings(result["findings"], diff, user_text)
+        result["findings"] = grounded["findings"]
+        result["ungrounded"] = grounded["ungrounded"]
+        if result["verdict"] == "issues" and not any(f["severity"] == "error" for f in result["findings"]) \
+                and result["findings"] and all(not f["grounded"] for f in result["findings"]):
+            # Nothing the reviewer said can be located in the diff.
+            result["verdict"] = "ok"
+            result["summary"] = (result.get("summary") or "").strip()
+            result["summary"] = ("no finding could be located in the diff" + (f" ({result['summary']})" if result["summary"] else ""))[:400]
     result["duration_s"] = round(time.time() - t0, 1)
     logger.info("[review] %s: verdict=%s findings=%d in %ss", reviewer, result["verdict"],
                 len(result["findings"]), result["duration_s"])
@@ -314,5 +366,6 @@ def fix_message(review: Dict[str, Any]) -> str:
 def compact(review: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     if not review:
         return None
-    keys = ("model", "verdict", "summary", "findings", "duration_s", "diff_chars", "truncated", "source", "error")
+    keys = ("model", "verdict", "summary", "findings", "duration_s", "diff_chars", "truncated", "source", "error",
+            "ungrounded", "disputed")
     return {k: review.get(k) for k in keys if k in review}

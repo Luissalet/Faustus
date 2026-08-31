@@ -254,7 +254,7 @@ def test_review_parse_variants():
     ok = _parse('<think>hmm</think>\n```json\n{"verdict": "ok", "summary": "fine", "findings": []}\n```')
     assert ok == {"verdict": "ok", "summary": "fine", "findings": []}
     issues = _parse('Sure: {"verdict": "issues", "summary": "bad", "findings": [{"severity": "ERROR", "file": "a.py", "line": "7", "issue": "off by one"},], }')
-    assert issues["verdict"] == "issues" and issues["findings"] == [{"severity": "error", "file": "a.py", "line": 7, "issue": "off by one"}]
+    assert issues["verdict"] == "issues" and issues["findings"] == [{"severity": "error", "file": "a.py", "line": 7, "issue": "off by one", "evidence": ""}]
     # verdict "ok" with an error-severity finding is promoted to "issues"; unknown severities become warnings.
     promoted = _parse('{"verdict": "ok", "findings": [{"severity": "fatal", "issue": "x"}, {"severity": "error", "issue": "y"}]}')
     assert promoted["verdict"] == "issues" and [f["severity"] for f in promoted["findings"]] == ["warning", "error"]
@@ -271,7 +271,7 @@ def test_review_turn_calls_the_model_with_one_attempt_and_handles_empty(ws, data
 
     async def _fake(url, model, messages, **kwargs):
         seen.update(kwargs, url=url, model=model, prompt=messages[-1]["content"])
-        return '{"verdict": "issues", "summary": "wrong operator", "findings": [{"severity": "error", "file": "src/calc.py", "line": 2, "issue": "subtracts"}]}'
+        return '{"verdict": "issues", "summary": "wrong operator", "findings": [{"severity": "error", "file": "src/calc.py", "line": 2, "issue": "subtracts", "evidence": "return a * b"}]}'
     monkeypatch.setattr(lc, "llm_call_async", _fake, raising=False)
     monkeypatch.setattr(ar, "turn_diff", lambda workspace, files, sha: {"diff": "-    return a - b\n+    return a * b\n", "source": "checkpoint", "truncated": False})
     res = asyncio.run(ar.review_turn(workspace=str(ws), changed=["src/calc.py"], checkpoint_sha="abc",
@@ -300,6 +300,52 @@ def test_review_turn_calls_the_model_with_one_attempt_and_handles_empty(ws, data
     res = asyncio.run(ar.review_turn(workspace=str(ws), changed=[], checkpoint_sha=None, user_text="x",
                                      endpoint_url="http://x", model="m"))
     assert res["verdict"] == "skipped"
+
+
+def test_review_findings_are_grounded_in_the_diff_or_the_request():
+    from src.auto_review import ground_findings
+    diff = "--- a/src/calc.py\n+++ b/src/calc.py\n@@\n-    return a - b\n+    return a * b\n+    print('debug')\n"
+    res = ground_findings([
+        {"severity": "error", "file": "src/calc.py", "line": 2, "issue": "multiplies", "evidence": "return a * b"},
+        {"severity": "error", "file": "src/calc.py", "line": 3, "issue": "debug print left", "evidence": "  print( 'debug' )  "},
+        {"severity": "error", "file": "src/calc.py", "line": 9, "issue": "the button is placed after", "evidence": "<button id='refresh'>"},
+        {"severity": "warning", "file": "src/calc.py", "line": None, "issue": "no evidence", "evidence": ""},
+        {"severity": "error", "file": "", "line": None, "issue": "half of the request is missing", "evidence": "y actualiza projects.js"},
+    ], diff, user_text="Renombra el campo y actualiza projects.js")
+    f = res["findings"]
+    assert f[0]["grounded"] and f[0]["severity"] == "error"
+    assert f[1]["grounded"] is False or f[1]["grounded"] is True   # whitespace inside quotes: tolerated either way
+    assert f[2]["grounded"] is False and f[2]["severity"] == "warning" and f[2]["demoted"] is True
+    assert f[3]["grounded"] is False and f[3]["severity"] == "warning"
+    assert f[4]["grounded"] is True and f[4]["severity"] == "error"     # request-phrase evidence
+    assert res["ungrounded"] >= 2
+
+
+def test_review_turn_demotes_ungrounded_errors_and_never_fix_rounds_on_them(ws, data_dir, monkeypatch):
+    from src import auto_review as ar
+    import src.llm_core as lc
+
+    async def _fake(url, model, messages, **kwargs):
+        return json.dumps({"verdict": "issues", "summary": "two problems", "findings": [
+            {"severity": "error", "file": "src/calc.py", "line": 2, "issue": "invented", "evidence": "this line is not in the diff at all"},
+            {"severity": "error", "file": "src/calc.py", "line": 2, "issue": "real", "evidence": "return a * b"},
+        ]})
+    monkeypatch.setattr(lc, "llm_call_async", _fake, raising=False)
+    monkeypatch.setattr(ar, "turn_diff", lambda workspace, files, sha: {"diff": "-    return a - b\n+    return a * b\n", "source": "checkpoint", "truncated": False})
+    res = asyncio.run(ar.review_turn(workspace=str(ws), changed=["src/calc.py"], checkpoint_sha="abc", user_text="fix add",
+                                     endpoint_url="http://127.0.0.1:11434/v1", model="m"))
+    sev = [(f["issue"], f["severity"], f["grounded"]) for f in res["findings"]]
+    assert sev == [("invented", "warning", False), ("real", "error", True)] and res["ungrounded"] == 1
+    assert "src/calc.py:2" in ar.fix_message(res) and "invented" not in ar.fix_message(res)
+
+    async def _all_invented(url, model, messages, **kwargs):
+        return json.dumps({"verdict": "issues", "summary": "bad", "findings": [
+            {"severity": "error", "file": "x", "line": 1, "issue": "nope", "evidence": "nothing like this"}]})
+    monkeypatch.setattr(lc, "llm_call_async", _all_invented, raising=False)
+    res = asyncio.run(ar.review_turn(workspace=str(ws), changed=["src/calc.py"], checkpoint_sha="abc", user_text="fix add",
+                                     endpoint_url="http://127.0.0.1:11434/v1", model="m"))
+    assert res["verdict"] == "ok" and res["summary"].startswith("no finding could be located") and res["findings"][0]["severity"] == "warning"
+    assert "ungrounded" in ar.compact(res)
 
 
 def test_resolve_reviewer_modes(monkeypatch):
