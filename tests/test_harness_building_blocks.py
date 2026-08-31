@@ -445,6 +445,9 @@ def test_scorecard_record_aggregate_and_table(data_dir, settings):
                            duration_s=3, rounds=1, harness={"stop_reason": "awaiting_user", "mutations": []}, asked_user=True)
     assert asked["approval_stop"] is False and asked["asked_user"] is True
     assert sc.aggregate([gate, asked]) [0]["turns"] == 1
+    legacy_gate = {"model": "m", "stop_reason": "awaiting_user", "asked_user": True, "failed_calls": 1, "files_changed": 0, "tool_calls": 3}
+    legacy_ask = {"model": "m", "stop_reason": "awaiting_user", "asked_user": True, "failed_calls": 0, "files_changed": 0, "tool_calls": 2}
+    assert sc.aggregate([legacy_gate, legacy_ask])[0]["turns"] == 1
     e3 = sc.build_entry(session_id="s3", model="big:30b", endpoint_label="local", workspace=None, user_text="chat only",
                         duration_s=5, rounds=1, harness={"stop_reason": "complete", "mutations": []})
     for e in (e1, e2, e3):

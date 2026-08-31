@@ -165,6 +165,11 @@ def aggregate(entries: Iterable[Dict[str, Any]], *, only_workspace: bool = False
             continue
         if e.get("approval_stop"):
             continue
+        if ("approval_stop" not in e and e.get("stop_reason") == "awaiting_user"
+                and not e.get("files_changed") and int(e.get("failed_calls") or 0) >= 1):
+            # Lines written before approval stops were tagged: a gate stop
+            # shows as awaiting_user + one blocked (failed) call + no files.
+            continue
         by.setdefault(str(e.get("model") or "?"), []).append(e)
     rows: List[Dict[str, Any]] = []
     for model, items in by.items():
