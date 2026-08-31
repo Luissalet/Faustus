@@ -181,6 +181,17 @@ Causa: el índice semántico de herramientas emparejó *"health"* / *"status ok"
 
 Arreglo (`_browser_intent_is_real()`): se expande cuando la ruta nombra el servidor (`builtin_browser`, la vía prevista), cuando aparece una herramienta que **abre sesión** (`navigate`, `tabs`, `snapshot`) o cuando hay **dos o más** herramientas de navegador. Un solo acierto periférico se conserva tal cual, sin expandir — `browser_console_messages` sin navegador abierto no sirve de nada, pero costaba 28 esquemas. 9 tests.
 
+Medido en la misma tarea antes y después (qwen3.5:9b, instancia dev):
+
+| | antes (t10) | después (t10b) |
+|---|---|---|
+| herramientas enviadas | 75 | **46** |
+| tokens de entrada (ronda 1) | 38.176 | **29.190** |
+| tiempo hasta el primer token | 10,8 s | **4,8 s** |
+| tok/s | 15,1 | **24,5** |
+
+Dos honestidades sobre esta prueba: (1) las 46 restantes siguen incluyendo un dominio equivocado — "health"/"status ok" también empareja con las herramientas de servir modelos ("cookbook"); eso queda como problema conocido, más difícil de acotar sin tocar la clasificación del índice. (2) La regla escrita con `#` **sí llegaba al prompt** (`project_instructions.block()` la inyecta, verificado a mano: 355 caracteres) y el modelo de 9B la ignoró igualmente en ambas pasadas. El atajo `#` hace su trabajo; que un modelo pequeño obedezca una regla de estilo enterrada en 30.000 tokens es otra cosa.
+
 ### Verificación
 89 tests nuevos en 4 ficheros (`test_file_mentions.py`, `test_file_mentions_routes_js.py`, `test_project_instructions_remember.py`, `test_composer_sigils_js.py`), incluidos los de contrato entre el popup y el resolutor del servidor (lo que inserta el popup es lo que el servidor resuelve) y los de node para los predicados del compositor. Suite completa en verde antes y después.
 
