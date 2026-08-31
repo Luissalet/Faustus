@@ -172,7 +172,7 @@ _PATH_EXTS = (
 PATH_TOKEN_RE = re.compile(
     r"(?<![\w@:/\\.-])"                                   # not glued to a URL/word
     r"((?:\.{0,2}[\w@.-]+[/\\])*"                          # optional dir segments
-    r"[\w@.-]*[A-Za-z_][\w@.-]*\.(?:" + _PATH_EXTS + r"))"  # basename.ext
+    r"[\w@.-]*[A-Za-z_][\w@.-]*\.(?:" + _PATH_EXTS + r")(?!\w))"  # basename.ext, whole extension
     r"(?![\w/\\.-]*(?:://|@))",
     re.IGNORECASE,
 )

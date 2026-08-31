@@ -417,3 +417,12 @@ def test_target_substitution_ignores_files_created_this_turn(tmp_path):
                {"output": "Wrote", "exit_code": 0, "diff": {"new_file": True, "added": 1, "removed": 0, "text": "+x"}}, 1)
     assert led.user_missing_paths() == []
     assert led.check_target_substitution("He creado utils/helpers.py con slugify.") is None
+
+
+def test_path_tokens_take_the_whole_extension():
+    """`data.json` used to be extracted as `data.js` (alternation `js` matched
+    first with no trailing boundary) — a phantom missing file that could fail
+    the fabricated-path and substituted-target checks (seen live on t3)."""
+    assert h.extract_path_tokens("leyendo data.json con _load(). Solo server.py.") == ["data.json", "server.py"]
+    assert h.extract_path_tokens("abre config.jsonc, readme.markdown y main.pyc; utils.py sí") == ["config.jsonc", "utils.py"]
+    assert h.extract_path_tokens("componentes app.jsx, index.tsx y styles.scss") == ["app.jsx", "index.tsx", "styles.scss"]
