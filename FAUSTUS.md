@@ -183,12 +183,13 @@ Arreglo (`_browser_intent_is_real()`): se expande cuando la ruta nombra el servi
 
 Medido en la misma tarea antes y después (qwen3.5:9b, instancia dev):
 
-| | antes (t10) | después (t10b) |
-|---|---|---|
-| herramientas enviadas | 75 | **46** |
-| tokens de entrada (ronda 1) | 38.176 | **29.190** |
-| tiempo hasta el primer token | 10,8 s | **4,8 s** |
-| tok/s | 15,1 | **24,5** |
+| | antes (t10) | solo navegador (t10b) | los dos (t10c) |
+|---|---|---|---|
+| herramientas enviadas | 75 | 46 | **24** |
+| tokens de entrada (ronda 1) | 38.176 | 29.190 | **20.174** |
+| tiempo hasta el primer token | 10,8 s | 4,8 s | 7,7 s (caché fría tras reiniciar) |
+
+**−68 % de herramientas y −47 % de prompt en la misma petición**, con el mismo resultado: `server.py` editado y verificado. El tiempo hasta el primer token de t10c no es comparable (la instancia acababa de reiniciarse, caché KV vacía); el recuento de tokens sí lo es.
 
 Dos honestidades sobre esta prueba: (1) las 46 restantes incluían otro dominio equivocado, y la causa resultó ser más tonta de lo esperado: el clasificador de Cookbook (servir modelos) emparejaba la palabra suelta **`server`**, y la petición decía **`server.py`**. `server.py`, `server.js` y `server.ts` están entre los nombres de fichero más comunes que hay, así que ese falso positivo saltaba constantemente en peticiones de código normales y añadía las 13 herramientas de servir modelos. Arreglado con `server(?!\.\w)` en el clasificador y en la regex de contexto de continuación, con 4 tests que comprueban las dos direcciones (`arregla server.js` no es Cookbook; "what's running on the server", "gpu box", "serving" siguen siéndolo). (2) La regla escrita con `#` **sí llegaba al prompt** (`project_instructions.block()` la inyecta, verificado a mano: 355 caracteres) y el modelo de 9B la ignoró igualmente en ambas pasadas. El atajo `#` hace su trabajo; que un modelo pequeño obedezca una regla de estilo enterrada en 30.000 tokens es otra cosa.
 
