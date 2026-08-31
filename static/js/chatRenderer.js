@@ -2344,7 +2344,9 @@ export function displayMetrics(messageElement, metrics) {
           row = document.createElement('div');
           row.className = 'harness-files-row harness-files';
           const esc2 = (t) => String(t ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-          row.innerHTML = files.map(f => `<a href="#" class="harness-file" data-open-file="${esc2(f)}"${hz.workspace ? ` data-open-workspace="${esc2(hz.workspace)}"` : ''} data-open-mode="diff" title="${esc2(f)} — click to review">${esc2(String(f).split(/[\\/]/).pop())}</a>`).join(' ');
+          row.innerHTML = files.map(f => `<a href="#" class="harness-file" data-open-file="${esc2(f)}"${hz.workspace ? ` data-open-workspace="${esc2(hz.workspace)}"` : ''} data-open-mode="diff" title="${esc2(f)} — click to review">${esc2(String(f).split(/[\\/]/).pop())}</a>`).join(' ')
+            // same "undo this turn" control the live Turn summary has (handled by agentHarnessUI)
+            + ` <button type="button" class="harness-btn harness-btn-danger" data-revert-all="${esc2(JSON.stringify({ files: files.slice(0, 60), workspace: hz.workspace || null }))}" title="Undo the changes of this turn (git checkout per file; a new untracked file is deleted)">↺ Revert all ${files.length}</button>`;
           footer.parentElement.appendChild(row);
         });
       }

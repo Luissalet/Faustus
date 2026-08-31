@@ -830,12 +830,14 @@ function createSessionItem(s) {
   dropdown.appendChild(renameItem);
 
   // Stop a run that is working in the background (grey blinking dot) without
-  // having to open the chat first.
-  if (sessionActivityStatus(s.id) === 'running' && _serverRunIds[s.id]) {
-    const _stopIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
-    const stopItem = document.createElement('div');
-    stopItem.className = 'dropdown-item-compact dropdown-item-danger';
-    stopItem.innerHTML = _icon(_stopIcon) + '<span>Stop run</span>';
+  // having to open the chat first. The item is always built and shown/hidden
+  // when the menu opens (the row may have been rendered before the run began).
+  const _stopIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
+  const stopItem = document.createElement('div');
+  stopItem.className = 'dropdown-item-compact dropdown-item-danger session-stop-run';
+  stopItem.innerHTML = _icon(_stopIcon) + '<span>Stop run</span>';
+  stopItem.style.display = (sessionActivityStatus(s.id) === 'running' && _serverRunIds[s.id]) ? '' : 'none';
+  {
     stopItem.addEventListener('click', async (e) => {
       e.stopPropagation();
       dropdown.style.display = 'none';
@@ -971,6 +973,8 @@ function createSessionItem(s) {
     if (dropdown.style.display === 'block') {
       dropdown.style.display = 'none';
     } else {
+      const stopEl = dropdown.querySelector('.session-stop-run');
+      if (stopEl) stopEl.style.display = (sessionActivityStatus(s.id) === 'running' && _serverRunIds[s.id]) ? '' : 'none';
       // Position the dropdown using viewport coords
       const rect = menuBtn.getBoundingClientRect();
       dropdown.style.left = '';
