@@ -473,11 +473,28 @@ def reset(workspace: str) -> bool:
         if not os.path.isdir(gd):
             return True
         try:
-            shutil.rmtree(gd)
+            _rmtree_force(gd)
             return True
         except OSError as e:
             logger.warning("[checkpoint] reset of %s failed: %s", gd, e)
             return False
+
+
+def _rmtree_force(path: str) -> None:
+    """rmtree that copes with git's read-only object files (Windows refuses to
+    delete them with a plain rmtree: WinError 5)."""
+    import stat
+
+    def _clear_and_retry(func, p, exc):
+        try:
+            os.chmod(p, stat.S_IWRITE | stat.S_IREAD)
+            func(p)
+        except OSError:
+            raise
+    try:
+        shutil.rmtree(path, onexc=lambda f, p, e: _clear_and_retry(f, p, e))     # Python ≥ 3.12
+    except TypeError:
+        shutil.rmtree(path, onerror=lambda f, p, ei: _clear_and_retry(f, p, ei[1]))
 
 
 def status(workspace: str) -> Dict[str, Any]:
