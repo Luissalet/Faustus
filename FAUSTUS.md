@@ -4,7 +4,7 @@
 
 - Base del fork: commit upstream `c9dd68d8` (27-08-2026, "refactor(docs): separate Pages site source").
 - Ramas: `feat/projects` (principal, `D:\LocalAI\odysseus`) y `feat/reliability` (desarrollo, worktree `D:\LocalAI\odysseus-dev`, instancia de pruebas en el puerto 7001). La rama de desarrollo se fusiona en la principal por fast-forward.
-- Cifras a 31-08-2026: **78 commits**, 176 ficheros tocados, **+18.485 / −324 líneas**; 20 módulos nuevos (12 de backend, 3 de rutas, 5 de frontend), 20 ficheros de tests nuevos (+4.269 líneas de tests). Suite completa: **5.922 tests en verde en Windows** (partía de 178 fallos ambientales) y ~5.960 en Linux.
+- Cifras a 31-08-2026 (16:00): **83 commits**, ~180 ficheros tocados, **+19.000 líneas**; 20 módulos nuevos (12 de backend, 3 de rutas, 5 de frontend) + `scripts/faustus_rename.py`, 21 ficheros de tests nuevos. Suite completa: **5.926 tests en verde en Windows** (partía de 178 fallos ambientales) y 5.992 en Linux.
 - Máquina de referencia: RTX 4070 Ti 12 GB, 128 GB RAM, Windows 11, Ollama 0.33.x; modelos `qwen3-coder:30b`, `qwen3.5:9b`, `qwen3.8:27b`, `qwen3-coder-next`.
 
 ---
@@ -100,7 +100,16 @@ La suite pasó de **178 fallos ambientales a 0** en la máquina de Luis: UTF-8 e
 
 Para comparar: qwen3-coder:30b hacía t6 en 133–279 s. `qwen3.5:9b` (7,5 GB en VRAM, ~30 tok/s) quedó como modelo de pruebas del agente.
 
-## 4. Renombrado a Faustus (31-08-2026)
+## 4. Segunda pasada de la tarde (31-08-2026, 15:15–16:30): más verificación, más tests
+
+- **Revisión con evidencia** (`src/auto_review.py`): cada hallazgo del revisor debe traer una línea copiada del diff (o, si falta trabajo, las palabras exactas de la petición). Lo que no se localiza en el diff queda como aviso y **nunca cuesta una ronda de arreglo**; si nada se localiza, el veredicto pasa a "ok" con nota. Si tras la ronda de arreglo el agente no cambió nada, la revisión queda marcada **disputed** (el agente miró y no estuvo de acuerdo) en vez de un aviso rojo de "defectos". Motivo: qwen3.5:9b se inventó un botón "colocado después" y discutió consigo mismo dentro del hallazgo.
+- **Tests comparados con el checkpoint** (`src/project_tests.py`, `workspace_checkpoints.export_tree`): cuando los tests fallan tras el turno, los mismos ficheros de test se ejecutan sobre una exportación del árbol del checkpoint (`git archive` del repo sombra, sin `-x`). Cada fallo queda clasificado como **nuevo** o **preexistente**; el mensaje de la ronda de arreglo lo dice; y si todos los fallos son preexistentes en tests que no están ligados por nombre a los ficheros cambiados (el test roto de otro), el turno **no gasta ronda de arreglo** y la tarjeta dice "ya fallaba antes de este cambio". Un test ligado por nombre (`test_calc.py` al tocar `calc.py`) sigue mereciendo la ronda: puede ser justo lo que se pidió arreglar. Setting `agent_project_tests_baseline`.
+- **`/agentsmd [write]`** (`POST /api/workspace/instructions/draft`): borrador de `AGENTS.md` para el workspace con lo que el runtime ya detecta (lenguajes, estructura, manifiestos, comando de tests) y las convenciones que un modelo local necesita explícitas; nunca sobreescribe.
+- **`scripts/faustus_rename.py`** (`--check`): vuelve a aplicar la marca visible tras un merge del proyecto original; tests que fijan la marca en la UI, los identificadores intactos y la idempotencia del script.
+- Scripts `.bat` del PC renombrados (`Start/Stop/Restart-Faustus.bat`, los antiguos como atajos).
+- Cifras tras esta pasada: suite Linux **5992 passed**; en vivo (qwen3.5:9b): t7 con fallo nuevo clasificado contra el checkpoint → ronda de arreglo → verified en 51 s.
+
+## 5. Renombrado a Faustus (31-08-2026)
 El nombre visible de la aplicación pasa de Odysseus a **Faustus** (interfaz, título y manifest, login, notificaciones, identidad en el prompt del modelo, correos, scripts del PC). Los identificadores internos (variables `ODYSSEUS_*`, claves de `localStorage`, ids/clases CSS, nombres de módulos, carpetas `D:\LocalAI\odysseus*`) se conservan a propósito: no se rompen los datos ni el venv y el fork puede seguir recibiendo cambios del proyecto original.
 
 ---

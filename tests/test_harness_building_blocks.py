@@ -366,6 +366,19 @@ def test_review_findings_are_grounded_in_the_diff_or_the_request():
     assert f[3]["grounded"] is False and f[3]["severity"] == "warning"
     assert f[4]["grounded"] is True and f[4]["severity"] == "error"     # request-phrase evidence
     assert res["ungrounded"] >= 2
+    # A real diff line attached to a complaint about the agent's workflow
+    # (seen live: "the request asks to use todowrite… the diff shows no todo
+    # list", evidence '@app.get("/api/stats")') is not a code defect.
+    wf = ground_findings([
+        {"severity": "error", "file": "server.py", "line": 57, "evidence": "return a * b",
+         "issue": "The request explicitly asks to use todowrite for the list of goals, but the diff shows no implementation of a todo list."},
+        {"severity": "error", "file": "server.py", "line": 57, "evidence": "return a * b",
+         "issue": "The request asks to check syntax at the end ('comprueba la sintaxis'), but the diff contains no syntax checking step."},
+        {"severity": "error", "file": "server.py", "line": 2, "evidence": "return a * b",
+         "issue": "multiplies instead of adding; the tests will fail"},
+    ], diff, user_text="Añade el endpoint. Usa todowrite y comprueba la sintaxis al final.")
+    sev = [(x["severity"], x.get("workflow", False)) for x in wf["findings"]]
+    assert sev == [("warning", True), ("warning", True), ("error", False)]
 
 
 def test_review_turn_demotes_ungrounded_errors_and_never_fix_rounds_on_them(ws, data_dir, monkeypatch):

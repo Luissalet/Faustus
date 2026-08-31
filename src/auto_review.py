@@ -174,6 +174,24 @@ def _norm_line(text: str) -> str:
     return _WS_RE.sub(" ", (text or "").strip()).strip("+- ").lower()
 
 
+# Findings about the agent's *process* rather than the code: small reviewers
+# keep reporting "the request asked to use todowrite / check the syntax / run
+# the tests and the diff does not show it". Those are never code defects.
+_WORKFLOW_RE = re.compile(
+    r"\b(?:todo\s*write|todowrite|todo list|lista de (?:tareas|objetivos)|"
+    r"syntax check|check(?:ing|ed)? (?:the )?syntax|comprob\w+ la sintaxis|sintaxis|"
+    r"run(?:ning)? (?:the )?tests?|ejecut\w+ (?:los )?tests?|"
+    r"report(?:ing)? back|inform\w+ al usuario|ask(?:ing)? (?:the user|before)|preguntar)\b",
+    re.I,
+)
+
+
+def _looks_like_workflow_finding(f: Dict[str, Any]) -> bool:
+    text = f"{f.get('issue') or ''}"
+    ev = f"{f.get('evidence') or ''}"
+    return bool(_WORKFLOW_RE.search(text)) and not _WORKFLOW_RE.search(ev)
+
+
 def ground_findings(findings: List[Dict[str, Any]], diff: str, user_text: str = "") -> Dict[str, Any]:
     """Keep only what the reviewer can point at. A finding whose `evidence`
     is neither a line of the diff nor a phrase of the request (whitespace- and
@@ -196,6 +214,12 @@ def ground_findings(findings: List[Dict[str, Any]], diff: str, user_text: str = 
         )
         g = dict(f)
         g["grounded"] = grounded
+        if grounded and _looks_like_workflow_finding(g):
+            # A real diff line attached to a complaint about the agent's
+            # workflow ("no todowrite", "did not check syntax"): not a defect.
+            g["workflow"] = True
+            grounded = False
+            g["grounded"] = False
         if not grounded:
             ungrounded += 1
             if g.get("severity") == "error":
