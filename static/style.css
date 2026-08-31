@@ -17675,6 +17675,9 @@ body:not(.email-doc-split-active) #email-lib-modal.email-lib-fullscreen:not(.mod
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
+  /* Chrome 151 computes `-webkit-box` as `flow-root`, which silently kills the
+     clamp above; a real height cap keeps the two-line box in every engine. */
+  max-height: 2lh;
   overflow: hidden;
   word-break: break-word;
   line-height: 1.3;
@@ -38590,6 +38593,7 @@ button.cal-view-btn {
     display: -webkit-box;
     -webkit-line-clamp: 4;
     -webkit-box-orient: vertical;
+    max-height: 4lh;   /* `-webkit-box` no longer clamps in Chrome 151 */
   }
 }
 /* Resize handle: a 6 px hit zone along the block's bottom edge. The
@@ -42561,6 +42565,114 @@ body:has(.sidebar.right-side) .project-active-pill { right: 12px; }
 .project-check input { margin-top: 3px; }
 .project-check span { display: flex; flex-direction: column; }
 .project-check small { opacity: .6; }
+
+/* ── Projects: framing fixes (31-08-2026) ──────────────────────────────────
+   Four regressions, all the same shape: a broader rule outranking the panel's
+   own single-class rules.
+
+   1. `button { height: 32px; }` also matches `.project-card`, which IS a
+      <button>. `min-height: 154px` lifted the box but the *height* stayed
+      pinned, so the description and the entire footer row painted below the
+      card border. `height: auto` gives the card back to its content.
+   2. `-webkit-line-clamp` no longer clamps in current Chrome (151 computes
+      `display: -webkit-box` as `flow-root`), so the description had no line
+      cap at all and only survived by being squeezed by flexbox. Cap it at
+      exactly two lines with a real height, and fade the cut line instead of
+      relying on the dead ellipsis.
+   3. `button:hover` (0,1,1) outranks every plain class rule, so it repainted
+      the panel's buttons with --panel/--fg on hover: the primary CTA turned
+      white-on-white, since its label colour is --bg. Each hover below is
+      specific enough to win and names its own background. `filter:
+      brightness()` is gone too — it washes out light accents and darkens
+      nothing on dark ones; mixing towards --fg always moves away from the
+      page background, in either theme.
+   4. The agent checkboxes are <label>s directly inside `.project-field`, so
+      `.project-field > label` threw their text to the far right
+      (justify-content: space-between) and shrank it to 9px, while
+      `.project-field input` stretched the checkbox to 100% x 40px.        */
+
+.project-card { height: auto; }
+
+.project-card-sub {
+  display: block;
+  min-height: 32px;              /* fallback for engines without `lh` */
+  max-height: 32px;
+  min-height: 2lh;
+  max-height: 2lh;
+  overflow: hidden;
+  /* first line opaque, second line fades out where it gets cut */
+  -webkit-mask-image: linear-gradient(#000 0 0), linear-gradient(to right, #000 62%, transparent 100%);
+          mask-image: linear-gradient(#000 0 0), linear-gradient(to right, #000 62%, transparent 100%);
+  -webkit-mask-size: 100% 1lh, 100% 1lh;
+          mask-size: 100% 1lh, 100% 1lh;
+  -webkit-mask-position: 0 0, 0 1lh;
+          mask-position: 0 0, 0 1lh;
+  -webkit-mask-repeat: no-repeat, no-repeat;
+          mask-repeat: no-repeat, no-repeat;
+}
+
+.projects-primary-btn:hover:not(:disabled) {
+  filter: none;
+  background: color-mix(in srgb, var(--accent, var(--red)) 86%, var(--fg));
+  border-color: color-mix(in srgb, var(--accent, var(--red)) 86%, var(--fg));
+  color: var(--bg);
+}
+.projects-secondary-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--panel) 92%, var(--fg));
+  border-color: color-mix(in srgb, var(--fg) 35%, var(--border));
+  color: var(--fg);
+}
+.projects-danger-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, #e05252 16%, transparent);
+  border-color: color-mix(in srgb, #e05252 65%, var(--border));
+  color: #e96a6a;
+}
+.projects-tab:hover {
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+  border-color: transparent;
+  color: var(--fg);
+}
+.project-text-btn:hover,
+.project-mini-btn:hover { background: transparent; border-color: transparent; }
+
+.project-agent-fields { gap: 10px; }
+.project-field > label.project-check {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 10px;
+  margin: 0;
+  padding: 2px 0;
+  color: var(--fg);
+  font-size: 12px;
+  font-weight: 450;
+  opacity: 1;
+  cursor: pointer;
+}
+.project-field .project-check input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  margin: 2px 0 0;
+  padding: 0;
+  accent-color: var(--accent, var(--red));
+}
+.project-field > label.project-check > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  color: var(--fg);
+  font-size: 12px;
+  font-weight: 450;
+}
+.project-field > label.project-check strong { font-size: 12px; font-weight: 650; color: var(--fg); }
+.project-field > label.project-check small {
+  color: color-mix(in srgb, var(--fg) 52%, transparent);
+  font-size: 11px;
+  font-weight: 450;
+  line-height: 1.4;
+}
 .project-audit-list { display: flex; flex-direction: column; gap: 8px; }
 .project-audit-row { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 12px; display: flex; flex-direction: column; gap: 4px; }
 .project-audit-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
