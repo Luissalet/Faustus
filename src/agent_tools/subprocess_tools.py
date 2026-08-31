@@ -37,7 +37,10 @@ def _kill_tree(proc) -> None:
     launcher (bin\\bash.exe) execs the real usr\\bin\\bash.exe which spawns the
     command: a bare proc.kill() only removed the launcher and left a
     foreground `uvicorn` running forever (seen live). taskkill /T takes the
-    tree; on POSIX the shell runs in its own session so killpg does."""
+    tree; on POSIX the shell runs in its own session so killpg does.
+
+    Synchronous (taskkill takes well under a second); `_kill_tree_async` is the
+    variant for the event loop."""
     pid = getattr(proc, "pid", None)
     try:
         if IS_WINDOWS and pid:
@@ -59,6 +62,17 @@ def _kill_tree(proc) -> None:
         proc.kill()
     except Exception:
         pass
+
+
+async def _kill_tree_async(proc) -> None:
+    """`_kill_tree` off the event loop (taskkill is a blocking subprocess)."""
+    try:
+        await asyncio.to_thread(_kill_tree, proc)
+    except Exception:
+        try:
+            proc.kill()
+        except Exception:
+            pass
 
 
 # Commands that never exit on their own (servers, dev watchers, tails). Run in
@@ -343,7 +357,7 @@ async def _run_subprocess_streaming(
             await asyncio.sleep(min(5.0, idle_timeout))
             if time.time() - last_activity[0] > idle_timeout:
                 idle_hit[0] = True
-                _kill_tree(proc)
+                await _kill_tree_async(proc)
                 return
 
     async def _progress_emitter():
@@ -371,7 +385,7 @@ async def _run_subprocess_streaming(
             timed_out = "idle"
     except asyncio.TimeoutError:
         timed_out = True
-        _kill_tree(proc)
+        await _kill_tree_async(proc)
         try:
             await asyncio.wait_for(proc.wait(), timeout=2)
         except Exception:
