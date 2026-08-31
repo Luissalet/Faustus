@@ -437,6 +437,14 @@ def test_scorecard_record_aggregate_and_table(data_dir, settings):
                         duration_s=30, rounds=3, harness={"stop_reason": "complete_unverified", "mutations": [], "notes": ["unverified: x"]},
                         tests={"ran": True, "ok": False}, review={"verdict": "unparsed"}, asked_user=True)
     assert e2["verified"] is False and e2["unverified"] is True and e2["tests"] == "fail" and e2["review"] is None
+    # A stop at the approval gate is not a turn and not a question: never recorded.
+    gate = sc.build_entry(session_id="s2", model="qwen3.5:9b", endpoint_label="local", workspace="/w", user_text="t2",
+                          duration_s=3, rounds=1, harness={"stop_reason": "awaiting_user", "mutations": []})
+    assert gate["approval_stop"] is True and gate["asked_user"] is False and sc.record(gate) is False
+    asked = sc.build_entry(session_id="s2", model="qwen3.5:9b", endpoint_label="local", workspace="/w", user_text="t2",
+                           duration_s=3, rounds=1, harness={"stop_reason": "awaiting_user", "mutations": []}, asked_user=True)
+    assert asked["approval_stop"] is False and asked["asked_user"] is True
+    assert sc.aggregate([gate, asked]) [0]["turns"] == 1
     e3 = sc.build_entry(session_id="s3", model="big:30b", endpoint_label="local", workspace=None, user_text="chat only",
                         duration_s=5, rounds=1, harness={"stop_reason": "complete", "mutations": []})
     for e in (e1, e2, e3):

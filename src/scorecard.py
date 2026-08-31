@@ -86,7 +86,10 @@ def build_entry(
         "verified": stop == "complete" and not any(n.startswith("unverified") for n in notes),
         "unverified": stop == "complete_unverified",
         "rejections": int(harness.get("rejections") or 0),
-        "asked_user": bool(asked_user or stop == "awaiting_user"),
+        # A real question (ask_user). A stop for the "Allow this task to
+        # continue?" gate is not the model asking: that hop is skipped below.
+        "asked_user": bool(asked_user),
+        "approval_stop": (stop == "awaiting_user" and not asked_user),
         "syntax_errors": len([c for c in static if not c.get("ok")]),
         "whole_file_rewrite": any(n.startswith("whole_file_rewrite") for n in notes),
         "target_substituted": any(n.startswith("target_substituted") for n in notes),
@@ -107,6 +110,10 @@ def build_entry(
 
 def record(entry: Dict[str, Any]) -> bool:
     if not bool(_setting("agent_scorecard", True)):
+        return False
+    if entry.get("approval_stop"):
+        # The turn paused at the approval gate: the resumed hop records the
+        # real outcome. Counting this half would inflate turns and "asks".
         return False
     path = _path()
     try:
@@ -155,6 +162,8 @@ def aggregate(entries: Iterable[Dict[str, Any]], *, only_workspace: bool = False
     by: Dict[str, List[Dict[str, Any]]] = {}
     for e in entries:
         if only_workspace and not e.get("workspace"):
+            continue
+        if e.get("approval_stop"):
             continue
         by.setdefault(str(e.get("model") or "?"), []).append(e)
     rows: List[Dict[str, Any]] = []
