@@ -4046,7 +4046,7 @@ async def stream_agent_loop(
         ):
             _relevant_tools = set(_WORKSPACE_TERMINUS_TOOLS)
             logger.info("[tool-rag] Workspace file/terminal request; using Odysseus Terminus toolset")
-        elif workspace and not _active_document_relevant and not active_email:
+        elif workspace and not _low_signal_turn and not _active_document_relevant and not active_email:
             # A bound workspace is the user's declared intent to work in that
             # folder. Whatever the retriever picked (it is English-biased and
             # happily returns session/notes tools for "eliminar chats"), the
