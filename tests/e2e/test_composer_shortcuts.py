@@ -94,3 +94,22 @@ def test_versions_restores_what_an_edit_deleted(page, app_server, fake_llm, work
     page.wait_for_function(
         "() => document.querySelector('#chat-history').innerText.includes('La primera respuesta')",
         timeout=30000)
+
+
+def test_a_sent_mention_becomes_a_chip_that_opens_the_file(page, app_server, fake_llm, workspace):
+    fake_llm.script(["Vale."])
+    sid = app_server.new_session("e2e chips")
+    open_chat(page, app_server, sid, str(workspace))
+
+    send_agent_message(page, "mira @calc.py y dime que hace")
+    page.wait_for_selector(".msg-user .mention-chip", timeout=30000)
+    chip = page.locator(".msg-user .mention-chip").first
+    assert chip.inner_text() == "@calc.py"
+    # The rest of the sentence survives the decoration.
+    assert "mira @calc.py y dime que hace" in page.locator(".msg-user").last.inner_text()
+
+    chip.click()
+    page.wait_for_selector("#file-viewer-panel", state="visible", timeout=20000)
+    page.wait_for_function(
+        "() => document.querySelector('#file-viewer-panel').innerText.includes('return a - b')",
+        timeout=20000)

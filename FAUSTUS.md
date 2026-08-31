@@ -153,13 +153,20 @@ Seleccionar texto dentro de un mensaje ofrece un botón **❝ Quote** que deja e
 - **`static/js/quoteSelection.js`** (nuevo): `blockquote()` y `withQuote()` son funciones puras (testeables sin DOM). Las líneas en blanco conservan su `>` para que la cita sea **un solo bloque** en cualquier renderizador; el corte por longitud (700 caracteres) respeta la palabra, salvo cuando eso dejaría la cita en nada (una línea minificada, un token larguísimo), donde cae al corte duro; un borrador que ya hubiera en el compositor se conserva **debajo** de la cita, que es donde va la pregunta.
 - El botón se activa en `mousedown`, no en `click`: un `click` borraría la selección antes de leerla.
 
-### 6.5 Verificación en navegador (e2e) y un fallo que solo aparece ahí
+### 6.5 Las menciones enviadas se ven y se abren
 
-`tests/e2e/test_composer_shortcuts.py` (nuevo, 4 flujos Playwright): el popup de `@` se abre y Enter inserta la ruta **sin enviar el mensaje**; `@` encuentra un fichero anidado y Escape cierra el popup; `#` escribe la regla en AGENTS.md y repetirla dice "Already in" sin duplicar; y el flujo completo de versiones — turno, editar el mensaje (la primera respuesta desaparece), `/versions`, *Restore*, y la primera respuesta vuelve.
+En el mensaje ya enviado, cada `@ruta` se convierte en una **ficha pulsable** que abre ese fichero en el visor lateral (`static/js/mentionChips.js`). Cierra el círculo del selector: después de enviar se ve de un vistazo a qué ficheros apuntó el turno, y se puede comprobar uno sin salir del chat. Es puramente cosmético — el servidor resuelve las menciones del texto igual.
+
+- Se decoran **solo los mensajes del usuario** (que una respuesta cite `@x.py` es texto del modelo, no una ruta que el usuario señaló) y nunca dentro de `code`, `pre` o enlaces. Un `MutationObserver` sobre `#chat-history` cubre streaming, carga de historial y cambio de sesión sin engancharse a cada ruta de render.
+- El test compara la expresión regular del JS con `file_mentions.extract()` sobre los mismos casos: si divergen, aparecería una ficha donde el servidor no ve mención (o al revés), justo donde la función intenta ganarse la confianza. Y comprueba que recomponer las partes devuelve el mensaje **idéntico**.
+
+### 6.6 Verificación en navegador (e2e) y un fallo que solo aparece ahí
+
+`tests/e2e/test_composer_shortcuts.py` (nuevo, 5 flujos Playwright): el popup de `@` se abre y Enter inserta la ruta **sin enviar el mensaje**; `@` encuentra un fichero anidado y Escape cierra el popup; `#` escribe la regla en AGENTS.md y repetirla dice "Already in" sin duplicar; y el flujo completo de versiones — turno, editar el mensaje (la primera respuesta desaparece), `/versions`, *Restore*, y la primera respuesta vuelve; y la ficha de una mención enviada abre `calc.py` en el visor.
 
 El primer flujo **falló al escribirlo**, y por un fallo real: `initFileMentions` se engancha desde un `import()` dinámico, así que quien escribe en una página recién cargada (o pega un borrador) ya tiene texto en el compositor cuando se enganchan los escuchadores, y el popup no se abría hasta la siguiente tecla — "la arroba no hace nada". Arreglado con un `refresh()` inicial y un escuchador de `focus`.
 
-### 6.6 Lo que cambia en vivo (qwen3.5:9b, instancia dev 7001)
+### 6.7 Lo que cambia en vivo (qwen3.5:9b, instancia dev 7001)
 
 Dos pruebas contra el modelo real, sobre `agent-bench/demo-app`:
 
@@ -167,7 +174,7 @@ Dos pruebas contra el modelo real, sobre `agent-bench/demo-app`:
 - **t9b — mencionar un fichero que no existe** (`Arregla el bug de @static/js/cards.js…`): es literalmente el fallo t4 de la mañana, en el que el modelo metía un arreglo especulativo en `projects.js` y lo presentaba como la corrección. Ahora, en **8 s, cero herramientas y cero cambios**: *"El archivo `@static/js/cards.js` no existe en este workspace… ¿Estás buscando en `projects.js` la función que renderiza las tarjetas?"*, con la lista de los ficheros JS que sí existen. El arnés ya no tiene que corregir nada a posteriori porque el error no llega a ocurrir.
 
 ### Verificación
-75 tests nuevos en 4 ficheros (`test_file_mentions.py`, `test_file_mentions_routes_js.py`, `test_project_instructions_remember.py`, `test_composer_sigils_js.py`), incluidos los de contrato entre el popup y el resolutor del servidor (lo que inserta el popup es lo que el servidor resuelve) y los de node para los predicados del compositor. Suite completa en verde antes y después.
+80 tests nuevos en 4 ficheros (`test_file_mentions.py`, `test_file_mentions_routes_js.py`, `test_project_instructions_remember.py`, `test_composer_sigils_js.py`), incluidos los de contrato entre el popup y el resolutor del servidor (lo que inserta el popup es lo que el servidor resuelve) y los de node para los predicados del compositor. Suite completa en verde antes y después.
 
 ---
 

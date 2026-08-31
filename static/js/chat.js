@@ -971,6 +971,12 @@ import modelControls from './modelControls.js';
       try { mod.initQuoteSelection(); } catch (_e) { console.warn('quoteSelection init', _e); }
     }).catch(() => {});
 
+    // "@path" in a sent message becomes a chip that opens the file in the
+    // viewer, so you can check what the turn actually pointed at.
+    import('./mentionChips.js').then(mod => {
+      try { mod.initMentionChips(); } catch (_e) { console.warn('mentionChips init', _e); }
+    }).catch(() => {});
+
     // ArrowUp on the composer recalls previous user prompts from this chat.
     const _wireArrowUpRecall = (composer) =>
       wireArrowUpRecall(composer, () => getUserMessagesFromChatHistory(), {
