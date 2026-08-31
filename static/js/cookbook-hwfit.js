@@ -1052,6 +1052,85 @@ function _renderHwVisibilityWarning(sys) {
   });
 }
 
+// ── shared GPU memory ────────────────────────────────────────────────────────
+// The chips above are what the card *has*. This is about the memory it does
+// not: on Windows the driver can page GPU allocations into system RAM and
+// reach them over PCIe ("shared GPU memory", 102 GB of it on a 128 GB box).
+// For inference that is ~20x slower than VRAM and invisible everywhere else —
+// nvidia-smi only knows the card's own memory. src/gpu_shared_memory.py reads
+// the WDDM counters so this page can say it out loud, whether or not it is
+// happening right now.
+
+let _gpuMemBusy = false;
+
+async function _renderGpuMemoryCard(sys) {
+  const row = document.getElementById('hwfit-hw-row');
+  if (!row || _gpuMemBusy) return;
+  _gpuMemBusy = true;
+  let data = null;
+  try {
+    const r = await fetch('/api/system/usage', { credentials: 'same-origin' });
+    if (r.ok) data = await r.json();
+  } catch (_) { /* best effort: no card, no Windows, no counters — no card shown */ }
+  _gpuMemBusy = false;
+
+  const gm = (data && data.gpu_mem) || {};
+  let box = document.getElementById('hwfit-gpu-memory');
+  if (!gm.supported) { if (box) box.remove(); return; }
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'hwfit-gpu-memory';
+    box.className = 'hwfit-loading hwfit-hw-visibility-warning hwfit-gpumem';
+    // Sits under the hardware row, after the visibility warning when there is one.
+    (document.getElementById('hwfit-hw-visibility-warning') || row)
+      .insertAdjacentElement('afterend', box);
+  }
+
+  const om = gm.ollama || {};
+  const fb = (data && data.sysmem_fallback) || {};
+  const mb = (b) => Math.round((b || 0) / 1048576).toLocaleString();
+  const share = Math.round((om.shared_fraction || 0) * 100);
+  box.classList.toggle('hwfit-gpumem-spill', !!om.spilling);
+  box.innerHTML = `
+    <div class="hwfit-hw-visibility-warning-title">Shared GPU memory · this machine ${om.spilling ? '— weights are paging over PCIe' : '— healthy'}</div>
+    <div class="hwfit-hw-visibility-warning-body">
+      Windows can hand a GPU part of system RAM and let it reach that over PCIe: ~25 GB/s against the ~500 GB/s of the card's own memory.
+      Generation re-reads the active weights for every token, so whatever is served from there runs at a fraction of the speed — while
+      <code>nvidia-smi</code>, GPU utilisation and <code>ollama ps</code> all keep reading perfectly healthy.
+      <div class="hwfit-gpumem-nums">
+        <span>model runner: <b>${mb(om.shared)} MB</b> · ${share}% of its GPU memory</span>
+        <span>everything: <b>${mb(gm.total_shared)} MB</b></span>
+      </div>
+      <div class="hwfit-gpumem-note">${om.spilling
+        ? 'Shrink the context first (model settings → <b>Fit to VRAM</b>). To stop the driver falling back at all:'
+        : 'A CUDA process always parks a few hundred MB there — that is not a spill. To make the driver fail loudly instead of falling back:'}</div>
+      ${(fb.steps || []).map(s => `<div class="hwfit-gpumem-step">· ${esc(s)}</div>`).join('')}
+      ${fb.exposed === false
+        ? `<div class="hwfit-gpumem-note">Faustus cannot flip this one for you: this driver does not expose the sysmem fallback policy through NVAPI (${esc(fb.setting_id || '')} is not among the settings it lists), and saving driver settings needs an administrator anyway.</div>`
+        : ''}
+    </div>
+    <div class="hwfit-hw-visibility-warning-actions">
+      <button type="button" class="hwfit-gpu-btn" data-gpumem="panel">Open NVIDIA Control Panel</button>
+      <button type="button" class="hwfit-gpu-btn" data-gpumem="refresh">Refresh</button>
+    </div>
+  `;
+
+  box.querySelector('[data-gpumem="panel"]')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    const label = btn.textContent;
+    btn.disabled = true;
+    try {
+      const r = await fetch('/api/system/gpu/policy/open', { method: 'POST', credentials: 'same-origin' });
+      const out = r.ok ? await r.json() : null;
+      btn.textContent = out && out.ok ? 'Opened — Manage 3D settings' : 'Could not open it';
+    } catch (_) {
+      btn.textContent = 'Could not open it';
+    }
+    setTimeout(() => { btn.textContent = label; btn.disabled = false; }, 4000);
+  });
+  box.querySelector('[data-gpumem="refresh"]')?.addEventListener('click', () => _renderGpuMemoryCard(sys));
+}
+
 export function _hwfitRenderHw(el, sys) {
   if (!el || !sys) return;
   // Cache system info globally so other modules can read VRAM without refetching
@@ -1141,6 +1220,7 @@ export function _hwfitRenderHw(el, sys) {
     + chip('backend', esc(sys.backend || ''))
     + manualChip;
   _renderHwVisibilityWarning(sys);
+  _renderGpuMemoryCard(sys);
   // Body click → toggle "off" (dimmed, still visible). Membership of
   // _dismissedHwChips is what the ranker reads, so both add+remove
   // here also flips the model list. The manual chip is excluded —

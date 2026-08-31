@@ -23505,6 +23505,14 @@ body.gallery-selecting .gallery-dl-btn,
   gap: 8px;
   flex-wrap: wrap;
 }
+.hwfit-gpumem-nums {
+  display: flex; gap: 16px; flex-wrap: wrap; margin: 6px 0 2px;
+  font-variant-numeric: tabular-nums;
+}
+.hwfit-gpumem-note { margin-top: 6px; }
+.hwfit-gpumem-step { margin-left: 6px; opacity: .85; }
+.hwfit-gpumem.hwfit-gpumem-spill { border-color: var(--red, #e06c75); }
+.hwfit-gpumem code { font-size: 11px; }
 .hwfit-row {
   display: flex; align-items: center; gap: 6px; padding: 5px 8px;
   border-radius: 6px; cursor: pointer; font-size: 11px;
