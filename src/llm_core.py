@@ -2620,13 +2620,18 @@ def _ollama_native_url_for_compat(url: str) -> str:
     return root.rstrip("/") + "/api/chat"
 
 
-def _route_for_gen_overrides(url: str, gen_overrides: Optional[Dict]) -> str:
+def _route_for_gen_overrides(url: str, gen_overrides: Optional[Dict], model: str = "") -> str:
     """Ollama's OpenAI-compatible /v1 surface ignores the top-level `think`
     flag (verified on Ollama 0.33.2: think=false still streamed reasoning), so
-    a pinned thinking toggle — /think off, or the harness' runaway-thinking
-    retry — is only honoured by the native /api/chat endpoint. Same server,
-    same model, same tools; only the wire format changes."""
-    if not isinstance(gen_overrides, dict) or gen_overrides.get("think") is None:
+    a thinking toggle is only honoured by the native /api/chat endpoint: a
+    pinned one (/think off|on, the harness' runaway-thinking retry) and the
+    default suppression for thinking-capable models that the /v1 branch below
+    tries to apply with `think: false`. Same server, same model, same tools;
+    only the wire format changes."""
+    think = gen_overrides.get("think") if isinstance(gen_overrides, dict) else None
+    if think is None and model and _supports_thinking(model):
+        think = False
+    if think is None:
         return url
     try:
         port = urlparse(url or "").port
@@ -2645,7 +2650,15 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
                      tools: Optional[List[Dict]] = None, session_id: Optional[str] = None,
                      tool_choice_none: bool = False, workload: str = "foreground",
                      gen_overrides: Optional[Dict] = None):
-    url = _route_for_gen_overrides(url, gen_overrides)
+    _routed = _route_for_gen_overrides(url, gen_overrides, model)
+    if _routed != url:
+        # Rerouted /v1 → /api/chat for the thinking toggle: make the default
+        # suppression explicit so the native payload carries think=false.
+        if not isinstance(gen_overrides, dict) or gen_overrides.get("think") is None:
+            gen_overrides = dict(gen_overrides or {})
+            gen_overrides["think"] = False
+        logger.info("Ollama /v1 → native /api/chat for %s (think=%s)", model, gen_overrides.get("think"))
+        url = _routed
     target_url = _stream_target_url(url)
     async with _local_model_slot(target_url, model, workload):
         async for chunk in _stream_llm_inner(
