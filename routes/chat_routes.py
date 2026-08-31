@@ -369,6 +369,19 @@ def _project_workspace(request, session_id) -> str:
     return vet_workspace(workspace_for_session(session_id, owner)) or ""
 
 
+def _project_work_roots(request, session_id) -> list[str]:
+    """All current file/folder roots attached to this chat's project."""
+    session_id = str(session_id or "").strip()
+    if not session_id:
+        return []
+    from src.tool_security import owner_is_admin_or_single_user
+    owner = get_current_user(request)
+    if not owner_is_admin_or_single_user(owner):
+        return []
+    from services.projects import work_roots_for_session
+    return work_roots_for_session(session_id, owner)
+
+
 _ABS_PATH_RE = re.compile(r"(?<!\S)(~?/[^\"'\s`<>]+)")
 _LOCAL_FILE_TASK_RE = re.compile(
     r"\b(?:file|folder|directory|path|workspace|repo|project|movie|video|"
@@ -1013,6 +1026,7 @@ def setup_chat_routes(
         # Chats that belong to no project fall through to the posted value, so
         # everything outside projects behaves exactly as it did before.
         _project_ws = _project_workspace(request, session)
+        _project_roots = _project_work_roots(request, session)
         if _project_ws:
             workspace, workspace_rejected = _project_ws, ""
         # Plan mode is a modifier on agent mode — it only makes sense with tools.
@@ -2324,6 +2338,14 @@ def setup_chat_routes(
                     elif _explicit_browser_intent:
                         _forced_tools = set(_BROWSER_MCP_TOOLS)
 
+                    try:
+                        from services.projects import project_for_session
+                        if project_for_session(session, _user):
+                            _forced_tools = set(_forced_tools or set())
+                            _forced_tools.update({"project_context", "search_project_chats"})
+                    except Exception:
+                        pass
+
                     async for chunk in stream_agent_loop(
                         sess.endpoint_url,
                         sess.model,
@@ -2349,6 +2371,7 @@ def setup_chat_routes(
                         plan_mode=plan_mode,
                         approved_plan=approved_plan or None,
                         workspace=workspace or None,
+                        workspace_roots=_project_roots or None,
                         relevant_tools=(
                             set(pending_tool_approval.selected_tools)
                             if exact_tool_approval

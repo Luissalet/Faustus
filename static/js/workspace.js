@@ -12,11 +12,13 @@ import { makeWindowDraggable } from './windowDrag.js';
 const API_BASE = window.location.origin;
 // Same folder glyph as the overflow menu item + pill (not an emoji).
 const _FOLDER_SVG = '<svg class="workspace-row-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>';
+const _FILE_SVG = '<svg class="workspace-row-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>';
 let _modal = null;
 let _curPath = '';
 // Set only while the browser is open on someone else's behalf (the project
 // editor). Null means "Use this folder" binds the workspace, as it always has.
 let _onPick = null;
+let _pickerOptions = {};
 
 export function getWorkspace() {
   return Storage.get(KEYS.WORKSPACE, '') || '';
@@ -93,7 +95,10 @@ export function clearWorkspace() {
 }
 
 async function _load(path) {
-  const url = `${API_BASE}/api/workspace/browse${path ? `?path=${encodeURIComponent(path)}` : ''}`;
+  const params = new URLSearchParams();
+  if (path) params.set('path', path);
+  if (_pickerOptions.includeFiles) params.set('include_files', 'true');
+  const url = `${API_BASE}/api/workspace/browse${params.size ? `?${params.toString()}` : ''}`;
   const res = await fetch(url, { credentials: 'same-origin' });
   if (!res.ok) throw new Error(`browse failed: ${res.status}`);
   return res.json();
@@ -116,13 +121,20 @@ function _render(data) {
     // Backend supplies the full child path (os.path.join → cross-platform).
     rows += `<div class="workspace-row" data-path="${encodeURIComponent(d.path)}">${_FOLDER_SVG}<span>${uiModule.esc(d.name)}</span></div>`;
   }
+  for (const file of (data.files || [])) {
+    rows += `<button type="button" class="workspace-row workspace-file" data-file-path="${encodeURIComponent(file.path)}">${_FILE_SVG}<span>${uiModule.esc(file.name)}</span><small>${Number(file.size || 0).toLocaleString()} B</small></button>`;
+  }
   if (data.truncated) {
     rows += '<div class="workspace-empty">Too many folders to list. Type or paste a path above to jump in.</div>';
   }
   if (!data.dirs.length && !data.parent) rows = '<div class="workspace-empty">No subfolders</div>';
   body.innerHTML = rows || '<div class="workspace-empty">No subfolders</div>';
   body.querySelectorAll('.workspace-row').forEach((row) => {
-    row.addEventListener('click', () => _navigate(decodeURIComponent(row.dataset.path)));
+    if (row.dataset.filePath) {
+      row.addEventListener('click', () => _choose(decodeURIComponent(row.dataset.filePath)));
+    } else {
+      row.addEventListener('click', () => _navigate(decodeURIComponent(row.dataset.path)));
+    }
   });
   // Filesystem roots (and sensitive dirs) can be browsed through but never
   // bound as the workspace; the backend rejects them too.
@@ -131,6 +143,19 @@ function _render(data) {
     useBtn.disabled = data.selectable === false;
     useBtn.title = data.selectable === false ? 'This folder cannot be used as a workspace' : '';
   }
+}
+
+function _choose(path) {
+  if (_onPick) {
+    const cb = _onPick;
+    _onPick = null;
+    closeWorkspaceBrowser();
+    cb(path);
+    return;
+  }
+  setWorkspace(path);
+  if (uiModule && uiModule.showToast) uiModule.showToast(`Workspace set: ${_basename(path)}`);
+  closeWorkspaceBrowser();
 }
 
 async function _navigate(path) {
@@ -171,22 +196,25 @@ function _getModal() {
     if (e.key === 'Enter') {
       e.preventDefault();
       const v = e.target.value.trim();
-      if (v) _navigate(v);
+      if (!v) return;
+      if (_pickerOptions.includeFiles) {
+        fetch(`${API_BASE}/api/workspace/vet-context?path=${encodeURIComponent(v)}`, { credentials: 'same-origin' })
+          .then(res => res.ok ? res.json() : null)
+          .then(data => {
+            if (!data?.ok) throw new Error('invalid path');
+            if (data.kind === 'file') _choose(data.path);
+            else _navigate(data.path);
+          })
+          .catch(() => uiModule?.showError?.('That file or folder cannot be added'));
+      } else {
+        _navigate(v);
+      }
     }
   });
   _modal.querySelector('#workspace-use').addEventListener('click', () => {
     // Borrowed by the project editor: with a picker callback the chosen folder
     // is handed back instead of being bound globally.
-    if (_onPick) {
-      const cb = _onPick;
-      _onPick = null;
-      closeWorkspaceBrowser();
-      cb(_curPath);
-      return;
-    }
-    setWorkspace(_curPath);
-    if (uiModule && uiModule.showToast) uiModule.showToast(`Workspace set: ${_basename(_curPath)}`);
-    closeWorkspaceBrowser();
+    _choose(_curPath);
   });
   const content = _modal.querySelector('.modal-content');
   const header = _modal.querySelector('.modal-header');
@@ -199,9 +227,18 @@ function _getModal() {
  *   the chosen path to this callback instead of binding it as the workspace.
  *   The project editor uses it to fill its folder field.
  */
-export async function openWorkspaceBrowser(onPick = null) {
+export async function openWorkspaceBrowser(onPick = null, options = {}) {
   _onPick = typeof onPick === 'function' ? onPick : null;
+  _pickerOptions = options || {};
   const modal = _getModal();
+  const title = modal.querySelector('.modal-header h4');
+  if (title) title.innerHTML = `${_FOLDER_SVG}${uiModule.esc(_pickerOptions.title || 'Select workspace')}`;
+  const note = modal.querySelector('.workspace-note');
+  if (note) note.innerHTML = _pickerOptions.includeFiles
+    ? 'Choose a file, or open a folder and add it with the button below. Project work roots can be <strong>read and modified</strong> by the agent.'
+    : 'File tools are <strong>confined</strong> to this folder. Shell commands start here but are <strong>not sandboxed</strong> and can reach outside it.';
+  const use = modal.querySelector('#workspace-use');
+  if (use) use.textContent = _pickerOptions.useLabel || 'Use this folder';
   modal.style.display = 'flex';
   try {
     _render(await _load(getWorkspace() || ''));
@@ -213,6 +250,7 @@ export async function openWorkspaceBrowser(onPick = null) {
 export function closeWorkspaceBrowser() {
   if (_modal) _modal.style.display = 'none';
   _onPick = null;
+  _pickerOptions = {};
 }
 
 export function initWorkspace() {

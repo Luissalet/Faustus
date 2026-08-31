@@ -298,21 +298,33 @@
        instructions and a Markdown memory. Gallery first, detail on click;
        both bodies are rendered by static/js/projects.js. -->
   <div id="projects-modal" class="modal hidden">
-    <div class="modal-content memory-modal-content" role="dialog" aria-label="Projects" style="background:var(--bg)">
-      <div class="modal-header">
-        <h4><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:6px"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>Projects</h4>
-        <button class="close-btn" id="close-projects-modal" aria-label="Close projects">&#10006;</button>
-      </div>
-      <div class="modal-body memory-modal-body">
+    <div class="modal-content projects-modal-content" role="region" aria-label="Projects">
+      <button type="button" class="projects-close-btn" id="close-projects-modal" aria-label="Close projects" title="Back to chat">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+      <div class="projects-modal-body">
         <div id="projects-gallery">
-          <div class="projects-toolbar">
-            <input type="text" id="projects-search" class="memory-search-input" placeholder="Search projects." aria-label="Search projects" spellcheck="false" />
-            <select id="projects-sort" class="memory-sort-select" aria-label="Sort projects">
-              <option value="updated">Last updated</option>
-              <option value="name">Name</option>
-              <option value="created">Newest</option>
-            </select>
-            <button type="button" id="projects-new-btn" class="projects-new-btn">New project</button>
+          <div class="projects-page-head">
+            <div>
+              <h2>Projects</h2>
+              <p>Keep chats, instructions, files and durable memory together.</p>
+            </div>
+            <div class="projects-toolbar">
+              <label class="projects-search-wrap">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                <input type="search" id="projects-search" placeholder="Search projects" aria-label="Search projects" spellcheck="false" />
+              </label>
+              <select id="projects-sort" class="projects-sort" aria-label="Sort projects">
+                <option value="updated">Last updated</option>
+                <option value="name">Name</option>
+                <option value="created">Newest</option>
+              </select>
+              <button type="button" id="projects-new-btn" class="projects-primary-btn">New project</button>
+            </div>
+          </div>
+          <div class="projects-tabs" role="tablist" aria-label="Project status">
+            <button type="button" class="projects-tab active" id="projects-active-tab" role="tab" aria-selected="true">Your projects <span id="projects-active-count"></span></button>
+            <button type="button" class="projects-tab" id="projects-archived-tab" role="tab" aria-selected="false">Archived <span id="projects-archived-count"></span></button>
           </div>
           <div id="projects-grid" class="projects-grid"></div>
         </div>
@@ -1011,6 +1023,7 @@
          mobile) so the page always exposes a single level-1 heading. -->
     <h1 class="a11y-visually-hidden">Odysseus</h1>
     <div class="chat-top-bar">
+      <button type="button" class="project-active-pill" id="project-active-pill" hidden title="Open project"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span id="project-active-pill-label"></span></button>
       <button type="button" class="incognito-indicator" id="incognito-indicator" title="Nobody mode active — click to deactivate" style="display:none;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><line x1="8" y1="16" x2="16" y2="8"/><line x1="8" y1="8" x2="16" y2="16"/></svg></button>
       <div class="chat-meta-overlay"><span id="current-meta">Odysseus Chat</span><span id="current-meta-count" class="chat-meta-count" aria-hidden="true"></span><span id="session-cost-display" class="session-cost-display" style="display:none;"></span><button type="button" class="chat-context-pill" id="chat-context-pill" title="Chat context" hidden><span class="chat-context-dot"></span><span id="chat-context-pill-label">0%</span></button><span class="export-dropdown-wrap" id="export-dropdown-wrap"><button type="button" class="export-dl-btn" id="export-dl-btn" title="More"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></button><div class="export-dropdown-menu" id="export-dropdown-menu"><div class="export-dropdown-item" id="export-rename-btn"><span class="dropdown-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></span><span>Rename</span></div><div class="export-dropdown-item" id="export-compact-btn"><span class="dropdown-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M7 12h10"/><path d="M10 17h4"/></svg></span><span class="export-compact-pill">Compact</span></div><div class="export-dropdown-item" id="export-copy-btn"><span class="dropdown-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></span><span>Copy Chat</span></div><div class="export-dropdown-item" id="export-pdf-btn"><span class="dropdown-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 15v-2h2a1.5 1.5 0 0 1 0 3H9z"/></svg></span><span>PDF</span></div><div class="export-dropdown-item" id="export-doc-btn"><span class="dropdown-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></span><span>Save to Documents</span></div><div class="export-dropdown-item dropdown-item-danger" id="export-delete-btn"><span class="dropdown-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></span><span>Delete Chat</span></div></div></span></div>    </div>
     <div id="welcome-screen">

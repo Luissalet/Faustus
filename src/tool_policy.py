@@ -102,6 +102,8 @@ _COMMON_TOOL_NAMES = {
     "reply_to_email",
     "resolve_contact",
     "search_chats",
+    "search_project_chats",
+    "project_context",
     "search_hf_models",
     "send_email",
     "send_to_session",

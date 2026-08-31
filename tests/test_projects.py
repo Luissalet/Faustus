@@ -83,6 +83,74 @@ def test_delete_forgets_the_binding_not_the_files(store, workspace):
     assert os.path.isfile(os.path.join(workspace, ".odysseus", "notas.md"))
 
 
+def test_legacy_rows_gain_project_organisation_defaults(tmp_path):
+    data = tmp_path / "data"
+    data.mkdir()
+    (data / "projects.json").write_text(
+        '[{"id":"old","name":"Legacy","folder":"Legacy"}]',
+        encoding="utf-8",
+    )
+    project = ProjectStore(str(data)).list()[0]
+    assert project["pinned"] is False
+    assert project["archived"] is False
+
+
+def test_archiving_unpins_and_pinning_restores(store, workspace):
+    project = store.create("Covernet", workspace=workspace)
+    project = store.update(project["id"], {"pinned": True})
+    assert project["pinned"] is True
+    assert project["archived"] is False
+
+    project = store.update(project["id"], {"archived": True})
+    assert project["archived"] is True
+    assert project["pinned"] is False
+
+    project = store.update(project["id"], {"pinned": True})
+    assert project["pinned"] is True
+    assert project["archived"] is False
+
+
+def test_archived_project_still_provides_context(store, workspace):
+    project = store.create("Covernet", workspace=workspace, instructions="Keep this.")
+    project = store.update(project["id"], {"archived": True})
+    assert "Keep this." in store.system_block(project)
+
+
+def test_touch_refreshes_project_activity(store, workspace, monkeypatch):
+    project = store.create("Covernet", workspace=workspace)
+    monkeypatch.setattr("services.projects._now", lambda: project["updated_at"] + 20)
+    touched = store.touch(project["id"])
+    assert touched["updated_at"] == project["updated_at"] + 20
+
+
+def test_project_work_roots_round_trip_and_cannot_escape(store, workspace, tmp_path):
+    project = store.create("Covernet", workspace=workspace)
+    extra = tmp_path / "reference"
+    extra.mkdir()
+    source = extra / "brief.txt"
+    source.write_text("first\nimportant decision\nthird", encoding="utf-8")
+
+    item = store.add_context_item(project["id"], str(extra))
+    project = store.get(project["id"])
+    assert item["kind"] == "folder"
+    assert project["context_items"][0]["path"] == str(extra)
+    assert "important decision" in store.read_context_file(project, item["id"], "brief.txt")["content"]
+    assert store.search_context(project, "decision")["matches"][0]["path"] == "brief.txt"
+    with pytest.raises(ProjectError):
+        store.read_context_file(project, item["id"], "../outside.txt")
+
+
+def test_system_block_explains_editable_work_roots_and_project_chat_search(store, workspace, tmp_path):
+    project = store.create("Covernet", workspace=workspace)
+    extra = tmp_path / "docs"
+    extra.mkdir()
+    store.add_context_item(project["id"], str(extra))
+    block = store.system_block(store.get(project["id"]))
+    assert "Project work roots" in block
+    assert "normal file tools" in block
+    assert "search_project_chats" in block
+
+
 # ── memory files ──────────────────────────────────────────────────────
 
 
@@ -106,6 +174,7 @@ def test_memory_round_trips(store, workspace):
     names = [f["name"] for f in store.list_memory_files(p)]
     assert names[0] == "MEMORY.md"            # index first
     assert "decisiones.md" in names
+    assert "](decisiones.md)" in store.read_memory_file(p, "MEMORY.md")
 
 
 def test_reading_a_missing_memory_file_is_empty_not_an_error(store, workspace):

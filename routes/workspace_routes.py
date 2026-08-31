@@ -15,7 +15,11 @@ def setup_workspace_routes():
     router = APIRouter(prefix="/api/workspace", tags=["workspace"])
 
     @router.get("/browse")
-    def browse(request: Request, path: str = Query(default="")):
+    def browse(
+        request: Request,
+        path: str = Query(default=""),
+        include_files: bool = Query(default=False),
+    ):
         """List subdirectories of `path` (default: home) so the UI can navigate
         the server filesystem and pick a workspace folder. Directories only.
 
@@ -35,6 +39,7 @@ def setup_workspace_routes():
             target = os.path.realpath(os.path.expanduser("~"))
 
         dirs = []
+        files = []
         try:
             with os.scandir(target) as it:
                 for entry in it:
@@ -46,6 +51,12 @@ def setup_workspace_routes():
                             # Build the child path server-side with os.path.join
                             # so it's correct on Windows (backslashes) and Linux.
                             dirs.append({"name": entry.name, "path": os.path.join(target, entry.name)})
+                        elif include_files and entry.is_file(follow_symlinks=False) and not entry.name.startswith("."):
+                            files.append({
+                                "name": entry.name,
+                                "path": os.path.join(target, entry.name),
+                                "size": entry.stat(follow_symlinks=False).st_size,
+                            })
                     except OSError:
                         continue
         except (PermissionError, OSError):
@@ -59,6 +70,7 @@ def setup_workspace_routes():
             "path": target,
             "parent": parent if parent and parent != target else None,
             "dirs": dirs_sorted[:_MAX_BROWSE_DIRS],
+            "files": sorted(files, key=lambda f: f["name"].lower())[:_MAX_BROWSE_DIRS],
             "truncated": truncated,
             # Whether this directory may be bound as a workspace (filesystem
             # roots and sensitive dirs may be browsed through but not chosen).
@@ -81,5 +93,22 @@ def setup_workspace_routes():
         from src.tool_execution import vet_workspace
         resolved = vet_workspace(path)
         return {"ok": resolved is not None, "path": resolved}
+
+    @router.get("/vet-context")
+    def vet_context(request: Request, path: str = Query(default="")):
+        """Validate a project work-root file or directory."""
+        owner = get_current_user(request)
+        if not owner_is_admin_or_single_user(owner):
+            raise HTTPException(status_code=403, detail="Context selection is admin-only")
+        from src.tool_execution import vet_readonly_context
+        resolved = vet_readonly_context(path)
+        return {
+            "ok": resolved is not None,
+            "path": resolved,
+            "kind": (
+                "folder" if resolved and os.path.isdir(resolved)
+                else "file" if resolved else None
+            ),
+        }
 
     return router

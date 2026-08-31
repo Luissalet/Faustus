@@ -132,6 +132,53 @@ async def test_read_write_edit_confined_e2e(ws, admin):
 
 
 @pytest.mark.asyncio
+async def test_project_additional_roots_are_real_editable_work_roots(ws, admin):
+    secondary = tempfile.mkdtemp()
+    target = os.path.join(secondary, "shared.txt")
+    with open(target, "w") as handle:
+        handle.write("before")
+
+    _, read_result = await execute_tool_block(
+        _block("read_file", target), owner="a", workspace=ws,
+        workspace_roots=[secondary],
+    )
+    assert read_result["output"] == "before"
+
+    _, edit_result = await execute_tool_block(
+        _block("edit_file", json.dumps({
+            "path": target, "old_string": "before", "new_string": "after"
+        })),
+        owner="a", workspace=ws, workspace_roots=[secondary],
+    )
+    assert edit_result["exit_code"] == 0
+    with open(target) as handle:
+        assert handle.read() == "after"
+
+
+@pytest.mark.asyncio
+async def test_individually_attached_file_is_editable_but_not_its_siblings(ws, admin):
+    outside = tempfile.mkdtemp()
+    attached = os.path.join(outside, "attached.txt")
+    sibling = os.path.join(outside, "sibling.txt")
+    for path in (attached, sibling):
+        with open(path, "w") as handle:
+            handle.write("x")
+
+    _, allowed = await execute_tool_block(
+        _block("write_file", attached + "\ny"), owner="a", workspace=ws,
+        workspace_roots=[attached],
+    )
+    _, denied = await execute_tool_block(
+        _block("write_file", sibling + "\ny"), owner="a", workspace=ws,
+        workspace_roots=[attached],
+    )
+    assert allowed["exit_code"] == 0
+    assert denied["exit_code"] == 1
+    with open(sibling) as handle:
+        assert handle.read() == "x"
+
+
+@pytest.mark.asyncio
 async def test_apply_patch_confined_e2e(ws, admin):
     with open(os.path.join(ws, "patchme.txt"), "w") as f:
         f.write("alpha\nbeta\ngamma\n")

@@ -29,7 +29,7 @@ def _db(with_fts=True):
     return db
 
 
-def _add_session(db, sid, owner="alice", archived=False, name=None):
+def _add_session(db, sid, owner="alice", archived=False, name=None, folder=None):
     db.add(
         DbSession(
             id=sid,
@@ -38,6 +38,7 @@ def _add_session(db, sid, owner="alice", archived=False, name=None):
             model="test-model",
             owner=owner,
             archived=archived,
+            folder=folder,
             message_count=0,
         )
     )
@@ -78,6 +79,25 @@ def test_session_search_uses_fts_and_returns_context():
         assert results[0].context_before[0]["message_id"] == "m1"
         assert results[0].context_after[0]["message_id"] == "m3"
         assert "modal" in results[0].content_snippet.lower()
+    finally:
+        db.close()
+
+
+def test_session_search_can_be_scoped_to_one_project_folder():
+    db = _db(with_fts=True)
+    try:
+        base = datetime(2026, 1, 1, 12, 0, 0)
+        _add_session(db, "project-a", folder="Alpha")
+        _add_session(db, "project-b", folder="Beta")
+        _add_message(db, "project-a", "m-a", "user", "shared project decision", base)
+        _add_message(db, "project-b", "m-b", "user", "shared project decision", base + timedelta(minutes=1))
+        db.commit()
+
+        results = search_session_messages(
+            "shared project decision", owner="alice", folder="Alpha", db=db
+        )
+
+        assert [result.session_id for result in results] == ["project-a"]
     finally:
         db.close()
 

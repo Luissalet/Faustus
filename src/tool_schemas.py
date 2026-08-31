@@ -334,6 +334,39 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "search_project_chats",
+            "description": "Search only earlier chat transcripts from the current project. Use for prior decisions, attempts, and discussions that may not be in project memory.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Keywords to find in this project's earlier chats"}
+                },
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "project_context",
+            "description": "Inspect the files and folders attached to the current project. Use list to see roots or a folder, read for a text file, and search across attached roots. Normal file tools may modify these same roots.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["list", "read", "search"]},
+                    "item_id": {"type": "string", "description": "Root id from list; optional for listing all roots or searching all roots"},
+                    "path": {"type": "string", "description": "Relative path inside a folder root"},
+                    "query": {"type": "string", "description": "Text to search for"},
+                    "start_line": {"type": "integer", "minimum": 1},
+                    "line_count": {"type": "integer", "minimum": 1, "maximum": 500}
+                },
+                "required": ["action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "chat_with_model",
             "description": "Send a message to another AI model and get its response. Use for getting a second opinion, delegating subtasks, or AI-to-AI communication.",
             "parameters": {
@@ -1481,8 +1514,10 @@ def function_call_to_tool_block(name: str, arguments: str) -> Optional[ToolBlock
         content = "\n".join(blocks)
     elif tool_type == "update_document":
         content = args.get("content", "")
-    elif tool_type == "search_chats":
+    elif tool_type in ("search_chats", "search_project_chats"):
         content = args.get("query", "")
+    elif tool_type == "project_context":
+        content = json.dumps(args)
     elif tool_type == "chat_with_model":
         content = args.get("model", "") + "\n" + args.get("message", "")
     elif tool_type == "create_session":

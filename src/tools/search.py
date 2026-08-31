@@ -10,7 +10,12 @@ from typing import Dict
 logger = logging.getLogger(__name__)
 
 
-async def do_search_chats(query: str, limit: int = 20, owner: str | None = None) -> Dict:
+async def do_search_chats(
+    query: str,
+    limit: int = 20,
+    owner: str | None = None,
+    folder: str | None = None,
+) -> Dict:
     """Search past session transcripts for the calling user's sessions only.
 
     Without an owner filter this used to leak EVERY user's chat history
@@ -22,7 +27,10 @@ async def do_search_chats(query: str, limit: int = 20, owner: str | None = None)
     try:
         from src.session_search import search_session_messages
 
-        results = search_session_messages(query, limit=limit, owner=owner)
+        kwargs = {"limit": limit, "owner": owner}
+        if folder:
+            kwargs["folder"] = folder
+        results = search_session_messages(query, **kwargs)
         if not results:
             return {"results": f"No chats found matching \"{query}\"."}
 

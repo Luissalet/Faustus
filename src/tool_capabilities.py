@@ -94,7 +94,7 @@ _register(
     result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
 )
 _register(
-    {"get_workspace", "glob", "grep", "ls", "read_file"},
+    {"get_workspace", "glob", "grep", "ls", "read_file", "project_context"},
     ToolEffect.READ_WORKSPACE,
     result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
 )
@@ -117,6 +117,7 @@ _register(
         "resolve_contact",
         "scan_email_unsubscribes",
         "search_chats",
+        "search_project_chats",
         "search_emails",
         "list_sessions",
         "tail_serve_output",

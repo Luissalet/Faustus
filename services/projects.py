@@ -15,8 +15,8 @@ Why it is built this way
 * **Project memory is Markdown on disk** under ``<workspace>/.odysseus/`` rather
   than rows in the ``memories`` table. Files are greppable, hand-editable,
   survive a database wipe, travel with the folder when it moves — and the agent
-  already has read/write tools confined to the workspace, so it can maintain
-  them without any new tool surface.
+  already has read/write tools confined to the project's work roots, so it can
+  maintain them like any other project file.
 
 Nothing here imports from ``src.*`` beyond ``tool_execution.vet_workspace`` (done
 lazily, inside the function) so the module stays importable from route setup
@@ -46,6 +46,10 @@ MEMORY_INDEX = "MEMORY.md"
 MAX_INSTRUCTIONS = 10000
 MAX_INDEX_INJECT = 4000
 MAX_MEMORY_FILE = 200000
+MAX_CONTEXT_ITEMS = 40
+MAX_CONTEXT_READ_LINES = 500
+MAX_CONTEXT_SEARCH_FILES = 500
+MAX_CONTEXT_SEARCH_MATCHES = 80
 
 _NAME_RE = re.compile(r"^[^\x00-\x1f<>:\"/\\|?*]{1,80}$")
 _MEM_FILE_RE = re.compile(r"^[A-Za-z0-9._-]{1,120}\.md$")
@@ -91,6 +95,14 @@ class ProjectStore:
             except OSError:
                 pass
             rows = []
+        # New presentation-only fields stay backwards compatible with the
+        # first projects.json format.  Normalising them here means every API
+        # consumer sees a stable shape without forcing a migration or an
+        # eager rewrite of the user's file.
+        for row in rows:
+            row.setdefault("pinned", False)
+            row.setdefault("archived", False)
+            row.setdefault("context_items", [])
         self._cache = rows
         return rows
 
@@ -204,6 +216,9 @@ class ProjectStore:
             "id": uuid.uuid4().hex[:12],
             "owner": owner,
             "enabled": True,
+            "pinned": False,
+            "archived": False,
+            "context_items": [],
             "created_at": _now(),
             "updated_at": _now(),
             **fields,
@@ -244,10 +259,246 @@ class ProjectStore:
             new_row.update(fields)
             if "enabled" in updates:
                 new_row["enabled"] = bool(updates["enabled"])
+            if "archived" in updates:
+                new_row["archived"] = bool(updates["archived"])
+                # Archived projects do not occupy the pinned section.  Their
+                # chats keep resolving to the project; archive is an
+                # organisation state, not a context kill-switch.
+                if new_row["archived"]:
+                    new_row["pinned"] = False
+            if "pinned" in updates:
+                new_row["pinned"] = bool(updates["pinned"])
+                if new_row["pinned"]:
+                    new_row["archived"] = False
             new_row["updated_at"] = _now()
             rows[i] = new_row
             self._save(rows)
             return new_row
+        return None
+
+    # ------------------------------------------------------------------
+    # Project work roots (files and folders)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _context_item(project: Dict[str, Any], item_id: str) -> Dict[str, Any]:
+        for item in (project or {}).get("context_items") or []:
+            if isinstance(item, dict) and item.get("id") == item_id:
+                return item
+        raise ProjectError("Context item not found")
+
+    @staticmethod
+    def _context_target(item: Dict[str, Any], relative_path: str = "") -> str:
+        from src.tool_execution import vet_project_root
+
+        base = vet_project_root(item.get("path") or "")
+        if not base:
+            raise ProjectError("This context item no longer exists or is no longer safe")
+        relative_path = (relative_path or "").strip()
+        if os.path.isfile(base):
+            if relative_path not in ("", ".", os.path.basename(base)):
+                raise ProjectError("A file context item has no child paths")
+            return base
+
+        target = os.path.realpath(os.path.join(base, relative_path)) if relative_path else base
+        try:
+            if os.path.commonpath([target, base]) != base:
+                raise ValueError
+        except ValueError:
+            raise ProjectError("Context path escapes the attached folder")
+        vetted = vet_project_root(target)
+        if not vetted:
+            raise ProjectError("Context path does not exist or is sensitive")
+        return vetted
+
+    def add_context_item(
+        self, project_id: str, path: str, owner: Optional[str] = None
+    ) -> Dict[str, Any]:
+        from src.tool_execution import vet_project_root
+
+        resolved = vet_project_root(path)
+        if not resolved:
+            raise ProjectError(
+                "Context must be an existing file or folder, not a filesystem root or sensitive path"
+            )
+        rows = list(self._load())
+        for i, row in enumerate(rows):
+            if row.get("id") != project_id or not self._owned(row, owner):
+                continue
+            items = [item for item in (row.get("context_items") or []) if isinstance(item, dict)]
+            if os.path.normcase(row.get("workspace") or "") == os.path.normcase(resolved):
+                raise ProjectError("This folder is already the project's primary working folder")
+            for item in items:
+                if os.path.normcase(item.get("path") or "") == os.path.normcase(resolved):
+                    return item
+            if len(items) >= MAX_CONTEXT_ITEMS:
+                raise ProjectError(f"A project can have at most {MAX_CONTEXT_ITEMS} context items")
+            item = {
+                "id": uuid.uuid4().hex[:10],
+                "path": resolved,
+                "kind": "folder" if os.path.isdir(resolved) else "file",
+                "name": os.path.basename(resolved) or resolved,
+            }
+            updated = dict(row)
+            updated["context_items"] = [*items, item]
+            updated["updated_at"] = _now()
+            rows[i] = updated
+            self._save(rows)
+            return item
+        raise ProjectError("Project not found")
+
+    def remove_context_item(
+        self, project_id: str, item_id: str, owner: Optional[str] = None
+    ) -> bool:
+        rows = list(self._load())
+        for i, row in enumerate(rows):
+            if row.get("id") != project_id or not self._owned(row, owner):
+                continue
+            items = [item for item in (row.get("context_items") or []) if isinstance(item, dict)]
+            kept = [item for item in items if item.get("id") != item_id]
+            if len(kept) == len(items):
+                return False
+            updated = dict(row)
+            updated["context_items"] = kept
+            updated["updated_at"] = _now()
+            rows[i] = updated
+            self._save(rows)
+            return True
+        return False
+
+    def list_context_path(
+        self, project: Dict[str, Any], item_id: str = "", relative_path: str = ""
+    ) -> Dict[str, Any]:
+        items = [item for item in (project or {}).get("context_items") or [] if isinstance(item, dict)]
+        if not item_id:
+            return {"items": items}
+        item = self._context_item(project, item_id)
+        target = self._context_target(item, relative_path)
+        if os.path.isfile(target):
+            st = os.stat(target)
+            return {"item_id": item_id, "path": relative_path or os.path.basename(target), "kind": "file", "size": st.st_size}
+        entries = []
+        try:
+            with os.scandir(target) as it:
+                for entry in it:
+                    if entry.name.startswith(".") or entry.is_symlink():
+                        continue
+                    try:
+                        entries.append({
+                            "name": entry.name,
+                            "kind": "folder" if entry.is_dir(follow_symlinks=False) else "file",
+                            "size": entry.stat(follow_symlinks=False).st_size if entry.is_file(follow_symlinks=False) else None,
+                        })
+                    except OSError:
+                        continue
+                    if len(entries) >= 200:
+                        break
+        except OSError as exc:
+            raise ProjectError(f"Could not list context folder: {exc}")
+        entries.sort(key=lambda entry: (entry["kind"] != "folder", entry["name"].casefold()))
+        return {"item_id": item_id, "path": relative_path, "kind": "folder", "entries": entries}
+
+    def read_context_file(
+        self,
+        project: Dict[str, Any],
+        item_id: str,
+        relative_path: str = "",
+        start_line: int = 1,
+        line_count: int = 200,
+    ) -> Dict[str, Any]:
+        item = self._context_item(project, item_id)
+        target = self._context_target(item, relative_path)
+        if not os.path.isfile(target):
+            raise ProjectError("Choose a file inside the attached context folder")
+        try:
+            with open(target, "rb") as fh:
+                sample = fh.read(4096)
+            if b"\x00" in sample:
+                raise ProjectError("This appears to be a binary file and cannot be read as text")
+            with open(target, "r", encoding="utf-8", errors="replace") as fh:
+                lines = fh.readlines()
+        except ProjectError:
+            raise
+        except OSError as exc:
+            raise ProjectError(f"Could not read context file: {exc}")
+        start = max(1, int(start_line or 1))
+        count = max(1, min(int(line_count or 200), MAX_CONTEXT_READ_LINES))
+        selected = lines[start - 1:start - 1 + count]
+        numbered = "".join(f"{number}: {line}" for number, line in enumerate(selected, start=start))
+        return {
+            "item_id": item_id,
+            "path": relative_path or os.path.basename(target),
+            "start_line": start,
+            "line_count": len(selected),
+            "total_lines": len(lines),
+            "content": numbered,
+        }
+
+    def search_context(
+        self, project: Dict[str, Any], query: str, item_id: str = ""
+    ) -> Dict[str, Any]:
+        query = (query or "").strip()
+        if not query:
+            raise ProjectError("Search query is required")
+        items = [self._context_item(project, item_id)] if item_id else [
+            item for item in (project or {}).get("context_items") or [] if isinstance(item, dict)
+        ]
+        matches = []
+        scanned = 0
+        needle = query.casefold()
+        for item in items:
+            base = self._context_target(item)
+            if os.path.isfile(base):
+                candidates = [(base, os.path.basename(base))]
+            else:
+                candidates = []
+                for root, dirs, files in os.walk(base, followlinks=False):
+                    dirs[:] = [name for name in dirs if not name.startswith(".") and not os.path.islink(os.path.join(root, name))]
+                    for name in files:
+                        full = os.path.join(root, name)
+                        if name.startswith(".") or os.path.islink(full):
+                            continue
+                        candidates.append((full, os.path.relpath(full, base)))
+                        if len(candidates) + scanned >= MAX_CONTEXT_SEARCH_FILES:
+                            break
+                    if len(candidates) + scanned >= MAX_CONTEXT_SEARCH_FILES:
+                        break
+            for full, relative in candidates:
+                if scanned >= MAX_CONTEXT_SEARCH_FILES or len(matches) >= MAX_CONTEXT_SEARCH_MATCHES:
+                    break
+                scanned += 1
+                try:
+                    if os.path.getsize(full) > 2_000_000:
+                        continue
+                    with open(full, "rb") as fh:
+                        if b"\x00" in fh.read(4096):
+                            continue
+                    with open(full, "r", encoding="utf-8", errors="replace") as fh:
+                        for number, line in enumerate(fh, start=1):
+                            if needle in line.casefold():
+                                matches.append({
+                                    "item_id": item.get("id"),
+                                    "path": relative,
+                                    "line": number,
+                                    "snippet": line.strip()[:300],
+                                })
+                                if len(matches) >= MAX_CONTEXT_SEARCH_MATCHES:
+                                    break
+                except OSError:
+                    continue
+        return {"query": query, "matches": matches, "scanned_files": scanned, "truncated": scanned >= MAX_CONTEXT_SEARCH_FILES or len(matches) >= MAX_CONTEXT_SEARCH_MATCHES}
+
+    def touch(self, project_id: str, owner: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """Refresh activity ordering without changing project settings."""
+        rows = list(self._load())
+        for i, row in enumerate(rows):
+            if row.get("id") != project_id or not self._owned(row, owner):
+                continue
+            touched = dict(row)
+            touched["updated_at"] = _now()
+            rows[i] = touched
+            self._save(rows)
+            return touched
         return None
 
     def delete(self, project_id: str, owner: Optional[str] = None) -> bool:
@@ -350,6 +601,7 @@ class ProjectStore:
         path = self._memory_path(project, filename)
         if len(content or "") > MAX_MEMORY_FILE:
             raise ProjectError(f"Memory file exceeds {MAX_MEMORY_FILE} bytes")
+        is_new_topic = filename != MEMORY_INDEX and not os.path.exists(path)
         os.makedirs(os.path.dirname(path), exist_ok=True)
         tmp = path + ".tmp"
         try:
@@ -358,6 +610,33 @@ class ProjectStore:
             os.replace(tmp, path)
         except OSError as e:
             raise ProjectError(f"Could not write {filename}: {e}")
+
+        # A note that is absent from MEMORY.md is effectively invisible to the
+        # model: only the short index is injected on every turn.  Notes created
+        # through the Projects UI therefore get a conservative one-line index
+        # entry automatically. Existing files and hand-written index wording
+        # are never changed.
+        if is_new_topic:
+            try:
+                self.scaffold_memory(project)
+                index_path = self._memory_path(project, MEMORY_INDEX)
+                with open(index_path, "r", encoding="utf-8", errors="replace") as fh:
+                    index = fh.read(MAX_MEMORY_FILE)
+                marker = f"]({filename})"
+                if marker not in index:
+                    title = os.path.splitext(filename)[0].replace("-", " ").replace("_", " ").strip().title()
+                    updated = index.rstrip() + f"\n\n- [{title}]({filename}) — project note\n"
+                    if len(updated) <= MAX_MEMORY_FILE:
+                        index_tmp = index_path + ".tmp"
+                        with open(index_tmp, "w", encoding="utf-8") as fh:
+                            fh.write(updated)
+                        os.replace(index_tmp, index_path)
+                    else:
+                        logger.warning("Could not index %s: %s is at its size limit", filename, MEMORY_INDEX)
+            except OSError as e:
+                # The note itself is already durable and remains visible in
+                # the UI. An index maintenance failure should not discard it.
+                logger.warning("Could not index project memory file %s: %s", filename, e)
 
     # ------------------------------------------------------------------
     # The block injected into the system prompt
@@ -379,6 +658,7 @@ class ProjectStore:
         workspace = project.get("workspace") or ""
         folder = project.get("folder") or name
         instructions = (project.get("instructions") or "").strip()
+        context_items = [item for item in (project.get("context_items") or []) if isinstance(item, dict)]
 
         parts = [f'You are working inside the project "{name}".']
         if workspace:
@@ -388,6 +668,27 @@ class ProjectStore:
                 "drive or leading slash are relative to this folder."
             )
         parts.append(f'Chats for this project are grouped under the sidebar folder "{folder}".')
+
+        parts.append(
+            "## Previous project chats\n"
+            "You can consult earlier conversations from this project on demand with "
+            "`search_project_chats`. Use it when a question refers to prior decisions, "
+            "earlier attempts or what was discussed before; do not guess from titles."
+        )
+
+        if context_items:
+            manifest = "\n".join(
+                f'- `{item.get("id")}` ({item.get("kind", "file")}): {item.get("path", "")}'
+                for item in context_items
+            )
+            parts.append(
+                "## Project work roots\n"
+                "These attached files and folders are part of the working project. "
+                "You may inspect them with `project_context`, and you may read or "
+                "modify them with the normal file tools. Relative paths resolve in "
+                "the primary project folder; use the absolute paths below for other "
+                "roots. Their contents are not copied into the prompt.\n" + manifest
+            )
 
         if instructions:
             parts.append("## Project instructions\n" + instructions)
@@ -466,6 +767,24 @@ def workspace_for_session(session_id: str, owner: Optional[str] = None) -> str:
     """The project's workspace for this chat, or '' when there is none."""
     project = project_for_session(session_id, owner)
     return (project or {}).get("workspace") or ""
+
+
+def work_roots_for_session(session_id: str, owner: Optional[str] = None) -> List[str]:
+    """Canonical file/folder roots available to this project's tools."""
+    project = project_for_session(session_id, owner)
+    if not project:
+        return []
+    from src.tool_execution import vet_project_root
+
+    roots: List[str] = []
+    for candidate in [
+        project.get("workspace") or "",
+        *[item.get("path") or "" for item in (project.get("context_items") or []) if isinstance(item, dict)],
+    ]:
+        vetted = vet_project_root(candidate)
+        if vetted and vetted not in roots:
+            roots.append(vetted)
+    return roots
 
 
 def instructions_for_session(session_id: str, owner: Optional[str] = None) -> str:

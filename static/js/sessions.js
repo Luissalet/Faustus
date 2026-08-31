@@ -2460,6 +2460,46 @@ export async function deleteCurrentSessionFromTopMenu() {
   return true;
 }
 
+/**
+ * Delete an arbitrary session by id (not necessarily the one currently
+ * open). Used by surfaces outside the sidebar -- e.g. the per-chat delete
+ * button in a project's chat list -- that don't have access to the
+ * sidebar's private cleanup helpers.
+ */
+export async function deleteSessionById(id, { confirmMessage = 'Delete this session?' } = {}) {
+  if (!id) return false;
+  const session = sessions.find(s => String(s.id) === String(id));
+  if (session?.is_important) {
+    uiModule.showToast('Unfavorite before deleting');
+    return false;
+  }
+  if (!await uiModule.styledConfirm(confirmMessage, { confirmText: 'Delete', danger: true })) {
+    return false;
+  }
+  const wasCurrentSession = currentSessionId === id;
+  if (wasCurrentSession && window.chatModule && window.chatModule.abortCurrentRequest) {
+    window.chatModule.abortCurrentRequest();
+  }
+  _deselectCurrentSession(id);
+  _removeSessionFromLocalState(id);
+  _skipAutoSelect = true;
+  try {
+    const pm = await import('./presets.js');
+    if (pm.removePersistentChat) pm.removePersistentChat(id);
+  } catch (e) {}
+  try {
+    const res = await fetch(`${API_BASE}/api/session/${id}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error('Failed');
+    uiModule.showToast('Session deleted');
+  } catch (e) {
+    uiModule.showError('Failed to delete session');
+    await loadSessions();
+    return false;
+  }
+  await loadSessions();
+  return true;
+}
+
 // Session list keyboard navigation: arrows to move, Delete to delete
 async function _onSessionListKeydown(e) {
   const item = e.target.closest('.list-item[data-session-id]');
@@ -3690,7 +3730,8 @@ const sessionModule = {
   setSessionHasDocs,
   getSortMode,
   setSortMode,
-  deleteCurrentSessionFromTopMenu
+  deleteCurrentSessionFromTopMenu,
+  deleteSessionById
 };
 
 export { updateModelPicker };

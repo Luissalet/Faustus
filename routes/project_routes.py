@@ -38,10 +38,16 @@ class ProjectUpdateRequest(BaseModel):
     workspace: Optional[str] = Field(None, max_length=4096)
     instructions: Optional[str] = Field(None, max_length=MAX_INSTRUCTIONS)
     enabled: Optional[bool] = None
+    pinned: Optional[bool] = None
+    archived: Optional[bool] = None
 
 
 class MemoryWriteRequest(BaseModel):
     content: str = Field("", max_length=MAX_MEMORY_FILE)
+
+
+class ContextAddRequest(BaseModel):
+    path: str = Field(..., min_length=1, max_length=4096)
 
 
 def setup_project_routes() -> APIRouter:
@@ -120,6 +126,110 @@ def setup_project_routes() -> APIRouter:
         return {"success": True}
 
     # ------------------------------------------------------------------
+    # Session management within projects
+    # ------------------------------------------------------------------
+
+    @router.delete("/{project_id}/session/{session_id}")
+    def delete_project_session(
+        project_id: str,
+        session_id: str,
+        request: Request,
+        _admin: None = Depends(require_admin),
+    ) -> Dict[str, Any]:
+        """Delete a specific session within the project."""
+        owner = effective_user(request)
+        project = _get_or_404(project_id, owner)
+        
+        # Verify that the session belongs to this project
+        from core.session_manager import get_session_manager_instance
+        session_manager = get_session_manager_instance()
+        
+        try:
+            session = session_manager.get_session(session_id)
+        except KeyError:
+            raise HTTPException(404, f"Session {session_id} not found")
+            
+        # Check if session belongs to this project's folder
+        expected_folder = project.get("folder", "")
+        if session.folder != expected_folder:
+            raise HTTPException(400, "Session does not belong to this project")
+            
+        # Delete the session using the session manager
+        result = session_manager.delete_session(session_id)
+        if not result:
+            raise HTTPException(404, "Session deletion failed")
+        
+        return {"success": True}
+
+    @router.delete("/{project_id}/sessions")
+    def delete_project_sessions(
+        project_id: str,
+        request: Request,
+        _admin: None = Depends(require_admin),
+    ) -> Dict[str, Any]:
+        """Delete all sessions within the project."""
+        owner = effective_user(request)
+        project = _get_or_404(project_id, owner)
+        
+        # Get session manager
+        from core.session_manager import get_session_manager_instance
+        session_manager = get_session_manager_instance()
+        
+        # Find all sessions in this project's folder using database query
+        from core.database import SessionLocal, DbSession
+        db = SessionLocal()
+        try:
+            # Find all sessions that belong to the project's folder
+            project_folder = project.get("folder", "")
+            db_sessions = db.query(DbSession).filter(
+                DbSession.folder == project_folder,
+                DbSession.archived == False
+            ).all()
+            
+            deleted_count = 0
+            
+            for db_session in db_sessions:
+                # Delete the session using the session manager
+                if session_manager.delete_session(db_session.id):
+                    deleted_count += 1
+                    
+            return {"success": True, "deleted_count": deleted_count}
+        finally:
+            db.close()
+
+    # ------------------------------------------------------------------
+    # Files and folders attached as additional project work roots
+    # ------------------------------------------------------------------
+
+    @router.post("/{project_id}/context")
+    def add_context(
+        project_id: str,
+        payload: ContextAddRequest,
+        request: Request,
+        _admin: None = Depends(require_admin),
+    ) -> Dict[str, Any]:
+        owner = effective_user(request)
+        _get_or_404(project_id, owner)
+        try:
+            item = get_store().add_context_item(project_id, payload.path, owner)
+        except ProjectError as e:
+            raise HTTPException(400, str(e))
+        return {"item": item}
+
+    @router.delete("/{project_id}/context/{item_id}")
+    def remove_context(
+        project_id: str,
+        item_id: str,
+        request: Request,
+        _admin: None = Depends(require_admin),
+    ) -> Dict[str, Any]:
+        owner = effective_user(request)
+        _get_or_404(project_id, owner)
+        if not get_store().remove_context_item(project_id, item_id, owner):
+            raise HTTPException(404, "Context item not found")
+        return {"success": True}
+
+    # ------------------------------------------------------------------
     # Resolution — what the frontend asks when the user switches chats
     # ------------------------------------------------------------------
 
@@ -147,6 +257,7 @@ def setup_project_routes() -> APIRouter:
                 "folder": project.get("folder"),
                 "workspace": project.get("workspace"),
                 "has_instructions": bool((project.get("instructions") or "").strip()),
+                "context_count": len(project.get("context_items") or []),
             }
         }
 
@@ -211,6 +322,12 @@ def setup_project_routes() -> APIRouter:
             store.write_memory_file(project, filename, payload.content)
         except ProjectError as e:
             raise HTTPException(400, str(e))
+        try:
+            store.touch(project_id, effective_user(request))
+        except OSError as e:
+            # The memory file is already saved; activity ordering is useful
+            # metadata, but must not turn a successful write into an HTTP 500.
+            logger.warning("Could not refresh project activity: %s", e)
         return {"success": True}
 
     # ------------------------------------------------------------------

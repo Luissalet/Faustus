@@ -195,6 +195,7 @@ def _search_like(
     context_messages: int,
     restrict_owner: bool,
     include_legacy_owner: bool,
+    folder: str | None,
 ) -> list[SessionSearchResult]:
     safe_q = _escape_like(query)
     q = (
@@ -210,6 +211,8 @@ def _search_like(
     q = q.filter(~DBSession.name.like("SFT trace batch%"))
     if restrict_owner:
         q = _owner_filter(q, owner, include_legacy_owner)
+    if folder:
+        q = q.filter(DBSession.folder.ilike(_escape_like(folder), escape="\\"))
     rows = q.order_by(DBChatMessage.timestamp.desc()).limit(limit).all()
     shaped = ((msg, session_name, _snippet(msg.content or "", query)) for msg, session_name in rows)
     return _rows_to_results(db, shaped, query, context_messages)
@@ -242,6 +245,7 @@ def _search_fts(
     context_messages: int,
     restrict_owner: bool,
     include_legacy_owner: bool,
+    folder: str | None,
 ) -> list[SessionSearchResult] | None:
     fts_query = _sanitize_fts_query(query)
     if not fts_query or not _has_fts_table(db):
@@ -259,6 +263,9 @@ def _search_fts(
     params: dict[str, Any] = {"fts_query": fts_query, "limit": limit}
     if restrict_owner and owner is not None:
         params["owner"] = owner
+    folder_clause = "AND lower(s.folder) = lower(:folder)" if folder else ""
+    if folder:
+        params["folder"] = folder
 
     sql = text(
         f"""
@@ -271,6 +278,7 @@ def _search_fts(
         WHERE chat_messages_fts MATCH :fts_query
           {archived_clause}
           {owner_clause}
+          {folder_clause}
           AND s.name NOT LIKE 'SFT trace batch%'
           AND m.role IN ('user', 'assistant')
         ORDER BY bm25(chat_messages_fts), m.timestamp DESC
@@ -305,6 +313,7 @@ def search_session_messages(
     context_messages: int = 1,
     restrict_owner: bool = True,
     include_legacy_owner: bool = True,
+    folder: str | None = None,
     db=None,
 ) -> list[SessionSearchResult]:
     """Search session transcripts using FTS5 when available.
@@ -332,6 +341,7 @@ def search_session_messages(
             context_messages,
             restrict_owner,
             include_legacy_owner,
+            folder,
         )
         if fts_results is not None:
             like_results = _search_like(
@@ -343,6 +353,7 @@ def search_session_messages(
                 context_messages,
                 restrict_owner,
                 include_legacy_owner,
+                folder,
             )
             merged: list[SessionSearchResult] = []
             seen: set[str] = set()
@@ -363,6 +374,7 @@ def search_session_messages(
             context_messages,
             restrict_owner,
             include_legacy_owner,
+            folder,
         )
     finally:
         if owns_db:

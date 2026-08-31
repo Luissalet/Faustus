@@ -662,12 +662,19 @@ class GetWorkspaceTool:
     """Report the active workspace folder (no args). File tools are confined to
     it; the shell starts there (cwd) but is NOT sandboxed."""
     async def execute(self, content: str, ctx: dict) -> dict:
-        from src.tool_execution import get_active_workspace
+        from src.tool_execution import get_active_workspace, get_active_workspace_roots
         ws = get_active_workspace()
-        if ws:
+        roots = get_active_workspace_roots()
+        if ws or roots:
+            root_lines = "\n".join(f"- {root}" for root in roots)
             return {
-                "output": f"{ws}\n(File tools are confined to this folder; the shell starts "
-                          f"here but is not sandboxed and can reach outside it.)",
+                "output": (
+                    f"{ws or '(no primary folder)'}\n"
+                    f"Primary working folder: {ws or '(none)'}\n"
+                    f"Project work roots:\n{root_lines}\n"
+                    "File tools may read and modify these roots. Relative paths use the "
+                    "primary folder; the shell starts there but is not sandboxed."
+                ),
                 "exit_code": 0,
             }
         return {

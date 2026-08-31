@@ -531,8 +531,8 @@ _DOMAIN_TOOL_MAP = {
     "cookbook": {"download_model", "serve_model", "serve_preset", "list_serve_presets", "list_served_models", "stop_served_model", "tail_serve_output", "list_downloads", "cancel_download", "search_hf_models", "list_cached_models", "list_cookbook_servers", "adopt_served_model"},
     "notes_calendar_tasks": {"manage_notes", "manage_calendar", "manage_tasks"},
     "ui": {"ui_control"},
-    "sessions": {"create_session", "list_sessions", "manage_session", "send_to_session", "search_chats"},
-    "files": {"bash", "python", "read_file", "write_file", "edit_file", "apply_patch", "todowrite", "grep", "glob", "ls", "get_workspace", "manage_bg_jobs"},
+    "sessions": {"create_session", "list_sessions", "manage_session", "send_to_session", "search_chats", "search_project_chats"},
+    "files": {"bash", "python", "read_file", "write_file", "edit_file", "apply_patch", "todowrite", "grep", "glob", "ls", "get_workspace", "project_context", "manage_bg_jobs"},
     "settings": {"manage_settings", "manage_endpoints", "manage_mcp", "manage_webhooks", "manage_tokens", "app_api"},
     "contacts": {"resolve_contact", "manage_contact"},
     "integrations": {"api_call"},
@@ -556,6 +556,8 @@ def _domain_rules_for_tools(tool_names: set) -> list[str]:
 # Each tool section is keyed by tool name(s) it covers.
 # Sections with multiple tools use a tuple key.
 TOOL_SECTIONS = {
+    "search_project_chats": "- ```search_project_chats``` - Search only earlier transcripts from the current project. Use for prior project decisions, attempts and discussions before answering from memory or guessing.",
+    "project_context": "- ```project_context``` - Inspect roots attached to the current project. Args (JSON): {\"action\":\"list|read|search\",\"item_id\":\"...\",\"path\":\"relative/file\",\"query\":\"...\"}. Attached roots are real working roots: normal file tools may read and modify them.",
     "bash": """\
 ```bash
 <shell command>
@@ -3439,6 +3441,7 @@ async def stream_agent_loop(
     approved_plan: Optional[str] = None,
     tool_policy: Optional[ToolPolicy] = None,
     workspace: Optional[str] = None,
+    workspace_roots: Optional[List[str]] = None,
     forced_tools: Optional[Set[str]] = None,
     uploaded_files: Optional[List[Dict]] = None,
     workload: str = "foreground",
@@ -4555,6 +4558,7 @@ async def stream_agent_loop(
                     owner=owner,
                     progress_cb=_push_approved_progress,
                     workspace=workspace,
+                    workspace_roots=workspace_roots,
                     security_context=run_security,
                     exact_approval=exact_approval,
                 )
@@ -5789,6 +5793,7 @@ async def stream_agent_loop(
                             owner=owner,
                             progress_cb=_push_progress,
                             workspace=workspace,
+                            workspace_roots=workspace_roots,
                             security_context=run_security,
                         )
                     finally:

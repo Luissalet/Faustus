@@ -180,9 +180,9 @@ def _resolve_tool_path(raw_path: str) -> str:
     When a workspace is active for this turn, paths are confined to it instead
     of the default allowlist (see _resolve_tool_path_in_workspace).
     """
-    ws = get_active_workspace()
-    if ws:
-        return _resolve_tool_path_in_workspace(ws, raw_path)
+    roots = get_active_workspace_roots()
+    if roots:
+        return _resolve_tool_path_in_roots(list(roots), raw_path, get_active_workspace())
     if raw_path is None or not str(raw_path).strip():
         raise ValueError("path is required")
     expanded = os.path.expanduser(str(raw_path).strip())
@@ -256,10 +256,23 @@ _active_workspace: contextvars.ContextVar = contextvars.ContextVar(
     "agent_active_workspace", default=None
 )
 
+_active_workspace_roots: contextvars.ContextVar = contextvars.ContextVar(
+    "agent_active_workspace_roots", default=()
+)
+
 
 def get_active_workspace() -> Optional[str]:
     """The folder the agent is confined to this turn, or None."""
     return _active_workspace.get()
+
+
+def get_active_workspace_roots() -> tuple[str, ...]:
+    """All file/folder roots attached to the active project turn."""
+    roots = tuple(_active_workspace_roots.get() or ())
+    if roots:
+        return roots
+    workspace = get_active_workspace()
+    return (workspace,) if workspace else ()
 
 
 def vet_workspace(raw: str) -> Optional[str]:
@@ -286,6 +299,66 @@ def vet_workspace(raw: str) -> Optional[str]:
     return resolved
 
 
+def _path_is_within_root(resolved: str, root: str) -> bool:
+    root = os.path.realpath(root)
+    resolved = os.path.realpath(resolved)
+    if os.path.isfile(root):
+        return os.path.normcase(resolved) == os.path.normcase(root)
+    try:
+        return os.path.commonpath([
+            os.path.normcase(resolved), os.path.normcase(root)
+        ]) == os.path.normcase(root)
+    except ValueError:
+        return False
+
+
+def _resolve_tool_path_in_roots(
+    roots: list[str], raw_path: str, primary_workspace: Optional[str] = None
+) -> str:
+    """Resolve a path against all file/folder roots of the active project."""
+    if raw_path is None or not str(raw_path).strip():
+        raise ValueError("path is required")
+    clean_roots = [os.path.realpath(root) for root in roots if root]
+    expanded = os.path.expanduser(str(raw_path).strip())
+    if os.path.isabs(expanded):
+        resolved = os.path.realpath(expanded)
+    else:
+        base = primary_workspace or next(
+            (root for root in clean_roots if os.path.isdir(root)), None
+        )
+        if not base:
+            raise ValueError("relative paths require a project folder root")
+        resolved = os.path.realpath(os.path.join(base, expanded))
+    if _is_sensitive_path(resolved):
+        raise ValueError(
+            f"path '{raw_path}' is inside a sensitive directory or matches a sensitive filename"
+        )
+    if any(_path_is_within_root(resolved, root) for root in clean_roots):
+        return resolved
+    raise ValueError(f"path '{raw_path}' is outside the workspace / project work roots")
+
+
+def vet_project_root(raw: str) -> Optional[str]:
+    """Validate a file or directory before attaching it as a project root.
+
+    Project roots may be individual files as well as directories. They reject
+    missing targets, sensitive locations and filesystem roots. Tool calls
+    re-check and confine concrete paths against the canonical roots.
+    """
+    raw = (raw or "").strip()
+    if not raw:
+        return None
+    resolved = os.path.realpath(os.path.expanduser(raw))
+    if not os.path.exists(resolved) or _is_sensitive_path(resolved):
+        return None
+    if os.path.isdir(resolved) and os.path.dirname(resolved) == resolved:
+        return None
+    return resolved
+
+
+vet_readonly_context = vet_project_root
+
+
 def agent_cwd() -> str:
     """Working directory for agent subprocesses (bash/python/background jobs):
     the active workspace when set, else the persistent data dir."""
@@ -308,9 +381,12 @@ def _resolve_search_root(raw_path: str) -> str:
     global allowlist + sensitive-file policy.
     """
     raw = (raw_path or "").strip()
+    roots = get_active_workspace_roots()
     ws = get_active_workspace()
-    if ws:
-        return os.path.realpath(ws) if not raw else _resolve_tool_path_in_workspace(ws, raw)
+    if roots:
+        if not raw:
+            return os.path.realpath(ws or next((r for r in roots if os.path.isdir(r)), roots[0]))
+        return _resolve_tool_path_in_roots(list(roots), raw, ws)
     if not raw:
         roots = _tool_path_roots()
         return roots[0] if roots else os.path.realpath(".")
@@ -597,6 +673,7 @@ async def execute_tool_block(
     owner: Optional[str] = None,
     progress_cb: Optional[Callable[[Dict], Awaitable[None]]] = None,
     workspace: Optional[str] = None,
+    workspace_roots: Optional[list[str]] = None,
     tool_policy: Optional[Any] = None,
     security_context: (
         ToolRunSecurityContext
@@ -709,7 +786,13 @@ async def execute_tool_block(
                 decision.reason or "Tool blocked by external-context policy.",
             )
 
+    roots = []
+    for candidate in [workspace, *(workspace_roots or [])]:
+        vetted = vet_project_root(candidate or "")
+        if vetted and vetted not in roots:
+            roots.append(vetted)
     token = _active_workspace.set(workspace or None)
+    roots_token = _active_workspace_roots.set(tuple(roots))
     try:
         output = await _execute_tool_block_impl(
             block,
@@ -742,6 +825,7 @@ async def execute_tool_block(
             )
         return output
     finally:
+        _active_workspace_roots.reset(roots_token)
         _active_workspace.reset(token)
 
 
@@ -932,6 +1016,55 @@ async def _execute_tool_block_impl(
         query = content.split("\n")[0].strip()
         desc = f"search_chats: {query[:80]}"
         result = await do_search_chats(query, owner=owner)
+    elif tool == "search_project_chats":
+        query = content.split("\n")[0].strip()
+        desc = f"search_project_chats: {query[:80]}"
+        from services.projects import project_for_session
+        project = project_for_session(session_id or "", owner)
+        if not project:
+            result = {"error": "This chat is not attached to a project", "exit_code": 1}
+        else:
+            result = await do_search_chats(
+                query, owner=owner, folder=project.get("folder") or ""
+            )
+    elif tool == "project_context":
+        desc = "project_context"
+        from services.projects import ProjectError, get_store, project_for_session
+        project = project_for_session(session_id or "", owner)
+        if not project:
+            result = {"error": "This chat is not attached to a project", "exit_code": 1}
+        else:
+            try:
+                args = json.loads(content or "{}")
+                if not isinstance(args, dict):
+                    raise ProjectError("Project context arguments must be an object")
+                action = str(args.get("action") or "list").strip().lower()
+                store = get_store()
+                if action == "list":
+                    result = store.list_context_path(
+                        project,
+                        str(args.get("item_id") or ""),
+                        str(args.get("path") or ""),
+                    )
+                elif action == "read":
+                    result = store.read_context_file(
+                        project,
+                        str(args.get("item_id") or ""),
+                        str(args.get("path") or ""),
+                        int(args.get("start_line") or 1),
+                        int(args.get("line_count") or 200),
+                    )
+                elif action == "search":
+                    result = store.search_context(
+                        project,
+                        str(args.get("query") or ""),
+                        str(args.get("item_id") or ""),
+                    )
+                else:
+                    raise ProjectError("Action must be list, read or search")
+                desc = f"project_context: {action}"
+            except (ProjectError, ValueError, TypeError, json.JSONDecodeError) as exc:
+                result = {"error": str(exc), "exit_code": 1}
     elif tool in ("chat_with_model", "ask_teacher", "list_models"):
         # Migrated to the agent_tools registry (#3629): dispatched through
         # TOOL_HANDLERS with the owner/session ctx these tools need, instead
