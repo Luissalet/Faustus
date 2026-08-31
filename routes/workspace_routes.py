@@ -147,12 +147,14 @@ def setup_workspace_routes():
         truncated = len(raw) > _FILE_VIEW_MAX
         raw = raw[:_FILE_VIEW_MAX]
         binary = b"\x00" in raw[:8000]
-        text = "" if binary else raw.decode("utf-8", errors="replace")
+        # Display only: normalise CRLF so line numbers and the diff view agree.
+        text = "" if binary else raw.decode("utf-8", errors="replace").replace("\r\n", "\n")
+        crlf = (not binary) and (b"\r\n" in raw)
         root = os.path.realpath(os.path.expanduser(workspace))
         rel = os.path.relpath(target, root).replace(os.sep, "/")
         return {
             "path": target, "rel": rel, "workspace": root, "size": size,
-            "binary": binary, "truncated": truncated, "text": text,
+            "binary": binary, "truncated": truncated, "text": text, "crlf": crlf,
             "lines": (text.count("\n") + (1 if text and not text.endswith("\n") else 0)) if text else 0,
             "mtime": os.path.getmtime(target),
         }
