@@ -353,6 +353,38 @@ def setup_workspace_routes():
             raise HTTPException(status_code=400, detail="bad checkpoint")
         return sha
 
+    # ── AGENTS.md draft (project instructions the runtime injects) ────────
+    @router.post("/instructions/draft")
+    async def instructions_draft(request: Request):
+        """Body: {"workspace": "...", "write": bool, "language": "en"|"es"}.
+        Returns the draft; with write=true it is saved as AGENTS.md when no
+        instructions file exists yet (never overwrites)."""
+        _admin_only(request)
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        if not isinstance(body, dict):
+            body = {}
+        root = _vetted_root(str(body.get("workspace") or ""))
+        from src import project_instructions as pi
+        d = pi.draft(root, language=str(body.get("language") or "en"))
+        if d.get("error"):
+            raise HTTPException(status_code=400, detail=d["error"])
+        d["written"] = False
+        if body.get("write"):
+            if d.get("exists"):
+                d["note"] = "an instructions file already exists; nothing written"
+            else:
+                try:
+                    with open(d["path"], "w", encoding="utf-8", newline="\n") as f:
+                        f.write(d["text"])
+                    d["written"] = True
+                    pi.invalidate(root)
+                except OSError as e:
+                    raise HTTPException(status_code=500, detail=f"could not write AGENTS.md: {e}")
+        return d
+
     @router.get("/checkpoint/status")
     def checkpoint_status(request: Request, workspace: str = Query(default="")):
         _admin_only(request)

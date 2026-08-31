@@ -499,6 +499,48 @@ def test_project_instructions_block_priority_cache_and_cap(ws, settings):
     assert pi.block(str(ws)) == ""
 
 
+def test_agents_md_draft_uses_detected_facts_and_never_overwrites(ws, monkeypatch):
+    from src import project_instructions as pi
+    import src.agent_harness as ah
+    monkeypatch.setattr(ah, "_index_cache", {}, raising=False)
+    (ws / "package.json").write_text('{"scripts": {"test": "vitest run"}}', encoding="utf-8")
+    d = pi.draft(str(ws), language="es")
+    assert d["path"].endswith("AGENTS.md") and d["exists"] is False
+    assert d["facts"]["languages"][0] == "Python" and "src" in d["facts"]["top_dirs"] and "package.json" in d["facts"]["manifests"]
+    assert d["facts"]["test_command"].startswith("python") and "pytest" in d["facts"]["test_command"]   # pytest wins over npm
+    text = d["text"]
+    assert text.startswith("# ws — instructions for the coding agent") and "## Cómo se ejecutan los tests" in text
+    assert "pytest -x -q" in text and "## No tocar" in text and "`src/`" in text
+    # An existing instructions file is reported, and the draft is still produced.
+    (ws / "CLAUDE.md").write_text("rules\n", encoding="utf-8")
+    d2 = pi.draft(str(ws))
+    assert d2["exists"] is True and d2["existing"].endswith("CLAUDE.md") and "## How to run the tests" in d2["text"]
+    assert pi.draft(str(ws / "missing"))["error"]
+
+
+def test_agents_md_draft_route_writes_once(ws, monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    import routes.workspace_routes as wr
+    monkeypatch.setattr(wr, "get_current_user", lambda request: "admin")
+    monkeypatch.setattr(wr, "owner_is_admin_or_single_user", lambda owner: True)
+    app = FastAPI()
+    app.include_router(wr.setup_workspace_routes())
+    c = TestClient(app)
+    r = c.post("/api/workspace/instructions/draft", json={"workspace": str(ws), "language": "en"})
+    assert r.status_code == 200 and r.json()["written"] is False and "# ws" in r.json()["text"]
+    assert not (ws / "AGENTS.md").exists()
+    r = c.post("/api/workspace/instructions/draft", json={"workspace": str(ws), "write": True})
+    assert r.status_code == 200 and r.json()["written"] is True
+    assert (ws / "AGENTS.md").read_text(encoding="utf-8").startswith("# ws")
+    # Second write: the file exists now → nothing overwritten.
+    (ws / "AGENTS.md").write_text("mine\n", encoding="utf-8")
+    r = c.post("/api/workspace/instructions/draft", json={"workspace": str(ws), "write": True})
+    assert r.status_code == 200 and r.json()["written"] is False and r.json()["exists"] is True
+    assert (ws / "AGENTS.md").read_text(encoding="utf-8") == "mine\n"
+    assert c.post("/api/workspace/instructions/draft", json={"workspace": str(ws / "nope")}).status_code == 400
+
+
 # ---------------------------------------------------------------------------
 # repo_map
 # ---------------------------------------------------------------------------

@@ -1327,6 +1327,43 @@ export function delegateTasks(tasks, { parallel = true, review = false } = {}) {
   return true;
 }
 
+function _boundWorkspacePath() {
+  try {
+    if (window.workspaceModule && typeof window.workspaceModule.getWorkspace === 'function') {
+      const w = window.workspaceModule.getWorkspace();
+      if (w) return typeof w === 'string' ? w : (w.path || '');
+    }
+    const raw = localStorage.getItem('odysseus-workspace');
+    if (!raw) return '';
+    try { const v = JSON.parse(raw); return typeof v === 'string' ? v : (v && v.path) || ''; } catch (_) { return raw; }
+  } catch (_) { return ''; }
+}
+
+// /agentsmd [write] — draft an AGENTS.md for the bound workspace from what the
+// runtime already detects (languages, layout, test command); `write` saves it
+// when no instructions file exists yet. The file is injected into every turn.
+async function _cmdAgentsMd(args) {
+  const ws = _boundWorkspacePath();
+  if (!ws) { slashReply('Bind a workspace folder first (the folder icon next to the composer).'); return true; }
+  const write = (args || []).map(x => String(x).toLowerCase()).includes('write');
+  const lang = (navigator.language || '').toLowerCase().startsWith('es') ? 'es' : 'en';
+  try {
+    const r = await fetch(`${API_BASE}/api/workspace/instructions/draft`, {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workspace: ws, write, language: lang }),
+    });
+    if (!r.ok) { slashReply(`Could not draft AGENTS.md (HTTP ${r.status}).`); return true; }
+    const d = await r.json();
+    const escd = t => String(t || '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+    let head;
+    if (d.written) head = `<b>AGENTS.md written</b> to <code>${escd(d.path)}</code> — it is injected into every agent turn in this workspace from now on. Edit it freely.`;
+    else if (d.exists) head = `This workspace already has an instructions file (<code>${escd(d.existing)}</code>); here is a fresh draft for reference (nothing written):`;
+    else head = `Draft AGENTS.md for <code>${escd(ws)}</code> — run <code>/agentsmd write</code> to save it:`;
+    slashReply(`<div class="agentsmd-draft"><p>${head}</p><pre class="harness-pre">${escd(d.text)}</pre></div>`);
+  } catch (e) { slashReply(`Could not draft AGENTS.md: ${e}`); }
+  return true;
+}
+
 async function _cmdScorecard(args) {
   const a = (args || []).map(x => String(x).toLowerCase());
   if (a[0] === 'clear' || a[0] === 'reset') {
@@ -6029,6 +6066,14 @@ const COMMANDS = {
     handler: _cmdAgents,
     noUserBubble: true,
     usage: '/agents [--review] [--serial] [a.py] task one | {model} task two',
+  },
+  agentsmd: {
+    alias: ['agents-md', 'instructions'],
+    category: 'Agent',
+    help: 'Draft an AGENTS.md for the bound workspace (languages, layout, test command, conventions); "write" saves it',
+    handler: _cmdAgentsMd,
+    noUserBubble: true,
+    usage: '/agentsmd [write]',
   },
   scorecard: {
     alias: ['models-score', 'score'],
