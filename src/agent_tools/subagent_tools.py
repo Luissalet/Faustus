@@ -292,6 +292,21 @@ def _build_report_text(runs: List[SubagentRun], workspace: Optional[str]) -> str
             lines.append(f"   harness rejections: {r.rejections}")
         if r.text.strip():
             lines.append("   worker report: " + _short(r.text, 900))
+    # Two workers writing the same file is the classic parallel-agent failure:
+    # the later write may have clobbered the earlier one. Call it out.
+    seen: Dict[str, List[str]] = {}
+    for r in runs:
+        for p in r.mutations:
+            key = str(p).replace("\\", "/").lower()
+            seen.setdefault(key, [])
+            if r.name not in seen[key]:
+                seen[key].append(r.name)
+    overlaps = {k: v for k, v in seen.items() if len(v) > 1}
+    if overlaps:
+        lines.append("")
+        lines.append("WARNING — files changed by MORE THAN ONE worker (review for clobbered edits):")
+        for k, names in list(overlaps.items())[:10]:
+            lines.append(f"   {k}: " + ", ".join(names))
     if workspace:
         try:
             from src.agent_harness import git_change_summary

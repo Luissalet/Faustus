@@ -266,3 +266,19 @@ def test_rejection_message_offers_already_exists_branch():
     check = ledger.check_completion("I've added the delete button in the component.")
     msg = ledger.rejection_message(check)
     assert "ALREADY exists" in msg and "citing the file and lines" in msg
+
+
+def test_delegation_report_flags_files_touched_by_two_workers(tmp_path):
+    from src.agent_tools.subagent_tools import SubagentRun, _build_report_text
+    a = SubagentRun(0, {"name": "backend", "instruction": "add route"})
+    b = SubagentRun(1, {"name": "frontend", "instruction": "add button"})
+    a.mutations = ["server.py", "static/js/app.js"]
+    b.mutations = ["static\\js\\app.js"]  # same file, Windows separators
+    a.stop_reason = b.stop_reason = "complete"
+    text = _build_report_text([a, b], None)
+    assert "MORE THAN ONE worker" in text
+    assert "static/js/app.js: backend, frontend" in text
+    assert "server.py" not in text.split("WARNING")[1]  # only the shared file is listed
+    # no overlap → no warning
+    b.mutations = ["README.md"]
+    assert "MORE THAN ONE" not in _build_report_text([a, b], None)

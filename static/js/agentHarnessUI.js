@@ -79,6 +79,13 @@ export function renderHarnessCheck(json) {
     }
     return;
   }
+  if (status === 'think_cutoff') {
+    const mins = Math.round((json.seconds || 0) / 60);
+    _card('continue',
+      `Thinking ran for ${mins ? mins + ' min' : (json.seconds || 0) + ' s'} without any output — cut off, retrying this step with thinking OFF for the rest of the turn`,
+      `<div class="harness-foot">${(json.reasoning_chars || 0).toLocaleString()} reasoning characters discarded · budget ${Math.round(json.budget_seconds || 0)} s (<code>agent_local_think_budget_seconds</code>). Pin <code>/think on</code> to disable this watchdog.</div>`);
+    return;
+  }
   const reasons = Array.isArray(json.reasons) ? json.reasons : [];
   const items = reasons.map(r => `<li>${esc(REASON_TEXT[r] || r)}</li>`);
   if (json.bad_paths && json.bad_paths.length) {

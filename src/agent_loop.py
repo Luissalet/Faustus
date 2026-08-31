@@ -4564,6 +4564,21 @@ async def stream_agent_loop(
     _todo_nudged = False
     _round_finish_reason = None
     _harness_scope_active = bool(workspace) or _looks_like_workspace_coding_request(_last_user)
+    # Thinking watchdog (local thinking models): a round that has produced only
+    # reasoning for longer than the budget is cut off once and retried with
+    # think=false for the rest of the turn. 0 disables.
+    try:
+        _think_budget_s = float(get_setting("agent_local_think_budget_seconds", 240) or 0)
+    except (TypeError, ValueError):
+        _think_budget_s = 240.0
+    try:
+        from src.model_context import is_local_endpoint as _is_local_ep_w
+        _think_watchdog_on = _harness_enabled and _think_budget_s > 0 and _is_local_ep_w(endpoint_url)
+    except Exception:
+        _think_watchdog_on = False
+    if isinstance(gen_overrides, dict) and gen_overrides.get("think") is True:
+        _think_watchdog_on = False  # the user pinned thinking on: respect it
+    _think_cutoffs = 0
 
     def _filter_route_tool_schemas(schemas):
         # Keep candidate actions visible after taint so the model can propose
@@ -5049,6 +5064,8 @@ async def stream_agent_loop(
         _round_start = time.time()
         _round_first_event_logged = False
         _round_first_token_logged = False
+        _think_first_ts = None
+        _think_runaway = False
         _round_actual_model = model
         _round_actual_endpoint_id = actual_endpoint_id
         _round_actual_endpoint_label = actual_endpoint_label
@@ -5369,6 +5386,15 @@ async def stream_agent_loop(
                         # round_response unchanged.
                         if data.get("thinking"):
                             round_reasoning += data["delta"]
+                            if _think_first_ts is None:
+                                _think_first_ts = time.time()
+                            elif (
+                                _think_watchdog_on and _think_cutoffs < 1
+                                and not round_response.strip()
+                                and time.time() - _think_first_ts > _think_budget_s
+                            ):
+                                _think_runaway = True
+                                break
                         else:
                             _delta_text = (
                                 _strip_doc_model_artifacts(data["delta"])
@@ -5393,6 +5419,31 @@ async def stream_agent_loop(
                 # Forward error events to frontend as visible text
                 yield chunk
             # Intercept [DONE] — don't forward until all rounds finish
+
+        if _think_runaway:
+            # The model has been "thinking" for the whole budget without a
+            # single visible token or tool call (qwen3 27B at 5 tok/s can sit
+            # in reasoning for 10+ minutes). Drop this stream, disable thinking
+            # for the rest of the turn and re-run the round.
+            _think_cutoffs += 1
+            _think_secs = time.time() - (_think_first_ts or _round_start)
+            logger.warning(
+                "[harness] round %s thinking cut off after %.0fs / %d reasoning chars — retrying with think=false",
+                round_num, _think_secs, len(round_reasoning),
+            )
+            _ledger.notes.append(f"think_cutoff@{round_num}")
+            gen_overrides = dict(gen_overrides or {})
+            gen_overrides["think"] = False
+            _rounds_budget += 1  # the retry must not eat the task's step budget
+            yield (
+                "data: " + json.dumps({
+                    "type": "harness_check", "status": "think_cutoff", "round": round_num,
+                    "seconds": round(_think_secs), "reasoning_chars": len(round_reasoning),
+                    "budget_seconds": _think_budget_s,
+                }) + "\n\n"
+            )
+            yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
+            continue
 
         logger.info(
             "[agent-timing] round_stream_done round=%s elapsed=%.3fs text_chars=%s tool_calls=%s first_event=%s first_token=%s",
@@ -6793,7 +6844,8 @@ async def stream_agent_loop(
         logger.info("[harness] turn summary: stop=%s tools=%s mutations=%s failed=%s rejections=%s",
                     _hsum["stop_reason"], _hsum["tool_calls"], _hsum["mutations"],
                     _hsum["failed_calls"], _hsum["rejections"])
-        if _ledger.events or _ledger.rejections or _ledger.length_continues or _hsum["stop_reason"] != "complete":
+        if (_ledger.events or _ledger.rejections or _ledger.length_continues or _ledger.notes
+                or _hsum["stop_reason"] != "complete"):
             yield f"data: {json.dumps({'type': 'harness_summary', 'data': _hsum})}\n\n"
     except Exception as _hs_err:
         logger.debug("[harness] summary failed: %s", _hs_err)

@@ -163,3 +163,42 @@ def test_todowrite_progress_is_annotated_and_persisted(tmp_path, monkeypatch):
     assert done and done[0]["verified"] is False  # completed with zero tool evidence in between
     saved = json.loads((tmp_path / "agent_todos" / "sess-progress.json").read_text(encoding="utf-8"))
     assert saved["todos"] == ups[1]["todos"]
+
+
+def test_runaway_thinking_is_cut_off_and_retried_without_think(tmp_path, monkeypatch):
+    """A local model that only produces reasoning past the budget is cut off
+    once; the round is retried with gen_overrides.think=False and the step
+    budget is not consumed by the retry."""
+    monkeypatch.setattr(al, "get_setting",
+                        lambda key, default=None: 0.05 if key == "agent_local_think_budget_seconds" else default,
+                        raising=False)
+    monkeypatch.setattr(al, "get_mcp_manager", lambda: None, raising=False)
+    monkeypatch.setattr(al, "estimate_tokens", lambda *a, **k: 10, raising=False)
+    monkeypatch.setattr(al, "blocked_tools_for_owner", lambda owner: set(), raising=False)
+    seen_think = []
+    calls = {"n": 0}
+
+    async def _fake_stream(_candidates, messages, **kwargs):
+        calls["n"] += 1
+        go = kwargs.get("gen_overrides") or {}
+        seen_think.append(go.get("think"))
+        if calls["n"] == 1:
+            # endless reasoning, never a visible token
+            for _ in range(200):
+                yield f'data: {json.dumps({"delta": "hmm ", "thinking": True})}\n\n'
+                await asyncio.sleep(0.002)
+            yield "data: [DONE]\n\n"
+            return
+        yield f'data: {json.dumps({"delta": "I could not find a project counter in this repository."})}\n\n'
+        yield f'data: {json.dumps({"type": "finish", "finish_reason": "stop"})}\n\n'
+        yield "data: [DONE]\n\n"
+    monkeypatch.setattr(al, "stream_llm_with_fallback", _fake_stream, raising=False)
+
+    events = _run(monkeypatch, str(tmp_path), user="¿Dónde está el contador de proyectos?", max_rounds=2)
+    cut = [e for e in events if e.get("type") == "harness_check" and e.get("status") == "think_cutoff"]
+    assert len(cut) == 1 and cut[0]["reasoning_chars"] > 0
+    assert calls["n"] == 2
+    assert seen_think == [None, False]
+    summary = next(e for e in events if e.get("type") == "harness_summary")["data"]
+    assert any(n.startswith("think_cutoff@") for n in summary["notes"])
+    assert summary["stop_reason"] == "complete"
