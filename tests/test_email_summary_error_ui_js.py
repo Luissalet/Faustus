@@ -7,7 +7,7 @@ import pytest
 
 
 _REPO = Path(__file__).resolve().parent.parent
-_UTILS = (_REPO / "static" / "js" / "emailLibrary" / "utils.js").as_posix()
+_UTILS = (_REPO / "static" / "js" / "emailLibrary" / "utils.js").as_uri()
 _HAS_NODE = shutil.which("node") is not None
 
 pytestmark = pytest.mark.skipif(not _HAS_NODE, reason="node binary not on PATH")
@@ -42,6 +42,7 @@ def test_email_summary_renderer_ignores_untrusted_provider_error_text():
         input=script,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         cwd=str(_REPO),
         timeout=30,
     )

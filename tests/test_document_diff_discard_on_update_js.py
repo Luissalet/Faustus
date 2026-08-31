@@ -21,7 +21,7 @@ browser-coupled and not importable in pytest.
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DOC_JS = (ROOT / "static/js/document.js").read_text()
+DOC_JS = (ROOT / "static/js/document.js").read_text(encoding="utf-8")
 
 GUARD = "if (_diffModeActive) exitDiffMode(true);"
 

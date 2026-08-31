@@ -140,6 +140,12 @@ def _tool_path_roots() -> list[str]:
     tmpdir = os.environ.get("TMPDIR")
     if tmpdir:
         roots.append(tmpdir)
+    # The platform temp dir (Windows: %TEMP%, which no /tmp rule covers).
+    try:
+        import tempfile as _tempfile
+        roots.append(_tempfile.gettempdir())
+    except Exception:
+        pass
 
     # Opt-in extra roots from settings.
     try:

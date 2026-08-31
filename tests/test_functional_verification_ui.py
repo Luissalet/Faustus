@@ -125,7 +125,7 @@ def test_turn_files_row_renders_chips_and_controls_in_node(tmp_path):
         "const html2 = turnFilesRowHtml({ mutations: ['x.js'], workspace: '/w' }, {});\n"
         "console.log(JSON.stringify({ html, html2 }));\n"
     )
-    proc = subprocess.run(["node", "--input-type=module"], input=script, capture_output=True, text=True, timeout=30)
+    proc = subprocess.run(["node", "--input-type=module"], input=script, capture_output=True, text=True, encoding="utf-8", timeout=30)
     assert proc.returncode == 0, proc.stderr
     out = json.loads(proc.stdout.strip().splitlines()[-1])
     html = out["html"]

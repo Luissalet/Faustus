@@ -43,7 +43,7 @@ def _run_tile_case():
           disconnect() {{}}
         }};
 
-        const mod = await import('{_HELPER.as_posix()}');
+        const mod = await import('{_HELPER.as_uri()}');
         const pick = (zone) => zone ? {{
           name: zone.name,
           rect: {{
@@ -77,6 +77,7 @@ def _run_tile_case():
         input=script,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         cwd=str(_REPO),
         timeout=30,
     )

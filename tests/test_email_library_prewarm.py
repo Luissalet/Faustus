@@ -173,6 +173,7 @@ def _run_scheduler_scenario(scenario: str):
         input=script,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         cwd=str(_REPO),
         timeout=30,
     )
@@ -358,6 +359,7 @@ def test_prewarm_account_chooser_rejects_disabled_or_empty_authoritative_invento
         input=script,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         cwd=str(_REPO),
         timeout=30,
     )

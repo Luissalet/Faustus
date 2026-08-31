@@ -90,6 +90,7 @@ console.log(JSON.stringify({{
         input=harness,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         cwd=str(_REPO),
         timeout=30,
     )
@@ -156,6 +157,7 @@ realLog(JSON.stringify({{ calls, oldRead: oldEmail.is_read, newerRead: newerEmai
         input=harness,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         cwd=str(_REPO),
         timeout=30,
     )
@@ -223,6 +225,7 @@ realLog(JSON.stringify({{ createCalls, isRead: email.is_read }}));
         input=harness,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         cwd=str(_REPO),
         timeout=30,
     )

@@ -98,6 +98,7 @@ def _run_markdown_case(markdown: str, render_expr: str = "mod.mdToHtml(input)", 
         capture_output=True,
         timeout=15,
         text=True,
+        encoding="utf-8",
     )
     if result.returncode != 0:
         raise AssertionError(f"node failed:\nSTDERR:\n{result.stderr}\nSTDOUT:\n{result.stdout}")

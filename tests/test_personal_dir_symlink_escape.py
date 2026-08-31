@@ -26,7 +26,7 @@ def _function_source(src_text, name):
 
 
 def test_confinement_uses_realpath_not_abspath():
-    body = _function_source(SRC.read_text(), "_resolve_allowed_personal_dir")
+    body = _function_source(SRC.read_text(encoding="utf-8"), "_resolve_allowed_personal_dir")
     assert "os.path.realpath" in body, (
         "_resolve_allowed_personal_dir must use os.path.realpath so a symlink "
         "inside PERSONAL_DIR cannot escape the confinement check"

@@ -31,6 +31,7 @@ def test_streaming_segmenter_suite():
         capture_output=True,
         timeout=180,
         text=True,
+        encoding="utf-8",
     )
     if result.returncode != 0:
         raise AssertionError(

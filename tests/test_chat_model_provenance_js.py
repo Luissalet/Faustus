@@ -42,6 +42,7 @@ def test_round_two_fallback_then_provider_alias_does_not_relabel_round_one():
         input=script,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         cwd=_REPO,
         timeout=30,
     )
@@ -103,6 +104,7 @@ def test_next_round_and_final_metrics_preserve_each_agent_round_route():
         input=script,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         cwd=_REPO,
         timeout=30,
     )
@@ -149,6 +151,7 @@ def test_same_model_fallback_preserves_distinct_endpoint_route_state():
         input=script,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         cwd=_REPO,
         timeout=30,
     )
@@ -189,6 +192,7 @@ def test_metrics_preserve_explicitly_unknown_round_endpoint():
         input=script,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         cwd=_REPO,
         timeout=30,
     )

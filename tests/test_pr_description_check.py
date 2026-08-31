@@ -115,6 +115,7 @@ checkPrDescription({ github, context, core })
         ["node", "-e", harness, str(_CHECKER), payload],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         cwd=str(_REPO),
         timeout=30,
     )
@@ -301,7 +302,7 @@ def test_draft_pr_never_receives_ready_for_review():
 
 
 def test_workflow_serializes_readiness_before_mergeability():
-    workflow = _WORKFLOW.read_text()
+    workflow = _WORKFLOW.read_text(encoding="utf-8")
 
     assert (
         "types: [opened, edited, synchronize, reopened, ready_for_review, "
@@ -319,7 +320,7 @@ def test_workflow_serializes_readiness_before_mergeability():
 
 
 def test_privileged_pr_workflow_executes_only_base_code():
-    workflow = _WORKFLOW.read_text()
+    workflow = _WORKFLOW.read_text(encoding="utf-8")
 
     assert "pull_request_target:" in workflow
     assert "ref: ${{ github.base_ref }}" in workflow

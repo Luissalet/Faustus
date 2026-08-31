@@ -48,6 +48,7 @@ def _run_node(source: str) -> dict:
         input=source,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         cwd=_REPO,
         timeout=30,
     )
