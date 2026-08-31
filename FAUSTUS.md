@@ -4,7 +4,7 @@
 
 - Base del fork: commit upstream `c9dd68d8` (27-08-2026, "refactor(docs): separate Pages site source").
 - Ramas: `feat/projects` (principal, `D:\LocalAI\odysseus`) y `feat/reliability` (desarrollo, worktree `D:\LocalAI\odysseus-dev`, instancia de pruebas en el puerto 7001). La rama de desarrollo se fusiona en la principal por fast-forward.
-- Cifras a 31-08-2026 (20:40): **117 commits**, 386 ficheros tocados, **+28.084 líneas** (−835); 33 módulos nuevos (20 de backend, 3 de rutas, 10 de frontend) + `scripts/faustus_rename.py`, 46 ficheros de tests nuevos. Suite completa: **6.218 tests en verde en Windows**, 66 saltados, 5 min 15 s (partía de 178 fallos ambientales); e2e Playwright **10/10** verificado en la tanda anterior.
+- Cifras a 31-08-2026 (21:00, tras fusionar en `feat/projects`): **121 commits**, 390 ficheros tocados, **+28.441 líneas** (−835); 33 módulos nuevos (20 de backend, 3 de rutas, 10 de frontend) + `scripts/faustus_rename.py`, 53 ficheros de tests nuevos. Suite completa: **6.218 tests en verde en Windows**, 66 saltados, 5 min 15 s (partía de 178 fallos ambientales); e2e Playwright **10/10** verificado en la tanda anterior.
 - Máquina de referencia: RTX 4070 Ti 12 GB, 128 GB RAM, Windows 11, Ollama 0.33.x; modelos `qwen3-coder:30b`, `qwen3.5:9b`, `qwen3.8:27b`, `qwen3-coder-next`.
 
 ---
