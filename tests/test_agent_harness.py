@@ -339,3 +339,43 @@ def test_whole_file_rewrite_is_noted(tmp_path):
     ledger.record("write_file", '{"path": "kept.js", "content": "x"}',
                   {"output": "Wrote", "exit_code": 0, "diff": {"added": 12, "removed": 1, "new_file": False}}, 3)
     assert [n for n in ledger.notes if n.startswith("whole_file_rewrite")] == ["whole_file_rewrite:static/js/app.js"]
+
+
+def test_subagent_worker_chat_is_flagged_busy_while_running(monkeypatch):
+    """The worker chat of delegate_agents has no detached run of its own; it is
+    marked busy for the sidebar dot while the worker runs and released after."""
+    import asyncio
+    import json
+    import src.agent_loop as al
+    from src import agent_runs
+    from src.agent_tools import subagent_tools as st
+
+    seen = {}
+
+    async def fake_loop(*args, **kwargs):
+        seen["busy_during"] = agent_runs.active_session_ids()
+        yield 'data: {"type": "tool_start", "tool": "read_file", "command": "x"}\n\n'
+        yield 'data: {"type": "tool_output", "tool": "read_file", "command": "x", "output": "ok", "exit_code": 0}\n\n'
+        yield f'data: {json.dumps({"type": "harness_summary", "data": {"stop_reason": "complete", "mutations": []}})}\n\n'
+        yield "data: [DONE]\n\n"
+
+    monkeypatch.setattr(al, "stream_agent_loop", fake_loop)
+    import src.ai_interaction as ai
+    monkeypatch.setattr(ai, "get_session_manager", lambda: None)  # no child chat persistence
+
+    events = []
+
+    async def emit(p):
+        events.append(p)
+
+    run = st.SubagentRun(0, {"name": "worker", "instruction": "read the code"})
+    agent_runs._EXTERNAL_BUSY.clear()
+    asyncio.run(st._run_subagent(
+        run, endpoint_url="http://x/v1", model="m", headers=None, owner="luis",
+        workspace=None, workspace_roots=None, max_rounds=3, shared_context="",
+        parent_session_id="parent", emit=emit,
+    ))
+    assert run.session_id and run.session_id in seen["busy_during"]
+    assert run.session_id not in agent_runs.active_session_ids()
+    assert [e["event"] for e in events] == ["started", "tool", "tool", "done"]
+    assert run.tool_calls == 1 and run.stop_reason == "complete"

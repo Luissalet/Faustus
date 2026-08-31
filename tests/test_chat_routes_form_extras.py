@@ -71,9 +71,19 @@ def test_activity_snapshot_helpers():
         agent_runs._RUNS.clear()
         agent_runs._RUNS.update({"a": _R("running"), "b": _R("done"), "c": _R("running")})
         assert sorted(agent_runs.active_session_ids()) == ["a", "c"]
+        # Sub-agent worker chats have no detached run of their own: they are
+        # flagged busy explicitly for the duration of the worker.
+        agent_runs.mark_busy("w1")
+        agent_runs.mark_busy("a")   # already running → not duplicated
+        assert sorted(agent_runs.active_session_ids()) == ["a", "c", "w1"]
+        agent_runs.clear_busy("w1")
+        agent_runs.clear_busy("nope")  # unknown id is a no-op
+        assert sorted(agent_runs.active_session_ids()) == ["a", "c"]
+        assert not agent_runs.is_active("w1")
     finally:
         agent_runs._RUNS.clear()
         agent_runs._RUNS.update(saved)
+        agent_runs._EXTERNAL_BUSY.clear()
 
     from src.tool_capabilities import capabilities_for_action
     store = ToolApprovalStore()

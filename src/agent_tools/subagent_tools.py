@@ -191,6 +191,13 @@ async def _run_subagent(
     await emit({"event": "started", "name": run.name, "instruction": _short(run.instruction, 240), "session_id": child_sid})
     final_metrics: Dict[str, Any] = {}
     tool_events: List[Dict[str, Any]] = []
+    # Sidebar activity: the worker chat blinks while it works, then shows as
+    # finished-unread — same as a chat the user started themselves.
+    try:
+        from src import agent_runs as _agent_runs
+        _agent_runs.mark_busy(child_sid)
+    except Exception:
+        _agent_runs = None
     try:
         async for chunk in stream_agent_loop(
             endpoint_url, model, messages,
@@ -254,6 +261,11 @@ async def _run_subagent(
         run.finished = time.time()
         if run.stop_reason == "unknown":
             run.stop_reason = "error" if run.error else "complete"
+        if _agent_runs is not None:
+            try:
+                _agent_runs.clear_busy(child_sid)
+            except Exception:
+                pass
     # Persist the transcript into the child chat so it can be audited later.
     if sm and run.session_id:
         try:

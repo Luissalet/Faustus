@@ -365,6 +365,14 @@ async function _syncActivityFromServer() {
     }
     _serverRunning.clear();
     for (const sid of running) _serverRunning.add(sid);
+    // A running chat this tab does not list yet (a sub-agent worker chat
+    // created server-side, or a chat started from another tab): refresh the
+    // list once per unknown id so its dot has a row to sit on.
+    const unknown = [...running].filter(sid => !sessions.some(x => x.id === sid) && !_activityUnknownSeen.has(sid));
+    if (unknown.length) {
+      for (const sid of unknown) _activityUnknownSeen.add(sid);
+      loadSessions().catch(() => {});
+    }
     // Approvals: the server is the source of truth for tool approvals; keep
     // locally-marked ask_user questions until the user opens that chat.
     _serverAwaitingSet = awaiting;
@@ -379,6 +387,7 @@ async function _syncActivityFromServer() {
   }
 }
 const _localQuestionSessions = new Set(); // ask_user questions (not tool approvals) seen by this tab
+const _activityUnknownSeen = new Set();   // running ids we already reloaded the list for
 let _serverAwaitingSet = new Set();
 function _serverAwaiting(sid) { return _serverAwaitingSet.has(sid); }
 

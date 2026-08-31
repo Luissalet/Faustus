@@ -2571,6 +2571,14 @@ def setup_chat_routes(
                                     yield chunk
                                 elif data.get("type") in (
                                     "tool_start", "tool_output", "agent_step",
+                                    # live progress of a running tool: bash/python
+                                    # stdout tail, image steps and the sub-agent
+                                    # worker board (delegate_agents). The agent
+                                    # loop emits these while the tool is in
+                                    # flight; without this entry they were
+                                    # silently dropped here and the UI never saw
+                                    # them (board stayed empty, tails stayed blind).
+                                    "tool_progress",
                                     "doc_stream_open", "doc_stream_delta",
                                     "doc_update", "doc_suggestions", "ui_control",
                                     "rounds_exhausted", "budget_exceeded",

@@ -95,9 +95,30 @@ def is_active(session_id: str) -> bool:
     return bool(r and r.status == "running")
 
 
+# Sessions that are busy WITHOUT a detached run of their own — e.g. the worker
+# chats of `delegate_agents`, which are driven by the parent's tool call. They
+# get the same blinking dot in the sidebar while their run is in flight.
+_EXTERNAL_BUSY: set = set()
+
+
+def mark_busy(session_id: Optional[str]) -> None:
+    if session_id:
+        _EXTERNAL_BUSY.add(session_id)
+
+
+def clear_busy(session_id: Optional[str]) -> None:
+    if session_id:
+        _EXTERNAL_BUSY.discard(session_id)
+
+
 def active_session_ids() -> List[str]:
-    """Sessions with a detached run still going (sidebar activity dots)."""
-    return [sid for sid, r in list(_RUNS.items()) if r.status == "running"]
+    """Sessions with a run still going (sidebar activity dots): detached runs
+    plus externally-marked busy sessions (sub-agent workers)."""
+    ids = [sid for sid, r in list(_RUNS.items()) if r.status == "running"]
+    for sid in list(_EXTERNAL_BUSY):
+        if sid not in ids:
+            ids.append(sid)
+    return ids
 
 
 def get_status(session_id: str) -> Optional[str]:

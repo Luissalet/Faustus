@@ -3655,3 +3655,47 @@ def test_skill_activation_reaches_later_fallback_request_and_pinned_round(monkey
         for message in round_three_requests[0]["messages"]
     )
     assert any('"delta": "pinned backup answer"' in chunk for chunk in chunks)
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_forwards_tool_progress_events(monkeypatch):
+    """Live tool progress (bash tail, sub-agent worker board) must reach the
+    browser. The agent-mode route forwards a whitelist of event types; before
+    the fix `tool_progress` was missing and every progress event emitted by the
+    agent loop was silently dropped."""
+    captured = {}
+    progress_events = [
+        {"type": "tool_progress", "tool": "bash", "round": 1, "elapsed_s": 3, "tail": "building…"},
+        {
+            "type": "tool_progress", "tool": "delegate_agents", "round": 0, "approved": True,
+            "subagent": {"id": "w1", "index": 0, "name": "worker", "event": "started", "session_id": "abc12345"},
+        },
+        {
+            "type": "tool_progress", "tool": "delegate_agents", "round": 0, "approved": True,
+            "subagent": {"id": "w1", "index": 0, "name": "worker", "event": "done", "stop_reason": "complete",
+                         "mutations": ["a.py"], "tool_calls": 3, "failed_calls": 0, "duration_s": 12.5},
+        },
+    ]
+    chunks = [
+        f'data: {json.dumps({"type": "tool_start", "tool": "delegate_agents", "command": "{}", "round": 0, "approved": True})}\n\n',
+        *[f"data: {json.dumps(ev)}\n\n" for ev in progress_events],
+        f'data: {json.dumps({"type": "tool_output", "tool": "delegate_agents", "output": "report", "exit_code": 0, "round": 0, "approved": True})}\n\n',
+        'data: {"delta": "done"}\n\n',
+        "data: [DONE]\n\n",
+    ]
+    endpoint = _chat_stream_endpoint(monkeypatch, "agent", captured, agent_chunks=chunks)
+
+    response = await endpoint(_RouteRequest("agent"))
+    emitted = [chunk async for chunk in response.body_iterator]
+
+    forwarded = [
+        json.loads(c[6:]) for c in emitted
+        if c.startswith("data: ") and not c.startswith("data: [DONE]") and '"tool_progress"' in c
+    ]
+    assert len(forwarded) == 3, emitted
+    assert forwarded[0]["tail"] == "building…"
+    assert forwarded[1]["subagent"]["event"] == "started"
+    assert forwarded[2]["subagent"]["mutations"] == ["a.py"]
+    # Order relative to the tool card events is preserved (start → progress → output).
+    order = [json.loads(c[6:]).get("type") for c in emitted if c.startswith("data: {")]
+    assert order.index("tool_start") < order.index("tool_progress") < order.index("tool_output")
