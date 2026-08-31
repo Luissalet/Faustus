@@ -3,8 +3,8 @@
 **Faustus** es el fork personal de Luis de [Odysseus](https://github.com/odysseus-dev/odysseus) (interfaz local tipo Cowork sobre Ollama). Este documento es el registro vivo de **todo lo que Faustus añade o cambia respecto al Odysseus original**: se actualiza con cada bloque de trabajo, sirve de changelog del fork y de material para el currículum (qué se construyó, por qué, cómo se verificó).
 
 - Base del fork: commit upstream `c9dd68d8` (27-08-2026, "refactor(docs): separate Pages site source").
-- Ramas: `feat/projects` (principal, `D:\LocalAI\odysseus`) y `feat/reliability` (desarrollo, worktree `D:\LocalAI\odysseus-dev`, instancia de pruebas en el puerto 7001). La rama de desarrollo se fusiona en la principal por fast-forward.
-- Cifras a 31-08-2026 (22:20, en `feat/reliability`): **122 commits**, 391 ficheros tocados, **+28.606 líneas** (−835); 36 módulos nuevos (23 de backend, 3 de rutas, 10 de frontend) + `scripts/faustus_rename.py`, 54 ficheros de tests nuevos. Suite completa: **6.256 tests en verde en Windows**, 66 saltados, 5 min 16 s (partía de 178 fallos ambientales); e2e Playwright **10/10** verificado en la tanda anterior.
+- Rama: **una sola, `master`** (`D:\LocalAI\odysseus`), que trackea `origin/master` en `github.com/Luissalet/Faustus`. Las ramas `feat/projects` y `feat/reliability` y la worktree de pruebas se consolidaron el 31-08.
+- Cifras a 01-09-2026 (00:55, en `master`): **128 commits**, **+33.983 líneas** sobre la base; 37 módulos nuevos de backend/rutas/frontend + `scripts/faustus_rename.py`, **75 ficheros de tests** nuevos. Suite completa: **6.547 tests en verde**, 12 saltados, 4 min 34 s; e2e Playwright 10/10.
 - Máquina de referencia: RTX 4070 Ti 12 GB, 128 GB RAM, Windows 11, Ollama 0.33.x; modelos `qwen3-coder:30b`, `qwen3.5:9b`, `qwen3.8:27b`, `qwen3-coder-next`.
 
 ---
@@ -323,6 +323,25 @@ Cuatro sitios, porque el fallo es invisible por definición: la **pill de uso** 
 ### Verificación
 
 38 tests nuevos en 4 ficheros: la regla del umbral contra la línea base medida, la aritmética del ajuste (incluida la estimación de atención híbrida), lo que el driver expone de verdad, y el cableado de las cuatro superficies —un endpoint perfecto que nadie llama sigue siendo no entregar nada—. En vivo: qwen3.5:9b cargado al 100% en GPU, 65 tok/s, 706 MB de shared constantes durante la generación → "no spill", que es la respuesta correcta.
+
+## 10. Referencias a código: la traza de error se convierte en el código real (31-08-2026, madrugada del 1-09)
+
+**El problema.** El caso más común de un agente de código es *«me peta esto»* seguido de un traceback pegado. Hasta ahora no recibía ningún trato especial: la traza entraba como texto plano y el modelo de 9B gastaba dos o tres rondas (60–90 s) haciendo `grep` y `read_file` para volver a encontrar lo que la traza ya decía — fichero, línea y función—, y a veces terminaba arreglando el fichero equivocado. Y `@src/app.py:42` no servía de nada: la clase de caracteres de `MENTION_RE` no incluía `:`, así que resolvía el fichero y **tiraba el número de línea**.
+
+**Qué hace.** `src/code_refs.py` lee el mensaje del usuario, extrae las referencias a código, las resuelve contra el workspace y le pone delante al modelo la **ventana numerada del fichero real** con la línea señalada.
+
+- **Extracción** (`extract`): traceback de Python en sus dos formas (`File "/p/app.py", line 42` y la de Windows con letra de unidad), línea de fallo de pytest (`tests/test_x.py:42: AssertionError`), node-id de pytest (`tests/test_x.py::TestC::test_foo`, que no trae línea y se centra en la definición), stack de Node con columna (`at fn (/p/a.js:12:5)`) y el genérico `ruta:línea[:col]`. Las URLs se enmascaran antes de escanear, porque `http://localhost:8080` no es la línea 8080, y la letra de unidad forma parte de la ruta, nunca del número.
+- **Resolución** (`resolve`): exacta → sin mayúsculas → **por sufijo más largo** → basename único. El sufijo es lo que hace que funcione de verdad: una traza casi siempre viene de otro checkout o de CI, así que `/home/ci/app/src/a.py` tiene que casar con `src/a.py` del workspace.
+- **Ventanas** (`window`, `turn_context`): ±25 líneas con números alineados y marca en la línea señalada; dos marcos del mismo fichero a menos de dos radios se funden en **una sola** ventana; tope de 5 ficheros y presupuesto de caracteres (`agent_code_ref_chars`, 4000). Un fichero que ya venga entero por una mención `@` no se repite.
+- **Lo de fuera se nombra, no se pega**: los marcos de `site-packages`, `node_modules`, venv, stdlib y `<frozen …>` se listan aparte con una frase explícita de que no son código del usuario. Todo el bloque va con el mismo envoltorio de contenido no confiable que las menciones, y se inyecta después del mapa del repo y antes del mensaje del usuario.
+
+**Un falso positivo que se muere por el camino.** Esas mismas rutas de dependencias contaban hasta ahora en `user_missing_paths()` como «ficheros que el usuario nombró y no existen», y podían disparar la ronda de honestidad `target_substituted` sin ningún motivo. Pegar un traceback de una librería castigaba al modelo por algo que no había hecho.
+
+**De regalo, del mismo módulo:** `@src/app.py:42` y `@src/app.py:120-160` recortan la ventana en vez de inlinear el fichero entero, y una línea nombrada gana a la regla de «demasiado grande para inlinear» — si dices la línea, la quieres ver.
+
+**Ficheros.** Nuevo: `src/code_refs.py`, `tests/test_code_refs.py`. Tocados: `src/agent_loop.py` (inyección), `src/file_mentions.py` (rangos en las menciones), `src/agent_harness.py` (el falso positivo), `src/settings.py` (`agent_code_refs`, `agent_code_ref_chars`).
+
+**Verificación.** 31 tests nuevos con un corpus de trazas **reales** — capturadas ejecutando código que falla de verdad, no escritas a mano —, más los negativos (ruta sin línea, URL con puerto, fichero inexistente), el presupuesto con 8 marcos, la fusión de ventanas, el symlink que escapa (no se inlinea) y el **test de cableado** que parsea `agent_loop.py` con `ast` y exige la llamada, el envoltorio y el orden de inyección: un módulo que nadie llama sigue siendo no haber entregado nada.
 
 ---
 
