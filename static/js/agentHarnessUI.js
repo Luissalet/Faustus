@@ -156,6 +156,14 @@ export function renderHarnessCheck(json) {
       open ? `<div class="harness-foot">Open objectives:</div><ul class="harness-list">${open}</ul>` : '');
     return;
   }
+  if (status === 'target_substituted') {
+    const missing = (json.missing || []).map(p => `<code>${esc(p)}</code>`).join(', ');
+    const changed = (json.changed || []).map(p => `<code>${esc(p)}</code>`).join(', ');
+    _card('rejected',
+      `You named ${(json.missing || []).join(', ')} — it does not exist; the model changed other files without saying so. Asked for an explicit answer (or a question)`,
+      `<div class="harness-foot">Named by you: ${missing || '—'} · changed instead: ${changed || '—'}. The edits stay; review them with the chips below or revert.</div>`, { open: true });
+    return;
+  }
   if (status === 'think_cutoff') {
     const mins = Math.round((json.seconds || 0) / 60);
     _card('continue',
@@ -241,6 +249,7 @@ export function renderHarnessSummary(json) {
     unverified_mentions: p => `mentions paths never seen in a tool result: <code>${esc(p)}</code>`,
     auto_continue_rounds: r => `step limit reached at round ${esc(r)}, one extra cycle granted`,
     empty_round_nudge: r => `round ${esc(r)} was empty (no text, no tool) — nudged`,
+    target_substituted: p => `you named <code>${esc(p)}</code> (does not exist) — the model changed other files; it was asked to say so explicitly`,
   };
   const noteLines = notes.map(n => {
     const [k, ...rest] = String(n).split(/[:@]/);

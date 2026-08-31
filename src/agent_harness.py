@@ -317,6 +317,13 @@ def find_intent_announcement(text: str, tail_chars: int = 600) -> Optional[str]:
     return None
 
 
+_MISSING_ACK_RE = re.compile(
+    r"(no existe|no exist[ií]a|no (?:lo |la )?(?:he )?encontr|no se encontr|not exist|doesn'?t exist|does not exist|"
+    r"did not exist|not found|couldn'?t find|could not find|no such file|en su lugar|en vez de|instead)",
+    re.I,
+)
+
+
 def extract_path_tokens(text: str) -> List[str]:
     """Path-like tokens mentioned in prose (de-duplicated, order kept)."""
     out: List[str] = []
@@ -523,6 +530,7 @@ class TurnLedger:
         self.notes: List[str] = []
         self.static_checks: List[Dict[str, Any]] = []
         self.syntax_rejections = 0
+        self.target_nudges = 0
         # The user's own message may name real files; those count as observed.
         for tok in extract_path_tokens(self.user_text):
             self.observed_paths.add(_norm(tok))
@@ -643,6 +651,57 @@ class TurnLedger:
             if len(out) >= limit:
                 break
         return out
+
+    def user_missing_paths(self) -> List[str]:
+        """Files the USER named that do not exist in the workspace (and were not
+        created this turn). Empty without a workspace."""
+        if not self.workspace:
+            return []
+        created = {_norm(p).rsplit("/", 1)[-1] for p in self.mutated_paths()}
+        out: List[str] = []
+        for tok in extract_path_tokens(self.user_text):
+            if path_exists_in_workspace(self.workspace, tok):
+                continue
+            if _norm(tok).rsplit("/", 1)[-1] in created:
+                continue
+            out.append(tok)
+        return out[:4]
+
+    def check_target_substitution(self, text: str) -> Optional[Dict[str, Any]]:
+        """The user named a file that does not exist; the model changed OTHER
+        files and its answer neither says the named file is missing nor asked the
+        user. Seen live (t4): 'fix static/js/cards.js' → cards.js does not exist,
+        the model guessed a null-guard in projects.js and reported it as the fix.
+        Returns {"missing": [...], "changed": [...]} when the answer must
+        acknowledge the substitution, else None."""
+        if not self.mutations:
+            return None
+        missing = self.user_missing_paths()
+        if not missing:
+            return None
+        if any(e.get("tool") == "ask_user" for e in self.events):
+            return None
+        low = (text or "").lower()
+        for tok in missing:
+            base = _norm(tok).rsplit("/", 1)[-1]
+            # Acknowledged: the named file is mentioned together with a "does not
+            # exist / not found / instead" statement anywhere in the answer.
+            if base in low and _MISSING_ACK_RE.search(low):
+                return None
+        return {"missing": missing, "changed": self.mutated_paths()[:6]}
+
+    def target_substitution_message(self, check: Dict[str, Any]) -> str:
+        missing = ", ".join(f"`{m}`" for m in check.get("missing", []))
+        changed = ", ".join(f"`{c}`" for c in check.get("changed", [])) or "other files"
+        return (
+            "[Harness check — automatic message from the runtime, not from the user] "
+            f"The user named {missing}, which does NOT exist in the workspace, and you changed "
+            f"{changed} instead without saying so. Do NOT redo or extend the edits. Write the final "
+            "answer so that it (a) states explicitly that the named file does not exist, (b) names the "
+            "file(s) you changed instead and why you believe that is what the user meant, and (c) if "
+            "you found no concrete defect and the change is a guess, say so and offer to revert it — "
+            "or call ask_user to confirm which file / behaviour the user meant."
+        )
 
     def check_completion(self, text: str) -> Dict[str, Any]:
         """Judge a text-only (final) round against the evidence.

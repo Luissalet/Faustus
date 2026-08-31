@@ -294,3 +294,35 @@ def test_delegate_agents_worker_reports_are_persisted_with_the_tool_event(tmp_pa
     assert sa["stop_reason"] == "complete" and sa["tool_calls"] == 3 and sa["duration_s"] == 41.2
     assert len(sa["final_text"]) == 400          # shortened for history
     assert "git" not in sa and "static_checks" not in sa  # evidence fields only
+
+
+def test_silent_target_substitution_gets_one_honesty_round(tmp_path, monkeypatch):
+    """The user names a missing file, the model edits another one and reports
+    'fixed' without saying so → exactly one harness round asking for an explicit
+    answer; the honest second answer ends the turn verified."""
+    (tmp_path / "static" / "js").mkdir(parents=True)
+    (tmp_path / "static" / "js" / "projects.js").write_text("export function cardHtml(p) { return p.name; }\n", encoding="utf-8")
+    _patch_common(monkeypatch)
+    edit = "```edit_file\n" + json.dumps({"path": "static/js/projects.js", "old_string": "p.name", "new_string": "p.name || 'x'"}) + "\n```"
+    silent = "He arreglado el bug: cardHtml ahora usa un valor por defecto cuando falta el nombre."
+    honest = "static/js/cards.js no existe en el proyecto; las tarjetas se generan en static/js/projects.js y ahí he añadido el valor por defecto."
+    _scripted_stream(monkeypatch, [(edit, "tool_calls"), (silent, "stop"), (honest, "stop")])
+    gen = al.stream_agent_loop(
+        "http://127.0.0.1:11434/v1", "qwen3-coder:30b",
+        [{"role": "user", "content": "Arregla el bug de static/js/cards.js que hace que no se muestre el nombre del proyecto"}],
+        max_rounds=6, relevant_tools={"read_file", "edit_file", "glob", "ask_user"},
+        workspace=str(tmp_path), session_id="sess-target",
+    )
+    events = _events(_collect(gen))
+    checks = [e for e in events if e.get("type") == "harness_check"]
+    statuses = [c["status"] for c in checks]
+    assert statuses.count("target_substituted") == 1, statuses
+    ts = next(c for c in checks if c["status"] == "target_substituted")
+    assert ts["missing"] == ["static/js/cards.js"] and ts["changed"] == ["static/js/projects.js"]
+    assert statuses[-1] == "verified"
+    summary = [e for e in events if e.get("type") == "harness_summary"][-1]["data"]
+    assert summary["stop_reason"] == "complete"
+    assert any(str(n).startswith("target_substituted:") for n in summary.get("notes", []))
+    # the honest answer is what the user gets
+    text = "".join(e.get("delta", "") for e in events if "delta" in e and not e.get("thinking"))
+    assert "no existe" in text

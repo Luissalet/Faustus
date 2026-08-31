@@ -5895,6 +5895,35 @@ async def stream_agent_loop(
                         }) + "\n\n"
                     )
                 elif _ledger.rejections or _ledger.effects:
+                    # ── (2b) Substituted target. The user named a file that does
+                    # not exist; the model edited other files and the answer does
+                    # not say so. One bounded round to make the answer honest
+                    # about it (or to ask) — the edits themselves stay.
+                    _ts_check = None
+                    if workspace and _ledger.target_nudges < 1:
+                        try:
+                            _ts_check = _ledger.check_target_substitution(_hc_text)
+                        except Exception as _ts_err:
+                            logger.debug("[harness] target substitution check failed: %s", _ts_err)
+                            _ts_check = None
+                    if _ts_check:
+                        _ledger.target_nudges += 1
+                        _ledger.notes.append("target_substituted:" + ",".join(_ts_check["missing"]))
+                        logger.warning("[harness] round %s changed %s while the user named missing %s — asking for an explicit answer",
+                                       round_num, _ts_check["changed"], _ts_check["missing"])
+                        if round_response.strip():
+                            messages.append({"role": "assistant", "content": round_response})
+                        messages.append({"role": "user", "content": _ledger.target_substitution_message(_ts_check)})
+                        yield (
+                            "data: " + json.dumps({
+                                "type": "harness_check", "status": "target_substituted", "round": round_num,
+                                "missing": _ts_check["missing"], "changed": _ts_check["changed"],
+                                "attempt": 1, "max_attempts": 1, "mutations": _ledger.mutated_paths(),
+                            }) + "\n\n"
+                        )
+                        full_response += "\n\n"
+                        yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
+                        continue
                     # ── (3) Post-mutation syntax check. The model says it is done
                     # and changed files: make sure they at least parse before the
                     # turn ends. One bounded round-trip to fix what broke.

@@ -379,3 +379,41 @@ def test_subagent_worker_chat_is_flagged_busy_while_running(monkeypatch):
     assert run.session_id not in agent_runs.active_session_ids()
     assert [e["event"] for e in events] == ["started", "tool", "tool", "done"]
     assert run.tool_calls == 1 and run.stop_reason == "complete"
+
+
+def test_target_substitution_requires_an_honest_answer(tmp_path):
+    """User names a file that does not exist; the model edits another file and
+    reports it as the fix without saying the named file is missing (t4 live)."""
+    (tmp_path / "static" / "js").mkdir(parents=True)
+    (tmp_path / "static" / "js" / "projects.js").write_text("export function cardHtml(p) { return p.name; }\n", encoding="utf-8")
+    led = h.TurnLedger(str(tmp_path), "Arregla el bug de static/js/cards.js que hace que no se muestre el nombre del proyecto")
+    assert led.user_missing_paths() == ["static/js/cards.js"]
+    # nothing changed yet → nothing to explain
+    assert led.check_target_substitution("No he tocado nada, cards.js no existe.") is None
+    led.record("edit_file", '{"path": "static/js/projects.js", "old_string": "p.name", "new_string": "p.name || \'x\'"}',
+               {"output": "Edited", "exit_code": 0}, 3)
+    silent = "He arreglado el bug: ahora cardHtml usa un valor por defecto cuando falta el nombre."
+    chk = led.check_target_substitution(silent)
+    assert chk and chk["missing"] == ["static/js/cards.js"] and chk["changed"] == ["static/js/projects.js"]
+    msg = led.target_substitution_message(chk)
+    assert "static/js/cards.js" in msg and "does NOT exist" in msg and "ask_user" in msg
+    # honest variants pass
+    for ok_text in (
+        "static/js/cards.js no existe en el proyecto; las tarjetas se generan en static/js/projects.js, donde he añadido un valor por defecto.",
+        "Note: cards.js does not exist — the card markup lives in projects.js, which I changed instead.",
+        "I could not find cards.js, so I edited projects.js (the file that renders the cards).",
+    ):
+        assert led.check_target_substitution(ok_text) is None, ok_text
+    # asking the user also counts
+    led.record("ask_user", '{"question": "¿Te refieres a projects.js?"}', {"output": "asked", "exit_code": None}, 4)
+    assert led.check_target_substitution(silent) is None
+
+
+def test_target_substitution_ignores_files_created_this_turn(tmp_path):
+    """'Create utils/helpers.py' — the named path did not exist but the model
+    created it: nothing to acknowledge."""
+    led = h.TurnLedger(str(tmp_path), "Crea utils/helpers.py con una función slugify")
+    led.record("write_file", '{"path": "utils/helpers.py", "content": "def slugify(s): return s"}',
+               {"output": "Wrote", "exit_code": 0, "diff": {"new_file": True, "added": 1, "removed": 0, "text": "+x"}}, 1)
+    assert led.user_missing_paths() == []
+    assert led.check_target_substitution("He creado utils/helpers.py con slugify.") is None
