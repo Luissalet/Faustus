@@ -1289,8 +1289,17 @@ function _cmdAgents(args) {
       const agentBtn = document.getElementById('mode-agent-btn');
       if (agentBtn && !agentBtn.classList.contains('active')) agentBtn.click();
     } catch (_) {}
-    const sb = document.querySelector('.send-btn');
-    if (sb) sb.click();
+    // The send button is polymorphic (New chat / voice when the composer was
+    // empty a moment ago), so go through the submit path directly — the same
+    // route the tool-approval and email flows use.
+    const cm = window.chatModule;
+    if (cm && typeof cm.handleChatSubmit === 'function') {
+      cm.handleChatSubmit({ preventDefault() {} }).catch?.(() => {});
+      return;
+    }
+    const form = document.getElementById('chat-form');
+    if (form && form.requestSubmit) form.requestSubmit();
+    else if (form) form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
   }, 0);
   return true;
 }
