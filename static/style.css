@@ -42382,6 +42382,12 @@ body:has(.sidebar.right-side) .project-active-pill { right: 12px; }
 .su-model-name { font-weight: 600; }
 .su-muted { opacity: .65; }
 .su-foot { margin-top: 4px; font-size: 11px; }
+@media (max-width: 1100px) {
+  /* Narrow chat column: the floating panel overlaps the text, so keep it
+     compact and let the content show through until hovered. */
+  .agent-progress-panel { width: 250px; opacity: .88; transition: opacity .15s; }
+  .agent-progress-panel:hover { opacity: 1; }
+}
 @media (max-width: 768px) {
   .agent-progress-panel { top: auto; bottom: 120px; right: 8px; width: 260px; }
   .sys-usage-pill .su-text { max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
