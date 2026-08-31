@@ -2620,6 +2620,36 @@ def _ollama_native_url_for_compat(url: str) -> str:
     return root.rstrip("/") + "/api/chat"
 
 
+_ollama_caps_cache: Dict[Tuple[str, str], Tuple[float, Optional[frozenset]]] = {}
+_OLLAMA_CAPS_TTL = 600.0
+
+
+def _ollama_model_caps(url: str, model: str) -> Optional[frozenset]:
+    """Capabilities Ollama reports for `model` (/api/show → ["completion",
+    "tools", "thinking", …]), cached 10 min. None when unknown (server down,
+    model missing) — callers must then leave the request as it is."""
+    try:
+        parsed = urlparse((url or "").strip())
+        base = f"{parsed.scheme or 'http'}://{parsed.netloc}"
+    except ValueError:
+        return None
+    key = (base, model)
+    now = time.time()
+    hit = _ollama_caps_cache.get(key)
+    if hit and now - hit[0] < _OLLAMA_CAPS_TTL:
+        return hit[1]
+    caps: Optional[frozenset] = None
+    try:
+        r = httpx.post(base + "/api/show", json={"model": model}, timeout=3.0)
+        if r.status_code < 400:
+            data = r.json() or {}
+            caps = frozenset(str(c) for c in (data.get("capabilities") or []))
+    except Exception as e:  # noqa: BLE001 — best effort
+        logger.debug("ollama /api/show failed for %s: %s", model, e)
+    _ollama_caps_cache[key] = (now, caps)
+    return caps
+
+
 def _route_for_gen_overrides(url: str, gen_overrides: Optional[Dict], model: str = "") -> str:
     """Ollama's OpenAI-compatible /v1 surface ignores the top-level `think`
     flag (verified on Ollama 0.33.2: think=false still streamed reasoning), so
@@ -2628,19 +2658,26 @@ def _route_for_gen_overrides(url: str, gen_overrides: Optional[Dict], model: str
     default suppression for thinking-capable models that the /v1 branch below
     tries to apply with `think: false`. Same server, same model, same tools;
     only the wire format changes."""
-    think = gen_overrides.get("think") if isinstance(gen_overrides, dict) else None
-    if think is None and model and _supports_thinking(model):
-        think = False
-    if think is None:
-        return url
     try:
         port = urlparse(url or "").port
     except ValueError:
         return url
     # Only the default Ollama port: a llama.cpp / vLLM server on another local
     # port also matches _is_ollama_openai_compat_url and has no /api/chat.
-    if port == 11434 and _is_ollama_openai_compat_url(url):
+    if not (port == 11434 and _is_ollama_openai_compat_url(url)):
+        return url
+    ov = gen_overrides if isinstance(gen_overrides, dict) else {}
+    # top_k / repeat_penalty / num_ctx are Ollama `options` with no OpenAI
+    # equivalent either — only the native payload can carry them.
+    if ov.get("think") is not None or any(k in ov for k in ("top_k", "repeat_penalty", "num_ctx")):
         return _ollama_native_url_for_compat(url)
+    # Default suppression: only for models Ollama itself reports as thinking-
+    # capable. A name match alone (qwen3-coder matches "qwen3") must not move
+    # a non-thinking model off the wire format it was configured with.
+    if model and _supports_thinking(model):
+        caps = _ollama_model_caps(url, model)
+        if caps is not None and "thinking" in caps:
+            return _ollama_native_url_for_compat(url)
     return url
 
 
@@ -2652,10 +2689,14 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
                      gen_overrides: Optional[Dict] = None):
     _routed = _route_for_gen_overrides(url, gen_overrides, model)
     if _routed != url:
-        # Rerouted /v1 → /api/chat for the thinking toggle: make the default
-        # suppression explicit so the native payload carries think=false.
-        if not isinstance(gen_overrides, dict) or gen_overrides.get("think") is None:
-            gen_overrides = dict(gen_overrides or {})
+        caps = _ollama_model_caps(url, model)
+        gen_overrides = dict(gen_overrides or {})
+        if caps is not None and "thinking" not in caps:
+            # Ollama rejects `think` for models without the capability.
+            gen_overrides.pop("think", None)
+        elif gen_overrides.get("think") is None and _supports_thinking(model):
+            # Rerouted for the default suppression: make it explicit so the
+            # native payload carries think=false.
             gen_overrides["think"] = False
         logger.info("Ollama /v1 → native /api/chat for %s (think=%s)", model, gen_overrides.get("think"))
         url = _routed

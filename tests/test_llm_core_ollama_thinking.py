@@ -52,6 +52,8 @@ class _FakeClient:
 def _capture_payload(monkeypatch, url, model):
     """Run stream_llm, intercept the HTTP payload, and return it."""
     client = _FakeClient()
+    # No live Ollama in tests: capabilities unknown → the /v1 wire format is kept.
+    monkeypatch.setattr(llm_core, "_ollama_model_caps", lambda u, m: None)
     monkeypatch.setattr(llm_core, "_get_http_client", lambda: client)
     monkeypatch.setattr(llm_core, "_is_host_dead", lambda u: False)
     monkeypatch.setattr(llm_core, "note_model_activity", lambda *a, **k: None)
@@ -213,6 +215,7 @@ class TestThinkOverrideRouting:
         monkeypatch.setattr(llm_core, "note_model_activity", lambda *a, **k: None)
         monkeypatch.setattr(llm_core, "_clear_host_dead", lambda *a, **k: None)
         monkeypatch.setattr(llm_core, "get_context_length", lambda u, m: 32768)
+        monkeypatch.setattr(llm_core, "_ollama_model_caps", lambda url, model: frozenset({"completion", "tools", "thinking"}))
 
         async def run():
             return [c async for c in llm_core.stream_llm(
@@ -224,3 +227,66 @@ class TestThinkOverrideRouting:
         assert captured["json"].get("think") is False
         assert captured["json"]["options"].get("num_ctx") == 32768
         assert any('"finish_reason": "stop"' in c for c in chunks)
+
+    def test_ollama_only_options_also_reroute(self):
+        assert llm_core._route_for_gen_overrides("http://127.0.0.1:11434/v1", {"top_k": 20}) == "http://127.0.0.1:11434/api/chat"
+        assert llm_core._route_for_gen_overrides("http://127.0.0.1:11434/v1", {"num_ctx": 16384}, "qwen3-coder:30b") == "http://127.0.0.1:11434/api/chat"
+
+
+    def test_default_suppression_reroutes_only_models_ollama_reports_as_thinking(self, monkeypatch):
+        caps = {"qwen3.8:27b-q4_K_M": frozenset({"completion", "tools", "thinking"}),
+                "qwen3-coder:30b": frozenset({"completion", "tools"}),
+                "qwen3:unknown": None}
+        monkeypatch.setattr(llm_core, "_ollama_model_caps", lambda url, model: caps.get(model))
+        v1 = "http://127.0.0.1:11434/v1"
+        assert llm_core._route_for_gen_overrides(v1, None, "qwen3.8:27b-q4_K_M") == "http://127.0.0.1:11434/api/chat"
+        # name matches "qwen3" but Ollama says no thinking → stays on /v1
+        assert llm_core._route_for_gen_overrides(v1, None, "qwen3-coder:30b") == v1
+        # capabilities unknown (server down) → leave the request alone
+        assert llm_core._route_for_gen_overrides(v1, None, "qwen3:unknown") == v1
+        # a pinned think still reroutes regardless of the name pattern
+        assert llm_core._route_for_gen_overrides(v1, {"think": False}, "qwen3-coder:30b") == "http://127.0.0.1:11434/api/chat"
+        # a non-thinking model with OpenAI-expressible overrides stays on /v1
+        assert llm_core._route_for_gen_overrides("http://127.0.0.1:11434/v1", {"top_p": 0.9}, "llama3.2:3b") == "http://127.0.0.1:11434/v1"
+
+    def test_pinned_think_is_dropped_for_models_without_the_capability(self, monkeypatch):
+        captured = {}
+
+        class _NativeResp:
+            status_code = 200
+
+            async def aiter_lines(self):
+                yield json.dumps({"model": "qwen3-coder:30b", "message": {"role": "assistant", "content": "ok"}, "done": True, "done_reason": "stop"})
+
+            async def aread(self):
+                return b""
+
+        class _Ctx:
+            async def __aenter__(self):
+                return _NativeResp()
+
+            async def __aexit__(self, *a):
+                return False
+
+        class _Client:
+            def stream(self, method, url, **kw):
+                captured["url"] = url
+                captured["json"] = kw.get("json") or {}
+                return _Ctx()
+
+        monkeypatch.setattr(llm_core, "_get_http_client", lambda: _Client())
+        monkeypatch.setattr(llm_core, "_is_host_dead", lambda u: False)
+        monkeypatch.setattr(llm_core, "note_model_activity", lambda *a, **k: None)
+        monkeypatch.setattr(llm_core, "_clear_host_dead", lambda *a, **k: None)
+        monkeypatch.setattr(llm_core, "get_context_length", lambda u, m: 32768)
+        monkeypatch.setattr(llm_core, "_ollama_model_caps", lambda url, model: frozenset({"completion", "tools"}))
+
+        async def run():
+            return [c async for c in llm_core.stream_llm(
+                "http://127.0.0.1:11434/v1", "qwen3-coder:30b", [{"role": "user", "content": "hi"}],
+                gen_overrides={"think": False, "top_k": 20},
+            )]
+        asyncio.run(run())
+        assert captured["url"].endswith("/api/chat")
+        assert "think" not in captured["json"]          # Ollama would reject it
+        assert captured["json"]["options"]["top_k"] == 20
