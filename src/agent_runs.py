@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 class _Run:
-    __slots__ = ("buffer", "subscribers", "status", "task", "evict_task", "run_id")
+    __slots__ = ("buffer", "subscribers", "status", "task", "evict_task", "run_id", "last_key")
 
     def __init__(self) -> None:
         self.buffer: list = []          # ordered SSE event strings (replay log)
@@ -35,6 +35,7 @@ class _Run:
         # Stable across every subscription/replay of this exact detached run.
         # The browser uses it to make local cost accounting replay-idempotent.
         self.run_id: str = uuid.uuid4().hex
+        self.last_key: Optional[str] = None   # compaction key of buffer[-1] (see _compact_key)
 
 
 _RUNS: Dict[str, _Run] = {}
@@ -46,13 +47,42 @@ _RUNS: Dict[str, _Run] = {}
 _EVICT_GRACE_S = 180
 
 
+_PROGRESS_PREFIX = 'data: {"type": "tool_progress"'
+
+
+def _compact_key(ev: str) -> Optional[str]:
+    """Replay-log compaction key for a live-progress event, else None.
+
+    A long bash/python command emits a `tool_progress` (elapsed + stdout tail)
+    every 2 s; only the LATEST one matters for a client that reconnects, and a
+    1-hour command would otherwise leave ~1800 near-identical events in the
+    buffer. Consecutive progress events of the same tool call collapse into
+    one slot. Sub-agent board events are never merged (each is a state change).
+    """
+    if not ev.startswith(_PROGRESS_PREFIX) or '"subagent"' in ev:
+        return None
+    try:
+        d = json.loads(ev[6:])
+    except Exception:
+        return None
+    return f"{d.get('tool')}|{d.get('round')}|{d.get('approved')}"
+
+
 def _publish(run: _Run, ev: str) -> None:
-    """Append one SSE event and fan it out to every live subscriber."""
-    run.buffer.append(ev)
+    """Append one SSE event (or replace the previous progress tick of the same
+    tool call) and fan it out to every live subscriber."""
+    key = _compact_key(ev)
+    replaced = False
+    if key is not None and run.last_key == key and run.buffer:
+        run.buffer[-1] = ev
+        replaced = True
+    else:
+        run.buffer.append(ev)
+    run.last_key = key
     seq = len(run.buffer) - 1
     for q in list(run.subscribers):
         try:
-            q.put_nowait((seq, ev))
+            q.put_nowait((seq, ev, replaced))
         except Exception:
             pass
 
@@ -61,7 +91,7 @@ def _wake_run_subscribers(run: _Run) -> None:
     """Close subscribers even when the drain task never reached its body."""
     for q in list(run.subscribers):
         try:
-            q.put_nowait((None, None))
+            q.put_nowait((None, None, False))
         except Exception:
             pass
 
@@ -254,7 +284,7 @@ async def subscribe(
         heartbeat_idx = 0
         while True:
             try:
-                seq, ev = await asyncio.wait_for(q.get(), timeout=10.0)
+                seq, ev, replaced = await asyncio.wait_for(q.get(), timeout=10.0)
             except asyncio.TimeoutError:
                 # Keep slow local models/proxies alive while they prefill before
                 # the first token. SSE comments are ignored by the UI but reset
@@ -264,13 +294,16 @@ async def subscribe(
                     heartbeat_idx += 1
                     yield f": heartbeat {heartbeat_idx}\n\n"
                     continue
-                seq, ev = (None, None)
+                seq, ev, replaced = (None, None, False)
             if seq is None:            # end sentinel
                 while next_seq < len(run.buffer):   # flush any tail the sentinel raced
                     yield run.buffer[next_seq]
                     next_seq += 1
                 break
-            if seq >= next_seq:        # skip events already replayed from the buffer
+            # Skip events already replayed from the buffer — except a compacted
+            # progress tick, which reuses the slot of the tick it replaced and
+            # must still reach a live client.
+            if seq >= next_seq or replaced:
                 yield ev
                 next_seq = seq + 1
     finally:

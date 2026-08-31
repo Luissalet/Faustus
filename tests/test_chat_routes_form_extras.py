@@ -95,3 +95,47 @@ def test_activity_snapshot_helpers():
     assert store.pending_session_ids(owner="someone-else") == []
     store.retire_for_session(owner="luis", session_id="s1")
     assert store.pending_session_ids(owner="luis") == []
+
+
+def test_detached_run_buffer_compacts_progress_ticks():
+    """A long bash command emits a tool_progress tick every 2 s; the replay log
+    keeps only the latest tick of a tool call (a reconnect replays one, not
+    hundreds), while live subscribers still receive every tick. Sub-agent board
+    events and ticks of different calls are never merged."""
+    import asyncio
+    import json
+    from src import agent_runs
+
+    def ev(**d):
+        return "data: " + json.dumps(d) + "\n\n"
+
+    async def _go():
+        run = agent_runs._Run()
+        q: asyncio.Queue = asyncio.Queue()
+        run.subscribers.add(q)
+        agent_runs._publish(run, ev(type="tool_start", tool="bash", command="pytest", round=1))
+        agent_runs._publish(run, ev(type="tool_progress", tool="bash", round=1, elapsed_s=2, tail="a"))
+        agent_runs._publish(run, ev(type="tool_progress", tool="bash", round=1, elapsed_s=4, tail="b"))
+        agent_runs._publish(run, ev(type="tool_progress", tool="bash", round=1, elapsed_s=6, tail="c"))
+        agent_runs._publish(run, ev(type="tool_progress", tool="delegate_agents", round=1, subagent={"id": "w", "event": "started"}))
+        agent_runs._publish(run, ev(type="tool_progress", tool="delegate_agents", round=1, subagent={"id": "w", "event": "done"}))
+        agent_runs._publish(run, ev(type="tool_progress", tool="bash", round=2, elapsed_s=2, tail="x"))
+        agent_runs._publish(run, ev(type="tool_output", tool="bash", output="ok", exit_code=0, round=2))
+        live = []
+        while not q.empty():
+            live.append(q.get_nowait())
+        return run, live
+
+    run, live = asyncio.run(_go())
+    kinds = [json.loads(e[6:]) for e in run.buffer]
+    assert [k.get("type") for k in kinds] == [
+        "tool_start", "tool_progress", "tool_progress", "tool_progress", "tool_progress", "tool_output"
+    ]
+    assert kinds[1]["tail"] == "c"                      # bash round 1: latest tick only
+    assert [k["subagent"]["event"] for k in kinds[2:4]] == ["started", "done"]  # board events kept
+    assert kinds[4]["tail"] == "x"                      # a different call is a new slot
+    # every tick reached the live subscriber, replaced ones flagged so a client
+    # that already saw that seq still renders them
+    assert len(live) == 8
+    assert [r for (_s, _e, r) in live] == [False, False, True, True, False, False, False, False]
+    assert [s for (s, _e, _r) in live] == [0, 1, 1, 1, 2, 3, 4, 5]
