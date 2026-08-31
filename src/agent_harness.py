@@ -531,6 +531,16 @@ class TurnLedger:
         self.static_checks: List[Dict[str, Any]] = []
         self.syntax_rejections = 0
         self.target_nudges = 0
+        # Functional verification + turn baseline (see project_tests.py,
+        # auto_review.py, workspace_checkpoints.py).
+        self.checkpoint: Optional[Dict[str, Any]] = None   # {"sha", ...} | {"skipped"|"failed": True}
+        self.tests: Optional[Dict[str, Any]] = None        # project_tests.compact()
+        self.tests_runs = 0
+        self.tests_fix_rounds = 0
+        self.review: Optional[Dict[str, Any]] = None       # auto_review.compact()
+        self.review_runs = 0
+        self.review_fix_rounds = 0
+        self.asked_user = False
         # The user's own message may name real files; those count as observed.
         for tok in extract_path_tokens(self.user_text):
             self.observed_paths.add(_norm(tok))
@@ -551,6 +561,8 @@ class TurnLedger:
             "paths": paths, "error": (result or {}).get("error") if not ok else None,
         }
         self.events.append(ev)
+        if tool == "ask_user":
+            self.asked_user = True
         # Delegated workers: their verified mutations are evidence for the
         # coordinator's own report ("the workers changed X").
         if tool == "delegate_agents" and isinstance(result, dict):
@@ -840,6 +852,12 @@ class TurnLedger:
             "git": git,
             "progress": self.progress,
             "static_checks": self.static_checks,
+            "checkpoint": (self.checkpoint or {}).get("sha") if isinstance(self.checkpoint, dict) else None,
+            "tests": self.tests,
+            "tests_fix_rounds": self.tests_fix_rounds,
+            "review": self.review,
+            "review_fix_rounds": self.review_fix_rounds,
+            "asked_user": self.asked_user,
         }
 
 

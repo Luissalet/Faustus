@@ -2647,6 +2647,14 @@ def _build_system_prompt(
 
     if workspace and not suppress_local_context:
         agent_prompt += _workspace_coding_rules(workspace)
+        # Standing instructions kept in the repo itself (AGENTS.md / CLAUDE.md /
+        # .odysseus/INSTRUCTIONS.md): conventions, how to run the tests, what
+        # not to touch. Cached by mtime — byte-identical until the file changes.
+        try:
+            from src import project_instructions as _pinstr
+            agent_prompt += _pinstr.block(workspace)
+        except Exception as _pi_err:
+            logger.debug("[instructions] injection failed: %s", _pi_err)
     elif (
         relevant_tools
         and not suppress_local_context
@@ -3518,6 +3526,7 @@ async def stream_agent_loop(
     temperature_explicit: bool = False,
     gen_overrides: Optional[Dict] = None,
     security_gate_bypass: bool = False,
+    harness_options: Optional[Dict[str, Any]] = None,
 ) -> AsyncGenerator[str, None]:
     """Streaming agent loop generator.
 
@@ -3525,6 +3534,15 @@ async def stream_agent_loop(
     (chat model controls); it disables the local-model agent temperature cap.
     ``gen_overrides`` carries extra sampling params (top_p, think, ...) that
     llm_core forwards to the provider.
+    ``harness_options`` (all optional, mostly project-level knobs resolved by
+    the route): ``checkpoints`` (bool, default True — shadow snapshot before
+    the first change), ``test_command`` (str, overrides test detection),
+    ``run_tests`` (bool override of the setting), ``review_model`` (str, the
+    auto-review reviewer; "same" = this model), ``review_mode`` (bool: edits
+    stay pending until the user accepts them per file), ``trusted_workspace``
+    (realpath: file writes inside it skip the post-external-context approval
+    gate), ``trusted_agents`` (bool: same for delegate_agents), ``repo_map``
+    (bool, default True), ``project_id`` and ``task_tag`` (scorecard/audit).
 
     Yields SSE events:
       - data: {"delta": "text"}                             (text chunks)
@@ -3547,7 +3565,10 @@ async def stream_agent_loop(
         approval_gate_bypassed=bool(
             exact_approval and exact_approval.allow_remaining_actions
         ) or bool(security_gate_bypass),
+        trusted_workspace=str((harness_options or {}).get("trusted_workspace") or ""),
+        trusted_agents=bool((harness_options or {}).get("trusted_agents")),
     )
+    _hopts: Dict[str, Any] = dict(harness_options or {})
     mcp_mgr = get_mcp_manager()
     prep_timings: Dict[str, float] = {}
     disabled_tools = set(disabled_tools or [])
@@ -3587,6 +3608,22 @@ async def stream_agent_loop(
     _t0 = time.time()
     _needs_admin = _detect_admin_intent(messages)
     _last_user = _extract_last_user_message(messages)
+    # Repository map (src/repo_map.py): files + top-level symbols of the
+    # workspace, ranked for this request, injected once per turn as reference
+    # data right before the user's message. Frozen for the whole turn so the
+    # prompt prefix stays identical across rounds (local KV cache).
+    if workspace and not guide_only and _hopts.get("repo_map", True):
+        try:
+            from src import repo_map as _repo_map
+            _repo_map_text = await asyncio.to_thread(_repo_map.build, workspace, _last_user)
+        except Exception as _rm_err:
+            logger.debug("[repo-map] build failed: %s", _rm_err)
+            _repo_map_text = ""
+        if _repo_map_text:
+            messages = _insert_before_latest_user(
+                messages,
+                untrusted_context_message("repository map", _repo_map_text, arm_tool_gate=False),
+            )
     _ody_qwen_finetune_model = _is_odysseus_qwen_model(model)
     # The caller's temperature survives for non-qwen routes; the qwen cap is
     # applied per candidate (here for the primary, in the candidate request
@@ -4607,6 +4644,54 @@ async def stream_agent_loop(
     _unknown_tool_nudges = 0
     _empty_round_nudges = 0
 
+    # ── Turn baseline (src/workspace_checkpoints.py) ──────────────────────
+    # A shadow snapshot of the workspace right before the FIRST change of the
+    # turn (write/edit/patch, a mutating shell command, or a delegation whose
+    # workers will write). It is what "restore to before this turn", the
+    # per-file diff without the user's git, and review mode restore from.
+    _checkpoints_on = bool(_harness_enabled and workspace and _hopts.get("checkpoints", True))
+    _CHECKPOINT_TRIGGER_TOOLS = set(_harness.FILE_MUTATION_TOOLS) | {"delegate_agents"}
+
+    async def _maybe_checkpoint(tool_type: str, content: str):
+        if not _checkpoints_on or _ledger.checkpoint is not None:
+            return None
+        trig = tool_type in _CHECKPOINT_TRIGGER_TOOLS or (
+            tool_type in _harness.SHELL_TOOLS and _harness.shell_command_looks_mutating(content or "")
+        )
+        if not trig:
+            return None
+        try:
+            from src import workspace_checkpoints as _wc
+            if not _wc.enabled():
+                _ledger.checkpoint = {"skipped": True}
+                return None
+            _cp = await asyncio.to_thread(
+                _wc.checkpoint, workspace,
+                f"before: {' '.join(_last_user.split())[:70]} [{session_id or '-'}]",
+            )
+        except Exception as _cp_err:
+            logger.debug("[checkpoint] failed: %s", _cp_err)
+            _cp = None
+        _ledger.checkpoint = _cp or {"failed": True}
+        return _cp
+
+    _tests_on = bool(_harness_enabled and workspace and _hopts.get("run_tests", get_setting("agent_project_tests", True)))
+    try:
+        _tests_max_fix = int(get_setting("agent_project_tests_fix_rounds", 1) or 0)
+    except (TypeError, ValueError):
+        _tests_max_fix = 1
+    try:
+        from src import auto_review as _auto_review
+        _reviewer_model = _auto_review.resolve_reviewer(
+            model, _hopts.get("review_model") or str(get_setting("agent_auto_review", "off") or "off"),
+        ) if (_harness_enabled and workspace) else None
+    except Exception:
+        _reviewer_model = None
+    try:
+        _review_max_fix = int(get_setting("agent_auto_review_fix_rounds", 1) or 0) if get_setting("agent_auto_review_fix_round", True) else 0
+    except (TypeError, ValueError):
+        _review_max_fix = 1
+
     def _filter_route_tool_schemas(schemas):
         # Keep candidate actions visible after taint so the model can propose
         # the exact call that the server will seal for user approval.  Schema
@@ -4680,6 +4765,10 @@ async def stream_agent_loop(
                 )
                 + "\n\n"
             )
+            _cp0 = await _maybe_checkpoint(approved.tool_name, approved.content)
+            if _cp0:
+                yield "data: " + json.dumps({"type": "harness_check", "status": "checkpoint", "round": 0,
+                                             "sha": _cp0.get("sha"), "created": _cp0.get("created"), "ms": _cp0.get("ms")}) + "\n\n"
         approved_progress_q: asyncio.Queue = asyncio.Queue()
 
         async def _push_approved_progress(payload):
@@ -5964,12 +6053,100 @@ async def stream_agent_loop(
                         full_response += "\n\n"
                         yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
                         continue
+                    # ── (4) Functional verification: the project's own tests
+                    # (src/project_tests.py). "It parses" became "it works".
+                    # Re-run every time the model finishes with changes (so the
+                    # card shows the final state), one bounded fix round.
+                    if _ledger.mutations and _tests_on and _ledger.tests_runs < 3:
+                        _ledger.tests_runs += 1
+                        try:
+                            from src import project_tests as _ptests
+                            _tspec = _ptests.detect_test_command(
+                                workspace, _hopts.get("test_command") or str(get_setting("agent_project_test_command", "") or "").strip() or None,
+                            )
+                            _tres = None
+                            if _tspec:
+                                yield f'data: {json.dumps({"type": "harness_check", "status": "tests_running", "round": round_num, "label": _tspec.get("label")})}\n\n'
+                                _tres = await asyncio.to_thread(
+                                    _ptests.run_for_turn, workspace, _ledger.mutated_paths(),
+                                    override=_hopts.get("test_command"),
+                                )
+                                _ledger.tests = _ptests.compact(_tres)
+                        except Exception as _pt_err:
+                            logger.debug("[harness] project tests failed to run: %s", _pt_err)
+                            _tres = None
+                        if (_tres and _tres.get("ran") and _tres.get("ok") is False
+                                and not _tres.get("inconclusive") and _ledger.tests_fix_rounds < _tests_max_fix):
+                            _ledger.tests_fix_rounds += 1
+                            logger.warning("[harness] round %s project tests FAILED (%s) — one fix round",
+                                           round_num, _tres.get("summary"))
+                            if round_response.strip():
+                                messages.append({"role": "assistant", "content": round_response})
+                            messages.append({"role": "user", "content": _ptests.failure_message(_tres)})
+                            yield (
+                                "data: " + json.dumps({
+                                    "type": "harness_check", "status": "tests_failed", "round": round_num,
+                                    "tests": _ledger.tests, "attempt": _ledger.tests_fix_rounds,
+                                    "max_attempts": _tests_max_fix, "mutations": _ledger.mutated_paths(),
+                                }) + "\n\n"
+                            )
+                            full_response += "\n\n"
+                            yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
+                            continue
+                        if _tres and _tres.get("ran") and _tres.get("ok") is False and not _tres.get("inconclusive"):
+                            _note = "tests_failed:" + str(_tres.get("summary") or "")[:80]
+                            if _note not in _ledger.notes:
+                                _ledger.notes.append(_note)
+                    # ── (5) Independent review of the diff (src/auto_review.py):
+                    # a second model pass with no tools flags obvious defects.
+                    # error-severity findings get one bounded fix round.
+                    if _ledger.mutations and _reviewer_model and _ledger.review_runs < 2 and (
+                            _ledger.review is None or _ledger.review_fix_rounds):
+                        _ledger.review_runs += 1
+                        try:
+                            yield f'data: {json.dumps({"type": "harness_check", "status": "review_running", "round": round_num, "model": _reviewer_model})}\n\n'
+                            _rev = await _auto_review.review_turn(
+                                workspace=workspace, changed=_ledger.mutated_paths(),
+                                checkpoint_sha=(_ledger.checkpoint or {}).get("sha") if isinstance(_ledger.checkpoint, dict) else None,
+                                user_text=_last_user, endpoint_url=endpoint_url, model=model, headers=headers,
+                                reviewer_model=_reviewer_model, tests=_ledger.tests,
+                            )
+                            _ledger.review = _auto_review.compact(_rev)
+                        except Exception as _rv_err:
+                            logger.debug("[harness] auto-review failed: %s", _rv_err)
+                            _rev = None
+                        _rev_errors = [f for f in ((_rev or {}).get("findings") or []) if f.get("severity") == "error"]
+                        if _rev_errors and _ledger.review_fix_rounds < _review_max_fix:
+                            _ledger.review_fix_rounds += 1
+                            logger.warning("[harness] round %s review flagged %d defect(s) — one fix round",
+                                           round_num, len(_rev_errors))
+                            if round_response.strip():
+                                messages.append({"role": "assistant", "content": round_response})
+                            messages.append({"role": "user", "content": _auto_review.fix_message(_rev)})
+                            yield (
+                                "data: " + json.dumps({
+                                    "type": "harness_check", "status": "review_issues", "round": round_num,
+                                    "review": _ledger.review, "attempt": _ledger.review_fix_rounds,
+                                    "max_attempts": _review_max_fix, "mutations": _ledger.mutated_paths(),
+                                }) + "\n\n"
+                            )
+                            full_response += "\n\n"
+                            yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
+                            continue
+                        elif _rev_errors:
+                            _note = "review_defects:" + str(len(_rev_errors))
+                            if _note not in _ledger.notes:
+                                _ledger.notes.append(_note)
                     yield (
                         "data: " + json.dumps({
                             "type": "harness_check", "status": "verified", "round": round_num,
                             "mutations": _ledger.mutated_paths(),
                             "static_checks": _ledger.static_checks,
                             "workspace": workspace or None,
+                            "tests": _ledger.tests,
+                            "review": _ledger.review,
+                            "checkpoint": (_ledger.checkpoint or {}).get("sha") if isinstance(_ledger.checkpoint, dict) else None,
+                            "review_mode": bool(_hopts.get("review_mode")) and bool(_ledger.mutations),
                         }) + "\n\n"
                     )
 
@@ -6324,6 +6501,11 @@ async def stream_agent_loop(
                 yield (
                     f'data: {json.dumps({"type": "tool_start", "tool": block.tool_type, "command": cmd_display, "full_command": full_command, "round": round_num})}\n\n'
                 )
+                # Baseline before the first change of the turn.
+                _cp = await _maybe_checkpoint(block.tool_type, block.content)
+                if _cp:
+                    yield "data: " + json.dumps({"type": "harness_check", "status": "checkpoint", "round": round_num,
+                                                 "sha": _cp.get("sha"), "created": _cp.get("created"), "ms": _cp.get("ms")}) + "\n\n"
 
                 # Streaming progress for long-running tools (bash, python).
                 # The bash/python branches inside _direct_fallback emit
@@ -7038,9 +7220,29 @@ async def stream_agent_loop(
             k: _hsum.get(k) for k in (
                 "stop_reason", "mutations", "tool_calls", "failed_calls", "rejections",
                 "length_continues", "finish_reasons", "git", "notes", "progress", "language",
-                "static_checks", "workspace",
+                "static_checks", "workspace", "checkpoint", "tests", "tests_fix_rounds",
+                "review", "review_fix_rounds", "asked_user",
             )
         }
+        metrics["harness"]["review_mode"] = bool(_hopts.get("review_mode")) and bool(_hsum.get("mutations"))
+        if _hopts.get("project_id"):
+            metrics["harness"]["project_id"] = _hopts.get("project_id")
+        # Model scorecard (src/scorecard.py): one line per agent turn so the
+        # user can compare models on verified rate, questions, tests, time.
+        if _harness_enabled and not _is_teacher_run and (workspace or _ledger.events):
+            try:
+                from src import scorecard as _scorecard
+                _scorecard.record(_scorecard.build_entry(
+                    session_id=session_id, model=str(actual_model or model),
+                    endpoint_label=actual_endpoint_label, workspace=workspace or None,
+                    user_text=_last_user, duration_s=total_duration, rounds=len(round_texts),
+                    harness=_hsum, tests=_hsum.get("tests"), review=_hsum.get("review"),
+                    tokens_per_second=metrics.get("tokens_per_second"),
+                    output_tokens=metrics.get("output_tokens"),
+                    asked_user=bool(_hsum.get("asked_user")), task_tag=_hopts.get("task_tag"),
+                ))
+            except Exception as _sc_err:
+                logger.debug("[scorecard] record failed: %s", _sc_err)
     yield f"data: {json.dumps({'type': 'metrics', 'data': metrics})}\n\n"
 
     # Teacher-escalation: inline takeover visible in the chat stream.
