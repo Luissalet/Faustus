@@ -114,6 +114,34 @@ Para comparar: qwen3-coder:30b hacía t6 en 133–279 s. `qwen3.5:9b` (7,5 GB en
 ## 5. Renombrado a Faustus (31-08-2026)
 El nombre visible de la aplicación pasa de Odysseus a **Faustus** (interfaz, título y manifest, login, notificaciones, identidad en el prompt del modelo, correos, scripts del PC). Los identificadores internos (variables `ODYSSEUS_*`, claves de `localStorage`, ids/clases CSS, nombres de módulos, carpetas `D:\LocalAI\odysseus*`) se conservan a propósito: no se rompen los datos ni el venv y el fork puede seguir recibiendo cambios del proyecto original.
 
+## 6. Atajos del compositor: menciones `@` de ficheros y `#` para recordar (31-08-2026, tarde-noche)
+
+Auditoría comparando Faustus con los workspaces de Claude (Code/Cowork) y ChatGPT. La mayoría de lo que tienen ya estaba: modo plan, cola de mensajes mientras el agente trabaja, editar/regenerar/bifurcar un mensaje, buscador de chats con Ctrl+K, ejecución de código con vista previa HTML, presets, tareas programadas, memoria, comparador de modelos, atajos de teclado, exportar. Faltaban dos atajos del compositor, y los dos atacan justo el punto débil de un modelo local pequeño: **decirle exactamente de qué fichero hablas** y **no tener que repetirle las mismas reglas**.
+
+### 6.1 Menciones `@` de ficheros del workspace
+
+Escribir `@` en el compositor abre un buscador difuso de los ficheros del workspace; Tab o Enter inserta la ruta relativa. Es el `@` de Claude Code y Cursor (el `#` de ChatGPT).
+
+- **`src/file_mentions.py`** (nuevo): ranking difuso (coincidencia exacta del nombre > prefijo > subcadena > subsecuencia estilo fzf, con penalización por profundidad, tests y código vendorizado), extracción de las menciones del texto enviado (`@ruta` y `@"ruta con espacios"`, sin confundir correos), y resolución contra el índice de ficheros ya cacheado: ruta relativa exacta → sin distinguir mayúsculas → nombre de fichero único. **Un nombre ambiguo no se adivina**: se devuelve como `ambiguous` y el modelo tiene que preguntar — adivinar es exactamente el fallo de sustitución que el arnés persigue desde la mañana.
+- El bloque que se inyecta antes del mensaje del usuario dice que esos son los ficheros exactos, y **mete el contenido de los pequeños** (presupuesto `agent_file_mention_inline_chars`, 6000 por defecto): a 30 tok/s eso ahorra una ronda entera de `read_file` (~30 s). Los que no caben se listan con "read_file it" en vez de meter un trozo inútil.
+- Las menciones que no existen y las ambiguas se le dicen al modelo explícitamente ("di que no existe en vez de editar otro fichero").
+- `GET /api/workspace/files?workspace=&q=&limit=` (solo admin, como `/browse`: enumera rutas del host). Lee el índice cacheado, así que cada pulsación cuesta una ordenación, no un `os.walk`.
+- **`static/js/fileMentions.js`** (nuevo): el popup, con *debounce* de 90 ms, caché por consulta, navegación con flechas, y `keydown` en captura para ganarle el Enter al botón de enviar. Reutiliza el CSS del popup de comandos.
+- **Bug preexistente encontrado y arreglado**: `extract_path_tokens()` devolvía `@src/app.py` con la arroba incluida, así que **cualquier** ruta escrita con `@` (no solo las de esta función) no casaba con el índice del workspace, se contaba como "fichero que el usuario nombró y no existe" y podía disparar la ronda `target_substituted` sin motivo. Ahora se quita la arroba inicial. Dos tests de regresión.
+
+### 6.2 `#` (y `/remember`) — añadir una regla a las instrucciones del proyecto
+
+Empezar un mensaje con `#` guarda esa línea como regla permanente en el fichero de instrucciones del proyecto (`AGENTS.md`, `CLAUDE.md`… el que ya use, y si no hay ninguno crea `AGENTS.md`), que el runtime inyecta en el prompt de todos los turnos siguientes. Es el `#` de Claude Code, y encaja con el `/agentsmd` de la pasada anterior.
+
+- **`project_instructions.remember()`**: normaliza la regla (quita la almohadilla, marcadores de lista y saltos de línea; tope 500 caracteres), la añade como viñeta bajo `## Notes added from chat` creando la sección si falta, **la inserta antes de la siguiente sección** en vez de al final del fichero, **conserva CRLF** si el fichero lo usa, y **no duplica** una regla que ya está (lo dice). Nunca reescribe lo que había.
+- `POST /api/workspace/instructions/remember` (solo admin) y el comando `/remember <regla>` (alias `/recuerda`).
+- **`static/js/composerSigils.js`** (nuevo, sin DOM para poder testearlo): `isMemoryLine()` decide qué es una línea de memoria — **una sola línea, una sola almohadilla, y con workspace vinculado**. `##` sigue siendo un encabezado de Markdown y un mensaje de varias líneas se envía normal: secuestrar cualquiera de los dos convertiría `#` en una trampa.
+
+### Verificación
+41 tests nuevos en 4 ficheros (`test_file_mentions.py`, `test_file_mentions_routes_js.py`, `test_project_instructions_remember.py`, `test_composer_sigils_js.py`), incluidos los de contrato entre el popup y el resolutor del servidor (lo que inserta el popup es lo que el servidor resuelve) y los de node para los predicados del compositor. Suite completa en verde antes y después.
+
+---
+
 ---
 
 ## Cómo mantener este documento

@@ -10,6 +10,7 @@ window.cancelActiveTour = function cancelActiveTour() {
 };
 
 import Storage from './storage.js';
+import { isMemoryLine } from './composerSigils.js';
 import uiModule from './ui.js';
 import sessionModule from './sessions.js';
 import modelsModule from './models.js';
@@ -1363,6 +1364,45 @@ async function _cmdAgentsMd(args) {
   } catch (e) { slashReply(`Could not draft AGENTS.md: ${e}`); }
   return true;
 }
+
+// "#" / /remember <rule> — append one standing rule to the project's own
+// instructions file (AGENTS.md, CLAUDE.md, …), which the runtime injects into
+// every turn that has this workspace bound. Claude Code's "#" shortcut: the
+// thing you keep repeating to the model becomes part of its briefing instead.
+async function _cmdRemember(args, rawText) {
+  const ws = _boundWorkspacePath();
+  if (!ws) { slashReply('Bind a workspace folder first — a remembered rule lives in that project\'s instructions file.'); return true; }
+  const text = String(rawText != null ? rawText : (args || []).join(' ')).trim();
+  if (!text) {
+    slashReply('Say what to remember: <code>/remember run the tests with pytest -q</code> (or start a message with <code>#</code>).');
+    return true;
+  }
+  const escd = t => String(t || '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+  try {
+    const r = await fetch(`${API_BASE}/api/workspace/instructions/remember`, {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workspace: ws, text }),
+    });
+    if (!r.ok) {
+      let detail = `HTTP ${r.status}`;
+      try { const e = await r.json(); if (e && e.detail) detail = e.detail; } catch (_) {}
+      slashReply(`Could not remember that: ${escd(detail)}`);
+      return true;
+    }
+    const d = await r.json();
+    if (d.duplicate) {
+      slashReply(`Already in <code>${escd(d.rel)}</code>: &ldquo;${escd(d.rule)}&rdquo;`);
+      return true;
+    }
+    const where = d.created
+      ? `<code>${escd(d.rel)}</code> (created — it is injected into every agent turn in this workspace from now on)`
+      : `<code>${escd(d.rel)}</code>`;
+    slashReply(`Remembered in ${where}:<br>&ldquo;${escd(d.rule)}&rdquo;`);
+  } catch (e) { slashReply(`Could not remember that: ${escd(e)}`); }
+  return true;
+}
+
+export { isMemoryLine };
 
 // /checkpoints [n] — the last shadow checkpoints of the bound workspace, each
 // with "what differs now" and a Restore button (every file that differs goes
@@ -6151,6 +6191,14 @@ const COMMANDS = {
     noUserBubble: true,
     usage: '/checkpoints [n | reset]',
   },
+  remember: {
+    alias: ['recuerda', 'note-to-agent'],
+    category: 'Agent',
+    help: "Append a standing rule to the project's instructions file, so every later turn in this workspace gets it (also: start a message with #)",
+    handler: _cmdRemember,
+    noUserBubble: true,
+    usage: '/remember <rule>',
+  },
   agentsmd: {
     alias: ['agents-md', 'instructions'],
     category: 'Agent',
@@ -6670,6 +6718,11 @@ function _isCmd(str) { return str.startsWith('/') || str.startsWith('!'); }
 // ── Main dispatcher ───────────────────────────────────────────────
 
 async function handleSlashCommand(input) {
+  // "#" memory lines never reach the "/" parser: the rest of the line is the
+  // rule verbatim, not a command name plus arguments.
+  if (isMemoryLine(input) && _boundWorkspacePath()) {
+    return await _cmdRemember([], String(input).trim().replace(/^#\s*/, ''));
+  }
   const parts = input.slice(1).split(/\s+/);
   const rawCmd = parts[0].toLowerCase();
   let args = parts.slice(1);
@@ -6876,6 +6929,10 @@ export function initSlashCommands(deps) {
  * Check if input looks like a slash command.
  */
 export function isCommand(str) {
+  // A "#" line is a command too, but only where it can mean anything:
+  // with a workspace bound. Without one it stays an ordinary message so
+  // a Markdown heading typed into a normal chat still sends.
+  if (isMemoryLine(str) && _boundWorkspacePath()) return true;
   return _isCmd(str);
 }
 

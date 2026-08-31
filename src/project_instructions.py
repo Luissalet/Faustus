@@ -220,6 +220,93 @@ def draft(workspace: str, language: str = "en") -> Dict[str, Any]:
             "existing": existing, "facts": facts}
 
 
+REMEMBER_HEADING = "## Notes added from chat"
+_REMEMBER_MAX_CHARS = 500
+
+
+def _detect_newline(text: str) -> str:
+    return "\r\n" if "\r\n" in text else "\n"
+
+
+def normalise_rule(text: str) -> str:
+    """One clean bullet body from whatever the user typed.
+
+    Leading "#" (the composer shortcut), list markers and internal newlines all
+    go, because the value of this file is that it stays a short readable list —
+    a pasted three-paragraph note is a worse instruction than one sentence.
+    """
+    t = (text or "").strip()
+    while t[:1] in ("#", "-", "*", ">"):
+        t = t[1:].lstrip()
+    t = " ".join(t.split())
+    if len(t) > _REMEMBER_MAX_CHARS:
+        t = t[: _REMEMBER_MAX_CHARS - 1].rstrip() + "…"
+    return t
+
+
+def remember(workspace: str, text: str, *, heading: str = REMEMBER_HEADING) -> Dict[str, Any]:
+    """Append one standing rule to the workspace's instructions file.
+
+    Claude Code's "#" shortcut: the rule you just had to repeat becomes part of
+    every future turn's system prompt instead of being retyped. Uses the file
+    the project already has (AGENTS.md, CLAUDE.md, …) and creates AGENTS.md
+    when there is none. Never rewrites what is already in the file.
+
+    Returns {"path", "rel", "rule", "created", "duplicate", "chars"} or
+    {"error": ...}.
+    """
+    root = os.path.realpath(os.path.expanduser(workspace or ""))
+    if not root or not os.path.isdir(root):
+        return {"error": "workspace is not a folder"}
+    rule = normalise_rule(text)
+    if not rule:
+        return {"error": "nothing to remember"}
+    path = find_file(root)
+    created = False
+    if path:
+        try:
+            # newline="" so CRLF survives the read — universal newlines would
+            # hide it and the rewrite would silently convert the whole file.
+            with open(path, "r", encoding="utf-8", errors="replace", newline="") as f:
+                body = f.read()
+        except OSError as e:
+            return {"error": f"could not read {os.path.basename(path)}: {e}"}
+    else:
+        rel = candidate_files()[0] if candidate_files() else "AGENTS.md"
+        path = os.path.join(root, rel)
+        os.makedirs(os.path.dirname(path) or root, exist_ok=True)
+        body = f"# {os.path.basename(root) or 'Project'}\n\nInstructions for the coding agent.\n"
+        created = True
+    nl = _detect_newline(body)
+    flat = body.replace("\r\n", "\n")
+    bullet = f"- {rule}"
+    if bullet in flat.split("\n"):
+        return {"path": path, "rel": os.path.relpath(path, root).replace(os.sep, "/"),
+                "rule": rule, "created": False, "duplicate": True, "chars": len(body)}
+    lines = flat.rstrip("\n").split("\n") if flat.strip() else []
+    if heading in lines:
+        # Insert at the end of that section, before the next "## " heading.
+        idx = lines.index(heading) + 1
+        while idx < len(lines) and not lines[idx].startswith("## "):
+            idx += 1
+        while idx > 0 and not lines[idx - 1].strip():
+            idx -= 1
+        lines.insert(idx, bullet)
+    else:
+        if lines and lines[-1].strip():
+            lines.append("")
+        lines += [heading, "", bullet]
+    out = nl.join(lines) + nl
+    try:
+        with open(path, "w", encoding="utf-8", newline="") as f:
+            f.write(out)
+    except OSError as e:
+        return {"error": f"could not write {os.path.basename(path)}: {e}"}
+    invalidate(root)
+    return {"path": path, "rel": os.path.relpath(path, root).replace(os.sep, "/"),
+            "rule": rule, "created": created, "duplicate": False, "chars": len(out)}
+
+
 def invalidate(workspace: Optional[str] = None) -> None:
     with _LOCK:
         if workspace:
