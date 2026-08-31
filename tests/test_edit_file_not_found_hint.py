@@ -2,6 +2,7 @@
 model can copy the exact text instead of guessing again."""
 
 import asyncio
+import json
 import os
 
 from src.agent_tools.filesystem_tools import EditFileTool
@@ -61,3 +62,65 @@ def test_edit_file_not_found_without_similar_text(tmp_path):
     with _bound(tmp_path):
         res = _run(EditFileTool().execute('{"path": "a.py", "old_string": "def totally_unrelated_function():", "new_string": "y"}', {}))
     assert res["exit_code"] == 1 and "Nothing similar found" in res["error"]
+
+
+def test_edit_file_matches_lf_quote_in_crlf_file_and_keeps_crlf(tmp_path):
+    """Windows files: the model quotes text with \\n; the file has \\r\\n. The
+    edit must apply and the file must keep CRLF everywhere (no whole-file
+    line-ending rewrite)."""
+    target = tmp_path / "server.py"
+    target.write_bytes(b"import os\r\n\r\ndef main():\r\n    return 1\r\n")
+    with _bound(tmp_path):
+        res = _run(EditFileTool().execute(json.dumps({
+            "path": "server.py",
+            "old_string": "def main():\n    return 1\n",
+            "new_string": "def main():\n    return 2\n",
+        }), {}))
+    assert res["exit_code"] == 0, res
+    data = target.read_bytes()
+    assert data == b"import os\r\n\r\ndef main():\r\n    return 2\r\n"
+    assert b"\n" not in data.replace(b"\r\n", b"")  # no stray LF-only lines
+    assert "+    return 2" in res["diff"]["text"]
+
+
+def test_edit_file_keeps_lf_files_lf(tmp_path):
+    target = tmp_path / "a.js"
+    target.write_bytes(b"const a = 1;\nconst b = 2;\n")
+    with _bound(tmp_path):
+        res = _run(EditFileTool().execute(json.dumps({
+            "path": "a.js", "old_string": "const b = 2;", "new_string": "const b = 3;",
+        }), {}))
+    assert res["exit_code"] == 0, res
+    assert target.read_bytes() == b"const a = 1;\nconst b = 3;\n"
+
+
+def test_apply_patch_keeps_crlf(tmp_path):
+    from src.agent_tools.filesystem_tools import ApplyPatchTool
+    target = tmp_path / "server.py"
+    target.write_bytes(b"import os\r\n\r\ndef main():\r\n    return 1\r\n")
+    patch = (
+        "*** Begin Patch\n"
+        "*** Update File: server.py\n"
+        "@@\n"
+        " def main():\n"
+        "-    return 1\n"
+        "+    return 2\n"
+        "*** End Patch\n"
+    )
+    with _bound(tmp_path):
+        res = _run(ApplyPatchTool().execute(json.dumps({"patch_text": patch}), {}))
+    assert res.get("exit_code") == 0, res
+    assert target.read_bytes() == b"import os\r\n\r\ndef main():\r\n    return 2\r\n"
+
+
+def test_write_file_overwrite_keeps_crlf_and_new_files_are_verbatim(tmp_path):
+    from src.agent_tools.filesystem_tools import WriteFileTool
+    target = tmp_path / "notes.md"
+    target.write_bytes(b"# a\r\nb\r\n")
+    with _bound(tmp_path):
+        res = _run(WriteFileTool().execute(json.dumps({"path": "notes.md", "content": "# a\nc\n"}), {}))
+        assert res["exit_code"] == 0, res
+        assert target.read_bytes() == b"# a\r\nc\r\n"
+        res2 = _run(WriteFileTool().execute(json.dumps({"path": "new/x.py", "content": "x = 1\ny = 2\n"}), {}))
+        assert res2["exit_code"] == 0, res2
+        assert (tmp_path / "new" / "x.py").read_bytes() == b"x = 1\ny = 2\n"

@@ -70,6 +70,22 @@ def _unified_diff(old: str, new: str, path: str) -> Optional[Dict[str, Any]]:
         "file": os.path.basename(path) or (path or "file"),
     }
 
+def _read_text_lf(path: str):
+    """Read a text file without newline translation and return
+    (text with LF line endings, had_crlf). Models quote text with "\\n";
+    Windows files carry "\\r\\n" — matching happens on the LF form and the
+    file is written back with its own convention (see _write_text_lf)."""
+    with open(path, "r", encoding="utf-8", newline="") as f:
+        raw = f.read()
+    crlf = "\r\n" in raw
+    return (raw.replace("\r\n", "\n") if crlf else raw), crlf
+
+
+def _write_text_lf(path: str, text_lf: str, crlf: bool) -> None:
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        f.write(text_lf.replace("\n", "\r\n") if crlf else text_lf)
+
+
 class EditFileTool:
     async def execute(self, content: str, ctx: dict) -> dict:
         from src.tool_execution import _resolve_tool_path, _resolve_search_root, _truncate
@@ -92,18 +108,22 @@ class EditFileTool:
         if old == new:
             return {"error": "edit_file: old_string and new_string are identical", "exit_code": 1}
 
+        # Models quote text with "\n"; Windows files carry "\r\n". Match on
+        # LF-normalized text and write the file back with the line endings it
+        # already had — never rewrite a whole file's endings on a one-line edit.
+        old_lf = old.replace("\r\n", "\n")
+        new_lf = new.replace("\r\n", "\n")
+
         def _apply():
             """Helper function that performs the actual string replacement and file writing logic."""
-            with open(path, "r", encoding="utf-8") as f:
-                original = f.read()
-            count = original.count(old)
+            original, crlf = _read_text_lf(path)
+            count = original.count(old_lf)
             if count == 0:
                 return original, None, "not_found"
             if count > 1 and not replace_all:
                 return original, None, f"not_unique:{count}"
-            updated = original.replace(old, new) if replace_all else original.replace(old, new, 1)
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(updated)
+            updated = original.replace(old_lf, new_lf) if replace_all else original.replace(old_lf, new_lf, 1)
+            _write_text_lf(path, updated, crlf)
             return original, updated, "ok"
 
         try:
@@ -131,7 +151,7 @@ class EditFileTool:
             hint = ""
             try:
                 import difflib
-                probe = next((ln for ln in old.splitlines() if ln.strip()), old.strip())[:200]
+                probe = next((ln for ln in old_lf.splitlines() if ln.strip()), old_lf.strip())[:200]
                 file_lines = original.splitlines()
                 best_ratio, best_idx = 0.0, -1
                 for i, line in enumerate(file_lines):
@@ -155,7 +175,7 @@ class EditFileTool:
             n = status.split(":", 1)[1]
             return {"error": f"edit_file: old_string is not unique in {path} ({n} matches). Add surrounding context or set replace_all=true.", "exit_code": 1}
 
-        n = original.count(old)
+        n = original.count(old_lf)
         result = {"output": f"Edited {path} ({n} replacement{'s' if n != 1 else ''})", "exit_code": 0}
         diff = _unified_diff(original, updated, path)
         if diff:
@@ -245,17 +265,18 @@ class WriteFileTool:
             return {"error": f"write_file: {e}", "exit_code": 1}
         try:
             def _write():
-                old = ""
+                old, crlf = "", False
                 try:
-                    with open(path, "r", encoding="utf-8") as f:
-                        old = f.read()
+                    old, crlf = _read_text_lf(path)
                 except (FileNotFoundError, IsADirectoryError, UnicodeDecodeError, OSError):
-                    old = ""
+                    old, crlf = "", False
                 d = os.path.dirname(path)
                 if d:
                     os.makedirs(d, exist_ok=True)
-                with open(path, "w", encoding="utf-8") as f:
-                    f.write(body)
+                # Overwriting keeps the file's existing line-ending convention;
+                # a new file is written exactly as the model produced it (no
+                # platform translation), so the diff shows content changes only.
+                _write_text_lf(path, body.replace("\r\n", "\n"), crlf)
                 return old, len(body)
             old_content, size = await asyncio.to_thread(_write)
         except PermissionError:
@@ -299,6 +320,7 @@ class ApplyPatchTool:
             for op in ops:
                 path = _resolve_tool_path(op["path"])
                 kind = op["kind"]
+                crlf = False
                 if kind == "add":
                     if os.path.exists(path):
                         return {"error": f"apply_patch: {op['path']}: already exists", "exit_code": 1}
@@ -307,27 +329,24 @@ class ApplyPatchTool:
                 elif kind == "delete":
                     if not os.path.isfile(path):
                         return {"error": f"apply_patch: {op['path']}: not found", "exit_code": 1}
-                    with open(path, "r", encoding="utf-8") as f:
-                        old = f.read()
+                    old, _crlf = _read_text_lf(path)
                     new = ""
                 else:
                     if not os.path.isfile(path):
                         return {"error": f"apply_patch: {op['path']}: not found", "exit_code": 1}
-                    with open(path, "r", encoding="utf-8") as f:
-                        old = f.read()
+                    old, crlf = _read_text_lf(path)
                     new = _apply_patch_hunks(old, op["hunks"], op["path"])
-                prepared.append((kind, path, old, new))
+                prepared.append((kind, path, old, new, crlf))
 
             diffs = []
-            for kind, path, old, new in prepared:
+            for kind, path, old, new, crlf in prepared:
                 if kind == "delete":
                     os.remove(path)
                 else:
                     directory = os.path.dirname(path)
                     if directory:
                         os.makedirs(directory, exist_ok=True)
-                    with open(path, "w", encoding="utf-8") as f:
-                        f.write(new)
+                    _write_text_lf(path, new, crlf)
                 diff = _unified_diff(old, new, path)
                 if diff:
                     diffs.append(diff)
