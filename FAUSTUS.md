@@ -4,7 +4,7 @@
 
 - Base del fork: commit upstream `c9dd68d8` (27-08-2026, "refactor(docs): separate Pages site source").
 - Ramas: `feat/projects` (principal, `D:\LocalAI\odysseus`) y `feat/reliability` (desarrollo, worktree `D:\LocalAI\odysseus-dev`, instancia de pruebas en el puerto 7001). La rama de desarrollo se fusiona en la principal por fast-forward.
-- Cifras a 31-08-2026 (17:20): **101 commits**, 338 ficheros tocados, **+22.911 líneas** (−814); 25 módulos nuevos (14 de backend, 3 de rutas, 8 de frontend) + `scripts/faustus_rename.py`, 30 ficheros de tests nuevos. Suite completa: **6.021 tests en verde en Windows** (partía de 178 fallos ambientales) y 6.074 en Linux; e2e Playwright **10/10** en Windows y Linux.
+- Cifras a 31-08-2026 (17:45): **105 commits**, 339 ficheros tocados, **+22.973 líneas** (−816); 25 módulos nuevos (14 de backend, 3 de rutas, 8 de frontend) + `scripts/faustus_rename.py`, 31 ficheros de tests nuevos. Suite completa: **6.025 tests en verde en Windows** (partía de 178 fallos ambientales) y 6.078 en Linux; e2e Playwright **10/10** en Windows y Linux.
 - Máquina de referencia: RTX 4070 Ti 12 GB, 128 GB RAM, Windows 11, Ollama 0.33.x; modelos `qwen3-coder:30b`, `qwen3.5:9b`, `qwen3.8:27b`, `qwen3-coder-next`.
 
 ---
@@ -198,7 +198,11 @@ Dos honestidades sobre esta prueba: (1) las 46 restantes incluían otro dominio 
 Matriz habitual (`run_matrix_q35.ps1`, qwen3.5:9b, tras el arreglo del punto 6.8), con las cifras de la tanda anterior entre paréntesis: t1 regresión de botones **67 s** (59 s), t4 ruta inventada por el usuario **94 s** (12 s), t5 solo lectura **5 s** (3 s), t8 petición ambigua **65 s** (102 s). Las cuatro terminan en `complete`, **0 llamadas fallidas**. La t4 tarda más porque esta vez exploró de verdad (16 llamadas) en lugar de concluir a la primera que el fallo no existía; es una tarea que este modelo resuelve de forma distinta en cada pasada, así que se anota tal cual y no como mejora ni como regresión.
 
 ### Verificación
-89 tests nuevos en 4 ficheros (`test_file_mentions.py`, `test_file_mentions_routes_js.py`, `test_project_instructions_remember.py`, `test_composer_sigils_js.py`), incluidos los de contrato entre el popup y el resolutor del servidor (lo que inserta el popup es lo que el servidor resuelve) y los de node para los predicados del compositor. Suite completa en verde antes y después.
+**90 tests nuevos**: 83 de unidad en 10 ficheros (`test_file_mentions.py`, `test_file_mentions_routes_js.py`, `test_project_instructions_remember.py`, `test_composer_sigils_js.py`, `test_chat_versions.py`, `test_chat_versions_routes.py`, `test_quote_selection_js.py`, `test_mention_chips_js.py`, `test_browser_mcp_expansion.py`, `test_cookbook_domain_false_positive.py`), 2 de regresión añadidos a `test_agent_harness.py`, y **5 flujos e2e** en `tests/e2e/test_composer_shortcuts.py`. Entre ellos, los de contrato que impiden que las tres capas se separen: lo que inserta el popup de `@` es lo que resuelve el servidor; la regex de las fichas del transcript se compara con `file_mentions.extract()` sobre los mismos casos; y `resendUserMessage` no puede volver a llamar a `/truncate` directamente sin pasar por la captura de versiones.
+
+Suites completas en verde antes y después: **Windows 6.025 / 0 fallos** (partía de 5.940), **Linux 6.078 / 0** (partía de 5.993), **e2e Playwright 10/10** en las dos plataformas (~80 s).
+
+Dos avisos aprendidos por el camino: (1) el guardián de regresión `test_resend_message_nondestructive.py` comprobaba que la URL de `/truncate` aparece tras la guarda `replaceFromHere`; al pasar por `_truncateWithVersion()` hubo que actualizarlo para vigilar la llamada nueva. (2) Un test de rutas con `SessionManager` real obliga a recargar `core.database` (liga su engine al importar), y dejarlo recargado le pasa su base de datos temporal a todos los tests posteriores — 10 fallos por orden. Se sustituyó por un doble sobre una lista; la capa real la cubre el flujo e2e.
 
 ---
 
