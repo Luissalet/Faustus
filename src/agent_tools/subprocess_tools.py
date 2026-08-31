@@ -1,7 +1,10 @@
 import asyncio
+import logging
 import os
 import re
 import shutil
+import signal
+import subprocess
 import sys
 import time
 import collections
@@ -9,8 +12,100 @@ from typing import Optional, Callable, Awaitable, Tuple, Dict
 from core.platform_compat import IS_WINDOWS, find_bash
 from src.constants import MAX_OUTPUT_CHARS
 
+logger = logging.getLogger(__name__)
+
 DEFAULT_BASH_TIMEOUT = 60 * 60     # 1 hour
 DEFAULT_PYTHON_TIMEOUT = 60 * 60
+# A command that prints nothing for this long is treated as stuck (a server
+# left in the foreground, a process waiting for input) and its whole process
+# tree is killed. Setting `agent_subprocess_idle_timeout_seconds`; 0 disables.
+DEFAULT_IDLE_TIMEOUT = 300
+
+
+def _idle_timeout_seconds() -> float:
+    try:
+        from src.settings import get_setting
+        v = get_setting("agent_subprocess_idle_timeout_seconds", DEFAULT_IDLE_TIMEOUT)
+        v = float(v)
+        return v if v > 0 else 0.0
+    except Exception:
+        return float(DEFAULT_IDLE_TIMEOUT)
+
+
+def _kill_tree(proc) -> None:
+    """Kill the subprocess AND its children. On Windows the Git-for-Windows
+    launcher (bin\\bash.exe) execs the real usr\\bin\\bash.exe which spawns the
+    command: a bare proc.kill() only removed the launcher and left a
+    foreground `uvicorn` running forever (seen live). taskkill /T takes the
+    tree; on POSIX the shell runs in its own session so killpg does."""
+    pid = getattr(proc, "pid", None)
+    try:
+        if IS_WINDOWS and pid:
+            subprocess.run(
+                ["taskkill", "/T", "/F", "/PID", str(pid)],
+                capture_output=True, timeout=15,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+        elif pid:
+            try:
+                pgid = os.getpgid(pid)
+                if pgid != os.getpgid(0):        # never our own group
+                    os.killpg(pgid, signal.SIGKILL)
+            except Exception:
+                pass
+    except Exception as e:
+        logger.debug("kill tree %s failed: %s", pid, e)
+    try:
+        proc.kill()
+    except Exception:
+        pass
+
+
+# Commands that never exit on their own (servers, dev watchers, tails). Run in
+# the foreground they block the turn until the timeout — the model must start
+# them detached (`#!bg` first line) or bounded (`timeout N …`).
+_SERVER_LAUNCH_RE = re.compile(
+    r"(?:^|[;&|(]\s*)(?:[\w./\\:-]*python[\w.]*\s+(?:-m\s+)?)?(?:"
+    r"uvicorn|gunicorn|hypercorn|daphne|waitress-serve|flask\s+run|streamlit\s+run|"
+    r"http\.server|php\s+-S|rails\s+s(?:erver)?\b|ng\s+serve|vite\b(?!\s+build)|next\s+dev|nuxt\s+dev|"
+    r"npm\s+(?:run\s+)?(?:start|dev|serve)\b|yarn\s+(?:run\s+)?(?:start|dev|serve)\b|pnpm\s+(?:run\s+)?(?:start|dev|serve)\b|"
+    r"node\s+\S*(?:server|app|index)\.[cm]?js\b|nodemon\b|ollama\s+serve|tail\s+-[a-zA-Z]*[fF]|watch\s|"
+    r"manage\.py\s+runserver|docker\s+compose\s+up(?![^\n;&|]*\s-d\b)|docker-compose\s+up(?![^\n;&|]*\s-d\b)"
+    r")",
+    re.I | re.M,
+)
+_BACKGROUNDED_RE = re.compile(
+    r"(?:&\s*$|&\s*\n|\bnohup\b|\bsetsid\b|\bdisown\b|\bstart\s+/b\b|Start-Process|\btimeout\s+-?\d|\bgtimeout\s+\d|\bscreen\s+-d|\btmux\s+new)",
+    re.I | re.M,
+)
+
+
+def foreground_server_launch(command: str) -> Optional[str]:
+    """Return the matched launcher when `command` starts a server/watcher in
+    the foreground (nothing backgrounds or bounds it), else None."""
+    cmd = str(command or "")
+    if not cmd.strip():
+        return None
+    m = _SERVER_LAUNCH_RE.search(cmd)
+    if not m:
+        return None
+    if _BACKGROUNDED_RE.search(cmd):
+        return None
+    return m.group(0).strip(" ;&|(")
+
+
+def _blocked_server_result(kind: str, tool: str) -> Dict:
+    return {
+        "error": (
+            f"{tool}: `{kind}` starts a long-running server/watcher and would block this turn "
+            "(it never exits on its own; the previous attempt hung the run). Do ONE of: "
+            "(1) start it detached — put `#!bg` as the FIRST line of the bash block and the "
+            "command below it; you will be re-invoked with its output and can query/kill it with "
+            "manage_bg_jobs; (2) bound it: `timeout 30 <command>`; (3) verify the code without "
+            "running the server (import it, run its tests, or call the handler directly)."
+        ),
+        "exit_code": 2,
+    }
 
 PROGRESS_INTERVAL_S = 2.0
 PROGRESS_TAIL_LINES = 12
@@ -35,6 +130,8 @@ async def _create_bash_subprocess(command: str, **kwargs):
                 "install Git for Windows and restart Odysseus"
             )
         return await asyncio.create_subprocess_exec(bash, "-c", command, **kwargs)
+    # Own session/process group so a stuck command's whole tree can be killed.
+    kwargs.setdefault("start_new_session", True)
     return await asyncio.create_subprocess_shell(command, **kwargs)
 
 
@@ -210,11 +307,19 @@ async def _run_subprocess_streaming(
     *,
     timeout: float,
     progress_cb: Optional[Callable[[Dict], Awaitable[None]]] = None,
+    idle_timeout: Optional[float] = None,
 ) -> Tuple[str, str, Optional[int], bool]:
+    """Run `proc` to completion. Returns (stdout, stderr, returncode, timed_out);
+    `timed_out` is True for the hard timeout and the string "idle" when the
+    command was killed for printing nothing for `idle_timeout` seconds."""
     started = time.time()
     stdout_full: list[str] = []
     stderr_full: list[str] = []
     tail = collections.deque(maxlen=PROGRESS_TAIL_LINES)
+    last_activity = [time.time()]
+    idle_hit = [False]
+    if idle_timeout is None:
+        idle_timeout = _idle_timeout_seconds()
 
     async def _reader(stream, full_buf, label: str):
         if stream is None:
@@ -223,12 +328,23 @@ async def _run_subprocess_streaming(
             line = await stream.readline()
             if not line:
                 break
+            last_activity[0] = time.time()
             decoded = line.decode("utf-8", errors="replace").rstrip("\n")
             full_buf.append(decoded)
             if label == "err":
                 tail.append(f"! {decoded}")
             else:
                 tail.append(decoded)
+
+    async def _idle_watchdog():
+        if not idle_timeout:
+            return
+        while True:
+            await asyncio.sleep(min(5.0, idle_timeout))
+            if time.time() - last_activity[0] > idle_timeout:
+                idle_hit[0] = True
+                _kill_tree(proc)
+                return
 
     async def _progress_emitter():
         await asyncio.sleep(PROGRESS_INTERVAL_S)
@@ -246,25 +362,23 @@ async def _run_subprocess_streaming(
     rd_out = asyncio.create_task(_reader(proc.stdout, stdout_full, "out"))
     rd_err = asyncio.create_task(_reader(proc.stderr, stderr_full, "err"))
     prog_task = asyncio.create_task(_progress_emitter()) if progress_cb else None
+    idle_task = asyncio.create_task(_idle_watchdog()) if idle_timeout else None
 
-    timed_out = False
+    timed_out: object = False
     try:
         await asyncio.wait_for(proc.wait(), timeout=timeout)
+        if idle_hit[0]:
+            timed_out = "idle"
     except asyncio.TimeoutError:
         timed_out = True
-        try:
-            proc.kill()
-        except Exception:
-            pass
+        _kill_tree(proc)
         try:
             await asyncio.wait_for(proc.wait(), timeout=2)
         except Exception:
             pass
     except asyncio.CancelledError:
-        try:
-            proc.kill()
-        except Exception:
-            pass
+        # The turn was stopped / the run cancelled: take the whole tree with us.
+        _kill_tree(proc)
         try:
             await asyncio.wait_for(proc.wait(), timeout=2)
         except Exception:
@@ -273,14 +387,17 @@ async def _run_subprocess_streaming(
             t.cancel()
         if prog_task is not None:
             prog_task.cancel()
+        if idle_task is not None:
+            idle_task.cancel()
         raise
     finally:
-        if prog_task is not None and not prog_task.done():
-            prog_task.cancel()
-            try:
-                await prog_task
-            except (asyncio.CancelledError, Exception):
-                pass
+        for t in (prog_task, idle_task):
+            if t is not None and not t.done():
+                t.cancel()
+                try:
+                    await t
+                except (asyncio.CancelledError, Exception):
+                    pass
         for t in (rd_out, rd_err):
             try:
                 await asyncio.wait_for(t, timeout=1)
@@ -294,6 +411,21 @@ async def _run_subprocess_streaming(
         timed_out,
     )
 
+
+def _idle_result(tool: str, idle_s: float, stdout: str, stderr: str) -> Dict:
+    from src.tool_execution import _truncate
+    return {
+        "error": (
+            f"{tool}: no output for {int(idle_s)}s while still running — killed with its child processes. "
+            "This usually means a server/watcher left in the foreground or a process waiting for input. "
+            "Start servers detached (`#!bg` as the first line of the bash block, then manage_bg_jobs), "
+            "bound long commands with `timeout N …`, and never run interactive programs."
+        ),
+        "exit_code": 124,
+        "stdout": _truncate(stdout, MAX_OUTPUT_CHARS),
+        "stderr": _truncate(stderr, MAX_OUTPUT_CHARS),
+    }
+
 class BashTool:
     async def execute(self, content: str, ctx: dict) -> dict:
         from src.tool_execution import agent_cwd, _truncate
@@ -302,6 +434,9 @@ class BashTool:
         progress_cb = ctx.get("progress_cb")
         _subproc_env = ctx.get("subproc_env")
         session_id = ctx.get("session_id")
+        launcher = foreground_server_launch(content)
+        if launcher:
+            return _blocked_server_result(launcher, "bash")
         # tmux is a POSIX persistence path. A stray MSYS/Cygwin tmux.exe on
         # native Windows must not bypass the Git Bash launcher below: the tmux
         # setup hard-codes /bin/bash and cannot safely consume a native cwd.
@@ -347,6 +482,8 @@ class BashTool:
             timeout=DEFAULT_BASH_TIMEOUT,
             progress_cb=progress_cb,
         )
+        if timed_out == "idle":
+            return _idle_result("bash", _idle_timeout_seconds(), stdout, stderr)
         if timed_out:
             return {"error": f"bash: timed out after {DEFAULT_BASH_TIMEOUT}s — process killed", "exit_code": 124, "stdout": _truncate(stdout, MAX_OUTPUT_CHARS), "stderr": _truncate(stderr, MAX_OUTPUT_CHARS)}
         output = stdout.rstrip()
@@ -373,6 +510,8 @@ class PythonTool:
             timeout=DEFAULT_PYTHON_TIMEOUT,
             progress_cb=progress_cb,
         )
+        if timed_out == "idle":
+            return _idle_result("python", _idle_timeout_seconds(), stdout, stderr)
         if timed_out:
             return {"error": f"python: timed out after {DEFAULT_PYTHON_TIMEOUT}s — process killed", "exit_code": 124, "stdout": _truncate(stdout, MAX_OUTPUT_CHARS), "stderr": _truncate(stderr, MAX_OUTPUT_CHARS)}
         output = stdout.rstrip()

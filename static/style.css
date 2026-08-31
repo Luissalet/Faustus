@@ -42460,6 +42460,8 @@ body:has(.sidebar.right-side) .project-active-pill { right: 12px; }
 .fv-crumbs { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: var(--mono, ui-monospace, monospace); font-size: 12px; }
 .fv-crumb { opacity: .7; } .fv-crumb.is-last { opacity: 1; font-weight: 600; } .fv-sep { opacity: .4; margin: 0 4px; }
 .fv-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.fv-nav { display: flex; align-items: center; gap: 2px; flex-shrink: 0; margin-right: 4px; padding-right: 6px; border-right: 1px solid var(--border); }
+.fv-nav-pos { font-size: 11px; opacity: .7; min-width: 28px; text-align: center; font-variant-numeric: tabular-nums; }
 .fv-btn { background: transparent; border: 1px solid var(--border); color: var(--fg); border-radius: 6px; padding: 3px 8px; cursor: pointer; font-size: 12px; opacity: .85; }
 .fv-btn:hover { opacity: 1; background: color-mix(in srgb, var(--fg) 8%, transparent); }
 .fv-btn.active { background: color-mix(in srgb, var(--accent-primary, var(--red)) 18%, transparent); border-color: var(--accent-primary, var(--red)); opacity: 1; }
@@ -42478,6 +42480,13 @@ body:has(.sidebar.right-side) .project-active-pill { right: 12px; }
 .harness-file:hover { border-color: var(--accent-primary, var(--red)); }
 .harness-files { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; }
 .harness-muted { opacity: .55; font-size: 11px; }
+.harness-actions { margin-top: 6px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.harness-btn { font: inherit; font-size: 11px; padding: 2px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-secondary, transparent); color: inherit; cursor: pointer; }
+.harness-btn:hover { border-color: var(--color-accent, #00aaff); }
+.harness-btn:disabled { opacity: .6; cursor: default; }
+.harness-btn-danger { color: var(--red, #e06c75); }
+.harness-btn-danger:hover { border-color: var(--red, #e06c75); }
+.harness-revert-result { margin-top: 2px; }
 @media (max-width: 900px) { .file-viewer-panel { width: 100vw; } }
 .harness-files-row { margin: 4px 0 2px; padding: 4px 6px; }
 .fv-btn.fv-danger:hover { border-color: var(--red, #e06c75); color: var(--red, #e06c75); }

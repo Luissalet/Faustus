@@ -71,6 +71,62 @@ function _fileChip(path, workspace, mode) {
   return `<a href="#" class="harness-file" data-open-file="${esc(p)}"${workspace ? ` data-open-workspace="${esc(workspace)}"` : ''}${mode ? ` data-open-mode="${mode}"` : ''} title="${esc(p)} — click to review">${esc(base)}</a>`;
 }
 
+// "Revert all" for a turn: one button per Turn summary, confirmed, file by file
+// through POST /api/workspace/revert (the same endpoint the viewer's ↺ uses).
+function _revertAllButton(files, workspace) {
+  const payload = esc(JSON.stringify({ files: files.slice(0, 60), workspace: workspace || null }));
+  return `<button type="button" class="harness-btn harness-btn-danger" data-revert-all="${payload}" title="Undo the changes of this turn">↺ Revert all ${files.length}</button>`;
+}
+
+function _workspaceFallback() {
+  try {
+    if (window.workspaceModule && typeof window.workspaceModule.getWorkspace === 'function') {
+      const w = window.workspaceModule.getWorkspace();
+      if (w) return typeof w === 'string' ? w : (w.path || '');
+    }
+    const raw = localStorage.getItem('odysseus-workspace');
+    if (!raw) return '';
+    try { const v = JSON.parse(raw); return typeof v === 'string' ? v : (v && v.path) || ''; } catch (_) { return raw; }
+  } catch (_) { return ''; }
+}
+
+async function _revertAll(button) {
+  let payload;
+  try { payload = JSON.parse(button.dataset.revertAll || '{}'); } catch (_) { return; }
+  const files = Array.isArray(payload.files) ? payload.files : [];
+  if (!files.length) return;
+  const ws = payload.workspace || _workspaceFallback();
+  const q = `Revert the ${files.length} file${files.length === 1 ? '' : 's'} changed in this turn? (git checkout — a new untracked file is deleted)`;
+  let ok = false;
+  try {
+    ok = window.uiModule && window.uiModule.styledConfirm
+      ? await window.uiModule.styledConfirm(q, { confirmText: 'Revert all', danger: true })
+      : window.confirm(q);
+  } catch (_) { ok = window.confirm(q); }
+  if (!ok) return;
+  button.disabled = true;
+  button.textContent = 'Reverting…';
+  const results = [];
+  for (const f of files) {
+    const name = String(f).split(/[\\/]/).pop();
+    try {
+      const qs = `workspace=${encodeURIComponent(ws || '')}&path=${encodeURIComponent(f)}`;
+      const r = await fetch(`${API_BASE}/api/workspace/revert?${qs}`, { method: 'POST', credentials: 'same-origin' });
+      let action = 'failed';
+      if (r.ok) { try { action = (await r.json()).action || 'ok'; } catch (_) { action = 'ok'; } }
+      else { try { action = `failed (${(await r.json()).detail || r.status})`; } catch (_) { action = `failed (${r.status})`; } }
+      results.push({ name, action });
+    } catch (e) { results.push({ name, action: 'failed' }); }
+  }
+  const okN = results.filter(r => !/^failed/.test(r.action)).length;
+  button.textContent = `↺ Reverted ${okN}/${files.length}`;
+  const note = document.createElement('div');
+  note.className = 'harness-muted harness-revert-result';
+  note.textContent = results.map(r => `${r.name}: ${r.action.replace('_', ' ')}`).join(' · ');
+  button.insertAdjacentElement('afterend', note);
+  try { if (window.fileViewer && window.fileViewer.isOpen()) window.fileViewer.close(); } catch (_) {}
+}
+
 const REASON_TEXT = {
   claims_without_mutation: 'The model described changes as done, but no write tool (edit_file / write_file / apply_patch) succeeded this turn.',
   fabricated_paths: 'It mentioned files that do not exist in the workspace and were never returned by any tool.',
@@ -167,6 +223,7 @@ export function renderHarnessSummary(json) {
   }[stop] || stop;
   const details = [];
   if (files.length) details.push(`<div class="harness-files"><b>Edited:</b> ${files.map(f => _fileChip(f, d.workspace, 'diff')).join(' ')} <span class="harness-muted">— click a file to review it (contents / diff / open folder)</span></div>`);
+  if (files.length) details.push(`<div class="harness-actions">${_revertAllButton(files, d.workspace)} <span class="harness-muted">undo this turn's edits (git checkout per file; a new untracked file is deleted)</span></div>`);
   if (git && git.changed && git.changed.length) {
     details.push(`<div><b>git status:</b><pre class="harness-pre">${esc(git.changed.map(c => `${c.status.padEnd(2)} ${c.path}`).join('\n'))}</pre></div>`);
   }
@@ -409,6 +466,13 @@ export function init(apiBase) {
   document.addEventListener('odysseus:session-switch', (ev) => {
     const id = ev.detail && ev.detail.id;
     restoreProgress(id || null);
+  });
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-revert-all]');
+    if (!b || b.disabled) return;
+    e.preventDefault();
+    e.stopPropagation();
+    _revertAll(b);
   });
 }
 

@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 
 MAX_SUBAGENTS = 4
 DEFAULT_MAX_ROUNDS = 14
+DEFAULT_WORKER_TIMEOUT_S = 1500   # wall-clock bound per worker (25 min; qwen3-coder on this GPU does a task in 1-5 min)
 SUBAGENT_FOLDER = "Agents"
 # Tools a worker must not use: no recursion, no user prompts (nobody is
 # watching the child chat), no session management.
@@ -84,11 +85,16 @@ def parse_delegation_args(content: str) -> Dict[str, Any]:
         max_rounds = int(data.get("max_rounds") or DEFAULT_MAX_ROUNDS)
     except (TypeError, ValueError):
         max_rounds = DEFAULT_MAX_ROUNDS
+    try:
+        timeout_s = int(data.get("timeout_s") or data.get("timeout") or DEFAULT_WORKER_TIMEOUT_S)
+    except (TypeError, ValueError):
+        timeout_s = DEFAULT_WORKER_TIMEOUT_S
     return {
         "tasks": tasks,
         "parallel": bool(data.get("parallel", True)),
         "max_rounds": max(3, min(max_rounds, 40)),
         "shared_context": str(data.get("context") or data.get("shared_context") or "").strip()[:4000],
+        "timeout_s": max(60, min(timeout_s, 7200)),
     }
 
 
@@ -266,19 +272,22 @@ async def _run_subagent(
                 _agent_runs.clear_busy(child_sid)
             except Exception:
                 pass
-    # Persist the transcript into the child chat so it can be audited later.
-    if sm and run.session_id:
-        try:
-            child = sm.get_session(run.session_id)
-            if child is not None:
-                child.add_message(ChatMessage("user", run.instruction))
-                meta = dict(final_metrics or {})
-                meta["tool_events"] = tool_events[:60]
-                meta["subagent"] = {"parent_session": parent_session_id, "name": run.name}
-                child.add_message(ChatMessage("assistant", run.text.strip() or "(no final text)", metadata=meta))
-                sm.save_sessions()
-        except Exception as e:
-            logger.debug("delegate_agents: transcript save failed: %s", e)
+        # Persist the transcript into the child chat so it can be audited later
+        # (also when the worker was cancelled/timed out: what it did is evidence).
+        if sm and run.session_id:
+            try:
+                child = sm.get_session(run.session_id)
+                if child is not None:
+                    child.add_message(ChatMessage("user", run.instruction))
+                    meta = dict(final_metrics or {})
+                    meta["tool_events"] = tool_events[:60]
+                    meta["subagent"] = {"parent_session": parent_session_id, "name": run.name}
+                    if run.error:
+                        meta["subagent"]["error"] = run.error
+                    child.add_message(ChatMessage("assistant", run.text.strip() or "(no final text)", metadata=meta))
+                    sm.save_sessions()
+            except Exception as e:
+                logger.debug("delegate_agents: transcript save failed: %s", e)
     await emit({"event": "done", **run.report(), "final_text": _short(run.text, 300)})
 
 
@@ -376,13 +385,26 @@ class DelegateAgentsTool:
             return _emit
 
         async def one(run: SubagentRun):
-            await _run_subagent(
-                run,
-                endpoint_url=endpoint_url, model=run.model_override or model, headers=headers, owner=owner,
-                workspace=workspace, workspace_roots=roots, max_rounds=args["max_rounds"],
-                shared_context=args["shared_context"], parent_session_id=parent_sid,
-                emit=await emit_for(run), gen_overrides=gen_overrides,
-            )
+            emit = await emit_for(run)
+            try:
+                # Wall-clock bound per worker: a worker stuck on a foreground
+                # server or a silent model must not hang the coordinator.
+                await asyncio.wait_for(
+                    _run_subagent(
+                        run,
+                        endpoint_url=endpoint_url, model=run.model_override or model, headers=headers, owner=owner,
+                        workspace=workspace, workspace_roots=roots, max_rounds=args["max_rounds"],
+                        shared_context=args["shared_context"], parent_session_id=parent_sid,
+                        emit=emit, gen_overrides=gen_overrides,
+                    ),
+                    timeout=args["timeout_s"],
+                )
+            except asyncio.TimeoutError:
+                run.error = run.error or f"worker timed out after {args['timeout_s']}s (its running command was killed)"
+                run.stop_reason = "timeout"
+                run.finished = run.finished or time.time()
+                await emit({"event": "error", "message": run.error})
+                await emit({"event": "done", **run.report(), "final_text": _short(run.text, 300)})
 
         t0 = time.time()
         if args["parallel"] and len(runs) > 1:

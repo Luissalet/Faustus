@@ -356,6 +356,7 @@ async function _syncActivityFromServer() {
     _activityFailures = 0;
     const running = new Set(Array.isArray(data.running) ? data.running : []);
     const awaiting = new Set(Array.isArray(data.awaiting_approval) ? data.awaiting_approval : []);
+    _serverRunIds = (data.runs && typeof data.runs === 'object') ? data.runs : {};
     // A run this tab was not watching that just finished → finished-unread,
     // unless it is the chat on screen (the user sees the answer arrive).
     for (const sid of _serverRunning) {
@@ -388,6 +389,7 @@ async function _syncActivityFromServer() {
 }
 const _localQuestionSessions = new Set(); // ask_user questions (not tool approvals) seen by this tab
 const _activityUnknownSeen = new Set();   // running ids we already reloaded the list for
+let _serverRunIds = {};                    // session → run id of its detached run (Stop needs it)
 let _serverAwaitingSet = new Set();
 function _serverAwaiting(sid) { return _serverAwaitingSet.has(sid); }
 
@@ -826,6 +828,30 @@ function createSessionItem(s) {
 
 
   dropdown.appendChild(renameItem);
+
+  // Stop a run that is working in the background (grey blinking dot) without
+  // having to open the chat first.
+  if (sessionActivityStatus(s.id) === 'running' && _serverRunIds[s.id]) {
+    const _stopIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
+    const stopItem = document.createElement('div');
+    stopItem.className = 'dropdown-item-compact dropdown-item-danger';
+    stopItem.innerHTML = _icon(_stopIcon) + '<span>Stop run</span>';
+    stopItem.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      dropdown.style.display = 'none';
+      try {
+        const r = await fetch(`${API_BASE}/api/chat/stop/${encodeURIComponent(s.id)}`, { method: 'POST', credentials: 'same-origin', headers: { 'X-Odysseus-Run-Id': _serverRunIds[s.id] || '' } });
+        const j = r.ok ? await r.json() : {};
+        uiModule.showToast(j.stopped ? 'Run stopped' : 'Nothing to stop (already finished)');
+      } catch (_) { uiModule.showToast('Could not stop the run'); }
+      _serverRunning.delete(s.id);
+      _streamingSessions.delete(s.id);
+      _updateResearchDots();
+      _updateRailNotifs();
+      _syncActivityFromServer();
+    });
+    dropdown.appendChild(stopItem);
+  }
 
   // Star/Unstar item
   if (!isOpenClaw) {

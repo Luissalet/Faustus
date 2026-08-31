@@ -2859,6 +2859,7 @@ def setup_chat_routes(
     async def chat_activity(request: Request) -> Dict[str, Any]:
         owner = effective_user(request)
         running: List[str] = []
+        runs: Dict[str, str] = {}   # session → opaque run id (needed to Stop from the sidebar)
         try:
             for sid in agent_runs.active_session_ids():
                 try:
@@ -2866,13 +2867,16 @@ def setup_chat_routes(
                 except HTTPException:
                     continue  # another user's run (or a vanished session)
                 running.append(sid)
+                rid = agent_runs.get_run_id(sid)
+                if rid and agent_runs.is_active(sid):
+                    runs[sid] = rid
         except Exception:
             running = []
         try:
             awaiting = tool_approval_store.pending_session_ids(owner=owner)
         except Exception:
             awaiting = []
-        return {"running": running, "awaiting_approval": awaiting, "ts": time.time()}
+        return {"running": running, "runs": runs, "awaiting_approval": awaiting, "ts": time.time()}
 
     # ------------------------------------------------------------------ #
     # GET /api/chat/stream_status — check if a stream is active for a session

@@ -41,6 +41,7 @@ function _ensurePanel() {
   el.innerHTML =
     `<div class="fv-head">` +
     `<div class="fv-title"><span class="fv-kicker">View file</span><span class="fv-crumbs"></span></div>` +
+    `<div class="fv-nav" hidden><button type="button" class="fv-btn fv-icon" data-fv="prev" title="Previous file (←)">‹</button><span class="fv-nav-pos"></span><button type="button" class="fv-btn fv-icon" data-fv="next" title="Next file (→)">›</button></div>` +
     `<div class="fv-actions">` +
     `<button type="button" class="fv-btn" data-fv="file" title="File contents">File</button>` +
     `<button type="button" class="fv-btn" data-fv="diff" title="Changes vs. git HEAD">Diff</button>` +
@@ -66,8 +67,20 @@ function _ensurePanel() {
     else if (a === 'editor') _openEditor();
     else if (a === 'revert') _revert();
     else if (a === 'raw') _openRaw();
+    else if (a === 'prev') _nav(-1);
+    else if (a === 'next') _nav(1);
   });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !el.hidden) close(); });
+  document.addEventListener('keydown', (e) => {
+    if (el.hidden) return;
+    if (e.key === 'Escape') { close(); return; }
+    // ← / → step through the files of the group the viewer was opened from,
+    // unless the user is typing somewhere.
+    const t = e.target;
+    const typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+    if (typing || e.altKey || e.ctrlKey || e.metaKey) return;
+    if (e.key === 'ArrowLeft') { e.preventDefault(); _nav(-1); }
+    else if (e.key === 'ArrowRight') { e.preventDefault(); _nav(1); }
+  });
   _panel = el;
   return el;
 }
@@ -94,6 +107,10 @@ function _render() {
   const d = _state.data;
   el.querySelector('.fv-crumbs').innerHTML = _crumbs(_state.path);
   el.querySelectorAll('.fv-btn[data-fv="file"], .fv-btn[data-fv="diff"]').forEach(b => b.classList.toggle('active', b.dataset.fv === _state.mode));
+  const nav = el.querySelector('.fv-nav');
+  const many = Array.isArray(_state.list) && _state.list.length > 1;
+  nav.hidden = !many;
+  if (many) nav.querySelector('.fv-nav-pos').textContent = `${_state.index + 1}/${_state.list.length}`;
   const meta = el.querySelector('.fv-meta');
   const code = el.querySelector('.fv-code');
   if (!d) { meta.textContent = 'Loading…'; code.innerHTML = ''; el.hidden = false; return; }
@@ -211,11 +228,39 @@ function _openRaw() {
   } catch (_) {}
 }
 
-export function open(path, { workspace = null, mode = 'file' } = {}) {
+/** Open a file. `list` (optional) is the group of files the viewer can step
+ *  through with ‹ › / arrow keys: [{path, workspace}], `index` = position. */
+export function open(path, { workspace = null, mode = 'file', list = null, index = 0 } = {}) {
   if (!path) return;
-  _state = { path, workspace: workspace || _workspaceFallback(), mode, data: null, diff: null };
+  const group = Array.isArray(list) && list.length > 1 ? list : null;
+  _state = { path, workspace: workspace || _workspaceFallback(), mode, data: null, diff: null, list: group, index: group ? Math.max(0, Math.min(index, group.length - 1)) : 0 };
   _ensurePanel();
   _load().then(() => { if (mode === 'diff') _loadDiff().then(_render); });
+}
+
+function _nav(delta) {
+  const l = _state.list;
+  if (!l || l.length < 2) return;
+  const i = (_state.index + delta + l.length) % l.length;
+  const it = l[i];
+  open(it.path, { workspace: it.workspace || _state.workspace, mode: _state.mode, list: l, index: i });
+}
+
+/** Files edited by the agent in the current chat, as a navigable group. */
+function _groupFrom(anchor) {
+  const group = anchor.closest('.harness-files') || anchor.parentElement;
+  const chips = group ? [...group.querySelectorAll('[data-open-file]')] : [anchor];
+  const seen = new Set();
+  const list = [];
+  let index = 0;
+  for (const c of chips) {
+    const p = c.dataset.openFile;
+    if (!p || seen.has(p)) continue;
+    seen.add(p);
+    if (c === anchor) index = list.length;
+    list.push({ path: p, workspace: c.dataset.openWorkspace || null });
+  }
+  return { list, index };
 }
 
 export function close() {
@@ -233,7 +278,8 @@ export function init(apiBase) {
     if (!a) return;
     e.preventDefault();
     e.stopPropagation();
-    open(a.dataset.openFile, { workspace: a.dataset.openWorkspace || null, mode: a.dataset.openMode || 'file' });
+    const { list, index } = _groupFrom(a);
+    open(a.dataset.openFile, { workspace: a.dataset.openWorkspace || null, mode: a.dataset.openMode || 'file', list, index });
   });
 }
 

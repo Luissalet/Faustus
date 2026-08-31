@@ -865,7 +865,12 @@ def local_model_policy() -> str:
         "(or the 2-3 candidate interpretations). Never rewrite code you have not shown to be wrong.\n"
         "9. Change existing files with edit_file (exact old_string → new_string). write_file is for "
         "NEW files or when the user asked for a full rewrite; a whole-file rewrite from memory drops "
-        "code you did not remember."
+        "code you did not remember.\n"
+        "10. Never start a server, dev watcher or any command that does not exit on its own "
+        "(uvicorn, flask run, npm start/dev, tail -f, …) in the foreground: it blocks the turn and "
+        "gets killed. Either put `#!bg` as the first line of the bash block to run it detached, "
+        "bound it with `timeout 30 …`, or verify the code without running it (tests, import, "
+        "calling the handler directly). Never run interactive programs."
     )
 
 
