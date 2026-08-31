@@ -1474,6 +1474,121 @@ document.addEventListener('click', (ev) => {
   _cpAction(t, t.hasAttribute('data-cp-diff') ? 'diff' : 'restore');
 });
 
+// /backup — verified snapshots of the whole data/ directory (FAUSTUS).
+// Different thing from /checkpoints (workspace files) and from Export
+// (memories/presets as JSON): this is chats, memory, projects, skills, gallery
+// and the SQLite databases — the install itself. Snapshots are taken
+// automatically on a schedule; this is the manual handle plus the proof that
+// what is on disk would actually restore.
+function _bkEsc(t) {
+  return String(t == null ? '' : t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
+function _bkSize(bytes) {
+  const b = Number(bytes) || 0;
+  if (b >= 1024 * 1024 * 1024) return `${(b / 1024 / 1024 / 1024).toFixed(1)} GB`;
+  if (b >= 1024 * 1024) return `${(b / 1024 / 1024).toFixed(0)} MB`;
+  return `${(b / 1024).toFixed(0)} KB`;
+}
+
+function _bkAge(hours) {
+  const h = Number(hours) || 0;
+  if (h < 1) return `${Math.round(h * 60)} min ago`;
+  if (h < 48) return `${h.toFixed(1)} h ago`;
+  return `${Math.round(h / 24)} days ago`;
+}
+
+async function _bkList() {
+  const r = await fetch(`${API_BASE}/api/backup/snapshots`, { credentials: 'same-origin' });
+  if (!r.ok) { slashReply(`Snapshots unavailable (HTTP ${r.status}).`); return true; }
+  const d = await r.json();
+  const list = d.snapshots || [];
+  const st = d.status || {};
+  const head = list.length
+    ? `<b>${list.length} snapshot${list.length === 1 ? '' : 's'}</b> · newest ${_bkEsc(_bkAge(list[0].age_hours))} · ${_bkEsc(_bkSize(st.total_bytes))} in <code>${_bkEsc(st.backup_dir)}</code>`
+    : `<b>No snapshots yet</b> — they land in <code>${_bkEsc(st.backup_dir)}</code>`;
+  const rows = list.slice(0, 12).map(b => (
+    `<li><code>${_bkEsc(b.name)}</code> · ${_bkEsc(_bkSize(b.bytes))} · ${_bkEsc(_bkAge(b.age_hours))} ` +
+    `<button type="button" class="harness-btn harness-btn-mini" data-backup-verify="${_bkEsc(b.name)}">Verify</button></li>`
+  )).join('');
+  slashReply(
+    `<div class="backup-list"><p>${head}</p>` +
+    (rows ? `<ul class="harness-list">${rows}</ul>` : '') +
+    `<p><button type="button" class="harness-btn harness-btn-mini" data-backup-now="1">Back up now</button>` +
+    ` — automatic every <code>backup_interval_hours</code> h, keeping <code>backup_keep</code>. ` +
+    `Restoring is manual and destructive: stop Faustus, then ` +
+    `<code>python scripts/odysseus-backup restore &lt;file&gt; --yes</code>.</p></div>`
+  );
+  return true;
+}
+
+async function _bkNow() {
+  slashReply('Taking a snapshot of <code>data/</code>…');
+  try {
+    const r = await fetch(`${API_BASE}/api/backup/snapshot`, {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' }, body: '{}',
+    });
+    if (!r.ok) { slashReply(`Snapshot failed (HTTP ${r.status}).`); return true; }
+    const d = await r.json();
+    if (!d.ok) {
+      const why = ((d.verified || {}).problems || []).join('; ') || d.error || 'unknown reason';
+      slashReply(`Snapshot written but it does <b>not</b> verify: ${_bkEsc(why)}`);
+      return true;
+    }
+    const dbs = ((d.verified || {}).databases || []).length;
+    slashReply(
+      `Snapshot <code>${_bkEsc(d.name)}</code> — ${d.files} files, ${_bkEsc(_bkSize(d.bytes))}, ` +
+      `${d.seconds}s. Verified: ${dbs} database${dbs === 1 ? '' : 's'} pass integrity_check.` +
+      ((d.pruned || []).length ? ` Pruned ${d.pruned.length} old one(s).` : '')
+    );
+  } catch (e) { slashReply(`Snapshot failed: ${_bkEsc(e)}`); }
+  return true;
+}
+
+async function _bkVerify(name) {
+  slashReply(`Verifying <code>${_bkEsc(name)}</code>…`);
+  try {
+    const r = await fetch(`${API_BASE}/api/backup/verify`, {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }),
+    });
+    if (!r.ok) { slashReply(`Could not verify (HTTP ${r.status}).`); return; }
+    const d = await r.json();
+    const dbs = (d.databases || []).map(x => `<li><code>${_bkEsc(x.name)}</code>: ${x.ok ? 'ok' : `<b>${_bkEsc(x.detail)}</b>`}</li>`).join('');
+    slashReply(
+      `<div class="backup-verify"><p>${d.ok ? '✅ Would restore' : '❌ Would NOT restore'} — ` +
+      `${d.members} entries.</p>` +
+      (dbs ? `<ul class="harness-list">${dbs}</ul>` : '') +
+      ((d.problems || []).length ? `<ul class="harness-list">${d.problems.map(p => `<li>${_bkEsc(p)}</li>`).join('')}</ul>` : '') +
+      `<p>${_bkEsc(d.restore_command || '')}</p></div>`
+    );
+  } catch (e) { slashReply(`Could not verify: ${_bkEsc(e)}`); }
+}
+
+async function _cmdBackup(args) {
+  const a = (args || []).map(x => String(x).toLowerCase());
+  if (a[0] === 'now') return _bkNow();
+  if (a[0] === 'verify') {
+    const r = await fetch(`${API_BASE}/api/backup/snapshots`, { credentials: 'same-origin' });
+    const list = r.ok ? ((await r.json()).snapshots || []) : [];
+    const idx = parseInt(a[1] || '1', 10);
+    const target = Number.isFinite(idx) ? list[Math.max(idx, 1) - 1] : null;
+    if (!target) { slashReply('No such snapshot — run <code>/backup</code> to see the list.'); return true; }
+    await _bkVerify(target.name);
+    return true;
+  }
+  return _bkList();
+}
+
+document.addEventListener('click', (ev) => {
+  const t = ev.target && ev.target.closest ? ev.target.closest('[data-backup-now],[data-backup-verify]') : null;
+  if (!t) return;
+  ev.preventDefault();
+  if (t.hasAttribute('data-backup-now')) _bkNow();
+  else _bkVerify(t.getAttribute('data-backup-verify'));
+});
+
 // /versions [n | clear] — the tails this chat lost to an edit or a
 // "regenerate from here", newest first, each with a Restore button. Editing a
 // message truncates the chat; src/chat_versions.py keeps what was deleted so a
@@ -6256,6 +6371,14 @@ const COMMANDS = {
     handler: _cmdAgents,
     noUserBubble: true,
     usage: '/agents [--review] [--serial] [a.py] task one | {model} task two',
+  },
+  backup: {
+    alias: ['backups'],
+    category: 'Agent',
+    help: 'Verified snapshots of the whole data/ directory (chats, memory, projects, skills, gallery, databases) — list, take one now, or check that one would really restore',
+    handler: _cmdBackup,
+    noUserBubble: true,
+    usage: '/backup [now | verify <n>]',
   },
   checkpoints: {
     alias: ['checkpoint', 'snapshots'],

@@ -218,4 +218,57 @@ def setup_backup_routes(memory_manager, preset_manager, skills_manager) -> APIRo
 
         return {"ok": True, "imported": imported, "message": f"Imported: {', '.join(imported)}"}
 
+    # ── data/ snapshots (FAUSTUS) ────────────────────────────────────────────
+    # /api/export above is the *user data* export (memories, presets, skills)
+    # as JSON. These are whole-directory snapshots: the SQLite databases, the
+    # app key, chat history, gallery, projects — the things that make this
+    # install yours. See src/backup_service for why restore has no endpoint.
+
+    @router.get("/api/backup/snapshots")
+    async def list_snapshots(request: Request):
+        require_admin(request)
+        from src import backup_service
+        return {"ok": True, "status": backup_service.status(),
+                "snapshots": backup_service.list_backups()}
+
+    @router.post("/api/backup/snapshot")
+    async def take_snapshot(request: Request):
+        """Snapshot now. Runs in a thread — tarring data/ takes seconds."""
+        require_admin(request)
+        import asyncio
+
+        from src import backup_service
+        from src.settings import get_setting
+        body = {}
+        try:
+            body = await request.json()
+        except Exception:
+            pass
+        try:
+            keep = int(body.get("keep") or get_setting("backup_keep", 7) or 7)
+        except (TypeError, ValueError):
+            keep = 7
+        result = await asyncio.to_thread(
+            backup_service.snapshot,
+            include_research=bool(body.get("include_research")),
+            include_attachments=bool(body.get("include_attachments")),
+            keep=keep,
+        )
+        return result
+
+    @router.post("/api/backup/verify")
+    async def verify_snapshot(request: Request):
+        """Re-open a snapshot and integrity-check the databases inside it."""
+        require_admin(request)
+        import asyncio
+
+        from src import backup_service
+        body = await request.json()
+        target = backup_service.resolve_in_backup_dir(str(body.get("name") or ""))
+        if target is None:
+            raise HTTPException(404, "No such snapshot")
+        report = await asyncio.to_thread(backup_service.verify_archive, target)
+        report["restore_command"] = backup_service.restore_command(target.name)
+        return report
+
     return router

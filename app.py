@@ -1087,6 +1087,13 @@ async def _startup_event():
         _startup_tasks.append(start_bg_monitor())
     except Exception as _e:
         logger.warning("Failed to start background-job monitor: %s", _e)
+    # Verified snapshots of data/ on a schedule (FAUSTUS). The machine that
+    # never gets backed up is always the one with everything on it.
+    try:
+        from src.backup_service import run_auto_backups
+        _startup_tasks.append(asyncio.create_task(run_auto_backups()))
+    except Exception as _e:
+        logger.warning("Failed to start automatic backups: %s", _e)
     # MCP servers can be slow or blocked by local tooling. Connect them after
     # the web server is accepting traffic instead of delaying the whole UI.
     async def _startup_mcp_connections():
