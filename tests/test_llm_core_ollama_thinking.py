@@ -163,3 +163,64 @@ class TestThinkSuppression:
             monkeypatch, "http://127.0.0.1:11435/v1/chat/completions", "qwen3:14b"
         )
         assert payload.get("think") is False
+
+
+# ---------------------------------------------------------------------------
+# A pinned `think` goes to the native /api/chat endpoint (Ollama /v1 ignores
+# the top-level flag — verified on Ollama 0.33.2).
+# ---------------------------------------------------------------------------
+
+class TestThinkOverrideRouting:
+    def test_pinned_think_reroutes_default_port_v1_to_native(self):
+        assert llm_core._route_for_gen_overrides(
+            "http://127.0.0.1:11434/v1", {"think": False}) == "http://127.0.0.1:11434/api/chat"
+        assert llm_core._route_for_gen_overrides(
+            "http://localhost:11434/v1/chat/completions", {"think": True}) == "http://localhost:11434/api/chat"
+
+    def test_other_overrides_and_other_servers_are_untouched(self):
+        assert llm_core._route_for_gen_overrides("http://127.0.0.1:11434/v1", {"top_p": 0.9}) == "http://127.0.0.1:11434/v1"
+        # llama.cpp / vLLM on another local port has no /api/chat
+        assert llm_core._route_for_gen_overrides("http://127.0.0.1:8080/v1", {"think": False}) == "http://127.0.0.1:8080/v1"
+        assert llm_core._route_for_gen_overrides("https://api.openai.com/v1", {"think": False}) == "https://api.openai.com/v1"
+
+    def test_native_payload_carries_think_false(self, monkeypatch):
+        captured = {}
+
+        class _NativeResp:
+            status_code = 200
+
+            async def aiter_lines(self):
+                yield json.dumps({"model": "qwen3.8:27b", "message": {"role": "assistant", "content": "ok"}, "done": True, "done_reason": "stop"})
+
+            async def aread(self):
+                return b""
+
+        class _Ctx:
+            async def __aenter__(self):
+                return _NativeResp()
+
+            async def __aexit__(self, *a):
+                return False
+
+        class _Client:
+            def stream(self, method, url, **kw):
+                captured["url"] = url
+                captured["json"] = kw.get("json") or {}
+                return _Ctx()
+
+        monkeypatch.setattr(llm_core, "_get_http_client", lambda: _Client())
+        monkeypatch.setattr(llm_core, "_is_host_dead", lambda u: False)
+        monkeypatch.setattr(llm_core, "note_model_activity", lambda *a, **k: None)
+        monkeypatch.setattr(llm_core, "_clear_host_dead", lambda *a, **k: None)
+        monkeypatch.setattr(llm_core, "get_context_length", lambda u, m: 32768)
+
+        async def run():
+            return [c async for c in llm_core.stream_llm(
+                "http://127.0.0.1:11434/v1", "qwen3.8:27b", [{"role": "user", "content": "hi"}],
+                gen_overrides={"think": False},
+            )]
+        chunks = asyncio.run(run())
+        assert captured["url"].endswith("/api/chat"), captured
+        assert captured["json"].get("think") is False
+        assert captured["json"]["options"].get("num_ctx") == 32768
+        assert any('"finish_reason": "stop"' in c for c in chunks)

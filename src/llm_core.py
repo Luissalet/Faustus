@@ -2613,12 +2613,39 @@ def _apply_gen_overrides_ollama(payload: Dict, overrides: Dict) -> None:
         payload.pop("options", None)
 
 
+def _ollama_native_url_for_compat(url: str) -> str:
+    """http://host:11434/v1[/...] → http://host:11434/api/chat (same server)."""
+    parsed = urlparse((url or "").strip())
+    root = f"{parsed.scheme or 'http'}://{parsed.netloc}"
+    return root.rstrip("/") + "/api/chat"
+
+
+def _route_for_gen_overrides(url: str, gen_overrides: Optional[Dict]) -> str:
+    """Ollama's OpenAI-compatible /v1 surface ignores the top-level `think`
+    flag (verified on Ollama 0.33.2: think=false still streamed reasoning), so
+    a pinned thinking toggle — /think off, or the harness' runaway-thinking
+    retry — is only honoured by the native /api/chat endpoint. Same server,
+    same model, same tools; only the wire format changes."""
+    if not isinstance(gen_overrides, dict) or gen_overrides.get("think") is None:
+        return url
+    try:
+        port = urlparse(url or "").port
+    except ValueError:
+        return url
+    # Only the default Ollama port: a llama.cpp / vLLM server on another local
+    # port also matches _is_ollama_openai_compat_url and has no /api/chat.
+    if port == 11434 and _is_ollama_openai_compat_url(url):
+        return _ollama_native_url_for_compat(url)
+    return url
+
+
 async def stream_llm(url: str, model: str, messages: List[Dict], temperature: float = LLMConfig.DEFAULT_TEMPERATURE,
                      max_tokens: int = LLMConfig.DEFAULT_MAX_TOKENS, headers: Optional[Dict] = None,
                      timeout: int = LLMConfig.STREAM_TIMEOUT, prompt_type: Optional[str] = None,
                      tools: Optional[List[Dict]] = None, session_id: Optional[str] = None,
                      tool_choice_none: bool = False, workload: str = "foreground",
                      gen_overrides: Optional[Dict] = None):
+    url = _route_for_gen_overrides(url, gen_overrides)
     target_url = _stream_target_url(url)
     async with _local_model_slot(target_url, model, workload):
         async for chunk in _stream_llm_inner(
