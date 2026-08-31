@@ -8,6 +8,7 @@ run-local integrity gates before dispatch.
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum
@@ -618,6 +619,54 @@ def messages_contain_external_untrusted_context(messages: Iterable[dict]) -> boo
     return False
 
 
+_TRUSTED_WRITE_TOOLS = frozenset({"write_file", "edit_file", "apply_patch"})
+_APPLY_PATCH_DELETE_RE = re.compile(r"^\*\*\*\s+Delete\s+File:", re.MULTILINE)
+
+
+def _write_targets(tool_name: str, content: Any) -> list[str] | None:
+    """Paths a write tool will touch, or None when they cannot be determined
+    (fail closed: an undeterminable target is not inside anything)."""
+    raw = content if isinstance(content, str) else ("" if content is None else str(content))
+    raw = raw.strip()
+    if tool_name == "apply_patch":
+        if _APPLY_PATCH_DELETE_RE.search(raw):
+            return None  # deleting is destructive: keep the gate
+        paths = re.findall(r"^\*\*\*\s+(?:Add|Update)\s+File:\s*(.+)$", raw, re.MULTILINE)
+        paths += re.findall(r"^\*\*\*\s+Move\s+to:\s*(.+)$", raw, re.MULTILINE)
+        return [p.strip() for p in paths if p.strip()] or None
+    if isinstance(content, Mapping):
+        p = content.get("path")
+        return [str(p).strip()] if isinstance(p, str) and p.strip() else None
+    if raw.startswith("{"):
+        try:
+            data = json.loads(raw)
+        except (TypeError, ValueError):
+            return None
+        if not isinstance(data, dict):
+            return None
+        p = data.get("path")
+        return [str(p).strip()] if isinstance(p, str) and p.strip() else None
+    # Legacy line form: first line is the path.
+    first = raw.split("\n", 1)[0].strip()
+    return [first] if first else None
+
+
+def path_inside_trusted(root: str, path: str) -> bool:
+    """True when `path` (absolute, or relative to `root`) resolves inside `root`."""
+    if not root or not path:
+        return False
+    import os
+    try:
+        candidate = path if os.path.isabs(path) else os.path.join(root, path)
+        real = os.path.realpath(candidate)
+        root_real = os.path.realpath(root)
+    except (OSError, ValueError):
+        return False
+    if os.name == "nt":
+        real, root_real = real.lower(), root_real.lower()
+    return real == root_real or real.startswith(root_real.rstrip(os.sep) + os.sep)
+
+
 @dataclass
 class ToolRunSecurityContext:
     """Server-owned integrity state for one agent run."""
@@ -630,6 +679,24 @@ class ToolRunSecurityContext:
     # The bypass affects only this automatic gate; current tool policy, ownership,
     # workspace confinement, and execution/sandbox restrictions still apply.
     approval_gate_bypassed: bool = False
+    # "Trusted workspace" (a project flag): file writes whose target resolves
+    # inside this folder skip the post-external-context approval gate. Shell,
+    # deletions, private/admin/external effects keep the gate. Empty = off.
+    trusted_workspace: str = ""
+    # Same flag for `delegate_agents` (its workers keep their own gates).
+    trusted_agents: bool = False
+
+    def _trusted_override(self, tool_name: Any, content: Any) -> bool:
+        if not self.trusted_workspace or not isinstance(tool_name, str):
+            return False
+        if tool_name == "delegate_agents":
+            return bool(self.trusted_agents)
+        if tool_name not in _TRUSTED_WRITE_TOOLS:
+            return False
+        targets = _write_targets(tool_name, content)
+        if not targets:
+            return False
+        return all(path_inside_trusted(self.trusted_workspace, t) for t in targets)
 
     def observe_messages(self, messages: Iterable[dict]) -> None:
         """Apply server-owned chat scope and promote untrusted prompt context."""
@@ -650,6 +717,8 @@ class ToolRunSecurityContext:
         if self.approval_gate_bypassed:
             return ToolGateDecision(True)
         if not self.external_untrusted_context_seen:
+            return ToolGateDecision(True)
+        if self._trusted_override(tool_name, content):
             return ToolGateDecision(True)
         capabilities = capabilities_for_action(tool_name, content)
         blocked_effects = capabilities.effects & POST_EXTERNAL_BLOCKED_EFFECTS
