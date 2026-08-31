@@ -4,7 +4,7 @@
 
 - Base del fork: commit upstream `c9dd68d8` (27-08-2026, "refactor(docs): separate Pages site source").
 - Rama: **una sola, `master`** (`D:\LocalAI\odysseus`), que trackea `origin/master` en `github.com/Luissalet/Faustus`. Las ramas `feat/projects` y `feat/reliability` y la worktree de pruebas se consolidaron el 31-08.
-- Cifras a 01-09-2026 (00:55, en `master`): **128 commits**, **+33.983 líneas** sobre la base; 37 módulos nuevos de backend/rutas/frontend + `scripts/faustus_rename.py`, **75 ficheros de tests** nuevos. Suite completa: **6.547 tests en verde**, 12 saltados, 4 min 34 s; e2e Playwright 10/10.
+- Cifras a 01-09-2026 (02:05, en `master`): **131 commits**, **+41.000 líneas** sobre la base; 41 módulos nuevos de backend/rutas/frontend + `scripts/faustus_rename.py`, **80 ficheros de tests** nuevos. Suite completa: **6.740 tests en verde**, 12 saltados, 5 min; e2e Playwright 10/10.
 - Máquina de referencia: RTX 4070 Ti 12 GB, 128 GB RAM, Windows 11, Ollama 0.33.x; modelos `qwen3-coder:30b`, `qwen3.5:9b`, `qwen3.8:27b`, `qwen3-coder-next`.
 
 ---
@@ -342,6 +342,24 @@ Cuatro sitios, porque el fallo es invisible por definición: la **pill de uso** 
 **Ficheros.** Nuevo: `src/code_refs.py`, `tests/test_code_refs.py`. Tocados: `src/agent_loop.py` (inyección), `src/file_mentions.py` (rangos en las menciones), `src/agent_harness.py` (el falso positivo), `src/settings.py` (`agent_code_refs`, `agent_code_ref_chars`).
 
 **Verificación.** 31 tests nuevos con un corpus de trazas **reales** — capturadas ejecutando código que falla de verdad, no escritas a mano —, más los negativos (ruta sin línea, URL con puerto, fichero inexistente), el presupuesto con 8 marcos, la fusión de ventanas, el symlink que escapa (no se inlinea) y el **test de cableado** que parsea `agent_loop.py` con `ast` y exige la llamada, el envoltorio y el orden de inyección: un módulo que nadie llama sigue siendo no haber entregado nada.
+
+## 11. Exportar conversaciones: seis formatos desde un modelo de bloques (01-09-2026, madrugada)
+
+**El problema.** El export existía —`md`, `txt`, `json`, `html`— pero los cuatro se construían a mano dentro de la ruta, en noventa líneas de concatenación de cadenas. El HTML escapaba el texto y sustituía el salto de línea por `<br>`, así que **los bloques de código y todo el markdown se perdían**: una respuesta con código salía como un muro de `<br>`. Y ningún formato incluía marcas de tiempo, el modelo, ni **las llamadas a herramientas del agente** — un transcript de agente sin sus tool calls no es un registro de lo que pasó.
+
+**La forma.** Un **modelo de bloques intermedio** (`src/chat_export_model.py`) del que renderizan los seis formatos, así que una conversación se lee igual caiga donde caiga. El markdown se parsea **una sola vez** con el paquete `markdown` —que ya era dependencia— y su HTML se camina con `HTMLParser` de la stdlib hacia los bloques: fenced code, tablas y listas son justo lo que más emite un modelo y justo lo que un parser casero hace mal, así que no se escribió uno.
+
+- **PDF** (`src/chat_export_pdf.py`, reportlab/Platypus). Se eligió reportlab por ser Python puro y BSD: WeasyPrint necesita Pango y cairo nativos en Windows, y Chromium son 150 MB de navegador. Portada, bandas de rol con color, código en caja gris que **parte las líneas largas en vez de recortarlas**, tablas con rejilla y cabecera repetida entre páginas, citas con barra lateral, enlaces reales y pie con «Page N of M».
+- **DOCX** (`src/chat_export_docx.py`, python-docx) con estilos de Word de verdad —`Heading`, `List Bullet`, `Quote`, más estilos propios con el sombreado *en el estilo*, no como formato manual— para que se pueda reestilar en Word. Hipervínculos reales, que python-docx no expone y hay que montar como relación `w:hyperlink`.
+- **HTML** autónomo: markdown renderizado de verdad, CSS embebido, claro y oscuro, sin un solo recurso externo. Se renderiza **desde los bloques**, no desde la salida cruda del parser, y eso hace el XSS imposible por construcción: cada nodo de texto pasa por `html.escape`, así que un `<script>` escrito en el chat sobrevive como texto literal en vez de ejecutarse — y sin censurar lo que el usuario escribió.
+- **En lote**: `GET /sessions/export` con `project`, `folder` o `ids` devuelve un zip con un fichero por chat y un `index.md`. Si una conversación falla, entra un `.txt` con el error y el lote continúa.
+- La ruta ya no adivina: un `fmt` desconocido da **400 con la lista** en vez de caer a markdown en silencio, y una dependencia opcional ausente da **503 nombrando el paquete**. La UI descarga por `fetch` + blob en lugar de `window.open`, que es la única forma de enseñar ese error en vez de una pestaña en blanco.
+
+**Dos trampas que costaron sangre.** El `Content-Disposition` iba sin comillas ni codificar, así que un chat llamado «Informe 2026» producía una cabecera rota; ahora lleva `filename*=UTF-8''`. Y reportlab genera un **CMap inválido** para cualquier codepoint por encima de U+FFFF: `makeToUnicodeCMap` formatea con `%04X`, o sea cinco dígitos hex donde debería ir el par suplente UTF-16. Eso no estropea el emoji: corrompe **la capa de texto del PDF entero** —copiar, pegar y buscar dejan de funcionar, y pypdf revienta al leerlo—. Se descubrió porque el primer PDF con un emoji no se dejaba extraer. Decisión: en PDF los emoji se sustituyen por `?` aunque la fuente tenga el glifo; en DOCX salen intactos. Las tildes y la eñe van por una TTF registrada con cadena de búsqueda y respaldo carácter a carácter, y cuando no hay nada se sustituye el glifo — nunca se lanza una excepción.
+
+**Ficheros.** Nuevos: `src/chat_export_model.py`, `src/chat_export.py`, `src/chat_export_pdf.py`, `src/chat_export_docx.py`, `static/js/chatExport.js` y cinco ficheros de tests. Tocados: `routes/session_routes.py` (la ruta pasa de 90 líneas de cadenas a una delegación), `static/js/sessions.js`, `projects.js`, `slashCommands.js`, `requirements.txt`.
+
+**Verificación.** 193 tests nuevos. Se comprueban **los bytes de salida**, no que la llamada no reviente: el PDF se abre con pypdf y se afirma que el texto del chat está dentro, tildes incluidas; el DOCX se abre con `zipfile` y se comprueba su `word/document.xml`. Casos cubiertos: una URL de 2000 caracteres sin espacios que no debe desbordar (medido con el propio partidor de líneas de reportlab, no a ojo), un bloque de 500 líneas, una tabla de diez columnas, un `<b>` literal escrito por el usuario que no debe interpretarse como marcado —la trampa clásica de reportlab—, ocho cargas de XSS verificadas parseando el HTML de salida, y 500 mensajes en 0,67 s.
 
 ---
 
