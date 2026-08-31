@@ -192,6 +192,10 @@ Medido en la misma tarea antes y después (qwen3.5:9b, instancia dev):
 
 Dos honestidades sobre esta prueba: (1) las 46 restantes siguen incluyendo un dominio equivocado — "health"/"status ok" también empareja con las herramientas de servir modelos ("cookbook"); eso queda como problema conocido, más difícil de acotar sin tocar la clasificación del índice. (2) La regla escrita con `#` **sí llegaba al prompt** (`project_instructions.block()` la inyecta, verificado a mano: 355 caracteres) y el modelo de 9B la ignoró igualmente en ambas pasadas. El atajo `#` hace su trabajo; que un modelo pequeño obedezca una regla de estilo enterrada en 30.000 tokens es otra cosa.
 
+### 6.9 Regresión del bucle del agente
+
+Matriz habitual (`run_matrix_q35.ps1`, qwen3.5:9b, tras el arreglo del punto 6.8), con las cifras de la tanda anterior entre paréntesis: t1 regresión de botones **67 s** (59 s), t4 ruta inventada por el usuario **94 s** (12 s), t5 solo lectura **5 s** (3 s), t8 petición ambigua **65 s** (102 s). Las cuatro terminan en `complete`, **0 llamadas fallidas**. La t4 tarda más porque esta vez exploró de verdad (16 llamadas) en lugar de concluir a la primera que el fallo no existía; es una tarea que este modelo resuelve de forma distinta en cada pasada, así que se anota tal cual y no como mejora ni como regresión.
+
 ### Verificación
 89 tests nuevos en 4 ficheros (`test_file_mentions.py`, `test_file_mentions_routes_js.py`, `test_project_instructions_remember.py`, `test_composer_sigils_js.py`), incluidos los de contrato entre el popup y el resolutor del servidor (lo que inserta el popup es lo que el servidor resuelve) y los de node para los predicados del compositor. Suite completa en verde antes y después.
 
