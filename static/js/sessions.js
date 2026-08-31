@@ -388,11 +388,48 @@ async function _syncActivityFromServer() {
     for (const sid of [..._approvalSessions]) {
       if (!awaiting.has(sid) && !_localQuestionSessions.has(sid)) _approvalSessions.delete(sid);
     }
+    // Task queue: chats waiting for the GPU lane show "queued #N" instead of
+    // the working dot; runs cut short by a restart get one toast + unread dot.
+    _serverQueued = (data.queued && typeof data.queued === 'object') ? data.queued : {};
+    const interrupted = Array.isArray(data.interrupted) ? data.interrupted : [];
+    if (interrupted.length) _noticeInterrupted(interrupted);
     _updateResearchDots();
     _updateRailNotifs();
   } catch (_) {
     _activityFailures += 1;
   }
+}
+let _serverQueued = {};                    // session → 1-based position in the task queue
+const _interruptedSeen = new Set();
+
+/** Queue position of a chat (0 = not queued). */
+export function sessionQueuePosition(sessionId) {
+  const p = _serverQueued[sessionId];
+  return Number.isFinite(p) ? p : 0;
+}
+
+function _noticeInterrupted(entries) {
+  const fresh = entries.filter(e => e && e.session_id && !_interruptedSeen.has(e.session_id));
+  if (!fresh.length) return;
+  for (const e of fresh) {
+    _interruptedSeen.add(e.session_id);
+    if (e.session_id !== currentSessionId) _completedSessions.add(e.session_id);
+  }
+  const names = fresh.map(e => {
+    const s = sessions.find(x => x.id === e.session_id);
+    return (s && s.name) || e.label || e.session_id;
+  });
+  const msg = fresh.length === 1
+    ? `A task was interrupted by a restart: “${names[0]}”. What it had produced is kept in the chat — send “continue” to pick it up.`
+    : `${fresh.length} tasks were interrupted by a restart: ${names.map(n => `“${n}”`).join(', ')}. What they had produced is kept in their chats.`;
+  try {
+    if (window.uiModule && typeof window.uiModule.showToast === 'function') window.uiModule.showToast(msg, { duration: 12000 });
+    else if (window.uiModule && typeof window.uiModule.showInfo === 'function') window.uiModule.showInfo(msg);
+    else console.warn(msg);
+  } catch (_) {}
+  fetch(`${API_BASE}/api/chat/interrupted/ack`, {
+    method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: '{}',
+  }).catch(() => {});
 }
 const _localQuestionSessions = new Set(); // ask_user questions (not tool approvals) seen by this tab
 const _activityUnknownSeen = new Set();   // running ids we already reloaded the list for
@@ -2814,11 +2851,14 @@ function _updateResearchDots() {
     var isRunning = st === 'running';
     var isCompleted = st === 'done';
     var isApproval = st === 'approval';
+    var queuePos = isRunning ? sessionQueuePosition(sid) : 0;
     var listItem = star.closest('.list-item');
-    star.classList.toggle('processing', isRunning);
+    star.classList.toggle('processing', isRunning && !queuePos);
+    star.classList.toggle('queued', isRunning && queuePos > 0);
     star.classList.toggle('notify', isCompleted);
     star.classList.toggle('approval', isApproval);
-    star.title = isApproval ? 'Waiting for you (approval / question)' : (isRunning ? 'Working…' : (isCompleted ? 'Finished — not read yet' : ''));
+    star.title = isApproval ? 'Waiting for you (approval / question)' : (isRunning ? (queuePos ? `Queued — position ${queuePos} (waiting for the GPU)` : 'Working…') : (isCompleted ? 'Finished — not read yet' : ''));
+    if (queuePos) star.dataset.queuePos = String(queuePos); else delete star.dataset.queuePos;
     if (listItem) {
       listItem.classList.toggle('stream-complete', isCompleted);
       listItem.classList.toggle('needs-approval', isApproval);

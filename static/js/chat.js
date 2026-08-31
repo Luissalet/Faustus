@@ -37,6 +37,10 @@ import {
 import { createTerminalStreamError, isRecoverableStreamError } from './chatStreamErrors.js';
 import { loadPanel } from './panels.js';
 import agentHarnessUI from './agentHarnessUI.js';
+
+// harness_check statuses after which the model gets another round (the
+// current bubble must be closed so the next round renders fresh).
+const _HARNESS_SPEAKS_AGAIN = new Set(['rejected', 'auto_continue', 'unknown_tool', 'empty_round', 'target_substituted', 'syntax_error', 'think_cutoff', 'tests_failed', 'review_issues']);
 import fileViewer from './fileViewer.js';
 import modelControls from './modelControls.js';
 
@@ -3624,6 +3628,9 @@ import modelControls from './modelControls.js';
                 // can be edited/deleted immediately, without reloading the chat.
                 if (_isBg) continue;
                 if (holder && json.id) holder.dataset.dbId = json.id;
+                // The Turn summary (review mode, restore/commit) binds its
+                // controls to this id once it exists (agentHarnessUI).
+                try { document.dispatchEvent(new CustomEvent('odysseus:message-saved', { detail: { id: json.id, sessionId: streamSessionId } })); } catch (_) {}
 
               } else if (json.type === 'tool_start') {
                 try { if (json.approved) sessionModule.clearAwaitingApproval && sessionModule.clearAwaitingApproval(streamSessionId); } catch (_) {}
@@ -4046,14 +4053,19 @@ import modelControls from './modelControls.js';
                 if (_isBg) continue;
                 try { modelControls.noteRoundInfo(json); } catch (_) {}
 
-              } else if (json.type === 'harness_check' || json.type === 'harness_summary') {
-                // Reliability harness verdicts (src/agent_harness.py).
+              } else if (json.type === 'harness_check' || json.type === 'harness_summary' || json.type === 'queue_status') {
+                // Reliability harness verdicts (src/agent_harness.py) + the
+                // task-queue position while the GPU lane is busy.
                 if (_isBg) continue;
-                _cancelThinkingTimer();
-                _removeThinkingSpinner();
-                if (json.type === 'harness_check' && json.status !== 'verified') {
-                  // A rejection/continue means the model will speak again:
-                  // close the current bubble so the next round starts fresh.
+                if (json.type !== 'queue_status') {
+                  _cancelThinkingTimer();
+                  _removeThinkingSpinner();
+                }
+                if (json.type === 'harness_check' && _HARNESS_SPEAKS_AGAIN.has(json.status)) {
+                  // A rejection/continue/fix round means the model will speak
+                  // again: close the current bubble so the next round starts
+                  // fresh. Informational statuses (checkpoint, tests_running,
+                  // review_running, verified) leave the bubble alone.
                   _finalizeRoundRender();
                 }
                 try { agentHarnessUI.handleStreamEvent(json, { sessionId: streamSessionId }); } catch (_e) { console.warn('harness ui', _e); }
@@ -5310,7 +5322,7 @@ import modelControls from './modelControls.js';
             rich = true;
             if (json.subagent) { try { agentHarnessUI.renderSubagentEvent(json); } catch (_) {} }
             else if (json.tail) _toolNodeTail(resumeToolNode, json.tail);
-          } else if (json.type === 'harness_check' || json.type === 'harness_summary' || json.type === 'progress_update') {
+          } else if (json.type === 'harness_check' || json.type === 'harness_summary' || json.type === 'progress_update' || json.type === 'queue_status') {
             rich = true;
             try { agentHarnessUI.handleStreamEvent(json, { sessionId }); } catch (_) {}
           } else if (json.type === 'ask_user') {

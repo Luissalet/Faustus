@@ -204,6 +204,8 @@ export const createProject = (body) => req('', { method: 'POST', body: JSON.stri
 export const updateProject = (id, body) => req(`/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
 export const deleteProject = (id) => req(`/${id}`, { method: 'DELETE' });
 export const previewProject = (id) => req(`/${id}/preview`);
+export const projectAudit = (id, limit = 100) => req(`/${id}/audit?limit=${encodeURIComponent(limit)}`);
+export const clearProjectAudit = (id) => req(`/${id}/audit`, { method: 'DELETE' });
 export const listMemory = (id) => req(`/${id}/memory`);
 export const readMemory = (id, name) => req(`/${id}/memory/${encodeURIComponent(name)}`);
 export const writeMemory = (id, name, content) =>
@@ -422,6 +424,90 @@ function chatRowsHtml(project) {
     </div>`).join('');
 }
 
+const AGENT_FLAGS = [
+  ['trusted', 'Trusted folder', 'file writes inside the folder skip the approval gate (shell and deletions still ask)'],
+  ['trusted_agents', 'Trusted sub-agents', 'delegate_agents does not ask either'],
+  ['review_mode', 'Review mode', 'edits stay pending until you accept them per file'],
+  ['checkpoints', 'Checkpoints', 'snapshot before the first change of every turn (restore without git)'],
+  ['run_tests', 'Run tests', "the project's tests run after every turn that changes files"],
+];
+const AGENT_FLAG_DEFAULTS = { trusted: false, trusted_agents: false, review_mode: false, checkpoints: true, run_tests: true };
+
+function agentFlagsHtml(project) {
+  const rows = AGENT_FLAGS.map(([key, label, help]) => {
+    const on = project[key] == null ? AGENT_FLAG_DEFAULTS[key] : !!project[key];
+    return `<li class="project-agent-flag${on ? ' is-on' : ''}" title="${esc(help)}"><span class="project-agent-dot"></span>${esc(label)}<small>${on ? 'on' : 'off'}</small></li>`;
+  });
+  if (project.test_command) rows.push(`<li class="project-agent-flag is-on" title="Explicit test command"><span class="project-agent-dot"></span>Tests: <code>${esc(project.test_command)}</code></li>`);
+  if (project.review_model) rows.push(`<li class="project-agent-flag is-on" title="Reviewer model for the second pass over the diff"><span class="project-agent-dot"></span>Review: <code>${esc(project.review_model)}</code></li>`);
+  return rows.join('');
+}
+
+function auditRowsHtml(entries, project) {
+  if (!entries.length) return '<p class="project-muted">No agent turn has changed files in this project yet.</p>';
+  const chatName = (sid) => {
+    const chat = (window.sessionModule?.getSessions?.() || []).find(x => x.id === sid);
+    return chat ? (chat.name || 'Untitled chat') : `chat ${sid || '?'}`;
+  };
+  return entries.slice(0, 200).map(e => {
+    const when = e.ts ? new Date(e.ts * 1000).toLocaleString() : '';
+    const files = Array.isArray(e.files) ? e.files : [];
+    const shown = files.slice(0, 6).map(f => `<a href="#" class="harness-file" data-open-file="${esc(f)}"${e.workspace ? ` data-open-workspace="${esc(e.workspace)}"` : ''}${e.checkpoint ? ` data-open-checkpoint="${esc(e.checkpoint)}"` : ''} data-open-mode="diff" title="${esc(f)}">${esc(String(f).split(/[\\/]/).pop())}</a>`).join(' ');
+    const more = files.length > 6 ? `<small>+${files.length - 6}</small>` : '';
+    const badges = [];
+    if (e.tests === 'pass') badges.push('<span class="project-audit-badge is-ok">tests ✓</span>');
+    else if (e.tests === 'fail') badges.push('<span class="project-audit-badge is-bad">tests ✗</span>');
+    else if (e.tests === 'inconclusive') badges.push('<span class="project-audit-badge">tests ?</span>');
+    if (e.review === 'ok') badges.push('<span class="project-audit-badge is-ok">review ✓</span>');
+    else if (e.review === 'issues') badges.push('<span class="project-audit-badge is-warn">review ⚠</span>');
+    if (e.stop_reason === 'complete_unverified') badges.push('<span class="project-audit-badge is-bad">unverified</span>');
+    return `<div class="project-audit-row">
+      <div class="project-audit-head"><button type="button" class="project-audit-link" data-audit-session="${esc(e.session_id || '')}" data-audit-message="${esc(e.message_id || '')}" title="Open the chat at this turn">${esc(chatName(e.session_id))} ${ICON.send}</button><small>${esc(when)}${e.model ? ` · ${esc(e.model)}` : ''}</small></div>
+      ${e.request ? `<p class="project-audit-request">${esc(e.request)}</p>` : ''}
+      <div class="project-audit-files harness-files">${shown}${more}</div>
+      <div class="project-audit-badges">${badges.join('')}${e.checkpoint ? `<span class="project-audit-badge" title="Restorable: checkpoint ${esc(e.checkpoint)}">⟲ ${esc(String(e.checkpoint).slice(0, 8))}</span>` : ''}</div>
+    </div>`;
+  }).join('');
+}
+
+async function renderAudit(project) {
+  const host = $('project-audit-list');
+  if (!host) return;
+  try {
+    const data = await projectAudit(project.id, 100);
+    const entries = Array.isArray(data?.entries) ? data.entries : [];
+    host.innerHTML = auditRowsHtml(entries, project);
+    host.querySelectorAll('[data-audit-session]').forEach(button => {
+      button.addEventListener('click', async () => {
+        const sid = button.dataset.auditSession;
+        const mid = button.dataset.auditMessage;
+        if (!sid) return;
+        closeProjectsPanel();
+        await window.sessionModule?.selectSession?.(sid);
+        if (mid) scrollToMessage(mid);
+      });
+    });
+  } catch (error) {
+    host.innerHTML = `<p class="project-muted">Could not load the activity: ${esc(error.message || error)}</p>`;
+  }
+}
+
+/** Scroll the chat to a saved message (by DB id) once it has rendered. */
+function scrollToMessage(messageId, attempts = 20) {
+  const find = () => document.querySelector(`#chat-history [data-db-id="${CSS.escape(String(messageId))}"]`);
+  const tick = (left) => {
+    const el = find();
+    if (el) {
+      try { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (_) { el.scrollIntoView(); }
+      el.classList.add('project-audit-target');
+      setTimeout(() => el.classList.remove('project-audit-target'), 3000);
+      return;
+    }
+    if (left > 0) setTimeout(() => tick(left - 1), 250);
+  };
+  tick(attempts);
+}
+
 function hubHtml(project) {
   const instructions = String(project.instructions || '').trim();
   const attached = Array.isArray(project.context_items) ? project.context_items : [];
@@ -462,6 +548,11 @@ function hubHtml(project) {
             <div class="project-section-head"><div><h3>Recent chats</h3><p>Conversations in ${esc(project.folder)}</p></div>${!project.archived ? '<button type="button" class="project-text-btn" id="project-empty-chat">New chat</button>' : ''}</div>
             <div class="project-chat-list">${chatRowsHtml(project)}</div>
           </section>
+
+          <section class="project-recents project-audit">
+            <div class="project-section-head"><div><h3>Agent activity</h3><p>Every turn that changed files in this project, with the chat and the exact answer it came from</p></div><button type="button" class="project-text-btn" id="project-audit-refresh">Refresh</button></div>
+            <div id="project-audit-list" class="project-audit-list"><p class="project-muted">Loading…</p></div>
+          </section>
         </section>
 
         <aside class="project-context-column">
@@ -473,6 +564,11 @@ function hubHtml(project) {
           <section class="project-context-card">
             <div class="project-context-head"><div><span class="project-context-icon">${ICON.memory}</span><h3>Memory</h3></div><button type="button" class="project-mini-btn" id="project-add-memory" aria-label="Add memory note">Add</button></div>
             <div id="project-memory-list" class="project-memory-list"><p class="project-muted">Loading memory…</p></div>
+          </section>
+
+          <section class="project-context-card project-agent-card">
+            <div class="project-context-head"><div><span class="project-context-icon">${ICON.edit}</span><h3>Agent</h3></div><button type="button" class="project-mini-btn" id="project-edit-agent" aria-label="Agent settings">Edit</button></div>
+            <ul class="project-agent-flags">${agentFlagsHtml(project)}</ul>
           </section>
 
           <section class="project-context-card project-context-location">
@@ -504,6 +600,8 @@ export function openDetail(project) {
   $('project-settings')?.addEventListener('click', () => openSettings(project));
   $('project-edit-instructions')?.addEventListener('click', () => openSettings(project, 'project-instructions'));
   $('project-edit-context')?.addEventListener('click', () => openSettings(project, 'project-workspace'));
+  $('project-edit-agent')?.addEventListener('click', () => openSettings(project, 'project-trusted'));
+  $('project-audit-refresh')?.addEventListener('click', () => renderAudit(project));
   $('project-add-context')?.addEventListener('click', () => addContextRoot(project));
   $('project-pin')?.addEventListener('click', () => setProjectFlags(project, { pinned: !project.pinned }, project.pinned ? 'Project unpinned' : 'Project pinned'));
   $('project-archive')?.addEventListener('click', () => setArchived(project, !project.archived));
@@ -541,6 +639,7 @@ export function openDetail(project) {
     });
   });
   renderMemoryList(project);
+  renderAudit(project);
   if (!project.archived) populateProjectModelSelect();
 }
 
@@ -603,6 +702,17 @@ function settingsHtml(project, isNew) {
             <textarea id="project-instructions" rows="10" maxlength="10000" placeholder="How should Odysseus work in this project?">${esc(value.instructions)}</textarea>
             <p id="project-cost">Sent with every message in this project.</p>
           </div>
+          <fieldset class="project-field project-agent-fields">
+            <legend>Agent <span>How the agent works in this folder</span></legend>
+            ${AGENT_FLAGS.map(([key, label, help]) => {
+              const on = value[key] == null ? AGENT_FLAG_DEFAULTS[key] : !!value[key];
+              return `<label class="project-check"><input type="checkbox" id="project-${key.replace(/_/g, '-')}" data-agent-flag="${key}" ${on ? 'checked' : ''} /> <span><strong>${esc(label)}</strong><small>${esc(help)}</small></span></label>`;
+            }).join('')}
+            <label for="project-test-command">Test command <span>Optional — empty = detect pytest / npm test / cargo / go / make</span></label>
+            <input type="text" id="project-test-command" value="${esc(value.test_command || '')}" placeholder="pytest -x -q tests/" spellcheck="false" maxlength="400" />
+            <label for="project-review-model">Reviewer model <span>Optional — “same” = this chat's model, or a model on the same endpoint (e.g. qwen3-coder-next:q4_K_M); empty = global setting</span></label>
+            <input type="text" id="project-review-model" value="${esc(value.review_model || '')}" placeholder="same" spellcheck="false" maxlength="200" />
+          </fieldset>
           <div class="project-form-actions">
             <button type="button" class="projects-secondary-btn" id="project-settings-cancel">Cancel</button>
             <button type="submit" class="projects-primary-btn" id="project-save">${isNew ? 'Create project' : 'Save changes'}</button>
@@ -675,10 +785,16 @@ function openSettings(project, focusId = '') {
       workspace: String($('project-workspace')?.value || '').trim(),
       instructions: String($('project-instructions')?.value || ''),
     };
+    const agentFlags = {};
+    document.querySelectorAll('[data-agent-flag]').forEach(input => { agentFlags[input.dataset.agentFlag] = !!input.checked; });
+    agentFlags.test_command = String($('project-test-command')?.value || '').trim();
+    agentFlags.review_model = String($('project-review-model')?.value || '').trim();
     const save = $('project-save');
     if (save) { save.disabled = true; save.textContent = isNew ? 'Creating…' : 'Saving…'; }
     try {
-      const saved = isNew ? await createProject(body) : await updateProject(_draft.id, body);
+      const saved = isNew
+        ? await updateProject((await createProject(body)).id, agentFlags)
+        : await updateProject(_draft.id, { ...body, ...agentFlags });
       await loadProjects(true);
       const current = _projects.find(item => item.id === saved.id) || saved;
       uiModule.showToast?.(isNew ? `Project “${saved.name}” created` : 'Project saved');
@@ -836,14 +952,18 @@ async function openMemoryFile(project, name) {
 
 async function openContextPreview(project) {
   try {
-    const { block, chars } = await previewProject(project.id);
+    const { block, chars, instructions_file, repo_map_chars } = await previewProject(project.id);
     const host = $('projects-detail');
     if (!host) return;
+    const extras = [];
+    if (instructions_file && instructions_file.rel) extras.push(`plus <code>${esc(instructions_file.rel)}</code> from the folder (${Number(instructions_file.chars || 0).toLocaleString()} characters${instructions_file.truncated ? ', truncated' : ''}) in the system prompt`);
+    else if (project.workspace) extras.push('no AGENTS.md / CLAUDE.md in the folder (add one to give the model standing rules)');
+    if (repo_map_chars) extras.push(`plus a repository map of about ${Number(repo_map_chars).toLocaleString()} characters (≈${Math.ceil(repo_map_chars / 4).toLocaleString()} tokens) before each message`);
     host.innerHTML = `
       <div class="project-editor-view">
         <header class="project-subview-head">
           <button type="button" class="project-icon-btn" id="context-back" aria-label="Back to project">${ICON.arrow}</button>
-          <div><h2>Model context</h2><p>${Number(chars || 0).toLocaleString()} characters sent before each message</p></div>
+          <div><h2>Model context</h2><p>${Number(chars || 0).toLocaleString()} characters sent before each message${extras.length ? ' — ' + extras.join('; ') : ''}</p></div>
         </header>
         <div class="project-editor-card">
           <p class="project-context-explainer">This is the exact project block Odysseus prepends to the chat. It combines work roots, instructions, chat lookup guidance and the short memory index.</p>

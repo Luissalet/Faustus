@@ -2321,12 +2321,13 @@ export function displayMetrics(messageElement, metrics) {
       footer.querySelectorAll('.harness-badge, .harness-divider').forEach(el => el.remove());
       const files = Array.isArray(hz.mutations) ? hz.mutations : [];
       const unverified = hz.stop_reason === 'complete_unverified';
+      const testsFailed = !!(hz.tests && hz.tests.ran && hz.tests.ok === false && !hz.tests.inconclusive);
       const badge = document.createElement('span');
-      badge.className = `harness-badge ${unverified ? 'is-unverified' : (files.length ? 'is-verified' : 'is-neutral')}`;
+      badge.className = `harness-badge ${unverified || testsFailed ? 'is-unverified' : (files.length ? 'is-verified' : 'is-neutral')}`;
       badge.textContent = unverified
         ? '🛡 unverified'
         : files.length
-          ? `🛡 Edited ${files.length} file${files.length === 1 ? '' : 's'}`
+          ? `🛡 Edited ${files.length} file${files.length === 1 ? '' : 's'}${hz.tests && hz.tests.ran ? (testsFailed ? ' · tests ✗' : (hz.tests.ok ? ' · tests ✓' : '')) : ''}${hz.review && hz.review.verdict === 'ok' ? ' · review ✓' : (hz.review && hz.review.verdict === 'issues' ? ' · review ⚠' : '')}`
           : `🛡 ${hz.tool_calls || 0} tool${hz.tool_calls === 1 ? '' : 's'}`;
       // Restored history: the edited files stay reviewable — click the badge
       // to toggle the chips (each opens the file viewer). Also feed the
@@ -2339,14 +2340,20 @@ export function displayMetrics(messageElement, metrics) {
         badge.style.cursor = 'pointer';
         badge.addEventListener('click', (e) => {
           e.stopPropagation();
-          let row = footer.parentElement && footer.parentElement.querySelector(':scope > .harness-files-row');
+          let row = footer.parentElement && footer.parentElement.querySelector(':scope > .harness-turn-files');
           if (row) { row.remove(); return; }
           row = document.createElement('div');
-          row.className = 'harness-files-row harness-files';
+          row.className = 'harness-turn-files';
           const esc2 = (t) => String(t ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-          row.innerHTML = files.map(f => `<a href="#" class="harness-file" data-open-file="${esc2(f)}"${hz.workspace ? ` data-open-workspace="${esc2(hz.workspace)}"` : ''} data-open-mode="diff" title="${esc2(f)} — click to review">${esc2(String(f).split(/[\\/]/).pop())}</a>`).join(' ')
-            // same "undo this turn" control the live Turn summary has (handled by agentHarnessUI)
-            + ` <button type="button" class="harness-btn harness-btn-danger" data-revert-all="${esc2(JSON.stringify({ files: files.slice(0, 60), workspace: hz.workspace || null }))}" title="Undo the changes of this turn (git checkout per file; a new untracked file is deleted)">↺ Revert all ${files.length}</button>`;
+          const msgId = (metadata && metadata._db_id) || (footer.parentElement && footer.parentElement.dataset && footer.parentElement.dataset.dbId) || null;
+          if (window.agentHarnessUI && typeof window.agentHarnessUI.restoredTurnFilesRow === 'function') {
+            // Same files row the live Turn summary has: diff vs. the turn's
+            // checkpoint, restore / revert, commit, review-mode controls.
+            row.innerHTML = window.agentHarnessUI.restoredTurnFilesRow(hz, msgId);
+          } else {
+            row.innerHTML = files.map(f => `<a href="#" class="harness-file" data-open-file="${esc2(f)}"${hz.workspace ? ` data-open-workspace="${esc2(hz.workspace)}"` : ''} data-open-mode="diff" title="${esc2(f)} — click to review">${esc2(String(f).split(/[\\/]/).pop())}</a>`).join(' ')
+              + ` <button type="button" class="harness-btn harness-btn-danger" data-revert-all="${esc2(JSON.stringify({ files: files.slice(0, 60), workspace: hz.workspace || null }))}" title="Undo the changes of this turn (git checkout per file; a new untracked file is deleted)">↺ Revert all ${files.length}</button>`;
+          }
           footer.parentElement.appendChild(row);
         });
       }
@@ -2356,6 +2363,10 @@ export function displayMetrics(messageElement, metrics) {
         `${hz.tool_calls || 0} tool calls${hz.failed_calls ? ` (${hz.failed_calls} failed)` : ''}`,
         files.length ? `changed: ${files.join(', ')}` : 'no files changed',
       ];
+      if (hz.tests && hz.tests.ran) parts.push(hz.tests.inconclusive ? 'tests: inconclusive' : (hz.tests.ok ? `tests: passed (${hz.tests.summary || ''})` : `tests: FAILED (${hz.tests.summary || ''})`));
+      if (hz.review && hz.review.verdict && hz.review.verdict !== 'skipped') parts.push(`review: ${hz.review.verdict}${hz.review.findings && hz.review.findings.length ? ` (${hz.review.findings.length} finding(s))` : ''}`);
+      if (hz.checkpoint) parts.push(`checkpoint ${String(hz.checkpoint).slice(0, 10)}`);
+      if (hz.review_mode) parts.push('review mode');
       if (hz.rejections) parts.push(`${hz.rejections} rejection(s)`);
       if (hz.git && typeof hz.git.changed_count === 'number') parts.push(`git: ${hz.git.changed_count ? hz.git.changed_count + ' dirty' : 'clean'}`);
       badge.title = parts.join(' · ');

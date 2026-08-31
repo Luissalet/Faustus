@@ -3,10 +3,14 @@
 // Progress panel (todowrite):
 //   - harness_check / harness_summary SSE events → cards inside the agent
 //     thread, so the user sees when the runtime rejected an unsupported
-//     "done", auto-continued a truncated answer, or verified real changes.
+//     "done", auto-continued a truncated answer, ran the project's tests,
+//     reviewed the diff, or verified real changes.
 //   - progress_update SSE events → a docked "Progress" panel (like the task
 //     list in Cowork) whose ticks carry a "verified" mark only when a tool
 //     actually succeeded between updates.
+//   - queue_status SSE events → "in queue" card while the GPU is busy.
+//   - Turn summary actions: restore to before this turn (checkpoint), revert
+//     (git), commit these changes, review mode accept/reject per file.
 // Zero dependencies on chat.js internals: it only appends to #chat-history and
 // listens to the custom events below.
 
@@ -16,6 +20,7 @@ let _progressCollapsed = false;
 let _currentSessionId = null;
 let _lastTodosBySession = new Map();
 let _filesBySession = new Map();     // sessionId → Map(path → workspace) of files edited in that chat
+let _queueCard = null;
 
 const PROGRESS_KEY = 'odysseus-progress-collapsed';
 
@@ -44,14 +49,14 @@ function _threadForCard() {
   return wrap;
 }
 
-function _card(kind, title, bodyHtml, { open = false } = {}) {
+function _card(kind, title, bodyHtml, { open = false, icon = '🛡' } = {}) {
   const thread = _threadForCard();
   if (!thread) return null;
   const node = document.createElement('div');
   node.className = `agent-thread-node harness-node harness-${kind}${open ? ' expanded' : ''}`;
   node.innerHTML =
     `<div class="agent-thread-dot"></div>` +
-    `<div class="agent-thread-header harness-header"><span class="agent-thread-icon">🛡</span>` +
+    `<div class="agent-thread-header harness-header"><span class="agent-thread-icon">${icon}</span>` +
     `<span class="agent-thread-tool">${esc(title)}</span></div>` +
     (bodyHtml ? `<div class="agent-thread-content harness-body">${bodyHtml}</div>` : '');
   const hdr = node.querySelector('.harness-header');
@@ -65,17 +70,57 @@ function _card(kind, title, bodyHtml, { open = false } = {}) {
 }
 
 // Clickable file chip → fileViewer.js (data-open-file is handled globally).
-function _fileChip(path, workspace, mode) {
+// `checkpoint` makes the viewer diff/revert against the turn's baseline;
+// `review` = {msg, state} adds review-mode attributes.
+function _fileChip(path, workspace, mode, { checkpoint = null, review = null } = {}) {
   const p = String(path || '');
   const base = p.split(/[\\/]/).pop();
-  return `<a href="#" class="harness-file" data-open-file="${esc(p)}"${workspace ? ` data-open-workspace="${esc(workspace)}"` : ''}${mode ? ` data-open-mode="${mode}"` : ''} title="${esc(p)} — click to review">${esc(base)}</a>`;
+  const attrs = [
+    `data-open-file="${esc(p)}"`,
+    workspace ? `data-open-workspace="${esc(workspace)}"` : '',
+    mode ? `data-open-mode="${mode}"` : '',
+    checkpoint ? `data-open-checkpoint="${esc(checkpoint)}"` : '',
+    review && review.msg ? `data-review-msg="${esc(review.msg)}"` : '',
+    review && review.state ? `data-review-state="${esc(review.state)}"` : '',
+  ].filter(Boolean).join(' ');
+  const st = review && review.state ? ` is-${review.state}` : (review ? ' is-pending' : '');
+  return `<a href="#" class="harness-file${st}" ${attrs} title="${esc(p)} — click to review">${esc(base)}</a>`;
 }
 
-// "Revert all" for a turn: one button per Turn summary, confirmed, file by file
-// through POST /api/workspace/revert (the same endpoint the viewer's ↺ uses).
-function _revertAllButton(files, workspace) {
-  const payload = esc(JSON.stringify({ files: files.slice(0, 60), workspace: workspace || null }));
-  return `<button type="button" class="harness-btn harness-btn-danger" data-revert-all="${payload}" title="Undo the changes of this turn">↺ Revert all ${files.length}</button>`;
+/** Files row of a turn (live summary AND restored history): chips, restore /
+ *  revert, commit, review-mode controls. `hz` = the harness data of the turn. */
+export function turnFilesRowHtml(hz, { messageId = null, reviewState = null } = {}) {
+  const files = Array.isArray(hz.mutations) ? hz.mutations : [];
+  if (!files.length) return '';
+  const ws = hz.workspace || null;
+  const cp = hz.checkpoint || null;
+  const review = hz.review_mode ? { msg: messageId, state: null } : null;
+  const stateOf = (f) => {
+    if (!reviewState) return null;
+    if ((reviewState.accepted || []).includes(f)) return 'accepted';
+    if ((reviewState.rejected || []).includes(f)) return 'rejected';
+    return 'pending';
+  };
+  const chips = files.map(f => _fileChip(f, ws, 'diff', { checkpoint: cp, review: review ? { msg: messageId, state: stateOf(f) } : null })).join(' ');
+  const payload = esc(JSON.stringify({ files: files.slice(0, 60), workspace: ws, checkpoint: cp }));
+  const actions = [];
+  if (cp) {
+    actions.push(`<button type="button" class="harness-btn harness-btn-danger" data-restore-turn="${payload}" title="Put every file of this turn back to its state before the turn (checkpoint ${esc(String(cp).slice(0, 10))})">⟲ Restore to before this turn</button>`);
+  } else {
+    actions.push(`<button type="button" class="harness-btn harness-btn-danger" data-revert-all="${payload}" title="Undo the changes of this turn (git checkout per file; a new untracked file is deleted)">↺ Revert all ${files.length}</button>`);
+  }
+  actions.push(`<button type="button" class="harness-btn" data-commit-turn="${payload}" title="git commit exactly these files (the message is proposed, you can edit it)">⎘ Commit these changes…</button>`);
+  let reviewBar = '';
+  if (hz.review_mode) {
+    const pending = reviewState ? (reviewState.pending || []).length : files.length;
+    reviewBar = `<div class="harness-review-bar" data-review-bar="1"${messageId ? ` data-review-msg="${esc(messageId)}"` : ''}>` +
+      `<span class="harness-review-label">Review mode · <b class="harness-review-count">${pending}</b> file${pending === 1 ? '' : 's'} pending</span> ` +
+      `<button type="button" class="harness-btn" data-review-all="accept" title="Accept every pending file">✓ Accept all</button> ` +
+      `<button type="button" class="harness-btn harness-btn-danger" data-review-all="reject" title="Reject every pending file (restore them)">✗ Reject all</button>` +
+      `<span class="harness-muted"> — open a file to accept or reject it individually</span></div>`;
+  }
+  return `<div class="harness-files-row harness-files" data-turn-files="1"${messageId ? ` data-message-id="${esc(messageId)}"` : ''}${cp ? ` data-checkpoint="${esc(cp)}"` : ''}>${chips}</div>` +
+    `<div class="harness-actions">${actions.join(' ')} <span class="harness-commit-slot"></span></div>` + reviewBar;
 }
 
 function _workspaceFallback() {
@@ -90,19 +135,28 @@ function _workspaceFallback() {
   } catch (_) { return ''; }
 }
 
+async function _confirm(q, confirmText) {
+  try {
+    return window.uiModule && window.uiModule.styledConfirm
+      ? await window.uiModule.styledConfirm(q, { confirmText, danger: true })
+      : window.confirm(q);
+  } catch (_) { return window.confirm(q); }
+}
+
+function _noteAfter(button, text) {
+  const note = document.createElement('div');
+  note.className = 'harness-muted harness-revert-result';
+  note.textContent = text;
+  button.insertAdjacentElement('afterend', note);
+}
+
 async function _revertAll(button) {
   let payload;
   try { payload = JSON.parse(button.dataset.revertAll || '{}'); } catch (_) { return; }
   const files = Array.isArray(payload.files) ? payload.files : [];
   if (!files.length) return;
   const ws = payload.workspace || _workspaceFallback();
-  const q = `Revert the ${files.length} file${files.length === 1 ? '' : 's'} changed in this turn? (git checkout — a new untracked file is deleted)`;
-  let ok = false;
-  try {
-    ok = window.uiModule && window.uiModule.styledConfirm
-      ? await window.uiModule.styledConfirm(q, { confirmText: 'Revert all', danger: true })
-      : window.confirm(q);
-  } catch (_) { ok = window.confirm(q); }
+  const ok = await _confirm(`Revert the ${files.length} file${files.length === 1 ? '' : 's'} changed in this turn? (git checkout — a new untracked file is deleted)`, 'Revert all');
   if (!ok) return;
   button.disabled = true;
   button.textContent = 'Reverting…';
@@ -120,11 +174,199 @@ async function _revertAll(button) {
   }
   const okN = results.filter(r => !/^failed/.test(r.action)).length;
   button.textContent = `↺ Reverted ${okN}/${files.length}`;
-  const note = document.createElement('div');
-  note.className = 'harness-muted harness-revert-result';
-  note.textContent = results.map(r => `${r.name}: ${r.action.replace('_', ' ')}`).join(' · ');
-  button.insertAdjacentElement('afterend', note);
+  _noteAfter(button, results.map(r => `${r.name}: ${r.action.replace('_', ' ')}`).join(' · '));
   try { if (window.fileViewer && window.fileViewer.isOpen()) window.fileViewer.close(); } catch (_) {}
+}
+
+// "Restore to before this turn": every file of the turn back to the checkpoint
+// (POST /api/workspace/checkpoint/restore). Works without the user's git.
+async function _restoreTurn(button) {
+  let payload;
+  try { payload = JSON.parse(button.dataset.restoreTurn || '{}'); } catch (_) { return; }
+  const files = Array.isArray(payload.files) ? payload.files : [];
+  if (!files.length || !payload.checkpoint) return;
+  const ws = payload.workspace || _workspaceFallback();
+  const ok = await _confirm(`Restore the ${files.length} file${files.length === 1 ? '' : 's'} of this turn to their state before it? Files the turn created are deleted.`, 'Restore');
+  if (!ok) return;
+  button.disabled = true;
+  button.textContent = 'Restoring…';
+  try {
+    const qs = `workspace=${encodeURIComponent(ws || '')}&sha=${encodeURIComponent(payload.checkpoint)}`;
+    const r = await fetch(`${API_BASE}/api/workspace/checkpoint/restore?${qs}`, {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paths: files }),
+    });
+    if (!r.ok) {
+      let msg = `HTTP ${r.status}`; try { msg = (await r.json()).detail || msg; } catch (_) {}
+      button.textContent = '⟲ Restore failed';
+      _noteAfter(button, msg);
+      button.disabled = false;
+      return;
+    }
+    const res = await r.json();
+    const n = (res.restored || []).length + (res.deleted || []).length;
+    button.textContent = `⟲ Restored ${n}/${files.length}`;
+    const bits = [];
+    if ((res.restored || []).length) bits.push(`restored: ${res.restored.map(p => p.split('/').pop()).join(', ')}`);
+    if ((res.deleted || []).length) bits.push(`deleted (new in this turn): ${res.deleted.map(p => p.split('/').pop()).join(', ')}`);
+    if ((res.failed || []).length) bits.push(`failed: ${res.failed.join(', ')}`);
+    if (res.unchanged) bits.push(`${res.unchanged} already identical`);
+    _noteAfter(button, bits.join(' · ') || 'nothing to restore');
+    try { if (window.fileViewer && window.fileViewer.isOpen()) window.fileViewer.close(); } catch (_) {}
+  } catch (e) {
+    button.textContent = '⟲ Restore failed';
+    button.disabled = false;
+  }
+}
+
+// "Commit these changes": ask for a proposed message, show an inline editor,
+// then git commit exactly the turn's files (POST /api/workspace/commit).
+async function _commitTurn(button) {
+  let payload;
+  try { payload = JSON.parse(button.dataset.commitTurn || '{}'); } catch (_) { return; }
+  const files = Array.isArray(payload.files) ? payload.files : [];
+  if (!files.length) return;
+  const ws = payload.workspace || _workspaceFallback();
+  const slot = button.parentElement && button.parentElement.querySelector('.harness-commit-slot');
+  if (!slot) return;
+  if (slot.querySelector('.harness-commit-form')) { slot.innerHTML = ''; return; }
+  slot.innerHTML = '<span class="harness-muted">Preparing the commit…</span>';
+  // The user's request lives in the previous user bubble; use it for the proposal.
+  let text = '';
+  try {
+    const msgs = [...document.querySelectorAll('#chat-history .msg.user, #chat-history .message.user, #chat-history [data-role="user"]')];
+    const last = msgs[msgs.length - 1];
+    text = last ? (last.innerText || last.textContent || '').trim().slice(0, 400) : '';
+  } catch (_) {}
+  const lang = /[¿¡ñáéíóú]/i.test(text) ? 'es' : 'en';
+  let proposal = { git: false, message: '' };
+  try {
+    const qs = `workspace=${encodeURIComponent(ws || '')}&paths=${encodeURIComponent(files.join('\n'))}&text=${encodeURIComponent(text)}&language=${lang}`;
+    const r = await fetch(`${API_BASE}/api/workspace/commit/proposal?${qs}`, { credentials: 'same-origin' });
+    if (r.ok) proposal = await r.json();
+  } catch (_) {}
+  if (!proposal.git) {
+    slot.innerHTML = '<span class="harness-muted">Not a git repository — nothing to commit to. (Restore still works through the checkpoint.)</span>';
+    return;
+  }
+  const form = document.createElement('div');
+  form.className = 'harness-commit-form';
+  form.innerHTML = `<textarea class="harness-commit-msg" rows="4" spellcheck="false"></textarea>` +
+    `<div class="harness-commit-actions"><span class="harness-muted">${files.length} file${files.length === 1 ? '' : 's'} → ${esc(proposal.repo || ws)}</span> ` +
+    `<button type="button" class="harness-btn" data-commit-cancel="1">Cancel</button> <button type="button" class="harness-btn harness-btn-primary" data-commit-go="1">Commit</button></div>`;
+  form.querySelector('.harness-commit-msg').value = proposal.message || '';
+  slot.innerHTML = '';
+  slot.appendChild(form);
+  form.querySelector('[data-commit-cancel]').addEventListener('click', () => { slot.innerHTML = ''; });
+  form.querySelector('[data-commit-go]').addEventListener('click', async () => {
+    const msg = form.querySelector('.harness-commit-msg').value.trim();
+    const go = form.querySelector('[data-commit-go]');
+    go.disabled = true; go.textContent = 'Committing…';
+    try {
+      const r = await fetch(`${API_BASE}/api/workspace/commit?workspace=${encodeURIComponent(ws || '')}`, {
+        method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paths: files, message: msg }),
+      });
+      if (!r.ok) {
+        let m = `HTTP ${r.status}`; try { m = (await r.json()).detail || m; } catch (_) {}
+        slot.innerHTML = `<span class="harness-muted">Commit failed: ${esc(m)}</span>`;
+        return;
+      }
+      const res = await r.json();
+      slot.innerHTML = `<span class="harness-muted">✓ Committed ${esc(res.sha || '')} — ${(res.files || []).length} file${(res.files || []).length === 1 ? '' : 's'}</span>`;
+      button.disabled = true;
+      button.textContent = `⎘ Committed ${res.sha || ''}`;
+    } catch (e) {
+      slot.innerHTML = `<span class="harness-muted">Commit failed: ${esc(String(e))}</span>`;
+    }
+  });
+  try { form.querySelector('.harness-commit-msg').focus(); } catch (_) {}
+}
+
+// Review mode: accept / reject every pending file of the turn.
+async function _reviewAll(button) {
+  const bar = button.closest('[data-review-bar]');
+  const decision = button.dataset.reviewAll;
+  if (!bar || !decision) return;
+  const msgId = bar.dataset.reviewMsg || _lastAssistantDbId();
+  if (!msgId) { _noteAfter(button, 'The turn is still being saved — try again in a second.'); return; }
+  let st = null;
+  try {
+    const r = await fetch(`${API_BASE}/api/workspace/review/${encodeURIComponent(msgId)}`, { credentials: 'same-origin' });
+    if (r.ok) st = await r.json();
+  } catch (_) {}
+  const pending = st ? (st.pending || []) : [];
+  if (!pending.length) { _noteAfter(button, 'Nothing pending.'); return; }
+  if (decision === 'reject') {
+    const ok = await _confirm(`Reject the ${pending.length} pending file${pending.length === 1 ? '' : 's'}? They go back to their state before the turn.`, 'Reject all');
+    if (!ok) return;
+  }
+  button.disabled = true;
+  for (const p of pending) {
+    try {
+      const r = await fetch(`${API_BASE}/api/workspace/review/${encodeURIComponent(msgId)}/decide`, {
+        method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: p, decision }),
+      });
+      if (r.ok) {
+        const res = await r.json();
+        _applyReviewState(msgId, res.state);
+      }
+    } catch (_) {}
+  }
+  button.disabled = false;
+  try { if (window.fileViewer && window.fileViewer.isOpen()) window.fileViewer.close(); } catch (_) {}
+}
+
+function _lastAssistantDbId() {
+  try {
+    const els = [...document.querySelectorAll('#chat-history [data-db-id]')];
+    for (let i = els.length - 1; i >= 0; i--) {
+      if (els[i].dataset.dbId) return els[i].dataset.dbId;
+    }
+  } catch (_) {}
+  return null;
+}
+
+/** Paint the review state (accepted/rejected/pending) onto every chip and bar
+ *  that belongs to the message. */
+function _applyReviewState(msgId, state) {
+  if (!msgId || !state) return;
+  document.querySelectorAll(`[data-turn-files][data-message-id="${CSS.escape(String(msgId))}"] [data-open-file]`).forEach(chip => {
+    const f = chip.dataset.openFile;
+    let s = 'pending';
+    if ((state.accepted || []).includes(f)) s = 'accepted';
+    else if ((state.rejected || []).includes(f)) s = 'rejected';
+    chip.classList.remove('is-pending', 'is-accepted', 'is-rejected');
+    chip.classList.add(`is-${s}`);
+    chip.dataset.reviewState = s;
+    chip.dataset.reviewMsg = String(msgId);
+  });
+  document.querySelectorAll(`[data-review-bar][data-review-msg="${CSS.escape(String(msgId))}"] .harness-review-count`).forEach(c => {
+    c.textContent = String((state.pending || []).length);
+  });
+}
+
+/** Called when the assistant message of a turn gets its database id: bind the
+ *  latest unbound files row (live summary rendered before the save) to it and
+ *  fetch the review state. */
+function _bindMessageId(id) {
+  if (!id) return;
+  const rows = [...document.querySelectorAll('[data-turn-files]:not([data-message-id])')];
+  const row = rows[rows.length - 1];
+  if (!row) return;
+  row.dataset.messageId = String(id);
+  row.querySelectorAll('[data-open-file]').forEach(chip => { if (chip.classList.contains('is-pending')) chip.dataset.reviewMsg = String(id); });
+  const bar = row.parentElement && row.parentElement.querySelector('[data-review-bar]:not([data-review-msg])');
+  if (bar) bar.dataset.reviewMsg = String(id);
+  if (bar) _fetchReviewState(id);
+}
+
+async function _fetchReviewState(msgId) {
+  try {
+    const r = await fetch(`${API_BASE}/api/workspace/review/${encodeURIComponent(msgId)}`, { credentials: 'same-origin' });
+    if (r.ok) _applyReviewState(msgId, await r.json());
+  } catch (_) {}
 }
 
 const REASON_TEXT = {
@@ -132,6 +374,31 @@ const REASON_TEXT = {
   fabricated_paths: 'It mentioned files that do not exist in the workspace and were never returned by any tool.',
   intent_without_action: 'It announced an action ("I will now…", "Voy a…") and ended the turn without calling any tool.',
 };
+
+function _testsLine(t) {
+  if (!t || !t.ran) return '';
+  const label = t.label || t.kind || 'tests';
+  const scope = t.scope === 'related' && Array.isArray(t.related_files) && t.related_files.length
+    ? ` (related: ${t.related_files.map(f => `<code>${esc(f.split('/').pop())}</code>`).join(', ')})` : '';
+  if (t.inconclusive) return `<div class="harness-foot harness-tests is-inconclusive">⚠ Tests inconclusive — ${esc(t.summary || 'could not run')}${scope} · <code>${esc(label)}</code></div>`;
+  if (t.ok) return `<div class="harness-foot harness-tests is-ok">✓ Project tests passed: ${esc(t.summary || 'ok')}${scope} · <code>${esc(label)}</code> · ${esc(String(t.duration_s || 0))}s</div>`;
+  const fails = (t.failures || []).slice(0, 6).map(f => `<li><code>${esc(f)}</code></li>`).join('');
+  return `<div class="harness-foot harness-tests is-fail">✗ Project tests FAILED: ${esc(t.summary || 'failed')}${scope} · <code>${esc(label)}</code></div>` +
+    (fails ? `<ul class="harness-list">${fails}</ul>` : '') +
+    (t.output_tail ? `<details class="harness-details"><summary>Output</summary><pre class="harness-pre">${esc(t.output_tail)}</pre></details>` : '');
+}
+
+function _reviewLine(r) {
+  if (!r || !r.verdict || r.verdict === 'skipped') return '';
+  if (r.verdict === 'error') return `<div class="harness-foot harness-review is-inconclusive">⚠ Review could not run (${esc(r.model || '')}): ${esc(r.error || '')}</div>`;
+  if (r.verdict === 'unparsed') return `<div class="harness-foot harness-review is-inconclusive">⚠ Reviewer (${esc(r.model || '')}) answered without a verdict: <em>${esc((r.summary || '').slice(0, 200))}</em></div>`;
+  const findings = Array.isArray(r.findings) ? r.findings : [];
+  const errs = findings.filter(f => f.severity === 'error').length;
+  const items = findings.slice(0, 8).map(f => `<li class="is-${esc(f.severity || 'warning')}"><b>${esc(f.severity || 'warning')}</b> <code>${esc(f.file || '?')}${f.line ? ':' + esc(f.line) : ''}</code> — ${esc(f.issue || '')}</li>`).join('');
+  if (r.verdict === 'ok' && !findings.length) return `<div class="harness-foot harness-review is-ok">✓ Independent review (${esc(r.model || '')}): no obvious defects${r.summary ? ` — <em>${esc(r.summary)}</em>` : ''} · ${esc(String(r.duration_s || 0))}s</div>`;
+  return `<div class="harness-foot harness-review ${errs ? 'is-fail' : 'is-warn'}">${errs ? '✗' : '⚠'} Independent review (${esc(r.model || '')}): ${findings.length} finding${findings.length === 1 ? '' : 's'}${errs ? ` (${errs} likely defect${errs === 1 ? '' : 's'})` : ''}${r.summary ? ` — <em>${esc(r.summary)}</em>` : ''}</div>` +
+    (items ? `<ul class="harness-list harness-findings">${items}</ul>` : '');
+}
 
 export function renderHarnessCheck(json) {
   const status = json.status;
@@ -141,6 +408,27 @@ export function renderHarnessCheck(json) {
     } else {
       _card('continue', `Output cut off by max_tokens — continuing automatically (${json.attempt}/${json.max_attempts})`, '');
     }
+    return;
+  }
+  if (status === 'checkpoint') {
+    _card('checkpoint', `Checkpoint taken before the first change of this turn${json.ms != null ? ` · ${json.ms} ms` : ''}${json.created === false ? ' (workspace unchanged since the last one)' : ''}`,
+      `<div class="harness-foot">Shadow snapshot <code>${esc(String(json.sha || '').slice(0, 10))}</code> — "Restore to before this turn" and per-file diffs use it, with or without git.</div>`, { icon: '⟲' });
+    return;
+  }
+  if (status === 'tests_running') {
+    _card('running', `Running the project's tests${json.label ? ` (${json.label})` : ''}…`, '', { icon: '🧪' });
+    return;
+  }
+  if (status === 'tests_failed') {
+    _card('rejected', `Project tests failed after the changes — asked the model to fix the cause (${json.attempt}/${json.max_attempts})`, _testsLine(json.tests), { open: true, icon: '🧪' });
+    return;
+  }
+  if (status === 'review_running') {
+    _card('running', `Reviewing the diff with ${json.model || 'a second pass'}…`, '', { icon: '🔍' });
+    return;
+  }
+  if (status === 'review_issues') {
+    _card('rejected', `Independent review flagged likely defects — asked the model to verify and fix them (${json.attempt}/${json.max_attempts})`, _reviewLine(json.review), { open: true, icon: '🔍' });
     return;
   }
   if (status === 'unknown_tool') {
@@ -200,16 +488,26 @@ export function renderHarnessCheck(json) {
     const files = (json.mutations || []);
     const checks = Array.isArray(json.static_checks) ? json.static_checks : [];
     const checked = checks.filter(c => c.ok).length;
+    const t = json.tests;
+    const rv = json.review;
     const body = [];
-    if (files.length) body.push(`<div class="harness-foot harness-files">${files.map(f => _fileChip(f, json.workspace, 'diff')).join(' ')}</div>`);
+    if (files.length) body.push(`<div class="harness-foot harness-files">${files.map(f => _fileChip(f, json.workspace, 'diff', { checkpoint: json.checkpoint || null })).join(' ')}</div>`);
     if (checked) body.push(`<div class="harness-foot">Syntax check passed: ${checks.filter(c => c.ok).map(c => `<code>${esc(c.path)}</code>`).join(' ')}</div>`);
-    _card('verified',
-      files.length ? `Verified: ${files.length} file${files.length === 1 ? '' : 's'} changed${checked ? ` · ${checked} syntax-checked` : ''}` : 'Verified against the tool log',
-      body.join(''));
+    body.push(_testsLine(t));
+    body.push(_reviewLine(rv));
+    const bits = [];
+    if (files.length) bits.push(`${files.length} file${files.length === 1 ? '' : 's'} changed`);
+    if (checked) bits.push(`${checked} syntax-checked`);
+    if (t && t.ran) bits.push(t.inconclusive ? 'tests inconclusive' : (t.ok ? 'tests passed' : 'tests FAILED'));
+    if (rv && rv.verdict && rv.verdict !== 'skipped') bits.push(rv.verdict === 'ok' ? 'review ok' : (rv.verdict === 'issues' ? `review: ${(rv.findings || []).length} finding${(rv.findings || []).length === 1 ? '' : 's'}` : 'review n/a'));
+    const bad = (t && t.ran && t.ok === false && !t.inconclusive) || (rv && rv.verdict === 'issues' && (rv.findings || []).some(f => f.severity === 'error'));
+    _card(bad ? 'unverified' : 'verified',
+      files.length ? `${bad ? 'Changed but NOT green' : 'Verified'}: ${bits.join(' · ')}` : 'Verified against the tool log',
+      body.join(''), { open: !!bad });
   }
 }
 
-export function renderHarnessSummary(json) {
+export function renderHarnessSummary(json, { messageId = null } = {}) {
   const d = json.data || {};
   const tools = d.tool_calls || 0;
   const failed = d.failed_calls || 0;
@@ -222,6 +520,9 @@ export function renderHarnessSummary(json) {
   if (git && typeof git.changed_count === 'number') {
     parts.push(git.changed_count ? `git: ${git.changed_count} path${git.changed_count === 1 ? '' : 's'} dirty${git.shortstat ? ` (${git.shortstat.trim()})` : ''}` : 'git: clean');
   }
+  if (d.tests && d.tests.ran) parts.push(d.tests.inconclusive ? 'tests: inconclusive' : (d.tests.ok ? 'tests: ✓' : 'tests: ✗'));
+  if (d.review && d.review.verdict === 'ok') parts.push('review: ✓');
+  else if (d.review && d.review.verdict === 'issues') parts.push(`review: ${(d.review.findings || []).length} finding${(d.review.findings || []).length === 1 ? '' : 's'}`);
   if (d.rejections) parts.push(`${d.rejections} rejection${d.rejections === 1 ? '' : 's'}`);
   if (d.length_continues) parts.push(`${d.length_continues} auto-continue`);
   const stopLabel = {
@@ -230,8 +531,12 @@ export function renderHarnessSummary(json) {
     awaiting_user: 'waiting for you', length: 'cut off',
   }[stop] || stop;
   const details = [];
-  if (files.length) details.push(`<div class="harness-files"><b>Edited:</b> ${files.map(f => _fileChip(f, d.workspace, 'diff')).join(' ')} <span class="harness-muted">— click a file to review it (contents / diff / open folder)</span></div>`);
-  if (files.length) details.push(`<div class="harness-actions">${_revertAllButton(files, d.workspace)} <span class="harness-muted">undo this turn's edits (git checkout per file; a new untracked file is deleted)</span></div>`);
+  if (files.length) {
+    details.push(`<div class="harness-files-head"><b>Edited:</b> <span class="harness-muted">click a file to review it (diff vs. before this turn / contents / open folder)</span></div>`);
+    details.push(turnFilesRowHtml({ mutations: files, workspace: d.workspace, checkpoint: d.checkpoint, review_mode: d.review_mode }, { messageId }));
+  }
+  details.push(_testsLine(d.tests));
+  details.push(_reviewLine(d.review));
   if (git && git.changed && git.changed.length) {
     details.push(`<div><b>git status:</b><pre class="harness-pre">${esc(git.changed.map(c => `${c.status.padEnd(2)} ${c.path}`).join('\n'))}</pre></div>`);
   }
@@ -250,6 +555,8 @@ export function renderHarnessSummary(json) {
     auto_continue_rounds: r => `step limit reached at round ${esc(r)}, one extra cycle granted`,
     empty_round_nudge: r => `round ${esc(r)} was empty (no text, no tool) — nudged`,
     target_substituted: p => `you named <code>${esc(p)}</code> (does not exist) — the model changed other files; it was asked to say so explicitly`,
+    tests_failed: s => `<b>⚠ the project's tests still fail</b> after the fix round: ${esc(s)}`,
+    review_defects: n => `<b>⚠ the reviewer still sees ${esc(n)} likely defect${String(n) === '1' ? '' : 's'}</b> after the fix round — check the findings above`,
   };
   const noteLines = notes.map(n => {
     const [k, ...rest] = String(n).split(/[:@]/);
@@ -259,8 +566,33 @@ export function renderHarnessSummary(json) {
   if (noteLines.length) details.push(`<div><b>Notes:</b><ul class="harness-list">${noteLines.map(l => `<li>${l}</li>`).join('')}</ul></div>`);
   const rewrote = notes.some(n => String(n).startsWith('whole_file_rewrite:'));
   if (rewrote) parts.push('⚠ whole-file rewrite');
-  const kind = stop === 'complete_unverified' ? 'unverified' : (files.length ? 'verified' : 'summary');
+  const red = stop === 'complete_unverified' || notes.some(n => /^(tests_failed|review_defects)/.test(String(n)));
+  const kind = red ? 'unverified' : (files.length ? 'verified' : 'summary');
   _card(kind, `Turn summary · ${parts.join(' · ')} · ${stopLabel}`, details.join(''), { open: files.length > 0 });
+}
+
+// ── Queue (task queue for the local GPU) ────────────────────────────────────
+
+export function renderQueueStatus(json) {
+  if (json.queued) {
+    const ahead = Array.isArray(json.ahead) && json.ahead.length ? ` · ahead: ${json.ahead.map(esc).join(', ')}` : '';
+    const title = `In queue — position ${json.position}${json.active ? ` (${json.active} running)` : ''}`;
+    if (_queueCard && document.body.contains(_queueCard)) {
+      _queueCard.querySelector('.agent-thread-tool').textContent = title;
+      const body = _queueCard.querySelector('.harness-body');
+      if (body) body.innerHTML = `<div class="harness-foot">Waiting for the ${esc(json.lane || 'local')} lane (one generation at a time on the GPU). It starts on its own; you can close the tab.${ahead}</div>`;
+      return;
+    }
+    _queueCard = _card('queued', title, `<div class="harness-foot">Waiting for the ${esc(json.lane || 'local')} lane (one generation at a time on the GPU). It starts on its own; you can close the tab.${ahead}</div>`, { open: true, icon: '⏳' });
+    return;
+  }
+  if (_queueCard && document.body.contains(_queueCard)) {
+    _queueCard.querySelector('.agent-thread-tool').textContent = 'Started (the queue reached this chat)';
+    _queueCard.classList.remove('expanded');
+    _queueCard.classList.remove('harness-queued');
+    _queueCard.classList.add('harness-checkpoint');
+  }
+  _queueCard = null;
 }
 
 // ── Sub-agent board (delegate_agents) ────────────────────────────────────────
@@ -288,6 +620,33 @@ function _boardFor() {
 
 const SA_STATUS_ICON = { started: '◉', running: '◉', done: '✓', error: '✗' };
 
+async function _stopWorker(button) {
+  const sid = button.dataset.stopWorker;
+  if (!sid) return;
+  button.disabled = true;
+  button.textContent = 'Stopping…';
+  try {
+    const r = await fetch(`${API_BASE}/api/chat/subagent/stop/${encodeURIComponent(sid)}`, { method: 'POST', credentials: 'same-origin' });
+    const res = r.ok ? await r.json() : { stopped: false };
+    button.textContent = res.stopped ? 'Stopped' : 'Not running';
+  } catch (_) { button.textContent = 'Stop failed'; button.disabled = false; }
+}
+
+// "Re-run" a worker (after a stop / error / partial): re-delegate that single
+// task, optionally with another model — through the same /agents path.
+function _rerunWorker(button) {
+  let task;
+  try { task = JSON.parse(button.dataset.rerunWorker || '{}'); } catch (_) { return; }
+  if (!task.instruction) return;
+  let model = '';
+  try { model = (window.prompt('Model for this worker (empty = same as the chat):', task.model || '') || '').trim(); } catch (_) { model = ''; }
+  if (model === null) return;
+  const sc = window.slashCommandsModule;
+  if (sc && typeof sc.delegateTasks === 'function') {
+    sc.delegateTasks([{ name: task.name, instruction: task.instruction, files: task.files || [], model }], { parallel: false });
+  }
+}
+
 export function renderSubagentEvent(json) {
   const sa = json.subagent || {};
   const board = _boardFor();
@@ -298,16 +657,26 @@ export function renderSubagentEvent(json) {
     row = document.createElement('div');
     row.className = 'subagent-row is-running';
     row.dataset.sa = sa.id;
-    row.innerHTML = `<div class="subagent-head"><span class="subagent-icon">◉</span><span class="subagent-name"></span><span class="subagent-meta"></span></div><div class="subagent-last"></div>`;
+    row.innerHTML = `<div class="subagent-head"><span class="subagent-icon">◉</span><span class="subagent-name"></span><span class="subagent-meta"></span><span class="subagent-actions"></span></div><div class="subagent-last"></div>`;
     rows.appendChild(row);
   }
-  row.querySelector('.subagent-name').textContent = `${(sa.index ?? 0) + 1}. ${sa.name || 'worker'}`;
+  const isReviewer = sa.role === 'reviewer';
+  row.querySelector('.subagent-name').textContent = isReviewer ? `🔍 ${sa.name || 'reviewer'}` : `${(sa.index ?? 0) + 1}. ${sa.name || 'worker'}`;
   const meta = row.querySelector('.subagent-meta');
   const last = row.querySelector('.subagent-last');
+  const actions = row.querySelector('.subagent-actions');
   const ev = sa.event;
   if (ev === 'started') {
     last.textContent = sa.instruction || '';
-    if (sa.session_id) meta.innerHTML = `<a href="#${esc(sa.session_id)}" class="subagent-chat-link" title="Open this worker's chat">chat ${esc(sa.session_id)}</a>`;
+    row.dataset.instruction = sa.instruction_full || sa.instruction || '';
+    if (sa.session_id) {
+      row.dataset.sessionId = sa.session_id;
+      meta.innerHTML = `<a href="#${esc(sa.session_id)}" class="subagent-chat-link" title="Open this worker's chat">chat ${esc(sa.session_id)}</a>`;
+      if (actions) actions.innerHTML = `<button type="button" class="harness-btn harness-btn-mini harness-btn-danger" data-stop-worker="${esc(sa.session_id)}" title="Stop this worker only">■ Stop</button>`;
+    }
+    const files = Array.isArray(sa.files) && sa.files.length ? ` · owns ${sa.files.map(f => f.split('/').pop()).join(', ')}` : '';
+    const model = sa.model ? ` · ${sa.model}` : '';
+    if (files || model) meta.innerHTML += `<span class="harness-muted">${esc(files)}${esc(model)}</span>`;
   } else if (ev === 'tool') {
     const n = (parseInt(row.dataset.tools || '0', 10) + (sa.phase === 'done' ? 1 : 0));
     row.dataset.tools = String(n);
@@ -323,13 +692,20 @@ export function renderSubagentEvent(json) {
     row.querySelector('.subagent-icon').textContent = '✗';
     last.textContent = sa.message || 'error';
   } else if (ev === 'done') {
+    const stopped = sa.stop_reason === 'stopped';
     const ok = !sa.error && (sa.stop_reason === 'complete');
     row.className = `subagent-row ${sa.error ? 'is-error' : (ok ? 'is-done' : 'is-partial')}`;
-    row.querySelector('.subagent-icon').textContent = sa.error ? '✗' : (ok ? '✓' : '◑');
+    row.querySelector('.subagent-icon').textContent = sa.error ? '✗' : (ok ? '✓' : (stopped ? '■' : '◑'));
     const files = (sa.mutations || []).length;
     const link = meta.querySelector('a');
     meta.innerHTML = `${sa.tool_calls || 0} tools${sa.failed_calls ? ` (${sa.failed_calls} failed)` : ''} · ${files ? `${files} file${files === 1 ? '' : 's'} changed` : 'no files changed'} · ${sa.duration_s || 0}s · ${esc(sa.stop_reason || '')}` + (link ? ` · ${link.outerHTML}` : '');
     last.textContent = sa.final_text || '';
+    if (actions) {
+      const task = { name: sa.name, instruction: sa.instruction || row.dataset.instruction || '', files: sa.files || [], model: sa.model || '' };
+      actions.innerHTML = (!ok && !isReviewer && task.instruction)
+        ? `<button type="button" class="harness-btn harness-btn-mini" data-rerun-worker="${esc(JSON.stringify(task))}" title="Delegate this task again (optionally with another model)">↻ Re-run…</button>`
+        : '';
+    }
   }
   const all = rows.querySelectorAll('.subagent-row');
   const done = rows.querySelectorAll('.subagent-row.is-done, .subagent-row.is-error, .subagent-row.is-partial').length;
@@ -438,6 +814,7 @@ export function clearProgress() {
 
 export async function restoreProgress(sessionId) {
   _currentSessionId = sessionId;
+  _queueCard = null;
   if (!sessionId) { clearProgress(); return; }
   const cached = _lastTodosBySession.get(sessionId);
   if (cached) { renderProgress(cached, { sessionId }); return; }
@@ -463,11 +840,20 @@ export function handleStreamEvent(json, { sessionId = null } = {}) {
       try { const d = json.data || {}; noteMutations(sessionId || _currentSessionId, d.mutations || [], d.workspace || null); } catch (_) {}
       renderHarnessSummary(json); return true;
     case 'progress_update': renderProgress(json.todos || [], { sessionId }); return true;
+    case 'queue_status': renderQueueStatus(json); return true;
     case 'tool_progress':
       if (json.subagent) { renderSubagentEvent(json); return true; }
       return false;
     default: return false;
   }
+}
+
+/** Restored history (chatRenderer): the files row of an old turn with its
+ *  restore/commit/review controls, from metrics.harness + the message id. */
+export function restoredTurnFilesRow(hz, messageId) {
+  const html = turnFilesRowHtml(hz, { messageId });
+  if (hz && hz.review_mode && messageId) setTimeout(() => _fetchReviewState(messageId), 0);
+  return html;
 }
 
 export function init(apiBase) {
@@ -476,15 +862,33 @@ export function init(apiBase) {
     const id = ev.detail && ev.detail.id;
     restoreProgress(id || null);
   });
+  document.addEventListener('odysseus:message-saved', (ev) => {
+    try { _bindMessageId(ev.detail && ev.detail.id); } catch (_) {}
+  });
+  document.addEventListener('odysseus:review-decided', (ev) => {
+    const d = ev.detail || {};
+    if (d.messageId && d.state) _applyReviewState(d.messageId, d.state);
+  });
   document.addEventListener('click', (e) => {
-    const b = e.target.closest('[data-revert-all]');
-    if (!b || b.disabled) return;
-    e.preventDefault();
-    e.stopPropagation();
-    _revertAll(b);
+    const handlers = [
+      ['[data-revert-all]', _revertAll],
+      ['[data-restore-turn]', _restoreTurn],
+      ['[data-commit-turn]', _commitTurn],
+      ['[data-review-all]', _reviewAll],
+      ['[data-stop-worker]', _stopWorker],
+      ['[data-rerun-worker]', _rerunWorker],
+    ];
+    for (const [sel, fn] of handlers) {
+      const b = e.target.closest(sel);
+      if (!b || b.disabled) continue;
+      e.preventDefault();
+      e.stopPropagation();
+      fn(b);
+      return;
+    }
   });
 }
 
-const agentHarnessUI = { init, handleStreamEvent, renderHarnessCheck, renderHarnessSummary, renderProgress, restoreProgress, clearProgress, renderSubagentEvent, noteMutations };
+const agentHarnessUI = { init, handleStreamEvent, renderHarnessCheck, renderHarnessSummary, renderProgress, restoreProgress, clearProgress, renderSubagentEvent, renderQueueStatus, noteMutations, turnFilesRowHtml, restoredTurnFilesRow };
 window.agentHarnessUI = agentHarnessUI;
 export default agentHarnessUI;

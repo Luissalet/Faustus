@@ -10,7 +10,7 @@
 
 let API_BASE = '';
 let _panel = null;
-let _state = { path: null, workspace: null, mode: 'file', data: null, diff: null };
+let _state = { path: null, workspace: null, mode: 'file', data: null, diff: null, checkpoint: null, reviewMsg: null };
 
 function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -48,7 +48,8 @@ function _ensurePanel() {
     `<button type="button" class="fv-btn fv-icon" data-fv="copy" title="Copy contents"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>` +
     `<button type="button" class="fv-btn fv-icon" data-fv="reveal" title="Show in folder"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></button>` +
     `<button type="button" class="fv-btn fv-icon" data-fv="editor" title="Open in editor (VS Code)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></button>` +
-    `<button type="button" class="fv-btn fv-icon fv-danger" data-fv="revert" title="Revert this file's changes (git checkout)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></button>` +
+    `<span class="fv-review" hidden><button type="button" class="fv-btn fv-accept" data-fv="accept" title="Keep this change (review mode)">✓ Accept</button><button type="button" class="fv-btn fv-reject" data-fv="reject" title="Discard this change — the file goes back to its state before the turn">✗ Reject</button></span>` +
+    `<button type="button" class="fv-btn fv-icon fv-danger" data-fv="revert" title="Revert this file's changes (checkpoint of the turn, or git checkout)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></button>` +
     `<button type="button" class="fv-btn fv-icon" data-fv="raw" title="Open raw in a new tab"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></button>` +
     `<button type="button" class="fv-btn fv-icon fv-close" data-fv="close" title="Close">×</button>` +
     `</div></div>` +
@@ -66,6 +67,8 @@ function _ensurePanel() {
     else if (a === 'reveal') _reveal();
     else if (a === 'editor') _openEditor();
     else if (a === 'revert') _revert();
+    else if (a === 'accept') _decide('accept');
+    else if (a === 'reject') _decide('reject');
     else if (a === 'raw') _openRaw();
     else if (a === 'prev') _nav(-1);
     else if (a === 'next') _nav(1);
@@ -118,11 +121,11 @@ function _render() {
   if (_state.mode === 'diff') {
     const df = _state.diff;
     if (!df) { meta.textContent = 'Loading diff…'; code.innerHTML = ''; }
-    else if (!df.git) { meta.textContent = 'Not a git repository — no diff available (showing nothing).'; code.innerHTML = ''; }
-    else if (!df.diff) { meta.textContent = 'No changes vs. HEAD for this file.'; code.innerHTML = ''; }
+    else if (!df.git) { meta.textContent = 'Not a git repository and no checkpoint for this turn — no diff available.'; code.innerHTML = ''; }
+    else if (!df.diff) { meta.textContent = df.checkpoint ? 'No changes vs. the checkpoint taken before this turn.' : 'No changes vs. HEAD for this file.'; code.innerHTML = ''; }
     else {
       const lines = df.diff.split('\n');
-      meta.textContent = `git diff · ${lines.filter(l => l.startsWith('+') && !l.startsWith('+++')).length} added, ${lines.filter(l => l.startsWith('-') && !l.startsWith('---')).length} removed`;
+      meta.textContent = `${df.checkpoint ? 'diff vs. before this turn' : 'git diff'} · ${lines.filter(l => l.startsWith('+') && !l.startsWith('+++')).length} added, ${lines.filter(l => l.startsWith('-') && !l.startsWith('---')).length} removed`;
       code.innerHTML = lines.map(l => {
         const cls = l.startsWith('+') && !l.startsWith('+++') ? 'fv-add' : (l.startsWith('-') && !l.startsWith('---') ? 'fv-del' : (l.startsWith('@@') ? 'fv-hunk' : ''));
         return `<span class="fv-line ${cls}">${esc(l) || '&nbsp;'}</span>`;
@@ -137,6 +140,14 @@ function _render() {
       const parts = html.split('\n');
       code.innerHTML = parts.map((l, i) => `<span class="fv-line"><span class="fv-ln">${i + 1}</span>${l || '&nbsp;'}</span>`).join('');
     }
+  }
+  const rv = el.querySelector('.fv-review');
+  if (rv) {
+    rv.hidden = !_state.reviewMsg;
+    const st = _state.reviewState;
+    rv.querySelectorAll('.fv-btn').forEach(b => b.classList.remove('active'));
+    if (st === 'accepted') { const b = rv.querySelector('[data-fv="accept"]'); if (b) b.classList.add('active'); }
+    if (st === 'rejected') { const b = rv.querySelector('[data-fv="reject"]'); if (b) b.classList.add('active'); }
   }
   el.hidden = false;
   document.body.classList.add('file-viewer-open');
@@ -162,7 +173,8 @@ async function _load() {
 async function _loadDiff() {
   if (_state.diff) return;
   try {
-    const q = `workspace=${encodeURIComponent(_state.workspace || '')}&path=${encodeURIComponent(_state.path || '')}`;
+    const cp = _state.checkpoint ? `&checkpoint=${encodeURIComponent(_state.checkpoint)}` : '';
+    const q = `workspace=${encodeURIComponent(_state.workspace || '')}&path=${encodeURIComponent(_state.path || '')}${cp}`;
     const r = await fetch(`${API_BASE}/api/workspace/file_diff?${q}`, { credentials: 'same-origin' });
     _state.diff = r.ok ? await r.json() : { git: false, diff: '' };
   } catch (_) { _state.diff = { git: false, diff: '' }; }
@@ -194,15 +206,17 @@ async function _openEditor() {
 
 async function _revert() {
   const name = String(_state.path || '').split(/[\\/]/).pop();
+  const how = _state.checkpoint ? 'back to its state before this turn' : 'git checkout — an untracked new file is deleted';
   let ok = false;
   try {
     ok = window.uiModule && window.uiModule.styledConfirm
-      ? await window.uiModule.styledConfirm(`Revert all changes to ${name}? (git checkout — an untracked new file is deleted)`, { confirmText: 'Revert', danger: true })
+      ? await window.uiModule.styledConfirm(`Revert all changes to ${name}? (${how})`, { confirmText: 'Revert', danger: true })
       : window.confirm(`Revert all changes to ${name}?`);
   } catch (_) { ok = window.confirm(`Revert all changes to ${name}?`); }
   if (!ok) return;
   try {
-    const q = `workspace=${encodeURIComponent(_state.workspace || '')}&path=${encodeURIComponent(_state.path || '')}`;
+    const cp = _state.checkpoint ? `&checkpoint=${encodeURIComponent(_state.checkpoint)}` : '';
+    const q = `workspace=${encodeURIComponent(_state.workspace || '')}&path=${encodeURIComponent(_state.path || '')}${cp}`;
     const r = await fetch(`${API_BASE}/api/workspace/revert?${q}`, { method: 'POST', credentials: 'same-origin' });
     const meta = _panel && _panel.querySelector('.fv-meta');
     if (!r.ok) {
@@ -211,10 +225,50 @@ async function _revert() {
       return;
     }
     const res = await r.json();
-    if (res.action === 'deleted_untracked') { _state.data = { error: `${name} was a new file and has been deleted.` }; _state.diff = null; _render(); return; }
+    if (res.action === 'deleted_untracked' || res.action === 'deleted_new_file') { _state.data = { error: `${name} was a new file and has been deleted.` }; _state.diff = null; _render(); return; }
     _state.diff = null;
     await _load();
-    if (meta) meta.textContent = (res.action === 'restored' ? 'Restored from git HEAD · ' : 'No changes to revert · ') + meta.textContent;
+    if (meta) meta.textContent = (res.action === 'restored' ? (res.checkpoint ? 'Restored to before this turn · ' : 'Restored from git HEAD · ') : 'No changes to revert · ') + meta.textContent;
+  } catch (_) {}
+}
+
+/** Review mode: accept keeps the change, reject restores the file from the
+ *  turn's checkpoint. Bookkeeping lives server-side (services/review_state). */
+async function _decide(decision) {
+  if (!_state.reviewMsg || !_state.path) return;
+  const name = String(_state.path || '').split(/[\\/]/).pop();
+  if (decision === 'reject') {
+    let ok = false;
+    try {
+      ok = window.uiModule && window.uiModule.styledConfirm
+        ? await window.uiModule.styledConfirm(`Reject the change to ${name}? The file goes back to its state before the turn.`, { confirmText: 'Reject', danger: true })
+        : window.confirm(`Reject the change to ${name}?`);
+    } catch (_) { ok = window.confirm(`Reject the change to ${name}?`); }
+    if (!ok) return;
+  }
+  const meta = _panel && _panel.querySelector('.fv-meta');
+  try {
+    const r = await fetch(`${API_BASE}/api/workspace/review/${encodeURIComponent(_state.reviewMsg)}/decide`, {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: _state.path, decision }),
+    });
+    if (!r.ok) {
+      let msg = `HTTP ${r.status}`; try { msg = (await r.json()).detail || msg; } catch (_) {}
+      if (meta) meta.textContent = `Could not record the decision: ${msg}`;
+      return;
+    }
+    const res = await r.json();
+    _state.reviewState = decision === 'accept' ? 'accepted' : 'rejected';
+    try { document.dispatchEvent(new CustomEvent('odysseus:review-decided', { detail: { messageId: _state.reviewMsg, path: _state.path, decision, state: res.state } })); } catch (_) {}
+    if (decision === 'reject') {
+      if (res.action === 'deleted_new_file') { _state.data = { error: `${name} was a new file and has been deleted (rejected).` }; _state.diff = null; _render(); return; }
+      _state.diff = null;
+      await _load();
+      if (meta) meta.textContent = 'Rejected — restored to before this turn · ' + meta.textContent;
+    } else {
+      _render();
+      if (meta) meta.textContent = 'Accepted · ' + meta.textContent;
+    }
   } catch (_) {}
 }
 
@@ -230,10 +284,12 @@ function _openRaw() {
 
 /** Open a file. `list` (optional) is the group of files the viewer can step
  *  through with ‹ › / arrow keys: [{path, workspace}], `index` = position. */
-export function open(path, { workspace = null, mode = 'file', list = null, index = 0 } = {}) {
+export function open(path, { workspace = null, mode = 'file', list = null, index = 0, checkpoint = null, reviewMsg = null, reviewState = null } = {}) {
   if (!path) return;
   const group = Array.isArray(list) && list.length > 1 ? list : null;
-  _state = { path, workspace: workspace || _workspaceFallback(), mode, data: null, diff: null, list: group, index: group ? Math.max(0, Math.min(index, group.length - 1)) : 0 };
+  _state = { path, workspace: workspace || _workspaceFallback(), mode, data: null, diff: null, list: group,
+             index: group ? Math.max(0, Math.min(index, group.length - 1)) : 0,
+             checkpoint: checkpoint || null, reviewMsg: reviewMsg || null, reviewState: reviewState || null };
   _ensurePanel();
   _load().then(() => { if (mode === 'diff') _loadDiff().then(_render); });
 }
@@ -243,7 +299,8 @@ function _nav(delta) {
   if (!l || l.length < 2) return;
   const i = (_state.index + delta + l.length) % l.length;
   const it = l[i];
-  open(it.path, { workspace: it.workspace || _state.workspace, mode: _state.mode, list: l, index: i });
+  open(it.path, { workspace: it.workspace || _state.workspace, mode: _state.mode, list: l, index: i,
+                  checkpoint: it.checkpoint || _state.checkpoint, reviewMsg: it.reviewMsg || _state.reviewMsg, reviewState: it.reviewState || null });
 }
 
 /** Files edited by the agent in the current chat, as a navigable group. */
@@ -258,7 +315,8 @@ function _groupFrom(anchor) {
     if (!p || seen.has(p)) continue;
     seen.add(p);
     if (c === anchor) index = list.length;
-    list.push({ path: p, workspace: c.dataset.openWorkspace || null });
+    list.push({ path: p, workspace: c.dataset.openWorkspace || null, checkpoint: c.dataset.openCheckpoint || null,
+                reviewMsg: c.dataset.reviewMsg || null, reviewState: c.dataset.reviewState || null });
   }
   return { list, index };
 }
@@ -279,7 +337,8 @@ export function init(apiBase) {
     e.preventDefault();
     e.stopPropagation();
     const { list, index } = _groupFrom(a);
-    open(a.dataset.openFile, { workspace: a.dataset.openWorkspace || null, mode: a.dataset.openMode || 'file', list, index });
+    open(a.dataset.openFile, { workspace: a.dataset.openWorkspace || null, mode: a.dataset.openMode || 'file', list, index,
+                               checkpoint: a.dataset.openCheckpoint || null, reviewMsg: a.dataset.reviewMsg || null, reviewState: a.dataset.reviewState || null });
   });
 }
 

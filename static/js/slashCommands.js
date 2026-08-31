@@ -1257,26 +1257,49 @@ async function _cmdToggleDoc(args, ctx) {
 // Workspace: confine the agent's file/shell tools to a folder. Not a boolean -
 // show / set <path> / clear / pick (open the directory browser).
 function _cmdAgents(args) {
-  const raw = (args || []).join(' ').trim();
+  let raw = (args || []).join(' ').trim();
+  // Flags: --review (a reviewer worker runs over the combined result),
+  // --serial (one worker after another instead of in parallel).
+  const flags = { review: false, parallel: true };
+  raw = raw.replace(/(^|\s)--(review|reviewer|serial|sequential)\b/g, (_m, _sp, f) => {
+    if (f === 'review' || f === 'reviewer') flags.review = true;
+    else flags.parallel = false;
+    return ' ';
+  }).trim();
   const parts = raw.split(/\s*(?:\||;;|\n)\s*/).map(s => s.trim()).filter(Boolean);
   if (!parts.length) {
-    slashReply('Usage: <code>/agents task one | task two | task three</code> — each part becomes one sub-agent with its own chat, all working in the current workspace. Results come back as an evidence-based report (files each worker really changed).');
+    slashReply('Usage: <code>/agents task one | task two | task three</code> — each part becomes one sub-agent with its own chat, all working in the current workspace. '
+      + 'Prefix a task with <code>[file1, file2]</code> to give that worker exclusive ownership of those files (other workers cannot write them), and with <code>{model}</code> to run it on another model of the same endpoint. '
+      + 'Add <code>--review</code> for a reviewer worker that checks the combined result afterwards, <code>--serial</code> to run the tasks one after another. '
+      + 'Results come back as an evidence-based report (files each worker really changed).');
     return true;
   }
   if (parts.length > 4) {
     slashReply('At most 4 sub-agents per call. Merge some tasks or run <code>/agents</code> again afterwards.');
     return true;
   }
-  const tasks = parts.map((p, i) => ({ name: p.length > 40 ? p.slice(0, 38) + '…' : p, instruction: p }));
-  const payload = JSON.stringify({ tasks, parallel: true });
+  const tasks = parts.map((p) => {
+    const m = p.match(/^\s*(?:\{[^}]+\}\s*)?(?:\[[^\]]+\]\s*)?(.*)$/s);
+    const bare = (m && m[1] ? m[1] : p).trim() || p;
+    return { name: bare.length > 40 ? bare.slice(0, 38) + '…' : bare, instruction: p };
+  });
+  return delegateTasks(tasks, flags);
+}
+
+/** Send a delegation (used by /agents and by the "Re-run" button of a worker
+ *  row). `tasks` = [{name, instruction, files?, model?}]. */
+export function delegateTasks(tasks, { parallel = true, review = false } = {}) {
+  if (!Array.isArray(tasks) || !tasks.length) return true;
+  const payload = JSON.stringify({ tasks, parallel, reviewer: !!review });
   // The chat bubble shows a compact line; the full delegation instruction
   // travels as the `delegate_tasks` form field and the server swaps it in for
   // the model only (routes/chat_routes.py), so history stays readable.
-  const msg = `🤖 ${tasks.length} sub-agent${tasks.length === 1 ? '' : 's'}: ${parts.join('  |  ')}`;
+  const label = tasks.map(t => (t.model ? `{${t.model}} ` : '') + (Array.isArray(t.files) && t.files.length ? `[${t.files.join(', ')}] ` : '') + (t.instruction || t.name)).join('  |  ');
+  const msg = `🤖 ${tasks.length} sub-agent${tasks.length === 1 ? '' : 's'}${review ? ' + reviewer' : ''}${parallel ? '' : ' (serial)'}: ${label}`;
   const msgInput = document.getElementById('message');
   if (!msgInput) return true;
   try { window.__odysseusDelegateTasks = payload; } catch (_) {}
-  // We are running INSIDE chat.js' send handler (slash dispatch): it still
+  // We may be running INSIDE chat.js' send handler (slash dispatch): it still
   // holds the send-in-flight flag and clears the textarea right after we
   // return, so the real send has to be queued for the next tick.
   setTimeout(() => {
@@ -1301,6 +1324,30 @@ function _cmdAgents(args) {
     if (form && form.requestSubmit) form.requestSubmit();
     else if (form) form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
   }, 0);
+  return true;
+}
+
+async function _cmdScorecard(args) {
+  const a = (args || []).map(x => String(x).toLowerCase());
+  if (a[0] === 'clear' || a[0] === 'reset') {
+    try {
+      const r = await fetch(`${API_BASE}/api/scorecard`, { method: 'DELETE', credentials: 'same-origin' });
+      slashReply(r.ok ? 'Scorecard cleared.' : `Could not clear the scorecard (HTTP ${r.status}).`);
+    } catch (e) { slashReply(`Could not clear the scorecard: ${e}`); }
+    return true;
+  }
+  const days = Number.isFinite(parseFloat(a[0])) ? parseFloat(a[0]) : 30;
+  const lang = (navigator.language || '').toLowerCase().startsWith('es') ? 'es' : 'en';
+  try {
+    const r = await fetch(`${API_BASE}/api/scorecard/table?days=${encodeURIComponent(days)}&language=${lang}`, { credentials: 'same-origin' });
+    if (!r.ok) { slashReply(`Scorecard unavailable (HTTP ${r.status}).`); return true; }
+    const data = await r.json();
+    const md = data.markdown || '';
+    let html = '';
+    try { html = window.marked ? window.marked.parse(md) : ''; } catch (_) { html = ''; }
+    if (!html) html = `<pre>${md.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))}</pre>`;
+    slashReply(`<div class="scorecard-table"><p><b>Model scorecard</b> — agent turns of the last ${days} day${days === 1 ? '' : 's'} (verified = the harness confirmed the claims; asks = the model asked you instead of guessing; tests / review = project tests and the independent diff review when they ran). <code>/scorecard 7</code>, <code>/scorecard clear</code>.</p>${html}</div>`);
+  } catch (e) { slashReply(`Scorecard unavailable: ${e}`); }
   return true;
 }
 
@@ -5978,10 +6025,18 @@ const COMMANDS = {
   agents: {
     alias: ['swarm', 'delegate'],
     category: 'Agent',
-    help: 'Run several sub-agents in parallel on separate tasks (same workspace)',
+    help: 'Run several sub-agents in parallel on separate tasks (same workspace); [files] = exclusive ownership, {model} = per-task model, --review = reviewer worker',
     handler: _cmdAgents,
     noUserBubble: true,
-    usage: '/agents task one | task two | task three',
+    usage: '/agents [--review] [--serial] [a.py] task one | {model} task two',
+  },
+  scorecard: {
+    alias: ['models-score', 'score'],
+    category: 'Agent',
+    help: 'Per-model reliability table of your agent turns (verified rate, questions, tests, review, time)',
+    handler: _cmdScorecard,
+    noUserBubble: true,
+    usage: '/scorecard [days | clear]',
   },
   usage: {
     alias: ['sys', 'gpu'],
@@ -6726,6 +6781,8 @@ const slashCommands = {
   slashReply,
   typewriterReply,
   typewriterInto,
+  delegateTasks,
 };
+try { window.slashCommandsModule = slashCommands; } catch (_) {}
 
 export default slashCommands;
