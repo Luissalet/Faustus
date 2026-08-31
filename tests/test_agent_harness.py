@@ -426,3 +426,32 @@ def test_path_tokens_take_the_whole_extension():
     assert h.extract_path_tokens("leyendo data.json con _load(). Solo server.py.") == ["data.json", "server.py"]
     assert h.extract_path_tokens("abre config.jsonc, readme.markdown y main.pyc; utils.py sí") == ["config.jsonc", "utils.py"]
     assert h.extract_path_tokens("componentes app.jsx, index.tsx y styles.scss") == ["app.jsx", "index.tsx", "styles.scss"]
+
+
+def test_at_mention_paths_are_not_read_as_missing_files(tmp_path):
+    """`@src/a.py` is the composer's file-mention sigil (src/file_mentions.py).
+
+    Left on the token, every mention looked like a user-named file that does
+    not exist, so a mentioned-and-edited file tripped the target-substitution
+    round it exists to prevent.
+    """
+    (tmp_path / "static" / "js").mkdir(parents=True)
+    (tmp_path / "static" / "js" / "projects.js").write_text("x\n", encoding="utf-8")
+    assert h.extract_path_tokens("arregla @static/js/projects.js ya") == ["static/js/projects.js"]
+
+    led = h.TurnLedger(str(tmp_path), "arregla @static/js/projects.js")
+    assert led.user_missing_paths() == []
+    led.record("edit_file", '{"path": "static/js/projects.js", "old_string": "x", "new_string": "y"}',
+               {"output": "Edited", "exit_code": 0}, 1)
+    assert led.check_target_substitution("Hecho, he cambiado projects.js.") is None
+
+
+def test_a_mention_of_a_file_that_really_is_missing_still_fires(tmp_path):
+    (tmp_path / "static" / "js").mkdir(parents=True)
+    (tmp_path / "static" / "js" / "projects.js").write_text("x\n", encoding="utf-8")
+    led = h.TurnLedger(str(tmp_path), "arregla @static/js/cards.js")
+    assert led.user_missing_paths() == ["static/js/cards.js"]
+    led.record("edit_file", '{"path": "static/js/projects.js", "old_string": "x", "new_string": "y"}',
+               {"output": "Edited", "exit_code": 0}, 1)
+    chk = led.check_target_substitution("Hecho, arreglado.")
+    assert chk and chk["missing"] == ["static/js/cards.js"]

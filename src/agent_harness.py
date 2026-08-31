@@ -330,6 +330,12 @@ def extract_path_tokens(text: str) -> List[str]:
     seen: Set[str] = set()
     for m in PATH_TOKEN_RE.finditer(text or ""):
         tok = m.group(1).strip().strip(".,;:()[]{}<>\"'`")
+        # A leading "@" is the composer's file-mention sigil (src/file_mentions.py),
+        # not part of the path. Left on, "@src/app.py" never matches the workspace
+        # index and every mention would look like a user-named missing file — the
+        # exact false positive that fires check_target_substitution.
+        if tok.startswith("@") and len(tok) > 1:
+            tok = tok.lstrip("@")
         low = tok.lower()
         if not tok or low in _PATH_STOPWORDS or low in seen:
             continue
