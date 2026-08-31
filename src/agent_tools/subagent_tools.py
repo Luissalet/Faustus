@@ -210,6 +210,30 @@ def parse_delegation_args(content: str) -> Dict[str, Any]:
     if not isinstance(data, dict):
         raise ValueError("delegate_agents: arguments must be a JSON object")
     tasks_raw = data.get("tasks")
+    if isinstance(tasks_raw, str) and tasks_raw.strip().startswith(("[", "{")):
+        # qwen3.5 (native tool calls) sometimes double-encodes the list —
+        # {"tasks": "[{...}, {...}]"} — or even stuffs the rest of the object
+        # into that string: {"tasks": "[{...}], \"parallel\": true, \"reviewer\": true}"}.
+        # Seen live on the bench: it cost a failed call, a correction round
+        # (which dropped the reviewer flag) and a second approval.
+        text = tasks_raw.strip()
+        try:
+            parsed, end = json.JSONDecoder().raw_decode(text)
+        except json.JSONDecodeError:
+            parsed, end = None, 0
+        if parsed is not None:
+            tasks_raw = [parsed] if isinstance(parsed, dict) else parsed
+            rest = text[end:].strip().lstrip(",").strip()
+            if rest.endswith("}") and not rest.startswith("{"):
+                rest = "{" + rest
+            if rest.startswith("{"):
+                try:
+                    extra = json.loads(rest)
+                except json.JSONDecodeError:
+                    extra = None
+                if isinstance(extra, dict):
+                    for k, v in extra.items():
+                        data.setdefault(k, v)
     if not isinstance(tasks_raw, list) or not tasks_raw:
         raise ValueError("delegate_agents: 'tasks' must be a non-empty list")
     tasks: List[Dict[str, Any]] = []

@@ -29,6 +29,22 @@ def test_parse_inline_files_and_model_prefixes():
     assert args["reviewer"] is True
 
 
+def test_parse_accepts_a_double_encoded_tasks_list():
+    """qwen3.5 (native tool calls) sent {"tasks": "[{...}]"} on the bench —
+    the list JSON-encoded as a string. Accept it instead of failing the call."""
+    inner = [{"name": "a", "instruction": "do a", "files": ["a.py"]}, {"name": "b", "instruction": "do b"}]
+    args = st.parse_delegation_args(json.dumps({"tasks": json.dumps(inner), "parallel": True, "reviewer": True}))
+    assert [t["name"] for t in args["tasks"]] == ["a", "b"] and args["tasks"][0]["files"] == ["a.py"]
+    one = st.parse_delegation_args(json.dumps({"tasks": json.dumps(inner[0])}))
+    assert len(one["tasks"]) == 1
+    # The exact live shape: the rest of the object inside the string.
+    stuffed = json.dumps({"tasks": json.dumps(inner) + ', "parallel": true, "reviewer": true}'})
+    args = st.parse_delegation_args(stuffed)
+    assert [t["name"] for t in args["tasks"]] == ["a", "b"] and args["reviewer"] is True and args["parallel"] is True
+    with pytest.raises(ValueError):
+        st.parse_delegation_args(json.dumps({"tasks": "not a list"}))
+
+
 def test_reviewer_defaults_to_setting(monkeypatch):
     import src.settings as settings
     monkeypatch.setattr(settings, "get_setting", lambda k, d=None: True if k == "agent_subagent_reviewer" else d)
