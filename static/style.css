@@ -42403,6 +42403,16 @@ body:has(.sidebar.right-side) .project-active-pill { right: 12px; }
 .sys-usage-pill.warm { border-color: var(--warn, #f0ad4e); }
 .sys-usage-pill.hot { border-color: var(--red, #e06c75); }
 .sys-usage-pill.unavailable { opacity: .5; }
+.sys-usage-pill.spill { border-color: var(--red, #e06c75); opacity: 1; }
+.su-warn {
+  margin-top: 5px; padding: 6px 8px; border-radius: 6px; line-height: 1.35;
+  border: 1px solid var(--red, #e06c75);
+  background: color-mix(in srgb, var(--red, #e06c75) 12%, var(--panel));
+}
+.su-warn-steps { margin-top: 4px; opacity: .8; }
+.su-warn code { font-size: 11px; }
+.mc-fit { display: block; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); line-height: 1.35; }
+.mc-fit-row { margin-top: 6px; }
 .su-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--color-muted, #888); }
 .su-dot.busy { background: var(--color-success, #4caf50); animation: agent-progress-pulse 1s ease-in-out infinite; }
 .sys-usage-panel {

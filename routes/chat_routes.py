@@ -421,6 +421,12 @@ def _parse_gen_overrides(raw) -> Dict[str, Any]:
             nc = int(data["num_ctx"])
             if 512 <= nc <= 1048576:
                 out["num_ctx"] = nc
+        # Layers to keep on the GPU. 0 is meaningful (run it all on the CPU),
+        # and the fit advisor is the thing that normally sets it.
+        if data.get("num_gpu") not in (None, ""):
+            ng = int(data["num_gpu"])
+            if 0 <= ng <= 1024:
+                out["num_gpu"] = ng
         if data.get("seed") not in (None, ""):
             out["seed"] = int(data["seed"])
         if data.get("repeat_penalty") not in (None, ""):

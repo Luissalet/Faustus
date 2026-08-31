@@ -1589,6 +1589,70 @@ document.addEventListener('click', (ev) => {
   else _bkVerify(t.getAttribute('data-backup-verify'));
 });
 
+// /researchfit — Deep Research settings for the card this actually runs on
+// (FAUSTUS). The seven research_* numbers default to values tuned for a fast
+// hosted model; on a local GPU they produce empty runs that read like the web
+// went missing. Also reports what would make a run return nothing however well
+// it is tuned (no reachable search provider, no model).
+function _rfLabel(key) {
+  return String(key || '').replace(/^research_/, '').replace(/_seconds$/, ' (s)').replace(/_/g, ' ');
+}
+
+async function _cmdResearchFit(args) {
+  const a = (args || []).map(x => String(x).toLowerCase());
+  if (a[0] === 'apply') return _rfApply(a[1] === 'fixes');
+  try {
+    const r = await fetch(`${API_BASE}/api/research/preset`, { credentials: 'same-origin' });
+    if (!r.ok) { slashReply(`Preset unavailable (HTTP ${r.status}).`); return true; }
+    const d = await r.json();
+    const hw = d.gpu_name
+      ? `${_bkEsc(d.gpu_name)}${d.vram_gb ? ` · ${_bkEsc(String(d.vram_gb))} GB VRAM` : ''}`
+      : (d.vram_gb ? `${_bkEsc(String(d.vram_gb))} GB VRAM` : 'GPU not detected');
+    const rows = (d.changes || []).map(c => (
+      `<li><code>${_bkEsc(_rfLabel(c.key))}</code>: ${_bkEsc(String(c.from))} → <b>${_bkEsc(String(c.to))}</b></li>`
+    )).join('');
+    const blockers = (d.blockers || []).map(b => (
+      `<li>⚠ ${_bkEsc(b.text)}${b.fix_label ? ` — <i>${_bkEsc(b.fix_label)}</i>` : ''}</li>`
+    )).join('');
+    const canFix = (d.blockers || []).some(b => b.fix);
+    slashReply(
+      `<div class="research-fit"><p><b>Profile «${_bkEsc(d.tier)}»</b> — ${hw}</p>` +
+      `<p>${_bkEsc(d.note)}</p>` +
+      (rows ? `<ul class="harness-list">${rows}</ul>` : '<p>Settings already match this profile.</p>') +
+      (blockers ? `<ul class="harness-list">${blockers}</ul>` : '') +
+      `<p>` +
+      (rows ? `<button type="button" class="harness-btn harness-btn-mini" data-research-apply="plain">Apply profile</button> ` : '') +
+      (canFix ? `<button type="button" class="harness-btn harness-btn-mini" data-research-apply="fixes">Apply + fix search</button>` : '') +
+      `</p></div>`
+    );
+  } catch (e) { slashReply(`Preset unavailable: ${_bkEsc(e)}`); }
+  return true;
+}
+
+async function _rfApply(includeFixes) {
+  try {
+    const r = await fetch(`${API_BASE}/api/research/preset/apply`, {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ include_fixes: !!includeFixes }),
+    });
+    if (!r.ok) { slashReply(`Could not apply (HTTP ${r.status}).`); return true; }
+    const d = await r.json();
+    const keys = Object.keys(d.written || {});
+    slashReply(keys.length
+      ? `Applied the «${_bkEsc(d.tier)}» profile — ${keys.length} setting${keys.length === 1 ? '' : 's'} updated${includeFixes ? ', search provider included' : ''}.`
+      : 'Nothing to change — settings already match.');
+  } catch (e) { slashReply(`Could not apply: ${_bkEsc(e)}`); }
+  return true;
+}
+
+document.addEventListener('click', (ev) => {
+  const t = ev.target && ev.target.closest ? ev.target.closest('[data-research-apply]') : null;
+  if (!t) return;
+  ev.preventDefault();
+  _rfApply(t.getAttribute('data-research-apply') === 'fixes');
+});
+
 // /versions [n | clear] — the tails this chat lost to an edit or a
 // "regenerate from here", newest first, each with a Restore button. Editing a
 // message truncates the chat; src/chat_versions.py keeps what was deleted so a
@@ -6371,6 +6435,14 @@ const COMMANDS = {
     handler: _cmdAgents,
     noUserBubble: true,
     usage: '/agents [--review] [--serial] [a.py] task one | {model} task two',
+  },
+  researchfit: {
+    alias: ['deepfit', 'researchpreset'],
+    category: 'Agent',
+    help: 'Deep Research settings matched to this machine: token budget, extraction concurrency and timeouts for the detected VRAM, plus what would make a run come back empty',
+    handler: _cmdResearchFit,
+    noUserBubble: true,
+    usage: '/researchfit [apply [fixes]]',
   },
   backup: {
     alias: ['backups'],

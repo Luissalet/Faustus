@@ -2574,8 +2574,9 @@ def _stream_target_url(url: str) -> str:
 # Sampling/runtime knobs a user may pin per chat session (model controls in
 # the chat UI / slash commands). Only these keys are honoured; anything else is
 # dropped so a client cannot smuggle arbitrary provider fields.
-GEN_OVERRIDE_KEYS = frozenset({"top_p", "top_k", "seed", "think", "num_ctx", "repeat_penalty",
-                               "presence_penalty", "frequency_penalty", "reasoning_effort"})
+GEN_OVERRIDE_KEYS = frozenset({"top_p", "top_k", "seed", "think", "num_ctx", "num_gpu",
+                               "repeat_penalty", "presence_penalty", "frequency_penalty",
+                               "reasoning_effort"})
 
 
 def _clean_gen_overrides(overrides: Optional[Dict]) -> Dict:
@@ -2588,7 +2589,7 @@ def _clean_gen_overrides(overrides: Optional[Dict]) -> Dict:
         try:
             if k in ("top_p", "repeat_penalty", "presence_penalty", "frequency_penalty"):
                 out[k] = float(v)
-            elif k in ("top_k", "seed", "num_ctx"):
+            elif k in ("top_k", "seed", "num_ctx", "num_gpu"):
                 out[k] = int(v)
             elif k == "think":
                 out[k] = bool(v) if not isinstance(v, str) else v.strip().lower() in ("1", "true", "on", "yes")
@@ -2619,7 +2620,7 @@ def _apply_gen_overrides_openai(payload: Dict, overrides: Dict, url: str) -> Non
 def _apply_gen_overrides_ollama(payload: Dict, overrides: Dict) -> None:
     """Apply pinned sampling params to a native Ollama /api/chat payload."""
     options = payload.setdefault("options", {})
-    for k in ("top_p", "top_k", "seed", "num_ctx", "repeat_penalty", "presence_penalty", "frequency_penalty"):
+    for k in ("top_p", "top_k", "seed", "num_ctx", "num_gpu", "repeat_penalty", "presence_penalty", "frequency_penalty"):
         if k in overrides:
             options[k] = overrides[k]
     if "think" in overrides:
@@ -2684,7 +2685,7 @@ def _route_for_gen_overrides(url: str, gen_overrides: Optional[Dict], model: str
     ov = gen_overrides if isinstance(gen_overrides, dict) else {}
     # top_k / repeat_penalty / num_ctx are Ollama `options` with no OpenAI
     # equivalent either — only the native payload can carry them.
-    if ov.get("think") is not None or any(k in ov for k in ("top_k", "repeat_penalty", "num_ctx")):
+    if ov.get("think") is not None or any(k in ov for k in ("top_k", "repeat_penalty", "num_ctx", "num_gpu")):
         return _ollama_native_url_for_compat(url)
     # Default suppression: only for models Ollama itself reports as thinking-
     # capable. A name match alone (qwen3-coder matches "qwen3") must not move

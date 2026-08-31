@@ -12,7 +12,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
-from core.middleware import INTERNAL_TOOL_USER
+from core.middleware import INTERNAL_TOOL_USER, require_admin
 from src.endpoint_resolver import resolve_endpoint
 from src.auth_helpers import _auth_disabled, get_current_user
 from src.owner_identity import REQUEST_SENTINEL_OWNERS
@@ -779,5 +779,62 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
             "name": new_name,
             "source_count": len(sources),
         }
+
+    # ── hardware presets (FAUSTUS) ───────────────────────────────────────────
+    # Roadmap: "Deep Research model presets by hardware." The seven research_*
+    # numbers default to values tuned for a fast hosted model; on a local card
+    # they produce empty runs that look like the web went missing. See
+    # src/research_presets for the tiers and the blocker list.
+
+    @router.get("/api/research/preset")
+    async def research_preset(request: Request):
+        require_admin(request)
+        import asyncio as _asyncio
+
+        from src.research_presets import detect_hardware, recommend
+        from src.settings import load_settings
+        settings = load_settings() or {}
+        hardware = await _asyncio.to_thread(detect_hardware)
+
+        searxng_ok = None
+        if str(settings.get("search_provider") or "searxng") == "searxng":
+            try:
+                from src.service_health import searxng_health
+                probe = await _asyncio.to_thread(searxng_health, settings)
+                searxng_ok = probe.get("status") in ("ok", "disabled")
+            except Exception:
+                searxng_ok = None  # probe unavailable: do not invent a blocker
+
+        return recommend(settings, vram_gb=hardware.get("vram_gb"),
+                         ram_gb=hardware.get("ram_gb"),
+                         gpu_name=hardware.get("gpu_name"),
+                         searxng_ok=searxng_ok)
+
+    @router.post("/api/research/preset/apply")
+    async def research_preset_apply(request: Request):
+        """Apply the recommended tier, optionally with the blocker fixes."""
+        require_admin(request)
+        import asyncio as _asyncio
+
+        from src.research_presets import apply_patch, detect_hardware, recommend
+        from src.settings import load_settings
+        body = {}
+        try:
+            body = await request.json()
+        except Exception:
+            pass
+        settings = load_settings() or {}
+        hardware = await _asyncio.to_thread(detect_hardware)
+        rec = recommend(settings, vram_gb=hardware.get("vram_gb"),
+                        ram_gb=hardware.get("ram_gb"),
+                        gpu_name=hardware.get("gpu_name"))
+        patch = dict(rec["patch"])
+        if body.get("include_fixes"):
+            for blocker in rec["blockers"]:
+                if blocker.get("fix"):
+                    patch.update(blocker["fix"])
+        result = apply_patch(patch)
+        result["tier"] = rec["tier"]
+        return result
 
     return router

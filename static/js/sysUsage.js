@@ -36,6 +36,7 @@ function untilText(iso) {
   return `${(s / 3600).toFixed(1)} h left`;
 }
 function meterClass(p) { return p == null ? '' : p >= 90 ? 'hot' : p >= 70 ? 'warm' : ''; }
+function mbytes(bytes) { return bytes == null ? '—' : Math.round(bytes / 1048576).toLocaleString(); }
 
 function _ensureEls() {
   if (_pill && document.body.contains(_pill)) return;
@@ -100,13 +101,18 @@ function render() {
   const gpu = (d.gpu && d.gpu[0]) || null;
   const model = (d.ollama && d.ollama.models && d.ollama.models[0]) || null;
   const bits = [];
+  // Weights paging into shared system memory is the one failure every other
+  // gauge hides: VRAM, GPU% and `ollama ps` all keep reading healthy while the
+  // model crawls over PCIe. Say it on the pill, not just in the panel.
+  const spill = !!(d.gpu_mem && d.gpu_mem.ollama && d.gpu_mem.ollama.spilling);
   if (gpu) {
     const vramPct = gpu.mem_total ? (gpu.mem_used / gpu.mem_total) * 100 : null;
     bits.push(`GPU ${pct(gpu.util)}`);
     bits.push(`${mib2gb(gpu.mem_used)}/${mib2gb(gpu.mem_total)}G`);
     if (gpu.temp != null) bits.push(`${Math.round(gpu.temp)}°`);
-    _pill.className = `sys-usage-pill ${meterClass(Math.max(gpu.util || 0, vramPct || 0))}`;
+    _pill.className = `sys-usage-pill ${meterClass(Math.max(gpu.util || 0, vramPct || 0))}${spill ? ' spill' : ''}`;
   }
+  if (spill) bits.push('⚠ PCIe spill');
   if (model) bits.push(`${(model.name || '').split(':')[0]} ${model.gpu_pct}%↑GPU`);
   else if (d.ollama && d.ollama.reachable) bits.push('no model');
   else if (d.ollama) bits.push('ollama offline');
@@ -146,6 +152,21 @@ function renderPanel(d) {
       `<div class="su-row"><span class="su-label">Keep-alive</span><span class="su-val">${esc(untilText(m.expires_at)) || '—'}</span></div></div>`).join('')
       : `<div class="su-muted">${o.reachable ? 'No model loaded (ollama ps is empty).' : 'Cannot reach Ollama.'}</div>`) +
     `</div>`);
+  const gm = d.gpu_mem || {};
+  if (gm.supported) {
+    const om = gm.ollama || {};
+    const fb = d.sysmem_fallback || {};
+    const frac = Math.round((om.shared_fraction || 0) * 100);
+    rows.push(`<div class="su-section"><div class="su-h">Shared GPU memory <span class="su-muted">system RAM, over PCIe</span></div>` +
+      `<div class="su-row"><span class="su-label">Runner</span><span class="su-val">${mbytes(om.shared)} MB · ${frac}% of its GPU memory</span></div>` +
+      `<div class="su-row"><span class="su-label">Everything</span><span class="su-val">${mbytes(gm.total_shared)} MB</span></div>` +
+      (om.spilling
+        ? `<div class="su-warn"><b>Weights are paging over PCIe.</b> The card ran out of room and the CUDA driver put part of the model in system memory instead of failing, so it is being read at ~25 GB/s instead of ~500. Nothing else shows this: VRAM, GPU% and <code>ollama ps</code> all still look healthy.` +
+          (fb.steps && fb.steps.length ? `<div class="su-warn-steps">${fb.steps.map(s => `<div>· ${esc(s)}</div>`).join('')}</div>` : '') +
+          `<div class="su-warn-steps"><div>· Or open the model settings and use <b>Fit to VRAM</b> to shrink the context instead.</div></div></div>`
+        : `<div class="su-muted">A CUDA process always parks a few hundred MB here — that is not a spill.</div>`) +
+      `</div>`);
+  }
   if (d.ram && d.ram.total) {
     rows.push(`<div class="su-section"><div class="su-h">Host</div>` +
       bar('RAM', d.ram.used, d.ram.total, '', `${gb(d.ram.used)} / ${gb(d.ram.total)} GB (${pct(d.ram.percent)})`) +

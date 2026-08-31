@@ -19,6 +19,7 @@ let _pop = null;
 let _lastRound = null;          // last round_info payload
 let _modelInfoCache = new Map(); // model → /api/system/ollama/model response
 let _usageSnapshot = null;       // last /api/system/usage payload (shared by sysUsage.js)
+let _lastFit = null;             // last /api/system/vram-fit answer, per model
 
 const STORE_KEY = 'odysseus-gen-overrides';
 const GLOBAL = '*';
@@ -254,7 +255,9 @@ function _renderPopover() {
     ['auto', 'on', 'off'].map(v => `<button type="button" data-v="${v}" class="${think === v ? 'on' : ''}">${v}</button>`).join('') +
     `</div></div>`);
   rows.push(`<div class="mc-row mc-actions"><button type="button" id="mc-reset" class="mc-btn">Reset to preset</button>` +
+    `<button type="button" id="mc-fit" class="mc-btn" title="Work out the context and layer split that keep this model on the GPU">Fit to VRAM</button>` +
     `<label class="mc-muted"><input type="checkbox" id="mc-global"> apply to all chats</label></div>`);
+  rows.push(`<div class="mc-fit" id="mc-fit-out" hidden></div>`);
   rows.push(`<div class="mc-row mc-muted mc-hint">Slash: <code>/temp 0.3</code> · <code>/maxtokens 8192</code> · <code>/topp 0.9</code> · <code>/think on|off|auto</code> · <code>/gen reset</code></div>`);
   pop.innerHTML = rows.join('');
 
@@ -273,6 +276,64 @@ function _renderPopover() {
     setOverride('think', v === 'auto' ? null : (v === 'on'), { global: isGlobal() });
   });
   pop.querySelector('#mc-reset').addEventListener('click', () => resetOverrides({ global: isGlobal() }));
+  pop.querySelector('#mc-fit').addEventListener('click', () => _runFit(model));
+  if (_lastFit && _lastFit.model === model) _paintFit();
+}
+
+// ── fit to VRAM ──────────────────────────────────────────────────────────────
+// The context window is the knob nobody thinks about: the weights are fixed by
+// the file, the KV cache grows with num_ctx, and when the two stop fitting the
+// driver quietly pages the difference over PCIe. The server works out what
+// fits (measuring the loaded model when it can); this just applies it.
+
+function _gbOf(bytes) { return (Number(bytes || 0) / 1073741824).toFixed(1); }
+
+async function _runFit(model) {
+  const out = _pop && _pop.querySelector('#mc-fit-out');
+  if (!out || !model) return;
+  out.hidden = false;
+  out.innerHTML = '<span class="mc-muted">working it out…</span>';
+  try {
+    const r = await fetch(`${API_BASE}/api/system/vram-fit?model=${encodeURIComponent(model)}`, { credentials: 'same-origin' });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    _lastFit = await r.json();
+    _paintFit();
+  } catch (e) {
+    _lastFit = null;
+    out.innerHTML = `<span class="mc-muted">could not work it out: ${esc(e && e.message ? e.message : e)}</span>`;
+  }
+}
+
+function _paintFit() {
+  const out = _pop && _pop.querySelector('#mc-fit-out');
+  const f = _lastFit;
+  if (!out || !f) return;
+  out.hidden = false;
+  const lines = [];
+  lines.push(`<div><b>${f.fits ? 'Fits on the GPU' : 'Does not fit whole'}</b>` +
+    `<span class="mc-muted"> — needs ${_gbOf(f.estimated_vram_bytes)} GB of the ${_gbOf(f.budget_bytes)} GB free` +
+    `${f.kv_source === 'measured' ? ', measured' : ', estimated'}</span></div>`);
+  for (const s of f.steps || []) lines.push(`<div class="mc-muted">· ${esc(s)}</div>`);
+  const bits = [`num_ctx ${f.num_ctx}`];
+  if (f.num_gpu != null) bits.push(`num_gpu ${f.num_gpu}`);
+  lines.push(`<div class="mc-fit-row"><button type="button" id="mc-fit-apply" class="mc-btn">Apply ${esc(bits.join(' · '))}</button></div>`);
+  if (f.kv_cache_type) {
+    lines.push(`<div class="mc-muted">KV cache: <code>OLLAMA_KV_CACHE_TYPE=${esc(f.kv_cache_type)}</code> — Ollama reads that at startup, so it needs a restart of the server, not of the chat.</div>`);
+  }
+  if (f.gpu_overhead_bytes) {
+    lines.push(`<div class="mc-muted">Something else is on the card: <code>OLLAMA_GPU_OVERHEAD=${f.gpu_overhead_bytes}</code> stops Ollama filling it to the brim (also a server restart).</div>`);
+  }
+  out.innerHTML = lines.join('');
+  const apply = out.querySelector('#mc-fit-apply');
+  if (apply) {
+    apply.addEventListener('click', () => {
+      setOverride('num_ctx', f.num_ctx);
+      if (f.num_gpu != null) setOverride('num_gpu', f.num_gpu);
+      // The runner keeps the context it was loaded with, so this lands on the
+      // next load of the model rather than on the next message.
+      out.innerHTML = `<div class="mc-muted">Pinned for this chat. Ollama applies it when the model is next loaded — <code>/unload</code> or wait for the keep-alive to expire to make that now.</div>`;
+    });
+  }
 }
 
 // ── slash commands ───────────────────────────────────────────────────────────
