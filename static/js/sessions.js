@@ -635,6 +635,10 @@ function buildFolderSubmenu(sessionId, currentFolder, dropdown) {
 function createSessionItem(s) {
   const div = document.createElement('div');
   div.className = 'list-item session-item';
+  // Sub-agent worker chats (delegate_agents) read as children of the chat that
+  // spawned them: indented, slightly smaller, so a burst of workers does not
+  // look like a burst of conversations.
+  if (s.folder === 'Agents' || /^🤖 /.test(String(s.name || ''))) div.classList.add('session-item-worker');
   div.setAttribute('role', 'option');
   div.setAttribute('tabindex', '-1');
   div.setAttribute('data-session-id', s.id);
