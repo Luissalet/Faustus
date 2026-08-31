@@ -4,7 +4,7 @@
 
 - Base del fork: commit upstream `c9dd68d8` (27-08-2026, "refactor(docs): separate Pages site source").
 - Ramas: `feat/projects` (principal, `D:\LocalAI\odysseus`) y `feat/reliability` (desarrollo, worktree `D:\LocalAI\odysseus-dev`, instancia de pruebas en el puerto 7001). La rama de desarrollo se fusiona en la principal por fast-forward.
-- Cifras a 31-08-2026 (21:00, tras fusionar en `feat/projects`): **121 commits**, 390 ficheros tocados, **+28.441 líneas** (−835); 33 módulos nuevos (20 de backend, 3 de rutas, 10 de frontend) + `scripts/faustus_rename.py`, 53 ficheros de tests nuevos. Suite completa: **6.218 tests en verde en Windows**, 66 saltados, 5 min 15 s (partía de 178 fallos ambientales); e2e Playwright **10/10** verificado en la tanda anterior.
+- Cifras a 31-08-2026 (22:20, en `feat/reliability`): **122 commits**, 391 ficheros tocados, **+28.606 líneas** (−835); 36 módulos nuevos (23 de backend, 3 de rutas, 10 de frontend) + `scripts/faustus_rename.py`, 54 ficheros de tests nuevos. Suite completa: **6.256 tests en verde en Windows**, 66 saltados, 5 min 16 s (partía de 178 fallos ambientales); e2e Playwright **10/10** verificado en la tanda anterior.
 - Máquina de referencia: RTX 4070 Ti 12 GB, 128 GB RAM, Windows 11, Ollama 0.33.x; modelos `qwen3-coder:30b`, `qwen3.5:9b`, `qwen3.8:27b`, `qwen3-coder-next`.
 
 ---
@@ -286,6 +286,43 @@ Los siete números de `research_*` vienen ajustados para un modelo alojado y rá
 
 ### Verificación
 **175 tests nuevos en 15 ficheros** (46 ficheros tocados, +4.780 líneas). Además de los de unidad, los de cableado: cada función nueva tiene un test que comprueba que **está enchufada**, porque el fallo que abre esta sección — un endpoint perfecto que nadie llama — es la forma más silenciosa de no entregar nada. Y los tres bugs reales de esta tanda (las dos conexiones SQLite filtradas, el `zlib.error` del tar truncado, el `?v=` olvidado) los encontraron los tests, no el uso.
+
+---
+
+## 9. Memoria compartida de GPU: el fallo que ningún otro indicador enseña (31-08-2026, noche)
+
+`nvidia-smi` solo conoce la memoria física de la tarjeta. Windows, además, deja que el driver coloque asignaciones de GPU en la RAM del sistema y las lea por PCIe — la *shared GPU memory* del Administrador de tareas, 102 GB de ella en esta máquina. Para inferencia eso son ~25 GB/s contra los ~500 GB/s de la GDDR6X y, como generar relee los pesos activos en cada token, una capa servida desde ahí cuesta unas 20 veces más. Lo grave no es la lentitud: es que **no se ve**. Cuando el *sysmem fallback* de CUDA atrapa una asignación que no cabe, el modelo carga igual, `nvidia-smi` marca la VRAM casi llena, `ollama ps` dice 100% GPU, la temperatura y el uso de GPU son normales — y el modelo va a una fracción de su velocidad. Todos los indicadores en verde y el rendimiento hundido.
+
+### 9.1 Medir el síntoma — `src/gpu_shared_memory.py`
+
+Contadores WDDM por proceso leídos con PDH vía `ctypes` (`\GPU Process Memory(*)\Shared Usage` y `Dedicated Usage`), una sola consulta para los dos y sin subprocesos: ~280 ms la primera vez (calentar PDH) y ~3 ms después, con caché de 2 s porque el widget refresca cada 1,5 s mientras genera.
+
+- **El runner de Ollama no se llama `ollama`.** En Windows es `llama-server.exe`, un proceso hijo. Filtrar por el nombre de Ollama encuentra el servidor y la app de bandeja — los dos que no tienen ni un byte de GPU — y se pierde al único que importa; hay que recorrer los hijos.
+- **El umbral está medido, no elegido.** Un proceso CUDA siempre aparca memoria de sistema (buffers de staging): con qwen3.5:9b entero en la 4070 Ti generando a 65 tok/s son 706 MB planos, el 7,7% de su huella, sin moverse durante toda la generación. Un umbral absoluto bajo daría alarma siempre, así que hacen falta las dos condiciones: más de 1 GiB **y** más del 15% de la huella del runner.
+- El `dedicated` de estos contadores es un *commitment* de WDDM, no lo que `nvidia-smi` llama "used": se vio un proceso declarando 7,7 GB "dedicados" mientras la tarjeta entera reportaba 1,6 GB en uso. Sirve para saber quién tiene la tarjeta, no para hacer cuentas — esas las hace el advisor con `ollama ps`.
+
+### 9.2 Arreglarlo donde Faustus sí manda — `src/vram_fit.py`, `GET /api/system/vram-fit`
+
+El ancho de la ventana de contexto es el mando en el que nadie piensa: los pesos los fija el fichero, la caché KV crece linealmente con `num_ctx`, y cuando la suma deja de caber es cuando el driver empieza a paginar.
+
+- La KV por token se **mide** cuando el modelo está cargado (`ollama ps`.size − el fichero en disco, dividido por el contexto con el que se cargó): 14.828 B/token reales para qwen3.5:9b. La alternativa —la fórmula sobre los metadatos GGUF— da 131.072 para ese mismo modelo, 9 veces de más, porque su GGUF no trae `attention.head_count_kv` y solo 1 de cada 4 bloques es de atención completa. Cuando únicamente hay estimación, el plan lo dice y la trata como cota superior.
+- Orden de preferencia deliberado: bajar el contexto → caché KV a `q8_0` → y solo entonces mover capas a la CPU. Las capas en CPU leen esa misma RAM sin el viaje por PCIe: es la versión honesta del mismo intercambio. Nunca sube el contexto por su cuenta; si sobra sitio lo informa (`max_ctx_that_fits`).
+- `num_gpu` se suma a los overrides por chat para poder aplicar el reparto de capas. `OLLAMA_KV_CACHE_TYPE` y `OLLAMA_GPU_OVERHEAD` solo se recomiendan: Ollama los lee al arrancar, no por petición.
+- Detalle que costaba 11 GB de error: el tamaño del fichero se busca por tag exacto. Emparejar por nombre base devolvía los 28 GB de `qwen3.8:27b-q8_0` al preguntar por `qwen3.8:27b-q4_K_M`, y todo el cálculo cuelga de ese número.
+
+### 9.3 El ajuste del driver: lo que **no** se puede automatizar — `src/nvidia_drs.py`
+
+Comprobado contra `nvapi64.dll` (driver 560.94), no supuesto: `NvAPI_Initialize`, `DRS_CreateSession`, `DRS_LoadSettings` y `DRS_GetBaseProfile` funcionan sin elevación, e incluso se puede crear un perfil por aplicación. Pero `DRS_EnumAvailableSettingIds` devuelve 102 ajustes y **la política de sysmem fallback no está entre ellos**: `0x10ECECC9` responde `NVAPI_SETTING_NOT_FOUND` tanto al leer como al escribir, porque el Panel de control la escribe por una vía privada. Y `DRS_SaveSettings` sin elevar devuelve `NVAPI_ACCESS_DENIED` de todas formas.
+
+El módulo reporta eso —`exposed: false`, `manual_only: true`, con el motivo— en lugar de fingir que puede, ofrece los pasos y abre el Panel de control. Que además es el ajuste que menos falta hace por aquí: Ollama calcula su propio presupuesto de VRAM y no le hace caso (issue abierto `ollama/ollama#16725`). Donde sí importa es en lo que usa PyTorch, como la generación de imágenes.
+
+### 9.4 Dónde se ve
+
+Cuatro sitios, porque el fallo es invisible por definición: la **pill de uso** se pone en rojo con `⚠ PCIe spill`; el **panel de uso** gana su sección *Shared GPU memory* con los dos números y la explicación; los **controles de modelo** tienen el botón **Fit to VRAM**, que calcula el plan y lo aplica; y la página de hardware del **Cookbook** lleva una tarjeta permanente, para que el número se vea antes de que sea un problema y no solo después.
+
+### Verificación
+
+38 tests nuevos en 4 ficheros: la regla del umbral contra la línea base medida, la aritmética del ajuste (incluida la estimación de atención híbrida), lo que el driver expone de verdad, y el cableado de las cuatro superficies —un endpoint perfecto que nadie llama sigue siendo no entregar nada—. En vivo: qwen3.5:9b cargado al 100% en GPU, 65 tok/s, 706 MB de shared constantes durante la generación → "no spill", que es la respuesta correcta.
 
 ---
 
