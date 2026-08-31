@@ -2958,6 +2958,16 @@ def setup_chat_routes(
         return {"stopped": stopped}
 
     # ------------------------------------------------------------------ #
+    # POST /api/chat/subagent/stop/{child_session_id} — stop ONE worker of a
+    # delegate_agents run (the coordinator keeps going with the others).
+    # ------------------------------------------------------------------ #
+    @router.post("/api/chat/subagent/stop/{child_session_id}")
+    async def subagent_stop(request: Request, child_session_id: str) -> Dict[str, Any]:
+        _verify_session_owner(request, child_session_id)
+        from src.agent_tools.subagent_tools import stop_worker
+        return {"stopped": stop_worker(child_session_id)}
+
+    # ------------------------------------------------------------------ #
     # GET /api/chat/activity — sidebar status dots in one call: sessions with a
     # detached run still going and sessions parked on an approval card. The
     # client keeps "finished but unread" itself (it knows what was viewed).

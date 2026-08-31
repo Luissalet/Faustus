@@ -260,6 +260,16 @@ _active_workspace_roots: contextvars.ContextVar = contextvars.ContextVar(
     "agent_active_workspace_roots", default=()
 )
 
+# Per-turn options the tool handlers may need (sampling overrides for
+# delegated workers, the project's harness knobs). Same task-local scoping.
+_active_turn_options: contextvars.ContextVar = contextvars.ContextVar(
+    "agent_active_turn_options", default=None
+)
+
+
+def get_active_turn_options() -> dict:
+    return dict(_active_turn_options.get() or {})
+
 
 def get_active_workspace() -> Optional[str]:
     """The folder the agent is confined to this turn, or None."""
@@ -622,11 +632,14 @@ async def _direct_fallback(
     }
 
     try:
+        _turn_opts = get_active_turn_options()
         ctx = {
             "progress_cb": progress_cb,
             "subproc_env": _subproc_env,
             "session_id": session_id,
             "owner": owner,
+            "gen_overrides": _turn_opts.get("gen_overrides"),
+            "harness_options": _turn_opts.get("harness_options"),
         }
 
         from src.agent_tools import TOOL_HANDLERS
@@ -681,6 +694,7 @@ async def execute_tool_block(
         | _MissingToolSecurityContext
     ) = _MISSING_TOOL_SECURITY_CONTEXT,
     exact_approval: Optional[ExactToolApproval] = None,
+    turn_options: Optional[dict] = None,
 ) -> Tuple[str, Dict]:
     """Execute a single tool block. Returns (description, result_dict).
 
@@ -786,6 +800,20 @@ async def execute_tool_block(
                 decision.reason or "Tool blocked by external-context policy.",
             )
 
+    # Sub-agent file locks (src/agent_tools/subagent_tools.py): a worker must
+    # not write a file another worker owns. Checked after the security gate,
+    # before dispatch; no-op outside a delegation.
+    try:
+        from src.agent_tools.subagent_tools import write_block_reason as _lock_reason, note_write_result as _lock_note
+        _locked = _lock_reason(getattr(block, "tool_type", None), getattr(block, "content", None))
+    except Exception:
+        _locked, _lock_note = None, None
+    if _locked:
+        return (
+            f"{getattr(block, 'tool_type', None)}: BLOCKED",
+            {"error": _locked, "exit_code": 1, "locked": True, "policy": "subagent_file_lock"},
+        )
+
     roots = []
     for candidate in [workspace, *(workspace_roots or [])]:
         vetted = vet_project_root(candidate or "")
@@ -793,6 +821,7 @@ async def execute_tool_block(
             roots.append(vetted)
     token = _active_workspace.set(workspace or None)
     roots_token = _active_workspace_roots.set(tuple(roots))
+    opts_token = _active_turn_options.set(turn_options or None)
     try:
         output = await _execute_tool_block_impl(
             block,
@@ -823,8 +852,14 @@ async def execute_tool_block(
                 output[1],
                 getattr(block, "content", None),
             )
+        if _lock_note is not None:
+            try:
+                _lock_note(getattr(block, "tool_type", None), getattr(block, "content", None), output[1])
+            except Exception:
+                pass
         return output
     finally:
+        _active_turn_options.reset(opts_token)
         _active_workspace_roots.reset(roots_token)
         _active_workspace.reset(token)
 

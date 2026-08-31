@@ -4787,6 +4787,7 @@ async def stream_agent_loop(
                     workspace_roots=workspace_roots,
                     security_context=run_security,
                     exact_approval=exact_approval,
+                    turn_options={"gen_overrides": gen_overrides, "harness_options": _hopts},
                 )
             finally:
                 await approved_progress_q.put(None)
@@ -6528,6 +6529,7 @@ async def stream_agent_loop(
                             workspace=workspace,
                             workspace_roots=workspace_roots,
                             security_context=run_security,
+                            turn_options={"gen_overrides": gen_overrides, "harness_options": _hopts},
                         )
                     finally:
                         # Sentinel so the drainer knows to stop.
