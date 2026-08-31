@@ -37,10 +37,14 @@ def test_detect_test_command_never_runs_the_frozen_executable(pyws, monkeypatch)
     assert spec is not None and spec["kind"] == "pytest"
     assert frozen not in (spec.get("argv") or []), spec
     assert spec.get("python") != frozen
-    # A real interpreter is on PATH here, so it is used.
-    real = shutil.which("python3") or shutil.which("python")
-    if real:
-        assert spec["argv"][0] == real and spec["argv"][1:3] == ["-m", "pytest"]
+    # A real interpreter is on PATH here, so *one of them* is used. Which one
+    # is not the point and must not be pinned: on Windows `python3` is often
+    # the Microsoft Store stub in WindowsApps while `python` is the real
+    # install, so pinning an order asserts the worse choice.
+    candidates = [c for c in (shutil.which("python3"), shutil.which("python")) if c]
+    if candidates:
+        assert spec["argv"][0] in candidates, (spec["argv"][0], candidates)
+        assert spec["argv"][1:3] == ["-m", "pytest"]
 
 
 def test_frozen_build_without_any_interpreter_is_inconclusive(pyws, monkeypatch):
