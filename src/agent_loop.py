@@ -8,6 +8,7 @@ The LLM decides when to use tools by writing fenced code blocks.
 
 import asyncio
 import collections
+import difflib
 import json
 import re
 import time
@@ -4579,6 +4580,8 @@ async def stream_agent_loop(
     if isinstance(gen_overrides, dict) and gen_overrides.get("think") is True:
         _think_watchdog_on = False  # the user pinned thinking on: respect it
     _think_cutoffs = 0
+    _unknown_tool_nudges = 0
+    _empty_round_nudges = 0
 
     def _filter_route_tool_schemas(schemas):
         # Keep candidate actions visible after taint so the model can propose
@@ -5732,6 +5735,82 @@ async def stream_agent_loop(
                     }) + "\n\n"
                 )
                 full_response += "\n\n"
+                yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
+                continue
+            # ── (1b) Hallucinated tool name. The native call was dropped by
+            # function_call_to_tool_block ("Unknown function call"), so from the
+            # model's point of view the tool ran and said nothing — and the turn
+            # would end here with no answer. Tell it, with the real names.
+            _dropped = [
+                str(tc.get("name") or "?") for tc in (native_tool_calls or [])
+                if tc not in (converted_calls or [])
+            ]
+            if _dropped and _unknown_tool_nudges < 2:
+                _unknown_tool_nudges += 1
+                _sent_names = [n for n in _tool_names_sent if n] or sorted(str(n) for n in (_relevant_tools or []))
+                _sugg: list = []
+                for _d in _dropped[:3]:
+                    _sugg.extend(difflib.get_close_matches(_d, _sent_names, n=3, cutoff=0.5))
+                    _sugg.extend(n for n in _sent_names if _d.lower() in n.lower() and n not in _sugg)
+                _sugg = list(dict.fromkeys(_sugg))[:6]
+                for _d in _dropped:
+                    _ledger.events.append({"round": round_num, "tool": "unknown:" + _d, "ok": False,
+                                           "kind": "read", "paths": [], "error": "unknown tool"})
+                logger.warning("[harness] round %s called unknown tool(s) %s — nudging with real names %s",
+                               round_num, _dropped, _sugg)
+                if round_response.strip():
+                    messages.append({"role": "assistant", "content": round_response})
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "[Harness check — automatic message from the runtime, not from the user] "
+                        "You called a tool that does not exist: " + ", ".join(f"`{d}`" for d in _dropped)
+                        + ". NOTHING ran. "
+                        + (f"Did you mean: {', '.join(_sugg)}? " if _sugg else "")
+                        + "The tools available in this turn are: " + ", ".join(_sent_names[:40])
+                        + ". Call the correct tool now with the same intent."
+                    ),
+                })
+                yield (
+                    "data: " + json.dumps({
+                        "type": "harness_check", "status": "unknown_tool", "round": round_num,
+                        "tools": _dropped, "suggestions": _sugg, "attempt": _unknown_tool_nudges,
+                        "max_attempts": 2,
+                    }) + "\n\n"
+                )
+                full_response += "\n\n"
+                yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
+                continue
+            # ── (1c) Silent give-up: no text, no tool, in a turn where the
+            # model was supposed to act (workspace / coding request / open
+            # objectives). One bounded nudge; then the turn ends as before.
+            if (
+                not _hc_text
+                and (_harness_scope_active or (_ledger.progress and any(t.get("status") != "completed" for t in _ledger.progress)))
+                and _empty_round_nudges < 1
+                and round_num > 1
+            ):
+                _empty_round_nudges += 1
+                _open = [t.get("content") for t in (_ledger.progress or []) if t.get("status") != "completed"]
+                logger.warning("[harness] round %s ended with no text and no tool call — nudging (open objectives: %s)",
+                               round_num, _open[:4])
+                _ledger.notes.append(f"empty_round_nudge@{round_num}")
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "[Harness check — automatic message from the runtime, not from the user] "
+                        "Your last message was EMPTY: no text and no tool call, so nothing happened. "
+                        + (f"Open objectives: {'; '.join(str(o) for o in _open[:4])}. " if _open else "")
+                        + "Either continue the task by calling a tool now, or write the final answer "
+                        "stating exactly what was done and what remains."
+                    ),
+                })
+                yield (
+                    "data: " + json.dumps({
+                        "type": "harness_check", "status": "empty_round", "round": round_num,
+                        "open": _open[:6], "attempt": 1, "max_attempts": 1,
+                    }) + "\n\n"
+                )
                 yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
                 continue
             # ── (2) Claims vs. evidence. Only meaningful where the model could

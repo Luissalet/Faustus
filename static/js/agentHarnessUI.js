@@ -79,6 +79,19 @@ export function renderHarnessCheck(json) {
     }
     return;
   }
+  if (status === 'unknown_tool') {
+    const names = (json.tools || []).map(t => `<code>${esc(t)}</code>`).join(', ');
+    const sugg = (json.suggestions || []).map(t => `<code>${esc(t)}</code>`).join(', ');
+    _card('rejected', `The model called a tool that does not exist (${(json.tools || []).join(', ')}) — nothing ran; told it the real tool names (${json.attempt}/${json.max_attempts})`,
+      `<div class="harness-foot">Called: ${names}${sugg ? ` · did you mean ${sugg}?` : ''}</div>`);
+    return;
+  }
+  if (status === 'empty_round') {
+    const open = (json.open || []).map(o => `<li>${esc(String(o))}</li>`).join('');
+    _card('rejected', 'The model ended with no text and no tool call — asked it to continue or to state what remains',
+      open ? `<div class="harness-foot">Open objectives:</div><ul class="harness-list">${open}</ul>` : '');
+    return;
+  }
   if (status === 'think_cutoff') {
     const mins = Math.round((json.seconds || 0) / 60);
     _card('continue',

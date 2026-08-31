@@ -202,3 +202,60 @@ def test_runaway_thinking_is_cut_off_and_retried_without_think(tmp_path, monkeyp
     summary = next(e for e in events if e.get("type") == "harness_summary")["data"]
     assert any(n.startswith("think_cutoff@") for n in summary["notes"])
     assert summary["stop_reason"] == "complete"
+
+
+def _native_call_stream(monkeypatch, rounds):
+    """Each entry: list of native calls [{"name","arguments"}] or a text string."""
+    calls = {"n": 0}
+
+    async def _fake_stream(_candidates, messages, **kwargs):
+        i = min(calls["n"], len(rounds) - 1)
+        calls["n"] += 1
+        item = rounds[i]
+        if isinstance(item, str):
+            if item:
+                yield f'data: {json.dumps({"delta": item})}\n\n'
+            yield f'data: {json.dumps({"type": "finish", "finish_reason": "stop"})}\n\n'
+        else:
+            yield f'data: {json.dumps({"type": "tool_calls", "calls": item})}\n\n'
+            yield f'data: {json.dumps({"type": "finish", "finish_reason": "tool_calls"})}\n\n'
+        yield "data: [DONE]\n\n"
+    monkeypatch.setattr(al, "stream_llm_with_fallback", _fake_stream, raising=False)
+    return calls
+
+
+def test_hallucinated_tool_name_gets_a_correction_not_a_silent_end(tmp_path, monkeypatch):
+    """Seen live with qwen3-coder-next: a native call to `list` (no such tool)
+    was dropped and the turn ended with no answer. The model must be told the
+    real names and get another round."""
+    (tmp_path / "server.py").write_text("x = 1\n", encoding="utf-8")
+    _patch_common(monkeypatch)
+    calls = _native_call_stream(monkeypatch, [
+        [{"name": "list", "arguments": json.dumps({"path": "."})}],
+        [{"name": "ls", "arguments": json.dumps({"path": "."})}],
+        "The repo has server.py at the root; nothing was changed.",
+    ])
+    events = _run(monkeypatch, str(tmp_path), user="Añade un endpoint /api/stats en server.py", max_rounds=6)
+    unk = [e for e in events if e.get("type") == "harness_check" and e.get("status") == "unknown_tool"]
+    assert len(unk) == 1 and unk[0]["tools"] == ["list"]
+    assert "ls" in unk[0]["suggestions"]
+    assert calls["n"] == 3
+    summary = next(e for e in events if e.get("type") == "harness_summary")["data"]
+    assert summary["stop_reason"] == "complete"
+    assert summary["failed_calls"] >= 1  # the unknown call is recorded as a failed event
+
+
+def test_empty_round_after_tool_work_is_nudged_once(tmp_path, monkeypatch):
+    (tmp_path / "server.py").write_text("x = 1\n", encoding="utf-8")
+    _patch_common(monkeypatch)
+    calls = _native_call_stream(monkeypatch, [
+        [{"name": "read_file", "arguments": json.dumps({"path": "server.py"})}],
+        "",   # silent give-up
+        "I read server.py; the endpoint is not there yet and I have not changed anything.",
+    ])
+    events = _run(monkeypatch, str(tmp_path), user="Añade un endpoint /api/stats en server.py", max_rounds=6)
+    empty = [e for e in events if e.get("type") == "harness_check" and e.get("status") == "empty_round"]
+    assert len(empty) == 1
+    assert calls["n"] == 3
+    summary = next(e for e in events if e.get("type") == "harness_summary")["data"]
+    assert any(n.startswith("empty_round_nudge@") for n in summary["notes"])
