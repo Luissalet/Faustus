@@ -1197,7 +1197,9 @@ _WORKSPACE_CODE_TARGET_RE = re.compile(
     r"pruebas?|errores?|estilos?|html|script|scripts|m[oó]dulos?|servidor|"
     r"base\s+de\s+datos|pantalla|vistas?|men[uú]|formulario|p[aá]ginas?|"
     r"panel|ventana|sidebar|barra|galer[ií]a|modal|dise[ñn]o|layout|"
-    r"programa|aplicaci[oó]n|web|p[aá]gina|chats?|sesiones?|usuarios?)\b"
+    r"programa|aplicaci[oó]n|web|p[aá]gina|chats?|sesiones?|usuarios?|"
+    r"fallos?|problemas?|crash|excepci[oó]n|excepciones|borrado|borrar|eliminar|guardado|guardar|"
+    r"cargar|carga|arranque|inicio|login|contador|lista|listado)\b"
     r"|(?:~?/[^\"'\s`<>]+)|(?:[A-Za-z]:\\[^\s\"']+)",
     re.IGNORECASE,
 )
@@ -1507,6 +1509,11 @@ def _classify_agent_request(messages: List[Dict], last_user: str) -> Dict[str, o
            r"\b(?:home ?assistant|miniflux|gitea|linkding|jellyfin)\b"):
         domains.add("integrations")
 
+    # The domain keywords above are English; a coding request in Spanish
+    # ("Arregla el fallo que hay al borrar") matched nothing, was classified
+    # low-signal and — even with a workspace bound — got read-only tools.
+    if not domains and _looks_like_workspace_coding_request(text):
+        domains.add("files")
     low_signal = not continuation and not domains
     return {
         "low_signal": low_signal,

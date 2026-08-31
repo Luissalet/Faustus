@@ -298,3 +298,17 @@ def test_negated_statements_are_not_claims():
     # A leading "No," answering a question does not negate the claim that follows.
     assert h.find_mutation_claims("No, he modificado el fichero server.py como pediste.")
     assert h.find_mutation_claims("He modificado el fichero server.py.")
+
+
+def test_spanish_coding_request_is_not_low_signal():
+    """The agent-intent domains are English keywords; 'Arregla el fallo que hay
+    al borrar' matched none, was low-signal and got read-only tools even with
+    a workspace bound (seen live on the bench)."""
+    import src.agent_loop as al
+    for text in ("Arregla el fallo que hay al borrar.", "Corrige el problema del contador",
+                 "Añade botones para eliminar proyectos"):
+        r = al._classify_agent_request([{"role": "user", "content": text}], text)
+        assert not r["low_signal"] and "files" in r["domains"], text
+    for text in ("hola", "gracias", "Explica qué es un closure"):
+        r = al._classify_agent_request([{"role": "user", "content": text}], text)
+        assert r["low_signal"], text
