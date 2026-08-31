@@ -70,7 +70,13 @@ def _register(
 
 
 _register(
-    {"ask_user", "update_plan"},
+    # todowrite only rewrites the agent's own progress list under data/ (the
+    # Progress panel). Classifying it as a private write made the approval
+    # gate fire on the very first "here is my plan" step of every tainted
+    # workspace turn, so the model could not even lay out its objectives
+    # without a click. It shares update_plan's class: UI-facing, no external
+    # or workspace effect.
+    {"ask_user", "update_plan", "todowrite"},
     ToolEffect.USER_INTERACTION,
 )
 _register(
@@ -128,7 +134,7 @@ _register(
     result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
 )
 _register(
-    {"bash", "manage_bg_jobs", "python"},
+    {"bash", "manage_bg_jobs", "python", "delegate_agents"},
     ToolEffect.EXECUTE_CODE,
     result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
 )
@@ -152,7 +158,6 @@ _register(
         "manage_skills",
         "manage_tasks",
         "suggest_document",
-        "todowrite",
     },
     ToolEffect.WRITE_PRIVATE,
 )

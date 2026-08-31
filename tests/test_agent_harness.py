@@ -1,3 +1,4 @@
+import json
 import os
 
 import pytest
@@ -174,3 +175,27 @@ def test_static_check_files(tmp_path):
     assert by["bad.py"]["ok"] is False and by["bad.py"]["error"]
     assert by["c.json"]["ok"] is False
     assert "notes.md" not in by and "missing.py" not in by
+
+
+def test_delegation_args_parsing():
+    from src.agent_tools.subagent_tools import parse_delegation_args, MAX_SUBAGENTS
+    args = parse_delegation_args('{"tasks": [{"name": "backend", "instruction": "add route"}, "write tests for it"], "parallel": false}')
+    assert len(args["tasks"]) == 2 and args["parallel"] is False
+    assert args["tasks"][1]["name"].startswith("write tests")
+    many = parse_delegation_args(json.dumps({"tasks": [f"t{i}" for i in range(10)]}))
+    assert len(many["tasks"]) == MAX_SUBAGENTS
+    with pytest.raises(ValueError):
+        parse_delegation_args('{"tasks": []}')
+    with pytest.raises(ValueError):
+        parse_delegation_args('not json')
+
+
+def test_ledger_counts_worker_mutations_as_evidence(tmp_path):
+    ledger = h.TurnLedger(str(tmp_path), "haz esto con varios agentes")
+    ledger.record("delegate_agents", '{"tasks": ["a"]}', {
+        "output": "report", "exit_code": 0,
+        "subagents": [{"name": "backend", "mutations": ["server.py"]}, {"name": "ui", "mutations": []}],
+    }, 1)
+    assert "server.py" in ledger.mutated_paths()
+    check = ledger.check_completion("Los workers han modificado server.py y el frontend queda pendiente.")
+    assert check["ok"], check

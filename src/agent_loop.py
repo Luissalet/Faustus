@@ -541,7 +541,8 @@ _DOMAIN_TOOL_MAP = {
 
 _WORKSPACE_TERMINUS_TOOLS = (
     _DOMAIN_TOOL_MAP["files"]
-    | {"manage_skills", "ask_teacher", "web_search", "web_fetch", "ask_user", "update_plan"}
+    | {"manage_skills", "ask_teacher", "web_search", "web_fetch", "ask_user", "update_plan",
+       "delegate_agents"}
 )
 # Tools whose presence in a turn makes the reliability rules worth their tokens.
 _HARNESS_RULE_TOOLS = frozenset({
@@ -3492,6 +3493,7 @@ async def stream_agent_loop(
     defer_context_shaping: bool = False,
     temperature_explicit: bool = False,
     gen_overrides: Optional[Dict] = None,
+    security_gate_bypass: bool = False,
 ) -> AsyncGenerator[str, None]:
     """Streaming agent loop generator.
 
@@ -3520,7 +3522,7 @@ async def stream_agent_loop(
         ),
         approval_gate_bypassed=bool(
             exact_approval and exact_approval.allow_remaining_actions
-        ),
+        ) or bool(security_gate_bypass),
     )
     mcp_mgr = get_mcp_manager()
     prep_timings: Dict[str, float] = {}
@@ -4833,6 +4835,15 @@ async def stream_agent_loop(
         tool_events.append(approved_tool_event)
         if approved.tool_name in _VERIFIER_EFFECTFUL_TOOLS:
             _effectful_used = True
+        # Evidence ledger + Progress panel for the replayed (approved) action —
+        # the same bookkeeping the in-loop tool path does.
+        try:
+            _ledger.record(approved.tool_name, approved.content, approved_result, 0)
+            if approved.tool_name == "todowrite" and isinstance(approved_result, dict) and isinstance(approved_result.get("todos"), list) and not approved_result.get("error"):
+                _annotated_todos = _ledger.record_progress(approved_result["todos"], 0)
+                yield "data: " + json.dumps({"type": "progress_update", "round": 0, "todos": _annotated_todos}) + "\n\n"
+        except Exception as _ledger_err:
+            logger.debug("[harness] ledger record (approved) failed: %s", _ledger_err)
         formatted_approved_result = format_tool_result(desc, approved_result)
         _append_tool_results(
             messages,

@@ -1256,6 +1256,33 @@ async function _cmdToggleDoc(args, ctx) {
 
 // Workspace: confine the agent's file/shell tools to a folder. Not a boolean -
 // show / set <path> / clear / pick (open the directory browser).
+function _cmdAgents(args) {
+  const raw = (args || []).join(' ').trim();
+  const parts = raw.split(/\s*(?:\||;;|\n)\s*/).map(s => s.trim()).filter(Boolean);
+  if (!parts.length) {
+    slashReply('Usage: <code>/agents task one | task two | task three</code> — each part becomes one sub-agent with its own chat, all working in the current workspace. Results come back as an evidence-based report (files each worker really changed).');
+    return true;
+  }
+  if (parts.length > 4) {
+    slashReply('At most 4 sub-agents per call. Merge some tasks or run <code>/agents</code> again afterwards.');
+    return true;
+  }
+  const tasks = parts.map((p, i) => ({ name: p.length > 40 ? p.slice(0, 38) + '…' : p, instruction: p }));
+  const payload = JSON.stringify({ tasks, parallel: true });
+  const msg = `Delegate this work to parallel sub-agents by calling the delegate_agents tool EXACTLY ONCE with these arguments (do not do the tasks yourself, do not rewrite them):\n${payload}\nWhen the tool returns, report to the user only what its evidence says: which files each worker changed, failures, and what still needs doing.`;
+  const msgInput = document.getElementById('message');
+  if (!msgInput) return true;
+  msgInput.value = msg;
+  // Delegation only makes sense with tools: force agent mode for this send.
+  try {
+    const agentBtn = document.getElementById('mode-agent-btn');
+    if (agentBtn && !agentBtn.classList.contains('active')) agentBtn.click();
+  } catch (_) {}
+  const sb = document.querySelector('.send-btn');
+  if (sb) sb.click();
+  return true;
+}
+
 function _cmdModelControls(name, args) {
   const mod = window.modelControls;
   if (!mod) { slashReply('Model controls not loaded yet.'); return true; }
@@ -5926,6 +5953,14 @@ const COMMANDS = {
     handler: (args) => _cmdModelControls('think', args),
     noUserBubble: true,
     usage: '/think on | off | auto',
+  },
+  agents: {
+    alias: ['swarm', 'delegate'],
+    category: 'Agent',
+    help: 'Run several sub-agents in parallel on separate tasks (same workspace)',
+    handler: _cmdAgents,
+    noUserBubble: true,
+    usage: '/agents task one | task two | task three',
   },
   usage: {
     alias: ['sys', 'gpu'],

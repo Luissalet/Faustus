@@ -3608,6 +3608,11 @@ import modelControls from './modelControls.js';
                 // elapsed-time + tail of its stdout/stderr so the
                 // user doesn't stare at a blind "Running…" spinner.
                 if (_isBg) continue;
+                if (json.subagent) {
+                  // delegate_agents: live worker board instead of a stdout tail.
+                  try { agentHarnessUI.renderSubagentEvent(json); } catch (_e) { console.warn('subagent ui', _e); }
+                  continue;
+                }
                 if (!currentToolBubble) continue;
                 const isImageProgress = /image/i.test(String(json.tool || '')) || /image/i.test(String(json.message || ''));
                 if (json.total || json.percent != null || isImageProgress) {

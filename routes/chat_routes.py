@@ -2416,6 +2416,11 @@ def setup_chat_routes(
                             _forced_tools.update({"project_context", "search_project_chats"})
                     except Exception:
                         pass
+                    # /agents (multi-agent delegation) names the tool explicitly;
+                    # make sure retrieval cannot drop it.
+                    if isinstance(message, str) and "delegate_agents" in message:
+                        _forced_tools = set(_forced_tools or set())
+                        _forced_tools.add("delegate_agents")
 
                     async for chunk in stream_agent_loop(
                         sess.endpoint_url,

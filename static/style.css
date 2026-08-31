@@ -42345,6 +42345,8 @@ body:has(.sidebar.right-side) .project-active-pill { right: 12px; }
 .model-controls-pop .mc-seg button.on { background: color-mix(in srgb, var(--color-accent, #00aaff) 25%, transparent); opacity: 1; }
 .model-controls-pop .mc-actions { flex-direction: row; justify-content: space-between; align-items: center; }
 .model-controls-pop .mc-btn { background: transparent; color: var(--fg); border: 1px solid var(--border); border-radius: 6px; padding: 3px 8px; cursor: pointer; }
+.model-controls-pop { overflow: auto; }
+.model-controls-pop .mc-hint { display: block; line-height: 1.7; }
 .model-controls-pop .mc-hint code { font-size: 11px; }
 
 /* System usage pill + panel */
@@ -42383,3 +42385,18 @@ body:has(.sidebar.right-side) .project-active-pill { right: 12px; }
   .agent-progress-panel { top: auto; bottom: 120px; right: 8px; width: 260px; }
   .sys-usage-pill .su-text { max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
 }
+
+/* Sub-agent board (delegate_agents) */
+.subagent-board .harness-body { display: block; }
+.subagent-rows { display: flex; flex-direction: column; gap: 4px; }
+.subagent-row { border: 1px solid var(--border); border-radius: 8px; padding: 5px 8px; font-size: 0.86em; }
+.subagent-head { display: flex; align-items: center; gap: 6px; }
+.subagent-icon { width: 12px; text-align: center; }
+.subagent-row.is-running .subagent-icon { color: var(--color-accent, #00aaff); animation: agent-progress-pulse 1.2s ease-in-out infinite; }
+.subagent-row.is-done .subagent-icon { color: var(--color-success, #4caf50); }
+.subagent-row.is-partial .subagent-icon { color: var(--warn, #f0ad4e); }
+.subagent-row.is-error .subagent-icon { color: var(--red, #e06c75); }
+.subagent-name { font-weight: 600; }
+.subagent-meta { margin-left: auto; opacity: .7; font-size: 0.9em; white-space: nowrap; }
+.subagent-last { opacity: .75; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: var(--mono, monospace); font-size: 0.9em; }
+.subagent-chat-link { color: var(--color-accent, #00aaff); text-decoration: none; }

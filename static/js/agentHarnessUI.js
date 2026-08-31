@@ -148,6 +148,81 @@ export function renderHarnessSummary(json) {
   _card(kind, `Turn summary · ${parts.join(' · ')} · ${stopLabel}`, details.join(''));
 }
 
+// ── Sub-agent board (delegate_agents) ────────────────────────────────────────
+
+let _boards = new Map(); // toolNode/thread key → board element
+
+function _boardFor() {
+  const chatBox = document.getElementById('chat-history');
+  if (!chatBox) return null;
+  // The delegate_agents tool card is the last running node in the thread;
+  // attach the board right after it so workers appear where the call is.
+  let anchor = null;
+  const threads = chatBox.querySelectorAll('.agent-thread');
+  const thread = threads.length ? threads[threads.length - 1] : _threadForCard();
+  if (!thread) return null;
+  let board = thread.querySelector('.subagent-board:last-of-type');
+  if (board && board.dataset.open === '1') return board;
+  board = document.createElement('div');
+  board.className = 'agent-thread-node harness-node harness-subagents expanded subagent-board';
+  board.dataset.open = '1';
+  board.innerHTML = `<div class="agent-thread-dot"></div><div class="agent-thread-header harness-header"><span class="agent-thread-icon">🤖</span><span class="agent-thread-tool">Sub-agents</span><span class="subagent-board-count"></span></div><div class="agent-thread-content harness-body"><div class="subagent-rows"></div></div>`;
+  thread.appendChild(board);
+  return board;
+}
+
+const SA_STATUS_ICON = { started: '◉', running: '◉', done: '✓', error: '✗' };
+
+export function renderSubagentEvent(json) {
+  const sa = json.subagent || {};
+  const board = _boardFor();
+  if (!board) return;
+  const rows = board.querySelector('.subagent-rows');
+  let row = rows.querySelector(`[data-sa="${sa.id}"]`);
+  if (!row) {
+    row = document.createElement('div');
+    row.className = 'subagent-row is-running';
+    row.dataset.sa = sa.id;
+    row.innerHTML = `<div class="subagent-head"><span class="subagent-icon">◉</span><span class="subagent-name"></span><span class="subagent-meta"></span></div><div class="subagent-last"></div>`;
+    rows.appendChild(row);
+  }
+  row.querySelector('.subagent-name').textContent = `${(sa.index ?? 0) + 1}. ${sa.name || 'worker'}`;
+  const meta = row.querySelector('.subagent-meta');
+  const last = row.querySelector('.subagent-last');
+  const ev = sa.event;
+  if (ev === 'started') {
+    last.textContent = sa.instruction || '';
+    if (sa.session_id) meta.innerHTML = `<a href="#${esc(sa.session_id)}" class="subagent-chat-link" title="Open this worker's chat">chat ${esc(sa.session_id)}</a>`;
+  } else if (ev === 'tool') {
+    const n = (parseInt(row.dataset.tools || '0', 10) + (sa.phase === 'done' ? 1 : 0));
+    row.dataset.tools = String(n);
+    last.textContent = `${sa.phase === 'start' ? '▶' : (sa.ok === false ? '✗' : '✓')} ${sa.tool || ''} ${sa.command || sa.output || ''}`.trim();
+    const link = meta.querySelector('a');
+    meta.innerHTML = `${n} tool${n === 1 ? '' : 's'}` + (link ? ` · ${link.outerHTML}` : '');
+  } else if (ev === 'harness') {
+    last.textContent = `🛡 ${sa.status}${sa.reasons && sa.reasons.length ? ': ' + sa.reasons.join(', ') : ''}`;
+  } else if (ev === 'guard') {
+    last.textContent = `⚠ ${sa.kind}`;
+  } else if (ev === 'error') {
+    row.className = 'subagent-row is-error';
+    row.querySelector('.subagent-icon').textContent = '✗';
+    last.textContent = sa.message || 'error';
+  } else if (ev === 'done') {
+    const ok = !sa.error && (sa.stop_reason === 'complete');
+    row.className = `subagent-row ${sa.error ? 'is-error' : (ok ? 'is-done' : 'is-partial')}`;
+    row.querySelector('.subagent-icon').textContent = sa.error ? '✗' : (ok ? '✓' : '◑');
+    const files = (sa.mutations || []).length;
+    const link = meta.querySelector('a');
+    meta.innerHTML = `${sa.tool_calls || 0} tools${sa.failed_calls ? ` (${sa.failed_calls} failed)` : ''} · ${files ? `${files} file${files === 1 ? '' : 's'} changed` : 'no files changed'} · ${sa.duration_s || 0}s · ${esc(sa.stop_reason || '')}` + (link ? ` · ${link.outerHTML}` : '');
+    last.textContent = sa.final_text || '';
+  }
+  const all = rows.querySelectorAll('.subagent-row');
+  const done = rows.querySelectorAll('.subagent-row.is-done, .subagent-row.is-error, .subagent-row.is-partial').length;
+  board.querySelector('.subagent-board-count').textContent = ` ${done}/${all.length}`;
+  if (done === all.length && all.length) board.dataset.open = '0';
+  try { row.scrollIntoView({ block: 'nearest' }); } catch (_) {}
+}
+
 // ── Progress panel ──────────────────────────────────────────────────────────
 
 function _ensureProgressEl() {
@@ -232,6 +307,9 @@ export function handleStreamEvent(json, { sessionId = null } = {}) {
     case 'harness_check': renderHarnessCheck(json); return true;
     case 'harness_summary': renderHarnessSummary(json); return true;
     case 'progress_update': renderProgress(json.todos || [], { sessionId }); return true;
+    case 'tool_progress':
+      if (json.subagent) { renderSubagentEvent(json); return true; }
+      return false;
     default: return false;
   }
 }
@@ -244,6 +322,6 @@ export function init(apiBase) {
   });
 }
 
-const agentHarnessUI = { init, handleStreamEvent, renderHarnessCheck, renderHarnessSummary, renderProgress, restoreProgress, clearProgress };
+const agentHarnessUI = { init, handleStreamEvent, renderHarnessCheck, renderHarnessSummary, renderProgress, restoreProgress, clearProgress, renderSubagentEvent };
 window.agentHarnessUI = agentHarnessUI;
 export default agentHarnessUI;

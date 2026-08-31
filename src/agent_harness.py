@@ -460,6 +460,21 @@ class TurnLedger:
             "paths": paths, "error": (result or {}).get("error") if not ok else None,
         }
         self.events.append(ev)
+        # Delegated workers: their verified mutations are evidence for the
+        # coordinator's own report ("the workers changed X").
+        if tool == "delegate_agents" and isinstance(result, dict):
+            for sub in result.get("subagents") or []:
+                if not isinstance(sub, dict):
+                    continue
+                sub_paths = [p for p in (sub.get("mutations") or []) if isinstance(p, str)]
+                if sub_paths:
+                    self.events.append({
+                        "round": round_num, "tool": "delegate_agents:" + str(sub.get("name") or "worker"),
+                        "ok": True, "kind": "mutation", "paths": sub_paths, "error": None,
+                    })
+                    for p in sub_paths:
+                        self.observed_paths.add(_norm(p))
+            invalidate_index(self.workspace)
         if ok:
             for p in paths:
                 self.observed_paths.add(_norm(p))

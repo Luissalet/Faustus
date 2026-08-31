@@ -239,6 +239,34 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "delegate_agents",
+            "description": "Split a big job into independent sub-tasks and run each with its own sub-agent (same workspace, same tools, same reliability checks), in parallel. Use for work that decomposes into 2-4 separate pieces (e.g. backend route + frontend component + tests). Returns an evidence-based report per worker: files really changed, tool calls, failures, child chat id. Do not use for single small edits.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "tasks": {
+                        "type": "array",
+                        "description": "2-4 independent sub-tasks. Each instruction must be self-contained (mention the files/areas involved).",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "name": {"type": "string", "description": "Short label shown in the UI"},
+                                "instruction": {"type": "string", "description": "Complete instruction for the worker"}
+                            },
+                            "required": ["instruction"]
+                        }
+                    },
+                    "context": {"type": "string", "description": "Optional shared context every worker should know (conventions, constraints)"},
+                    "parallel": {"type": "boolean", "description": "Run workers concurrently (default true)"},
+                    "max_rounds": {"type": "integer", "description": "Tool rounds allowed per worker (default 14)"}
+                },
+                "required": ["tasks"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "create_document",
             "description": "Create a new document in the editor panel. Use this when the user asks to write, create, build, make, or generate code, scripts, programs, games, apps, or any long-form or structured content that is more than a short paragraph, AND there is no already-open document/email draft that the request refers to. If an email compose draft is open, edit that draft instead of creating another document. NEVER put large generated content directly in chat — use this tool instead.",
             "parameters": {
@@ -1480,7 +1508,7 @@ def function_call_to_tool_block(name: str, arguments: str) -> Optional[ToolBlock
         content = json.dumps(args)
     elif tool_type == "apply_patch":
         content = args.get("patch_text") or args.get("patchText") or args.get("patch") or ""
-    elif tool_type == "todowrite":
+    elif tool_type in ("todowrite", "delegate_agents"):
         content = json.dumps(args)
     elif tool_type == "create_document":
         parts = [args.get("title", "Untitled")]

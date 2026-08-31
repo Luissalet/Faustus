@@ -99,7 +99,13 @@ function _loadedModelEntry(model) {
   const models = (_usageSnapshot && _usageSnapshot.ollama && _usageSnapshot.ollama.models) || [];
   if (!models.length) return null;
   const short = (model || '').split('/').pop();
-  return models.find(m => m.name === model || m.name === short || (short && m.name && m.name.startsWith(short))) || models[0];
+  const base = short.split(':')[0];
+  // Exact name first, then same base name (tag mismatch); never fall back to
+  // whatever else happens to be loaded — that misattributes another model's
+  // GPU split and context to the selected one.
+  return models.find(m => m.name === model || m.name === short)
+    || models.find(m => base && m.name && m.name.split(':')[0] === base)
+    || null;
 }
 
 function _effective(sessionId) {
@@ -187,7 +193,10 @@ function _position() {
   _pop.style.width = w + 'px';
   let left = Math.min(Math.max(8, r.right - w), window.innerWidth - w - 8);
   _pop.style.left = left + 'px';
-  // Above the composer.
+  // Above the composer when there is room, otherwise pin to the top edge and
+  // let the panel scroll (max-height in CSS).
+  const spaceAbove = r.top - 16;
+  _pop.style.maxHeight = Math.max(200, Math.min(window.innerHeight - 24, spaceAbove)) + 'px';
   _pop.style.top = 'auto';
   _pop.style.bottom = Math.max(8, window.innerHeight - r.top + 8) + 'px';
 }

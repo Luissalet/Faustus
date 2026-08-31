@@ -992,6 +992,18 @@ async def _execute_tool_block_impl(
         desc = f"{tool}: {first_line}" if first_line else tool
         result = await _direct_fallback(tool, content, session_id=session_id, owner=owner) \
             or {"error": f"{tool}: execution failed", "exit_code": 1}
+    elif tool == "delegate_agents":
+        # Multi-agent delegation: needs the parent session (model route, child
+        # chats), the owner, and the progress callback for live worker cards.
+        desc = "delegate_agents"
+        result = await _direct_fallback(tool, content, progress_cb=progress_cb, session_id=session_id, owner=owner) \
+            or {"error": "delegate_agents: execution failed", "exit_code": 1}
+        try:
+            _n = len((result or {}).get("subagents") or [])
+            if _n:
+                desc = f"delegate_agents: {_n} worker(s)"
+        except Exception:
+            pass
     elif tool == "manage_bg_jobs":
         # Inspect/kill detached `bash` jobs; needs session_id to scope to chat.
         desc = f"manage_bg_jobs: {content.split(chr(10))[0][:80]}"
