@@ -42615,3 +42615,20 @@ body:has(.sidebar.right-side) .project-active-pill { right: 12px; }
 .quote-selection-btn:hover {
   border-color: var(--accent, #6ea8fe);
 }
+
+/* Footer of the slash-command popup: where the "@" and "#" composer sigils
+   are discoverable, since neither has a menu you can open cold. */
+.slash-ac-foot {
+  padding: 6px 10px 4px;
+  margin-top: 2px;
+  border-top: 1px solid var(--border, rgba(255,255,255,0.08));
+  font-size: 11px;
+  color: var(--fg-muted, #888);
+  opacity: 0.75;
+  white-space: nowrap;
+}
+.slash-ac-foot code {
+  font-size: 11px;
+  padding: 0 3px;
+}
+.file-mention-popup .slash-ac-foot { display: none; }

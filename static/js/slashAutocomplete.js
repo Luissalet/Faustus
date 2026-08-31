@@ -161,8 +161,8 @@ function _render(popup, items, selectedIdx, query) {
     popup.innerHTML = `<div class="slash-ac-empty">No commands match <code>${_esc(query)}</code></div>`;
     return;
   }
-  // Group by category for the headers
   let html = '';
+  // Group by category for the headers
   let lastCat = null;
   for (let i = 0; i < items.length; i++) {
     const it = items[i];
@@ -178,6 +178,12 @@ function _render(popup, items, selectedIdx, query) {
          +    usage
          + `</div>`;
   }
+  // The other two composer sigils have no menu of their own, so this is where
+  // people find out they exist (static/js/fileMentions.js, composerSigils.js).
+  html += '<div class="slash-ac-foot">'
+       +    '<code>@</code> a workspace file &nbsp;·&nbsp; '
+       +    '<code>#</code> remember a rule for this project'
+       + '</div>';
   popup.innerHTML = html;
   // Scroll selected into view
   const selEl = popup.querySelector('.slash-ac-row-sel');

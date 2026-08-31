@@ -159,6 +159,13 @@ Seleccionar texto dentro de un mensaje ofrece un botón **❝ Quote** que deja e
 
 El primer flujo **falló al escribirlo**, y por un fallo real: `initFileMentions` se engancha desde un `import()` dinámico, así que quien escribe en una página recién cargada (o pega un borrador) ya tiene texto en el compositor cuando se enganchan los escuchadores, y el popup no se abría hasta la siguiente tecla — "la arroba no hace nada". Arreglado con un `refresh()` inicial y un escuchador de `focus`.
 
+### 6.6 Lo que cambia en vivo (qwen3.5:9b, instancia dev 7001)
+
+Dos pruebas contra el modelo real, sobre `agent-bench/demo-app`:
+
+- **t9a — mencionar el fichero correcto** (`En @static/js/sessions.js cambia el texto del botón de borrar…`): **22 s, 2 rondas, 2 herramientas**, editó exactamente `sessions.js` y nada más, verificado. **Cero rondas de exploración**: no hubo `ls`, `glob` ni `grep`, porque el fichero venía ya en el contexto.
+- **t9b — mencionar un fichero que no existe** (`Arregla el bug de @static/js/cards.js…`): es literalmente el fallo t4 de la mañana, en el que el modelo metía un arreglo especulativo en `projects.js` y lo presentaba como la corrección. Ahora, en **8 s, cero herramientas y cero cambios**: *"El archivo `@static/js/cards.js` no existe en este workspace… ¿Estás buscando en `projects.js` la función que renderiza las tarjetas?"*, con la lista de los ficheros JS que sí existen. El arnés ya no tiene que corregir nada a posteriori porque el error no llega a ocurrir.
+
 ### Verificación
 75 tests nuevos en 4 ficheros (`test_file_mentions.py`, `test_file_mentions_routes_js.py`, `test_project_instructions_remember.py`, `test_composer_sigils_js.py`), incluidos los de contrato entre el popup y el resolutor del servidor (lo que inserta el popup es lo que el servidor resuelve) y los de node para los predicados del compositor. Suite completa en verde antes y después.
 

@@ -58,3 +58,16 @@ def test_the_versions_command_is_registered_with_a_restore_action():
     assert 'data-cv-restore="${payload}"' in src
     assert "closest('[data-cv-restore]')" in src
     assert "/versions/${encodeURIComponent(p.id)}/restore" in src
+
+
+def test_the_slash_popup_advertises_the_other_two_sigils():
+    """Neither "@" nor "#" has a menu you can open cold, so the slash popup —
+    where people go to find out what the composer can do — points at them."""
+    src = (_REPO / "static" / "js" / "slashAutocomplete.js").read_text(encoding="utf-8", errors="replace")
+    assert "slash-ac-foot" in src
+    assert "a workspace file" in src and "remember a rule" in src
+    css = (_REPO / "static" / "style.css").read_text(encoding="utf-8", errors="replace")
+    assert ".slash-ac-foot" in css
+    # The file picker reuses the popup chrome; it must not show the hint about
+    # itself under its own list.
+    assert ".file-mention-popup .slash-ac-foot { display: none; }" in css
