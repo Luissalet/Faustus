@@ -965,6 +965,12 @@ import modelControls from './modelControls.js';
       if (ta && mod.initFileMentions) mod.initFileMentions(ta);
     }).catch(() => {});
 
+    // Selecting text in a message offers a "Quote" button that drops the
+    // passage into the composer as a blockquote (static/js/quoteSelection.js).
+    import('./quoteSelection.js').then(mod => {
+      try { mod.initQuoteSelection(); } catch (_e) { console.warn('quoteSelection init', _e); }
+    }).catch(() => {});
+
     // ArrowUp on the composer recalls previous user prompts from this chat.
     const _wireArrowUpRecall = (composer) =>
       wireArrowUpRecall(composer, () => getUserMessagesFromChatHistory(), {

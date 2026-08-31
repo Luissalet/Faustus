@@ -27,12 +27,16 @@ def test_resend_message_does_not_truncate_by_default():
     assert "const replaceFromHere = Boolean(opts && opts.replaceFromHere);" in body
 
     guard_idx = body.index("if (replaceFromHere)")
-    truncate_idx = body.index("/api/session/${sessionId}/truncate")
+    # The truncation goes through _truncateWithVersion() (it keeps the deleted
+    # tail — src/chat_versions.py), so the contract is about that call, not a
+    # raw fetch. A direct /truncate here would skip the capture entirely.
+    truncate_idx = body.index("_truncateWithVersion(")
     hide_idx = body.index("_hideUserBubble = true;")
 
     assert guard_idx < truncate_idx
     assert guard_idx < hide_idx
-    assert "/truncate" not in body[:guard_idx]
+    assert "/truncate" not in body
+    assert "_truncateWithVersion(" not in body[:guard_idx]
     assert "_hideUserBubble = true;" not in body[:guard_idx]
 
 

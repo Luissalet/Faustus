@@ -146,8 +146,21 @@ Editar un mensaje (o "regenerar desde aquí") **truncaba** el chat: todo lo que 
 - `POST /api/session/{sid}/truncate` captura la cola y devuelve el resumen; `GET/POST/DELETE …/versions` listan, restauran y olvidan. **La captura nunca bloquea el truncado**: si falla, se registra y el truncado sigue (una red de seguridad que puede romper la caída que está amortiguando es peor que ninguna).
 - En el frontend, los **tres** sitios que truncaban (editar, regenerar, regenerar-variante) pasan ahora por `_truncateWithVersion()`, que muestra un aviso con **Undo** (restaura al momento) y el comando **`/versions [n | clear]`** lista las versiones con su botón *Restore*, al estilo de `/checkpoints`.
 
+### 6.4 Citar una selección
+
+Seleccionar texto dentro de un mensaje ofrece un botón **❝ Quote** que deja el pasaje en el compositor como cita Markdown. Lo tienen Claude y ChatGPT, y aquí arregla la continuación más habitual de una respuesta larga del agente: "esta parte, explícala/rehazla". Sin ello se reescribe la frase a mano, o se dice "el tercer punto" y un modelo de 9B adivina cuál era.
+
+- **`static/js/quoteSelection.js`** (nuevo): `blockquote()` y `withQuote()` son funciones puras (testeables sin DOM). Las líneas en blanco conservan su `>` para que la cita sea **un solo bloque** en cualquier renderizador; el corte por longitud (700 caracteres) respeta la palabra, salvo cuando eso dejaría la cita en nada (una línea minificada, un token larguísimo), donde cae al corte duro; un borrador que ya hubiera en el compositor se conserva **debajo** de la cita, que es donde va la pregunta.
+- El botón se activa en `mousedown`, no en `click`: un `click` borraría la selección antes de leerla.
+
+### 6.5 Verificación en navegador (e2e) y un fallo que solo aparece ahí
+
+`tests/e2e/test_composer_shortcuts.py` (nuevo, 4 flujos Playwright): el popup de `@` se abre y Enter inserta la ruta **sin enviar el mensaje**; `@` encuentra un fichero anidado y Escape cierra el popup; `#` escribe la regla en AGENTS.md y repetirla dice "Already in" sin duplicar; y el flujo completo de versiones — turno, editar el mensaje (la primera respuesta desaparece), `/versions`, *Restore*, y la primera respuesta vuelve.
+
+El primer flujo **falló al escribirlo**, y por un fallo real: `initFileMentions` se engancha desde un `import()` dinámico, así que quien escribe en una página recién cargada (o pega un borrador) ya tiene texto en el compositor cuando se enganchan los escuchadores, y el popup no se abría hasta la siguiente tecla — "la arroba no hace nada". Arreglado con un `refresh()` inicial y un escuchador de `focus`.
+
 ### Verificación
-60 tests nuevos en 4 ficheros (`test_file_mentions.py`, `test_file_mentions_routes_js.py`, `test_project_instructions_remember.py`, `test_composer_sigils_js.py`), incluidos los de contrato entre el popup y el resolutor del servidor (lo que inserta el popup es lo que el servidor resuelve) y los de node para los predicados del compositor. Suite completa en verde antes y después.
+75 tests nuevos en 4 ficheros (`test_file_mentions.py`, `test_file_mentions_routes_js.py`, `test_project_instructions_remember.py`, `test_composer_sigils_js.py`), incluidos los de contrato entre el popup y el resolutor del servidor (lo que inserta el popup es lo que el servidor resuelve) y los de node para los predicados del compositor. Suite completa en verde antes y después.
 
 ---
 

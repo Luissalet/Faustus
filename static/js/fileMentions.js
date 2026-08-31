@@ -201,7 +201,13 @@ export function initFileMentions(textarea, opts = {}) {
 
   textarea.addEventListener('input', refresh);
   textarea.addEventListener('click', refresh);
+  textarea.addEventListener('focus', refresh);
   textarea.addEventListener('blur', () => { setTimeout(hide, 120); });
+  // The composer is wired from a dynamic import, so text can already be in it
+  // by the time we get here — someone typing into a cold page, or a restored
+  // draft. Without this first pass the picker stays shut until the next
+  // keystroke, which reads as "@ does nothing".
+  refresh();
 
   textarea.addEventListener('keydown', (e) => {
     if (!visible) return;

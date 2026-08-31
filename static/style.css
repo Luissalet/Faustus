@@ -42595,3 +42595,23 @@ body:has(.sidebar.right-side) .project-active-pill { right: 12px; }
   direction: rtl;          /* keep the deepest folder visible when it elides */
   text-align: left;
 }
+
+/* ── "Quote" button on a text selection (static/js/quoteSelection.js) ────
+   Floats over the transcript at the end of the selection; deliberately small
+   and low-contrast so it never competes with the message it points at. */
+.quote-selection-btn {
+  position: absolute;
+  z-index: 9200;
+  padding: 3px 9px;
+  font-size: 12px;
+  line-height: 1.4;
+  border-radius: 999px;
+  cursor: pointer;
+  border: 1px solid var(--border, rgba(255,255,255,0.12));
+  background: var(--panel, var(--bg));
+  color: var(--fg, #e6e6e6);
+  box-shadow: 0 4px 14px rgba(0,0,0,0.3);
+}
+.quote-selection-btn:hover {
+  border-color: var(--accent, #6ea8fe);
+}
