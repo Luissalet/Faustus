@@ -218,15 +218,22 @@ async def _model_show(client: httpx.AsyncClient, model: str) -> Dict[str, Any]:
 
 
 async def _file_size(client: httpx.AsyncClient, model: str) -> int:
-    """Size of the model on disk — the weights, without the KV cache."""
+    """Size of the model on disk — the weights, without the KV cache.
+
+    Exact tag match only. Matching on the base name would happily hand back
+    `qwen3.8:27b-q8_0`'s 28 GB when asked about `qwen3.8:27b-q4_K_M`, and the
+    whole fit calculation is built on this number.
+    """
     try:
         r = await client.get(f"{_ollama_base()}/api/tags", timeout=6)
         if r.status_code != 200:
             return 0
         short = model.split("/")[-1]
+        wanted = {model, short}
+        if ":" not in short:
+            wanted.add(f"{short}:latest")
         for m in r.json().get("models") or []:
-            name = m.get("name") or ""
-            if name in (model, short) or name.split(":")[0] == short.split(":")[0]:
+            if (m.get("name") or "") in wanted:
                 return int(m.get("size") or 0)
     except (httpx.HTTPError, ValueError):
         pass
@@ -266,6 +273,9 @@ async def collect_fit(model: str, target_ctx: Optional[int] = None) -> Dict[str,
     if kv_per_token is None:
         kv_per_token, kv_note = vram_fit.kv_bytes_per_token_estimated(info)
         kv_source = "estimated" if kv_per_token else "unknown"
+    kv_reliable = kv_source == "measured" or (
+        kv_source == "estimated" and "upper bound" not in kv_note
+    )
 
     total_bytes = int((gpu.get("mem_total") or 0) * 1024 * 1024)
     used_bytes = int((gpu.get("mem_used") or 0) * 1024 * 1024)
@@ -282,6 +292,7 @@ async def collect_fit(model: str, target_ctx: Optional[int] = None) -> Dict[str,
         n_layers=n_layers,
         kv_bytes_per_token=kv_per_token,
         kv_source=kv_source,
+        kv_reliable=kv_reliable,
         current_ctx=int(loaded.get("context_length")) if loaded and loaded.get("context_length") else None,
         target_ctx=target_ctx,
         max_ctx=max_ctx,

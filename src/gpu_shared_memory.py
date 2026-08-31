@@ -41,9 +41,15 @@ _INSTANCE_RE = re.compile(
 _SHARED_PATH = r"\GPU Process Memory(*)\Shared Usage"
 _DEDICATED_PATH = r"\GPU Process Memory(*)\Dedicated Usage"
 
-# Ollama's runner allocates in bursts; a couple of hundred MB of shared memory
-# is the driver keeping command buffers around, not weights paging over PCIe.
-DEFAULT_WARN_BYTES = 256 * 1024 * 1024
+# A CUDA process always holds *some* host-visible memory — staging and pinned
+# buffers — and Windows counts that as shared. Measured on the reference box
+# (RTX 4070 Ti, qwen3.5:9b fully on the GPU, 65 tok/s): a flat 706 MB shared
+# against 8461 MB dedicated, 7.7%, unchanged while generating. That is the
+# healthy baseline, not a spill. Weights actually paging over PCIe show up as
+# gigabytes and a much larger share of the runner's footprint, so we want both
+# an absolute floor and a fraction before crying wolf.
+DEFAULT_WARN_BYTES = 1024 * 1024 * 1024
+WARN_FRACTION = 0.15
 
 _CACHE_TTL = 2.0
 _cache: Dict[str, Any] = {"ts": 0.0, "data": None}
@@ -153,21 +159,39 @@ def _rows() -> List[Dict[str, Any]]:
     return list(by_key.values())
 
 
-def ollama_pids() -> List[int]:
-    """PIDs of the Ollama server and its model runners."""
+# Ollama does not do the inference itself: it spawns a runner, and on Windows
+# 0.33 that runner is `llama-server.exe`. Filtering on "ollama*" finds the
+# server and the tray app — the two processes holding no GPU memory at all —
+# and misses the only one that matters, so walk the children too.
+_RUNNER_NAMES = ("llama-server", "ollama_llama_server", "ollama-runner")
+
+
+def runner_pids() -> Dict[int, str]:
+    """{pid: process name} for Ollama and whatever it spawned to hold the model."""
     try:
         import psutil
     except Exception:  # pragma: no cover - psutil is a hard dep in practice
-        return []
-    pids: List[int] = []
+        return {}
+    found: Dict[int, str] = {}
+    roots = []
     for proc in psutil.process_iter(["pid", "name"]):
         try:
             name = (proc.info.get("name") or "").lower()
         except Exception:
             continue
         if name.startswith("ollama"):
-            pids.append(int(proc.info["pid"]))
-    return pids
+            found[int(proc.info["pid"])] = name
+            roots.append(proc)
+        elif any(name.startswith(r) for r in _RUNNER_NAMES):
+            # Reachable even if the parent link is gone (restarted server).
+            found[int(proc.info["pid"])] = name
+    for proc in roots:
+        try:
+            for child in proc.children(recursive=True):
+                found[int(child.pid)] = (child.name() or "").lower()
+        except Exception:
+            continue
+    return found
 
 
 def _collect_uncached() -> Dict[str, Any]:
@@ -178,25 +202,31 @@ def _collect_uncached() -> Dict[str, Any]:
     except Exception as e:
         logger.debug("GPU process memory counters unavailable: %s", e)
         return {"supported": False, "reason": f"PDH: {e}"}
-    pids = set(ollama_pids())
-    ollama_shared = sum(r["shared"] for r in rows if r["pid"] in pids)
-    ollama_dedicated = sum(r["dedicated"] for r in rows if r["pid"] in pids)
+    procs = runner_pids()
+    shared_bytes = sum(r["shared"] for r in rows if r["pid"] in procs)
+    dedicated_bytes = sum(r["dedicated"] for r in rows if r["pid"] in procs)
+    footprint = shared_bytes + dedicated_bytes
+    fraction = (shared_bytes / footprint) if footprint else 0.0
     threshold = warn_threshold_bytes()
     return {
         "supported": True,
         "threshold": threshold,
+        "warn_fraction": WARN_FRACTION,
         "total_shared": sum(r["shared"] for r in rows),
         "ollama": {
-            "pids": sorted(pids),
-            "shared": ollama_shared,
+            "pids": sorted(procs),
+            "processes": sorted(set(procs.values())),
+            "shared": shared_bytes,
             # WDDM commitment, not what nvidia-smi calls "used": Windows can
             # evict a committed allocation and still count it here. Good enough
-            # to see that Ollama holds the card, not precise enough to do
+            # to see that the runner holds the card, not precise enough to do
             # arithmetic with — the fit advisor uses `ollama ps` for that.
-            "dedicated": ollama_dedicated,
+            "dedicated": dedicated_bytes,
+            "shared_fraction": round(fraction, 4),
             # The whole point of the module: weights paging over PCIe while
-            # every other gauge still looks fine.
-            "spilling": ollama_shared > threshold,
+            # every other gauge still looks fine. Both tests have to fire, so
+            # the CUDA baseline does not raise a false alarm.
+            "spilling": shared_bytes > threshold and fraction > WARN_FRACTION,
         },
     }
 
@@ -232,6 +262,8 @@ def describe(snapshot: Optional[Dict[str, Any]] = None) -> str:
         return f"shared GPU memory: unavailable ({d.get('reason', 'unknown')})"
     o = d.get("ollama") or {}
     mb = (o.get("shared") or 0) / (1024 * 1024)
+    pct = 100.0 * (o.get("shared_fraction") or 0.0)
     if o.get("spilling"):
-        return f"Ollama is using {mb:.0f} MB of shared GPU memory — weights are paging over PCIe"
-    return f"Ollama shared GPU memory: {mb:.0f} MB (no spill)"
+        return (f"the model runner is using {mb:.0f} MB of shared GPU memory "
+                f"({pct:.0f}% of its footprint) — weights are paging over PCIe")
+    return f"runner shared GPU memory: {mb:.0f} MB ({pct:.0f}%) — no spill"

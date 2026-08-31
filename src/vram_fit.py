@@ -50,7 +50,16 @@ def kv_bytes_per_token_measured(
 
 
 def kv_bytes_per_token_estimated(model_info: Dict[str, Any]) -> Tuple[Optional[float], str]:
-    """From GGUF metadata. Returns (bytes_per_token, note)."""
+    """From GGUF metadata. Returns (bytes_per_token, note).
+
+    This is the weak path. Two things routinely make it an over-estimate: a
+    model that leaves ``attention.head_count_kv`` out of its metadata (we then
+    have to assume full multi-head attention, when almost every modern model
+    uses grouped-query attention with far fewer KV heads), and a hybrid model
+    where only every n-th block is full attention. We correct for the second
+    when the metadata says so, flag the first, and let the caller treat the
+    number as a ceiling rather than a measurement.
+    """
     if not model_info:
         return None, "no model metadata"
     arch = str(model_info.get("general.architecture") or "").strip()
@@ -79,13 +88,25 @@ def kv_bytes_per_token_estimated(model_info: Dict[str, Any]) -> Tuple[Optional[f
             key_len = value_len = emb / heads
     if not heads_kv or not key_len or not value_len:
         return None, "not enough attention metadata"
-    # f16 K and V for every layer.
-    per_token = layers * heads_kv * (key_len + value_len) * 2
+
+    caveats = []
+    if not val("attention.head_count_kv"):
+        caveats.append("no head_count_kv in the metadata, assuming full multi-head attention")
+    # Hybrid models (Qwen 3.5 and friends) only give every n-th block full
+    # attention; the rest are SSM blocks with a fixed-size state.
+    attn_layers = layers
+    interval = val("full_attention_interval")
+    if interval and interval > 1:
+        attn_layers = math.ceil(layers / interval)
+        caveats.append(f"hybrid attention, 1 full-attention block in {int(interval)}")
+    elif any(str(k).startswith(f"{arch}.ssm.") for k in model_info):
+        caveats.append("hybrid SSM model")
+
+    # f16 K and V for every attention layer.
+    per_token = attn_layers * heads_kv * (key_len + value_len) * 2
     note = "estimated from GGUF metadata"
-    if model_info.get(f"{arch}.full_attention_interval") or any(
-        str(k).startswith(f"{arch}.ssm.") for k in model_info
-    ):
-        note = "estimated from GGUF metadata — hybrid attention model, treat as an upper bound"
+    if caveats:
+        note += " — " + "; ".join(caveats) + "; treat as an upper bound"
     return per_token, note
 
 
@@ -97,6 +118,7 @@ def plan(
     n_layers: int,
     kv_bytes_per_token: Optional[float],
     kv_source: str = "unknown",
+    kv_reliable: bool = True,
     current_ctx: Optional[int] = None,
     target_ctx: Optional[int] = None,
     max_ctx: Optional[int] = None,
@@ -131,6 +153,7 @@ def plan(
         "file_size_bytes": file_size_bytes,
         "kv_bytes_per_token": kv_bytes_per_token,
         "kv_source": kv_source,
+        "kv_reliable": kv_reliable,
         "current_ctx": current_ctx,
         "target_ctx": target,
         "n_layers": n_layers,
@@ -187,6 +210,11 @@ def plan(
     )
     if kv_bytes_per_token:
         steps.append("KV cache to q8_0 to buy back some of the room.")
+    if not kv_reliable:
+        steps.append(
+            "The KV cache size here is a ceiling read off the metadata, not a measurement — "
+            "load the model once and ask again for exact numbers."
+        )
     return {
         **base, "fits": False, "num_ctx": ctx, "num_gpu": num_gpu,
         "kv_cache_type": "q8_0" if kv_bytes_per_token else None,
