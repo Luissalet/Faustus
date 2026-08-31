@@ -173,6 +173,11 @@ DEFAULT_SETTINGS = {
     # read_file. 0 inline chars = list the paths only.
     "agent_file_mentions": True,
     "agent_file_mention_inline_chars": 6000,
+    # Tails an edit/regenerate would otherwise delete, kept aside so they can
+    # be put back (src/chat_versions.py, /versions).
+    "chat_versions": True,
+    "chat_versions_keep": 10,
+    "chat_versions_keep_hours": 168,
     # Per-model scorecard of agent turns (src/scorecard.py, /scorecard).
     "agent_scorecard": True,
     # Detached runs: on-disk replay log (survives restarts) and the task

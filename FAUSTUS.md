@@ -137,8 +137,17 @@ Empezar un mensaje con `#` guarda esa línea como regla permanente en el fichero
 - `POST /api/workspace/instructions/remember` (solo admin) y el comando `/remember <regla>` (alias `/recuerda`).
 - **`static/js/composerSigils.js`** (nuevo, sin DOM para poder testearlo): `isMemoryLine()` decide qué es una línea de memoria — **una sola línea, una sola almohadilla, y con workspace vinculado**. `##` sigue siendo un encabezado de Markdown y un mensaje de varias líneas se envía normal: secuestrar cualquiera de los dos convertiría `#` en una trampa.
 
+### 6.3 Versiones del chat: deshacer lo que borra una edición
+
+Editar un mensaje (o "regenerar desde aquí") **truncaba** el chat: todo lo que venía después se borraba de la base de datos y no volvía. Claude y ChatGPT guardan la rama anterior y te dejan alternar entre versiones; aquí importa más, porque una respuesta puede ser veinte minutos de un modelo local.
+
+- **`src/chat_versions.py`** (nuevo): antes de truncar, la cola que se va a borrar se guarda aparte en `DATA_DIR/chat_versions/<sesión>.json` — fichero por sesión como `agent_runs`, **sin tocar el esquema de la base de datos**: nada que migrar, y un fichero corrupto cuesta historial, nunca el chat. Poda por número (`chat_versions_keep`, 10), por antigüedad (`chat_versions_keep_hours`, una semana) y por tamaño. Los resúmenes no llevan los mensajes; la vista previa es **la respuesta**, no la pregunta.
+- **Restaurar es simétrico**: al recuperar una versión, la cola actual se guarda como versión antes de reemplazarla, así se puede ir y volver. Si no lo fuera, la función solo cambiaría qué respuesta pierdes.
+- `POST /api/session/{sid}/truncate` captura la cola y devuelve el resumen; `GET/POST/DELETE …/versions` listan, restauran y olvidan. **La captura nunca bloquea el truncado**: si falla, se registra y el truncado sigue (una red de seguridad que puede romper la caída que está amortiguando es peor que ninguna).
+- En el frontend, los **tres** sitios que truncaban (editar, regenerar, regenerar-variante) pasan ahora por `_truncateWithVersion()`, que muestra un aviso con **Undo** (restaura al momento) y el comando **`/versions [n | clear]`** lista las versiones con su botón *Restore*, al estilo de `/checkpoints`.
+
 ### Verificación
-41 tests nuevos en 4 ficheros (`test_file_mentions.py`, `test_file_mentions_routes_js.py`, `test_project_instructions_remember.py`, `test_composer_sigils_js.py`), incluidos los de contrato entre el popup y el resolutor del servidor (lo que inserta el popup es lo que el servidor resuelve) y los de node para los predicados del compositor. Suite completa en verde antes y después.
+60 tests nuevos en 4 ficheros (`test_file_mentions.py`, `test_file_mentions_routes_js.py`, `test_project_instructions_remember.py`, `test_composer_sigils_js.py`), incluidos los de contrato entre el popup y el resolutor del servidor (lo que inserta el popup es lo que el servidor resuelve) y los de node para los predicados del compositor. Suite completa en verde antes y después.
 
 ---
 

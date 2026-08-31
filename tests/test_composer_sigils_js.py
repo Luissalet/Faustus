@@ -48,3 +48,13 @@ def test_the_dispatcher_re_exports_the_same_predicate():
 def test_the_composer_wires_the_at_mention_picker():
     src = (_REPO / "static" / "js" / "chat.js").read_text(encoding="utf-8", errors="replace")
     assert "./fileMentions.js" in src and "initFileMentions" in src
+
+
+def test_the_versions_command_is_registered_with_a_restore_action():
+    src = (_REPO / "static" / "js" / "slashCommands.js").read_text(encoding="utf-8", errors="replace")
+    assert "  versions: {" in src and "handler: _cmdVersions," in src
+    # The list rows and the delegated click handler have to agree on the
+    # data attribute, or Restore silently does nothing.
+    assert 'data-cv-restore="${payload}"' in src
+    assert "closest('[data-cv-restore]')" in src
+    assert "/versions/${encodeURIComponent(p.id)}/restore" in src

@@ -5728,7 +5728,49 @@ import modelControls from './modelControls.js';
     }
   }
 
-  /**
+    /**
+   * Truncate the stored history, keeping the tail that is being thrown away.
+   *
+   * Edit and "regenerate from here" both delete everything after a point. The
+   * server sets that tail aside (src/chat_versions.py) and returns a summary;
+   * we surface it as an Undo, because an answer a local model spent minutes on
+   * should not vanish because the question got reworded. `/versions` lists them
+   * later, so the toast is a convenience, not the only way back.
+   */
+  async function _truncateWithVersion(sessionId, keepCount, reason) {
+    let saved = null;
+    try {
+      const r = await fetch(`${API_BASE}/api/session/${sessionId}/truncate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keep_count: keepCount, reason: reason || 'edit' })
+      });
+      if (r.ok) saved = (await r.json()).version || null;
+    } catch (err) {
+      console.warn('truncate failed', err);
+      return null;
+    }
+    if (saved && uiModule && uiModule.showToast) {
+      const n = saved.count || 0;
+      uiModule.showToast(`Kept the previous ${n} message${n === 1 ? '' : 's'}`, {
+        duration: 8000,
+        action: 'Undo',
+        actionHint: 'or /versions later',
+        onAction: async () => {
+          try {
+            const rr = await fetch(`${API_BASE}/api/session/${sessionId}/versions/${encodeURIComponent(saved.id)}/restore`, {
+              method: 'POST', credentials: 'same-origin',
+            });
+            if (!rr.ok) { uiModule.showError('Could not restore that version'); return; }
+            await sessionModule.selectSession(sessionId, { keepSidebar: true, showLoading: false });
+          } catch (e) { uiModule.showError('Could not restore that version: ' + e); }
+        },
+      });
+    }
+    return saved;
+  }
+
+/**
    * Regenerate response: truncate history to the user message before this AI message,
    * then re-submit that user message.
    */
@@ -5784,11 +5826,7 @@ import modelControls from './modelControls.js';
 
       const keepCount = msgIndex;
       try {
-        await fetch(`${API_BASE}/api/session/${sessionId}/truncate`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ keep_count: keepCount })
-        });
+        await _truncateWithVersion(sessionId, keepCount, 'edit');
 
         // Remove DOM elements from msgIndex onward
         for (let i = allMsgs.length - 1; i >= msgIndex; i--) {
@@ -5874,11 +5912,7 @@ import modelControls from './modelControls.js';
         // Regenerate flows intentionally trim history to this point before
         // resubmitting. The plain "Resend message" action must not do this.
         const keepCount = msgIndex;
-        await fetch(`${API_BASE}/api/session/${sessionId}/truncate`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ keep_count: keepCount })
-        });
+        await _truncateWithVersion(sessionId, keepCount, 'regenerate');
 
         // Drop the AI replies after the user message but KEEP the user bubble
         // itself (so its photo stays visible). Then suppress the new user
@@ -5990,11 +6024,7 @@ import modelControls from './modelControls.js';
     const keepCount = userIndex;
 
     try {
-      await fetch(`${API_BASE}/api/session/${sessionId}/truncate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keep_count: keepCount })
-      });
+      await _truncateWithVersion(sessionId, keepCount, 'regenerate');
 
       for (let i = allMsgs.length - 1; i > aiIndex; i--) {
         allMsgs[i].remove();

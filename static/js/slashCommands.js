@@ -1474,6 +1474,80 @@ document.addEventListener('click', (ev) => {
   _cpAction(t, t.hasAttribute('data-cp-diff') ? 'diff' : 'restore');
 });
 
+// /versions [n | clear] — the tails this chat lost to an edit or a
+// "regenerate from here", newest first, each with a Restore button. Editing a
+// message truncates the chat; src/chat_versions.py keeps what was deleted so a
+// reworded question does not cost you the answer you already had.
+async function _cmdVersions(args) {
+  const sid = sessionModule.getCurrentSessionId();
+  if (!sid) { slashReply('Open a chat first.'); return true; }
+  const a = (args || []).map(x => String(x).toLowerCase());
+  const escd = t => String(t || '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  if (a[0] === 'clear' || a[0] === 'reset') {
+    const ok = window.uiModule && window.uiModule.styledConfirm
+      ? await window.uiModule.styledConfirm('Forget every earlier version of this chat? They cannot be restored afterwards.', { confirmText: 'Forget', danger: true })
+      : window.confirm('Forget every earlier version of this chat?');
+    if (!ok) return true;
+    try {
+      const r = await fetch(`${API_BASE}/api/session/${encodeURIComponent(sid)}/versions`, { method: 'DELETE', credentials: 'same-origin' });
+      slashReply(r.ok ? `Forgot ${(await r.json()).removed || 0} version(s).` : `Could not clear the versions (HTTP ${r.status}).`);
+    } catch (e) { slashReply(`Could not clear the versions: ${e}`); }
+    return true;
+  }
+  const limit = Number.isFinite(parseInt(a[0], 10)) ? Math.max(1, Math.min(parseInt(a[0], 10), 50)) : 10;
+  try {
+    const r = await fetch(`${API_BASE}/api/session/${encodeURIComponent(sid)}/versions`, { credentials: 'same-origin' });
+    if (!r.ok) { slashReply(`Versions unavailable (HTTP ${r.status}).`); return true; }
+    const list = ((await r.json()).versions || []).slice(0, limit);
+    if (!list.length) {
+      slashReply('No earlier versions of this chat yet — one is kept every time an edit or a "regenerate from here" removes messages.');
+      return true;
+    }
+    const reasons = { edit: 'replaced by an edit', replaced: 'replaced by a restore' };
+    const rows = list.map(v => {
+      const when = v.created_at ? new Date(v.created_at * 1000).toLocaleString() : '';
+      const payload = escd(JSON.stringify({ sid, id: v.id }));
+      return `<li>${escd(when)} · ${v.count} message${v.count === 1 ? '' : 's'} · ${escd(reasons[v.reason] || v.reason || '')}`
+           + (v.preview ? `<div class="harness-muted">${escd(v.preview)}</div>` : '')
+           + ` <button type="button" class="harness-btn harness-btn-mini" data-cv-restore="${payload}">⟲ Restore this version</button></li>`;
+    }).join('');
+    slashReply(`<div class="chat-version-list"><p><b>Earlier versions of this chat</b> (newest first; <code>/versions clear</code> forgets them):</p><ul class="harness-list">${rows}</ul></div>`);
+  } catch (e) { slashReply(`Versions unavailable: ${e}`); }
+  return true;
+}
+
+async function _cvRestore(button) {
+  let p;
+  try { p = JSON.parse(button.dataset.cvRestore || '{}'); } catch (_) { return; }
+  if (!p.sid || !p.id) return;
+  const note = (text) => {
+    let n = button.parentElement.querySelector('.cv-note');
+    if (!n) { n = document.createElement('div'); n.className = 'cv-note harness-muted'; button.parentElement.appendChild(n); }
+    n.textContent = text;
+  };
+  const ok = window.uiModule && window.uiModule.styledConfirm
+    ? await window.uiModule.styledConfirm('Put this version back? What is in the chat after that point is saved as a version of its own, so you can switch back.', { confirmText: 'Restore' })
+    : window.confirm('Restore this version?');
+  if (!ok) return;
+  button.disabled = true;
+  try {
+    const r = await fetch(`${API_BASE}/api/session/${encodeURIComponent(p.sid)}/versions/${encodeURIComponent(p.id)}/restore`, { method: 'POST', credentials: 'same-origin' });
+    if (!r.ok) { note(`restore failed (HTTP ${r.status})`); button.disabled = false; return; }
+    const res = await r.json();
+    note(`restored ${res.restored} message(s); ${res.replaced} kept as a new version`);
+    button.textContent = '⟲ Restored';
+    // Reload the chat so the transcript matches what is now stored.
+    try { await sessionModule.selectSession(p.sid, { keepSidebar: true, showLoading: false }); } catch (_) {}
+  } catch (e) { note(`failed: ${e}`); button.disabled = false; }
+}
+
+document.addEventListener('click', (ev) => {
+  const t = ev.target && ev.target.closest ? ev.target.closest('[data-cv-restore]') : null;
+  if (!t) return;
+  ev.preventDefault();
+  _cvRestore(t);
+});
+
 async function _cmdScorecard(args) {
   const a = (args || []).map(x => String(x).toLowerCase());
   if (a[0] === 'clear' || a[0] === 'reset') {
@@ -6206,6 +6280,14 @@ const COMMANDS = {
     handler: _cmdAgentsMd,
     noUserBubble: true,
     usage: '/agentsmd [write]',
+  },
+  versions: {
+    alias: ['history-versions', 'undo-edit'],
+    category: 'Chat',
+    help: 'Earlier versions of this chat — the messages an edit or a "regenerate from here" removed, with a Restore button',
+    handler: _cmdVersions,
+    noUserBubble: true,
+    usage: '/versions [n | clear]',
   },
   scorecard: {
     alias: ['models-score', 'score'],

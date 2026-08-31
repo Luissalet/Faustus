@@ -250,13 +250,74 @@ def setup_history_routes(session_manager, upload_handler=None) -> APIRouter:
         try:
             body = await request.json()
             keep_count = body.get("keep_count", 0)
+            # Set the tail aside before deleting it (src/chat_versions.py).
+            # Editing a message is how people reword a question, and losing the
+            # answer it already produced — twenty minutes of a local model on a
+            # good day — is not what they were asking for.
+            saved = None
+            try:
+                from src import chat_versions
+                session = session_manager.get_session(session_id)
+                dropped = list(getattr(session, "history", []) or [])[int(keep_count or 0):]
+                if dropped:
+                    saved = chat_versions.save(
+                        session_id, dropped, keep_count=int(keep_count or 0),
+                        reason=str(body.get("reason") or "edit"),
+                    )
+            except Exception as ver_err:              # never block the truncation
+                logger.debug("[chat-versions] capture failed for %s: %s", session_id, ver_err)
             result = session_manager.truncate_messages(session_id, keep_count)
-            return {"status": "ok", "kept": keep_count, "truncated": result}
+            return {"status": "ok", "kept": keep_count, "truncated": result, "version": saved}
         except KeyError:
             raise HTTPException(404, "Session not found")
         except Exception as e:
             logger.error(f"Truncate error {session_id}: {e}")
             raise HTTPException(500, str(e))
+
+    @router.get("/api/session/{session_id}/versions")
+    async def list_chat_versions(request: Request, session_id: str):
+        """Tails this chat lost to an edit / regenerate, newest first."""
+        _verify_session_owner(request, session_id)
+        from src import chat_versions
+        return {"versions": chat_versions.list_versions(session_id)}
+
+    @router.post("/api/session/{session_id}/versions/{version_id}/restore")
+    async def restore_chat_version(request: Request, session_id: str, version_id: str):
+        """Put a saved tail back, saving the current one first.
+
+        Symmetric on purpose: restoring must not be its own destructive act, or
+        the feature just moves which answer you lose.
+        """
+        _verify_session_owner(request, session_id)
+        from src import chat_versions
+        record = chat_versions.get(session_id, version_id)
+        if not record:
+            raise HTTPException(404, "Version not found")
+        session = session_manager.get_session(session_id)
+        if session is None:
+            raise HTTPException(404, "Session not found")
+        history = list(getattr(session, "history", []) or [])
+        keep = max(0, min(int(record.get("keep_count") or 0), len(history)))
+        replaced = history[keep:]
+        if replaced:
+            chat_versions.save(session_id, replaced, keep_count=keep, reason="replaced")
+        restored = [
+            ChatMessage(role=str(m.get("role") or "assistant"),
+                        content=m.get("content"),
+                        metadata=m.get("metadata") if isinstance(m.get("metadata"), dict) else None)
+            for m in (record.get("messages") or [])
+        ]
+        if not session_manager.replace_messages(session_id, history[:keep] + restored):
+            raise HTTPException(500, "Could not restore that version")
+        chat_versions.drop(session_id, version_id)
+        return {"status": "ok", "restored": len(restored), "kept": keep,
+                "replaced": len(replaced)}
+
+    @router.delete("/api/session/{session_id}/versions")
+    async def clear_chat_versions(request: Request, session_id: str):
+        _verify_session_owner(request, session_id)
+        from src import chat_versions
+        return {"status": "ok", "removed": chat_versions.clear(session_id)}
 
     @router.post("/api/session/{session_id}/message")
     async def add_message(request: Request, session_id: str):
