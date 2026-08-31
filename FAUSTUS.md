@@ -210,5 +210,22 @@ Dos avisos aprendidos por el camino: (1) el guardián de regresión `test_resend
 
 ---
 
+## 7. Identidad visual: la marca Faustus (31-08-2026, noche)
+
+Odysseus se identifica con un glifo de **velero** (dos velas y una ola) que sigue el color de acento del tema. Faustus se quedó con él durante todo el fork, así que el renombrado (§5) era sólo textual: la app seguía enseñando el logo de otro proyecto. Este bloque cierra eso con una marca propia.
+
+**La marca.** Punta de flecha con un **bocadillo de chat recortado en negativo** (casa, tres puntos y cola) y dos alas laterales con muesca. Se partió de una referencia en PNG y se vectorizó midiendo, no calcando: k-means a 3 clusters para separar las tintas, máscaras binarias, **ajuste de rectas por mínimos cuadrados a cada arista** y las intersecciones de esas rectas como vértices (`approxPolyDP` directo daba ±2 px). Salen 12 vértices para el cuerpo, 5 por ala y 3 círculos. Contrastado contra el original: **IoU 0,953**; lo que falta es el antialiasing blando del PNG de referencia, que engorda ≈ 1 px todo el contorno.
+
+**Dos variantes, por una razón medible.** Los tres puntos del bocadillo miden r ≈ 0,7 px a 32 px y se convierten en una mancha gris. La variante `small` (sin puntos, huecos del bocadillo abiertos, alas separadas) es la que se usa en favicon y en la pantalla de bienvenida (1,8 rem); la completa queda para los iconos grandes del manifest. Paleta medida del original: degradado vertical `#9F6DE0` → `#6F3ECA` en el cuerpo, `#B085E4` en alas y puntos — que resulta ser ≈ 62 % de opacidad del cuerpo, así que la marca funciona con un solo color más `opacity`, igual que hacía el velero.
+
+**Ficheros.** `assets/branding/faustus-logo.svg` (master con degradado), `-flat.svg` (dos tintas, tematizable con `var(--logo-ink)`), `faustus-mark.svg` (`currentColor`, también en `static/icons/`) y `faustus-mark-small.svg`. Iconos regenerados: `static/icons/icon-192/-512/-maskable-512.png` (el maskable con su safe zone sobre `#282c34`) y los `.ico` multi-tamaño, que ahora traen la variante correcta en cada frame (16 y 32 px la simplificada, 48 px la completa) en vez de un reescalado del mismo dibujo.
+
+**De paso, un 404 viejo.** `notes.js`, `tasks.js`, `settings.js` y `calendar/reminders.js` apuntaban las notificaciones del navegador a `/static/favicon.ico` y `/static/favicon.png`, y **ninguno de los dos existía**. Ahora existen. Nota de mantenimiento: `.gitignore` ignora `*.png`, así que los iconos van con `git add -f`.
+
+### Verificación
+El SVG vive **inline en cuatro sitios**, cada uno con su escapado distinto — data: URI url-encoded en el `<link rel=icon>`, concatenación de strings JS en el script de arranque, template literal en `theme.js::_updateFavicon`, y HTML plano en la pantalla de bienvenida — y no hay build que los mantenga sincronizados. Sustituir el dibujo con una regex **se comió las comillas dobles** del literal del script de arranque: un error de sintaxis que deja la página en blanco y que **los 262 tests de Python seguían pasando**. De ahí `tests/test_faustus_mark.py` (15 tests): parsea el SVG de los cuatro sitios como XML y compara la geometría, comprueba que el glifo viejo ya no aparece, que los dos registros de iconos por ruta siguen en sync, que existen los assets y que las rutas de notificación resuelven — y pasa **cada bloque `<script>` inline de `index.html` por `node --check`**, que es lo único que habría cazado el fallo real.
+
+---
+
 ## Cómo mantener este documento
 Cada bloque de trabajo añade una sección (fecha, qué, por qué, ficheros, cómo se verificó, cifras) y actualiza las cifras de cabecera (`git log --oneline c9dd68d8..HEAD | wc -l`, `git diff --stat c9dd68d8..HEAD`). Los commits del fork llevan mensajes largos que explican el porqué: `git log c9dd68d8..HEAD` es la fuente detallada.

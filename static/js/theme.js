@@ -293,7 +293,7 @@ export function applyColors(colors) {
 
 // Per-route SVG shape registry — kept in sync with the inline favicon
 // script in index.html so a theme change keeps the route icon, not the
-// default boat. Returns the inner SVG markup colored with `fg`.
+// default mark. Returns the inner SVG markup colored with `fg`.
 const _ROUTE_FAVICON_SHAPES = {
   '/calendar':
     "<rect x='4' y='6' width='24' height='22' rx='2' fill='none' stroke='__C__' stroke-width='2.5'/>" +
@@ -336,7 +336,7 @@ function _updateFavicon(fg) {
   if (routeShape) {
     svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'>${routeShape.split('__C__').join(fg)}</svg>`;
   } else {
-    svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><path d='M16 4L16 22L6 22Z' fill='${fg}'/><path d='M16 8L16 22L24 22Z' fill='${fg}' opacity='0.6'/><path d='M4 24Q10 20 16 24Q22 28 28 24' stroke='${fg}' stroke-width='2.5' fill='none' stroke-linecap='round'/></svg>`;
+    svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><path d='M16 0.738L4.674 25.559L13.004 28.992L13.004 24.798L9.229 24.798L9.229 19.644L16 12.094L22.772 19.644L22.772 24.798L17.678 24.798L13.4 31.264L27.326 25.559Z' fill='${fg}'/><g fill='${fg}' opacity='.62'><path d='M5.993 5.022L0.839 13.292L6.233 18.985L9.049 13.172L4.555 11.434Z'/><path d='M26.008 5.022L31.161 13.292L25.768 18.985L22.952 13.172L27.446 11.434Z'/></g></svg>`;
   }
   const href = 'data:image/svg+xml,' + encodeURIComponent(svg);
   let link = document.querySelector("link[rel='icon']");
