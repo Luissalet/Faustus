@@ -1064,6 +1064,16 @@ async def _startup_event():
             _db.close()
     except Exception as e:
         logger.debug(f"Incognito purge skipped: {e}")
+    # Detached agent runs the previous process took down with it: keep what
+    # they produced as a marked partial message and flag them in the sidebar
+    # (src/agent_runs.py). Also prunes old replay logs.
+    try:
+        from src import agent_runs as _agent_runs
+        _interrupted = await asyncio.to_thread(_agent_runs.recover_interrupted_runs, session_manager)
+        if _interrupted:
+            logger.warning("Recovered %d interrupted agent run(s) from the previous process", len(_interrupted))
+    except Exception as e:
+        logger.warning(f"Interrupted-run recovery skipped: {e}")
     # Strong refs to fire-and-forget startup tasks. Without this, Python may
     # GC tasks created with `asyncio.create_task(...)` before they finish.
     _startup_tasks: list[asyncio.Task] = getattr(app.state, "_startup_tasks", [])

@@ -2907,7 +2907,23 @@ def setup_chat_routes(
         if compare_mode:
             return StreamingResponse(_safe_stream(), media_type="text/event-stream")
 
-        _detached_run = agent_runs.start(session, _safe_stream())
+        # Task queue: runs on a local endpoint share one lane (one GPU, one
+        # generation at a time by default); API endpoints run immediately
+        # unless agent_queue_api_concurrency is set. Queued runs stream a live
+        # `queue_status` position and start on their own when the lane frees.
+        _lane = None
+        try:
+            from src.model_context import is_local_endpoint as _is_local_ep
+            if _is_local_ep(sess.endpoint_url):
+                _lane = "local"
+            else:
+                from src.settings import get_setting as _gs_queue
+                if int(_gs_queue("agent_queue_api_concurrency", 0) or 0) > 0:
+                    _lane = "api"
+        except Exception:
+            _lane = None
+        _run_label = (getattr(sess, "name", "") or "").strip() or " ".join(str(message or "").split())[:60]
+        _detached_run = agent_runs.start(session, _safe_stream(), lane=_lane, label=_run_label[:80])
         return StreamingResponse(
             agent_runs.subscribe(session, _detached_run),
             media_type="text/event-stream",
@@ -2967,7 +2983,35 @@ def setup_chat_routes(
             awaiting = tool_approval_store.pending_session_ids(owner=owner)
         except Exception:
             awaiting = []
-        return {"running": running, "runs": runs, "awaiting_approval": awaiting, "ts": time.time()}
+        # Queue positions of runs waiting for their lane + runs a restart cut
+        # short (until the client acknowledges them).
+        queued: Dict[str, int] = {}
+        interrupted: List[Dict[str, Any]] = []
+        try:
+            for sid, pos in agent_runs.queued_positions().items():
+                if sid in running:
+                    queued[sid] = pos
+            for entry in agent_runs.interrupted_runs():
+                try:
+                    _verify_session_owner(request, entry["session_id"], session_manager)
+                except HTTPException:
+                    continue
+                interrupted.append(entry)
+        except Exception:
+            pass
+        return {"running": running, "runs": runs, "awaiting_approval": awaiting, "queued": queued,
+                "interrupted": interrupted, "ts": time.time()}
+
+    @router.post("/api/chat/interrupted/ack")
+    async def chat_interrupted_ack(request: Request) -> Dict[str, Any]:
+        """The client has shown the "interrupted by a restart" notice."""
+        effective_user(request)
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        sid = str((body or {}).get("session_id") or "") or None
+        return {"cleared": agent_runs.acknowledge_interrupted(sid)}
 
     # ------------------------------------------------------------------ #
     # GET /api/chat/stream_status — check if a stream is active for a session
