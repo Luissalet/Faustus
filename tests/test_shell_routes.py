@@ -174,6 +174,7 @@ class TestRunningInContainer:
 class TestAppleSiliconDetection:
     """APFEL should only surface as available on native Apple Silicon Macs."""
 
+    @pytest.mark.skipif(os.name == "nt", reason="macOS-only detection path")
     def test_reports_true_on_macos_arm64(self, monkeypatch):
         import core.platform_compat as platform_compat
 
@@ -290,6 +291,7 @@ class TestHostDockerAccess:
 
         assert _host_docker_access_enabled(str(socket_path)) is False
 
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX-only: Unix domain sockets")
     @pytest.mark.parametrize("flag", [None, "false"])
     def test_socket_without_explicit_opt_in_is_disabled(
         self,
@@ -307,6 +309,7 @@ class TestHostDockerAccess:
 
             assert _host_docker_access_enabled(str(socket_path)) is False
 
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX-only: Unix domain sockets")
     def test_explicit_opt_in_with_unix_socket_is_enabled(
         self,
         monkeypatch,
@@ -414,6 +417,7 @@ class TestPackageProbeStatus:
         assert _package_installed_from_probe("diffusers", missing_torch) is False
         assert _package_installed_from_probe("diffusers", ready) is True
 
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX-only: ~/.local/bin user-base layout")
     def test_local_user_install_bin_is_added_to_path(self, monkeypatch, tmp_path):
         user_base = tmp_path / "user-base"
         monkeypatch.setattr("site.USER_BASE", str(user_base))

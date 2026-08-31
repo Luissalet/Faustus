@@ -52,6 +52,7 @@ def _make_vectorrag(rows):
     return rag
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX-only: the fixture uses POSIX-shaped absolute paths")
 def test_vectorrag_remove_is_path_bounded():
     rows = [
         ("a", {"source": "/a/docs/f1.md"}),

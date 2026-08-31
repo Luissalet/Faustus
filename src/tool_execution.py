@@ -104,7 +104,7 @@ def _is_sensitive_path(resolved: str) -> bool:
     the lowercase form, so a case-sensitive check would let it slip past the
     deny-list in every file tool that relies on it.
     """
-    parts = [p.casefold() for p in resolved.split(os.sep)]
+    parts = [p.casefold() for p in re.split(r"[\\/]", resolved)]
     filename = parts[-1] if parts else ""
 
     # Check if any path component is a sensitive directory.

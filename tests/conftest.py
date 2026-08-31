@@ -24,6 +24,22 @@ os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 os.environ.setdefault("PYTHONIOENCODING", "utf-8")
 os.environ.setdefault("PYTHONUTF8", "1")
 
+# On Windows `bash` on PATH is usually the WSL launcher in System32, which
+# fails with "execvpe(/bin/bash) failed" when no distro is installed. Tests
+# that exercise shell snippets need a real POSIX shell: put Git for Windows'
+# bash first when it is installed (bash -n, pipes, `||` chains all work there).
+if os.name == "nt":
+    _git_bash_dirs = [
+        os.path.join(os.environ.get("ProgramFiles", r"C:\Program Files"), "Git", "bin"),
+        os.path.join(os.environ.get("ProgramFiles", r"C:\Program Files"), "Git", "usr", "bin"),
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Git", "bin"),
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Git", "usr", "bin"),
+    ]
+    for _d in _git_bash_dirs:
+        if _d and os.path.isfile(os.path.join(_d, "bash.exe")):
+            os.environ["PATH"] = _d + os.pathsep + os.environ.get("PATH", "")
+            break
+
 # Pre-import real heavy modules BEFORE any test file's module-level stubs can
 # replace them with MagicMock. Some test files (e.g. test_llm_core_sanitize_*)
 # stub sqlalchemy/core.database at module scope with `if mod not in sys.modules`,

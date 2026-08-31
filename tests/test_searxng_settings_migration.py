@@ -6,6 +6,10 @@ import sys
 from pathlib import Path
 
 import pytest
+
+import os as _os
+
+pytestmark = pytest.mark.skipif(_os.name == "nt", reason="Linux/Docker migration script (os.fchown, POSIX temp semantics)")
 import yaml
 
 

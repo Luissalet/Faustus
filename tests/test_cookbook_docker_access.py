@@ -1,3 +1,4 @@
+import os
 import socket
 from unittest.mock import AsyncMock
 
@@ -56,6 +57,7 @@ async def test_container_cli_only_is_rejected(monkeypatch, tmp_path):
     assert "docker/host-docker.yml" in message
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX-only: Unix domain sockets")
 @pytest.mark.asyncio
 async def test_container_opt_in_with_unix_socket_is_allowed(monkeypatch, tmp_path):
     monkeypatch.setattr(cookbook_routes.shutil, "which", lambda binary: "/usr/bin/docker")
@@ -170,6 +172,7 @@ async def test_local_container_serve_returns_host_docker_opt_in_hint(
     assert "docker/host-docker.yml" in response["error"]
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX-only: Unix domain sockets")
 @pytest.mark.asyncio
 async def test_local_container_serve_allows_generated_docker_exec_when_enabled(
     monkeypatch,

@@ -1,3 +1,4 @@
+import os
 """CPU architecture normalization for HW Fit hardware detection."""
 
 import pytest
@@ -25,6 +26,7 @@ def _stub_common_probe(monkeypatch, machine):
     monkeypatch.setattr(hardware, "_detect_amd", lambda: None)
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX-only: platform detection is mocked for Linux/macOS")
 def test_detect_system_reports_cpu_arch_for_gpu_backends(monkeypatch):
     """GPU-backed systems still need CPU architecture for cpu_only estimates."""
     _stub_common_probe(monkeypatch, "aarch64")
@@ -44,6 +46,7 @@ def test_detect_system_reports_cpu_arch_for_gpu_backends(monkeypatch):
     assert system["cpu_arch"] == "arm64"
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX-only: platform detection is mocked for Linux/macOS")
 def test_detect_system_keeps_32_bit_arm_on_conservative_cpu_backend(monkeypatch):
     """Plain arm/armv7 is not the same as the ARM64-class cpu_arm fallback."""
     _stub_common_probe(monkeypatch, "armv7l")

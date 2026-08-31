@@ -894,6 +894,9 @@ def test_cached_model_scan_does_not_launch_ollama_cli_on_windows(tmp_path):
     env = dict(os.environ)
     env["PATH"] = str(tmp_path) + os.pathsep + env.get("PATH", "")
     env["HOME"] = str(empty_home)
+    env["USERPROFILE"] = str(empty_home)
+    env["LOCALAPPDATA"] = str(empty_home)
+    env.pop("OLLAMA_MODELS", None)
     env.pop("ODYSSEUS_ALLOW_OLLAMA_CLI_SCAN", None)
     proc = subprocess.run(
         [sys.executable, str(scan_py)],

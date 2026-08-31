@@ -1,3 +1,5 @@
+import pytest
+import os
 """macOS / Apple Silicon (Metal) support for Cookbook hardware-fit.
 
 Covers the Metal-specific behavior added for Apple Silicon and locks in the
@@ -174,6 +176,7 @@ def test_plain_arm_mac_skipped(monkeypatch):
     assert hardware._detect_apple_silicon() is None
 
 
+@pytest.mark.skipif(os.name == "nt", reason="macOS-only detection path")
 def test_detect_system_propagates_unified_memory(monkeypatch):
     """The unified_memory flag set by GPU detection must survive into the
     system dict so the API and UI can report it (it was being dropped)."""

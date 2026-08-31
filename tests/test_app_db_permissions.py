@@ -119,6 +119,7 @@ def test_app_db_sidecars_relocked(tmp_path):
         assert s.stat().st_mode & 0o777 == 0o600, f"{s.name} not re-locked on startup"
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX-only: file://localhost/<path> URIs are not a Windows form")
 def test_sqlite_db_path_handles_file_uri_forms(tmp_path):
     """SQLite URI filenames must chmod the real filesystem path, not the
     literal file: URI string. Memory URI databases should still be skipped."""

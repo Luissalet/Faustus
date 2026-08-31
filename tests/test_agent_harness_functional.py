@@ -143,7 +143,7 @@ def test_checkpoint_then_tests_fail_then_fix_round_then_verified(project, monkey
     assert summary["checkpoint"] == verified["checkpoint"]
     assert summary["stop_reason"] == "complete"
     # The checkpoint really holds the pre-turn content and sees the change.
-    assert wc.file_at(project, summary["checkpoint"], "src/calc.py") == b"def add(a, b):\n    return a - b\n"
+    assert wc.file_at(project, summary["checkpoint"], "src/calc.py").replace(b"\r\n", b"\n") == b"def add(a, b):\n    return a - b\n"
     assert [c["path"] for c in wc.changed_since(project, summary["checkpoint"])] == ["src/calc.py"]
     metrics = next(e for e in events if e.get("type") == "metrics")["data"]
     assert metrics["harness"]["tests"]["ok"] is True and metrics["harness"]["checkpoint"]

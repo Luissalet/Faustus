@@ -1,3 +1,4 @@
+import os
 import importlib.util
 import json
 import pytest
@@ -720,6 +721,7 @@ def test_cli_terminal_no_color_outputs_no_ansi(tmp_path, capsys):
     assert not re.search(r"\x1b\[[0-9;]*m", output)
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX-only: ANSI auto-detection is off on Windows")
 def test_color_auto_requires_terminal_and_support(monkeypatch):
     audit = load_module()
     args = audit.argparse.Namespace(format="terminal", color="auto", output=None)
