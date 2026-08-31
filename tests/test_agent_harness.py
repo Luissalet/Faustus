@@ -282,3 +282,19 @@ def test_delegation_report_flags_files_touched_by_two_workers(tmp_path):
     # no overlap → no warning
     b.mutations = ["README.md"]
     assert "MORE THAN ONE" not in _build_report_text([a, b], None)
+
+
+def test_negated_statements_are_not_claims():
+    """'No he modificado nada' is the opposite of a claim (seen live with
+    qwen3.8: the read-only answer was rejected for it)."""
+    for text in (
+        "Las tarjetas se renderizan en projects.js. No he modificado nada.",
+        "Todavía no he modificado ningún fichero; primero necesito leer el código.",
+        "No se ha modificado ningún archivo del proyecto.",
+        "I have not modified any files in the repo.",
+        "Nothing has been changed in the code yet.",
+    ):
+        assert h.find_mutation_claims(text) == [], text
+    # A leading "No," answering a question does not negate the claim that follows.
+    assert h.find_mutation_claims("No, he modificado el fichero server.py como pediste.")
+    assert h.find_mutation_claims("He modificado el fichero server.py.")

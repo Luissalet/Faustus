@@ -237,6 +237,19 @@ _INVESTIGATION_OBJECT_RE = re.compile(
 )
 
 
+# "No he modificado nada" / "not modified" — a negated claim is the opposite of
+# a claim. Checked on the few words right before a match.
+_NEGATION_BEFORE_RE = re.compile(
+    r"\b(?:no|nunca|jam[aá]s|tampoco|ni|nada|ning[uú]n[oa]?|nothing|not|never|neither|nor|without|sin|"
+    r"haven't|hasn't|hadn't|didn't|don't|doesn't|wasn't|weren't|isn't|aren't)\s+(?:\w+\s+)?$",
+    re.IGNORECASE,
+)
+
+
+def _negated_before(text: str, start: int) -> bool:
+    return bool(_NEGATION_BEFORE_RE.search(text[max(0, start - 28):start]))
+
+
 def _finishes_an_investigation(match_text: str, following: str) -> bool:
     """True for "completed the analysis"-style matches: a completion verb whose
     object (next ~50 chars) is an investigation, not a change."""
@@ -269,6 +282,8 @@ def find_mutation_claims(text: str, limit: int = 4, include_bare_done: bool = Tr
             if not (has_paths or (terse and standalone) or _TECH_CONTEXT_RE.search(ctx)):
                 continue
             if _finishes_an_investigation(m.group(0), body[m.end():m.end() + 50]):
+                continue
+            if _negated_before(body, m.start()):
                 continue
             key = m.group(0).strip().lower()
             if key in seen:
