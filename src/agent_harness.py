@@ -471,17 +471,17 @@ def git_change_summary(workspace: Optional[str], timeout: float = 8.0) -> Option
     try:
         probe = subprocess.run(
             ["git", "rev-parse", "--is-inside-work-tree"],
-            cwd=workspace, capture_output=True, text=True, timeout=timeout,
+            cwd=workspace, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout,
         )
         if probe.returncode != 0 or "true" not in (probe.stdout or ""):
             return None
         status = subprocess.run(
             ["git", "status", "--porcelain", "--untracked-files=normal"],
-            cwd=workspace, capture_output=True, text=True, timeout=timeout,
+            cwd=workspace, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout,
         )
         stat = subprocess.run(
             ["git", "diff", "--shortstat"],
-            cwd=workspace, capture_output=True, text=True, timeout=timeout,
+            cwd=workspace, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout,
         )
         changed: List[Dict[str, str]] = []
         for line in (status.stdout or "").splitlines():

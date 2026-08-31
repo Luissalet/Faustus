@@ -173,7 +173,7 @@ def setup_workspace_routes():
         import subprocess
         try:
             probe = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=root,
-                                   capture_output=True, text=True, timeout=8)
+                                   capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=8)
         except (OSError, subprocess.SubprocessError):
             probe = None
         if not probe or probe.returncode != 0:
@@ -182,13 +182,14 @@ def setup_workspace_routes():
         rel = os.path.relpath(target, top).replace(os.sep, "/")
         try:
             st = subprocess.run(["git", "status", "--porcelain", "--", rel], cwd=top,
-                                capture_output=True, text=True, timeout=8)
+                                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=8)
             code = (st.stdout or "")[:2].strip() or None
             if code and code.startswith("?"):
                 diff = subprocess.run(["git", "diff", "--no-index", "--", "/dev/null" if os.name != "nt" else "NUL", rel],
-                                      cwd=top, capture_output=True, text=True, timeout=8)
+                                      cwd=top, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=8)
             else:
-                diff = subprocess.run(["git", "diff", "--", rel], cwd=top, capture_output=True, text=True, timeout=8)
+                diff = subprocess.run(["git", "diff", "--", rel], cwd=top, capture_output=True, text=True,
+                                      encoding="utf-8", errors="replace", timeout=8)
             text = diff.stdout or ""
         except (OSError, subprocess.SubprocessError) as e:
             raise HTTPException(status_code=500, detail=str(e))

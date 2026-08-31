@@ -104,8 +104,8 @@ function _render() {
       meta.textContent = `git diff · ${lines.filter(l => l.startsWith('+') && !l.startsWith('+++')).length} added, ${lines.filter(l => l.startsWith('-') && !l.startsWith('---')).length} removed`;
       code.innerHTML = lines.map(l => {
         const cls = l.startsWith('+') && !l.startsWith('+++') ? 'fv-add' : (l.startsWith('-') && !l.startsWith('---') ? 'fv-del' : (l.startsWith('@@') ? 'fv-hunk' : ''));
-        return `<span class="fv-line ${cls}">${esc(l)}</span>`;
-      }).join('\n');
+        return `<span class="fv-line ${cls}">${esc(l) || '&nbsp;'}</span>`;
+      }).join('');
     }
   } else {
     const ext = (String(_state.path).split('.').pop() || '').toUpperCase();
@@ -114,7 +114,7 @@ function _render() {
     else {
       const html = _highlight(d.text, _state.path);
       const parts = html.split('\n');
-      code.innerHTML = parts.map((l, i) => `<span class="fv-line"><span class="fv-ln">${i + 1}</span>${l}</span>`).join('\n');
+      code.innerHTML = parts.map((l, i) => `<span class="fv-line"><span class="fv-ln">${i + 1}</span>${l || '&nbsp;'}</span>`).join('');
     }
   }
   el.hidden = false;
