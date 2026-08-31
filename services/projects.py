@@ -54,6 +54,36 @@ MAX_CONTEXT_SEARCH_MATCHES = 80
 _NAME_RE = re.compile(r"^[^\x00-\x1f<>:\"/\\|?*]{1,80}$")
 _MEM_FILE_RE = re.compile(r"^[A-Za-z0-9._-]{1,120}\.md$")
 
+# Per-project agent knobs (routes/chat_routes builds `harness_options` from
+# them). Missing keys mean "use the global setting / default".
+#   trusted        — file writes inside the workspace skip the approval gate
+#   trusted_agents — same for delegate_agents (its workers keep their gates)
+#   review_mode    — edits stay "pending" until accepted per file in the viewer
+#   checkpoints    — shadow snapshot before the first change of each turn
+#   run_tests      — run the project's tests after a turn with changes
+#   test_command   — explicit test command (empty = auto-detect)
+#   review_model   — auto-review reviewer ("", "same" or a model name)
+AGENT_OPTION_FIELDS: Dict[str, type] = {
+    "trusted": bool, "trusted_agents": bool, "review_mode": bool, "checkpoints": bool,
+    "run_tests": bool, "test_command": str, "review_model": str,
+}
+AGENT_OPTION_DEFAULTS: Dict[str, Any] = {
+    "trusted": False, "trusted_agents": False, "review_mode": False, "checkpoints": True,
+    "run_tests": True, "test_command": "", "review_model": "",
+}
+
+
+def agent_options(project: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """The project's agent knobs with defaults filled in ({} for no project)."""
+    if not project:
+        return {}
+    out: Dict[str, Any] = {}
+    for key, kind in AGENT_OPTION_FIELDS.items():
+        val = project.get(key, AGENT_OPTION_DEFAULTS[key])
+        out[key] = bool(val) if kind is bool else str(val or "").strip()
+    out["project_id"] = project.get("id")
+    return out
+
 
 class ProjectError(ValueError):
     """Invalid project input — routes map this to a 400."""
@@ -257,6 +287,18 @@ class ProjectStore:
             )
             new_row = dict(r)
             new_row.update(fields)
+            # Agent knobs (all optional; see AGENT_OPTION_FIELDS).
+            for key, kind in AGENT_OPTION_FIELDS.items():
+                if key not in updates:
+                    continue
+                val = updates[key]
+                if kind is bool:
+                    new_row[key] = bool(val)
+                else:
+                    text = str(val or "").strip()
+                    if len(text) > 400:
+                        raise ProjectError(f"{key} is too long (max 400 chars)")
+                    new_row[key] = text
             if "enabled" in updates:
                 new_row["enabled"] = bool(updates["enabled"])
             if "archived" in updates:

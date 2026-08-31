@@ -810,6 +810,10 @@ app.include_router(setup_workspace_routes())
 from routes.project_routes import setup_project_routes
 app.include_router(setup_project_routes())
 
+# Model scorecard: per-model reliability metrics of agent turns (src/scorecard.py).
+from routes.scorecard_routes import setup_scorecard_routes
+app.include_router(setup_scorecard_routes())
+
 # Live system usage (ollama ps + nvidia-smi + RAM/CPU) for the chat usage widget.
 from routes.system_usage_routes import setup_system_usage_routes
 app.include_router(setup_system_usage_routes())

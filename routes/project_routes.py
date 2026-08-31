@@ -40,6 +40,14 @@ class ProjectUpdateRequest(BaseModel):
     enabled: Optional[bool] = None
     pinned: Optional[bool] = None
     archived: Optional[bool] = None
+    # Agent knobs (services.projects.AGENT_OPTION_FIELDS)
+    trusted: Optional[bool] = None
+    trusted_agents: Optional[bool] = None
+    review_mode: Optional[bool] = None
+    checkpoints: Optional[bool] = None
+    run_tests: Optional[bool] = None
+    test_command: Optional[str] = Field(None, max_length=400)
+    review_model: Optional[str] = Field(None, max_length=200)
 
 
 class MemoryWriteRequest(BaseModel):
@@ -347,6 +355,62 @@ def setup_project_routes() -> APIRouter:
         store = get_store()
         project = _get_or_404(project_id, effective_user(request))
         block = store.system_block(project)
-        return {"block": block, "chars": len(block)}
+        extra: Dict[str, Any] = {}
+        # The per-workspace blocks the agent loop adds on top of the project
+        # block (AGENTS.md instructions, repository map) — shown so the user
+        # can see the whole budget, not just the project's own text.
+        ws = project.get("workspace") or ""
+        if ws:
+            try:
+                from src import project_instructions as _pinstr
+                info = _pinstr.read(ws)
+                extra["instructions_file"] = {"rel": info.get("rel"), "chars": info.get("chars"), "truncated": info.get("truncated")} if info else None
+            except Exception:
+                extra["instructions_file"] = None
+            try:
+                from src import repo_map as _repo_map
+                rm = _repo_map.build(ws, "")
+                extra["repo_map_chars"] = len(rm)
+            except Exception:
+                extra["repo_map_chars"] = 0
+        return {"block": block, "chars": len(block), **extra}
+
+    # ------------------------------------------------------------------
+    # Audit — everything the agent touched in this project
+    # ------------------------------------------------------------------
+
+    @router.get("/{project_id}/audit")
+    def project_audit(
+        project_id: str,
+        request: Request,
+        limit: int = 200,
+        _admin: None = Depends(require_admin),
+    ) -> Dict[str, Any]:
+        """Turns that changed files, newest first, each linking to its chat
+        and saved message (src/project_audit.py)."""
+        project = _get_or_404(project_id, effective_user(request))
+        from src import project_audit
+        entries = project_audit.load(project_id, limit=max(1, min(int(limit), 2000)))
+        # Chats that belonged to the project before it existed / a non-project
+        # turn in the same folder are keyed by workspace; merge them in.
+        ws = project.get("workspace") or ""
+        if ws:
+            seen = {(e.get("session_id"), e.get("message_id"), e.get("ts")) for e in entries}
+            for e in project_audit.load(project_audit.workspace_key(ws), limit=limit):
+                key = (e.get("session_id"), e.get("message_id"), e.get("ts"))
+                if key not in seen:
+                    entries.append(e)
+            entries.sort(key=lambda e: -int(e.get("ts") or 0))
+        return {"entries": entries[: max(1, int(limit))], "files": project_audit.files_index(project_id)[:500]}
+
+    @router.delete("/{project_id}/audit")
+    def clear_project_audit(
+        project_id: str,
+        request: Request,
+        _admin: None = Depends(require_admin),
+    ) -> Dict[str, Any]:
+        _get_or_404(project_id, effective_user(request))
+        from src import project_audit
+        return {"success": project_audit.clear(project_id)}
 
     return router

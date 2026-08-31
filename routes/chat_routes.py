@@ -464,6 +464,83 @@ def _project_workspace(request, session_id) -> str:
     return vet_workspace(workspace_for_session(session_id, owner)) or ""
 
 
+def _project_harness_options(request, session_id, workspace: str) -> Dict[str, Any]:
+    """`harness_options` for stream_agent_loop from the chat's project (see
+    services.projects.AGENT_OPTION_FIELDS). Never raises; no project → {}."""
+    session_id = str(session_id or "").strip()
+    out: Dict[str, Any] = {}
+    if not session_id:
+        return out
+    try:
+        from src.tool_security import owner_is_admin_or_single_user
+        owner = get_current_user(request)
+        if not owner_is_admin_or_single_user(owner):
+            return out
+        from services.projects import agent_options, project_for_session
+        project = project_for_session(session_id, owner)
+        opts = agent_options(project)
+        if not opts:
+            return out
+        out = {
+            "project_id": opts.get("project_id"),
+            "checkpoints": opts.get("checkpoints", True),
+            "run_tests": opts.get("run_tests", True),
+            "review_mode": bool(opts.get("review_mode")),
+            "trusted_agents": bool(opts.get("trusted_agents")),
+        }
+        if opts.get("test_command"):
+            out["test_command"] = opts["test_command"]
+        if opts.get("review_model"):
+            out["review_model"] = opts["review_model"]
+        # The trusted folder is the project's vetted workspace, and only when
+        # this turn actually runs inside it.
+        if opts.get("trusted") and workspace and (project or {}).get("workspace"):
+            import os as _os
+            if _os.path.realpath(workspace) == _os.path.realpath(project["workspace"]):
+                out["trusted_workspace"] = _os.path.realpath(workspace)
+    except Exception as e:  # noqa: BLE001 - hot path
+        logger.debug("harness options unavailable for %s: %s", session_id, e)
+    return out
+
+
+def _record_turn_side_effects(session_id: str, message_id: Any, metrics: Dict[str, Any],
+                              user_text: str, harness_options: Dict[str, Any]) -> None:
+    """After an assistant message is saved: append the turn to the project's
+    audit trail (src/project_audit.py) and, in review mode, register its files
+    as pending (services/review_state.py). Only turns that changed files."""
+    hz = (metrics or {}).get("harness") if isinstance(metrics, dict) else None
+    if not isinstance(hz, dict):
+        return
+    files = [str(f) for f in (hz.get("mutations") or []) if f]
+    if not files:
+        return
+    workspace = str(hz.get("workspace") or "")
+    project_id = str(harness_options.get("project_id") or hz.get("project_id") or "")
+    tests = hz.get("tests") if isinstance(hz.get("tests"), dict) else None
+    review = hz.get("review") if isinstance(hz.get("review"), dict) else None
+    try:
+        from src import project_audit
+        key = project_id or (project_audit.workspace_key(workspace) if workspace else "")
+        if key:
+            project_audit.record(
+                key, session_id=session_id, message_id=message_id, model=str(metrics.get("model") or ""),
+                files=files, workspace=workspace or None, stop_reason=hz.get("stop_reason"),
+                checkpoint=hz.get("checkpoint"), user_text=user_text or "",
+                tests=("inconclusive" if tests.get("inconclusive") else ("pass" if tests.get("ok") else "fail")) if tests and tests.get("ran") else None,
+                review=review.get("verdict") if review else None,
+                project_id=project_id or None,
+            )
+    except Exception as e:  # noqa: BLE001
+        logger.debug("audit record failed: %s", e)
+    if hz.get("review_mode") and workspace:
+        try:
+            from services import review_state
+            review_state.init(message_id, session_id=session_id, workspace=workspace, files=files,
+                              checkpoint=hz.get("checkpoint"))
+        except Exception as e:  # noqa: BLE001
+            logger.debug("review state init failed: %s", e)
+
+
 def _project_work_roots(request, session_id) -> list[str]:
     """All current file/folder roots attached to this chat's project."""
     session_id = str(session_id or "").strip()
@@ -1124,6 +1201,9 @@ def setup_chat_routes(
         _project_roots = _project_work_roots(request, session)
         if _project_ws:
             workspace, workspace_rejected = _project_ws, ""
+        # Per-project agent knobs → harness_options (checkpoints, tests,
+        # review, trusted workspace…). Non-project chats get the defaults.
+        _harness_options = _project_harness_options(request, session, workspace)
         # Plan mode is a modifier on agent mode — it only makes sense with tools.
         if plan_mode:
             chat_mode = "agent"
@@ -2552,6 +2632,7 @@ def setup_chat_routes(
                         exact_approval=exact_tool_approval,
                         temperature_explicit=_temperature_explicit,
                         gen_overrides=_gen_overrides or None,
+                        harness_options=_harness_options or None,
                     ):
                         if chunk.startswith("data: ") and not chunk.startswith("data: [DONE]"):
                             try:
@@ -2722,6 +2803,16 @@ def setup_chat_routes(
                                 )
                                 if _saved_id:
                                     yield f'data: {json.dumps({"type": "message_saved", "id": _saved_id})}\n\n'
+                                    # Project audit trail + review-mode state for
+                                    # a turn that changed files (linked to this
+                                    # saved message so the UI can jump to it).
+                                    try:
+                                        _record_turn_side_effects(
+                                            session, _saved_id, _metrics_to_save, message,
+                                            _harness_options if isinstance(_harness_options, dict) else {},
+                                        )
+                                    except Exception as _se_err:
+                                        logger.debug("turn side effects failed: %s", _se_err)
                                 run_post_response_tasks(
                                     sess, session_manager, session, message, _response_to_save,
                                     _metrics_to_save, ctx.uprefs, memory_manager, memory_vector, webhook_manager,
