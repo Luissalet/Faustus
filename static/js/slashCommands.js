@@ -1276,14 +1276,22 @@ function _cmdAgents(args) {
   const msgInput = document.getElementById('message');
   if (!msgInput) return true;
   try { window.__odysseusDelegateTasks = payload; } catch (_) {}
-  msgInput.value = msg;
-  // Delegation only makes sense with tools: force agent mode for this send.
-  try {
-    const agentBtn = document.getElementById('mode-agent-btn');
-    if (agentBtn && !agentBtn.classList.contains('active')) agentBtn.click();
-  } catch (_) {}
-  const sb = document.querySelector('.send-btn');
-  if (sb) sb.click();
+  // We are running INSIDE chat.js' send handler (slash dispatch): it still
+  // holds the send-in-flight flag and clears the textarea right after we
+  // return, so the real send has to be queued for the next tick.
+  setTimeout(() => {
+    const input = document.getElementById('message');
+    if (!input) return;
+    input.value = msg;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    // Delegation only makes sense with tools: force agent mode for this send.
+    try {
+      const agentBtn = document.getElementById('mode-agent-btn');
+      if (agentBtn && !agentBtn.classList.contains('active')) agentBtn.click();
+    } catch (_) {}
+    const sb = document.querySelector('.send-btn');
+    if (sb) sb.click();
+  }, 0);
   return true;
 }
 
