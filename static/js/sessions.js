@@ -408,6 +408,10 @@ export function markAwaitingQuestion(sessionId) {
 
 function _startActivitySync() {
   if (_activityTimer) return;
+  // Only in a real browser document: the node-based source tests drive
+  // loadSessions() with a stub document and a scripted fetch — a live
+  // interval would keep the process alive and the poll would eat a response.
+  if (typeof document === 'undefined' || typeof document.hidden !== 'boolean') return;
   _syncActivityFromServer();
   _activityTimer = setInterval(() => {
     if (document.hidden && _activityFailures > 3) return;
