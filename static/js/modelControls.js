@@ -123,14 +123,18 @@ function _effective(sessionId) {
 function _ensurePill() {
   if (_pill && document.body.contains(_pill)) return _pill;
   const wrap = document.getElementById('model-picker-wrap');
-  if (!wrap || !wrap.parentElement) return null;
+  if (!wrap) return null;
   const pill = document.createElement('button');
   pill.type = 'button';
   pill.id = 'model-controls-pill';
   pill.className = 'model-controls-pill';
   pill.title = 'Model settings for this chat (temperature, max tokens, thinking)';
   pill.innerHTML = '<span class="mc-icon">🎛</span><span class="mc-text">model</span>';
-  wrap.parentElement.insertBefore(pill, wrap);
+  // Sit right next to the model picker button (the wrap is absolutely
+  // positioned top-right of the composer; the dropdown menu is absolute too,
+  // so a flex row only lays out the two buttons).
+  wrap.classList.add('has-model-controls');
+  wrap.insertBefore(pill, wrap.firstChild);
   pill.addEventListener('click', (e) => { e.stopPropagation(); togglePopover(); });
   _pill = pill;
   return pill;

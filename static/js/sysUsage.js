@@ -103,14 +103,14 @@ function render() {
   if (gpu) {
     const vramPct = gpu.mem_total ? (gpu.mem_used / gpu.mem_total) * 100 : null;
     bits.push(`GPU ${pct(gpu.util)}`);
-    bits.push(`VRAM ${mib2gb(gpu.mem_used)}/${mib2gb(gpu.mem_total)} GB`);
+    bits.push(`${mib2gb(gpu.mem_used)}/${mib2gb(gpu.mem_total)}G`);
     if (gpu.temp != null) bits.push(`${Math.round(gpu.temp)}°`);
     _pill.className = `sys-usage-pill ${meterClass(Math.max(gpu.util || 0, vramPct || 0))}`;
   }
-  if (model) bits.push(`${(model.name || '').split(':')[0]} ${model.gpu_pct}%GPU`);
-  else if (d.ollama && d.ollama.reachable) bits.push('no model loaded');
+  if (model) bits.push(`${(model.name || '').split(':')[0]} ${model.gpu_pct}%↑GPU`);
+  else if (d.ollama && d.ollama.reachable) bits.push('no model');
   else if (d.ollama) bits.push('ollama offline');
-  if (d.ram && d.ram.total) bits.push(`RAM ${gb(d.ram.used)}/${gb(d.ram.total)}`);
+  if (d.ram && d.ram.total) bits.push(`RAM ${Math.round(d.ram.percent)}%`);
   text.textContent = bits.join(' · ');
   dot.classList.toggle('busy', !!model && (gpu ? (gpu.util || 0) > 5 : true));
   if (_panel && !_panel.hidden) renderPanel(d);
