@@ -2698,7 +2698,7 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
             # Rerouted for the default suppression: make it explicit so the
             # native payload carries think=false.
             gen_overrides["think"] = False
-        logger.info("Ollama /v1 → native /api/chat for %s (think=%s)", model, gen_overrides.get("think"))
+        logger.info("Ollama /v1 -> native /api/chat for %s (think=%s)", model, gen_overrides.get("think"))
         url = _routed
     target_url = _stream_target_url(url)
     async with _local_model_slot(target_url, model, workload):
