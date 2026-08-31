@@ -2776,7 +2776,29 @@ export function addMessage(role, content, modelName, metadata) {
             node.className = 'agent-thread-node' + (ok ? '' : ' error');
             // Hide the raw JSON command when a diff says it better (same as live).
             const evCmdHtml = (ev.command && !(ev.diff && ev.diff.text)) ? `<pre class="agent-thread-cmd">${esc(ev.command)}</pre>` : '';
-            node.innerHTML = `<div class="agent-thread-dot"></div><div class="agent-thread-header"><span class="agent-thread-icon">${ok ? '\u2713' : '\u2717'}</span><span class="agent-thread-tool">${esc(ev.tool)}</span><span class="agent-thread-status">${ok ? 'done' : 'failed'}</span><span class="agent-thread-chevron">\u25B6</span></div><div class="agent-thread-content">${evCmdHtml}${outHtml}${evDiffHtml}</div>`;
+            // A call parked on the permission gate never ran: say so instead of "done".
+            const parked = ok && /^Waiting for an exact user approval/i.test(String(ev.output || '').trim());
+            const statusIcon = parked ? '\u270B' : (ok ? '\u2713' : '\u2717');
+            const statusText = parked ? 'approval requested' : (ok ? 'done' : 'failed');
+            // delegate_agents: rebuild the worker board from the persisted
+            // evidence (same rows the live board showed).
+            let saHtml = '';
+            if (Array.isArray(ev.subagents) && ev.subagents.length) {
+              const rows = ev.subagents.map((sa, i) => {
+                const fine = !sa.error && sa.stop_reason === 'complete';
+                const cls = sa.error ? 'is-error' : (fine ? 'is-done' : 'is-partial');
+                const icon = sa.error ? '\u2717' : (fine ? '\u2713' : '\u25D1');
+                const files = (sa.mutations || []).length;
+                const link = sa.session_id ? ` \u00B7 <a href="#${esc(sa.session_id)}" class="subagent-chat-link" title="Open this worker's chat">chat ${esc(sa.session_id)}</a>` : '';
+                const meta = `${sa.tool_calls || 0} tools${sa.failed_calls ? ` (${sa.failed_calls} failed)` : ''} \u00B7 ${files ? `${files} file${files === 1 ? '' : 's'} changed` : 'no files changed'} \u00B7 ${sa.duration_s || 0}s \u00B7 ${esc(sa.stop_reason || '')}${link}`;
+                const last = sa.error ? esc(sa.error) : esc(sa.final_text || '');
+                return `<div class="subagent-row ${cls}"><div class="subagent-head"><span class="subagent-icon">${icon}</span><span class="subagent-name">${i + 1}. ${esc(sa.name || 'worker')}</span><span class="subagent-meta">${meta}</span></div>${last ? `<div class="subagent-last">${last}</div>` : ''}</div>`;
+              }).join('');
+              const doneN = ev.subagents.filter(sa => !sa.error && sa.stop_reason === 'complete').length;
+              saHtml = `<div class="subagent-restored"><div class="subagent-restored-title">\uD83E\uDD16 Sub-agents ${doneN}/${ev.subagents.length}</div><div class="subagent-rows">${rows}</div></div>`;
+            }
+            node.innerHTML = `<div class="agent-thread-dot"></div><div class="agent-thread-header"><span class="agent-thread-icon">${statusIcon}</span><span class="agent-thread-tool">${esc(ev.tool)}</span><span class="agent-thread-status">${statusText}</span><span class="agent-thread-chevron">\u25B6</span></div><div class="agent-thread-content">${evCmdHtml}${saHtml}${outHtml}${evDiffHtml}</div>`;
+            if (saHtml) node.classList.add('open');
             // Click handling is delegated globally \u2014 see chat.js init.
             threadWrap.appendChild(node);
           }

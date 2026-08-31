@@ -259,3 +259,38 @@ def test_empty_round_after_tool_work_is_nudged_once(tmp_path, monkeypatch):
     assert calls["n"] == 3
     summary = next(e for e in events if e.get("type") == "harness_summary")["data"]
     assert any(n.startswith("empty_round_nudge@") for n in summary["notes"])
+
+
+def test_delegate_agents_worker_reports_are_persisted_with_the_tool_event(tmp_path, monkeypatch):
+    """The sub-agent board is rebuilt from history: the compact worker reports
+    travel in metrics.tool_events[*].subagents (evidence fields only)."""
+    _patch_common(monkeypatch)
+    report = [{"id": "sa1-abc", "name": "backend", "session_id": "1a2b3c4d", "status": "done",
+               "stop_reason": "complete", "error": None, "tool_calls": 3, "failed_calls": 0,
+               "mutations": ["server.py"], "rejections": 0, "rounds": 2, "static_checks": [],
+               "git": {"changed_count": 1}, "duration_s": 41.2, "final_text": "x" * 3000}]
+
+    async def _fake_exec(block, *a, **k):
+        if block.tool_type == "delegate_agents":
+            return ("delegate_agents: 1 worker(s)", {"output": "Delegated 1 sub-agent task(s).", "exit_code": 0,
+                                                     "subagents": report, "duration_s": 41.5})
+        return (block.tool_type, {"output": "ok", "exit_code": 0})
+    monkeypatch.setattr(al, "execute_tool_block", _fake_exec, raising=False)
+
+    call = "```delegate_agents\n" + json.dumps({"tasks": [{"name": "backend", "instruction": "add /api/stats"}]}) + "\n```"
+    _scripted_stream(monkeypatch, [(call, "tool_calls"), ("El worker backend cambió server.py.", "stop")])
+    gen = al.stream_agent_loop(
+        "http://127.0.0.1:11434/v1", "qwen3-coder:30b",
+        [{"role": "user", "content": "Delega: añade /api/stats"}],
+        max_rounds=4, relevant_tools={"delegate_agents", "read_file"},
+        workspace=str(tmp_path), session_id="sess-delegate",
+    )
+    events = _events(_collect(gen))
+    metrics = [e for e in events if e.get("type") == "metrics"][-1]["data"]
+    ev = [t for t in metrics["tool_events"] if t["tool"] == "delegate_agents"][0]
+    assert len(ev["subagents"]) == 1
+    sa = ev["subagents"][0]
+    assert sa["name"] == "backend" and sa["session_id"] == "1a2b3c4d" and sa["mutations"] == ["server.py"]
+    assert sa["stop_reason"] == "complete" and sa["tool_calls"] == 3 and sa["duration_s"] == 41.2
+    assert len(sa["final_text"]) == 400          # shortened for history
+    assert "git" not in sa and "static_checks" not in sa  # evidence fields only

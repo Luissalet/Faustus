@@ -42437,6 +42437,10 @@ body:has(.sidebar.right-side) .project-active-pill { right: 12px; }
 .subagent-meta { margin-left: auto; opacity: .7; font-size: 0.9em; white-space: nowrap; }
 .subagent-last { opacity: .75; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: var(--mono, monospace); font-size: 0.9em; }
 .subagent-chat-link { color: var(--color-accent, #00aaff); text-decoration: none; }
+/* Board rebuilt from history inside the delegate_agents tool card */
+.subagent-restored { margin: 6px 0 4px; }
+.subagent-restored-title { font-size: 0.82em; font-weight: 600; opacity: .8; margin-bottom: 4px; }
+.subagent-restored .subagent-row { background: var(--bg-secondary, rgba(0,0,0,0.04)); }
 
 /* Harness verdict badge in the message footer (persisted with the message) */
 .harness-badge { font-size: 0.85em; opacity: .85; cursor: help; white-space: nowrap; }

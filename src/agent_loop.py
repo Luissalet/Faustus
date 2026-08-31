@@ -1649,6 +1649,23 @@ def _minimal_saved_memory_message(messages: List[Dict]) -> Optional[Dict]:
     )
 
 
+
+def _compact_subagent_reports(reports) -> list:
+    """Persisted shape of delegate_agents worker reports (tool_events metadata):
+    the evidence fields only, final text shortened."""
+    out = []
+    for r in reports[:8]:
+        if not isinstance(r, dict):
+            continue
+        out.append({
+            "id": r.get("id"), "name": r.get("name"), "session_id": r.get("session_id"),
+            "status": r.get("status"), "stop_reason": r.get("stop_reason"), "error": r.get("error"),
+            "tool_calls": r.get("tool_calls"), "failed_calls": r.get("failed_calls"),
+            "mutations": list(r.get("mutations") or [])[:40], "duration_s": r.get("duration_s"),
+            "final_text": str(r.get("final_text") or "")[:400],
+        })
+    return out
+
 def _resolved_tool_event_name(event: dict[str, Any]) -> str:
     tool = str(event.get("tool") or "").strip()
     if tool != "mcp":
@@ -4862,6 +4879,8 @@ async def stream_agent_loop(
         if approved_result.get("doc_id"):
             approved_tool_event["doc_id"] = approved_result["doc_id"]
             approved_tool_event["doc_title"] = approved_result.get("title", "")
+        if isinstance(approved_result.get("subagents"), list):
+            approved_tool_event["subagents"] = _compact_subagent_reports(approved_result["subagents"])
         tool_events.append(approved_tool_event)
         if approved.tool_name in _VERIFIER_EFFECTFUL_TOOLS:
             _effectful_used = True
@@ -6734,6 +6753,10 @@ async def stream_agent_loop(
             # this the diff shows live but vanishes from saved history.
             if result.get("diff"):
                 tool_event["diff"] = result["diff"]
+            # delegate_agents: keep the per-worker evidence so the sub-agent
+            # board can be rebuilt from history on reload.
+            if isinstance(result.get("subagents"), list):
+                tool_event["subagents"] = _compact_subagent_reports(result["subagents"])
             if _pending_ask_user_event:
                 # Persist the structured question with the tool event.  On a
                 # reload, chatRenderer can restore the card; a later user
