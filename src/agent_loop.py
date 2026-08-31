@@ -53,6 +53,7 @@ from src.tool_approvals import (
     tool_approval_store,
 )
 from src.tool_utils import _truncate, get_mcp_manager
+from src import agent_harness as _harness
 from src.agent_tools import (
     parse_tool_blocks,
     strip_tool_blocks,
@@ -542,6 +543,11 @@ _WORKSPACE_TERMINUS_TOOLS = (
     _DOMAIN_TOOL_MAP["files"]
     | {"manage_skills", "ask_teacher", "web_search", "web_fetch", "ask_user", "update_plan"}
 )
+# Tools whose presence in a turn makes the reliability rules worth their tokens.
+_HARNESS_RULE_TOOLS = frozenset({
+    "read_file", "write_file", "edit_file", "apply_patch", "glob", "grep", "ls",
+    "get_workspace", "bash", "python", "todowrite",
+})
 
 def _domain_rules_for_tools(tool_names: set) -> list[str]:
     names = set(tool_names or set())
@@ -2601,6 +2607,20 @@ def _build_system_prompt(
         and (set(relevant_tools) & _WORKSPACE_TERMINUS_TOOLS)
     ):
         agent_prompt += _local_computer_rules()
+    # Reliability rules: the harness (src/agent_harness.py) enforces them, so
+    # tell the model up front. Injected whenever file/shell tools are in play,
+    # which is exactly where local models fabricate paths and claim edits.
+    if not suppress_local_context and (
+        workspace
+        or (relevant_tools and (set(relevant_tools) & _HARNESS_RULE_TOOLS))
+        or (not relevant_tools and not compact)
+    ):
+        try:
+            from src.settings import get_setting as _gs
+            if _gs("agent_harness_checks", True):
+                agent_prompt += _harness.local_model_policy()
+        except Exception:
+            agent_prompt += _harness.local_model_policy()
 
     # When creating email documents, instruct the AI on the format
     if relevant_tools and not suppress_local_context and (_EMAIL_TOOL_HINTS & set(relevant_tools)):
@@ -4470,6 +4490,20 @@ async def stream_agent_loop(
     # so the user can resume instead of the turn silently stalling.
     _exhausted_rounds = False
 
+    # ── Reliability harness (src/agent_harness.py) ────────────────────────
+    # Per-turn evidence ledger: every tool execution is recorded, and a
+    # text-only "done" round is checked against it (claimed edits without a
+    # successful mutation tool, fabricated paths, announced-but-not-called
+    # actions, finish_reason=length). Rejections are bounded; after that the
+    # answer is accepted but annotated for the user.
+    _harness_enabled = bool(get_setting("agent_harness_checks", True)) and not guide_only
+    _HARNESS_MAX_REJECTIONS = 2
+    _HARNESS_MAX_LENGTH_CONTINUES = 2
+    _ledger = _harness.TurnLedger(workspace, _last_user)
+    _harness_final_note = ""
+    _round_finish_reason = None
+    _harness_scope_active = bool(workspace) or _looks_like_workspace_coding_request(_last_user)
+
     def _filter_route_tool_schemas(schemas):
         # Keep candidate actions visible after taint so the model can propose
         # the exact call that the server will seal for user approval.  Schema
@@ -4769,6 +4803,7 @@ async def stream_agent_loop(
         round_response = ""
         round_reasoning = ""  # reasoning_content deltas (DeepSeek-thinking, vLLM --reasoning-parser)
         native_tool_calls = []  # populated if model uses function calling
+        _round_finish_reason = None  # provider finish_reason for this round (stop/length/tool_calls)
 
         _active_route_state = {
             "messages": messages,
@@ -5058,6 +5093,11 @@ async def stream_agent_loop(
                             yield f'data: {json.dumps({"type": "compacted", "context_length": _last_route_context_length})}\n\n'
                         native_tool_calls = data.get("calls", [])
                         logger.info(f"Agent round {round_num}: received {len(native_tool_calls)} native tool call(s)")
+                    elif data.get("type") == "finish":
+                        # Provider stop reason for this round (emitted by
+                        # llm_core just before [DONE]). Drives auto-continue
+                        # on truncation and is surfaced to the UI.
+                        _round_finish_reason = data.get("finish_reason")
                     elif data.get("type") == "usage":
                         u = data.get("data", {})
                         actual_model = u.get("model") or actual_model
@@ -5425,6 +5465,119 @@ async def stream_agent_loop(
         if _ody_qwen_finetune_model and not tool_blocks and cleaned_round:
             yield f'data: {json.dumps({"delta": cleaned_round})}\n\n'
 
+        # Per-round instrumentation (what the provider actually returned).
+        _ledger.finish_reasons.append(_round_finish_reason)
+        logger.info(
+            "[harness] round=%s finish_reason=%s native_calls=%s tool_blocks=%s text_chars=%s "
+            "tools_sent=%s temperature=%s max_tokens=%s",
+            round_num, _round_finish_reason, len(native_tool_calls), len(tool_blocks),
+            len(round_response), len(_tool_names_sent), temperature, max_tokens,
+        )
+        yield (
+            "data: " + json.dumps({
+                "type": "round_info",
+                "round": round_num,
+                "finish_reason": _round_finish_reason,
+                "native_tool_calls": len(native_tool_calls),
+                "tool_blocks": [b.tool_type for b in tool_blocks][:12],
+                "text_chars": len(round_response),
+                "tools_sent": len(_tool_names_sent),
+                "input_tokens": _round_real_input_tokens or None,
+                "output_tokens": _round_real_output_tokens or None,
+            }) + "\n\n"
+        )
+
+        if not tool_blocks and _harness_enabled and not _force_answer and not plan_mode:
+            _hc_text = _strip_think_blocks(cleaned_round).strip()
+            # ── (1) Truncated output: continue instead of accepting a cut-off
+            # answer as the end of the turn.
+            if (
+                _round_finish_reason == "length"
+                and _ledger.length_continues < _HARNESS_MAX_LENGTH_CONTINUES
+            ):
+                _ledger.length_continues += 1
+                logger.info("[harness] round %s hit max_tokens (finish_reason=length) — auto-continue #%s",
+                            round_num, _ledger.length_continues)
+                if round_response.strip():
+                    messages.append({"role": "assistant", "content": round_response})
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "[Harness check — automatic message from the runtime, not from the user] "
+                        "Your previous output was cut off by the max_tokens limit (finish_reason=length). "
+                        "Continue EXACTLY where you stopped without repeating anything already written. "
+                        "If you were about to call a tool, call it now."
+                    ),
+                })
+                yield (
+                    "data: " + json.dumps({
+                        "type": "harness_check", "status": "auto_continue", "reason": "length",
+                        "round": round_num, "attempt": _ledger.length_continues,
+                        "max_attempts": _HARNESS_MAX_LENGTH_CONTINUES,
+                    }) + "\n\n"
+                )
+                full_response += "\n\n"
+                yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
+                continue
+            # ── (2) Claims vs. evidence. Only meaningful where the model could
+            # have acted: a workspace turn, a coding-looking request, or a turn
+            # in which tools already ran.
+            if _hc_text and (_harness_scope_active or _ledger.events):
+                try:
+                    _check = _ledger.check_completion(_hc_text)
+                except Exception as _hc_err:  # never let the harness kill a turn
+                    logger.warning("[harness] completion check failed: %s", _hc_err)
+                    _check = {"ok": True, "reasons": []}
+                if not _check["ok"]:
+                    if _ledger.rejections < _HARNESS_MAX_REJECTIONS:
+                        _ledger.rejections += 1
+                        if "intent_without_action" in _check["reasons"]:
+                            _ledger.intent_nudges += 1
+                        logger.warning(
+                            "[harness] round %s REJECTED (%s) attempt %s/%s claims=%s bad_paths=%s intent=%r",
+                            round_num, ",".join(_check["reasons"]), _ledger.rejections,
+                            _HARNESS_MAX_REJECTIONS, _check.get("claims"), _check.get("bad_paths"),
+                            _check.get("intent"),
+                        )
+                        if round_response.strip():
+                            messages.append({"role": "assistant", "content": round_response})
+                        messages.append({"role": "user", "content": _ledger.rejection_message(_check)})
+                        yield (
+                            "data: " + json.dumps({
+                                "type": "harness_check", "status": "rejected",
+                                "reasons": _check["reasons"], "claims": _check.get("claims", []),
+                                "bad_paths": _check.get("bad_paths", []), "intent": _check.get("intent"),
+                                "round": round_num, "attempt": _ledger.rejections,
+                                "max_attempts": _HARNESS_MAX_REJECTIONS,
+                                "mutations": _ledger.mutated_paths(),
+                            }) + "\n\n"
+                        )
+                        full_response += "\n\n"
+                        yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
+                        continue
+                    # Retries exhausted: accept the text but never let it pass
+                    # as verified work — annotate for the user and log it.
+                    logger.warning("[harness] round %s still unsupported after %s rejections: %s",
+                                   round_num, _ledger.rejections, _check["reasons"])
+                    _ledger.stop_reason = "complete_unverified"
+                    _ledger.notes.append("unverified_claims:" + ",".join(_check["reasons"]))
+                    _harness_final_note = _ledger.user_note(_check, final=True)
+                    yield (
+                        "data: " + json.dumps({
+                            "type": "harness_check", "status": "unverified",
+                            "reasons": _check["reasons"], "claims": _check.get("claims", []),
+                            "bad_paths": _check.get("bad_paths", []), "intent": _check.get("intent"),
+                            "round": round_num, "mutations": _ledger.mutated_paths(),
+                        }) + "\n\n"
+                    )
+                elif _ledger.rejections or _ledger.effects:
+                    yield (
+                        "data: " + json.dumps({
+                            "type": "harness_check", "status": "verified", "round": round_num,
+                            "mutations": _ledger.mutated_paths(),
+                        }) + "\n\n"
+                    )
+
         if not tool_blocks:
             # ── Completion verifier (mechanism 3a) ────────────────────
             # The model is finishing. If this was an effectful agentic turn,
@@ -5542,6 +5695,7 @@ async def stream_agent_loop(
                     })
                     + "\n\n"
                 )
+                _ledger.stop_reason = "intent_nudge_exhausted"
                 break
             break  # no tools — done
 
@@ -5604,6 +5758,7 @@ async def stream_agent_loop(
             _off_note = (f" ({', '.join(_off)} is currently disabled — say so if "
                          f"you needed it.)" if _off else "")
             _force_answer = True
+            _ledger.stop_reason = "loop_breaker"
             messages.append({
                 "role": "system",
                 "content": (
@@ -5628,6 +5783,7 @@ async def stream_agent_loop(
             if max_tool_calls > 0 and total_tool_calls >= max_tool_calls:
                 yield f'data: {json.dumps({"type": "budget_exceeded", "limit": max_tool_calls, "used": total_tool_calls})}\n\n'
                 budget_hit = True
+                _ledger.stop_reason = "budget_exceeded"
                 break
 
             total_tool_calls += 1
@@ -5828,6 +5984,20 @@ async def stream_agent_loop(
                             pass
 
             run_security.observe_tool_result(block.tool_type, result, block.content)
+
+            # Evidence ledger: record what really ran (success, kind, paths).
+            try:
+                _ledger.record(block.tool_type, block.content, result, round_num)
+                if block.tool_type == "todowrite" and isinstance(result, dict) and isinstance(result.get("todos"), list) and not result.get("error"):
+                    _annotated_todos = _ledger.record_progress(result["todos"], round_num)
+                    yield (
+                        "data: " + json.dumps({
+                            "type": "progress_update", "round": round_num,
+                            "todos": _annotated_todos,
+                        }) + "\n\n"
+                    )
+            except Exception as _ledger_err:
+                logger.debug("[harness] ledger record failed: %s", _ledger_err)
 
             # A skill the model just loaded can prescribe tools that weren't
             # RAG-selected this turn (declared via requires_toolsets in its
@@ -6257,6 +6427,7 @@ async def stream_agent_loop(
         # arrives as the next message and the agent resumes from there. The
         # question text is already in the streamed response, so it persists.
         if _awaiting_user:
+            _ledger.stop_reason = "awaiting_user"
             break
 
         if _doc_stream_create_completed:
@@ -6308,6 +6479,7 @@ async def stream_agent_loop(
     # can show a "Continue" affordance instead of the turn just stopping.
     if _exhausted_rounds:
         logger.info("[agent] round cap (%d) reached mid-task — emitting rounds_exhausted", max_rounds)
+        _ledger.stop_reason = "rounds_exhausted"
         yield f'data: {json.dumps({"type": "rounds_exhausted", "rounds": max_rounds})}\n\n'
 
     # If the response is completely empty and no tools were executed,
@@ -6330,6 +6502,12 @@ async def stream_agent_loop(
             and _looks_like_success_claim(full_response)
         ):
             full_response = "I couldn't make that change because no matching tool action completed."
+    # Harness: a final answer that kept claiming unsupported work is annotated
+    # so the user never mistakes narration for changes on disk.
+    if _harness_final_note:
+        _note_delta = ("\n\n" if full_response.strip() else "") + _harness_final_note
+        full_response = (full_response.rstrip() + _note_delta).strip()
+        yield f"data: {json.dumps({'delta': _note_delta})}\n\n"
     _response_before_tool_summary = full_response
     if tool_events:
         for _ev in reversed(tool_events):
@@ -6378,6 +6556,23 @@ async def stream_agent_loop(
         _final_delta = full_response.strip()
         yield f"data: {json.dumps({'delta': _final_delta})}\n\n"
 
+    # --- Harness summary: what really happened this turn (from the ledger +
+    # the working tree), independent of what the model said. ---
+    _hsum = None
+    try:
+        _git_summary = None
+        if workspace and (_ledger.events or _ledger.rejections):
+            _git_summary = await asyncio.to_thread(_harness.git_change_summary, workspace)
+        _hsum = _ledger.summary(_git_summary)
+        _hsum["round_count"] = len(round_texts)
+        logger.info("[harness] turn summary: stop=%s tools=%s mutations=%s failed=%s rejections=%s",
+                    _hsum["stop_reason"], _hsum["tool_calls"], _hsum["mutations"],
+                    _hsum["failed_calls"], _hsum["rejections"])
+        if _ledger.events or _ledger.rejections or _ledger.length_continues or _hsum["stop_reason"] != "complete":
+            yield f"data: {json.dumps({'type': 'harness_summary', 'data': _hsum})}\n\n"
+    except Exception as _hs_err:
+        logger.debug("[harness] summary failed: %s", _hs_err)
+
     # --- Final metrics ---
     total_duration = time.time() - total_start
     final_context_tokens = estimate_tokens(messages)
@@ -6417,6 +6612,14 @@ async def stream_agent_loop(
             )
     metrics["requested_endpoint_id"] = requested_endpoint_id
     metrics["requested_endpoint_label"] = requested_endpoint_label
+    if _hsum:
+        # Persisted with the message so the verification card survives reload.
+        metrics["harness"] = {
+            k: _hsum.get(k) for k in (
+                "stop_reason", "mutations", "tool_calls", "failed_calls", "rejections",
+                "length_continues", "finish_reasons", "git", "notes", "progress", "language",
+            )
+        }
     yield f"data: {json.dumps({'type': 'metrics', 'data': metrics})}\n\n"
 
     # Teacher-escalation: inline takeover visible in the chat stream.

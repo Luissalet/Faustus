@@ -109,7 +109,14 @@ class EditFileTool:
         try:
             original, updated, status = await asyncio.to_thread(_apply)
         except FileNotFoundError:
-            return {"error": f"edit_file: {path}: not found (use write_file to create it)", "exit_code": 1}
+            from src.agent_harness import not_found_error
+            from src.tool_execution import get_active_workspace
+            return {
+                "error": not_found_error("edit_file", raw_path, path, get_active_workspace())
+                + " (edit_file only changes EXISTING files; use write_file to create a new one.)",
+                "exit_code": 1,
+                "not_found": True,
+            }
         except (IsADirectoryError, UnicodeDecodeError):
             return {"error": f"edit_file: {path}: not an editable text file", "exit_code": 1}
         except PermissionError:
@@ -169,7 +176,13 @@ class ReadFileTool:
                     return f.read(MAX_READ_CHARS + 1)
             data = await asyncio.to_thread(_read)
         except FileNotFoundError:
-            return {"error": f"read_file: {path}: not found", "exit_code": 1}
+            from src.agent_harness import not_found_error
+            from src.tool_execution import get_active_workspace
+            return {
+                "error": not_found_error("read_file", raw_path, path, get_active_workspace()),
+                "exit_code": 1,
+                "not_found": True,
+            }
         except PermissionError:
             return {"error": f"read_file: {path}: permission denied", "exit_code": 1}
         except IsADirectoryError:

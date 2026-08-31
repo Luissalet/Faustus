@@ -2410,6 +2410,11 @@ def setup_chat_routes(
                                     "intent_nudge_exhausted",
                                     "ask_user",
                                     "plan_update",
+                                    # reliability harness (src/agent_harness.py)
+                                    "round_info", "harness_check", "harness_summary",
+                                    "progress_update",
+                                    # multi-agent delegation
+                                    "subagent_event",
                                 ):
                                     if data.get("type") == "agent_step":
                                         _event_round = data.get("round", 1)

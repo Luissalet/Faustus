@@ -2868,6 +2868,13 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                                     _ollama_actual_model,
                                 )
                                 yield f'data: {json.dumps({"type": "usage", "data": normalized_usage})}\n\n'
+                        # Ollama reports why it stopped as done_reason
+                        # ("stop" | "length" | "load"); normalize to the
+                        # OpenAI vocabulary so the agent loop has one signal.
+                        _done_reason = j.get("done_reason")
+                        if _ollama_tool_calls and _done_reason in (None, "stop"):
+                            _done_reason = "tool_calls"
+                        yield f'data: {json.dumps({"type": "finish", "finish_reason": _done_reason or "stop"})}\n\n'
                         yield "data: [DONE]\n\n"
                         return
                 for part, is_thinking in _harmony_router.flush():
@@ -3060,6 +3067,10 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
     _harmony_active = False       # sticky: gpt-oss harmony <|channel|> stream detected
     _actual_model = ""
     _actual_model_announced = False
+    # Provider finish_reason ("stop" | "length" | "tool_calls" | …). Surfaced
+    # as a `finish` event right before [DONE] so the agent loop can tell a
+    # truncated answer from a finished one instead of treating both as done.
+    _finish_reason: Optional[str] = None
 
     def _emit_tool_calls():
         """Build the tool_calls event string if any were accumulated."""
@@ -3067,6 +3078,12 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
             return None
         calls = [_tc_acc[i] for i in sorted(_tc_acc)]
         return f'data: {json.dumps({"type": "tool_calls", "calls": calls})}\n\n'
+
+    def _emit_finish():
+        reason = _finish_reason
+        if _tc_acc and reason in (None, "stop"):
+            reason = "tool_calls"
+        return f'data: {json.dumps({"type": "finish", "finish_reason": reason or "stop"})}\n\n'
 
     def _format_routed_content(parts: List[Tuple[str, bool]]) -> List[str]:
         nonlocal _first_content_sent
@@ -3110,6 +3127,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                         tc_event = _emit_tool_calls()
                         if tc_event:
                             yield tc_event
+                        yield _emit_finish()
                         yield "data: [DONE]\n\n"
                         return
 
@@ -3183,6 +3201,9 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                                     _c0 = (j["choices"] or [None])[0]
                                     if _c0 is None:
                                         continue
+                                    _fr = _c0.get("finish_reason")
+                                    if isinstance(_fr, str) and _fr:
+                                        _finish_reason = _fr
                                     delta = _c0.get("delta") or {}
                                     if isinstance(delta, dict):
                                         # Text content
@@ -3340,6 +3361,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
             tc_event = _emit_tool_calls()
             if tc_event:
                 yield tc_event
+            yield _emit_finish()
             yield "data: [DONE]\n\n"
 
     except (httpx.ConnectError, httpx.ConnectTimeout) as e:
