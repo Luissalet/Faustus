@@ -542,3 +542,45 @@ def test_the_badge_is_styled_for_both_themes():
 def test_there_are_at_most_three_states():
     states = set(re.findall(r"mp-fit-([a-z]+)", _CSS))
     assert states == {"fits", "tight", "over"}
+
+
+# ---------------------------------------------------------------------------
+# The badge must not cost the model its name.
+#
+# Found by opening the real picker after shipping the badge: the row is ~290px
+# and the name, the endpoint and the badge all share it, so three rows came
+# back as "qwen3.8:...", "qwen3.8:..." and "qwen3-c..." — you could not tell
+# the q4_K_M from the q8_0, which is the only reason to open the menu at all.
+# ---------------------------------------------------------------------------
+
+def _picker_source() -> str:
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parents[1]
+    return (root / "static" / "js" / "modelPicker.js").read_text(encoding="utf-8")
+
+
+def test_the_endpoint_yields_its_place_to_the_fit_badge():
+    """A fit badge only exists for a loopback Ollama, where the endpoint text is
+    `127.0.0.1:11434` — the least informative thing in the row. The badge takes
+    its place so the model name keeps its width."""
+    src = _picker_source()
+    assert "epSpan.textContent = fitEl ? '' : _epDisplay;" in src
+    assert "if (!fitEl) row.appendChild(epSpan);" in src
+    # ...and the old unconditional append is gone, or the row grows again.
+    assert "\n      row.appendChild(epSpan);\n" not in src
+
+
+def test_a_truncated_name_still_reveals_the_full_model_id_on_hover():
+    src = _picker_source()
+    assert "nameSpan.title = m.mid || m.display || '';" in src
+
+
+def test_the_viewport_media_query_is_not_relied_on_for_this():
+    """The CSS `@media (max-width: 480px)` measures the viewport, not the popup,
+    so on a wide screen it never fires on a 290px menu. If someone ever deletes
+    the JS rule and leans on the media query again, this fails."""
+    src = _picker_source()
+    assert "fitEl ? '' : _epDisplay" in src, (
+        "the endpoint/badge trade-off must be decided in JS, not by a viewport "
+        "media query that cannot see the menu's width"
+    )

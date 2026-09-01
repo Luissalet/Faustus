@@ -571,13 +571,26 @@ function _initModelPickerDropdown() {
       epSpan.className = 'model-switch-ep';
       // Don't show endpoint name if it matches the model name (local self-hosted)
       const _epDisplay = m.epName && !m.display.toLowerCase().includes(m.epName.toLowerCase().split('/').pop()) ? m.epName : '';
-      epSpan.textContent = _epDisplay;
-      row.appendChild(epSpan);
 
       // Size + whether it fits on the card. Advisory only: a model that does
       // not fit stays perfectly clickable, it just says so first.
       const fitEl = _fitBadge(m);
+
+      // The badge and the endpoint compete for the same strip, and the row is
+      // only ~290px wide. With both, the NAME is what gets truncated, and two
+      // rows reading "qwen3.8:..." are worse than useless: you cannot tell the
+      // q4_K_M from the q8_0, which is the whole reason you opened the menu.
+      // A fit badge only exists for a loopback Ollama, and for those the
+      // endpoint text is `127.0.0.1:11434` — the least informative thing in the
+      // row. So the badge takes the endpoint's place rather than its space.
+      // The CSS media query cannot do this: it measures the viewport, not the
+      // menu, so on a 1568px screen it never fires on a 290px popup.
+      epSpan.textContent = fitEl ? '' : _epDisplay;
+      if (!fitEl) row.appendChild(epSpan);
       if (fitEl) row.appendChild(fitEl);
+      // Nothing is lost when a long id still has to ellipsize: the full model
+      // id is on hover, and the badge carries its own numbers.
+      if (!nameSpan.title) nameSpan.title = m.mid || m.display || '';
 
       // Inline favorite dot — toggles favorite, never picks the model.
       const favDot = document.createElement('button');
