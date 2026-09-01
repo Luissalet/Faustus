@@ -584,3 +584,40 @@ def test_the_viewport_media_query_is_not_relied_on_for_this():
         "the endpoint/badge trade-off must be decided in JS, not by a viewport "
         "media query that cannot see the menu's width"
     )
+
+
+# ---------------------------------------------------------------------------
+# Two tags, one model.
+#
+# Ollama lets one blob wear several names. On the reference machine
+# `claude-sonnet-4-5:latest` and `qwen3.8:27b-q4_K_M` share digest
+# 25b843619e94 — the second is a nickname for the first. The picker showed six
+# rows for five models, and once the size badge landed, two of them read the
+# same weight with no explanation.
+# ---------------------------------------------------------------------------
+
+def test_the_fit_endpoint_carries_the_blob_digest():
+    """Both output branches, not just the one with a card: a machine without
+    nvidia-smi still deserves to know two names are one model."""
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parents[1]
+    src = (root / "routes" / "model_routes.py").read_text(encoding="utf-8")
+    assert 'digests.setdefault(str(name), _d)' in src
+    assert src.count("_with_digest(") >= 3  # helper + both branches
+
+
+def test_the_picker_groups_tags_by_digest_and_marks_the_aliases():
+    src = _picker_source()
+    assert "function _aliasGroups()" in src
+    assert "function _aliasesOf(" in src
+    # Only a shared digest counts — never a name resemblance, which would flag
+    # q4_K_M and q8_0 as the same model when they are genuinely different.
+    assert "fit && fit.digest" in src
+    assert "tags.length < 2" in src
+    assert "'mp-alias'" in src
+
+
+def test_a_model_without_a_digest_is_never_called_an_alias():
+    """No digest means we cannot tell — and silence is the honest answer."""
+    src = _picker_source()
+    assert "if (!d) return [];" in src

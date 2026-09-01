@@ -132,6 +132,15 @@ DEFAULT_SETTINGS = {
     # `compute_input_token_budget`.
     "agent_input_token_hard_max": 200_000,
     "agent_stream_timeout_seconds": 300,
+    # Tool preflight (src/tool_preflight.py): before the tool list goes out,
+    # drop the tools that structurally cannot work in this turn — e.g.
+    # `project_context` in a chat that is not inside a project, or the email
+    # tools on a box with no mailbox configured. Saves the small local models a
+    # round per trap and the schema tokens with it; if a call is made anyway,
+    # the model gets the reason instead of a generic "disabled". Only ever
+    # removes tools, and never one the workspace floor guarantees. Set false to
+    # send every selected tool regardless.
+    "agent_tool_preflight": True,
     # ── Reliability harness (src/agent_harness.py and friends) ──
     # Claims-vs-evidence checks, syntax check, fabricated-path detection.
     "agent_harness_checks": True,

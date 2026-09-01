@@ -4397,6 +4397,47 @@ async def stream_agent_loop(
         except Exception as _e:
             logger.debug(f"[tool-rag] skill-aware tool include skipped: {_e}")
 
+    # ── Tool preflight (FAUSTUS, see src/tool_preflight.py) ───────────────
+    # The selection above answers "what is this turn about?". This answers a
+    # different question the runtime can already settle: "which of these
+    # cannot possibly work?" — a chat outside a project cannot run
+    # `project_context`, a box with no mailbox cannot run any email tool.
+    # Observed live: `project_context` called twice, failing both times, in a
+    # chat that was never in a project. Every impossible tool is a trap a small
+    # model walks into, and a schema's worth of tokens out of a tight window.
+    #
+    # It folds into `disabled_tools` rather than out of `_relevant_tools` so
+    # both surfaces move together: the prompt tool sections (local models) and
+    # the function schemas (API routes) are each `relevant_tools` minus
+    # `disabled_tools`. Same discipline as WORKSPACE_TOOL_FLOOR above — it only
+    # removes, it never adds, and `prune_for_turn` subtracts the floor first,
+    # so a rule that ever contradicts the floor loses.
+    _preflight_pruned: Dict[str, str] = {}
+    if not guide_only and get_setting("agent_tool_preflight", True):
+        try:
+            from src.tool_preflight import PreflightContext, prune_for_turn
+            _preflight_pruned = prune_for_turn(
+                PreflightContext(
+                    # Both handed on exactly as the executor would hand them to
+                    # the tool itself, `owner=None` included — see
+                    # `PreflightContext.owner`.
+                    session_id=session_id or "",
+                    owner=owner,
+                    tools=(
+                        None if _relevant_tools is None
+                        else frozenset(str(t) for t in _relevant_tools)
+                    ),
+                ),
+                protected=_workspace_tool_floor,
+            )
+        except Exception as _pf_err:            # pragma: no cover - defensive
+            # A broken preflight costs the turn nothing: no tool is removed.
+            logger.debug("[tool-preflight] skipped: %s", _pf_err)
+            _preflight_pruned = {}
+        if _preflight_pruned:
+            disabled_tools.update(_preflight_pruned)
+            logger.info("[tool-preflight] pruned=%s", _preflight_pruned)
+
     _intent_domains = set(_intent.get("domains") or set())
     _base_relevant_tools = None if _relevant_tools is None else set(_relevant_tools)
     _runtime_skill_tools: Set[str] = set()
@@ -5333,11 +5374,19 @@ async def stream_agent_loop(
                 f" relevant_not_sent={sorted(_relevant_set - _sent_set)}"
                 f" sent_not_relevant={sorted(_sent_set - _relevant_set)}"
             )
+        # `relevant_not_sent` says a tool was selected and did not ship;
+        # `pruned` says which of those the preflight removed and WHY, so the
+        # line answers "why can't it do that?" on its own instead of sending
+        # the reader to a second log. Always emitted, `{}` included: a fixed
+        # shape is what makes the line greppable across turns.
+        _pruned_note = "pruned={" + ", ".join(
+            f"{name}: {reason}" for name, reason in sorted(_preflight_pruned.items())
+        ) + "}"
         logger.info(
             "[agent-debug] round=%s model=%s _is_api_model=%s tools_sent=%s"
-            " tool_names=%s %s",
+            " tool_names=%s %s %s",
             round_num, model, _is_api_model, len(_tool_names_sent),
-            sorted(_sent_set), _diff_note,
+            sorted(_sent_set), _diff_note, _pruned_note,
         )
 
         # Once a fallback produces substantive output, keep that exact route
@@ -6733,11 +6782,32 @@ async def stream_agent_loop(
                 (blocked_by_tool_policy or blocked_by_disabled_tools)
                 and not _ody_clamped_tool_allowed
             ):
+                _preflight_reason = next(
+                    (
+                        _preflight_pruned[name]
+                        for name in sorted(policy_names)
+                        if name in _preflight_pruned
+                    ),
+                    "",
+                )
+                _blocked_policy = "current_tool_policy"
                 if blocked_by_tool_policy:
                     blocked_name = next(
                         name for name in policy_names if tool_policy.blocks(name)
                     )
                     reason = tool_policy.reason_for(blocked_name)
+                elif _preflight_reason:
+                    # The tool was preflighted off the list, and the model asked
+                    # for it anyway — a fenced call needs no schema. Hand back
+                    # the REASON, not "disabled": "this chat is not attached to
+                    # a project" ends the turn's confusion in one round, while a
+                    # generic policy message invites a retry, which is the exact
+                    # two-round loop this whole mechanism exists to stop.
+                    reason = (
+                        f"Tool '{block.tool_type}' cannot work in this chat: "
+                        f"{_preflight_reason}. Do not call it again in this turn."
+                    )
+                    _blocked_policy = "tool_preflight"
                 else:
                     reason = (
                         f"Tool '{block.tool_type}' is disabled by the current "
@@ -6748,11 +6818,12 @@ async def stream_agent_loop(
                     "error": reason,
                     "exit_code": 1,
                     "blocked": True,
-                    "policy": "current_tool_policy",
+                    "policy": _blocked_policy,
                 }
                 logger.info(
-                    "Tool blocked before approval by current policy: %s",
-                    block.tool_type,
+                    "Tool blocked before approval by %s: %s%s",
+                    _blocked_policy, block.tool_type,
+                    f" ({_preflight_reason})" if _blocked_policy == "tool_preflight" else "",
                 )
             elif not security_decision.allowed:
                 approval_document = (

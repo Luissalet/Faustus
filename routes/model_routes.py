@@ -1761,10 +1761,21 @@ def setup_model_routes(model_discovery):
                 ep_ids.append(ep_id)
         return bases, ep_ids
 
+    def _with_digest(entry: Dict[str, Any], digest: Optional[str]) -> Dict[str, Any]:
+        """Attach the blob digest when Ollama gave us one.
+
+        Advisory and additive: a missing digest simply means the picker cannot
+        group that row with its aliases, never that the row is wrong.
+        """
+        if digest:
+            entry["digest"] = digest
+        return entry
+
     def _collect_fit_hints() -> Dict[str, Any]:
         vram = gpu_shared_memory.vram_snapshot()
         roots, ep_ids = _same_machine_ollama()
         sizes: Dict[str, int] = {}
+        digests: Dict[str, str] = {}
         held_by_runner = 0
         for root in roots:
             try:
@@ -1775,6 +1786,17 @@ def setup_model_routes(model_discovery):
                     size = int(m.get("size") or 0)
                     if name and size > 0:
                         sizes.setdefault(str(name), size)
+                        # Two tags can point at one blob: on this machine
+                        # `claude-sonnet-4-5:latest` and `qwen3.8:27b-q4_K_M`
+                        # share digest 25b843619e94 — the same model under a
+                        # nickname. Without the digest the picker shows six
+                        # rows for five models, and now that the size badge is
+                        # there, two of them read the same weight with no
+                        # explanation. Switching between two tags of one blob
+                        # looks like a change and is a no-op.
+                        _d = str(m.get("digest") or "")
+                        if _d:
+                            digests.setdefault(str(name), _d)
             except Exception as e:
                 logger.debug("fit hints: /api/tags failed for %s: %s", _redact_url_for_log(root), e)
             try:
@@ -1790,7 +1812,10 @@ def setup_model_routes(model_discovery):
             # No card, no nvidia-smi, no verdict. The sizes are still facts, so
             # they go out; the UI shows them without a fit colour.
             out["vram"] = {"supported": False, "reason": vram.get("reason", "")}
-            out["models"] = {name: {"size_bytes": size} for name, size in sizes.items()}
+            out["models"] = {
+                name: _with_digest({"size_bytes": size}, digests.get(name))
+                for name, size in sizes.items()
+            }
             return out
 
         total = int(vram.get("total") or 0)
@@ -1812,7 +1837,7 @@ def setup_model_routes(model_discovery):
         }
         for name, size in sizes.items():
             state = _fit_state(size, budget)
-            entry: Dict[str, Any] = {"size_bytes": size}
+            entry: Dict[str, Any] = _with_digest({"size_bytes": size}, digests.get(name))
             if state:
                 entry["state"] = state
                 entry["headroom_bytes"] = budget - size

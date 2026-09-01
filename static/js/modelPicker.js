@@ -308,6 +308,35 @@ function _initModelPickerDropdown() {
 
   const _FIT_WORD = { tight: 'tight', over: 'over VRAM' };
 
+  /** Tags that share a blob, keyed by digest.
+   *  Ollama lets one model wear several names: on this machine
+   *  `claude-sonnet-4-5:latest` and `qwen3.8:27b-q4_K_M` are the same file.
+   *  Without saying so the menu shows six rows for five models, two of them
+   *  reading the same weight with no explanation, and switching between them
+   *  looks like a change while being a no-op. */
+  function _aliasGroups() {
+    const byDigest = new Map();
+    const models = (_fitHints && _fitHints.models) || {};
+    Object.keys(models).forEach((tag) => {
+      const d = models[tag] && models[tag].digest;
+      if (!d) return;
+      if (!byDigest.has(d)) byDigest.set(d, []);
+      byDigest.get(d).push(tag);
+    });
+    return byDigest;
+  }
+
+  /** The other names this exact blob answers to, or []. */
+  function _aliasesOf(m) {
+    const fit = _fitFor(m);
+    const d = fit && fit.digest;
+    if (!d) return [];
+    const tags = _aliasGroups().get(d) || [];
+    if (tags.length < 2) return [];
+    const mine = String(m.mid || '').replace(/^.*?\//, '');
+    return tags.filter((t) => t !== mine && !String(m.mid || '').endsWith(t));
+  }
+
   /** The badge, or null when there is nothing honest to say. */
   function _fitBadge(m) {
     const fit = _fitFor(m);
@@ -591,6 +620,17 @@ function _initModelPickerDropdown() {
       // Nothing is lost when a long id still has to ellipsize: the full model
       // id is on hover, and the badge carries its own numbers.
       if (!nameSpan.title) nameSpan.title = m.mid || m.display || '';
+      // Say it plainly when two names are one model, so the menu stops
+      // looking like it has more choices than it does.
+      const _aliases = _aliasesOf(m);
+      if (_aliases.length) {
+        nameSpan.title = `${m.mid || m.display}\nsame model as ${_aliases.join(', ')}`;
+        const tag = document.createElement('span');
+        tag.className = 'mp-alias';
+        tag.textContent = 'alias';
+        tag.title = `Same file as ${_aliases.join(', ')} — switching between them changes nothing.`;
+        row.appendChild(tag);
+      }
 
       // Inline favorite dot — toggles favorite, never picks the model.
       const favDot = document.createElement('button');

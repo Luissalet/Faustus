@@ -3507,6 +3507,20 @@ body.bg-pattern-sparkles {
     @media (max-width: 480px) {
       .model-picker-list .model-switch-item .model-switch-ep { display: none; }
     }
+    /* Two tags, one blob. Quiet by design: it is a fact about the row, not a
+       warning — the row stays perfectly usable, it just stops pretending to be
+       a separate model. */
+    .model-picker-list .model-switch-item .mp-alias {
+      flex: 0 0 auto;
+      font-size: 0.72em;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      opacity: 0.5;
+      padding: 1px 4px;
+      border-radius: 3px;
+      border: 1px solid color-mix(in srgb, var(--fg) 22%, transparent);
+      color: var(--fg);
+    }
     /* Keyboard navigation highlight (Arrow keys in the search box). */
     .model-picker-list .model-switch-item.kb-active {
       background: color-mix(in srgb, var(--red) 14%, transparent);
