@@ -20,12 +20,18 @@ Windows-only and best-effort: everywhere else it reports ``supported: False``
 and the caller carries on. Counters are read through PDH (a few milliseconds,
 no subprocess) and cached briefly, because the usage widget polls every 1.5 s
 while a model generates.
+
+:func:`vram_snapshot` at the bottom is the other half and is not Windows-only:
+the plain size of the card, read from nvidia-smi, for the callers that have to
+answer "will this model fit" *before* anything is loaded — the model picker.
 """
 from __future__ import annotations
 
 import logging
 import os
 import re
+import shutil
+import subprocess
 import sys
 import threading
 import time
@@ -253,6 +259,100 @@ def reset_cache() -> None:
     with _lock:
         _cache["ts"] = 0.0
         _cache["data"] = None
+
+
+# ── The card's own VRAM, before anything is loaded ─────────────────────────
+#
+# Everything above answers "is the runner paging over PCIe *right now*" — a
+# diagnosis after the fact, and only on Windows. Choosing a model is a decision
+# taken *before* anything is loaded, and that needs the plain size of the card.
+# nvidia-smi is the only source that answers with no model resident, so it is
+# read here, once, cheaply, and reported as unsupported everywhere it is not
+# available rather than guessed at. Deliberately the first GPU only: a fit
+# verdict about "some card in the box" would be worse than no verdict.
+
+_MIB = 1024 * 1024
+_VRAM_TTL = 8.0
+_vram_cache: Dict[str, Any] = {"ts": 0.0, "data": None}
+_vram_lock = threading.Lock()
+
+
+def _nvidia_smi_path() -> Optional[str]:
+    exe = shutil.which("nvidia-smi")
+    if exe:
+        return exe
+    # Standard Windows install locations when PATH does not include it.
+    for cand in (
+        r"C:\Windows\System32\nvidia-smi.exe",
+        r"C:\Program Files\NVIDIA Corporation\NVSMI\nvidia-smi.exe",
+    ):
+        if os.path.exists(cand):
+            return cand
+    return None
+
+
+def _vram_uncached() -> Dict[str, Any]:
+    exe = _nvidia_smi_path()
+    if not exe:
+        return {"supported": False, "reason": "nvidia-smi: not found"}
+    try:
+        proc = subprocess.run(
+            [exe, "--query-gpu=name,memory.total,memory.used",
+             "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=4,
+        )
+    except (OSError, subprocess.SubprocessError) as e:
+        return {"supported": False, "reason": f"nvidia-smi: {e}"}
+    if proc.returncode != 0:
+        return {"supported": False,
+                "reason": f"nvidia-smi exit {proc.returncode}"}
+    for line in (proc.stdout or "").splitlines():
+        parts = [p.strip() for p in line.split(",")]
+        if len(parts) < 3:
+            continue
+        try:
+            total = int(float(parts[1])) * _MIB
+            used = int(float(parts[2])) * _MIB
+        except ValueError:
+            continue
+        if total <= 0:
+            continue
+        return {
+            "supported": True,
+            "name": parts[0],
+            "total": total,
+            "used": max(0, used),
+            "free": max(0, total - used),
+        }
+    return {"supported": False, "reason": "nvidia-smi reported no usable GPU"}
+
+
+def vram_snapshot() -> Dict[str, Any]:
+    """Total/used/free VRAM of the first GPU, in bytes. Never raises.
+
+    ``{"supported": False, "reason": ...}`` when there is no NVIDIA card, no
+    nvidia-smi, or the output could not be parsed — callers are expected to
+    show nothing at all in that case rather than invent a number.
+    """
+    with _vram_lock:
+        cached = _vram_cache.get("data")
+        if cached is not None and time.time() - _vram_cache["ts"] < _VRAM_TTL:
+            return cached
+    try:
+        data = _vram_uncached()
+    except Exception as e:  # pragma: no cover - defensive, subprocess is guarded
+        logger.debug("vram snapshot failed: %s", e)
+        data = {"supported": False, "reason": str(e)[:200]}
+    with _vram_lock:
+        _vram_cache["ts"] = time.time()
+        _vram_cache["data"] = data
+    return data
+
+
+def reset_vram_cache() -> None:
+    with _vram_lock:
+        _vram_cache["ts"] = 0.0
+        _vram_cache["data"] = None
 
 
 def describe(snapshot: Optional[Dict[str, Any]] = None) -> str:

@@ -38,21 +38,69 @@ function _isChatMode() {
   return !!(b && b.classList.contains('active'));
 }
 
+// Shown on the pill and in the empty state when nothing is bound. Binding a
+// folder is the central act of agent mode, so "nothing bound" has to be a
+// visible state with a way out of it, not an absent control.
+const NO_FOLDER_LABEL = 'No folder';
+
+/**
+ * Empty-chat call to action. The welcome screen is the one place the user is
+ * guaranteed to look before the first message, and until now it spent that
+ * space on rotating tips while agent mode sat there unable to touch a file.
+ * Chat mode never uses the workspace, so the block stays hidden there.
+ */
+function _syncWelcomeWorkspace(path, chat) {
+  const box = document.getElementById('welcome-workspace');
+  if (!box) return;
+  const text = document.getElementById('welcome-workspace-text');
+  const label = document.getElementById('welcome-workspace-btn-label');
+  const btn = document.getElementById('welcome-workspace-btn');
+  box.hidden = !!chat;
+  box.classList.toggle('welcome-workspace-empty', !path);
+  if (chat) return;
+  if (path) {
+    if (text) {
+      text.textContent = `Working in ${_basename(path)}`;
+      text.title = path;
+    }
+    if (label) label.textContent = 'Change folder';
+    if (btn) btn.setAttribute('aria-label', `Change workspace folder — currently ${_basename(path)}`);
+  } else {
+    if (text) {
+      text.textContent = 'No folder linked — Agent mode cannot read or edit files until you pick one.';
+      text.title = '';
+    }
+    if (label) label.textContent = 'Choose folder';
+    if (btn) btn.setAttribute('aria-label', 'Choose a workspace folder');
+  }
+}
+
 export function syncWorkspaceIndicator(path) {
   const chat = _isChatMode();
   const pill = document.getElementById('workspace-indicator-btn');
   const name = document.getElementById('workspace-indicator-name');
   const overflow = document.getElementById('overflow-workspace-btn');
   if (pill) {
-    pill.style.display = (path && !chat) ? '' : 'none';
+    // Visible for the whole of agent mode, not only once a folder exists.
+    // Hiding it until then made the *only* toolbar entry point appear after
+    // the thing it is supposed to help you do.
+    pill.style.display = chat ? 'none' : '';
     pill.classList.toggle('active', !!path);
-    if (path) pill.title = `Workspace: ${path}\nFile tools are confined here; shell commands start here but are not sandboxed and can reach outside it.\nClick to clear.`;
+    pill.classList.toggle('workspace-unset', !path);
+    if (path) {
+      pill.title = `Workspace: ${path}\nFile tools are confined here; shell commands start here but are not sandboxed and can reach outside it.\nClick to change it — the ✕ clears it.`;
+      pill.setAttribute('aria-label', `Workspace ${_basename(path)} — change folder`);
+    } else {
+      pill.title = 'No workspace folder yet — click to choose one.\nAgent file edits and shell commands need a folder.';
+      pill.setAttribute('aria-label', 'Choose a workspace folder');
+    }
   }
-  if (name) name.textContent = path ? _basename(path) : '';
+  if (name) name.textContent = path ? _basename(path) : NO_FOLDER_LABEL;
   if (overflow) {
     overflow.style.display = chat ? 'none' : '';
     overflow.classList.toggle('active', !!path);
   }
+  _syncWelcomeWorkspace(path, chat);
   // Recompute the "+" overflow dot (app.js owns updatePlusDot via this event).
   try { document.dispatchEvent(new CustomEvent('overflow-state-change')); } catch (_) {}
 }
@@ -191,6 +239,7 @@ function _getModal() {
       <p class="muted workspace-note">File tools are <strong>confined</strong> to this folder. Shell commands start here but are <strong>not sandboxed</strong> and can reach outside it. A workspace scopes the tools; it is not a security boundary.</p>
       <div class="modal-body workspace-body" id="workspace-body"></div>
       <div class="modal-footer workspace-footer">
+        <button type="button" class="confirm-btn confirm-btn-secondary workspace-clear-btn" id="workspace-clear" hidden>Clear workspace</button>
         <button type="button" class="confirm-btn confirm-btn-secondary" id="workspace-cancel">Cancel</button>
         <button type="button" class="confirm-btn confirm-btn-primary" id="workspace-use">Use this folder</button>
       </div>
@@ -198,6 +247,13 @@ function _getModal() {
   document.body.appendChild(_modal);
   _modal.querySelector('#workspace-close').addEventListener('click', closeWorkspaceBrowser);
   _modal.querySelector('#workspace-cancel').addEventListener('click', closeWorkspaceBrowser);
+  // Unbinding used to live only on the pill's ✕, i.e. only for a mouse. The
+  // pill's default action is now "choose a folder", so clearing needs a home
+  // a keyboard can reach.
+  _modal.querySelector('#workspace-clear').addEventListener('click', () => {
+    clearWorkspace();
+    closeWorkspaceBrowser();
+  });
   // Editable path bar: Enter navigates to a typed/pasted folder.
   _modal.querySelector('#workspace-cur-path').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
@@ -246,6 +302,10 @@ export async function openWorkspaceBrowser(onPick = null, options = {}) {
     : 'File tools are <strong>confined</strong> to this folder. Shell commands start here but are <strong>not sandboxed</strong> and can reach outside it.';
   const use = modal.querySelector('#workspace-use');
   if (use) use.textContent = _pickerOptions.useLabel || 'Use this folder';
+  // Only when the picker is binding the global workspace (the project editor
+  // borrows the same dialog via onPick) and there is something to clear.
+  const clearBtn = modal.querySelector('#workspace-clear');
+  if (clearBtn) clearBtn.hidden = !!_onPick || !getWorkspace();
   modal.style.display = 'flex';
   try {
     _render(await _load(getWorkspace() || ''));
@@ -266,7 +326,24 @@ export function initWorkspace() {
   const overflow = document.getElementById('overflow-workspace-btn');
   if (overflow) overflow.addEventListener('click', openWorkspaceBrowser);
   const pill = document.getElementById('workspace-indicator-btn');
-  if (pill) pill.addEventListener('click', clearWorkspace);
+  if (pill) {
+    pill.addEventListener('click', (e) => {
+      // The ✕ keeps doing exactly what it did — clear — and must not fall
+      // through to the picker. Everything else on the pill now opens the
+      // folder browser, which is the whole point: with no folder there was
+      // previously nothing here at all to click.
+      const x = e && e.target && typeof e.target.closest === 'function'
+        ? e.target.closest('.tool-indicator-x')
+        : null;
+      if (x && getWorkspace()) {
+        clearWorkspace();
+        return;
+      }
+      openWorkspaceBrowser();
+    });
+  }
+  const welcomeBtn = document.getElementById('welcome-workspace-btn');
+  if (welcomeBtn) welcomeBtn.addEventListener('click', () => openWorkspaceBrowser());
 }
 
 export default { initWorkspace, openWorkspaceBrowser, getWorkspace, setWorkspace, vetAndSetWorkspace, clearWorkspace, syncWorkspaceIndicator, applyMode };

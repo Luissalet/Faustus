@@ -29,7 +29,8 @@ from src.endpoint_resolver import (
     build_models_url,
     build_headers,
 )
-from src.auth_helpers import _auth_disabled, effective_user, owner_filter
+from src.auth_helpers import _auth_disabled, effective_user, owner_filter, require_user
+from src import gpu_shared_memory
 
 logger = logging.getLogger(__name__)
 
@@ -1367,6 +1368,60 @@ def _picker_models_for_endpoint(ep, base_url: str, kind: str):
     ), pinned
 
 
+# ── "Will this model fit on the card?" ────────────────────────────────────
+#
+# The GPU pill already tells you a model is spilling over PCIe, but only after
+# you loaded it and waited (measured: 4 tok/s on a 27B-q8_0 in 12 GB). The
+# decision is taken in the model picker, so the numbers have to be there.
+#
+# Everything below is deliberately conservative. The size we know is the file
+# on disk, which is *not* the VRAM footprint: the KV cache grows with the
+# context window on top of it. So we keep a headroom band — a model whose
+# weights alone leave less than this much room is "tight", not "fits" — and the
+# UI says out loud that the figure is approximate.
+_FIT_TIGHT_HEADROOM_BYTES = 1536 * 1024 * 1024
+# CUDA context, cuBLAS workspace and compute buffers, gone before a single
+# weight is loaded. Same constant the fit advisor uses (src/vram_fit.py).
+_FIT_RESERVE_BYTES = 800 * 1024 * 1024
+
+
+def _fit_state(size_bytes: int, budget_bytes: int) -> str:
+    """'fits' | 'tight' | 'over', or '' when there is nothing to say.
+
+    An empty string is the honest answer when we do not know the card or the
+    model size, and the UI is expected to render nothing at all for it rather
+    than guess.
+    """
+    if size_bytes <= 0 or budget_bytes <= 0:
+        return ""
+    headroom = budget_bytes - size_bytes
+    if headroom < 0:
+        return "over"
+    if headroom < _FIT_TIGHT_HEADROOM_BYTES:
+        return "tight"
+    return "fits"
+
+
+def _gb(n: float) -> str:
+    return f"{n / (1024 ** 3):.1f} GB"
+
+
+def _fit_note(size_bytes: int, budget_bytes: int, total_bytes: int, state: str) -> str:
+    """The `title=` text: the real numbers, and what they do not include."""
+    if not state:
+        return ""
+    head = (f"~{_gb(size_bytes)} of weights against {_gb(budget_bytes)} usable "
+            f"of {_gb(total_bytes)} on the card.")
+    verdict = {
+        "fits": "Room to spare for the context window.",
+        "tight": "It fits, but barely — a large context window may push it over.",
+        "over": ("It does not fit: expect layers on the CPU, or weights paging "
+                 "over PCIe and a fraction of the speed."),
+    }[state]
+    return (f"{head} {verdict} Approximate — this is the file on disk; the KV "
+            f"cache grows on top of it with the context window.")
+
+
 def _api_key_fingerprint(api_key: Optional[str]) -> str:
     """Stable, non-secret label for distinguishing same-URL credentials."""
     key = (api_key or "").strip()
@@ -1664,6 +1719,129 @@ def setup_model_routes(model_discovery):
         if background or refresh:
             _refresh_caches_bg(force=refresh)
         return result
+
+    # The fit hints are a second, much cheaper document than /api/models: sizes
+    # come from Ollama's own catalogue and the card from nvidia-smi, and both
+    # change slowly. Cached here as well as in the picker so a burst of opens
+    # costs one round trip.
+    _FIT_CACHE_TTL = 20.0
+    _fit_cache: Dict[str, Any] = {"data": None, "time": 0.0}
+
+    def _same_machine_ollama() -> tuple[List[str], List[str]]:
+        """(Ollama roots, endpoint ids) served by *this* box, deduplicated.
+
+        Only loopback. A tailnet or LAN Ollama is still classified "local" by
+        _classify_endpoint, but its models live on someone else's card and a fit
+        verdict against our nvidia-smi reading would be a confident lie. The
+        endpoint ids travel to the picker so a row is only ever annotated when
+        it really is served from this machine.
+        """
+        bases: List[str] = []
+        ep_ids: List[str] = []
+        db = SessionLocal()
+        try:
+            endpoints = db.query(ModelEndpoint).filter(ModelEndpoint.is_enabled == True).all()
+        finally:
+            db.close()
+        for ep in endpoints:
+            base = _normalize_base(getattr(ep, "base_url", "") or "")
+            if not base or not _is_ollama_base(base):
+                continue
+            try:
+                host = (urlparse(base).hostname or "").lower()
+            except Exception:
+                continue
+            if host not in _LOCAL_HOSTS:
+                continue
+            root = base[:-3].rstrip("/") if base.endswith("/v1") else base.rstrip("/")
+            if root not in bases:
+                bases.append(root)
+            ep_id = str(getattr(ep, "id", "") or "")
+            if ep_id and ep_id not in ep_ids:
+                ep_ids.append(ep_id)
+        return bases, ep_ids
+
+    def _collect_fit_hints() -> Dict[str, Any]:
+        vram = gpu_shared_memory.vram_snapshot()
+        roots, ep_ids = _same_machine_ollama()
+        sizes: Dict[str, int] = {}
+        held_by_runner = 0
+        for root in roots:
+            try:
+                r = httpx.get(root + "/api/tags", timeout=3.0, verify=llm_verify())
+                r.raise_for_status()
+                for m in (r.json() or {}).get("models") or []:
+                    name = m.get("name") or m.get("model") or ""
+                    size = int(m.get("size") or 0)
+                    if name and size > 0:
+                        sizes.setdefault(str(name), size)
+            except Exception as e:
+                logger.debug("fit hints: /api/tags failed for %s: %s", _redact_url_for_log(root), e)
+            try:
+                r = httpx.get(root + "/api/ps", timeout=2.5, verify=llm_verify())
+                r.raise_for_status()
+                for m in (r.json() or {}).get("models") or []:
+                    held_by_runner += int(m.get("size_vram") or 0)
+            except Exception as e:
+                logger.debug("fit hints: /api/ps failed for %s: %s", _redact_url_for_log(root), e)
+
+        out: Dict[str, Any] = {"ts": _time.time(), "endpoint_ids": ep_ids, "models": {}}
+        if not vram.get("supported"):
+            # No card, no nvidia-smi, no verdict. The sizes are still facts, so
+            # they go out; the UI shows them without a fit colour.
+            out["vram"] = {"supported": False, "reason": vram.get("reason", "")}
+            out["models"] = {name: {"size_bytes": size} for name, size in sizes.items()}
+            return out
+
+        total = int(vram.get("total") or 0)
+        used = int(vram.get("used") or 0)
+        # What Ollama itself is holding is about to be freed when you switch to
+        # another model, so it must not count against the next one. Anything
+        # else on the card (a browser, a Stable Diffusion process) does.
+        others = max(0, used - held_by_runner)
+        budget = max(0, total - _FIT_RESERVE_BYTES - others)
+        out["vram"] = {
+            "supported": True,
+            "name": vram.get("name", ""),
+            "total_bytes": total,
+            "used_bytes": used,
+            "free_bytes": int(vram.get("free") or 0),
+            "held_by_runner_bytes": held_by_runner,
+            "reserve_bytes": _FIT_RESERVE_BYTES,
+            "budget_bytes": budget,
+        }
+        for name, size in sizes.items():
+            state = _fit_state(size, budget)
+            entry: Dict[str, Any] = {"size_bytes": size}
+            if state:
+                entry["state"] = state
+                entry["headroom_bytes"] = budget - size
+                entry["note"] = _fit_note(size, budget, total, state)
+            out["models"][name] = entry
+        return out
+
+    @router.get("/models/fit")
+    async def api_models_fit(request: Request, refresh: bool = False):
+        """Per-model VRAM fit hints for the model picker.
+
+        `{"vram": {...}, "models": {"<ollama tag>": {"size_bytes", "state",
+        "note"}}}`. `state` is absent whenever we cannot tell — the picker
+        renders nothing at all in that case instead of inventing a verdict.
+        """
+        require_user(request)
+        import asyncio as _asyncio
+        now = _time.time()
+        if not refresh and _fit_cache["data"] is not None and (now - _fit_cache["time"]) < _FIT_CACHE_TTL:
+            return _fit_cache["data"]
+        try:
+            data = await _asyncio.to_thread(_collect_fit_hints)
+        except Exception as e:
+            logger.debug("model fit hints failed: %s", e)
+            data = {"ts": now, "endpoint_ids": [],
+                    "vram": {"supported": False, "reason": str(e)[:200]}, "models": {}}
+        _fit_cache["data"] = data
+        _fit_cache["time"] = _time.time()
+        return data
 
     # Brief cache for local-probe results so picker-open doesn't hammer
     # endpoint health checks every time. 8s TTL — long enough to amortize cost,

@@ -1029,6 +1029,17 @@
     <div id="welcome-screen">
       <div class="welcome-name"><svg class="welcome-boat" viewBox="0 0 32 32"><path d="M16 0.738L4.674 25.559L13.004 28.992L13.004 24.798L9.229 24.798L9.229 19.644L16 12.094L22.772 19.644L22.772 24.798L17.678 24.798L13.4 31.264L27.326 25.559Z" fill="currentColor"/><g fill="currentColor" opacity=".62"><path d="M5.993 5.022L0.839 13.292L6.233 18.985L9.049 13.172L4.555 11.434Z"/><path d="M26.008 5.022L31.161 13.292L25.768 18.985L22.952 13.172L27.446 11.434Z"/></g></svg>Faustus</div>
       <div class="welcome-sub" id="welcome-sub">New chat ready.</div>
+      <!-- Agent mode without a folder can't touch a single file, and the only
+           way to bind one used to be three levels down the overflow menu. The
+           empty chat is where that question belongs; workspace.js fills it in
+           and keeps it in sync with the mode + the bound folder. -->
+      <div class="welcome-workspace" id="welcome-workspace" hidden>
+        <span class="welcome-workspace-text" id="welcome-workspace-text"></span>
+        <button type="button" class="welcome-workspace-btn" id="welcome-workspace-btn" aria-label="Choose a workspace folder">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+          <span id="welcome-workspace-btn-label">Choose folder</span>
+        </button>
+      </div>
       <div class="welcome-tip" id="welcome-tip"></div>
       <button type="button" class="incognito-btn" id="incognito-btn" title="Enable Nobody mode — no memory, no history saved">
         <svg class="eye-open" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1050,6 +1061,7 @@
         'Tip: Shift-click the sidebar toggle to swap it to the other side.',
         'Tip: Drag and drop files onto the chat to attach them.',
         'Tip: Right-click a session for rename, delete, and memory options.',
+        'Tip: Agent mode needs a folder — click the workspace pill in the input toolbar.',
       ];
       var phone = [
         'Tip: Long-press a session for rename, delete, and memory options.',
@@ -1057,6 +1069,7 @@
         'Tip: Switch to Agent mode for web search and code execution.',
         'Tip: Use Compare mode to test different models side by side.',
         'Tip: Attach images or files using the + button next to the input.',
+        'Tip: Agent mode needs a folder — tap the workspace pill in the input toolbar.',
       ];
       var tips = mobile ? phone : desktop;
       var el = document.getElementById('welcome-tip');
@@ -1200,10 +1213,14 @@
               <polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>
             </svg>
           </button>
-          <!-- Workspace indicator (hidden until a folder is set) -->
-          <button type="button" class="input-icon-btn tool-indicator" title="Workspace - click to clear" id="workspace-indicator-btn" aria-label="Clear workspace" style="display:none;">
+          <!-- Workspace indicator. Shown for the whole of agent mode, folder or
+               no folder: with one it names it and the x clears it, without one
+               it reads "No folder" and opens the picker. JS owns display —
+               workspace.js:syncWorkspaceIndicator() — and starts it hidden so
+               chat mode never flashes it. -->
+          <button type="button" class="input-icon-btn tool-indicator workspace-unset" title="No workspace folder yet — click to choose one." id="workspace-indicator-btn" aria-label="Choose a workspace folder" style="display:none;">
             <svg class="workspace-indicator-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
-            <span style="font-size:11px;margin-left:2px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" id="workspace-indicator-name"></span>
+            <span style="font-size:11px;margin-left:2px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" id="workspace-indicator-name">No folder</span>
             <svg class="tool-indicator-x" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>
           </button>
           <!-- RAG toolbar indicator (hidden until active) -->

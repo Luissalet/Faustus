@@ -3470,6 +3470,43 @@ body.bg-pattern-sparkles {
       font-size: 0.9em;
       opacity: 0.45;
     }
+    /* ── VRAM fit badge ──────────────────────────────────────────
+       Size on disk plus, when we can tell, whether it fits on the card. Three
+       states at most, and the state is carried by a WORD as well as by colour
+       — a colour-only signal is no signal for a good share of readers, and it
+       would also vanish in a high-contrast theme. Advisory, never a block: the
+       row stays clickable in every state.
+       Neutral by default so the common "it fits" case stays quiet. */
+    .model-picker-list .model-switch-item .mp-fit {
+      flex: 0 0 auto;
+      font-size: 0.85em;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+      opacity: 0.42;
+      color: var(--fg);
+    }
+    .model-picker-list .model-switch-item .mp-fit-fits {
+      opacity: 0.42;
+    }
+    /* Themes are arbitrary generated palettes (theme.js writes --bg/--fg
+       straight onto :root), so a flat --warn / --red would be washed out on
+       every light one — #f0ad4e on #f5f5f5 is barely 2:1. Blending toward --fg
+       darkens the hue on a light theme and lightens it on a dark one, which
+       keeps the one row that matters legible in both without a theme class. */
+    .model-picker-list .model-switch-item .mp-fit-tight {
+      opacity: 0.9;
+      color: color-mix(in srgb, var(--warn) 68%, var(--fg));
+    }
+    .model-picker-list .model-switch-item .mp-fit-over {
+      opacity: 0.9;
+      color: color-mix(in srgb, var(--red) 72%, var(--fg));
+    }
+    /* Very narrow menus: the endpoint label is the least useful thing in the
+       row, so it yields the space to the size. The full sentence is in the
+       tooltip either way. */
+    @media (max-width: 480px) {
+      .model-picker-list .model-switch-item .model-switch-ep { display: none; }
+    }
     /* Keyboard navigation highlight (Arrow keys in the search box). */
     .model-picker-list .model-switch-item.kb-active {
       background: color-mix(in srgb, var(--red) 14%, transparent);
@@ -41091,6 +41128,95 @@ body.theme-frosted .modal {
   border-top: 1px solid var(--border);
 }
 .workspace-note { margin: 0 0 8px; font-size: 11px; line-height: 1.4; }
+/* Clearing is the destructive option: park it on the far left, away from
+   "Use this folder". Only rendered when a folder is actually bound. */
+.workspace-footer .workspace-clear-btn { margin-right: auto; }
+
+/* ── Workspace indicator: the "no folder yet" state ──────────────
+   The pill is now visible for the whole of agent mode, so it needs a resting
+   state that reads as an invitation rather than as an active tool. Dashed
+   outline, muted label, and no ✕ — there is nothing to clear. Both themes get
+   this for free: every colour here is a token that :root.light overrides. */
+#workspace-indicator-btn.workspace-unset {
+  opacity: 0.45;
+  color: var(--fg);
+  background: none;
+  border: 1px dashed color-mix(in srgb, var(--fg) 32%, transparent);
+  /* .input-icon-btn is border:none and pads 6px; keep the same box so adding
+     a border does not shove the toolbar around. */
+  padding: 5px;
+}
+#workspace-indicator-btn.workspace-unset:hover,
+#workspace-indicator-btn.workspace-unset:focus-visible {
+  opacity: 0.9;
+  border-color: color-mix(in srgb, var(--accent, var(--red)) 55%, transparent);
+  background: color-mix(in srgb, var(--accent, var(--red)) 8%, transparent);
+}
+/* ID specificity beats the mobile `.tool-indicator .tool-indicator-x`
+   display override, so this holds on phones too. */
+#workspace-indicator-btn.workspace-unset .tool-indicator-x { display: none !important; }
+
+/* ── Empty chat: bind a folder ───────────────────────────────────
+   #welcome-screen is pointer-events:none, so anything clickable inside it has
+   to opt back in (same trick .incognito-btn uses). */
+.welcome-workspace {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  max-width: 330px;
+  pointer-events: auto;
+}
+#welcome-workspace[hidden] { display: none; }
+.welcome-workspace-text {
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--fg);
+  opacity: 0.5;
+}
+.welcome-workspace-btn {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 20px;
+  border: 1px solid color-mix(in srgb, var(--accent, var(--red)) 45%, var(--border));
+  background: color-mix(in srgb, var(--accent, var(--red)) 10%, transparent);
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+  opacity: 0.85;
+  transition: opacity 0.15s, background 0.15s, border-color 0.15s;
+}
+.welcome-workspace-btn:hover,
+.welcome-workspace-btn:focus-visible {
+  opacity: 1;
+  background: color-mix(in srgb, var(--accent, var(--red)) 18%, transparent);
+  border-color: color-mix(in srgb, var(--accent, var(--red)) 70%, var(--border));
+}
+/* With a folder bound this is just a quiet status line, so drop the accent. */
+.welcome-workspace:not(.welcome-workspace-empty) .welcome-workspace-btn {
+  border-color: var(--border);
+  background: none;
+  opacity: 0.45;
+}
+.welcome-workspace:not(.welcome-workspace-empty) .welcome-workspace-btn:hover,
+.welcome-workspace:not(.welcome-workspace-empty) .welcome-workspace-btn:focus-visible {
+  opacity: 0.85;
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+}
+/* Short viewports already collapse the tip; the folder prompt is the one
+   thing here worth keeping, so it only goes at the tightest breakpoint. */
+@media (max-height: 500px) {
+  .welcome-workspace { margin-top: 8px; }
+  .welcome-workspace-text { display: none; }
+}
+@media (max-height: 380px) {
+  .welcome-workspace { display: none; }
+}
 
 /* Real-time Diagnostics Log Terminal UI Styles */
 .settings-system-logs-svg {

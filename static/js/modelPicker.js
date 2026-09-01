@@ -259,6 +259,72 @@ function _initModelPickerDropdown() {
   let _pickerLoading = false;
   let _pickerLoadSeq = 0;
 
+  // ── VRAM fit hints ──
+  // The GPU pill only tells you a model is spilling over PCIe once you have
+  // loaded it and waited; the decision is taken here. /api/models/fit answers
+  // "how big is it and does it fit" for the Ollama models served by this
+  // machine — sizes from Ollama's own catalogue, the card from nvidia-smi.
+  // Fetched when the picker opens and on the refresh button, NEVER per
+  // keystroke: _populate() only ever reads this cache.
+  let _fitHints = { models: {}, vram: null, endpointIds: [] };
+  let _fitFetchedAt = 0;
+  const _FIT_TTL_MS = 20000;
+
+  async function _refreshFitHints({ force = false } = {}) {
+    const now = Date.now();
+    if (!force && now - _fitFetchedAt < _FIT_TTL_MS) return;
+    _fitFetchedAt = now;
+    try {
+      const r = await fetch(`/api/models/fit${force ? '?refresh=true' : ''}`, { credentials: 'same-origin' });
+      if (!r.ok) return;                      // keep whatever we had; never guess
+      const data = (await r.json()) || {};
+      _fitHints = {
+        models: data.models || {},
+        vram: data.vram || null,
+        endpointIds: data.endpoint_ids || [],
+      };
+    } catch (_) { /* offline / no GPU: rows simply carry no badge */ }
+  }
+
+  // Ollama tags come back exactly as the picker's model id, but a `:latest`
+  // suffix is elided in some listings — try both, and nothing else. A fuzzy
+  // match here would attach one model's size to another (28 GB of
+  // qwen3.8:27b-q8_0 shown for the q4_K_M), which is the one mistake this
+  // whole feature exists to avoid.
+  function _fitFor(m) {
+    if (!m || !m.mid) return null;
+    const ids = _fitHints.endpointIds || [];
+    // Only annotate rows actually served from this box (the backend lists the
+    // loopback Ollama endpoints it looked at). A LAN model with the same tag
+    // runs on someone else's card.
+    if (!ids.length || !m.endpointId || !ids.includes(m.endpointId)) return null;
+    const table = _fitHints.models || {};
+    return table[m.mid] || table[`${m.mid}:latest`] || null;
+  }
+
+  function _fitGb(bytes) {
+    return `${(bytes / (1024 ** 3)).toFixed(1)} GB`;
+  }
+
+  const _FIT_WORD = { tight: 'tight', over: 'over VRAM' };
+
+  /** The badge, or null when there is nothing honest to say. */
+  function _fitBadge(m) {
+    const fit = _fitFor(m);
+    if (!fit || !(fit.size_bytes > 0)) return null;
+    const span = document.createElement('span');
+    span.className = 'mp-fit';
+    const state = fit.state || '';
+    // No card, no nvidia-smi, no verdict: show the size (a fact from the model
+    // file) with no colour and no claim about whether it fits.
+    if (state) span.classList.add(`mp-fit-${state}`);
+    const word = _FIT_WORD[state];
+    span.textContent = word ? `${_fitGb(fit.size_bytes)} · ${word}` : _fitGb(fit.size_bytes);
+    span.title = fit.note
+      || `${_fitGb(fit.size_bytes)} on disk. Approximate — the KV cache grows on top of it with the context window.`;
+    return span;
+  }
+
   async function _refreshLocalProbe() {
     try {
       if (window.__odysseusChatBusy || Date.now() < (window.__odysseusChatBusyUntil || 0)) return;
@@ -353,7 +419,12 @@ function _initModelPickerDropdown() {
     listEl.appendChild(row);
   }
 
-  async function _refreshPickerModels({ force = false, showLoading = false } = {}) {
+  // `force` means "re-probe the endpoints for the model list"; picker-open
+  // passes it whenever the /api/models cache is warm. The fit hints are a
+  // separate, slower thing (nvidia-smi + Ollama's catalogue), so they get their
+  // own flag and are only recomputed from scratch when the user asks — the
+  // refresh button. An ordinary open rides the TTL cache.
+  async function _refreshPickerModels({ force = false, showLoading = false, refreshFit = false } = {}) {
     if (!window.modelsModule || typeof window.modelsModule.refreshModels !== 'function') return;
     const seq = ++_pickerLoadSeq;
     _pickerLoading = true;
@@ -361,6 +432,7 @@ function _initModelPickerDropdown() {
     try {
       await window.modelsModule.refreshModels(force);
       await _refreshLocalProbe();
+      await _refreshFitHints({ force: refreshFit });
     } finally {
       if (seq === _pickerLoadSeq) {
         _pickerLoading = false;
@@ -501,6 +573,11 @@ function _initModelPickerDropdown() {
       const _epDisplay = m.epName && !m.display.toLowerCase().includes(m.epName.toLowerCase().split('/').pop()) ? m.epName : '';
       epSpan.textContent = _epDisplay;
       row.appendChild(epSpan);
+
+      // Size + whether it fits on the card. Advisory only: a model that does
+      // not fit stays perfectly clickable, it just says so first.
+      const fitEl = _fitBadge(m);
+      if (fitEl) row.appendChild(fitEl);
 
       // Inline favorite dot — toggles favorite, never picks the model.
       const favDot = document.createElement('button');
@@ -819,7 +896,7 @@ async function _pick(m) {
       refreshBtn.disabled = true;
       refreshBtn.classList.add('spinning');
       try {
-        await _refreshPickerModels({ force: true, showLoading: true });
+        await _refreshPickerModels({ force: true, showLoading: true, refreshFit: true });
         if (!menu.classList.contains('hidden')) _populate(search.value || '');
         updateModelPicker();
       } catch (_) {
