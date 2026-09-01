@@ -3,9 +3,105 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional, Set
+from typing import Any, Optional, Set
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Machine-readable error codes
+# ---------------------------------------------------------------------------
+#
+# The browser used to infer *why* a request failed by searching the error text
+# for the substring "tool". Every message the approval gate raises contains
+# that word, so the three explanations that exist to tell a user why their
+# action was refused were exactly the ones that got swallowed — replaced by a
+# fabricated "this model doesn't support agent tools", plus a persisted mode
+# switch the user never asked for.
+#
+# The cure is a code the server states outright. Text is for humans and may be
+# reworded freely; the code is the contract the client branches on. A client
+# that does not recognise a code must fall back to *showing the message*, never
+# to guessing.
+
+#: The endpoint/model genuinely cannot run agent tools. This is the ONLY signal
+#: that may move a user out of agent mode. It is deliberately narrow: see
+#: ``agent_tools_unsupported_reason`` for why almost nothing qualifies.
+MODEL_NO_TOOLS_CODE = "model_no_tools"
+
+#: The approval id is unknown to this owner/session (never issued, already
+#: consumed, or another thread's).
+TOOL_APPROVAL_INVALID_CODE = "tool_approval_invalid"
+
+#: The approval existed and its TTL elapsed before the user answered. Distinct
+#: from "invalid" because it is the one refusal with an obvious way out: rerun
+#: the turn and answer the fresh card.
+TOOL_APPROVAL_EXPIRED_CODE = "tool_approval_expired"
+
+#: Plan mode was switched on between the card appearing and the click.
+TOOL_APPROVAL_PLAN_MODE_CODE = "tool_approval_plan_mode"
+
+#: The approval passed the ownership check but could not be consumed (a race
+#: with another tab, or a superseding turn).
+TOOL_APPROVAL_UNAVAILABLE_CODE = "tool_approval_unavailable"
+
+
+def tool_error_detail(code: str, message: str) -> dict:
+    """Build an HTTPException detail carrying both a code and a message.
+
+    FastAPI serialises this as ``{"detail": {"code": ..., "message": ...}}``.
+    The message stays first-class: a client that cannot interpret the code
+    still has something true to show.
+    """
+    return {"code": str(code or ""), "message": str(message or "")}
+
+
+def error_code(detail: Any) -> str:
+    """Read the machine-readable code out of an error detail, if any.
+
+    Plain-string details (every other ``HTTPException`` in the app) have no
+    code — they return ``""`` and are handled by showing the message.
+    """
+    if isinstance(detail, dict):
+        return str(detail.get("code") or "")
+    return ""
+
+
+def error_message(detail: Any) -> str:
+    """Read the human-readable message out of an error detail."""
+    if isinstance(detail, dict):
+        return str(detail.get("message") or "")
+    return str(detail or "")
+
+
+def agent_tools_unsupported_reason(
+    *,
+    endpoint_supports_tools: Optional[bool] = None,
+    model: Optional[str] = None,
+) -> Optional[str]:
+    """Why this endpoint/model cannot run agent tools at all, or ``None``.
+
+    This is the authoritative answer to the question the browser used to guess
+    at. It returns ``None`` today for every endpoint the app can reach, and
+    that is the correct answer rather than a gap:
+
+    ``ModelEndpoint.supports_tools is False`` (set by the operator in Settings,
+    or derived from a provider's model list) and the no-native-tools model list
+    in ``src/agent_loop._resolve_native_tool_support`` both rule out *native*
+    function calling only. When they fire, the agent loop drops to XML tool
+    fences, which every text model can emit — the run still works, tools and
+    all. So neither fact justifies taking a user out of agent mode, and the
+    live evidence agrees: no ``/api/chat_stream`` failure has ever meant "this
+    model can't do tools".
+
+    The seam exists so that a provider which truly refuses to carry tool output
+    can say so here, in one place, instead of every caller re-deriving it from
+    error prose.
+    """
+    # Explicitly evaluated and explicitly not disqualifying — keep the inputs
+    # named so the reasoning above stays attached to real values.
+    _ = (endpoint_supports_tools, str(model or "").strip().lower())
+    return None
 
 
 # Every tool exposed by the built-in email MCP server

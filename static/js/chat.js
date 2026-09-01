@@ -98,6 +98,123 @@ import modelControls from './modelControls.js';
     _submitToolApprovalWhenIdle(_pendingToolApproval.approval_id);
   });
 
+  // --- Server error contract ------------------------------------------------
+  //
+  // The server states WHY a request failed in a machine-readable `code` and
+  // states it to the human in `message`. The client branches on the code and
+  // renders the message verbatim.
+  //
+  // It used to guess instead: any error text containing "tool" or "auto" was
+  // rewritten to "This model doesn't support agent tools" and the user was
+  // moved to Chat mode, persisted to localStorage. All three of the approval
+  // gate's 409 refusals contain the word "tool", so the messages that existed
+  // to explain a refused approval were exactly the ones destroyed — the user
+  // lost an approved patch, was told something false about their model, and
+  // was left in a mode they never chose.
+  function _parseServerError(body, status) {
+    const fallback = { code: '', message: `Error ${status || ''}`.trim() };
+    if (!body) return fallback;
+    let parsed = null;
+    try { parsed = JSON.parse(body); } catch (_) { parsed = null; }
+    if (parsed && typeof parsed === 'object') {
+      const detail = parsed.detail !== undefined ? parsed.detail : parsed;
+      if (detail && typeof detail === 'object' && !Array.isArray(detail)) {
+        const message = String(detail.message || detail.error || '').trim();
+        return {
+          code: String(detail.code || ''),
+          message: message || fallback.message,
+        };
+      }
+      if (typeof detail === 'string' && detail.trim()) {
+        return { code: '', message: detail.trim() };
+      }
+      return fallback;
+    }
+    const text = String(body).trim();
+    if (text && text.length < 400) return { code: '', message: text };
+    return fallback;
+  }
+
+  // Single owner of the Agent/Chat toggle, so an automatic switch and the undo
+  // that reverses it are literally the same code path. Returns the mode that
+  // was active before, which is what makes the switch reversible.
+  function _applyModeSwitch(mode) {
+    const target = mode === 'agent' ? 'agent' : 'chat';
+    const agentBtn = document.getElementById('mode-agent-btn');
+    const chatBtn = document.getElementById('mode-chat-btn');
+    let previous = '';
+    if (agentBtn && chatBtn) {
+      previous = agentBtn.classList.contains('active') ? 'agent' : 'chat';
+      agentBtn.classList.toggle('active', target === 'agent');
+      chatBtn.classList.toggle('active', target === 'chat');
+      const toggle = agentBtn.closest('.mode-toggle');
+      if (toggle) toggle.classList.toggle('mode-chat', target === 'chat');
+    }
+    try {
+      if (typeof Storage !== 'undefined' && Storage.KEYS) {
+        const st = Storage.getJSON(Storage.KEYS.TOGGLES, {}) || {};
+        if (!previous) previous = st.mode === 'agent' ? 'agent' : 'chat';
+        st.mode = target;
+        Storage.setJSON(Storage.KEYS.TOGGLES, st);
+      }
+    } catch (_) {}
+    return previous || target;
+  }
+
+  function _inlineNoticeRow(container) {
+    const row = document.createElement('div');
+    row.className = 'chat-inline-notice';
+    row.style.cssText = 'display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px;';
+    container.appendChild(row);
+    return row;
+  }
+
+  // An automatic mode switch is announced where the user is looking and can be
+  // put back with one click. Never a silent localStorage write.
+  function _renderModeSwitchNotice(container, previousMode, targetMode) {
+    if (!container || previousMode === targetMode) return;
+    const row = _inlineNoticeRow(container);
+    const label = document.createElement('span');
+    label.textContent = `Switched from ${previousMode} mode to ${targetMode} mode.`;
+    row.appendChild(label);
+    const undoBtn = document.createElement('button');
+    undoBtn.type = 'button';
+    undoBtn.className = 'confirm-btn confirm-btn-secondary';
+    undoBtn.textContent = `Undo — back to ${previousMode} mode`;
+    undoBtn.addEventListener('click', () => {
+      _applyModeSwitch(previousMode);
+      row.remove();
+    });
+    row.appendChild(undoBtn);
+  }
+
+  // An expired approval must not be a dead end. Reviewing a diff on a slow
+  // local model is exactly when a user takes their time, so the way back is
+  // offered right next to the explanation: replay the user's own last turn
+  // through the ordinary non-destructive resend and answer the fresh card.
+  function _renderApprovalExpiredNotice(container) {
+    if (!container) return;
+    const box = document.getElementById('chat-history');
+    const users = box ? box.querySelectorAll('.msg-user') : [];
+    const lastUserMsg = users.length ? users[users.length - 1] : null;
+    if (!lastUserMsg) return;
+    const row = _inlineNoticeRow(container);
+    const rerunBtn = document.createElement('button');
+    rerunBtn.type = 'button';
+    rerunBtn.className = 'confirm-btn confirm-btn-primary';
+    rerunBtn.textContent = 'Rerun this turn';
+    rerunBtn.addEventListener('click', () => {
+      rerunBtn.disabled = true;
+      try {
+        resendUserMessage(lastUserMsg);
+      } catch (e) {
+        rerunBtn.disabled = false;
+        console.warn('rerun after expired approval failed', e);
+      }
+    });
+    row.appendChild(rerunBtn);
+  }
+
   function _fmtContextNumber(n) {
     const v = Number(n || 0);
     return v ? v.toLocaleString() : '?';
@@ -2365,31 +2482,26 @@ import modelControls from './modelControls.js';
           return;
         }
         let errText = `Error ${res.status}`;
+        let errCode = '';
         try {
           const errBody = await res.text();
-          // Parse nested JSON error if present
-          const m = errBody.match(/"message"\s*:\s*"([^"]+)"/);
-          if (m) errText = m[1].replace(/\\"/g, '"');
-          else if (errBody.length < 200) errText = errBody;
+          const parsedErr = _parseServerError(errBody, res.status);
+          errCode = parsedErr.code;
+          if (parsedErr.message) errText = parsedErr.message;
         } catch {}
-        // Auto-switch to chat mode for tool-related errors
-        if (errText.includes('tool') || errText.includes('auto')) {
-          errText = 'This model doesn\'t support agent tools — switched to Chat mode. Try again.';
-          const _ab = document.getElementById('mode-agent-btn');
-          const _cb = document.getElementById('mode-chat-btn');
-          if (_ab && _cb) {
-            _ab.classList.remove('active');
-            _cb.classList.add('active');
-            const _toggle = _ab.closest('.mode-toggle');
-            if (_toggle) _toggle.classList.add('mode-chat');
-          }
-          if (typeof Storage !== 'undefined' && Storage.KEYS) {
-            const _st = Storage.getJSON(Storage.KEYS.TOGGLES, {});
-            _st.mode = 'chat';
-            Storage.setJSON(Storage.KEYS.TOGGLES, _st);
-          }
+        // The server's own words, always. Only an explicit capability code
+        // from the server may move the user out of agent mode, and when it
+        // does the switch is announced and undoable (see _applyModeSwitch).
+        // Notices go on the holder, not on `.body`: typewriterInto rewrites
+        // that element's textContent on a timer and would eat any child node.
+        const _errBodyEl = holder.querySelector('.body');
+        typewriterInto(_errBodyEl, errText);
+        if (errCode === 'model_no_tools') {
+          const _previousMode = _applyModeSwitch('chat');
+          _renderModeSwitchNotice(holder, _previousMode, 'chat');
+        } else if (errCode === 'tool_approval_expired') {
+          _renderApprovalExpiredNotice(holder);
         }
-        typewriterInto(holder.querySelector('.body'), errText);
         enableResearchBtn();
         return;
       }
@@ -4813,12 +4925,13 @@ import modelControls from './modelControls.js';
               _catchViewHolder?.querySelector('.body')
               || document.querySelector('.msg-ai:last-of-type .body');
             if (errorHolder) {
-              let errMsg = `Error: ${err.message}`;
-              // Add hint for tool-call errors
-              if (err.message && (err.message.includes('tool') || err.message.includes('auto'))) {
-                errMsg += '\n\nThis model may not support tools — try switching to Chat mode.';
-              }
-              typewriterInto(errorHolder, errMsg);
+              // The stream's own error, verbatim. The "this model may not
+              // support tools" hint that used to be appended here was the same
+              // substring guess as the one above: any message containing
+              // "tool" (a failed tool call, an approval refusal) got told the
+              // model was at fault. If the server ever knows that, it says so
+              // with a code — it does not leave the browser to infer it.
+              typewriterInto(errorHolder, `Error: ${err.message}`);
             }
           }
         }

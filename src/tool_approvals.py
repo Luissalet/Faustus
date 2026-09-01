@@ -27,8 +27,39 @@ from src.tool_approval_scopes import (
 from src.tool_capabilities import ToolCapabilities, capabilities_for_action
 
 
-DEFAULT_APPROVAL_TTL_SECONDS = 10 * 60
+def _ttl_from_env(default_seconds: int) -> int:
+    """Operator override for the approval deadline (seconds)."""
+    raw = os.environ.get("TOOL_APPROVAL_TTL_SECONDS", "").strip()
+    if not raw:
+        return default_seconds
+    try:
+        parsed = int(float(raw))
+    except (TypeError, ValueError):
+        return default_seconds
+    # A zero/negative override would make every card expire on arrival.
+    return parsed if parsed > 0 else default_seconds
+
+
+# How long a parked approval card stays answerable.
+#
+# This is a *human review deadline*, not a session timeout: the card shows a
+# diff and the user is supposed to read it. Ten minutes was measured against a
+# fast model and broke the moment a real one was used — a local model at
+# ~1 tok/s leaves the card on screen for half an hour, and the click that
+# finally arrived was refused with a 409, dropping an approved patch.
+#
+# The window is ABSOLUTE from creation and nothing extends it. A sliding TTL
+# would have to be refreshed by the browser, which is the wrong direction of
+# trust: an open tab (or a page influenced by untrusted content) would keep a
+# privileged sealed action alive indefinitely, and "expires 30 minutes after
+# you last twitched" is not a bound anyone can audit. A fixed deadline the
+# server picked is. Users who exceed it are not stranded — the gate reports
+# ``tool_approval_expired`` and the UI offers to rerun the turn.
+DEFAULT_APPROVAL_TTL_SECONDS = _ttl_from_env(30 * 60)
 DEFAULT_MAX_PENDING_APPROVALS = 2048
+# Bounded memory of approvals dropped by the TTL, so the gate can answer
+# "expired" instead of the misleading "invalid, or belongs to another thread".
+DEFAULT_MAX_EXPIRED_MEMORY = 512
 
 
 def _normalized_owner(owner: Any) -> str:
@@ -321,11 +352,24 @@ class ToolApprovalStore:
         *,
         ttl_seconds: int = DEFAULT_APPROVAL_TTL_SECONDS,
         max_pending: int = DEFAULT_MAX_PENDING_APPROVALS,
+        max_expired_memory: int = DEFAULT_MAX_EXPIRED_MEMORY,
     ):
         self._ttl_seconds = max(1, int(ttl_seconds))
         self._max_pending = max(1, int(max_pending))
+        self._max_expired_memory = max(1, int(max_expired_memory))
         self._pending: dict[str, PendingToolApproval] = {}
+        # approval_id -> normalized owner, for approvals the TTL dropped. Only
+        # the owner is kept: enough to tell that user "this expired, rerun the
+        # turn", and nothing a stranger holding a leaked id could learn from.
+        # Insertion-ordered and capped, so it can never grow without bound.
+        self._expired: dict[str, str] = {}
         self._lock = threading.Lock()
+
+    def _remember_expired_locked(self, pending: PendingToolApproval) -> None:
+        self._expired.pop(pending.approval_id, None)
+        self._expired[pending.approval_id] = pending.owner
+        while len(self._expired) > self._max_expired_memory:
+            self._expired.pop(next(iter(self._expired)), None)
 
     def _purge_expired_locked(self, now: float) -> None:
         expired = [
@@ -334,7 +378,9 @@ class ToolApprovalStore:
             if pending.expires_at <= now
         ]
         for approval_id in expired:
-            self._pending.pop(approval_id, None)
+            dropped = self._pending.pop(approval_id, None)
+            if dropped is not None:
+                self._remember_expired_locked(dropped)
 
     def create(
         self,
@@ -490,6 +536,29 @@ class ToolApprovalStore:
         with self._lock:
             self._purge_expired_locked(now)
             return self._pending.get(str(approval_id or ""))
+
+    def was_expired(self, approval_id: Any, *, owner: Any) -> bool:
+        """Whether this owner's approval was dropped by the TTL.
+
+        Lets the gate answer "your approval expired, rerun the turn" instead of
+        the catch-all "invalid, expired, or belongs to another thread" — the
+        difference between a dead end and a way forward. Owner-scoped so a
+        leaked opaque id still tells a stranger nothing.
+        """
+        now = time.time()
+        normalized_owner = _normalized_owner(owner)
+        with self._lock:
+            self._purge_expired_locked(now)
+            return self._expired.get(str(approval_id or "")) == normalized_owner
+
+    def expire_now(self, approval_id: Any) -> bool:
+        """Expire a pending approval immediately (tests, admin revocation)."""
+        with self._lock:
+            pending = self._pending.pop(str(approval_id or ""), None)
+            if pending is None:
+                return False
+            self._remember_expired_locked(pending)
+            return True
 
     def retire_for_session(self, *, owner: Any, session_id: Any) -> bool:
         """Discard pending actions superseded by an ordinary user turn.

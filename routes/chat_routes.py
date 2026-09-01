@@ -1380,6 +1380,16 @@ def setup_chat_routes(
             sess = session_manager.get_session(session)
             owner = effective_user(request)
             if tool_approval_id:
+                # Codes, not prose: the browser must branch on the machine
+                # field and render the message as-is (src/tool_security.py).
+                from src.tool_security import (
+                    TOOL_APPROVAL_EXPIRED_CODE,
+                    TOOL_APPROVAL_INVALID_CODE,
+                    TOOL_APPROVAL_PLAN_MODE_CODE,
+                    TOOL_APPROVAL_UNAVAILABLE_CODE,
+                    tool_error_detail,
+                )
+
                 pending_tool_approval = tool_approval_store.peek(tool_approval_id)
                 normalized_owner = str(owner or "").strip().casefold()
                 if (
@@ -1387,9 +1397,29 @@ def setup_chat_routes(
                     or pending_tool_approval.owner != normalized_owner
                     or pending_tool_approval.session_id != str(session)
                 ):
+                    # Separate "you took too long" from "this was never yours".
+                    # They look identical to the store but not to the user:
+                    # an expired card has an obvious way out (rerun the turn),
+                    # so the client needs to be able to tell them apart without
+                    # reading the prose.
+                    if tool_approval_store.was_expired(
+                        tool_approval_id, owner=owner
+                    ):
+                        raise HTTPException(
+                            409,
+                            tool_error_detail(
+                                TOOL_APPROVAL_EXPIRED_CODE,
+                                "This approval expired before it was answered. "
+                                "Nothing was executed — rerun the turn to get a "
+                                "fresh approval card.",
+                            ),
+                        )
                     raise HTTPException(
                         409,
-                        "This tool approval is invalid, expired, or belongs to another thread.",
+                        tool_error_detail(
+                            TOOL_APPROVAL_INVALID_CODE,
+                            "This tool approval is invalid, expired, or belongs to another thread.",
+                        ),
                     )
                 pending_taint = bool(
                     pending_tool_approval.external_untrusted_context_seen
@@ -1403,7 +1433,10 @@ def setup_chat_routes(
                 if plan_mode:
                     raise HTTPException(
                         409,
-                        "Tool approvals cannot be consumed while plan mode is active.",
+                        tool_error_detail(
+                            TOOL_APPROVAL_PLAN_MODE_CODE,
+                            "Tool approvals cannot be consumed while plan mode is active.",
+                        ),
                     )
                 exact_tool_approval = tool_approval_store.consume(
                     tool_approval_id,
@@ -1418,7 +1451,10 @@ def setup_chat_routes(
                 ):
                     raise HTTPException(
                         409,
-                        "This tool approval could not be consumed.",
+                        tool_error_detail(
+                            TOOL_APPROVAL_UNAVAILABLE_CODE,
+                            "This tool approval could not be consumed.",
+                        ),
                     )
                 if not _mark_tool_approval_resolved(
                     sess,
