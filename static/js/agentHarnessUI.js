@@ -375,6 +375,7 @@ async function _fetchReviewState(msgId) {
 const REASON_TEXT = {
   claims_without_mutation: 'The model described changes as done, but no write tool (edit_file / write_file / apply_patch) succeeded this turn.',
   fabricated_paths: 'It mentioned files that do not exist in the workspace and were never returned by any tool.',
+  claimed_paths_untouched: 'It said it created or modified files that no write tool touched this turn — some of the work it describes did not happen.',
   intent_without_action: 'It announced an action ("I will now…", "Voy a…") and ended the turn without calling any tool.',
 };
 
@@ -473,6 +474,9 @@ export function renderHarnessCheck(json) {
   const items = reasons.map(r => `<li>${esc(REASON_TEXT[r] || r)}</li>`);
   if (json.bad_paths && json.bad_paths.length) {
     items.push(`<li>Non-existent paths: ${json.bad_paths.map(p => `<code>${esc(p)}</code>`).join(', ')}</li>`);
+  }
+  if (json.untouched_paths && json.untouched_paths.length) {
+    items.push(`<li>Claimed ${json.untouched_paths.map(p => `<code>${esc(p)}</code>`).join(', ')} but never touched ${json.untouched_paths.length === 1 ? 'it' : 'them'}.</li>`);
   }
   if (json.intent) {
     items.push(`<li>Announced: <em>${esc(String(json.intent).slice(0, 140))}</em></li>`);

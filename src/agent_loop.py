@@ -6320,7 +6320,10 @@ async def stream_agent_loop(
                     _fa_check = _ledger.check_completion(_fa_text)
                 except Exception:
                     _fa_check = {"ok": True, "reasons": []}
-                if not _fa_check["ok"] and ("claims_without_mutation" in _fa_check["reasons"] or "fabricated_paths" in _fa_check["reasons"]):
+                if not _fa_check["ok"] and any(
+                    r in _fa_check["reasons"]
+                    for r in ("claims_without_mutation", "fabricated_paths", "claimed_paths_untouched")
+                ):
                     _ledger.stop_reason = "complete_unverified"
                     _ledger.notes.append("unverified_claims_forced:" + ",".join(_fa_check["reasons"]))
                     _harness_final_note = _ledger.user_note(_fa_check, final=True)
@@ -6329,6 +6332,7 @@ async def stream_agent_loop(
                             "type": "harness_check", "status": "unverified",
                             "reasons": _fa_check["reasons"], "claims": _fa_check.get("claims", []),
                             "bad_paths": _fa_check.get("bad_paths", []), "round": round_num,
+                            "untouched_paths": _fa_check.get("untouched_paths", []),
                             "mutations": _ledger.mutated_paths(),
                         }) + "\n\n"
                     )
@@ -6460,10 +6464,11 @@ async def stream_agent_loop(
                             # not 2 + 2.
                             _intent_nudge_count += 1
                         logger.warning(
-                            "[harness] round %s REJECTED (%s) attempt %s/%s claims=%s bad_paths=%s intent=%r",
+                            "[harness] round %s REJECTED (%s) attempt %s/%s claims=%s bad_paths=%s "
+                            "untouched=%s intent=%r",
                             round_num, ",".join(_check["reasons"]), _ledger.rejections,
                             _HARNESS_MAX_REJECTIONS, _check.get("claims"), _check.get("bad_paths"),
-                            _check.get("intent"),
+                            _check.get("untouched_paths"), _check.get("intent"),
                         )
                         if round_response.strip():
                             messages.append({"role": "assistant", "content": round_response})
@@ -6473,6 +6478,7 @@ async def stream_agent_loop(
                                 "type": "harness_check", "status": "rejected",
                                 "reasons": _check["reasons"], "claims": _check.get("claims", []),
                                 "bad_paths": _check.get("bad_paths", []), "intent": _check.get("intent"),
+                                "untouched_paths": _check.get("untouched_paths", []),
                                 "round": round_num, "attempt": _ledger.rejections,
                                 "max_attempts": _HARNESS_MAX_REJECTIONS,
                                 "mutations": _ledger.mutated_paths(),
@@ -6493,6 +6499,7 @@ async def stream_agent_loop(
                             "type": "harness_check", "status": "unverified",
                             "reasons": _check["reasons"], "claims": _check.get("claims", []),
                             "bad_paths": _check.get("bad_paths", []), "intent": _check.get("intent"),
+                            "untouched_paths": _check.get("untouched_paths", []),
                             "round": round_num, "mutations": _ledger.mutated_paths(),
                         }) + "\n\n"
                     )

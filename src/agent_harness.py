@@ -111,6 +111,17 @@ def shell_command_looks_mutating(command: str) -> bool:
     return bool(_MUTATING_SHELL_RE.search(_strip_quoted(command or "")))
 
 
+# Written-file hints _MUTATING_SHELL_RE cannot see: a script body that opens a
+# file for writing. Used only to STAY SILENT about a path, never to claim one
+# was changed — `kind` stays "shell", so this is not mutation evidence.
+_SHELL_WRITE_HINT_RE = re.compile(
+    r"(?:\bopen\s*\(|\.write(?:lines|_text|_bytes)?\s*\(|\bwriteFile|\bfs\.write|"
+    r"\bshutil\.|\bjson\.dump|\byaml\.(?:dump|safe_dump)|\bto_csv|\bto_excel|\bsavefig|"
+    r"\bPath\s*\([^)]*\)\s*\.write|\bcreate_file|\bmakedirs|\bmkdir\s*\()",
+    re.IGNORECASE,
+)
+
+
 # ---------------------------------------------------------------------------
 # Claim detection (Spanish + English)
 # ---------------------------------------------------------------------------
@@ -390,6 +401,301 @@ def extract_path_tokens(text: str) -> List[str]:
 
 
 # ---------------------------------------------------------------------------
+# Path-scoped write claims ("I added the test to tests/test_cart.py")
+# ---------------------------------------------------------------------------
+#
+# find_mutation_claims() above answers "does the model say it changed
+# *something*?". That is only half the question. The failure mode a small model
+# falls into far more often is finishing HALF the job and narrating all of it:
+# one real edit_file on cart.py, then "I added the function to cart.py AND the
+# test to tests/test_cart.py". There *is* an effect, so the ledger's
+# claims-without-mutation gate opens and the second, invented half rides
+# through as verified work.
+#
+# So this block answers the sharper question: "did the file you NAME appear in
+# the set that was actually mutated?". The bar for accusing is deliberately
+# high — a false accusation costs a whole extra round of a 20 tok/s local model
+# and, worse, teaches the user to distrust the card, which is the only thing
+# that makes the harness worth anything. When in doubt, stay quiet.
+#
+# Counts as a claim (the sentence asserts authorship of the file's contents):
+#     "He añadido la función a cart.py"        "I've added the test to x.py"
+#     "creé tests/test_cart.py"                "I added helpers to utils.py"
+#     "se ha modificado cart.py"               "cart.py has been updated"
+#     "cart.py fue actualizado"                "- Updated: cart.py"
+#     "- Añadido el test en tests/test_cart.py"
+#     "He añadido:" + "- **En tests/test_cart.py**: el test…"   (list header)
+#
+# Does NOT count (the sentence merely mentions the file):
+#     "leí cart.py"                            "I read cart.py"
+#     "cart.py ya tenía subtotal"              "cart.py already had subtotal"
+#     "no hizo falta tocar utils.py"           "utils.py needed no changes"
+#     "el test está en tests/test_cart.py"     "the test lives in tests/x.py"
+#     "habría que añadir un test en x.py"      "a test should be added to x.py"
+#     "ejecuta pytest tests/test_cart.py"      "run pytest tests/test_cart.py"
+#     "usa subtotal de cart.py"                "uses subtotal from cart.py"
+
+# Past-tense verbs that assert the CONTENTS OF A FILE changed. Deliberately
+# narrower than _ES_PP/_EN_PP: "completado", "terminado", "listo",
+# "configurado", "instalado", "revisado" report that something finished or was
+# looked at, not that a named file was written — a path standing next to one of
+# those must never be read as an unfulfilled promise.
+_WRITE_PP_ES = (
+    r"(?:cread[oa]s?|añadid[oa]s?|agregad[oa]s?|modificad[oa]s?|actualizad[oa]s?|"
+    r"escrit[oa]s?|editad[oa]s?|implementad[oa]s?|eliminad[oa]s?|borrad[oa]s?|"
+    r"cambiad[oa]s?|corregid[oa]s?|arreglad[oa]s?|reescrit[oa]s?|movid[oa]s?|"
+    r"renombrad[oa]s?|refactorizad[oa]s?|ampliad[oa]s?|extendid[oa]s?|insertad[oa]s?|"
+    r"sustituid[oa]s?|reemplazad[oa]s?|aplicad[oa]s?|parchead[oa]s?|generad[oa]s?|"
+    r"guardad[oa]s?|incluid[oa]s?|dividid[oa]s?)"
+)
+_WRITE_PRET_ES = (
+    r"(?:cre[eé]|añad[ií]|agregu[eé]|modifiqu[eé]|actualic[eé]|escrib[ií]|edit[eé]|"
+    r"implement[eé]|elimin[eé]|borr[eé]|cambi[eé]|correg[ií]|arregl[eé]|reescrib[ií]|"
+    r"mov[ií]|renombr[eé]|refactoric[eé]|ampli[eé]|extend[ií]|insert[eé]|sustitu[ií]|"
+    r"reemplac[eé]|apliqu[eé]|parche[eé]|gener[eé]|guard[eé]|inclu[ií])"
+)
+_WRITE_PP_EN = (
+    r"(?:created|added|modified|updated|written|wrote|edited|implemented|removed|"
+    r"deleted|changed|fixed|rewritten|rewrote|moved|renamed|refactored|extended|"
+    r"inserted|replaced|applied|patched|generated|saved|appended|introduced|split)"
+)
+
+# The grammatical frames in which one of those verbs asserts authorship. A bare
+# participle is never enough: "el test debería estar añadido en x.py" and "a
+# test should be added to x.py" must not match, and they do not, because no
+# frame accepts a participle without a first/third-person auxiliary or a
+# line-initial bullet position.
+_LINE_LEAD = r"^\s*(?:[-*•+]\s+|\d+[.)]\s+|[✅✓☑]\s*|\[[xX]\]\s+)?(?:\*\*|__)?\s*"
+WRITE_CLAIM_FRAMES: List[re.Pattern] = [
+    # Spanish
+    re.compile(r"\b(?:he|hemos|ha|han)\s+(?:ya\s+|tambi[eé]n\s+|adem[aá]s\s+|justo\s+)?" + _WRITE_PP_ES, re.IGNORECASE),
+    re.compile(r"\bse\s+(?:ha|han)\s+(?:ya\s+)?" + _WRITE_PP_ES, re.IGNORECASE),
+    re.compile(r"\b(?:ha|han)\s+sido\s+" + _WRITE_PP_ES, re.IGNORECASE),
+    re.compile(r"\b(?:fue|fueron)\s+" + _WRITE_PP_ES, re.IGNORECASE),
+    re.compile(r"\b" + _WRITE_PRET_ES + r"\b", re.IGNORECASE),
+    re.compile(_LINE_LEAD + _WRITE_PP_ES + r"\b", re.IGNORECASE | re.MULTILINE),
+    # English
+    re.compile(r"\b(?:I|we)(?:'ve|\s+have)\s+(?:now\s+|also\s+|just\s+|then\s+|successfully\s+)?" + _WRITE_PP_EN, re.IGNORECASE),
+    re.compile(r"\b(?:I|we)\s+(?:then\s+|also\s+|now\s+|just\s+)?" + _WRITE_PP_EN + r"\b", re.IGNORECASE),
+    re.compile(r"\b(?:has|have)\s+been\s+(?:successfully\s+)?" + _WRITE_PP_EN, re.IGNORECASE),
+    re.compile(_LINE_LEAD + _WRITE_PP_EN + r"\b", re.IGNORECASE | re.MULTILINE),
+    # "- cart.py: added total_con_envio" / "- cart.py: añadida la función"
+    re.compile(
+        r"^\s*(?:[-*•+]|\d+[.)]|[✅✓☑]|\[[xX]\])\s+[^:\n]{0,80}:\s*(?:\*\*|__)?\s*"
+        + r"(?:" + _WRITE_PP_ES + r"|" + _WRITE_PP_EN + r")\b",
+        re.IGNORECASE | re.MULTILINE,
+    ),
+    # The headings a model puts above its file list. "Ficheros revisados:" is
+    # deliberately absent — reviewing is not writing.
+    re.compile(
+        r"\b(?:"
+        r"(?:he|hemos)\s+(?:hecho|realizado|aplicado|efectuado|introducido)\s+"
+        r"(?:los?\s+|las?\s+|estos?\s+|estas?\s+)?(?:siguientes\s+)?(?:cambios|modificaciones|ediciones)|"
+        r"(?:cambios|modificaciones|ficheros|archivos)\s+"
+        r"(?:realizad|efectuad|aplicad|modificad|cambiad|cread|editad|actualizad|nuev|añadid|agregad|generad|escrit|toc)[oa]s|"
+        r"resumen\s+de\s+(?:los\s+)?cambios|"
+        r"(?:i|we)(?:'ve|\s+have)?\s+made\s+(?:the\s+)?(?:following\s+)?changes|"
+        r"(?:files?|changes?)\s+(?:changed|modified|created|edited|updated|written|added|touched)|"
+        r"changes\s+made|summary\s+of\s+(?:the\s+)?changes"
+        r")",
+        re.IGNORECASE,
+    ),
+]
+
+# "✅ cart.py — test añadido": the participle trails the path in its own clause.
+# Only trusted at the end of a SHORT, path-less tail of a list item.
+_TAIL_PP_RE = re.compile(
+    r"\b(?:" + _WRITE_PP_ES + r"|" + _WRITE_PP_EN + r")\s*[.!)\]]*$", re.IGNORECASE
+)
+
+# A modal in front turns the claim into a proposal: "should have been added",
+# "podría haber creado", "habría que…". Checked on the few words before a match.
+_HEDGE_BEFORE_RE = re.compile(
+    r"\b(?:should|could|would|must|might|may|can|will|shall|need|needs|needed|"
+    r"deber[íi]a(?:s|mos|n)?|podr[íi]a(?:s|mos|n)?|habr[íi]a|tendr[íi]a(?:s|mos|n)?|"
+    r"har[íi]a|hay\s+que|falta|faltar[íi]a|queda|quedar[íi]a|recomiendo|sugiero|"
+    r"conviene|ser[íi]a|puedes|puede|pod[eé]is|pueden)\s+(?:\w+\s+){0,2}$",
+    re.IGNORECASE,
+)
+
+# A reading verb earlier in the sentence owns the paths before the claim verb:
+# "después de leer cart.py, he modificado utils.py" claims utils.py only.
+_READ_VERB_RE = re.compile(
+    r"\b(?:le[ií]d?[oa]?|leer|leyendo|revis(?:ad[oa]s?|[eé]|ar|ando)|"
+    r"comprob(?:ad[oa]s?|[eé]|ar|ando)|verific(?:ad[oa]s?|u[eé]|ar|ando)|"
+    r"inspeccion(?:ad[oa]s?|[eé]|ar|ando)|analiz(?:ad[oa]s?|[eé]|ar|ando)|"
+    r"mir(?:ad[oa]s?|[eé]|ar|ando)|busc(?:ad[oa]s?|u[eé]|ar|ando)|"
+    r"examin(?:ad[oa]s?|[eé]|ar|ando)|consult(?:ad[oa]s?|[eé]|ar|ando)|"
+    r"abr(?:[ií]|ir|iendo)|vist[oa]|ver\b|"
+    r"read(?:ing)?|review(?:ed|ing)?|check(?:ed|ing)?|inspect(?:ed|ing)?|"
+    r"examin(?:ed|ing)|analy[sz](?:ed|ing)|look(?:ed|ing)?|search(?:ed|ing)?|"
+    r"open(?:ed|ing)?|view(?:ed|ing)?|grep(?:ped)?|scann(?:ed|ing))\b",
+    re.IGNORECASE,
+)
+
+# Everything from here on in the sentence is a reference to code the model
+# *used*, not a file it wrote: "…en cart.py usando subtotal de utils.py".
+_REFERENCE_CUE_RE = re.compile(
+    r"\b(?:usando|utilizando|reutilizando|basad[oa]s?\s+en|seg[uú]n|"
+    r"definid[oa]s?\s+en|declarad[oa]s?\s+en|ubicad[oa]s?\s+en|localizad[oa]s?\s+en|"
+    r"import(?:a|ad[oa]s?|ando)\s+(?:de|desde)|"
+    r"que\s+(?:usa|utiliza|importa|llama|lee|est[aá]|estaba|contiene|vive|reside|depende|hereda)|"
+    r"using|based\s+on|according\s+to|defined\s+in|declared\s+in|located\s+in|"
+    r"imported\s+from|"
+    r"which\s+(?:uses|imports|calls|reads|is|lives|contains|depends)|"
+    r"that\s+(?:uses|imports|calls|reads|lives))\b",
+    re.IGNORECASE,
+)
+
+# A path sitting in a command the user is told to run is not a claim:
+# "ejecuta pytest tests/test_cart.py".
+_RUNNER_BEFORE_RE = re.compile(
+    r"(?:^|[\s`(\[])(?:pytest|py\.test|python3?|node|npm|npx|yarn|pnpm|deno|go|cargo|"
+    r"ruby|php|dotnet|java|bash|sh|zsh|cat|less|head|tail|vim|nano|code|open|jest|"
+    r"vitest|mocha|tsc|eslint|ruff|flake8|black|mypy|pylint|pytest-watch|grep|rg|ls|"
+    r"wc|diff|git|make)\s+(?:-[\w-]+\s+|--[\w-]+(?:=\S+)?\s+|-m\s+[\w.]+\s+|run\s+|exec\s+)*$",
+    re.IGNORECASE,
+)
+
+# "ya existía", "already had", "sin cambios": the line reports a pre-existing
+# state. Never an authorship claim, even under a "He añadido:" header.
+_PREEXISTING_RE = re.compile(
+    r"(?:\bya\s+(?:estaba\s+|est[aá]\s+|lo\s+)?\w*(?:ad[oa]s?|id[oa]s?)\b|"
+    r"\bya\s+(?:exist|ten[íi]|conten[íi]|estaba|hab[íi]a|inclu[íi]|lo\s+hac[íi]a)|"
+    r"\balready\b|sin\s+cambios|no\s+(?:ha\s+)?(?:sido\s+)?(?:hizo|hac[íi]a|hac[eé]|fue|"
+    r"requer|necesit|hac[ií]a\s+falta)|unchanged|untouched|no\s+changes?\b|not\s+modified|"
+    r"no\s+hac[ií]a\s+falta|no\s+fue\s+necesario)",
+    re.IGNORECASE,
+)
+
+_LIST_ITEM_RE = re.compile(r"^\s*(?:[-*•+]|\d+[.)]|[✅✓☑]|\[[xX]\])\s*\S")
+# A model that writes its report without markdown bullets still lists files one
+# per line, usually as "En cart.py: …" / "In cart.py — …" / "cart.py: …".
+_BARE_ITEM_RE = re.compile(r"^\s*(?:\*\*|__)?(?:en|in)\s+\S|^\s*(?:\*\*|__)?[\w@.-]*[A-Za-z_][\w@.-]*[/\\.]", re.IGNORECASE)
+_FENCE_RE = re.compile(r"```.*?```", re.DOTALL)
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.;!?])\s+|\s+[—–]\s+")
+
+
+def _hedged_before(text: str, start: int) -> bool:
+    return bool(_HEDGE_BEFORE_RE.search(text[max(0, start - 30):start]))
+
+
+def _accepted_write_claim(segment: str) -> Optional[re.Match]:
+    """First write-claim match in `segment` that is neither negated ("no he
+    modificado…") nor hedged ("should have been added")."""
+    best: Optional[re.Match] = None
+    for pat in WRITE_CLAIM_FRAMES:
+        for m in pat.finditer(segment):
+            if _negated_before(segment, m.start()) or _hedged_before(segment, m.start()):
+                continue
+            if best is None or m.start() < best.start():
+                best = m
+            break
+    return best
+
+
+def _paths_in_region(region: str) -> List[str]:
+    """Path tokens in `region`, minus the ones that are arguments of a command
+    the reader is told to run."""
+    out: List[str] = []
+    for tok in extract_path_tokens(region):
+        idx = region.find(tok)
+        if idx > 0 and _RUNNER_BEFORE_RE.search(region[max(0, idx - 60):idx]):
+            continue
+        out.append(tok)
+    return out
+
+
+def _claim_region(segment: str, m: re.Match) -> str:
+    """The slice of `segment` whose paths the claim is about: from the claim
+    verb (or from the start, when nothing was read first) up to the first
+    "…using X from Y" reference cue."""
+    start = 0
+    for r in _READ_VERB_RE.finditer(segment):
+        if r.end() <= m.start():
+            start = m.start()          # the earlier paths belong to the reading
+            break
+    end = len(segment)
+    cue = _REFERENCE_CUE_RE.search(segment, m.end())
+    if cue:
+        end = cue.start()
+    return segment[start:max(start, end)]
+
+
+def _item_region(item: str) -> str:
+    """The slice of a list item that names the file it is about. "En
+    tests/test_cart.py: el test que compara con cart.py" is about the first
+    path only — everything after the colon describes it."""
+    body = item
+    cue = _REFERENCE_CUE_RE.search(body)
+    if cue:
+        body = body[:cue.start()]
+    colon = body.find(":")
+    if colon > 0 and extract_path_tokens(body[:colon]):
+        body = body[:colon]
+    return body
+
+
+def find_claimed_paths(text: str, limit: int = 8) -> List[str]:
+    """Paths the answer asserts it CREATED OR MODIFIED, in order of appearance.
+
+    Reuses extract_path_tokens()/PATH_TOKEN_RE for the path side; the verb side
+    is the narrow write-verb vocabulary above. A mere mention ("leí cart.py",
+    "el test está en tests/test_cart.py") is not a claim — see the block comment.
+    """
+    body = _FENCE_RE.sub("\n", text or "")
+    out: List[str] = []
+    seen: Set[str] = set()
+
+    def _add(tokens: Iterable[str]) -> None:
+        for tok in tokens:
+            key = _norm(tok)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(tok)
+
+    carry = False                      # under a "He añadido:" / "Changes:" header
+    for raw_line in body.splitlines():
+        line = raw_line.rstrip()
+        if not line.strip():
+            carry = False
+            continue
+        bullet = bool(_LIST_ITEM_RE.match(line))
+        is_item = bullet or bool(_BARE_ITEM_RE.match(line))
+        found: List[str] = []
+        header = False
+        prefix = ""
+        for seg in _SENTENCE_SPLIT_RE.split(line):
+            if not seg.strip() or _PREEXISTING_RE.search(seg):
+                prefix = (prefix + " " + seg).strip()
+                continue
+            m = _accepted_write_claim(seg)
+            if m:
+                hits = _paths_in_region(_claim_region(seg, m))
+                if hits:
+                    found.extend(hits)
+                elif seg.rstrip(" \t*_`").endswith(":"):
+                    # "He añadido:" — the files come in the list below.
+                    header = True
+            elif bullet and prefix and len(seg) <= 70 and not extract_path_tokens(seg):
+                # "✅ cart.py — test añadido": the verb trails the file it is
+                # about, in its own clause. Only inside a list item, only when
+                # the tail names no file of its own.
+                t = _TAIL_PP_RE.search(seg)
+                if t and not _negated_before(seg, t.start()) and not _hedged_before(seg, t.start()):
+                    found.extend(_paths_in_region(_item_region(prefix)))
+            prefix = (prefix + " " + seg).strip()
+        if found:
+            _add(found)
+        elif carry and is_item and not _PREEXISTING_RE.search(line) and not _READ_VERB_RE.search(line):
+            _add(_paths_in_region(_item_region(line)))
+        carry = header or (carry and is_item)
+        if len(out) >= limit:
+            break
+    return out[:limit]
+
+# ---------------------------------------------------------------------------
 # Workspace file index (for path grounding + suggestions)
 # ---------------------------------------------------------------------------
 
@@ -646,6 +952,11 @@ class TurnLedger:
         self.review_fix_rounds = 0
         self.review_mutations_at_fix = -1     # len(mutations) when the review fix round started
         self.asked_user = False
+        # Paths named by a bash/python call that the mutating-command regex read
+        # as read-only but whose body writes files anyway (`python - <<EOF …
+        # open(p,"w") … EOF`). The ledger cannot prove those were NOT written,
+        # so claimed_untouched_paths() never accuses them.
+        self.shell_write_hints: Set[str] = set()
         # The user's own message may name real files; those count as observed.
         for tok in extract_path_tokens(self.user_text):
             self.observed_paths.add(_norm(tok))
@@ -659,6 +970,9 @@ class TurnLedger:
             kind = "mutation"
         elif tool in SHELL_TOOLS:
             kind = "mutation" if shell_command_looks_mutating(content) else "shell"
+            if kind != "mutation" and _SHELL_WRITE_HINT_RE.search(content or ""):
+                for p in paths:
+                    self.shell_write_hints.add(_norm(p).rsplit("/", 1)[-1])
         elif tool in OTHER_EFFECT_TOOLS:
             kind = "effect"
         ev = {
@@ -769,6 +1083,43 @@ class TurnLedger:
                 break
         return out
 
+    def claimed_untouched_paths(self, text: str, limit: int = 4) -> List[str]:
+        """Files the answer says it CREATED OR MODIFIED that are not in the set
+        this turn actually mutated.
+
+        The half-done turn is the common lie of a small model: one real
+        edit_file on cart.py, then "I added the function to cart.py AND the test
+        to tests/test_cart.py". `claims and not self.effects` cannot see it —
+        there *was* an effect. This can: every named file is checked against
+        mutated_paths() (basename comparison, the same lenient rule
+        user_missing_paths() uses for the other direction).
+
+        Silent whenever the mutated set may be incomplete, because a false
+        accusation costs a whole round of a slow local model and teaches the
+        user to distrust the card:
+          * a mutation whose target the ledger could not name (`make`,
+            `npm run build`) — anything could have been written;
+          * a delegated run, whose workers report their own file lists;
+          * a path a bash/python call may have written without looking mutating.
+        """
+        if not text:
+            return []
+        # An unnamed mutation means the "what changed" set is incomplete.
+        if any(not e["paths"] for e in self.mutations):
+            return []
+        if any(e["ok"] and e["tool"].startswith("delegate_agents") for e in self.events):
+            return []
+        touched = {_norm(p).rsplit("/", 1)[-1] for p in self.mutated_paths()}
+        touched |= self.shell_write_hints
+        out: List[str] = []
+        for tok in find_claimed_paths(text):
+            if _norm(tok).rsplit("/", 1)[-1] in touched:
+                continue
+            out.append(tok)
+            if len(out) >= limit:
+                break
+        return out
+
     def user_missing_paths(self) -> List[str]:
         """Files the USER named that do not exist in the workspace (and were not
         created this turn). Empty without a workspace."""
@@ -857,6 +1208,12 @@ class TurnLedger:
                 note = "unverified_mentions:" + ",".join(bad_paths)
                 if note not in self.notes:
                     self.notes.append(note)
+        # A completion claim that NAMES files is checked file by file: having
+        # done *something* is not having done what you say you did. Paths
+        # already reported as fabricated are left to that reason.
+        untouched = [p for p in self.claimed_untouched_paths(body) if p not in bad_paths]
+        if untouched:
+            reasons.append("claimed_paths_untouched")
         if intent and not claims:
             reasons.append("intent_without_action")
         return {
@@ -864,6 +1221,7 @@ class TurnLedger:
             "reasons": reasons,
             "claims": claims,
             "bad_paths": bad_paths,
+            "untouched_paths": untouched,
             "intent": intent,
         }
 
@@ -872,9 +1230,14 @@ class TurnLedger:
         """Instruction fed back to the model (English: local models follow
         English instructions more reliably; the user-facing summary is
         localized separately)."""
+        partial = check["reasons"] == ["claimed_paths_untouched"]
         lines = [
             "[Harness check — automatic message from the runtime, not from the user]",
-            "Your last message is NOT supported by the tool log of this turn:",
+            # Half a turn's work being real changes what the model must do next,
+            # so it changes the first line the model reads.
+            ("PART of your last message is NOT supported by the tool log of this turn:"
+             if partial else
+             "Your last message is NOT supported by the tool log of this turn:"),
         ]
         tools = ", ".join(f"{k}×{v}" for k, v in self.tools_run().items()) or "none"
         if "claims_without_mutation" in check["reasons"]:
@@ -899,11 +1262,30 @@ class TurnLedger:
                             hints.append(s)
                 if hints:
                     lines.append("    Real files with similar names: " + ", ".join(hints[:8]))
+        if "claimed_paths_untouched" in check["reasons"]:
+            named = check.get("untouched_paths") or []
+            done = ", ".join(self.mutated_paths()) or "NONE"
+            lines.append(
+                "- You say you created or modified " + ", ".join(named)
+                + (", but no write tool touched " + ("that file" if len(named) == 1 else "those files"))
+                + f" this turn. Files actually modified this turn: {done}. Tools that ran: {tools}."
+            )
         if "intent_without_action" in check["reasons"]:
             lines.append(
                 f'- You announced "{check["intent"]}" and then ended the turn without calling '
                 "any tool. Announcing is not doing."
             )
+        if partial:
+            # Part of the work is real: sending the "nothing happened" script
+            # here would make the model redo or undo the edits it did make.
+            lines.append(
+                "The rest of your answer is backed by the tool log — keep those edits and do NOT "
+                "redo them. Either (a) do the missing part now with edit_file / write_file / "
+                "apply_patch on the file(s) named above; or (b) if it should not be done, rewrite "
+                "the final answer WITHOUT that claim, saying plainly which files you changed and "
+                "which you did not. Never present unexecuted work as done."
+            )
+            return "\n".join(lines)
         lines.append(
             "Nothing you described has happened. Do not apologize and do not restate the plan. "
             "Either (a) DO the work now — discover real files with glob/grep/ls, read them, then "
@@ -934,16 +1316,33 @@ class TurnLedger:
                  "it mentions paths that do not exist in the workspace: ")
                 + ", ".join(f"`{p}`" for p in check["bad_paths"])
             )
+        if "claimed_paths_untouched" in check["reasons"]:
+            named = ", ".join(f"`{p}`" for p in (check.get("untouched_paths") or []))
+            done = ", ".join(f"`{p}`" for p in self.mutated_paths())
+            parts.append(
+                (f"dice haber creado o modificado {named}, pero no se tocó en este turno"
+                 + (f" (**modificados realmente**: {done})" if done else "")
+                 ) if es else
+                (f"it claims {named} but never touched it"
+                 + (f" (**actually modified**: {done})" if done else ""))
+            )
         if "intent_without_action" in check["reasons"]:
             parts.append(
                 "anunció una acción y terminó sin ejecutar ninguna herramienta" if es else
                 "it announced an action and ended without calling any tool"
             )
         head = "⚠️ **Verificación del harness**: " if es else "⚠️ **Harness check**: "
-        tail = (
-            " No des por hecho nada de lo anterior." if es else
-            " Do not take the text above as done."
-        )
+        if check["reasons"] == ["claimed_paths_untouched"]:
+            # Some of the work IS real here — "nothing above happened" would be
+            # its own falsehood.
+            tail = (" No des por hecha esa parte; el resto sí está respaldado por el registro "
+                    "de herramientas." if es else
+                    " Do not take that part as done; the rest is backed by the tool log.")
+        else:
+            tail = (
+                " No des por hecho nada de lo anterior." if es else
+                " Do not take the text above as done."
+            )
         return head + "; ".join(parts) + "." + tail
 
     def summary(self, git: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
