@@ -4,7 +4,7 @@
 
 - Base del fork: commit upstream `c9dd68d8` (27-08-2026, "refactor(docs): separate Pages site source").
 - Rama: **una sola, `master`** (`D:\LocalAI\odysseus`), que trackea `origin/master` en `github.com/Luissalet/Faustus`. Las ramas `feat/projects` y `feat/reliability` y la worktree de pruebas se consolidaron el 31-08.
-- Cifras a 01-09-2026 (05:40, en `master`): **139 commits**, +47.000 líneas sobre la base; 45 módulos nuevos + `scripts/faustus_rename.py`, **90 ficheros de tests**. Suite completa: **7.009 tests en verde**, 12 saltados, 5 min; e2e Playwright 10/10.
+- Cifras a 01-09-2026 (09:30, en `master`): **146 commits**, +52.000 líneas sobre la base; 48 módulos nuevos + `scripts/faustus_rename.py`, **97 ficheros de tests**. Suite completa: **7.216 tests en verde**, 12 saltados, ~6 min; e2e Playwright 10/10.
 - Máquina de referencia: RTX 4070 Ti 12 GB, 128 GB RAM, Windows 11, Ollama 0.33.x; modelos `qwen3-coder:30b`, `qwen3.5:9b`, `qwen3.8:27b`, `qwen3-coder-next`.
 
 ---
@@ -396,6 +396,48 @@ Ahora cada modelo local lleva su tamaño y un veredicto de tres estados, con las
 El resultado, en la máquina de Luis: de seis modelos instalados, **uno solo cabe**.
 
 Una regresión propia, encontrada abriendo el selector después de enviarlo: la fila mide ~290 px y el nombre, el endpoint y la insignia se la repartían, así que tres filas volvían como `qwen3.8:…` y no se podía distinguir el `q4_K_M` del `q8_0` — que es la única razón por la que abres el menú. Como la insignia solo existe para un Ollama en loopback, donde el endpoint es `127.0.0.1:11434`, la insignia pasó a ocupar **el sitio** del endpoint en vez de su espacio. El `@media (max-width: 480px)` que ya había no podía hacerlo: mide el viewport, no el menú, así que en una pantalla de 1568 px nunca disparaba sobre un popup de 290.
+
+## 14. Lo que solo se ve usando la aplicación (01-09-2026, madrugada)
+
+Esta sección es distinta a las demás: **ninguno de estos huecos salió de leer código.** Salieron de abrir Faustus en el navegador contra el Ollama de la máquina, vincular una carpeta de verdad y pedirle al agente una tarea pequeña —*"añade una función `apply_tax(total, rate)` a `cart.py` y su test"*— tres veces seguidas, arreglando entre una y otra lo que aparecía. Los tres fallos estaban en cadena y ninguno se veía desde el código: cada uno tapaba al siguiente.
+
+### Primera vuelta: la palabra `rate` dejaba al agente sin `read_file`
+
+El modelo contestó *"el archivo `cart.py` no puede ser leído con la herramienta actual"* y gastó ocho rondas probando `project_context`, `get_workspace`, `ls` y `grep` sin llegar a editar nada. No era culpa suya: **no le habían dado `read_file`**.
+
+El clamp de intención web de la ruta decide con un regex de palabra sobre el texto crudo, y ese regex lleva `rate` dentro (por *exchange rate*). Pedir escribir una función llamada `apply_tax(total, **rate**)` se clasificó como una búsqueda web: la denylist desactivó `bash`, `python`, `read_file`, `write_file` y `edit_file`, y **re-habilitó** `web_search` y `web_fetch`. Un solo mecanismo explicaba las dos anomalías del log.
+
+El arreglo no es parchear el regex —perseguir una palabra deja abierta la clase entera— sino un **suelo duro**: con carpeta vinculada, `read_file` y `ls` van siempre, y `edit_file`/`apply_patch` salvo en turno de baja señal. Se **resta de la denylist** en vez de sumarse a los esquemas, así que solo puede conservar una herramienta ya seleccionada, nunca inventarla, y no pisa `guide_only`, `block_all_tool_calls`, la denylist de no-admin, la allowlist de modo plan ni el ajuste del operador. `bash`, `python` y `write_file` quedan fuera del suelo a propósito: son el trío privilegiado que una ruta puede retirar legítimamente.
+
+De paso: `cart.py` a secas no contaba como objetivo de código (el regex solo aceptaba rutas con barra), y **`Anade` sin tilde** no casaba ningún verbo español. El idioma en sí no influía —el clasificador es bilingüe— pero `rate` dispara en los dos.
+
+Y el log mentía por omisión justo cuando hacía falta: `tool_names` y `relevant_tools` iban recortados a quince elementos, así que faltaban seis herramientas y no cinco, y las de web sí estaban entre las relevantes. Ahora registra los conjuntos completos y la diferencia en las dos direcciones.
+
+### Segunda vuelta: se ofrecía `read_file` y luego se bloqueaba al ejecutarlo
+
+Con el suelo puesto, la lista enviada ya era correcta —quince herramientas con `read_file` dentro— y aun así el log decía `Tool blocked before approval by current_tool_policy: read_file`, cinco veces. Trece llamadas, ocho fallidas, ningún fichero cambiado. El modelo llegó a llamar a `web_search` con la consulta *"demo_app workspace status"* —buscando en internet cuál era su propia carpeta— y acabó rindiéndose: *"las herramientas están bloqueadas en este workspace"*, volcando el código como texto.
+
+**Ofrecer una herramienta y luego bloquearla es peor que no ofrecerla**: es una trampa por construcción, y un modelo de 9B se estrella contra ella hasta agotar el turno.
+
+La causa: el clamp mete los mismos nombres en la denylist por **dos canales** —`disabled_tools` y el `ToolPolicy` que la envuelve— así que los dos predicados de la puerta disparaban a la vez; y como el log etiquetaba ambos con la misma palabra, no se distinguían. El suelo sí restaba de la denylist, pero en una variable local que **solo veía la lista de esquemas**: el prompt en prosa, la puerta del bucle y la del dispatcher seguían leyendo el conjunto sin reconciliar.
+
+De ahí sale el invariante, que vale más que el arreglo: **lo que una ronda ofrece, esa misma ronda lo puede ejecutar.** Una denylist leída por las cuatro superficies, y una alarma `[tool-coherence] OFFERED THEN BLOCKED` que grita con nombre y origen si alguna vez divergen —con un test que la rompe a propósito para demostrar que suena—. El log pasó a decir *qué* predicado, *qué* política, y **dónde entró el nombre** en la denylist; eso son los veinte minutos que costó diagnosticarlo.
+
+### Tercera vuelta: funcionó. Y entonces apareció el fallo de verdad
+
+`READ_FILE done`, propuesta de `edit_file` correcta en la puerta de aprobación, **dos ficheros cambiados, sintaxis comprobada, tests del proyecto en verde**. De trece llamadas con ocho fallos a tres con uno.
+
+Pero en la tarea siguiente el modelo hizo **una** edición correcta en `cart.py` y escribió: *"He completado la tarea. He añadido: en `cart.py`… **y en `tests/test_cart.py`** el test `test_total_con_envio()`."* Lo segundo era falso — ese fichero no se tocó. Y el turno salió **Verified**.
+
+`check_completion` cazaba *"he modificado X"* cuando **no hubo ningún efecto**. Aquí sí hubo uno, así que la puerta se abrió y la afirmación sobre un segundo fichero pasó sin comprobar. La comprobación era *"¿pasó algo?"*, no *"¿pasó lo que dices?"* — y con un modelo pequeño, **terminar la mitad del trabajo y narrar el todo es un fallo mucho más común que no hacer nada y decir que sí**.
+
+Ahora cada fichero nombrado se contrasta con lo realmente mutado. Lo delicado era la frontera entre afirmar y mencionar: cuenta un verbo de escritura en pasado dentro de un marco que atribuye autoría —incluida la **cabecera de lista que arrastra el verbo** a las viñetas siguientes, que es exactamente la forma del incidente, con el verbo y el fichero en líneas distintas—; no cuentan la lectura, el estado previo, la negación, la localización ni lo hipotético. Y el arnés **calla del todo cuando no puede saberlo** (una mutación sin ruta identificable, un `delegate_agents`, un `bash` con pista de escritura): acusar en falso gasta una ronda de un modelo a 20 tok/s y erosiona la confianza en la tarjeta, que es lo único que la hace útil.
+
+### Y dos cosas menores que también salieron de mirar la pantalla
+
+Se le ofrecían al modelo **herramientas que no podían funcionar**: llamó a `project_context` dos veces y las dos fallaron porque el chat no estaba en un proyecto. Cada herramienta imposible en la lista es una trampa; ahora un preflight las quita **con su motivo**, y si el modelo la pide igualmente con un fence, el error que recibe es ese motivo y no un "unknown tool" — un mensaje accionable cierra el bucle en una ronda, uno genérico lo abre.
+
+Y `read_file` sobre un fichero grande devolvía una tajada ciega: sobre este mismo repo, `src/agent_loop.py` daba el **4,75 %** del fichero, cortado a mitad de línea y sin un solo símbolo, mientras el modelo creía haberlo visto. Ahora devuelve un mapa —los hechos, 124 símbolos con su línea que alcanzan el 64 % del fichero, las primeras ochenta líneas completas y la llamada literal para pedir cualquier otro tramo— por **un 64 % menos de tokens**.
 
 ---
 
