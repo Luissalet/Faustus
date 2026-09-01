@@ -4,7 +4,7 @@
 
 - Base del fork: commit upstream `c9dd68d8` (27-08-2026, "refactor(docs): separate Pages site source").
 - Rama: **una sola, `master`** (`D:\LocalAI\odysseus`), que trackea `origin/master` en `github.com/Luissalet/Faustus`. Las ramas `feat/projects` y `feat/reliability` y la worktree de pruebas se consolidaron el 31-08.
-- Cifras a 01-09-2026 (02:05, en `master`): **131 commits**, **+41.000 líneas** sobre la base; 41 módulos nuevos de backend/rutas/frontend + `scripts/faustus_rename.py`, **80 ficheros de tests** nuevos. Suite completa: **6.740 tests en verde**, 12 saltados, 5 min; e2e Playwright 10/10.
+- Cifras a 01-09-2026 (05:40, en `master`): **139 commits**, +47.000 líneas sobre la base; 45 módulos nuevos + `scripts/faustus_rename.py`, **90 ficheros de tests**. Suite completa: **7.009 tests en verde**, 12 saltados, 5 min; e2e Playwright 10/10.
 - Máquina de referencia: RTX 4070 Ti 12 GB, 128 GB RAM, Windows 11, Ollama 0.33.x; modelos `qwen3-coder:30b`, `qwen3.5:9b`, `qwen3.8:27b`, `qwen3-coder-next`.
 
 ---
@@ -360,6 +360,42 @@ Cuatro sitios, porque el fallo es invisible por definición: la **pill de uso** 
 **Ficheros.** Nuevos: `src/chat_export_model.py`, `src/chat_export.py`, `src/chat_export_pdf.py`, `src/chat_export_docx.py`, `static/js/chatExport.js` y cinco ficheros de tests. Tocados: `routes/session_routes.py` (la ruta pasa de 90 líneas de cadenas a una delegación), `static/js/sessions.js`, `projects.js`, `slashCommands.js`, `requirements.txt`.
 
 **Verificación.** 193 tests nuevos. Se comprueban **los bytes de salida**, no que la llamada no reviente: el PDF se abre con pypdf y se afirma que el texto del chat está dentro, tildes incluidas; el DOCX se abre con `zipfile` y se comprueba su `word/document.xml`. Casos cubiertos: una URL de 2000 caracteres sin espacios que no debe desbordar (medido con el propio partidor de líneas de reportlab, no a ojo), un bloque de 500 líneas, una tabla de diez columnas, un `<b>` literal escrito por el usuario que no debe interpretarse como marcado —la trampa clásica de reportlab—, ocho cargas de XSS verificadas parseando el HTML de salida, y 500 mensajes en 0,67 s.
+
+## 12. La puerta de análisis estático: dejar de conformarse con que el fichero parsee (01-09-2026, madrugada)
+
+**El hueco.** El arnés comprobaba sintaxis y nada más: `py_compile`, `node --check`, `json.load`. Eso acepta encantado `Depends(get_db)` sin el import, `self.metodo_que_no_existe`, o un `from x import y` que no existe. Y el error número uno de un modelo pequeño **no** es escribir código que no parsea: es **usar nombres que no existen**, porque comprimir a 9B parámetros pierde justo los identificadores poco frecuentes.
+
+El coste real, en esta máquina: el modelo escribe la ruta usando un símbolo que no importó, `py_compile` dice OK, corren los tests del proyecto —cuarenta segundos de reloj— y revienta con `NameError`. O peor: no hay ningún test que cubra esa rama, los tests pasan, la tarjeta dice **verified**, y el fallo aparece cuando arrancas la app.
+
+**Qué hace.** `src/static_checks.py` descubre qué herramienta hay disponible —`ruff` en el venv del proyecto, `pyflakes`, `eslint` si hay config, `go vet`; `tsc` y `cargo` en modo `types`— y corre **solo reglas de corrección, nunca de estilo** (`--select F,E9`). Un proyecto sin configurar tiene cientos de avisos de estilo que ahogarían la señal. Los hallazgos se cruzan con el diff del checkpoint y **solo cuentan los de las líneas que el turno añadió**: un aviso preexistente no puede gastar una ronda de arreglo, la misma regla que ya aplicaba `compare_with_baseline` a los tests y por la misma razón. Sin ninguna herramienta disponible el veredicto es `unavailable`: no gasta ronda, no marca fallo, y dice qué instalar.
+
+Va **entre** el chequeo de sintaxis y los tests, que es donde vale: fallar en 0,2 s en vez de en 40 s de pytest. Y vuelca en `TurnLedger.static_checks`, que ya existía, ya se pintaba y ya se puntuaba — la tarjeta y el scorecard salieron gratis.
+
+`pyflakes` entra en `requirements.txt` como respaldo puro-Python y **corre en proceso**, no como subproceso: solo recorre el AST, nunca importa el código, y es el único camino que funciona en el build congelado, donde `sys.executable -m` relanzaría la aplicación entera (§ el mismo motivo que documenta `host_python()`).
+
+**Dos cosas que solo se ven ejecutando las herramientas de verdad.** `FORCE_COLOR=0` **enciende** el color en ruff: su librería lee la variable como *presente = forzar color*, sea cual sea el valor. Como `project_tests._clean_env()` la pone para los test runners, cada hallazgo llegaba como `\x1b[1msrc/api.py\x1b[0m…` y no casaba con ningún regex — **la puerta habría dicho "limpio" sobre un fichero lleno de F821**. Y la columna tiene que ser obligatoria en el regex genérico, o `a.py:no_es_una_linea:1` inventa un hallazgo.
+
+**Verificación.** 28 tests, entre ellos el cableado por partida doble: el que parsea `agent_loop.py` con `ast` y exige el **orden** (sintaxis < estático < tests), y tres funcionales que conducen `stream_agent_loop` de verdad y comprueban que el prompt de arreglo nombra el fichero, la línea y el código de regla.
+
+## 13. Lo que enseñó usar la aplicación: la carpeta escondida y el modelo que no cabe (01-09-2026, madrugada)
+
+Estas dos no salieron de leer código. Salieron de abrir Faustus en el navegador y usarlo como lo usaría alguien que llega nuevo.
+
+### La acción central del producto estaba a tres niveles de profundidad
+
+Vincular una carpeta es *la* acción de un agente de código: sin ella el modo Agente no puede leer ni escribir nada. Y no había **ninguna forma visible** de hacerlo. El indicador de workspace tenía `display:none` hasta que ya había carpeta, y su tooltip decía *"click to clear"* — solo servía para **quitarla**. El único punto de entrada era un elemento dentro del menú del chevron, que además solo aparece en modo Agente. Cuatro clics desde el arranque en frío, cero puntos de entrada visibles. Mientras tanto, el estado vacío gastaba su mejor sitio en un consejo rotatorio sobre el shift-click de la barra lateral.
+
+Ahora el estado vacío en modo Agente dice cuál es la situación —*"No folder linked — Agent mode cannot read or edit files until you pick one"*, o *"Working in demo_app"*— y ofrece el botón que abre el selector que ya existía. El indicador es visible en todo el modo Agente: sin carpeta la abre, con carpeta la nombra, y la × sigue limpiándola. De 4 clics a 3 en frío, de 3 a 2 estando ya en Agente.
+
+### El selector de modelos no decía cuál cabe en la tarjeta
+
+El modelo por defecto de la máquina de referencia, `qwen3.8:27b-q8_0`, **no cabe** en sus 12 GB. La píldora de GPU lo detecta y avisa de PCIe spill —eso lo construyó §9— pero **solo después** de cargar el modelo y esperar. Medido en vivo esa noche: un turno de agente a **1,06 tok/s**. El selector ofrecía los seis modelos como iguales.
+
+Ahora cada modelo local lleva su tamaño y un veredicto de tres estados, con las cifras reales en el tooltip y **la palabra además del color** (un color solo no es señal para bastante gente, y desaparece en un tema de alto contraste). El presupuesto descuenta lo que el propio runner retiene, porque cambiar de modelo lo descarga. Sin datos no se pinta nada: un modelo que no cabe **sigue siendo elegible**, solo avisado. Y solo se anota lo que sirve un Ollama en loopback — otro en la LAN corre en otra tarjeta y el veredicto sería una mentira segura.
+
+El resultado, en la máquina de Luis: de seis modelos instalados, **uno solo cabe**.
+
+Una regresión propia, encontrada abriendo el selector después de enviarlo: la fila mide ~290 px y el nombre, el endpoint y la insignia se la repartían, así que tres filas volvían como `qwen3.8:…` y no se podía distinguir el `q4_K_M` del `q8_0` — que es la única razón por la que abres el menú. Como la insignia solo existe para un Ollama en loopback, donde el endpoint es `127.0.0.1:11434`, la insignia pasó a ocupar **el sitio** del endpoint en vez de su espacio. El `@media (max-width: 480px)` que ya había no podía hacerlo: mide el viewport, no el menú, así que en una pantalla de 1568 px nunca disparaba sobre un popup de 290.
 
 ---
 
