@@ -5,10 +5,11 @@ Auto-compacts conversation history when approaching context window limits.
 Summarizes older messages via the same LLM, preserving key context.
 """
 
+import hashlib
 import json
 import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from src.model_context import get_context_length, estimate_tokens
 from src.llm_core import llm_call_async
@@ -35,6 +36,111 @@ def _content_as_text(content: Any) -> str:
             if isinstance(b, dict) and b.get("text")
         )
     return ""
+
+
+# ---------------------------------------------------------------------------
+# History correspondence
+#
+# The prompt sent to the model is NOT ``session.history`` with the system
+# messages in front.  routes/chat_helpers.py builds it as
+# ``preface + session.get_context_messages()``, and:
+#   * the preface contributes system messages *and* user-role blocks — memory,
+#     RAG and web context are ``role: "user"`` untrusted-context messages
+#     (src/prompt_security.py), so counting system messages does not describe
+#     the offset;
+#   * a date/time context message is spliced in just before the last turn;
+#   * ``get_context_messages()`` filters slash-command chatter out of the
+#     history, so history positions and prompt positions drift apart.
+#
+# No arithmetic on indices can map a position in the prompt back to a row of
+# the durable transcript.  Instead the prompt builder stamps every message that
+# actually came from the history with its real history index, and compaction
+# deletes a row only when it carries that stamp *and* still matches the row it
+# names.  Without a provable mapping nothing is deleted: an uncompacted history
+# costs context, a wrongly deleted one is gone from the database for good.
+# ---------------------------------------------------------------------------
+
+HISTORY_INDEX_KEY = "_history_index"
+
+# Marker left on a message the trimmer shortened, carrying a fingerprint of the
+# text it was made from.  It lets callers recognise a shortened rendering as the
+# same message instead of comparing text (see ``message_is_truncation_of``).
+TRUNCATED_ORIGINAL_KEY = "_truncated_original"
+
+
+def _text_fingerprint(text: Any) -> str:
+    """Stable fingerprint of a piece of message text."""
+    return hashlib.sha256(str(text or "").encode("utf-8", "replace")).hexdigest()
+
+
+def _row_fingerprint(role: Any, content: Any) -> str:
+    """Stable identity for one history row (role + length + flattened text)."""
+    text = _content_as_text(content)
+    return _text_fingerprint(f"{role}\x00{len(text)}\x00{text}")
+
+
+def annotate_history_positions(session, context_messages: List[Dict]) -> int:
+    """Stamp prompt messages with the history row each one came from.
+
+    ``context_messages`` is what ``Session.get_context_messages()`` returned:
+    by construction an order-preserving subsequence of ``session.history``
+    (the filter drops rows, it never reorders them or rewrites role/content).
+    Align the two greedily; if the alignment cannot consume every context
+    message that assumption no longer holds, so stamp nothing and let
+    compaction fall back to "summarize the prompt, touch no history".
+
+    Returns the number of messages stamped (0 when no mapping could be proved).
+    """
+    history = getattr(session, "history", None)
+    if not isinstance(history, list) or not history or not context_messages:
+        return 0
+
+    pairs: List[Tuple[Dict, int]] = []
+    cursor = 0
+    for msg in context_messages:
+        if not isinstance(msg, dict):
+            return 0
+        role = msg.get("role")
+        content = msg.get("content")
+        while cursor < len(history):
+            entry = history[cursor]
+            if getattr(entry, "role", None) == role and getattr(entry, "content", None) == content:
+                break
+            cursor += 1
+        if cursor >= len(history):
+            return 0
+        pairs.append((msg, cursor))
+        cursor += 1
+
+    for msg, index in pairs:
+        msg[HISTORY_INDEX_KEY] = index
+    return len(pairs)
+
+
+def _history_targets(older: List[Dict], kept: List[Dict]) -> List[Dict[str, Any]]:
+    """Rows compaction may delete: summarized AND no longer in the prompt.
+
+    Built from the stamps only — never from index arithmetic — and explicitly
+    minus every row still present in the prompt we are about to send, so a
+    message the model is being shown right now can never be deleted.
+    """
+    kept_indices = {
+        m.get(HISTORY_INDEX_KEY)
+        for m in kept
+        if isinstance(m, dict) and isinstance(m.get(HISTORY_INDEX_KEY), int)
+    }
+    targets: Dict[int, Dict[str, Any]] = {}
+    for msg in older:
+        if not isinstance(msg, dict):
+            continue
+        index = msg.get(HISTORY_INDEX_KEY)
+        if not isinstance(index, int) or index in kept_indices:
+            continue
+        targets[index] = {
+            "index": index,
+            "fingerprint": _row_fingerprint(msg.get("role"), msg.get("content")),
+        }
+    return [targets[i] for i in sorted(targets)]
 
 
 COMPACT_THRESHOLD = 0.85  # Trigger compaction at 85% of context window
@@ -131,10 +237,83 @@ def _message_text_token_estimate(text: str) -> int:
     return int(len(text) * 0.3) + 4
 
 
-def _truncate_text_to_token_budget(text: str, token_budget: int) -> str:
+# The three reasons a message can come back shortened. They are distinct on
+# purpose: claiming "the pasted message was too large" when the message was
+# perfectly reasonable and merely lost a race for room is a lie the user cannot
+# check, and it made large-paste bugs look like user error.
+OVERSIZED_NOTICE = (
+    "\n\n[Notice: the pasted message was too large for this model's context "
+    "window, so Faustus kept the beginning and end.]"
+)
+ROOM_NOTICE = (
+    "\n\n[Notice: this message was shortened to fit the remaining context "
+    "window; the beginning and end were kept.]"
+)
+CONTEXT_NOTICE = "\n\n[Notice: shortened to fit the model's context window.]"
+_TRUNCATION_NOTICES = (OVERSIZED_NOTICE, ROOM_NOTICE, CONTEXT_NOTICE)
+
+OMITTED_PLACEHOLDER = "[Current user message omitted: it exceeded the model context window.]"
+
+
+def truncation_fragments(text: Any) -> Optional[Tuple[str, str]]:
+    """Split a trimmer-shortened text back into its (head, tail) fragments.
+
+    Returns None when the text carries no truncation notice.
+    """
+    if not isinstance(text, str):
+        return None
+    for notice in _TRUNCATION_NOTICES:
+        marker = notice.strip()
+        if marker and marker in text:
+            head, _, tail = text.partition(marker)
+            return head.strip(), tail.strip()
+    return None
+
+
+def truncated_text_matches(shortened: Any, original: Any) -> bool:
+    """Is `shortened` a trimmed rendering of `original`?
+
+    Text-level recovery for callers that only have the two strings: the head
+    and tail the trimmer kept are a prefix and a suffix of the original, so
+    both must still be found in it.
+    """
+    fragments = truncation_fragments(shortened)
+    if not fragments:
+        return False
+    head, tail = fragments
+    if not head:
+        return False
+    original_text = str(original or "")
+    if head not in original_text:
+        return False
+    return not tail or tail in original_text
+
+
+def message_is_truncation_of(message: Any, original_text: Any) -> bool:
+    """Identity check: was `message` produced by shortening `original_text`?
+
+    Reads the marker the trimmer stamps on a message it shortened, so callers
+    do not have to guess from the text — a notice spliced into the middle of a
+    message defeats every substring comparison.
+    """
+    if not isinstance(message, dict):
+        return False
+    marker = message.get(TRUNCATED_ORIGINAL_KEY)
+    if not isinstance(marker, str) or not marker:
+        return False
+    text = str(original_text or "")
+    return marker in (_text_fingerprint(text), _text_fingerprint(text.strip()))
+
+
+def _truncate_text_to_token_budget(
+    text: str,
+    token_budget: int,
+    notice: str = OVERSIZED_NOTICE,
+    placeholder: Optional[str] = None,
+) -> str:
     """Trim a too-large current user message instead of dropping it entirely."""
     if token_budget <= 32:
-        return "[Current user message omitted: it exceeded the model context window.]"
+        return OMITTED_PLACEHOLDER if placeholder is None else placeholder
 
     if not isinstance(text, str):
         # This helper is typed/used as text downstream, so return an empty
@@ -146,10 +325,6 @@ def _truncate_text_to_token_budget(text: str, token_budget: int) -> str:
     if len(text) <= max_chars:
         return text
 
-    notice = (
-        "\n\n[Notice: the pasted message was too large for this model's context "
-        "window, so Faustus kept the beginning and end.]"
-    )
     keep_chars = max(200, max_chars - len(notice))
     head_len = max(100, int(keep_chars * 0.7))
     tail_len = max(80, keep_chars - head_len)
@@ -196,12 +371,23 @@ def _truncate_tool_call_args(msg: Dict[str, Any], token_budget: int) -> Dict[str
     return out
 
 
-def _truncate_message_to_token_budget(msg: Dict[str, Any], token_budget: int) -> Dict[str, Any]:
-    """Return a copy of msg whose text content (and tool-call args) fit token_budget."""
+def _truncate_message_to_token_budget(
+    msg: Dict[str, Any],
+    token_budget: int,
+    notice: str = OVERSIZED_NOTICE,
+    placeholder: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Return a copy of msg whose text content (and tool-call args) fit token_budget.
+
+    When the text actually changed, the copy is stamped with a fingerprint of
+    the text it came from so downstream code can recognise it as the same
+    message (see ``message_is_truncation_of``).
+    """
     out = dict(msg)
     content = out.get("content", "")
+    original_text = _content_as_text(content)
     if isinstance(content, str):
-        out["content"] = _truncate_text_to_token_budget(content, token_budget)
+        out["content"] = _truncate_text_to_token_budget(content, token_budget, notice, placeholder)
     elif isinstance(content, list):
         remaining = token_budget
         new_content = []
@@ -210,24 +396,98 @@ def _truncate_message_to_token_budget(msg: Dict[str, Any], token_budget: int) ->
                 new_content.append(item)
                 continue
             text = item.get("text", "")
-            truncated = _truncate_text_to_token_budget(text, remaining)
+            truncated = _truncate_text_to_token_budget(text, remaining, notice, placeholder)
             cloned = dict(item)
             cloned["text"] = truncated
             new_content.append(cloned)
             remaining -= _message_text_token_estimate(truncated)
         out["content"] = new_content
+    if original_text and _content_as_text(out.get("content")) != original_text:
+        out[TRUNCATED_ORIGINAL_KEY] = _text_fingerprint(original_text)
     # A tool-only turn (content=None) carries its payload in tool_calls args,
     # which the branches above can't shrink — handle it so the message can fit.
     return _truncate_tool_call_args(out, token_budget)
 
 
+def _shrink_messages_to_budget(msgs: List[Dict], budget: int) -> List[Dict]:
+    """Shorten `msgs` (biggest first) until together they fit `budget`."""
+    out = list(msgs)
+    if estimate_tokens(out) <= budget:
+        return out
+    order = sorted(range(len(out)), key=lambda i: estimate_tokens([out[i]]), reverse=True)
+    for i in order:
+        total = estimate_tokens(out)
+        if total <= budget:
+            break
+        own = estimate_tokens([out[i]])
+        out[i] = _truncate_message_to_token_budget(
+            out[i],
+            max(0, own - (total - budget)),
+            notice=CONTEXT_NOTICE,
+            placeholder="[Omitted: it did not fit the model's context window.]",
+        )
+    return out
+
+
+def _force_within_budget(messages: List[Dict], budget: int) -> List[Dict]:
+    """Absolute last resort behind ``trim_for_context``'s hard invariant.
+
+    Every structured strategy has already run by the time this is reached; it
+    exists so the function can never hand back a prompt the model would
+    reject, whatever shape the input had.
+    """
+    out = list(messages)
+    while len(out) > 1 and estimate_tokens(out) > budget:
+        out.pop(0)  # the newest turn is the anchor
+    if not out or estimate_tokens(out) <= budget:
+        return out
+    msg = dict(out[0])
+    msg.pop("tool_calls", None)
+    text = _content_as_text(msg.get("content"))
+    msg["content"] = text[: max(0, int((budget - 8) / 0.3))]
+    out = [msg]
+    while out and estimate_tokens(out) > budget:
+        text = out[0].get("content") or ""
+        if not text:
+            return []
+        out = [{**out[0], "content": text[: len(text) // 2]}]
+    return out
+
+
+def _is_essential_system(msg: Dict) -> bool:
+    """System messages that must survive trimming, whatever else is dropped.
+
+    Two kinds qualify, for the same reason: nothing else in the prompt carries
+    their content.
+
+      * a research-spinoff primer (the seeded report that grounds a "Discuss"
+        chat) — it is the conversation's whole knowledge base;
+      * a compaction summary — the messages it replaced have already been
+        deleted from the transcript, so dropping it loses the conversation
+        outright.  It used to land in ``extra_system`` with the same priority
+        as a memory or RAG blob, and the blob won.
+    """
+    metadata = msg.get("metadata") or {}
+    if metadata.get("research_spinoff_from") or metadata.get("compacted"):
+        return True
+    content = msg.get("content")
+    return isinstance(content, str) and content.lstrip().startswith("[Conversation summary")
+
+
 def trim_for_context(messages: List[Dict], context_length: int, reserve_tokens: int = 512) -> List[Dict]:
-    """Trim system messages to fit within context_length.
+    """Trim messages to fit within context_length.
 
     For small-context models, progressively strips:
-    1. RAG/memory system messages (keep preset system prompt)
-    2. Older conversation turns
-    Reserves space for the response.
+    1. RAG/memory system messages (keep preset system prompt and essentials)
+    2. Older conversation turns — including the recent ones, if that is what
+       it takes; a protected window is a preference, not a licence to return
+       an over-budget prompt
+    3. Room clawed back from the resident system/document payload
+    4. Only then, the current turn itself
+
+    Hard invariant: ``estimate_tokens(trim_for_context(m, ctx, r)) <= ctx - r``.
+    Callers (src/llm_core.py included) do not re-trim, so anything this returns
+    is what the model is asked to accept.
     """
     budget = context_length - reserve_tokens
     used = estimate_tokens(messages)
@@ -237,7 +497,8 @@ def trim_for_context(messages: List[Dict], context_length: int, reserve_tokens: 
     logger.info(f"Trimming messages: {used} tokens > {budget} budget (ctx={context_length})")
 
     # Separate system messages from conversation.
-    # Messages marked _protected (e.g. active document) are never trimmed.
+    # Messages marked _protected (e.g. active document) are never dropped, but
+    # they are counted against the budget like everything else.
     system_msgs = []
     protected_msgs = []
     convo_msgs = []
@@ -249,73 +510,93 @@ def trim_for_context(messages: List[Dict], context_length: int, reserve_tokens: 
         else:
             convo_msgs.append(msg)
 
-    # Protected messages count toward budget but are never dropped
-    protected_tokens = estimate_tokens(protected_msgs)
-    budget -= protected_tokens
+    # Priority: keep the first system msg (preset prompt) plus every essential
+    # one (research primer, compaction summary); drop the rest (memory, RAG,
+    # memo) first.
+    _essential_marked = [m for m in system_msgs if _is_essential_system(m)]
+    _plain = [m for m in system_msgs if not _is_essential_system(m)]
+    essential_system = (_plain[:1] if _plain else []) + _essential_marked
+    extra_system = _plain[1:]
 
-    # Priority: keep first system msg (preset prompt), drop others (memory, RAG, memo).
-    # Exception: a research-spinoff primer (the seeded report that grounds a
-    # "Discuss" chat) must never be dropped — it is the conversation's whole
-    # knowledge base. Treat any system message carrying research_spinoff_from
-    # metadata as essential alongside the leading system prompt.
-    def _is_research_primer(m):
-        return bool((m.get("metadata") or {}).get("research_spinoff_from"))
-    _primers = [m for m in system_msgs if _is_research_primer(m)]
-    _non_primer = [m for m in system_msgs if not _is_research_primer(m)]
-    essential_system = (_non_primer[:1] if _non_primer else []) + _primers
-    extra_system = _non_primer[1:]
+    def _fits(convo, systems=None, protected=None):
+        resident = essential_system if systems is None else systems
+        held = protected_msgs if protected is None else protected
+        return estimate_tokens(resident) + estimate_tokens(held) + estimate_tokens(convo) <= budget
 
-    # Try dropping extra system messages one by one (from the end)
-    trimmed = essential_system + convo_msgs
-    if estimate_tokens(trimmed) <= budget:
+    # 1. Try dropping extra system messages one by one (from the end)
+    if _fits(convo_msgs):
         # Dropping extras was enough — try adding back some
         result = list(essential_system)
         for msg in extra_system:
-            candidate = result + [msg] + convo_msgs
-            if estimate_tokens(candidate) <= budget:
+            if _fits(convo_msgs, systems=result + [msg]):
                 result.append(msg)
             else:
                 break
         return _sanitize_tool_messages(result + protected_msgs + convo_msgs)
 
-    # Still too big — truncate the first system message (but keep more than 500 chars)
+    # 2. Still too big — truncate the first system message (but keep more than 500 chars)
     if essential_system:
         sys_text = essential_system[0].get("content", "")
-        if len(sys_text) > 2000:
+        if isinstance(sys_text, str) and len(sys_text) > 2000:
             truncated_system = dict(essential_system[0])
             truncated_system["content"] = sys_text[:2000] + "\n[System prompt truncated for context limits]"
-            essential_system[0] = truncated_system
-            trimmed = essential_system + convo_msgs
-            if estimate_tokens(trimmed) <= budget:
+            essential_system = [truncated_system] + essential_system[1:]
+            if _fits(convo_msgs):
                 return _sanitize_tool_messages(essential_system + protected_msgs + convo_msgs)
 
-    # Still too big — drop older conversation turns BUT always keep the current
-    # user turn. If a pasted message alone exceeds the model context, truncate
-    # that message with a visible notice instead of dropping it; otherwise the
-    # model appears to "ignore" large pastes because it never receives them.
-    # Hermes-style: recent context matters more than old context.
+    # 3. Still too big — drop older conversation turns BUT always keep the
+    # current user turn.  Hermes-style: recent context matters more than old
+    # context, so the last PROTECT_RECENT turns go last — but they do go.
+    # Keeping them pinned while the total stayed over budget is what made this
+    # function return prompts at ~2x the window and then "compensate" by
+    # mangling the user's own message.
     PROTECT_RECENT = 10
     current_msg = convo_msgs[-1:] if convo_msgs else []
-    prior_convo = convo_msgs[:-1] if convo_msgs else []
+    prior_convo = list(convo_msgs[:-1]) if convo_msgs else []
     if len(prior_convo) >= PROTECT_RECENT:
-        old_msgs = prior_convo[:-(PROTECT_RECENT - 1)]
-        recent_msgs = prior_convo[-(PROTECT_RECENT - 1):] + current_msg
-        while old_msgs and estimate_tokens(essential_system + old_msgs + recent_msgs) > budget:
-            old_msgs.pop(0)
-        convo_msgs = old_msgs + recent_msgs
+        keep = PROTECT_RECENT - 1
+        old_msgs = prior_convo[:-keep]
+        recent_msgs = prior_convo[-keep:]
     else:
-        convo_msgs = prior_convo + current_msg
-        while prior_convo and estimate_tokens(essential_system + prior_convo + current_msg) > budget:
-            prior_convo.pop(0)
-        convo_msgs = prior_convo + current_msg
+        old_msgs = prior_convo
+        recent_msgs = []
+    while old_msgs and not _fits(old_msgs + recent_msgs + current_msg):
+        old_msgs.pop(0)
+    while recent_msgs and not _fits(old_msgs + recent_msgs + current_msg):
+        recent_msgs.pop(0)
+    convo_msgs = old_msgs + recent_msgs + current_msg
 
-    # If the current message itself is too large, shrink only that message.
-    if current_msg and estimate_tokens(essential_system + protected_msgs + convo_msgs) > budget:
+    # 4. Everything droppable is gone.  Before touching the user's own words,
+    # claw back room from what is still resident (system prompt, primer,
+    # summary, pinned document) — the current turn is the request itself.
+    if current_msg and not _fits(convo_msgs):
+        own_tokens = estimate_tokens(current_msg)
+        if own_tokens <= budget:
+            held = len(essential_system)
+            resident = _shrink_messages_to_budget(
+                essential_system + protected_msgs, budget - own_tokens
+            )
+            essential_system, protected_msgs = resident[:held], resident[held:]
+
+    # 5. If the current message still does not fit, shrink only that message.
+    # The "too large to paste" notice is reserved for a message that does not
+    # fit the budget on its own merits; anything else gets an honest one.
+    if current_msg and not _fits(convo_msgs):
         prefix = essential_system + protected_msgs + convo_msgs[:-1]
-        available_for_current = max(64, budget - estimate_tokens(prefix))
-        convo_msgs[-1] = _truncate_message_to_token_budget(convo_msgs[-1], available_for_current)
+        available_for_current = budget - estimate_tokens(prefix)
+        oversized = estimate_tokens(convo_msgs[-1:]) > budget
+        convo_msgs = list(convo_msgs)
+        convo_msgs[-1] = _truncate_message_to_token_budget(
+            convo_msgs[-1],
+            available_for_current,
+            notice=OVERSIZED_NOTICE if oversized else ROOM_NOTICE,
+        )
 
     result = _sanitize_tool_messages(essential_system + protected_msgs + convo_msgs)
+    # 6. Hard invariant. Nothing downstream re-trims, so a prompt that is still
+    # over budget here is a prompt the model is asked to reject.
+    if estimate_tokens(result) > budget:
+        result = _sanitize_tool_messages(_force_within_budget(result, budget))
     logger.info(f"Trimmed to {estimate_tokens(result)} tokens ({len(result)} messages)")
     return result
 
@@ -411,25 +692,34 @@ async def maybe_compact(
 
     summary_msg = {
         "role": "system",
+        # Marked so trim_for_context treats it as essential: the messages it
+        # stands in for have already been deleted from the transcript.
+        "metadata": {"compacted": True},
         "content": f"[Conversation summary — earlier messages were compacted]\n{summary}",
     }
 
     compacted = system_msgs + [summary_msg] + recent
 
-    # Update session history to match. Pass len(system_msgs) so the
-    # recent_history slice in _update_session_history uses the correct
-    # offset — session.history INCLUDES the system messages, but
-    # split_point is indexed against convo_msgs which does NOT. Without
-    # this, the slice drops the leading system message(s).
+    # Update the session history to match. The rows to delete are named
+    # individually by the history stamps the prompt builder left on them
+    # (see annotate_history_positions), minus everything still present in the
+    # prompt we are about to send — never by adding an offset to a prompt
+    # index. When the prompt carries no stamps the mapping is unknown, so the
+    # transcript is left alone and only the prompt is compacted.
+    history_targets = _history_targets(older, system_msgs + recent)
     if compaction_state is not None:
         compaction_state.update({
             "split_point": split_point,
             "summary": summary,
             "system_msg_count": len(system_msgs),
+            "history_targets": history_targets,
+            "summarized_count": len(older),
             "applied": False,
         })
     if persist:
-        _update_session_history(session, split_point, summary, system_msg_count=len(system_msgs))
+        _update_session_history(
+            session, summary, history_targets, summarized_count=len(older)
+        )
         if compaction_state is not None:
             compaction_state["applied"] = True
 
@@ -456,14 +746,14 @@ def apply_compaction_state(session, compaction_state: Optional[Dict[str, Any]]) 
         return False
     summary = state.get("summary")
     split_point = state.get("split_point")
-    system_msg_count = state.get("system_msg_count", 0)
     if not isinstance(summary, str) or not isinstance(split_point, int):
         return False
+    summarized_count = state.get("summarized_count")
     _update_session_history(
         session,
-        split_point,
         summary,
-        system_msg_count=system_msg_count if isinstance(system_msg_count, int) else 0,
+        state.get("history_targets") or [],
+        summarized_count=summarized_count if isinstance(summarized_count, int) else split_point,
     )
     state["applied"] = True
     return True
@@ -487,35 +777,78 @@ def apply_compaction_state_for_session(
     return apply_compaction_state(session, compaction_state) if session else False
 
 
-def _update_session_history(session, split_point: int, summary: str,
-                            system_msg_count: int = 0):
-    """Update the in-memory session history after compaction.
+def _update_session_history(session, summary: str,
+                            history_targets: Optional[List[Dict[str, Any]]] = None,
+                            summarized_count: int = 0) -> bool:
+    """Replace the summarized transcript rows with the compaction summary.
 
-    `split_point` is the index in `convo_msgs` (system-stripped). The
-    in-memory `session.history` includes leading system messages, so the
-    actual recent-history slice starts at `system_msg_count + split_point`.
-    Prepending `session.history[:system_msg_count]` to the new history
-    preserves persona, preset, and RAG system messages that would
-    otherwise be dropped.
+    ``history_targets`` names each row to delete by its real index in
+    ``session.history`` together with a fingerprint of the row that occupied
+    that index when the prompt was built. Every target is verified before
+    anything is written, and one mismatch aborts the whole update: the
+    transcript may have been edited, forked or already compacted since, and
+    this deletes rows from the database (SessionManager.replace_messages).
+
+    Returns True when the history was rewritten. Refusing is cheap — the
+    conversation merely stays uncompacted; deleting the wrong rows is not
+    recoverable.
     """
     if not session or not hasattr(session, "history"):
-        return
+        return False
+    history = getattr(session, "history", None)
+    if not isinstance(history, list) or not history:
+        return False
+    if not history_targets:
+        logger.info(
+            "Compaction: no provable prompt-to-history mapping — "
+            "compacting the prompt only, transcript left intact"
+        )
+        return False
 
-    effective_split = system_msg_count + split_point
-    if effective_split >= len(session.history):
-        return
+    doomed = set()
+    for target in history_targets:
+        if not isinstance(target, dict):
+            return False
+        index = target.get("index")
+        if not isinstance(index, int) or not 0 <= index < len(history):
+            logger.warning(
+                "Compaction: history target %r is out of range (%d rows) — "
+                "leaving the transcript intact", index, len(history),
+            )
+            return False
+        entry = history[index]
+        if _row_fingerprint(getattr(entry, "role", None), getattr(entry, "content", None)) != target.get("fingerprint"):
+            logger.warning(
+                "Compaction: history row %d no longer matches the message it was "
+                "summarized from — leaving the transcript intact", index,
+            )
+            return False
+        doomed.add(index)
 
-    # Keep the recent messages, prepend summary AND the leading system
-    # messages so the system prompt survives compaction.
-    system_prefix = list(session.history[:system_msg_count])
-    recent_history = session.history[effective_split:]
+    if not doomed:
+        return False
+    if max(doomed) >= len(history) - 1:
+        # The newest row is never old context; a mapping that says otherwise
+        # is a mapping we do not trust.
+        logger.warning("Compaction: refusing to summarize away the newest history row")
+        return False
+
     summary = normalize_compaction_summary(summary)
     summary_msg = ChatMessage(
         role="system",
         content=f"[Conversation summary]\n{summary}",
-        metadata={"compacted": True, "summarized_count": split_point},
+        metadata={"compacted": True, "summarized_count": summarized_count or len(doomed)},
     )
-    new_history = system_prefix + [summary_msg] + recent_history
+    new_history = []
+    inserted = False
+    for index, entry in enumerate(history):
+        if index in doomed:
+            if not inserted:
+                new_history.append(summary_msg)
+                inserted = True
+            continue
+        new_history.append(entry)
+
     try:
         from core.models import get_session_manager_instance
         manager = get_session_manager_instance()
@@ -523,5 +856,6 @@ def _update_session_history(session, split_point: int, summary: str,
         manager = None
     if manager and getattr(session, "id", None):
         if manager.replace_messages(session.id, new_history):
-            return
+            return True
     session.history = new_history
+    return True

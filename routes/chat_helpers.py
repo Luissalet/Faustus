@@ -14,7 +14,7 @@ from core.database import SessionLocal
 from core.database import Session as DBSession, ModelEndpoint
 from src.llm_core import normalize_model_id
 from src.endpoint_resolver import normalize_base
-from src.context_compactor import maybe_compact, trim_for_context
+from src.context_compactor import annotate_history_positions, maybe_compact, trim_for_context
 from src.model_context import estimate_tokens, get_context_length
 from src.auth_helpers import effective_user
 from src.prompt_security import untrusted_context_message
@@ -782,7 +782,19 @@ async def build_chat_context(
     # Build messages. In Nobody/incognito mode, never read saved session
     # history: the session id may be a temporary wrapper or, in buggy clients, a
     # stale normal session id. Only the ephemeral incognito transcript is safe.
-    messages = preface + (_incognito_messages(session_id) if incognito else sess.get_context_messages())
+    if incognito:
+        _history_messages = _incognito_messages(session_id)
+    else:
+        _history_messages = sess.get_context_messages()
+        # Stamp each history-derived message with the row of sess.history it
+        # came from. Compaction deletes transcript rows from the database, and
+        # the prompt is preface + filtered history — no offset arithmetic can
+        # recover the correspondence, so it is carried explicitly from here.
+        # See src.context_compactor.annotate_history_positions. Incognito
+        # transcripts are ephemeral and are deliberately left unstamped, so
+        # compaction can never rewrite a durable session from that path.
+        annotate_history_positions(sess, _history_messages)
+    messages = preface + _history_messages
 
     # Current date/time — injected as a standalone *user*-role context message
     # placed immediately before the latest user turn, NOT folded into the

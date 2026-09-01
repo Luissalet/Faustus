@@ -28,6 +28,8 @@ from src.model_context import estimate_tokens
 from src.context_compactor import (
     apply_compaction_state,
     maybe_compact,
+    message_is_truncation_of,
+    truncated_text_matches,
     trim_for_context,
 )
 from src.chat_helpers import coerce_message_and_session
@@ -229,20 +231,43 @@ def _message_plain_text(content: Any) -> str:
     return str(content or "")
 
 
-def _last_user_plain_text(messages: List[Dict[str, Any]]) -> str:
+def _last_user_message(messages: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     for msg in reversed(messages or []):
         if msg.get("role") == "user":
-            return _message_plain_text(msg.get("content"))
-    return ""
+            return msg
+    return None
 
 
-def _ensure_current_request_is_latest_user(messages: List[Dict[str, Any]], current_message: str) -> List[Dict[str, Any]]:
-    """Defensively keep detached streams grounded on the request that created them."""
+def _last_user_plain_text(messages: List[Dict[str, Any]]) -> str:
+    latest = _last_user_message(messages)
+    return _message_plain_text(latest.get("content")) if latest else ""
+
+
+def _ensure_current_request_is_latest_user(
+    messages: List[Dict[str, Any]],
+    current_message: str,
+    context_length: int = 0,
+) -> List[Dict[str, Any]]:
+    """Defensively keep detached streams grounded on the request that created them.
+
+    The trimmer can hand the current turn back *shortened*, with a notice
+    spliced into the middle of it. That is still the same message, but no
+    substring comparison can see it: ``latest == current``, ``current in
+    latest`` and ``latest in current`` all fail, and the old repair pasted the
+    whole original message back — duplicating it and pushing the prompt far
+    past the context window it had just been trimmed to. So recognise a
+    shortened rendering by the marker the trimmer stamps on it (identity, not
+    text), and if a repair really is needed, re-trim afterwards: appending must
+    never leave the prompt over budget.
+    """
     current = str(current_message or "").strip()
     if not current:
         return messages
-    latest = _last_user_plain_text(messages).strip()
+    latest_msg = _last_user_message(messages)
+    latest = _message_plain_text(latest_msg.get("content")).strip() if latest_msg else ""
     if latest == current or current in latest or latest in current:
+        return messages
+    if message_is_truncation_of(latest_msg, current_message) or truncated_text_matches(latest, current):
         return messages
     logger.warning(
         "[chat_stream] latest user context mismatch; appending current request for model call. latest=%r current=%r",
@@ -251,6 +276,8 @@ def _ensure_current_request_is_latest_user(messages: List[Dict[str, Any]], curre
     )
     repaired = list(messages or [])
     repaired.append({"role": "user", "content": current})
+    if context_length:
+        repaired = trim_for_context(repaired, context_length)
     return repaired
 
 
@@ -2033,7 +2060,9 @@ def setup_chat_routes(
             messages = (
                 list(context_source)
                 if tool_approval_continuation
-                else _ensure_current_request_is_latest_user(context_source, message)
+                else _ensure_current_request_is_latest_user(
+                    context_source, message, getattr(ctx, "context_length", 0) or 0
+                )
             )
 
             # Auto-compact notification
