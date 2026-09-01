@@ -13,7 +13,7 @@ import json
 import re
 import time
 import logging
-from typing import Any, AsyncGenerator, List, Dict, Optional, Set
+from typing import Any, AsyncGenerator, List, Dict, NamedTuple, Optional, Set
 from urllib.parse import urlparse
 
 from src.llm_core import (
@@ -608,9 +608,123 @@ _WORKSPACE_TERMINUS_TOOLS = (
 #     `disabled_tools` setting all still win (see `_resolve_workspace_floor`).
 #   * it depends on the workspace being bound, never on the request's wording,
 #     because the wording is exactly what the upstream heuristics misread.
+#
+# The floor is applied ONCE, to `disabled_tools` and `tool_policy` together,
+# the moment it is resolved, just after `_resolve_workspace_floor()`. Its first
+# version subtracted itself inside `_tool_schemas_for_route` instead, into a
+# local. That fixed the list the model was SHOWN and left the list it could RUN
+# untouched, which produced the sharper version of the same live failure: 15
+# tools sent, `read_file` among them, and eight `Tool blocked before approval`
+# lines in the server log for tools the same turn had just advertised. Offering
+# a tool and then refusing it is worse than not offering it — it is a trap by
+# construction, and the model has no way to tell it from a bug in its own call.
 WORKSPACE_TOOL_FLOOR_READ = frozenset({"read_file", "ls"})
 WORKSPACE_TOOL_FLOOR_EDIT = frozenset({"edit_file", "apply_patch"})
 WORKSPACE_TOOL_FLOOR = WORKSPACE_TOOL_FLOOR_READ | WORKSPACE_TOOL_FLOOR_EDIT
+
+
+# ── Why a tool call was refused (FAUSTUS) ─────────────────────────────────
+# Two unrelated predicates used to end at the same log word. `tool_policy` is
+# a composed object with a mode and a per-tool reason; `disabled_tools` is a
+# flat denylist assembled from eight places (the caller, the non-admin
+# denylist, plan mode, the preflight, an operator setting, ...). Both logged
+#
+#     Tool blocked before approval by current_tool_policy: read_file
+#
+# so the line named neither of them. A log that gives two different causes the
+# same word is not terse, it is wrong by omission: it cost twenty minutes of a
+# live incident that the line itself could have ended. Every denial now carries
+# which predicate fired, which named policy inside it fired, where that name
+# entered the denylist, and the sentence the model is handed.
+class ToolDenial(NamedTuple):
+    tool: str        # the spelling the model used
+    matched: str     # the policy-equivalent spelling that actually matched
+    source: str      # "tool_policy" | "tool_preflight" | "disabled_tools"
+    policy: str      # the named policy inside that source
+    origin: str      # where the name entered the denylist, when known
+    reason: str      # the sentence handed back to the model
+
+
+# Where a denied name came from, for the `origin` above. Recorded at each
+# point that composes `disabled_tools`; the first (outermost) writer wins,
+# because that is the one the reader is looking for.
+DENIAL_ORIGIN_REQUEST = "request_denylist"
+DENIAL_ORIGIN_POLICY = "request_tool_policy"
+DENIAL_ORIGIN_NON_ADMIN = "non_admin_denylist"
+DENIAL_ORIGIN_PLAN_MODE = "plan_mode_readonly"
+DENIAL_ORIGIN_EMAIL_DRAFT = "active_email_draft"
+DENIAL_ORIGIN_PREFLIGHT = "tool_preflight"
+DENIAL_ORIGIN_ODY_NO_TOOL = "odysseus_no_tool_clamp"
+
+
+def _denial_for_tool(
+    tool_name: str,
+    *,
+    tool_policy: Optional[ToolPolicy] = None,
+    disabled_tools: Optional[Set[str]] = None,
+    preflight_pruned: Optional[Dict[str, str]] = None,
+    denial_origin: Optional[Dict[str, str]] = None,
+) -> Optional[ToolDenial]:
+    """The single answer to "may this turn run this tool?", or None.
+
+    Every name is tested in each of its policy-equivalent spellings
+    (`email_tool_policy_names`): a denylist written as `send_email` and a call
+    made as `mcp__email__send_email` are the same denial, and a gate that
+    checks only the spelling the model happened to emit is a gate that gets
+    walked past.
+
+    Precedence is the order the reader needs, not the order the checks are
+    cheap in: a composed policy explains itself best, then the preflight (whose
+    reason is specific enough to end the turn's confusion in one round), then
+    the flat denylist, which can at least say where the name came from.
+    """
+    policy_names = sorted(email_tool_policy_names(tool_name))
+    pruned = preflight_pruned or {}
+    origins = denial_origin or {}
+    origin_of = next((origins[n] for n in policy_names if n in origins), "")
+
+    if tool_policy is not None:
+        matched = next((n for n in policy_names if tool_policy.blocks(n)), None)
+        if matched is not None:
+            named = f"tool_policy[mode={tool_policy.mode}]"
+            if tool_policy.block_all_tool_calls:
+                named = f"tool_policy[mode={tool_policy.mode},block_all]"
+            return ToolDenial(
+                tool=tool_name, matched=matched, source="tool_policy",
+                policy=named, origin=origin_of or DENIAL_ORIGIN_POLICY,
+                reason=tool_policy.reason_for(matched),
+            )
+
+    matched = next((n for n in policy_names if n in (disabled_tools or ())), None)
+    if matched is None:
+        return None
+
+    preflight_reason = next((pruned[n] for n in policy_names if n in pruned), "")
+    if preflight_reason:
+        # The tool was preflighted off the list and the model asked for it
+        # anyway — a fenced call needs no schema. Hand back the REASON, not
+        # "disabled": "this chat is not attached to a project" ends the turn's
+        # confusion in one round, while a generic policy message invites the
+        # retry this whole mechanism exists to stop.
+        return ToolDenial(
+            tool=tool_name, matched=matched, source="tool_preflight",
+            policy=DENIAL_ORIGIN_PREFLIGHT, origin=DENIAL_ORIGIN_PREFLIGHT,
+            reason=(
+                f"Tool '{tool_name}' cannot work in this chat: "
+                f"{preflight_reason}. Do not call it again in this turn."
+            ),
+        )
+
+    origin = origin_of or DENIAL_ORIGIN_REQUEST
+    return ToolDenial(
+        tool=tool_name, matched=matched, source="disabled_tools",
+        policy=origin, origin=origin,
+        reason=(
+            f"Tool '{tool_name}' is disabled by the current request policy "
+            f"({origin})."
+        ),
+    )
+
 
 # Tools whose presence in a turn makes the reliability rules worth their tokens.
 _HARNESS_RULE_TOOLS = frozenset({
@@ -3658,6 +3772,16 @@ async def stream_agent_loop(
     mcp_mgr = get_mcp_manager()
     prep_timings: Dict[str, float] = {}
     disabled_tools = set(disabled_tools or [])
+    # Where each denied name entered `disabled_tools`, so a block can name its
+    # own cause instead of saying "policy" and leaving the reader to diff eight
+    # composition points by hand. `setdefault`, so the outermost writer wins.
+    _denial_origin: Dict[str, str] = {}
+
+    def _note_denials(names, origin: str) -> None:
+        for _name in names or ():
+            _denial_origin.setdefault(str(_name), origin)
+
+    _note_denials(disabled_tools, DENIAL_ORIGIN_REQUEST)
     route_descriptors = list(route_descriptors or [])
     while len(route_descriptors) < 1 + len(fallbacks or []):
         route_descriptors.append({})
@@ -3669,12 +3793,14 @@ async def stream_agent_loop(
         requested_endpoint_cost_tracked = None
     if tool_policy:
         disabled_tools.update(tool_policy.all_disabled_names())
+        _note_denials(tool_policy.all_disabled_names(), DENIAL_ORIGIN_POLICY)
         if tool_policy.disable_mcp:
             mcp_mgr = None
     guide_only = bool(tool_policy and tool_policy.mode == "guide_only")
     public_blocked_tools = blocked_tools_for_owner(owner)
     if public_blocked_tools:
         disabled_tools.update(public_blocked_tools)
+        _note_denials(public_blocked_tools, DENIAL_ORIGIN_NON_ADMIN)
         # MCP tools are namespaced dynamically, so hide all MCP schemas for
         # public/non-admin users rather than trying to enumerate every tool.
         mcp_mgr = None
@@ -3684,7 +3810,9 @@ async def stream_agent_loop(
         # route also unions the read-only-disabled set, but enforce here too so
         # the loop is safe regardless of caller. MCP stays available but is
         # filtered to read-only tools below (after the disabled map is loaded).
-        disabled_tools.update(plan_mode_disabled_tools())
+        _plan_off = plan_mode_disabled_tools()
+        disabled_tools.update(_plan_off)
+        _note_denials(_plan_off, DENIAL_ORIGIN_PLAN_MODE)
 
     uploaded_files = uploaded_files or []
     _upload_msg = _uploaded_files_context_message(uploaded_files)
@@ -3798,10 +3926,12 @@ async def stream_agent_loop(
     _active_document_relevant = _turn_targets_active_document(_intent, _last_user, active_document)
     _active_email_draft_relevant = _active_document_relevant and _is_email_document_obj(active_document)
     if _active_email_draft_relevant:
-        disabled_tools.update({
+        _draft_off = {
             "list_email_accounts", "list_emails", "read_email", "scan_email_unsubscribes",
             "mcp__email__list_emails", "mcp__email__read_email", "mcp__email__scan_email_unsubscribes",
-        })
+        }
+        disabled_tools.update(_draft_off)
+        _note_denials(_draft_off, DENIAL_ORIGIN_EMAIL_DRAFT)
     _prompt_active_document = active_document if _active_document_relevant else None
     _direct_low_signal = (
         _low_signal_turn
@@ -4156,6 +4286,49 @@ async def stream_agent_loop(
     if _workspace_tool_floor:
         logger.info("[tool-floor] workspace floor=%s", sorted(_workspace_tool_floor))
 
+    # ── One reconciliation, both surfaces (FAUSTUS) ───────────────────────
+    # The floor is subtracted from the turn's denials HERE, once, and every
+    # later reader — the function schemas, the prompt's tool sections, the
+    # execution gate, and the dispatcher's own gate in `src/tool_execution.py`
+    # — sees the result. What is offered is therefore what can be executed, by
+    # construction rather than by two places agreeing.
+    #
+    # It was not always here. The first version subtracted the floor inside
+    # `_tool_schemas_for_route`, into a local that only the schema list could
+    # see, and the live consequence was a turn that shipped `read_file` in a
+    # 15-tool list and then answered every `read_file` call with "Tool is
+    # disabled for this request." — a trap the model cannot diagnose, and one
+    # a 9B model burns its whole round budget on. (It went on to run
+    # `web_search` for "demo_app workspace status", looking on the internet for
+    # the folder it was bound to, and then dictated the patch as chat text.)
+    #
+    # Nothing is relaxed. `_resolve_workspace_floor` above has already removed
+    # every denial that is a decision rather than a guess — guide-only,
+    # block-all, the non-admin denylist, plan mode's read-only allowlist and
+    # the operator's own `disabled_tools` setting — so what is subtracted here
+    # is exactly the set the loop had already decided must reach the model.
+    # Clamps composed AFTER this point (the preflight, which is handed the
+    # floor as `protected` and cannot name one; the odysseus-finetune no-tool
+    # clamp, which disables everything for a route that ships no schemas
+    # either) still apply on top and still win, and they keep both surfaces in
+    # step because both now read this same set.
+    if _workspace_tool_floor:
+        _floor_denied = sorted(
+            _workspace_tool_floor
+            & (disabled_tools | (tool_policy.all_disabled_names() if tool_policy else set()))
+        )
+        if _floor_denied:
+            disabled_tools -= _workspace_tool_floor
+            for _name in _workspace_tool_floor:
+                _denial_origin.pop(_name, None)
+            if tool_policy is not None:
+                tool_policy = tool_policy.exempting(_workspace_tool_floor)
+            logger.info(
+                "[tool-floor] workspace bound; %s were denied and are restored to "
+                "BOTH the offered and the executable set",
+                _floor_denied,
+            )
+
     # RAG-based tool selection: retrieve relevant tools for this query.
     # If caller provided a pre-computed set (e.g. task_scheduler), use that.
     _relevant_tools = relevant_tools
@@ -4436,6 +4609,7 @@ async def stream_agent_loop(
             _preflight_pruned = {}
         if _preflight_pruned:
             disabled_tools.update(_preflight_pruned)
+            _note_denials(_preflight_pruned, DENIAL_ORIGIN_PREFLIGHT)
             logger.info("[tool-preflight] pruned=%s", _preflight_pruned)
 
     _intent_domains = set(_intent.get("domains") or set())
@@ -4522,14 +4696,16 @@ async def stream_agent_loop(
     if _ody_doc_finetune_mode and _relevant_tools is not None:
         logger.info("[agent-intent] odysseus doc finetune tool clamp=%s", sorted(_relevant_tools))
     elif _ody_notes_finetune_mode and _relevant_tools is not None:
-        disabled_tools.difference_update({
-            "manage_notes", "manage_calendar", "manage_tasks",
-        })
+        _notes_back = {"manage_notes", "manage_calendar", "manage_tasks"}
+        disabled_tools.difference_update(_notes_back)
+        for _name in _notes_back:
+            _denial_origin.pop(_name, None)
         logger.info("[agent-intent] odysseus notes finetune tool clamp=%s", sorted(_relevant_tools))
     elif _ody_general_no_tool_mode:
         try:
             from src.tool_policy import known_tool_names
             disabled_tools.update(known_tool_names())
+            _note_denials(known_tool_names(), DENIAL_ORIGIN_ODY_NO_TOOL)
         except Exception:
             pass
         logger.info("[agent-intent] odysseus general no-tool clamp active")
@@ -4794,6 +4970,10 @@ async def stream_agent_loop(
     actual_endpoint_cost_tracked = requested_endpoint_cost_tracked
     usage_buckets = []
     total_tool_calls = 0  # for budget enforcement
+    # The tools this round put in front of the model, on whichever surface the
+    # route uses. Recomputed each round just before the provider call; empty
+    # until then so an early exit can never read a stale or unbound name.
+    _tool_names_sent_set: Set[str] = set()
     _ody_notes_tool_completed = False
     _pinned_fallback_candidate = None
     _pinned_fallback_route = None
@@ -4970,21 +5150,18 @@ async def stream_agent_loop(
                 schemas = base_schemas + route_mcp_schemas
             if route_state["ody_qwen_finetune_model"]:
                 schemas = []
-            # The workspace floor is subtracted from the denylist, not added to
-            # the schemas: it can only keep a tool the selection already chose,
-            # never introduce one. `_resolve_workspace_floor` has already taken
-            # authorization out of it, so what remains here are the heuristic
-            # denials that must not be able to blind a workspace agent.
-            _effective_disabled = (
-                (disabled_tools - _workspace_tool_floor)
-                if (disabled_tools and _workspace_tool_floor)
-                else disabled_tools
-            )
-            if _effective_disabled:
+            # One denylist, read as-is. The workspace floor was subtracted from
+            # it once, upstream, where the floor is resolved — NOT here, into a
+            # local. A local is how this filter and the execution gate came to
+            # hold different opinions about `read_file` in the same turn: the
+            # model was shown a tool the runtime had already decided to refuse.
+            # Whatever remains in `disabled_tools` at this point is refused on
+            # both surfaces, so the offered set is the executable set.
+            if disabled_tools:
                 schemas = [
                     schema for schema in schemas
-                    if schema.get("function", {}).get("name") not in _effective_disabled
-                    and schema.get("name") not in _effective_disabled
+                    if schema.get("function", {}).get("name") not in disabled_tools
+                    and schema.get("name") not in disabled_tools
                 ]
             return _filter_route_tool_schemas(schemas)
 
@@ -5382,6 +5559,19 @@ async def stream_agent_loop(
         _pruned_note = "pruned={" + ", ".join(
             f"{name}: {reason}" for name, reason in sorted(_preflight_pruned.items())
         ) + "}"
+        # What this round actually OFFERED, on whichever surface this route
+        # uses: function schemas for an API route, prompt tool sections for a
+        # fenced-call route. It is the left-hand side of the invariant the
+        # execution gate checks — offered implies executable — so it has to
+        # cover both, or the check quietly stops applying to local models,
+        # which are the ones the invariant exists for.
+        _tool_names_sent_set = set(_sent_set)
+        if not _is_api_model and not _force_answer:
+            _prose_pool = (
+                set(TOOL_SECTIONS) if _relevant_set is None
+                else set(TOOL_SECTIONS) & _relevant_set
+            )
+            _tool_names_sent_set |= _prose_pool - set(disabled_tools or ())
         logger.info(
             "[agent-debug] round=%s model=%s _is_api_model=%s tools_sent=%s"
             " tool_names=%s %s %s",
@@ -6770,61 +6960,54 @@ async def stream_agent_loop(
                 _ody_notes_finetune_mode
                 and block.tool_type in {"manage_notes", "manage_calendar", "manage_tasks"}
             )
-            policy_names = email_tool_policy_names(block.tool_type)
-            blocked_by_tool_policy = bool(
-                tool_policy
-                and any(tool_policy.blocks(name) for name in policy_names)
-            )
-            blocked_by_disabled_tools = bool(
-                disabled_tools and not policy_names.isdisjoint(disabled_tools)
-            )
-            if (
-                (blocked_by_tool_policy or blocked_by_disabled_tools)
-                and not _ody_clamped_tool_allowed
-            ):
-                _preflight_reason = next(
-                    (
-                        _preflight_pruned[name]
-                        for name in sorted(policy_names)
-                        if name in _preflight_pruned
-                    ),
-                    "",
+            # One decision function, so the answer cannot depend on which of
+            # two lookalike predicates the reader happens to be tracing.
+            _denial = (
+                None if _ody_clamped_tool_allowed
+                else _denial_for_tool(
+                    block.tool_type,
+                    tool_policy=tool_policy,
+                    disabled_tools=disabled_tools,
+                    preflight_pruned=_preflight_pruned,
+                    denial_origin=_denial_origin,
                 )
-                _blocked_policy = "current_tool_policy"
-                if blocked_by_tool_policy:
-                    blocked_name = next(
-                        name for name in policy_names if tool_policy.blocks(name)
-                    )
-                    reason = tool_policy.reason_for(blocked_name)
-                elif _preflight_reason:
-                    # The tool was preflighted off the list, and the model asked
-                    # for it anyway — a fenced call needs no schema. Hand back
-                    # the REASON, not "disabled": "this chat is not attached to
-                    # a project" ends the turn's confusion in one round, while a
-                    # generic policy message invites a retry, which is the exact
-                    # two-round loop this whole mechanism exists to stop.
-                    reason = (
-                        f"Tool '{block.tool_type}' cannot work in this chat: "
-                        f"{_preflight_reason}. Do not call it again in this turn."
-                    )
-                    _blocked_policy = "tool_preflight"
-                else:
-                    reason = (
-                        f"Tool '{block.tool_type}' is disabled by the current "
-                        "request policy."
-                    )
+            )
+            if _denial is not None:
+                reason = _denial.reason
                 desc = f"{block.tool_type}: BLOCKED"
                 result = {
                     "error": reason,
                     "exit_code": 1,
                     "blocked": True,
-                    "policy": _blocked_policy,
+                    "policy": _denial.source,
+                    "policy_name": _denial.policy,
+                    "policy_origin": _denial.origin,
                 }
+                # Fixed shape, and it says which gate closed, which named
+                # policy inside that gate closed it, where that name entered
+                # the denylist, which spelling matched, and what the model was
+                # told. The old line said `current_tool_policy` for two
+                # unrelated causes, which is how a live incident spent twenty
+                # minutes finding out that both had fired at once.
                 logger.info(
-                    "Tool blocked before approval by %s: %s%s",
-                    _blocked_policy, block.tool_type,
-                    f" ({_preflight_reason})" if _blocked_policy == "tool_preflight" else "",
+                    "Tool blocked before approval: tool=%s source=%s policy=%s "
+                    "origin=%s matched=%s reason=%r",
+                    _denial.tool, _denial.source, _denial.policy,
+                    _denial.origin, _denial.matched, _denial.reason,
                 )
+                if block.tool_type in _tool_names_sent_set:
+                    # The invariant this whole path exists to keep: a tool that
+                    # was offered this round must not be refused this round.
+                    # If this ever fires, the turn has handed the model a trap
+                    # and the model has walked into it — say so loudly, naming
+                    # the tool, rather than leaving it to be reconstructed from
+                    # a schema list and a block line eight rounds apart.
+                    logger.error(
+                        "[tool-coherence] OFFERED THEN BLOCKED: tool=%s source=%s "
+                        "policy=%s origin=%s — the model was shown a schema for a "
+                        "tool this turn refuses to run",
+                        _denial.tool, _denial.source, _denial.policy, _denial.origin,
+                    )
             elif not security_decision.allowed:
                 approval_document = (
                     active_document
@@ -7169,6 +7352,16 @@ async def stream_agent_loop(
 
             # Emit tool_output (include ui_event data if present)
             tool_output_data = {"type": "tool_output", "tool": block.tool_type, "command": cmd_display, "output": output_text, "exit_code": result.get("exit_code")}
+            if result.get("blocked"):
+                # A refusal is a different event from a failure, and the client
+                # has no other way to tell them apart: both arrive as exit_code
+                # 1 with a sentence in `output`. Carry the same attribution the
+                # log line carries, so "why can't it do that?" is answerable
+                # from the stream and not only from the server's log file.
+                tool_output_data["blocked"] = True
+                for _key in ("policy", "policy_name", "policy_origin"):
+                    if result.get(_key):
+                        tool_output_data[_key] = result[_key]
             if is_doc_tool and "action" in result:
                 tool_output_data.update({
                     "doc_id": result.get("doc_id"),

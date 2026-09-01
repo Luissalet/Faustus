@@ -164,6 +164,48 @@ class ToolPolicy:
             return "Tool use is disabled for this guide-only turn."
         return "Tool use is disabled for this turn."
 
+    def exempting(self, names: Iterable[str]) -> "ToolPolicy":
+        """This policy with `names` lifted out of every denial it carries.
+
+        The loop's workspace floor and this policy are two answers to one
+        question — "may the agent read a file in the folder it is bound to?" —
+        and until this existed they could give different answers to the same
+        turn. The floor decided what the model was SHOWN; the policy decided
+        what it could RUN. Live, with `read_file` on both the floor and the
+        route's denylist, the model was handed a `read_file` schema and then
+        told "Tool is disabled for this request." eight times in one turn.
+
+        Offering a tool and then refusing it is worse than never offering it:
+        the schema is a promise, and a 9B model spends the whole turn trying to
+        get through a wall the same runtime advertised a door in. So the floor
+        is reconciled into the policy ONCE, before either surface is built, and
+        both then read the same set.
+
+        This never widens an authorization. The caller hands in a set from
+        which every authorization denial has already been subtracted — see
+        `_resolve_workspace_floor` in `src/agent_loop.py`, which drops
+        guide-only, block-all, the non-admin denylist, plan mode's read-only
+        allowlist and the operator's own `disabled_tools` setting before the
+        floor exists at all. And a turn that blocks every tool outright is
+        returned unchanged here as well, because there is no exemption from
+        "no tools at all".
+        """
+        if self.block_all_tool_calls:
+            return self
+        exempt = {str(name) for name in (names or ()) if name}
+        if not exempt or not (exempt & self.all_disabled_names()):
+            return self
+        return ToolPolicy(
+            disabled_tools=frozenset(self.disabled_tools - exempt),
+            hidden_tools=frozenset(self.hidden_tools - exempt),
+            reasons=MappingProxyType(
+                {k: v for k, v in self.reasons.items() if k not in exempt}
+            ),
+            mode=self.mode,
+            block_all_tool_calls=self.block_all_tool_calls,
+            disable_mcp=self.disable_mcp,
+        )
+
 
 def detect_guide_only_turn(message: object) -> Optional[str]:
     """Return a reason when the latest user turn strongly requests no tools."""
