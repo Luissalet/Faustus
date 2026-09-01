@@ -33,6 +33,7 @@ from src.context_compactor import (
 from src.settings import get_setting
 from src.prompt_security import untrusted_context_message
 from src.tool_security import (
+    PLAN_MODE_READONLY_TOOLS,
     blocked_tools_for_owner,
     email_tool_policy_names,
     plan_mode_disabled_tools,
@@ -583,6 +584,34 @@ _WORKSPACE_TERMINUS_TOOLS = (
     | {"manage_skills", "ask_teacher", "web_search", "web_fetch", "ask_user", "update_plan",
        "delegate_agents"}
 )
+
+# ── Workspace tool floor (FAUSTUS) ────────────────────────────────────────
+# An agent with a bound workspace that cannot read a file in it is not an
+# agent. It is worth stating as an invariant because the failure mode is
+# silent: the model is handed a plausible-looking tool list, discovers a gap
+# it cannot name, and burns its whole round budget working around it.
+#
+# The list that reaches the model is `relevant_tools` minus `disabled_tools`,
+# and `disabled_tools` arrives already composed by the turn route. That set
+# mixes two very different things: authorization (who may run what) and
+# heuristics (guesses about what this turn is for). A heuristic that guesses
+# wrong therefore silently overrules the tool index — observed live, where the
+# route's "direct web lookup" clamp fired on the word `rate` inside
+# `apply_tax(total, rate)` and stripped read_file/edit_file/bash from a plain
+# code request that had a project folder bound.
+#
+# So the loop keeps a floor of its own, and it is deliberately narrow:
+#   * read/list plus one edit path. `bash`, `python` and `write_file` are the
+#     privileged trio a caller may legitimately withhold and are NOT floored.
+#   * it never outranks an authorization decision — guide-only, block-all, the
+#     non-admin denylist, plan mode's read-only allowlist, or an operator's own
+#     `disabled_tools` setting all still win (see `_resolve_workspace_floor`).
+#   * it depends on the workspace being bound, never on the request's wording,
+#     because the wording is exactly what the upstream heuristics misread.
+WORKSPACE_TOOL_FLOOR_READ = frozenset({"read_file", "ls"})
+WORKSPACE_TOOL_FLOOR_EDIT = frozenset({"edit_file", "apply_patch"})
+WORKSPACE_TOOL_FLOOR = WORKSPACE_TOOL_FLOOR_READ | WORKSPACE_TOOL_FLOOR_EDIT
+
 # Tools whose presence in a turn makes the reliability rules worth their tokens.
 _HARNESS_RULE_TOOLS = frozenset({
     "read_file", "write_file", "edit_file", "apply_patch", "glob", "grep", "ls",
@@ -1213,7 +1242,10 @@ _WORKSPACE_CODE_ACTION_RE = re.compile(
     # Spanish request like "añade botones a la interfaz" never entered code
     # mode and the tool RAG handed the model session/notes tools instead of
     # file tools — the direct cause of "I implemented X" hallucinations).
-    r"añad[ea]|añadir|agreg[ao]|agregar|cre[ao]|crear|implement[ao]|implementar|"
+    # `anade`/`anadir` (no tilde) as well as `añade`/`añadir`: typing Spanish
+    # without accents is normal, and the reported incident opened with "Anade
+    # a cart.py ..." — which matched no action verb at all.
+    r"añad[ea]|añadir|anad[ea]|anadir|agreg[ao]|agregar|cre[ao]|crear|implement[ao]|implementar|"
     r"arregl[ao]|arreglar|corrig[eo]|corregir|modific[ao]|modificar|cambi[ao]|cambiar|"
     r"elimin[ao]|eliminar|borr[ao]|borrar|quit[ao]|quitar|actualiz[ao]|actualizar|"
     r"refactoriz[ao]|refactorizar|muev[eo]|mover|renombr[ao]|renombrar|revis[ao]|revisar|"
@@ -1238,7 +1270,17 @@ _WORKSPACE_CODE_TARGET_RE = re.compile(
     r"programa|aplicaci[oó]n|web|p[aá]gina|chats?|sesiones?|usuarios?|"
     r"fallos?|problemas?|crash|excepci[oó]n|excepciones|borrado|borrar|eliminar|guardado|guardar|"
     r"cargar|carga|arranque|inicio|login|contador|lista|listado)\b"
-    r"|(?:~?/[^\"'\s`<>]+)|(?:[A-Za-z]:\\[^\s\"']+)",
+    r"|(?:~?/[^\"'\s`<>]+)|(?:[A-Za-z]:\\[^\s\"']+)"
+    # A bare source filename is as strong a "work in this folder" signal as
+    # there is, and only *paths* used to count: "refactor the rate limiter in
+    # cart.py" matched no target, so it was classified low-signal and the turn
+    # got read-only tools with a project folder bound. Extensions are limited
+    # to source/config/doc types so ordinary prose ("check example.com") does
+    # not become a code request.
+    r"|(?:\b[\w.-]+\.(?:py|pyi|js|mjs|cjs|jsx|ts|tsx|vue|svelte|go|rs|rb|php|"
+    r"java|kt|kts|swift|scala|c|h|cc|cpp|hpp|cs|sh|bash|zsh|ps1|sql|html|htm|"
+    r"css|scss|sass|less|json|jsonc|ya?ml|toml|ini|cfg|conf|env|lock|gradle|"
+    r"mk|cmake|md|rst)\b)",
     re.IGNORECASE,
 )
 _EXPLICIT_WORKSPACE_REFERENCE_RE = re.compile(
@@ -4083,6 +4125,37 @@ async def stream_agent_loop(
         disabled_tools.update(_mcp_block_q)
     prep_timings["request_setup"] = time.time() - _t0
 
+    # ── Workspace tool floor for this turn (see WORKSPACE_TOOL_FLOOR) ─────
+    # Resolved once, from the turn's own facts rather than its wording, and
+    # subtracting every denial that is a decision instead of a guess.
+    def _resolve_workspace_floor() -> Set[str]:
+        if not workspace:
+            return set()                       # nothing to be confined to
+        if guide_only or (tool_policy is not None and tool_policy.block_all_tool_calls):
+            return set()                       # the turn sends no tools at all
+        if _active_document_relevant or active_email:
+            # The turn is about the open document / the open email, not the
+            # folder. Forcing file tools in would drag it back to disk.
+            return set()
+        floor = set(WORKSPACE_TOOL_FLOOR)
+        if plan_mode:
+            # Investigate read-only: keep the reading half, drop the edit path.
+            floor &= PLAN_MODE_READONLY_TOOLS
+        # Public/non-admin callers: `blocked_tools_for_owner` is authorization.
+        floor -= public_blocked_tools
+        # An operator who switched a tool off in Settings meant it.
+        try:
+            _operator_off = get_setting("disabled_tools", []) or []
+            if isinstance(_operator_off, (list, tuple, set, frozenset)):
+                floor -= {str(name) for name in _operator_off}
+        except Exception as _floor_err:            # pragma: no cover - settings backend
+            logger.debug("[tool-floor] operator setting lookup failed: %s", _floor_err)
+        return floor
+
+    _workspace_tool_floor = _resolve_workspace_floor()
+    if _workspace_tool_floor:
+        logger.info("[tool-floor] workspace floor=%s", sorted(_workspace_tool_floor))
+
     # RAG-based tool selection: retrieve relevant tools for this query.
     # If caller provided a pre-computed set (e.g. task_scheduler), use that.
     _relevant_tools = relevant_tools
@@ -4097,8 +4170,10 @@ async def stream_agent_loop(
             # tools (intersection with the plan-mode read-only allowlist) so the
             # agent can investigate; write/shell tools stay out until the request
             # actually calls for them (RAG retrieval adds those on a real ask).
+            # PLAN_MODE_READONLY_TOOLS is imported at module scope; a local
+            # `from ... import` here would rebind it as a function local and
+            # leave the closures above reading it before assignment.
             _relevant_tools = set(ALWAYS_AVAILABLE)
-            from src.tool_security import PLAN_MODE_READONLY_TOOLS
             _relevant_tools |= (_DOMAIN_TOOL_MAP["files"] & PLAN_MODE_READONLY_TOOLS)
             logger.info("[tool-rag] Low-signal but workspace active; including read-only file tools")
         else:
@@ -4220,6 +4295,27 @@ async def stream_agent_loop(
             if _missing:
                 _relevant_tools.update(_WORKSPACE_TERMINUS_TOOLS)
                 logger.info("[tool-rag] Workspace bound; adding file/terminal tools: %s", sorted(_missing))
+
+    # The floor, above every selection path. The branches above cover the
+    # confident cases; this covers the rest, so the floor holds whichever path
+    # ran (vector retrieval, keyword fallback, the low-signal read-only branch)
+    # and whatever the request happened to be worded like.
+    #
+    # The edit half is held back on a low-signal turn, matching the read-only
+    # branch above: a vague "look at this" gets tools to investigate with, and
+    # the write side arrives when the request asks for work. That is the loop's
+    # own already-made judgement, not a second guess at the wording.
+    #
+    # A caller-pinned set (an approval replay, the scheduler) is left alone:
+    # that set is an authorization decision, not a retrieval result.
+    if not guide_only and _relevant_tools is not None and not relevant_tools:
+        _floor_add = set(_workspace_tool_floor)
+        if _low_signal_turn:
+            _floor_add -= WORKSPACE_TOOL_FLOOR_EDIT
+        _floor_missing = _floor_add - set(_relevant_tools)
+        if _floor_missing:
+            _relevant_tools.update(_floor_missing)
+            logger.info("[tool-floor] workspace bound; restoring %s", sorted(_floor_missing))
 
     # If this turn targets the open document, keep editing tools available
     # regardless of which selection path (RAG, keyword, caller-provided) ran.
@@ -4833,11 +4929,21 @@ async def stream_agent_loop(
                 schemas = base_schemas + route_mcp_schemas
             if route_state["ody_qwen_finetune_model"]:
                 schemas = []
-            if disabled_tools:
+            # The workspace floor is subtracted from the denylist, not added to
+            # the schemas: it can only keep a tool the selection already chose,
+            # never introduce one. `_resolve_workspace_floor` has already taken
+            # authorization out of it, so what remains here are the heuristic
+            # denials that must not be able to blind a workspace agent.
+            _effective_disabled = (
+                (disabled_tools - _workspace_tool_floor)
+                if (disabled_tools and _workspace_tool_floor)
+                else disabled_tools
+            )
+            if _effective_disabled:
                 schemas = [
                     schema for schema in schemas
-                    if schema.get("function", {}).get("name") not in disabled_tools
-                    and schema.get("name") not in disabled_tools
+                    if schema.get("function", {}).get("name") not in _effective_disabled
+                    and schema.get("name") not in _effective_disabled
                 ]
             return _filter_route_tool_schemas(schemas)
 
@@ -5210,7 +5316,29 @@ async def stream_agent_loop(
             pass
 
         _tool_names_sent = [t.get("function", {}).get("name") for t in (all_tool_schemas or []) if t.get("function")]
-        logger.info(f"[agent-debug] round={round_num} model={model} _is_api_model={_is_api_model} tools_sent={len(_tool_names_sent)} tool_names={_tool_names_sent[:15]} relevant_tools={sorted(_relevant_tools)[:15] if _relevant_tools else 'ALL'}")
+        # Log the two sets in full, and the difference between them explicitly.
+        # Both lists used to be clipped to 15 names, which is precisely how a
+        # workspace agent could be shipped without `read_file` for eight rounds
+        # while the log looked plausible: the drop lived past the cut, and the
+        # reader had to diff two truncated lists by eye to see it. `sent` is
+        # short (one route's schemas) and `relevant_not_sent` is the answer to
+        # "why can't it do that?", so neither is worth truncating.
+        _sent_set = set(_tool_names_sent)
+        _relevant_set = set(_relevant_tools) if _relevant_tools else None
+        if _relevant_set is None:
+            _diff_note = "relevant_tools=ALL"
+        else:
+            _diff_note = (
+                f"relevant_tools={len(_relevant_set)}"
+                f" relevant_not_sent={sorted(_relevant_set - _sent_set)}"
+                f" sent_not_relevant={sorted(_sent_set - _relevant_set)}"
+            )
+        logger.info(
+            "[agent-debug] round=%s model=%s _is_api_model=%s tools_sent=%s"
+            " tool_names=%s %s",
+            round_num, model, _is_api_model, len(_tool_names_sent),
+            sorted(_sent_set), _diff_note,
+        )
 
         # Once a fallback produces substantive output, keep that exact route
         # pinned for every later tool round instead of retrying the primary.
