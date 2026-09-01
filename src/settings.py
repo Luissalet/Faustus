@@ -154,6 +154,15 @@ DEFAULT_SETTINGS = {
     # when everything was already failing before the change).
     "agent_project_tests_baseline": True,
     "agent_project_test_command": "",
+    # Static analysis of the lines a turn changed, between the syntax check and
+    # the project's tests (src/static_checks.py): ruff --select F,E9 / pyflakes,
+    # eslint, go vet — correctness rules only, never style, and only findings on
+    # lines the turn added (the checkpoint diff decides). "off" | "names" |
+    # "types" ("types" also runs tsc --noEmit and cargo check, which are slower).
+    # One bounded fix round; with no tool installed it is "unavailable" and
+    # costs no round. The override command gets the changed paths appended.
+    "agent_static_analysis": "names",
+    "agent_static_analysis_command": "",
     # Independent, tool-less review of the turn's diff (src/auto_review.py):
     # "off", "same" (this chat's model) or a model name on the same endpoint.
     "agent_auto_review": "off",

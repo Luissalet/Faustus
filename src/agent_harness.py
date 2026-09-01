@@ -626,8 +626,14 @@ class TurnLedger:
         self.finish_reasons: List[Optional[str]] = []
         self.stop_reason: str = "complete"
         self.notes: List[str] = []
+        # Per-file verdicts: the cheap syntax check below, enriched in place by
+        # the static-analysis gate (src/static_checks.py). One entry per file —
+        # static/js/agentHarnessUI.js chips them and src/scorecard.py counts the
+        # not-ok ones, so both come free.
         self.static_checks: List[Dict[str, Any]] = []
         self.syntax_rejections = 0
+        self.static_analysis: Optional[Dict[str, Any]] = None   # static_checks.compact()
+        self.static_fix_rounds = 0
         self.target_nudges = 0
         # Functional verification + turn baseline (see project_tests.py,
         # auto_review.py, workspace_checkpoints.py).
@@ -957,6 +963,8 @@ class TurnLedger:
             "git": git,
             "progress": self.progress,
             "static_checks": self.static_checks,
+            "static_analysis": self.static_analysis,
+            "static_fix_rounds": self.static_fix_rounds,
             "checkpoint": (self.checkpoint or {}).get("sha") if isinstance(self.checkpoint, dict) else None,
             "tests": self.tests,
             "tests_fix_rounds": self.tests_fix_rounds,

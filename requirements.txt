@@ -54,6 +54,13 @@ mcp<2
 pyotp
 qrcode[pil]
 croniter
+# Static-analysis gate for agent turns (src/static_checks.py): the fallback
+# when the user's project has no ruff. ~100 KB, pure Python, zero dependencies,
+# and it runs in-process (it walks the AST, it never imports the code it
+# checks), so the feature works out of the box - including in the frozen
+# build, where spawning `python -m pyflakes` is not possible. ruff is used
+# instead whenever the project or the PATH has it.
+pyflakes
 pytest
 pytest-asyncio
 # starlette.testclient prefers httpx2 since Starlette 1.2.0 and warns on every

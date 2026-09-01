@@ -4772,6 +4772,16 @@ async def stream_agent_loop(
         _ledger.checkpoint = _cp or {"failed": True}
         return _cp
 
+    # Static-analysis gate (src/static_checks.py), between the syntax check and
+    # the project's tests: names that do not exist, on the lines this turn wrote.
+    try:
+        from src import static_checks as _static_checks_mod
+        _static_mode = _static_checks_mod.resolve_mode(_hopts.get("static_analysis"))
+    except Exception:                                       # pragma: no cover - import fallback
+        _static_mode = "off"
+    _static_on = bool(_harness_enabled and workspace and _static_mode != "off")
+    _static_max_fix = 1
+
     _tests_on = bool(_harness_enabled and workspace and _hopts.get("run_tests", get_setting("agent_project_tests", True)))
     try:
         _tests_max_fix = int(get_setting("agent_project_tests_fix_rounds", 1) or 0)
@@ -6189,6 +6199,63 @@ async def stream_agent_loop(
                         full_response += "\n\n"
                         yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
                         continue
+                    # ── (3b) Static analysis of the lines this turn changed
+                    # (src/static_checks.py). The syntax check above only proves
+                    # the file PARSES; it accepts `Depends(get_db)` with neither
+                    # name imported. ruff --select F,E9 / pyflakes / eslint /
+                    # go vet catch that in ~0.2 s, before the 40 s pytest run
+                    # below — and only on lines the turn added, so a pre-existing
+                    # warning can never spend the fix round. No tool installed →
+                    # "unavailable": no round, no failure mark.
+                    _analysis_failed = []
+                    if _ledger.mutations and workspace and _static_on and _ledger.static_fix_rounds < _static_max_fix:
+                        try:
+                            from src import static_checks as _static_checks
+                            _sres = await asyncio.to_thread(
+                                _static_checks.run_for_turn, workspace, _ledger.mutated_paths(),
+                                checkpoint_sha=(_ledger.checkpoint or {}).get("sha") if isinstance(_ledger.checkpoint, dict) else None,
+                                override=_hopts.get("static_analysis_command"),
+                                mode=_static_mode,
+                            )
+                            if _sres:
+                                _ledger.static_analysis = _static_checks.compact(_sres)
+                                _ledger.static_checks = _static_checks.merge_static_checks(
+                                    _ledger.static_checks, _static_checks.ledger_entries(_sres))
+                                _analysis_failed = list(_sres.get("findings") or [])
+                                if _sres.get("unavailable"):
+                                    # Honest degradation: say what is missing in the
+                                    # turn summary instead of silently checking nothing.
+                                    _note = "static_analysis_unavailable:" + str(_sres.get("unavailable") or "")[:120]
+                                    if _note not in _ledger.notes:
+                                        _ledger.notes.append(_note)
+                                        logger.info("[harness] %s", _sres.get("unavailable") or _note)
+                        except Exception as _sa_err:
+                            logger.debug("[harness] static analysis failed: %s", _sa_err)
+                    if _analysis_failed:
+                        _ledger.static_fix_rounds += 1
+                        _note = "static_analysis:" + str((_sres or {}).get("summary") or "")[:80]
+                        if _note not in _ledger.notes:
+                            _ledger.notes.append(_note)
+                        logger.warning("[harness] round %s static analysis flagged %d problem(s) on changed lines: %s",
+                                       round_num, len(_analysis_failed),
+                                       [(f.get("path"), f.get("line"), f.get("code")) for f in _analysis_failed[:5]])
+                        if round_response.strip():
+                            messages.append({"role": "assistant", "content": round_response})
+                        messages.append({"role": "user", "content": _static_checks.fix_message(_sres)})
+                        yield (
+                            "data: " + json.dumps({
+                                "type": "harness_check", "status": "static_analysis", "round": round_num,
+                                "errors": [{"path": f.get("path"),
+                                            "error": f"{f.get('line')}: {f.get('code')} {f.get('msg')}".strip()}
+                                           for f in _analysis_failed[:8]],
+                                "static_analysis": _ledger.static_analysis,
+                                "attempt": _ledger.static_fix_rounds, "max_attempts": _static_max_fix,
+                                "mutations": _ledger.mutated_paths(),
+                            }) + "\n\n"
+                        )
+                        full_response += "\n\n"
+                        yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
+                        continue
                     # ── (4) Functional verification: the project's own tests
                     # (src/project_tests.py). "It parses" became "it works".
                     # Re-run every time the model finishes with changes (so the
@@ -6291,6 +6358,7 @@ async def stream_agent_loop(
                             "type": "harness_check", "status": "verified", "round": round_num,
                             "mutations": _ledger.mutated_paths(),
                             "static_checks": _ledger.static_checks,
+                            "static_analysis": _ledger.static_analysis,
                             "workspace": workspace or None,
                             "tests": _ledger.tests,
                             "review": _ledger.review,
@@ -7370,7 +7438,8 @@ async def stream_agent_loop(
             k: _hsum.get(k) for k in (
                 "stop_reason", "mutations", "tool_calls", "failed_calls", "rejections",
                 "length_continues", "finish_reasons", "git", "notes", "progress", "language",
-                "static_checks", "workspace", "checkpoint", "tests", "tests_fix_rounds",
+                "static_checks", "static_analysis", "static_fix_rounds",
+                "workspace", "checkpoint", "tests", "tests_fix_rounds",
                 "review", "review_fix_rounds", "asked_user",
             )
         }
