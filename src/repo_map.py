@@ -17,6 +17,11 @@ whole thing is bounded by `agent_repo_map_tokens` (~4 chars per token).
 Symbol extraction: Python via `ast`; JS/TS/Go/Rust/Java/Kotlin/C#/Ruby/PHP via
 regexes on line starts. Per-file results are cached by (path, mtime, size).
 Stdlib only, never raises.
+
+The extractors are shared, not copied: `symbol_lines(text, lang)` returns the
+same symbols with the line each one starts on, which is what `src/read_plan.py`
+shows as the index of a file too big to return whole. One extractor per
+language, two renderings — a module summary here, a navigable outline there.
 """
 from __future__ import annotations
 
@@ -106,46 +111,171 @@ def _setting(key: str, default: Any) -> Any:
 # Symbols
 # ---------------------------------------------------------------------------
 
-def _py_symbols(text: str) -> List[str]:
+_PY_FALLBACK_RES = (
+    re.compile(r"^class\s+([A-Za-z_]\w*)", re.M),
+    re.compile(r"^(?:async\s+)?def\s+([A-Za-z_]\w*)", re.M),
+)
+_REGEX_NON_SYMBOLS = ("if", "for", "while", "switch", "return", "catch", "function", "else", "constructor")
+_REGEX_LIMIT = 40
+
+
+def _py_defs(text: str) -> Optional[List[Dict[str, Any]]]:
+    """Every top-level definition in a Python source, with its line.
+
+    The single Python extractor: one `ast` pass, two renderers on top of it —
+    `_py_symbols` (the repo map's one-line-per-file summary) and
+    `_py_symbol_lines` (read_plan's per-file outline). Returns None when the
+    source does not parse, so callers fall back to the regex path.
+
+    Records: {"kind": class|def|const, "name", "line"} plus, for a class, its
+    "methods" and, for a function, its directly "nested" defs — one level down,
+    which is where a module that is mostly one long function keeps its structure
+    (src/agent_loop.py holds 4113 of its 7691 lines inside `stream_agent_loop`).
+    Nothing is filtered here — each renderer decides what it wants to show.
+    """
     try:
         tree = ast.parse(text)
     except (SyntaxError, ValueError, RecursionError):
-        return _regex_symbols(text, (
-            re.compile(r"^class\s+([A-Za-z_]\w*)", re.M),
-            re.compile(r"^(?:async\s+)?def\s+([A-Za-z_]\w*)", re.M),
-        ))
-    out: List[str] = []
-    consts: List[str] = []
+        return None
+    defs: List[Dict[str, Any]] = []
     for node in tree.body:
         if isinstance(node, ast.ClassDef):
-            methods = [n.name for n in node.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and not n.name.startswith("__")]
-            shown = ", ".join(methods[:8]) + (f", +{len(methods) - 8}" if len(methods) > 8 else "")
-            out.append(f"class {node.name}({shown})" if methods else f"class {node.name}")
+            methods = [(n.name, n.lineno) for n in node.body
+                       if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+            defs.append({"kind": "class", "name": node.name, "line": node.lineno, "methods": methods})
         elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            if not node.name.startswith("_") or node.name in ("__init__",):
-                out.append(f"def {node.name}")
+            nested = [(n.name, n.lineno) for n in node.body
+                      if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))]
+            defs.append({"kind": "def", "name": node.name, "line": node.lineno,
+                         "async": isinstance(node, ast.AsyncFunctionDef), "nested": nested})
         elif isinstance(node, ast.Assign):
             for t in node.targets:
-                if isinstance(t, ast.Name) and t.id.isupper() and len(t.id) > 2 and not t.id.startswith("_"):
-                    consts.append(t.id)
+                if isinstance(t, ast.Name):
+                    defs.append({"kind": "const", "name": t.id, "line": node.lineno})
+    return defs
+
+
+def _py_symbols(text: str) -> List[str]:
+    """Repo-map rendering: public API of a module, classes with their methods."""
+    defs = _py_defs(text)
+    if defs is None:
+        return _regex_symbols(text, _PY_FALLBACK_RES)
+    out: List[str] = []
+    consts: List[str] = []
+    for d in defs:
+        if d["kind"] == "class":
+            methods = [n for n, _ in d["methods"] if not n.startswith("__")]
+            shown = ", ".join(methods[:8]) + (f", +{len(methods) - 8}" if len(methods) > 8 else "")
+            out.append(f"class {d['name']}({shown})" if methods else f"class {d['name']}")
+        elif d["kind"] == "def":
+            if not d["name"].startswith("_") or d["name"] in ("__init__",):
+                out.append(f"def {d['name']}")
+        elif d["kind"] == "const":
+            name = d["name"]
+            if name.isupper() and len(name) > 2 and not name.startswith("_"):
+                consts.append(name)
     return out + consts[:6]
 
 
-def _regex_symbols(text: str, patterns) -> List[str]:
-    out: List[str] = []
+def _py_symbol_lines(text: str) -> List[Tuple[str, int]]:
+    """Outline rendering: every definition in the file with the line it starts on.
+
+    Same extraction as `_py_symbols`, different question. Navigating *inside* one
+    file is not the same job as summarising a module for the repo map: private
+    helpers are most of a large module (7 of 8 top-level defs in
+    src/agent_loop.py start with "_"), and methods are where the work lives, so
+    both are kept here and neither is kept there.
+    """
+    defs = _py_defs(text)
+    if defs is None:
+        return _regex_symbol_lines(text, _PY_FALLBACK_RES)
+    out: List[Tuple[str, int]] = []
+    for d in defs:
+        if d["kind"] == "class":
+            out.append((f"class {d['name']}", d["line"]))
+            for name, line in d["methods"]:
+                out.append((f"{d['name']}.{name}", line))
+        elif d["kind"] == "def":
+            out.append((f"{'async def' if d.get('async') else 'def'} {d['name']}", d["line"]))
+            for name, line in d.get("nested", ()):
+                out.append((f"{d['name']}.{name}", line))
+        elif d["kind"] == "const":
+            name = d["name"]
+            if name.isupper() and len(name) > 2:
+                out.append((name, d["line"]))
+    return out
+
+
+def _regex_matches(text: str, patterns, *, limit: int, include_private: bool) -> List[Tuple[str, int]]:
+    """The single regex extractor: (name, 1-based line) for each pattern hit.
+
+    First-wins dedupe by name, patterns applied in order — the order
+    `_regex_symbols` has always produced.
+    """
+    out: List[Tuple[str, int]] = []
     seen: Set[str] = set()
     for pat in patterns:
         for m in pat.finditer(text):
             name = m.group(1)
-            if not name or name in seen or name.startswith("_") and name != "__init__":
+            if not name or name in seen or (not include_private and name.startswith("_") and name != "__init__"):
                 continue
-            if name in ("if", "for", "while", "switch", "return", "catch", "function", "else", "constructor"):
+            if name in _REGEX_NON_SYMBOLS:
                 continue
             seen.add(name)
-            out.append(name)
-            if len(out) >= 40:
+            out.append((name, text.count("\n", 0, m.start()) + 1))
+            if len(out) >= limit:
                 return out
     return out
+
+
+def _regex_symbols(text: str, patterns) -> List[str]:
+    return [name for name, _ in _regex_matches(text, patterns, limit=_REGEX_LIMIT, include_private=False)]
+
+
+def _dedent_lines(text: str) -> str:
+    """The same text with per-line indentation removed; line numbers preserved.
+
+    The language regexes anchor on `^` because the repo map wants *top-level*
+    symbols only. A file outline wants the ones inside a wrapper too — 103 of
+    static/js/chat.js's 104 function declarations are indented inside the module
+    body, so the anchored patterns find one. Running the *same* patterns over a
+    dedented view finds them without a second set of regexes; stripping only
+    leading whitespace keeps every line at its original index.
+    """
+    return "\n".join(line.lstrip() for line in text.split("\n"))
+
+
+def _regex_symbol_lines(text: str, patterns, *, limit: int = 400) -> List[Tuple[str, int]]:
+    """Outline rendering for the regex languages: top-level hits plus indented ones."""
+    found = _regex_matches(text, patterns, limit=limit, include_private=True)
+    seen = {name for name, _ in found}
+    for name, line in _regex_matches(_dedent_lines(text), patterns, limit=limit, include_private=True):
+        if name not in seen:
+            seen.add(name)
+            found.append((name, line))
+    return found[:limit]
+
+
+def symbol_lines(text: str, lang: str) -> List[Tuple[str, int]]:
+    """(symbol, line) pairs for one source text — the outline `read_plan` shows.
+
+    Pure function on text the caller already has; `lang` is a `SOURCE_EXTS`
+    value. Returns [] for "none"/unknown languages (a .log, a .csv, a binary),
+    which is what tells read_plan there is no index to give.
+    """
+    if not text or lang in (None, "", "none"):
+        return []
+    if lang == "py":
+        return _py_symbol_lines(text)
+    patterns = _LANG_RES.get(lang)
+    if not patterns:
+        return []
+    return _regex_symbol_lines(text, patterns)
+
+
+def lang_for_path(path: str) -> str:
+    """`SOURCE_EXTS` language for a path ('none' when it has no symbol extractor)."""
+    return SOURCE_EXTS.get(os.path.splitext(path)[1].lower(), "none")
 
 
 def file_symbols(abs_path: str, lang: str) -> str:

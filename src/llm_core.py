@@ -194,16 +194,17 @@ def _cache_header_identity(headers) -> str:
 
 
 def _get_cache_key(url: str, model: str, messages: List[Dict],
-                   temperature: float, max_tokens: int, headers=None) -> str:
+                   temperature: float, max_tokens: int, headers=None,
+                   response_schema=None) -> str:
     """Generate a cache key partitioned by endpoint and credential identity."""
     hashable_messages = []
     for msg in messages:
         sorted_items = tuple(sorted(msg.items()))
         hashable_messages.append(sorted_items)
-    
-    content = json.dumps({
+
+    payload = {
         'url': url,
-        'model': model, 
+        'model': model,
         'messages': hashable_messages,
         'temp': temperature,
         'max_tokens': max_tokens,
@@ -211,7 +212,18 @@ def _get_cache_key(url: str, model: str, messages: List[Dict],
         # digest only prevents responses from one configured account/route
         # being returned under another route with the same URL and model.
         'header_identity': _cache_header_identity(headers),
-    }, sort_keys=True)
+    }
+    if response_schema:
+        # A constrained answer and a free-form one are different answers to
+        # the same prompt; they must not share a cache entry. The field is
+        # only added when a schema is really going out, so every key computed
+        # before this existed keeps its exact digest.
+        try:
+            fingerprint = json.dumps(response_schema, sort_keys=True, default=str)
+        except (TypeError, ValueError):
+            fingerprint = repr(response_schema)
+        payload['response_schema'] = hashlib.sha256(fingerprint.encode()).hexdigest()
+    content = json.dumps(payload, sort_keys=True)
     return hashlib.sha256(content.encode()).hexdigest()
 
 _response_cache = {}
@@ -736,6 +748,7 @@ def _build_ollama_payload(
     stream: bool = False,
     tools: Optional[List[Dict]] = None,
     num_ctx: Optional[int] = None,
+    response_schema: Optional[Dict] = None,
 ) -> Dict:
     """Build the JSON payload for Ollama's /api/chat endpoint.
 
@@ -747,6 +760,13 @@ def _build_ollama_payload(
     the value is trusted (not the ``DEFAULT_CONTEXT`` fallback), so we
     don't guess for unknown models but do tell Ollama the real window
     when we know it — even if it's smaller than 2048.
+
+    ``response_schema`` is a JSON Schema for Ollama's native ``format``
+    parameter: the server compiles it into a grammar and masks the logits,
+    so the model *cannot* emit a token that breaks the schema. It is only
+    ever emitted for a tool-less request — see ``_resolve_response_schema``
+    for why, and for the endpoint gate that decides whether a caller's
+    schema reaches this builder at all.
     """
     payload: Dict = {
         "model": model,
@@ -764,12 +784,96 @@ def _build_ollama_payload(
         payload["options"] = options
     if tools:
         payload["tools"] = _alias_harmony_tools(tools, model)
+    if response_schema:
+        if tools:
+            # Ollama does not combine `format` with `tools` reliably across
+            # versions (the grammar and the tool-call decoder fight over the
+            # same output): a request that carries both can come back with an
+            # empty message. Constrained decoding is for the tool-less passes
+            # only, so drop the schema rather than risk the tool call.
+            logger.debug(
+                "Not sending Ollama `format` alongside `tools` for %s "
+                "(constrained decoding is for tool-less passes only)", model,
+            )
+        else:
+            payload["format"] = response_schema
     return payload
 
 
 def _parse_ollama_response(data: dict) -> str:
     message = data.get("message") or {}
     return message.get("content") or data.get("response") or ""
+
+
+# ── Constrained JSON decoding (Ollama's native `format`) ────────────────────
+#
+# Several internal passes ask the model for a JSON object and then parse
+# whatever prose comes back (src/auto_review.py is the expensive one: a whole
+# GPU-seconds review thrown away because the object never closed). Ollama's
+# /api/chat takes a JSON Schema in `format` and decodes under it — a state
+# machine over the logits, not a plea in the prompt — so the model cannot
+# emit a token that breaks the schema.
+#
+# Two hard limits shape everything below:
+#   * `format` is an OLLAMA-NATIVE parameter. Ollama's OpenAI-compatible /v1
+#     surface has no such field and drops it without a word, so sending it
+#     there would buy nothing while making us believe the answer is safe.
+#   * `format` + `tools` do not coexist reliably across Ollama versions, so
+#     this is for tool-less passes only and never enters the agent loop.
+_STRUCTURED_OUTPUT_SETTING = "local_structured_output"
+
+
+def _structured_output_enabled() -> bool:
+    """The `local_structured_output` setting: "auto" (default) or "off".
+
+    "off" restores the previous behaviour exactly: no schema is attached to
+    any request and every caller falls back to the tolerant text parser it
+    still carries.
+    """
+    try:
+        from src.settings import get_setting
+        raw = get_setting(_STRUCTURED_OUTPUT_SETTING, "auto")
+    except Exception:
+        return True
+    value = str("auto" if raw is None else raw).strip().lower()
+    return value not in ("off", "false", "0", "no", "none", "disabled")
+
+
+def _resolve_response_schema(url: str, response_schema: Optional[Dict]) -> Optional[Dict]:
+    """The schema to actually put on the wire for `url`, or None.
+
+    Gated on capability exactly like `think` and `num_ctx` are: only a native
+    Ollama endpoint understands `format`, so anything else (OpenAI, Anthropic,
+    llama.cpp, Ollama's own /v1) gets nothing and keeps today's parsing.
+    """
+    if not response_schema or not isinstance(response_schema, dict):
+        return None
+    if not _structured_output_enabled():
+        return None
+    if not _is_ollama_native_url(url):
+        return None
+    return response_schema
+
+
+def _route_for_response_schema(url: str, model: str) -> str:
+    """Move a local Ollama /v1 call to the native /api/chat so it can carry a
+    schema — same server, same model, same messages, only the wire format
+    changes. This is the reroute `_route_for_gen_overrides` already performs
+    for `think`, with a stricter proof of identity: we only move the request
+    once /api/show has actually answered for this model, because that answer
+    is what tells us the thing listening on :11434 really is Ollama and not a
+    llama.cpp or vLLM server wearing the same port. When it does not answer,
+    the URL is left alone and the caller keeps the tolerant parse.
+    """
+    try:
+        port = urlparse(url or "").port
+    except ValueError:
+        return url
+    if not (port == 11434 and _is_ollama_openai_compat_url(url)):
+        return url
+    if _ollama_model_caps(url, model) is None:
+        return url
+    return _ollama_native_url_for_compat(url)
 
 
 def _host_match(url: str, *domains: str) -> bool:
@@ -1968,8 +2072,17 @@ def normalize_model_id(
 
 def llm_call(url: str, model: str, messages: List[Dict], temperature: float = LLMConfig.DEFAULT_TEMPERATURE,
              max_tokens: int = LLMConfig.DEFAULT_MAX_TOKENS, headers: Optional[Dict] = None,
-             timeout: int = LLMConfig.DEFAULT_TIMEOUT, prompt_type: Optional[str] = None) -> str:
-    """Synchronous LLM call with optional prompt type enhancement."""
+             timeout: int = LLMConfig.DEFAULT_TIMEOUT, prompt_type: Optional[str] = None,
+             response_schema: Optional[Dict] = None) -> str:
+    """Synchronous LLM call with optional prompt type enhancement.
+
+    ``response_schema`` is a JSON Schema the answer must obey. It only has
+    teeth on a native Ollama endpoint (``format`` on /api/chat); everywhere
+    else it is dropped and the caller's own parsing still applies. Unlike
+    ``llm_call_async`` this sync path does not reroute a local Ollama /v1 to
+    the native endpoint to make a schema fit: no sync caller asks for one, so
+    that would be an unexercised routing change on a shared code path.
+    """
     h = _provider_headers(_detect_provider(url))
     # Tolerate headers that arrive as a JSON string (some sessions stored them
     # double-encoded) — otherwise h.update() throws "dictionary update sequence
@@ -1998,8 +2111,10 @@ def llm_call(url: str, model: str, messages: List[Dict], temperature: float = LL
         messages_copy = non_sys
 
     provider = _detect_provider(url)
+    schema = _resolve_response_schema(url, response_schema)
     cache_key = _get_cache_key(
         url, model, messages_copy, temperature, max_tokens, headers=headers,
+        response_schema=schema,
     )
     cached_response = _get_cached_response(cache_key)
     if cached_response:
@@ -2015,6 +2130,7 @@ def llm_call(url: str, model: str, messages: List[Dict], temperature: float = LL
         payload = _build_ollama_payload(
             model, messages_copy, temperature, max_tokens,
             stream=False, num_ctx=get_context_length(url, model),
+            response_schema=schema,
         )
     else:
         target_url = _normalize_openai_chat_url(url)
@@ -2273,8 +2389,14 @@ async def llm_call_async(
     workload: str = "foreground",
     availability_only_transport: bool = False,
     return_model_metadata: bool = False,
+    response_schema: Optional[Dict] = None,
 ) -> str | tuple[str, str]:
-    """Asynchronous LLM call using httpx with connection pooling, timeout, retry logic, and performance logging."""
+    """Asynchronous LLM call using httpx with connection pooling, timeout, retry logic, and performance logging.
+
+    ``response_schema`` is a JSON Schema the answer must obey. Native Ollama
+    enforces it while decoding (``format`` on /api/chat); every other provider
+    ignores it and never sees it, so callers keep their own parsing as a net.
+    """
     # Same reroute as stream_llm: Ollama's /v1 ignores `think`, so a
     # thinking-capable model (qwen3.5, gemma…) would spend the whole
     # num_predict budget reasoning and return an empty `content` (seen live:
@@ -2288,6 +2410,18 @@ async def llm_call_async(
         logger.info("Ollama /v1 -> native /api/chat for %s (non-streaming call, think=%s)", model,
                     False if _native_think_off else None)
         url = _routed
+    # And the same reroute for a constrained answer: `format` is native-only,
+    # so a schema sent to /v1 would be dropped in silence and we would believe
+    # the JSON was guaranteed when nothing guaranteed it. Move the request to
+    # the endpoint that honours it, or send no schema at all.
+    if isinstance(response_schema, dict) and response_schema and _structured_output_enabled():
+        _routed_schema = _route_for_response_schema(url, model)
+        if _routed_schema != url:
+            caps = _ollama_model_caps(url, model)
+            _native_think_off = caps is not None and "thinking" in caps
+            logger.info("Ollama /v1 -> native /api/chat for %s (constrained JSON decoding, think=%s)",
+                        model, False if _native_think_off else None)
+            url = _routed_schema
     provider = _detect_provider(url)
     messages_copy = _sanitize_llm_messages(messages)
 
@@ -2304,8 +2438,10 @@ async def llm_call_async(
     else:
         messages_copy = non_sys
 
+    schema = _resolve_response_schema(url, response_schema)
     cache_key = _get_cache_key(
         url, model, messages_copy, temperature, max_tokens, headers=headers,
+        response_schema=schema,
     )
     cached_response = _get_cached_response(cache_key)
     if cached_response:
@@ -2388,6 +2524,7 @@ async def llm_call_async(
         payload = _build_ollama_payload(
             model, messages_copy, temperature, max_tokens,
             stream=False, num_ctx=get_context_length(url, model),
+            response_schema=schema,
         )
         if _native_think_off:
             payload["think"] = False

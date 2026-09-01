@@ -178,6 +178,16 @@ DEFAULT_SETTINGS = {
     "agent_auto_review_timeout_seconds": 180,
     "agent_auto_review_fix_round": True,
     "agent_auto_review_fix_rounds": 1,
+    # Constrained JSON decoding for the tool-less internal passes that need a
+    # JSON answer (today: the diff reviewer). "auto" — when the endpoint is a
+    # native Ollama one, the pass sends its JSON Schema in Ollama's `format`
+    # and the server masks the logits, so the model cannot emit a token that
+    # breaks the schema; a measured 44 % parse rate for the reviewer on a 9B
+    # model is what this is for. "off" — no schema is ever sent and every
+    # pass falls back to the tolerant text parser it still carries.
+    # Never applied to a request that also carries tools (Ollama does not
+    # combine `format` with `tools` reliably), so the agent loop is untouched.
+    "local_structured_output": "auto",
     # Standing instructions from the repo (AGENTS.md / CLAUDE.md / …) in the
     # system prompt, and the repository map (files + symbols) before the
     # user's message (src/project_instructions.py, src/repo_map.py).
@@ -185,6 +195,18 @@ DEFAULT_SETTINGS = {
     "agent_project_instructions_max_chars": 6000,
     "agent_repo_map": True,
     "agent_repo_map_tokens": 1500,
+    # An un-ranged read_file on a file too big to return whole (src/read_plan.py):
+    # instead of the first 20000 characters and nothing else, answer with the
+    # line count, the symbol index with line numbers (the same extraction the
+    # repo map uses), the first ~80 lines, and the literal call that fetches any
+    # other range. Off = the old blind cut off the top. A read that already
+    # carries offset/limit is never touched either way.
+    "agent_read_outline": True,
+    # Share of the model's context window one un-ranged read may occupy. The cap
+    # only ever comes DOWN from MAX_READ_CHARS: 20000 characters is a third of an
+    # 8k window, so on a small model one unasked-for read evicts the user's own
+    # message on the next trim. An unproven window keeps the full ceiling.
+    "agent_read_window_fraction": 0.25,
     # "@" file mentions from the composer (src/file_mentions.py): the paths the
     # user picked are re-resolved server-side and handed to the model, and small
     # mentioned files ride along inline so it does not spend a round on

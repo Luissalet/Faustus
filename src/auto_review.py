@@ -131,6 +131,51 @@ def turn_diff(workspace: str, changed: Iterable[str], checkpoint_sha: Optional[s
 
 
 # ---------------------------------------------------------------------------
+# The shape of the answer
+# ---------------------------------------------------------------------------
+#
+# The prompt below has always described this object, and `_parse` has always
+# had to go looking for it inside whatever prose came back. On a 9B model that
+# search fails often enough to matter: a measured 44 % of review passes landed
+# as "unparsed", each one 15 s of GPU spent on nothing and a turn with no
+# review. This is the same object as a JSON Schema, so an endpoint that can
+# decode under a grammar (native Ollama's `format`) simply cannot produce
+# anything else — the parser stays, but as a net rather than as the mechanism.
+#
+# `evidence` is REQUIRED on every finding. That is the load-bearing part.
+# Until now a finding with no evidence was a thing the model could say and
+# `ground_findings` had to catch afterwards; with the schema the reviewer
+# cannot even open a finding it has nothing to point at. `ground_findings`
+# stays exactly as it is — it still has to check that the evidence is real,
+# which no schema can do, and it is still the only defence on every endpoint
+# that does not support constrained decoding.
+REVIEW_SCHEMA: Dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "verdict": {"type": "string", "enum": ["ok", "issues"]},
+        "summary": {"type": "string"},
+        "findings": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "severity": {"type": "string", "enum": ["error", "warning"]},
+                    "file": {"type": "string"},
+                    # The reviewer often genuinely cannot tell; null is an
+                    # honest answer and `_parse` already normalises it.
+                    "line": {"type": ["integer", "null"]},
+                    "evidence": {"type": "string"},
+                    "issue": {"type": "string"},
+                },
+                "required": ["severity", "file", "evidence", "issue"],
+            },
+        },
+    },
+    "required": ["verdict", "summary", "findings"],
+}
+
+
+# ---------------------------------------------------------------------------
 # The review call
 # ---------------------------------------------------------------------------
 
@@ -321,12 +366,17 @@ async def review_turn(
         # i.e. forever, since this very turn is what keeps the chat active.
         # Hard bound on the whole call (HTTP timeout + gate wait): a review must
         # never hang the turn it belongs to.
+        # response_schema: on a native Ollama endpoint the answer is decoded
+        # under REVIEW_SCHEMA and cannot come back as prose with a half-closed
+        # object inside. Everywhere else it is dropped before it reaches the
+        # wire and `_parse` below does the work it has always done.
         raw = await asyncio.wait_for(
             llm_call_async(
                 url=endpoint_url, model=reviewer,
                 messages=[{"role": "user", "content": _prompt(user_text, diff, files, tests)}],
                 headers=headers, temperature=0.1, max_tokens=1200, timeout=int(timeout),
                 max_retries=1, workload=workload or "foreground",
+                response_schema=REVIEW_SCHEMA,
             ),
             timeout=timeout + 30,
         )

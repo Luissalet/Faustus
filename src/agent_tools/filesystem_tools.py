@@ -7,6 +7,7 @@ import fnmatch
 import shutil
 from typing import Optional, Dict, Any, Tuple, List
 
+from src import read_plan
 from src.constants import MAX_READ_CHARS, MAX_DIFF_LINES, MAX_OUTPUT_CHARS
 
 _CODENAV_SKIP_DIRS = frozenset({
@@ -199,9 +200,15 @@ class ReadFileTool:
             path = _resolve_tool_path(raw_path)
         except ValueError as e:
             return {"error": f"read_file: {e}", "exit_code": 1}
+        # An un-ranged read of a file too big to return whole answers with a map
+        # of it (line count, symbol index, the first lines, the call that fetches
+        # any other part) instead of a blind slice off the top — src/read_plan.py.
+        # A ranged read, and any file that fits, are untouched below.
+        ranged = offset > 0 or limit > 0
+        window_tokens = 0 if ranged else read_plan.resolve_window_tokens(ctx)
         try:
             def _read():
-                if offset > 0 or limit > 0:
+                if ranged:
                     start = max(offset, 1)
                     out, n, budget = [], 0, MAX_READ_CHARS
                     with open(path, "r", encoding="utf-8", errors="replace") as f:
@@ -216,10 +223,15 @@ class ReadFileTool:
                             if budget <= 0:
                                 out.append(f"\n... [truncated at {MAX_READ_CHARS} chars]")
                                 break
-                    return "".join(out)
+                    return "".join(out), MAX_READ_CHARS
+                plan = read_plan.plan(path, window_tokens, display_path=raw_path or path)
+                if plan.output is not None:
+                    return plan.output, plan.budget_chars
+                # The file fits, or the outline is switched off: read it exactly
+                # as before, under the cap this plan settled on.
                 with open(path, "r", encoding="utf-8", errors="replace") as f:
-                    return f.read(MAX_READ_CHARS + 1)
-            data = await asyncio.to_thread(_read)
+                    return f.read(plan.budget_chars + 1), plan.budget_chars
+            data, cap = await asyncio.to_thread(_read)
         except FileNotFoundError:
             from src.agent_harness import not_found_error
             from src.tool_execution import get_active_workspace
@@ -234,8 +246,8 @@ class ReadFileTool:
             return {"error": f"read_file: {path}: is a directory (use ls)", "exit_code": 1}
         except OSError as e:
             return {"error": f"read_file: {path}: {e}", "exit_code": 1}
-        if not (offset > 0 or limit > 0) and len(data) > MAX_READ_CHARS:
-            data = data[:MAX_READ_CHARS] + f"\n... [truncated at {MAX_READ_CHARS} chars]"
+        if not ranged and len(data) > cap:
+            data = data[:cap] + f"\n... [truncated at {cap} chars]"
         return {"output": data, "exit_code": 0}
 
 class WriteFileTool:
