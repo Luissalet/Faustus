@@ -611,41 +611,546 @@ export function renderQueueStatus(json) {
   _queueCard = null;
 }
 
-// ── Sub-agent board (delegate_agents) ────────────────────────────────────────
+// ── Sub-agent board v3 (delegate_agents) ─────────────────────────────────────
+// One CARD per worker (Cowork / Claude-Code style), fed by `tool_progress`
+// events that carry a `subagent` payload (src/agent_tools/subagent_tools.py):
+//   queued · started · round · tool (start/progress/done) · tick (~5 s:
+//   elapsed, idle, tokens, stalled) · steer · supervisor · harness · guard ·
+//   error · done.
+// Every field is optional (older backends send a subset) — the card degrades
+// to what it knows. State is kept PER PARENT CHAT so events that arrive while
+// that chat is in the background are not lost: chat.js keeps calling
+// renderSubagentEvent() with `background: true`, and restoreSubagentBoard()
+// repaints the cards when the user comes back (chat.js checkBackgroundStream).
 
-let _boards = new Map(); // toolNode/thread key → board element
+const _SA_MAX_SESSIONS = 12;
+const _SA_NO_SIGNAL_MS = 20000;    // ticks stopped arriving (only judged once a tick was seen)
+let _saBoards = new Map();         // parent sessionId → { workers: Map(id → state), order: [] }
+let _saTicker = null;              // 1 s interval: elapsed, stalled seconds, Re-run enablement
+
+function _toast(msg) {
+  try {
+    if (window.uiModule && typeof window.uiModule.showToast === 'function') { window.uiModule.showToast(msg); return; }
+  } catch (_) {}
+  try { console.info(msg); } catch (_) {}
+}
 
 function _boardFor() {
   const chatBox = document.getElementById('chat-history');
   if (!chatBox) return null;
   // The delegate_agents tool card is the last running node in the thread;
   // attach the board right after it so workers appear where the call is.
-  let anchor = null;
   const threads = chatBox.querySelectorAll('.agent-thread');
   const thread = threads.length ? threads[threads.length - 1] : _threadForCard();
   if (!thread) return null;
   let board = thread.querySelector('.subagent-board:last-of-type');
   if (board && board.dataset.open === '1') return board;
+  // Built with createElement (not one innerHTML) so the node-based tests can
+  // drive it with a minimal DOM stub.
   board = document.createElement('div');
-  board.className = 'agent-thread-node harness-node harness-subagents expanded subagent-board';
+  board.className = 'agent-thread-node harness-node harness-subagents expanded subagent-board subagent-board-v3';
   board.dataset.open = '1';
-  board.innerHTML = `<div class="agent-thread-dot"></div><div class="agent-thread-header harness-header"><span class="agent-thread-icon">🤖</span><span class="agent-thread-tool">Sub-agents</span><span class="subagent-board-count"></span></div><div class="agent-thread-content harness-body"><div class="subagent-rows"></div></div>`;
+  const dot = document.createElement('div');
+  dot.className = 'agent-thread-dot';
+  board.appendChild(dot);
+  const header = document.createElement('div');
+  header.className = 'agent-thread-header harness-header';
+  header.innerHTML = `<span class="agent-thread-icon">🤖</span><span class="agent-thread-tool">Sub-agents</span>`;
+  const count = document.createElement('span');
+  count.className = 'subagent-board-count';
+  header.appendChild(count);
+  const summary = document.createElement('span');
+  summary.className = 'subagent-board-summary harness-muted';
+  header.appendChild(summary);
+  board.appendChild(header);
+  const body = document.createElement('div');
+  body.className = 'agent-thread-content harness-body';
+  const rows = document.createElement('div');
+  rows.className = 'subagent-rows subagent-cards';
+  body.appendChild(rows);
+  board.appendChild(body);
   thread.appendChild(board);
   return board;
 }
 
-const SA_STATUS_ICON = { started: '◉', running: '◉', done: '✓', error: '✗' };
+function _saState(sessionId, create) {
+  const key = sessionId || '__current__';
+  let st = _saBoards.get(key);
+  if (!st && create) {
+    st = { workers: new Map(), order: [] };
+    _saBoards.set(key, st);
+    while (_saBoards.size > _SA_MAX_SESSIONS) {
+      const oldest = _saBoards.keys().next().value;
+      if (oldest === undefined) break;
+      _saBoards.delete(oldest);
+    }
+  } else if (st && create) {
+    _saBoards.delete(key);          // re-insert => most recent last (LRU)
+    _saBoards.set(key, st);
+  }
+  return st || null;
+}
+
+function _saNewWorker(id, now) {
+  return {
+    id, index: null, name: '', role: 'worker', model: '', files: [], instruction: '', instructionFull: '',
+    sessionId: '', status: 'running', firstSeen: now, startedLocal: null, startedAt: null, endedAt: null,
+    lastEventAt: now, sawTick: false, tickElapsed: null, tickAt: null, round: null, maxRounds: null, rounds: null,
+    toolCalls: 0, failedCalls: 0, lastTool: '', lastCmd: '', lastToolOk: null, lastOut: '', tail: '', toolElapsed: null, toolInFlight: false,
+    inTok: null, outTok: null, idleS: null, stalled: false, stallReason: '', stallAt: null,
+    stallIdleAt: null, timeoutS: null, endedLocal: null,
+    steers: [], supervisor: [], note: '', error: '', stopReason: '', finalText: '', mutations: [], durationS: null,
+    stopRequested: false,
+  };
+}
+
+/** Live event → state (+ card when the parent chat is on screen).
+ *  `sessionId` = the PARENT chat (defaults to the chat on screen);
+ *  `background` = record only, chat.js paints nothing for background chats. */
+export function renderSubagentEvent(json, { sessionId = null, background = false } = {}) {
+  const sa = json.subagent || {};
+  const id = sa.id != null ? String(sa.id) : (sa.session_id ? String(sa.session_id) : '');
+  if (!id) return;
+  const now = Date.now();
+  const parent = sessionId || _currentSessionId || null;
+  const st = _saState(parent, true);
+  let w = st.workers.get(id);
+  if (!w) { w = _saNewWorker(id, now); st.workers.set(id, w); st.order.push(id); }
+  _saApply(w, sa, now);
+  if (background || (parent && _currentSessionId && parent !== _currentSessionId)) return;
+  const board = _boardFor();
+  if (!board) return;
+  const row = _saPaintWorker(board, w);
+  _saPaintHeader(board, st);
+  _saEnsureTicker();
+  try { if (row && row.scrollIntoView) row.scrollIntoView({ block: 'nearest' }); } catch (_) {}
+}
+
+/** Repaint the cards of a chat from the retained state (the user came back
+ *  to a chat whose delegation ran in the background). Returns true when a
+ *  board was painted. */
+export function restoreSubagentBoard(sessionId) {
+  const st = _saState(sessionId || _currentSessionId, false);
+  if (!st || !st.order.length) return false;
+  const board = _boardFor();
+  if (!board) return false;
+  for (const id of st.order) {
+    const w = st.workers.get(id);
+    if (w) _saPaintWorker(board, w);
+  }
+  _saPaintHeader(board, st);
+  _saEnsureTicker();
+  return true;
+}
+
+/** Retained worker states of a chat (for tests / other UI). */
+export function subagentBoardState(sessionId) {
+  const st = _saState(sessionId || _currentSessionId, false);
+  return st ? st.order.map(id => st.workers.get(id)).filter(Boolean) : [];
+}
+
+const _SA_LIVE = { queued: 1, running: 1 };
+function _saLive(w) { return !!_SA_LIVE[w.status]; }
+
+/** Fold one subagent payload into the worker state (pure; no DOM). */
+function _saApply(w, sa, now) {
+  w.lastEventAt = now;
+  if (sa.name) w.name = String(sa.name);
+  if (sa.role) w.role = String(sa.role);
+  if (sa.index != null) w.index = Number(sa.index);
+  if (sa.session_id) w.sessionId = String(sa.session_id);
+  if (sa.model) w.model = String(sa.model);
+  if (Array.isArray(sa.files)) w.files = sa.files.map(String);
+  if (sa.instruction) w.instruction = String(sa.instruction);
+  if (sa.instruction_full) w.instructionFull = String(sa.instruction_full);
+  if (sa.max_rounds != null) w.maxRounds = Number(sa.max_rounds);
+  if (sa.timeout_s != null) w.timeoutS = Number(sa.timeout_s);
+  if (sa.started_at != null && Number(sa.started_at) > 0) w.startedAt = Number(sa.started_at);
+  if (sa.ended_at != null && Number(sa.ended_at) > 0) w.endedAt = Number(sa.ended_at);
+  if (sa.input_tokens != null) w.inTok = Number(sa.input_tokens) || 0;
+  if (sa.output_tokens != null) w.outTok = Number(sa.output_tokens) || 0;
+  if (sa.rounds != null) w.rounds = Number(sa.rounds);
+  switch (sa.event) {
+    case 'queued':
+      w.status = 'queued';
+      w.note = sa.reason ? String(sa.reason) : 'waiting for a GPU slot';
+      break;
+    case 'started':
+      w.status = 'running';
+      w.startedLocal = now;
+      w.note = '';
+      break;
+    case 'round':
+      if (sa.round != null) w.round = Number(sa.round);
+      w.stalled = false;
+      break;
+    case 'tool':
+      w.stalled = false;
+      if (sa.tool) w.lastTool = String(sa.tool);
+      if (sa.phase === 'start') {
+        w.lastCmd = String(sa.command || '');
+        w.lastToolOk = null;
+        w.lastOut = '';
+        w.tail = '';
+        w.toolElapsed = null;
+        w.toolInFlight = true;
+      } else if (sa.phase === 'progress') {
+        w.toolInFlight = true;
+        if (sa.tail != null) w.tail = String(sa.tail);
+        if (sa.elapsed_s != null) w.toolElapsed = Number(sa.elapsed_s);
+      } else {
+        w.toolInFlight = false;
+        w.toolCalls += 1;
+        if (sa.ok === false) w.failedCalls += 1;
+        w.lastToolOk = sa.ok !== false;
+        w.lastOut = String(sa.output || '');
+        w.tail = '';
+        w.toolElapsed = null;
+      }
+      break;
+    case 'tick':
+      w.sawTick = true;
+      if (sa.elapsed_s != null) { w.tickElapsed = Number(sa.elapsed_s); w.tickAt = now; }
+      if (sa.round != null) w.round = Number(sa.round);
+      if (sa.last_tool) w.lastTool = String(sa.last_tool);
+      if (sa.tool_calls != null) w.toolCalls = Math.max(w.toolCalls, Number(sa.tool_calls) || 0);
+      if (sa.idle_s != null) w.idleS = Number(sa.idle_s);
+      if (sa.stalled) {
+        if (!w.stalled) w.stallAt = now;
+        w.stalled = true;
+        w.stallReason = String(sa.stall_reason || '');
+        w.stallIdleAt = now;
+      } else {
+        w.stalled = false;
+      }
+      break;
+    case 'steer': {
+      const text = String(sa.text || '');
+      const source = String(sa.source || 'user');
+      // The Steer… button paints its line right away; the server echoes it.
+      const last = w.steers[w.steers.length - 1];
+      if (!(last && last.text === text && last.source === source && last.local && now - last.at < 60000)) {
+        w.steers.push({ text, source, at: now });
+      } else { last.local = false; }
+      break;
+    }
+    case 'supervisor':
+      w.supervisor.push({ action: String(sa.action || ''), reason: String(sa.reason || '') });
+      break;
+    case 'harness':
+      w.note = `🛡 ${sa.status || ''}${sa.reasons && sa.reasons.length ? ': ' + sa.reasons.join(', ') : ''}`;
+      break;
+    case 'guard':
+      w.note = `⚠ ${sa.kind || 'guard'}`;
+      break;
+    case 'error':
+      w.status = 'failed';
+      w.error = String(sa.message || 'error');
+      break;
+    case 'done': {
+      const stopped = sa.stop_reason === 'stopped';
+      const ok = !sa.error && sa.stop_reason === 'complete';
+      w.status = sa.error ? 'failed' : (ok ? 'done' : (stopped ? 'stopped' : 'partial'));
+      w.stopReason = String(sa.stop_reason || '');
+      w.error = sa.error ? String(sa.error) : w.error;
+      w.finalText = String(sa.final_text || '');
+      w.mutations = Array.isArray(sa.mutations) ? sa.mutations.map(String) : w.mutations;
+      if (sa.tool_calls != null) w.toolCalls = Number(sa.tool_calls) || 0;
+      if (sa.failed_calls != null) w.failedCalls = Number(sa.failed_calls) || 0;
+      if (sa.duration_s != null) w.durationS = Number(sa.duration_s);
+      if (!w.endedAt) w.endedLocal = now;
+      w.stalled = false;
+      w.tail = '';
+      w.toolInFlight = false;
+      if (Array.isArray(sa.steered)) {
+        for (const s of sa.steered) {
+          const text = typeof s === 'string' ? s : String((s && s.text) || '');
+          const source = typeof s === 'string' ? 'user' : String((s && s.source) || 'user');
+          if (text && !w.steers.some(x => x.text === text)) w.steers.push({ text, source, at: now });
+        }
+      }
+      if (Array.isArray(sa.supervisor) && !w.supervisor.length) {
+        w.supervisor = sa.supervisor.map(x => (typeof x === 'string' ? { action: x, reason: '' } : { action: String((x && x.action) || ''), reason: String((x && x.reason) || '') }));
+      }
+      break;
+    }
+    default:
+      break;
+  }
+  return w;
+}
+
+/** Seconds this worker has been (or was) running. */
+function _saElapsed(w, now) {
+  if (w.startedAt && w.endedAt) return Math.max(0, w.endedAt - w.startedAt);
+  if (!_saLive(w)) {
+    if (w.durationS != null) return w.durationS;
+    if (w.startedAt && w.endedLocal) return Math.max(0, w.endedLocal / 1000 - w.startedAt);
+    if (w.startedLocal && w.endedLocal) return Math.max(0, (w.endedLocal - w.startedLocal) / 1000);
+  }
+  // The tick's own elapsed beats the wall clock: it does not care about the
+  // skew between the server's and the browser's clocks.
+  if (w.tickElapsed != null && w.tickAt) return w.tickElapsed + Math.max(0, now - w.tickAt) / 1000;
+  if (w.startedAt) return Math.max(0, now / 1000 - w.startedAt);
+  return Math.max(0, (now - (w.startedLocal || w.firstSeen)) / 1000);
+}
+
+function _fmtDur(s) {
+  const v = Math.max(0, Math.round(Number(s) || 0));
+  if (v < 60) return `${v}s`;
+  if (v < 3600) return `${Math.floor(v / 60)}m ${String(v % 60).padStart(2, '0')}s`;
+  return `${Math.floor(v / 3600)}h ${String(Math.floor((v % 3600) / 60)).padStart(2, '0')}m`;
+}
+
+/** Status pill: {kind, text} — `kind` is also the CSS modifier. */
+function _saPill(w, now) {
+  if (w.status === 'queued') return { kind: 'queued', text: 'queued' };
+  if (w.status === 'running') {
+    if (w.stalled) {
+      if (/loop/i.test(w.stallReason)) return { kind: 'stalled', text: 'loop' };
+      if (w.idleS != null) {
+        const idle = w.idleS + Math.max(0, now - (w.stallIdleAt || now)) / 1000;
+        return { kind: 'stalled', text: `no activity ${Math.round(idle)}s` };
+      }
+      return { kind: 'stalled', text: w.stallReason || 'stalled' };
+    }
+    if (w.sawTick && now - w.lastEventAt > _SA_NO_SIGNAL_MS) {
+      return { kind: 'stalled', text: `no signal ${Math.round((now - w.lastEventAt) / 1000)}s` };
+    }
+    return { kind: 'running', text: 'running' };
+  }
+  if (w.status === 'done') return { kind: 'done', text: 'done' };
+  if (w.status === 'stopped') return { kind: 'stopped', text: 'stopped' };
+  if (w.status === 'failed') return { kind: 'failed', text: 'failed' };
+  return { kind: 'partial', text: w.stopReason || 'partial' };
+}
+
+const _SA_ICON = { queued: '⏳', running: '◉', done: '✓', failed: '✗', stopped: '■', partial: '◑' };
+const _SA_ROW_CLASS = { queued: 'is-queued', running: 'is-running', done: 'is-done', failed: 'is-error', stopped: 'is-partial is-stopped', partial: 'is-partial' };
+
+function _saTokens(w) {
+  if (w.inTok == null && w.outTok == null) return '';
+  return `${_fmtTok(w.inTok || 0)} in · ${_fmtTok(w.outTok || 0)} out`;
+}
+
+/** Is the parent chat (the one on screen) still streaming? Re-run must wait. */
+function _parentStreaming() {
+  try {
+    const cm = window.chatModule;
+    return !!(cm && typeof cm.hasActiveStream === 'function' && _currentSessionId && cm.hasActiveStream(_currentSessionId));
+  } catch (_) { return false; }
+}
+
+function _rerunButtonHtml(w, streaming) {
+  const instruction = w.instructionFull || w.instruction || '';
+  if (!instruction) return '';
+  const task = { name: w.name, instruction, files: w.files || [], model: w.model || '' };
+  const dis = streaming ? ' disabled title="wait for the delegation to finish"' : ' title="Delegate this task again (optionally with another model)"';
+  return `<button type="button" class="harness-btn harness-btn-mini" data-rerun-worker="${esc(JSON.stringify(task))}"${dis}>↻ Re-run…</button>`;
+}
+
+/** Inner HTML of one worker card. `live` = the board is on a running turn
+ *  (Stop / Steer make sense); a restored board only gets Open chat / Re-run. */
+function _saCardHtml(w, { live = true, streaming = false, now = Date.now() } = {}) {
+  const isReviewer = w.role === 'reviewer';
+  const name = isReviewer ? `🔍 ${w.name || 'reviewer'}` : `${(w.index ?? 0) + 1}. ${w.name || 'worker'}`;
+  const pill = _saPill(w, now);
+  const alive = _saLive(w);
+  const head =
+    `<div class="subagent-head">` +
+    `<span class="subagent-icon">${_SA_ICON[w.status] || '◉'}</span>` +
+    `<span class="subagent-name">${esc(name)}</span>` +
+    `<span class="subagent-role-badge is-${esc(w.role || 'worker')}">${esc(w.role || 'worker')}</span>` +
+    (w.model ? `<span class="subagent-model harness-muted" title="model">${esc(w.model)}</span>` : '') +
+    `<span class="subagent-pill is-${pill.kind}">${esc(pill.text)}</span>` +
+    `</div>`;
+  const instruction = w.instruction || w.instructionFull;
+  const instr = instruction ? `<div class="subagent-instruction" title="${esc(w.instructionFull || w.instruction)}">${esc(instruction)}</div>` : '';
+  const stats = [];
+  const started = w.startedAt ? Math.round(w.startedAt * 1000) : (w.startedLocal || w.firstSeen);
+  stats.push(`<span class="subagent-elapsed" data-started="${started}" title="elapsed">${_fmtDur(_saElapsed(w, now))}</span>`);
+  if (w.round != null || w.rounds != null) {
+    const r = alive ? w.round : (w.rounds != null ? w.rounds : w.round);
+    stats.push(`<span class="subagent-round" title="round">r${esc(String(r))}${w.maxRounds ? `/${esc(String(w.maxRounds))}` : ''}</span>`);
+  }
+  stats.push(`<span class="subagent-tools">${w.toolCalls} tool${w.toolCalls === 1 ? '' : 's'}${w.failedCalls ? ` (${w.failedCalls} failed)` : ''}</span>`);
+  const tok = _saTokens(w);
+  if (tok) stats.push(`<span class="subagent-tokens" title="tokens">${esc(tok)}</span>`);
+  if (!alive && w.mutations.length) stats.push(`<span class="subagent-changed">${w.mutations.length} file${w.mutations.length === 1 ? '' : 's'} changed</span>`);
+  else if (!alive && w.status !== 'queued') stats.push(`<span class="subagent-changed harness-muted">no files changed</span>`);
+  const statsHtml = `<div class="subagent-stats">${stats.join('<span class="subagent-sep"> · </span>')}</div>`;
+  // Last line: tool in flight / last tool / final text / error.
+  let last = '';
+  if (w.error) last = `✗ ${w.error}`;
+  else if (!alive && w.finalText) last = w.finalText;
+  else if (w.lastTool) {
+    const mark = w.toolInFlight ? '▶' : (w.lastToolOk === null ? '·' : (w.lastToolOk ? '✓' : '✗'));
+    const cmd = w.toolInFlight ? w.lastCmd : (w.lastCmd || w.lastOut);
+    const el = w.toolInFlight && w.toolElapsed != null ? ` (${_fmtDur(w.toolElapsed)})` : '';
+    last = `${mark} ${w.lastTool}${el} ${cmd}`.trim();
+  } else if (w.note) last = w.note;
+  const lastHtml = last ? `<div class="subagent-last" title="${esc(last)}">${esc(last)}</div>` : '';
+  const tailHtml = alive && w.tail ? `<pre class="subagent-tail">${esc(w.tail)}</pre>` : '';
+  const noteHtml = (w.note && last !== w.note) ? `<div class="subagent-note harness-muted">${esc(w.note)}</div>` : '';
+  let filesHtml = '';
+  if (w.files.length) {
+    filesHtml = `<div class="subagent-files harness-muted">owns ${w.files.map(f => `<code class="subagent-file" title="${esc(f)}">${esc(String(f).split(/[\\/]/).pop())}</code>`).join(' ')}</div>`;
+  }
+  if (!alive && w.mutations.length) {
+    filesHtml += `<div class="subagent-files subagent-mutations harness-files">${w.mutations.slice(0, 40).map(f => _fileChip(f, null, 'diff')).join(' ')}</div>`;
+  }
+  const lines = [];
+  for (const s of w.steers) lines.push(`<div class="subagent-steer">→ steered${s.source && s.source !== 'user' ? ` (${esc(s.source)})` : ''}: ${esc(s.text)}</div>`);
+  for (const s of w.supervisor) {
+    const verb = s.action === 'nudge' ? 'nudged' : (s.action === 'stop' ? 'stopped' : (s.action || 'acted'));
+    lines.push(`<div class="subagent-supervisor">supervisor: ${esc(verb)}${s.reason ? ` — ${esc(s.reason)}` : ''}</div>`);
+  }
+  const linesHtml = lines.length ? `<div class="subagent-lines">${lines.join('')}</div>` : '';
+  // Footer buttons.
+  const btns = [];
+  if (live && alive && w.sessionId) {
+    btns.push(w.stopRequested
+      ? `<button type="button" class="harness-btn harness-btn-mini harness-btn-danger" data-stop-worker="${esc(w.sessionId)}" disabled>Stopping…</button>`
+      : `<button type="button" class="harness-btn harness-btn-mini harness-btn-danger" data-stop-worker="${esc(w.sessionId)}" title="Stop this worker only">■ Stop</button>`);
+    btns.push(`<button type="button" class="harness-btn harness-btn-mini" data-steer-worker="${esc(w.sessionId)}" title="Send this worker a message (injected before its next round)">✎ Steer…</button>`);
+  }
+  if (w.sessionId) btns.push(`<a href="#${esc(w.sessionId)}" class="harness-btn harness-btn-mini subagent-chat-link" title="Open this worker's chat (${esc(w.sessionId)})">↗ Open chat</a>`);
+  const ok = w.status === 'done';
+  if (!alive && !ok && !isReviewer) btns.push(_rerunButtonHtml(w, streaming));
+  const foot = btns.length ? `<div class="subagent-foot subagent-actions">${btns.join(' ')}</div>` : '';
+  return head + instr + statsHtml + lastHtml + tailHtml + noteHtml + filesHtml + linesHtml + foot;
+}
+
+function _saPaintWorker(board, w, { live = true } = {}) {
+  const rows = board.querySelector('.subagent-rows');
+  if (!rows) return null;
+  let row = rows.querySelector(`[data-sa="${w.id}"]`);
+  if (!row) {
+    row = document.createElement('div');
+    row.dataset.sa = w.id;
+    rows.appendChild(row);
+  }
+  row.className = `subagent-row subagent-card ${_SA_ROW_CLASS[w.status] || 'is-running'}${_saLive(w) ? ' is-live' : ''}${w.stalled ? ' is-stalled' : ''}`;
+  row.dataset.instruction = w.instructionFull || w.instruction || '';
+  if (w.sessionId) row.dataset.sessionId = w.sessionId;
+  row.innerHTML = _saCardHtml(w, { live, streaming: _parentStreaming() });
+  return row;
+}
+
+function _saPaintHeader(board, st) {
+  const all = st.order.length;
+  let done = 0, running = 0, stalled = 0, queued = 0;
+  for (const id of st.order) {
+    const w = st.workers.get(id);
+    if (!w) continue;
+    if (!_saLive(w)) done += 1;
+    else if (w.status === 'queued') queued += 1;
+    else { running += 1; if (w.stalled) stalled += 1; }
+  }
+  const count = board.querySelector('.subagent-board-count');
+  if (count) count.textContent = ` ${done}/${all}`;
+  const summary = board.querySelector('.subagent-board-summary');
+  if (summary) {
+    const bits = [];
+    if (running) bits.push(`${running} running`);
+    if (queued) bits.push(`${queued} queued`);
+    if (stalled) bits.push(`${stalled} stalled`);
+    summary.textContent = bits.length ? ` · ${bits.join(' · ')}` : '';
+    if (summary.classList) summary.classList.toggle('is-stalled', stalled > 0);
+  }
+  if (all && done === all) board.dataset.open = '0';
+}
+
+function _saTick() {
+  const now = Date.now();
+  const streaming = _parentStreaming();
+  let busy = false;
+  try {
+    const st = _saState(_currentSessionId, false);
+    const cards = document.querySelectorAll('.subagent-card.is-live');
+    for (const card of cards) {
+      busy = true;
+      const w = st && st.workers.get(card.dataset.sa);
+      if (!w) continue;
+      const el = card.querySelector('.subagent-elapsed');
+      if (el) el.textContent = _fmtDur(_saElapsed(w, now));
+      const pill = card.querySelector('.subagent-pill');
+      if (pill) {
+        const p = _saPill(w, now);
+        pill.textContent = p.text;
+        pill.className = `subagent-pill is-${p.kind}`;
+        if (card.classList) card.classList.toggle('is-stalled', p.kind === 'stalled');
+      }
+    }
+    // Re-run buttons (live board AND restored history) follow the parent.
+    const reruns = document.querySelectorAll('[data-rerun-worker]');
+    for (const b of reruns) {
+      busy = true;
+      b.disabled = streaming;
+      b.title = streaming ? 'wait for the delegation to finish' : 'Delegate this task again (optionally with another model)';
+    }
+  } catch (_) { busy = false; }
+  if (!busy && _saTicker) { clearInterval(_saTicker); _saTicker = null; }
+}
+
+function _saEnsureTicker() {
+  if (_saTicker || typeof setInterval !== 'function') return;
+  _saTicker = setInterval(_saTick, 1000);
+}
 
 async function _stopWorker(button) {
   const sid = button.dataset.stopWorker;
   if (!sid) return;
   button.disabled = true;
   button.textContent = 'Stopping…';
+  const w = _saWorkerByChild(sid);
+  if (w) w.stopRequested = true;
   try {
     const r = await fetch(`${API_BASE}/api/chat/subagent/stop/${encodeURIComponent(sid)}`, { method: 'POST', credentials: 'same-origin' });
     const res = r.ok ? await r.json() : { stopped: false };
     button.textContent = res.stopped ? 'Stopped' : 'Not running';
-  } catch (_) { button.textContent = 'Stop failed'; button.disabled = false; }
+    if (!res.stopped && w) w.stopRequested = false;
+  } catch (_) { button.textContent = 'Stop failed'; button.disabled = false; if (w) w.stopRequested = false; }
+}
+
+function _saWorkerByChild(childSid) {
+  const st = _saState(_currentSessionId, false);
+  if (!st) return null;
+  for (const id of st.order) {
+    const w = st.workers.get(id);
+    if (w && w.sessionId === childSid) return w;
+  }
+  return null;
+}
+
+// "✎ Steer…": inject a message into a running worker (it lands before its
+// next round). The line is painted right away; the server's `steer` event
+// for the same text is folded into it.
+async function _steerWorker(button) {
+  const sid = button.dataset.steerWorker;
+  if (!sid) return;
+  let raw = null;
+  try { raw = window.prompt('Message for this worker (it is injected before its next round):', ''); } catch (_) { raw = null; }
+  if (raw === null) return;
+  const text = String(raw).trim();
+  if (!text) return;
+  button.disabled = true;
+  try {
+    const r = await fetch(`${API_BASE}/api/chat/subagent/steer/${encodeURIComponent(sid)}`, {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }),
+    });
+    if (r.status === 404) { _toast('This worker is not running any more'); return; }
+    if (!r.ok) { _toast('Steer failed'); return; }
+    const w = _saWorkerByChild(sid);
+    if (w) {
+      w.steers.push({ text, source: 'user', at: Date.now(), local: true });
+      const card = button.closest ? button.closest('.subagent-card') : null;
+      const board = card && card.closest ? card.closest('.subagent-board') : null;
+      if (board) _saPaintWorker(board, w);
+    }
+    _toast('Steered');
+  } catch (_) { _toast('Steer failed'); }
+  finally { button.disabled = false; }
 }
 
 // "Re-run" a worker (after a stop / error / partial): re-delegate that single
@@ -654,6 +1159,13 @@ function _rerunWorker(button) {
   let task;
   try { task = JSON.parse(button.dataset.rerunWorker || '{}'); } catch (_) { return; }
   if (!task.instruction) return;
+  // While the parent turn still streams, a new send would be turned into a
+  // Stop of the WHOLE delegation by chat.js (and the payload would stick to
+  // the user's next message). Refuse instead of killing the siblings.
+  if (_parentStreaming()) {
+    _toast('Wait for the delegation to finish before re-running a worker');
+    return;
+  }
   // Cancel returns null. Normalizing it to '' before the check made the guard
   // below dead code, so Cancel re-delegated the worker anyway — another GPU
   // generation, and its files rewritten.
@@ -667,72 +1179,33 @@ function _rerunWorker(button) {
   }
 }
 
-export function renderSubagentEvent(json) {
-  const sa = json.subagent || {};
-  const board = _boardFor();
-  if (!board) return;
-  const rows = board.querySelector('.subagent-rows');
-  let row = rows.querySelector(`[data-sa="${sa.id}"]`);
-  if (!row) {
-    row = document.createElement('div');
-    row.className = 'subagent-row is-running';
-    row.dataset.sa = sa.id;
-    row.innerHTML = `<div class="subagent-head"><span class="subagent-icon">◉</span><span class="subagent-name"></span><span class="subagent-meta"></span><span class="subagent-actions"></span></div><div class="subagent-last"></div>`;
-    rows.appendChild(row);
-  }
-  const isReviewer = sa.role === 'reviewer';
-  row.querySelector('.subagent-name').textContent = isReviewer ? `🔍 ${sa.name || 'reviewer'}` : `${(sa.index ?? 0) + 1}. ${sa.name || 'worker'}`;
-  const meta = row.querySelector('.subagent-meta');
-  const last = row.querySelector('.subagent-last');
-  const actions = row.querySelector('.subagent-actions');
-  const ev = sa.event;
-  if (ev === 'started') {
-    last.textContent = sa.instruction || '';
-    row.dataset.instruction = sa.instruction_full || sa.instruction || '';
-    if (sa.session_id) {
-      row.dataset.sessionId = sa.session_id;
-      meta.innerHTML = `<a href="#${esc(sa.session_id)}" class="subagent-chat-link" title="Open this worker's chat">chat ${esc(sa.session_id)}</a>`;
-      if (actions) actions.innerHTML = `<button type="button" class="harness-btn harness-btn-mini harness-btn-danger" data-stop-worker="${esc(sa.session_id)}" title="Stop this worker only">■ Stop</button>`;
-    }
-    const files = Array.isArray(sa.files) && sa.files.length ? ` · owns ${sa.files.map(f => f.split('/').pop()).join(', ')}` : '';
-    const model = sa.model ? ` · ${sa.model}` : '';
-    if (files || model) meta.innerHTML += `<span class="harness-muted">${esc(files)}${esc(model)}</span>`;
-  } else if (ev === 'tool') {
-    const n = (parseInt(row.dataset.tools || '0', 10) + (sa.phase === 'done' ? 1 : 0));
-    row.dataset.tools = String(n);
-    last.textContent = `${sa.phase === 'start' ? '▶' : (sa.ok === false ? '✗' : '✓')} ${sa.tool || ''} ${sa.command || sa.output || ''}`.trim();
-    const link = meta.querySelector('a');
-    meta.innerHTML = `${n} tool${n === 1 ? '' : 's'}` + (link ? ` · ${link.outerHTML}` : '');
-  } else if (ev === 'harness') {
-    last.textContent = `🛡 ${sa.status}${sa.reasons && sa.reasons.length ? ': ' + sa.reasons.join(', ') : ''}`;
-  } else if (ev === 'guard') {
-    last.textContent = `⚠ ${sa.kind}`;
-  } else if (ev === 'error') {
-    row.className = 'subagent-row is-error';
-    row.querySelector('.subagent-icon').textContent = '✗';
-    last.textContent = sa.message || 'error';
-  } else if (ev === 'done') {
-    const stopped = sa.stop_reason === 'stopped';
-    const ok = !sa.error && (sa.stop_reason === 'complete');
-    row.className = `subagent-row ${sa.error ? 'is-error' : (ok ? 'is-done' : 'is-partial')}`;
-    row.querySelector('.subagent-icon').textContent = sa.error ? '✗' : (ok ? '✓' : (stopped ? '■' : '◑'));
-    const files = (sa.mutations || []).length;
-    const link = meta.querySelector('a');
-    meta.innerHTML = `${sa.tool_calls || 0} tools${sa.failed_calls ? ` (${sa.failed_calls} failed)` : ''} · ${files ? `${files} file${files === 1 ? '' : 's'} changed` : 'no files changed'} · ${sa.duration_s || 0}s · ${esc(sa.stop_reason || '')}` + (link ? ` · ${link.outerHTML}` : '');
-    last.textContent = sa.final_text || '';
-    if (actions) {
-      const task = { name: sa.name, instruction: sa.instruction || row.dataset.instruction || '', files: sa.files || [], model: sa.model || '' };
-      actions.innerHTML = (!ok && !isReviewer && task.instruction)
-        ? `<button type="button" class="harness-btn harness-btn-mini" data-rerun-worker="${esc(JSON.stringify(task))}" title="Delegate this task again (optionally with another model)">↻ Re-run…</button>`
-        : '';
-    }
-  }
-  const all = rows.querySelectorAll('.subagent-row');
-  const done = rows.querySelectorAll('.subagent-row.is-done, .subagent-row.is-error, .subagent-row.is-partial').length;
-  board.querySelector('.subagent-board-count').textContent = ` ${done}/${all.length}`;
-  if (done === all.length && all.length) board.dataset.open = '0';
-  try { row.scrollIntoView({ block: 'nearest' }); } catch (_) {}
+/** Worker state from one persisted `tool_events[i].subagents[j]` record. */
+function _saFromPersisted(sa, i) {
+  const w = _saNewWorker(String(sa.id || sa.session_id || i), 0);
+  w.index = sa.index != null ? Number(sa.index) : i;
+  _saApply(w, Object.assign({}, sa, { event: 'done' }), 0);
+  if (sa.stop_reason == null && !sa.error && sa.status === 'done') w.status = 'done';
+  return w;
 }
+
+/** Restored history (chatRenderer): the board of a finished delegate_agents
+ *  call, rebuilt from the persisted evidence — role, model, tokens, files,
+ *  elapsed, steer / supervisor lines, Re-run with the persisted instruction. */
+export function restoredSubagentBoardHtml(subagents) {
+  const list = Array.isArray(subagents) ? subagents : [];
+  if (!list.length) return '';
+  const streaming = _parentStreaming();
+  const cards = list.map((sa, i) => {
+    const w = _saFromPersisted(sa || {}, i);
+    return `<div class="subagent-row subagent-card ${_SA_ROW_CLASS[w.status] || 'is-partial'}" data-sa="${esc(w.id)}"${w.sessionId ? ` data-session-id="${esc(w.sessionId)}"` : ''}>${_saCardHtml(w, { live: false, streaming })}</div>`;
+  }).join('');
+  const doneN = list.filter(sa => sa && !sa.error && sa.stop_reason === 'complete').length;
+  _saEnsureTicker();
+  return `<div class="subagent-restored subagent-board-v3"><div class="subagent-restored-title">🤖 Sub-agents ${doneN}/${list.length}</div><div class="subagent-rows subagent-cards">${cards}</div></div>`;
+}
+
+/** Pure helpers, exposed for the node-based tests. */
+export const _subagentInternals = { apply: _saApply, newWorker: _saNewWorker, elapsed: _saElapsed, pill: _saPill, cardHtml: _saCardHtml, fmtDur: _fmtDur, boards: _saBoards };
 
 // ── Progress panel ──────────────────────────────────────────────────────────
 
@@ -914,7 +1387,7 @@ export function handleStreamEvent(json, { sessionId = null } = {}) {
     case 'queue_status': renderQueueStatus(json); return true;
     case 'context_ledger': renderContextLedger(json); return true;
     case 'tool_progress':
-      if (json.subagent) { renderSubagentEvent(json); return true; }
+      if (json.subagent) { renderSubagentEvent(json, { sessionId }); return true; }
       return false;
     default: return false;
   }
@@ -949,6 +1422,7 @@ export function init(apiBase) {
       ['[data-review-all]', _reviewAll],
       ['[data-stop-worker]', _stopWorker],
       ['[data-rerun-worker]', _rerunWorker],
+      ['[data-steer-worker]', _steerWorker],
     ];
     for (const [sel, fn] of handlers) {
       const b = e.target.closest(sel);
@@ -961,6 +1435,6 @@ export function init(apiBase) {
   });
 }
 
-const agentHarnessUI = { init, handleStreamEvent, renderHarnessCheck, renderHarnessSummary, renderProgress, restoreProgress, clearProgress, renderSubagentEvent, renderQueueStatus, noteMutations, turnFilesRowHtml, restoredTurnFilesRow };
+const agentHarnessUI = { init, handleStreamEvent, renderHarnessCheck, renderHarnessSummary, renderProgress, restoreProgress, clearProgress, renderSubagentEvent, restoreSubagentBoard, restoredSubagentBoardHtml, subagentBoardState, renderQueueStatus, noteMutations, turnFilesRowHtml, restoredTurnFilesRow };
 window.agentHarnessUI = agentHarnessUI;
 export default agentHarnessUI;
