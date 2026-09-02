@@ -50,7 +50,6 @@ import sys
 import threading
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from src.settings import get_setting
 from src.tool_capabilities import (
     ALWAYS_APPROVE_TOOLS,
     desktop_control_mode,
@@ -505,7 +504,8 @@ class WindowsBackend(DesktopBackend):
     def _vk_for(self, key: str) -> int:
         if key in self._VK:
             return self._VK[key]
-        code = int(self.user32.VkKeyScanW(ord(key)))
+        self.user32.VkKeyScanW.restype = self.ctypes.c_short
+        code = int(self.user32.VkKeyScanW(self.ctypes.c_wchar(key)))
         if code == -1:
             raise DesktopError(f"no virtual key for {key!r} on this keyboard layout")
         return code & 0xFF
@@ -533,11 +533,16 @@ class LinuxBackend(DesktopBackend):
         self.wmctrl = shutil.which("wmctrl")
 
     def available(self) -> Tuple[bool, str]:
+        # Capture needs only a display; input additionally needs xdotool, which
+        # each input method checks so a box without it can still screenshot.
         if not os.environ.get("DISPLAY"):
             return False, "no X display (DISPLAY is not set — headless session or Wayland without XWayland)"
-        if not self.xdotool:
-            return False, "xdotool is not installed (apt install xdotool) — needed for desktop input on Linux"
         return True, ""
+
+    def _need_xdotool(self) -> str:
+        if not self.xdotool:
+            raise DesktopError("xdotool is not installed (apt install xdotool) — needed for desktop input on Linux")
+        return self.xdotool
 
     def _run(self, *args: str, timeout: float = 10.0) -> str:
         try:
@@ -561,11 +566,10 @@ class LinuxBackend(DesktopBackend):
         return _grab(region, all_screens=False)
 
     def list_windows(self) -> List[Dict[str, Any]]:
-        if not self.xdotool:
-            raise DesktopError("xdotool is not installed")
+        xdotool = self._need_xdotool()
         active = ""
         try:
-            active = self._run(self.xdotool, "getactivewindow").strip()
+            active = self._run(xdotool, "getactivewindow").strip()
         except DesktopError:
             pass
         out: List[Dict[str, Any]] = []
@@ -585,10 +589,10 @@ class LinuxBackend(DesktopBackend):
                 except ValueError:
                     continue
             return out
-        ids = self._run(self.xdotool, "search", "--onlyvisible", "--name", "").split()
+        ids = self._run(xdotool, "search", "--onlyvisible", "--name", "").split()
         for wid in ids:
             try:
-                title = self._run(self.xdotool, "getwindowname", wid).strip()
+                title = self._run(xdotool, "getwindowname", wid).strip()
             except DesktopError:
                 continue
             if not title:
@@ -602,19 +606,19 @@ class LinuxBackend(DesktopBackend):
         if not matches:
             raise DesktopError(f"no visible window title contains {title!r}")
         target = matches[0]
-        self._run(self.xdotool, "windowactivate", "--sync", str(target["handle"]))
+        self._run(self._need_xdotool(), "windowactivate", "--sync", str(target["handle"]))
         return target
 
     def click(self, x: int, y: int, button: str) -> None:
         code = {"left": "1", "middle": "2", "right": "3", "double": "1"}[button]
-        args = [self.xdotool, "mousemove", str(x), str(y), "click"]
+        args = [self._need_xdotool(), "mousemove", str(x), str(y), "click"]
         if button == "double":
             args += ["--repeat", "2", "--delay", "80"]
         args.append(code)
         self._run(*args)
 
     def type_text(self, text: str) -> None:
-        self._run(self.xdotool, "type", "--delay", "12", "--", text, timeout=60)
+        self._run(self._need_xdotool(), "type", "--delay", "12", "--", text, timeout=60)
 
     _X_KEYS = {"ctrl": "ctrl", "alt": "alt", "shift": "shift", "win": "super", "enter": "Return",
                "tab": "Tab", "escape": "Escape", "space": "space", "backspace": "BackSpace",
@@ -625,11 +629,11 @@ class LinuxBackend(DesktopBackend):
 
     def key_combo(self, keys: Sequence[str]) -> None:
         combo = "+".join(self._X_KEYS.get(k, k.upper() if k.startswith("f") and k[1:].isdigit() else k) for k in keys)
-        self._run(self.xdotool, "key", "--", combo)
+        self._run(self._need_xdotool(), "key", "--", combo)
 
     def scroll(self, x: int, y: int, dy: int) -> None:
         button = "5" if dy > 0 else "4"
-        self._run(self.xdotool, "mousemove", str(x), str(y), "click", "--repeat", str(abs(int(dy))), "--delay", "30", button)
+        self._run(self._need_xdotool(), "mousemove", str(x), str(y), "click", "--repeat", str(abs(int(dy))), "--delay", "30", button)
 
 
 # ── macOS (ImageGrab + optional pyautogui) ────────────────────────────────

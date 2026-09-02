@@ -42,7 +42,7 @@ from src.tool_capabilities import (
     capabilities_for_tool,
     tool_requires_per_call_approval,
 )
-from src.tool_execution import NO_TOOL_SECURITY_CONTEXT, execute_tool_block
+
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -136,23 +136,40 @@ def _settings(monkeypatch):
     def _get(key, default=None):
         return values.get(key, default)
 
+    import importlib
+
     import src.tool_capabilities as tc
-    import src.tool_execution as te
-    from src import tool_images
+    from src import tool_images, tool_security
+    # Other tests importlib.reload() src.tool_execution: patch the module
+    # object that is current *now*, not the one bound at collection.
+    te = importlib.import_module("src.tool_execution")
     monkeypatch.setattr(dt, "get_setting", _get, raising=False)
     monkeypatch.setattr(tc, "get_setting", _get, raising=False)
     monkeypatch.setattr(tool_images, "get_setting", _get, raising=False)
     # The desktop tools are admin/single-user only (see test_non_admin_blocked);
     # the dispatch tests below exercise them as the owner of the box.
     monkeypatch.setattr(te, "_owner_is_admin", lambda owner: True)
+    monkeypatch.setattr(tool_security, "owner_is_admin_or_single_user", lambda owner: True)
     return values
+
+
+def _te():
+    """src.tool_execution as it is *now* (other tests reload it, which also
+    replaces the NO_TOOL_SECURITY_CONTEXT sentinel)."""
+    import importlib
+
+    return importlib.import_module("src.tool_execution")
+
+
+def _execute(*args, **kwargs):
+    return _te().execute_tool_block(*args, **kwargs)
 
 
 def _run(tool, args=None, **kw):
     content = json.dumps(args) if isinstance(args, dict) else (args or "{}")
-    return asyncio.run(execute_tool_block(
+    return asyncio.run(_execute(
         ToolBlock(tool, content),
-        security_context=kw.pop("security_context", NO_TOOL_SECURITY_CONTEXT),
+        security_context=kw.pop("security_context", _te().NO_TOOL_SECURITY_CONTEXT),
         **kw,
     ))
 
@@ -556,7 +573,7 @@ def test_unknown_mode_falls_back_to_ask_each(_settings):
 @pytest.mark.asyncio
 async def test_dispatcher_blocks_control_tool_without_approval(backend):
     ctx = ToolRunSecurityContext()
-    desc, result = await execute_tool_block(
+    desc, result = await _execute(
         ToolBlock("desktop_click", '{"x": 1, "y": 1}'), security_context=ctx,
     )
     assert result["blocked"] is True
@@ -582,14 +599,14 @@ async def test_exact_approval_runs_control_tool_in_unarmed_run(backend):
     )
     approval = store.consume(pending.approval_id, decision="approve_task", owner="alice", session_id="s1")
     assert approval is not None
-    desc, result = await execute_tool_block(
+    desc, result = await _execute(
         ToolBlock("desktop_click", content), owner="alice", session_id="s1",
         security_context=ctx, exact_approval=approval,
     )
     assert result.get("exit_code") == 0, result
     assert backend.calls == [("click", 1, 2, "left")]
     # A second, un-approved call is gated again (ask_each).
-    desc, result = await execute_tool_block(
+    desc, result = await _execute(
         ToolBlock("desktop_click", content), owner="alice", session_id="s1", security_context=ctx,
     )
     assert result.get("blocked") is True
@@ -609,7 +626,7 @@ async def test_exact_approval_for_other_tools_still_requires_armed_run():
         capabilities=capabilities_for_action("bash", "echo hi"),
     )
     approval = store.consume(pending.approval_id, decision="approve_task", owner="alice", session_id="s1")
-    desc, result = await execute_tool_block(
+    desc, result = await _execute(
         ToolBlock("bash", "echo hi"), owner="alice", session_id="s1",
         security_context=ctx, exact_approval=approval,
     )
@@ -627,3 +644,48 @@ def test_function_call_conversion_keeps_json_args():
     assert json.loads(block.content) == {"x": 10, "y": 20, "button": "right"}
     block = function_call_to_tool_block("desktop_screenshot", "")
     assert block.tool_type == "desktop_screenshot"
+
+
+# ── intent seed, prompt rules, offer/execute coherence ─────────────────────
+
+def test_desktop_intent_seeds_the_domain_in_spanish_and_english():
+    from src.agent_loop import _DOMAIN_RULES, _DOMAIN_TOOL_MAP, _classify_agent_request
+
+    assert _DOMAIN_TOOL_MAP["desktop"] == frozenset(DESKTOP_TOOLS)
+    assert "desktop_screenshot" in _DOMAIN_RULES["desktop"]
+    for text in [
+        "haz una captura de pantalla y dime qué ves",
+        "take a screenshot of my screen",
+        "qué ventanas hay abiertas ahora mismo",
+        "click on the Save button you see on the screen",
+    ]:
+        intent = _classify_agent_request([{"role": "user", "content": text}], text)
+        assert "desktop" in intent["domains"], text
+    for text in ["build a desktop app in electron", "write a window function in sql"]:
+        intent = _classify_agent_request([{"role": "user", "content": text}], text)
+        assert "desktop" not in intent["domains"], text
+
+
+def test_offered_control_tool_is_an_approval_not_a_block(_settings):
+    """Coherence: a round that offers desktop_click can run it — the gate
+    answers with an approval card, never with a BLOCKED denial."""
+    from src.agent_loop import _denial_for_tool
+
+    assert _denial_for_tool("desktop_click", disabled_tools=set()) is None
+    decision = ToolRunSecurityContext().decision_for("desktop_click", '{"x": 1, "y": 1}')
+    assert decision.allowed is False and decision.reason  # -> approval card path
+
+
+def test_off_mode_removes_control_tools_from_both_surfaces(_settings, backend):
+    """When pruned (mode off), neither the prompt sections nor the schema
+    list offer the control tools; the read tools stay."""
+    from src.agent_loop import TOOL_SECTIONS, _assemble_prompt
+    from src.tool_preflight import PreflightContext, prune_for_turn
+
+    _settings["desktop_control_mode"] = "off"
+    pruned = prune_for_turn(PreflightContext(tools=frozenset(DESKTOP_TOOLS)))
+    prompt = _assemble_prompt(set(TOOL_SECTIONS), set(pruned))
+    for name in CONTROL_TOOLS:
+        assert f"```{name}```" not in prompt, name
+    assert "```desktop_screenshot```" in prompt
+    assert "```desktop_list_windows```" in prompt
