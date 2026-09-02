@@ -425,18 +425,18 @@ async def test_max_parallel_queues_workers_and_timeout_ignores_queue_time(delega
         concurrent["now"] += 1
         concurrent["max"] = max(concurrent["max"], concurrent["now"])
         try:
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(0.6)
         finally:
             concurrent["now"] -= 1
         yield _harness_summary([])
         yield "data: [DONE]\n\n"
     delegation(_loop)
     events = []
-    # 0.3 s queued + 0.3 s running > 0.5 s: only a timeout that starts at
+    # 0.6 s queued + 0.6 s running > 1.0 s: only a timeout that starts at
     # `started` lets the second worker finish.
     result = await asyncio.wait_for(_delegate([{"name": "a", "instruction": "one"},
                                                {"name": "b", "instruction": "two"}], events,
-                                              parallel=True, timeout_s=0.5), 10)
+                                              parallel=True, timeout_s=1.0), 10)
     assert concurrent["max"] == 1
     by_name = {}
     for e in events:
