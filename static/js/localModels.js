@@ -10,8 +10,14 @@
 //        page re-attaches to whatever /pulls still lists — a pull is a server
 //        job, closing the tab does not stop it
 //   POST /api/local-models/load|unload, DELETE /api/local-models/{name}
-//   PUT  /api/local-models/{name}/options    num_ctx / num_gpu / keep_alive
+//   PUT  /api/local-models/{name}/options    num_ctx / num_gpu / keep_alive / main_gpu
 //   GET  /api/local-models/discover?q=       curated catalogue with fit badges
+//
+// With more than one card the `vram` block carries the pool (`count`,
+// `gpus[]`), the loaded rows say where each model sits (`placement`,
+// `gpus`, `per_gpu`), a fit verdict can be `split` (bigger than any one
+// card, fits the pool) and the options form offers `main_gpu` to pin a
+// model to a card (the top-level `gpus[]` lists them).
 //
 // The render functions are pure (HTML in, HTML out) so
 // tests/test_local_models_js.py can run them under node without a DOM;
@@ -66,11 +72,25 @@ export function fmtDate(iso) {
   catch (_) { return String(iso).slice(0, 10); }
 }
 
-const FIT_WORD = { fits: 'fits', tight: 'tight', over: 'no fit' };
+/** "NVIDIA GeForce RTX 4070 Ti" → "RTX 4070 Ti" where the card is named in
+ *  a chip or an option label. */
+export function shortGpuName(name) { return String(name == null ? '' : name).replace(/^NVIDIA GeForce /, ''); }
 
-/** Size + fit verdict, the same three states (and colours) as the picker. */
+/** `GPU 0 — RTX 4070 Ti (12 GB)`: the label of a card in the main_gpu select. */
+export function gpuOptionLabel(g) {
+  const total = Number(g && g.total_bytes) || 0;
+  const name = shortGpuName(g && g.name) || 'GPU';
+  return `GPU ${g && g.index != null ? g.index : '?'} — ${name}${total ? ` (${Math.round(total / GIB)} GB)` : ''}`;
+}
+
+const FIT_WORD = { fits: 'fits', tight: 'tight', over: 'no fit', split: 'split' };
+
+/** Size + fit verdict, the same three states (and colours) as the picker,
+ *  plus `split`: bigger than any one card, fits the pool, so Ollama spreads
+ *  it across the cards. */
 export function fitBadgeHtml(fit, sizeBytes) {
-  const state = fit && fit.state ? String(fit.state) : '';
+  let state = fit && fit.state ? String(fit.state) : '';
+  if (fit && fit.split && state && state !== 'over') state = 'split';
   const size = fmtGb(sizeBytes);
   const word = FIT_WORD[state] || '';
   const title = (fit && fit.note) || `${size} on disk. Approximate — the KV cache grows on top of it with the context window.`;
@@ -97,6 +117,37 @@ export function capsHtml(caps) {
 
 // ── sections ────────────────────────────────────────────────────────────────
 
+/** One card of the pool (`vram.gpus[]`): its own models / other / free bar
+ *  under the pool bar, with the models resident on it. `models_bytes` null
+ *  (not measurable on this platform) → a single "used" segment. */
+function _vramGpuHtml(g) {
+  const total = Number(g.total_bytes) || 0;
+  const used = Math.max(0, Number(g.used_bytes) || 0);
+  const measured = g.models_bytes != null;
+  const models = measured ? Math.max(0, Number(g.models_bytes) || 0) : 0;
+  const others = measured ? Math.max(0, Number(g.other_bytes != null ? g.other_bytes : used - models) || 0) : 0;
+  const free = Math.max(0, total - used);
+  const pct = v => (total ? Math.max(0, Math.min(100, 100 * v / total)) : 0);
+  const names = (g.models || []).filter(Boolean).join(', ');
+  const idx = g.index != null ? g.index : '?';
+  const segs = measured
+    ? `<span class="lm-vram-seg lm-vram-models" style="width:${pct(models).toFixed(1)}%" title="Models on this card${names ? ': ' + attr(names) : ''}"></span>` +
+      `<span class="lm-vram-seg lm-vram-other" style="width:${pct(others).toFixed(1)}%" title="Other processes on this card"></span>`
+    : `<span class="lm-vram-seg lm-vram-used" style="width:${pct(used).toFixed(1)}%" title="In use on this card${names ? ' (' + attr(names) + ')' : ''} — per-model bytes are not measurable here"></span>`;
+  const label = measured
+    ? `GPU ${idx}: ${fmtGb(models)} models, ${fmtGb(others)} other, ${fmtGb(free)} free`
+    : `GPU ${idx}: ${fmtGb(used)} used, ${fmtGb(free)} free`;
+  return `
+    <div class="lm-vram-gpu" data-lm-gpu="${attr(idx)}">
+      <div class="lm-vram-head">
+        <span class="lm-vram-name">GPU ${esc(idx)} · ${esc(shortGpuName(g.name) || 'GPU')}</span>
+        <span class="lm-vram-nums">${esc(fmtGb(used))} of ${esc(fmtGb(total))} used · ${esc(fmtGb(free))} free</span>
+      </div>
+      <div class="lm-vram-bar" role="img" aria-label="${attr(label)}">${segs}</div>
+      <div class="lm-vram-gpu-models lm-muted">${names ? esc(names) : 'nothing loaded on this card'}${g.budget_bytes != null ? ` · budget ${esc(fmtGb(g.budget_bytes))}` : ''}</div>
+    </div>`;
+}
+
 export function renderVramHtml(vram, loaded = []) {
   if (!vram || !vram.supported) {
     const why = vram && vram.reason ? ` ${esc(vram.reason)}` : '';
@@ -108,9 +159,12 @@ export function renderVramHtml(vram, loaded = []) {
   const pct = v => (total ? Math.max(0, Math.min(100, 100 * v / total)) : 0);
   const free = Math.max(0, total - runner - others);
   const names = (loaded || []).map(m => m.name).filter(Boolean).join(', ');
+  const count = Number(vram.count) || 0;
+  const cards = count > 1 && Array.isArray(vram.gpus) ? vram.gpus : [];
+  const multi = count > 1;
   return `
     <div class="lm-vram-head">
-      <span class="lm-vram-name">${esc(vram.name || 'GPU')}</span>
+      <span class="lm-vram-name">${esc(vram.name || 'GPU')}${multi ? ` · ${count} GPUs` : ''}</span>
       <span class="lm-vram-nums">${esc(fmtGb(runner + others))} of ${esc(fmtGb(total))} used · ${esc(fmtGb(free))} free</span>
     </div>
     <div class="lm-vram-bar" role="img" aria-label="VRAM: ${attr(fmtGb(runner))} models, ${attr(fmtGb(others))} other, ${attr(fmtGb(free))} free">
@@ -120,12 +174,45 @@ export function renderVramHtml(vram, loaded = []) {
     <div class="lm-vram-legend">
       <span><i class="lm-vram-dot lm-vram-models"></i>models ${esc(fmtGb(runner))}</span>
       <span><i class="lm-vram-dot lm-vram-other"></i>other ${esc(fmtGb(others))}</span>
-      <span title="CUDA context, cuBLAS workspace and compute buffers, gone before a single weight is loaded.">reserve ${esc(fmtGb(vram.reserve_bytes))}</span>
-      <span title="What a model's weights can take right now, KV cache not included.">budget ${esc(fmtGb(vram.budget_bytes))}</span>
-    </div>`;
+      <span title="CUDA context, cuBLAS workspace and compute buffers, gone before a single weight is loaded${multi ? ' — one per card' : ''}.">reserve ${esc(fmtGb(vram.reserve_bytes))}${multi ? ` × ${count}` : ''}</span>
+      <span title="What a model's weights can take right now, KV cache not included${multi ? ' — across the pool' + (vram.largest_single_budget_bytes != null ? '; a single card takes up to ' + attr(fmtGb(vram.largest_single_budget_bytes)) : '') : ''}.">budget ${esc(fmtGb(vram.budget_bytes))}</span>
+    </div>${cards.map(_vramGpuHtml).join('')}${multi ? `
+    <div class="lm-vram-note lm-muted">Ollama places each model on the card with the most free memory and splits a model across cards only when it does not fit one; pin a card per model in Options… (main_gpu). OLLAMA_SCHED_SPREAD=1 on the Ollama server spreads every model.</div>` : ''}`;
 }
 
-export function renderLoadedHtml(loaded, { isAdmin = false, endpointId = '' } = {}) {
+/** Where a loaded model sits, as a chip: `GPU 1 · RTX 5060 Ti`,
+ *  `split #0 8.5 GB + #1 10.2 GB`, `CPU`; '' when the server did not say
+ *  (an older server, or placement unknown). `gpus` is the card list
+ *  (`[{index, name, total_bytes}]`) used to name the card. */
+export function placementChipHtml(m, gpus = []) {
+  const p = m && m.placement;
+  if (!p || p === 'unknown') return '';
+  const cardName = idx => {
+    const g = (gpus || []).find(x => x && x.index === idx);
+    return g ? shortGpuName(g.name) : '';
+  };
+  if (p === 'cpu') {
+    return `<span class="lm-place lm-place-cpu" title="No weights on a GPU: the model runs on the CPU.">CPU</span>`;
+  }
+  if (p === 'single') {
+    const idx = Array.isArray(m.gpus) && m.gpus.length ? m.gpus[0] : null;
+    if (idx == null) return '';
+    const name = cardName(idx);
+    const text = `GPU ${idx}${name ? ` · ${name}` : ''}`;
+    return `<span class="lm-place lm-place-single" title="Resident on GPU ${attr(idx)}${name ? ' (' + attr(name) + ')' : ''}: the card with the most free memory when it loaded, or the card its main_gpu option pins.">${esc(text)}</span>`;
+  }
+  if (p === 'split') {
+    const parts = Array.isArray(m.per_gpu) && m.per_gpu.length
+      ? m.per_gpu
+      : (Array.isArray(m.gpus) ? m.gpus : []).map(i => ({ index: i }));
+    if (!parts.length) return '';
+    const text = `split ${parts.map(x => `#${x.index}${x.bytes != null ? ` ${fmtGb(x.bytes)}` : ''}`).join(' + ')}`;
+    return `<span class="lm-place lm-place-split" title="Bigger than any one card: Ollama split the weights across ${parts.length} GPUs (${attr(parts.map(x => `#${x.index}${cardName(x.index) ? ' ' + cardName(x.index) : ''}`).join(', '))}). Layers cross the PCIe bus between the cards, slower than a single card but far faster than the CPU.">${esc(text)}</span>`;
+  }
+  return '';
+}
+
+export function renderLoadedHtml(loaded, { isAdmin = false, endpointId = '', gpus = [] } = {}) {
   if (!loaded || !loaded.length) {
     return '<div class="admin-empty">Nothing is loaded right now.</div>';
   }
@@ -135,6 +222,7 @@ export function renderLoadedHtml(loaded, { isAdmin = false, endpointId = '' } = 
     const split = spill
       ? `<span class="lm-split lm-split-spill" title="${attr(fmtGb(m.size_cpu))} of the weights are in system RAM — expect PCIe paging and a fraction of the speed.">${gpu}% GPU · ${100 - gpu}% CPU</span>`
       : '<span class="lm-split">100% GPU</span>';
+    const place = placementChipHtml(m, gpus);
     const ctx = m.context_length ? `<span class="lm-muted" title="Context window it was loaded with">ctx ${esc(fmtCtx(m.context_length))}</span>` : '';
     const until = untilText(m.expires_at);
     const unload = isAdmin
@@ -145,7 +233,7 @@ export function renderLoadedHtml(loaded, { isAdmin = false, endpointId = '' } = 
         <div class="lm-loaded-main">
           <span class="lm-name">${esc(m.name)}</span>
           <span class="lm-muted">${esc(fmtGb(m.size))} resident · ${esc(fmtGb(m.size_vram))} VRAM</span>
-          ${split}
+          ${place ? place + '\n          ' : ''}${split}
           ${ctx}
           ${until ? `<span class="lm-muted lm-until" title="${attr(m.expires_at)}">${esc(until)}</span>` : ''}
         </div>
@@ -160,11 +248,33 @@ function _optionsSummary(opts) {
   const bits = [];
   if (opts.num_ctx != null) bits.push(`ctx ${fmtCtx(opts.num_ctx)}`);
   if (opts.num_gpu != null) bits.push(`gpu ${opts.num_gpu}`);
+  if (opts.main_gpu != null && opts.main_gpu !== '') bits.push(`gpu #${opts.main_gpu}`);
   if (opts.keep_alive != null && opts.keep_alive !== '') bits.push(`keep ${opts.keep_alive}`);
   return bits.join(' · ');
 }
 
-export function renderOptionsFormHtml(model) {
+/** The main_gpu select: Auto (value "", the server clears the key) and one
+ *  option per card. Rendered when there is a choice to make — more than one
+ *  card, or a pin already saved that the admin may want to clear. */
+function _mainGpuSelectHtml(o, gpus) {
+  const cards = (gpus || []).filter(g => g && g.index != null);
+  const raw = o.main_gpu == null || o.main_gpu === '' ? null : Number(o.main_gpu);
+  const saved = Number.isFinite(raw) ? raw : null;
+  if (cards.length < 2 && saved == null) return '';
+  const opts = [`<option value=""${saved == null ? ' selected' : ''}>Auto — Ollama picks the freest card, splits when needed</option>`];
+  cards.forEach(g => {
+    opts.push(`<option value="${attr(g.index)}"${saved === Number(g.index) ? ' selected' : ''}>${esc(gpuOptionLabel(g))}</option>`);
+  });
+  if (saved != null && !cards.some(g => Number(g.index) === saved)) {
+    opts.push(`<option value="${attr(saved)}" selected>GPU ${esc(saved)} — not listed on this endpoint</option>`);
+  }
+  return `
+      <label>main_gpu<span class="lm-muted"> (pin to a card)</span>
+        <select name="main_gpu">${opts.join('')}</select>
+      </label>`;
+}
+
+export function renderOptionsFormHtml(model, gpus = []) {
   const o = (model && model.options) || {};
   const name = model && model.name ? model.name : '';
   const maxCtx = model && model.context_length ? ` (model max ${fmtCtx(model.context_length)})` : '';
@@ -175,7 +285,7 @@ export function renderOptionsFormHtml(model) {
       </label>
       <label>num_gpu<span class="lm-muted"> (layers on the GPU)</span>
         <input type="number" name="num_gpu" min="0" max="1024" step="1" placeholder="auto" value="${attr(o.num_gpu == null ? '' : o.num_gpu)}">
-      </label>
+      </label>${_mainGpuSelectHtml(o, gpus)}
       <label>keep_alive<span class="lm-muted"> (5m, 1h, -1 = forever)</span>
         <input type="text" name="keep_alive" placeholder="5m" value="${attr(o.keep_alive == null ? '' : o.keep_alive)}">
       </label>
@@ -187,7 +297,7 @@ export function renderOptionsFormHtml(model) {
     </form>`;
 }
 
-export function renderInstalledHtml(models, { isAdmin = false, endpointId = '', canSetDefault = true, optionsOpen = '' } = {}) {
+export function renderInstalledHtml(models, { isAdmin = false, endpointId = '', canSetDefault = true, optionsOpen = '', gpus = [] } = {}) {
   if (!models || !models.length) {
     return '<div class="admin-empty">No models installed on this endpoint yet — pull one below.</div>';
   }
@@ -212,12 +322,12 @@ export function renderInstalledHtml(models, { isAdmin = false, endpointId = '', 
       if (canSetDefault && !(m.capabilities && m.capabilities.embedding)) {
         actions.push(`<button type="button" class="admin-btn-sm" data-lm-action="default" data-lm-name="${attr(m.name)}" title="Make this the default chat model (Settings → AI Defaults)">Set default</button>`);
       }
-      actions.push(`<button type="button" class="admin-btn-sm${summary ? ' lm-has-options' : ''}" data-lm-action="options" data-lm-name="${attr(m.name)}" title="num_ctx / num_gpu / keep_alive defaults for this model">Options…</button>`);
+      actions.push(`<button type="button" class="admin-btn-sm${summary ? ' lm-has-options' : ''}" data-lm-action="options" data-lm-name="${attr(m.name)}" title="num_ctx / num_gpu / keep_alive / main_gpu defaults for this model">Options…</button>`);
       actions.push(`<button type="button" class="admin-btn-sm lm-danger" data-lm-action="delete" data-lm-name="${attr(m.name)}" title="Remove the model files from this Ollama">Delete</button>`);
     }
     const family = m.family || (m.families && m.families[0]) || '';
     const sub = [family, m.license, fmtDate(m.modified_at)].filter(Boolean).join(' · ');
-    const form = optionsOpen && optionsOpen === m.name ? renderOptionsFormHtml(m) : '';
+    const form = optionsOpen && optionsOpen === m.name ? renderOptionsFormHtml(m, gpus) : '';
     return `
       <div class="lm-row${m.loaded ? ' lm-loaded-now' : ''}" data-lm-model="${attr(m.name)}">
         <span class="lm-c-name">
@@ -301,6 +411,17 @@ export function renderDiscoverHtml(items, { isAdmin = false, q = '' } = {}) {
   return `<div class="lm-discover-list">${cards.join('')}</div>`;
 }
 
+/** The line under the Discover heading: what the fit badges were judged
+ *  against. Plain text (set through textContent). */
+export function discoverNoteText(vram) {
+  if (!vram || !vram.supported) {
+    return 'Sizes are approximate (the default build of each tag). No VRAM reading, so no fit verdict.';
+  }
+  const count = Number(vram.count) || 0;
+  const against = `${vram.name || 'your card'}${count > 1 ? ` (${count} GPUs)` : ''}`;
+  return `Sizes are approximate (the default build of each tag). Fit is against ${against} with nothing loaded: ${fmtGb(vram.clean_budget_bytes)} usable of ${fmtGb(vram.total_bytes)}.`;
+}
+
 export function renderEndpointOptionsHtml(endpoints, selected) {
   return (endpoints || []).map(ep => {
     const where = ep.same_machine ? 'this machine' : 'remote';
@@ -348,6 +469,15 @@ async function _json(url, opts = {}) {
   return body;
 }
 
+/** The cards of the endpoint (`[{index, name, total_bytes}]`): the route's
+ *  top-level `gpus[]`, else the ones inside the vram block. */
+function _cards(data) {
+  if (!data) return [];
+  if (Array.isArray(data.gpus)) return data.gpus;
+  if (data.vram && Array.isArray(data.vram.gpus)) return data.vram.gpus;
+  return [];
+}
+
 function _setStatus(text, isError = false) {
   const box = el('lm-status');
   if (!box) return;
@@ -365,10 +495,11 @@ function _renderAll() {
     sel.hidden = !(_data.endpoints && _data.endpoints.length > 1);
   }
   const ep = (_data.endpoints || []).find(e => e.id === _endpointId) || {};
+  const gpus = _cards(_data);
   const vram = el('lm-vram');
   if (vram) vram.innerHTML = renderVramHtml(_data.vram, _data.loaded);
   const loaded = el('lm-loaded');
-  if (loaded) loaded.innerHTML = renderLoadedHtml(_data.loaded, { isAdmin: admin, endpointId: _endpointId });
+  if (loaded) loaded.innerHTML = renderLoadedHtml(_data.loaded, { isAdmin: admin, endpointId: _endpointId, gpus });
   const installed = el('lm-installed');
   // The 8 s poll must not repaint the table while an options form is open:
   // the form is rendered from the saved values, so whatever the admin had
@@ -380,6 +511,7 @@ function _renderAll() {
       endpointId: _endpointId,
       canSetDefault: !!ep.id && ep.id !== 'ollama-local',
       optionsOpen: _optionsOpen,
+      gpus,
     });
     _installedFormFor = _optionsOpen;
   }
@@ -598,8 +730,9 @@ async function _action(action, btn) {
       case 'save-options': {
         const form = btn.closest('form');
         if (!form) return;
+        // Every key is sent, "" clears it on the server (main_gpu "" = Auto).
         const options = {};
-        ['num_ctx', 'num_gpu', 'keep_alive'].forEach(k => {
+        ['num_ctx', 'num_gpu', 'keep_alive', 'main_gpu'].forEach(k => {
           const input = form.querySelector(`[name="${k}"]`);
           options[k] = input ? String(input.value || '').trim() : '';
         });
@@ -652,11 +785,7 @@ async function _loadDiscover() {
     if (seq !== _discoverSeq) return;
     box.innerHTML = renderDiscoverHtml(data.items, { isAdmin: isAdmin(), q: _discoverQ });
     const note = el('lm-discover-note');
-    if (note) {
-      note.textContent = data.vram && data.vram.supported
-        ? `Sizes are approximate (the default build of each tag). Fit is against ${data.vram.name || 'your card'} with nothing loaded: ${fmtGb(data.vram.clean_budget_bytes)} usable of ${fmtGb(data.vram.total_bytes)}.`
-        : 'Sizes are approximate (the default build of each tag). No VRAM reading, so no fit verdict.';
-    }
+    if (note) note.textContent = discoverNoteText(data.vram);
   } catch (e) {
     if (seq !== _discoverSeq) return;
     box.innerHTML = `<div class="admin-empty">Could not load the catalogue: ${esc(e.message || e)}</div>`;

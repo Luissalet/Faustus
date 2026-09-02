@@ -71,6 +71,51 @@ _DISCOVER = {
     ],
 }
 
+MIB = 1024 ** 2
+
+# A two-card box: RTX 4070 Ti (12 GB) + RTX 5060 Ti (16 GB). qwen3.8:27b is
+# split 8.5 + 10.2 GB across both cards, qwen3.5:9b sits on GPU 1 alone.
+# The `vram` block is the pool; `vram.gpus[]` and the top-level `gpus[]`
+# describe the cards; every loaded row says where it lives.
+_GPUS2 = [
+    {"index": 0, "name": "NVIDIA GeForce RTX 4070 Ti", "total_bytes": 12282 * MIB},
+    {"index": 1, "name": "NVIDIA GeForce RTX 5060 Ti", "total_bytes": 16311 * MIB},
+]
+_VRAM2 = {
+    "supported": True, "name": "RTX 4070 Ti + RTX 5060 Ti", "count": 2,
+    "total_bytes": 28593 * MIB, "used_bytes": 25702 * MIB, "free_bytes": 2891 * MIB,
+    "held_by_runner_bytes": 24474 * MIB, "other_bytes": 1228 * MIB,
+    "reserve_bytes": 800 * MIB, "budget_bytes": int(1.8 * GIB), "clean_budget_bytes": 26993 * MIB,
+    "largest_single_budget_bytes": 2200 * MIB, "largest_single_clean_budget_bytes": 15511 * MIB,
+    "gpus": [
+        {"index": 0, "name": "NVIDIA GeForce RTX 4070 Ti", "uuid": "GPU-5ab72dd9", "total_bytes": 12282 * MIB,
+         "used_bytes": 9523 * MIB, "free_bytes": 2759 * MIB, "models_bytes": 8704 * MIB, "other_bytes": 819 * MIB,
+         "models": ["qwen3.8:27b-q4_K_M"], "budget_bytes": 1959 * MIB},
+        {"index": 1, "name": "NVIDIA GeForce RTX 5060 Ti", "uuid": "GPU-15d17fee", "total_bytes": 16311 * MIB,
+         "used_bytes": 16179 * MIB, "free_bytes": 132 * MIB, "models_bytes": None, "other_bytes": 0,
+         "models": ["qwen3.8:27b-q4_K_M", "qwen3.5:9b"], "budget_bytes": 0},
+    ],
+}
+_LOADED2 = [
+    {"name": "qwen3.8:27b-q4_K_M", "size": int(18.7 * GIB), "size_vram": int(18.7 * GIB), "size_cpu": 0, "gpu_pct": 100,
+     "expires_at": "2099-01-01T00:00:00Z", "context_length": 16384,
+     "gpus": [0, 1], "placement": "split", "per_gpu": [{"index": 0, "bytes": int(8.5 * GIB)}, {"index": 1, "bytes": int(10.2 * GIB)}]},
+    {"name": "qwen3.5:9b", "size": int(5.2 * GIB), "size_vram": int(5.2 * GIB), "size_cpu": 0, "gpu_pct": 100,
+     "context_length": 32768, "gpus": [1], "placement": "single", "per_gpu": [{"index": 1, "bytes": int(5.2 * GIB)}]},
+    {"name": "tiny:cpu", "size": 1 * GIB, "size_vram": 0, "size_cpu": 1 * GIB, "gpu_pct": 0,
+     "gpus": [], "placement": "cpu", "per_gpu": []},
+]
+_MODELS2 = [
+    {"name": "qwen3.8:27b-q4_K_M", "size": 17 * GIB, "digest": "ddd", "family": "qwen3", "parameter_size": "27B",
+     "quantization": "Q4_K_M", "capabilities": {"vision": False, "tools": True, "thinking": True, "embedding": False},
+     "context_length": 131072, "loaded": True, "options": {"num_ctx": 16384, "main_gpu": 1},
+     "fit": {"state": "fits", "split": True, "note": "Bigger than any one card: Ollama splits it across 2 GPUs (RTX 4070 Ti + RTX 5060 Ti)"}},
+    {"name": "qwen3.5:9b", "size": int(6.6 * GIB), "digest": "aaa", "family": "qwen3", "parameter_size": "9B",
+     "quantization": "Q4_K_M", "capabilities": {"tools": True}, "context_length": 262144, "loaded": True,
+     "options": {}, "fit": {"state": "fits", "split": False, "note": "room to spare"}},
+]
+_DATA2 = {**_DATA, "vram": _VRAM2, "loaded": _LOADED2, "models": _MODELS2, "gpus": _GPUS2}
+
 # The module with its exports turned into plain declarations and its two
 # imports replaced by globals, so node can run it as a script.
 _MODULE_SRC = (MODULE_JS
@@ -161,7 +206,8 @@ function click(attrs) { const btn = fakeBtn(attrs); root.fire('click', { target:
 
 
 def _run(script: str) -> dict:
-    src = _DOM_STUB + f"\nglobalThis.DATA = {json.dumps(_DATA)};\nglobalThis.DISCOVER = {json.dumps(_DISCOVER)};\n" + _MODULE_SRC + "\n" + script
+    src = (_DOM_STUB + f"\nglobalThis.DATA = {json.dumps(_DATA)};\nglobalThis.DATA2 = {json.dumps(_DATA2)};\n"
+           f"globalThis.DISCOVER = {json.dumps(_DISCOVER)};\n" + _MODULE_SRC + "\n" + script)
     proc = subprocess.run(["node", "--input-type=module"], input=src, capture_output=True, text=True, encoding="utf-8", timeout=60)
     assert proc.returncode == 0, proc.stderr
     return json.loads(proc.stdout.strip().splitlines()[-1])
@@ -218,8 +264,17 @@ def test_css_block_is_delimited_and_at_the_end():
     block = CSS[i:]
     assert "/* === " not in block[len("/* === local models === */"):], "appended as the last delimited block"
     for sel in (".lm-vram-bar", ".lm-fit-tight", ".lm-fit-over", ".lm-row", ".lm-options-form", ".lm-pull-bar",
-                ".lm-pull-indeterminate", ".lm-tag", ".lm-cap-vision", "@media (max-width: 720px)"):
+                ".lm-pull-indeterminate", ".lm-tag", ".lm-cap-vision", "@media (max-width: 720px)",
+                # multi-GPU: per-card bars, the placement chip, the split fit state, the main_gpu select
+                ".lm-vram-gpu", ".lm-vram-seg.lm-vram-used", ".lm-vram-note", ".lm-place", ".lm-place-split",
+                ".lm-place-cpu", ".lm-fit-split", ".lm-options-form select"):
         assert sel in block, sel
+    # split sits between fits and tight: dimmer than tight, brighter than fits
+    fits = block.split(".lm-fit-fits {", 1)[1].split("}", 1)[0]
+    split = block.split(".lm-fit-split {", 1)[1].split("}", 1)[0]
+    tight = block.split(".lm-fit-tight {", 1)[1].split("}", 1)[0]
+    op = lambda s: float(s.split("opacity:", 1)[1].split(";", 1)[0])  # noqa: E731
+    assert op(fits) < op(split) < op(tight)
 
 
 # ── the renderers under node ────────────────────────────────────────────────
@@ -310,6 +365,201 @@ def test_loaded_vram_pulls_and_discover_render():
     assert 'zzz' in out["discEmpty"] and 'exact name' in out["discEmpty"]
     assert out["eps"].count('<option') == 2 and 'value="lan" selected' in out["eps"] and 'this machine' in out["eps"]
     assert out["fmt"] == ['6.6 GB', '261 MB', '—', '256k', '900', 'kept loaded', 'unloading']
+
+
+# ── more than one card ──────────────────────────────────────────────────────
+
+@pytest.mark.skipif(not _HAS_NODE, reason="node not installed")
+def test_vram_block_renders_the_pool_then_a_bar_per_card():
+    out = _run("""
+      console.log(JSON.stringify({ vram: renderVramHtml(DATA2.vram, DATA2.loaded) }));
+    """)
+    vram = out["vram"]
+    # pool header + pool bar exactly as with one card
+    assert '<span class="lm-vram-name">RTX 4070 Ti + RTX 5060 Ti · 2 GPUs</span>' in vram
+    assert '25.1 GB of 27.9 GB used · 2.8 GB free' in vram
+    assert vram.index('lm-vram-legend') < vram.index('lm-vram-gpu')     # pool first, cards after
+    assert vram.count('class="lm-vram-bar"') == 3                        # pool + 2 cards
+    assert 'reserve 800 MB × 2' in vram and 'one per card' in vram
+    assert 'budget 1.8 GB' in vram and 'a single card takes up to 2.1 GB' in vram
+    # card 0: models / other / free with the short card name and its models
+    g0 = vram.split('data-lm-gpu="0"', 1)[1].split('data-lm-gpu="1"', 1)[0]
+    assert '<span class="lm-vram-name">GPU 0 · RTX 4070 Ti</span>' in g0
+    assert '9.3 GB of 12.0 GB used · 2.7 GB free' in g0
+    assert 'lm-vram-models" style="width:70.9%"' in g0 and 'lm-vram-other" style="width:6.7%"' in g0
+    assert 'qwen3.8:27b-q4_K_M · budget 1.9 GB' in g0
+    assert 'lm-vram-used' not in g0
+    # card 1: per-model bytes not measurable → one "used" segment, both models named
+    g1 = vram.split('data-lm-gpu="1"', 1)[1]
+    assert '<span class="lm-vram-name">GPU 1 · RTX 5060 Ti</span>' in g1
+    assert '15.8 GB of 15.9 GB used · 132 MB free' in g1
+    assert 'lm-vram-seg lm-vram-used" style="width:99.2%"' in g1
+    assert 'lm-vram-models' not in g1.split('lm-vram-gpu-models', 1)[0]
+    assert 'qwen3.8:27b-q4_K_M, qwen3.5:9b' in g1
+    # the placement note
+    assert 'lm-vram-note' in vram
+    assert 'Ollama places each model on the card with the most free memory and splits a model across cards only when it does not fit one; pin a card per model in Options… (main_gpu). OLLAMA_SCHED_SPREAD=1 on the Ollama server spreads every model.' in vram
+
+
+@pytest.mark.skipif(not _HAS_NODE, reason="node not installed")
+def test_one_card_vram_block_is_unchanged_by_the_pool_fields():
+    """A one-card box now also gets `count: 1, gpus: [one]` — it must render
+    exactly as before: no per-card bar, no `× 1`, no placement note."""
+    out = _run("""
+      const withPool = { ...DATA.vram, count: 1, gpus: [{ index: 0, name: DATA.vram.name, total_bytes: DATA.vram.total_bytes,
+                         used_bytes: 7 * 1073741824, free_bytes: 5 * 1073741824, models_bytes: 6 * 1073741824, other_bytes: 1073741824,
+                         models: ['qwen3.5:9b'], budget_bytes: DATA.vram.budget_bytes }] };
+      console.log(JSON.stringify({ before: renderVramHtml(DATA.vram, DATA.loaded), after: renderVramHtml(withPool, DATA.loaded) }));
+    """)
+    assert out["before"] == out["after"]
+    for absent in ("lm-vram-gpu", "× 1", "lm-vram-note", "GPUs", "one per card"):
+        assert absent not in out["after"], absent
+
+
+@pytest.mark.skipif(not _HAS_NODE, reason="node not installed")
+def test_loaded_rows_carry_a_placement_chip():
+    out = _run("""
+      console.log(JSON.stringify({
+        rows: renderLoadedHtml(DATA2.loaded, { isAdmin: true, gpus: DATA2.gpus }),
+        noCards: renderLoadedHtml(DATA2.loaded, { isAdmin: false }),
+        legacy: renderLoadedHtml(DATA.loaded, { isAdmin: true, gpus: DATA2.gpus }),
+        unknown: placementChipHtml({ placement: 'unknown', gpus: [] }, DATA2.gpus),
+      }));
+    """)
+    rows = out["rows"]
+    assert '<span class="lm-place lm-place-split" title="Bigger than any one card: Ollama split the weights across 2 GPUs (#0 RTX 4070 Ti, #1 RTX 5060 Ti).' in rows
+    assert '>split #0 8.5 GB + #1 10.2 GB</span>' in rows
+    assert '<span class="lm-place lm-place-single" title="Resident on GPU 1 (RTX 5060 Ti):' in rows
+    assert '>GPU 1 · RTX 5060 Ti</span>' in rows
+    assert '<span class="lm-place lm-place-cpu" title="No weights on a GPU: the model runs on the CPU.">CPU</span>' in rows
+    # the chip sits after the size, before the GPU/CPU split
+    row = rows.split('data-lm-loaded="qwen3.5:9b"', 1)[1].split('lm-loaded-row', 1)[0]
+    assert row.index('5.2 GB resident') < row.index('lm-place-single') < row.index('100% GPU')
+    # without a card list the chip still names the index
+    assert '>GPU 1</span>' in out["noCards"] and 'RTX 5060 Ti' not in out["noCards"]
+    # rows from a server without placement get no chip at all
+    assert 'lm-place' not in out["legacy"]
+    assert out["unknown"] == ""
+
+
+@pytest.mark.skipif(not _HAS_NODE, reason="node not installed")
+def test_fit_badge_gets_a_fourth_state_for_split():
+    out = _run("""
+      console.log(JSON.stringify({
+        split: fitBadgeHtml({ state: 'fits', split: true, note: 'Bigger than any one card: Ollama splits it across 2 GPUs (RTX 4070 Ti + RTX 5060 Ti)' }, 17 * 1073741824),
+        splitState: fitBadgeHtml({ state: 'split', note: 'n' }, 17 * 1073741824),
+        tightSplit: fitBadgeHtml({ state: 'tight', split: true, note: 'n' }, 17 * 1073741824),
+        overSplit: fitBadgeHtml({ state: 'over', split: true, note: 'n' }, 30 * 1073741824),
+        plain: fitBadgeHtml({ state: 'fits', split: false, note: 'room' }, 6 * 1073741824),
+        table: renderInstalledHtml(DATA2.models, { isAdmin: false, gpus: DATA2.gpus }),
+      }));
+    """)
+    assert out["split"] == '<span class="lm-fit lm-fit-split" title="Bigger than any one card: Ollama splits it across 2 GPUs (RTX 4070 Ti + RTX 5060 Ti)">17.0 GB · split</span>'
+    assert 'lm-fit-split' in out["splitState"] and '17.0 GB · split' in out["splitState"]
+    assert 'lm-fit-split' in out["tightSplit"]
+    assert 'lm-fit-over' in out["overSplit"] and 'no fit' in out["overSplit"]     # over is over, split or not
+    assert out["plain"] == '<span class="lm-fit lm-fit-fits" title="room">6.0 GB · fits</span>'
+    assert '17.0 GB · split' in out["table"] and '6.6 GB · fits' in out["table"]
+
+
+@pytest.mark.skipif(not _HAS_NODE, reason="node not installed")
+def test_options_form_offers_main_gpu_and_the_summary_shows_the_pin():
+    out = _run("""
+      console.log(JSON.stringify({
+        pinned: renderOptionsFormHtml(DATA2.models[0], DATA2.gpus),
+        auto: renderOptionsFormHtml(DATA2.models[1], DATA2.gpus),
+        oneCard: renderOptionsFormHtml(DATA.models[0], [DATA2.gpus[0]]),
+        noCards: renderOptionsFormHtml(DATA.models[0], []),
+        stale: renderOptionsFormHtml({ name: 'x', options: { main_gpu: 3 } }, [DATA2.gpus[0]]),
+        table: renderInstalledHtml(DATA2.models, { isAdmin: true, optionsOpen: 'qwen3.8:27b-q4_K_M', gpus: DATA2.gpus }),
+        label: [gpuOptionLabel(DATA2.gpus[0]), gpuOptionLabel(DATA2.gpus[1]), gpuOptionLabel({ index: 2, name: 'Tesla T4' })],
+      }));
+    """)
+    pinned = out["pinned"]
+    assert '<select name="main_gpu">' in pinned
+    assert '<option value="">Auto — Ollama picks the freest card, splits when needed</option>' in pinned
+    assert '<option value="0">GPU 0 — RTX 4070 Ti (12 GB)</option>' in pinned
+    assert '<option value="1" selected>GPU 1 — RTX 5060 Ti (16 GB)</option>' in pinned
+    assert pinned.count('<option') == 3
+    # the select sits between num_gpu and keep_alive, inside its own label
+    assert pinned.index('name="num_gpu"') < pinned.index('name="main_gpu"') < pinned.index('name="keep_alive"')
+    assert '<option value="" selected>Auto' in out["auto"] and 'selected>GPU' not in out["auto"]
+    # one card, nothing pinned: no select at all (nothing to choose); a stale pin stays visible so it can be cleared
+    assert 'main_gpu' not in out["oneCard"] and 'main_gpu' not in out["noCards"]
+    assert '<option value="3" selected>GPU 3 — not listed on this endpoint</option>' in out["stale"]
+    table = out["table"]
+    assert 'ctx 16k · gpu #1' in table                     # the summary line
+    assert '<select name="main_gpu">' in table and 'title="num_ctx / num_gpu / keep_alive / main_gpu defaults for this model"' in table
+    assert out["label"] == ["GPU 0 — RTX 4070 Ti (12 GB)", "GPU 1 — RTX 5060 Ti (16 GB)", "GPU 2 — Tesla T4"]
+
+
+@pytest.mark.skipif(not _HAS_NODE, reason="node not installed")
+def test_discover_note_names_the_pool():
+    out = _run("""
+      console.log(JSON.stringify({
+        pool: discoverNoteText({ supported: true, name: 'RTX 4070 Ti + RTX 5060 Ti', count: 2, clean_budget_bytes: 26993 * 1048576, total_bytes: 28593 * 1048576 }),
+        one: discoverNoteText(DISCOVER.vram),
+        none: discoverNoteText({ supported: false }),
+      }));
+    """)
+    assert out["pool"] == "Sizes are approximate (the default build of each tag). Fit is against RTX 4070 Ti + RTX 5060 Ti (2 GPUs) with nothing loaded: 26.4 GB usable of 27.9 GB."
+    assert out["one"] == "Sizes are approximate (the default build of each tag). Fit is against RTX with nothing loaded: 11.0 GB usable of 12.0 GB."
+    assert out["none"] == "Sizes are approximate (the default build of each tag). No VRAM reading, so no fit verdict."
+
+
+@pytest.mark.skipif(not _HAS_NODE, reason="node not installed")
+def test_hostile_server_strings_are_escaped_in_the_multi_gpu_markup():
+    evil = "<img src=x onerror=1>"
+    out = _run(f"""
+      const evil = {json.dumps(evil)};
+      const vram = JSON.parse(JSON.stringify(DATA2.vram));
+      vram.name = evil; vram.gpus[0].name = evil; vram.gpus[0].models = [evil]; vram.gpus[1].models = [evil];
+      const gpus = [{{ index: 0, name: evil, total_bytes: 1 }}, {{ index: 1, name: evil + '2', total_bytes: 1 }}];
+      const loaded = JSON.parse(JSON.stringify(DATA2.loaded));
+      loaded[0].name = evil; loaded[1].name = evil;
+      const model = {{ name: evil, options: {{ main_gpu: 1 }} }};
+      console.log(JSON.stringify({{
+        vram: renderVramHtml(vram, loaded),
+        loaded: renderLoadedHtml(loaded, {{ isAdmin: true, gpus }}),
+        form: renderOptionsFormHtml(model, gpus),
+        fit: fitBadgeHtml({{ state: 'fits', split: true, note: evil }}, 1),
+      }}));
+    """)
+    for key in ("vram", "loaded", "form", "fit"):
+        assert evil not in out[key], key
+        assert "&lt;img src=x onerror=1&gt;" in out[key], key
+
+
+@pytest.mark.skipif(not _HAS_NODE, reason="node not installed")
+def test_the_page_passes_the_cards_through_and_saves_main_gpu():
+    out = _run("""
+      globalThis._isAdmin = true;
+      globalThis.DATA = globalThis.DATA2;
+      localModelsModule.activate();
+      await flush();
+      const vram = byId['lm-vram'].innerHTML;
+      const loaded = byId['lm-loaded'].innerHTML;
+      fetches.length = 0;
+      click({ 'data-lm-action': 'options', 'data-lm-name': 'qwen3.8:27b-q4_K_M' });
+      const formHtml = byId['lm-installed'].innerHTML;
+      const form = new El('form');
+      form.setAttribute('data-lm-options-form', 'qwen3.8:27b-q4_K_M');
+      const save = fakeBtn({ 'data-lm-action': 'save-options', 'data-lm-name': 'qwen3.8:27b-q4_K_M' });
+      save._form = form;
+      form.querySelector = sel => sel.includes('save-options') ? save
+        : { value: sel.includes('num_ctx') ? '16384' : sel.includes('main_gpu') ? '0' : '' };
+      root.fire('submit', { target: form, preventDefault() {} });
+      await flush();
+      console.log(JSON.stringify({
+        vramHasCards: vram.includes('data-lm-gpu="1"'),
+        chip: loaded.includes('GPU 1 · RTX 5060 Ti') && loaded.includes('split #0 8.5 GB + #1 10.2 GB'),
+        select: formHtml.includes('<option value="1" selected>GPU 1 — RTX 5060 Ti (16 GB)</option>'),
+        put: fetches.find(f => f.method === 'PUT'),
+      }));
+    """)
+    assert out["vramHasCards"] and out["chip"] and out["select"]
+    assert out["put"]["url"] == "/api/local-models/qwen3.8%3A27b-q4_K_M/options?endpoint_id=local-ollama"
+    assert out["put"]["body"] == {"options": {"num_ctx": "16384", "num_gpu": "", "keep_alive": "", "main_gpu": "0"}}
 
 
 # ── behaviour: activate, re-attach, actions ─────────────────────────────────
@@ -410,7 +660,8 @@ def test_actions_go_through_the_api_and_the_app_confirm():
     assert out["formOpen"] is True
     put = next(c for c in calls if c[0] == "PUT")
     assert put[1] == "/api/local-models/qwen3.5%3A9b/options?endpoint_id=local-ollama"
-    assert put[2] == {"options": {"num_ctx": "8192", "num_gpu": "", "keep_alive": ""}}
+    # every key goes, "" clears it on the server (main_gpu "" = Auto)
+    assert put[2] == {"options": {"num_ctx": "8192", "num_gpu": "", "keep_alive": "", "main_gpu": ""}}
     assert not any("rm -rf" in json.dumps(c) for c in calls)
     assert any("does not look like an Ollama model name" in t for t in out["toasts"])
     assert "Pulling gemma3:4b…" in out["toasts"] and "Pull cancelled" in out["toasts"]

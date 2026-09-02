@@ -43302,12 +43302,24 @@ body:has(.sidebar.right-side) .project-active-pill { right: 12px; }
 .lm-vram-dot { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
 .lm-vram-dot.lm-vram-models { background: color-mix(in srgb, var(--red) 70%, var(--fg)); }
 .lm-vram-dot.lm-vram-other { background: color-mix(in srgb, var(--warn, #e5c07b) 55%, var(--fg)); }
+/* More than one card: a smaller bar per card under the pool bar; `used` is
+   the one segment a card gets when its per-model bytes cannot be measured. */
+.lm-vram-gpu { display: flex; flex-direction: column; gap: 3px; margin: 4px 0 0 12px; padding-left: 8px; border-left: 2px solid color-mix(in srgb, var(--border) 70%, transparent); }
+.lm-vram-gpu .lm-vram-head { font-size: 11px; }
+.lm-vram-gpu .lm-vram-bar { height: 6px; }
+.lm-vram-seg.lm-vram-used { background: color-mix(in srgb, var(--fg) 45%, transparent); }
+.lm-vram-gpu-models { word-break: break-all; }
+.lm-vram-note { margin-top: 4px; line-height: 1.45; }
 /* Loaded now */
 .lm-loaded-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 0; border-bottom: 1px solid color-mix(in srgb, var(--border) 30%, transparent); }
 .lm-loaded-row:last-child { border-bottom: 0; }
 .lm-loaded-main { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-width: 0; }
 .lm-split { font-size: 11px; font-variant-numeric: tabular-nums; color: color-mix(in srgb, var(--fg) 65%, transparent); }
 .lm-split-spill { color: color-mix(in srgb, var(--red) 72%, var(--fg)); font-weight: 600; }
+/* Placement chip: which card(s) a loaded model sits on */
+.lm-place { display: inline-block; font-size: 10.5px; font-variant-numeric: tabular-nums; white-space: nowrap; padding: 1px 6px; border-radius: 4px; border: 1px solid color-mix(in srgb, var(--border) 80%, transparent); color: color-mix(in srgb, var(--fg) 75%, transparent); }
+.lm-place-split { border-color: color-mix(in srgb, #7aa2f7 55%, var(--border)); }
+.lm-place-cpu { border-color: color-mix(in srgb, var(--red) 55%, var(--border)); color: color-mix(in srgb, var(--red) 72%, var(--fg)); }
 /* Installed table */
 .lm-table { display: flex; flex-direction: column; }
 .lm-row { display: grid; grid-template-columns: minmax(160px, 2.2fr) minmax(96px, 1fr) minmax(90px, 1fr) minmax(70px, .9fr) 48px auto; gap: 6px 10px; align-items: center; padding: 7px 0; border-bottom: 1px solid color-mix(in srgb, var(--border) 30%, transparent); font-size: 12px; }
@@ -43328,15 +43340,18 @@ body:has(.sidebar.right-side) .project-active-pill { right: 12px; }
 .lm-cap-tools { border-color: color-mix(in srgb, #9ece6a 55%, var(--border)); }
 .lm-cap-thinking { border-color: color-mix(in srgb, #bb9af7 55%, var(--border)); }
 .lm-cap-embedding { border-color: color-mix(in srgb, var(--warn, #e5c07b) 55%, var(--border)); }
-/* Fit badge — same three states as the picker's .mp-fit */
+/* Fit badge — same three states as the picker's .mp-fit, plus `split`
+   (bigger than one card, fits the pool): between fits and tight */
 .lm-fit { font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; opacity: .55; color: var(--fg); }
 .lm-fit-fits { opacity: .55; }
+.lm-fit-split { opacity: .85; color: color-mix(in srgb, #7aa2f7 60%, var(--fg)); }
 .lm-fit-tight { opacity: .95; color: color-mix(in srgb, var(--warn, #e5c07b) 68%, var(--fg)); }
 .lm-fit-over { opacity: .95; color: color-mix(in srgb, var(--red) 72%, var(--fg)); }
 /* Options… inline form */
 .lm-options-form { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: flex-end; padding: 8px 10px; margin: 2px 0 4px; border: 1px solid color-mix(in srgb, var(--border) 70%, transparent); border-radius: 8px; background: color-mix(in srgb, var(--fg) 3%, transparent); }
 .lm-options-form label { display: flex; flex-direction: column; gap: 3px; font-size: 11px; font-weight: 500; }
 .lm-options-form input { width: 130px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); font-size: 12px; -moz-appearance: textfield; }
+.lm-options-form select { max-width: 320px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); font-size: 12px; }
 .lm-options-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; flex: 1 1 100%; }
 /* Pull form + progress */
 .lm-pull-form { display: flex; gap: 6px; margin-bottom: 10px; }
