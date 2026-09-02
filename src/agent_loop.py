@@ -13,7 +13,7 @@ import json
 import re
 import time
 import logging
-from typing import Any, AsyncGenerator, List, Dict, NamedTuple, Optional, Set
+from typing import Any, AsyncGenerator, Callable, List, Dict, NamedTuple, Optional, Set
 from urllib.parse import urlparse
 
 from src.llm_core import (
@@ -1852,17 +1852,28 @@ def _minimal_saved_memory_message(messages: List[Dict]) -> Optional[Dict]:
 
 def _compact_subagent_reports(reports) -> list:
     """Persisted shape of delegate_agents worker reports (tool_events metadata):
-    the evidence fields only, final text shortened."""
+    the evidence fields only, final text shortened — plus what the control
+    board needs to be restored after a reload (tokens, timing, role, files,
+    model, instruction, rounds, steering and supervisor actions)."""
     out = []
     for r in reports[:8]:
         if not isinstance(r, dict):
             continue
+        supervisor = [
+            {"action": a.get("action"), "reason": str(a.get("reason") or "")[:200], "ts": a.get("ts")}
+            for a in (r.get("supervisor") or [])[:8] if isinstance(a, dict)
+        ]
         out.append({
             "id": r.get("id"), "name": r.get("name"), "session_id": r.get("session_id"),
             "status": r.get("status"), "stop_reason": r.get("stop_reason"), "error": r.get("error"),
             "tool_calls": r.get("tool_calls"), "failed_calls": r.get("failed_calls"),
             "mutations": list(r.get("mutations") or [])[:40], "duration_s": r.get("duration_s"),
             "final_text": str(r.get("final_text") or "")[:400],
+            "input_tokens": r.get("input_tokens"), "output_tokens": r.get("output_tokens"),
+            "started_at": r.get("started_at"), "ended_at": r.get("ended_at"),
+            "role": r.get("role"), "files": list(r.get("files") or [])[:40], "model": r.get("model"),
+            "instruction": str(r.get("instruction") or "")[:500], "rounds": r.get("rounds"),
+            "steered": r.get("steered") or 0, "supervisor": supervisor,
         })
     return out
 
@@ -3727,6 +3738,7 @@ async def stream_agent_loop(
     gen_overrides: Optional[Dict] = None,
     security_gate_bypass: bool = False,
     harness_options: Optional[Dict[str, Any]] = None,
+    pending_user_messages: Optional[Callable[[], List[Dict[str, Any]]]] = None,
 ) -> AsyncGenerator[str, None]:
     """Streaming agent loop generator.
 
@@ -3734,6 +3746,10 @@ async def stream_agent_loop(
     (chat model controls); it disables the local-model agent temperature cap.
     ``gen_overrides`` carries extra sampling params (top_p, think, ...) that
     llm_core forwards to the provider.
+    ``pending_user_messages`` (optional, sync): called at the start of every
+    round; each ``{"text", "source"}`` it returns is appended as a ``user``
+    message before the model is called and announced with a ``steer`` event.
+    This is how a delegate_agents worker is steered mid-task.
     ``harness_options`` (all optional, mostly project-level knobs resolved by
     the route): ``checkpoints`` (bool, default True — shadow snapshot before
     the first change), ``test_command`` (str, overrides test detection),
@@ -5484,6 +5500,24 @@ async def stream_agent_loop(
                 # harness `continue` on the final round included).
                 _exhausted_rounds = True
                 break
+        # Steering (delegate_agents workers): text queued while the previous
+        # round ran becomes a user message now, before this round's request.
+        if pending_user_messages is not None:
+            try:
+                _steers = list(pending_user_messages() or [])
+            except Exception as _steer_err:
+                logger.debug("[steer] queue read failed: %s", _steer_err)
+                _steers = []
+            for _steer in _steers:
+                _steer_text = str((_steer or {}).get("text") or "").strip() if isinstance(_steer, dict) else str(_steer or "").strip()
+                if not _steer_text:
+                    continue
+                _steer_src = "supervisor" if isinstance(_steer, dict) and _steer.get("source") == "supervisor" else "user"
+                messages.append({"role": "user", "content": (
+                    f"[Steering message from the {_steer_src}, received while you were working — "
+                    f"it refines your task; follow it from now on] {_steer_text}")})
+                yield "data: " + json.dumps({"type": "steer", "round": round_num,
+                                             "text": _steer_text[:300], "source": _steer_src}) + "\n\n"
         round_response = ""
         round_reasoning = ""  # reasoning_content deltas (DeepSeek-thinking, vLLM --reasoning-parser)
         native_tool_calls = []  # populated if model uses function calling
