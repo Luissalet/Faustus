@@ -358,21 +358,36 @@ SUBAGENT_LEAN_DENYLIST = frozenset({
     "web_search", "web_fetch", "manage_skills", "manage_bg_jobs", "manage_memory",
     "manage_tasks", "manage_contact", "ui_control", "manage_notes", "project_context",
 })
-_LEAN_KEEP_RE = re.compile(
-    r"\b(web|internet|url|https?://|busca en|search the|fetch|descarga|download|"
-    r"memoria|memory|recuerda|remember|background job|segundo plano|skill)\b", re.I,
+# Which family of lean-denied tools a task text asks for. Per family, on
+# purpose: one keyword ("memoria" in "fuga de memoria") used to restore all
+# ten tools at once, web search and background jobs included.
+_LEAN_KEEP_FAMILIES = (
+    (re.compile(r"\b(web|internet|url|https?://|busca en|search the|fetch|descarga|download)\b", re.I),
+     frozenset({"web_search", "web_fetch"})),
+    (re.compile(r"\b(memoria|memory|recuerda|remember)\b", re.I), frozenset({"manage_memory"})),
+    (re.compile(r"\bskills?\b", re.I), frozenset({"manage_skills"})),
+    (re.compile(r"\b(background( job)?|segundo plano|bg job)\b", re.I), frozenset({"manage_bg_jobs"})),
+    (re.compile(r"\b(contact[os]?|contacts?)\b", re.I), frozenset({"manage_contact"})),
+    (re.compile(r"\b(notes?|notas?|apunte)\b", re.I), frozenset({"manage_notes"})),
+    (re.compile(r"\b(todo list|tareas pendientes|task list)\b", re.I), frozenset({"manage_tasks"})),
 )
+# Kept for callers that import it: every keyword of every family.
+_LEAN_KEEP_RE = re.compile("|".join(f"(?:{rx.pattern})" for rx, _ in _LEAN_KEEP_FAMILIES), re.I)
 
 
 def worker_disabled_tools(instruction: str) -> set:
-    """The worker's denylist: the hard set plus, when the lean mode is on and
-    the task does not mention them, the tools a scoped worker never needs."""
+    """The worker's denylist: the hard set plus, when the lean mode is on,
+    the tools a scoped worker never needs — minus the family (web, memory,
+    skills, background jobs, contacts, notes, tasks) the task text asks for."""
     out = set(SUBAGENT_DISABLED_TOOLS)
     if not _as_bool(_setting("agent_subagent_lean_tools", True), True):
         return out
-    if _LEAN_KEEP_RE.search(str(instruction or "")):
-        return out
-    return out | set(SUBAGENT_LEAN_DENYLIST)
+    text = str(instruction or "")
+    keep: set = set()
+    for rx, tools in _LEAN_KEEP_FAMILIES:
+        if rx.search(text):
+            keep |= tools
+    return out | (set(SUBAGENT_LEAN_DENYLIST) - keep)
 
 
 def _short(text: Any, n: int = 160) -> str:

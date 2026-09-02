@@ -609,6 +609,31 @@ def test_workers_get_a_lean_toolset_unless_the_task_asks_for_more(monkeypatch):
     assert "web_search" not in web and "web_fetch" not in web and "delegate_agents" in web
     url = st.worker_disabled_tools("Lee https://example.com/spec y aplica el formato")
     assert "web_fetch" not in url
+    # Audited: one keyword used to restore ALL ten lean-denied tools. A task
+    # that mentions memory gets manage_memory back — not the web, skills,
+    # background jobs, contacts, notes and the rest.
+    memoria = st.worker_disabled_tools("[parser.py] arregla la fuga de memoria del parser")
+    assert "manage_memory" not in memoria
+    for tool in ("web_search", "web_fetch", "manage_skills", "manage_bg_jobs", "manage_contact", "manage_notes", "ui_control"):
+        assert tool in memoria, tool
+    assert "delegate_agents" in memoria
+    # …and a web task gets the web back but nothing else
+    for tool in ("manage_memory", "manage_skills", "manage_bg_jobs", "manage_contact", "manage_notes", "manage_tasks", "ui_control"):
+        assert tool in web, tool
+    assert "manage_skills" not in st.worker_disabled_tools("Create a skill that lints the repo")
+    assert "web_search" in st.worker_disabled_tools("Create a skill that lints the repo")
+    bg = st.worker_disabled_tools("Lanza los tests en segundo plano y revisa el resultado")
+    assert "manage_bg_jobs" not in bg and "web_search" in bg and "manage_memory" in bg
+    assert "manage_bg_jobs" not in st.worker_disabled_tools("run the build as a background job")
+    notes = st.worker_disabled_tools("Add a note with the release checklist")
+    assert "manage_notes" not in notes and "manage_memory" in notes
+    contacts = st.worker_disabled_tools("Look up the contact for the vendor and update the phone")
+    assert "manage_contact" not in contacts and "web_search" in contacts
+    # a URL in the task keeps only the web family
+    assert "manage_memory" in url and "manage_skills" in url
+    # "remember" restores memory alone
+    assert "manage_memory" not in st.worker_disabled_tools("Remember the API base path for later")
+    assert "web_fetch" in st.worker_disabled_tools("Remember the API base path for later")
     monkeypatch.setattr(st, "_setting", lambda k, d=None: {"agent_subagent_lean_tools": False}.get(k, d))
     off = st.worker_disabled_tools("[cart.py] add currency_format(amount)")
     assert off == set(st.SUBAGENT_DISABLED_TOOLS)
