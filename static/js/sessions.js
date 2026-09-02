@@ -2407,10 +2407,27 @@ export async function selectSession(id, { keepSidebar = false, showLoading = tru
     // after a streaming completion in an incognito chat.
     const isSameSession = (prevSessionId === id);
     const hasExistingBubbles = chatHistory && chatHistory.querySelectorAll('.msg').length > 0;
-    const wouldWipe = !isOC && !msgHistory.length && isSameSession && hasExistingBubbles;
+    // A turn the user just sent in THIS chat is streaming on screen: the
+    // history render that lands afterwards (the page was still opening the
+    // chat when they hit send — typing fast on a chat opened by URL) must
+    // not wipe the bubbles; the stream's own nodes are the freshest content
+    // and the server has the message for the next visit. Before this guard
+    // the message vanished and the answer streamed into a detached node.
+    let streamingHere = false;
+    try {
+      streamingHere = !!(window.chatModule && window.chatModule.hasActiveStream && window.chatModule.hasActiveStream(id));
+    } catch (e) {}
+    const wouldWipe = !isOC && hasExistingBubbles && ((!msgHistory.length && isSameSession) || streamingHere);
     if (wouldWipe) {
       // Skip the fade/reload; we're already showing the right content.
-      if (chatHistory) chatHistory.classList.remove('no-animate');
+      if (chatHistory) {
+        chatHistory.classList.remove('no-animate');
+        if (streamingHere) {
+          // the "Opening chat" placeholder painted before the send
+          chatHistory.querySelectorAll('.session-loading-state').forEach(n => n.remove());
+          if (window.chatModule && window.chatModule.hideWelcomeScreen) { try { window.chatModule.hideWelcomeScreen(); } catch (e) {} }
+        }
+      }
       return;
     }
 

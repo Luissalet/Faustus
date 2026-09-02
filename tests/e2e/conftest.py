@@ -159,6 +159,8 @@ def app_server(fake_llm):
         except subprocess.TimeoutExpired:
             proc.kill()
         log.close()
+        if os.environ.get("ODYSSEUS_E2E_KEEP_LOG"):
+            shutil.copyfile(os.path.join(data_dir, "server.log"), os.environ["ODYSSEUS_E2E_KEEP_LOG"])
         shutil.rmtree(data_dir, ignore_errors=True)
 
 
@@ -197,9 +199,25 @@ def open_chat(page, app_server: AppServer, session_id: str, workspace: str | Non
         page.evaluate("ws => localStorage.setItem('odysseus-workspace', ws)", workspace)
     page.goto(app_server.base + "/#" + session_id, wait_until="domcontentloaded")
     page.wait_for_selector("#message:visible")
-    # A previous session may still be streaming into the composer state;
-    # give the app a beat to select the hash session.
-    page.wait_for_timeout(500)
+    # Wait for the app to have SELECTED the hash session, not for a fixed
+    # beat: under load (two CPUs, the browser, uvicorn and the fake model
+    # all busy) 500 ms was not enough, the send went out before the session
+    # switch and the user bubble never appeared — the flaky failures of
+    # test_agent_flows / test_composer_shortcuts / test_subagent_board.
+    page.wait_for_function(
+        "sid => !!(window.sessionModule && window.sessionModule.getCurrentSessionId && window.sessionModule.getCurrentSessionId() === sid)",
+        arg=session_id, timeout=20000,
+    )
+    # …and for the app's own start-up traffic to drain (session history render,
+    # prefs, models, stream_status probe). Sending while that is still in flight
+    # gets the bubbles wiped by the history render that lands afterwards — the
+    # deterministic failure seen once the tool index (fastembed, CPU-heavy)
+    # started building on the first request and slowed every init call.
+    try:
+        page.wait_for_load_state("networkidle", timeout=20000)
+    except Exception:
+        pass
+    page.wait_for_timeout(150)
 
 
 def send_agent_message(page, text: str) -> None:
