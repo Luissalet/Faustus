@@ -508,3 +508,42 @@ console.log(JSON.stringify({ seq, html, doneHtml }));
     ]
     assert '<span class="subagent-activity" title="what the worker is doing right now">Idle</span>' in out["html"]
     assert "subagent-activity" not in out["doneHtml"]
+
+
+@pytest.mark.skipif(not _HAS_NODE, reason="node is required")
+def test_a_second_delegation_in_the_same_chat_gets_its_own_board_and_count():
+    """Seen live (ronda 6): the second /agents in a chat painted 2 new cards but
+    the header said "Sub-agents 3/4" — the count was over BOTH delegations'
+    workers. State and board are keyed by the `delegation` id the backend
+    stamps on every event; restore/steer/stop still find the workers."""
+    script = _DOM_STUB + _harness_module_source() + r"""
+restoreProgress('s1');
+// The backend stamps `delegation` on EVERY event of a call (subagent_tools emit_for).
+let D = 'd1';
+const S = (sa) => renderSubagentEvent({ subagent: Object.assign({ delegation: D }, sa) }, { sessionId: 's1' });
+S({ id: 'a1', index: 0, name: 'one', event: 'started', session_id: 'c1' });
+S({ id: 'a2', index: 1, name: 'two', event: 'started', session_id: 'c2' });
+S({ id: 'a1', event: 'done', stop_reason: 'complete' });
+S({ id: 'a2', event: 'done', stop_reason: 'complete' });
+const boards1 = chatBox._all('.subagent-board').length;
+const count1 = chatBox._all('.subagent-board-count')[0].textContent;
+// the next turn: a new thread + a new delegation
+const t2 = new El('div'); t2.className = 'agent-thread'; chatBox.appendChild(t2);
+D = 'd2';
+S({ id: 'b1', index: 0, name: 'three', event: 'started', session_id: 'c3' });
+S({ id: 'b2', index: 1, name: 'four', event: 'started', session_id: 'c4' });
+S({ id: 'b2', event: 'done', stop_reason: 'complete' });
+const boards = chatBox._all('.subagent-board');
+const counts = chatBox._all('.subagent-board-count').map(c => c.textContent);
+const cardsPerBoard = boards.map(b => b._all('.subagent-card').length);
+const latest = subagentBoardState('s1').map(w => w.id);
+const byChild = _subagentInternals.workerByChild ? _subagentInternals.workerByChild('c1') : null;
+console.log(JSON.stringify({ boards1, count1, nBoards: boards.length, counts, cardsPerBoard, latest, delegations: boards.map(b => b.dataset.delegation) }));
+"""
+    out = _run_node(script)
+    assert out["boards1"] == 1 and out["count1"] == " 2/2"
+    assert out["nBoards"] == 2
+    assert out["cardsPerBoard"] == [2, 2]
+    assert out["counts"] == [" 2/2", " 1/2"]
+    assert out["latest"] == ["b1", "b2"]
+    assert out["delegations"] == ["d1", "d2"]

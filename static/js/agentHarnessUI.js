@@ -640,7 +640,7 @@ function _toast(msg) {
   try { console.info(msg); } catch (_) {}
 }
 
-function _boardFor({ trailing = false } = {}) {
+function _boardFor({ trailing = false, delegation = '' } = {}) {
   const chatBox = document.getElementById('chat-history');
   if (!chatBox) return null;
   // The delegate_agents tool card is the last running node in the thread;
@@ -652,12 +652,16 @@ function _boardFor({ trailing = false } = {}) {
   const thread = trailing ? _threadForCard() : (threads.length ? threads[threads.length - 1] : _threadForCard());
   if (!thread) return null;
   let board = thread.querySelector('.subagent-board:last-of-type');
-  if (board && board.dataset.open === '1') return board;
+  if (board && board.dataset.open === '1' && (!delegation || !board.dataset.delegation || board.dataset.delegation === delegation)) {
+    if (delegation) board.dataset.delegation = delegation;
+    return board;
+  }
   // Built with createElement (not one innerHTML) so the node-based tests can
   // drive it with a minimal DOM stub.
   board = document.createElement('div');
   board.className = 'agent-thread-node harness-node harness-subagents expanded subagent-board subagent-board-v3';
   board.dataset.open = '1';
+  if (delegation) board.dataset.delegation = delegation;
   const dot = document.createElement('div');
   dot.className = 'agent-thread-dot';
   board.appendChild(dot);
@@ -681,11 +685,27 @@ function _boardFor({ trailing = false } = {}) {
   return board;
 }
 
-function _saState(sessionId, create) {
-  const key = sessionId || '__current__';
+// One state per DELEGATION (a delegate_agents call), keyed by the parent
+// chat plus the call's `delegation` id: a second /agents in the same chat
+// gets its own board and its own N/M count instead of piling onto the first
+// one's (seen live: "Sub-agents 3/4" over a board showing 2 cards).
+// Without a delegation id (older backend) the key is the parent alone.
+function _saKey(sessionId, delegation) {
+  return `${sessionId || '__current__'}|${delegation || ''}`;
+}
+/** The most recently used state of a parent chat (any delegation). */
+function _saLatest(sessionId) {
+  const prefix = `${sessionId || '__current__'}|`;
+  let found = null;
+  for (const [k, st] of _saBoards) if (k.startsWith(prefix)) found = st;   // Map keeps insertion order; LRU re-inserts
+  return found;
+}
+function _saState(sessionId, create, delegation) {
+  if (delegation === undefined && !create) return _saLatest(sessionId);
+  const key = _saKey(sessionId, delegation);
   let st = _saBoards.get(key);
   if (!st && create) {
-    st = { workers: new Map(), order: [] };
+    st = { workers: new Map(), order: [], delegation: delegation || '' };
     _saBoards.set(key, st);
     while (_saBoards.size > _SA_MAX_SESSIONS) {
       const oldest = _saBoards.keys().next().value;
@@ -721,12 +741,13 @@ export function renderSubagentEvent(json, { sessionId = null, background = false
   if (!id) return;
   const now = Date.now();
   const parent = sessionId || _currentSessionId || null;
-  const st = _saState(parent, true);
+  const delegation = sa.delegation ? String(sa.delegation) : '';
+  const st = _saState(parent, true, delegation);
   let w = st.workers.get(id);
   if (!w) { w = _saNewWorker(id, now); st.workers.set(id, w); st.order.push(id); }
   _saApply(w, sa, now);
   if (background || (parent && _currentSessionId && parent !== _currentSessionId)) return;
-  const board = _boardFor();
+  const board = _boardFor({ delegation });
   if (!board) return;
   const row = _saPaintWorker(board, w);
   _saPaintHeader(board, st);
@@ -740,7 +761,7 @@ export function renderSubagentEvent(json, { sessionId = null, background = false
 export function restoreSubagentBoard(sessionId) {
   const st = _saState(sessionId || _currentSessionId, false);
   if (!st || !st.order.length) return false;
-  const board = _boardFor({ trailing: true });
+  const board = _boardFor({ trailing: true, delegation: st.delegation || '' });
   if (!board) return false;
   for (const id of st.order) {
     const w = st.workers.get(id);
@@ -1099,11 +1120,12 @@ function _saTick() {
   const streaming = _parentStreaming();
   let busy = false;
   try {
-    const st = _saState(_currentSessionId, false);
+    const prefix = `${_currentSessionId || '__current__'}|`;
+    const lookup = (id) => { for (const [k, st] of _saBoards) { if (k.startsWith(prefix) && st.workers.has(id)) return st.workers.get(id); } return null; };
     const cards = document.querySelectorAll('.subagent-card.is-live');
     for (const card of cards) {
       busy = true;
-      const w = st && st.workers.get(card.dataset.sa);
+      const w = lookup(card.dataset.sa);
       if (!w) continue;
       const el = card.querySelector('.subagent-elapsed');
       if (el) el.textContent = _fmtDur(_saElapsed(w, now));
@@ -1149,11 +1171,13 @@ async function _stopWorker(button) {
 }
 
 function _saWorkerByChild(childSid) {
-  const st = _saState(_currentSessionId, false);
-  if (!st) return null;
-  for (const id of st.order) {
-    const w = st.workers.get(id);
-    if (w && w.sessionId === childSid) return w;
+  const prefix = `${_currentSessionId || '__current__'}|`;
+  for (const [k, st] of _saBoards) {
+    if (!k.startsWith(prefix)) continue;
+    for (const id of st.order) {
+      const w = st.workers.get(id);
+      if (w && w.sessionId === childSid) return w;
+    }
   }
   return null;
 }

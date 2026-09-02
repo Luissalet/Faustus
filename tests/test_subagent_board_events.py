@@ -180,8 +180,12 @@ async def test_every_event_carries_ts_and_session_id_and_started_has_the_card(de
     for e in events:
         assert isinstance(e.get("ts"), float) and e["ts"] >= t0 - 1, e
         assert "session_id" in e, e
-        for k in ("id", "index", "name", "role", "event"):
+        for k in ("id", "index", "name", "role", "event", "delegation"):
             assert k in e, (k, e)
+    # One `delegation` id per delegate_agents call, identical on every event —
+    # the board keys its state by it (a second /agents in the same chat must
+    # not pile onto the first one's N/M count).
+    assert len({e["delegation"] for e in events}) == 1 and len(events[0]["delegation"]) == 8
     started = next(e for e in events if e["event"] == "started")
     assert started["session_id"] and isinstance(started["started_at"], float)
     assert started["files"] == ["a.py"] and started["model"] == "qwen:x" and started["role"] == "worker"

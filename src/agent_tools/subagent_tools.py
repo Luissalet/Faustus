@@ -900,6 +900,9 @@ class DelegateAgentsTool:
         gen_overrides = ctx.get("gen_overrides") if isinstance(ctx.get("gen_overrides"), dict) else None
 
         runs = [SubagentRun(i, t) for i, t in enumerate(args["tasks"])]
+        # One id per delegate_agents CALL: the board keys its state by it, so
+        # a second /agents in the same chat does not pile onto the first.
+        delegation_id = uuid.uuid4().hex[:8]
         locks = FileLockRegistry(workspace)
         harness_options = ctx.get("harness_options") if isinstance(ctx.get("harness_options"), dict) else None
 
@@ -910,7 +913,8 @@ class DelegateAgentsTool:
                 try:
                     await progress_cb({"subagent": {
                         "id": run.id, "index": run.index, "name": run.name, "role": run.role,
-                        "ts": time.time(), "session_id": run.session_id, **payload,
+                        "ts": time.time(), "session_id": run.session_id, "delegation": delegation_id,
+                        **payload,
                     }})
                 except Exception:
                     pass
