@@ -174,7 +174,7 @@ export function renderVramHtml(vram, loaded = []) {
     <div class="lm-vram-legend">
       <span><i class="lm-vram-dot lm-vram-models"></i>models ${esc(fmtGb(runner))}</span>
       <span><i class="lm-vram-dot lm-vram-other"></i>other ${esc(fmtGb(others))}</span>
-      <span title="CUDA context, cuBLAS workspace and compute buffers, gone before a single weight is loaded${multi ? ' — one per card' : ''}.">reserve ${esc(fmtGb(vram.reserve_bytes))}${multi ? ` × ${count}` : ''}</span>
+      <span title="CUDA context, cuBLAS workspace and compute buffers, gone before a single weight is loaded${multi ? ' — one per card' : ''}.">reserve ${esc(fmtGb(multi ? (vram.reserve_per_gpu_bytes != null ? vram.reserve_per_gpu_bytes : vram.reserve_bytes / count) : vram.reserve_bytes))}${multi ? ` × ${count}` : ''}</span>
       <span title="What a model's weights can take right now, KV cache not included${multi ? ' — across the pool' + (vram.largest_single_budget_bytes != null ? '; a single card takes up to ' + attr(fmtGb(vram.largest_single_budget_bytes)) : '') : ''}.">budget ${esc(fmtGb(vram.budget_bytes))}</span>
     </div>${cards.map(_vramGpuHtml).join('')}${multi ? `
     <div class="lm-vram-note lm-muted">Ollama places each model on the card with the most free memory and splits a model across cards only when it does not fit one; pin a card per model in Options… (main_gpu). OLLAMA_SCHED_SPREAD=1 on the Ollama server spreads every model.</div>` : ''}`;

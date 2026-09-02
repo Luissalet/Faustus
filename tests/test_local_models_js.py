@@ -85,7 +85,10 @@ _VRAM2 = {
     "supported": True, "name": "RTX 4070 Ti + RTX 5060 Ti", "count": 2,
     "total_bytes": 28593 * MIB, "used_bytes": 25702 * MIB, "free_bytes": 2891 * MIB,
     "held_by_runner_bytes": 24474 * MIB, "other_bytes": 1228 * MIB,
-    "reserve_bytes": 800 * MIB, "budget_bytes": int(1.8 * GIB), "clean_budget_bytes": 26993 * MIB,
+    # the server's reserve_bytes is the POOL reserve (one CUDA context per
+    # card); the legend prints the per-card figure × count
+    "reserve_bytes": 1600 * MIB, "reserve_per_gpu_bytes": 800 * MIB,
+    "budget_bytes": int(1.8 * GIB), "clean_budget_bytes": 26993 * MIB,
     "largest_single_budget_bytes": 2200 * MIB, "largest_single_clean_budget_bytes": 15511 * MIB,
     "gpus": [
         {"index": 0, "name": "NVIDIA GeForce RTX 4070 Ti", "uuid": "GPU-5ab72dd9", "total_bytes": 12282 * MIB,
