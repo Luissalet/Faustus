@@ -506,9 +506,159 @@ def gpus_runners(ollama_base: str, ps_models: Optional[List[Dict[str, Any]]],
     return report(ollama_base, ps_models, gpus).get("gpus") or {}
 
 
+# ── orphaned runners ────────────────────────────────────────────────────────
+#
+# Seen live (ronda 6, two-card box): restarting Ollama (Stop-Process on
+# ollama*) leaves its `llama-server.exe` children alive — two of them held
+# 13 GB on the 5060 Ti with `ollama ps` empty, and every gauge just read
+# "other 13 GB". Nothing but a process list can tell those from a browser.
+
+_ORPHAN_TTL = 2.0
+_orphan_cache: Dict[str, Any] = {"ts": 0.0, "data": None}
+
+
+def is_orphan_runner(name: str, parent_name: Optional[str], parent_alive: bool) -> bool:
+    """A runner process (llama-server / ollama_llama_server / ollama-runner)
+    whose parent is gone, or is not an Ollama process (a recycled pid)."""
+    n = (name or "").lower()
+    if not any(n.startswith(r) for r in gsm._RUNNER_NAMES):
+        return False
+    if not parent_alive:
+        return True
+    return not (parent_name or "").lower().startswith("ollama")
+
+
+def _orphan_processes() -> List[Dict[str, Any]]:
+    try:
+        import psutil
+    except Exception:  # pragma: no cover
+        return []
+    out: List[Dict[str, Any]] = []
+    for proc in psutil.process_iter(["pid", "name"]):
+        try:
+            name = (proc.info.get("name") or "")
+            if not any(name.lower().startswith(r) for r in gsm._RUNNER_NAMES):
+                continue
+            parent = proc.parent()
+            parent_name = None
+            parent_alive = False
+            if parent is not None:
+                try:
+                    parent_alive = parent.is_running() and parent.status() != psutil.STATUS_ZOMBIE
+                    parent_name = parent.name() if parent_alive else None
+                except Exception:
+                    parent_alive = False
+            if not is_orphan_runner(name, parent_name, parent_alive):
+                continue
+            try:
+                started = float(proc.create_time())
+            except Exception:
+                started = None
+            try:
+                blob = runner_blob_from_cmdline(proc.cmdline())
+            except Exception:
+                blob = None
+            out.append({"pid": int(proc.pid), "name": name, "started": started,
+                        "blob": blob_key(blob) if blob else ""})
+        except Exception:
+            continue
+    return out
+
+
+def orphan_runners(gpus: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
+    """``[{pid, name, started, gpus: [idx], bytes|None, blob}]`` — runner
+    processes no Ollama server owns any more, with the card(s) and bytes
+    they still hold (nvidia-smi compute-apps + the WDDM counters, like the
+    placement). Cached ~2 s; never raises; runs even with nothing loaded —
+    that is exactly when orphans matter."""
+    now = time.time()
+    with _lock:
+        if _orphan_cache["data"] is not None and now - _orphan_cache["ts"] < _ORPHAN_TTL:
+            return list(_orphan_cache["data"])
+    try:
+        data = _orphans_uncached(gpus)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("orphan runner scan failed: %s", e)
+        data = []
+    with _lock:
+        _orphan_cache["ts"] = time.time()
+        _orphan_cache["data"] = data
+    return list(data)
+
+
+def _orphans_uncached(gpus: Optional[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+    procs = _orphan_processes()
+    if not procs:
+        return []
+    if gpus is None:
+        snap = gsm.vram_snapshot()
+        gpus = snap.get("gpus") or [] if snap.get("supported") else []
+    norm_gpus = _norm_gpus(gpus)
+    apps = _compute_apps()
+    pids = {p["pid"] for p in procs}
+    pid_gpus: Dict[int, Dict[int, Optional[int]]] = {}
+    for a in apps:
+        pid = int(a["pid"])
+        if pid not in pids:
+            continue
+        idx = _gpu_index_for(a, norm_gpus)
+        if idx is not None:
+            pid_gpus.setdefault(pid, {})[idx] = a.get("used_bytes")
+    wddm = _wddm()
+    if wddm:
+        luid_to_idx = map_luids(norm_gpus, apps, wddm.get("processes") or [], wddm.get("adapters") or {})
+        for r in wddm.get("processes") or []:
+            pid = int(r["pid"])
+            if pid not in pids:
+                continue
+            idx = luid_to_idx.get(str(r["luid"]))
+            if idx is None:
+                continue
+            dedicated = int(r.get("dedicated") or 0)
+            slot = pid_gpus.setdefault(pid, {})
+            if slot.get(idx) is None and dedicated > 0:
+                slot[idx] = dedicated
+    for p in procs:
+        cards = pid_gpus.get(p["pid"], {})
+        p["gpus"] = sorted(cards)
+        known = [b for b in cards.values() if b is not None]
+        p["bytes"] = sum(known) if known else None
+    return procs
+
+
+def release_orphan(pid: int, timeout: float = 3.0) -> Dict[str, Any]:
+    """Terminate ONE runner that is an orphan RIGHT NOW (re-checked, uncached):
+    never an arbitrary pid, never a runner an Ollama server still owns.
+    Returns ``{"ok", "pid", "killed": bool, "reason"}``."""
+    pid = int(pid)
+    current = {p["pid"]: p for p in _orphans_uncached(None)}
+    if pid not in current:
+        return {"ok": False, "pid": pid, "killed": False,
+                "reason": "not an orphaned runner right now (gone already, or still owned by an Ollama server)"}
+    try:
+        import psutil
+        proc = psutil.Process(pid)
+        proc.terminate()
+        try:
+            proc.wait(timeout=timeout)
+        except psutil.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=timeout)
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "pid": pid, "killed": False, "reason": str(e)[:200]}
+    with _lock:
+        _orphan_cache["ts"] = 0.0
+        _orphan_cache["data"] = None
+    gsm.reset_vram_cache()
+    return {"ok": True, "pid": pid, "killed": True, "reason": "",
+            "bytes": current[pid].get("bytes"), "gpus": current[pid].get("gpus") or []}
+
+
 def reset_cache() -> None:
     with _lock:
         _cache["ts"] = 0.0
         _cache["key"] = None
+        _orphan_cache["ts"] = 0.0
+        _orphan_cache["data"] = None
         _cache["data"] = None
         _show_cache.clear()

@@ -16,6 +16,7 @@ GET /api/system/usage
            "uuid", "bus_id", "mem_free",
            "models": [{"name", "bytes"|null}],  # loaded models resident on THIS card
            "runner_pids": [15948]}],
+  "orphans": [{"pid", "name", "started", "gpus", "bytes", "blob"}],  # runners no server owns
   "gpu_pool": {"count": 2, "mem_used", "mem_total", "mem_free",   # sums (MiB)
                "util": max, "util_avg", "power": sum, "power_limit": sum,
                "temp": max, "names": [...]},   # {} when no GPU
@@ -55,6 +56,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 from src import gpu_placement, nvidia_drs, vram_fit
 from src import gpu_shared_memory
+from core.middleware import require_admin
 from src.auth_helpers import require_user
 
 logger = logging.getLogger(__name__)
@@ -280,6 +282,11 @@ async def collect_usage() -> Dict[str, Any]:
         if ollama.get("models") and gpus:
             report = await asyncio.to_thread(gpu_placement.report, ollama.get("base", ""), ollama["models"], gpus)
         _merge_placement(ollama, gpus, report)
+        # Runners no Ollama server owns any more (a restart leaves them
+        # behind) — they hold VRAM every other gauge files under "other".
+        orphans: List[Dict[str, Any]] = []
+        if gpus:
+            orphans = await asyncio.to_thread(gpu_placement.orphan_runners, gpus)
         if gpu_err:
             errors.append(gpu_err)
         if ollama.get("error"):
@@ -291,6 +298,7 @@ async def collect_usage() -> Dict[str, Any]:
             "ollama": ollama,
             "gpu": gpus,
             "gpu_pool": gpu_pool(gpus),
+            "orphans": orphans,
             "gpu_mem": gpu_mem,
             "sysmem_fallback": policy,
             "cpu": host.get("cpu", {}),
@@ -414,6 +422,28 @@ def setup_system_usage_routes() -> APIRouter:
         except Exception as e:
             logger.warning("usage collection failed: %s", e)
             raise HTTPException(500, "usage collection failed")
+
+    @router.post("/gpu/orphans/release")
+    async def release_orphan_runner(request: Request):
+        """Kill ONE orphaned model runner (`{"pid": N}`) — a llama-server the
+        Ollama server no longer owns, still holding VRAM. The pid is re-checked
+        against the live orphan list at call time: never an arbitrary process,
+        never a runner Ollama still owns. Admin only; off-limits to app_api."""
+        require_admin(request)
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        try:
+            pid = int((body or {}).get("pid"))
+        except (TypeError, ValueError):
+            raise HTTPException(422, "pid is required")
+        result = await asyncio.to_thread(gpu_placement.release_orphan, pid)
+        if not result.get("ok"):
+            raise HTTPException(409, result.get("reason") or "could not release the runner")
+        _cache["ts"] = 0.0
+        _cache["data"] = None
+        return result
 
     @router.get("/gpu/policy")
     async def gpu_policy(request: Request):

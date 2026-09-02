@@ -140,6 +140,13 @@ function _ensureEls() {
   // panel HTML, so the click is delegated: switch the view and repaint, no
   // page reload, no closing of the panel.
   panel.addEventListener('click', (e) => {
+    const rel = e.target && e.target.closest ? e.target.closest('[data-su-release]') : null;
+    if (rel && panel.contains(rel)) {
+      e.preventDefault();
+      e.stopPropagation();
+      _release(rel.getAttribute('data-su-release'), rel);
+      return;
+    }
     const btn = e.target && e.target.closest ? e.target.closest('[data-su-gpu-view]') : null;
     if (!btn || !panel.contains(btn)) return;
     e.preventDefault();
@@ -366,9 +373,43 @@ export function ollamaSectionHtml(d) {
     `</div>`;
 }
 
+/** Runners no Ollama server owns any more (a restart leaves them behind),
+ *  still holding VRAM the gauges file under "other". Exported for tests. */
+export function orphansHtml(d) {
+  const list = Array.isArray(d && d.orphans) ? d.orphans : [];
+  if (!list.length) return '';
+  const total = list.reduce((a, o) => a + (o.bytes || 0), 0);
+  return `<div class="su-section su-orphans"><div class="su-h">Orphaned runner${list.length > 1 ? 's' : ''} <span class="su-muted">no Ollama server owns them</span></div>` +
+    `<div class="su-warn">${list.map(o =>
+      `<div class="su-orphan"><span>${esc(o.name || 'runner')} · pid ${esc(String(o.pid))}` +
+      `${o.bytes != null ? ` · ${gb(o.bytes)} GB` : ''}${o.gpus && o.gpus.length ? ` on #${o.gpus.map(esc).join(', #')}` : ''}</span>` +
+      `<button type="button" class="su-btn" data-su-release="${esc(String(o.pid))}" title="Kill this runner and free its VRAM (it is re-checked as orphaned first)">Release</button></div>`).join('')}` +
+    `<div class="su-muted">${total ? gb(total) + ' GB' : 'VRAM'} that every other gauge counts as "other". Ollama restarted without its runners; releasing them is safe — the next request loads the model again.</div></div></div>`;
+}
+
+async function _release(pid, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = 'Releasing…'; }
+  try {
+    const r = await fetch(`${API_BASE}/api/system/gpu/orphans/release`, {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pid: Number(pid) }),
+    });
+    if (!r.ok) {
+      let msg = `HTTP ${r.status}`;
+      try { msg = (await r.json()).detail || msg; } catch (_) {}
+      throw new Error(msg);
+    }
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Release'; btn.title = String(e.message || e); }
+    return;
+  }
+  await tick();
+}
+
 function renderPanel(d) {
   const rows = [];
   rows.push(gpuSectionsHtml(d, _gpuView));
+  rows.push(orphansHtml(d));
   rows.push(ollamaSectionHtml(d));
   const gm = d.gpu_mem || {};
   if (gm.supported) {

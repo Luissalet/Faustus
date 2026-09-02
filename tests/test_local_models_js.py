@@ -796,3 +796,35 @@ def test_non_admins_get_a_read_only_page():
     assert "lm-fit-over" in out["installed"]
     assert out["pullDisabled"] is True and out["hint"] is False
     assert 'data-lm-action="pull"' not in out["discover"]
+
+
+# ── orphaned runners ────────────────────────────────────────────────────────
+
+@pytest.mark.skipif(not _HAS_NODE, reason="node not installed")
+def test_vram_block_lists_orphaned_runners_with_a_release_button():
+    """A restarted Ollama leaves its llama-server children alive: 13 GB on the
+    5060 Ti with `ollama ps` empty, filed under "other". The block names each
+    one and offers to release it; nothing at all when there are none."""
+    out = _run("""
+      const v = JSON.parse(JSON.stringify(DATA2.vram));
+      v.orphans = [
+        { pid: 49960, name: 'llama-server.exe', gpus: [1], bytes: 6 * 1073741824, started: 1 },
+        { pid: 46404, name: '<b>x</b>', gpus: [], bytes: null, started: 2 },
+      ];
+      console.log(JSON.stringify({ with: renderVramHtml(v, DATA2.loaded), without: renderVramHtml(DATA2.vram, DATA2.loaded),
+                                   direct: orphansHtml(v.orphans), none: orphansHtml(undefined) }));
+    """)
+    html = out["with"]
+    assert 'class="lm-orphans"' in html and out["without"].count("lm-orphan") == 0 and out["none"] == ""
+    assert 'Orphaned runner <code>llama-server.exe</code> (pid 49960) holds 6.0 GB on GPU 1' in html
+    assert 'data-lm-action="release-orphan" data-lm-pid="49960"' in html
+    assert '&lt;b&gt;x&lt;/b&gt;' in html and '<b>x</b>' not in html
+    assert html.count('data-lm-action="release-orphan"') == 2
+    assert html.index('lm-orphans') > html.index('lm-vram-legend')
+
+
+def test_release_orphan_action_posts_the_pid_to_the_usage_route():
+    src = MODULE_JS
+    handler = src.split("case 'release-orphan': {", 1)[1].split("break;", 1)[0]
+    assert "/api/system/gpu/orphans/release" in handler and "JSON.stringify({ pid })" in handler
+    assert "refresh({ silent: true })" in handler

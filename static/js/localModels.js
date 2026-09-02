@@ -176,8 +176,21 @@ export function renderVramHtml(vram, loaded = []) {
       <span><i class="lm-vram-dot lm-vram-other"></i>other ${esc(fmtGb(others))}</span>
       <span title="CUDA context, cuBLAS workspace and compute buffers, gone before a single weight is loaded${multi ? ' — one per card' : ''}.">reserve ${esc(fmtGb(multi ? (vram.reserve_per_gpu_bytes != null ? vram.reserve_per_gpu_bytes : vram.reserve_bytes / count) : vram.reserve_bytes))}${multi ? ` × ${count}` : ''}</span>
       <span title="What a model's weights can take right now, KV cache not included${multi ? ' — across the pool' + (vram.largest_single_budget_bytes != null ? '; a single card takes up to ' + attr(fmtGb(vram.largest_single_budget_bytes)) : '') : ''}.">budget ${esc(fmtGb(vram.budget_bytes))}</span>
-    </div>${cards.map(_vramGpuHtml).join('')}${multi ? `
+    </div>${cards.map(_vramGpuHtml).join('')}${orphansHtml(vram.orphans)}${multi ? `
     <div class="lm-vram-note lm-muted">Ollama places each model on the card with the most free memory and splits a model across cards only when it does not fit one; pin a card per model in Options… (main_gpu). OLLAMA_SCHED_SPREAD=1 on the Ollama server spreads every model.</div>` : ''}`;
+}
+
+/** Runners no Ollama server owns any more (a restart leaves its
+ *  llama-server children behind) — VRAM the bar files under "other" with
+ *  nothing to explain it. One line per runner with a Release button. */
+export function orphansHtml(orphans) {
+  const list = Array.isArray(orphans) ? orphans : [];
+  if (!list.length) return '';
+  return `
+    <div class="lm-orphans">${list.map(o => `
+      <div class="lm-orphan"><span class="lm-orphan-text">Orphaned runner <code>${esc(o.name || 'runner')}</code> (pid ${esc(String(o.pid))})${o.bytes != null ? ` holds ${esc(fmtGb(o.bytes))}` : ''}${o.gpus && o.gpus.length ? ` on GPU ${esc(o.gpus.join(', '))}` : ''} — no Ollama server owns it.</span>
+      <button type="button" class="admin-btn-sm" data-lm-action="release-orphan" data-lm-pid="${attr(String(o.pid))}" title="Kill this runner and free its VRAM; the next request loads the model again">Release</button></div>`).join('')}
+    </div>`;
 }
 
 /** Where a loaded model sits, as a chip: `GPU 1 · RTX 5060 Ti`,
@@ -689,6 +702,18 @@ async function _action(action, btn) {
         btn.disabled = true;
         await _post('/unload', { name, embedding: btn.getAttribute('data-lm-embedding') === '1' });
         toast(`Unloaded ${name}`);
+        await refresh({ silent: true });
+        break;
+      }
+      case 'release-orphan': {
+        // an orphaned runner (no Ollama server owns it) still holding VRAM
+        const pid = Number(btn.getAttribute('data-lm-pid'));
+        btn.disabled = true;
+        btn.textContent = 'Releasing…';
+        await _json('/api/system/gpu/orphans/release', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pid }),
+        });
+        toast(`Released runner ${pid}`);
         await refresh({ silent: true });
         break;
       }

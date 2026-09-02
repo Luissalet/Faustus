@@ -300,3 +300,33 @@ def test_hostile_server_strings_are_escaped_everywhere():
         assert "&lt;img src=x onerror=1&gt;" in out[key], key
     # the pill is set through textContent, so the raw name is fine there — but it is the model's name, nothing else
     assert out["pill"].startswith("GPU 22% · 25.1/28G · 43° · <img src=x onerror=1> 100%↑GPU")
+
+
+# ── orphaned runners (a restarted Ollama leaves its llama-server behind) ─────
+
+def test_orphans_section_lists_each_runner_with_a_release_button_and_escapes():
+    out = _run("""
+      const d = JSON.parse(JSON.stringify(TWO));
+      d.orphans = [
+        { pid: 49960, name: 'llama-server.exe', gpus: [1], bytes: 6 * 1073741824, started: 1 },
+        { pid: 46404, name: '<img src=x onerror=1>', gpus: [0, 1], bytes: null, started: 2 },
+      ];
+      console.log(JSON.stringify({ html: m.orphansHtml(d), none: m.orphansHtml(TWO), missing: m.orphansHtml({}) }));
+    """)
+    html = out["html"]
+    assert out["none"] == "" and out["missing"] == ""
+    assert "Orphaned runners" in html and "no Ollama server owns them" in html
+    assert 'data-su-release="49960"' in html and 'data-su-release="46404"' in html
+    assert "pid 49960 · 6.0 GB on #1" in html
+    assert "on #0, #1" in html and "6.0 GB that every other gauge" in html
+    assert "<img src=x onerror=1>" not in html and "&lt;img src=x onerror=1&gt;" in html
+
+
+def test_release_button_posts_the_pid_and_is_off_limits_to_the_view_switch_handler():
+    src = MODULE_PATH.read_text(encoding="utf-8")
+    assert "data-su-release" in src and "/api/system/gpu/orphans/release" in src
+    assert "JSON.stringify({ pid: Number(pid) })" in src
+    # the panel's click handler answers the Release button before the view switch
+    handler = src.split("panel.addEventListener('click'", 1)[1].split("});", 1)[0]
+    assert handler.index("data-su-release") < handler.index("data-su-gpu-view")
+    assert "rows.push(orphansHtml(d));" in src

@@ -437,6 +437,11 @@ def collect_local_models(ep: Dict[str, Any]) -> Dict[str, Any]:
             loaded_by_name[name] = row
 
     vram = _vram_block(same, held, placements)
+    if same and vram.get("supported"):
+        # runners a restarted Ollama left behind: VRAM the bars file under
+        # "other" with nothing to explain it (the page offers to release them)
+        vram["orphans"] = gpu_placement.orphan_runners(
+            [dict(g, used=g.get("used_bytes"), total=g.get("total_bytes")) for g in vram.get("gpus") or []])
     out["vram"] = vram
     out["disk"] = _disk(root, same)
     saved = mlo.options_for_endpoint(ep["id"])
