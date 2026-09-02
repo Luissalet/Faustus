@@ -53,8 +53,8 @@ _DATA = {
          "context_length": 8192, "fit": {"state": "fits"}, "loaded": False, "options": {}},
     ],
     "pulls": [
-        {"id": "p1", "name": "gemma3:12b", "status": "pulling", "status_text": "pulling abc", "completed": 4 * GIB,
-         "total": 8 * GIB, "percent": 50.0, "active": True, "started_at": 1},
+        {"id": "p1", "endpoint_id": "local-ollama", "name": "gemma3:12b", "status": "pulling", "status_text": "pulling abc",
+         "completed": 4 * GIB, "total": 8 * GIB, "percent": 50.0, "active": True, "started_at": 1},
     ],
 }
 
@@ -418,6 +418,110 @@ def test_actions_go_through_the_api_and_the_app_confirm():
     assert "Saved options for qwen3.5:9b" in out["toasts"]
     assert out["invalidated"] >= 1
     assert "/api/local-models/pulls/p2/events" in out["attached"]     # the new pull is followed live
+
+
+@pytest.mark.skipif(not _HAS_NODE, reason="node not installed")
+def test_a_pull_the_server_no_longer_lists_is_marked_lost_not_kept_active_forever():
+    """Audited: pulls live in the server's memory. After a restart the poll
+    lists none, the EventSource reconnects into a 404 for ever, and the row
+    stays "pulling 50 %" with a Cancel button that 404s too. The page must
+    notice — close the stream, drop the ghost's active state and say what
+    happened — instead of believing the last snapshot for ever."""
+    out = _run("""
+      globalThis._isAdmin = true;
+      localModelsModule.activate();
+      await flush();
+      const before = _pullsState().map(p => [p.id, p.active]);
+      // the browser's EventSource reconnects, gets 404 on /pulls/p1/events and fires onerror
+      sources[0].onerror && sources[0].onerror({});
+      // server restarted: the next poll lists no pulls at all
+      globalThis.DATA = { ...globalThis.DATA, pulls: [] };
+      await localModelsModule.refresh({ silent: true }); await flush();
+      const after = _pullsState().map(p => [p.id, p.active, p.status]);
+      const html = byId['lm-pulls'].innerHTML;
+      // a finished pull of ANOTHER endpoint the poll does not list is not a ghost
+      console.log(JSON.stringify({ before, after, html, hasCancel: html.includes('cancel-pull'),
+                                   hasDismiss: html.includes('dismiss-pull'), sourceClosed: sources[0].closed,
+                                   pullsHidden: byId['lm-pulls'].hidden }));
+    """)
+    assert out["before"] == [["p1", True]]
+    assert out["after"] == [["p1", False, "lost"]]
+    assert out["sourceClosed"] is True
+    assert out["hasCancel"] is False and out["hasDismiss"] is True
+    assert out["pullsHidden"] is False
+    assert "server restarted" in out["html"] and 'data-lm-pull-row="p1"' in out["html"]
+
+
+@pytest.mark.skipif(not _HAS_NODE, reason="node not installed")
+def test_a_pull_of_another_endpoint_or_one_started_during_the_poll_is_not_a_ghost():
+    out = _run("""
+      globalThis._isAdmin = true;
+      localModelsModule.activate();
+      await flush();
+      // A pull started while a poll was in flight is not in that poll's answer.
+      let release;
+      const gate = new Promise(r => { release = r; });
+      const realFetch = globalThis.fetch;
+      globalThis.fetch = async (url, opts = {}) => {
+        if (url === '/api/local-models?endpoint_id=local-ollama') { await gate; }
+        return realFetch(url, opts);
+      };
+      const poll = localModelsModule.refresh({ silent: true });
+      await tick();
+      await localModelsModule.startPull('gemma3:4b');   // p2, created during the poll
+      release(); await poll; await flush();
+      const p2 = _pullsState().find(p => p.id === 'p2');
+      // A pull on another endpoint is listed by its own endpoint's poll only.
+      globalThis.fetch = realFetch;
+      globalThis.DATA = { ...globalThis.DATA, pulls: [], endpoint_id: 'lan' };
+      byId['lm-endpoint'].value = 'lan';
+      byId['lm-endpoint'].fire('change');
+      await flush();
+      const p1 = _pullsState().find(p => p.id === 'p1');
+      console.log(JSON.stringify({ p2: [p2.id, p2.active, p2.status], p1: [p1.id, p1.active, p1.status] }));
+    """)
+    assert out["p2"] == ["p2", True, "queued"]
+    assert out["p1"] == ["p1", True, "pulling"]
+
+
+@pytest.mark.skipif(not _HAS_NODE, reason="node not installed")
+def test_the_open_options_form_survives_the_poll():
+    """Audited: the 8 s poll repainted #lm-installed from the saved values,
+    so whatever the admin had typed into num_ctx was gone before Save."""
+    out = _run("""
+      globalThis._isAdmin = true;
+      localModelsModule.activate();
+      await flush();
+      click({ 'data-lm-action': 'options', 'data-lm-name': 'qwen3.5:9b' });
+      await flush();
+      const formBefore = byId['lm-installed'].innerHTML.includes('data-lm-options-form="qwen3.5:9b"');
+      // the user typed into the form (only the DOM knows): mark the painted HTML
+      byId['lm-installed'].innerHTML = byId['lm-installed'].innerHTML.replace('value="32768"', 'value="4096" data-typed="1"');
+      const paintsBefore = byId['lm-installed'].innerHTML;
+      await localModelsModule.refresh({ silent: true }); await flush();
+      const survived = byId['lm-installed'].innerHTML === paintsBefore;
+      // the rest of the page still repaints on the poll
+      globalThis.DATA = { ...globalThis.DATA, loaded: [] };
+      await localModelsModule.refresh({ silent: true }); await flush();
+      const loadedRepainted = byId['lm-loaded'].innerHTML.includes('Nothing is loaded');
+      const stillTyped = byId['lm-installed'].innerHTML.includes('data-typed="1"');
+      // closing the form repaints the table from the data again
+      click({ 'data-lm-action': 'close-options', 'data-lm-name': 'qwen3.5:9b' });
+      await flush();
+      const afterClose = byId['lm-installed'].innerHTML;
+      // …and so does opening it for another model
+      click({ 'data-lm-action': 'options', 'data-lm-name': 'qwen3.8:27b-q8_0' });
+      await flush();
+      const otherForm = byId['lm-installed'].innerHTML.includes('data-lm-options-form="qwen3.8:27b-q8_0"');
+      console.log(JSON.stringify({ formBefore, survived, loadedRepainted, stillTyped,
+                                   closedForm: afterClose.includes('data-lm-options-form='), closedTyped: afterClose.includes('data-typed'),
+                                   otherForm }));
+    """)
+    assert out["formBefore"] is True
+    assert out["survived"] is True and out["stillTyped"] is True
+    assert out["loadedRepainted"] is True
+    assert out["closedForm"] is False and out["closedTyped"] is False
+    assert out["otherForm"] is True
 
 
 @pytest.mark.skipif(not _HAS_NODE, reason="node not installed")

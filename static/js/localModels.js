@@ -246,7 +246,9 @@ export function renderPullsHtml(pulls, { isAdmin = false } = {}) {
     const state = p.status || '';
     const label = active
       ? `${esc(p.status_text || 'pulling')}${p.total ? ` · ${esc(fmtGb(p.completed))} / ${esc(fmtGb(p.total))}` : ''}`
-      : state === 'done' ? 'done' : state === 'cancelled' ? 'cancelled' : `failed: ${esc(p.error || 'unknown error')}`;
+      : state === 'done' ? 'done' : state === 'cancelled' ? 'cancelled'
+        : state === 'lost' ? 'lost — the server restarted; pull it again to resume'
+          : `failed: ${esc(p.error || 'unknown error')}`;
     const cancel = active && isAdmin
       ? `<button type="button" class="admin-btn-sm" data-lm-action="cancel-pull" data-lm-pull="${attr(p.id)}">Cancel</button>`
       : (!active ? `<button type="button" class="admin-btn-sm" data-lm-action="dismiss-pull" data-lm-pull="${attr(p.id)}" title="Hide">×</button>` : '');
@@ -315,6 +317,7 @@ let _loading = false;
 let _data = null;
 let _endpointId = '';
 let _optionsOpen = '';
+let _installedFormFor = '';   // the model whose options form the painted table holds
 let _discoverQ = '';
 let _discoverTimer = null;
 let _discoverSeq = 0;
@@ -367,13 +370,18 @@ function _renderAll() {
   const loaded = el('lm-loaded');
   if (loaded) loaded.innerHTML = renderLoadedHtml(_data.loaded, { isAdmin: admin, endpointId: _endpointId });
   const installed = el('lm-installed');
-  if (installed) {
+  // The 8 s poll must not repaint the table while an options form is open:
+  // the form is rendered from the saved values, so whatever the admin had
+  // typed was wiped before Save (seen live). The table repaints again as
+  // soon as the form closes, saves, or moves to another model.
+  if (installed && !(_optionsOpen && _installedFormFor === _optionsOpen)) {
     installed.innerHTML = renderInstalledHtml(_data.models, {
       isAdmin: admin,
       endpointId: _endpointId,
       canSetDefault: !!ep.id && ep.id !== 'ollama-local',
       optionsOpen: _optionsOpen,
     });
+    _installedFormFor = _optionsOpen;
   }
   const count = el('lm-installed-count');
   if (count) {
@@ -407,18 +415,39 @@ function _renderPulls() {
 async function refresh({ silent = false } = {}) {
   if (_loading) return;
   _loading = true;
+  // The active pulls this page knew BEFORE asking: a pull started while
+  // the poll is in flight is not in the poll's answer and is no ghost.
+  const knownActive = Array.from(_pulls.values()).filter(p => p.active).map(p => p.id);
   try {
     const url = `${API}${_endpointId ? `?endpoint_id=${encodeURIComponent(_endpointId)}` : ''}`;
     const data = await _json(url);
     _data = data;
     if (data.endpoint_id) _endpointId = data.endpoint_id;
+    const listed = new Set();
     (data.pulls || []).forEach(p => {
+      listed.add(p.id);
       // The SSE stream may already know a newer state than this poll (the
       // `version` counter is the server's own); never step backwards.
       const cur = _pulls.get(p.id);
       if (cur && Number(cur.version || 0) > Number(p.version || 0)) return;
       _pulls.set(p.id, p);
       if (p.active) _attach(p.id);
+    });
+    // Pulls live in the server's memory: an active pull the server no
+    // longer lists (for this endpoint) is gone — it restarted. Without
+    // this the row stayed "pulling 50 %" for ever with a Cancel that 404s,
+    // while the EventSource reconnected into a 404 on every retry.
+    knownActive.forEach(id => {
+      const p = _pulls.get(id);
+      if (!p || !p.active || listed.has(id)) return;
+      if (p.endpoint_id && data.endpoint_id && p.endpoint_id !== data.endpoint_id) return;
+      _pulls.set(id, {
+        ...p, active: false, status: 'lost', status_text: 'lost',
+        error: 'lost — the server restarted', finished_at: Date.now() / 1000,
+        version: Number(p.version || 0) + 1,
+      });
+      const es = _sources.get(id);
+      if (es) { try { es.close(); } catch (_) {} _sources.delete(id); }
     });
     _renderAll();
   } catch (e) {

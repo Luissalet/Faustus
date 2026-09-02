@@ -43332,10 +43332,11 @@ body:has(.sidebar.right-side) .project-active-pill { right: 12px; }
 .lm-pull-head { display: flex; align-items: center; gap: 8px; font-size: 12px; }
 .lm-pull-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lm-pull-error .lm-pull-label { color: var(--red); white-space: normal; }
+.lm-pull-lost .lm-pull-label { color: var(--muted, #888); white-space: normal; }
 .lm-pull-bar { height: 6px; margin-top: 5px; border-radius: 4px; overflow: hidden; background: color-mix(in srgb, var(--fg) 9%, transparent); }
 .lm-pull-fill { display: block; height: 100%; background: color-mix(in srgb, var(--red) 70%, var(--fg)); transition: width .25s ease; }
 .lm-pull-done .lm-pull-fill { background: color-mix(in srgb, #9ece6a 60%, var(--fg)); }
-.lm-pull-cancelled .lm-pull-fill, .lm-pull-error .lm-pull-fill { background: color-mix(in srgb, var(--fg) 30%, transparent); }
+.lm-pull-cancelled .lm-pull-fill, .lm-pull-error .lm-pull-fill, .lm-pull-lost .lm-pull-fill { background: color-mix(in srgb, var(--fg) 30%, transparent); }
 .lm-pull-indeterminate { width: 30% !important; animation: lm-indeterminate 1.2s ease-in-out infinite; }
 @keyframes lm-indeterminate { 0% { margin-left: 0; } 50% { margin-left: 70%; } 100% { margin-left: 0; } }
 /* Discover */
