@@ -529,7 +529,12 @@ export function renderHarnessSummary(json, { messageId = null } = {}) {
   const git = d.git;
   const stop = d.stop_reason || 'complete';
   const parts = [];
-  parts.push(`${tools} tool call${tools === 1 ? '' : 's'}${failed ? ` (${failed} failed)` : ''}`);
+  // A turn parked at the approval gate counts its sealed call as "failed"
+  // in the ledger (it did not run). To the user it is not a failure — it is
+  // the call they are being asked about.
+  const gated = stop === 'awaiting_user' && failed > 0 ? Math.min(failed, 1) : 0;
+  const reallyFailed = failed - gated;
+  parts.push(`${tools} tool call${tools === 1 ? '' : 's'}${reallyFailed ? ` (${reallyFailed} failed)` : ''}${gated ? ' (1 awaiting approval)' : ''}`);
   parts.push(files.length ? `Edited ${files.length} file${files.length === 1 ? '' : 's'}` : 'no files changed');
   if (git && typeof git.changed_count === 'number') {
     parts.push(git.changed_count ? `git: ${git.changed_count} path${git.changed_count === 1 ? '' : 's'} dirty${git.shortstat ? ` (${git.shortstat.trim()})` : ''}` : 'git: clean');
