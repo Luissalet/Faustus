@@ -39,6 +39,10 @@ REPO = Path(__file__).resolve().parents[1]
 ALLOWED_CALLERS = frozenset({
     "src/llm_core.py",          # shared AsyncClient used by stream_llm
     "routes/model_routes.py",   # _probe_endpoint + _ping_endpoint
+    # Settings → Local models: /api/tags, /api/ps, /api/show, /api/pull … on
+    # the same Ollama endpoints model_routes probes — an Ollama behind a TLS
+    # reverse proxy with a private CA needs the same bundle here as there.
+    "routes/local_models_routes.py",
 })
 
 
