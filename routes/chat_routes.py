@@ -2735,8 +2735,12 @@ def setup_chat_routes(
                         # delegate_agents call with these exact instructions
                         # passes the post-external-context gate (workers keep
                         # their own gates).
-                        _harness_options = dict(_harness_options) if isinstance(_harness_options, dict) else {}
-                        _harness_options["user_delegation"] = _delegate_tasks
+                        # NB: a new name — assigning to `_harness_options`
+                        # here would make it a local of this closure and
+                        # unbind it for the rest of the function (seen live:
+                        # "cannot access local variable '_harness_options'").
+                        _loop_harness_options = dict(_harness_options) if isinstance(_harness_options, dict) else {}
+                        _loop_harness_options["user_delegation"] = _delegate_tasks
                         # The user saw (and history keeps) the compact line; the
                         # model gets the explicit delegation instruction.
                         _instr = _delegation_instruction(_delegate_tasks)
@@ -2746,6 +2750,8 @@ def setup_chat_routes(
                                 messages[_mi] = dict(messages[_mi])
                                 messages[_mi]["content"] = _instr
                                 break
+                    else:
+                        _loop_harness_options = _harness_options
 
                     async for chunk in stream_agent_loop(
                         sess.endpoint_url,
@@ -2787,7 +2793,7 @@ def setup_chat_routes(
                         exact_approval=exact_tool_approval,
                         temperature_explicit=_temperature_explicit,
                         gen_overrides=_gen_overrides or None,
-                        harness_options=_harness_options or None,
+                        harness_options=_loop_harness_options or None,
                     ):
                         if chunk.startswith("data: ") and not chunk.startswith("data: [DONE]"):
                             try:
