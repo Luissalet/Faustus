@@ -1,0 +1,518 @@
+"""Declarative schema for the "Agent & automation" settings UI.
+
+Every ``agent_*`` / ``browser_*`` / ``desktop_*`` key of ``DEFAULT_SETTINGS``
+(plus the few agent-adjacent ones in ``EXTRA_KEYS``) is described here once:
+which group it belongs to, a short label, a concrete help text, the control
+type and the numeric bounds. ``GET /api/agent/settings/schema``
+(routes/agent_settings_routes.py) hands this to static/js/agentSettings.js,
+which renders the form in Settings → Agent Tools; ``POST /api/auth/settings``
+uses :func:`coerce_setting_value` so a value typed into that form (or posted
+by hand) lands with the right Python type and inside its bounds.
+
+Parity with ``DEFAULT_SETTINGS`` is enforced by tests/test_agent_settings_schema.py:
+a new ``agent_*`` key without an entry here, or an entry for a key that does
+not exist, fails the suite — :func:`schema_problems` is what it checks.
+
+Field types: ``bool`` (toggle), ``int`` / ``float`` (number input with
+``min`` / ``max`` / ``step``), ``text``, ``secret`` (masked text), ``select``
+(``options``: list of ``{value, label}``) and ``list`` (list of strings,
+edited comma-separated). ``restart_hint`` marks a key that is only read when
+the process starts; every key in this schema is read live today, so the flag
+is carried for the UI contract but currently false everywhere. The browser_*
+keys are applied on the next browser action instead (src/builtin_mcp.py
+compares the argv it would launch with and restarts the server).
+"""
+
+from __future__ import annotations
+
+import re
+from typing import Any
+
+from src.settings import DEFAULT_SETTINGS, RETIRED_SETTING_KEYS
+
+# Keys the schema MUST cover (besides EXTRA_KEYS): every default matching this.
+SCHEMA_KEY_RE = re.compile(r"^(agent_|browser_|desktop_)")
+# Agent-adjacent keys that live under other prefixes but belong on this page.
+EXTRA_KEYS: tuple[str, ...] = ("tool_path_extra_roots", "vision_enabled", "vision_model")
+
+FIELD_TYPES: tuple[str, ...] = ("bool", "int", "float", "text", "select", "list", "secret")
+_NUMERIC_TYPES = ("int", "float")
+
+
+def _field(key: str, label: str, help: str, type: str, **extra: Any) -> dict[str, Any]:
+    field: dict[str, Any] = {
+        "key": key,
+        "label": label,
+        "help": help,
+        "type": type,
+        "restart_hint": bool(extra.pop("restart_hint", False)),
+    }
+    if type == "select":
+        options = extra.pop("options")
+        field["options"] = [
+            {"value": o, "label": o} if isinstance(o, str) else dict(o) for o in options
+        ]
+    for name in ("min", "max", "step", "placeholder"):
+        if name in extra:
+            field[name] = extra.pop(name)
+    if extra:
+        raise TypeError(f"{key}: unknown field attributes {sorted(extra)}")
+    return field
+
+
+def _bool(key, label, help, **kw):
+    return _field(key, label, help, "bool", **kw)
+
+
+def _int(key, label, help, lo, hi, **kw):
+    return _field(key, label, help, "int", min=lo, max=hi, step=kw.pop("step", 1), **kw)
+
+
+def _float(key, label, help, lo, hi, step, **kw):
+    return _field(key, label, help, "float", min=lo, max=hi, step=step, **kw)
+
+
+def _text(key, label, help, **kw):
+    return _field(key, label, help, "text", **kw)
+
+
+def _select(key, label, help, options, **kw):
+    return _field(key, label, help, "select", options=options, **kw)
+
+
+def _list(key, label, help, **kw):
+    return _field(key, label, help, "list", **kw)
+
+
+def _group(id: str, title: str, help: str, fields: list[dict[str, Any]]) -> dict[str, Any]:
+    return {"id": id, "title": title, "help": help, "fields": fields}
+
+
+_BROWSER_APPLY = " Applies on the next browser action."
+
+GROUPS: list[dict[str, Any]] = [
+    _group(
+        "loop", "Agent loop",
+        "How far one message may go, and when a local model gets cut off.",
+        [
+            _int("agent_max_rounds", "Max steps per message",
+                 "Model rounds (tool call + reply) one message may take before the Continue button appears.",
+                 1, 200),
+            _int("agent_max_tool_calls", "Tool call limit",
+                 "Tool calls allowed in one message. 0 = unlimited.",
+                 0, 1000),
+            _int("agent_auto_continue_cycles", "Auto-continue cycles",
+                 "When the step cap hits mid-task, the harness continues by itself this many times "
+                 "(each grants another Max steps) before showing the Continue button. 0 = always ask.",
+                 0, 10),
+            _bool("agent_harness_checks", "Reliability harness",
+                  "Claims-vs-evidence check, syntax check and fabricated-path detection after each turn."),
+            _bool("agent_tool_preflight", "Tool preflight",
+                  "Drop the tools that cannot work in this turn (no project, no mailbox…) before the tool "
+                  "list goes out. Saves rounds and schema tokens for small local models."),
+            _int("agent_stream_timeout_seconds", "Stream timeout (s)",
+                 "Seconds without any output from the model before the request is abandoned.",
+                 10, 7200),
+            _int("agent_local_stream_timeout_seconds", "Local stream timeout floor (s)",
+                 "On local endpoints the stream timeout is raised to at least this: local runners can "
+                 "stay silent for minutes while they prefill a long prompt.",
+                 0, 7200),
+            _float("agent_local_temperature_cap", "Local temperature cap",
+                   "Coding turns on a local endpoint run at most at this temperature unless the chat pins "
+                   "one. 0 = never cap.",
+                   0, 2, 0.05),
+            _int("agent_local_think_budget_seconds", "Thinking budget (s, local)",
+                 "A local thinking model that has produced only reasoning for this long is cut off once "
+                 "and retried with thinking off for the rest of the turn. 0 = no watchdog.",
+                 0, 3600),
+            _int("agent_subprocess_idle_timeout_seconds", "Command idle timeout (s)",
+                 "A bash / python command that prints nothing for this long is killed with its whole "
+                 "process tree (a server left in the foreground, a prompt waiting for input). 0 = never.",
+                 0, 86400),
+            _bool("agent_workspace_no_memory", "Skip memory on coding turns",
+                  "Do not retrieve personal memories for workspace coding turns; local models weave them "
+                  "into the code."),
+            _int("agent_input_token_budget", "Input token budget",
+                 "Soft cap on prompt tokens per round. 6000 (the default) means auto: scale to the "
+                 "model's context window. Any other value is an explicit cap; 0 disables trimming.",
+                 0, 2_000_000),
+            _int("agent_input_token_hard_max", "Auto budget ceiling",
+                 "Ceiling for the auto-derived budget. Raise it on APIs with very large windows you "
+                 "actually want to fill; no effect on an explicit budget.",
+                 1000, 10_000_000),
+            _bool("agent_email_confirm", "Confirm agent emails",
+                  "send_email / reply_to_email stage a draft for your approval in the chat instead of "
+                  "sending right away."),
+        ],
+    ),
+    _group(
+        "verification", "Verification",
+        "What runs on the files a turn changed before the turn is reported as done.",
+        [
+            _bool("agent_project_tests", "Run project tests",
+                  "After a turn that changed files, run the project's own tests (pytest, npm test, "
+                  "cargo, go, make — detected)."),
+            _select("agent_project_tests_scope", "Test scope",
+                    "related = only the test files that name a changed module (pytest); all = the whole suite.",
+                    ["related", "all"]),
+            _int("agent_project_tests_timeout_seconds", "Tests timeout (s)",
+                 "Wall-clock cap for one test run.",
+                 10, 7200),
+            _int("agent_project_tests_fix_rounds", "Test fix rounds",
+                 "Bounded extra rounds the model gets to fix failing tests. 0 = report only.",
+                 0, 5),
+            _bool("agent_project_tests_baseline", "Baseline failing tests",
+                  "Re-run the failing test files against the turn's checkpoint to tell new failures "
+                  "from pre-existing ones; no fix round when everything already failed before."),
+            _text("agent_project_test_command", "Test command override",
+                  "Command to run instead of the detected one, e.g. npm run test:unit. Empty = auto-detect.",
+                  placeholder="auto-detect"),
+            _select("agent_static_analysis", "Static analysis",
+                    "Correctness-only checks on the lines a turn added: names = ruff / pyflakes, eslint, "
+                    "go vet; types also runs tsc --noEmit and cargo check (slower). A missing tool costs nothing.",
+                    ["off", "names", "types"]),
+            _text("agent_static_analysis_command", "Static analysis override",
+                  "Command run instead of the detected linters; the changed paths are appended. "
+                  "Empty = auto-detect.",
+                  placeholder="auto-detect"),
+            _text("agent_auto_review", "Diff reviewer",
+                  "Independent, tool-less review of the turn's diff: off, same (this chat's model) or a "
+                  "model name on the same endpoint.",
+                  placeholder="off | same | model name"),
+            _int("agent_auto_review_timeout_seconds", "Review timeout (s)",
+                 "Wall-clock cap for the review pass.",
+                 10, 3600),
+            _bool("agent_auto_review_fix_round", "Review fix round",
+                  "Let the model act on the reviewer's findings before the turn ends."),
+            _int("agent_auto_review_fix_rounds", "Review fix rounds",
+                 "How many bounded fix rounds the review findings may trigger.",
+                 0, 5),
+            _bool("agent_checkpoints", "Workspace checkpoints",
+                  "Shadow snapshot of the workspace before the first change of a turn: powers 'restore to "
+                  "before this turn', per-file diffs and the test baseline. Needs git."),
+            _int("agent_checkpoint_max_repo_mb", "Checkpoint repo cap (MB)",
+                 "Workspaces larger than this are not snapshotted.",
+                 1, 100_000),
+            _int("agent_checkpoint_max_file_mb", "Checkpoint file cap (MB)",
+                 "Files larger than this are left out of the snapshot.",
+                 1, 1000),
+        ],
+    ),
+    _group(
+        "context", "Context",
+        "What rides along with the user's message, and how big one read may be.",
+        [
+            _bool("agent_project_instructions", "Project instructions",
+                  "Put the repo's standing instructions (AGENTS.md, CLAUDE.md, …) in the system prompt."),
+            _int("agent_project_instructions_max_chars", "Instructions max chars",
+                 "Longer instruction files are cut at this size.",
+                 0, 200_000),
+            _bool("agent_repo_map", "Repository map",
+                  "Files + symbols of the workspace before the user's message, so the model does not "
+                  "spend rounds on ls / grep."),
+            _int("agent_repo_map_tokens", "Repo map tokens",
+                 "Token budget of the map.",
+                 0, 50_000),
+            _bool("agent_read_outline", "Outline big reads",
+                  "An un-ranged read_file on a file too big to return whole answers with the line count, "
+                  "the symbol index, the first ~80 lines and the call that fetches any range — instead of "
+                  "a blind cut at the top."),
+            _float("agent_read_window_fraction", "Read window fraction",
+                   "Share of the model's context window one un-ranged read may occupy; the cap only ever "
+                   "comes down from the fixed maximum.",
+                   0.01, 1, 0.05),
+            _bool("agent_file_mentions", "@ file mentions",
+                  "Paths picked with @ in the composer are re-resolved server-side and handed to the model."),
+            _int("agent_file_mention_inline_chars", "Mention inline chars",
+                 "Mentioned files up to this size ride along inline. 0 = list the paths only.",
+                 0, 200_000),
+            _bool("agent_code_refs", "path:line references",
+                  "Tracebacks and stack frames pasted into the message bring the lines around each frame "
+                  "along with the turn."),
+            _int("agent_code_ref_chars", "Reference chars",
+                 "Budget for those excerpts. 0 = list the frames only.",
+                 0, 200_000),
+            _bool("agent_tool_images", "Tool result images",
+                  "Screenshots returned by tools (browser, desktop) go to the model as image blocks when "
+                  "it can see."),
+            _int("agent_tool_image_max_px", "Tool image max px",
+                 "Longest side of a tool image; larger ones are shrunk (JPEG q80).",
+                 256, 8192),
+            _int("agent_keep_images", "Tool images kept",
+                 "Only the last N tool images stay in the prompt; older ones become "
+                 "'[earlier image omitted]'. -1 = keep all.",
+                 -1, 100),
+        ],
+    ),
+    _group(
+        "subagents", "Sub-agents",
+        "delegate_agents: the workers, their watchdog and the control board.",
+        [
+            _bool("agent_subagent_reviewer", "Add a reviewer",
+                  "Append a reviewer worker after the others by default."),
+            _int("agent_subagent_max_parallel", "Max parallel workers",
+                 "Workers running at the same time on one GPU; the rest wait as 'queued'.",
+                 1, 32),
+            _int("agent_subagent_stall_seconds", "Stall threshold (s)",
+                 "Idle or loop time after which a worker counts as stalled.",
+                 10, 3600),
+            _int("agent_subagent_tick_seconds", "Watchdog tick (s)",
+                 "Heartbeat period of the control board.",
+                 1, 60),
+            _bool("agent_subagent_supervisor", "Deterministic supervisor",
+                  "Nudge a stalled worker once, then stop it."),
+        ],
+    ),
+    _group(
+        "runs", "Runs & queue",
+        "Detached runs: the replay log on disk and the task queue.",
+        [
+            _bool("agent_runs_persist", "Persist runs",
+                  "On-disk replay log, so a run survives a restart and can be reopened."),
+            _int("agent_runs_keep_hours", "Keep runs (hours)",
+                 "Finished run logs older than this are swept.",
+                 1, 8760),
+            _int("agent_queue_local_concurrency", "Local lane concurrency",
+                 "Runs at a time on local endpoints (1 = one GPU, one generation). 0 = unlimited.",
+                 0, 64),
+            _int("agent_queue_api_concurrency", "API lane concurrency",
+                 "Runs at a time on API endpoints. 0 = no queue.",
+                 0, 64),
+            _bool("agent_scorecard", "Model scorecard",
+                  "Record per-model reliability metrics of agent turns (/scorecard)."),
+        ],
+    ),
+    _group(
+        "browser", "Browser",
+        "Built-in Playwright browser. Changes apply on the next browser action — the server is "
+        "restarted with the new flags, no app restart needed.",
+        [
+            _select("browser_profile", "Profile",
+                    "persistent keeps cookies and logins in data/browser-profile between runs; isolated "
+                    "starts from a blank profile every time." + _BROWSER_APPLY,
+                    ["isolated", "persistent"]),
+            _bool("browser_headless", "Headless",
+                  "Run the browser without a window. Turn off to watch it on the server's desktop." + _BROWSER_APPLY),
+            _text("browser_cdp_endpoint", "Attach to your Chrome (CDP)",
+                  "DevTools URL of a browser you already run, e.g. http://127.0.0.1:9222. Start Chrome with "
+                  "--remote-debugging-port=9222 --user-data-dir=<a separate profile dir>. When set, the "
+                  "built-in server attaches to it and Headless / Profile do not apply." + _BROWSER_APPLY,
+                  placeholder="http://127.0.0.1:9222"),
+            _bool("browser_vision_caps", "Vision tools",
+                  "Add the mouse_*_xy tools; only useful with a vision model looking at screenshots." + _BROWSER_APPLY),
+            _int("browser_snapshot_max_chars", "Snapshot max chars",
+                 "Budget for the accessibility snapshot text returned by browser_snapshot / browser_navigate.",
+                 1000, 200_000),
+            _bool("browser_allow_code_execution", "Allow page JavaScript",
+                  "Offer browser_evaluate / browser_run_code_unsafe: model-written JavaScript runs inside "
+                  "the page. Off = not offered and denied."),
+            _bool("browser_live_view", "Live view",
+                  "Capture a viewport frame after every action for the Browser panel (never sent to the model)."),
+        ],
+    ),
+    _group(
+        "desktop", "Desktop control",
+        "The agent sees and drives the server's desktop.",
+        [
+            _select("desktop_control_mode", "Input tools",
+                    "desktop_click / type / key / scroll / focus_window: ask_each = approval card on every "
+                    "call, ask_task = the normal scoped approval gate, off = not offered at all.",
+                    ["ask_each", "ask_task", "off"]),
+        ],
+    ),
+    _group(
+        "vision", "Vision",
+        "Image analysis for the agent (OCR, tagging, screenshots).",
+        [
+            _bool("vision_enabled", "Vision",
+                  "Let the agent analyse images. Global default; users can override it in their own preferences."),
+            _text("vision_model", "Vision model",
+                  "Model id used for image analysis. The picker in AI Defaults → Vision lists the available ones.",
+                  placeholder="e.g. qwen2.5vl:7b"),
+        ],
+    ),
+    _group(
+        "files", "File access",
+        "Where the file tools may go besides the project data/ and temp directories.",
+        [
+            _list("tool_path_extra_roots", "Extra file roots",
+                  "Absolute directories read_file / write_file may access, comma-separated. .ssh, .gnupg, "
+                  "shell rc files and SSH keys stay blocked regardless.",
+                  placeholder="/srv/projects, /home/me/work"),
+        ],
+    ),
+]
+
+
+def schema_fields() -> list[dict[str, Any]]:
+    """Every field of every group, in display order."""
+    return [f for g in GROUPS for f in g["fields"]]
+
+
+def schema_keys() -> list[str]:
+    return [f["key"] for f in schema_fields()]
+
+
+def expected_keys() -> list[str]:
+    """The keys the schema must cover: DEFAULT_SETTINGS agent_/browser_/desktop_
+    keys plus EXTRA_KEYS (retired keys excluded)."""
+    keys = [k for k in DEFAULT_SETTINGS if SCHEMA_KEY_RE.match(k) and k not in RETIRED_SETTING_KEYS]
+    keys += [k for k in EXTRA_KEYS if k in DEFAULT_SETTINGS]
+    return keys
+
+
+def _default_matches_type(field: dict[str, Any], default: Any) -> bool:
+    t = field["type"]
+    if t == "bool":
+        return isinstance(default, bool)
+    if t == "int":
+        return isinstance(default, int) and not isinstance(default, bool)
+    if t == "float":
+        return isinstance(default, (int, float)) and not isinstance(default, bool)
+    if t in ("text", "secret"):
+        return isinstance(default, str)
+    if t == "select":
+        return isinstance(default, str) and any(o["value"] == default for o in field["options"])
+    if t == "list":
+        return isinstance(default, list)
+    return False
+
+
+def schema_problems() -> list[str]:
+    """Human-readable parity/consistency problems; empty when the schema is sound.
+
+    Checked: every expected key has exactly one entry; no entry names an
+    unknown key; types are valid and match the default's Python type; numeric
+    fields carry min <= default <= max; selects list their default."""
+    problems: list[str] = []
+    seen: dict[str, int] = {}
+    for f in schema_fields():
+        seen[f["key"]] = seen.get(f["key"], 0) + 1
+    for key, n in seen.items():
+        if n > 1:
+            problems.append(f"{key}: listed {n} times")
+        if key not in DEFAULT_SETTINGS:
+            problems.append(f"{key}: in the schema but not in DEFAULT_SETTINGS")
+    for key in expected_keys():
+        if key not in seen:
+            problems.append(f"{key}: in DEFAULT_SETTINGS but missing from the schema")
+    for f in schema_fields():
+        key = f["key"]
+        if f["type"] not in FIELD_TYPES:
+            problems.append(f"{key}: unknown type {f['type']!r}")
+            continue
+        if not f.get("label") or not f.get("help"):
+            problems.append(f"{key}: label and help are required")
+        if key not in DEFAULT_SETTINGS:
+            continue
+        default = DEFAULT_SETTINGS[key]
+        if not _default_matches_type(f, default):
+            problems.append(f"{key}: type {f['type']} does not match default {default!r}")
+        if f["type"] in _NUMERIC_TYPES:
+            lo, hi = f.get("min"), f.get("max")
+            if lo is None or hi is None or lo > hi:
+                problems.append(f"{key}: numeric field needs min <= max")
+            elif isinstance(default, (int, float)) and not (lo <= default <= hi):
+                problems.append(f"{key}: default {default!r} outside [{lo}, {hi}]")
+    return problems
+
+
+def build_schema() -> dict[str, Any]:
+    """Payload of GET /api/agent/settings/schema: ``{"groups": [...], "defaults": {...}}``."""
+    return {
+        "groups": [
+            {"id": g["id"], "title": g["title"], "help": g["help"], "fields": [dict(f) for f in g["fields"]]}
+            for g in GROUPS
+        ],
+        "defaults": {k: DEFAULT_SETTINGS[k] for k in schema_keys() if k in DEFAULT_SETTINGS},
+    }
+
+
+_FIELD_BY_KEY: dict[str, dict[str, Any]] = {f["key"]: f for f in schema_fields()}
+
+_TRUE_WORDS = ("true", "1", "yes", "on", "enable", "enabled")
+_FALSE_WORDS = ("false", "0", "no", "off", "disable", "disabled", "")
+
+
+def field_for(key: str) -> dict[str, Any] | None:
+    return _FIELD_BY_KEY.get(key)
+
+
+def _clamp(value, field):
+    lo, hi = field.get("min"), field.get("max")
+    if lo is not None and value < lo:
+        return lo
+    if hi is not None and value > hi:
+        return hi
+    return value
+
+
+def coerce_setting_value(key: str, value: Any) -> Any:
+    """Coerce ``value`` to the type the schema declares for ``key`` and clamp
+    numbers to their bounds. Keys outside the schema pass through untouched.
+    Raises ``ValueError`` with a short message for a value that cannot be read."""
+    field = _FIELD_BY_KEY.get(key)
+    if field is None:
+        return value
+    t = field["type"]
+    if t == "bool":
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)) and value in (0, 1):
+            return bool(value)
+        word = str(value if value is not None else "").strip().lower()
+        if word in _TRUE_WORDS:
+            return True
+        if word in _FALSE_WORDS:
+            return False
+        raise ValueError("must be true or false")
+    if t == "int":
+        if isinstance(value, bool):
+            raise ValueError("must be an integer")
+        try:
+            if isinstance(value, str):
+                value = value.strip()
+                number = float(value) if value else None
+            else:
+                number = float(value)
+        except (TypeError, ValueError):
+            number = None
+        if number is None or number != number or number != int(number):
+            raise ValueError("must be an integer")
+        return int(_clamp(int(number), field))
+    if t == "float":
+        if isinstance(value, bool):
+            raise ValueError("must be a number")
+        try:
+            number = float(str(value).strip()) if isinstance(value, str) else float(value)
+        except (TypeError, ValueError):
+            raise ValueError("must be a number") from None
+        if number != number:
+            raise ValueError("must be a number")
+        return float(_clamp(number, field))
+    if t in ("text", "secret"):
+        return "" if value is None else str(value).strip()
+    if t == "select":
+        word = "" if value is None else str(value).strip()
+        allowed = [o["value"] for o in field["options"]]
+        if word not in allowed:
+            raise ValueError("must be one of " + ", ".join(allowed))
+        return word
+    if t == "list":
+        if value is None:
+            return []
+        if isinstance(value, str):
+            items = re.split(r"[,\n]", value)
+        elif isinstance(value, (list, tuple)):
+            items = value
+        else:
+            raise ValueError("must be a list")
+        out = []
+        for item in items:
+            if not isinstance(item, str):
+                raise ValueError("must be a list of strings")
+            item = item.strip()
+            if item:
+                out.append(item)
+        return out
+    return value

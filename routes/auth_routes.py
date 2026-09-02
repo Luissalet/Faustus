@@ -16,6 +16,7 @@ from core.auth import AuthManager, RESERVED_USERNAMES, SetAdminResult, TOKEN_TTL
 from src.constants import DEEP_RESEARCH_DIR, MEMORY_FILE, PASSWORD_MIN_LENGTH, SKILLS_DIR
 from src.rate_limiter import RateLimiter
 from src.settings_scrub import scrub_settings
+from src.agent_settings_schema import coerce_setting_value
 from src.settings import (
     load_settings as _load_settings,
     save_settings as _save_settings,
@@ -750,6 +751,15 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
                 except (TypeError, ValueError):
                     raise HTTPException(400, f"{key} must be an integer")
                 val = max(lo, min(val, hi))
+            else:
+                # Agent / browser / desktop keys carry a declared type and
+                # bounds (src/agent_settings_schema.py): a "true" string lands
+                # as a bool, "12" as an int, out-of-range numbers are clamped
+                # and an unknown select value is refused. Other keys pass through.
+                try:
+                    val = coerce_setting_value(key, val)
+                except ValueError as exc:
+                    raise HTTPException(400, f"{key} {exc}")
             current[key] = val
         _save_settings(current)
         return without_retired_settings(current)

@@ -145,6 +145,27 @@ DEFAULT_SETTINGS = {
     # `compute_input_token_budget`.
     "agent_input_token_hard_max": 200_000,
     "agent_stream_timeout_seconds": 300,
+    # Local runners (Ollama, llama.cpp…) can sit silent for minutes while they
+    # prefill a long prompt: on a local endpoint the per-read inactivity
+    # timeout is raised to at least this many seconds (src/agent_loop.py).
+    "agent_local_stream_timeout_seconds": 900,
+    # Coding turns on a local endpoint run at most at this temperature unless
+    # the chat pins one explicitly (FAUSTUS harness). 0 = never cap.
+    "agent_local_temperature_cap": 0.4,
+    # Thinking watchdog for local thinking models: a round that has produced
+    # only reasoning for longer than this is cut off once and retried with
+    # think=false for the rest of the turn. 0 disables.
+    "agent_local_think_budget_seconds": 240,
+    # When the round budget (agent_max_rounds) runs out mid-task the harness
+    # injects the "continue" checkpoint itself and grants this many extra
+    # cycles of max_rounds before the Continue button appears. 0 = button only.
+    "agent_auto_continue_cycles": 1,
+    # bash / python tool: a command that prints nothing for this long is killed
+    # with its whole process tree (src/agent_tools/subprocess_tools.py). 0 = never.
+    "agent_subprocess_idle_timeout_seconds": 300,
+    # Workspace coding turns skip personal-memory retrieval (local models weave
+    # unrelated facts about the user into the code) — routes/chat_routes.py.
+    "agent_workspace_no_memory": True,
     # Tool preflight (src/tool_preflight.py): before the tool list goes out,
     # drop the tools that structurally cannot work in this turn — e.g.
     # `project_context` in a chat that is not inside a project, or the email
