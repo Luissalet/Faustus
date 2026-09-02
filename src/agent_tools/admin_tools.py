@@ -704,12 +704,31 @@ async def do_manage_settings(content: str, owner: Optional[str] = None) -> Dict:
             # "documents" -> the document tool set, "memory" ->
             # manage_memory, etc.
             from src.settings import get_setting, save_settings, load_settings
+            from src.tool_capabilities import BROWSER_MCP_PREFIX, browser_tool_denials
+
+            # "browser" covers the server id (McpManager hides/denies by it)
+            # AND every qualified mcp__builtin_browser__* name — the static
+            # set plus what the connected server exposes — because the
+            # request-level gates compare qualified names and the id alone
+            # blocked nothing (audit finding 4).
+            def _browser_toggle_names():
+                live = set()
+                try:
+                    _mgr = get_mcp_manager()
+                    if _mgr is not None and hasattr(_mgr, "browser_tool_names"):
+                        live = set(_mgr.browser_tool_names() or ())
+                except Exception:
+                    live = set()
+                return ["builtin_browser"] + sorted(
+                    browser_tool_denials({"builtin_browser"}, live_tool_names=live)
+                )
+
             _ALIASES = {
                 "shell": ["bash"],
                 "terminal": ["bash"],
                 "search": ["web_search", "web_fetch"],
                 "web": ["web_search", "web_fetch"],
-                "browser": ["builtin_browser"],
+                "browser": _browser_toggle_names(),
                 "documents": ["create_document", "edit_document", "update_document", "suggest_document"],
                 "doc": ["create_document", "edit_document", "update_document", "suggest_document"],
                 "memory": ["manage_memory"],
@@ -756,6 +775,13 @@ async def do_manage_settings(content: str, owner: Optional[str] = None) -> Dict:
                         current.append(t)
             else:  # enable_tool
                 current = [t for t in current if t not in targets]
+                if tool_name in ("browser", "builtin_browser"):
+                    # Drop any browser entry, however it was spelled (older
+                    # toggles, hand edits, tools of a newer server version).
+                    current = [
+                        t for t in current
+                        if t != "builtin_browser" and not str(t).startswith(BROWSER_MCP_PREFIX)
+                    ]
             after = set(current)
             settings["disabled_tools"] = current
             save_settings(settings)

@@ -70,6 +70,8 @@ from src.tool_policy import (
     web_search_enabled_for_turn,
 )
 from src.tool_approvals import tool_approval_store
+from src.tool_capabilities import BROWSER_MCP_ALL_TOOLS, browser_tool_denials
+from src.tool_utils import get_mcp_manager
 
 logger = logging.getLogger(__name__)
 
@@ -293,26 +295,64 @@ _RECENT_WEB_CONTEXT_RE = re.compile(
     r"price|current|latest|search|look\s+up|online)\b",
     re.I,
 )
-_RECENT_BROWSER_CONTEXT_RE = re.compile(
-    r"\b(?:browser|browse|open\s+(?:the\s+)?(?:site|page|url|link)|click|"
+# Browser wording, English + Spanish. Every alternative is a whole word or a
+# fixed phrase (\b on both sides) so "navega" never fires inside "navegar"
+# or "navegación", "clic" never inside "clicked", "pestaña" never inside
+# "pestañear". Bare nouns that coding requests use figuratively — "captura"
+# (catch an exception), "formulario" (a form component) — only count inside
+# the browser phrase ("captura de pantalla", "rellena el formulario",
+# "formulario de contacto"); a rule that classified those as browsing would
+# strip file tools from a plain code request.
+_BROWSER_INTENT_WORDS = (
+    # English
+    r"browser|browse|open\s+(?:the\s+)?(?:site|page|url|link)|click|"
     r"fill(?:\s+out)?|submit|send\s+(?:the\s+)?form|contact\s+form|web\s*form|"
-    r"form\s+submission|playwright|automation)\b",
+    r"form\s+submission|"
+    # Spanish
+    r"navegador|navega|"
+    r"abre\s+(?:la\s+|el\s+|una\s+|un\s+)?(?:web|p[aá]gina|url|enlace|sitio)|"
+    r"captura\s+de\s+pantalla|pantallazo|"
+    r"pincha|pulsa|haz\s+clic|clic|"
+    r"rellena(?:r)?|"
+    r"formulario\s+(?:de\s+contacto|web)|env[ií]a(?:r)?\s+el\s+formulario|"
+    r"pesta[nñ]as?|despl[aá]zate|haz\s+scroll|scroll\s+(?:down|up|hacia)|"
+    r"inicia(?:r)?\s+sesi[oó]n"
+)
+_EXPLICIT_BROWSER_INTENT_RE = re.compile(r"\b(?:" + _BROWSER_INTENT_WORDS + r")\b", re.I)
+_RECENT_BROWSER_CONTEXT_RE = re.compile(
+    r"\b(?:" + _BROWSER_INTENT_WORDS + r"|playwright|automation)\b",
     re.I,
 )
-_BROWSER_MCP_TOOLS = {
-    "mcp__builtin_browser__browser_navigate",
-    "mcp__builtin_browser__browser_snapshot",
-    "mcp__builtin_browser__browser_click",
-    "mcp__builtin_browser__browser_type",
-    "mcp__builtin_browser__browser_fill_form",
-    "mcp__builtin_browser__browser_select_option",
-    "mcp__builtin_browser__browser_press_key",
-    "mcp__builtin_browser__browser_wait_for",
-    "mcp__builtin_browser__browser_take_screenshot",
-    "mcp__builtin_browser__browser_drag",
-    "mcp__builtin_browser__browser_navigate_back",
-    "mcp__builtin_browser__browser_close",
-}
+
+
+def _explicit_browser_intent_for_message(message) -> bool:
+    """Whether one user message explicitly asks for the browser (EN/ES)."""
+    if not isinstance(message, str) or not message:
+        return False
+    return bool(_EXPLICIT_BROWSER_INTENT_RE.search(message.lower()))
+
+
+# Every tool the built-in Playwright server can expose (static, 30 names as of
+# @playwright/mcp 0.0.80). Used to FORCE the browser set into a turn on
+# explicit intent and, via `_browser_mcp_denylist`, to withhold it. A
+# hand-picked subset here silently left 18 tools (evaluate, run_code_unsafe,
+# console/network, hover, tabs, resize, the mouse_*_xy set…) outside
+# `can_use_browser=False`.
+_BROWSER_MCP_TOOLS = set(BROWSER_MCP_ALL_TOOLS)
+
+
+def _browser_mcp_denylist() -> set:
+    """Qualified names to deny when the browser is off for this request:
+    the static set plus whatever the connected server actually exposes, so a
+    tool renamed or added in a newer Playwright release is covered too."""
+    live = set()
+    try:
+        mgr = get_mcp_manager()
+        if mgr is not None and hasattr(mgr, "browser_tool_names"):
+            live = set(mgr.browser_tool_names() or ())
+    except Exception:
+        live = set()
+    return set(browser_tool_denials({"builtin_browser"}, live_tool_names=live))
 
 
 def _recent_session_text(sess, limit: int = 8, max_chars: int = 2000) -> str:
@@ -1303,12 +1343,8 @@ def setup_chat_routes(
                 r"\b(search|look\s*up|lookup|google|browse|web|online|latest|current|today|news|weather|forecast|rate|exchange\s+rate)\b",
                 _msg_l,
             ))
-            _explicit_browser_intent = bool(re.search(
-                r"\b(browser|browse|open\s+(?:the\s+)?(?:site|page|url|link)|"
-                r"click|fill(?:\s+out)?|submit|send\s+(?:the\s+)?form|"
-                r"contact\s+form|web\s*form|form\s+submission)\b",
-                _msg_l,
-            ))
+            # English + Spanish browser wording — see _BROWSER_INTENT_WORDS.
+            _explicit_browser_intent = _explicit_browser_intent_for_message(message)
         _allow_browser_for_web_turn = bool(
             _explicit_browser_intent
             or _explicit_web_intent
@@ -1896,7 +1932,7 @@ def setup_chat_routes(
             if not _privs.get("can_use_bash", True):
                 disabled_tools.update({"bash", "python", "read_file", "write_file"})
             if not _privs.get("can_use_browser", True):
-                disabled_tools.update(_BROWSER_MCP_TOOLS)
+                disabled_tools.update(_browser_mcp_denylist())
             if not _privs.get("can_use_documents", True):
                 disabled_tools.update({"create_document", "edit_document", "update_document", "suggest_document"})
             if not _privs.get("can_generate_images", True):
