@@ -8,12 +8,15 @@ run-local integrity gates before dispatch.
 from __future__ import annotations
 
 import json
+import logging
 import re
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum
 from types import MappingProxyType
 from typing import Any, Iterable, Mapping, Optional
+
+logger = logging.getLogger(__name__)
 
 from src.settings import get_setting
 from src.tool_approval_scopes import CHAT_SESSION_APPROVAL_CONTEXT_MARKER
@@ -863,13 +866,20 @@ class ToolRunSecurityContext:
             return False
         wanted = self._user_delegation_instructions()
         if not wanted:
+            if self.user_delegation is not None:
+                logger.info("[gate] user delegation present but no instructions parsed: %r", self.user_delegation)
             return False
         data: Any = content
         if not isinstance(data, Mapping):
             raw = content if isinstance(content, str) else ("" if content is None else str(content))
+            raw = raw.strip()
+            # Tolerate a leading tool-name line / fence around the JSON object.
+            if not raw.startswith("{") and "{" in raw:
+                raw = raw[raw.index("{"):raw.rindex("}") + 1] if "}" in raw else raw
             try:
-                data = json.loads(raw.strip())
+                data = json.loads(raw)
             except (TypeError, ValueError):
+                logger.info("[gate] user delegation: tool content is not JSON (%r)", raw[:120])
                 return False
         if not isinstance(data, Mapping):
             return False
@@ -880,6 +890,7 @@ class ToolRunSecurityContext:
             try:
                 tasks = json.loads(tasks)
             except (TypeError, ValueError):
+                logger.info("[gate] user delegation: `tasks` string is not JSON")
                 return False
         if not isinstance(tasks, list) or not tasks:
             return False
@@ -888,7 +899,10 @@ class ToolRunSecurityContext:
                 return False
             instr = t.get("instruction")
             if not isinstance(instr, str) or " ".join(instr.split()) not in wanted:
+                logger.info("[gate] user delegation: task instruction differs from the user's (%r vs %d dictated)",
+                            (instr or "")[:120], len(wanted))
                 return False
+        logger.info("[gate] user delegation matched %d task(s): delegate_agents passes the gate", len(tasks))
         return True
 
     def _trusted_override(self, tool_name: Any, content: Any) -> bool:

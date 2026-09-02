@@ -4033,6 +4033,9 @@ async def stream_agent_loop(
             if isinstance((harness_options or {}).get("user_delegation"), dict) else None
         ),
     )
+    if run_security.user_delegation is not None:
+        logger.info("[gate] user-dictated delegation in this turn: %d task(s)",
+                    len((run_security.user_delegation.get("tasks") or [])) if isinstance(run_security.user_delegation.get("tasks"), list) else 0)
     _hopts: Dict[str, Any] = dict(harness_options or {})
     mcp_mgr = get_mcp_manager()
     prep_timings: Dict[str, float] = {}
