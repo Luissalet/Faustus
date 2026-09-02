@@ -43205,3 +43205,50 @@ body:has(.sidebar.right-side) .project-active-pill { right: 12px; }
 .bv-thumb img { display: block; width: 100%; height: 60px; object-fit: cover; object-position: top; }
 .bv-thumb-n { position: absolute; right: 3px; bottom: 3px; font-size: 10px; line-height: 1; padding: 2px 4px; border-radius: 4px; background: rgba(0,0,0,.55); color: #fff; }
 @media (max-width: 900px) { .browser-view-panel { width: 100vw; } }
+
+/* === agent settings === */
+/* Settings → Agent Tools → "Agent & automation" (static/js/agentSettings.js):
+   the schema-driven form. Reuses .admin-card / .settings-label /
+   .settings-select / .admin-switch / .admin-btn-* so it reads like the
+   neighbouring cards; only the field grid and the states are new. */
+.agset { display: flex; flex-direction: column; gap: 10px; }
+.agset-toolbar { display: flex; align-items: center; gap: 10px; }
+.agset-search { flex: 1 1 auto; min-width: 0; }
+.agset-count { font-size: 11px; white-space: nowrap; color: color-mix(in srgb, var(--fg) 55%, transparent); }
+.agset-groups { display: flex; flex-direction: column; gap: 10px; }
+.agset-group { border: 1px solid color-mix(in srgb, var(--border) 70%, transparent); border-radius: 8px; padding: 10px 12px; background: color-mix(in srgb, var(--fg) 2%, transparent); }
+.agset-group.hidden, .agset-field.hidden, .agset-empty.hidden { display: none; }
+.agset-group-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding-bottom: 8px; margin-bottom: 4px; border-bottom: 1px solid color-mix(in srgb, var(--border) 40%, transparent); }
+.agset-group-text { min-width: 0; }
+.agset-group-title { font-size: 13px; font-weight: 600; letter-spacing: -0.02em; }
+.agset-group-help { margin-top: 2px; }
+.agset-group-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.agset-group-msg { font-size: 11px; color: color-mix(in srgb, var(--fg) 65%, transparent); white-space: nowrap; }
+.agset-group-msg.is-error { color: var(--red); white-space: normal; }
+.agset-fields { display: flex; flex-direction: column; }
+.agset-field { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding: 8px 0; border-bottom: 1px solid color-mix(in srgb, var(--border) 25%, transparent); }
+.agset-field:last-child { border-bottom: 0; }
+.agset-main { flex: 1 1 auto; min-width: 0; }
+.agset-label { display: inline; font-size: 13px; font-weight: 500; min-width: 0; }
+.agset-key { display: inline-block; margin-left: 6px; font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace); font-size: 10.5px; color: color-mix(in srgb, var(--fg) 50%, transparent); user-select: all; vertical-align: 1px; }
+.agset-help { margin-top: 2px; line-height: 1.4; }
+.agset-hint { margin-top: 3px; font-size: 11px; color: var(--yellow, #e5c07b); }
+.agset-control { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; padding-top: 2px; }
+.agset-control .agset-input { flex: 0 0 auto; width: 210px; }
+.agset-control .agset-number { width: 110px; -moz-appearance: textfield; }
+.agset-control .agset-select { width: 150px; }
+.agset-control .agset-list { width: 260px; }
+.agset-reset { padding: 2px 6px; line-height: 1; font-size: 13px; opacity: 0.35; transition: opacity 0.15s; }
+.agset-field.is-changed .agset-reset { opacity: 0.85; }
+.agset-reset:hover { opacity: 1; }
+/* An edit not yet saved: accent rail on the row + the control's border. */
+.agset-field.is-dirty { box-shadow: inset 3px 0 0 var(--red); padding-left: 8px; }
+.agset-field.is-dirty .agset-input, .agset-field.is-dirty .agset-switch .admin-slider { border-color: var(--red); outline: 1px solid color-mix(in srgb, var(--red) 45%, transparent); }
+.agset-save:disabled { opacity: 0.45; cursor: default; }
+.agset-empty { padding: 14px 0; }
+@media (max-width: 640px) {
+  .agset-field { flex-direction: column; gap: 6px; }
+  .agset-control { width: 100%; }
+  .agset-control .agset-input, .agset-control .agset-number, .agset-control .agset-select, .agset-control .agset-list { flex: 1 1 auto; width: auto; }
+  .agset-group-head { flex-direction: column; }
+}

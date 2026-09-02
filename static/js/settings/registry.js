@@ -117,7 +117,9 @@ export const SETTINGS_PANELS = Object.freeze([
     group: 'administration',
     controller: 'admin',
     adminOnly: true,
-    keywords: ['agent', 'tools'],
+    // The "Agent & automation" form (agentSettings.js) lives here too.
+    keywords: ['agent', 'tools', 'automation', 'browser', 'desktop', 'vision',
+      'sub-agents', 'queue', 'runs', 'harness', 'tests'],
   }),
   definePanel({
     id: 'users',

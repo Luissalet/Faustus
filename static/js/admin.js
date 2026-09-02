@@ -7,6 +7,7 @@ import { providerLogo, providerLogoFromUrl } from './providers.js';
 import { sortModelObjects } from './modelSort.js';
 import { PROVIDER_DEVICE_FLOWS, formatDeviceFlowError, runProviderDeviceFlow } from './providerDeviceFlow.js';
 import { getSettings, getTools, invalidateSettings, invalidateTools } from './appConfig.js';
+import { loadAgentSettings } from './agentSettings.js';
 
 let initialized = false;
 let modalEl = null;
@@ -3173,6 +3174,10 @@ function refreshAll() {
   loadUsers();
   loadEndpoints();
   loadBuiltinTools();
+  // Agent & automation form (Agent Tools tab): the schema is fetched once per
+  // page on the first admin open, the values are re-read on every open so the
+  // panel shows authoritative state (an edit in progress is kept).
+  loadAgentSettings().catch(e => console.warn('agent settings', e));
   loadMcpServers();
   loadTokens();
   loadLogs(false);
