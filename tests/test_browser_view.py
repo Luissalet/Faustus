@@ -290,3 +290,43 @@ bv.setAutoOpen(true);
 console.log(JSON.stringify({{ closedByPref, liveShown, liveHidden, pref: localStorage.getItem('odysseus.browserView.auto'), auto: bv.autoOpenEnabled(), cb: parts['.bv-auto-toggle'].checked }}));
 """)
     assert out == {"closedByPref": True, "liveShown": True, "liveHidden": True, "pref": "1", "auto": True, "cb": True}
+
+
+@pytest.mark.skipif(not _HAS_NODE, reason="node binary not on PATH")
+def test_live_means_a_browser_action_in_the_streaming_turn():
+    """Seen live (ronda 6): the dot stayed on after the turn ended and even
+    lit up in ANOTHER chat that never touched the browser, because "live"
+    followed the chat-busy flag. It must follow frames of the streaming turn
+    and go out at the end of the turn or when the user switches chat."""
+    out = _node(_FAKE_DOM.replace("addEventListener() {},\n};", "addEventListener(t, fn) { (this.listeners = this.listeners || {}); (this.listeners[t] = this.listeners[t] || []).push(fn); },\n};") + f"""
+const winListeners = {{}};
+globalThis.addEventListener = (t, fn) => {{ (winListeners[t] = winListeners[t] || []).push(fn); }};
+// the module registered its listeners at import time ⇒ re-import a fresh copy
+const bv2 = (await import('./static/js/browserView.js?fresh=1')).default;
+const fire = (t, detail) => (winListeners[t] || []).forEach(fn => fn({{ detail }}));
+const fireDoc = (t) => ((document.listeners || {{}})[t] || []).forEach(fn => fn({{}}));
+const ok = (raw) => raw;
+const steps = [];
+fire('odysseus:chat-busy-change', {{ active: true }});          // a turn starts, no browser yet
+window.__odysseusChatBusy = true;
+bv2.push({{ url: 'https://e.test/', title: 't', screenshot: 'data:image/jpeg;base64,{JPEG}' }}, ok);
+steps.push(['frame while busy', !parts['.bv-live'].hidden]);
+fire('odysseus:chat-busy-change', {{ active: false }});         // the turn ends
+window.__odysseusChatBusy = false;
+steps.push(['turn ended', !parts['.bv-live'].hidden]);
+fire('odysseus:chat-busy-change', {{ active: true }});          // another turn that never browses
+steps.push(['busy without a frame', !parts['.bv-live'].hidden]);
+window.__odysseusChatBusy = true;
+bv2.push({{ url: 'https://e.test/2', title: 't2', screenshot: 'data:image/jpeg;base64,{JPEG}' }}, ok);
+steps.push(['frame again', !parts['.bv-live'].hidden]);
+fireDoc('odysseus:session-switch');                              // user opens another chat
+steps.push(['after chat switch', !parts['.bv-live'].hidden]);
+console.log(JSON.stringify(Object.fromEntries(steps)));
+""")
+    assert out == {
+        "frame while busy": True,
+        "turn ended": False,
+        "busy without a frame": False,
+        "frame again": True,
+        "after chat switch": False,
+    }

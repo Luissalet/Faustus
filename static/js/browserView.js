@@ -94,12 +94,23 @@ function _ensurePanel() {
 function _listen() {
   if (_listening || typeof window === 'undefined' || !window.addEventListener) return;
   _listening = true;
+  // "Live" means: a browser action happened in the turn that is streaming
+  // NOW — not merely "the chat is busy". It goes on at the first frame of a
+  // busy turn (push) and off when the turn ends; a busy turn that never
+  // touches the browser never lights it.
   window.addEventListener('odysseus:chat-busy-change', (e) => {
     const active = !!(e && e.detail && e.detail.active);
-    setLive(active);
-    if (active) _turnHadFrame = false;   // next frame is "the first of the turn"
+    if (!active) setLive(false);
+    else _turnHadFrame = false;          // next frame is "the first of the turn"
   });
+  // Another chat on screen: its frames are not this chat's. Keep the film
+  // (cheap, and the user may switch back) but drop the live dot and let the
+  // next turn's first frame re-open the panel on its own terms.
+  if (typeof document !== 'undefined' && document.addEventListener) {
+    document.addEventListener('odysseus:session-switch', () => { setLive(false); _turnHadFrame = false; });
+  }
 }
+if (typeof window !== 'undefined') _listen();
 
 /** Filmstrip markup for the last frames; exported for tests. */
 export function renderFilmstripHtml(frames, active) {
@@ -155,6 +166,7 @@ export function push(ev, safeSrc) {
   _active = _frames.length - 1;
   const first = !_turnHadFrame;
   _turnHadFrame = true;
+  try { if (typeof window !== 'undefined' && window.__odysseusChatBusy) _live = true; } catch (_) {}
   _ensurePanel();
   if (first && autoOpenEnabled()) open();
   _render();

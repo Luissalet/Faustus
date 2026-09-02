@@ -166,7 +166,8 @@ def test_harness_ui_board_v3_contract():
     assert "['[data-steer-worker]', _steerWorker]" in init
     assert "restoreSubagentBoard, restoredSubagentBoardHtml" in HARNESS_JS
     rerun = HARNESS_JS.split("function _rerunWorker(", 1)[1].split("\n}\n", 1)[0]
-    assert rerun.index("_parentStreaming()") < rerun.index("window.prompt("), "refuse before asking for a model"
+    assert rerun.index("_parentStreaming()") < rerun.index("_inlineForm(card"), "refuse before asking for a model"
+    assert "window.prompt(" not in HARNESS_JS, "native dialogs block the page and are refused by embedded browsers"
 
 
 def test_sessions_worker_rows_banner_and_activity_workers():
@@ -360,14 +361,24 @@ const row = new El('div'); row.innerHTML = disabledHtml; chatBox.appendChild(row
 streaming = false;
 _subagentInternals.tick();
 const b = row.querySelector('[data-rerun-worker]');
+// No card around the button (restored history without a card): re-run at once
+// with the task's own model — no native prompt, ever.
 _subagentInternals.rerun(btn);
-console.log(JSON.stringify({ refused, disabledHtml, enabledAfter: { disabled: b.disabled, title: b.title }, delegated, prompts }));
+// With a card: an inline form is opened instead of window.prompt, and nothing
+// is delegated until the user submits it.
+const card = new El('div'); card.className = 'subagent-card'; const btn2 = new El('button'); card.appendChild(btn2);
+btn2.dataset.rerunWorker = btn.dataset.rerunWorker;
+_subagentInternals.rerun(btn2);
+const inlineForm = card.querySelector('.subagent-inline-form');
+console.log(JSON.stringify({ refused, disabledHtml, enabledAfter: { disabled: b.disabled, title: b.title }, delegated, prompts, inline: !!inlineForm, inlineKind: inlineForm ? inlineForm.dataset.kind : null }));
 """
     out = _run_node(script)
     assert out["refused"] == {"delegated": 0, "prompts": 0, "toast": "Wait for the delegation to finish before re-running a worker"}
     assert 'data-rerun-worker=' in out["disabledHtml"] and ' disabled title="wait for the delegation to finish"' in out["disabledHtml"]
     assert out["enabledAfter"] == {"disabled": False, "title": "Delegate this task again (optionally with another model)"}
-    assert out["prompts"] == 1 and out["delegated"] == [[[{"name": "api", "instruction": "fix the api", "files": ["a.py"], "model": "other-model"}], {"parallel": False}]]
+    assert out["prompts"] == 0
+    assert out["delegated"] == [[[{"name": "api", "instruction": "fix the api", "files": ["a.py"], "model": ""}], {"parallel": False}]]
+    assert out["inline"] is True and out["inlineKind"] == "rerun"
 
 
 @pytest.mark.skipif(not _HAS_NODE, reason="node is required")

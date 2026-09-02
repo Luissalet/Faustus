@@ -1153,18 +1153,58 @@ function _saWorkerByChild(childSid) {
   return null;
 }
 
+// Inline mini-form inside a worker card (no window.prompt: native dialogs
+// block the page, cannot be styled, and are refused by embedded browsers).
+// One form per card; a second click on the same button focuses it.
+function _inlineForm(card, { kind, placeholder, value = '', submitLabel, onSubmit }) {
+  if (!card) return null;
+  let form = card.querySelector(`.subagent-inline-form[data-kind="${kind}"]`);
+  if (form) {
+    const inp = form.querySelector('input,textarea');
+    if (inp && inp.focus) inp.focus();
+    return form;
+  }
+  for (const other of card.querySelectorAll('.subagent-inline-form')) other.remove();
+  form = document.createElement('form');
+  form.className = 'subagent-inline-form';
+  form.dataset.kind = kind;
+  form.innerHTML =
+    `<input type="text" class="subagent-inline-input" placeholder="${esc(placeholder)}" value="${esc(value)}" autocomplete="off">` +
+    `<button type="submit" class="harness-btn harness-btn-mini subagent-inline-submit">${esc(submitLabel)}</button>` +
+    `<button type="button" class="harness-btn harness-btn-mini subagent-inline-cancel" data-inline-cancel="1">Cancel</button>`;
+  const input = form.querySelector('input');
+  const close = () => { try { form.remove(); } catch (_) {} };
+  form.addEventListener('submit', (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    const text = String((input && input.value) || '').trim();
+    close();
+    onSubmit(text);
+  });
+  const cancel = form.querySelector('[data-inline-cancel]');
+  if (cancel) cancel.addEventListener('click', close);
+  if (input) input.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+  card.appendChild(form);
+  if (input && input.focus) setTimeout(() => input.focus(), 0);
+  return form;
+}
+
 // "✎ Steer…": inject a message into a running worker (it lands before its
 // next round). The line is painted right away; the server's `steer` event
 // for the same text is folded into it.
-async function _steerWorker(button) {
+function _steerWorker(button) {
   const sid = button.dataset.steerWorker;
   if (!sid) return;
-  let raw = null;
-  try { raw = window.prompt('Message for this worker (it is injected before its next round):', ''); } catch (_) { raw = null; }
-  if (raw === null) return;
-  const text = String(raw).trim();
-  if (!text) return;
-  button.disabled = true;
+  const card = button.closest ? button.closest('.subagent-card') : null;
+  _inlineForm(card, {
+    kind: 'steer',
+    placeholder: 'Message for this worker (injected before its next round)',
+    submitLabel: 'Send',
+    onSubmit: (text) => { if (text) _sendSteer(sid, text, button, card); },
+  });
+}
+
+async function _sendSteer(sid, text, button, card) {
+  if (button) button.disabled = true;
   try {
     const r = await fetch(`${API_BASE}/api/chat/subagent/steer/${encodeURIComponent(sid)}`, {
       method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }),
@@ -1174,13 +1214,12 @@ async function _steerWorker(button) {
     const w = _saWorkerByChild(sid);
     if (w) {
       w.steers.push({ text, source: 'user', at: Date.now(), local: true });
-      const card = button.closest ? button.closest('.subagent-card') : null;
       const board = card && card.closest ? card.closest('.subagent-board') : null;
       if (board) _saPaintWorker(board, w);
     }
     _toast('Steered');
   } catch (_) { _toast('Steer failed'); }
-  finally { button.disabled = false; }
+  finally { if (button) button.disabled = false; }
 }
 
 // "Re-run" a worker (after a stop / error / partial): re-delegate that single
@@ -1196,17 +1235,23 @@ function _rerunWorker(button) {
     _toast('Wait for the delegation to finish before re-running a worker');
     return;
   }
-  // Cancel returns null. Normalizing it to '' before the check made the guard
-  // below dead code, so Cancel re-delegated the worker anyway — another GPU
-  // generation, and its files rewritten.
-  let raw = '';
-  try { raw = window.prompt('Model for this worker (empty = same as the chat):', task.model || ''); } catch (_) { raw = ''; }
-  if (raw === null) return;
-  const model = String(raw == null ? '' : raw).trim();
-  const sc = window.slashCommandsModule;
-  if (sc && typeof sc.delegateTasks === 'function') {
-    sc.delegateTasks([{ name: task.name, instruction: task.instruction, files: task.files || [], model }], { parallel: false });
-  }
+  const card = button.closest ? button.closest('.subagent-card') : null;
+  const run = (model) => {
+    const sc = window.slashCommandsModule;
+    if (sc && typeof sc.delegateTasks === 'function') {
+      sc.delegateTasks([{ name: task.name, instruction: task.instruction, files: task.files || [], model }], { parallel: false });
+    }
+  };
+  if (!card) { run(String(task.model || '').trim()); return; }
+  // Cancel (Escape / the Cancel button) never re-delegates: another GPU
+  // generation, and the worker's files rewritten.
+  _inlineForm(card, {
+    kind: 'rerun',
+    placeholder: 'Model for this worker (empty = same as the chat)',
+    value: task.model || '',
+    submitLabel: '↻ Run',
+    onSubmit: (model) => run(model),
+  });
 }
 
 /** Worker state from one persisted `tool_events[i].subagents[j]` record. */

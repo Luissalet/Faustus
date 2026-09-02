@@ -30,6 +30,36 @@ function _saveList(key, list) {
   try { localStorage.setItem(key, JSON.stringify(list)); } catch { /* quota / private mode */ }
 }
 function _loadRecent() { return _loadList(RECENT_KEY); }
+// The last model the user picked BY HAND, remembered per signed-in user so a
+// new chat starts on it instead of on the operator default. Seen live: the
+// default was a 29 GB model that spills out of the 12 GB card ("PCIe spill",
+// 2 tok/s) while the user had just picked the 6 GB one — every page reload
+// silently put him back on the slow model. Keyed by username so a shared
+// browser never hands one account the other's pick.
+const LAST_MODEL_KEY = 'odysseus-last-model';
+function _currentUserKey() {
+  try {
+    const el = document.getElementById('user-bar-name');
+    const name = el && el.textContent ? el.textContent.trim() : '';
+    return name && name !== 'User' ? name : '';
+  } catch { return ''; }
+}
+export function rememberLastModel(m) {
+  if (!m || !m.mid || !m.url) return;
+  try {
+    localStorage.setItem(LAST_MODEL_KEY, JSON.stringify({
+      url: m.url, modelId: m.mid, endpointId: m.endpointId || '', user: _currentUserKey(), at: Date.now(),
+    }));
+  } catch { /* quota / private mode */ }
+}
+export function lastModelFor(user) {
+  try {
+    const v = JSON.parse(localStorage.getItem(LAST_MODEL_KEY) || 'null');
+    if (!v || !v.modelId || !v.url) return null;
+    if ((v.user || '') !== (user || '')) return null;
+    return v;
+  } catch { return null; }
+}
 function _pushRecent(mid) {
   if (!mid) return;
   const next = _loadRecent().filter(x => x !== mid);
@@ -797,6 +827,7 @@ async function _pick(m) {
     // Remember this pick so it surfaces under "Recent" next time the picker
     // opens — the whole point of quick-switch.
     if (m && m.mid) _pushRecent(_pickerModelKey(m) || m.mid);
+    rememberLastModel(m);
 
     // Broadcast immediately so listeners (e.g. the tour) can advance without
     // waiting for the async session-create/PATCH that follows.
@@ -1010,6 +1041,13 @@ export function updateModelPicker() {
     if (_pendingChat.source === 'fallback' && !_modelExists(modelId, _pendingChat.url || '')) {
       _deps.setPendingChat(null);
       modelId = null;
+    }
+  }
+  if (!modelId && !currentSessionId && !_pendingChat && _deps.setPendingChat) {
+    const last = lastModelFor(_currentUserKey());
+    if (last && _modelExists(last.modelId, last.url)) {
+      modelId = last.modelId;
+      _deps.setPendingChat({ url: last.url, modelId, endpointId: last.endpointId || '', source: 'last' });
     }
   }
   if (!modelId && !currentSessionId && !_pendingChat && _deps.setPendingChat) {
