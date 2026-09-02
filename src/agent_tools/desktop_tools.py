@@ -809,6 +809,24 @@ def _control_mode_guard(tool: str) -> Optional[Tuple[str, Dict[str, Any]]]:
     return None
 
 
+def _primary_monitor_centre(backend: DesktopBackend) -> Tuple[int, int]:
+    """Centre of the primary monitor (the first listed one when none is
+    flagged). ``screen_size() // 2`` was the centre of the VIRTUAL screen
+    without its origin: with a second monitor left of the primary the virtual
+    screen starts at x=-1920, so the "centre" landed on the primary's edge or,
+    with the primary on the right, outside every monitor."""
+    try:
+        monitors = [m for m in backend.list_monitors() if int(m.get("width", 0)) > 0 and int(m.get("height", 0)) > 0]
+    except Exception:  # noqa: BLE001 - no monitor list: fall back to the plain size
+        monitors = []
+    if monitors:
+        primary = next((m for m in monitors if m.get("primary")), monitors[0])
+        return (int(primary["left"]) + int(primary["width"]) // 2,
+                int(primary["top"]) + int(primary["height"]) // 2)
+    screen_w, screen_h = backend.screen_size()
+    return screen_w // 2, screen_h // 2
+
+
 def _check_on_screen(backend: DesktopBackend, x: int, y: int) -> None:
     try:
         monitors = backend.list_monitors()
@@ -1007,8 +1025,8 @@ class DesktopTool:
         y = _int_arg(args, "y", required=False)
         coords = str(args.get("coords") or "screenshot").strip().lower()
         if x is None or y is None:
-            screen_w, screen_h = backend.screen_size()
-            sx, sy, note = screen_w // 2, screen_h // 2, "screen centre"
+            sx, sy = _primary_monitor_centre(backend)
+            note = "primary monitor centre"
         else:
             sx, sy, note = map_to_screen(x, y, coords)
         _check_on_screen(backend, sx, sy)

@@ -405,6 +405,46 @@ def test_scroll_without_position_uses_center(backend):
     assert backend.calls[-1] == ("scroll", 960, 540, -2)
 
 
+def test_scroll_without_position_centres_on_the_primary_monitor(monkeypatch):
+    """Audited: the default scroll point was screen_size()//2 — the size of
+    the VIRTUAL screen without its origin. With a second monitor to the left
+    of the primary the virtual screen is 3840x1080 starting at x=-1920, so the
+    "centre" (1920, 540) was the primary's right edge, and with the primary on
+    the right it was outside every monitor: the tool refused its own default."""
+    fake = FakeBackend(width=3840, height=1080)
+    monkeypatch.setattr(dt, "get_backend", lambda: fake)
+    dt.reset_capture_state()
+    # secondary LEFT of the primary
+    fake.monitors = [
+        {"index": 0, "left": 0, "top": 0, "width": 1920, "height": 1080, "primary": True},
+        {"index": 1, "left": -1920, "top": 0, "width": 1920, "height": 1080, "primary": False},
+    ]
+    _, result = _run("desktop_scroll", {"dy": 3})
+    assert result["exit_code"] == 0, result
+    assert backend_last_scroll(fake) == (960, 540, 3)
+    assert "primary" in result["output"]
+    # primary on the RIGHT: the virtual centre (1920, 540) is on no monitor at all
+    fake.monitors = [
+        {"index": 0, "left": 1920, "top": 0, "width": 1920, "height": 1080, "primary": True},
+        {"index": 1, "left": 0, "top": 0, "width": 1920, "height": 1080, "primary": False},
+    ]
+    _, result = _run("desktop_scroll", {"dy": 3})
+    assert result["exit_code"] == 0, result
+    assert backend_last_scroll(fake) == (2880, 540, 3)
+    # no monitor flagged primary: the first listed one
+    fake.monitors = [
+        {"index": 0, "left": -1920, "top": 0, "width": 1920, "height": 1080, "primary": False},
+        {"index": 1, "left": 0, "top": 0, "width": 1920, "height": 1080, "primary": False},
+    ]
+    _, result = _run("desktop_scroll", {"dy": 1})
+    assert result["exit_code"] == 0, result
+    assert backend_last_scroll(fake) == (-960, 540, 1)
+
+
+def backend_last_scroll(fake):
+    return next(c[1:] for c in reversed(fake.calls) if c[0] == "scroll")
+
+
 # ── type / key / focus / list ──────────────────────────────────────────────
 
 def test_type_text(backend):
