@@ -1490,6 +1490,24 @@ import modelControls from './modelControls.js';
     // If currently streaming, keyboard Enter can queue a non-empty composer.
     // Clicking the stop icon should still stop normally, even if text exists.
     if (isStreaming) {
+      // A delegation payload (/agents, worker "Re-run") never rides on a Stop
+      // click — the intent was "delegate", not "kill the running delegation" —
+      // and must not stick to the user's NEXT message either. The callers
+      // refuse to delegate while streaming; this is the safety net.
+      let _delegateRefused = false;
+      try {
+        if (window.__odysseusDelegateTasks) {
+          window.__odysseusDelegateTasks = null;
+          _delegateRefused = true;
+          const _composer = uiModule.el('message');
+          if (_composer && /^🤖 /.test(String(_composer.value || ''))) {
+            _composer.value = '';
+            _composer.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+          uiModule.showToast && uiModule.showToast('Wait for the current run to finish before delegating');
+        }
+      } catch (_) {}
+      if (_delegateRefused) return;
       const queueRequestedAt = Number(window.__odysseusQueueStreamingSubmit || 0);
       const shouldQueueStreamingSubmit = queueRequestedAt && Date.now() - queueRequestedAt < 1200;
       window.__odysseusQueueStreamingSubmit = 0;
@@ -3953,12 +3971,15 @@ import modelControls from './modelControls.js';
                 // flight — refresh the running tool card with the
                 // elapsed-time + tail of its stdout/stderr so the
                 // user doesn't stare at a blind "Running…" spinner.
-                if (_isBg) continue;
                 if (json.subagent) {
                   // delegate_agents: live worker board instead of a stdout tail.
-                  try { agentHarnessUI.renderSubagentEvent(json); } catch (_e) { console.warn('subagent ui', _e); }
+                  // NEVER dropped in the background: agentHarnessUI keeps the
+                  // per-chat worker state and repaints the cards when the user
+                  // comes back (checkBackgroundStream → restoreSubagentBoard).
+                  try { agentHarnessUI.renderSubagentEvent(json, { sessionId: streamSessionId, background: _isBg }); } catch (_e) { console.warn('subagent ui', _e); }
                   continue;
                 }
+                if (_isBg) continue;
                 if (!currentToolBubble) continue;
                 const isImageProgress = /image/i.test(String(json.tool || '')) || /image/i.test(String(json.message || ''));
                 if (json.total || json.percent != null || isImageProgress) {
@@ -5654,6 +5675,16 @@ import modelControls from './modelControls.js';
         }
       }
 
+      // A delegation (delegate_agents) that ran while this chat was in the
+      // background: repaint its worker cards from the retained state, BEFORE
+      // the spinner holder so the board sits where the tool call is.
+      var _boardPainted = false;
+      try {
+        if (agentHarnessUI && typeof agentHarnessUI.restoreSubagentBoard === 'function') {
+          _boardPainted = !!agentHarnessUI.restoreSubagentBoard(sessionId);
+        }
+      } catch (_boardErr) { console.warn('subagent board restore', _boardErr); }
+
       var holder = document.createElement('div');
       holder.className = 'msg msg-ai';
       var meta = sessionModule.getSessions().find(function(s) { return s.id === sessionId; });
@@ -5663,7 +5694,7 @@ import modelControls from './modelControls.js';
       _applyModelColor(holder.querySelector('.role'), meta && meta.model);
 
       var bodyDiv = holder.querySelector('.body');
-      var spinner = spinnerModule.create('Response streaming in background', 'right');
+      var spinner = spinnerModule.create(_boardPainted ? 'Sub-agents working in background' : 'Response streaming in background', 'right');
       bodyDiv.appendChild(spinner.createElement());
       spinner.start();
 

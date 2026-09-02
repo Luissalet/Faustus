@@ -1325,6 +1325,13 @@ function _cmdAgents(args) {
  *  row). `tasks` = [{name, instruction, files?, model?}]. */
 export function delegateTasks(tasks, { parallel = true, review = false } = {}) {
   if (!Array.isArray(tasks) || !tasks.length) return true;
+  // While a turn streams, a submit is a STOP in chat.js: it would kill the
+  // whole running delegation, and the payload would stick to the user's next
+  // message. Refuse up front (the worker "Re-run…" button lands here too).
+  if (_delegationBlocked()) {
+    try { uiModule.showToast('Wait for the current run to finish before delegating'); } catch (_) {}
+    return true;
+  }
   const payload = JSON.stringify({ tasks, parallel, reviewer: !!review });
   // The chat bubble shows a compact line; the full delegation instruction
   // travels as the `delegate_tasks` form field and the server swaps it in for
@@ -1339,7 +1346,13 @@ export function delegateTasks(tasks, { parallel = true, review = false } = {}) {
   // return, so the real send has to be queued for the next tick.
   setTimeout(() => {
     const input = document.getElementById('message');
-    if (!input) return;
+    if (!input) { _dropDelegatePayload(payload); return; }
+    if (_delegationBlocked()) {
+      // A stream started between the call and this tick.
+      _dropDelegatePayload(payload);
+      try { uiModule.showToast('Wait for the current run to finish before delegating'); } catch (_) {}
+      return;
+    }
     input.value = msg;
     input.dispatchEvent(new Event('input', { bubbles: true }));
     // Delegation only makes sense with tools: force agent mode for this send.
@@ -1352,13 +1365,41 @@ export function delegateTasks(tasks, { parallel = true, review = false } = {}) {
     // route the tool-approval and email flows use.
     const cm = window.chatModule;
     if (cm && typeof cm.handleChatSubmit === 'function') {
-      cm.handleChatSubmit({ preventDefault() {} }).catch?.(() => {});
+      let p = null;
+      try { p = cm.handleChatSubmit({ preventDefault() {} }); } catch (_) { p = null; }
+      // handleChatSubmit consumes the payload when it builds the request; if
+      // it bailed before that (no session, empty composer, upload failure…)
+      // the payload is still there and would ride on the next message.
+      const settle = () => _dropDelegatePayload(payload, { toast: true });
+      if (p && typeof p.then === 'function') p.then(settle, settle);
+      else settle();
       return;
     }
     const form = document.getElementById('chat-form');
     if (form && form.requestSubmit) form.requestSubmit();
     else if (form) form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    setTimeout(() => _dropDelegatePayload(payload, { toast: true }), 1500);
   }, 0);
+  return true;
+}
+
+/** True while the chat on screen is streaming (a send would become a Stop). */
+function _delegationBlocked() {
+  try { if (_isStreamingFn()) return true; } catch (_) {}
+  try {
+    const cm = window.chatModule;
+    const sid = sessionModule && sessionModule.getCurrentSessionId && sessionModule.getCurrentSessionId();
+    return !!(cm && typeof cm.hasActiveStream === 'function' && sid && cm.hasActiveStream(sid));
+  } catch (_) { return false; }
+}
+
+/** Clear OUR delegation payload if the submit did not consume it. */
+function _dropDelegatePayload(payload, { toast = false } = {}) {
+  try {
+    if (window.__odysseusDelegateTasks !== payload) return false;   // consumed, or replaced by a newer delegation
+    window.__odysseusDelegateTasks = null;
+  } catch (_) { return false; }
+  if (toast) { try { uiModule.showToast('The delegation was not sent'); } catch (_) {} }
   return true;
 }
 
