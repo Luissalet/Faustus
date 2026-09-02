@@ -829,14 +829,16 @@ class ToolRunSecurityContext:
     # Same flag for `delegate_agents` (its workers keep their own gates).
     trusted_agents: bool = False
     # The delegation the USER dictated with `/agents` (the parsed payload the
-    # chat route hands the model). One delegate_agents call whose task
+    # chat route hands the model). A delegate_agents call whose task
     # instructions are (a subset of) those exact words passes the
     # post-external-context gate — the user typed them, they are not an
-    # action the model decided after reading untrusted context. Consumed by
-    # the first matching call; a rewritten or extended task list keeps the
-    # gate; the workers keep their own gates.
+    # action the model decided after reading untrusted context. A rewritten
+    # or extended task list keeps the gate; the workers keep their own gates.
+    # NOT a one-shot flag: the loop asks `decision_for` before the approval
+    # card AND tool_execution asks again right before running — consuming on
+    # the first check let it through and blocked the second (seen live:
+    # "blocked by the external-context policy", no card).
     user_delegation: Optional[Mapping[str, Any]] = None
-    user_delegation_used: bool = False
 
     def _user_delegation_instructions(self) -> frozenset[str]:
         payload = self.user_delegation
@@ -857,7 +859,7 @@ class ToolRunSecurityContext:
         return frozenset(out)
 
     def _user_delegation_allows(self, tool_name: Any, content: Any) -> bool:
-        if tool_name != "delegate_agents" or self.user_delegation_used:
+        if tool_name != "delegate_agents":
             return False
         wanted = self._user_delegation_instructions()
         if not wanted:
@@ -887,7 +889,6 @@ class ToolRunSecurityContext:
             instr = t.get("instruction")
             if not isinstance(instr, str) or " ".join(instr.split()) not in wanted:
                 return False
-        self.user_delegation_used = True
         return True
 
     def _trusted_override(self, tool_name: Any, content: Any) -> bool:

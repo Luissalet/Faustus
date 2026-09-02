@@ -4,8 +4,8 @@ Seen live (ronda 6): every `/agents a | b` in an untrusted workspace stopped
 at "Allow this task to continue?" for the delegate_agents call the user had
 just dictated. The gate exists for actions the MODEL decides after untrusted
 context; a delegation whose tasks are exactly the user's own words is not
-that. One call, same instructions, consumed once — anything else (extra or
-rewritten tasks, a second call) keeps the gate."""
+that. Same instructions pass; anything else (extra or rewritten tasks)
+keeps the gate."""
 import json
 
 from src.tool_capabilities import ToolRunSecurityContext
@@ -23,15 +23,17 @@ PAYLOAD = {"tasks": [{"name": "a", "instruction": "[cart.py] add f()"},
            "parallel": True}
 
 
-def test_the_users_own_delegation_passes_the_gate_once():
+def test_the_users_own_delegation_passes_the_gate_every_time_it_is_checked():
+    """The loop checks before the approval card and tool_execution checks
+    again right before running: the same call must pass BOTH (a one-shot
+    flag let the first through and blocked the second — seen live)."""
     ctx = _ctx(PAYLOAD)
     content = json.dumps({"tasks": [
         {"name": "worker one", "instruction": "[cart.py] add f()"},          # model renamed it: fine
         {"name": "b", "instruction": "[tests/test_cart.py] add the test"},
     ], "parallel": True})
     assert ctx.decision_for("delegate_agents", content).allowed
-    # consumed: a second delegate_agents in the same run asks again
-    assert not ctx.decision_for("delegate_agents", content).allowed
+    assert ctx.decision_for("delegate_agents", content).allowed
 
 
 def test_rewritten_or_extra_tasks_keep_the_gate():
