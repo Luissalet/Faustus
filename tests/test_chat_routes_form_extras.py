@@ -139,3 +139,21 @@ def test_detached_run_buffer_compacts_progress_ticks():
     assert len(live) == 8
     assert [r for (_s, _e, r) in live] == [False, False, True, True, False, False, False, False]
     assert [s for (s, _e, _r) in live] == [0, 1, 1, 1, 2, 3, 4, 5]
+
+
+def test_the_users_delegation_reaches_the_gate_as_user_delegation():
+    """The parsed /agents payload is handed to the loop as
+    harness_options["user_delegation"], and the run's security context lets
+    the one matching delegate_agents call through the post-external-context
+    gate (tests/test_user_delegation_gate.py covers the matching rules)."""
+    import re
+    from pathlib import Path
+    src = Path(__file__).resolve().parents[1] / "routes" / "chat_routes.py"
+    text = src.read_text(encoding="utf-8")
+    block = text[text.index("if _delegate_tasks and not tool_approval_continuation:"):]
+    block = block[:block.index("async for chunk in stream_agent_loop(")]
+    assert '_harness_options["user_delegation"] = _delegate_tasks' in block
+    loop = (Path(__file__).resolve().parents[1] / "src" / "agent_loop.py").read_text(encoding="utf-8")
+    ctor = loop[loop.index("run_security = ToolRunSecurityContext("):]
+    ctor = ctor[:ctor.index("\n    )\n") + 6]
+    assert re.search(r"user_delegation=\(", ctor)

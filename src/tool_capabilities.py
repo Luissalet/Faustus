@@ -13,7 +13,7 @@ import uuid
 from dataclasses import dataclass, field
 from enum import Enum
 from types import MappingProxyType
-from typing import Any, Iterable, Mapping
+from typing import Any, Iterable, Mapping, Optional
 
 from src.settings import get_setting
 from src.tool_approval_scopes import CHAT_SESSION_APPROVAL_CONTEXT_MARKER
@@ -828,6 +828,67 @@ class ToolRunSecurityContext:
     trusted_workspace: str = ""
     # Same flag for `delegate_agents` (its workers keep their own gates).
     trusted_agents: bool = False
+    # The delegation the USER dictated with `/agents` (the parsed payload the
+    # chat route hands the model). One delegate_agents call whose task
+    # instructions are (a subset of) those exact words passes the
+    # post-external-context gate — the user typed them, they are not an
+    # action the model decided after reading untrusted context. Consumed by
+    # the first matching call; a rewritten or extended task list keeps the
+    # gate; the workers keep their own gates.
+    user_delegation: Optional[Mapping[str, Any]] = None
+    user_delegation_used: bool = False
+
+    def _user_delegation_instructions(self) -> frozenset[str]:
+        payload = self.user_delegation
+        if not isinstance(payload, Mapping):
+            return frozenset()
+        tasks = payload.get("tasks")
+        if isinstance(tasks, str):
+            try:
+                tasks = json.loads(tasks)
+            except (TypeError, ValueError):
+                return frozenset()
+        out = set()
+        for t in tasks if isinstance(tasks, list) else []:
+            if isinstance(t, Mapping):
+                instr = t.get("instruction")
+                if isinstance(instr, str) and instr.strip():
+                    out.add(" ".join(instr.split()))
+        return frozenset(out)
+
+    def _user_delegation_allows(self, tool_name: Any, content: Any) -> bool:
+        if tool_name != "delegate_agents" or self.user_delegation_used:
+            return False
+        wanted = self._user_delegation_instructions()
+        if not wanted:
+            return False
+        data: Any = content
+        if not isinstance(data, Mapping):
+            raw = content if isinstance(content, str) else ("" if content is None else str(content))
+            try:
+                data = json.loads(raw.strip())
+            except (TypeError, ValueError):
+                return False
+        if not isinstance(data, Mapping):
+            return False
+        tasks = data.get("tasks")
+        if isinstance(tasks, str):
+            # The model sends `tasks` as a JSON string half the time; the
+            # tool accepts it, so does the gate.
+            try:
+                tasks = json.loads(tasks)
+            except (TypeError, ValueError):
+                return False
+        if not isinstance(tasks, list) or not tasks:
+            return False
+        for t in tasks:
+            if not isinstance(t, Mapping):
+                return False
+            instr = t.get("instruction")
+            if not isinstance(instr, str) or " ".join(instr.split()) not in wanted:
+                return False
+        self.user_delegation_used = True
+        return True
 
     def _trusted_override(self, tool_name: Any, content: Any) -> bool:
         if not self.trusted_workspace or not isinstance(tool_name, str):
@@ -876,6 +937,8 @@ class ToolRunSecurityContext:
         if not self.external_untrusted_context_seen:
             return ToolGateDecision(True)
         if self._trusted_override(tool_name, content):
+            return ToolGateDecision(True)
+        if self._user_delegation_allows(tool_name, content):
             return ToolGateDecision(True)
         capabilities = capabilities_for_action(tool_name, content)
         blocked_effects = capabilities.effects & POST_EXTERNAL_BLOCKED_EFFECTS

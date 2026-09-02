@@ -4028,6 +4028,10 @@ async def stream_agent_loop(
         ) or bool(security_gate_bypass),
         trusted_workspace=str((harness_options or {}).get("trusted_workspace") or ""),
         trusted_agents=bool((harness_options or {}).get("trusted_agents")),
+        user_delegation=(
+            (harness_options or {}).get("user_delegation")
+            if isinstance((harness_options or {}).get("user_delegation"), dict) else None
+        ),
     )
     _hopts: Dict[str, Any] = dict(harness_options or {})
     mcp_mgr = get_mcp_manager()

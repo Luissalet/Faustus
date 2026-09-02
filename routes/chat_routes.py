@@ -2731,6 +2731,12 @@ def setup_chat_routes(
                     if _delegate_tasks and not tool_approval_continuation:
                         _forced_tools = set(_forced_tools or set())
                         _forced_tools.add("delegate_agents")
+                        # The user dictated this delegation: the one
+                        # delegate_agents call with these exact instructions
+                        # passes the post-external-context gate (workers keep
+                        # their own gates).
+                        _harness_options = dict(_harness_options) if isinstance(_harness_options, dict) else {}
+                        _harness_options["user_delegation"] = _delegate_tasks
                         # The user saw (and history keeps) the compact line; the
                         # model gets the explicit delegation instruction.
                         _instr = _delegation_instruction(_delegate_tasks)
