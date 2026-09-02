@@ -371,8 +371,13 @@ def _resolve_request_workspace(request, raw_value) -> tuple:
 
 def _parse_delegate_tasks(raw) -> Optional[Dict[str, Any]]:
     """`delegate_tasks` form field from the /agents slash command: a JSON object
-    {"tasks": [{"name", "instruction"}...], "parallel": bool}. Returns None
-    when absent or malformed (the request then behaves as a normal message)."""
+    {"tasks": [{"name", "instruction", "files"?, "model"?}...], "parallel": bool,
+    "reviewer"?, "reviewer_model"?, "max_rounds"?, "timeout_s"?}. Returns None
+    when absent or malformed (the request then behaves as a normal message).
+
+    Every field the delegate_agents tool understands is kept: this used to
+    drop files/model/reviewer/max_rounds/timeout_s, so `/agents --review` and
+    the per-task file ownership never reached the tool."""
     if not raw:
         return None
     try:
@@ -384,18 +389,55 @@ def _parse_delegate_tasks(raw) -> Optional[Dict[str, Any]]:
     tasks = data.get("tasks")
     if not isinstance(tasks, list) or not tasks:
         return None
+
+    def _bool(v, default):
+        if v is None:
+            return default
+        if isinstance(v, bool):
+            return v
+        if isinstance(v, (int, float)):
+            return bool(v)
+        s = str(v).strip().lower()
+        return default if s not in ("1", "true", "yes", "on", "0", "false", "no", "off", "") \
+            else s in ("1", "true", "yes", "on")
+
     clean = []
     for t in tasks[:4]:
         if isinstance(t, dict) and str(t.get("instruction") or "").strip():
-            clean.append({
+            task = {
                 "name": str(t.get("name") or t["instruction"])[:60],
                 "instruction": str(t["instruction"]).strip()[:4000],
-            })
+            }
+            files = t.get("files") or t.get("owns") or []
+            if isinstance(files, str):
+                files = [p for p in re.split(r"[,\s]+", files) if p]
+            if isinstance(files, list):
+                files = [str(p).strip() for p in files if str(p).strip()][:40]
+                if files:
+                    task["files"] = files
+            model = str(t.get("model") or "").strip()
+            if model:
+                task["model"] = model[:120]
+            clean.append(task)
         elif isinstance(t, str) and t.strip():
             clean.append({"name": t.strip()[:60], "instruction": t.strip()[:4000]})
     if not clean:
         return None
-    return {"tasks": clean, "parallel": bool(data.get("parallel", True))}
+    out: Dict[str, Any] = {"tasks": clean, "parallel": _bool(data.get("parallel"), True)}
+    reviewer = data.get("reviewer", data.get("review"))
+    if reviewer is not None:
+        out["reviewer"] = _bool(reviewer, False)
+    reviewer_model = str(data.get("reviewer_model") or "").strip()
+    if reviewer_model:
+        out["reviewer_model"] = reviewer_model[:120]
+    for key in ("max_rounds", "timeout_s"):
+        try:
+            val = int(data.get(key)) if data.get(key) not in (None, "") else None
+        except (TypeError, ValueError):
+            val = None
+        if val is not None and val > 0:
+            out[key] = val
+    return out
 
 
 def _delegation_instruction(payload: Dict[str, Any]) -> str:
@@ -3041,6 +3083,30 @@ def setup_chat_routes(
         return {"stopped": stop_worker(child_session_id)}
 
     # ------------------------------------------------------------------ #
+    # POST /api/chat/subagent/steer/{child_session_id} — send a steering
+    # message to ONE running worker. Body: {"text": "..."}. The worker's agent
+    # loop injects it as a user message before its next round (the board
+    # shows a `steer` event when that happens). 404 when the worker is not
+    # active, 400 for an empty text.
+    # ------------------------------------------------------------------ #
+    @router.post("/api/chat/subagent/steer/{child_session_id}")
+    async def subagent_steer(request: Request, child_session_id: str) -> Dict[str, Any]:
+        _verify_session_owner(request, child_session_id)
+        try:
+            body = await request.json()
+        except Exception:
+            body = None
+        text = str((body or {}).get("text") or "").strip() if isinstance(body, dict) else ""
+        if not text:
+            raise HTTPException(400, "A non-empty 'text' is required")
+        from src.agent_tools.subagent_tools import active_worker_ids, steer_worker
+        if child_session_id not in active_worker_ids():
+            raise HTTPException(404, "No active sub-agent worker for this session")
+        if not steer_worker(child_session_id, text[:4000], source="user"):
+            raise HTTPException(404, "No active sub-agent worker for this session")
+        return {"ok": True}
+
+    # ------------------------------------------------------------------ #
     # GET /api/chat/activity — sidebar status dots in one call: sessions with a
     # detached run still going and sessions parked on an approval card. The
     # client keeps "finished but unread" itself (it knows what was viewed).
@@ -3082,8 +3148,23 @@ def setup_chat_routes(
                 interrupted.append(entry)
         except Exception:
             pass
+        # Live delegate_agents workers (the control board): child session →
+        # {parent, name, role, started_at, round, last_event_at, stalled,
+        # tool_calls}, from the registry subagent_tools keeps.
+        workers: Dict[str, Dict[str, Any]] = {}
+        try:
+            from src.agent_tools.subagent_tools import worker_board
+            for sid, card in worker_board().items():
+                if sid not in running:
+                    try:
+                        _verify_session_owner(request, sid, session_manager)
+                    except HTTPException:
+                        continue
+                workers[sid] = card
+        except Exception:
+            workers = {}
         return {"running": running, "runs": runs, "awaiting_approval": awaiting, "queued": queued,
-                "interrupted": interrupted, "ts": time.time()}
+                "interrupted": interrupted, "workers": workers, "ts": time.time()}
 
     @router.post("/api/chat/interrupted/ack")
     async def chat_interrupted_ack(request: Request) -> Dict[str, Any]:
