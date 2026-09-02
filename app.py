@@ -817,6 +817,10 @@ app.include_router(setup_scorecard_routes())
 # Live system usage (ollama ps + nvidia-smi + RAM/CPU) for the chat usage widget.
 from routes.system_usage_routes import setup_system_usage_routes
 app.include_router(setup_system_usage_routes())
+# Local model manager for Ollama endpoints (Settings → Local models):
+# installed / loaded models, pulls, per-model load defaults, curated Discover.
+from routes.local_models_routes import setup_local_models_routes
+app.include_router(setup_local_models_routes())
 from routes.agent_progress_routes import setup_agent_progress_routes
 app.include_router(setup_agent_progress_routes())
 # Agent & automation settings schema (Settings → Agent Tools form).

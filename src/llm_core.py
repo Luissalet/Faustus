@@ -2132,6 +2132,11 @@ def llm_call(url: str, model: str, messages: List[Dict], temperature: float = LL
             stream=False, num_ctx=get_context_length(url, model),
             response_schema=schema,
         )
+        # Saved per-model load defaults (no reroute on this sync path: they
+        # only apply when the endpoint is already the native one).
+        _model_defaults = _clean_gen_overrides(_model_load_defaults(url, model))
+        if _model_defaults:
+            _apply_gen_overrides_ollama(payload, _model_defaults)
     else:
         target_url = _normalize_openai_chat_url(url)
         if provider == "copilot":
@@ -2403,7 +2408,11 @@ async def llm_call_async(
     # the diff reviewer answered nothing in 17 s). The native /api/chat
     # honours think=false.
     _native_think_off = False
-    _routed = _route_for_gen_overrides(url, None, model)
+    # Saved per-model load defaults (num_ctx / num_gpu / keep_alive) are the
+    # only overrides this non-streaming path carries; like `think` they need
+    # the native endpoint, so they take part in the routing decision.
+    _model_defaults = _clean_gen_overrides(_model_load_defaults(url, model))
+    _routed = _route_for_gen_overrides(url, _model_defaults or None, model)
     if _routed != url:
         caps = _ollama_model_caps(url, model)
         _native_think_off = caps is not None and "thinking" in caps
@@ -2526,6 +2535,8 @@ async def llm_call_async(
             stream=False, num_ctx=get_context_length(url, model),
             response_schema=schema,
         )
+        if _model_defaults:
+            _apply_gen_overrides_ollama(payload, _model_defaults)
         if _native_think_off:
             payload["think"] = False
     else:
@@ -2713,7 +2724,12 @@ def _stream_target_url(url: str) -> str:
 # dropped so a client cannot smuggle arbitrary provider fields.
 GEN_OVERRIDE_KEYS = frozenset({"top_p", "top_k", "seed", "think", "num_ctx", "num_gpu",
                                "repeat_penalty", "presence_penalty", "frequency_penalty",
-                               "reasoning_effort"})
+                               "reasoning_effort", "keep_alive"})
+
+# Ollama `options` / top-level knobs with no OpenAI equivalent: a request that
+# carries one of these has to go to the native /api/chat.
+_OLLAMA_NATIVE_ONLY_KEYS = ("top_k", "repeat_penalty", "num_ctx", "num_gpu", "keep_alive")
+_KEEP_ALIVE_RE = re.compile(r"^-?\d+(ms|s|m|h)?$")
 
 
 def _clean_gen_overrides(overrides: Optional[Dict]) -> Dict:
@@ -2733,9 +2749,46 @@ def _clean_gen_overrides(overrides: Optional[Dict]) -> Dict:
             elif k == "reasoning_effort":
                 if str(v) in ("low", "medium", "high", "none"):
                     out[k] = str(v)
+            elif k == "keep_alive":
+                # Seconds as a number, or an Ollama duration ("10m", "-1").
+                if isinstance(v, bool):
+                    continue
+                if isinstance(v, (int, float)):
+                    out[k] = int(v)
+                elif _KEEP_ALIVE_RE.match(str(v).strip()):
+                    out[k] = str(v).strip()
         except (TypeError, ValueError):
             continue
     return out
+
+
+def _model_load_defaults(url: str, model: str) -> Dict:
+    """Per-model load defaults saved in Settings → Local models (the
+    `model_load_options` setting, src/model_load_options.py): num_ctx /
+    num_gpu / keep_alive for THIS model on THIS Ollama server. Empty for
+    every other provider and whenever nothing was saved."""
+    if not model or not url:
+        return {}
+    try:
+        from src.model_load_options import resolve_for_request
+        return resolve_for_request(url, model)
+    except Exception as e:  # noqa: BLE001 — a default is never worth failing a chat
+        logger.debug("model load defaults unavailable for %s: %s", model, e)
+        return {}
+
+
+def _with_model_defaults(url: str, model: str, gen_overrides: Optional[Dict]) -> Optional[Dict]:
+    """Saved per-model defaults UNDER the caller's explicit overrides: a
+    `/ctx 8192` in the chat still beats a saved num_ctx of 32768."""
+    defaults = _model_load_defaults(url, model)
+    if not defaults:
+        return gen_overrides
+    merged = dict(defaults)
+    for k, v in (gen_overrides or {}).items():
+        if v is None or v == "":
+            continue
+        merged[k] = v
+    return merged
 
 
 def _apply_gen_overrides_openai(payload: Dict, overrides: Dict, url: str) -> None:
@@ -2762,6 +2815,8 @@ def _apply_gen_overrides_ollama(payload: Dict, overrides: Dict) -> None:
             options[k] = overrides[k]
     if "think" in overrides:
         payload["think"] = overrides["think"]
+    if "keep_alive" in overrides:
+        payload["keep_alive"] = overrides["keep_alive"]
     if not options:
         payload.pop("options", None)
 
@@ -2820,9 +2875,9 @@ def _route_for_gen_overrides(url: str, gen_overrides: Optional[Dict], model: str
     if not (port == 11434 and _is_ollama_openai_compat_url(url)):
         return url
     ov = gen_overrides if isinstance(gen_overrides, dict) else {}
-    # top_k / repeat_penalty / num_ctx are Ollama `options` with no OpenAI
-    # equivalent either — only the native payload can carry them.
-    if ov.get("think") is not None or any(k in ov for k in ("top_k", "repeat_penalty", "num_ctx", "num_gpu")):
+    # top_k / repeat_penalty / num_ctx / keep_alive are Ollama `options` with
+    # no OpenAI equivalent either — only the native payload can carry them.
+    if ov.get("think") is not None or any(k in ov for k in _OLLAMA_NATIVE_ONLY_KEYS):
         return _ollama_native_url_for_compat(url)
     # Default suppression: only for models Ollama itself reports as thinking-
     # capable. A name match alone (qwen3-coder matches "qwen3") must not move
@@ -2840,6 +2895,10 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
                      tools: Optional[List[Dict]] = None, session_id: Optional[str] = None,
                      tool_choice_none: bool = False, workload: str = "foreground",
                      gen_overrides: Optional[Dict] = None):
+    # Saved per-model load defaults (Settings → Local models) ride along as
+    # overrides — under the caller's own — so a saved num_ctx also triggers
+    # the native reroute below and lands in the Ollama `options`.
+    gen_overrides = _with_model_defaults(url, model, gen_overrides)
     _routed = _route_for_gen_overrides(url, gen_overrides, model)
     if _routed != url:
         caps = _ollama_model_caps(url, model)

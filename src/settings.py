@@ -222,6 +222,11 @@ DEFAULT_SETTINGS = {
     # Never applied to a request that also carries tools (Ollama does not
     # combine `format` with `tools` reliably), so the agent loop is untouched.
     "local_structured_output": "auto",
+    # Per-model load defaults for Ollama models (Settings → Local models →
+    # Options…, src/model_load_options.py): {"<endpoint_id>|<model>":
+    # {"num_ctx", "num_gpu", "keep_alive"}}. Applied under explicit
+    # per-request overrides on every Ollama request for that model.
+    "model_load_options": {},
     # Standing instructions from the repo (AGENTS.md / CLAUDE.md / …) in the
     # system prompt, and the repository map (files + symbols) before the
     # user's message (src/project_instructions.py, src/repo_map.py).
