@@ -720,7 +720,14 @@ def _build_index() -> ToolIndex:
     except Exception as e:
         if idx is not None and idx.backend == BACKEND_MEMORY:
             raise
-        logger.warning("tool index: ChromaDB-backed build failed (%s); using the in-memory lane", e)
+        if idx is None:
+            # ToolIndex() itself raised: Chroma failures are caught inside
+            # the constructor, so this is the lane that was actually built —
+            # usually the memory lane. Do not blame a "ChromaDB-backed
+            # build"; the retry below decides whether memory works at all.
+            logger.warning("tool index: build failed before an index existed (%s); retrying with the in-memory lane", e)
+        else:
+            logger.warning("tool index: ChromaDB-backed build failed (%s); using the in-memory lane", e)
     idx = ToolIndex(force_memory=True)
     idx.index_builtin_tools()
     return idx

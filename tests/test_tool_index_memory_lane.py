@@ -219,6 +219,73 @@ def test_embedding_cache_tolerates_corrupt_file(tmp_path):
     assert client.calls == 1
 
 
+@pytest.mark.parametrize("payload", [
+    {"version": 1, "model": "hash-bow", "dimension": 3, "entries": []},                    # entries is a list
+    {"version": 1, "model": "hash-bow", "dimension": "abc", "entries": {"k": [1, 2, 3]}},  # dimension not a number
+    {"version": 1, "model": "hash-bow", "dimension": 3, "entries": {"k": {"a": 1}}},      # a vector that is a dict
+    {"version": 1, "model": "hash-bow", "dimension": 3, "entries": "zzz"},                 # entries is a string
+    {"version": 1, "model": "hash-bow", "dimension": 512, "entries": "corrupt"},
+    {"version": 1, "model": "hash-bow", "dimension": None, "entries": {"k": None}},
+], ids=["entries-list", "dimension-str", "vector-dict", "entries-str", "entries-corrupt", "vector-none"])
+def test_embedding_cache_tolerates_a_structurally_invalid_file(tmp_path, payload):
+    """Audited: valid JSON with the wrong shape (entries not a dict, a
+    non-numeric dimension) raised out of _load — outside the try — and took
+    the whole memory lane, hence the tool index, down with it. Any such file
+    is an empty cache: rebuild, then rewrite it."""
+    from src.tool_index_memory import CachingEmbedder, EmbeddingCache, MemoryCollection
+
+    path = os.path.join(str(tmp_path), "tool_index_cache.json")
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(payload, fh)
+    client = HashingEmbedder()
+    cache = EmbeddingCache(path, model=client.model)
+    assert len(cache) == 0
+    embedder = CachingEmbedder(client, cache)
+    docs = ["Tool: bash\nRun shell commands"]
+    vectors = embedder.encode(docs)
+    assert vectors.shape == (1, client.dim) and client.calls == 1
+    MemoryCollection("t", cache=cache).upsert(ids=["a"], documents=docs, embeddings=vectors.tolist(), metadatas=[{}])
+    with open(path, encoding="utf-8") as fh:
+        rewritten = json.load(fh)
+    assert isinstance(rewritten["entries"], dict) and len(rewritten["entries"]) == 1
+    assert rewritten["dimension"] == client.dim
+    # a fresh process reads the rewritten file
+    warm = EmbeddingCache(path, model=client.model)
+    assert len(warm) == 1 and warm.dimension == client.dim
+
+
+def test_embedding_cache_save_uses_a_private_temp_file(tmp_path, monkeypatch):
+    """Two processes (the app and a CLI, a warmup thread and a request) saving
+    at once must not share `<path>.tmp`: one would rename the other's
+    half-written file into place. mkstemp in the same directory + os.replace."""
+    import src.tool_index_memory as tim
+    from src.tool_index_memory import EmbeddingCache
+
+    path = os.path.join(str(tmp_path), "sub", "tool_index_cache.json")
+    cache = EmbeddingCache(path, model="m")
+    cache.remember("x", [1.0, 0.0])
+    seen = []
+    real_replace = os.replace
+
+    def spy_replace(src, dst):
+        seen.append((src, dst))
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(tim.os, "replace", spy_replace)
+    assert cache.save() is True
+    assert len(seen) == 1
+    src, dst = seen[0]
+    assert dst == path
+    assert src != f"{path}.tmp"
+    assert os.path.dirname(src) == os.path.dirname(path)
+    assert not os.path.exists(src)
+    assert os.listdir(os.path.dirname(path)) == ["tool_index_cache.json"]
+    # a failed write leaves no temp file behind either
+    monkeypatch.setattr(tim.os, "replace", lambda s, d: (_ for _ in ()).throw(OSError("disk full")))
+    assert cache.save() is False
+    assert os.listdir(os.path.dirname(path)) == ["tool_index_cache.json"]
+
+
 def test_persisted_cache_mirrors_collection_contents(tmp_path):
     """Deleted rows leave the file; queries never enter it."""
     from src.tool_index_memory import CachingEmbedder, EmbeddingCache, MemoryCollection, embedding_cache_key
@@ -436,6 +503,49 @@ def test_get_tool_index_does_not_block_while_a_build_is_in_flight(monkeypatch, t
     worker.join(10)
     assert results["built"] is not None
     assert ti.get_tool_index() is results["built"]
+
+
+def test_get_tool_index_survives_a_structurally_invalid_cache_file(monkeypatch, tmp_path, clean_singleton, caplog):
+    """The audited chain: a wrong-shaped cache file → memory lane crash →
+    'ChromaDB-backed build failed' (it was not Chroma) → no tool index at all,
+    retrying for ever. Now: healthy index, the file rewritten."""
+    ti = clean_singleton
+    _chroma_down(monkeypatch)
+    emb = _use_embedder(monkeypatch, tmp_path)
+    import src.tool_index_memory as tim
+
+    with open(tim.DEFAULT_CACHE_PATH, "w", encoding="utf-8") as fh:
+        json.dump({"version": 1, "model": emb.model, "dimension": 512, "entries": "corrupt"}, fh)
+    with caplog.at_level(logging.DEBUG, logger="src.tool_index"):
+        index = ti.get_tool_index()
+    assert index is not None and index.healthy and index.backend == "memory"
+    assert "bash" in index.retrieve("run a shell command", k=8)
+    assert ti._last_error == ""
+    assert not [r for r in caplog.records if "ChromaDB-backed build failed" in r.getMessage()]
+    with open(tim.DEFAULT_CACHE_PATH, encoding="utf-8") as fh:
+        rewritten = json.load(fh)
+    assert isinstance(rewritten["entries"], dict) and rewritten["entries"]
+
+
+def test_build_index_names_the_lane_that_failed(monkeypatch, tmp_path, clean_singleton, caplog):
+    """When ToolIndex() itself raises there is no index to blame Chroma for:
+    the warning must not claim a 'ChromaDB-backed build' failed."""
+    ti = clean_singleton
+    _chroma_down(monkeypatch)
+    import src.tool_index_memory as tim
+
+    _use_embedder(monkeypatch, tmp_path)
+
+    def broken_lane(*a, **k):
+        raise RuntimeError("memory lane exploded")
+
+    monkeypatch.setattr(tim, "build_memory_lane", broken_lane)
+    with caplog.at_level(logging.DEBUG, logger="src.tool_index"):
+        assert ti.get_tool_index() is None
+    messages = [r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING]
+    assert messages, "the failure is reported"
+    assert not any("ChromaDB-backed build failed" in m for m in messages), messages
+    assert any("memory lane exploded" in m for m in messages)
 
 
 def test_get_tool_index_falls_back_to_memory_when_chroma_indexing_fails(monkeypatch, tmp_path, clean_singleton):

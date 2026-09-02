@@ -27,6 +27,7 @@ import hashlib
 import json
 import logging
 import os
+import tempfile
 import threading
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
@@ -109,20 +110,41 @@ class EmbeddingCache:
                 payload.get("model"), self.model,
             )
             return
-        entries = payload.get("entries") or {}
-        loaded: Dict[str, np.ndarray] = {}
-        dim = payload.get("dimension")
-        for key, vec in entries.items():
-            try:
-                arr = np.asarray(vec, dtype=np.float32)
-            except Exception:
-                continue
-            if arr.ndim != 1 or arr.size == 0 or (dim and arr.size != dim):
-                continue
-            loaded[str(key)] = arr
+        # Valid JSON of the wrong shape (entries not a dict, a dimension that
+        # is not a number, a vector that is a dict) used to raise out of here
+        # and take the whole memory lane — hence the tool index — down. Any
+        # such file is an empty cache: rebuild, and the next save rewrites it.
+        try:
+            entries = payload.get("entries") or {}
+            if not isinstance(entries, dict):
+                raise TypeError(f"entries is {type(entries).__name__}, not an object")
+            dim_raw = payload.get("dimension")
+            dim: Optional[int] = None
+            if dim_raw is not None and not isinstance(dim_raw, bool):
+                dim = int(dim_raw)
+                if dim <= 0:
+                    dim = None
+            loaded: Dict[str, np.ndarray] = {}
+            for key, vec in entries.items():
+                if not isinstance(vec, (list, tuple)):
+                    continue
+                try:
+                    arr = np.asarray(vec, dtype=np.float32)
+                except Exception:
+                    continue
+                if arr.ndim != 1 or arr.size == 0 or (dim and arr.size != dim):
+                    continue
+                loaded[str(key)] = arr
+        except Exception as e:
+            logger.info("tool index cache has an unexpected shape (%s); rebuilding it", e)
+            return
         with self._lock:
             self._vectors = loaded
-            self.dimension = int(dim) if dim else (next(iter(loaded.values())).size if loaded else None)
+            # The file's dimension is only trusted when it describes vectors
+            # actually loaded; an empty cache takes its dimension from the
+            # first vector remembered (a stale number would make every new
+            # vector look mismatched on the next load).
+            self.dimension = int(next(iter(loaded.values())).size) if loaded else None
 
     def lookup(self, text: str) -> Optional[np.ndarray]:
         with self._lock:
@@ -162,19 +184,26 @@ class EmbeddingCache:
                     for key, vec in selected.items()
                 },
             }
-        tmp = f"{self.path}.tmp"
+        # A private temp file in the same directory (same filesystem, so the
+        # rename is atomic): a fixed `<path>.tmp` shared by two writers (the
+        # warmup thread and a request, the app and a CLI) let one rename the
+        # other's half-written file into place.
+        tmp: Optional[str] = None
         try:
-            os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
-            with open(tmp, "w", encoding="utf-8") as fh:
+            directory = os.path.dirname(self.path) or "."
+            os.makedirs(directory, exist_ok=True)
+            fd, tmp = tempfile.mkstemp(prefix=os.path.basename(self.path) + ".", suffix=".tmp", dir=directory)
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
                 json.dump(payload, fh, separators=(",", ":"))
             os.replace(tmp, self.path)
             return True
         except Exception as e:
             logger.debug("tool index cache not saved (%s): %s", self.path, e)
-            try:
-                os.remove(tmp)
-            except OSError:
-                pass
+            if tmp:
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
             return False
 
 
