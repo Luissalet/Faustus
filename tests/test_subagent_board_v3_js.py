@@ -445,3 +445,55 @@ console.log(JSON.stringify({ s1, s2, s3 }));
     assert out["s2"]["payload"] is None and out["s2"]["submits"] == 1 and out["s2"]["toast"] == "The delegation was not sent"
     assert out["s2"]["composer"].startswith("🤖 1 sub-agent: do a")
     assert out["s3"] == {"payload": None, "submits": 2, "toasts": 2}
+
+
+@pytest.mark.skipif(not _HAS_NODE, reason="node is required")
+def test_activity_verb_follows_the_tool_in_flight():
+    """Cowork-style activity chip: 'Reading files' / 'Editing files' /
+    'Running command' / 'Browsing' / 'Thinking' — from the tool in flight."""
+    script = _DOM_STUB + _harness_module_source() + r"""
+const I = _subagentInternals;
+const S = (sa) => renderSubagentEvent({ subagent: sa }, { sessionId: 's1', background: true });
+S({ id: 'w', index: 0, name: 'api', role: 'worker', event: 'queued' });
+const [w] = subagentBoardState('s1');
+const seq = [];
+seq.push(I.activity(w));
+S({ id: 'w', event: 'started', session_id: 'c1' });
+seq.push(I.activity(w));
+S({ id: 'w', event: 'tool', tool: 'read_file', command: 'src/api.py', phase: 'start' });
+seq.push(I.activity(w));
+S({ id: 'w', event: 'tool', tool: 'read_file', phase: 'done', ok: true });
+seq.push(I.activity(w));
+S({ id: 'w', event: 'tool', tool: 'edit_file', command: 'src/api.py', phase: 'start' });
+seq.push(I.activity(w));
+S({ id: 'w', event: 'tool', tool: 'edit_file', phase: 'done', ok: true });
+S({ id: 'w', event: 'tool', tool: 'bash', command: 'pytest -q', phase: 'start' });
+seq.push(I.activity(w));
+S({ id: 'w', event: 'tool', tool: 'bash', phase: 'progress', elapsed_s: 3, tail: '..' });
+seq.push(I.activity(w));
+S({ id: 'w', event: 'tool', tool: 'bash', phase: 'done', ok: true });
+S({ id: 'w', event: 'tool', tool: 'mcp__builtin_browser__browser_navigate', command: 'https://x', phase: 'start' });
+seq.push(I.activity(w));
+S({ id: 'w', event: 'tool', tool: 'mcp__builtin_browser__browser_navigate', phase: 'done', ok: true });
+S({ id: 'w', event: 'tool', tool: 'desktop_click', command: '10,20', phase: 'start' });
+seq.push(I.activity(w));
+S({ id: 'w', event: 'tool', tool: 'desktop_click', phase: 'done', ok: true });
+S({ id: 'w', event: 'tool', tool: 'weird_tool', command: '', phase: 'start' });
+seq.push(I.activity(w));
+S({ id: 'w', event: 'tool', tool: 'weird_tool', phase: 'done', ok: true });
+S({ id: 'w', event: 'tick', elapsed_s: 140, idle_s: 134, stalled: true, stall_reason: 'idle' });
+seq.push(I.activity(w));
+const html = I.cardHtml(w, { live: true });
+S({ id: 'w', event: 'done', stop_reason: 'complete' });
+seq.push(I.activity(w));
+const doneHtml = I.cardHtml(w, { live: true });
+console.log(JSON.stringify({ seq, html, doneHtml }));
+"""
+    out = _run_node(script)
+    assert out["seq"] == [
+        "Queued", "Thinking", "Reading files", "Thinking", "Editing files",
+        "Running command", "Running command", "Browsing", "Using the desktop",
+        "Using weird_tool", "Idle", "",
+    ]
+    assert '<span class="subagent-activity" title="what the worker is doing right now">Idle</span>' in out["html"]
+    assert "subagent-activity" not in out["doneHtml"]

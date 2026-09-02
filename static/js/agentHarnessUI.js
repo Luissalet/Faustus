@@ -928,6 +928,30 @@ function _saPill(w, now) {
   return { kind: 'partial', text: w.stopReason || 'partial' };
 }
 
+/** Cowork-style activity verb ("Editing files", "Running command", …) derived
+ *  from what the worker is doing right now; '' when the card is not live. */
+const _SA_ACTIVITY = [
+  [/^(read_file|ls|list_files|glob|grep|search_files|find_files|read_plan|project_context|repo_map|code_refs)$/, 'Reading files'],
+  [/^(edit_file|write_file|apply_patch|replace_across_files|create_file|multi_edit)$/, 'Editing files'],
+  [/^(bash|python|run_tests|shell|execute|subprocess)$/, 'Running command'],
+  [/^(web_search|web_fetch|fetch_url|mcp__builtin_browser__|browser_)/, 'Browsing'],
+  [/^desktop_/, 'Using the desktop'],
+  [/^delegate_agents$/, 'Delegating'],
+  [/^(ask_user|update_plan|todowrite|save_todos)$/, 'Waiting for you'],
+  [/^(manage_skills|memory|remember|recall)/, 'Using memory'],
+];
+export function subagentActivity(w) {
+  if (!w) return '';
+  if (w.status === 'queued') return 'Queued';
+  if (!_saLive(w)) return '';
+  if (w.stalled) return /loop/i.test(w.stallReason || '') ? 'Looping' : 'Idle';
+  if (w.toolInFlight && w.lastTool) {
+    for (const [re, label] of _SA_ACTIVITY) if (re.test(w.lastTool)) return label;
+    return `Using ${w.lastTool}`;
+  }
+  return 'Thinking';
+}
+
 const _SA_ICON = { queued: '⏳', running: '◉', done: '✓', failed: '✗', stopped: '■', partial: '◑' };
 const _SA_ROW_CLASS = { queued: 'is-queued', running: 'is-running', done: 'is-done', failed: 'is-error', stopped: 'is-partial is-stopped', partial: 'is-partial' };
 
@@ -966,6 +990,7 @@ function _saCardHtml(w, { live = true, streaming = false, now = Date.now() } = {
     `<span class="subagent-role-badge is-${esc(w.role || 'worker')}">${esc(w.role || 'worker')}</span>` +
     (w.model ? `<span class="subagent-model harness-muted" title="model">${esc(w.model)}</span>` : '') +
     `<span class="subagent-pill is-${pill.kind}">${esc(pill.text)}</span>` +
+    (alive ? `<span class="subagent-activity" title="what the worker is doing right now">${esc(subagentActivity(w))}</span>` : '') +
     `</div>`;
   const instruction = w.instruction || w.instructionFull;
   const instr = instruction ? `<div class="subagent-instruction" title="${esc(w.instructionFull || w.instruction)}">${esc(instruction)}</div>` : '';
@@ -1084,6 +1109,8 @@ function _saTick() {
         pill.className = `subagent-pill is-${p.kind}`;
         if (card.classList) card.classList.toggle('is-stalled', p.kind === 'stalled');
       }
+      const act = card.querySelector('.subagent-activity');
+      if (act) act.textContent = subagentActivity(w);
     }
     // Re-run buttons (live board AND restored history) follow the parent.
     const reruns = document.querySelectorAll('[data-rerun-worker]');
@@ -1208,7 +1235,7 @@ export function restoredSubagentBoardHtml(subagents) {
 }
 
 /** Pure helpers, exposed for the node-based tests. */
-export const _subagentInternals = { apply: _saApply, newWorker: _saNewWorker, elapsed: _saElapsed, pill: _saPill, cardHtml: _saCardHtml, fmtDur: _fmtDur, boards: _saBoards, tick: _saTick, rerun: _rerunWorker, parentStreaming: _parentStreaming };
+export const _subagentInternals = { activity: subagentActivity, apply: _saApply, newWorker: _saNewWorker, elapsed: _saElapsed, pill: _saPill, cardHtml: _saCardHtml, fmtDur: _fmtDur, boards: _saBoards, tick: _saTick, rerun: _rerunWorker, parentStreaming: _parentStreaming };
 
 // ── Progress panel ──────────────────────────────────────────────────────────
 
