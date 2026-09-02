@@ -541,6 +541,7 @@ function buildFixture(document) {
   const panelIds = [
     'services',
     'added-models',
+    'local-models',
     'ai',
     'search',
     'integrations',
@@ -833,6 +834,15 @@ const STUBS = new Map([
     path.join(JS, 'modalSnap.js'),
     {
       clearDockSide() {},
+    },
+  ],
+  [
+    // Settings → Local models (Ollama manager) — activated/deactivated by the
+    // panel coordinator; its own behaviour is covered by
+    // tests/test_local_models_js.py.
+    path.join(JS, 'localModels.js'),
+    {
+      default: { activate() {}, deactivate() {}, isActive() { return false; } },
     },
   ],
 ]);

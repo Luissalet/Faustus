@@ -405,7 +405,12 @@ def test_registry_keywords_route_the_nav_search_to_agent_tools():
 def test_css_block_is_delimited_and_at_the_end():
     i = CSS.index("/* === agent settings === */")
     block = CSS[i:]
-    assert "/* === " not in block[len("/* === agent settings === */"):], "must be the last delimited block"
+    # Later features append their own delimited block after this one (the
+    # convention is "one delimited block per feature, appended at the end");
+    # this block ends where the next delimiter starts.
+    rest = block[len("/* === agent settings === */"):]
+    if "/* === " in rest:
+        block = block[:len("/* === agent settings === */") + rest.index("/* === ")]
     for sel in (".agset-toolbar", ".agset-search", ".agset-group", ".agset-field", ".agset-key", ".agset-help",
                 ".agset-hint", ".agset-reset", ".agset-field.is-dirty", ".agset-field.is-changed .agset-reset",
                 ".agset-save:disabled", ".agset-group-msg.is-error", ".agset-field.hidden"):

@@ -27,6 +27,7 @@ import { providerLogo } from './providers.js';
 import { isAltGrEvent } from './platform.js';
 import { bindMenuDismiss } from './escMenuStack.js';
 import { invalidateSettings } from './appConfig.js';
+import localModelsModule from './localModels.js';
 
 let initialized = false;
 let modalEl = null;
@@ -72,6 +73,13 @@ function onSettingsPanelActivated(tab) {
 
   // AI endpoints are intentionally refreshed only when entering the AI panel.
   if (tab === 'ai') refreshAiModelEndpoints();
+
+  // Local models (Ollama manager) loads lazily on first entry and polls the
+  // loaded-model list only while it is the visible panel.
+  try {
+    if (tab === 'local-models') localModelsModule.activate();
+    else localModelsModule.deactivate();
+  } catch (e) { console.warn('local models panel', e); }
 }
 
 function openAdminSettingsTab(tab) {
@@ -5562,6 +5570,7 @@ export function close() {
   // dimmed if Settings is closed while that panel is active.
   document.body.classList.remove('settings-appearance-open');
   syncAppearanceOpacity(false);
+  try { localModelsModule.deactivate(); } catch (_) {}
 
   hideSettingsModal(modalEl);
 }

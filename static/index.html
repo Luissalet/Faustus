@@ -1530,6 +1530,10 @@
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
             <span>Added Models</span>
           </button>
+          <button class="settings-nav-item" data-settings-tab="local-models">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="10" rx="2"/><path d="M6 11h.01M10 11h.01"/><path d="M14 11h4"/></svg>
+            <span>Local models</span>
+          </button>
           <button class="settings-nav-item" data-settings-tab="ai">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a4 4 0 0 0-4 4v2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V10a2 2 0 0 0-2-2h-2V6a4 4 0 0 0-4-4z"/></svg>
             <span>AI Defaults</span>
@@ -2408,6 +2412,44 @@
               </div>
               <div id="adm-epList-api"><div class="admin-empty">No API endpoints yet.</div></div>
             </div>
+          </div>
+        </div>
+
+        <!-- ═══ LOCAL MODELS TAB (static/js/localModels.js) ═══ -->
+        <div data-settings-panel="local-models" class="hidden">
+          <div class="admin-card lm-card">
+            <h2 class="lm-title">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;opacity:0.6"><rect x="2" y="7" width="20" height="10" rx="2"/><path d="M6 11h.01M10 11h.01"/><path d="M14 11h4"/></svg>Local models <span style="opacity:0.45;font-weight:normal;font-size:0.82em">(Ollama)</span>
+              <span style="flex:1"></span>
+              <select id="lm-endpoint" class="lm-endpoint" aria-label="Ollama endpoint" hidden></select>
+              <button type="button" class="admin-btn-sm" id="lm-refresh" title="Re-read installed and loaded models">Refresh</button>
+            </h2>
+            <div class="admin-toggle-sub" style="margin-bottom:8px">What is installed on the Ollama server, what is resident in VRAM right now, and whether each model fits on this card before you load it.</div>
+            <div id="lm-admin-hint" class="admin-toggle-sub" style="margin-bottom:8px" hidden>Read-only: pulling, loading and deleting models is for admins.</div>
+            <div id="lm-vram" class="lm-vram"></div>
+            <div id="lm-status" class="lm-status" hidden></div>
+          </div>
+          <div class="admin-card">
+            <h3 class="lm-h3">Loaded now</h3>
+            <div id="lm-loaded"><div class="admin-empty">Loading…</div></div>
+          </div>
+          <div class="admin-card">
+            <h3 class="lm-h3">Installed <span id="lm-installed-count" class="lm-muted"></span></h3>
+            <div id="lm-installed"><div class="admin-empty">Loading…</div></div>
+          </div>
+          <div class="admin-card">
+            <h3 class="lm-h3">Pull a model</h3>
+            <form id="lm-pull-form" class="lm-pull-form" autocomplete="off">
+              <input type="text" id="lm-pull-name" class="lm-input" placeholder="qwen3.5:9b, gemma3:12b, hf.co/user/repo:Q4_K_M…" aria-label="Model to pull" spellcheck="false">
+              <button type="submit" class="admin-btn-sm" id="lm-pull-btn">Pull</button>
+            </form>
+            <div id="lm-pulls" class="lm-pulls-box" hidden></div>
+            <div class="lm-discover-head">
+              <h3 class="lm-h3">Discover</h3>
+              <input type="search" id="lm-discover-q" class="lm-input lm-discover-q" placeholder="Filter the catalogue: coder, vision, embedding, 7b…" aria-label="Search the catalogue">
+            </div>
+            <div id="lm-discover-note" class="admin-toggle-sub" style="margin-bottom:8px"></div>
+            <div id="lm-discover"><div class="admin-empty">Loading…</div></div>
           </div>
         </div>
 

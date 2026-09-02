@@ -257,6 +257,7 @@ function buildFixture(document) {
   const panelIds = [
     'services',
     'added-models',
+    'local-models',
     'ai',
     'search',
     'integrations',
@@ -376,6 +377,7 @@ function moduleSource(relativePath) {
     registryPanelIds === [
       'services',
       'added-models',
+      'local-models',
       'ai',
       'search',
       'integrations',

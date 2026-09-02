@@ -59,6 +59,15 @@ export const SETTINGS_PANELS = Object.freeze([
     keywords: ['models', 'configured', 'provider', 'endpoint'],
   }),
   definePanel({
+    // Ollama model manager (localModels.js). Visible to every signed-in
+    // user; the buttons that change something only render for admins.
+    id: 'local-models',
+    label: 'Local models',
+    group: 'models',
+    keywords: ['ollama', 'local', 'vram', 'gpu', 'pull', 'download', 'loaded',
+      'unload', 'discover', 'catalogue', 'num_ctx', 'keep_alive'],
+  }),
+  definePanel({
     id: 'ai',
     label: 'AI Defaults',
     group: 'models',

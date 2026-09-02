@@ -176,8 +176,9 @@ def list_ollama_endpoints(include_default: bool = True) -> List[Dict[str, Any]]:
     return out
 
 
-def _pick_endpoint(endpoint_id: Optional[str]) -> Dict[str, Any]:
-    endpoints = list_ollama_endpoints()
+def _pick_endpoint(endpoint_id: Optional[str], endpoints: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    if endpoints is None:
+        endpoints = list_ollama_endpoints()
     if not endpoints:
         raise HTTPException(404, "No Ollama endpoint is configured")
     if endpoint_id:
@@ -734,7 +735,7 @@ def setup_local_models_routes() -> APIRouter:
     async def api_list(request: Request, endpoint_id: Optional[str] = Query(None)):
         require_user(request)
         endpoints = list_ollama_endpoints()
-        ep = _pick_endpoint(endpoint_id) if endpoints else None
+        ep = _pick_endpoint(endpoint_id, endpoints) if endpoints else None
         if ep is None:
             return {"endpoints": [], "endpoint_id": "", "reachable": False,
                     "error": "No Ollama endpoint is configured", "models": [],
@@ -751,7 +752,7 @@ def setup_local_models_routes() -> APIRouter:
                            endpoint_id: Optional[str] = Query(None)):
         require_user(request)
         endpoints = list_ollama_endpoints()
-        ep = _pick_endpoint(endpoint_id) if endpoints else None
+        ep = _pick_endpoint(endpoint_id, endpoints) if endpoints else None
         same = bool(ep and ep.get("same_machine"))
         installed: List[str] = []
         if ep is not None:
