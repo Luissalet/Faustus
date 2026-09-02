@@ -42605,7 +42605,7 @@ body:has(.sidebar.right-side) .project-active-pill { right: 12px; }
 .su-gpu-mini span { display: block; height: 100%; background: var(--color-accent, #00aaff); }
 .su-gpu-mini.warm span { background: var(--warn, #f0ad4e); }
 .su-gpu-mini.hot span { background: var(--red, #e06c75); }
-.su-gpu-models { margin: 0 0 3px 12px; font-size: 11px; opacity: .8; line-height: 1.4; word-break: break-all; }
+.su-gpu-models { margin: 0 0 3px 12px; font-size: 11px; opacity: .8; line-height: 1.4; overflow-wrap: anywhere; }
 @media (max-width: 1100px) {
   /* Narrow chat column: the floating panel overlaps the text, so keep it
      compact and let the content show through until hovered. */

@@ -215,7 +215,9 @@ export function pillText(d, mode = 'combined') {
       });
     } else {
       bits.push(`GPU ${pct(pool.util)}`);
-      bits.push(`${gpus.map(g => mib2gb(g.mem_used)).join('+')}/${gbInt(pool.mem_total)}G`);
+      // one figure for the pool — the per-card split lives in the panel and
+      // in the separate view; `a+b/28G` pushed the pill into the chat title
+      bits.push(`${mib2gb(pool.mem_used)}/${gbInt(pool.mem_total)}G`);
     }
     if (pool.temp != null) bits.push(`${Math.round(pool.temp)}°`);
   } else if (gpu) {

@@ -171,7 +171,7 @@ def test_pill_text_combined_separate_and_one_card():
         offline: m.pillText({ gpu: [], ollama: { reachable: false, models: [] } }),
       }));
     """)
-    assert out["combined"] == "GPU 22% · 9.3+15.8/28G · 43° · qwen3.8 100%↑GPU · RAM 31%"
+    assert out["combined"] == "GPU 22% · 25.1/28G · 43° · qwen3.8 100%↑GPU · RAM 31%"
     assert out["separate"] == "GPU0 22% 9.3/12G · GPU1 0% 15.8/16G · 43° · qwen3.8 100%↑GPU · RAM 31%"
     assert out["dflt"] == out["combined"]                      # default view is combined
     # one card: exactly what the pill said before, in either mode
@@ -299,4 +299,4 @@ def test_hostile_server_strings_are_escaped_everywhere():
         assert evil not in out[key], key
         assert "&lt;img src=x onerror=1&gt;" in out[key], key
     # the pill is set through textContent, so the raw name is fine there — but it is the model's name, nothing else
-    assert out["pill"].startswith("GPU 22% · 9.3+15.8/28G · 43° · <img src=x onerror=1> 100%↑GPU")
+    assert out["pill"].startswith("GPU 22% · 25.1/28G · 43° · <img src=x onerror=1> 100%↑GPU")

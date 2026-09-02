@@ -222,6 +222,30 @@ INTENT_PATTERNS: List[re.Pattern] = [
 # Question to the user → the turn legitimately ends without tools.
 _QUESTION_TAIL_RE = re.compile(r"[?¿][\s*_`\"')\]]*$")
 
+# "No puedo saber en cuántas GPUs estoy corriendo", "I can't tell how many
+# GPUs I'm running on", "no sé si estoy ejecutando la versión buena": the
+# progressive is inside a negation or an indirect question about STATE, not
+# an action announced and never taken. Seen live (ronda 6): a one-line
+# answer cost a second round at 0.7 tok/s because "estoy corriendo" matched.
+_NEGATED_LEAD_RE = re.compile(
+    r"(?:\b(?:no|nunca|jamás|tampoco|ni)\s+(?:\w+\s+){0,3}$)|"
+    r"(?:\b(?:cu[aá]nt[oa]s?|d[oó]nde|qu[eé]|cu[aá]l(?:es)?|si|por\s+qu[eé])\s+(?:\w+\s+){0,4}$)|"
+    r"(?:\b(?:can'?t|cannot|can\s+not|don'?t|doesn'?t|won'?t|not|never|unable\s+to|no\s+way\s+to)\s+(?:\w+\s+){0,4}$)|"
+    r"(?:\b(?:how\s+many|how\s+much|where|whether|which|what|why|if)\s+(?:\w+\s+){0,4}$)",
+    re.IGNORECASE,
+)
+
+
+def _negated_or_indirect(text: str, at: int) -> bool:
+    """True when the phrase starting at `at` sits inside a negation or an
+    indirect question in the same sentence ("no puedo saber en cuántas GPUs
+    estoy corriendo") — a statement about state, not an announced action."""
+    sentence_start = max(
+        (text.rfind(ch, 0, at) + 1 for ch in ".;!?\n"), default=0,
+    )
+    lead = text[sentence_start:at]
+    return bool(_NEGATED_LEAD_RE.search(lead))
+
 # Path-like tokens. Requires a known source/config extension so prose like
 # "v1.2" or "e.g." is not treated as a file. Directory prefixes optional.
 _PATH_EXTS = (
@@ -370,7 +394,7 @@ def find_intent_announcement(text: str, tail_chars: int = 600) -> Optional[str]:
     # followed by real calls in the same round.
     last_para = re.split(r"\n\s*\n", tail.strip())[-1]
     for pat in INTENT_PATTERNS:
-        matches = list(pat.finditer(last_para))
+        matches = [m for m in pat.finditer(last_para) if not _negated_or_indirect(last_para, m.start())]
         if matches:
             return matches[-1].group(0).strip()
     stripped = last_para.rstrip(" \t*_`")

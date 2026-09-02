@@ -68,6 +68,26 @@ def test_in_progress_execution_claims_count_as_announcements():
     assert h.find_intent_announcement("¿Quieres que ejecute el comando ahora?") is None
 
 
+def test_negated_or_indirect_progressives_are_statements_not_announcements():
+    """Seen live (ronda 6, two-GPU box): "No puedo saber en cuántas GPUs
+    estoy corriendo; la capital de Portugal es Lisboa" ended the turn and
+    the harness flagged "estoy corriendo" as an announced action — a second
+    round at 0.7 tok/s to re-answer a one-liner. A progressive inside a
+    negation or an indirect question describes STATE; nothing was announced."""
+    for text in (
+        "No puedo saber en cuántas GPUs estoy corriendo; la capital de Portugal es Lisboa.",
+        "No sé si estoy ejecutando la versión buena del script.",
+        "I can't tell how many GPUs I'm running on. The capital of Portugal is Lisbon.",
+        "I don't know whether the job is running now.",
+        "Nunca estoy ejecutando dos procesos a la vez.",
+    ):
+        assert h.find_intent_announcement(text) is None, text
+    # the same progressive without the negation / question is still caught,
+    # and a negation in an EARLIER sentence does not shield it
+    assert h.find_intent_announcement("Estoy corriendo los tests ahora.")
+    assert h.find_intent_announcement("No hay problema. Estoy ejecutando el comando ahora mismo.")
+
+
 def test_path_token_extraction():
     toks = h.extract_path_tokens(
         "Edited static/js/projects.js and ProjectCard.vue; see docs at https://x.com/a.js and Node.js v1.2 e.g. file."
