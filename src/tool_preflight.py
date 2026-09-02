@@ -212,6 +212,45 @@ def _integration_rule(ctx: PreflightContext) -> Dict[str, str]:
     return {"api_call": INTEGRATION_REASON}
 
 
+# ── Rule 4: desktop tools switched off, or no desktop to drive ────────────
+
+# `desktop_control_mode = off` is the owner saying "never offer the input
+# tools"; `src/tool_capabilities.py` documents the three modes. Offering them
+# anyway would be exactly the offered-then-refused trap this module exists to
+# prevent (the tools refuse to run in that mode as well, belt and braces).
+#
+# The platform check is the same `available()` the tools call before doing
+# anything — cheap and structural (ctypes / DISPLAY / xdotool on PATH), no
+# capture is attempted — so a Linux box with no X display or a platform with
+# no backend is pruned of all seven, screenshot included: none of them can
+# succeed there. A locked or service-session Windows desktop is NOT claimed
+# here (it is only known at capture time) and the tool reports it instead.
+DESKTOP_OFF_REASON = "desktop input tools are switched off (desktop_control_mode=off)"
+
+
+def _desktop_tool_sets():
+    from src.agent_tools.desktop_tools import DESKTOP_CONTROL_TOOLS, DESKTOP_TOOLS
+
+    return DESKTOP_TOOLS, DESKTOP_CONTROL_TOOLS
+
+
+def _desktop_tool_names() -> FrozenSet[str]:
+    return _desktop_tool_sets()[0]
+
+
+def _desktop_rule(ctx: PreflightContext) -> Dict[str, str]:
+    from src.agent_tools.desktop_tools import desktop_availability
+    from src.tool_capabilities import desktop_control_mode
+
+    all_tools, control_tools = _desktop_tool_sets()
+    ok, reason = desktop_availability()
+    if not ok:
+        return {name: f"desktop unavailable: {reason}" for name in all_tools}
+    if desktop_control_mode() == "off":
+        return {name: DESKTOP_OFF_REASON for name in control_tools}
+    return {}
+
+
 # ── Registry ──────────────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
@@ -227,6 +266,7 @@ RULES = (
     PreflightRule("project", lambda: PROJECT_TOOLS, _project_rule),
     PreflightRule("email", _email_tool_names, _email_rule),
     PreflightRule("integrations", lambda: frozenset({"api_call"}), _integration_rule),
+    PreflightRule("desktop", _desktop_tool_names, _desktop_rule),
 )
 
 

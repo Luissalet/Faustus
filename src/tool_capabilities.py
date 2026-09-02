@@ -15,6 +15,7 @@ from enum import Enum
 from types import MappingProxyType
 from typing import Any, Iterable, Mapping
 
+from src.settings import get_setting
 from src.tool_approval_scopes import CHAT_SESSION_APPROVAL_CONTEXT_MARKER
 from src.tool_security import BUILTIN_EMAIL_TOOLS
 
@@ -267,9 +268,66 @@ _register(
     # retain the action effect while treating every successful result as data.
     result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
 )
+# Desktop control (FAUSTUS, src/agent_tools/desktop_tools.py). A screenshot
+# or window list is a read of the owner's private screen, and its content —
+# pixels rendered by arbitrary applications and web pages — is as untrusted
+# as a fetched page. The input tools act on whatever has focus on the
+# owner's desktop: an external side effect with no undo.
+_register(
+    {"desktop_screenshot", "desktop_list_windows"},
+    ToolEffect.READ_PRIVATE,
+    result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
+)
+_register(
+    {"desktop_click", "desktop_type", "desktop_key", "desktop_scroll", "desktop_focus_window"},
+    ToolEffect.EXTERNAL_SIDE_EFFECT,
+    result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
+)
 
 
 TOOL_CAPABILITIES: Mapping[str, ToolCapabilities] = MappingProxyType(dict(_REGISTRY))
+
+# ---------------------------------------------------------------------------
+# Always-approve tools (FAUSTUS)
+#
+# The post-external-context gate below is scoped: one "Allow for this task"
+# click covers every later gated action in the run. That is the right trade
+# for a file edit; it is the wrong one for a synthetic mouse click on the
+# owner's desktop, where each action lands on whatever window has focus at
+# that instant. These tools therefore ask on EVERY call, regardless of
+# task/chat-scope approvals and regardless of whether external context was
+# ever seen — unless `desktop_control_mode` says otherwise:
+#
+#   ask_each  (default)  approval card per call
+#   ask_task             the normal scoped gate (an approval covers the task)
+#   off                  not offered at all (tool preflight prunes them) and
+#                        refused by the tools themselves
+#
+# `desktop_screenshot` / `desktop_list_windows` follow the normal rules.
+# ---------------------------------------------------------------------------
+ALWAYS_APPROVE_TOOLS = frozenset(
+    {"desktop_click", "desktop_type", "desktop_key", "desktop_scroll", "desktop_focus_window"}
+)
+DESKTOP_CONTROL_MODES = ("ask_each", "ask_task", "off")
+DEFAULT_DESKTOP_CONTROL_MODE = "ask_each"
+
+
+def desktop_control_mode() -> str:
+    """`desktop_control_mode` setting, normalised; unknown values fail closed
+    to the default (ask on every call)."""
+    try:
+        raw = get_setting("desktop_control_mode", DEFAULT_DESKTOP_CONTROL_MODE)
+    except Exception:  # noqa: BLE001 - settings unavailable: fail closed
+        return DEFAULT_DESKTOP_CONTROL_MODE
+    mode = str(raw or "").strip().lower().replace("-", "_")
+    return mode if mode in DESKTOP_CONTROL_MODES else DEFAULT_DESKTOP_CONTROL_MODE
+
+
+def tool_requires_per_call_approval(tool_name: Any) -> bool:
+    """True when `tool_name` must show an approval card on every call."""
+    if not isinstance(tool_name, str) or tool_name not in ALWAYS_APPROVE_TOOLS:
+        return False
+    return desktop_control_mode() == "ask_each"
 KNOWN_CAPABILITY_TOOLS = frozenset(TOOL_CAPABILITIES)
 
 _UNKNOWN_CAPABILITIES = _capabilities(
@@ -714,6 +772,20 @@ class ToolRunSecurityContext:
             self.external_untrusted_context_seen = True
 
     def decision_for(self, tool_name: Any, content: Any = None) -> ToolGateDecision:
+        # Per-call approvals come first: neither a task/chat-scope grant nor
+        # a clean (no external context) run lets a desktop input action run
+        # unconfirmed. The sealed exact-approval path in
+        # `src/tool_execution.py` is the only way through, and it is consumed
+        # by that one call.
+        if tool_requires_per_call_approval(tool_name):
+            return ToolGateDecision(
+                False,
+                (
+                    f"Tool '{tool_name}' sends mouse/keyboard input to your desktop. "
+                    "Each desktop action is confirmed separately "
+                    "(desktop_control_mode=ask_each); approve this exact action to run it."
+                ),
+            )
         if self.approval_gate_bypassed:
             return ToolGateDecision(True)
         if not self.external_untrusted_context_seen:

@@ -61,6 +61,10 @@ _VISION_MODEL_KEYWORDS = (
     "phi-4", "phi4",
     # zhipu / glm (glm-4.5v, glm-4.6v, glm-5v-turbo, etc.)
     "glm-4.5v", "glm-4.6v", "glm-5v",
+    # Qwen 3.5 / 3.8 are natively multimodal (Ollama /api/show reports
+    # "vision" for qwen3.5:9b). The Ollama probe below is the authority when
+    # the server is reachable; this is the safety net for other runners.
+    "qwen3.5", "qwen3.8",
 )
 # Catches the "*-VL-*" / "*VL*" family not covered by a literal keyword above
 # (e.g. Qwen2.5-VL and various tags): a standalone "vl" token, plus "vlm".
@@ -156,13 +160,61 @@ def lmstudio_supports_vision(url: str, model: str) -> Optional[bool]:
     return None
 
 
+def _is_local_ollama_url(url: str) -> bool:
+    """A local Ollama server, on its native `/api` surface or its OpenAI
+    `/v1` surface (both answer `/api/show`). Never a public host."""
+    try:
+        parsed = urlparse(url or "")
+    except ValueError:
+        return False
+    host = parsed.hostname or ""
+    if not _is_local_host(host):
+        return False
+    path = (parsed.path or "").rstrip("/")
+    if parsed.port == 11434:
+        return True
+    return path in ("", "/api", "/v1") or path.startswith("/api/") or path.startswith("/v1/")
+
+
+def ollama_supports_vision(url: str, model: str) -> Optional[bool]:
+    """Read `model`'s "vision" capability from Ollama's `/api/show` (through
+    the cache in src.llm_core), or None when the endpoint is not a local
+    Ollama, the server is unreachable, or it does not report capabilities."""
+    if not model or not _is_local_ollama_url(url):
+        return None
+    try:
+        from src.llm_core import _ollama_model_caps
+
+        caps = _ollama_model_caps(url, model)
+    except Exception as exc:  # noqa: BLE001 - never let a probe break a turn
+        logger.debug("ollama vision probe failed for %s: %s", model, exc)
+        return None
+    # None = unknown (server down / model missing); an EMPTY set means an
+    # Ollama too old to report capabilities at all — both fall back to the
+    # name heuristic rather than declaring a real vision model text-only.
+    if not caps:
+        return None
+    return "vision" in caps
+
+
 def model_supports_vision(model_name: str, endpoint_url: str = "") -> bool:
     """Whether a model accepts images, using the endpoint's reported
-    capability when available (LM Studio) and falling back to name-based
-    detection otherwise."""
+    capability when available (LM Studio, Ollama `/api/show`) and falling
+    back to name-based detection otherwise.
+
+    The server's answer wins because names lie in both directions:
+    `qwen3.5:9b` reports vision from Ollama but nothing in the name says so,
+    and a text-only tag can carry "vl" in its name.
+    """
     if endpoint_url:
         try:
             advertised = lmstudio_supports_vision(endpoint_url, model_name or "")
+        except Exception:
+            advertised = None
+        if advertised is not None:
+            return advertised
+        try:
+            advertised = ollama_supports_vision(endpoint_url, model_name or "")
         except Exception:
             advertised = None
         if advertised is not None:

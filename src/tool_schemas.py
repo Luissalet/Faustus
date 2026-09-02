@@ -613,6 +613,110 @@ FUNCTION_TOOL_SCHEMAS = [
             }
         }
     },
+    # ── Desktop control (FAUSTUS): see the screen and drive it ──────────────
+    {
+        "type": "function",
+        "function": {
+            "name": "desktop_screenshot",
+            "description": "Capture the screen of the computer Faustus runs on (the user's desktop) and SEE it: the image is attached to your context. Returns the screen size, the returned image size and the scale (the image is downscaled to at most agent_tool_image_max_px on its longest side). Coordinates you pass later to desktop_click / desktop_scroll are pixels of THIS image (they are mapped back to the screen for you). Take a fresh screenshot after every action that changes the screen. Fails clearly when there is no interactive desktop (locked/headless session).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "monitor": {"type": "integer", "description": "Monitor index (0 = primary). Default 0."},
+                    "region": {
+                        "type": "array",
+                        "items": {"type": "integer"},
+                        "description": "Optional [x, y, width, height] in SCREEN pixels to capture only that area (e.g. a window rect from desktop_list_windows). Coordinates of the returned image are then relative to that region."
+                    }
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "desktop_list_windows",
+            "description": "List the visible top-level windows on the user's desktop: title, screen rect [left, top, right, bottom] and which one is in the foreground. Use it to find a window title for desktop_focus_window or a rect for a desktop_screenshot region.",
+            "parameters": {"type": "object", "properties": {}, "required": []}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "desktop_focus_window",
+            "description": "Bring the first visible window whose title contains `title` (case-insensitive substring) to the foreground so keyboard input reaches it. Requires user approval on every call.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "Substring of the window title, e.g. \"Notepad\" or \"Firefox\"."}
+                },
+                "required": ["title"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "desktop_click",
+            "description": "Click the mouse on the user's desktop. x,y are pixels of the LAST desktop_screenshot image (default coords=\"screenshot\"; they are mapped back to real screen pixels using that screenshot's scale and origin) — take a screenshot first, then click what you see. Use coords=\"screen\" to pass raw screen pixels. Requires user approval on every call. Take a new screenshot afterwards to verify the effect.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "x": {"type": "integer", "description": "Horizontal position (pixels of the last screenshot image, or screen pixels with coords=\"screen\")."},
+                    "y": {"type": "integer", "description": "Vertical position (same frame as x)."},
+                    "button": {"type": "string", "enum": ["left", "right", "double", "middle"], "description": "Mouse button / double-click. Default left."},
+                    "coords": {"type": "string", "enum": ["screenshot", "screen"], "description": "Coordinate frame. Default screenshot."}
+                },
+                "required": ["x", "y"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "desktop_type",
+            "description": "Type text into whatever has keyboard focus on the user's desktop (unicode is fine; \\n presses Enter, \\t presses Tab). Click or focus the target field first. Requires user approval on every call.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string", "description": "The text to type, up to 5000 characters."}
+                },
+                "required": ["text"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "desktop_key",
+            "description": "Press a key or key combination on the user's desktop, e.g. \"enter\", \"ctrl+s\", \"alt+tab\", \"ctrl+shift+t\", \"win+d\", \"f5\", \"escape\". Modifiers: ctrl, alt, shift, win. Requires user approval on every call.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "combo": {"type": "string", "description": "Keys joined with '+': modifiers first, then exactly one key (a named key like enter/tab/escape/backspace/delete/home/end/pageup/pagedown/up/down/left/right/f1..f24, or a single character)."}
+                },
+                "required": ["combo"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "desktop_scroll",
+            "description": "Scroll the mouse wheel on the user's desktop. dy is the number of notches: positive scrolls DOWN, negative scrolls UP. x,y (optional) are pixels of the last desktop_screenshot image like desktop_click; without them the screen centre is used. Requires user approval on every call.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "dy": {"type": "integer", "description": "Wheel notches; positive = down, negative = up (max 100)."},
+                    "x": {"type": "integer", "description": "Optional horizontal position (pixels of the last screenshot image)."},
+                    "y": {"type": "integer", "description": "Optional vertical position (same frame as x)."},
+                    "coords": {"type": "string", "enum": ["screenshot", "screen"], "description": "Coordinate frame for x,y. Default screenshot."}
+                },
+                "required": ["dy"]
+            }
+        }
+    },
     {
         "type": "function",
         "function": {

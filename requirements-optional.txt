@@ -44,3 +44,11 @@ PyMuPDF
 # [all]/Azure/audio extras (cloud + heavy). Pinned to a release >30 days old per
 # the dependency-age discussion in issue #485.
 markitdown[docx,pptx,xlsx,xls]==0.1.6
+
+# Desktop control tools (desktop_screenshot / desktop_click / ... — FAUSTUS).
+# The tools work with ctypes + Pillow alone on Windows (and xdotool/wmctrl on
+# Linux/X11). These are optional accelerators, imported lazily when present:
+#   mss       — faster, multi-monitor screen capture (used before ImageGrab)
+#   pyautogui — mouse/keyboard input on macOS (Windows/Linux do not need it)
+mss
+pyautogui

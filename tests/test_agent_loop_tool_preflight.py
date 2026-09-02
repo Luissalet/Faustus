@@ -70,6 +70,22 @@ LEGACY_ENV_MAILBOX = dict(
 FLOOR = {"read_file", "ls", "edit_file", "apply_patch"}
 
 
+@pytest.fixture(autouse=True)
+def _desktop_is_available(monkeypatch):
+    """Rule 4 (desktop) prunes all seven desktop tools on a headless box —
+    which is what a CI runner is. The contracts below describe a box where
+    "everything is configured", so give it a desktop and the default mode;
+    tests/test_desktop_tools.py covers the rule itself."""
+    from src.agent_tools import desktop_tools as dt
+
+    class _Desk(dt.DesktopBackend):
+        def available(self):
+            return True, ""
+
+    monkeypatch.setattr(dt, "get_backend", lambda: _Desk())
+    monkeypatch.setattr("src.tool_capabilities.desktop_control_mode", lambda: "ask_each")
+
+
 @pytest.fixture()
 def workspace(tmp_path):
     """The user's linked folder: a tiny project with a test."""

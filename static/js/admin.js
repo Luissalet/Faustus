@@ -1890,6 +1890,14 @@ const TOOL_META = {
   manage_webhooks:   { name: 'Webhooks',         desc: 'Configure webhook events',        cat: 'System',     ctx: '~100' },
   manage_tokens:     { name: 'API Tokens',       desc: 'Manage API access tokens',        cat: 'System',     ctx: '~100' },
   manage_settings:   { name: 'Settings',         desc: 'Change app settings',             cat: 'System',     ctx: '~100' },
+  // Desktop control (FAUSTUS): the agent sees and drives the server's desktop.
+  desktop_screenshot:   { name: 'Screenshot',     desc: 'Capture the screen (image goes to the model)', cat: 'Desktop', ctx: '~150' },
+  desktop_list_windows: { name: 'List Windows',   desc: 'List visible desktop windows',   cat: 'Desktop',    ctx: '~80' },
+  desktop_focus_window: { name: 'Focus Window',   desc: 'Bring a window to the front',    cat: 'Desktop',    ctx: '~80' },
+  desktop_click:        { name: 'Click',          desc: 'Mouse click (asks every time)',  cat: 'Desktop',    ctx: '~150' },
+  desktop_type:         { name: 'Type Text',      desc: 'Keyboard input (asks every time)', cat: 'Desktop',  ctx: '~80' },
+  desktop_key:          { name: 'Key Combo',      desc: 'Shortcuts like ctrl+s (asks every time)', cat: 'Desktop', ctx: '~100' },
+  desktop_scroll:       { name: 'Scroll',         desc: 'Mouse wheel (asks every time)',  cat: 'Desktop',    ctx: '~100' },
 };
 
 async function loadBuiltinTools() {
@@ -1919,7 +1927,7 @@ async function loadBuiltinTools() {
     }
 
     // Category order
-    const catOrder = ['Code', 'Search', 'Documents', 'Media', 'Knowledge', 'Multi-Agent', 'Sessions', 'System', 'Other'];
+    const catOrder = ['Code', 'Search', 'Documents', 'Media', 'Knowledge', 'Multi-Agent', 'Sessions', 'Desktop', 'System', 'Other'];
     let html = '';
     for (const cat of catOrder) {
       const items = groups[cat];

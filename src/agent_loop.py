@@ -32,6 +32,7 @@ from src.context_compactor import (
 )
 from src.settings import get_setting
 from src.prompt_security import untrusted_context_message
+from src.chat_helpers import is_vision_model, model_supports_vision
 from src.tool_security import (
     PLAN_MODE_READONLY_TOOLS,
     blocked_tools_for_owner,
@@ -946,6 +947,14 @@ If the user asks for a reminder/alarm before the event, pass `reminder_minutes` 
     "ui_control": "- ```ui_control``` — Control the UI: toggle tools on/off, OPEN PANELS, open email reply drafts, switch models, change themes. Commands: `toggle <name> on/off` (names: bash/shell, web/search, research, incognito, document_editor/documents), `open_panel <name>` (panels: documents, gallery, email, sessions, notes, memories/brain, skills, settings, cookbook), `open_email_reply <uid> <folder> <reply|reply-all|ai-reply> <body text>` (opens an email compose document pre-filled with body, DOES NOT send; use this for normal “write/draft a reply saying X” requests), `set_mode agent/chat`, `switch_model <name>`, `set_theme <preset>`, `create_theme <name> <bg> <fg> <panel> <border> <accent>` (optional key=val for advanced colors AND background effects: bgPattern=<none|dots|synapse|rain|constellations|perlin-flow|petals|sparkles|embers>, bgEffectColor=#RRGGBB, bgEffectIntensity=<num>, bgEffectSize=<num>, frosted=true|false). \"open documents\" / \"open library\" / \"show gallery\" / \"open inbox\" / \"open notes\" / \"open cookbook\" all map to `open_panel <name>`. Built-in theme presets: dark, light, midnight, paper, cyberpunk, retrowave, forest, ocean, ume, copper, terminal, organs, lavender, gpt, claude, cute. For any other vibe/name, use create_theme.",
     "ask_user": "- ```ask_user``` — Ask the user a multiple-choice question when the task is genuinely ambiguous and the answer changes what you do next (pick an approach, confirm an assumption, choose a target). Args (JSON): {\"question\": \"...\", \"options\": [{\"label\": \"...\", \"description\": \"...\"?}, ...], \"multi\": false?}. 2-6 options. The user gets clickable buttons; calling this ENDS your turn and their choice comes back as your next message. Prefer sensible defaults — only ask when you truly can't proceed well without their input.",
     "update_plan": "- ```update_plan``` — While executing an approved plan, write the plan back: tick steps done or revise them. Args (JSON): {\"plan\": \"- [x] done step\\n- [ ] next step\"}. Always pass the COMPLETE checklist, not a diff. Call it after finishing each step (mark it `- [x]`) and whenever the user asks to change the plan. The user's docked plan window updates live. Does nothing if there's no active plan.",
+    # Desktop control (FAUSTUS): the model sees the screen and drives it.
+    "desktop_screenshot": "- ```desktop_screenshot``` — Capture the user's screen (the computer Faustus runs on) and SEE it: the image is attached to your context. Args (JSON, all optional): {\"monitor\": 0, \"region\": [x, y, w, h]}. Returns the screen size, the returned image size and the scale (the image is downscaled). Coordinates for desktop_click/desktop_scroll are pixels of THIS image (mapped back to the screen for you). Take a new screenshot after every action that changes the screen; fails clearly when there is no interactive desktop.",
+    "desktop_list_windows": "- ```desktop_list_windows``` — List visible windows on the user's desktop: title, screen rect [left, top, right, bottom], foreground flag. NO args. Use it to find a title for desktop_focus_window or a rect for a desktop_screenshot region.",
+    "desktop_focus_window": "- ```desktop_focus_window``` — Bring the first window whose title contains the substring to the front. Args (JSON): {\"title\": \"Notepad\"}. Needed before typing into an app. The user confirms every call.",
+    "desktop_click": "- ```desktop_click``` — Click on the user's desktop. Args (JSON): {\"x\": 640, \"y\": 360, \"button\": \"left|right|double|middle\"?, \"coords\": \"screenshot|screen\"?}. x,y are pixels of the LAST desktop_screenshot image (default coords=\"screenshot\"; mapped back to real screen pixels using its scale and origin) — take a screenshot first, click what you see, then screenshot again to verify. coords=\"screen\" passes raw screen pixels. The user confirms every call.",
+    "desktop_type": "- ```desktop_type``` — Type text into whatever has keyboard focus on the user's desktop (\\n = Enter, \\t = Tab, unicode ok). Args (JSON): {\"text\": \"hola\"}. Click/focus the target field first. The user confirms every call.",
+    "desktop_key": "- ```desktop_key``` — Press a key or shortcut: Args (JSON): {\"combo\": \"ctrl+s\"} — e.g. enter, escape, tab, ctrl+s, ctrl+c, alt+tab, alt+f4, win+d, f5. Modifiers ctrl/alt/shift/win first, then exactly one key. The user confirms every call.",
+    "desktop_scroll": "- ```desktop_scroll``` — Scroll the mouse wheel. Args (JSON): {\"dy\": 3, \"x\": 640?, \"y\": 360?, \"coords\": \"screenshot|screen\"?}. dy notches: positive = DOWN, negative = UP. x,y are pixels of the last screenshot image like desktop_click; without them the screen centre is used. The user confirms every call.",
     "list_served_models": "- ```list_served_models``` — Show what the Cookbook (LLM-serving subsystem) is currently running. NO args. Use this for ANY 'what's running' / 'what's serving' / 'show my cookbook' / 'is anything up' query. DO NOT shell out (`ps aux`, `docker ps`, etc.) — this tool is the source of truth. Failed serve tasks include recent logs plus diagnosis/retry suggestions; use those suggestions to call `serve_model` again with an adjusted command when appropriate.",
     "stop_served_model": "- ```stop_served_model``` — Stop a running model server. Args (JSON): {\"session_id\": \"<from list_served_models>\"}. Use for 'kill my cookbook' / 'stop the model' / 'shut down vLLM'.",
     "tail_serve_output": "- ```tail_serve_output``` — Read the actual tmux stderr/traceback of a CURRENTLY failing cookbook task. Args (JSON): {\"session_id\": \"<from list_served_models>\", \"tail\": 150?}. **Use ONLY after** you just launched something via `serve_model` AND `list_served_models` reports YOUR new task as `crashed`/`error`. DO NOT use it on old stopped/completed download tasks (they're historical noise — won't predict whether a new launch succeeds). DO NOT call it before launching a fresh attempt. When you do call it, bump `tail` to 400+ only if the visible error references 'see root cause above'.",
@@ -3275,6 +3284,173 @@ def _resolve_tool_blocks(
     return tool_blocks, used_native, converted_calls
 
 
+_TOOL_IMAGE_SOURCE_PREFIX = "tool result: "
+# Persisted with the tool event; a bigger data URL is not worth a history row.
+_MAX_PERSISTED_SCREENSHOT_CHARS = 2_000_000
+
+
+def _screenshot_data_url_for_event(result: Any) -> str:
+    """`tool_event.screenshot` for an image-bearing result, or ""."""
+    try:
+        from src.tool_images import screenshot_data_url
+
+        url = screenshot_data_url(result)
+    except Exception:  # noqa: BLE001
+        return ""
+    if not url or len(url) > _MAX_PERSISTED_SCREENSHOT_CHARS:
+        return ""
+    return url
+
+
+async def _image_record_extras(
+    result: Dict,
+    model: str,
+    endpoint_url: str,
+    owner: Optional[str],
+) -> Dict[str, Any]:
+    """`vision_capable` (+ `image_description`) for a tool-result record.
+
+    Runs the endpoint probe (and, for a text-only route with a Vision model
+    configured, the VL description) in a worker thread so the streaming loop
+    is not blocked by an HTTP call.
+    """
+    extras: Dict[str, Any] = {}
+    if not get_setting("agent_tool_images", True):
+        return extras
+    try:
+        vision_ok = await asyncio.to_thread(model_supports_vision, model or "", endpoint_url or "")
+    except Exception:  # noqa: BLE001
+        vision_ok = is_vision_model(model)
+    extras["vision_capable"] = bool(vision_ok)
+    if vision_ok:
+        return extras
+    vl_model = ""
+    try:
+        vl_model = str(get_setting("vision_model", "") or "").strip()
+    except Exception:  # noqa: BLE001
+        vl_model = ""
+    if not vl_model:
+        return extras
+    try:
+        description = await asyncio.to_thread(_describe_tool_image, result, owner)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("[agent] VL description of tool image failed: %s", exc)
+        description = ""
+    if description:
+        extras["image_description"] = description
+    return extras
+
+
+def _describe_tool_image(result: Dict, owner: Optional[str]) -> str:
+    """Describe the first image of a tool result with the configured Vision
+    model (the same `analyze_image_with_vl_result` path chat attachments use).
+    Returns "" when nothing usable came back."""
+    import base64 as _b64
+    import os as _os
+    import tempfile
+
+    from src.document_processor import analyze_image_with_vl_result
+    from src.tool_images import normalize_result_images
+
+    images = normalize_result_images(result)
+    if not images:
+        return ""
+    mime = images[0]["mimeType"]
+    ext = {"image/jpeg": ".jpg", "image/jpg": ".jpg", "image/webp": ".webp", "image/gif": ".gif"}.get(mime, ".png")
+    raw = _b64.b64decode(images[0]["data"])
+    fd, path = tempfile.mkstemp(prefix="tool-image-", suffix=ext)
+    try:
+        with _os.fdopen(fd, "wb") as fh:
+            fh.write(raw)
+        text = str((analyze_image_with_vl_result(path, owner=owner) or {}).get("text") or "").strip()
+    finally:
+        try:
+            _os.unlink(path)
+        except OSError:
+            pass
+    # The helper reports its own failures as bracketed notes — not a description.
+    if not text or text.startswith("["):
+        return ""
+    return text
+
+
+def _tool_image_messages(
+    record: Dict,
+    *,
+    vision_capable: Optional[bool],
+    model: str = "",
+    endpoint_url: str = "",
+) -> List[Dict]:
+    """Messages that carry a tool result's image(s) to the model (FAUSTUS).
+
+    A tool result with ``images: [{data, mimeType}]`` (an MCP screenshot, the
+    builtin ``desktop_screenshot``) becomes ONE synthetic ``role: "user"``
+    message placed right after the textual result::
+
+        {"role": "user",
+         "content": [{"type": "text", "text": "[image from <tool>]"},
+                     {"type": "image_url", "image_url": {"url": "data:<mime>;base64,..."}}],
+         "metadata": {"trusted": False, "source": "tool result: <tool>",
+                      "tool_gate_untrusted": True}}
+
+    The image is downscaled to ``agent_tool_image_max_px`` first.  It is a
+    *user* message because that is the only role every provider accepts image
+    blocks on (Ollama's ``images[]``, OpenAI ``image_url``, Anthropic
+    ``image``), and the metadata marks it untrusted exactly like the text
+    result: pixels from a screen are as attacker-controlled as a web page.
+
+    When the model cannot see (``vision_capable`` False), the picture is
+    replaced by text: the VL-model description the loop already produced
+    (``record["image_description"]``) when one exists, otherwise a one-line
+    note so the model knows an image existed and why it is not visible.
+    """
+    from src.tool_images import (
+        data_url as _data_url,
+        downscale_b64,
+        normalize_result_images,
+    )
+
+    tool_name = str(record.get("tool_name") or "tool")
+    images = normalize_result_images(record.get("result"))
+    if not images:
+        return []
+    metadata = {
+        "trusted": False,
+        "source": f"{_TOOL_IMAGE_SOURCE_PREFIX}{tool_name}",
+        "tool_gate_untrusted": True,
+    }
+    if vision_capable is None:
+        if "vision_capable" in record:
+            vision_capable = bool(record.get("vision_capable"))
+        elif model:
+            try:
+                vision_capable = bool(model_supports_vision(model, endpoint_url or ""))
+            except Exception:  # noqa: BLE001 - a probe failure must not lose the round
+                vision_capable = is_vision_model(model)
+        else:
+            vision_capable = False
+    if not vision_capable:
+        description = str(record.get("image_description") or "").strip()
+        if description:
+            text = (
+                f"[image from {tool_name} — described by the vision model because "
+                f"the current model cannot view images]\n{description}"
+            )
+        else:
+            text = (
+                f"[image from {tool_name} could not be viewed: the current model "
+                f"{model or ''} is not vision-capable. Switch to a vision-capable "
+                "model or configure a Vision model in Settings to see it.]"
+            ).replace("model  is", "model is")
+        return [{"role": "user", "content": text, "metadata": metadata}]
+
+    content: List[Dict] = [{"type": "text", "text": f"[image from {tool_name}]"}]
+    for image in images:
+        b64, mime, _info = downscale_b64(image["data"], image["mimeType"])
+        content.append({"type": "image_url", "image_url": {"url": _data_url(b64, mime)}})
+    return [{"role": "user", "content": content, "metadata": metadata}]
+
+
 def _append_tool_results(
     messages: List[Dict],
     round_response: str,
@@ -3285,6 +3461,10 @@ def _append_tool_results(
     round_num: int,
     round_reasoning: str = "",
     tool_result_records: Optional[list] = None,
+    model: str = "",
+    endpoint_url: str = "",
+    vision_capable: Optional[bool] = None,
+    tool_images_enabled: Optional[bool] = None,
 ):
     """Append tool execution results back into the message history for the next LLM round.
 
@@ -3300,8 +3480,33 @@ def _append_tool_results(
     reasoning, which reinforces repetition/looping. So keep reasoning_content
     on the MOST RECENT assistant turn only: enough for DeepSeek continuity,
     without the per-round accumulation.
+
+    `model` / `endpoint_url` name the route that will read these messages, so
+    image-bearing results (see `_tool_image_messages`) can be sent as image
+    blocks only when that model can see them; `vision_capable` overrides the
+    probe (tests, a loop that already asked), and a record may carry its own
+    `vision_capable` / `image_description` stamped by the loop.
     """
     tool_result_records = tool_result_records or []
+    if tool_images_enabled is None:
+        try:
+            tool_images_enabled = bool(get_setting("agent_tool_images", True))
+        except Exception:  # noqa: BLE001
+            tool_images_enabled = True
+
+    def _image_messages_for(record: Dict) -> List[Dict]:
+        if not tool_images_enabled or not isinstance(record, dict):
+            return []
+        try:
+            return _tool_image_messages(
+                record,
+                vision_capable=vision_capable,
+                model=model,
+                endpoint_url=endpoint_url,
+            )
+        except Exception as _img_err:  # noqa: BLE001 - never lose the text result
+            logger.warning("[agent] tool image could not be attached: %s", _img_err)
+            return []
     # Strip reasoning_content from earlier assistant turns; only the newest keeps it.
     for _m in messages:
         if _m.get("role") == "assistant":
@@ -3335,6 +3540,7 @@ def _append_tool_results(
             for j, tc in enumerate(native_tool_calls)
         ]
         messages.append(assistant_msg)
+        pending_image_messages: List[Dict] = []
         for j, tc in enumerate(native_tool_calls):
             result_text = tool_result_texts[j] if j < len(tool_result_texts) else ""
             record = tool_result_records[j] if j < len(tool_result_records) else {}
@@ -3365,6 +3571,14 @@ def _append_tool_results(
                     "tool_gate_untrusted": should_arm_gate,
                 }
             messages.append(result_message)
+            # Image-bearing results: the picture itself follows the text
+            # results as a user message the provider can carry an image block
+            # on. Collected here, appended after the WHOLE batch of tool
+            # messages: a user message between two `role:"tool"` replies
+            # would orphan the second one (OpenAI requires the batch to be
+            # contiguous, and `_sanitize_tool_messages` would drop it).
+            pending_image_messages.extend(_image_messages_for(record))
+        messages.extend(pending_image_messages)
     else:
         tool_output_text = "\n\n".join(tool_results)
         # An approved-action replay injects the sealed tool result with no
@@ -3399,6 +3613,10 @@ def _append_tool_results(
                 arm_tool_gate=arm_tool_gate,
             )
         )
+        # Same image hand-off for the fenced-call route (local models): the
+        # image message follows the wrapped text results.
+        for record in tool_result_records:
+            messages.extend(_image_messages_for(record))
 
 
 def _compute_final_metrics(
@@ -7624,6 +7842,13 @@ async def stream_agent_loop(
                 # reload, chatRenderer can restore the card; a later user
                 # message removes it as answered.
                 tool_event["ask_user"] = _pending_ask_user_event
+            # Screenshots (MCP browser tools, desktop_screenshot): the live
+            # stream already carries `tool_output.screenshot`, and
+            # chatRenderer reads the same key from the saved event on reload —
+            # without it the preview vanished after a refresh (FAUSTUS).
+            _shot_url = _screenshot_data_url_for_event(result)
+            if _shot_url:
+                tool_event["screenshot"] = _shot_url
             tool_events.append(tool_event)
             if block.tool_type in _VERIFIER_EFFECTFUL_TOOLS:
                 _effectful_used = True
@@ -7631,14 +7856,27 @@ async def stream_agent_loop(
             formatted = format_tool_result(desc, result)
             tool_results.append(formatted)
             tool_result_texts.append(formatted)
-            tool_result_records.append(
-                {
-                    "tool_name": block.tool_type,
-                    "content": block.content,
-                    "result": result,
-                    "text": formatted,
-                }
-            )
+            _record = {
+                "tool_name": block.tool_type,
+                "content": block.content,
+                "result": result,
+                "text": formatted,
+            }
+            # Image-bearing result: decide NOW, off the event loop, whether
+            # the route's model can see it, and — when it cannot but a Vision
+            # model is configured — describe it, so `_append_tool_results`
+            # (sync) only has to pick text or image.
+            if result.get("images"):
+                try:
+                    _record.update(await _image_record_extras(
+                        result,
+                        _round_actual_model,
+                        (_pinned_fallback_candidate[0] if _pinned_fallback_candidate else endpoint_url),
+                        owner,
+                    ))
+                except Exception as _img_err:  # noqa: BLE001
+                    logger.debug("[agent] tool image probe skipped: %s", _img_err)
+            tool_result_records.append(_record)
             if (
                 _ody_doc_stream_create_mode
                 and block.tool_type == "create_document"
@@ -7695,7 +7933,10 @@ async def stream_agent_loop(
         _append_tool_results(messages, round_response, converted_calls,
                              tool_results, tool_result_texts, used_native, round_num,
                              round_reasoning=round_reasoning,
-                             tool_result_records=tool_result_records)
+                             tool_result_records=tool_result_records,
+                             model=_round_actual_model,
+                             endpoint_url=(_pinned_fallback_candidate[0]
+                                           if _pinned_fallback_candidate else endpoint_url))
 
         # Progress discipline: a multi-step workspace task that is several tool
         # calls in without a todowrite list gets one nudge, so the Progress

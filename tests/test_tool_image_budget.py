@@ -136,7 +136,8 @@ def test_trim_for_context_prunes_old_tool_images(monkeypatch):
     # Generous budget: nothing else would be trimmed.
     out = cc.trim_for_context(msgs, 100000, reserve_tokens=10)
     assert _image_tags(out) == ["TWO"]
-    assert estimate_tokens(out) == estimate_tokens(msgs) - IMAGE_BLOCK_TOKENS + 4
+    marker_cost = int(len(cc.EARLIER_IMAGE_OMITTED) * 0.3)
+    assert estimate_tokens(out) == estimate_tokens(msgs) - IMAGE_BLOCK_TOKENS + marker_cost
 
 
 def test_trim_for_context_honours_keep_setting(monkeypatch):

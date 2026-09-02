@@ -110,6 +110,14 @@ BUILTIN_TOOL_DESCRIPTIONS: Dict[str, str] = {
     "project_context": "List, read, or search the files and folders attached as working roots to the active project. These roots may also be modified with normal file tools.",
     "ask_user": "Ask the user a multiple-choice question to get a decision or clarification. Use this when the task is genuinely ambiguous and the answer changes what you do next — pick between approaches, confirm an assumption, choose among options — instead of guessing. Provide a clear `question` and 2-6 `options` (each with a short `label`, optional `description`). Omit `multi`/keep it false unless the question explicitly permits choosing multiple options. Calling this ENDS your turn: the user sees clickable buttons and their choice arrives as your next message. Don't use it for things you can decide from context or sensible defaults, or for irreversible-action confirmation if a dedicated flow exists.",
     "update_plan": "Write back to the ACTIVE PLAN while executing an approved plan: mark steps done or revise them. After finishing a step call this with the full checklist and that step marked done; when the user asks to change the plan call it with the revised checklist. Always pass the COMPLETE markdown checklist (`- [ ]` / `- [x]`), not a diff. The user's docked plan window updates live. No effect when there is no active plan.",
+    # Desktop control (FAUSTUS): see the user's screen and drive mouse/keyboard.
+    "desktop_screenshot": "Take a screenshot of the user's desktop / screen (the computer Faustus runs on) and SEE it — the image is attached to your context. Use for 'what's on my screen', 'take a screenshot', 'captura de pantalla', 'mira la pantalla', 'qué hay en pantalla', 'look at the screen', before and after any desktop_click/desktop_type action, or to read a window/app the user is looking at. Optional monitor index or region [x, y, w, h]. Returns screen size, image size and scale; click coordinates are pixels of this image.",
+    "desktop_list_windows": "List the visible windows on the user's desktop (titles, screen rectangles, which one is in front). Use for 'what windows are open', 'qué ventanas hay abiertas', 'which app is active', or to find the title/rect to focus or capture a specific window.",
+    "desktop_focus_window": "Bring a desktop window to the front by a substring of its title ('focus Notepad', 'switch to Firefox', 'activa la ventana de Excel', 'pon delante la ventana'). Needed before typing into an app. Asks the user for approval on every call.",
+    "desktop_click": "Click the mouse on the user's desktop at a point seen in the last desktop_screenshot ('click the OK button', 'haz clic en Guardar', 'pulsa el botón', 'double-click the file', 'right-click there'). Coordinates are pixels of the last screenshot image; left/right/double/middle buttons. Asks the user for approval on every call. Take a new screenshot afterwards to verify.",
+    "desktop_type": "Type text with the keyboard into whatever has focus on the user's desktop ('type hello in the search box', 'escribe mi nombre en el formulario', 'teclea la contraseña', 'rellena el campo'). Click/focus the target first. Asks the user for approval on every call.",
+    "desktop_key": "Press a key or shortcut on the user's desktop: enter, escape, tab, ctrl+s, ctrl+c, ctrl+v, alt+tab, alt+f4, win+d, f5 ('press Enter', 'pulsa Enter', 'guarda con ctrl+s', 'cierra la ventana con alt+f4', 'atajo de teclado'). Asks the user for approval on every call.",
+    "desktop_scroll": "Scroll the mouse wheel on the user's desktop (down/up a number of notches, optionally at a point of the last screenshot): 'scroll down', 'baja en la página', 'desplázate hacia abajo', 'sube un poco'. Asks the user for approval on every call.",
     "ui_control": "Control the UI and toggle tools on/off. Use this to turn off / turn on / disable / enable individual tools and features: shell (bash), search (web), research, browser, documents, incognito. Open panels (documents library, gallery, email inbox, sessions, notes, memories/brain, skills, settings, cookbook) via `open_panel <name>`. Use `open_email_reply <uid> <folder> reply <body text>` (or structured body) to open an email reply draft document without sending. USE THIS whenever the user says to write/draft a reply or tells you what to say — opening an empty draft or sending immediately is wrong. Body can continue on subsequent lines for multi-line replies. Also switches between chat/agent modes, changes the current model, and applies/creates themes.",
     "list_email_accounts": "List configured email accounts and default status. Use before reading or sending mail when the user mentions Gmail, work mail, custom domain mail, another mailbox, or asks to compare/check multiple inboxes.",
     "list_emails": "List emails for a folder/account, newest first, including read messages by default. Shows subject, sender, date, UID, account, and AI summary. Check inbox, find emails needing replies. Supports account from list_email_accounts for Gmail/work/custom mailboxes. For last/latest/newest email, use max_results=1 and unread_only=false.",
@@ -467,6 +475,25 @@ class ToolIndex:
                    "make it light", "make the ui", "switch theme", "change theme",
                    "dark mode", "light mode", "toggle"}):
             {"ui_control"},
+        # Desktop control intent (FAUSTUS): see the screen / drive the mouse
+        # and keyboard of the machine the server runs on. ES + EN. Generic
+        # English words ("type", "window", "click", "screen") are anchored in
+        # short phrases so "what type of file" or "a window function" do not
+        # drag seven schemas into an unrelated turn.
+        frozenset({"screenshot", "screenshots", "screen shot", "captura", "captura de pantalla",
+                   "capturas", "pantallazo", "pantalla", "mi pantalla", "en pantalla",
+                   "the screen", "my screen", "on screen", "on my screen", "on the screen",
+                   "escritorio", "the desktop", "my desktop", "on the desktop", "desktop app",
+                   "ventana", "ventanas", "the window", "a window", "active window",
+                   "which window", "what windows", "windows are open", "open windows",
+                   "focus the window", "switch to the window", "bring to front",
+                   "click", "clic", "haz clic", "click on", "click the", "double-click", "double click",
+                   "right-click", "right click", "pulsa", "pulsa el", "presiona", "teclea",
+                   "escribe en", "type into", "type in the", "type it in", "press enter",
+                   "pulsa enter", "atajo de teclado", "keyboard shortcut", "scroll down",
+                   "scroll up", "desplaza", "desplázate", "baja en la", "sube en la"}):
+            {"desktop_screenshot", "desktop_list_windows", "desktop_focus_window",
+             "desktop_click", "desktop_type", "desktop_key", "desktop_scroll"},
         # Cookbook / model serving intent — user says "kill cookbook",
         # "stop the model", "what's running", etc.
         frozenset({"cookbook", "kill cookbook", "stop cookbook",

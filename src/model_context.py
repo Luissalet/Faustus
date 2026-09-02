@@ -547,6 +547,14 @@ def _query_context_length(endpoint_url: str, model: str) -> Tuple[int, bool]:
     return DEFAULT_CONTEXT, False
 
 
+# Flat cost charged per image block (FAUSTUS). Vision models spend a fixed
+# token budget per image tile regardless of the base64 length: a 1280 px
+# screenshot is ~1000-1600 tokens on Qwen-VL / Gemma 3 / GPT-4o-class models.
+# Before this, an image block counted 0, so a run that took a screenshot every
+# round piled up megabytes the trim/compaction gates could not see.
+IMAGE_BLOCK_TOKENS = 1200
+
+
 def estimate_tokens(messages: List[Dict]) -> int:
     """Rough token estimate for a list of messages.
 
@@ -556,7 +564,8 @@ def estimate_tokens(messages: List[Dict]) -> int:
     assistant tool_calls (name + arguments) — a tool-only turn carries
     content=None with the real payload in tool_calls, so ignoring them made the
     estimate (and the compaction/trim gates that rely on it) blind to large
-    tool arguments.
+    tool arguments. Every image block (``image_url`` / ``image``) is charged
+    ``IMAGE_BLOCK_TOKENS``, independent of its base64 length.
     """
     total = 0
     for msg in messages:
@@ -566,8 +575,13 @@ def estimate_tokens(messages: List[Dict]) -> int:
             total += int(len(content) * 0.3)
         elif isinstance(content, list):
             for item in content:
-                if isinstance(item, dict) and item.get("type") == "text":
+                if not isinstance(item, dict):
+                    continue
+                item_type = item.get("type")
+                if item_type == "text":
                     total += int(len(item.get("text", "")) * 0.3)
+                elif item_type in ("image_url", "image", "input_image"):
+                    total += IMAGE_BLOCK_TOKENS
         # Tool calls carry real payload too: a tool-only assistant turn is stored
         # with content=None and the actual args (e.g. a create_document body) in
         # tool_calls[].function.arguments. Ignoring them made large tool arguments

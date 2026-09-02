@@ -14,9 +14,87 @@ from typing import Any, Dict, List, Optional, Tuple
 from src.model_context import get_context_length, estimate_tokens
 from src.llm_core import llm_call_async
 from src.endpoint_resolver import resolve_endpoint
+from src.settings import get_setting
 from core.models import ChatMessage
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Tool images (FAUSTUS)
+#
+# A tool result that carries a picture (an MCP browser screenshot, the builtin
+# desktop_screenshot) reaches the model as a synthetic user message whose
+# metadata.source is "tool result: <tool>" (see `_tool_image_messages` in
+# src/agent_loop.py). A desktop-driving run takes one every round, and each is
+# ~1200 tokens the model only needs while it is the CURRENT view of the
+# screen. So the prompt keeps the last `agent_keep_images` of them and turns
+# the older ones into a one-line text marker, in place, so the round structure
+# (assistant / tool / image) is untouched. Images the user attached are never
+# pruned — they are the user's own words.
+# ---------------------------------------------------------------------------
+
+TOOL_IMAGE_SOURCE_PREFIX = "tool result: "
+EARLIER_IMAGE_OMITTED = "[earlier image omitted]"
+DEFAULT_KEEP_IMAGES = 1
+
+
+def _is_tool_image_message(msg: Any) -> bool:
+    if not isinstance(msg, dict) or not isinstance(msg.get("content"), list):
+        return False
+    metadata = msg.get("metadata")
+    if not isinstance(metadata, dict):
+        return False
+    source = metadata.get("source")
+    if not isinstance(source, str) or not source.startswith(TOOL_IMAGE_SOURCE_PREFIX):
+        return False
+    return any(
+        isinstance(block, dict) and block.get("type") in ("image_url", "image", "input_image")
+        for block in msg["content"]
+    )
+
+
+def _without_image_blocks(msg: Dict) -> Dict:
+    out = dict(msg)
+    new_content: List[Dict] = []
+    replaced = False
+    for block in msg["content"]:
+        if isinstance(block, dict) and block.get("type") in ("image_url", "image", "input_image"):
+            if not replaced:
+                new_content.append({"type": "text", "text": EARLIER_IMAGE_OMITTED})
+                replaced = True
+            continue
+        new_content.append(block)
+    out["content"] = new_content
+    return out
+
+
+def keep_images_setting() -> int:
+    """`agent_keep_images`: how many tool images stay in the prompt (-1 = all)."""
+    try:
+        return int(get_setting("agent_keep_images", DEFAULT_KEEP_IMAGES))
+    except Exception:  # noqa: BLE001 - settings unavailable / malformed
+        return DEFAULT_KEEP_IMAGES
+
+
+def prune_tool_images(messages: List[Dict], keep: int = DEFAULT_KEEP_IMAGES) -> List[Dict]:
+    """Keep only the LAST `keep` tool-sourced image messages; older ones get
+    their image blocks replaced by ``EARLIER_IMAGE_OMITTED``.
+
+    Returns the very same list object when nothing changes (callers rely on
+    identity to mean "untouched"); otherwise a new list with copied rows for
+    the pruned messages only. `keep < 0` disables pruning.
+    """
+    if keep < 0 or not messages:
+        return messages
+    indices = [i for i, m in enumerate(messages) if _is_tool_image_message(m)]
+    to_prune = indices[: max(0, len(indices) - keep)]
+    if not to_prune:
+        return messages
+    out = list(messages)
+    for i in to_prune:
+        out[i] = _without_image_blocks(out[i])
+    return out
 
 
 def _content_as_text(content: Any) -> str:
@@ -490,6 +568,10 @@ def trim_for_context(messages: List[Dict], context_length: int, reserve_tokens: 
     is what the model is asked to accept.
     """
     budget = context_length - reserve_tokens
+    # Tool images first, budget or not: only the newest screen view is worth
+    # its ~1200 tokens (see `prune_tool_images`). Non-destructive — the loop's
+    # own message list keeps every image; this shapes the request only.
+    messages = prune_tool_images(messages, keep_images_setting())
     used = estimate_tokens(messages)
     if used <= budget:
         return messages

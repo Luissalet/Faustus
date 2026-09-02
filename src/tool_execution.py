@@ -27,7 +27,7 @@ from src.tool_security import (
     is_public_blocked_tool,
     owner_is_admin_or_single_user,
 )
-from src.tool_capabilities import ToolRunSecurityContext, blocked_tool_result
+from src.tool_capabilities import ALWAYS_APPROVE_TOOLS, ToolRunSecurityContext, blocked_tool_result
 from src.tool_approvals import ExactToolApproval
 from src.tool_policy import ToolPolicy
 from src.constants import MAX_OUTPUT_CHARS, MAX_READ_CHARS, MAX_DIFF_LINES, DATA_DIR
@@ -724,10 +724,17 @@ async def execute_tool_block(
 
     approval_claimed = False
     if exact_approval is not None:
-        if (
-            not isinstance(security_context, ToolRunSecurityContext)
-            or not security_context.external_untrusted_context_seen
-            or not exact_approval.pending.external_untrusted_context_seen
+        # An always-approve tool (desktop input, FAUSTUS) is sealed and
+        # approved per call whether or not the run ever saw external
+        # context, so the "armed run" precondition below does not apply to
+        # it; the digest still binds the exact action.
+        _per_call_tool = exact_approval.pending.tool_name in ALWAYS_APPROVE_TOOLS
+        if not isinstance(security_context, ToolRunSecurityContext) or (
+            not _per_call_tool
+            and (
+                not security_context.external_untrusted_context_seen
+                or not exact_approval.pending.external_untrusted_context_seen
+            )
         ):
             return (
                 f"{getattr(block, 'tool_type', None)}: BLOCKED",
@@ -1322,12 +1329,23 @@ _FORMATTER_HANDLED_KEYS = {
     "response", "results", "session_id", "name", "model", "session_name",
     "success", "path", "action", "title", "doc_id", "version", "applied",
     "error", "output",
+    # Image payloads (MCP screenshots, desktop_screenshot) go to the model as
+    # an image block from `_append_tool_results` and to the UI as a data URL;
+    # echoing them here put ~8 KB of base64 per screenshot into the text the
+    # model reads and told it nothing (FAUSTUS).
+    "images", "screenshot",
 }
 
 
 def format_tool_result(description: str, result: Dict) -> str:
     """Format a tool result into text for feeding back to the LLM."""
     parts = [f"### {description}"]
+    _image_count = 0
+    try:
+        from src.tool_images import normalize_result_images
+        _image_count = len(normalize_result_images(result))
+    except Exception:  # noqa: BLE001 - formatting must never fail on images
+        _image_count = 0
 
     if "stdout" in result:
         if result["stdout"]:
@@ -1367,6 +1385,12 @@ def format_tool_result(description: str, result: Dict) -> str:
             parts.append(f'Document edited: "{result.get("title", "")}" (v{result.get("version", "?")}, {result.get("applied", 0)} edit(s) applied)')
     elif "error" in result:
         parts.append(f"**Error:** {result['error']}")
+
+    if _image_count:
+        parts.append(
+            f"**images:** {_image_count} image(s) attached — shown to you as a "
+            "separate image message right after this result."
+        )
 
     # Surface any additional structured payload (events, tasks, notes, calendars,
     # documents, attachments, etc.) that the dedicated branches above don't show.

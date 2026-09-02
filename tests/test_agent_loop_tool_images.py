@@ -55,6 +55,14 @@ def loop(monkeypatch):
     monkeypatch.setattr(al, "blocked_tools_for_owner", lambda owner: set(), raising=False)
     from src import tool_images
     monkeypatch.setattr(tool_images, "get_setting", _get, raising=False)
+    # The tool preflight prunes desktop tools on a headless box (no DISPLAY);
+    # pretend a desktop exists so the tool is offered and the fake runs.
+    from src.agent_tools import desktop_tools as dt
+
+    class _Desk(dt.DesktopBackend):
+        def available(self):
+            return True, ""
+    monkeypatch.setattr(dt, "get_backend", lambda: _Desk())
 
     b64 = _png_b64()
     result = {

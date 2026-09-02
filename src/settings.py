@@ -51,6 +51,19 @@ DEFAULT_SETTINGS = {
     "vision_enabled": True,
     # Ordered fallback chain for the Vision model (image analysis, OCR, tagging).
     "vision_model_fallbacks": [],
+    # Tool-result images (FAUSTUS). A tool that returns an image (an MCP
+    # browser screenshot, desktop_screenshot) hands it to the model as an
+    # image block when the model can see; the longest side is capped at
+    # agent_tool_image_max_px (JPEG q80 when shrunk). Only the last
+    # agent_keep_images tool images stay in the prompt; older ones become
+    # "[earlier image omitted]" (-1 = keep all).
+    "agent_tool_images": True,
+    "agent_tool_image_max_px": 1280,
+    "agent_keep_images": 1,
+    # Desktop input tools (desktop_click/type/key/scroll/focus_window):
+    # "ask_each" = approval card on EVERY call, "ask_task" = the normal
+    # scoped approval gate, "off" = not offered at all.
+    "desktop_control_mode": "ask_each",
     # Public base URL used to build clickable deep-links in outgoing alerts
     # (e.g., urgency alert email). Example: "https://chat.example.com"
     "app_public_url": "",

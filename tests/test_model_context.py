@@ -135,8 +135,13 @@ class TestEstimateTokens:
             }
         ]
         tokens = estimate_tokens(messages)
-        # 4 overhead + int(19 * 0.3) for the text item; image_url is ignored
-        assert tokens == 4 + int(19 * 0.3)
+        # 4 overhead + int(19 * 0.3) for the text item + a flat charge for the
+        # image block. An image used to count 0 tokens, which let screenshots
+        # pile up invisibly past the context gates (FAUSTUS); ~1200 is what a
+        # 1280 px image costs on Qwen-VL / Gemma 3 / GPT-4o-class models.
+        from src.model_context import IMAGE_BLOCK_TOKENS
+        assert IMAGE_BLOCK_TOKENS == 1200
+        assert tokens == 4 + int(19 * 0.3) + IMAGE_BLOCK_TOKENS
 
     def test_missing_content_key(self):
         messages = [{"role": "assistant"}]

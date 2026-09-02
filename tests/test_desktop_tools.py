@@ -91,16 +91,18 @@ class FakeBackend(dt.DesktopBackend):
             return Image.new("RGB", (w, h), (0, 0, 0))
         return _image(w, h)
 
+    _WINDOWS = [
+        {"title": "Notepad - notes.txt", "handle": 1, "rect": [0, 0, 800, 600], "foreground": True},
+        {"title": "Mozilla Firefox", "handle": 2, "rect": [100, 100, 1600, 900], "foreground": False},
+    ]
+
     def list_windows(self):
         self.calls.append(("list_windows",))
-        return [
-            {"title": "Notepad - notes.txt", "handle": 1, "rect": [0, 0, 800, 600], "foreground": True},
-            {"title": "Mozilla Firefox", "handle": 2, "rect": [100, 100, 1600, 900], "foreground": False},
-        ]
+        return [dict(w) for w in self._WINDOWS]
 
     def focus_window(self, title):
         self.calls.append(("focus_window", title))
-        wins = [w for w in self.list_windows() if title.lower() in w["title"].lower()]
+        wins = [w for w in self._WINDOWS if title.lower() in w["title"].lower()]
         if not wins:
             raise dt.DesktopError(f"no window matches {title!r}")
         return wins[0]
@@ -135,8 +137,14 @@ def _settings(monkeypatch):
         return values.get(key, default)
 
     import src.tool_capabilities as tc
+    import src.tool_execution as te
+    from src import tool_images
     monkeypatch.setattr(dt, "get_setting", _get, raising=False)
     monkeypatch.setattr(tc, "get_setting", _get, raising=False)
+    monkeypatch.setattr(tool_images, "get_setting", _get, raising=False)
+    # The desktop tools are admin/single-user only (see test_non_admin_blocked);
+    # the dispatch tests below exercise them as the owner of the box.
+    monkeypatch.setattr(te, "_owner_is_admin", lambda owner: True)
     return values
 
 

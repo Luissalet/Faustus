@@ -174,6 +174,15 @@ NON_ADMIN_BLOCKED_TOOLS = BUILTIN_EMAIL_TOOLS | {
     "stop_served_model",
     "cancel_download",
     "adopt_served_model",
+    # Desktop control (FAUSTUS): sees and drives the screen of the machine
+    # the server runs on — the owner's desktop, never a public user's.
+    "desktop_screenshot",
+    "desktop_list_windows",
+    "desktop_focus_window",
+    "desktop_click",
+    "desktop_type",
+    "desktop_key",
+    "desktop_scroll",
 }
 
 

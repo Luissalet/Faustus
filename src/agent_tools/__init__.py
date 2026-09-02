@@ -34,6 +34,7 @@ from .admin_tools import (
     do_manage_endpoints, do_manage_mcp, do_manage_webhooks,
     do_manage_tokens, do_manage_settings,
 )
+from .desktop_tools import DESKTOP_TOOL_HANDLERS, DESKTOP_TOOLS
 
 TOOL_HANDLERS = {
     "bash": BashTool().execute,
@@ -68,6 +69,8 @@ TOOL_HANDLERS = {
 }
 # Config/integration admin tools (manage_endpoints/mcp/webhooks/tokens/settings).
 TOOL_HANDLERS.update(ADMIN_TOOL_HANDLERS)
+# Desktop control (screenshot / windows / mouse / keyboard) — FAUSTUS.
+TOOL_HANDLERS.update(DESKTOP_TOOL_HANDLERS)
 
 # ---------------------------------------------------------------------------
 # Constants (re-exported for backward compatibility — single source of truth
@@ -113,7 +116,7 @@ TOOL_TAGS = {"bash", "python", "web_search", "web_fetch", "read_file", "write_fi
              # Generic loopback to any UI-button endpoint (cookbook,
              # gallery, email folders, etc.) — agent uses this when
              # there's no named tool wrapper for the action.
-             "app_api"} | BUILTIN_EMAIL_TOOLS
+             "app_api"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS
 
 ToolBlock = namedtuple("ToolBlock", ["tool_type", "content"])
 
