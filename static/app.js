@@ -2407,7 +2407,12 @@ function initializeEventListeners() {
     const TOOLBAR_HIDE_WIDTH = 160;
 	    const textarea = el('message');
 	    const inputBottom = document.querySelector('.chat-input-bottom');
-	    const _isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+	    // "Mobile" here means a PHONE-sized composer, where the swipe hint and
+	    // the picker collapse make sense. Touch capability alone is not it: a
+	    // Windows laptop with a touch screen (or a pen) reports maxTouchPoints
+	    // > 0 and got the alternating "Swipe to toggle plan" placeholder and the
+	    // mobile picker behaviour on a 1920 px desktop (seen live, ronda 6).
+	    const _isMobile = (('ontouchstart' in window) || navigator.maxTouchPoints > 0) && _isMobileChatInput();
 	    let _placeholderHintOn = false;
 
 	    function setComposerPlaceholder(width) {
