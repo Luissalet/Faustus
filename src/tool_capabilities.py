@@ -350,14 +350,97 @@ _BROWSER_MCP_READ_CAPABILITIES = _capabilities(
     ToolEffect.BROKERED_NETWORK_READ,
     result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
 )
-_BROWSER_MCP_READ_TOOLS = frozenset(
+
+# ── Built-in browser (Playwright MCP) policy ───────────────────────────────
+# Bare tool names as the server exposes them; qualified names carry the prefix.
+BROWSER_MCP_SERVER_ID = "builtin_browser"
+BROWSER_MCP_PREFIX = f"mcp__{BROWSER_MCP_SERVER_ID}__"
+
+# Observation only: auto-approved under the external-context gate (they are
+# "reads" for the gate's purposes, like snapshot/screenshot always were).
+BROWSER_READ_TOOLS = frozenset(
     {
-        "mcp__builtin_browser__browser_console_messages",
-        "mcp__builtin_browser__browser_network_requests",
-        "mcp__builtin_browser__browser_snapshot",
-        "mcp__builtin_browser__browser_take_screenshot",
+        "browser_navigate",
+        "browser_navigate_back",
+        "browser_snapshot",
+        "browser_take_screenshot",
+        "browser_find",
+        "browser_wait_for",
+        "browser_console_messages",
+        "browser_network_requests",
+        "browser_network_request",
     }
 )
+# browser_tabs is a read for action=list only (see capabilities_for_action).
+BROWSER_TABS_TOOL = "browser_tabs"
+# Interactions: stay gated after untrusted context (unknown/high-impact).
+BROWSER_ACTION_TOOLS = frozenset(
+    {
+        "browser_click",
+        "browser_type",
+        "browser_fill_form",
+        "browser_select_option",
+        "browser_press_key",
+        "browser_hover",
+        "browser_drag",
+        "browser_drop",
+        "browser_file_upload",
+        "browser_handle_dialog",
+        "browser_close",
+        "browser_resize",
+        BROWSER_TABS_TOOL,
+        "browser_mouse_move_xy",
+        "browser_mouse_click_xy",
+        "browser_mouse_drag_xy",
+        "browser_mouse_down",
+        "browser_mouse_up",
+        "browser_mouse_wheel",
+    }
+)
+# Model-written JavaScript inside the page: opt-in via the
+# `browser_allow_code_execution` setting (off → not offered, denied at dispatch).
+BROWSER_CODE_EXECUTION_TOOLS = frozenset({"browser_evaluate", "browser_run_code_unsafe"})
+
+BROWSER_MCP_ALL_TOOLS = frozenset(
+    BROWSER_MCP_PREFIX + name
+    for name in BROWSER_READ_TOOLS | BROWSER_ACTION_TOOLS | BROWSER_CODE_EXECUTION_TOOLS
+)
+_BROWSER_MCP_READ_TOOLS = frozenset(BROWSER_MCP_PREFIX + name for name in BROWSER_READ_TOOLS)
+_BROWSER_MCP_TABS_QUALIFIED = BROWSER_MCP_PREFIX + BROWSER_TABS_TOOL
+
+
+def is_browser_mcp_tool(tool_name: Any) -> bool:
+    return isinstance(tool_name, str) and tool_name.startswith(BROWSER_MCP_PREFIX)
+
+
+def browser_tool_denials(
+    disabled_names: Iterable[str] | None,
+    live_tool_names: Iterable[str] | None = None,
+) -> frozenset[str]:
+    """Expand a denylist entry that names the whole browser into every tool.
+
+    Policy sources (the admin "browser off" toggle, `can_use_browser=False`)
+    name the SERVER (`builtin_browser`); gates match QUALIFIED tool names. This
+    returns every qualified browser tool — the static set plus whatever the
+    connected server actually exposes — whenever the server id or a wildcard
+    is present, so a denylist written by name cannot be walked past.
+    """
+    names = {str(n) for n in (disabled_names or ()) if n}
+    wildcard = BROWSER_MCP_SERVER_ID in names or (BROWSER_MCP_PREFIX + "*") in names
+    if not wildcard:
+        return frozenset()
+    out = set(BROWSER_MCP_ALL_TOOLS)
+    for name in live_tool_names or ():
+        if is_browser_mcp_tool(name):
+            out.add(name)
+    return frozenset(out)
+
+
+def _browser_tabs_capabilities(content: Any) -> ToolCapabilities:
+    action = _action_from_content(_BROWSER_MCP_TABS_QUALIFIED, content)
+    if action == "list":
+        return _BROWSER_MCP_READ_CAPABILITIES
+    return _UNKNOWN_CAPABILITIES
 
 
 def capabilities_for_tool(tool_name: Any) -> ToolCapabilities:
@@ -520,6 +603,8 @@ def _action_from_content(tool_name: str, content: Any) -> str | None:
 
 def capabilities_for_action(tool_name: Any, content: Any) -> ToolCapabilities:
     """Classify a sealed multiplexed action; ambiguous actions fail high."""
+    if tool_name == _BROWSER_MCP_TABS_QUALIFIED:
+        return _browser_tabs_capabilities(content)
     base = capabilities_for_tool(tool_name)
     if not isinstance(tool_name, str):
         return base

@@ -76,14 +76,34 @@ _BUILTIN_SERVERS = {
     "email":      ("mcp_servers/email_server.py",      "Built-in: Email"),
 }
 
-# NPX-based built-in servers (run via npx, not Python)
+# NPX-based built-in servers (run via npx, not Python).
+#
+# The browser's base args carry only the package; headless / profile /
+# vision caps / CDP endpoint are derived from settings.json by
+# `_browser_mcp_args` so the server can be reconfigured without editing code.
 _BUILTIN_NPX_SERVERS = {
     "builtin_browser": {
         "name": "Built-in: Browser",
         "command": "npx",
-        "args": ["-y", "@playwright/mcp@latest", "--headless", "--caps", "vision"],
+        "args": ["-y", "@playwright/mcp@latest"],
     }
 }
+
+BROWSER_SERVER_ID = "builtin_browser"
+
+# Defaults mirrored from src/settings.py DEFAULT_SETTINGS so this module keeps
+# working when settings cannot be loaded (isolated test loads, early startup).
+BROWSER_SETTING_DEFAULTS = {
+    "browser_profile": "persistent",
+    "browser_cdp_endpoint": "",
+    "browser_headless": True,
+    "browser_vision_caps": False,
+}
+
+# Flags that only make sense when Playwright LAUNCHES a browser; dropped when
+# attaching to the user's own Chrome over CDP.
+_LAUNCH_ONLY_FLAGS = ("--headless", "--isolated", "--no-sandbox", "--sandbox")
+_LAUNCH_ONLY_VALUED_FLAGS = ("--user-data-dir", "--executable-path")
 
 # Global flag to disable MCP if there are compatibility issues
 MCP_DISABLED = os.environ.get("ODYSSEUS_DISABLE_MCP", "").lower() in ("1", "true", "yes")
@@ -129,20 +149,229 @@ def _find_browser_executable() -> str:
     return ""
 
 
-def _browser_mcp_args(args: list[str]) -> list[str]:
-    """Return Playwright MCP args with a concrete browser executable when found."""
+def _browser_settings(settings=None) -> dict:
+    """Effective browser settings: module defaults ← settings.json ← `settings`.
+
+    `settings` (a mapping) lets callers and tests pin values explicitly; when
+    it is None the saved settings are consulted, and any failure to read them
+    falls back to the defaults so the server still starts.
+    """
+    effective = dict(BROWSER_SETTING_DEFAULTS)
+    saved = settings
+    if saved is None:
+        try:
+            from src.settings import load_settings
+            saved = load_settings()
+        except Exception:
+            saved = {}
+    for key in effective:
+        try:
+            value = saved.get(key)
+        except AttributeError:
+            value = None
+        if value is not None:
+            effective[key] = value
+    return effective
+
+
+def _truthy(value) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() not in ("", "0", "false", "no", "off")
+    return bool(value)
+
+
+def _browser_profile_dir() -> str:
+    """On-disk profile used when browser_profile == "persistent"."""
+    configured = os.environ.get("ODYSSEUS_BROWSER_PROFILE_DIR", "").strip()
+    if configured:
+        return configured
+    try:
+        from src.constants import DATA_DIR
+        data_dir = DATA_DIR
+    except Exception:
+        data_dir = os.path.join(get_app_root(), "data")
+    return os.path.join(data_dir, "browser-profile")
+
+
+def _strip_flag(args: list[str], flag: str, valued: bool = False) -> list[str]:
+    out: list[str] = []
+    skip = False
+    for item in args:
+        if skip:
+            skip = False
+            continue
+        if item == flag:
+            skip = valued
+            continue
+        if valued and item.startswith(flag + "="):
+            continue
+        out.append(item)
+    return out
+
+
+def _set_caps(args: list[str], want_vision: bool) -> list[str]:
+    """Ensure/remove the `vision` entry of `--caps` (other caps are kept)."""
+    caps: list[str] = []
+    if "--caps" in args:
+        idx = args.index("--caps")
+        if idx + 1 < len(args):
+            caps = [c.strip() for c in args[idx + 1].split(",") if c.strip()]
+    out = _strip_flag(args, "--caps", valued=True)
+    if want_vision and "vision" not in caps:
+        caps.append("vision")
+    if not want_vision and "vision" in caps:
+        caps = [c for c in caps if c != "vision"]
+    if caps:
+        out.extend(["--caps", ",".join(caps)])
+    return out
+
+
+def _browser_mcp_args(args: list[str], settings=None) -> list[str]:
+    """Return Playwright MCP args for the built-in browser.
+
+    Settings (src/settings.py) decide headless / vision caps / profile /
+    CDP endpoint; the legacy env overrides ODYSSEUS_BROWSER_EXECUTABLE,
+    ODYSSEUS_BROWSER_ISOLATED and ODYSSEUS_BROWSER_NO_SANDBOX still win when
+    they are set explicitly. Flags already present in `args` are respected.
+    """
+    cfg = _browser_settings(settings)
     out = list(args or [])
+
+    # Tool set: `--caps vision` adds the mouse_*_xy tools.
+    out = _set_caps(out, _truthy(cfg.get("browser_vision_caps")))
+
+    cdp = str(cfg.get("browser_cdp_endpoint") or "").strip()
+    if cdp:
+        # Attach to a browser the user already runs: launch-only flags would
+        # be ignored at best and refuse to start at worst.
+        for flag in _LAUNCH_ONLY_FLAGS:
+            out = _strip_flag(out, flag)
+        for flag in _LAUNCH_ONLY_VALUED_FLAGS:
+            out = _strip_flag(out, flag, valued=True)
+        if "--cdp-endpoint" not in out:
+            out.extend(["--cdp-endpoint", cdp])
+        return out
+
+    if _truthy(cfg.get("browser_headless", True)):
+        if "--headless" not in out:
+            out.append("--headless")
+    else:
+        out = _strip_flag(out, "--headless")
+
     if "--executable-path" not in out:
         browser = _find_browser_executable()
         if browser:
             out.extend(["--executable-path", browser])
-    if os.environ.get("ODYSSEUS_BROWSER_ISOLATED", "1").lower() not in ("0", "false", "no"):
-        if "--isolated" not in out and "--user-data-dir" not in out:
+
+    # Profile: explicit env wins, else the setting. "persistent" pins the
+    # profile under DATA_DIR so cookies and logins survive restarts.
+    isolated_env = os.environ.get("ODYSSEUS_BROWSER_ISOLATED")
+    if isolated_env is not None and isolated_env.strip() != "":
+        isolated = _truthy(isolated_env)
+    else:
+        isolated = str(cfg.get("browser_profile") or "persistent").strip().lower() == "isolated"
+    if "--isolated" not in out and "--user-data-dir" not in out:
+        if isolated:
             out.append("--isolated")
+        else:
+            out.extend(["--user-data-dir", _browser_profile_dir()])
+
     if os.environ.get("ODYSSEUS_BROWSER_NO_SANDBOX", "1").lower() not in ("0", "false", "no"):
         if "--no-sandbox" not in out and "--sandbox" not in out:
             out.append("--no-sandbox")
     return out
+
+
+def browser_launch_args(settings=None) -> list[str]:
+    """The full argv (after `npx`) the built-in browser would start with now."""
+    return _browser_mcp_args(_BUILTIN_NPX_SERVERS[BROWSER_SERVER_ID]["args"], settings)
+
+
+def _browser_env(base_dir: str) -> dict[str, str]:
+    cache_home = os.environ.get(
+        "ODYSSEUS_BROWSER_MCP_CACHE",
+        os.path.join(base_dir, "data", "local", "playwright-mcp-cache"),
+    )
+    os.makedirs(cache_home, exist_ok=True)
+    return {
+        "XDG_CACHE_HOME": cache_home,
+        "PLAYWRIGHT_BROWSERS_PATH": os.path.join(cache_home, "browsers"),
+    }
+
+
+def _npx_server_launch(server_id: str) -> tuple[list[str], dict | None]:
+    """(args, env) for one NPX built-in, with browser settings applied."""
+    cfg = _BUILTIN_NPX_SERVERS[server_id]
+    base_dir = get_app_root()
+    if server_id == BROWSER_SERVER_ID:
+        args = _browser_mcp_args(cfg["args"])
+        if "--user-data-dir" in args:
+            try:
+                os.makedirs(args[args.index("--user-data-dir") + 1], exist_ok=True)
+            except (OSError, IndexError):
+                pass
+        return args, _browser_env(base_dir)
+    return list(cfg["args"]), None
+
+
+async def connect_builtin_npx_server(mcp_manager, server_id: str) -> bool:
+    """Start (or restart after a crash) one NPX built-in and register it.
+
+    Shared by startup, the crash-reconnect path in McpManager and
+    `restart_builtin_browser`. Records the argv the server was launched with
+    on the connection so a later settings change can be detected.
+    """
+    cfg = _BUILTIN_NPX_SERVERS.get(server_id)
+    if not cfg:
+        return False
+    npx_path = _find_npx()
+    args, env = _npx_server_launch(server_id)
+    logger.info(f"Starting NPX server: {cfg['name']} ({npx_path} {' '.join(args)})")
+    ok = await mcp_manager.connect_server(
+        server_id=server_id,
+        name=cfg["name"],
+        transport="stdio",
+        command=npx_path,
+        args=args,
+        env=env,
+    )
+    setter = getattr(mcp_manager, "set_connection_meta", None)
+    if callable(setter):
+        setter(server_id, launch_args=list(args))
+    else:  # pragma: no cover - minimal fakes
+        conn = mcp_manager.get_all_statuses().get(server_id)
+        if isinstance(conn, dict):
+            conn["launch_args"] = list(args)
+    if ok:
+        logger.info(f"Built-in NPX server registered: {cfg['name']}")
+    else:
+        logger.warning(f"Built-in NPX server failed to connect: {cfg['name']}")
+    return ok
+
+
+async def restart_builtin_browser(mcp_manager) -> bool:
+    """Stop the built-in browser server and start it again with the current
+    settings (profile, headless, vision caps, CDP endpoint)."""
+    try:
+        await mcp_manager.disconnect_server(BROWSER_SERVER_ID)
+    except Exception as e:  # pragma: no cover - best effort teardown
+        logger.warning(f"Browser MCP teardown before restart failed: {e}")
+    return await connect_builtin_npx_server(mcp_manager, BROWSER_SERVER_ID)
+
+
+def browser_launch_is_stale(mcp_manager) -> bool:
+    """True when the running browser server was started with different argv
+    than the current settings produce (i.e. a restart would apply them)."""
+    conn = mcp_manager.get_all_statuses().get(BROWSER_SERVER_ID)
+    if not isinstance(conn, dict) or conn.get("status") != "connected":
+        return False
+    launched = conn.get("launch_args")
+    if launched is None:
+        return False
+    try:
+        return list(launched) != browser_launch_args()
+    except Exception:
+        return False
 
 
 def builtin_python_env(base_dir: str) -> dict[str, str]:
@@ -207,8 +436,7 @@ async def register_builtin_servers(mcp_manager):
             # lets `npx -y` install @playwright/mcp on first start. Locked-down
             # installs can opt back into the old no-network startup behavior
             # with ODYSSEUS_BROWSER_MCP_REQUIRE_CACHE=1.
-            args = _browser_mcp_args(cfg["args"]) if server_id == "builtin_browser" else list(cfg["args"])
-            pkg_spec = _npx_package_from_args(args)
+            pkg_spec = _npx_package_from_args(list(cfg["args"]))
             if BROWSER_MCP_REQUIRE_CACHE and pkg_spec and not await _is_npx_package_cached(npx_path, pkg_spec):
                 logger.warning(
                     f"{cfg['name']} is not available.\n"
@@ -221,31 +449,8 @@ async def register_builtin_servers(mcp_manager):
                 )
                 continue
 
-            logger.info(f"Starting NPX server: {cfg['name']} ({npx_path} {' '.join(args)})")
             try:
-                env = None
-                if server_id == "builtin_browser":
-                    cache_home = os.environ.get(
-                        "ODYSSEUS_BROWSER_MCP_CACHE",
-                        os.path.join(base_dir, "data", "local", "playwright-mcp-cache"),
-                    )
-                    os.makedirs(cache_home, exist_ok=True)
-                    env = {
-                        "XDG_CACHE_HOME": cache_home,
-                        "PLAYWRIGHT_BROWSERS_PATH": os.path.join(cache_home, "browsers"),
-                    }
-                ok = await mcp_manager.connect_server(
-                    server_id=server_id,
-                    name=cfg["name"],
-                    transport="stdio",
-                    command=npx_path,
-                    args=args,
-                    env=env,
-                )
-                if ok:
-                    logger.info(f"Built-in NPX server registered: {cfg['name']}")
-                else:
-                    logger.warning(f"Built-in NPX server failed to connect: {cfg['name']}")
+                await connect_builtin_npx_server(mcp_manager, server_id)
             except asyncio.CancelledError:
                 raise
             except BaseException as e:

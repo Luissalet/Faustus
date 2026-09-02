@@ -263,6 +263,28 @@ DEFAULT_SETTINGS = {
     # entry is an absolute path. Sensitive subpaths (.ssh, .gnupg, shell
     # rc files, SSH key files) are always blocked regardless of roots.
     "tool_path_extra_roots": [],
+    # ── Built-in browser (Playwright MCP, src/builtin_mcp.py) ──
+    # "persistent" keeps cookies/logins in <DATA_DIR>/browser-profile between
+    # runs; "isolated" starts every server from a blank in-memory profile.
+    "browser_profile": "persistent",
+    # Chrome DevTools endpoint of a browser the USER already runs, e.g.
+    # "http://127.0.0.1:9222" (start Chrome with --remote-debugging-port=9222).
+    # When set, the built-in server attaches to that browser instead of
+    # launching its own (headless/profile settings do not apply).
+    "browser_cdp_endpoint": "",
+    "browser_headless": True,
+    # `--caps vision` adds the 6 mouse_*_xy tools, which only make sense with
+    # a vision model looking at screenshots; off by default to save schema tokens.
+    "browser_vision_caps": False,
+    # Budget for the accessibility snapshot text returned to the model by
+    # browser_snapshot / browser_navigate (truncated at a line boundary).
+    "browser_snapshot_max_chars": 12000,
+    # browser_evaluate / browser_run_code_unsafe run model-written JavaScript
+    # inside the page; opt-in only. Off → not offered AND denied at dispatch.
+    "browser_allow_code_execution": False,
+    # After every browser action, capture a viewport frame for the Browser
+    # panel in the UI (never sent to the model).
+    "browser_live_view": True,
     "task_endpoint_id": "",
     "task_model": "",
     "default_endpoint_id": "",
