@@ -1,6 +1,7 @@
 """Research background task routes — /api/research/*."""
 
 import asyncio
+import os
 import json
 import logging
 import re
@@ -215,11 +216,20 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
         block anonymous access. Multi-tenant deploys should additionally
         verify the session belongs to this user."""
         user = get_current_user(request)
-        if not user:
-            if _auth_disabled():
-                return ""
-            raise HTTPException(401, "Not authenticated")
-        return user
+        if user:
+            return user
+        if _auth_disabled():
+            return ""
+        # No user and auth on: one legitimate case remains — LOCALHOST_BYPASS
+        # =true with a loopback caller, the dev bypass the middleware honoured
+        # a moment ago (mirrors src.auth_helpers.require_user). 401-ing it
+        # here sent the SPA to /login from `/api/research/active` on every
+        # page load, so the bypass did not work at all in the browser.
+        client = getattr(request, "client", None)
+        host = (getattr(client, "host", "") or "") if client else ""
+        if host in ("127.0.0.1", "::1", "localhost") and os.getenv("LOCALHOST_BYPASS", "false").lower() == "true":
+            return ""
+        raise HTTPException(401, "Not authenticated")
 
     def _owns_in_memory(session_id: str, user: str) -> bool:
         """Ownership check for an in-flight (in-memory) research task.

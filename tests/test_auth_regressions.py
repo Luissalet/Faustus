@@ -368,3 +368,36 @@ def test_task_payload_exposes_crew_member_id_for_ui_category():
 
     src = open(task_routes.__file__, encoding="utf-8").read()
     assert '"crew_member_id"' in src
+
+
+def test_research_honours_the_localhost_bypass_like_every_other_route(monkeypatch):
+    """LOCALHOST_BYPASS=true: the middleware lets a loopback caller through
+    with no user on the request, and src.auth_helpers.require_user returns
+    "" for it. The research routes had their own copy that 401-ed instead —
+    the SPA's global 401 handler then bounced the browser to /login on every
+    page load (`/api/research/active` fires at init). Seen live on the 7001
+    test instance the moment the bypass was switched on."""
+    from routes.research_routes import setup_research_routes
+    rh = MagicMock()
+    rh.get_active.return_value = []
+    rh.list_active.return_value = []
+    router = setup_research_routes(rh)
+    target = next(r.endpoint for r in router.routes if getattr(r, "path", "") == "/api/research/status/{session_id}")
+    rh._active_tasks = {"x": {"owner": "", "status": "running"}}
+    rh.get_status.return_value = {"status": "running", "progress": {}}
+    monkeypatch.setenv("LOCALHOST_BYPASS", "true")
+    req = _fake_request(user=None)
+    # loopback + bypass → through (the owner check sees the anonymous "" user)
+    out = asyncio.run(target(session_id="x", request=req))
+    assert out == {"status": "running", "progress": {}}
+    # a non-loopback caller is still refused with the bypass on
+    req.client = SimpleNamespace(host="10.0.0.7")
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(target(session_id="x", request=req))
+    assert exc.value.status_code == 401
+    # and with the bypass off, loopback alone is not enough once users exist
+    monkeypatch.setenv("LOCALHOST_BYPASS", "false")
+    req.client = SimpleNamespace(host="127.0.0.1")
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(target(session_id="x", request=req))
+    assert exc.value.status_code == 401
