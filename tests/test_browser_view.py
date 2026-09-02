@@ -112,6 +112,21 @@ async def test_no_frame_for_observation_tools_or_when_disabled_or_blocked():
     assert mgr.calls == []
 
 
+async def test_no_frame_for_an_action_that_is_only_pending_approval():
+    """Audited: a click that stopped at the approval card still produced a
+    live-view frame (and a screenshot round-trip) — the action did not run,
+    so there is nothing new to show; the frame only suggested it had."""
+    mgr = FakeMgr()
+    pending = {"output": "Waiting for an exact user approval.", "exit_code": None,
+               "approval_required": True, "ask_user": {}}
+    assert await bv.after_browser_action(P + "browser_click", pending, mgr, {"browser_live_view": True}) is None
+    assert mgr.calls == []
+    # a failed action, by contrast, still shows where the page ended up
+    errored = {"error": "Timeout 30000ms exceeded", "exit_code": 1}
+    out = await bv.after_browser_action(P + "browser_navigate", errored, mgr, {"browser_live_view": True})
+    assert out is not None and out["screenshot"].startswith("data:image/jpeg;base64,")
+
+
 async def test_screenshot_failure_is_swallowed():
     class Boom(FakeMgr):
         async def call_tool(self, name, args):

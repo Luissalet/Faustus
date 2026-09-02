@@ -149,7 +149,8 @@ async def after_browser_action(
 
     Returns ``{"url", "title", "screenshot"}`` (screenshot as a data URL) or
     None when the tool is not an action, the live view is off, the action was
-    refused, or no frame could be taken. Never raises.
+    refused or is still waiting for approval, or no frame could be taken.
+    Never raises.
     """
     if not is_browser_action(tool_name):
         return None
@@ -157,7 +158,9 @@ async def after_browser_action(
         return None
     if mcp_manager is None or not hasattr(mcp_manager, "call_tool"):
         return None
-    if isinstance(result, dict) and result.get("blocked"):
+    if isinstance(result, dict) and (result.get("blocked") or result.get("approval_required")):
+        # Refused, or parked at the approval card: the action did not run,
+        # so a frame would only suggest it had (and cost a screenshot).
         return None
 
     url, title = parse_page_info(_result_text(result))
