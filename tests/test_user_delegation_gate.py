@@ -60,3 +60,26 @@ def test_string_encoded_tasks_are_read_like_the_tool_reads_them():
     ctx = _ctx(PAYLOAD)
     content = json.dumps({"tasks": json.dumps(PAYLOAD["tasks"]), "parallel": True})
     assert ctx.decision_for("delegate_agents", content).allowed
+
+
+def test_the_gate_reads_the_call_exactly_like_the_tool_does():
+    """Seen live: qwen3.5 sends `tasks` as a JSON string with the rest of the
+    object stuffed inside it — `{"tasks": "[{...}], \\"parallel\\": true}"}` —
+    and the tool strips the `[files]` prefix from instructions. json.loads on
+    that string fails, so the gate said 'not JSON' and asked for approval.
+    Both sides now go through subagent_tools.parse_delegation_args."""
+    ctx = _ctx(PAYLOAD)
+    stuffed = '{"tasks": "[{\\"name\\": \\"a\\", \\"instruction\\": \\"[cart.py] add f()\\"}, ' \
+              '{\\"name\\": \\"b\\", \\"instruction\\": \\"[tests/test_cart.py] add the test\\"}], \\"parallel\\": true}"}'
+    assert ctx.decision_for("delegate_agents", stuffed).allowed
+    # the model dropped the [file] prefix but kept the words: still the user's task
+    no_prefix = json.dumps({"tasks": [{"name": "a", "instruction": "add f()", "files": ["cart.py"]}]})
+    assert ctx.decision_for("delegate_agents", no_prefix).allowed
+    # trailing period / whitespace / case differences are not rewrites
+    loose = json.dumps({"tasks": [{"name": "a", "instruction": "  [cart.py]  Add F(). "}]})
+    assert ctx.decision_for("delegate_agents", loose).allowed
+    # a leading tool-name line around the JSON (fenced form)
+    fenced = "delegate_agents\n" + json.dumps({"tasks": PAYLOAD["tasks"]})
+    assert ctx.decision_for("delegate_agents", fenced).allowed
+    # garbage never passes
+    assert not ctx.decision_for("delegate_agents", "{not json").allowed

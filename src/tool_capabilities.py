@@ -843,22 +843,45 @@ class ToolRunSecurityContext:
     # "blocked by the external-context policy", no card).
     user_delegation: Optional[Mapping[str, Any]] = None
 
+    @staticmethod
+    def _delegation_tasks(content: Any) -> Optional[list]:
+        """Task list as the delegate_agents TOOL will read it — the tool's own
+        lenient parser (double-encoded `tasks` strings, the rest of the object
+        stuffed into that string, `[files]`/`{model}` prefixes split off), so
+        the gate and the tool cannot disagree about what was asked."""
+        try:
+            from src.agent_tools.subagent_tools import parse_delegation_args
+        except Exception:  # pragma: no cover - import cycle guard
+            return None
+        if isinstance(content, Mapping):
+            raw = json.dumps(dict(content))
+        else:
+            raw = content if isinstance(content, str) else ("" if content is None else str(content))
+            raw = raw.strip()
+            if not raw.startswith(("{", "[")) and "{" in raw and "}" in raw:
+                raw = raw[raw.index("{"):raw.rindex("}") + 1]
+        try:
+            parsed = parse_delegation_args(raw)
+        except Exception:
+            return None
+        tasks = parsed.get("tasks") if isinstance(parsed, Mapping) else None
+        return tasks if isinstance(tasks, list) else None
+
+    @staticmethod
+    def _norm_instruction(text: Any) -> str:
+        return " ".join(str(text or "").split()).strip().rstrip(".").lower()
+
     def _user_delegation_instructions(self) -> frozenset[str]:
         payload = self.user_delegation
         if not isinstance(payload, Mapping):
             return frozenset()
-        tasks = payload.get("tasks")
-        if isinstance(tasks, str):
-            try:
-                tasks = json.loads(tasks)
-            except (TypeError, ValueError):
-                return frozenset()
+        tasks = self._delegation_tasks(payload)
         out = set()
-        for t in tasks if isinstance(tasks, list) else []:
+        for t in tasks or []:
             if isinstance(t, Mapping):
-                instr = t.get("instruction")
-                if isinstance(instr, str) and instr.strip():
-                    out.add(" ".join(instr.split()))
+                n = self._norm_instruction(t.get("instruction"))
+                if n:
+                    out.add(n)
         return frozenset(out)
 
     def _user_delegation_allows(self, tool_name: Any, content: Any) -> bool:
@@ -869,38 +892,16 @@ class ToolRunSecurityContext:
             if self.user_delegation is not None:
                 logger.info("[gate] user delegation present but no instructions parsed: %r", self.user_delegation)
             return False
-        data: Any = content
-        if not isinstance(data, Mapping):
-            raw = content if isinstance(content, str) else ("" if content is None else str(content))
-            raw = raw.strip()
-            # Tolerate a leading tool-name line / fence around the JSON object.
-            if not raw.startswith("{") and "{" in raw:
-                raw = raw[raw.index("{"):raw.rindex("}") + 1] if "}" in raw else raw
-            try:
-                data = json.loads(raw)
-            except (TypeError, ValueError):
-                logger.info("[gate] user delegation: tool content is not JSON (%r)", raw[:120])
-                return False
-        if not isinstance(data, Mapping):
-            return False
-        tasks = data.get("tasks")
-        if isinstance(tasks, str):
-            # The model sends `tasks` as a JSON string half the time; the
-            # tool accepts it, so does the gate.
-            try:
-                tasks = json.loads(tasks)
-            except (TypeError, ValueError):
-                logger.info("[gate] user delegation: `tasks` string is not JSON")
-                return False
-        if not isinstance(tasks, list) or not tasks:
+        tasks = self._delegation_tasks(content)
+        if not tasks:
+            logger.info("[gate] user delegation: the call's tasks could not be parsed (%r)",
+                        (content if isinstance(content, str) else str(content))[:160])
             return False
         for t in tasks:
-            if not isinstance(t, Mapping):
-                return False
-            instr = t.get("instruction")
-            if not isinstance(instr, str) or " ".join(instr.split()) not in wanted:
+            instr = self._norm_instruction(t.get("instruction") if isinstance(t, Mapping) else None)
+            if not instr or instr not in wanted:
                 logger.info("[gate] user delegation: task instruction differs from the user's (%r vs %d dictated)",
-                            (instr or "")[:120], len(wanted))
+                            instr[:120], len(wanted))
                 return False
         logger.info("[gate] user delegation matched %d task(s): delegate_agents passes the gate", len(tasks))
         return True
