@@ -237,6 +237,14 @@ DEFAULT_SETTINGS = {
     "agent_queue_api_concurrency": 0,
     # delegate_agents: add a reviewer worker after the others by default.
     "agent_subagent_reviewer": False,
+    # delegate_agents control board: watchdog heartbeat period (s), the idle /
+    # loop threshold after which a worker counts as stalled (s), the
+    # deterministic supervisor (nudge once, then stop) and how many workers
+    # may run at the same time on one GPU (the rest wait, "queued").
+    "agent_subagent_tick_seconds": 5,
+    "agent_subagent_stall_seconds": 120,
+    "agent_subagent_supervisor": True,
+    "agent_subagent_max_parallel": 2,
     # Extra directory roots that read_file / write_file may access, in
     # addition to the built-in project data/ and system temp dirs. Each
     # entry is an absolute path. Sensitive subpaths (.ssh, .gnupg, shell

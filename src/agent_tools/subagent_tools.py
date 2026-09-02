@@ -34,6 +34,7 @@ logger = logging.getLogger(__name__)
 MAX_SUBAGENTS = 4
 DEFAULT_MAX_ROUNDS = 14
 DEFAULT_WORKER_TIMEOUT_S = 1500   # wall-clock bound per worker (25 min; qwen3-coder on this GPU does a task in 1-5 min)
+MIN_WORKER_TIMEOUT_S = 60         # floor for the per-worker timeout (counted from `started`, not from queueing)
 SUBAGENT_FOLDER = "Agents"
 REVIEWER_NAME = "reviewer"
 
@@ -61,6 +62,10 @@ class FileLockRegistry:
         self.display: Dict[str, str] = {}    # normalised path → path as first seen
         self.names: Dict[str, str] = {}      # worker key → human label (run.name)
         self.conflicts: List[Dict[str, str]] = []
+        # Paths claimed at CHECK time by `write_block_reason` (the write has not
+        # run yet). They become permanent when the write succeeds and are
+        # released when it fails, so a failed write does not fence a file off.
+        self.provisional: set = set()
 
     def label(self, worker: str) -> str:
         """The name to SHOW for a worker key (the key itself if unregistered)."""
@@ -86,8 +91,11 @@ class FileLockRegistry:
         key = real.replace("\\", "/")
         return key.lower() if os.name == "nt" else key
 
-    def claim(self, worker: str, paths: List[str]) -> List[str]:
-        """Claim paths for `worker`; returns the ones already owned by someone else."""
+    def claim(self, worker: str, paths: List[str], provisional: bool = False) -> List[str]:
+        """Claim paths for `worker`; returns the ones already owned by someone else.
+
+        `provisional=True` marks a claim made before the write ran (see
+        `write_block_reason`): `settle()` keeps or releases it afterwards."""
         taken: List[str] = []
         for p in paths:
             key = self.norm(p)
@@ -97,9 +105,26 @@ class FileLockRegistry:
             if cur is None:
                 self.owner[key] = worker
                 self.display[key] = p
+                if provisional:
+                    self.provisional.add(key)
             elif cur != worker:
                 taken.append(p)
+            elif not provisional:
+                self.provisional.discard(key)
         return taken
+
+    def settle(self, worker: str, paths: List[str], ok: bool) -> None:
+        """The write behind a provisional claim finished: keep the file on
+        success, give it back on failure. Declared (non-provisional) files are
+        never released here."""
+        for p in paths:
+            key = self.norm(p)
+            if not key or key not in self.provisional or self.owner.get(key) != worker:
+                continue
+            self.provisional.discard(key)
+            if not ok:
+                self.owner.pop(key, None)
+                self.display.pop(key, None)
 
     def blocked_by(self, worker: str, paths: List[str]) -> Optional[str]:
         """The other worker that owns one of `paths`, or None."""
@@ -180,6 +205,12 @@ def write_block_reason(tool: Any, content: Any) -> Optional[str]:
         return None
     other = reg.blocked_by(guard.worker, targets)
     if not other:
+        # Claim NOW, not after the write ran: the check happened before
+        # dispatch and the claim after execution, so two parallel workers
+        # checking the same unowned file both passed and both wrote it.
+        # `note_write_result` settles the claim (keeps it, or releases it
+        # when the write failed).
+        reg.claim(guard.worker, targets, provisional=True)
         return None
     mine = reg.owned_by(guard.worker)
     reg.conflicts.append({"worker": reg.label(guard.worker), "owner": reg.label(other), "path": targets[0]})
@@ -192,27 +223,50 @@ def write_block_reason(tool: Any, content: Any) -> Optional[str]:
 
 
 def note_write_result(tool: Any, content: Any, result: Any) -> None:
-    """Called after a write tool ran: first successful writer owns the file."""
+    """Called after a write tool ran: first successful writer owns the file.
+    A failed write releases the claim `write_block_reason` made for it."""
     guard = _LOCK_CTX.get()
     if guard is None or guard.bypass or not isinstance(tool, str) or tool not in _WRITE_TOOLS:
         return
-    if not isinstance(result, dict) or result.get("error") or result.get("blocked"):
-        return
-    if result.get("exit_code") not in (None, 0):
-        return
     # None = undeterminable: claim nothing (there is nothing to claim).
-    guard.registry.claim(guard.worker, _targets(tool, content) or [])
+    targets = _targets(tool, content) or []
+    ok = (isinstance(result, dict) and not result.get("error") and not result.get("blocked")
+          and result.get("exit_code") in (None, 0))
+    guard.registry.settle(guard.worker, targets, ok)
+    if ok:
+        guard.registry.claim(guard.worker, targets)
 
 
 # ---------------------------------------------------------------------------
-# v2: stop one worker
+# v2: stop / steer one worker; the live registry behind /api/chat/activity
 # ---------------------------------------------------------------------------
 
 _ACTIVE_WORKERS: Dict[str, asyncio.Task] = {}   # child session id → the worker's task
 _WORKER_RUNS: Dict[str, "SubagentRun"] = {}     # child session id → its SubagentRun
 
 
-def stop_worker(child_session_id: str) -> bool:
+def _setting(key: str, default: Any = None) -> Any:
+    try:
+        from src.settings import get_setting
+        return get_setting(key, default)
+    except Exception:
+        return default
+
+
+def _cancel_task(task: asyncio.Task) -> None:
+    """Cancel from whatever thread we are on (FastAPI runs `def` routes in a
+    threadpool; a bare cancel() from there can be lost)."""
+    try:
+        from src.agent_runs import _cancel_anywhere
+        _cancel_anywhere(task)
+    except Exception:
+        task.cancel()
+
+
+def stop_worker(child_session_id: str, reason: str = "stopped") -> bool:
+    """Cancel ONE worker; the coordinator carries on with the others.
+    `reason` becomes the worker's stop_reason ("stopped" for the user's Stop,
+    "stalled" for the supervisor)."""
     task = _ACTIVE_WORKERS.get(child_session_id)
     if task is None or task.done():
         return False
@@ -222,12 +276,68 @@ def stop_worker(child_session_id: str) -> bool:
     run = _WORKER_RUNS.get(child_session_id)
     if run is not None:
         run.stop_requested = True
-    task.cancel()
+        run.stop_reason_requested = str(reason or "stopped")
+    _cancel_task(task)
     return True
 
 
 def active_worker_ids() -> List[str]:
     return [sid for sid, t in _ACTIVE_WORKERS.items() if not t.done()]
+
+
+def steer_worker(child_session_id: str, text: str, source: str = "user") -> bool:
+    """Queue a steering message for a live worker. The worker's agent loop
+    injects it as a `user` message before its next round (see
+    `stream_agent_loop(pending_user_messages=...)`)."""
+    text = " ".join(str(text or "").split()).strip()
+    if not text:
+        return False
+    task = _ACTIVE_WORKERS.get(child_session_id)
+    run = _WORKER_RUNS.get(child_session_id)
+    if task is None or task.done() or run is None:
+        return False
+    run.steer_queue.append({"text": text[:4000], "source": "supervisor" if source == "supervisor" else "user"})
+    return True
+
+
+def pending_steers(child_session_id: str) -> List[Dict[str, str]]:
+    """Drain the steering queue of a worker (what the loop injects next)."""
+    run = _WORKER_RUNS.get(child_session_id)
+    if run is None:
+        return []
+    out, run.steer_queue = list(run.steer_queue), []
+    return out
+
+
+def worker_board() -> Dict[str, Dict[str, Any]]:
+    """Live workers for /api/chat/activity: child sid → a small status card."""
+    out: Dict[str, Dict[str, Any]] = {}
+    for sid, run in list(_WORKER_RUNS.items()):
+        task = _ACTIVE_WORKERS.get(sid)
+        if task is None or task.done():
+            continue
+        out[sid] = {
+            "parent": run.parent_session_id, "name": run.name, "role": run.role,
+            "started_at": run.started, "round": run.rounds, "last_event_at": run.last_event_at,
+            "stalled": bool(run.stalled), "tool_calls": run.tool_calls,
+        }
+    return out
+
+
+def _as_bool(value: Any, default: bool) -> bool:
+    """`bool("false")` is True. Models send booleans as strings."""
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    s = str(value).strip().lower()
+    if s in ("1", "true", "yes", "y", "on", "si", "sí"):
+        return True
+    if s in ("0", "false", "no", "n", "off", ""):
+        return False
+    return default
 
 
 _TASK_FILES_RE = re.compile(r"^\s*\[([^\]]+)\]\s*")
@@ -328,24 +438,29 @@ def parse_delegation_args(content: str) -> Dict[str, Any]:
         except Exception:
             reviewer = False
     reviewer_model = str(data.get("reviewer_model") or "").strip()
-    if len(tasks_raw) > MAX_SUBAGENTS:
+    dropped = max(0, len(tasks_raw) - MAX_SUBAGENTS)
+    if dropped:
         logger.info("delegate_agents: %s tasks requested, capped at %s", len(tasks_raw), MAX_SUBAGENTS)
     try:
         max_rounds = int(data.get("max_rounds") or DEFAULT_MAX_ROUNDS)
     except (TypeError, ValueError):
         max_rounds = DEFAULT_MAX_ROUNDS
     try:
-        timeout_s = int(data.get("timeout_s") or data.get("timeout") or DEFAULT_WORKER_TIMEOUT_S)
+        timeout_s = float(data.get("timeout_s") or data.get("timeout") or DEFAULT_WORKER_TIMEOUT_S)
     except (TypeError, ValueError):
-        timeout_s = DEFAULT_WORKER_TIMEOUT_S
+        timeout_s = float(DEFAULT_WORKER_TIMEOUT_S)
+    timeout_s = max(MIN_WORKER_TIMEOUT_S, min(timeout_s, 7200))
     return {
         "tasks": tasks,
-        "parallel": bool(data.get("parallel", True)),
+        "parallel": _as_bool(data.get("parallel"), True),
         "max_rounds": max(3, min(max_rounds, 40)),
         "shared_context": str(data.get("context") or data.get("shared_context") or "").strip()[:4000],
-        "timeout_s": max(60, min(timeout_s, 7200)),
-        "reviewer": bool(reviewer),
+        "timeout_s": int(timeout_s) if float(timeout_s).is_integer() else timeout_s,
+        "reviewer": _as_bool(reviewer, False),
         "reviewer_model": reviewer_model[:120],
+        # Tasks past MAX_SUBAGENTS are not run; the tool result says so (they
+        # used to vanish silently and the model believed they were done).
+        "dropped_tasks": dropped,
     }
 
 
@@ -362,7 +477,9 @@ class SubagentRun:
         # Set by stop_worker(): "the cancellation about to arrive targets ME",
         # as opposed to the coordinator being cancelled (the user pressed Stop).
         self.stop_requested = False
+        self.stop_reason_requested: Optional[str] = None
         self.session_id: Optional[str] = None
+        self.parent_session_id: Optional[str] = None
         self.text = ""
         self.tool_calls = 0
         self.failed_calls = 0
@@ -370,12 +487,43 @@ class SubagentRun:
         self.rejections = 0
         self.stop_reason = "unknown"
         self.error: Optional[str] = None
+        # `started` is reset when the worker really starts (after queueing).
         self.started = time.time()
         self.finished: Optional[float] = None
         self.static_checks: List[Dict[str, Any]] = []
         self.git: Optional[Dict[str, Any]] = None
         self.rounds = 0
         self.summary: Optional[Dict[str, Any]] = None
+        # Control board state (fed by the worker's own events; read by the
+        # watchdog tick, the supervisor and /api/chat/activity).
+        self.input_tokens = 0
+        self.output_tokens = 0
+        self.last_event_at = self.started      # last real worker event (not ticks)
+        self.last_tool: Optional[str] = None
+        self.last_tool_sig: Optional[str] = None
+        self.repeat_count = 0                  # same tool + same args, consecutively
+        self.stalled = False
+        self.stall_reason: Optional[str] = None
+        self.steer_queue: List[Dict[str, str]] = []
+        self.steered = 0
+        self.supervisor: List[Dict[str, Any]] = []
+        self.final_metrics: Dict[str, Any] = {}
+        self.tool_events: List[Dict[str, Any]] = []
+
+    def touch(self) -> None:
+        self.last_event_at = time.time()
+
+    @property
+    def loop_detected(self) -> bool:
+        return self.repeat_count >= 3
+
+    def note_tool_start(self, tool: Any, command: Any) -> None:
+        """Loop detection: the same tool with the same command/args, three
+        times in a row, is a stall (the model is not making progress)."""
+        self.last_tool = str(tool or "") or None
+        sig = f"{tool}\x00{str(command or '')[:2000]}"
+        self.repeat_count = self.repeat_count + 1 if sig == self.last_tool_sig else 1
+        self.last_tool_sig = sig
 
     def report(self) -> Dict[str, Any]:
         return {
@@ -389,6 +537,9 @@ class SubagentRun:
             "final_text": self.text.strip()[:2500],
             "role": self.role, "files": self.files, "model": self.model_override or None,
             "instruction": self.instruction[:2000],
+            "input_tokens": self.input_tokens, "output_tokens": self.output_tokens,
+            "started_at": self.started, "ended_at": self.finished,
+            "steered": self.steered, "supervisor": list(self.supervisor),
         }
 
 
@@ -408,10 +559,16 @@ async def _run_subagent(
     gen_overrides: Optional[Dict] = None,
     locks: Optional[FileLockRegistry] = None,
     harness_options: Optional[Dict[str, Any]] = None,
+    timeout_s: Optional[float] = None,
+    save_transcript: bool = True,
 ) -> None:
+    """Run one worker to completion (or until cancelled) and stream its board
+    events through `emit`. `save_transcript=False` leaves the child-chat
+    transcript to the caller (`one()` saves it AFTER the stop reason is final:
+    saved here, in the `finally`, a stopped/timed-out worker was recorded as
+    if it had completed)."""
     from src.agent_loop import stream_agent_loop
     from src.ai_interaction import get_session_manager
-    from core.models import ChatMessage
 
     # Exclusive files: pre-claim the declared ones, then first-writer-wins.
     # The lock key is run.id (unique), not run.name (written by the model).
@@ -432,6 +589,10 @@ async def _run_subagent(
             parent_name = ""
     child_sid = str(uuid.uuid4())[:8]
     run.session_id = child_sid
+    run.parent_session_id = parent_session_id
+    # The worker starts NOW (a queued worker waited before this point).
+    run.started = time.time()
+    run.last_event_at = run.started
     if sm:
         try:
             sm.create_session(
@@ -488,9 +649,8 @@ async def _run_subagent(
     messages = [{"role": "user", "content": f"{preamble}\n\nYOUR TASK: {run.instruction}"}]
 
     await emit({"event": "started", "name": run.name, "instruction": _short(run.instruction, 240), "session_id": child_sid,
-                "role": run.role, "files": run.files, "model": run.model_override or model})
-    final_metrics: Dict[str, Any] = {}
-    tool_events: List[Dict[str, Any]] = []
+                "role": run.role, "files": run.files, "model": run.model_override or model,
+                "started_at": run.started, "max_rounds": max_rounds, "timeout_s": timeout_s})
     # Sidebar activity: the worker chat blinks while it works, then shows as
     # finished-unread — same as a chat the user started themselves.
     try:
@@ -503,6 +663,13 @@ async def _run_subagent(
     # does, once, over everything), and do not need the repo map twice.
     _worker_opts = dict(harness_options or {})
     _worker_opts.update({"checkpoints": False, "run_tests": False, "review_model": "off"})
+    # Tokens: per-round usage arrives in `round_info` while the worker runs
+    # (the tick shows it live); the final `metrics` totals win when present.
+    _tokens_from_metrics = False
+
+    def _steers() -> List[Dict[str, str]]:
+        return pending_steers(child_sid)
+
     try:
         async for chunk in stream_agent_loop(
             endpoint_url, model, messages,
@@ -513,6 +680,7 @@ async def _run_subagent(
             security_gate_bypass=True, _is_teacher_run=True,
             gen_overrides=gen_overrides,
             harness_options=_worker_opts,
+            pending_user_messages=_steers,
         ):
             if not chunk.startswith("data: ") or chunk.startswith("data: [DONE]"):
                 if chunk.startswith("event: error"):
@@ -523,22 +691,37 @@ async def _run_subagent(
                 ev = json.loads(chunk[6:])
             except json.JSONDecodeError:
                 continue
+            run.touch()
             et = ev.get("type")
             if "delta" in ev and not et:
                 if not ev.get("thinking"):
                     run.text += ev["delta"]
                 continue
             if et == "tool_start":
+                run.note_tool_start(ev.get("tool"), ev.get("full_command") or ev.get("command"))
                 await emit({"event": "tool", "tool": ev.get("tool"), "command": _short(ev.get("command"), 120), "phase": "start"})
+            elif et == "tool_progress":
+                # The worker's own bash/python live tail.
+                await emit({"event": "tool", "phase": "progress", "tool": ev.get("tool"),
+                            "elapsed_s": float(ev.get("elapsed_s") or ev.get("elapsed") or 0),
+                            "tail": _short(ev.get("tail") or ev.get("message"), 200)})
             elif et == "tool_output":
                 run.tool_calls += 1
                 ok = ev.get("exit_code") in (0, None)
                 if not ok:
                     run.failed_calls += 1
-                tool_events.append({"tool": ev.get("tool"), "command": ev.get("command"), "output": _short(ev.get("output"), 400), "exit_code": ev.get("exit_code")})
+                run.tool_events.append({"tool": ev.get("tool"), "command": ev.get("command"), "output": _short(ev.get("output"), 400), "exit_code": ev.get("exit_code")})
                 await emit({"event": "tool", "tool": ev.get("tool"), "ok": ok, "phase": "done", "output": _short(ev.get("output"), 120)})
             elif et == "round_info":
                 run.rounds = max(run.rounds, int(ev.get("round") or 0))
+                if not _tokens_from_metrics:
+                    run.input_tokens += int(ev.get("input_tokens") or 0)
+                    run.output_tokens += int(ev.get("output_tokens") or 0)
+                await emit({"event": "round", "round": run.rounds})
+            elif et == "steer":
+                run.steered += 1
+                await emit({"event": "steer", "text": _short(ev.get("text"), 300),
+                            "source": "supervisor" if ev.get("source") == "supervisor" else "user"})
             elif et == "harness_check":
                 if ev.get("status") in ("rejected", "syntax_error"):
                     run.rejections += 1
@@ -551,9 +734,14 @@ async def _run_subagent(
                 run.static_checks = list(d.get("static_checks") or [])
                 run.git = d.get("git")
             elif et == "metrics":
-                final_metrics = ev.get("data") or {}
+                run.final_metrics = ev.get("data") or {}
                 if run.stop_reason == "unknown":
-                    run.stop_reason = ((final_metrics.get("harness") or {}).get("stop_reason")) or "complete"
+                    run.stop_reason = ((run.final_metrics.get("harness") or {}).get("stop_reason")) or "complete"
+                _in, _out = run.final_metrics.get("input_tokens"), run.final_metrics.get("output_tokens")
+                if isinstance(_in, (int, float)) or isinstance(_out, (int, float)):
+                    run.input_tokens = int(_in or 0)
+                    run.output_tokens = int(_out or 0)
+                    _tokens_from_metrics = True
             elif et in ("rounds_exhausted", "budget_exceeded", "loop_breaker_triggered", "intent_nudge_exhausted"):
                 await emit({"event": "guard", "kind": et})
             elif et == "agent_terminal":
@@ -572,23 +760,40 @@ async def _run_subagent(
                 _agent_runs.clear_busy(child_sid)
             except Exception:
                 pass
-        # Persist the transcript into the child chat so it can be audited later
-        # (also when the worker was cancelled/timed out: what it did is evidence).
-        if sm and run.session_id:
-            try:
-                child = sm.get_session(run.session_id)
-                if child is not None:
-                    child.add_message(ChatMessage("user", run.instruction))
-                    meta = dict(final_metrics or {})
-                    meta["tool_events"] = tool_events[:60]
-                    meta["subagent"] = {"parent_session": parent_session_id, "name": run.name}
-                    if run.error:
-                        meta["subagent"]["error"] = run.error
-                    child.add_message(ChatMessage("assistant", run.text.strip() or "(no final text)", metadata=meta))
-                    sm.save_sessions()
-            except Exception as e:
-                logger.debug("delegate_agents: transcript save failed: %s", e)
+        if save_transcript:
+            _save_transcript(run, sm)
     await emit({"event": "done", **run.report(), "final_text": _short(run.text, 300)})
+
+
+def _save_transcript(run: SubagentRun, sm: Any) -> None:
+    """Persist the worker's transcript into its child chat so it can be
+    audited later — also when it was stopped, stalled or timed out: what it
+    did is evidence, and HOW it ended is recorded in the metadata."""
+    if not sm or not run.session_id:
+        return
+    try:
+        from core.models import ChatMessage
+        child = sm.get_session(run.session_id)
+        if child is None:
+            return
+        child.add_message(ChatMessage("user", run.instruction))
+        meta = dict(run.final_metrics or {})
+        meta["tool_events"] = run.tool_events[:60]
+        meta["subagent"] = {
+            "parent_session": run.parent_session_id, "name": run.name, "role": run.role,
+            "stop_reason": run.stop_reason, "steered": run.steered,
+            "supervisor": list(run.supervisor),
+        }
+        if run.error:
+            meta["subagent"]["error"] = run.error
+        if run.stop_reason in ("stopped", "stalled", "timeout"):
+            meta["stopped"] = True
+            if run.stop_reason == "timeout":
+                meta["subagent"]["timeout"] = True
+        child.add_message(ChatMessage("assistant", run.text.strip() or "(no final text)", metadata=meta))
+        sm.save_sessions()
+    except Exception as e:
+        logger.debug("delegate_agents: transcript save failed: %s", e)
 
 
 def _build_report_text(runs: List[SubagentRun], workspace: Optional[str], locks: Optional[FileLockRegistry] = None) -> str:
@@ -599,9 +804,20 @@ def _build_report_text(runs: List[SubagentRun], workspace: Optional[str], locks:
         status = "ERROR" if r.error else r.stop_reason.upper()
         lines.append("")
         tag = "REVIEWER" if r.role == "reviewer" else f"[{r.index + 1}]"
-        lines.append(f"## {tag} {r.name} — {status} in {rep['duration_s']}s, {r.rounds} rounds, {r.tool_calls} tool calls ({r.failed_calls} failed), child chat {r.session_id}")
+        tokens = f", {r.input_tokens}+{r.output_tokens} tokens" if (r.input_tokens or r.output_tokens) else ""
+        lines.append(f"## {tag} {r.name} — {status} in {rep['duration_s']}s, {r.rounds} rounds, {r.tool_calls} tool calls ({r.failed_calls} failed){tokens}, child chat {r.session_id}")
         if r.error:
             lines.append(f"   error: {r.error}")
+        if r.stop_reason == "stalled":
+            lines.append("   STALLED: the supervisor stopped this worker because it made no progress; its task is NOT done.")
+        elif r.stop_reason == "stopped":
+            lines.append("   STOPPED by the user before it finished; its task may be incomplete.")
+        elif r.stop_reason == "timeout":
+            lines.append("   TIMED OUT before it finished; its task may be incomplete.")
+        for a in r.supervisor[:6]:
+            lines.append(f"   supervisor {a.get('action')}: {a.get('reason')}")
+        if r.steered:
+            lines.append(f"   steering messages injected while it ran: {r.steered}")
         if r.files:
             lines.append("   owned files: " + ", ".join(r.files[:20]))
         if r.mutations:
@@ -692,26 +908,102 @@ class DelegateAgentsTool:
                 if progress_cb is None:
                     return
                 try:
-                    await progress_cb({"subagent": {"id": run.id, "index": run.index, "name": run.name, "role": run.role, **payload}})
+                    await progress_cb({"subagent": {
+                        "id": run.id, "index": run.index, "name": run.name, "role": run.role,
+                        "ts": time.time(), "session_id": run.session_id, **payload,
+                    }})
                 except Exception:
                     pass
             return _emit
 
+        # One GPU: at most N workers generate at the same time; the rest wait
+        # ("queued") and only get `started` — and their timeout — when they run.
+        try:
+            max_parallel = int(_setting("agent_subagent_max_parallel", 2) or 0)
+        except (TypeError, ValueError):
+            max_parallel = 2
+        slots = asyncio.Semaphore(max(1, max_parallel)) if max_parallel > 0 else None
+
+        async def watchdog(run: SubagentRun, emit) -> None:
+            """Heartbeat + deterministic supervisor. Emits a `tick` every
+            agent_subagent_tick_seconds while the worker runs; a worker idle
+            for agent_subagent_stall_seconds (or looping on one tool call) is
+            nudged once with a steering message, and stopped if it is still
+            stalled one stall period later. No LLM calls."""
+            try:
+                tick_s = float(_setting("agent_subagent_tick_seconds", 5) or 5)
+                stall_s = float(_setting("agent_subagent_stall_seconds", 120) or 120)
+            except (TypeError, ValueError):
+                tick_s, stall_s = 5.0, 120.0
+            tick_s = max(0.05, tick_s)
+            supervise = _as_bool(_setting("agent_subagent_supervisor", True), True)
+            nudged_at: Optional[float] = None
+            while True:
+                await asyncio.sleep(tick_s)
+                if run.finished is not None:
+                    return
+                now = time.time()
+                idle = max(0.0, now - run.last_event_at)
+                if run.loop_detected:
+                    reason = "loop"
+                elif idle > stall_s:
+                    reason = "idle"
+                else:
+                    reason = None
+                run.stalled = reason is not None
+                run.stall_reason = reason
+                await emit({
+                    "event": "tick", "elapsed_s": round(now - run.started, 2), "idle_s": round(idle, 2),
+                    "round": run.rounds, "last_tool": run.last_tool, "tool_calls": run.tool_calls,
+                    "input_tokens": run.input_tokens, "output_tokens": run.output_tokens,
+                    "stalled": run.stalled, "stall_reason": reason,
+                })
+                if not (supervise and run.stalled and run.session_id):
+                    continue
+                if nudged_at is None:
+                    detail = (f"loop: the same tool call issued {run.repeat_count} times in a row"
+                              if reason == "loop" else f"idle: no activity for {int(idle)}s")
+                    text = (f"You appear stuck: {detail}. Finish with what you have, call ask_user, "
+                            "or take a different approach.")
+                    steer_worker(run.session_id, text, source="supervisor")
+                    run.supervisor.append({"action": "nudge", "reason": detail, "ts": now})
+                    nudged_at = now
+                    await emit({"event": "supervisor", "action": "nudge", "reason": detail})
+                elif now - nudged_at > stall_s:
+                    detail = f"still stalled ({reason}) {int(now - nudged_at)}s after the nudge"
+                    run.supervisor.append({"action": "stop", "reason": detail, "ts": now})
+                    await emit({"event": "supervisor", "action": "stop", "reason": detail})
+                    stop_worker(run.session_id, reason="stalled")
+                    return
+
         async def one(run: SubagentRun, max_rounds: Optional[int] = None):
             emit = await emit_for(run)
+            dog: Optional[asyncio.Task] = None
+            queued = slots is not None and slots.locked()
+            if queued:
+                await emit({"event": "queued"})
             try:
-                # Wall-clock bound per worker: a worker stuck on a foreground
-                # server or a silent model must not hang the coordinator.
-                await asyncio.wait_for(
-                    _run_subagent(
-                        run,
-                        endpoint_url=endpoint_url, model=run.model_override or model, headers=headers, owner=owner,
-                        workspace=workspace, workspace_roots=roots, max_rounds=max_rounds or args["max_rounds"],
-                        shared_context=args["shared_context"], parent_session_id=parent_sid,
-                        emit=emit, gen_overrides=gen_overrides, locks=locks, harness_options=harness_options,
-                    ),
-                    timeout=args["timeout_s"],
-                )
+                if slots is not None:
+                    await slots.acquire()
+                try:
+                    dog = asyncio.create_task(watchdog(run, emit))
+                    # Wall-clock bound per worker: a worker stuck on a foreground
+                    # server or a silent model must not hang the coordinator.
+                    # Counted from here — queue time is not the worker's.
+                    await asyncio.wait_for(
+                        _run_subagent(
+                            run,
+                            endpoint_url=endpoint_url, model=run.model_override or model, headers=headers, owner=owner,
+                            workspace=workspace, workspace_roots=roots, max_rounds=max_rounds or args["max_rounds"],
+                            shared_context=args["shared_context"], parent_session_id=parent_sid,
+                            emit=emit, gen_overrides=gen_overrides, locks=locks, harness_options=harness_options,
+                            timeout_s=args["timeout_s"], save_transcript=False,
+                        ),
+                        timeout=args["timeout_s"],
+                    )
+                finally:
+                    if slots is not None:
+                        slots.release()
             except asyncio.TimeoutError:
                 run.error = run.error or f"worker timed out after {args['timeout_s']}s (its running command was killed)"
                 run.stop_reason = "timeout"
@@ -727,15 +1019,20 @@ class DelegateAgentsTool:
                 #    Swallowing that one made the sequential loop resume and
                 #    launch the next worker — and the reviewer — after Stop.
                 # `run.stop_requested` (set by stop_worker) tells them apart.
-                # The transcript was already saved by _run_subagent's finally.
                 run.stopped_by_user = True
                 run.error = None
-                run.stop_reason = "stopped"
+                run.stop_reason = run.stop_reason_requested or "stopped"
                 run.finished = run.finished or time.time()
                 if not run.stop_requested:
                     raise
                 await emit({"event": "done", **run.report(), "final_text": _short(run.text, 300) or "(stopped by the user)"})
             finally:
+                run.finished = run.finished or time.time()
+                if dog is not None and not dog.done():
+                    dog.cancel()
+                # The transcript is saved HERE, after the stop reason is final
+                # (stopped / stalled / timeout), not in _run_subagent's finally.
+                _save_transcript(run, sm)
                 if run.session_id:
                     _ACTIVE_WORKERS.pop(run.session_id, None)
                     _WORKER_RUNS.pop(run.session_id, None)
@@ -744,12 +1041,12 @@ class DelegateAgentsTool:
             task = asyncio.create_task(one(run, max_rounds))
             # The child session id is assigned inside _run_subagent; register
             # the task under it as soon as it exists so the UI can stop it.
+            # No fixed cap: a queued worker may wait far longer than 10 s.
             async def _register():
-                for _ in range(200):
+                while not task.done():
                     if run.session_id:
-                        if not task.done():
-                            _ACTIVE_WORKERS[run.session_id] = task
-                            _WORKER_RUNS[run.session_id] = run
+                        _ACTIVE_WORKERS[run.session_id] = task
+                        _WORKER_RUNS[run.session_id] = run
                         return
                     await asyncio.sleep(0.05)
             asyncio.create_task(_register())
@@ -795,10 +1092,18 @@ class DelegateAgentsTool:
                 pass
             runs.append(reviewer)
         report = _build_report_text(runs, workspace, locks)
+        dropped = int(args.get("dropped_tasks") or 0)
+        if dropped:
+            report += (
+                f"\n\nNOTE: {dropped} task(s) were NOT run — delegate_agents runs at most {MAX_SUBAGENTS} "
+                f"tasks per call and the extra ones were dropped. Call delegate_agents again with the remaining "
+                "tasks (or do them yourself); do not report them as done."
+            )
         return {
             "output": report,
             "exit_code": 0 if not any(r.error for r in runs) else 1,
             "subagents": [r.report() for r in runs],
             "duration_s": round(time.time() - t0, 1),
             "lock_conflicts": list(locks.conflicts),
+            "dropped_tasks": dropped,
         }
