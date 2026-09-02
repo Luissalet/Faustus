@@ -51,20 +51,42 @@ def _fake_nvsmi(monkeypatch, stdout, returncode=0, exe="/usr/bin/nvidia-smi"):
     gsm.reset_vram_cache()
 
 
-def test_vram_snapshot_reads_the_first_card(monkeypatch):
-    _fake_nvsmi(monkeypatch, "NVIDIA GeForce RTX 4070 Ti, 12282, 8461\n")
+_ONE_CARD = "0, NVIDIA GeForce RTX 4070 Ti, GPU-5ab72dd9-1a45-c3af-5e12-ac7796b1def7, 12282, 8461\n"
+_TWO_CARDS = (
+    "0, NVIDIA GeForce RTX 4070 Ti, GPU-5ab72dd9-1a45-c3af-5e12-ac7796b1def7, 12282, 1046\n"
+    "1, NVIDIA GeForce RTX 5060 Ti, GPU-15d17fee-8c0c-4be3-be46-35fb3e32f2aa, 16311, 441\n"
+)
+
+
+def test_vram_snapshot_reads_the_card(monkeypatch):
+    _fake_nvsmi(monkeypatch, _ONE_CARD)
     out = gsm.vram_snapshot()
     assert out["supported"] is True
     assert out["name"] == "NVIDIA GeForce RTX 4070 Ti"
     assert out["total"] == 12282 * MIB
     assert out["used"] == 8461 * MIB
     assert out["free"] == (12282 - 8461) * MIB
+    # one card: the headline numbers ARE the card, and it is listed once
+    assert out["count"] == 1
+    assert out["gpus"] == [{"index": 0, "name": "NVIDIA GeForce RTX 4070 Ti",
+                            "uuid": "GPU-5ab72dd9-1a45-c3af-5e12-ac7796b1def7",
+                            "total": 12282 * MIB, "used": 8461 * MIB, "free": (12282 - 8461) * MIB}]
 
 
-def test_vram_snapshot_takes_only_the_first_gpu(monkeypatch):
-    """A verdict about "some card in the box" is worse than no verdict."""
-    _fake_nvsmi(monkeypatch, "Card A, 12282, 100\nCard B, 49140, 0\n")
-    assert gsm.vram_snapshot()["name"] == "Card A"
+def test_vram_snapshot_pools_two_cards(monkeypatch):
+    """Ollama 0.33 schedules across every card it sees (freest card first,
+    split when nothing fits one), so "would it fit" is a question about the
+    pool — with the cards kept for "would it fit ONE card"."""
+    _fake_nvsmi(monkeypatch, _TWO_CARDS)
+    out = gsm.vram_snapshot()
+    assert out["supported"] is True and out["count"] == 2
+    assert out["name"] == "RTX 4070 Ti + RTX 5060 Ti"
+    assert out["total"] == (12282 + 16311) * MIB
+    assert out["used"] == (1046 + 441) * MIB
+    assert out["free"] == (12282 - 1046 + 16311 - 441) * MIB
+    assert [g["index"] for g in out["gpus"]] == [0, 1]
+    assert out["gpus"][1]["uuid"] == "GPU-15d17fee-8c0c-4be3-be46-35fb3e32f2aa"
+    assert out["gpus"][1]["total"] == 16311 * MIB and out["gpus"][1]["used"] == 441 * MIB
 
 
 def test_vram_snapshot_is_unsupported_without_nvidia_smi(monkeypatch):
@@ -77,10 +99,11 @@ def test_vram_snapshot_is_unsupported_without_nvidia_smi(monkeypatch):
 
 
 @pytest.mark.parametrize("stdout,rc", [
-    ("", 0),                                    # no rows
-    ("NVIDIA, [N/A], [N/A]\n", 0),              # unparseable
-    ("NVIDIA GeForce RTX 4070 Ti, 0, 0\n", 0),  # nonsense total
-    ("whatever\n", 9),                          # nvidia-smi failed
+    ("", 0),                                                   # no rows
+    ("0, NVIDIA, GPU-x, [N/A], [N/A]\n", 0),                   # unparseable
+    ("0, NVIDIA GeForce RTX 4070 Ti, GPU-x, 0, 0\n", 0),       # nonsense total
+    ("NVIDIA GeForce RTX 4070 Ti, 12282, 8461\n", 0),          # the old 3-column query
+    ("whatever\n", 9),                                         # nvidia-smi failed
 ])
 def test_vram_snapshot_never_guesses(monkeypatch, stdout, rc):
     _fake_nvsmi(monkeypatch, stdout, returncode=rc)
@@ -107,7 +130,7 @@ def test_vram_snapshot_is_cached(monkeypatch):
 
     class _P:
         returncode = 0
-        stdout = "NVIDIA GeForce RTX 4070 Ti, 12282, 0\n"
+        stdout = _ONE_CARD
         stderr = ""
 
     def _run(*a, **k):
