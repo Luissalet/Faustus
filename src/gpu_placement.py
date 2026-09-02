@@ -620,9 +620,14 @@ def _orphans_uncached(gpus: Optional[List[Dict[str, Any]]]) -> List[Dict[str, An
                 slot[idx] = dedicated
     for p in procs:
         cards = pid_gpus.get(p["pid"], {})
-        p["gpus"] = sorted(cards)
         known = [b for b in cards.values() if b is not None]
-        p["bytes"] = sum(known) if known else None
+        total = sum(known) if known else None
+        # A runner keeps a small CUDA context on every card it saw (seen
+        # live: 6.9 GB on #1 and a couple hundred MB on #0 — "on #0, #1" was
+        # misleading). List the cards that hold a real share of it.
+        floor = max(256 * _MIB, int(total * 0.05)) if total else 0
+        p["gpus"] = sorted(i for i, b in cards.items() if b is None or not total or b >= floor)
+        p["bytes"] = total
     return procs
 
 

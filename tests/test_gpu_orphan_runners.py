@@ -140,6 +140,22 @@ def test_scan_lists_only_the_orphans_with_their_card_and_bytes(box):
     assert all(o["pid"] not in (15948, 3080) for o in out)
 
 
+def test_a_cards_token_cuda_context_does_not_count_as_a_card_the_runner_is_on(box, monkeypatch):
+    """Seen live: the orphan held 6.9 GB on #1 and ~200 MB (a CUDA context)
+    on #0 — "on #0, #1" read like a split. Only cards with a real share."""
+    monkeypatch.setattr(gp, "_wddm", lambda: {
+        "processes": [
+            {"pid": 49960, "luid": "0x00000000_0x01b3ff4f", "dedicated": 6 * GIB, "shared": 0},
+            {"pid": 49960, "luid": "0x00000000_0x01aec8b1", "dedicated": 200 * 1024 ** 2, "shared": 0},
+            {"pid": 15948, "luid": "0x00000000_0x01b3ff4f", "dedicated": 5 * GIB, "shared": 0},
+        ],
+        "adapters": {"0x00000000_0x01aec8b1": 1386 * 1024 ** 2, "0x00000000_0x01b3ff4f": 13631 * 1024 ** 2},
+    })
+    gp.reset_cache()
+    a = next(o for o in gp.orphan_runners(GPUS) if o["pid"] == 49960)
+    assert a["gpus"] == [1] and a["bytes"] == 6 * GIB + 200 * 1024 ** 2
+
+
 def test_scan_runs_with_nothing_loaded_and_is_cached_briefly(box, monkeypatch):
     calls = []
     real = gp._orphans_uncached
