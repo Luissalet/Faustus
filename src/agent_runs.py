@@ -92,13 +92,26 @@ def _compact_key(ev: str) -> Optional[str]:
     every 2 s; only the LATEST one matters for a client that reconnects, and a
     1-hour command would otherwise leave ~1800 near-identical events in the
     buffer. Consecutive progress events of the same tool call collapse into
-    one slot. Sub-agent board events are never merged (each is a state change).
+    one slot.
+
+    Sub-agent board events are state changes and are never merged — except
+    the two periodic ones: a worker's own bash tail (`tool`/`progress`, keyed
+    by worker id + tool) and the watchdog `tick` (keyed by worker id).
     """
-    if not ev.startswith(_PROGRESS_PREFIX) or '"subagent"' in ev:
+    if not ev.startswith(_PROGRESS_PREFIX):
         return None
     try:
         d = json.loads(ev[6:])
     except Exception:
+        return None
+    sa = d.get("subagent")
+    if isinstance(sa, dict):
+        if sa.get("event") == "tick":
+            return f"subagent|{sa.get('id')}|tick"
+        if sa.get("event") == "tool" and sa.get("phase") == "progress":
+            return f"subagent|{sa.get('id')}|progress|{sa.get('tool')}"
+        return None
+    if "subagent" in d:
         return None
     return f"{d.get('tool')}|{d.get('round')}|{d.get('approved')}"
 
@@ -644,8 +657,20 @@ def stop_for_session(session_id: str, reason: str = "session_deleted") -> bool:
     run = _RUNS.pop(session_id, None)
     clear_busy(session_id)
     _INTERRUPTED.pop(session_id, None)
+    # A delegate_agents worker chat has no detached run of its own: its work
+    # is a task inside the parent's tool call. Clearing the busy flag alone
+    # left that task running (writing files) and unstoppable — the worker
+    # endpoints 404 once the session is gone.
+    worker_stopped = False
+    try:
+        from src.agent_tools.subagent_tools import stop_worker
+        worker_stopped = stop_worker(session_id)
+    except Exception as exc:                          # pragma: no cover - best effort
+        logger.debug("[agent-run] could not stop worker %s: %s", session_id, exc)
+    if worker_stopped:
+        logger.info("[agent-run] sub-agent worker of session %s stopped (%s)", session_id, reason)
     if run is None:
-        return was_busy
+        return was_busy or worker_stopped
     was_running = run.status == "running"
     if was_running:
         run.status = "stopped"
