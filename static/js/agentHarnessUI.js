@@ -635,13 +635,16 @@ function _toast(msg) {
   try { console.info(msg); } catch (_) {}
 }
 
-function _boardFor() {
+function _boardFor({ trailing = false } = {}) {
   const chatBox = document.getElementById('chat-history');
   if (!chatBox) return null;
   // The delegate_agents tool card is the last running node in the thread;
   // attach the board right after it so workers appear where the call is.
+  // `trailing` (repaint after a history render, where the last thread is an
+  // OLDER turn's): only reuse a thread that ends the timeline, else open one
+  // after the user's message.
   const threads = chatBox.querySelectorAll('.agent-thread');
-  const thread = threads.length ? threads[threads.length - 1] : _threadForCard();
+  const thread = trailing ? _threadForCard() : (threads.length ? threads[threads.length - 1] : _threadForCard());
   if (!thread) return null;
   let board = thread.querySelector('.subagent-board:last-of-type');
   if (board && board.dataset.open === '1') return board;
@@ -732,7 +735,7 @@ export function renderSubagentEvent(json, { sessionId = null, background = false
 export function restoreSubagentBoard(sessionId) {
   const st = _saState(sessionId || _currentSessionId, false);
   if (!st || !st.order.length) return false;
-  const board = _boardFor();
+  const board = _boardFor({ trailing: true });
   if (!board) return false;
   for (const id of st.order) {
     const w = st.workers.get(id);
