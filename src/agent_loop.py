@@ -3307,11 +3307,20 @@ _MAX_PERSISTED_SCREENSHOT_CHARS = 2_000_000
 
 
 def _screenshot_data_url_for_event(result: Any) -> str:
-    """`tool_event.screenshot` for an image-bearing result, or ""."""
-    try:
-        from src.tool_images import screenshot_data_url
+    """`tool_event.screenshot` for an image-bearing result, or "".
 
-        url = screenshot_data_url(result)
+    Persisted in the message row, so it is the downscaled rendition (the same
+    size cap the model gets), not a full-resolution Playwright PNG."""
+    try:
+        from src.tool_images import data_url, downscale_b64, normalize_result_images
+
+        images = normalize_result_images(result)
+        if images:
+            b64, mime, _info = downscale_b64(images[0]["data"], images[0]["mimeType"])
+            url = data_url(b64, mime)
+        else:
+            explicit = result.get("screenshot") if isinstance(result, dict) else ""
+            url = explicit if isinstance(explicit, str) and explicit.startswith("data:image/") else ""
     except Exception:  # noqa: BLE001
         return ""
     if not url or len(url) > _MAX_PERSISTED_SCREENSHOT_CHARS:
