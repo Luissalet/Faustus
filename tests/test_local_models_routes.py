@@ -141,7 +141,7 @@ def env(monkeypatch, tmp_path):
     fake = FakeOllama()
     monkeypatch.setattr(lm, "_client_factory",
                         lambda timeout=10.0: httpx.Client(transport=httpx.MockTransport(fake.handler), timeout=timeout))
-    monkeypatch.setattr(lm, "list_ollama_endpoints", lambda include_default=True: [
+    monkeypatch.setattr(lm, "list_ollama_endpoints", lambda include_default=True, **kw: [
         {"id": "local-ollama", "name": "Ollama", "base_url": ROOT + "/v1", "root": ROOT, "same_machine": True},
         {"id": "lan-ollama", "name": "Studio box", "base_url": "http://192.168.1.20:11434/v1",
          "root": "http://192.168.1.20:11434", "same_machine": False},
@@ -291,6 +291,45 @@ def test_endpoint_detection_by_url(monkeypatch):
     assert [e["id"] for e in eps] == ["a", "d"]           # LM Studio, Cloud and the duplicate root are out
     assert eps[0]["root"] == "http://localhost:11434" and eps[0]["same_machine"] is True
     assert eps[1]["same_machine"] is False
+
+
+def test_endpoint_visibility_follows_ownership_like_api_models(monkeypatch):
+    """A regular user sees shared (owner-less) Ollama endpoints and their own;
+    an admin sees everyone's."""
+    rows = [
+        SimpleNamespace(id="shared", name="Ollama", base_url="http://localhost:11434/v1", is_enabled=True, owner=None),
+        SimpleNamespace(id="bobs", name="Bob's box", base_url="http://10.0.0.5:11434", is_enabled=True, owner="bob"),
+        SimpleNamespace(id="alices", name="Alice's box", base_url="http://10.0.0.6:11434", is_enabled=True, owner="alice"),
+    ]
+
+    class _Q:
+        def __init__(self, items):
+            self.items = items
+
+        def filter(self, *a, **k):
+            return self
+
+        def all(self):
+            return self.items
+
+    class _Db:
+        def query(self, model):
+            return _Q(rows)
+
+        def close(self):
+            pass
+
+    seen = {}
+
+    def _owner_filter(q, model_cls, user, **kw):
+        seen["user"] = user
+        return _Q([r for r in rows if r.owner in (None, user)])
+
+    monkeypatch.setattr(lm, "SessionLocal", lambda: _Db())
+    monkeypatch.setattr(lm, "owner_filter", _owner_filter)
+    assert [e["id"] for e in lm.list_ollama_endpoints(owner="alice", is_admin=False)] == ["shared", "alices"]
+    assert seen["user"] == "alice"
+    assert [e["id"] for e in lm.list_ollama_endpoints(owner="root", is_admin=True)] == ["shared", "bobs", "alices"]
 
 
 def test_endpoint_fallback_to_env_ollama_when_nothing_is_configured(monkeypatch):

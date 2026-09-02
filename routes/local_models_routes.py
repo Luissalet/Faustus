@@ -52,7 +52,7 @@ from core.middleware import require_admin
 from src import gpu_shared_memory
 from src import local_model_catalog as catalog
 from src import model_load_options as mlo
-from src.auth_helpers import require_user
+from src.auth_helpers import effective_user, owner_filter, require_user
 from src.endpoint_resolver import normalize_base as _normalize_base
 from src.llm_core import _host_match
 from src.tls_overrides import llm_verify
@@ -133,17 +133,24 @@ def _default_ollama_root() -> str:
     return ollama_root(mlo._default_ollama_base())
 
 
-def list_ollama_endpoints(include_default: bool = True) -> List[Dict[str, Any]]:
+def list_ollama_endpoints(include_default: bool = True, *, owner: str = "",
+                          is_admin: bool = True) -> List[Dict[str, Any]]:
     """Configured endpoints that are Ollama servers (by URL: port 11434 or
     an "ollama" host), Ollama Cloud excluded — it has no card to fit on and
     no /api/pull. Falls back to the env-configured local Ollama when nothing
-    is configured, so a fresh install still gets a page."""
+    is configured, so a fresh install still gets a page.
+
+    Same visibility rule as /api/models: admins see every endpoint, a regular
+    user sees the shared (owner-less) ones plus their own."""
     out: List[Dict[str, Any]] = []
     seen_roots: set = set()
     try:
         db = SessionLocal()
         try:
-            rows = db.query(ModelEndpoint).filter(ModelEndpoint.is_enabled == True).all()  # noqa: E712
+            q = db.query(ModelEndpoint).filter(ModelEndpoint.is_enabled == True)  # noqa: E712
+            if owner and not is_admin:
+                q = owner_filter(q, ModelEndpoint, owner)
+            rows = q.all()
         finally:
             db.close()
     except Exception as e:  # noqa: BLE001
@@ -178,7 +185,7 @@ def list_ollama_endpoints(include_default: bool = True) -> List[Dict[str, Any]]:
 
 def _pick_endpoint(endpoint_id: Optional[str], endpoints: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
     if endpoints is None:
-        endpoints = list_ollama_endpoints()
+        endpoints = _endpoints_for(request)
     if not endpoints:
         raise HTTPException(404, "No Ollama endpoint is configured")
     if endpoint_id:
@@ -722,6 +729,17 @@ def discover(q: str, vram: Dict[str, Any], installed: List[str]) -> List[Dict[st
 def setup_local_models_routes() -> APIRouter:
     router = APIRouter(prefix="/api/local-models", tags=["local-models"])
 
+    def _endpoints_for(request: Request) -> List[Dict[str, Any]]:
+        owner = effective_user(request) or ""
+        is_admin = True
+        try:
+            auth_mgr = getattr(request.app.state, "auth_manager", None)
+            if owner and auth_mgr is not None and getattr(auth_mgr, "is_admin", None):
+                is_admin = bool(auth_mgr.is_admin(owner))
+        except Exception:  # noqa: BLE001
+            is_admin = False
+        return list_ollama_endpoints(owner=owner, is_admin=is_admin)
+
     async def _body(request: Request) -> Dict[str, Any]:
         try:
             data = await request.json()
@@ -734,7 +752,7 @@ def setup_local_models_routes() -> APIRouter:
     @router.get("")
     async def api_list(request: Request, endpoint_id: Optional[str] = Query(None)):
         require_user(request)
-        endpoints = list_ollama_endpoints()
+        endpoints = _endpoints_for(request)
         ep = _pick_endpoint(endpoint_id, endpoints) if endpoints else None
         if ep is None:
             return {"endpoints": [], "endpoint_id": "", "reachable": False,
@@ -751,7 +769,7 @@ def setup_local_models_routes() -> APIRouter:
     async def api_discover(request: Request, q: str = Query(""),
                            endpoint_id: Optional[str] = Query(None)):
         require_user(request)
-        endpoints = list_ollama_endpoints()
+        endpoints = _endpoints_for(request)
         ep = _pick_endpoint(endpoint_id, endpoints) if endpoints else None
         same = bool(ep and ep.get("same_machine"))
         installed: List[str] = []
@@ -797,7 +815,7 @@ def setup_local_models_routes() -> APIRouter:
         require_admin(request)
         body = await _body(request)
         name = validate_model_name(body.get("name"))
-        ep = _pick_endpoint(body.get("endpoint_id"))
+        ep = _pick_endpoint(body.get("endpoint_id"), _endpoints_for(request))
         job, created = pulls.start(ep, name)
         if not stream:
             return {"ok": True, "created": created, "pull": job.snapshot()}
@@ -809,7 +827,7 @@ def setup_local_models_routes() -> APIRouter:
         require_admin(request)
         body = await _body(request)
         name = validate_model_name(body.get("name"))
-        ep = _pick_endpoint(body.get("endpoint_id"))
+        ep = _pick_endpoint(body.get("endpoint_id"), _endpoints_for(request))
         keep_alive = body.get("keep_alive")
         if keep_alive in (None, ""):
             keep_alive = _keep_alive_for(ep["id"], name)
@@ -825,7 +843,7 @@ def setup_local_models_routes() -> APIRouter:
         require_admin(request)
         body = await _body(request)
         name = validate_model_name(body.get("name"))
-        ep = _pick_endpoint(body.get("endpoint_id"))
+        ep = _pick_endpoint(body.get("endpoint_id"), _endpoints_for(request))
         is_embedding = bool(body.get("embedding"))
         return await asyncio.to_thread(_set_keep_alive, ep["root"], name, 0, is_embedding)
 
@@ -833,7 +851,7 @@ def setup_local_models_routes() -> APIRouter:
     async def api_get_options(request: Request, name: str, endpoint_id: Optional[str] = Query(None)):
         require_user(request)
         name = validate_model_name(name)
-        ep = _pick_endpoint(endpoint_id)
+        ep = _pick_endpoint(endpoint_id, _endpoints_for(request))
         return {"endpoint_id": ep["id"], "name": name, "options": mlo.get_options(ep["id"], name)}
 
     @router.put("/{name:path}/options")
@@ -841,7 +859,7 @@ def setup_local_models_routes() -> APIRouter:
         require_admin(request)
         name = validate_model_name(name)
         body = await _body(request)
-        ep = _pick_endpoint(endpoint_id or body.get("endpoint_id"))
+        ep = _pick_endpoint(endpoint_id or body.get("endpoint_id"), _endpoints_for(request))
         raw = body.get("options", body)
         if isinstance(raw, dict):
             raw = {k: v for k, v in raw.items() if k != "endpoint_id"}
@@ -855,7 +873,7 @@ def setup_local_models_routes() -> APIRouter:
     async def api_delete(request: Request, name: str, endpoint_id: Optional[str] = Query(None)):
         require_admin(request)
         name = validate_model_name(name)
-        ep = _pick_endpoint(endpoint_id)
+        ep = _pick_endpoint(endpoint_id, _endpoints_for(request))
 
         def _do() -> Dict[str, Any]:
             with _client_factory(_MUTATE_TIMEOUT) as client:

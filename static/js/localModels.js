@@ -258,7 +258,7 @@ export function renderPullsHtml(pulls, { isAdmin = false } = {}) {
           ${cancel}
         </div>
         <div class="lm-pull-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct.toFixed(0)}">
-          <span class="lm-pull-fill${active && !p.total ? ' lm-pull-indeterminate' : ''}" style="width:${(active || state === 'done' ? (state === 'done' ? 100 : pct) : pct).toFixed(1)}%"></span>
+          <span class="lm-pull-fill${active && !p.total ? ' lm-pull-indeterminate' : ''}" style="width:${(state === 'done' ? 100 : pct).toFixed(1)}%"></span>
         </div>
       </div>`;
   });
