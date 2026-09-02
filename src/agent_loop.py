@@ -4717,6 +4717,14 @@ async def stream_agent_loop(
             and not active_email
         ):
             _relevant_tools = set(_WORKSPACE_TERMINUS_TOOLS)
+            # The replacement drops the retriever's noise on purpose — but the
+            # deterministic domain seeds are not noise. Seen live: "captura
+            # de pantalla de mi escritorio (la pantalla del PC…)" is both a
+            # local-computer request and domain `desktop`; without this the
+            # desktop tools vanished and the model said it cannot see the
+            # screen.
+            for _domain in (_intent.get("domains") or set()):
+                _relevant_tools.update(_DOMAIN_TOOL_MAP.get(str(_domain), set()))
             logger.info("[tool-rag] Workspace file/terminal request; using Faustus Terminus toolset")
         elif workspace and not _low_signal_turn and not _active_document_relevant and not active_email:
             # A bound workspace is the user's declared intent to work in that
