@@ -51,7 +51,7 @@ import asyncio
 import logging
 import secrets
 from datetime import datetime, timezone
-from typing import Dict
+from typing import Dict, Optional
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, HTTPException
@@ -344,6 +344,19 @@ if AUTH_ENABLED:
         "x-forwarded-for", "x-forwarded-host", "x-real-ip", "forwarded",
     )
 
+    def _first_admin_username() -> Optional[str]:
+        """The operator the LOCALHOST_BYPASS caller acts as: the first admin
+        in auth.json (creation order), else the first user, else None (no
+        users yet — the unconfigured path below handles that)."""
+        try:
+            users = auth_manager.users
+        except Exception:
+            return None
+        for name, data in users.items():
+            if isinstance(data, dict) and data.get("is_admin"):
+                return name
+        return next(iter(users), None)
+
     def _is_trusted_loopback(request: Request) -> bool:
         """True ONLY for a DIRECT loopback connection with no proxy/tunnel
         forwarding headers. A bare ``client.host in ('127.0.0.1','::1')`` check is
@@ -402,6 +415,16 @@ if AUTH_ENABLED:
             # Cloudflare tunnel / reverse proxy. Keep LOCALHOST_BYPASS=false for
             # network-exposed deployments regardless.
             if LOCALHOST_BYPASS and _is_trusted_loopback(request):
+                # The bypass means "this loopback caller is the operator":
+                # act as the first admin. Without a user on the request every
+                # route with its own `get_current_user` check (email state,
+                # research, projects, cookbook, diagnostics…) answered 401/403,
+                # and the SPA's global 401 handler bounced the browser to
+                # /login — which the bypass sent straight back to / — in a
+                # reload loop. Seen live on the 7001 test instance.
+                _bypass_user = _first_admin_username()
+                if _bypass_user:
+                    request.state.current_user = _bypass_user
                 return await call_next(request)
             if not auth_manager.is_configured:
                 # No users yet — redirect to login for first-time setup

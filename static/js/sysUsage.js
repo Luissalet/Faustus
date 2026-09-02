@@ -296,11 +296,12 @@ function _cardModelsHtml(g, gpus) {
 }
 
 /** A card as its own section — the single-card layout, unchanged; with more
- *  than one card the header carries `#N`, the models and (first card) the
- *  view switch. */
+ *  than one card the header is `#N <short name>` (the vendor prefix wrapped
+ *  the header and squeezed the view switch to "Separat"), the models and
+ *  (first card) the view switch. */
 function _cardSectionHtml(g, gpus, extraHead, withModels) {
   const multi = gpus.length > 1;
-  return `<div class="su-section"><div class="su-h${extraHead ? ' su-h-gpu' : ''}">${esc(g.name || 'GPU')}${multi ? ` #${g.index}` : ''}${extraHead}</div>` +
+  return `<div class="su-section"><div class="su-h${extraHead ? ' su-h-gpu' : ''}">${multi ? `#${g.index} ` : ''}${esc((multi ? shortGpuName(g.name) : g.name) || 'GPU')}${extraHead}</div>` +
     bar('Util', g.util || 0, 100, '%', `${pct(g.util)}`) +
     bar('VRAM', g.mem_used || 0, g.mem_total || 1, '', `${mib2gb(g.mem_used)} / ${mib2gb(g.mem_total)} GB`) +
     (g.power != null ? bar('Power', g.power, g.power_limit || g.power || 1, 'W', `${Math.round(g.power)} W${g.power_limit ? ' / ' + Math.round(g.power_limit) + ' W' : ''}`) : '') +

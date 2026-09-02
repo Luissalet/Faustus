@@ -146,7 +146,7 @@ def test_css_has_the_multi_gpu_rules_next_to_the_other_su_rules():
                 ".su-gpu-mini", ".su-gpu-mini.hot span", ".su-gpu-models"):
         assert sel in block, sel
     # theme-neutral like its neighbours: tokens, no hard-coded page colours
-    view = block.split(".su-gpu-view {", 1)[1].split("\n", 1)[0]
+    view = block.split("\n.su-gpu-view {", 1)[1].split("\n", 1)[0]
     assert "var(--border)" in view
     on = block.split(".su-gpu-view button.on {", 1)[1].split("\n", 1)[0]
     assert "var(--color-accent" in on
@@ -218,7 +218,10 @@ def test_gpu_sections_separate_is_a_section_per_card_plus_models_and_the_switch_
     """)
     html = out["html"]
     assert html.count('<div class="su-section">') == 2
-    assert 'NVIDIA GeForce RTX 4070 Ti #0' in html and 'NVIDIA GeForce RTX 5060 Ti #1' in html
+    # short names in the headers: the vendor prefix wrapped the header and
+    # squeezed the view switch to "Separat" (seen live)
+    assert '#0 RTX 4070 Ti' in html and '#1 RTX 5060 Ti' in html
+    assert 'NVIDIA GeForce RTX 4070 Ti #0' not in html
     assert html.count('class="su-gpu-view"') == 1                 # on the first card only
     assert 'data-su-gpu-view="separate" class="on"' in html
     assert '9.3 / 12.0 GB' in html and '15.8 / 15.9 GB' in html   # today's per-card bars

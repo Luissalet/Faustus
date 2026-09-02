@@ -42576,7 +42576,7 @@ body:has(.sidebar.right-side) .project-active-pill { right: 12px; }
 .su-section { padding: 4px 0 6px; border-bottom: 1px solid var(--border); }
 .su-section:last-of-type { border-bottom: 0; }
 .su-h { font-weight: 600; margin-bottom: 3px; }
-.su-row { display: grid; grid-template-columns: 62px 1fr auto; gap: 6px; align-items: center; margin: 2px 0; }
+.su-row { display: grid; grid-template-columns: minmax(62px, max-content) 1fr auto; gap: 6px; align-items: center; margin: 2px 0; }
 .su-label { opacity: .7; }
 .su-val { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .su-meter { height: 6px; border-radius: 3px; background: rgba(127,127,127,.25); overflow: hidden; }
@@ -42590,11 +42590,16 @@ body:has(.sidebar.right-side) .project-active-pill { right: 12px; }
 /* More than one card: the combined / separate switch in the GPU heading, the
    compact per-card rows of the combined view and the models on each card. */
 .su-h.su-h-gpu { display: flex; align-items: center; gap: 8px; }
+.su-h.su-h-gpu .su-gpu-view { flex-shrink: 0; }
 .su-gpu-view { display: inline-flex; margin-left: auto; border: 1px solid var(--border); border-radius: 999px; overflow: hidden; font-size: 10.5px; font-weight: 500; }
 .su-gpu-view button { background: transparent; color: var(--fg); border: 0; padding: 1px 8px; cursor: pointer; opacity: .65; font: inherit; line-height: 1.5; }
 .su-gpu-view button.on { background: color-mix(in srgb, var(--color-accent, #00aaff) 25%, transparent); opacity: 1; }
 .su-gpu-view button:hover { opacity: 1; }
-.su-gpu-row { display: grid; grid-template-columns: auto 1fr auto; gap: 6px; align-items: center; margin: 5px 0 1px; }
+.su-gpu-row { display: grid; grid-template-columns: auto 1fr; gap: 2px 6px; align-items: center; margin: 5px 0 1px; }
+/* the stats ("1.1/12 GB · 20 % · 40 ° · 17 W") get their own line: with the
+   card name and a nowrap value on one line the 340 px panel grew a
+   horizontal scrollbar (seen live on the two-card box) */
+.su-gpu-row .su-val { grid-column: 1 / -1; justify-self: end; font-size: 11px; opacity: .85; white-space: normal; text-align: right; }
 .su-gpu-name { font-weight: 600; white-space: nowrap; }
 .su-gpu-mini { height: 5px; min-width: 36px; border-radius: 3px; background: rgba(127,127,127,.25); overflow: hidden; }
 .su-gpu-mini span { display: block; height: 100%; background: var(--color-accent, #00aaff); }
