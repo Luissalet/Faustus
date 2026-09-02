@@ -30,10 +30,15 @@ from urllib.parse import urlparse
 logger = logging.getLogger(__name__)
 
 SETTING_KEY = "model_load_options"
-ALLOWED_KEYS = ("num_ctx", "num_gpu", "keep_alive")
+ALLOWED_KEYS = ("num_ctx", "num_gpu", "keep_alive", "main_gpu")
 
 NUM_CTX_MIN, NUM_CTX_MAX = 512, 1_048_576
 NUM_GPU_MIN, NUM_GPU_MAX = 0, 1024
+# Which card a model is pinned to (Ollama `main_gpu`, verified honoured by
+# 0.33: "selecting requested single GPU … requested_main_gpu=0"). Auto when
+# unset: Ollama takes the card with the most free memory and splits a model
+# that fits no single card.
+MAIN_GPU_MIN, MAIN_GPU_MAX = 0, 15
 _KEEP_ALIVE_RE = re.compile(r"^-?\d+(ms|s|m|h)?$")
 
 # Synthetic endpoint id for "the Ollama this machine runs" when no configured
@@ -81,6 +86,16 @@ def sanitize_options(raw: Any) -> Dict[str, Any]:
                 raise ValueError("num_gpu must be an integer")
             if not NUM_GPU_MIN <= n <= NUM_GPU_MAX:
                 raise ValueError(f"num_gpu must be between {NUM_GPU_MIN} and {NUM_GPU_MAX}")
+            out[key] = n
+        elif key == "main_gpu":
+            if isinstance(value, bool):
+                raise ValueError("main_gpu must be a GPU index")
+            try:
+                n = int(value)
+            except (TypeError, ValueError):
+                raise ValueError("main_gpu must be a GPU index")
+            if not MAIN_GPU_MIN <= n <= MAIN_GPU_MAX:
+                raise ValueError(f"main_gpu must be between {MAIN_GPU_MIN} and {MAIN_GPU_MAX}")
             out[key] = n
         elif key == "keep_alive":
             if isinstance(value, bool):

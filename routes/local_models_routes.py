@@ -705,13 +705,22 @@ def _ollama_error(r: httpx.Response) -> str:
     return (r.text or f"HTTP {r.status_code}")[:300]
 
 
-def _set_keep_alive(root: str, name: str, keep_alive: Any, is_embedding: bool = False) -> Dict[str, Any]:
+def _set_keep_alive(root: str, name: str, keep_alive: Any, is_embedding: bool = False,
+                    options: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Load (keep_alive > 0) or evict (0) a model. `/api/generate` with no
-    prompt does exactly that; embedding models only answer `/api/embed`."""
+    prompt does exactly that; embedding models only answer `/api/embed`.
+
+    `options` are the saved load options (num_ctx / num_gpu / main_gpu):
+    they decide the context the runner is built with and the card it lands
+    on, so the Load button must send them — otherwise the model came up
+    with the server defaults and the next chat request reloaded it."""
     paths = ["/api/embed", "/api/generate"] if is_embedding else ["/api/generate", "/api/embed"]
     last = ""
+    load_opts = {k: v for k, v in (options or {}).items() if k != "keep_alive" and v not in (None, "")}
     for path in paths:
         body: Dict[str, Any] = {"model": name, "keep_alive": keep_alive}
+        if load_opts and keep_alive not in (0, "0"):
+            body["options"] = load_opts
         if path == "/api/embed":
             body["input"] = ""
         r = _post_json(root, path, body, _LOAD_TIMEOUT)
@@ -876,8 +885,11 @@ def setup_local_models_routes() -> APIRouter:
             except ValueError as e:
                 raise HTTPException(400, str(e))
         is_embedding = bool(body.get("embedding"))
-        result = await asyncio.to_thread(_set_keep_alive, ep["root"], name, keep_alive, is_embedding)
+        saved = mlo.get_options(ep["id"], name)
+        result = await asyncio.to_thread(_set_keep_alive, ep["root"], name, keep_alive, is_embedding, saved)
         result["keep_alive"] = keep_alive
+        if saved.get("main_gpu") is not None:
+            result["main_gpu"] = saved["main_gpu"]
         return result
 
     @router.post("/unload")

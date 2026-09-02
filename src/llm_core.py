@@ -2739,11 +2739,11 @@ def _stream_target_url(url: str) -> str:
 # dropped so a client cannot smuggle arbitrary provider fields.
 GEN_OVERRIDE_KEYS = frozenset({"top_p", "top_k", "seed", "think", "num_ctx", "num_gpu",
                                "repeat_penalty", "presence_penalty", "frequency_penalty",
-                               "reasoning_effort", "keep_alive"})
+                               "reasoning_effort", "keep_alive", "main_gpu"})
 
 # Ollama `options` / top-level knobs with no OpenAI equivalent: a request that
 # carries one of these has to go to the native /api/chat.
-_OLLAMA_NATIVE_ONLY_KEYS = ("top_k", "repeat_penalty", "num_ctx", "num_gpu", "keep_alive")
+_OLLAMA_NATIVE_ONLY_KEYS = ("top_k", "repeat_penalty", "num_ctx", "num_gpu", "keep_alive", "main_gpu")
 _KEEP_ALIVE_RE = re.compile(r"^-?\d+(ms|s|m|h)?$")
 
 
@@ -2757,7 +2757,7 @@ def _clean_gen_overrides(overrides: Optional[Dict]) -> Dict:
         try:
             if k in ("top_p", "repeat_penalty", "presence_penalty", "frequency_penalty"):
                 out[k] = float(v)
-            elif k in ("top_k", "seed", "num_ctx", "num_gpu"):
+            elif k in ("top_k", "seed", "num_ctx", "num_gpu", "main_gpu"):
                 out[k] = int(v)
             elif k == "think":
                 out[k] = bool(v) if not isinstance(v, str) else v.strip().lower() in ("1", "true", "on", "yes")
@@ -2825,7 +2825,7 @@ def _apply_gen_overrides_openai(payload: Dict, overrides: Dict, url: str) -> Non
 def _apply_gen_overrides_ollama(payload: Dict, overrides: Dict) -> None:
     """Apply pinned sampling params to a native Ollama /api/chat payload."""
     options = payload.setdefault("options", {})
-    for k in ("top_p", "top_k", "seed", "num_ctx", "num_gpu", "repeat_penalty", "presence_penalty", "frequency_penalty"):
+    for k in ("top_p", "top_k", "seed", "num_ctx", "num_gpu", "main_gpu", "repeat_penalty", "presence_penalty", "frequency_penalty"):
         if k in overrides:
             options[k] = overrides[k]
     if "think" in overrides:

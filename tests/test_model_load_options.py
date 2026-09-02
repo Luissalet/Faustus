@@ -263,3 +263,41 @@ def test_the_chat_route_still_does_not_accept_keep_alive_from_clients():
     """keep_alive is a saved default, not a per-request knob a browser can send."""
     from routes.chat_routes import _parse_gen_overrides
     assert "keep_alive" not in _parse_gen_overrides({"keep_alive": "-1", "num_ctx": 8192})
+
+
+# ── main_gpu: pin a model to one card (two-GPU box) ─────────────────────────
+
+def test_sanitize_main_gpu_is_a_small_gpu_index():
+    """`main_gpu` is the card a model is pinned to (Ollama honours it:
+    "selecting requested single GPU … requested_main_gpu=0"); "" / None =
+    Auto (Ollama picks the freest card, splits when nothing fits one)."""
+    assert mlo.sanitize_options({"main_gpu": 1}) == {"main_gpu": 1}
+    assert mlo.sanitize_options({"main_gpu": "0"}) == {"main_gpu": 0}
+    assert mlo.sanitize_options({"main_gpu": ""}) == {}
+    assert mlo.sanitize_options({"main_gpu": None}) == {}
+    for bad in ({"main_gpu": -1}, {"main_gpu": 16}, {"main_gpu": "b"}, {"main_gpu": True}):
+        with pytest.raises(ValueError):
+            mlo.sanitize_options(bad)
+    assert "main_gpu" in mlo.ALLOWED_KEYS
+
+
+def test_saved_main_gpu_reaches_the_ollama_options(store, monkeypatch):
+    """Options… → GPU 1 → `options.main_gpu` on the native /api/chat: the
+    scheduler then loads the model on that card instead of the freest one."""
+    mlo.set_options("local-ollama", "qwen3.5:9b", {"main_gpu": 1})
+    client = _stream(monkeypatch, "http://127.0.0.1:11434/v1", "qwen3.5:9b")
+    assert client.url.endswith("/api/chat")
+    assert client.payload["options"]["main_gpu"] == 1
+    # cleared → gone from the wire (Auto)
+    mlo.set_options("local-ollama", "qwen3.5:9b", {"main_gpu": ""})
+    client = _stream(monkeypatch, "http://127.0.0.1:11434/v1", "qwen3.5:9b")
+    assert "main_gpu" not in (client.payload.get("options") or {})
+
+
+def test_main_gpu_is_an_ollama_native_only_override():
+    assert "main_gpu" in llm_core.GEN_OVERRIDE_KEYS
+    assert "main_gpu" in llm_core._OLLAMA_NATIVE_ONLY_KEYS
+    assert llm_core._clean_gen_overrides({"main_gpu": "1"}) == {"main_gpu": 1}
+    payload = {}
+    llm_core._apply_gen_overrides_ollama(payload, {"main_gpu": 0, "num_ctx": 4096})
+    assert payload["options"] == {"num_ctx": 4096, "main_gpu": 0}

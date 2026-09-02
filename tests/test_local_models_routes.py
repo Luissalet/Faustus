@@ -679,3 +679,26 @@ def test_app_registers_the_router():
     src = (Path(__file__).resolve().parent.parent / "app.py").read_text(encoding="utf-8")
     assert "from routes.local_models_routes import setup_local_models_routes" in src
     assert "app.include_router(setup_local_models_routes())" in src
+
+
+def test_load_sends_the_saved_load_options_and_the_pinned_card(env):
+    """The Load button used to send only {model, keep_alive}: the runner came
+    up with the server defaults (num_ctx, freest card) and the first chat
+    request — which does carry the saved options — reloaded it. Now the
+    saved num_ctx / num_gpu / main_gpu ride along; unload never sends them."""
+    client, fake = env
+    mlo.set_options("local-ollama", "qwen3.5:9b", {"num_ctx": 16384, "main_gpu": 1, "keep_alive": "20m"})
+    r = client.post("/api/local-models/load", json={"endpoint_id": "local-ollama", "name": "qwen3.5:9b"}, headers=ADMIN)
+    assert r.status_code == 200, r.text
+    assert r.json()["main_gpu"] == 1 and r.json()["keep_alive"] == "20m"
+    path, body = fake.generate[-1]
+    assert path == "/api/generate"
+    assert body["keep_alive"] == "20m"
+    assert body["options"] == {"num_ctx": 16384, "main_gpu": 1}
+    client.post("/api/local-models/unload", json={"endpoint_id": "local-ollama", "name": "qwen3.5:9b"}, headers=ADMIN)
+    assert fake.generate[-1][1] == {"model": "qwen3.5:9b", "keep_alive": 0}
+    # the options round-trip through the options endpoint too
+    r = client.put("/api/local-models/qwen3.5:9b/options", json={"endpoint_id": "local-ollama", "options": {"main_gpu": "0", "num_ctx": ""}},
+                   headers=ADMIN)
+    assert r.status_code == 200, r.text
+    assert r.json()["options"] == {"main_gpu": 0}
