@@ -43319,6 +43319,9 @@ body:has(.sidebar.right-side) .project-active-pill { right: 12px; }
 .lm-vram-seg.lm-vram-used { background: color-mix(in srgb, var(--fg) 45%, transparent); }
 .lm-vram-gpu-models { word-break: break-all; }
 .lm-vram-note { margin-top: 4px; line-height: 1.45; }
+.lm-placement { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; font-size: 12px; }
+.lm-placement select { font: inherit; font-size: 12px; max-width: 320px; }
+.lm-pin-warn { grid-column: 1 / -1; padding: 6px 8px; border: 1px solid var(--warn, #f0ad4e); border-radius: 6px; font-size: 12px; line-height: 1.35; }
 .lm-orphans { margin-top: 6px; }
 .lm-orphan { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 5px 8px; margin: 3px 0; border: 1px solid var(--red, #e06c75); border-radius: 6px; font-size: 12px; line-height: 1.35; }
 .lm-orphan code { font-size: 11px; }

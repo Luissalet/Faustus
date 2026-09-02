@@ -148,7 +148,22 @@ function _vramGpuHtml(g) {
     </div>`;
 }
 
-export function renderVramHtml(vram, loaded = []) {
+/** The placement policy control (two or more cards): Auto, or fill card N
+ *  first. `policy` is the server's `placement_policy` ({prefer, name, mode}). */
+export function placementSelectHtml(vram, policy) {
+  const cards = vram && Number(vram.count) > 1 && Array.isArray(vram.gpus) ? vram.gpus : [];
+  if (cards.length < 2) return '';
+  const prefer = policy && Number.isFinite(Number(policy.prefer)) ? Number(policy.prefer) : -1;
+  const opts = [`<option value="-1"${prefer < 0 ? ' selected' : ''}>Auto — freest card, split when nothing fits one</option>`];
+  cards.forEach(g => {
+    opts.push(`<option value="${attr(g.index)}"${prefer === Number(g.index) ? ' selected' : ''}>Fill GPU ${esc(g.index)} first — ${esc(shortGpuName(g.name))} (${esc(gbInt(g.total_bytes))} GB)</option>`);
+  });
+  return `<label class="lm-placement" title="Which card Ollama fills first. A model that fits the chosen card is pinned to it (with room for its context); bigger models stay Auto and are split — pinning one to a card it does not fit sends the rest to the CPU. Per-model pins in Options… always win.">Placement <select name="lm-placement">${opts.join('')}</select></label>`;
+}
+
+function gbInt(bytes) { return String(Math.round((Number(bytes) || 0) / 1073741824)); }
+
+export function renderVramHtml(vram, loaded = [], policy = null) {
   if (!vram || !vram.supported) {
     const why = vram && vram.reason ? ` ${esc(vram.reason)}` : '';
     return `<div class="lm-vram-none">No VRAM reading for this endpoint.${why}</div>`;
@@ -165,7 +180,7 @@ export function renderVramHtml(vram, loaded = []) {
   return `
     <div class="lm-vram-head">
       <span class="lm-vram-name">${esc(vram.name || 'GPU')}${multi ? ` · ${count} GPUs` : ''}</span>
-      <span class="lm-vram-nums">${esc(fmtGb(runner + others))} of ${esc(fmtGb(total))} used · ${esc(fmtGb(free))} free</span>
+      <span class="lm-vram-nums">${esc(fmtGb(runner + others))} of ${esc(fmtGb(total))} used · ${esc(fmtGb(free))} free</span>${placementSelectHtml(vram, policy)}
     </div>
     <div class="lm-vram-bar" role="img" aria-label="VRAM: ${attr(fmtGb(runner))} models, ${attr(fmtGb(others))} other, ${attr(fmtGb(free))} free">
       <span class="lm-vram-seg lm-vram-models" style="width:${pct(runner).toFixed(1)}%" title="Models loaded by Ollama${names ? ': ' + attr(names) : ''}"></span>
@@ -269,7 +284,7 @@ function _optionsSummary(opts) {
 /** The main_gpu select: Auto (value "", the server clears the key) and one
  *  option per card. Rendered when there is a choice to make — more than one
  *  card, or a pin already saved that the admin may want to clear. */
-function _mainGpuSelectHtml(o, gpus) {
+function _mainGpuSelectHtml(o, gpus, size = 0) {
   const cards = (gpus || []).filter(g => g && g.index != null);
   const raw = o.main_gpu == null || o.main_gpu === '' ? null : Number(o.main_gpu);
   const saved = Number.isFinite(raw) ? raw : null;
@@ -284,7 +299,19 @@ function _mainGpuSelectHtml(o, gpus) {
   return `
       <label>main_gpu<span class="lm-muted"> (pin to a card)</span>
         <select name="main_gpu">${opts.join('')}</select>
-      </label>`;
+      </label>${pinWarningHtml(saved, size, cards)}`;
+}
+
+/** Measured: a model pinned to a card it does not fit is not split — the
+ *  rest goes to the CPU (54/66 layers, 10 tok/s instead of 20). Say so
+ *  next to the pin, with the numbers. */
+export function pinWarningHtml(gpuIndex, sizeBytes, cards) {
+  if (gpuIndex == null || !sizeBytes) return '';
+  const g = (cards || []).find(c => Number(c.index) === Number(gpuIndex));
+  if (!g || !g.total_bytes) return '';
+  const budget = Number(g.total_bytes) * 0.82 - 800 * 1048576;
+  if (Number(sizeBytes) <= budget) return '';
+  return `<div class="lm-pin-warn">⚠ ${esc(fmtGb(sizeBytes))} of weights will not fit ${esc(shortGpuName(g.name))} (${esc(fmtGb(g.total_bytes))}) with room for the context: pinned there, Ollama does not split it — the rest runs on the CPU (measured: half the speed). Leave it on Auto to let it split.</div>`;
 }
 
 export function renderOptionsFormHtml(model, gpus = []) {
@@ -298,7 +325,7 @@ export function renderOptionsFormHtml(model, gpus = []) {
       </label>
       <label>num_gpu<span class="lm-muted"> (layers on the GPU)</span>
         <input type="number" name="num_gpu" min="0" max="1024" step="1" placeholder="auto" value="${attr(o.num_gpu == null ? '' : o.num_gpu)}">
-      </label>${_mainGpuSelectHtml(o, gpus)}
+      </label>${_mainGpuSelectHtml(o, gpus, model && model.size)}
       <label>keep_alive<span class="lm-muted"> (5m, 1h, -1 = forever)</span>
         <input type="text" name="keep_alive" placeholder="5m" value="${attr(o.keep_alive == null ? '' : o.keep_alive)}">
       </label>
@@ -510,7 +537,7 @@ function _renderAll() {
   const ep = (_data.endpoints || []).find(e => e.id === _endpointId) || {};
   const gpus = _cards(_data);
   const vram = el('lm-vram');
-  if (vram) vram.innerHTML = renderVramHtml(_data.vram, _data.loaded);
+  if (vram) vram.innerHTML = renderVramHtml(_data.vram, _data.loaded, _data.placement_policy);
   const loaded = el('lm-loaded');
   if (loaded) loaded.innerHTML = renderLoadedHtml(_data.loaded, { isAdmin: admin, endpointId: _endpointId, gpus });
   const installed = el('lm-installed');
@@ -845,6 +872,21 @@ function _bind() {
       ev.preventDefault();
       const btn = form.querySelector('[data-lm-action="save-options"]');
       if (btn) _action('save-options', btn);
+    }
+  });
+
+  root.addEventListener('change', async ev => {
+    const s = ev.target;
+    if (!s || s.name !== 'lm-placement') return;
+    s.disabled = true;
+    try {
+      await _json(`${API}/placement`, { method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ prefer: Number(s.value) }) });
+      toast(Number(s.value) < 0 ? 'Placement: Auto' : `Placement: fill GPU ${s.value} first`);
+      await refresh({ silent: true });
+    } catch (e) {
+      toast(`Placement failed: ${e.message || e}`, 4000);
+      s.disabled = false;
     }
   });
 

@@ -56,10 +56,28 @@ MCP settings of Cowork / Claude Code):
 }
 ```
 
-Tools the coordinator gets: `dispatch_workers` (1–4 tasks, workspace, parallel,
+Tools the coordinator gets: `workers_guide` (how to use the workers well —
+read once per session), `dispatch_workers` (1–4 tasks, workspace, parallel,
 reviewer, model), `workers_wait` (block until done, compact result),
 `workers_status`, `workers_events` (the board's events, for a stuck worker),
 `workers_cancel`, `workers_list`.
+
+**Making any Fable-type model understand it.** Three layers, so it works
+whether the model reads skills, tool descriptions or nothing at all:
+
+1. The tool descriptions themselves say what to send and what comes back.
+2. `workers_guide` / `GET /api/dispatch/guide` returns the coordinator's
+   guide (below) — when to dispatch, how to write a task, how to read a
+   result, the plan → dispatch → wait → check loop.
+3. `docs/skills/faustus-workers/SKILL.md` is a ready-made **skill** for
+   Cowork / Claude Code: copy the folder into the client's skills directory
+   (Cowork: Settings → Skills → add; Claude Code: `.claude/skills/`) and the
+   model picks the workers up on its own for file/test/refactor work.
+
+In Cowork, then, this is the whole interaction:
+
+> **You:** en `D:\proj` añade validación a `apply_discount` y su test, con los workers locales.
+> **Fable:** *(dispatch_workers → workers_wait)* Hecho: el worker cambió `cart.py` y `tests/test_cart.py`, 7 tests en verde. Tablero: http://127.0.0.1:7000/#…
 
 A good task is self-contained and says what "done" means: *"In `cart.py` add
 `apply_tax(total, rate)` (rate as a fraction, rounds to cents) and a test in
@@ -88,6 +106,50 @@ Invoke-RestMethod "http://127.0.0.1:7000/api/dispatch/$($job.id)/wait?timeout=30
 
 Jobs are mirrored to `DATA_DIR/dispatch/<id>.json`; a job the server was
 restarted under reads back as `interrupted`.
+
+## The coordinator's guide (what `workers_guide` returns)
+
+    # Using Faustus workers (for the coordinating model)
+
+    You are the planner and the reviewer. The workers are local models on the
+    user's machine: cheap, tireless, good at mechanical steps, weaker at judgement.
+    Your own tokens are the scarce resource — spend them on deciding WHAT to do
+    and on checking the result, not on reading files or running tests yourself.
+
+    ## When to dispatch
+    - Editing or creating files, running tests/linters/builds, fixing what fails,
+      refactors with a clear spec, searching a codebase, converting formats,
+      writing boilerplate or docs from a spec: dispatch.
+    - Deciding the design, judging trade-offs, anything ambiguous, anything the
+      user must decide, the final answer to the user: keep.
+
+    ## How to write a task (each task = one worker)
+    1. Self-contained: name the files, the function/class, the behaviour, and the
+       exact command that proves it ("`pytest -q` in the workspace must pass").
+       The worker does not see this conversation — everything it needs goes in
+       the instruction or in `context`.
+    2. One outcome per task. Two changes that touch the same file go in ONE task
+       (parallel workers lock files against each other).
+    3. Say what NOT to do when it matters ("do not touch the public API",
+       "keep Python 3.11 compatibility").
+    4. 1–4 tasks per job. Independent tasks → `parallel: true`; dependent ones →
+       `parallel: false` (they run in order) or separate jobs.
+    5. `workspace` is the folder the workers are confined to. Always set it.
+
+    ## Reading the result
+    `workers_wait` returns, per worker: status (`done`, `error`, `timeout`,
+    `stalled`, `stopped`), files changed, static checks, git state, tool/round
+    counts, and the worker's last words (≤ 1200 chars). It never returns the
+    transcript. Trust files changed + tests over the worker's prose: if the
+    summary claims a change but `files_changed` is empty, it did not happen.
+    A worker that ended `stalled` or `timeout` did part of the work — look at
+    `files_changed`, then dispatch the remainder as a new, narrower task.
+
+    ## Loop
+    plan → dispatch → wait → check → (dispatch fixes) → answer the user.
+    Do not re-do a worker's work yourself; send a narrower task instead. Tell the
+    user which changes came from the workers and point them at the board
+    (`chat_url`) if they want the details.
 
 ## What the workers can and cannot do
 

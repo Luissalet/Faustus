@@ -294,6 +294,11 @@ DEFAULT_SETTINGS = {
     # utility model, then the default chat model.
     "dispatch_endpoint_id": "",
     "dispatch_model": "",
+    # Which card Ollama fills first: -1 = Auto (the freest card, split when
+    # nothing fits one), N = pin every model that fits card N to it (a model
+    # pinned to a card it does not fit goes to the CPU, so bigger ones stay
+    # Auto). src/gpu_policy.py.
+    "gpu_placement_prefer": -1,
     # Workers get a lean toolset (no web / memory / skills / background jobs
     # unless the task mentions them): tool schemas were 65 % of a worker's
     # first round on a 9B model.

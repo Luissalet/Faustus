@@ -17,9 +17,9 @@ tokens go to planning and review:
       }
     }
 
-Tools: dispatch_workers (start a job), workers_wait (block until done, then
-the compact result), workers_status, workers_events, workers_cancel,
-workers_list. It talks HTTP to the running Faustus (routes/dispatch_routes.py)
+Tools: workers_guide (read first), dispatch_workers (start a job),
+workers_wait (block until done, then the compact result), workers_status,
+workers_events, workers_cancel, workers_list. It talks HTTP to the running Faustus (routes/dispatch_routes.py)
 — nothing runs in this process, so a crash here cannot take a worker with it.
 """
 from __future__ import annotations
@@ -181,6 +181,11 @@ TOOLS: List[Tool] = [
         inputSchema={"type": "object", "properties": {"job_id": {"type": "string"}}, "required": ["job_id"]},
     ),
     Tool(
+        name="workers_guide",
+        description="How to use these workers well: what to dispatch, how to write a task, how to read a result. Read it once per session before the first dispatch.",
+        inputSchema={"type": "object", "properties": {}},
+    ),
+    Tool(
         name="workers_list",
         description="Recent dispatched jobs (id, status, title).",
         inputSchema={"type": "object", "properties": {"limit": {"type": "integer", "default": 20}}},
@@ -222,6 +227,9 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
         if name == "workers_cancel":
             data = await asyncio.to_thread(_request, "POST", f"/api/dispatch/{job_id}/cancel", {})
             return _text(f"job {data.get('id')}: {'cancelled' if data.get('cancelled') else 'was not running'} ({data.get('status')})")
+        if name == "workers_guide":
+            data = await asyncio.to_thread(_request, "GET", "/api/dispatch/guide")
+            return _text(str(data.get("guide") or ""))
         if name == "workers_list":
             data = await asyncio.to_thread(_request, "GET", f"/api/dispatch?limit={int(args.get('limit') or 20)}")
             rows = data.get("jobs") or []

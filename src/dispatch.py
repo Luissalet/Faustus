@@ -418,5 +418,50 @@ def cancel(job: DispatchJob) -> bool:
     return False
 
 
+COORDINATOR_GUIDE = """\
+# Using Faustus workers (for the coordinating model)
+
+You are the planner and the reviewer. The workers are local models on the
+user's machine: cheap, tireless, good at mechanical steps, weaker at judgement.
+Your own tokens are the scarce resource — spend them on deciding WHAT to do
+and on checking the result, not on reading files or running tests yourself.
+
+## When to dispatch
+- Editing or creating files, running tests/linters/builds, fixing what fails,
+  refactors with a clear spec, searching a codebase, converting formats,
+  writing boilerplate or docs from a spec: dispatch.
+- Deciding the design, judging trade-offs, anything ambiguous, anything the
+  user must decide, the final answer to the user: keep.
+
+## How to write a task (each task = one worker)
+1. Self-contained: name the files, the function/class, the behaviour, and the
+   exact command that proves it ("`pytest -q` in the workspace must pass").
+   The worker does not see this conversation — everything it needs goes in
+   the instruction or in `context`.
+2. One outcome per task. Two changes that touch the same file go in ONE task
+   (parallel workers lock files against each other).
+3. Say what NOT to do when it matters ("do not touch the public API",
+   "keep Python 3.11 compatibility").
+4. 1–4 tasks per job. Independent tasks → `parallel: true`; dependent ones →
+   `parallel: false` (they run in order) or separate jobs.
+5. `workspace` is the folder the workers are confined to. Always set it.
+
+## Reading the result
+`workers_wait` returns, per worker: status (`done`, `error`, `timeout`,
+`stalled`, `stopped`), files changed, static checks, git state, tool/round
+counts, and the worker's last words (≤ 1200 chars). It never returns the
+transcript. Trust files changed + tests over the worker's prose: if the
+summary claims a change but `files_changed` is empty, it did not happen.
+A worker that ended `stalled` or `timeout` did part of the work — look at
+`files_changed`, then dispatch the remainder as a new, narrower task.
+
+## Loop
+plan → dispatch → wait → check → (dispatch fixes) → answer the user.
+Do not re-do a worker's work yourself; send a narrower task instead. Tell the
+user which changes came from the workers and point them at the board
+(`chat_url`) if they want the details.
+"""
+
+
 def reset_for_tests() -> None:
     _jobs.clear()

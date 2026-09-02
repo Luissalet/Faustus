@@ -333,4 +333,16 @@ def test_mcp_render_is_one_glance_and_names_the_board(monkeypatch):
         "w1": {"last_event": "tick", "round": 3, "last_tool": "bash", "elapsed_s": 40, "stalled": True, "stall_reason": "idle"}}}
     assert "w1: tick · round 3 · tool bash · 40 s · STALLED (idle)" in ws.render(running)
     names = [t.name for t in ws.TOOLS]
-    assert names == ["dispatch_workers", "workers_wait", "workers_status", "workers_events", "workers_cancel", "workers_list"]
+    assert names == ["dispatch_workers", "workers_wait", "workers_status", "workers_events", "workers_cancel",
+                     "workers_guide", "workers_list"]
+
+
+def test_the_guide_is_served_to_token_holders_and_says_the_essentials(box, monkeypatch):
+    c = _client(monkeypatch, token_scopes=["agents:dispatch"])
+    r = c.get("/api/dispatch/guide")
+    assert r.status_code == 200
+    g = r.json()["guide"]
+    for must in ("Self-contained", "parallel", "workspace", "files_changed", "never returns the\ntranscript",
+                 "plan → dispatch → wait → check"):
+        assert must in g, must
+    assert _client(monkeypatch, token_scopes=["chat"]).get("/api/dispatch/guide").status_code == 403

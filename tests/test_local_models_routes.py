@@ -702,3 +702,46 @@ def test_load_sends_the_saved_load_options_and_the_pinned_card(env):
                    headers=ADMIN)
     assert r.status_code == 200, r.text
     assert r.json()["options"] == {"main_gpu": 0}
+
+
+# ── the GPU placement policy (src/gpu_policy.py) ───────────────────────────
+
+_TWO_CARDS = {"supported": True, "name": "RTX 4070 Ti + RTX 5060 Ti", "count": 2,
+              "total": 28593 * MIB, "used": 1500 * MIB, "free": 27093 * MIB, "gpus": [
+                  {"index": 0, "name": "NVIDIA GeForce RTX 4070 Ti", "uuid": "GPU-a", "total": 12282 * MIB, "used": 1100 * MIB, "free": 11182 * MIB},
+                  {"index": 1, "name": "NVIDIA GeForce RTX 5060 Ti", "uuid": "GPU-b", "total": 16311 * MIB, "used": 400 * MIB, "free": 15911 * MIB},
+              ]}
+
+
+def test_placement_policy_route_and_the_load_button_follow_it(env, monkeypatch):
+    """PUT /api/local-models/placement (admin) sets "fill card N first"; the
+    list carries it; Load sends the policy's main_gpu for a model that fits
+    that card and nothing for one that does not (Ollama splits it); a
+    per-model pin still wins."""
+    from src import gpu_policy
+    client, fake = env
+    monkeypatch.setattr(lm.gpu_shared_memory, "vram_snapshot", lambda: dict(_TWO_CARDS))
+    monkeypatch.setattr(gpu_policy, "model_sizes", lambda base, timeout=3.0: {"qwen3.5:9b": 6 * GIB, "big:70b": 40 * GIB})
+    assert client.get("/api/local-models/placement", headers=USER).json()["mode"] == "auto"
+    assert client.put("/api/local-models/placement", json={"prefer": 1}, headers=USER).status_code == 403
+    r = client.put("/api/local-models/placement", json={"prefer": 1}, headers=ADMIN)
+    assert r.status_code == 200, r.text
+    assert r.json() == {"prefer": 1, "name": "NVIDIA GeForce RTX 5060 Ti", "mode": "prefer"}
+    assert client.get("/api/local-models?endpoint_id=local-ollama", headers=USER).json()["placement_policy"]["prefer"] == 1
+    # a card that does not exist is refused and the policy falls back to Auto
+    r = client.put("/api/local-models/placement", json={"prefer": 5}, headers=ADMIN)
+    assert r.status_code == 400 and gpu_policy.preferred_index() == -1
+    assert client.put("/api/local-models/placement", json={"prefer": "x"}, headers=ADMIN).status_code == 400
+    client.put("/api/local-models/placement", json={"prefer": 1}, headers=ADMIN)
+    # Load: the policy's main_gpu rides along for a model that fits card 1
+    client.post("/api/local-models/load", json={"endpoint_id": "local-ollama", "name": "qwen3.5:9b"}, headers=ADMIN)
+    assert fake.generate[-1][1]["options"] == {"main_gpu": 1}
+    # a per-model pin wins over the policy
+    mlo.set_options("local-ollama", "qwen3.5:9b", {"main_gpu": 0})
+    client.post("/api/local-models/load", json={"endpoint_id": "local-ollama", "name": "qwen3.5:9b"}, headers=ADMIN)
+    assert fake.generate[-1][1]["options"] == {"main_gpu": 0}
+    # Auto again: nothing added
+    client.put("/api/local-models/placement", json={"prefer": -1}, headers=ADMIN)
+    mlo.set_options("local-ollama", "qwen3.5:9b", {})
+    client.post("/api/local-models/load", json={"endpoint_id": "local-ollama", "name": "qwen3.5:9b"}, headers=ADMIN)
+    assert "options" not in fake.generate[-1][1]

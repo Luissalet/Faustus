@@ -82,6 +82,13 @@ def setup_dispatch_routes() -> APIRouter:
             raise HTTPException(404, "no such dispatch job")
         return job
 
+    @router.get("/guide")
+    async def guide(request: Request):
+        """How a coordinating model should use the workers — the same text
+        the MCP server's `workers_guide` tool returns."""
+        _owner(request)
+        return {"guide": dispatch.COORDINATOR_GUIDE}
+
     @router.get("/{job_id}")
     async def status(request: Request, job_id: str):
         return dispatch.compact(_get(request, job_id))

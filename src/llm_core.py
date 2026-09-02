@@ -2786,10 +2786,21 @@ def _model_load_defaults(url: str, model: str) -> Dict:
         return {}
     try:
         from src.model_load_options import resolve_for_request
-        return resolve_for_request(url, model)
+        defaults = dict(resolve_for_request(url, model) or {})
     except Exception as e:  # noqa: BLE001 — a default is never worth failing a chat
         logger.debug("model load defaults unavailable for %s: %s", model, e)
-        return {}
+        defaults = {}
+    # The placement policy (fill card N first) adds main_gpu for a model that
+    # fits that card, under a per-model pin. src/gpu_policy.py.
+    if "main_gpu" not in defaults:
+        try:
+            from src.gpu_policy import preferred_main_gpu
+            idx = preferred_main_gpu(url, model)
+            if idx is not None:
+                defaults["main_gpu"] = idx
+        except Exception as e:  # noqa: BLE001
+            logger.debug("gpu placement policy unavailable for %s: %s", model, e)
+    return defaults
 
 
 def _with_model_defaults(url: str, model: str, gen_overrides: Optional[Dict]) -> Optional[Dict]:

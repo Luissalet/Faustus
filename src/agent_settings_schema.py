@@ -34,7 +34,7 @@ from src.settings import DEFAULT_SETTINGS, RETIRED_SETTING_KEYS
 SCHEMA_KEY_RE = re.compile(r"^(agent_|browser_|desktop_)")
 # Agent-adjacent keys that live under other prefixes but belong on this page.
 EXTRA_KEYS: tuple[str, ...] = ("tool_path_extra_roots", "vision_enabled", "vision_model",
-                               "dispatch_model", "dispatch_endpoint_id")
+                               "dispatch_model", "dispatch_endpoint_id", "gpu_placement_prefer")
 
 FIELD_TYPES: tuple[str, ...] = ("bool", "int", "float", "text", "select", "list", "secret")
 _NUMERIC_TYPES = ("int", "float")
@@ -338,6 +338,18 @@ GROUPS: list[dict[str, Any]] = [
             _text("vision_model", "Vision model",
                   "Model id used for image analysis. The picker in AI Defaults → Vision lists the available ones.",
                   placeholder="e.g. qwen2.5vl:7b"),
+        ],
+    ),
+    _group(
+        "gpu", "GPU placement",
+        "Which card the local Ollama fills first (two or more GPUs). Per-model pins in Local models → Options always win.",
+        [
+            _int("gpu_placement_prefer", "Fill this card first",
+                 "-1 = Auto (Ollama: the card with the most free memory, split across cards when nothing fits one). "
+                 "0, 1, … = pin every model that fits that card to it, with room for its context; bigger models stay "
+                 "Auto — a model pinned to a card it does not fit is not split, it goes to the CPU (measured: 10 tok/s "
+                 "instead of 20). Also on the Local models page.",
+                 -1, 15),
         ],
     ),
     _group(

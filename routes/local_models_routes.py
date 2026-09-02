@@ -443,6 +443,11 @@ def collect_local_models(ep: Dict[str, Any]) -> Dict[str, Any]:
         vram["orphans"] = gpu_placement.orphan_runners(
             [dict(g, used=g.get("used_bytes"), total=g.get("total_bytes")) for g in vram.get("gpus") or []])
     out["vram"] = vram
+    try:
+        from src import gpu_policy
+        out["placement_policy"] = gpu_policy.describe(out.get("gpus") or [])
+    except Exception:  # noqa: BLE001
+        out["placement_policy"] = {"prefer": -1, "name": "", "mode": "auto"}
     out["disk"] = _disk(root, same)
     saved = mlo.options_for_endpoint(ep["id"])
 
@@ -890,7 +895,17 @@ def setup_local_models_routes() -> APIRouter:
             except ValueError as e:
                 raise HTTPException(400, str(e))
         is_embedding = bool(body.get("embedding"))
-        saved = mlo.get_options(ep["id"], name)
+        saved = dict(mlo.get_options(ep["id"], name))
+        if "main_gpu" not in saved:
+            # the placement policy (fill card N first) — same rule every chat
+            # request gets in llm_core, so Load lands where the chat would
+            try:
+                from src.gpu_policy import preferred_main_gpu
+                idx = await asyncio.to_thread(preferred_main_gpu, ep["root"], name)
+                if idx is not None:
+                    saved["main_gpu"] = idx
+            except Exception as e:  # noqa: BLE001
+                logger.debug("gpu policy for load: %s", e)
         result = await asyncio.to_thread(_set_keep_alive, ep["root"], name, keep_alive, is_embedding, saved)
         result["keep_alive"] = keep_alive
         if saved.get("main_gpu") is not None:
@@ -905,6 +920,28 @@ def setup_local_models_routes() -> APIRouter:
         ep = _pick_endpoint(body.get("endpoint_id"), _endpoints_for(request))
         is_embedding = bool(body.get("embedding"))
         return await asyncio.to_thread(_set_keep_alive, ep["root"], name, 0, is_embedding)
+
+    @router.get("/placement")
+    async def api_placement(request: Request):
+        """The GPU placement policy: -1 Auto, N = fill card N first."""
+        require_user(request)
+        from src import gpu_policy
+        return gpu_policy.describe(_gpu_list(True))
+
+    @router.put("/placement")
+    async def api_set_placement(request: Request):
+        require_admin(request)
+        body = await _body(request)
+        from src import gpu_policy
+        try:
+            idx = gpu_policy.set_preferred_index(int(body.get("prefer", -1)))
+        except (TypeError, ValueError) as e:
+            raise HTTPException(400, str(e) if str(e) else "prefer must be -1 or a GPU index")
+        cards = _gpu_list(True)
+        if idx >= 0 and cards and idx not in {c["index"] for c in cards}:
+            gpu_policy.set_preferred_index(-1)
+            raise HTTPException(400, f"no GPU with index {idx} on this machine")
+        return gpu_policy.describe(cards)
 
     @router.get("/{name:path}/options")
     async def api_get_options(request: Request, name: str, endpoint_id: Optional[str] = Query(None)):
