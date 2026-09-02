@@ -24198,6 +24198,36 @@ body:not(.welcome-ready) #welcome-screen {
   top: 8px;
 }
 .tasks-modal-content { max-width: 600px; width: min(600px, 92vw); background: var(--bg); font-size: 12px; }
+/* Workers page (static/js/workers.js) */
+.workers-modal-content { max-width: 760px; width: min(760px, 94vw); background: var(--bg); font-size: 12.5px; }
+.wk-body { display: flex; flex-direction: column; gap: 12px; overflow: auto; }
+.wk-form { display: flex; flex-direction: column; gap: 8px; }
+.wk-form textarea { width: 100%; box-sizing: border-box; font: inherit; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); color: var(--fg); resize: vertical; }
+.wk-form-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.wk-field { display: inline-flex; align-items: center; gap: 6px; flex: 1 1 260px; }
+.wk-field input { flex: 1; font: inherit; padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--fg); }
+.wk-field-sm { flex: 0 1 220px; }
+.wk-check { display: inline-flex; align-items: center; gap: 4px; }
+.wk-hint { font-size: 11.5px; opacity: .7; line-height: 1.4; }
+.wk-list { display: flex; flex-direction: column; gap: 6px; }
+.wk-job { border: 1px solid var(--border); border-radius: 8px; background: var(--panel); }
+.wk-job-head { display: flex; align-items: center; gap: 8px; padding: 7px 10px; cursor: pointer; }
+.wk-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.wk-meta, .wk-muted { opacity: .7; font-size: 11.5px; }
+.wk-actions { display: inline-flex; gap: 6px; }
+.wk-status { font-size: 10.5px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border); text-transform: uppercase; letter-spacing: .03em; }
+.wk-status-running, .wk-status-queued { border-color: var(--color-accent, #00aaff); color: var(--color-accent, #00aaff); }
+.wk-status-done { border-color: var(--ok, #4caf50); color: var(--ok, #4caf50); }
+.wk-status-error, .wk-status-timeout, .wk-status-stalled, .wk-status-interrupted { border-color: var(--red, #e06c75); color: var(--red, #e06c75); }
+.wk-job-body { padding: 4px 10px 10px; display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--border); }
+.wk-worker { padding: 6px 8px; border-radius: 6px; background: color-mix(in srgb, var(--fg) 4%, transparent); }
+.wk-worker-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.wk-wname { font-weight: 600; }
+.wk-files code { font-size: 11px; margin-right: 4px; }
+.wk-summary { white-space: pre-wrap; line-height: 1.4; margin-top: 4px; }
+.wk-error { color: var(--red, #e06c75); }
+.wk-tasks summary { cursor: pointer; opacity: .75; }
+.wk-task { padding: 2px 0 2px 8px; }
 .tasks-activity-card,
 .tasks-activity-list {
   min-height: 0;

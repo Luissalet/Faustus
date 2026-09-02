@@ -95,6 +95,9 @@ class _SM:
     def add_message(self, sid, msg):
         self.messages.append((sid, msg))
 
+    def save_sessions(self):
+        self.saved = getattr(self, "saved", 0) + 1
+
 
 @pytest.fixture
 def box(tmp_path, monkeypatch):
@@ -143,8 +146,16 @@ def test_start_runs_the_delegation_in_its_own_workers_chat_and_compacts(box):
     sess = box["sm"].sessions[job.session_id]
     assert sess.model == "qwen3.5:9b" and sess.name.startswith("Workers · add apply_tax") and sess.owner == "luis"
     assert box["workspace_seen"] == box["ws"]
-    # the chat opens with a note saying where the job came from
+    # the chat opens with a note saying where the job came from…
     assert box["sm"].messages[0][0] == job.session_id and "Dispatched from outside" in box["sm"].messages[0][1].content
+    # …and ends with the turn a chat delegation would leave: the board's
+    # evidence in tool_events.subagents, so the Workers chat shows the board
+    last = box["sm"].messages[-1][1]
+    assert last.role == "assistant" and "Dispatched job" in last.content and "changed cart.py" in last.content
+    ev = last.metadata["tool_events"][0]
+    assert ev["tool"] == "delegate_agents" and ev["dispatch_id"] == job.id and ev["exit_code"] == 0
+    assert [r["name"] for r in ev["subagents"]] == ["w1", "w2"] and ev["subagents"][0]["mutations"] == ["cart.py", "tests/test_cart.py"]
+    assert box["sm"].saved >= 1
     c = dispatch.compact(job)
     assert c["status"] == "done" and c["chat_url"] == f"/#{job.session_id}"
     assert c["result"]["workers"][0]["name"] == "w1" and "progress" not in c

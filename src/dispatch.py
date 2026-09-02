@@ -282,8 +282,49 @@ async def _run(job: DispatchJob) -> None:
         te._active_workspace.reset(token)
         te._active_workspace_roots.reset(roots_token)
         job.finished = time.time()
+        _record_turn(job)
         job._persist()
         job._notify()
+
+
+def _record_turn(job: DispatchJob) -> None:
+    """Write the job into its Workers chat the way a chat turn would: one
+    assistant message whose tool_event carries the delegate_agents evidence,
+    so the control board is rebuilt from history when the chat is opened
+    (the same `subagents` shape src/agent_loop.py persists)."""
+    if not job.session_id:
+        return
+    try:
+        from core.models import ChatMessage
+        from src.ai_interaction import get_session_manager
+        from src.agent_loop import _compact_subagent_reports
+        sm = get_session_manager()
+        result = job.result if isinstance(job.result, dict) else {}
+        reports = result.get("subagents") if isinstance(result.get("subagents"), list) else []
+        comp = compact_from_result(result)
+        lines = [f"Dispatched job {job.id}: {job.status}" + (f" — {job.error}" if job.error else "")]
+        for w in comp.get("workers") or []:
+            lines.append(f"- {w.get('name')}: {w.get('status')}"
+                         + (f" — changed {', '.join(w.get('files_changed') or [])}" if w.get("files_changed") else ""))
+        ev = {
+            "round": 1, "model": job.model, "tool": "delegate_agents",
+            "desc": f"{len(job.args.get('tasks') or [])} worker(s) dispatched from outside Faustus",
+            "command": json.dumps({"tasks": [t.get("instruction", "")[:300] for t in job.args.get("tasks") or []],
+                                   "parallel": bool(job.args.get("parallel"))}, ensure_ascii=False),
+            "output": str(result.get("output") or job.error or job.status)[:4000],
+            "exit_code": 0 if job.status == "done" and not result.get("exit_code") else 1,
+            "subagents": _compact_subagent_reports(reports) if reports else [],
+            "dispatch_id": job.id,
+        }
+        sm.add_message(job.session_id, ChatMessage("assistant", "\n".join(lines),
+                                                   metadata={"tool_events": [ev], "model": job.model,
+                                                             "source": "dispatch", "dispatch_id": job.id}))
+        try:
+            sm.save_sessions()
+        except Exception:
+            pass
+    except Exception as e:  # noqa: BLE001 — the board is a courtesy; the job's answer is the compact result
+        logger.debug("dispatch %s: could not record the turn: %s", job.id, e)
 
 
 def _make_session(job: DispatchJob) -> str:

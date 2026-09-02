@@ -31,6 +31,7 @@ import censorModule from './js/censor.js';
 import galleryModule from './js/gallery.js';
 import { UI_VIS_DEFAULT_OFF, resolveVisibility } from './js/ui_visibility.js';
 import tasksModule from './js/tasks.js?v=20260723tasksbulkfeedback1';
+import workersModule from './js/workers.js?v=20260903workers1';
 import calendarModule from './js/calendar.js';
 import notesModule from './js/notes.js';
 import adminModule from './js/admin.js?v=20260716openrouter3';
@@ -1057,6 +1058,12 @@ function initializeEventListeners() {
   }
 
   // Tasks tool button
+  const toolWorkersBtn = el('tool-workers-btn');
+  if (toolWorkersBtn) {
+    toolWorkersBtn.addEventListener('click', () => {
+      workersModule.isWorkersOpen() ? workersModule.closeWorkers() : workersModule.openWorkers();
+    });
+  }
   const toolTasksBtn = el('tool-tasks-btn');
   if (toolTasksBtn) {
   // Agents buttons (sidebar + rail)
@@ -1224,6 +1231,7 @@ function initializeEventListeners() {
     '/memory':   () => document.getElementById('tool-memory-btn')?.click(),
     '/gallery':  () => document.getElementById('tool-gallery-btn')?.click(),
     '/tasks':    () => document.getElementById('tool-tasks-btn')?.click(),
+    '/workers':  () => document.getElementById('tool-workers-btn')?.click(),
     '/library':  () => sessionModule && sessionModule.openLibrary && sessionModule.openLibrary(),
   };
   const _opener = _routeOpen[urlPath];

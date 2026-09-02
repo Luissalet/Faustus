@@ -79,6 +79,7 @@ const PRECACHE = [
   '/static/js/emailLibrary/state.js',
   '/static/js/notes.js',
   '/static/js/tasks.js',
+  '/static/js/workers.js',
   '/static/js/calendar.js',
   '/static/js/calendar/utils.js',
   '/static/js/calendar/reminders.js',
