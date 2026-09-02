@@ -547,3 +547,29 @@ console.log(JSON.stringify({ boards1, count1, nBoards: boards.length, counts, ca
     assert out["counts"] == [" 2/2", " 1/2"]
     assert out["latest"] == ["b1", "b2"]
     assert out["delegations"] == ["d1", "d2"]
+
+
+@pytest.mark.skipif(not _HAS_NODE, reason="node is required")
+def test_the_inline_steer_form_survives_a_repaint():
+    """Seen live: clicking Steer… showed nothing — the tick that lands every
+    5 s repainted the card (innerHTML) and wiped the form before the user
+    could see it. The form node is kept across repaints while the worker
+    lives."""
+    script = _DOM_STUB + _harness_module_source() + r"""
+restoreProgress('s1');
+const S = (sa) => renderSubagentEvent({ subagent: Object.assign({ delegation: 'd1' }, sa) }, { sessionId: 's1' });
+S({ id: 'w', index: 0, name: 'api', event: 'started', session_id: 'c1' });
+const card = chatBox._all('.subagent-card')[0];
+const btn = new El('button'); btn.dataset.steerWorker = 'c1'; card.appendChild(btn);
+_subagentInternals.steer(btn);
+const before = !!card.querySelector('.subagent-inline-form');
+const formNode = card.querySelector('.subagent-inline-form');
+S({ id: 'w', event: 'tick', elapsed_s: 5, idle_s: 1, round: 1 });
+S({ id: 'w', event: 'tool', tool: 'read_file', command: 'a.py', phase: 'start' });
+const after = card.querySelector('.subagent-inline-form');
+S({ id: 'w', event: 'done', stop_reason: 'complete' });
+const gone = !card.querySelector('.subagent-inline-form');
+console.log(JSON.stringify({ before, same: after === formNode, gone }));
+"""
+    out = _run_node(script)
+    assert out == {"before": True, "same": True, "gone": True}

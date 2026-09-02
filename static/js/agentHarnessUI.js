@@ -1087,7 +1087,11 @@ function _saPaintWorker(board, w, { live = true } = {}) {
   row.className = `subagent-row subagent-card ${_SA_ROW_CLASS[w.status] || 'is-running'}${_saLive(w) ? ' is-live' : ''}${w.stalled ? ' is-stalled' : ''}`;
   row.dataset.instruction = w.instructionFull || w.instruction || '';
   if (w.sessionId) row.dataset.sessionId = w.sessionId;
+  // A repaint (a tick lands every few seconds) must not wipe the Steer /
+  // Re-run form the user is typing into: keep the node, re-append it.
+  const form = row.querySelector ? row.querySelector('.subagent-inline-form') : null;
   row.innerHTML = _saCardHtml(w, { live, streaming: _parentStreaming() });
+  if (form && _saLive(w)) row.appendChild(form);
   return row;
 }
 
@@ -1309,7 +1313,7 @@ export function restoredSubagentBoardHtml(subagents) {
 }
 
 /** Pure helpers, exposed for the node-based tests. */
-export const _subagentInternals = { activity: subagentActivity, apply: _saApply, newWorker: _saNewWorker, elapsed: _saElapsed, pill: _saPill, cardHtml: _saCardHtml, fmtDur: _fmtDur, boards: _saBoards, tick: _saTick, rerun: _rerunWorker, parentStreaming: _parentStreaming };
+export const _subagentInternals = { steer: _steerWorker, activity: subagentActivity, apply: _saApply, newWorker: _saNewWorker, elapsed: _saElapsed, pill: _saPill, cardHtml: _saCardHtml, fmtDur: _fmtDur, boards: _saBoards, tick: _saTick, rerun: _rerunWorker, parentStreaming: _parentStreaming };
 
 // ── Progress panel ──────────────────────────────────────────────────────────
 
