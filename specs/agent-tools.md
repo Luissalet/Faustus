@@ -134,8 +134,16 @@ When an email reader is active, browser chat passes active email metadata and th
 
 ## Degraded Behavior
 
-- ToolIndex can degrade to keyword selection when embeddings, Chroma, index
-  warmup, or vector retrieval timeouts fail.
+- ToolIndex does not need ChromaDB: when the service is unreachable (or
+  `chromadb` is not installed) it uses the in-process cosine lane in
+  `src.tool_index_memory` over the same fastembed vectors, with the document
+  vectors cached in `DATA_DIR/tool_index_cache.json` (keyed by model + text)
+  so a restart re-embeds only changed descriptions. Chroma lanes are still
+  used when reachable. The index is pre-built at startup by default
+  (`ODYSSEUS_TOOL_INDEX_WARMUP=0` disables it); `get_tool_index()` never
+  blocks on a build in flight and caches an "unavailable" answer with backoff.
+- ToolIndex can still degrade to keyword selection when no embedder exists
+  at all (fastembed missing) or a vector retrieval times out.
 - Agent mode can degrade from native function schemas to prompted fenced-block parsing based on provider/tool-support heuristics. Local Ollama `/v1` and native `/api` endpoints default to text tools unless the endpoint explicitly advertises `supports_tools`; `gpt-oss` remains text-tool by default unless the endpoint opts in.
 - MCP startup failure is non-critical; route/status surfaces expose per-server errors.
 - `ODYSSEUS_DISABLE_MCP`, missing `mcp`, uncached browser MCP packages, and per-server disabled tools can remove tools without blocking the app.

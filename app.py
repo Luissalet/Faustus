@@ -1111,43 +1111,53 @@ async def _startup_event():
 
     _startup_tasks.append(asyncio.create_task(_startup_mcp_connections()))
 
-    # Startup warmups are opt-in. They make later requests a little warmer, but
-    # they also compete with the first seconds of real UI use on slow or busy
-    # machines. Default to clear/idle startup and let requests warm what they use.
+    # Tool index warmup is ON by default: without it the first agent turn pays
+    # the index build (and, with the per-request selection timeout, usually
+    # lands on keyword-only tool selection). The build runs in a worker thread
+    # and, with the on-disk embedding cache, costs one fastembed model load.
+    # ODYSSEUS_TOOL_INDEX_WARMUP=0 (or the all-warmups opt-out
+    # ODYSSEUS_STARTUP_WARMUPS=0) turns it off.
+    async def _warmup_tool_index():
+        try:
+            from src.tool_index import get_tool_index
+            idx = await asyncio.to_thread(get_tool_index)
+            if idx:
+                await asyncio.to_thread(idx.get_tools_for_query, "warmup", 8)
+                logger.info("[startup] Tool index pre-warmed (backend=%s)", getattr(idx, "backend", "?"))
+        except Exception as e:
+            logger.warning(f"Tool index warmup failed (non-critical): {type(e).__name__}: {e}")
+
+    from src.tool_index import tool_index_warmup_enabled as _tool_index_warmup_enabled
+    if _tool_index_warmup_enabled():
+        _startup_tasks.append(asyncio.create_task(_warmup_tool_index()))
+    else:
+        logger.info("Tool index warmup disabled (ODYSSEUS_TOOL_INDEX_WARMUP=0)")
+
+    # Endpoint warmups stay opt-in. They ping every discovered model endpoint,
+    # which competes with the first seconds of real UI use on slow or busy
+    # machines and adds LAN traffic when stale endpoints are configured.
+    async def _warmup_endpoints():
+        try:
+            import httpx
+            urls = (
+                await asyncio.to_thread(model_discovery.warmup_ping_urls)
+                if model_discovery else []
+            )
+            for url in urls:
+                try:
+                    async with httpx.AsyncClient(timeout=5.0) as client:
+                        await client.get(url)
+                    logger.info(f"Warmup ping OK: {url}")
+                except Exception as e:
+                    logger.debug(f"Warmup ping failed for endpoint: {e}")
+        except Exception as e:
+            logger.debug(f"Warmup ping skipped: {e}")
+
     _startup_warmups_enabled = str(os.getenv("ODYSSEUS_STARTUP_WARMUPS", "")).lower() in {"1", "true", "yes", "on"}
     if _startup_warmups_enabled:
-        async def _warmup_tool_index():
-            try:
-                from src.tool_index import get_tool_index
-                idx = await asyncio.to_thread(get_tool_index)
-                if idx:
-                    await asyncio.to_thread(idx.get_tools_for_query, "warmup", 8)
-                    logger.info("[startup] Tool index pre-warmed")
-            except Exception as e:
-                logger.warning(f"Tool index warmup failed (non-critical): {type(e).__name__}: {e}")
-
-        _startup_tasks.append(asyncio.create_task(_warmup_tool_index()))
-
-        async def _warmup_endpoints():
-            try:
-                import httpx
-                urls = (
-                    await asyncio.to_thread(model_discovery.warmup_ping_urls)
-                    if model_discovery else []
-                )
-                for url in urls:
-                    try:
-                        async with httpx.AsyncClient(timeout=5.0) as client:
-                            await client.get(url)
-                        logger.info(f"Warmup ping OK: {url}")
-                    except Exception as e:
-                        logger.debug(f"Warmup ping failed for endpoint: {e}")
-            except Exception as e:
-                logger.debug(f"Warmup ping skipped: {e}")
-
         _startup_tasks.append(asyncio.create_task(_warmup_endpoints()))
     else:
-        logger.info("Startup warmups disabled (set ODYSSEUS_STARTUP_WARMUPS=1 to enable)")
+        logger.info("Endpoint warmup pings disabled (set ODYSSEUS_STARTUP_WARMUPS=1 to enable)")
 
     # Keep-alive is opt-in. The ping path performs model discovery, and when
     # stale LAN endpoints are configured it can add periodic backend pressure

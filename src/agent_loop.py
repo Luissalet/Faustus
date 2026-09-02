@@ -4624,12 +4624,18 @@ async def stream_agent_loop(
                     timeout=_TOOL_SELECTION_TIMEOUT_SECONDS,
                 )
             except asyncio.TimeoutError:
+                # get_tool_index() only takes this long when THIS call is the
+                # one building the index (a concurrent build or a cached
+                # "unavailable" answer returns at once). The build carries on
+                # in its thread for the next turn; this turn takes the same
+                # keyword fallback as the retrieval-timeout branch below —
+                # ALWAYS_AVAILABLE alone dropped the tools the query named.
                 logger.warning(
-                    "[tool-rag] Tool index init exceeded %.1fs; falling back to always-available tools",
+                    "[tool-rag] Tool index init exceeded %.1fs; falling back to keyword tool selection",
                     _TOOL_SELECTION_TIMEOUT_SECONDS,
                 )
                 tool_idx = None
-                _relevant_tools = set(ALWAYS_AVAILABLE)
+                _relevant_tools = None
             if tool_idx:
                 if mcp_mgr:
                     try:
