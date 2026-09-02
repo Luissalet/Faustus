@@ -2,16 +2,25 @@
 RAG-based tool selection for agent mode.
 
 Instead of injecting all tool descriptions into the system prompt,
-embed them in a ChromaDB collection and retrieve only the top-K
+embed them in a vector collection and retrieve only the top-K
 relevant ones per user message.
+
+The collection lives in ChromaDB when the service is reachable. When it is
+not (the container is down — a normal state on a desktop PC) the index falls
+back to an in-process cosine lane over the same fastembed vectors
+(``src.tool_index_memory``) with an on-disk embedding cache, so tool
+selection keeps working, at full quality, without Chroma.
 """
 
 import logging
 import hashlib
+import os
 import re
+import threading
 import time
 from typing import Dict, List, Optional, Set
 
+import src.embedding_lanes as _lanes_mod
 from src.embedding_lanes import (
     LANE_CUSTOM,
     LANE_FASTEMBED,
@@ -154,23 +163,83 @@ BUILTIN_TOOL_DESCRIPTIONS: Dict[str, str] = {
 }
 
 
-class ToolIndex:
-    """ChromaDB-backed tool index for RAG-based tool selection."""
+class ToolIndexUnavailable(RuntimeError):
+    """No embedder at all (fastembed missing/broken): nothing can index tools."""
 
-    def __init__(self):
-        self._lanes = build_embedding_lanes(COLLECTION_NAME)
+
+BACKEND_CHROMA = "chroma"
+BACKEND_MEMORY = "memory"
+
+# The in-memory fallback is announced once per process at INFO; later
+# rebuilds (embedding endpoint changes call reset_tool_index) log at DEBUG.
+_memory_lane_announced = False
+
+
+class ToolIndex:
+    """Vector tool index for RAG-based tool selection.
+
+    Backed by ChromaDB lanes when the service is reachable, otherwise by the
+    in-memory fastembed lane. Either way the public surface is the same.
+    """
+
+    def __init__(self, force_memory: bool = False, cache_path: Optional[str] = None):
+        global _memory_lane_announced
+        self._lanes = []
+        self._backend = BACKEND_CHROMA
+        chroma_error: Optional[BaseException] = None
+        if not force_memory:
+            try:
+                self._lanes = build_embedding_lanes(COLLECTION_NAME)
+            except Exception as e:
+                # get_chroma_client() raised: not installed / not reachable.
+                chroma_error = e
         if not self._lanes:
-            raise RuntimeError("No embedding lanes available")
+            self._lanes = [self._build_memory_lane(cache_path)]
+            self._backend = BACKEND_MEMORY
+            if chroma_error is not None:
+                reason = (
+                    "chromadb not installed" if "not installed" in str(chroma_error)
+                    else "ChromaDB not reachable"
+                )
+            elif force_memory:
+                reason = "requested"
+            else:
+                reason = "no ChromaDB embedding lane could be created"
+            level = logging.DEBUG if _memory_lane_announced else logging.INFO
+            _memory_lane_announced = True
+            logger.log(level, "tool index: in-memory lane (%s)", reason)
+            if chroma_error is not None:
+                logger.debug("tool index: chroma unavailable: %s", chroma_error)
+        else:
+            migrate_legacy_collection(COLLECTION_NAME, self._lanes)
         self._embedder = self._lanes[0].client
         self._collection = next(
             (lane.collection for lane in self._lanes if lane.name == LANE_FASTEMBED),
             self._lanes[0].collection,
         )
-        migrate_legacy_collection(COLLECTION_NAME, self._lanes)
         self._fingerprint = ""
         self._mcp_generation = -1
         self._healthy = True
-        logger.info("ToolIndex initialized (lanes=%s)", [lane.name for lane in self._lanes])
+        logger.info(
+            "ToolIndex initialized (backend=%s, lanes=%s)",
+            self._backend, [lane.name for lane in self._lanes],
+        )
+
+    @staticmethod
+    def _build_memory_lane(cache_path: Optional[str] = None):
+        from src.tool_index_memory import build_memory_lane
+
+        try:
+            # Module attribute lookup on purpose: tests stub this builder.
+            client = _lanes_mod._build_fastembed_client()
+        except Exception as e:
+            raise ToolIndexUnavailable(f"no local embedder for the tool index: {e}") from e
+        return build_memory_lane(COLLECTION_NAME, client, cache_path=cache_path)
+
+    @property
+    def backend(self) -> str:
+        """``"chroma"`` or ``"memory"``."""
+        return self._backend
 
     @property
     def healthy(self):
@@ -627,33 +696,110 @@ class ToolIndex:
 
 _tool_index: Optional[ToolIndex] = None
 _last_attempt = 0.0
+_last_error = ""
 _RETRY_INTERVAL = 30.0
+# The same failure repeating (no embedder at all: fastembed missing, model
+# not downloadable offline) doubles the wait between attempts up to this.
+_RETRY_INTERVAL_MAX = 600.0
+_retry_interval = _RETRY_INTERVAL
+# Held while a build is running. A caller that finds it taken gets None at
+# once (keyword fallback) instead of queueing behind a model load; the agent
+# loop's per-request timeout therefore never fires on the index itself.
+_build_lock = threading.Lock()
+
+
+def _build_index() -> ToolIndex:
+    """Build + populate an index; a failing Chroma build retries in memory."""
+    idx: Optional[ToolIndex] = None
+    try:
+        idx = ToolIndex()
+        idx.index_builtin_tools()
+        return idx
+    except ToolIndexUnavailable:
+        raise
+    except Exception as e:
+        if idx is not None and idx.backend == BACKEND_MEMORY:
+            raise
+        logger.warning("tool index: ChromaDB-backed build failed (%s); using the in-memory lane", e)
+    idx = ToolIndex(force_memory=True)
+    idx.index_builtin_tools()
+    return idx
 
 
 def get_tool_index() -> Optional[ToolIndex]:
-    """Get or create the singleton ToolIndex. Returns None if unavailable."""
-    global _tool_index, _last_attempt
+    """Get or create the singleton ToolIndex. Returns None if unavailable.
 
-    if _tool_index is not None and _tool_index.healthy:
-        return _tool_index
+    Never blocks on a build in progress and caches an "unavailable" answer
+    for ``_RETRY_INTERVAL`` seconds, so a request thread pays at most one
+    build per interval and otherwise returns immediately.
+    """
+    global _tool_index, _last_attempt, _last_error, _retry_interval
+
+    idx = _tool_index
+    if idx is not None and idx.healthy:
+        return idx
 
     now = time.monotonic()
-    if now - _last_attempt < _RETRY_INTERVAL:
+    if now - _last_attempt < _retry_interval:
         return None
-    _last_attempt = now
-
+    if not _build_lock.acquire(blocking=False):
+        return None
     try:
-        _tool_index = ToolIndex()
-        _tool_index.index_builtin_tools()
-        return _tool_index
-    except Exception as e:
-        logger.warning(f"ToolIndex init failed (will retry in {_RETRY_INTERVAL}s): {e}")
-        _tool_index = None
-        return None
+        _last_attempt = now
+        try:
+            idx = _build_index()
+        except Exception as e:
+            message = f"{type(e).__name__}: {e}"
+            # The first failure is a WARNING; the same failure repeating is
+            # noise, so it drops to DEBUG and backs off until the message
+            # changes.
+            repeated = message == _last_error
+            if repeated:
+                _retry_interval = min(_retry_interval * 2, _RETRY_INTERVAL_MAX)
+            else:
+                _retry_interval = _RETRY_INTERVAL
+            _last_error = message
+            logger.log(
+                logging.DEBUG if repeated else logging.WARNING,
+                "ToolIndex init failed (will retry in %.0fs): %s", _retry_interval, message,
+            )
+            _tool_index = None
+            return None
+        _last_error = ""
+        _retry_interval = _RETRY_INTERVAL
+        _tool_index = idx
+        return idx
+    finally:
+        _build_lock.release()
 
 
 def reset_tool_index() -> None:
     """Clear the singleton so embedding endpoint changes rebuild tool lanes."""
-    global _tool_index, _last_attempt
+    global _tool_index, _last_attempt, _last_error, _retry_interval
     _tool_index = None
     _last_attempt = 0.0
+    _last_error = ""
+    _retry_interval = _RETRY_INTERVAL
+
+
+_TRUTHY = {"1", "true", "yes", "on"}
+_FALSY = {"0", "false", "no", "off"}
+
+
+def tool_index_warmup_enabled(env: Optional[Dict[str, str]] = None) -> bool:
+    """Should app startup pre-build the tool index in the background?
+
+    On by default: building it costs one fastembed model load (the document
+    vectors come from the on-disk cache) and it removes the first-request
+    penalty. ``ODYSSEUS_TOOL_INDEX_WARMUP=0`` turns it off; an explicit
+    ``ODYSSEUS_STARTUP_WARMUPS=0`` (the opt-out for all warmups) is honoured
+    too unless the tool-index switch says otherwise.
+    """
+    env = os.environ if env is None else env
+    explicit = (env.get("ODYSSEUS_TOOL_INDEX_WARMUP") or "").strip().lower()
+    if explicit:
+        return explicit in _TRUTHY
+    legacy = (env.get("ODYSSEUS_STARTUP_WARMUPS") or "").strip().lower()
+    if legacy in _FALSY:
+        return False
+    return True
