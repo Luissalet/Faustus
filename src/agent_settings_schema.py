@@ -261,6 +261,8 @@ GROUPS: list[dict[str, Any]] = [
                  1, 60),
             _bool("agent_subagent_supervisor", "Deterministic supervisor",
                   "Nudge a stalled worker once, then stop it."),
+            _bool("agent_subagent_lean_tools", "Lean worker toolset",
+                  "Workers skip web, memory, skills and background-job tools unless their task mentions them (fewer schema tokens per round)."),
         ],
     ),
     _group(

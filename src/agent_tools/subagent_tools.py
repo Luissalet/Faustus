@@ -350,6 +350,30 @@ SUBAGENT_DISABLED_TOOLS = frozenset({
     "ask_teacher", "update_plan",
 })
 
+# Tools a scoped worker never needs but that the retriever happily hands it
+# (measured: 19 schemas = 4.7k tokens, 65 % of a worker's first round on a
+# 9B model). Removed when `agent_subagent_lean_tools` is on (default) unless
+# the task text itself asks for the web / memory / background jobs.
+SUBAGENT_LEAN_DENYLIST = frozenset({
+    "web_search", "web_fetch", "manage_skills", "manage_bg_jobs", "manage_memory",
+    "manage_tasks", "manage_contact", "ui_control", "manage_notes", "project_context",
+})
+_LEAN_KEEP_RE = re.compile(
+    r"\b(web|internet|url|https?://|busca en|search the|fetch|descarga|download|"
+    r"memoria|memory|recuerda|remember|background job|segundo plano|skill)\b", re.I,
+)
+
+
+def worker_disabled_tools(instruction: str) -> set:
+    """The worker's denylist: the hard set plus, when the lean mode is on and
+    the task does not mention them, the tools a scoped worker never needs."""
+    out = set(SUBAGENT_DISABLED_TOOLS)
+    if not _as_bool(_setting("agent_subagent_lean_tools", True), True):
+        return out
+    if _LEAN_KEEP_RE.search(str(instruction or "")):
+        return out
+    return out | set(SUBAGENT_LEAN_DENYLIST)
+
 
 def _short(text: Any, n: int = 160) -> str:
     s = str(text or "").replace("\n", " ").strip()
@@ -676,7 +700,7 @@ async def _run_subagent(
             headers=headers, temperature=0.3, max_tokens=0,
             max_rounds=max_rounds, session_id=child_sid, owner=owner,
             workspace=workspace, workspace_roots=workspace_roots,
-            disabled_tools=set(SUBAGENT_DISABLED_TOOLS),
+            disabled_tools=worker_disabled_tools(run.instruction),
             security_gate_bypass=True, _is_teacher_run=True,
             gen_overrides=gen_overrides,
             harness_options=_worker_opts,
@@ -967,8 +991,10 @@ class DelegateAgentsTool:
                 if nudged_at is None:
                     detail = (f"loop: the same tool call issued {run.repeat_count} times in a row"
                               if reason == "loop" else f"idle: no activity for {int(idle)}s")
-                    text = (f"You appear stuck: {detail}. Finish with what you have, call ask_user, "
-                            "or take a different approach.")
+                    # (workers cannot ask_user — they run detached — so the
+                    # way out is: finish, report the blocker, or change tack)
+                    text = (f"You appear stuck: {detail}. Finish with what you have and report what "
+                            "blocks you, or take a different approach.")
                     steer_worker(run.session_id, text, source="supervisor")
                     run.supervisor.append({"action": "nudge", "reason": detail, "ts": now})
                     nudged_at = now

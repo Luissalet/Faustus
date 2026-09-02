@@ -592,3 +592,33 @@ def test_settings_have_the_board_knobs():
     assert DEFAULT_SETTINGS["agent_subagent_stall_seconds"] == 120
     assert DEFAULT_SETTINGS["agent_subagent_supervisor"] is True
     assert DEFAULT_SETTINGS["agent_subagent_max_parallel"] == 2
+
+
+def test_workers_get_a_lean_toolset_unless_the_task_asks_for_more(monkeypatch):
+    """Measured: 19 tool schemas = 4.7k tokens = 65 % of a worker's first
+    round on qwen3.5:9b. A scoped worker never needs web search, memory,
+    skills or background jobs — unless its task says so."""
+    from src.agent_tools import subagent_tools as st
+    monkeypatch.setattr(st, "_setting", lambda k, d=None: {"agent_subagent_lean_tools": True}.get(k, d))
+    lean = st.worker_disabled_tools("[cart.py] add currency_format(amount)")
+    assert {"web_search", "web_fetch", "manage_skills", "manage_bg_jobs", "manage_memory"} <= lean
+    assert {"delegate_agents", "ask_user", "update_plan"} <= lean          # the hard set stays
+    for tool in ("read_file", "edit_file", "bash", "python", "apply_patch", "write_file", "todowrite", "grep", "glob", "ls"):
+        assert tool not in lean, tool
+    web = st.worker_disabled_tools("Busca en internet la documentación de httpx y resume")
+    assert "web_search" not in web and "web_fetch" not in web and "delegate_agents" in web
+    url = st.worker_disabled_tools("Lee https://example.com/spec y aplica el formato")
+    assert "web_fetch" not in url
+    monkeypatch.setattr(st, "_setting", lambda k, d=None: {"agent_subagent_lean_tools": False}.get(k, d))
+    off = st.worker_disabled_tools("[cart.py] add currency_format(amount)")
+    assert off == set(st.SUBAGENT_DISABLED_TOOLS)
+
+
+def test_the_supervisor_nudge_does_not_tell_a_worker_to_ask_user():
+    """Workers run detached with ask_user disabled; a nudge that says 'call
+    ask_user' sends them to a tool they do not have."""
+    from pathlib import Path
+    src = (Path(__file__).resolve().parents[1] / "src" / "agent_tools" / "subagent_tools.py").read_text(encoding="utf-8")
+    dog = src[src.index("async def watchdog("):src.index("async def one(")]
+    assert "ask_user" not in dog.replace("cannot ask_user", "")
+    assert "report what" in dog

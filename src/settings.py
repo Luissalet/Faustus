@@ -284,6 +284,10 @@ DEFAULT_SETTINGS = {
     "agent_subagent_stall_seconds": 120,
     "agent_subagent_supervisor": True,
     "agent_subagent_max_parallel": 2,
+    # Workers get a lean toolset (no web / memory / skills / background jobs
+    # unless the task mentions them): tool schemas were 65 % of a worker's
+    # first round on a 9B model.
+    "agent_subagent_lean_tools": True,
     # Extra directory roots that read_file / write_file may access, in
     # addition to the built-in project data/ and system temp dirs. Each
     # entry is an absolute path. Sensitive subpaths (.ssh, .gnupg, shell

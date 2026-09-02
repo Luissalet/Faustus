@@ -117,7 +117,7 @@ def test_groups_follow_the_requested_layout():
     assert all(k.startswith(("agent_project_test", "agent_static_analysis", "agent_auto_review", "agent_checkpoint"))
                for k in by_group["verification"])
     assert {"agent_subagent_reviewer", "agent_subagent_max_parallel", "agent_subagent_stall_seconds",
-            "agent_subagent_tick_seconds", "agent_subagent_supervisor"} == set(by_group["subagents"])
+            "agent_subagent_tick_seconds", "agent_subagent_supervisor", "agent_subagent_lean_tools"} == set(by_group["subagents"])
     assert {"agent_runs_persist", "agent_runs_keep_hours", "agent_queue_local_concurrency",
             "agent_queue_api_concurrency", "agent_scorecard"} == set(by_group["runs"])
     assert all(k.startswith("browser_") for k in by_group["browser"]) and len(by_group["browser"]) == 7
