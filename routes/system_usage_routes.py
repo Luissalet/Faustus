@@ -7,9 +7,18 @@ GET /api/system/usage
   "ollama": {"reachable": true, "base": "http://127.0.0.1:11434",
              "models": [{"name", "size", "size_vram", "gpu_pct", "cpu_pct",
                          "context_length", "expires_at", "parameter_size",
-                         "quantization"}]},
+                         "quantization",
+                         "gpus": [1] | [0, 1] | [],        # the card(s) it sits on
+                         "placement": "single|split|cpu|unknown",
+                         "per_gpu": [{"index", "bytes"|null}]}]},
   "gpu": [{"index", "name", "util", "mem_used", "mem_total", "temp",
-           "power", "power_limit"}],           # MiB / °C / W, from nvidia-smi
+           "power", "power_limit",              # MiB / °C / W, from nvidia-smi
+           "uuid", "bus_id", "mem_free",
+           "models": [{"name", "bytes"|null}],  # loaded models resident on THIS card
+           "runner_pids": [15948]}],
+  "gpu_pool": {"count": 2, "mem_used", "mem_total", "mem_free",   # sums (MiB)
+               "util": max, "util_avg", "power": sum, "power_limit": sum,
+               "temp": max, "names": [...]},   # {} when no GPU
   "gpu_mem": {"supported": true,               # Windows WDDM counters
               "ollama": {"shared": 0, "dedicated": 7.6e9, "spilling": false}},
   "sysmem_fallback": {"exposed": false, "manual_only": true, "steps": [...]},
@@ -18,10 +27,14 @@ GET /api/system/usage
   "errors": ["nvidia-smi: not found"]        # non-fatal collection problems
 }
 
-`gpu` is the card's own VRAM; `gpu_mem` is the part nvidia-smi cannot see —
+`gpu` is each card's own VRAM; `gpu_mem` is the part nvidia-smi cannot see —
 system RAM the driver paged GPU allocations into over PCIe. Ollama filling
 that up is a ~20x slowdown with every other gauge still reading green, so the
-widget calls it out. See src/gpu_shared_memory.py for why.
+widget calls it out. See src/gpu_shared_memory.py for why. With two cards
+Ollama 0.33 places each model on the card with the most free memory and
+splits one that fits no single card; `gpu_pool` is the sum the fit
+arithmetic works against and src/gpu_placement.py says where each model
+went.
 
 Everything is best-effort: a missing nvidia-smi or an unreachable Ollama just
 leaves that section empty. Results are cached for ~1s so several browser tabs
@@ -30,7 +43,6 @@ polling at once do not fork nvidia-smi per request.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import os
 import shutil
@@ -41,7 +53,8 @@ from typing import Any, Dict, List, Optional
 import httpx
 from fastapi import APIRouter, HTTPException, Request
 
-from src import gpu_shared_memory, nvidia_drs, vram_fit
+from src import gpu_placement, nvidia_drs, vram_fit
+from src import gpu_shared_memory
 from src.auth_helpers import require_user
 
 logger = logging.getLogger(__name__)
@@ -102,7 +115,49 @@ async def _collect_ollama(client: httpx.AsyncClient) -> Dict[str, Any]:
 _NVSMI_FIELDS = [
     "index", "name", "utilization.gpu", "memory.used", "memory.total",
     "temperature.gpu", "power.draw", "power.limit",
+    # Appended, so the columns above keep their positions: the uuid / bus id
+    # are what nvidia-smi's compute-apps listing names a card by.
+    "uuid", "pci.bus_id", "memory.free",
 ]
+
+
+def _num(v: str) -> Optional[float]:
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def parse_gpu_query(stdout: str) -> List[Dict[str, Any]]:
+    """Rows of ``--query-gpu=<_NVSMI_FIELDS>`` → one dict per card (MiB,
+    °C, W), with empty ``models`` / ``runner_pids`` for the placement pass
+    to fill in."""
+    gpus: List[Dict[str, Any]] = []
+    for line in (stdout or "").splitlines():
+        parts = [p.strip() for p in line.split(",")]
+        if len(parts) < len(_NVSMI_FIELDS):
+            continue
+        mem_total = _num(parts[4])
+        mem_used = _num(parts[3])
+        mem_free = _num(parts[10])
+        if mem_free is None and mem_total is not None and mem_used is not None:
+            mem_free = max(0.0, mem_total - mem_used)
+        gpus.append({
+            "index": int(_num(parts[0]) or 0),
+            "name": parts[1],
+            "util": _num(parts[2]),
+            "mem_used": mem_used,
+            "mem_total": mem_total,
+            "temp": _num(parts[5]),
+            "power": _num(parts[6]),
+            "power_limit": _num(parts[7]),
+            "uuid": parts[8],
+            "bus_id": parts[9],
+            "mem_free": mem_free,
+            "models": [],
+            "runner_pids": [],
+        })
+    return gpus
 
 
 def _collect_gpu() -> tuple[List[Dict[str, Any]], Optional[str]]:
@@ -127,29 +182,59 @@ def _collect_gpu() -> tuple[List[Dict[str, Any]], Optional[str]]:
         return [], f"nvidia-smi: {e}"
     if proc.returncode != 0:
         return [], f"nvidia-smi exit {proc.returncode}: {(proc.stderr or '').strip()[:200]}"
-    gpus: List[Dict[str, Any]] = []
-    for line in (proc.stdout or "").splitlines():
-        parts = [p.strip() for p in line.split(",")]
-        if len(parts) < len(_NVSMI_FIELDS):
-            continue
+    return parse_gpu_query(proc.stdout or ""), None
 
-        def num(v: str) -> Optional[float]:
-            try:
-                return float(v)
-            except ValueError:
-                return None
 
-        gpus.append({
-            "index": int(num(parts[0]) or 0),
-            "name": parts[1],
-            "util": num(parts[2]),
-            "mem_used": num(parts[3]),
-            "mem_total": num(parts[4]),
-            "temp": num(parts[5]),
-            "power": num(parts[6]),
-            "power_limit": num(parts[7]),
-        })
-    return gpus, None
+def gpu_pool(gpus: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """The cards as one: memory and power summed, utilisation and temperature
+    at their maximum (the pill's busy dot and the hot-card warning care about
+    the worst card, not the average — though the average is there too).
+    ``{}`` without a GPU."""
+    if not gpus:
+        return {}
+
+    def _sum(key: str) -> Optional[float]:
+        vals = [g.get(key) for g in gpus if g.get(key) is not None]
+        return float(sum(vals)) if vals else None
+
+    def _max(key: str) -> Optional[float]:
+        vals = [g.get(key) for g in gpus if g.get(key) is not None]
+        return float(max(vals)) if vals else None
+
+    utils = [g.get("util") for g in gpus if g.get("util") is not None]
+    mem_total = _sum("mem_total")
+    mem_used = _sum("mem_used")
+    mem_free = _sum("mem_free")
+    if mem_free is None and mem_total is not None and mem_used is not None:
+        mem_free = max(0.0, mem_total - mem_used)
+    return {
+        "count": len(gpus),
+        "mem_used": mem_used,
+        "mem_total": mem_total,
+        "mem_free": mem_free,
+        "util": _max("util"),
+        "util_avg": round(sum(utils) / len(utils), 1) if utils else None,
+        "power": _sum("power"),
+        "power_limit": _sum("power_limit"),
+        "temp": _max("temp"),
+        "names": [str(g.get("name") or "") for g in gpus],
+        "name": gpu_shared_memory.pool_name([str(g.get("name") or "") for g in gpus]),
+    }
+
+
+def _merge_placement(ollama: Dict[str, Any], gpus: List[Dict[str, Any]], report: Dict[str, Any]) -> None:
+    """Write src/gpu_placement's answer onto the ollama rows and the cards."""
+    models = (report or {}).get("models") or {}
+    for m in ollama.get("models") or []:
+        info = models.get(m.get("name")) or {}
+        m["gpus"] = list(info.get("gpus") or [])
+        m["placement"] = info.get("placement") or ("cpu" if not int(m.get("size_vram") or 0) else "unknown")
+        m["per_gpu"] = [dict(p) for p in (info.get("per_gpu") or [])]
+    per_gpu = (report or {}).get("gpus") or {}
+    for g in gpus:
+        slot = per_gpu.get(g.get("index")) or {}
+        g["models"] = [dict(x) for x in (slot.get("models") or [])]
+        g["runner_pids"] = list(slot.get("runner_pids") or [])
 
 
 def _collect_host() -> Dict[str, Any]:
@@ -189,6 +274,12 @@ async def collect_usage() -> Dict[str, Any]:
             ollama, (gpus, gpu_err), host, gpu_mem, policy = await asyncio.gather(
                 ollama_task, gpu_task, host_task, shared_task, policy_task
             )
+        # Placement needs both answers (the loaded models and the cards), so
+        # it runs after the gather; it is its own 2 s cache and never raises.
+        report: Dict[str, Any] = {}
+        if ollama.get("models") and gpus:
+            report = await asyncio.to_thread(gpu_placement.report, ollama.get("base", ""), ollama["models"], gpus)
+        _merge_placement(ollama, gpus, report)
         if gpu_err:
             errors.append(gpu_err)
         if ollama.get("error"):
@@ -199,6 +290,7 @@ async def collect_usage() -> Dict[str, Any]:
             "ts": now,
             "ollama": ollama,
             "gpu": gpus,
+            "gpu_pool": gpu_pool(gpus),
             "gpu_mem": gpu_mem,
             "sysmem_fallback": policy,
             "cpu": host.get("cpu", {}),
@@ -241,11 +333,16 @@ async def _file_size(client: httpx.AsyncClient, model: str) -> int:
 
 
 async def collect_fit(model: str, target_ctx: Optional[int] = None) -> Dict[str, Any]:
-    """Everything `vram_fit.plan` needs, gathered from the live system."""
+    """Everything `vram_fit.plan` needs, gathered from the live system.
+
+    Against the POOL: Ollama splits a model across the cards when it fits no
+    single one, so the budget is every card's memory, less a CUDA context
+    per card."""
     usage = await collect_usage()
-    gpu = (usage.get("gpu") or [None])[0]
-    if not gpu or not gpu.get("mem_total"):
+    pool = usage.get("gpu_pool") or gpu_pool(usage.get("gpu") or [])
+    if not pool or not pool.get("mem_total"):
         raise HTTPException(503, "no NVIDIA GPU visible to nvidia-smi")
+    count = int(pool.get("count") or 1)
     async with httpx.AsyncClient() as client:
         show = await _model_show(client, model)
         file_size = await _file_size(client, model)
@@ -277,8 +374,8 @@ async def collect_fit(model: str, target_ctx: Optional[int] = None) -> Dict[str,
         kv_source == "estimated" and "upper bound" not in kv_note
     )
 
-    total_bytes = int((gpu.get("mem_total") or 0) * 1024 * 1024)
-    used_bytes = int((gpu.get("mem_used") or 0) * 1024 * 1024)
+    total_bytes = int((pool.get("mem_total") or 0) * 1024 * 1024)
+    used_bytes = int((pool.get("mem_used") or 0) * 1024 * 1024)
     # What Ollama itself holds does not count as "someone else's". Take that
     # from `ollama ps` rather than the WDDM counter: the counter reports a
     # commitment that can outlive what is actually resident on the card.
@@ -296,11 +393,13 @@ async def collect_fit(model: str, target_ctx: Optional[int] = None) -> Dict[str,
         current_ctx=int(loaded.get("context_length")) if loaded and loaded.get("context_length") else None,
         target_ctx=target_ctx,
         max_ctx=max_ctx,
+        reserve_bytes=vram_fit.DEFAULT_RESERVE_BYTES * count,
     )
     result["model"] = model
     result["kv_note"] = kv_note
     result["loaded"] = bool(loaded)
-    result["gpu_name"] = gpu.get("name")
+    result["gpu_name"] = pool.get("name") or gpu_shared_memory.pool_name(pool.get("names") or [])
+    result["gpu_count"] = count
     return result
 
 
