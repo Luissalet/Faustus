@@ -712,3 +712,24 @@ def test_end_to_end_on_a_toy_workspace_costs_well_under_a_test_run(ws, data_dir)
     assert res["ok"] is False and res["findings"]
     assert time.time() - t0 < 20
     assert res["duration_s"] >= 0
+
+
+def test_a_utf8_bom_is_not_a_syntax_error_for_the_inprocess_pyflakes(ws):
+    """Seen live (ronda 6): a test file written by PowerShell carries a UTF-8
+    BOM. Python's compiler accepts the BOM in *bytes* but not as the U+FEFF
+    character of a decoded str, so decoding with plain utf-8 turned every
+    BOM'd file into 'invalid non-printable character U+FEFF' on line 1 — and
+    when the turn had touched line 1 (the import line) the gate charged a
+    fix round to the model, which then rewrote the whole file to 'remove
+    the BOM'. Decode with utf-8-sig, like Python itself does."""
+    from src import static_checks as sc
+    p = ws / "bommed.py"
+    p.write_bytes(b"\xef\xbb\xbfimport os\n\n\ndef f():\n    return os.sep\n")
+    rc, out, err = sc._run_inprocess_pyflakes(str(ws), ["bommed.py"])
+    assert rc == 0
+    assert "FEFF" not in out and "FEFF" not in err
+    assert out.strip() == "" and err.strip() == ""
+    # A real problem on a BOM'd file is still reported, on the right line.
+    p.write_bytes(b"\xef\xbb\xbfimport os\n\n\ndef f():\n    return missing_name\n")
+    rc, out, err = sc._run_inprocess_pyflakes(str(ws), ["bommed.py"])
+    assert "bommed.py:5" in out and "missing_name" in out

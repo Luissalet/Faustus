@@ -498,7 +498,11 @@ def _run_inprocess_pyflakes(workspace: str, rels: Sequence[str]) -> Tuple[Option
         p = os.path.join(workspace, *rel.split("/"))
         try:
             with open(p, "rb") as f:
-                text = f.read().decode("utf-8", "replace")
+                # utf-8-sig: Python's compiler accepts a UTF-8 BOM in bytes
+                # but rejects the U+FEFF *character* of a decoded str
+                # ("invalid non-printable character"). Files written by
+                # PowerShell / Notepad carry one; it is not a defect.
+                text = f.read().decode("utf-8-sig", "replace")
         except OSError:
             continue
         try:
