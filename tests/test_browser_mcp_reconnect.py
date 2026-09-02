@@ -84,14 +84,34 @@ async def _pid(mgr) -> int:
     return int(res["stdout"].strip())
 
 
-def _kill(pid: int):
-    os.kill(pid, signal.SIGKILL if hasattr(signal, "SIGKILL") else signal.SIGTERM)
-    deadline = time.time() + 5
-    while time.time() < deadline:
+def _alive(pid: int) -> bool:
+    """Portable liveness probe (on Windows `os.kill(pid, 0)` TERMINATES)."""
+    try:
+        import psutil  # type: ignore
+
+        try:
+            return psutil.Process(pid).status() != psutil.STATUS_ZOMBIE
+        except psutil.NoSuchProcess:
+            return False
+    except ImportError:  # pragma: no cover - psutil is a hard dep in practice
+        if os.name == "nt":
+            return False
         try:
             os.kill(pid, 0)
+            return True
         except OSError:
-            return
+            return False
+
+
+def _kill(pid: int):
+    try:
+        import psutil  # type: ignore
+
+        psutil.Process(pid).kill()
+    except Exception:  # noqa: BLE001 - fall back to a raw signal
+        os.kill(pid, signal.SIGKILL if hasattr(signal, "SIGKILL") else signal.SIGTERM)
+    deadline = time.time() + 5
+    while time.time() < deadline and _alive(pid):
         time.sleep(0.05)
 
 
@@ -146,14 +166,9 @@ async def test_disconnect_from_another_task_is_clean(fake_browser_server, caplog
     assert "Error closing MCP server" not in caplog.text
     # the child is really gone
     deadline = time.time() + 5
-    while time.time() < deadline:
-        try:
-            os.kill(pid, 0)
-        except OSError:
-            break
+    while time.time() < deadline and _alive(pid):
         await asyncio.sleep(0.05)
-    else:  # pragma: no cover - only on a leaked process
-        pytest.fail("server child process was not terminated")
+    assert not _alive(pid), "server child process was not terminated"
 
 
 async def test_status_is_honest_when_reconnect_fails(fake_browser_server, monkeypatch):
