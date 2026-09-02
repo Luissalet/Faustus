@@ -614,6 +614,19 @@ _APP_API_BLOCKLIST_METHOD_PATH = (
     ("POST",   "/api/calendar/events"),
     ("PUT",    "/api/calendar/events"),
     ("DELETE", "/api/calendar/events"),
+    # Settings → Local models (routes/local_models_routes.py) is admin-only,
+    # but `require_admin` accepts the internal-tool token this loopback
+    # sends, with no admin cookie and no approval card. Its writes delete a
+    # model from the Ollama server (DELETE /{name}), cancel a pull (DELETE
+    # /pulls/{id}), start a multi-GB download (POST /pull), load/unload a
+    # model in VRAM (POST /load, /unload) and rewrite the per-model load
+    # options every request inherits (PUT /{name}/options). GET (the list,
+    # /discover, /pulls, /{name}/options) stays open.
+    ("DELETE", "/api/local-models"),
+    ("POST",   "/api/local-models/pull"),
+    ("POST",   "/api/local-models/load"),
+    ("POST",   "/api/local-models/unload"),
+    ("PUT",    "/api/local-models"),
 )
 
 
@@ -732,6 +745,12 @@ async def do_app_api(content: str, owner: Optional[str] = None) -> Dict:
             return {"error": "Don't hit /api/notes via app_api — use the `manage_notes` tool. It accepts natural-language due_date ('11pm today', 'tomorrow at 9am'), fires reminders from the due_date itself (no separate calendar event), and uses the caller's timezone. The raw endpoint requires ISO-UTC + a separate calendar event, both of which the agent tends to get wrong.", "exit_code": 1}
         if "/api/calendar/events" in path:
             return {"error": "Don't hit /api/calendar/events via app_api — use the `manage_calendar` tool. It handles tz-aware natural-language datetimes and reminder_minutes correctly. If the user wants a note + reminder, prefer `manage_notes` with due_date — it bundles both.", "exit_code": 1}
+        if path.startswith("/api/local-models"):
+            return {"error": f"{method} {path} is blocked for safety — deleting, pulling, loading/unloading local models "
+                             "and their load options are the admin's Settings → Local models surface; app_api reaches "
+                             "it without the admin session or an approval card. Ask the user to do it there. "
+                             "GET /api/local-models (the list, /pulls, /{name}/options) is still allowed.",
+                    "exit_code": 1}
         return {"error": f"{method} {path} is blocked — it overwrites the whole cookbook state file. Use list_serve_presets / serve_preset / serve_model instead.", "exit_code": 1}
 
     body = args.get("body")
