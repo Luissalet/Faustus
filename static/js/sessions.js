@@ -392,6 +392,10 @@ async function _syncActivityFromServer() {
     // Task queue: chats waiting for the GPU lane show "queued #N" instead of
     // the working dot; runs cut short by a restart get one toast + unread dot.
     _serverQueued = (data.queued && typeof data.queued === 'object') ? data.queued : {};
+    // Sub-agent workers of delegate_agents (child chat → parent, name, role,
+    // stalled, round…): the sidebar Stop control and the stalled mark of the
+    // worker rows, and the banner of an open running worker chat.
+    _serverWorkers = (data.workers && typeof data.workers === 'object') ? data.workers : {};
     const interrupted = Array.isArray(data.interrupted) ? data.interrupted : [];
     if (interrupted.length) _noticeInterrupted(interrupted);
     _updateResearchDots();
@@ -401,6 +405,34 @@ async function _syncActivityFromServer() {
   }
 }
 let _serverQueued = {};                    // session → 1-based position in the task queue
+let _serverWorkers = {};                   // child session → {parent, name, role, started_at, round, last_event_at, stalled, tool_calls}
+
+/** Live record of a sub-agent worker chat (from /api/chat/activity), or null. */
+export function workerInfo(sessionId) {
+  const w = sessionId ? _serverWorkers[sessionId] : null;
+  return (w && typeof w === 'object') ? w : null;
+}
+
+/** Stop ONE sub-agent worker (the coordinator keeps going with the others). */
+export async function stopWorker(sessionId) {
+  if (!sessionId) return false;
+  let stopped = false;
+  try {
+    const r = await fetch(`${API_BASE}/api/chat/subagent/stop/${encodeURIComponent(sessionId)}`, { method: 'POST', credentials: 'same-origin' });
+    const j = r.ok ? await r.json() : {};
+    stopped = !!j.stopped;
+    uiModule.showToast(stopped ? 'Worker stopped' : 'Nothing to stop (the worker already finished)');
+  } catch (_) { uiModule.showToast('Could not stop the worker'); }
+  if (stopped) {
+    delete _serverWorkers[sessionId];
+    _serverRunning.delete(sessionId);
+    _streamingSessions.delete(sessionId);
+    _updateResearchDots();
+    _updateRailNotifs();
+  }
+  _syncActivityFromServer();
+  return stopped;
+}
 const _interruptedSeen = new Set();
 
 /** Queue position of a chat (0 = not queued). */
@@ -688,7 +720,8 @@ function createSessionItem(s) {
   // Sub-agent worker chats (delegate_agents) read as children of the chat that
   // spawned them: indented, slightly smaller, so a burst of workers does not
   // look like a burst of conversations.
-  if (s.folder === 'Agents' || /^🤖 /.test(String(s.name || ''))) div.classList.add('session-item-worker');
+  const _isWorkerRow = (s.folder === 'Agents' || /^🤖 /.test(String(s.name || '')));
+  if (_isWorkerRow) div.classList.add('session-item-worker');
   div.setAttribute('role', 'option');
   div.setAttribute('tabindex', '-1');
   div.setAttribute('data-session-id', s.id);
@@ -901,11 +934,14 @@ function createSessionItem(s) {
   const stopItem = document.createElement('div');
   stopItem.className = 'dropdown-item-compact dropdown-item-danger session-stop-run';
   stopItem.innerHTML = _icon(_stopIcon) + '<span>Stop run</span>';
-  stopItem.style.display = (sessionActivityStatus(s.id) === 'running' && _serverRunIds[s.id]) ? '' : 'none';
+  stopItem.style.display = (sessionActivityStatus(s.id) === 'running' && (_serverRunIds[s.id] || workerInfo(s.id))) ? '' : 'none';
   {
     stopItem.addEventListener('click', async (e) => {
       e.stopPropagation();
       dropdown.style.display = 'none';
+      // A sub-agent worker has no detached run of its own: it is stopped
+      // through the worker endpoint (the parent's delegation keeps going).
+      if (!_serverRunIds[s.id] && workerInfo(s.id)) { await stopWorker(s.id); return; }
       try {
         const r = await fetch(`${API_BASE}/api/chat/stop/${encodeURIComponent(s.id)}`, { method: 'POST', credentials: 'same-origin', headers: { 'X-Odysseus-Run-Id': _serverRunIds[s.id] || '' } });
         const j = r.ok ? await r.json() : {};
@@ -1055,7 +1091,7 @@ function createSessionItem(s) {
       dropdown.style.display = 'none';
     } else {
       const stopEl = dropdown.querySelector('.session-stop-run');
-      if (stopEl) stopEl.style.display = (sessionActivityStatus(s.id) === 'running' && _serverRunIds[s.id]) ? '' : 'none';
+      if (stopEl) stopEl.style.display = (sessionActivityStatus(s.id) === 'running' && (_serverRunIds[s.id] || workerInfo(s.id))) ? '' : 'none';
       // Position the dropdown using viewport coords
       const rect = menuBtn.getBoundingClientRect();
       dropdown.style.left = '';
@@ -1198,12 +1234,54 @@ function createSessionItem(s) {
     }
   }
 
+  // Sub-agent worker rows: an inline ■ Stop (the worker has no detached run,
+  // so the "Stop run" of ordinary chats does not apply) and a stalled mark.
+  // Shown / hidden by _updateResearchDots from /api/chat/activity.workers.
+  if (_isWorkerRow && !isOpenClaw) {
+    const wstop = document.createElement('button');
+    wstop.type = 'button';
+    wstop.className = 'session-worker-stop';
+    wstop.title = 'Stop this worker';
+    wstop.setAttribute('aria-label', 'Stop this worker');
+    wstop.textContent = '■';
+    wstop.hidden = !workerInfo(s.id);
+    wstop.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      wstop.disabled = true;
+      try { await stopWorker(s.id); } finally { wstop.disabled = false; }
+    });
+    div.appendChild(wstop);
+    _applyWorkerRowState(div, s.id);
+  }
+
   div.appendChild(menuBtn);
   dropdown.addEventListener('click', (e) => e.stopPropagation());
   document.body.appendChild(dropdown);
   div._sessionDropdown = dropdown;
 
   return div;
+}
+
+/** Worker row chrome from the activity snapshot: running → Stop visible,
+ *  stalled → red mark + title with the reason. */
+function _applyWorkerRowState(row, sid) {
+  const w = workerInfo(sid);
+  const running = !!w;
+  const stalled = !!(w && w.stalled);
+  row.classList.toggle('worker-running', running);
+  row.classList.toggle('worker-stalled', stalled);
+  const btn = row.querySelector('.session-worker-stop');
+  if (btn) btn.hidden = !running;
+  if (w) {
+    const bits = [];
+    if (w.role) bits.push(w.role);
+    if (w.round != null) bits.push(`round ${w.round}`);
+    if (w.tool_calls != null) bits.push(`${w.tool_calls} tools`);
+    row.title = `${stalled ? 'STALLED — no activity' : 'Working'}${w.name ? ` · ${w.name}` : ''}${bits.length ? ` · ${bits.join(' · ')}` : ''}`;
+  } else if (row.classList.contains('session-item-worker')) {
+    row.title = '';
+  }
 }
 
 function _dateBucketLabel(value) {
@@ -2948,6 +3026,10 @@ function _updateResearchDots() {
       star.style.opacity = '';
     }
   });
+  // Sub-agent worker rows: inline Stop while running, red mark when stalled.
+  document.querySelectorAll('.session-item-worker[data-session-id]').forEach(function(row) {
+    _applyWorkerRowState(row, row.dataset.sessionId);
+  });
   // Project hub / recents rows (projects.js) carry a status slot too.
   document.querySelectorAll('.session-status[data-session-status]').forEach(function(el) {
     var st = sessionActivityStatus(el.dataset.sessionStatus);
@@ -3103,6 +3185,10 @@ async function _checkServerStream(sessionId) {
 
     const res = await fetch(`${API_BASE}/api/chat/stream_status/${sessionId}`);
     if (!res.ok) {
+      // 404 = no active stream of its own. A sub-agent worker chat is driven
+      // by its parent's delegate_agents call: it has no run and no messages
+      // until it finishes, so the chat would just look empty. Say what it is.
+      if (await _showRunningWorkerBanner(sessionId)) return;
       _clearRunningState(sessionId);
       return; // 404 = no active stream
     }
@@ -3178,6 +3264,79 @@ async function _checkServerStream(sessionId) {
   } catch (_) {
     // No stream active — nothing to do
   }
+}
+
+/** "Worker <name> of <parent> — running · Stop · Open parent" in an open
+ *  worker chat that is still running (nothing else to show yet). Polls the
+ *  activity snapshot and reloads the chat once the worker finishes.
+ *  Returns true when the banner was painted. */
+async function _showRunningWorkerBanner(sessionId) {
+  const meta = sessions.find(s => s.id === sessionId);
+  const looksLikeWorker = !!(meta && (meta.folder === 'Agents' || /^🤖 /.test(String(meta.name || ''))));
+  let w = workerInfo(sessionId);
+  // The activity snapshot may not have arrived yet (fresh tab): ask once.
+  if (!w && (looksLikeWorker || _serverRunning.has(sessionId))) {
+    try { await _syncActivityFromServer(); } catch (_) {}
+    w = workerInfo(sessionId);
+  }
+  if (!w) return false;
+  if (getCurrentSessionId() !== sessionId) return false;
+  const box = document.getElementById('chat-history');
+  if (!box) return false;
+  const parent = sessions.find(s => s.id === w.parent);
+  const parentName = (parent && parent.name) || w.parent || 'its parent chat';
+  const workerName = w.name || (meta && meta.name) || 'worker';
+  const banner = document.createElement('div');
+  banner.className = 'worker-chat-banner' + (w.stalled ? ' is-stalled' : '');
+  banner.dataset.workerBanner = sessionId;
+  banner.innerHTML =
+    '<span class="worker-chat-dot"></span>' +
+    '<span class="worker-chat-text">Worker <b class="worker-chat-name"></b> of <b class="worker-chat-parent"></b> — <span class="worker-chat-state"></span></span>' +
+    '<button type="button" class="harness-btn harness-btn-mini harness-btn-danger worker-chat-stop" title="Stop this worker only">■ Stop</button>' +
+    (w.parent ? '<a class="harness-btn harness-btn-mini worker-chat-open-parent" href="#' + uiModule.esc(String(w.parent)) + '" title="Open the chat that delegated this task">↗ Open parent</a>' : '') +
+    '<div class="worker-chat-hint harness-muted">Its transcript is saved here when it finishes.</div>';
+  banner.querySelector('.worker-chat-name').textContent = workerName;
+  banner.querySelector('.worker-chat-parent').textContent = parentName;
+  const paintState = (info) => {
+    const st = banner.querySelector('.worker-chat-state');
+    const bits = [];
+    if (info && info.role) bits.push(info.role);
+    if (info && info.round != null) bits.push(`round ${info.round}`);
+    if (info && info.tool_calls != null) bits.push(`${info.tool_calls} tools`);
+    if (info && info.started_at) {
+      const s = Math.max(0, Math.round(Date.now() / 1000 - Number(info.started_at)));
+      bits.push(s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`);
+    }
+    const stalled = !!(info && info.stalled);
+    banner.classList.toggle('is-stalled', stalled);
+    if (st) st.textContent = (stalled ? 'stalled (no activity)' : 'running') + (bits.length ? ` · ${bits.join(' · ')}` : '');
+  };
+  paintState(w);
+  banner.querySelector('.worker-chat-stop').addEventListener('click', async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.currentTarget.disabled = true;
+    e.currentTarget.textContent = 'Stopping…';
+    await stopWorker(sessionId);
+  });
+  // Any welcome screen / placeholder gives way to the banner.
+  if (window.chatModule && window.chatModule.hideWelcomeScreen) { try { window.chatModule.hideWelcomeScreen(); } catch (_) {} }
+  box.appendChild(banner);
+  uiModule.scrollHistory();
+  const started = Date.now();
+  const pollId = setInterval(async () => {
+    if (getCurrentSessionId() !== sessionId || !banner.parentNode) { clearInterval(pollId); if (banner.parentNode) banner.remove(); return; }
+    // Refresh the snapshot ourselves between the 6 s sidebar syncs.
+    if (Date.now() - started > 2500) { try { await _syncActivityFromServer(); } catch (_) {} }
+    const cur = workerInfo(sessionId);
+    if (cur) { paintState(cur); return; }
+    clearInterval(pollId);
+    banner.remove();
+    _clearRunningState(sessionId);
+    // Finished: its transcript is in the DB now.
+    selectSession(sessionId);
+  }, 3000);
+  return true;
 }
 
 export function clearStreamComplete(sessionId) {
@@ -4080,6 +4239,8 @@ const sessionModule = {
   clearAwaitingApproval,
   markAwaitingQuestion,
   sessionActivityStatus,
+  workerInfo,
+  stopWorker,
   noteSessionViewed,
   openLibrary,
   closeLibrary,

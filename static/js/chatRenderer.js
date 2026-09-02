@@ -2796,7 +2796,14 @@ export function addMessage(role, content, modelName, metadata) {
             // delegate_agents: rebuild the worker board from the persisted
             // evidence (same rows the live board showed).
             let saHtml = '';
-            if (Array.isArray(ev.subagents) && ev.subagents.length) {
+            if (Array.isArray(ev.subagents) && ev.subagents.length && window.agentHarnessUI && typeof window.agentHarnessUI.restoredSubagentBoardHtml === 'function') {
+              // Board v3 cards: role, model, tokens, files, elapsed from
+              // started_at/ended_at, steer + supervisor lines, Re-run with the
+              // persisted instruction (agentHarnessUI owns the card markup).
+              try { saHtml = window.agentHarnessUI.restoredSubagentBoardHtml(ev.subagents); } catch (_) { saHtml = ''; }
+            }
+            if (!saHtml && Array.isArray(ev.subagents) && ev.subagents.length) {
+              // Fallback (agentHarnessUI not loaded): the compact v2 rows.
               const rows = ev.subagents.map((sa, i) => {
                 const fine = !sa.error && sa.stop_reason === 'complete';
                 const cls = sa.error ? 'is-error' : (fine ? 'is-done' : 'is-partial');
