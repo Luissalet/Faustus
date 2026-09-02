@@ -330,3 +330,38 @@ console.log(JSON.stringify(Object.fromEntries(steps)));
         "frame again": True,
         "after chat switch": False,
     }
+
+
+@pytest.mark.skipif(not _HAS_NODE, reason="node binary not on PATH")
+def test_desktop_screenshots_share_the_panel_with_a_desktop_kicker():
+    """One panel for everything the agent SEES: a desktop_screenshot frame
+    lands in the same panel as the browser frames, the kicker flips to
+    'Desktop' and the filmstrip labels the frame; a browser frame after it
+    flips the kicker back."""
+    out = _node(_FAKE_DOM + f"""
+const ok = (raw) => raw;
+parts['.bv-kicker'] = new El('span');
+bv.push({{ tool: 'desktop_screenshot', source: 'desktop', title: 'Desktop · monitor 0', screenshot: 'data:image/jpeg;base64,{JPEG}' }}, ok);
+const k1 = parts['.bv-kicker'].textContent; const t1 = parts['.bv-page-title'].textContent;
+const film1 = parts['.bv-filmstrip'].innerHTML;
+bv.push({{ tool: 'mcp__builtin_browser__browser_navigate', url: 'https://e.test/', title: 'E', screenshot: 'data:image/jpeg;base64,{JPEG}' }}, ok);
+const k2 = parts['.bv-kicker'].textContent;
+// a desktop frame with no title still gets a label; a desktop_* tool name alone is enough
+bv.push({{ tool: 'desktop_screenshot', screenshot: 'data:image/jpeg;base64,{JPEG}' }}, ok);
+const k3 = parts['.bv-kicker'].textContent; const t3 = parts['.bv-page-title'].textContent;
+console.log(JSON.stringify({{ k1, t1, film1HasDesktop: film1.includes('is-desktop') && film1.includes('🖥'), k2, k3, t3, n: bv.frames().length, sources: bv.frames().map(f => f.source) }}));
+""")
+    assert out["k1"] == "Desktop" and out["t1"] == "Desktop · monitor 0"
+    assert out["film1HasDesktop"] is True
+    assert out["k2"] == "Browser"
+    assert out["k3"] == "Desktop" and out["t3"] == "Desktop"
+    assert out["n"] == 3 and out["sources"] == ["desktop", "browser", "desktop"]
+
+
+def test_chat_js_routes_desktop_screenshots_to_the_panel():
+    src = (Path(__file__).resolve().parents[1] / "static" / "js" / "chat.js").read_text(encoding="utf-8")
+    i = src.index("/^desktop_screenshot$/.test(String(json.tool || ''))")
+    seg = src[i:i + 900]
+    assert "browserView.push({ tool: json.tool, source: 'desktop'" in seg
+    assert "chatRenderer.safeToolScreenshotSrc" in seg          # same raster whitelist
+    assert "!_isBg" in src[i - 200:i + 50]                       # background chats paint nothing

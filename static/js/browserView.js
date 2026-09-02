@@ -57,7 +57,7 @@ function _ensurePanel() {
   el.hidden = true;
   el.innerHTML =
     `<div class="fv-head bv-head">` +
-    `<div class="fv-title"><span class="fv-kicker">Browser</span><span class="bv-live" title="The agent is driving the browser right now" hidden><span class="bv-live-dot"></span>Live</span></div>` +
+    `<div class="fv-title"><span class="fv-kicker bv-kicker">Browser</span><span class="bv-live" title="The agent is driving the browser / desktop right now" hidden><span class="bv-live-dot"></span>Live</span></div>` +
     `<div class="fv-actions">` +
     `<label class="bv-auto" title="Open this panel automatically when the agent uses the browser"><input type="checkbox" class="bv-auto-toggle"> Auto-open</label>` +
     `<button type="button" class="fv-btn fv-icon fv-close" data-bv="close" title="Close">×</button>` +
@@ -115,9 +115,9 @@ if (typeof window !== 'undefined') _listen();
 /** Filmstrip markup for the last frames; exported for tests. */
 export function renderFilmstripHtml(frames, active) {
   return frames.map((f, i) =>
-    `<button type="button" class="bv-thumb${i === active ? ' active' : ''}" data-bv="frame" data-index="${i}" role="listitem" title="${esc(f.title || f.url || '')}">` +
+    `<button type="button" class="bv-thumb${i === active ? ' active' : ''}${f.source === 'desktop' ? ' is-desktop' : ''}" data-bv="frame" data-index="${i}" role="listitem" title="${esc((f.source === 'desktop' ? 'Desktop · ' : '') + (f.title || f.url || ''))}">` +
     `<img src="${esc(f.src)}" alt="${esc(f.title || 'frame ' + (i + 1))}">` +
-    `<span class="bv-thumb-n">${i + 1}</span></button>`
+    `<span class="bv-thumb-n">${f.source === 'desktop' ? '🖥 ' : ''}${i + 1}</span></button>`
   ).join('');
 }
 
@@ -128,6 +128,8 @@ function _render() {
   const empty = el.querySelector('.bv-empty');
   const title = el.querySelector('.bv-page-title');
   const url = el.querySelector('.bv-url');
+  const kicker = el.querySelector('.bv-kicker');
+  if (kicker) kicker.textContent = f && f.source === 'desktop' ? 'Desktop' : 'Browser';
   if (f) {
     img.src = f.src;              // validated in push()
     img.hidden = false;
@@ -154,11 +156,17 @@ export function push(ev, safeSrc) {
   const validate = typeof safeSrc === 'function' ? safeSrc : _defaultSafeSrc;
   const src = validate(ev.screenshot);
   if (!src) return null;
+  const tool = String(ev.tool || '');
+  // One panel for everything the agent SEES: browser frames and desktop
+  // screenshots (desktop_screenshot tool output). The kicker and the
+  // filmstrip label say which is which.
+  const source = ev.source === 'desktop' || /^desktop_/.test(tool) ? 'desktop' : 'browser';
   const frame = {
     src,
     url: String(ev.url || '').slice(0, 2048),
-    title: String(ev.title || '').slice(0, 300),
-    tool: String(ev.tool || ''),
+    title: String(ev.title || (source === 'desktop' ? 'Desktop' : '')).slice(0, 300),
+    tool,
+    source,
     at: Date.now(),
   };
   _frames.push(frame);

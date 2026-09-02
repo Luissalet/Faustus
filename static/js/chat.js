@@ -4085,6 +4085,17 @@ import modelControls from './modelControls.js';
                   _rememberGeneratedImage(json);
                   _appendGeneratedImageBubble(json);
                 }
+                // --- A desktop screenshot is a frame of what the agent sees:
+                // it goes to the same right-hand panel as the browser frames
+                // (kicker "Desktop"), not only under the tool card.
+                if (json.screenshot && !_isBg && /^desktop_screenshot$/.test(String(json.tool || ''))) {
+                  let _dtitle = 'Desktop';
+                  try {
+                    const _m = /monitor\s*(\d+)/i.exec(String(json.output || ''));
+                    if (_m) _dtitle = `Desktop · monitor ${_m[1]}`;
+                  } catch (_e) { /* label only */ }
+                  try { browserView.push({ tool: json.tool, source: 'desktop', title: _dtitle, url: '', screenshot: json.screenshot }, chatRenderer.safeToolScreenshotSrc); } catch (_e) { console.warn('browserView push (desktop)', _e); }
+                }
                 // --- Render browser screenshots in tool output ---
                 if (json.screenshot && currentToolBubble) {
                   const contentEl = currentToolBubble.querySelector('.agent-thread-content');
