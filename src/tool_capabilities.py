@@ -844,11 +844,12 @@ class ToolRunSecurityContext:
     user_delegation: Optional[Mapping[str, Any]] = None
 
     @staticmethod
-    def _delegation_tasks(content: Any) -> Optional[list]:
-        """Task list as the delegate_agents TOOL will read it — the tool's own
-        lenient parser (double-encoded `tasks` strings, the rest of the object
-        stuffed into that string, `[files]`/`{model}` prefixes split off), so
-        the gate and the tool cannot disagree about what was asked."""
+    def _delegation_payload(content: Any) -> Optional[Mapping[str, Any]]:
+        """The payload as the delegate_agents TOOL will act on it — the tool's
+        own lenient parser (double-encoded `tasks` strings, the rest of the
+        object stuffed into that string, `[files]`/`{model}` prefixes split
+        off, defaults filled in), so the gate and the tool cannot disagree
+        about what was asked."""
         try:
             from src.agent_tools.subagent_tools import parse_delegation_args
         except Exception:  # pragma: no cover - import cycle guard
@@ -864,46 +865,103 @@ class ToolRunSecurityContext:
             parsed = parse_delegation_args(raw)
         except Exception:
             return None
-        tasks = parsed.get("tasks") if isinstance(parsed, Mapping) else None
-        return tasks if isinstance(tasks, list) else None
+        if not isinstance(parsed, Mapping) or not isinstance(parsed.get("tasks"), list):
+            return None
+        return parsed
+
+    @classmethod
+    def _delegation_tasks(cls, content: Any) -> Optional[list]:
+        parsed = cls._delegation_payload(content)
+        return list(parsed["tasks"]) if parsed is not None else None
 
     @staticmethod
     def _norm_instruction(text: Any) -> str:
         return " ".join(str(text or "").split()).strip().rstrip(".").lower()
 
-    def _user_delegation_instructions(self) -> frozenset[str]:
-        payload = self.user_delegation
-        if not isinstance(payload, Mapping):
+    @staticmethod
+    def _norm_files(files: Any) -> frozenset[str]:
+        if not isinstance(files, (list, tuple)):
             return frozenset()
-        tasks = self._delegation_tasks(payload)
-        out = set()
-        for t in tasks or []:
-            if isinstance(t, Mapping):
-                n = self._norm_instruction(t.get("instruction"))
-                if n:
-                    out.add(n)
-        return frozenset(out)
+        return frozenset(str(f).strip() for f in files if str(f).strip())
+
+    @classmethod
+    def _norm_task(cls, task: Any) -> Optional[dict]:
+        if not isinstance(task, Mapping):
+            return None
+        instr = cls._norm_instruction(task.get("instruction"))
+        if not instr:
+            return None
+        return {
+            "instruction": instr,
+            "files": cls._norm_files(task.get("files")),
+            "model": str(task.get("model") or "").strip(),
+        }
 
     def _user_delegation_allows(self, tool_name: Any, content: Any) -> bool:
+        """True when the call is (a subset of) the delegation the user typed:
+        the whole normalized payload is compared, not only the instruction
+        words. Audited: a model-written `context` lands verbatim in every
+        worker prompt (workers run with the security gate bypassed), `files`
+        can point a worker at ../../etc/passwd, `model`/`reviewer_model`
+        pick another model, `reviewer`/`timeout_s`/`max_rounds` add workers
+        and wall-clock, and a task repeated N times runs N workers — none of
+        that is something the user dictated."""
         if tool_name != "delegate_agents":
             return False
-        wanted = self._user_delegation_instructions()
-        if not wanted:
-            if self.user_delegation is not None:
-                logger.info("[gate] user delegation present but no instructions parsed: %r", self.user_delegation)
+        if self.user_delegation is None:
             return False
-        tasks = self._delegation_tasks(content)
-        if not tasks:
+        user = self._delegation_payload(self.user_delegation) if isinstance(self.user_delegation, Mapping) else None
+        user_tasks = [t for t in (self._norm_task(t) for t in (user or {}).get("tasks") or []) if t]
+        if not user_tasks:
+            logger.info("[gate] user delegation present but no instructions parsed: %r", self.user_delegation)
+            return False
+        call = self._delegation_payload(content)
+        if call is None or not call.get("tasks"):
             logger.info("[gate] user delegation: the call's tasks could not be parsed (%r)",
                         (content if isinstance(content, str) else str(content))[:160])
             return False
-        for t in tasks:
-            instr = self._norm_instruction(t.get("instruction") if isinstance(t, Mapping) else None)
-            if not instr or instr not in wanted:
-                logger.info("[gate] user delegation: task instruction differs from the user's (%r vs %d dictated)",
-                            instr[:120], len(wanted))
+        # (e) nothing the user did not write reaches the worker prompts.
+        if str(call.get("shared_context") or "").strip():
+            logger.info("[gate] user delegation: the call carries a model-written context; keeping the gate")
+            return False
+        # (c)/(d) payload-level knobs: equal to the user's (both sides parsed
+        # by the tool, so an omitted knob is the tool's default on both).
+        for key in ("parallel", "reviewer", "max_rounds", "timeout_s"):
+            if call.get(key) != (user or {}).get(key):
+                logger.info("[gate] user delegation: %r differs from the user's (%r vs %r)",
+                            key, call.get(key), (user or {}).get(key))
                 return False
-        logger.info("[gate] user delegation matched %d task(s): delegate_agents passes the gate", len(tasks))
+        user_rm = str((user or {}).get("reviewer_model") or "").strip()
+        call_rm = str(call.get("reviewer_model") or "").strip()
+        if call_rm and call_rm != user_rm:
+            logger.info("[gate] user delegation: reviewer_model differs from the user's (%r vs %r)", call_rm, user_rm)
+            return False
+        # (a)(b)(c)(f) every task in the call is one the user dictated — same
+        # words, files within the user's files for that task, the user's
+        # model (or none) — and a dictated task is consumed once per match,
+        # so the model cannot multiply one task into several workers.
+        unused = list(user_tasks)
+        for raw_task in call["tasks"]:
+            task = self._norm_task(raw_task)
+            if task is None:
+                logger.info("[gate] user delegation: a task in the call has no instruction")
+                return False
+            match = None
+            for i, cand in enumerate(unused):
+                if cand["instruction"] != task["instruction"]:
+                    continue
+                if not task["files"] <= cand["files"]:
+                    continue
+                if task["model"] and task["model"] != cand["model"]:
+                    continue
+                match = i
+                break
+            if match is None:
+                logger.info("[gate] user delegation: task differs from the user's (%r, files=%s, model=%r vs %d dictated)",
+                            task["instruction"][:120], sorted(task["files"])[:8], task["model"], len(user_tasks))
+                return False
+            unused.pop(match)
+        logger.info("[gate] user delegation matched %d task(s): delegate_agents passes the gate", len(call["tasks"]))
         return True
 
     def _trusted_override(self, tool_name: Any, content: Any) -> bool:
