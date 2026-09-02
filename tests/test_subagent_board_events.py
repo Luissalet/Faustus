@@ -647,3 +647,37 @@ def test_the_supervisor_nudge_does_not_tell_a_worker_to_ask_user():
     dog = src[src.index("async def watchdog("):src.index("async def one(")]
     assert "ask_user" not in dog.replace("cannot ask_user", "")
     assert "report what" in dog
+
+
+# ── the worker model (two cards: a model of their own so they overlap) ──────
+
+@pytest.mark.asyncio
+async def test_workers_run_on_the_configured_worker_model_and_a_tasks_own_model_still_wins(delegation):
+    """Measured on the two-card box: Ollama generates for two DIFFERENT
+    models at once, but two requests to the same model queue on its single
+    slot. `agent_subagent_worker_model` gives the workers a model of their
+    own (pinned to the other card in Local models); empty = the
+    coordinator's; a task's explicit `model` still wins."""
+    seen = []
+
+    async def _loop(endpoint_url, model, messages, **kwargs):
+        seen.append(model)
+        yield _harness_summary([])
+        yield "data: [DONE]\n\n"
+    delegation(_loop)
+    events = []
+    await _delegate(["a", {"instruction": "b", "model": "special:1b"}], events, parallel=False)
+    assert seen == ["m", "special:1b"]
+    assert [e["model"] for e in events if e.get("event") == "started"] == ["m", "special:1b"]
+
+    seen.clear()
+    events.clear()
+    delegation.knobs["agent_subagent_worker_model"] = "qwen3.5:9b"
+    await _delegate(["a", {"instruction": "b", "model": "special:1b"}], events, parallel=False)
+    assert seen == ["qwen3.5:9b", "special:1b"]
+    assert [e["model"] for e in events if e.get("event") == "started"] == ["qwen3.5:9b", "special:1b"]
+
+    seen.clear()
+    delegation.knobs["agent_subagent_worker_model"] = "  auto "
+    await _delegate(["a"], [], parallel=False)
+    assert seen == ["m"]

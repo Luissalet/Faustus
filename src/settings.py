@@ -284,6 +284,11 @@ DEFAULT_SETTINGS = {
     "agent_subagent_stall_seconds": 120,
     "agent_subagent_supervisor": True,
     "agent_subagent_max_parallel": 2,
+    # Model the workers run on ("" = the coordinator's). Two different models
+    # generate at the same time on Ollama; two requests to one model queue on
+    # its single slot — pin the worker model to the other card (Local models →
+    # Options → main_gpu) and the coordinator and its workers overlap.
+    "agent_subagent_worker_model": "",
     # Workers get a lean toolset (no web / memory / skills / background jobs
     # unless the task mentions them): tool schemas were 65 % of a worker's
     # first round on a 9B model.

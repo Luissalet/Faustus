@@ -934,6 +934,16 @@ class DelegateAgentsTool:
         headers = getattr(parent, "headers", None) or None
         if not endpoint_url or not model:
             return {"error": "delegate_agents: parent session has no model route", "exit_code": 1}
+        # Workers default to the coordinator's model unless the admin picked a
+        # worker model (Settings → Agent & automation). Measured on the
+        # two-card box: Ollama runs two DIFFERENT models' runners at the same
+        # time (one request each in flight), but two requests to the SAME
+        # model queue on its single slot — so a worker model of its own,
+        # pinned to the other card in Local models → Options (main_gpu), is
+        # what makes the coordinator and the workers overlap at all.
+        worker_model = str(_setting("agent_subagent_worker_model", "") or "").strip()
+        if worker_model and worker_model.lower() != "auto":
+            model = worker_model
         workspace = get_active_workspace()
         roots = list(get_active_workspace_roots() or ()) or None
         gen_overrides = ctx.get("gen_overrides") if isinstance(ctx.get("gen_overrides"), dict) else None
