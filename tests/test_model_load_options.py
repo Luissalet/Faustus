@@ -187,6 +187,37 @@ def test_defaults_for_another_model_do_not_leak(store, monkeypatch):
     assert "options" not in client.payload
 
 
+def test_saved_defaults_apply_off_the_default_port_when_the_admin_declared_the_server(store, monkeypatch):
+    """Audited: the Local models page lists any endpoint with "ollama" in its
+    host (or port 11434) and lets the admin save options for it, but the
+    /v1 → /api/chat reroute only fired on :11434 — so for an Ollama behind a
+    remapped port or a LAN box named ollama.lan the saved num_ctx was
+    resolved, merged, and then silently dropped (the /v1 surface cannot
+    carry it). A saved option IS the admin's word that the server is Ollama."""
+    monkeypatch.setattr(mlo, "_endpoint_bases", lambda: {
+        "local-ollama": "http://localhost:11434/v1",
+        "lan-ollama": "http://ollama.lan:8080/v1",
+    })
+    mlo.set_options("lan-ollama", "qwen3.5:9b", {"num_ctx": 32768, "keep_alive": "1h"})
+    assert mlo.resolve_for_request("http://ollama.lan:8080/v1", "qwen3.5:9b") == {"num_ctx": 32768, "keep_alive": "1h"}
+    assert llm_core._route_for_gen_overrides(
+        "http://ollama.lan:8080/v1", {"num_ctx": 32768, "keep_alive": "1h"}, "qwen3.5:9b",
+    ) == "http://ollama.lan:8080/api/chat"
+    # and the rerouted request is built as a native Ollama request
+    assert llm_core._detect_provider("http://ollama.lan:8080/api/chat") == "ollama"
+    client = _stream(monkeypatch, "http://ollama.lan:8080/v1", "qwen3.5:9b")
+    assert client.url == "http://ollama.lan:8080/api/chat"
+    assert client.payload["options"]["num_ctx"] == 32768
+    assert client.payload["keep_alive"] == "1h"
+    # the 11434 rule still holds: no declaration, no reroute for another local port
+    assert llm_core._route_for_gen_overrides("http://127.0.0.1:8080/v1", {"num_ctx": 4096}, "qwen3.5:9b") \
+        == "http://127.0.0.1:8080/v1"
+    assert llm_core._route_for_gen_overrides("http://127.0.0.1:11434/v1", {"num_ctx": 4096}, "qwen3.5:9b") \
+        == "http://127.0.0.1:11434/api/chat"
+    # an undeclared LAN host is not Ollama just because it serves /api/chat
+    assert llm_core._detect_provider("http://vllm.lan:8080/api/chat") == "openai"
+
+
 def test_non_streaming_async_call_applies_the_defaults(store, monkeypatch):
     mlo.set_options("local-ollama", "qwen3.5:9b", {"num_ctx": 16384, "keep_alive": "1h"})
     captured = {}

@@ -217,6 +217,48 @@ def _model_matches(saved: str, requested: str) -> bool:
     return _canon(saved) == _canon(requested)
 
 
+def declared_ollama_netlocs() -> frozenset:
+    """host:port of every endpoint the admin saved load options for.
+
+    Settings → Local models only lists Ollama servers (port 11434 or an
+    "ollama" host — routes/model_routes.py ``_is_ollama_base``), so a saved
+    option is the admin's word that the thing at that host:port is Ollama:
+    llm_core uses it to move a /v1 request to the native /api/chat (the only
+    surface that carries num_ctx/num_gpu/keep_alive) off the default port.
+    Empty when nothing is saved or anything goes wrong.
+    """
+    try:
+        table = all_options()
+        if not table:
+            return frozenset()
+        out = set()
+        bases: Optional[Dict[str, str]] = None
+        for ep_id in {split_key(key)[0] for key in table}:
+            if ep_id == DEFAULT_ENDPOINT_ID:
+                base = _default_ollama_base()
+            else:
+                if bases is None:
+                    bases = _endpoint_bases()
+                base = bases.get(ep_id, "")
+            netloc = _netloc_key(base) if base else ""
+            if netloc:
+                out.add(netloc)
+        return frozenset(out)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("model_load_options: declared netlocs failed: %s", e)
+        return frozenset()
+
+
+def is_declared_ollama_host(url: str) -> bool:
+    """True when ``url`` points at a host:port the admin saved load options
+    for (see :func:`declared_ollama_netlocs`)."""
+    try:
+        want = _netloc_key(url)
+        return bool(want) and want in declared_ollama_netlocs()
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def resolve_for_request(url: str, model: str) -> Dict[str, Any]:
     """The saved defaults that apply to a request for ``model`` at ``url``.
 

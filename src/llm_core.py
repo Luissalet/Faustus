@@ -583,8 +583,23 @@ def _is_ollama_native_url(url: str) -> bool:
         return True
     if path.startswith("/v1"):
         return False
-    local_ollama_host = host in {"localhost", "127.0.0.1", "0.0.0.0", "::1"} or parsed.port == 11434
-    return local_ollama_host and (path == "" or path == "/api" or path.startswith("/api/"))
+    if not (path == "" or path == "/api" or path.startswith("/api/")):
+        return False
+    if host in {"localhost", "127.0.0.1", "0.0.0.0", "::1"} or parsed.port == 11434:
+        return True
+    # Off the default port and not loopback: Ollama only when the admin said
+    # so by saving load options for that server in Settings → Local models
+    # (the page lists any "ollama" host) — that is where the /v1 → /api/chat
+    # reroute of `_route_for_gen_overrides` sends such a request.
+    return _is_declared_ollama_host(url)
+
+
+def _is_declared_ollama_host(url: str) -> bool:
+    try:
+        from src.model_load_options import is_declared_ollama_host
+        return is_declared_ollama_host(url)
+    except Exception:  # noqa: BLE001 — never worth failing a request
+        return False
 
 
 def _is_ollama_openai_compat_url(url: str) -> bool:
@@ -2867,12 +2882,22 @@ def _route_for_gen_overrides(url: str, gen_overrides: Optional[Dict], model: str
     tries to apply with `think: false`. Same server, same model, same tools;
     only the wire format changes."""
     try:
-        port = urlparse(url or "").port
+        parsed = urlparse(url or "")
+        port = parsed.port
     except ValueError:
         return url
+    path = (parsed.path or "").rstrip("/")
+    if not (path == "/v1" or path.startswith("/v1/")):
+        return url
     # Only the default Ollama port: a llama.cpp / vLLM server on another local
-    # port also matches _is_ollama_openai_compat_url and has no /api/chat.
-    if not (port == 11434 and _is_ollama_openai_compat_url(url)):
+    # port also matches _is_ollama_openai_compat_url and has no /api/chat…
+    # unless the admin declared that server as Ollama by saving load options
+    # for it (Settings → Local models lists any "ollama" host, port aside):
+    # those saved num_ctx/num_gpu/keep_alive were resolved, merged and then
+    # silently dropped here because the /v1 surface cannot carry them.
+    if not ((port == 11434 and _is_ollama_openai_compat_url(url))
+            or _is_declared_ollama_host(url)
+            or (model and _model_load_defaults(url, model))):
         return url
     ov = gen_overrides if isinstance(gen_overrides, dict) else {}
     # top_k / repeat_penalty / num_ctx / keep_alive are Ollama `options` with
