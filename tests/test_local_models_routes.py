@@ -443,6 +443,35 @@ def test_pull_can_be_cancelled(env):
     assert client.delete("/api/local-models/pulls/nope", headers=ADMIN).status_code == 404
 
 
+def test_a_cancelled_pull_is_not_deduplicated_against_a_new_pull_of_the_same_model(env):
+    """Audited: cancel, then pull again right away → the route handed back the
+    job being cancelled (still "pulling" until the stream notices the flag),
+    the page attached to it and watched it end as "cancelled": no new pull."""
+    client, fake = env
+    fake.pull_gate = threading.Event()
+    fake.pull_lines = _PULL
+    j1 = client.post("/api/local-models/pull?stream=false", json={"endpoint_id": "local-ollama", "name": "llama3.2:3b"},
+                     headers=ADMIN).json()["pull"]
+    assert _wait(lambda: lm.pulls.get(j1["id"]).snapshot()["completed"] == 1500)
+    assert client.delete(f"/api/local-models/pulls/{j1['id']}", headers=ADMIN).status_code == 200
+    r2 = client.post("/api/local-models/pull?stream=false", json={"endpoint_id": "local-ollama", "name": "llama3.2:3b"},
+                     headers=ADMIN).json()
+    assert r2["created"] is True
+    assert r2["pull"]["id"] != j1["id"]
+    assert r2["pull"]["active"] is True and r2["pull"]["status"] in ("queued", "pulling")
+    # the third one IS the second (an honest active pull is still deduplicated)
+    r3 = client.post("/api/local-models/pull?stream=false", json={"endpoint_id": "local-ollama", "name": "llama3.2:3b"},
+                     headers=ADMIN).json()
+    assert r3["created"] is False and r3["pull"]["id"] == r2["pull"]["id"]
+    fake.pull_gate.set()
+    assert _wait(lambda: lm.pulls.get(j1["id"]).snapshot()["status"] == "cancelled")
+    assert _wait(lambda: lm.pulls.get(r2["pull"]["id"]).snapshot()["status"] == "done")
+    assert sum(1 for m, p in fake.calls if p == "/api/pull") == 2
+    # the listing shows the cancelled one as not active
+    listed = {p["id"]: p for p in client.get("/api/local-models/pulls?endpoint_id=local-ollama", headers=USER).json()["pulls"]}
+    assert listed[j1["id"]]["status"] == "cancelled" and listed[j1["id"]]["active"] is False
+
+
 def test_pull_reports_ollama_errors(env):
     client, fake = env
     fake.pull_lines = [{"status": "pulling manifest"}, {"error": "pull model manifest: file does not exist"}]
@@ -523,6 +552,36 @@ def test_unload_sends_keep_alive_zero_and_load_warms_with_the_saved_default(env)
     assert r.status_code == 200 and r.json()["via"] == "/api/embed"
     assert client.post("/api/local-models/load", json={"endpoint_id": "local-ollama", "name": "ghost:1b"}, headers=ADMIN).status_code == 404
     assert client.post("/api/local-models/unload", json={"name": "qwen3.5:9b"}, headers=USER).status_code == 403
+
+
+@pytest.mark.parametrize("keep_alive", ["soon", True, "10 minutes", [1]])
+def test_load_rejects_a_bad_keep_alive_with_400_not_500(env, keep_alive):
+    """Audited: sanitize_options raises ValueError, which the route let
+    escape as a 500 (the page showed 'load failed: HTTP 500')."""
+    client, fake = env
+    r = client.post("/api/local-models/load", json={"endpoint_id": "local-ollama", "name": "qwen3.5:9b", "keep_alive": keep_alive},
+                    headers=ADMIN)
+    assert r.status_code == 400, r.text
+    assert "keep_alive" in r.json()["detail"]
+    assert not fake.generate
+
+
+def test_pick_endpoint_needs_the_endpoint_list_it_is_given():
+    """The `endpoints is None` branch referenced a `request` that did not exist
+    (NameError at runtime); the helper now simply requires the list."""
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException) as e:
+        lm._pick_endpoint("local-ollama")
+    assert e.value.status_code == 404
+    with pytest.raises(HTTPException) as e:
+        lm._pick_endpoint("local-ollama", [])
+    assert e.value.status_code == 404
+    eps = [{"id": "a"}, {"id": "b"}]
+    assert lm._pick_endpoint(None, eps) == {"id": "a"}
+    assert lm._pick_endpoint("b", eps) == {"id": "b"}
+    with pytest.raises(HTTPException) as e:
+        lm._pick_endpoint("c", eps)
+    assert e.value.status_code == 404
 
 
 # ── per-model options ───────────────────────────────────────────────────────

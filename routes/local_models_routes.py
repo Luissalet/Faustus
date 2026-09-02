@@ -184,8 +184,8 @@ def list_ollama_endpoints(include_default: bool = True, *, owner: str = "",
 
 
 def _pick_endpoint(endpoint_id: Optional[str], endpoints: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
-    if endpoints is None:
-        endpoints = _endpoints_for(request)
+    """The endpoint `endpoint_id` names in `endpoints` (the request's own
+    visible list — every route passes it), or the first one."""
     if not endpoints:
         raise HTTPException(404, "No Ollama endpoint is configured")
     if endpoint_id:
@@ -479,6 +479,13 @@ class PullJob:
     def active(self) -> bool:
         return self.status in ("queued", "pulling")
 
+    @property
+    def cancelling(self) -> bool:
+        """Cancel was asked for but the stream has not noticed yet (it only
+        checks the flag between NDJSON lines). Still `active` for the page —
+        the row shows until it ends — but not a pull to deduplicate against."""
+        return self._cancel.is_set()
+
     def _bump(self) -> None:
         self.version += 1
 
@@ -599,11 +606,13 @@ class PullManager:
 
     def start(self, endpoint: Dict[str, Any], name: str) -> tuple:
         """(job, created). An active pull of the same model on the same
-        server is returned instead of starting a duplicate."""
+        server is returned instead of starting a duplicate — unless it is
+        being cancelled: cancel + pull again used to hand back the dying
+        job, and the page watched it end as "cancelled" with no new pull."""
         with self._lock:
             self._prune()
             for j in self._jobs.values():
-                if j.active and j.endpoint_id == endpoint["id"] and _same_model(j.name, name):
+                if j.active and not j.cancelling and j.endpoint_id == endpoint["id"] and _same_model(j.name, name):
                     return j, False
             job = PullJob(endpoint, name)
             self._jobs[job.id] = job
@@ -832,7 +841,10 @@ def setup_local_models_routes() -> APIRouter:
         if keep_alive in (None, ""):
             keep_alive = _keep_alive_for(ep["id"], name)
         else:
-            keep_alive = mlo.sanitize_options({"keep_alive": keep_alive}).get("keep_alive", "5m")
+            try:
+                keep_alive = mlo.sanitize_options({"keep_alive": keep_alive}).get("keep_alive", "5m")
+            except ValueError as e:
+                raise HTTPException(400, str(e))
         is_embedding = bool(body.get("embedding"))
         result = await asyncio.to_thread(_set_keep_alive, ep["root"], name, keep_alive, is_embedding)
         result["keep_alive"] = keep_alive
