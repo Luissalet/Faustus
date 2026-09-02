@@ -199,6 +199,24 @@ INTENT_PATTERNS: List[re.Pattern] = [
         r"déjame|permíteme|dejadme)\b[^\n]{0,200}",
         re.IGNORECASE,
     ),
+    # An action claimed to be IN PROGRESS at the end of a text-only round —
+    # "el comando se está ejecutando, esperaré a que termine", "the tests are
+    # running now, I'll wait" — is an announcement too: nothing was started.
+    # Seen live (ronda 6) on a worker told to run a 120 s command: 0 tools,
+    # "done", and the coordinator repeated the fiction to the user.
+    re.compile(
+        r"\b(?:se\s+(?:está|están)\s+(?:ejecutando|corriendo|procesando|instalando|compilando|generando)|"
+        r"(?:estoy|estamos)\s+(?:ejecutando|corriendo|lanzando|creando|escribiendo|editando|modificando|"
+        r"instalando|compilando|generando|procesando|leyendo|buscando|comprobando|verificando)|"
+        r"(?:está|están|queda|quedan)\s+en\s+(?:marcha|ejecución|curso|proceso)|"
+        r"(?:esperaré|espero|esperamos|aguardo|aguardaré)\s+(?:a\s+)?(?:que\s+)?(?:termine|acabe|finalice|complete|se\s+complete)|"
+        r"esperando\s+(?:a\s+)?(?:que\s+)?(?:termine|acabe|finalice)|"
+        r"(?:is|are)\s+(?:now\s+|currently\s+|still\s+)?(?:running|executing|being\s+executed|in\s+progress|underway)|"
+        r"i(?:'m|\s+am)\s+(?:now\s+|currently\s+)?(?:running|executing|launching|creating|writing|editing|"
+        r"modifying|installing|compiling|generating|processing|reading|checking|verifying)|"
+        r"(?:i(?:'ll|\s+will)\s+)?wait(?:ing)?\s+for\s+(?:it|the\s+\w+)\s+to\s+(?:finish|complete|end))\b[^\n]{0,200}",
+        re.IGNORECASE,
+    ),
 ]
 
 # Question to the user → the turn legitimately ends without tools.

@@ -49,6 +49,25 @@ def test_intent_announcement_spanish_and_english_and_colon_tail():
     assert h.find_intent_announcement("Let me check the file.\n\nThe file has 3 functions and no bugs.") is None
 
 
+def test_in_progress_execution_claims_count_as_announcements():
+    """Seen live (ronda 6): a worker told to run `python -c "time.sleep(120)"`
+    ended its round with 0 tool calls saying "El comando se está ejecutando.
+    Esperaré a que termine el proceso" — a claim of an action IN PROGRESS
+    that never started. Progressive / waiting phrasing is an announcement."""
+    for text in (
+        "El comando se está ejecutando. Esperaré a que termine el proceso.",
+        "Estoy ejecutando el comando ahora mismo.",
+        "El proceso está en marcha, espero a que termine.",
+        "The command is running now, I will wait for it to finish.",
+        "I am running the tests in the background.",
+        "Waiting for the process to complete.",
+    ):
+        assert h.find_intent_announcement(text), text
+    # Past-tense reports of a real run are not announcements (they are claims,
+    # handled elsewhere) — and a question still ends a turn legitimately.
+    assert h.find_intent_announcement("¿Quieres que ejecute el comando ahora?") is None
+
+
 def test_path_token_extraction():
     toks = h.extract_path_tokens(
         "Edited static/js/projects.js and ProjectCard.vue; see docs at https://x.com/a.js and Node.js v1.2 e.g. file."
