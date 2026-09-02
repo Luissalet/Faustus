@@ -1247,7 +1247,7 @@ function _rerunWorker(button) {
       sc.delegateTasks([{ name: task.name, instruction: task.instruction, files: task.files || [], model }], { parallel: false });
     }
   };
-  if (!card) { run(String(task.model || '').trim()); return; }
+  if (!card) { run(task.model ? String(task.model).trim() : ''); return; }
   // Cancel (Escape / the Cancel button) never re-delegates: another GPU
   // generation, and the worker's files rewritten.
   _inlineForm(card, {

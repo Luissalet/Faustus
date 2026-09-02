@@ -53,29 +53,34 @@ def _strip_line_comments(s):
 # ── Cancel on the re-run prompt ────────────────────────────────────────────
 
 def test_cancel_is_checked_before_the_value_is_normalized():
+    """Ronda 6: the native window.prompt() is gone (it blocks the page and
+    embedded browsers refuse it). Re-run now opens an inline card form; the
+    model text is normalized ONLY inside the submit path, so Cancel/Escape
+    (which close the form without submitting) can never reach a .trim()."""
     body = _body(_SRC, "function _rerunWorker(")
-    prompt = body.index("window.prompt(")
-    null_check = re.search(r"===\s*null", body)
-    assert null_check, "_rerunWorker() no longer distinguishes Cancel at all"
-    trim = body.index(".trim()")
-    assert prompt < null_check.start() < trim, (
-        "the null check must sit between window.prompt() and the .trim() that "
-        "normalizes it — otherwise Cancel has already become '' and the guard "
-        "is dead code"
-    )
+    assert "window.prompt(" not in body, "native prompt is back"
+    assert "_inlineForm(card" in body
+    form = _body(_SRC, "function _inlineForm(")
+    # The Cancel button and Escape only close the form; the submit handler is
+    # the single place that reads and trims the value.
+    assert form.count("onSubmit(") == 1
+    submit = form.index("form.addEventListener('submit'")
+    trim = form.index(".trim()")
+    assert submit < trim < form.index("onSubmit(")
+    assert "cancel.addEventListener('click', close)" in form
+    assert "e.key === 'Escape'" in form
 
 
 def test_cancel_never_reaches_the_delegation():
     body = _body(_SRC, "function _rerunWorker(")
-    assert "|| '').trim()" not in body, (
-        "`(window.prompt(...) || '').trim()` swallows the null that Cancel "
-        "returns"
-    )
-    null_check = re.search(r"===\s*null", body)
+    assert "|| '').trim()" not in body, "a swallowed Cancel used to re-delegate the worker"
+    # delegateTasks() is only reachable from the form's onSubmit (or when
+    # there is no card at all, where nothing was asked and nothing cancelled).
     delegate = body.index("delegateTasks(")
-    assert null_check.start() < delegate, (
-        "Cancel must return before delegateTasks() starts another worker run"
-    )
+    run_def = body.index("const run = (model) =>")
+    assert run_def < delegate
+    assert "onSubmit: (model) => run(model)" in body
+    assert "if (!card) { run(" in body
 
 
 # ── the Progress panel on the way back into a chat ─────────────────────────
