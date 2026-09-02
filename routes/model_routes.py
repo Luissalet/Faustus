@@ -31,6 +31,7 @@ from src.endpoint_resolver import (
 )
 from src.auth_helpers import _auth_disabled, effective_user, owner_filter, require_user
 from src import gpu_shared_memory
+from src import gpu_placement, vram_fit
 
 logger = logging.getLogger(__name__)
 
@@ -1406,12 +1407,24 @@ def _gb(n: float) -> str:
     return f"{n / (1024 ** 3):.1f} GB"
 
 
-def _fit_note(size_bytes: int, budget_bytes: int, total_bytes: int, state: str) -> str:
-    """The `title=` text: the real numbers, and what they do not include."""
+def _fit_note(size_bytes: int, budget_bytes: int, total_bytes: int, state: str,
+              count: int = 1, pool_name: str = "", split: bool = False) -> str:
+    """The `title=` text: the real numbers, and what they do not include.
+
+    With several cards the budget is the pool's (Ollama splits a model that
+    fits no single card), so the head says so, and `split` adds the sentence
+    that says the model is one of those."""
     if not state:
         return ""
-    head = (f"~{_gb(size_bytes)} of weights against {_gb(budget_bytes)} usable "
-            f"of {_gb(total_bytes)} on the card.")
+    if count > 1:
+        head = (f"~{_gb(size_bytes)} of weights against {_gb(budget_bytes)} usable "
+                f"across {count} GPUs ({_gb(total_bytes)}).")
+    else:
+        head = (f"~{_gb(size_bytes)} of weights against {_gb(budget_bytes)} usable "
+                f"of {_gb(total_bytes)} on the card.")
+    if split:
+        where = f" ({pool_name})" if pool_name else ""
+        head += f" Bigger than any one card: Ollama splits it across {count} GPUs{where}."
     verdict = {
         "fits": "Room to spare for the context window.",
         "tight": "It fits, but barely — a large context window may push it over.",
@@ -1777,6 +1790,7 @@ def setup_model_routes(model_discovery):
         sizes: Dict[str, int] = {}
         digests: Dict[str, str] = {}
         held_by_runner = 0
+        loaded_by_root: Dict[str, List[Dict[str, Any]]] = {}
         for root in roots:
             try:
                 r = httpx.get(root + "/api/tags", timeout=3.0, verify=llm_verify())
@@ -1804,6 +1818,7 @@ def setup_model_routes(model_discovery):
                 r.raise_for_status()
                 for m in (r.json() or {}).get("models") or []:
                     held_by_runner += int(m.get("size_vram") or 0)
+                    loaded_by_root.setdefault(root, []).append(m)
             except Exception as e:
                 logger.debug("fit hints: /api/ps failed for %s: %s", _redact_url_for_log(root), e)
 
@@ -1824,24 +1839,29 @@ def setup_model_routes(model_discovery):
         # another model, so it must not count against the next one. Anything
         # else on the card (a browser, a Stable Diffusion process) does.
         others = max(0, used - held_by_runner)
-        budget = max(0, total - _FIT_RESERVE_BYTES - others)
-        out["vram"] = {
-            "supported": True,
-            "name": vram.get("name", ""),
-            "total_bytes": total,
-            "used_bytes": used,
-            "free_bytes": int(vram.get("free") or 0),
-            "held_by_runner_bytes": held_by_runner,
-            "reserve_bytes": _FIT_RESERVE_BYTES,
-            "budget_bytes": budget,
-        }
+        # Which card each loaded model sits on, so the per-card budgets (the
+        # "would it be split" question) know whose bytes are whose.
+        placements: Dict[str, Dict[str, Any]] = {}
+        for root, loaded in loaded_by_root.items():
+            placements.update(gpu_placement.placement(root, loaded, vram.get("gpus")))
+        block = vram_fit.pool_budgets(
+            vram, held_by_runner_bytes=held_by_runner, others_bytes=others,
+            placements=placements, reserve_per_card=_FIT_RESERVE_BYTES,
+        )
+        block["gpu_count"] = block["count"]
+        out["vram"] = block
+        budget = int(block["budget_bytes"])
+        count = int(block["count"])
         for name, size in sizes.items():
             state = _fit_state(size, budget)
             entry: Dict[str, Any] = _with_digest({"size_bytes": size}, digests.get(name))
             if state:
+                split = vram_fit.needs_split(size, block)
                 entry["state"] = state
                 entry["headroom_bytes"] = budget - size
-                entry["note"] = _fit_note(size, budget, total, state)
+                entry["split"] = split
+                entry["note"] = _fit_note(size, budget, total, state, count=count,
+                                          pool_name=str(block.get("name") or ""), split=split)
             out["models"][name] = entry
         return out
 

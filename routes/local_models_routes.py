@@ -5,8 +5,12 @@ What LM Studio calls My Models / Discover / loaded models, for the Ollama
 servers this install is configured against:
 
   GET    /api/local-models?endpoint_id=     installed (/api/tags + cached
-                                            /api/show), loaded (/api/ps), the
-                                            card and a fit verdict per model
+                                            /api/show), loaded (/api/ps, with
+                                            the card(s) each one sits on), the
+                                            card(s) — `vram` is the pool plus
+                                            one entry per card, `gpus` the
+                                            list the Options form pins to —
+                                            and a fit verdict per model
   POST   /api/local-models/pull             {endpoint_id, name} → SSE progress
                                             (?stream=false → {id} only)
   GET    /api/local-models/pulls            active + recent pulls (re-attach)
@@ -14,7 +18,7 @@ servers this install is configured against:
   DELETE /api/local-models/pulls/{id}       cancel
   POST   /api/local-models/load|unload      {endpoint_id, name}
   GET    /api/local-models/discover?q=      curated offline catalogue + fit
-  GET/PUT /api/local-models/{name}/options  per-model num_ctx/num_gpu/keep_alive
+  GET/PUT /api/local-models/{name}/options  per-model num_ctx/num_gpu/keep_alive/main_gpu
   DELETE /api/local-models/{name}           ollama /api/delete
 
 Reads are for any signed-in user, mutations admin-only. A pull runs in a
@@ -49,7 +53,7 @@ from fastapi.responses import StreamingResponse
 from core.database import SessionLocal, ModelEndpoint
 from core.log_safety import redact_url as _redact_url_for_log
 from core.middleware import require_admin
-from src import gpu_shared_memory
+from src import gpu_placement, gpu_shared_memory, vram_fit
 from src import local_model_catalog as catalog
 from src import model_load_options as mlo
 from src.auth_helpers import effective_user, owner_filter, require_user
@@ -316,45 +320,59 @@ def _disk(root: str, same_machine: bool) -> Dict[str, Any]:
     return {"path": path, "free_bytes": int(usage.free), "total_bytes": int(usage.total)}
 
 
-def _vram_block(same_machine: bool, held_by_runner: int) -> Dict[str, Any]:
-    """The card as the fit arithmetic sees it. Mirrors model_routes'
+def _vram_block(same_machine: bool, held_by_runner: int,
+                placements: Optional[Dict[str, Dict[str, Any]]] = None) -> Dict[str, Any]:
+    """The card(s) as the fit arithmetic sees them. Mirrors model_routes'
     _collect_fit_hints: what the runner holds is about to be freed by a
-    switch, everything else on the card is not."""
+    switch, everything else on the card is not. With two cards the budget is
+    the pool's (Ollama splits what fits no single card) and each card gets
+    its own budget too, so `fit_verdict` can say "split"."""
     if not same_machine:
         return {"supported": False, "reason": "Models on this endpoint run on another machine."}
     vram = gpu_shared_memory.vram_snapshot()
     if not vram.get("supported"):
         return {"supported": False, "reason": vram.get("reason", "")}
-    total = int(vram.get("total") or 0)
     used = int(vram.get("used") or 0)
     others = max(0, used - held_by_runner)
-    budget = max(0, total - _FIT_RESERVE_BYTES - others)
-    return {
-        "supported": True,
-        "name": vram.get("name", ""),
-        "total_bytes": total,
-        "used_bytes": used,
-        "free_bytes": int(vram.get("free") or 0),
-        "held_by_runner_bytes": held_by_runner,
-        "other_bytes": others,
-        "reserve_bytes": _FIT_RESERVE_BYTES,
-        "budget_bytes": budget,
-        # Budget with nothing else resident: what Discover fits against.
-        "clean_budget_bytes": max(0, total - _FIT_RESERVE_BYTES),
-    }
+    return vram_fit.pool_budgets(
+        vram, held_by_runner_bytes=held_by_runner, others_bytes=others,
+        placements=placements, reserve_per_card=_FIT_RESERVE_BYTES,
+    )
+
+
+def _gpu_list(same_machine: bool) -> List[Dict[str, Any]]:
+    """`[{index, name, total_bytes}]` — the cards the Options form can pin a
+    model to (`main_gpu`). Empty off this machine: we cannot see its cards."""
+    if not same_machine:
+        return []
+    vram = gpu_shared_memory.vram_snapshot()
+    if not vram.get("supported"):
+        return []
+    cards = [g for g in (vram.get("gpus") or []) if isinstance(g, dict)]
+    if not cards:
+        cards = [{"index": 0, "name": vram.get("name"), "total": vram.get("total")}]
+    return [{"index": int(g.get("index") or 0), "name": str(g.get("name") or ""),
+             "total_bytes": int(g.get("total") or 0)} for g in cards]
 
 
 def fit_verdict(size_bytes: int, vram: Dict[str, Any], *, clean: bool = False) -> Dict[str, Any]:
+    """`{state, headroom_bytes, split, note}` against the pool budget (the
+    clean one for Discover); `split` when the weights exceed every single
+    card but not the pool — Ollama loads it across the cards."""
     if not vram.get("supported"):
         return {}
     budget = int(vram.get("clean_budget_bytes" if clean else "budget_bytes") or 0)
     state = _fit_state(int(size_bytes or 0), budget)
     if not state:
         return {}
+    count = int(vram.get("count") or 1)
+    split = vram_fit.needs_split(int(size_bytes), vram, clean=clean)
     return {
         "state": state,
         "headroom_bytes": budget - int(size_bytes),
-        "note": _fit_note(int(size_bytes), budget, int(vram.get("total_bytes") or 0), state),
+        "split": split,
+        "note": _fit_note(int(size_bytes), budget, int(vram.get("total_bytes") or 0), state,
+                          count=count, pool_name=str(vram.get("name") or ""), split=split),
     }
 
 
@@ -367,6 +385,7 @@ def collect_local_models(ep: Dict[str, Any]) -> Dict[str, Any]:
         "error": None,
         "models": [],
         "loaded": [],
+        "gpus": _gpu_list(same),
     }
     try:
         tags = _tags(root)
@@ -382,6 +401,13 @@ def collect_local_models(ep: Dict[str, Any]) -> Dict[str, Any]:
         logger.debug("local models: /api/ps failed for %s: %s", _redact_url_for_log(root), e)
         running = []
 
+    # Where each loaded model went (which card, how many bytes on each) — only
+    # answerable for the Ollama on this machine, and only with something loaded.
+    placements: Dict[str, Dict[str, Any]] = {}
+    if same and running:
+        snap = gpu_shared_memory.vram_snapshot()
+        placements = gpu_placement.placement(root, running, snap.get("gpus") if snap.get("supported") else [])
+
     loaded_by_name: Dict[str, Dict[str, Any]] = {}
     held = 0
     for m in running:
@@ -390,6 +416,7 @@ def collect_local_models(ep: Dict[str, Any]) -> Dict[str, Any]:
         vram_bytes = int(m.get("size_vram") or 0)
         held += vram_bytes
         details = m.get("details") or {}
+        where = placements.get(name) or {}
         row = {
             "name": name,
             "size": size,
@@ -401,12 +428,15 @@ def collect_local_models(ep: Dict[str, Any]) -> Dict[str, Any]:
             "digest": str(m.get("digest") or ""),
             "parameter_size": str(details.get("parameter_size") or ""),
             "quantization": str(details.get("quantization_level") or ""),
+            "gpus": list(where.get("gpus") or []),
+            "placement": where.get("placement") or ("cpu" if not vram_bytes else "unknown"),
+            "per_gpu": [dict(p) for p in (where.get("per_gpu") or [])],
         }
         out["loaded"].append(row)
         if name:
             loaded_by_name[name] = row
 
-    vram = _vram_block(same, held)
+    vram = _vram_block(same, held, placements)
     out["vram"] = vram
     out["disk"] = _disk(root, same)
     saved = mlo.options_for_endpoint(ep["id"])
@@ -766,7 +796,7 @@ def setup_local_models_routes() -> APIRouter:
         if ep is None:
             return {"endpoints": [], "endpoint_id": "", "reachable": False,
                     "error": "No Ollama endpoint is configured", "models": [],
-                    "loaded": [], "vram": {"supported": False}, "disk": {}, "pulls": []}
+                    "loaded": [], "gpus": [], "vram": {"supported": False}, "disk": {}, "pulls": []}
         data = await asyncio.to_thread(collect_local_models, ep)
         data["endpoints"] = endpoints
         data["endpoint_id"] = ep["id"]

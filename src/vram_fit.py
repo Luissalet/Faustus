@@ -233,3 +233,132 @@ def _overhead(used_by_others: int) -> int:
     exactly when the driver starts paging.
     """
     return 512 * MIB if used_by_others > 256 * MIB else 0
+
+
+# ── The pool: "does it fit somewhere" and "does it fit ONE card" ────────────
+#
+# Ollama 0.33 with two cards puts a model on the card with the most free
+# memory and splits one that fits no single card across all of them. Two
+# budgets therefore matter: the pool's (can it be loaded at all, at full GPU
+# speed) and the largest single card's (will it be split — which works, at a
+# PCIe-bound tokens/s). A CUDA context is paid per card.
+
+def pool_budgets(
+    vram: Dict[str, Any],
+    *,
+    held_by_runner_bytes: int,
+    others_bytes: int,
+    placements: Optional[Dict[str, Dict[str, Any]]] = None,
+    reserve_per_card: int = DEFAULT_RESERVE_BYTES,
+) -> Dict[str, Any]:
+    """The `vram` block of /api/local-models and /api/models/fit.
+
+    ``vram`` is ``gpu_shared_memory.vram_snapshot()`` (supported). The caller
+    decides what counts as somebody else's (``others_bytes``: the pool's used
+    minus what the runner holds, because a switch frees that); this works out
+    the pool budget, the clean budget (nothing loaded — what Discover fits
+    against) and the same two per card, attributing each loaded model's bytes
+    to the card(s) src/gpu_placement.py saw it on. A card whose models could
+    not be measured reports ``models_bytes: None`` and takes its share of the
+    pool's "others" pro rata — the honest "we do not know", not a zero.
+    """
+    total = int(vram.get("total") or 0)
+    used = int(vram.get("used") or 0)
+    held = max(0, int(held_by_runner_bytes or 0))
+    others = max(0, int(others_bytes or 0))
+    cards = [dict(g) for g in (vram.get("gpus") or []) if isinstance(g, dict)]
+    if not cards:
+        cards = [{"index": 0, "name": vram.get("name", ""), "uuid": "",
+                  "total": total, "used": used, "free": max(0, total - used)}]
+    count = len(cards)
+    reserve = reserve_per_card * count
+    budget = max(0, total - reserve - others)
+    clean_budget = max(0, total - reserve)
+    placements = placements or {}
+
+    def _placed(info: Dict[str, Any]) -> bool:
+        return bool(info.get("gpus")) or info.get("placement") == "cpu"
+
+    # Can every VRAM-resident model be put on a card? If not, the cards that
+    # show no model may still be holding one, and are unknown rather than empty.
+    all_placed = held == 0 or (bool(placements) and all(_placed(i) for i in placements.values()))
+
+    out_cards: List[Dict[str, Any]] = []
+    for c in cards:
+        idx = int(c.get("index") or 0)
+        c_total = int(c.get("total") or 0)
+        c_used = int(c.get("used") or 0)
+        names = sorted(n for n, i in placements.items() if idx in (i.get("gpus") or []))
+        parts: List[Optional[int]] = []
+        for n in names:
+            for e in placements[n].get("per_gpu") or []:
+                if int(e.get("index", -1)) == idx:
+                    parts.append(e.get("bytes"))
+        if count == 1:
+            models_bytes: Optional[int] = held
+        elif names:
+            models_bytes = sum(int(b) for b in parts) if parts and all(b is not None for b in parts) else None
+        else:
+            models_bytes = 0 if all_placed else None
+        out_cards.append({
+            "index": idx,
+            "name": str(c.get("name") or ""),
+            "uuid": str(c.get("uuid") or ""),
+            "total_bytes": c_total,
+            "used_bytes": c_used,
+            "free_bytes": int(c.get("free") if c.get("free") is not None else max(0, c_total - c_used)),
+            "models_bytes": models_bytes,
+            "models": names,
+        })
+
+    if count == 1:
+        out_cards[0]["other_bytes"] = others
+    else:
+        known_other = 0
+        for oc in out_cards:
+            if oc["models_bytes"] is not None:
+                oc["other_bytes"] = max(0, oc["used_bytes"] - int(oc["models_bytes"]))
+                known_other += oc["other_bytes"]
+        unknown = [oc for oc in out_cards if oc["models_bytes"] is None]
+        remaining = max(0, others - known_other)
+        weight = sum(oc["used_bytes"] for oc in unknown)
+        for oc in unknown:
+            share = remaining * oc["used_bytes"] / weight if weight else 0
+            oc["other_bytes"] = int(min(oc["used_bytes"], share))
+    for oc in out_cards:
+        oc["reserve_bytes"] = reserve_per_card
+        oc["budget_bytes"] = (budget if count == 1
+                              else max(0, oc["total_bytes"] - reserve_per_card - oc["other_bytes"]))
+        oc["clean_budget_bytes"] = (clean_budget if count == 1
+                                    else max(0, oc["total_bytes"] - reserve_per_card))
+
+    return {
+        "supported": True,
+        "name": str(vram.get("name") or ""),
+        "count": count,
+        "total_bytes": total,
+        "used_bytes": used,
+        "free_bytes": int(vram.get("free") if vram.get("free") is not None else max(0, total - used)),
+        "held_by_runner_bytes": held,
+        "other_bytes": others,
+        "reserve_bytes": reserve,
+        "reserve_per_gpu_bytes": reserve_per_card,
+        "budget_bytes": budget,
+        # Budget with nothing else resident: what Discover fits against.
+        "clean_budget_bytes": clean_budget,
+        "gpus": out_cards,
+        "largest_single_budget_bytes": max(oc["budget_bytes"] for oc in out_cards),
+        "largest_single_clean_budget_bytes": max(oc["clean_budget_bytes"] for oc in out_cards),
+    }
+
+
+def needs_split(size_bytes: int, vram: Dict[str, Any], *, clean: bool = False) -> bool:
+    """True when the weights exceed the largest single card's budget but not
+    the pool's: Ollama will load it, split across the cards."""
+    if int(vram.get("count") or 1) < 2 or size_bytes <= 0:
+        return False
+    pool = int(vram.get("clean_budget_bytes" if clean else "budget_bytes") or 0)
+    single = vram.get("largest_single_clean_budget_bytes" if clean else "largest_single_budget_bytes")
+    if single is None:
+        return False
+    return int(single) < size_bytes <= pool
