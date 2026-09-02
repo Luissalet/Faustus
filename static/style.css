@@ -43175,3 +43175,29 @@ body:has(.sidebar.right-side) .project-active-pill { right: 12px; }
 .worker-chat-text { flex: 1 1 auto; min-width: 0; }
 .worker-chat-banner .harness-btn-mini { margin-left: 0; text-decoration: none; font-size: 11px; padding: 2px 8px; }
 .worker-chat-hint { flex-basis: 100%; }
+
+/* === browser view === */
+/* Right-hand "Browser" panel (static/js/browserView.js): the latest frame of
+   the agent's browser after each action, a filmstrip of the last frames and a
+   Live dot while the run streams. Shares .file-viewer-panel for placement. */
+.browser-view-panel { width: min(44vw, 720px); }
+.bv-head .fv-title { align-items: center; }
+.bv-live { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--green, #7bd88f); text-transform: uppercase; letter-spacing: .04em; }
+.bv-live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green, #7bd88f); box-shadow: 0 0 0 0 color-mix(in srgb, var(--green, #7bd88f) 60%, transparent); animation: bv-pulse 1.4s ease-out infinite; }
+@keyframes bv-pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--green, #7bd88f) 60%, transparent); } 100% { box-shadow: 0 0 0 6px transparent; } }
+.bv-auto { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; opacity: .8; cursor: pointer; user-select: none; margin-right: 4px; }
+.bv-auto input { margin: 0; }
+.bv-meta { display: flex; flex-direction: column; gap: 2px; }
+.bv-page-title { font-weight: 600; opacity: .9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bv-url { font-family: var(--mono, ui-monospace, monospace); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; user-select: all; }
+.bv-body { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px 16px; }
+.bv-frame { position: relative; min-height: 120px; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--fg) 4%, transparent); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.bv-img { display: block; max-width: 100%; height: auto; }
+.bv-empty { font-size: 12px; opacity: .55; padding: 24px; }
+.bv-filmstrip { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; }
+.bv-thumb { position: relative; flex: 0 0 auto; width: 96px; padding: 0; background: transparent; border: 2px solid var(--border); border-radius: 6px; cursor: pointer; overflow: hidden; opacity: .75; }
+.bv-thumb:hover { opacity: 1; }
+.bv-thumb.active { border-color: var(--accent-primary, var(--red)); opacity: 1; }
+.bv-thumb img { display: block; width: 100%; height: 60px; object-fit: cover; object-position: top; }
+.bv-thumb-n { position: absolute; right: 3px; bottom: 3px; font-size: 10px; line-height: 1; padding: 2px 4px; border-radius: 4px; background: rgba(0,0,0,.55); color: #fff; }
+@media (max-width: 900px) { .browser-view-panel { width: 100vw; } }

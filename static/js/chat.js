@@ -42,6 +42,7 @@ import agentHarnessUI from './agentHarnessUI.js';
 // current bubble must be closed so the next round renders fresh).
 const _HARNESS_SPEAKS_AGAIN = new Set(['rejected', 'auto_continue', 'unknown_tool', 'empty_round', 'target_substituted', 'syntax_error', 'think_cutoff', 'tests_failed', 'review_issues']);
 import fileViewer from './fileViewer.js';
+import browserView from './browserView.js';
 import modelControls from './modelControls.js';
 
   const RESEARCH_TIMEOUT_MS = 360000;
@@ -4189,6 +4190,13 @@ import modelControls from './modelControls.js';
                 if (documentModule && documentModule.handleDocSuggestions) {
                   documentModule.handleDocSuggestions(json);
                 }
+
+              } else if (json.type === 'browser_view') {
+                // Live frame after a browser action → Browser panel
+                // (browserView.js). Validated through the same raster
+                // data-URL whitelist as tool screenshots.
+                if (_isBg) continue;
+                try { browserView.push(json, chatRenderer.safeToolScreenshotSrc); } catch (_e) { console.warn('browserView push', _e); }
 
               } else if (json.type === 'ui_control') {
                 if (_isBg) continue;

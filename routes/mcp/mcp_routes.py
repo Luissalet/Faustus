@@ -320,6 +320,28 @@ def setup_mcp_routes(mcp_manager: McpManager):
         finally:
             db.close()
 
+    @router.post("/builtin_browser/restart")
+    async def restart_builtin_browser_route(request: Request):
+        """Restart the built-in Playwright browser server with the current
+        settings (browser_profile / browser_headless / browser_vision_caps /
+        browser_cdp_endpoint). The server also restarts itself lazily on the
+        next browser tool call after a settings change; this applies it now
+        and reports whether the new configuration (e.g. a CDP endpoint)
+        actually connects. Not a DB-backed server, so the generic reconnect
+        route cannot address it."""
+        require_admin(request)
+        from src.builtin_mcp import browser_launch_args, restart_builtin_browser
+
+        connected = await restart_builtin_browser(mcp_manager)
+        status = mcp_manager.get_server_status("builtin_browser")
+        return {
+            "connected": connected,
+            "status": status.get("status", "disconnected"),
+            "tool_count": status.get("tool_count", 0),
+            "error": status.get("error"),
+            "args": browser_launch_args(),
+        }
+
     @router.patch("/servers/{server_id}")
     async def toggle_server(server_id: str, request: Request, is_enabled: str = Form(...)):
         """Enable or disable an MCP server."""

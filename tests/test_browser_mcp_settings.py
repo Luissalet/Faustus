@@ -316,3 +316,31 @@ def test_prompt_cache_follows_the_policy_without_restart(monkeypatch):
     assert "browser_click" in before
     monkeypatch.setattr(settings_mod, "load_settings", lambda: {"disabled_tools": ["builtin_browser"]})
     assert mgr.get_tool_descriptions_for_prompt() == ""
+
+
+# ── restart route ─────────────────────────────────────────────────────────
+
+
+async def test_restart_route_restarts_with_current_settings(monkeypatch):
+    import routes.mcp.mcp_routes as mcp_routes
+    import src.builtin_mcp as builtin_mcp_mod
+
+    monkeypatch.setattr(mcp_routes, "require_admin", lambda request: None)
+    monkeypatch.setattr(settings_mod, "load_settings", lambda: {"browser_profile": "isolated"})
+    calls = []
+
+    async def fake_restart(mgr):
+        calls.append(mgr)
+        mgr._connections["builtin_browser"] = {"status": "connected", "name": "Built-in: Browser", "tool_count": 24}
+        return True
+
+    monkeypatch.setattr(builtin_mcp_mod, "restart_builtin_browser", fake_restart)
+    mgr = McpManager()
+    router = mcp_routes.setup_mcp_routes(mgr)
+    route = next(r for r in router.routes if r.path == "/api/mcp/builtin_browser/restart")
+
+    body = await route.endpoint(request=object())
+
+    assert calls == [mgr]
+    assert body["connected"] is True and body["status"] == "connected" and body["tool_count"] == 24
+    assert "--isolated" in body["args"]

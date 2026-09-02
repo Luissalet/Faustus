@@ -2809,6 +2809,9 @@ def setup_chat_routes(
                                     # silently dropped here and the UI never saw
                                     # them (board stayed empty, tails stayed blind).
                                     "tool_progress",
+                                    # live browser frame after each browser
+                                    # action (src/browser_view.py → Browser panel)
+                                    "browser_view",
                                     "doc_stream_open", "doc_stream_delta",
                                     "doc_update", "doc_suggestions", "ui_control",
                                     "rounds_exhausted", "budget_exceeded",

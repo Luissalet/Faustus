@@ -7689,10 +7689,31 @@ async def stream_agent_loop(
             if result.get("images"):
                 img = result["images"][0]
                 tool_output_data["screenshot"] = f"data:{img['mimeType']};base64,{img['data']}"
+            # Live browser view (src/browser_view.py): after a browser ACTION
+            # take one viewport frame for the UI's Browser panel. UI only —
+            # it is not put into the tool result the model reads.
+            _browser_view = None
+            if block.tool_type.startswith(_BROWSER_MCP_PREFIX):
+                try:
+                    from src.browser_view import after_browser_action as _after_browser_action
+                    from src.settings import load_settings as _bv_load_settings
+                    _browser_view = await _after_browser_action(
+                        block.tool_type, result, get_mcp_manager(), _bv_load_settings()
+                    )
+                except Exception as _bv_err:  # noqa: BLE001 - the view is best effort
+                    logger.debug(f"[browser-view] skipped after {block.tool_type}: {_bv_err}")
+                    _browser_view = None
+            if _browser_view:
+                if not tool_output_data.get("screenshot"):
+                    tool_output_data["screenshot"] = _browser_view["screenshot"]
+                tool_output_data["browser_url"] = _browser_view.get("url", "")
+                tool_output_data["browser_title"] = _browser_view.get("title", "")
             # Forward a file-write diff for inline before/after rendering
             if "diff" in result:
                 tool_output_data["diff"] = result["diff"]
             yield f'data: {json.dumps(tool_output_data)}\n\n'
+            if _browser_view:
+                yield f'data: {json.dumps({"type": "browser_view", "tool": block.tool_type, **_browser_view})}\n\n'
             if result.get("image_url"):
                 generated_image_data = {"type": "generated_image", "url": result.get("image_url")}
                 for k in ("image_url", "image_id", "image_prompt", "image_model", "image_size", "image_quality"):
