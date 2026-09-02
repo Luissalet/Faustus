@@ -226,6 +226,14 @@ export function openWorkers() {
   });
   _escHandler = (e) => { if (e.key === 'Escape') closeWorkers(); };
   document.addEventListener('keydown', _escHandler);
+  // say which model a job would run on before Run (the configured worker
+  // model, else the utility / default chat model — which may be the big one)
+  _json('/api/dispatch/config').then(cfg => {
+    const inp = modal.querySelector('#wk-model');
+    if (!inp) return;
+    if (cfg && cfg.model) inp.placeholder = `${cfg.model}${cfg.server ? ' @ ' + cfg.server : ''}`;
+    else if (cfg && cfg.error) inp.placeholder = cfg.error;
+  }).catch(() => {});
   _refreshJobs();
   setTimeout(() => { const b = modal.querySelector('#wk-task'); if (b) b.focus(); }, 50);
 }

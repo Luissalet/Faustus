@@ -357,3 +357,25 @@ def test_the_guide_is_served_to_token_holders_and_says_the_essentials(box, monke
                  "plan → dispatch → wait → check"):
         assert must in g, must
     assert _client(monkeypatch, token_scopes=["chat"]).get("/api/dispatch/guide").status_code == 403
+
+
+def test_resolve_route_prefers_the_configured_dispatch_model_over_the_default(monkeypatch):
+    """`dispatch_model` without `dispatch_endpoint_id` — the common case —
+    must beat the utility/default model resolve_endpoint hands back (seen
+    live: the 29 GB default model picked up a dispatched job)."""
+    import src.endpoint_resolver as er
+    from src import settings as settings_mod
+    monkeypatch.setattr(er, "resolve_endpoint", lambda prefix, owner=None: ("http://127.0.0.1:11434/v1", "qwen3.8:27b-q8_0", None))
+    monkeypatch.setattr(settings_mod, "get_setting", lambda key, default=None: {"dispatch_model": "qwen3.5:9b"}.get(key, default))
+    assert dispatch.resolve_route("luis") == ("http://127.0.0.1:11434/v1", "qwen3.5:9b", None)
+    # the request's own model still wins
+    assert dispatch.resolve_route("luis", "tiny:1b")[1] == "tiny:1b"
+    monkeypatch.setattr(settings_mod, "get_setting", lambda key, default=None: default)
+    assert dispatch.resolve_route("luis")[1] == "qwen3.8:27b-q8_0"
+
+
+def test_config_route_says_where_a_job_would_run(box, monkeypatch):
+    c = _client(monkeypatch, token_scopes=["agents:dispatch"])
+    assert c.get("/api/dispatch/config").json() == {"model": "qwen3.5:9b", "server": "127.0.0.1:11434", "error": ""}
+    monkeypatch.setattr(dispatch, "resolve_route", lambda owner, model=None: (_ for _ in ()).throw(ValueError("no model configured for dispatch")))
+    assert c.get("/api/dispatch/config").json()["error"] == "no model configured for dispatch"

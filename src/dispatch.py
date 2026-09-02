@@ -234,7 +234,18 @@ def resolve_route(owner: Optional[str], model: Optional[str] = None) -> tuple[st
     url, resolved_model, headers = resolve_endpoint("dispatch", owner=owner)
     if not url:
         raise ValueError("no model endpoint is configured for dispatch (Settings → Agent & automation → Fable workers, or a default chat model)")
-    m = str(model or "").strip() or str(resolved_model or "")
+    # resolve_endpoint only honours `dispatch_model` together with
+    # `dispatch_endpoint_id`; a model chosen without an endpoint id (the
+    # common case: "the workers use qwen3.5:9b on the usual server") must
+    # still win over the utility / default chat model — seen live: the
+    # 29 GB q8_0 default model picked up a dispatched job.
+    configured = ""
+    try:
+        from src.settings import get_setting
+        configured = str(get_setting("dispatch_model", "") or "").strip()
+    except Exception:
+        configured = ""
+    m = str(model or "").strip() or configured or str(resolved_model or "")
     if not m:
         raise ValueError("no model configured for dispatch")
     return url, m, headers

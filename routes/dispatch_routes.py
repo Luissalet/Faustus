@@ -82,6 +82,18 @@ def setup_dispatch_routes() -> APIRouter:
             raise HTTPException(404, "no such dispatch job")
         return job
 
+    @router.get("/config")
+    async def config(request: Request):
+        """Where a job would run right now: the resolved model and server —
+        so the Workers page can say it before Run."""
+        owner = _owner(request)
+        try:
+            url, model, _ = dispatch.resolve_route(owner or None)
+        except ValueError as e:
+            return {"model": "", "server": "", "error": str(e)}
+        from urllib.parse import urlparse
+        return {"model": model, "server": urlparse(url).netloc, "error": ""}
+
     @router.get("/guide")
     async def guide(request: Request):
         """How a coordinating model should use the workers — the same text
