@@ -536,12 +536,27 @@ export function autoResize(textarea) {
     clone = textarea.cloneNode(false);
     clone.style.cssText = getComputedStyle(textarea).cssText;
     clone.style.position = 'absolute';
+    // Pin the clone to the corner of its (position: relative) parent. Without
+    // left/top an absolutely positioned box keeps its static position — AFTER
+    // the real textarea, i.e. up to a full composer width to the right of it —
+    // and overflows the chat container. `overflow-x: hidden` does not stop a
+    // programmatic scroll (scrollIntoView, focus), so the whole chat then
+    // drifted ~300 px to the left. Seen live on Windows/Chrome (ronda 6).
+    clone.style.left = '0';
+    clone.style.top = '0';
     clone.style.visibility = 'hidden';
     clone.style.height = '0';
     clone.style.transition = 'none';
     clone.style.overflow = 'hidden';
     clone.style.pointerEvents = 'none';
     clone.style.zIndex = '-1';
+    // Not a second composer: no duplicate id / accessible name / autofocus.
+    clone.removeAttribute('id');
+    clone.removeAttribute('aria-label');
+    clone.removeAttribute('autofocus');
+    clone.removeAttribute('required');
+    clone.setAttribute('aria-hidden', 'true');
+    clone.tabIndex = -1;
     textarea.parentNode.appendChild(clone);
     textarea._resizeClone = clone;
   }

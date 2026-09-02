@@ -1921,6 +1921,11 @@ body.bg-pattern-sparkles {
       flex-direction:column;
       padding:0 16px;
       overflow:hidden;
+      /* `clip` (unlike `hidden`) also forbids PROGRAMMATIC horizontal
+         scrolling: an absolutely positioned helper that overflows to the
+         right (the composer's auto-resize clone did) can no longer make a
+         scrollIntoView() drift the whole chat column to the left. */
+      overflow-x: clip;
       position:relative;
       min-height:0;
       min-width:0;
