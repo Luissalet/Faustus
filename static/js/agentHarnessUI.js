@@ -1205,7 +1205,7 @@ export function restoredSubagentBoardHtml(subagents) {
 }
 
 /** Pure helpers, exposed for the node-based tests. */
-export const _subagentInternals = { apply: _saApply, newWorker: _saNewWorker, elapsed: _saElapsed, pill: _saPill, cardHtml: _saCardHtml, fmtDur: _fmtDur, boards: _saBoards };
+export const _subagentInternals = { apply: _saApply, newWorker: _saNewWorker, elapsed: _saElapsed, pill: _saPill, cardHtml: _saCardHtml, fmtDur: _fmtDur, boards: _saBoards, tick: _saTick, rerun: _rerunWorker, parentStreaming: _parentStreaming };
 
 // ── Progress panel ──────────────────────────────────────────────────────────
 
