@@ -2536,6 +2536,7 @@ const _TOKEN_SCOPES = [
   { key: 'memory:write',      label: 'Memory write',      detail: 'Write memory when enabled' },
   { key: 'cookbook:read',     label: 'Cookbook read',     detail: 'List cookbook tasks + tail their tmux output' },
   { key: 'cookbook:launch',   label: 'Cookbook launch',   detail: 'Launch and stop cookbook serve tasks' },
+  { key: 'agents:dispatch',   label: 'Dispatch workers', detail: 'Start local worker jobs from outside the app (POST /api/dispatch) and read their compact results — the door for Fable / Claude Desktop' },
 ];
 
 function _renderTokenScopeRows(t) {

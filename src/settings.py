@@ -289,6 +289,11 @@ DEFAULT_SETTINGS = {
     # its single slot — pin the worker model to the other card (Local models →
     # Options → main_gpu) and the coordinator and its workers overlap.
     "agent_subagent_worker_model": "",
+    # Workers dispatched from OUTSIDE the app (Fable / Claude Desktop through
+    # POST /api/dispatch): which endpoint and model they run on. Empty = the
+    # utility model, then the default chat model.
+    "dispatch_endpoint_id": "",
+    "dispatch_model": "",
     # Workers get a lean toolset (no web / memory / skills / background jobs
     # unless the task mentions them): tool schemas were 65 % of a worker's
     # first round on a 9B model.

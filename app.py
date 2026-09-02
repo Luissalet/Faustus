@@ -849,6 +849,8 @@ app.include_router(setup_agent_progress_routes())
 # Agent & automation settings schema (Settings → Agent Tools form).
 from routes.agent_settings_routes import setup_agent_settings_routes
 app.include_router(setup_agent_settings_routes())
+from routes.dispatch_routes import setup_dispatch_routes
+app.include_router(setup_dispatch_routes())
 
 # Hardware model fitting (cookbook "What Fits?" tab)
 from routes.hwfit_routes import setup_hwfit_routes

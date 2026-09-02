@@ -5048,6 +5048,7 @@ async function initUnifiedIntegrations() {
       { key: 'memory:write', label: 'Memory write', detail: 'Write memory when enabled' },
       { key: 'cookbook:read', label: 'Cookbook', detail: 'List cookbook tasks + tail their tmux output (debug a model serve from outside the UI)' },
       { key: 'cookbook:launch', label: 'Cookbook launch', detail: 'Launch and stop cookbook serve tasks. Powerful: runs SSH commands on your configured servers, bounded by the same allowlist the UI uses (vllm/python3/sglang/llama-server/...)' },
+      { key: 'agents:dispatch', label: 'Dispatch workers', detail: 'Start local worker jobs from outside the app (POST /api/dispatch, the faustus-workers MCP server) and read their compact results. Workers run confined to the workspace the caller names, in a Workers chat you can open, steer or stop.' },
     ];
     // Strict name-prefix match keeps Codex and Claude tokens in their own forms.
     const agentTokens = (Array.isArray(tokens) ? tokens : []).filter(tok =>

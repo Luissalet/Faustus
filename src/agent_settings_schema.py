@@ -33,7 +33,8 @@ from src.settings import DEFAULT_SETTINGS, RETIRED_SETTING_KEYS
 # Keys the schema MUST cover (besides EXTRA_KEYS): every default matching this.
 SCHEMA_KEY_RE = re.compile(r"^(agent_|browser_|desktop_)")
 # Agent-adjacent keys that live under other prefixes but belong on this page.
-EXTRA_KEYS: tuple[str, ...] = ("tool_path_extra_roots", "vision_enabled", "vision_model")
+EXTRA_KEYS: tuple[str, ...] = ("tool_path_extra_roots", "vision_enabled", "vision_model",
+                               "dispatch_model", "dispatch_endpoint_id")
 
 FIELD_TYPES: tuple[str, ...] = ("bool", "int", "float", "text", "select", "list", "secret")
 _NUMERIC_TYPES = ("int", "float")
@@ -253,6 +254,10 @@ GROUPS: list[dict[str, Any]] = [
             _int("agent_subagent_max_parallel", "Max parallel workers",
                  "Workers running at the same time; the rest wait as 'queued'. Two requests to the SAME Ollama model queue on its single slot, so this only overlaps work when workers use another model (below) or another server.",
                  1, 32),
+            _text("dispatch_model", "Fable workers: model",
+                  "Model for workers dispatched from OUTSIDE the app (POST /api/dispatch with an `agents:dispatch` API token — Fable, Claude Desktop, a script). Empty = the utility model, then the default chat model. Pin it to a card in Local models → Options."),
+            _text("dispatch_endpoint_id", "Fable workers: endpoint id",
+                  "Endpoint the dispatched workers run on (the id shown in Added Models). Empty = the utility / default endpoint."),
             _text("agent_subagent_worker_model", "Worker model",
                   "Model the workers run on (empty = the coordinator's model; a task's own `model` still wins). With two cards, pin it to the other card in Local models → Options (main_gpu): different models generate at the same time, the same model does not."),
             _int("agent_subagent_stall_seconds", "Stall threshold (s)",
