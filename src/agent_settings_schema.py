@@ -130,6 +130,10 @@ GROUPS: list[dict[str, Any]] = [
                  "A bash / python command that prints nothing for this long is killed with its whole "
                  "process tree (a server left in the foreground, a prompt waiting for input). 0 = never.",
                  0, 86400),
+            _bool("agent_adaptive_idle_timeout", "Adaptive idle timeout",
+                  "Learn that bound from the last 20 commands (3 x their median, at most 600 s) instead "
+                  "of using the fixed one. It only ever grants MORE time, so a box whose builds run "
+                  "silent for minutes stops having them killed; a bound below 30 s is honoured as-is."),
             _bool("agent_workspace_no_memory", "Skip memory on coding turns",
                   "Do not retrieve personal memories for workspace coding turns; local models weave them "
                   "into the code."),
@@ -379,6 +383,26 @@ GROUPS: list[dict[str, Any]] = [
                   "Absolute directories read_file / write_file may access, comma-separated. .ssh, .gnupg, "
                   "shell rc files and SSH keys stay blocked regardless.",
                   placeholder="/srv/projects, /home/me/work"),
+        ],
+    ),
+    _group(
+        "reliability", "Reliability",
+        "Machinery that stops the workers wasting rounds — and stops the reports blaming the model for "
+        "what you did on purpose.",
+        [
+            _bool("agent_fix_round_convergence", "Stop fix rounds on convergence",
+                  "A dispatched job (Fable workers, above) stops its verification fix loop as soon as the "
+                  "rounds stop producing change — the size, edit distance and similarity of successive "
+                  "rounds. `fix_rounds` becomes a maximum instead of an exact count, and a request may ask "
+                  "for up to 4 of them. Off = the fixed counter, capped at 2."),
+            _bool("agent_tool_outcomes", "Four-value outcomes",
+                  "Record success / expected_error / cancelled / panic for worker runs, tool results and "
+                  "scorecard turns. A worker YOU stopped counts as cancelled, not as a failure. "
+                  "Off = anything that did not finish counts as an error."),
+            _bool("agent_mcp_stdio_guard", "Protect the MCP stdio stream",
+                  "While a built-in MCP server is serving, stdout writes from app code in the same process "
+                  "go to stderr instead. One stray print() on stdout corrupts the JSON-RPC stream and "
+                  "kills the session."),
         ],
     ),
 ]

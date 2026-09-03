@@ -171,6 +171,11 @@ DEFAULT_SETTINGS = {
     # bash / python tool: a command that prints nothing for this long is killed
     # with its whole process tree (src/agent_tools/subprocess_tools.py). 0 = never.
     "agent_subprocess_idle_timeout_seconds": 300,
+    # Learn the idle timeout from what this box really does (src/adaptive_timeout.py):
+    # 3 x the median of the last 20 command durations, clamped to [30, 600] s, and
+    # only ever LONGER than the fixed value above — a box whose commands legitimately
+    # run silent for minutes stops having them killed. Off = the fixed value exactly.
+    "agent_adaptive_idle_timeout": True,
     # Workspace coding turns skip personal-memory retrieval (local models weave
     # unrelated facts about the user into the code) — routes/chat_routes.py.
     "agent_workspace_no_memory": True,
@@ -280,6 +285,10 @@ DEFAULT_SETTINGS = {
     "chat_versions_keep_hours": 168,
     # Per-model scorecard of agent turns (src/scorecard.py, /scorecard).
     "agent_scorecard": True,
+    # Built-in MCP servers speak JSON-RPC on stdout; a stray print() from app
+    # code in the same process corrupts that stream. The guard (src/stdio_guard.py)
+    # sends stdout writes to stderr while a stdio session is live. Off = no guard.
+    "agent_mcp_stdio_guard": True,
     # Detached runs: on-disk replay log (survives restarts) and the task
     # queue — local endpoints share one lane, N runs at a time (1 = one GPU,
     # one generation); 0 = unlimited. API endpoints queue only when their
@@ -308,6 +317,16 @@ DEFAULT_SETTINGS = {
     # utility model, then the default chat model.
     "dispatch_endpoint_id": "",
     "dispatch_model": "",
+    # A dispatched job's fix loop stops when its rounds stop producing change
+    # (src/convergence.py): `fix_rounds` becomes a MAXIMUM instead of an exact
+    # count, and a caller may ask for more of them because the loop ends itself.
+    # Off = exactly today's fixed counter (and a maximum of 2 fix rounds).
+    "agent_fix_round_convergence": True,
+    # Four-value outcomes for tool calls and worker runs (src/tool_outcome.py):
+    # success / expected_error / cancelled / panic. A worker YOU stopped is
+    # `cancelled` and no longer counts as a failed one. Off = the old arithmetic,
+    # where anything that did not finish was an error.
+    "agent_tool_outcomes": True,
     # Which card Ollama fills first: -1 = Auto (the freest card, split when
     # nothing fits one), N = pin every model that fits card N to it (a model
     # pinned to a card it does not fit goes to the CPU, so bigger ones stay
