@@ -726,15 +726,8 @@ class DeepResearcher:
     async def _search(self, query: str) -> List[Dict]:
         """Run a search query using the configured research search provider."""
         try:
-            from src.search.providers import _get_search_settings
             from src.search.core import _call_provider, _build_provider_chain
-
-            settings = _get_search_settings()
-            provider = (self.search_provider_override or "").strip()
-            if not provider:
-                provider = (settings.get("research_search_provider") or "").strip()
-            if not provider:
-                provider = settings.get("search_provider", "searxng")
+            provider = self._active_search_provider()
 
             if provider == "disabled":
                 logger.info("Search is disabled for research")
@@ -772,18 +765,47 @@ class DeepResearcher:
             self._last_search_error = str(e)
             return []
 
+    def _active_search_provider(self) -> str:
+        """Resolve the research provider using the same precedence as search."""
+        provider = (self.search_provider_override or "").strip()
+        if provider:
+            return provider
+
+        from src.search.providers import _get_search_settings
+
+        settings = _get_search_settings()
+        if not provider:
+            provider = (settings.get("research_search_provider") or "").strip()
+        if not provider:
+            provider = settings.get("search_provider", "searxng")
+        return str(provider or "searxng").strip()
+
     async def _fetch_and_extract(self, url: str, question: str,
                                  title: str) -> Optional[Dict]:
         """Fetch a URL's content and use LLM to extract relevant info."""
         display = title or url
         self._emit(phase="reading", url=url, title=display,
                    total_sources=len(self.urls_fetched))
-        try:
-            from src.search import fetch_webpage_content
-            page = await asyncio.to_thread(fetch_webpage_content, url, 10)
-        except Exception as e:
-            logger.warning(f"Failed to fetch {url}: {e}")
-            return None
+        from src.search import fetch_webpage_content, firecrawl_scrape
+
+        page = None
+        if self._active_search_provider() == "firecrawl":
+            scrape_timeout = min(180, max(30, self.extraction_timeout))
+            page = await asyncio.to_thread(firecrawl_scrape, url, scrape_timeout)
+            if not page.get("success") or not page.get("content"):
+                logger.warning(
+                    "Firecrawl could not scrape %s (%s); falling back to the "
+                    "native bounded fetcher",
+                    url,
+                    page.get("error", "empty response"),
+                )
+
+        if not page or not page.get("success") or not page.get("content"):
+            try:
+                page = await asyncio.to_thread(fetch_webpage_content, url, 10)
+            except Exception as e:
+                logger.warning(f"Failed to fetch {url}: {e}")
+                return None
 
         if not page.get("success") or not page.get("content"):
             return None
