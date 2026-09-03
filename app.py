@@ -866,6 +866,13 @@ app.include_router(setup_expert_routes())
 from routes.agent_runner_routes import setup_agent_runner_routes
 app.include_router(setup_agent_runner_routes())
 
+# Agent definitions: an agent as a FILE (src/agent_defs.py) — what it may use,
+# what it may touch, where it runs — so a dispatched task can name one and the
+# worker starts under it. Reads only; the page shows resolved rules and the
+# files that would not load, each with its reason.
+from routes.agent_def_routes import setup_agent_def_routes
+app.include_router(setup_agent_def_routes())
+
 # Model tournament: the same prompt to N models blind and in parallel, then
 # rounds of explicit fusion over the anonymised answers, then a judged ranking
 # (src/tournament.py). Extends the A/B comparator below, it does not replace it.
