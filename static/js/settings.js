@@ -986,6 +986,7 @@ var _LINK = function(href, text) {
   return '<a href="' + href + '" target="_blank" rel="noopener noreferrer" style="color:var(--accent, var(--red));text-decoration:underline;">' + text + '</a>';
 };
 var _searchProviderHints = {
+  firecrawl: 'Private, self-hosted Firecrawl. Searches through the configured local /v2 endpoint; if it is unreachable the fallbacks below take over.',
   searxng: 'Private, self-hosted instance. Leave URL empty to use the SEARXNG_INSTANCE env var.',
   duckduckgo: 'No API key needed, but rate-limited — heavy use can return empty results. Configure a fallback below.',
   brave: 'Get your API key from ' + _LINK('https://brave.com/search/api/', 'brave.com/search/api'),
@@ -996,7 +997,7 @@ var _searchProviderHints = {
 };
 var _searchNeedsKey = { brave: 1, google_pse: 1, tavily: 1, serper: 1 };
 var _searchLabels = {
-  searxng: 'SearXNG', duckduckgo: 'DuckDuckGo', brave: 'Brave Search',
+  firecrawl: 'Firecrawl', searxng: 'SearXNG', duckduckgo: 'DuckDuckGo', brave: 'Brave Search',
   google_pse: 'Google PSE', tavily: 'Tavily', serper: 'Serper', disabled: 'Disabled',
 };
 var _searchKeyFields = {
@@ -1010,6 +1011,8 @@ async function initSearchSettings() {
   var countCustomInput = el('set-searchResultCountCustom');
   var urlInput = el('set-searchUrl');
   var urlRow = el('set-searchUrlRow');
+  var firecrawlUrlInput = el('set-firecrawlUrl');
+  var firecrawlUrlRow = el('set-firecrawlUrlRow');
   var keyInput = el('set-searchApiKey');
   var keyRow = el('set-searchKeyRow');
   var cxInput = el('set-searchCx');
@@ -1028,6 +1031,7 @@ async function initSearchSettings() {
   function updateVisibility() {
     var prov = provSel.value;
     urlRow.style.display = prov === 'searxng' ? 'flex' : 'none';
+    if (firecrawlUrlRow) firecrawlUrlRow.style.display = prov === 'firecrawl' ? 'flex' : 'none';
     keyRow.style.display = _searchNeedsKey[prov] ? 'flex' : 'none';
     cxRow.style.display = prov === 'google_pse' ? 'flex' : 'none';
     hint.innerHTML = _searchProviderHints[prov] || '';
@@ -1058,6 +1062,7 @@ async function initSearchSettings() {
     if (_settings.search_provider) provSel.value = _settings.search_provider;
     updateCountDisplay();
     if (_settings.search_url) urlInput.value = _settings.search_url;
+    if (_settings.firecrawl_url && firecrawlUrlInput) firecrawlUrlInput.value = _settings.firecrawl_url;
     if (_settings.google_pse_cx) cxInput.value = _settings.google_pse_cx;
   } catch (e) { console.warn('Failed to load search settings', e); }
 
@@ -1086,6 +1091,8 @@ async function initSearchSettings() {
         extra = hasKey ? ' (key set)' : ' (no key)';
       } else if (active === 'searxng' && (s.search_url || '').trim()) {
         extra = ' (' + s.search_url + ')';
+      } else if (active === 'firecrawl' && (s.firecrawl_url || '').trim()) {
+        extra = ' (' + s.firecrawl_url + ')';
       }
       var count = s.search_result_count || 5;
       msg.textContent = 'Active: ' + label + extra + ' \u00b7 ' + count + ' results';
@@ -1112,6 +1119,7 @@ async function initSearchSettings() {
         search_provider: prov,
         search_result_count: resultCount,
         search_url: urlInput.value.trim(),
+        firecrawl_url: firecrawlUrlInput ? firecrawlUrlInput.value.trim() : '',
         google_pse_cx: cxInput.value.trim(),
       };
       var kf = keyFieldFor(prov);
@@ -1129,6 +1137,7 @@ async function initSearchSettings() {
   provSel.addEventListener('change', function() { updateVisibility(); saveSearch(); _syncSearchPicker(); });
   countSel.addEventListener('change', saveSearch);
   urlInput.addEventListener('change', saveSearch);
+  if (firecrawlUrlInput) firecrawlUrlInput.addEventListener('change', saveSearch);
   keyInput.addEventListener('change', saveSearch);
   cxInput.addEventListener('change', saveSearch);
 
@@ -1340,6 +1349,7 @@ async function initSearchSettings() {
 
 // SVG logos for each search provider (16×16 viewBox normalised to 24×24).
 var _SEARCH_PROVIDER_LOGOS = {
+  firecrawl: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M13.6 2.2c.5 3.2-.8 4.7-2.1 6.1-1.1 1.2-2.2 2.4-2.2 4.5 0 1.6 1.2 2.8 2.7 2.8 2 0 3.2-1.6 3-3.8 1.8 1.2 3 3.2 3 5.3A6 6 0 0 1 6 17c0-3.2 1.7-5.2 3.5-7.2 1.7-1.9 3.5-3.9 4.1-7.6zM12 22a4.2 4.2 0 0 0 4.2-4.2c0-.7-.2-1.4-.5-2-.8 1.5-2.2 2.5-3.7 2.5-1.7 0-3.2-.9-4-2.3-.1.5-.2 1-.2 1.8A4.2 4.2 0 0 0 12 22z"/></svg>',
   searxng:   '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 4a6 6 0 1 0 0 12 6 6 0 0 0 0-12zm0-2a8 8 0 1 1-4.93 14.32l-3.4 3.4a1 1 0 1 1-1.4-1.4l3.4-3.4A8 8 0 0 1 10 2zM13 8.5L11.5 10 13 11.5l-1 1L10.5 11 9 12.5l-1-1L9.5 10 8 8.5l1-1L10.5 9 12 7.5z"/></svg>',
   duckduckgo:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm-1.5 5.5a1.2 1.2 0 1 1 0 2.4 1.2 1.2 0 0 1 0-2.4zm5 0a1.2 1.2 0 1 1 0 2.4 1.2 1.2 0 0 1 0-2.4zM12 13c-1.5 0-3.6.8-3.6 2.5C8.4 17.2 10.4 18 12 18s3.6-.8 3.6-2.5C15.6 13.8 13.5 13 12 13z"/></svg>',
   brave:     '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 4l-1.5 1L15 3l-3 .5L9 3 6.5 5 5 4 3 7l1.5 2L4 12l3 5 4 3 1 1 1-1 4-3 3-5-.5-3L21 7l-2-3zM12 17l-2.5-2 .5-3-2-1.5 2-1.5L11 7l3-1 3 1-.5 2 2 1.5-2 1.5.5 3L14.5 17 12 17z"/></svg>',
