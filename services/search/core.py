@@ -23,6 +23,7 @@ from .cache import (
 from .query import _cache_duration_for_query
 from .ranking import rank_search_results
 from .providers import (
+    firecrawl_search,
     searxng_search_api,
     brave_search,
     duckduckgo_search,
@@ -67,7 +68,10 @@ def get_search_config() -> Dict[str, Any]:
     config["active_provider"] = provider
     config["has_api_key"] = bool(_get_provider_key(provider))
     config["result_count"] = _get_result_count()
-    if provider == "searxng":
+    if provider == "firecrawl":
+        from .providers import _get_firecrawl_instance
+        config["firecrawl_url"] = _get_firecrawl_instance()
+    elif provider == "searxng":
         from .providers import _get_search_instance
         config["search_url"] = _get_search_instance()
     # Strip any string-valued credential so secrets never reach the response;
@@ -95,7 +99,9 @@ def update_search_config(api_key: str = None, **kwargs):
 
 def _call_provider(provider_name: str, query: str, count: int, time_filter: str = None) -> List[dict]:
     """Call a search provider by name. Returns list of results or empty list."""
-    if provider_name == "searxng":
+    if provider_name == "firecrawl":
+        return firecrawl_search(query, count, time_filter)
+    elif provider_name == "searxng":
         return searxng_search_api(query, count, time_filter=time_filter)
     elif provider_name == "brave":
         return brave_search(query, count, time_filter)

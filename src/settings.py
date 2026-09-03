@@ -105,6 +105,10 @@ DEFAULT_SETTINGS = {
     # safe to ship on by default for every user.
     "search_fallback_chain": ["duckduckgo"],
     "search_url": "",
+    # Self-hosted Firecrawl appliance. The default is the loopback service and
+    # is never swapped for api.firecrawl.dev when it is unreachable: silently
+    # failing over would ship a local-first user's queries to a third party.
+    "firecrawl_url": "http://localhost:3002",
     "search_result_count": 5,
     # SafeSearch level applied to every provider that exposes one.
     # "strict"   — apply the provider's strongest filtering level (default;
@@ -124,6 +128,7 @@ DEFAULT_SETTINGS = {
     # backend itself decides, so operators stay in control of self-hosted /
     # niche search instances.
     "search_safesearch": "strict",
+    "firecrawl_api_key": "",
     "brave_api_key": "",
     "google_pse_key": "",
     "google_pse_cx": "",

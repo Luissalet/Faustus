@@ -1,4 +1,4 @@
-"""Search provider implementations: SearXNG, Brave, DuckDuckGo, Google PSE, Tavily, Serper."""
+"""Search provider implementations: Firecrawl, SearXNG, Brave, DuckDuckGo, Google PSE, Tavily, Serper."""
 
 import json
 import logging
@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 # Provider registry — maps setting value to (label, needs_key, needs_url)
 PROVIDER_INFO = {
+    "firecrawl": ("Firecrawl (self-hosted)", False, True),
     "searxng":  ("SearXNG",           False, True),
     "brave":    ("Brave Search",      True,  False),
     "duckduckgo": ("DuckDuckGo",      False, False),
@@ -47,10 +48,22 @@ def _get_search_instance() -> str:
     return SEARXNG_INSTANCE
 
 
+def _get_firecrawl_instance() -> str:
+    """Return the self-hosted Firecrawl API URL without a hosted fallback."""
+    settings = _get_search_settings()
+    url = (
+        settings.get("firecrawl_url")
+        or os.environ.get("FIRECRAWL_API_URL")
+        or "http://localhost:3002"
+    )
+    return str(url).strip().rstrip("/")
+
+
 def _get_provider_key(provider: str) -> str:
     """Return the API key for a specific provider, with legacy fallback."""
     settings = _get_search_settings()
     key_map = {
+        "firecrawl": "firecrawl_api_key",
         "brave": "brave_api_key",
         "google_pse": "google_pse_key",
         "tavily": "tavily_api_key",
@@ -66,6 +79,7 @@ def _get_provider_key(provider: str) -> str:
     if legacy:
         return legacy
     env_map = {
+        "firecrawl": "FIRECRAWL_API_KEY",
         "brave": "DATA_BRAVE_API_KEY",
         "google_pse": "GOOGLE_API_KEY",
         "tavily": "TAVILY_API_KEY",
@@ -119,6 +133,146 @@ def _safesearch_for(provider: str) -> Optional[str]:
     if provider == "serper":
         return None if level == "off" else "active"
     return None
+
+
+# ── Firecrawl (self-hosted) ──
+
+def firecrawl_scrape(url: str, timeout: int = 60) -> dict:
+    """Render one public URL through the configured local Firecrawl appliance.
+
+    Search discovery and page extraction are separate Firecrawl operations.
+    Deep research uses this helper after ``/v2/search`` returns each result's
+    ``url`` field.  A normalized failure result lets callers retain their
+    existing hardened HTTP fetcher as a fallback without ever reaching the
+    hosted Firecrawl API.
+    """
+    instance = _get_firecrawl_instance()
+    if not instance:
+        return {
+            "url": url,
+            "title": "",
+            "content": "",
+            "og_image": "",
+            "success": False,
+            "error": "no local Firecrawl endpoint configured",
+        }
+
+    headers = {"User-Agent": WEB_FETCH_USER_AGENT}
+    api_key = _get_provider_key("firecrawl")
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    try:
+        response = httpx.post(
+            f"{instance}/v2/scrape",
+            json={
+                "url": url,
+                "formats": ["markdown"],
+                "onlyMainContent": True,
+            },
+            headers=headers,
+            timeout=max(5, int(timeout or 60)),
+        )
+        response.raise_for_status()
+        payload = response.json()
+        data = payload.get("data", {}) if isinstance(payload, dict) else {}
+        metadata = data.get("metadata", {}) if isinstance(data, dict) else {}
+        if not isinstance(metadata, dict):
+            metadata = {}
+        content = data.get("markdown", "") if isinstance(data, dict) else ""
+        if not isinstance(content, str) or not content.strip():
+            raise ValueError("Firecrawl returned no markdown content")
+
+        logger.info("Firecrawl scraped %d characters from: %s", len(content), url)
+        return {
+            "url": metadata.get("sourceURL") or metadata.get("url") or url,
+            "title": metadata.get("title") or "",
+            "content": content,
+            "og_image": (
+                metadata.get("ogImage")
+                or metadata.get("og:image")
+                or metadata.get("image")
+                or ""
+            ),
+            "success": True,
+            "error": "",
+            "provider": "firecrawl",
+        }
+    except Exception as exc:
+        logger.warning("Local Firecrawl scrape failed for %s: %s", url, exc)
+        return {
+            "url": url,
+            "title": "",
+            "content": "",
+            "og_image": "",
+            "success": False,
+            "error": str(exc),
+            "provider": "firecrawl",
+        }
+
+
+def firecrawl_search(
+    query: str,
+    count: Optional[int] = None,
+    time_filter: Optional[str] = None,
+) -> List[dict]:
+    """Search through the local Firecrawl v2 API.
+
+    Firecrawl is treated as a local search appliance: the URL defaults to the
+    loopback service and never falls back to Firecrawl's hosted API. Returning
+    an empty list on failure lets the caller continue through its configured
+    provider chain (normally the independently managed SearXNG instance).
+    """
+    count = count if count is not None else _get_result_count()
+    instance = _get_firecrawl_instance()
+    if not instance:
+        logger.warning("Firecrawl search skipped: no local endpoint configured")
+        return []
+
+    payload = {
+        "query": query,
+        "limit": count,
+        "sources": [{"type": "web"}],
+    }
+    tbs_map = {
+        "day": "qdr:d",
+        "week": "qdr:w",
+        "month": "qdr:m",
+        "year": "qdr:y",
+    }
+    if time_filter in tbs_map:
+        payload["tbs"] = tbs_map[time_filter]
+
+    headers = {"User-Agent": WEB_FETCH_USER_AGENT}
+    api_key = _get_provider_key("firecrawl")
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    try:
+        response = httpx.post(
+            f"{instance}/v2/search",
+            json=payload,
+            headers=headers,
+            timeout=REQUEST_TIMEOUT,
+        )
+        response.raise_for_status()
+        data = response.json()
+        web = data.get("data", {}).get("web", []) if isinstance(data, dict) else []
+        results = []
+        for item in web[:count]:
+            if not isinstance(item, dict) or not item.get("url"):
+                continue
+            snippet = item.get("description") or item.get("markdown") or ""
+            results.append({
+                "title": item.get("title") or item["url"],
+                "url": item["url"],
+                "snippet": str(snippet)[:2000],
+            })
+        logger.info("Firecrawl returned %d results for: %s", len(results), query)
+        return results
+    except Exception as exc:
+        logger.warning("Local Firecrawl search failed: %s", exc)
+        return []
 
 
 # ── SearXNG ──
