@@ -50,19 +50,96 @@ _REPORT_ALLOWED_ATTRS.setdefault("img", set()).update({"src", "alt", "title"})
 # Helpers
 # ---------------------------------------------------------------------------
 
+# Stretches of markdown where a URL is content, not a link waiting to be made.
+# Rewriting inside one corrupts it: a fenced example gains literal `[u](u)`
+# noise, an inline span is cut in half, and `<a href="…">` becomes unparseable
+# markup. Ordered so the widest construct wins at a given position.
+_PROTECTED_RE = re.compile(
+    r"""(?mx)
+      ^[\ \t]*(?P<fence>`{3,}|~{3,})[^\n]*\n(?s:.*?)^[\ \t]*(?P=fence)[\ \t]*$
+    | ^[\ \t]{0,3}\[[^\]\n]+\]:[\ \t]*\S+
+    | !?\[(?:[^\[\]\n]|\[[^\[\]\n]*\])*\]\((?:[^()\n]|\([^()\n]*\))*\)
+    | (?P<tick>`+)[^`\n]*(?P=tick)
+    | <[^<>\s][^<>]*>
+    """
+)
+
+# `(?<!\]\()` is a second line of defence for a markdown destination whose
+# parens nest deeper than _PROTECTED_RE follows; the alnum lookbehind stops a
+# scheme glued to the end of a word ("seehttps://x") from being linkified.
+_URL_START_RE = re.compile(r"(?<!\]\()(?<![A-Za-z0-9])https?://", re.IGNORECASE)
+
+# Quotes and backticks end a URL so a malformed tag or code span — one that
+# _PROTECTED_RE could not match — truncates the link instead of swallowing the
+# markup that follows it.
+_URL_STOP_CHARS = "\"'`<>"
+
+# A run of these at the end of a bare URL belongs to the sentence, not the href.
+_URL_TRAILING_PUNCT = ".,;:!?"
+
+
+def _url_end(text: str, start: int) -> int:
+    """Index one past the last character of the bare URL beginning at `start`.
+
+    Brackets and parens are counted rather than blacklisted: `[` and `(` opened
+    inside the URL make their closer part of it, so `http://[::1]:8080/x` and
+    `…/Foo_(bar)` survive whole, while the `)` of "(see …)" — which the URL
+    never opened — ends it.
+    """
+    depth = {"(": 0, "[": 0}
+    i, n = start, len(text)
+    while i < n:
+        ch = text[i]
+        if ch.isspace() or ch in _URL_STOP_CHARS:
+            break
+        if ch in "([":
+            depth[ch] += 1
+        elif ch in ")]":
+            opener = "(" if ch == ")" else "["
+            if depth[opener] == 0:
+                break
+            depth[opener] -= 1
+        i += 1
+    while i > start and text[i - 1] in _URL_TRAILING_PUNCT:
+        i -= 1
+    return i
+
+
+def _linkify_plain(text: str) -> str:
+    """Wrap every bare URL in a stretch of ordinary prose as `[url](url)`."""
+    if "://" not in text:
+        return text
+    out: List[str] = []
+    pos = 0
+    for m in _URL_START_RE.finditer(text):
+        if m.start() < pos:
+            continue                      # a scheme inside a URL we already took
+        end = _url_end(text, m.end())
+        if end <= m.end():
+            continue                      # a bare "https://" with no host
+        out.append(text[pos:m.start()])
+        url = text[m.start():end]
+        out.append(f"[{url}]({url})")
+        pos = end
+    out.append(text[pos:])
+    return "".join(out)
+
+
 def _autolink_urls(md_text: str) -> str:
     """Convert bare URLs to markdown links before processing.
 
-    Skips URLs already inside markdown link syntax [text](url).
+    Leaves alone anything already linked and anything quoted as code.
     """
     if not isinstance(md_text, str):
         return md_text
-    # Match bare URLs not already inside ](...)
-    return re.sub(
-        r'(?<!\]\()(?<!\()(https?://[^\s\)<>]+)',
-        r'[\1](\1)',
-        md_text,
-    )
+    out: List[str] = []
+    pos = 0
+    for m in _PROTECTED_RE.finditer(md_text):
+        out.append(_linkify_plain(md_text[pos:m.start()]))
+        out.append(m.group(0))
+        pos = m.end()
+    out.append(_linkify_plain(md_text[pos:]))
+    return "".join(out)
 
 
 def _md_to_html(md_text: str) -> str:
