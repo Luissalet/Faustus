@@ -1,4 +1,4 @@
-"""Numbered sources, citation repair and evidence grading for deep research.
+"""Numbered sources, citation repair and citation checking for deep research.
 
 Deterministic and pure: no network, no LLM, no database. Everything here can be
 re-run on the same input a year from now and produce the same bytes, which is
@@ -662,7 +662,7 @@ def strip_markers(text: Any) -> str:
 
     Load-bearing: ``claim_verify``'s layer 4 checks that every number in the
     claim occurs in the source, so leaving ``[12]`` in the text makes it hunt
-    for "12" in the page and grade an otherwise perfect sentence weak.
+    for "12" in the page and refuse an otherwise perfect sentence.
     """
     body = _as_text(text)
     cleaned, _ = _drop_dangling_markers_all(body)

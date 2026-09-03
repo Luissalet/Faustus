@@ -1254,14 +1254,14 @@ class DeepResearcher:
         return "\n\n".join(parts)
 
     def _finalize_citations(self, report: str) -> str:
-        """Repair, grade and annotate the finished report.
+        """Repair, check and annotate the finished report.
 
         Runs after the expensive part of the job, so it must not be able to
         destroy it: if anything here throws, the user still gets the report the
         model wrote and a warning saying its citations went unchecked.
         """
         try:
-            final, audit, _graded = finalize_report(
+            final, audit, _checked = finalize_report(
                 report, self.citations, getattr(self, "report_language", "en"))
             self.citation_audit = audit
             coverage = audit.coverage or {}
