@@ -334,6 +334,25 @@
     </div>
   </div>
 
+  <!-- ── Experts ───────────────────────────────────────────────────────
+       An expert is a specialist with its OWN corpus: a profile, a rubric, a
+       folder of the user's books indexed by page, and corrections that either
+       cite the page they came from or say they are the model's opinion.
+       Gallery first, editor on click, review panel for a result; all three
+       bodies are rendered by static/js/experts.js. -->
+  <div id="experts-modal" class="modal experts-page hidden">
+    <div class="modal-content experts-modal-content" role="region" aria-label="Experts">
+      <button type="button" class="experts-close-btn" id="close-experts-modal" aria-label="Close experts" title="Back to chat">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+      <div class="experts-modal-body">
+        <div id="experts-gallery" class="experts-view"></div>
+        <div id="experts-detail" class="experts-view hidden"></div>
+        <div id="experts-review" class="experts-view hidden"></div>
+      </div>
+    </div>
+  </div>
+
   <div id="memory-modal" class="modal hidden">
     <div class="modal-content memory-modal-content" role="dialog" aria-label="Brain" style="background:var(--bg)">
       <div class="modal-header">
@@ -945,6 +964,16 @@
         <div class="list-item" id="tool-research-btn">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;opacity:0.5;"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
           <span class="grow">Deep Research</span>
+        </div>
+        <div class="list-item" id="tool-experts-btn" title="Experts — a specialist with its own corpus, and corrections that cite the page">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+            style="flex-shrink:0;opacity:0.5;">
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+            <path d="M9 7h6"/>
+          </svg>
+          <span class="grow">Experts</span>
         </div>
         <div class="list-item" id="tool-gallery-btn">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -2693,6 +2722,7 @@
 <script type="module" src="/static/js/a11y.js"></script>
 <script type="module" src="/static/js/serviceHealth.js?v=20260831servicehealth1"></script>
 <script type="module" src="/static/js/noteToAgent.js?v=20260831notetoagent1"></script>
+<script type="module" src="/static/js/experts.js?v=20260903experts1"></script>
 <script nonce="{{CSP_NONCE}}">if('serviceWorker' in navigator){navigator.serviceWorker.register('/static/sw.js').catch(()=>{});}</script>
 </body>
 </html>
