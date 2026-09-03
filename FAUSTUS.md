@@ -4,7 +4,7 @@
 
 - Base del fork: commit upstream `c9dd68d8` (27-08-2026, "refactor(docs): separate Pages site source").
 - Rama: **una sola, `master`** (`D:\LocalAI\odysseus`), que trackea `origin/master` en `github.com/Luissalet/Faustus`. Las ramas `feat/projects` y `feat/reliability` y la worktree de pruebas se consolidaron el 31-08.
-- Cifras a 03-09-2026 (12:00, en `master`): **259 commits**, +89.300 líneas sobre la base (541 ficheros tocados); **68 módulos nuevos** en `src/`, `routes/`, `services/` y `static/js/`, **141 ficheros de tests nuevos**. Suite completa: **8.231 tests en verde**, ~6 min en Linux (2 fallos preexistentes del entorno: `markitdown` sin conversor docx y el escáner de marca sobre un docstring en español); e2e Playwright 12 flujos.
+- Cifras a 03-09-2026 (16:00, en `master`): **278 commits**, +97.000 líneas sobre la base; **79 módulos nuevos** en `src/`, `routes/`, `services/` y `static/js/`, **150 ficheros de tests nuevos**. Suite completa: **8.427 tests en verde**, ~6 min en Linux (2 fallos preexistentes del entorno: `markitdown` sin conversor docx y el escáner de marca sobre un docstring en español); e2e Playwright 12 flujos. En Windows hay además 12 fallos de plataforma y 13 dependientes del `data/` local, todos presentes también en el commit base (§24.4).
 - Máquina de referencia: RTX 4070 Ti 12 GB **+ RTX 5060 Ti 16 GB (eGPU, desde el 02-09)**, 128 GB RAM, Windows 11, Ollama 0.33.x; modelos `qwen3-coder:30b`, `qwen3.5:9b` (visión), `qwen3.8:27b`, `qwen3-coder-next`.
 
 ---
@@ -659,6 +659,99 @@ Suite completa tras la tanda: **8.231 en verde** (2 fallos preexistentes del ent
 grafo de conocimiento 2D como vista de auditoría (G2), agentes especializados con corpus propio (G3, la más
 diferencial), `wait-for`/`events` como primitivas de orquestación, búsqueda de dos niveles e importación de
 historiales de ChatGPT/Claude/LM Studio, torneo multi-modelo con fusión, el paso `prove`, y el ballast de disco.
+
+
+## 24. Los expertos con corpus propio y el grafo que explica (03-09-2026, tarde)
+
+Las dos ideas de Luis que quedaban del informe de `D:\LocalAi\inspiration\`: la que él marcó como
+más diferencial (agentes especializados con su propio corpus) y la que el propio informe recomendaba
+**acotar** (el grafo de conocimiento).
+
+### 24.1 Agentes especializados con corpus propio (G3, fase 1)
+Un corrector narrativo con los libros de guía; otro con los apuntes del máster. En local gana por tres
+motivos que no son opinables: los PDFs no salen de la máquina, no hay límite de subida, y el corpus se
+edita y se reindexa en caliente.
+
+- **El experto** (`services/experts.py`): `DATA_DIR/experts/<slug>/` con `EXPERT.md`
+  (frontmatter + instrucciones + **rúbrica**: sin rúbrica un corrector local divaga), `corpus/` con
+  los ficheros que el usuario suelta, `index.json` con los chunks y `usage.json` con los contadores.
+- **Procedencia por página**: cada chunk sabe de qué fichero y de qué página sale. Cuando la librería
+  no puede dar la página, el chunk queda con `page: null` y `page_confidence: "unknown"` — **nunca se
+  adivina un número**. `pypdf` extrae texto pero no rasteriza, así que el renderizado de la página se
+  ofrece solo si PyMuPDF (ya opcional para el visor de PDF) está instalado, y si no la respuesta lo
+  dice y enlaza el fichero, en vez de añadir una dependencia por la puerta de atrás.
+- **Búsqueda de dos niveles con degradación explícita** (`frankensearch`): BM25 siempre, más vectores
+  fusionados por **RRF `Σ 1/(60+rank)`** cuando los hay. Sin ChromaDB se sirve solo-léxico con
+  `degraded: true`; **nunca un error**. Medido en vivo con ChromaDB caído: `tier: "lexical"`,
+  `degraded: true`, resultados correctos.
+- **Las correcciones son deltas tipados por span**, no prosa reescrita (`brenner_bot` aplicado a la
+  narrativa): `{op, span, quote, replacement, rationale, rule, severity, citations, anchored, label}`.
+  Los offsets de un modelo local no son de fiar, así que el span **se valida contra su cita literal** y
+  se relocaliza cuando la cita aparece una sola vez; si aparece varias o ninguna, la corrección se
+  **rechaza con su motivo** y se muestra — un `EDIT` sin cita no toca la prosa de nadie.
+- **La regla de honestidad, que es el punto entero**: una corrección solo puede decir que viene del
+  corpus si el chunk citado la sostiene, comprobado en tres capas de barato a caro (`mindmap-generator`)
+  y **sin llamar a ningún LLM**. Si cita un marcador que no estaba en el bloque, o el chunk no la
+  sostiene, sale etiquetada **"model's opinion, not the corpus"**. No se descarta —el usuario puede
+  quererla— pero no puede disfrazarse de autoridad.
+- **Story bible** (`src/story_bible.py`): personajes, cronología y hechos establecidos como estado
+  estructurado, con detección de contradicciones léxica y conservadora. Es lo que ni ChatGPT ni Claude
+  hacen: te corrigen la frase, no te avisan de que el personaje tenía los ojos verdes en el capítulo 3.
+- Superficies: página **Experts** (galería, editor, corpus, reindex, búsqueda), panel de revisión con
+  control de cambios Accept/Reject, `@expert:<slug>` en el compositor, y la tool `expert_review`.
+- **Medido en vivo** (corpus de un manual de estilo, `qwen3.5:9b`): el modelo propuso
+  *"Marta caminaba lentamente hacia la puerta"* → *"Marta se arrastraba hacia la puerta"*, que es
+  literalmente lo que dice el capítulo 3 del corpus. El sistema **le relocalizó el span** (sus offsets
+  estaban mal) y aun así la marcó como **opinión del modelo**, porque citó un marcador que no existía.
+  La corrección era buena y la etiqueta era correcta: el corpus no la respaldaba *como fue citada*.
+- Fase 2 (LoRA para la voz y el criterio) sigue pendiente a propósito: necesita cientos de pares
+  texto→corrección aceptada que solo genera el uso. Meter los PDFs en un fine-tune para "aprendérselos"
+  es la forma más cara, lenta y alucinógena de hacer lo que el RAG hace mejor.
+
+### 24.2 El grafo de procedencia (G2), acotado como manda el informe
+El veredicto del informe era que el 3D es escaparate y que **el grafo paga cuando las aristas son
+verdad de terreno, no cuando las inventa un LLM** — con el dato duro de que `eidetic_engine_cli` pondera
+su propio grafo con **0.10** frente a 0.45 léxico y 0.45 semántico. Así que: **2D, aristas declaradas,
+y vendido como vista de auditoría**.
+
+- `src/provenance_graph.py` construye el grafo **solo** de lo que ya estaba almacenado: dependencias
+  declaradas entre objetivos, evidence spans de la memoria, el `inverted_from` que escribió el Curator,
+  los ficheros que cada checkpoint cambió, las citas de corpus, y duplicados **verificados
+  literalmente**. Cada arista lleva un `why` en una frase, porque el objetivo es que el usuario pueda
+  preguntar por qué está ahí. No hay ni una arista que haya afirmado un modelo, y el hueco para las
+  inferidas queda documentado pero vacío.
+- `src/text_overlap.py`: q-gramas → winnowing → fingerprints → voto por diagonal → **verificación
+  literal del span** (`franken_overlap`). Posicional, sin embeddings, y nunca reporta un span que no
+  haya comparado carácter a carácter.
+- Lo que da: **`explain`** (la cadena de evidencia paso a paso: por qué el agente cree esto),
+  **`impact`** (qué se rompe si tocas esto), huérfanos y duplicados, y una señal de ranking **acotada a
+  [0, 0.10]**, con el porqué de ese tope escrito en el docstring.
+- La página es 2D, dibuja como mucho 200 nodos elegidos por grado y **dice "showing 200 of N — narrow
+  the filter"** en vez de pintar una nebulosa ilegible.
+- **Medido en vivo** sobre los datos reales de la instancia: 25 nodos y 18 aristas del historial de
+  trabajos; `explain(OBJ-1)` devolvió *"OBJ-1 was EDITed from this chat session on 2026-09-03 — La API
+  de objetivos ya está cimentada y verificada en vivo"*, e `impact(OBJ-1)` = OBJ-2, OBJ-3, OBJ-5. Y
+  cuando una fuente no está, `sources` dice cuál y por qué (*"no project with a bound folder was
+  given"*, *"Faustus stores no review records"*) en lugar de fingir un grafo vacío — la postura
+  anti-mock de `vibe_cockpit`.
+
+### 24.3 De paso, dos cosas que el uso destapó
+- **`@expert:corrector` se reportaba como fichero inexistente**: la regex de menciones no tiene `:` en
+  su clase de caracteres, así que casaba la palabra suelta `expert` y el resolvedor la listaba en
+  *missing* — una mención que el usuario había escrito bien, culpándole a él. Ahora las menciones con
+  espacio de nombres se reconocen y el resolvedor de ficheros las ignora; `@expertos/notas.md` sigue
+  siendo una ruta.
+- **Una revisión devolvía spans sin el texto al que apuntan**, así que el panel tenía que pedirle al
+  usuario que pegara su propia prosa otra vez. `review()` ya lleva `text`; `compact_result()` lo quita,
+  porque devolverle al modelo la prosa del usuario es justo lo que esa forma compacta existe para evitar.
+
+### 24.4 Sobre los 25 fallos de la suite en Windows
+La suite completa en el PC dio 25 fallos y en Linux 2. Comprobado con dos worktrees limpias
+(commit base `2fe3acb` y HEAD, ambas sin `data/`): **fallan exactamente los mismos 12**, así que ninguno
+es regresión. Los otros 13 aparecen solo en el árbol de Luis y se reproducen **igual en el commit base**
+apuntando a una copia de su `data/`: son dependientes de sus datos locales, no del código. (No es el
+`default_model`: limpiarlo no los arregla.) En Linux la suite completa queda en **8.427 en verde** con
+los 2 fallos de entorno conocidos.
 
 ---
 
