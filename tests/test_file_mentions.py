@@ -245,3 +245,46 @@ def test_a_mention_with_a_line_wins_over_the_too_large_to_inline_rule(tmp_path):
     # A bare mention of the same file still refuses to inline it whole.
     plain, _ = fm.turn_context(str(tmp_path), "@src/big.py")
     assert "too large to inline" in plain and "line_9000" not in plain
+
+
+# ── namespaced mentions: `@expert:<slug>` is not a path ──────────────────
+# Regression: the mention regex has no ":" in its path class, so
+# `@expert:corrector` matched the bare word `expert` and resolve() reported it
+# in `missing` — a mention the user typed correctly, blamed on them.
+
+def test_an_expert_mention_is_not_treated_as_a_file():
+    text = "revisa @src/app.py y que @expert:corrector le pase la rúbrica"
+    assert fm.extract(text) == ["src/app.py"]
+    assert fm.expert_mentions(text) == ["corrector"]
+
+
+def test_an_expert_mention_alone_leaves_no_path_behind():
+    assert fm.extract("@expert:corrector") == []
+    assert fm.expert_mentions("@expert:corrector") == ["corrector"]
+
+
+def test_trailing_punctuation_is_not_part_of_the_slug():
+    assert fm.expert_mentions("pregunta a @expert:corrector.") == ["corrector"]
+
+
+def test_expert_mentions_are_ordered_and_deduplicated():
+    text = "@expert:corrector luego @expert:apuntes y otra vez @expert:corrector"
+    assert fm.expert_mentions(text) == ["corrector", "apuntes"]
+
+
+def test_a_path_that_merely_starts_with_expert_is_still_a_path():
+    assert fm.extract("@expertos/notas.md") == ["expertos/notas.md"]
+    assert fm.expert_mentions("@expertos/notas.md") == []
+
+
+def test_an_unknown_namespace_stays_a_file_mention():
+    # Only the namespaces this module knows are carved out; everything else
+    # keeps today's behaviour rather than silently disappearing.
+    assert fm.extract("@libro:cap1") == ["libro"]
+
+
+def test_an_expert_mention_does_not_reach_the_workspace_resolver(tmp_path):
+    (tmp_path / "app.py").write_text("x = 1\n", encoding="utf-8")
+    out = fm.resolve(str(tmp_path), "@app.py y @expert:corrector")
+    assert out["resolved"] == ["app.py"]
+    assert out["missing"] == [] and out["ambiguous"] == []

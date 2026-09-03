@@ -1198,6 +1198,12 @@ async def review(slug: str, text: str, *, llm_call: Callable,
         "chunks": len(chunks),
         "errors": errors,
         "text_chars": len(body),
+        # The passage the deltas index into. Without it a consumer holds spans
+        # into a text it does not have and has to be handed the passage a
+        # second time (the review panel used to ask the user to paste it back).
+        # `compact_result` drops it again — the agent tool answers in lines,
+        # not in the user's own prose echoed back at them.
+        "text": body,
     }
 
 
@@ -1267,6 +1273,10 @@ def compact_result(result: Dict[str, Any]) -> Dict[str, Any]:
         for row in result.get("rejected") or []]
     result["rejected_count"] = len(result["rejected"])
     result["summary"] = format_review(result)
+    # The passage itself belongs to the caller who already has it; echoing the
+    # user's prose back through the model's context is the one thing this
+    # compact shape exists to avoid.
+    result.pop("text", None)
     return result
 
 

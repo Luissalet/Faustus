@@ -193,12 +193,50 @@ def search(workspace: str, query: str = "", limit: int = 12) -> List[Dict[str, A
 
 # ── parsing / resolving ───────────────────────────────────────────────────
 
+# `@expert:corrector` names a specialist agent (services/experts.py), not a
+# file. The path class has no ":", so the regex matched the bare word `expert`
+# and `resolve()` then reported "expert" as a file the workspace does not have
+# — a mention the user typed correctly, blamed on them. Namespaced mentions are
+# recognised here and skipped by the file resolver; `expert_mentions()` reads
+# the slugs back out for whoever wants them.
+_NAMESPACES = ("expert",)
+_NAMESPACED_RE = re.compile(
+    r'(?<![\w@/\\.-])@(' + "|".join(_NAMESPACES) + r'):([A-Za-z0-9][\w.-]{0,99})'
+)
+
+
+def namespaced_mentions(text: str, namespace: str) -> List[str]:
+    """The slugs of `@<namespace>:<slug>` mentions, in order, de-duplicated."""
+    out: List[str] = []
+    if not text or "@" not in text:
+        return out
+    for m in _NAMESPACED_RE.finditer(text):
+        if m.group(1) != namespace:
+            continue
+        slug = m.group(2).rstrip(".,;:!?")
+        if slug and slug not in out:
+            out.append(slug)
+    return out
+
+
+def expert_mentions(text: str) -> List[str]:
+    """`@expert:corrector` → ["corrector"]."""
+    return namespaced_mentions(text, "expert")
+
+
 def extract(text: str) -> List[str]:
-    """The raw mention bodies in `text`, in order, de-duplicated."""
+    """The raw mention bodies in `text`, in order, de-duplicated.
+
+    A namespaced mention (`@expert:corrector`) is not a path and is left out:
+    it belongs to whoever owns that namespace, not to the file index.
+    """
     if not text or "@" not in text:
         return []
+    skip = {m.start() for m in _NAMESPACED_RE.finditer(text)}
     seen: List[str] = []
     for m in MENTION_RE.finditer(text):
+        if m.start() in skip:
+            continue
         raw = (m.group(1) or m.group(2) or "").strip()
         # A trailing period is nearly always sentence punctuation, not a path.
         while raw and raw[-1] in ".,;:!?":

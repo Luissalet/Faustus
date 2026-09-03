@@ -826,3 +826,32 @@ async def test_tool_rejects_garbage_without_raising(experts, project):
         block = ToolBlock(tool_type="expert_review", content=content)
         _, result = await te._execute_tool_block_impl(block, session_id="s1", owner="luis")
         assert result["exit_code"] == 1 and result["error"]
+
+
+# ── the review carries the passage its spans index into ──────────────────
+
+@pytest.mark.asyncio
+async def test_the_review_carries_the_text_its_spans_index_into(experts):
+    """A consumer holding spans needs the passage they point at. Without it the
+    review panel had to ask the user to paste their own text back."""
+    llm = _answering([{"op": "EDIT", "start": ORIGINAL.index("lentamente"),
+                       "end": ORIGINAL.index("lentamente") + len("lentamente"),
+                       "quote": "lentamente", "replacement": "despacio",
+                       "rationale": "Adverbio innecesario", "rule": "Adverbios",
+                       "severity": "low", "cite": ["C1"]}])
+    result = await er.review("brenner_bot", ORIGINAL, llm_call=llm)
+    assert result["text"] == ORIGINAL
+    delta = result["deltas"][0]
+    span = delta["span"]
+    assert result["text"][span["start"]:span["end"]] == delta["quote"]
+
+
+@pytest.mark.asyncio
+async def test_the_compact_result_does_not_echo_the_passage_back(experts):
+    """The agent tool answers in lines; sending the user's own prose back
+    through the model's context is what the compact shape exists to avoid."""
+    llm = _answering([])
+    result = await er.review("brenner_bot", ORIGINAL, llm_call=llm)
+    compact = er.compact_result(result)
+    assert "text" not in compact
+    assert compact["text_chars"] == len(ORIGINAL)
