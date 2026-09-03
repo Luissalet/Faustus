@@ -26,6 +26,12 @@ JOB = {
 }
 RUNNING = {"id": "abc", "status": "running", "title": "Workers · slow <b>x</b>", "created": 1.0, "session_id": "s2",
            "tasks": [], "progress": {"w1": {"last_event": "tick", "round": 3, "last_tool": "bash", "elapsed_s": 40.2, "stalled": True, "stall_reason": "idle"}}}
+# What a worker's own output says about it (src/output_rules.py), as the
+# dispatch progress entry carries it.
+DETECTED = {"id": "det", "status": "running", "title": "t", "created": 1.0, "tasks": [], "progress": {
+    "w1": {"last_event": "tool", "state": "rate_limited", "why": "HTTP 429 Too Many Requests <b>"},
+    "w2": {"last_event": "tool", "state": "waiting_for_input", "why": "Overwrite? [y/N]"},
+    "w3": {"last_event": "tick", "round": 2}}}
 
 
 def _run(script: str) -> dict:
@@ -67,6 +73,42 @@ def test_job_rows_collapsed_and_expanded_escape_and_link_to_the_board():
     # a running job: progress per worker, a Cancel button, escaped title
     assert 'data-wk-cancel="abc"' in running and "round 3 · bash · 40 s · <b>stalled</b> (idle)" in running
     assert "slow &lt;b&gt;x&lt;/b&gt;" in running and "<b>x</b>" not in running
+
+
+@pytest.mark.skipif(not _HAS_NODE, reason="node not installed")
+def test_a_detected_worker_state_is_a_chip_that_says_why():
+    """The board shows WHAT a worker's own output says and the line it says it
+    on — and that nobody killed it for it."""
+    out = _run(f"""
+      console.log(JSON.stringify({{ job: jobHtml({json.dumps(DETECTED)}, true),
+        chip: stateChip({{ state: 'stuck', why: 'the same line 4 times at the tail: retrying' }}),
+        none: stateChip({{ last_event: 'tick' }}), empty: stateChip(null) }}));
+    """)
+    job, chip = out["job"], out["chip"]
+    assert 'class="wk-state wk-state-rate_limited"' in job and ">rate limited<" in job
+    assert 'class="wk-state wk-state-waiting_for_input"' in job and ">waiting for input<" in job
+    # the matched line travels in the title, escaped, and says it was not killed
+    assert "HTTP 429 Too Many Requests &lt;b&gt; (reported, not killed)" in job
+    assert "<b>" not in job, "a worker's own output is never trusted as markup"
+    assert "Overwrite? [y/N]" in job
+    # a worker with no detected state gets no chip at all
+    assert job.count('class="wk-state') == 2
+    assert 'title="stuck — the same line 4 times at the tail: retrying (reported, not killed)"' in chip
+    assert out["none"] == "" and out["empty"] == ""
+
+
+def test_the_board_streams_live_and_falls_back_to_the_poll():
+    """The list fills in from /events?stream=1 while a job runs; any failure —
+    no EventSource, the setting off, a proxy — goes back to the 3 s poll."""
+    assert "new EventSource(" in SRC and "/events?stream=1" in SRC
+    assert "typeof EventSource !== 'undefined'" in SRC
+    # every failure path latches the fallback and every stream is closed
+    assert SRC.count("_noStream = true") >= 2 and "es.onerror" in SRC
+    assert "addEventListener('end'" in SRC
+    assert "setInterval(_refreshJobs, 3000)" in SRC and "_closeStreams()" in SRC
+    # the modal is closed → nothing is left open
+    close = SRC.split("export function closeWorkers()")[1]
+    assert "_closeStreams()" in close and "clearInterval(_pollTimer)" in close
 
 
 @pytest.mark.skipif(not _HAS_NODE, reason="node not installed")

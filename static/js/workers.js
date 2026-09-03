@@ -9,6 +9,12 @@
 //
 // Same page an outside coordinator (Fable through the faustus-workers MCP
 // server) uses — the jobs it starts appear here too.
+//
+// The board fills in LIVE: every running job opens an EventSource on
+// /api/dispatch/{id}/events?stream=1 and the list refreshes on each event.
+// When the stream is unsupported, switched off (agent_dispatch_sse) or blocked
+// by a proxy, the EventSource errors immediately and the page goes back to the
+// 3-second poll it has always used — same data, one round trip later.
 
 let _open = false;
 let _escHandler = null;
@@ -16,6 +22,11 @@ let _pollTimer = null;
 let _jobs = [];
 let _expanded = new Set();
 let _lastWorkspace = '';
+// job id → EventSource. `_noStream` latches once a stream fails so the page
+// stops re-opening one per refresh and simply polls.
+const _streams = new Map();
+let _noStream = false;
+let _refreshTimer = null;
 
 function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -29,6 +40,19 @@ const STATUS_WORD = { queued: 'queued', running: 'running', verifying: 'verifyin
   cancelling: 'cancelling', cancelled: 'cancelled', interrupted: 'interrupted' };
 const LIVE = new Set(['queued', 'running', 'verifying', 'cancelling']);
 export function isLive(status) { return LIVE.has(status); }
+
+/** What a worker's OWN output says about it (src/output_rules.py), as a chip
+ *  whose title carries the line the rule matched — so the board says WHY it
+ *  calls a worker stuck instead of asserting it. Such a worker is reported,
+ *  never killed. Exported for tests. */
+export function stateChip(p) {
+  const state = String((p && p.state) || '');
+  if (!state) return '';
+  const label = state.replace(/_/g, ' ');
+  const why = String((p && p.why) || '');
+  const title = why ? `${label} — ${why} (reported, not killed)` : `${label} (reported, not killed)`;
+  return `<span class="wk-state wk-state-${attr(state)}" title="${attr(title)}">${esc(label)}</span>`;
+}
 
 function verificationHtml(v) {
   if (!v) return '';
@@ -96,6 +120,7 @@ export function jobHtml(job, expanded = false) {
       if (p.last_tool || p.tool) bits.push(esc(p.last_tool || p.tool));
       if (p.elapsed_s != null) bits.push(`${esc(Math.round(p.elapsed_s))} s`);
       if (p.stalled) bits.push(`<b>stalled</b>${p.stall_reason ? ' (' + esc(p.stall_reason) + ')' : ''}`);
+      if (p.state) bits.push(stateChip(p));
       return `<div class="wk-worker-line"><span class="wk-wname">${esc(n)}</span> ${bits.join(' · ')}</div>`;
     }).join('') : '<span class="wk-muted">starting…</span>'}</div>`);
   }
@@ -201,14 +226,64 @@ async function _refreshJobs() {
   _renderList();
 }
 
+function _streamsUsable() {
+  return !_noStream && typeof EventSource !== 'undefined';
+}
+
+function _closeStream(id) {
+  const es = _streams.get(id);
+  if (!es) return;
+  _streams.delete(id);
+  try { es.close(); } catch (_) {}
+}
+
+function _closeStreams() {
+  for (const id of Array.from(_streams.keys())) _closeStream(id);
+}
+
+/** Refresh soon, not once per event: a busy worker emits a tool event per
+ *  line and the list is one fetch per job. */
+function _scheduleRefresh(ms = 300) {
+  if (_refreshTimer) return;
+  _refreshTimer = setTimeout(() => { _refreshTimer = null; if (_open) _refreshJobs(); }, ms);
+}
+
+/** Follow one running job live. Any failure — no EventSource, the setting
+ *  off (the endpoint then answers JSON, which the stream rejects), a proxy in
+ *  the way — latches `_noStream` and leaves the poll to do the work. */
+function _openStream(id) {
+  if (!_streamsUsable() || _streams.has(id)) return;
+  let es = null;
+  try {
+    es = new EventSource(`/api/dispatch/${encodeURIComponent(id)}/events?stream=1`);
+  } catch (_) {
+    _noStream = true;
+    return;
+  }
+  _streams.set(id, es);
+  es.onmessage = () => _scheduleRefresh();
+  es.addEventListener('end', () => { _closeStream(id); _scheduleRefresh(0); });
+  es.onerror = () => {
+    _closeStream(id);
+    _noStream = true;                     // back to the poll that always works
+    _scheduleRefresh(0);
+  };
+}
+
 function _renderList() {
   const list = document.getElementById('wk-list');
   if (!list) return;
   list.innerHTML = _jobs.length ? _jobs.map(j => jobHtml(j, _expanded.has(j.id))).join('')
     : '<div class="admin-empty">No jobs yet. Describe a task above and press Run.</div>';
-  const live = _jobs.some(j => isLive(j.status));
-  if (live && !_pollTimer) _pollTimer = setInterval(_refreshJobs, 3000);
-  if (!live && _pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
+  const live = _jobs.filter(j => isLive(j.status));
+  const ids = new Set(live.map(j => j.id));
+  for (const id of Array.from(_streams.keys())) if (!ids.has(id)) _closeStream(id);
+  if (_streamsUsable()) for (const j of live) _openStream(j.id);
+  // poll while anything live is NOT being streamed (no EventSource, a stream
+  // that failed, or one that has not opened yet)
+  const needPoll = live.length > 0 && (!_streamsUsable() || live.some(j => !_streams.has(j.id)));
+  if (needPoll && !_pollTimer) _pollTimer = setInterval(_refreshJobs, 3000);
+  if (!needPoll && _pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
 }
 
 async function _run(modal) {
@@ -252,7 +327,18 @@ export function openWorkers() {
   const modal = document.createElement('div');
   modal.className = 'modal';
   modal.id = 'workers-modal';
+  // The state chip's own styling travels with the modal: the page owns this
+  // widget, so it does not reach into the shared stylesheet for six rules.
   modal.innerHTML = `
+    <style>
+      #workers-modal .wk-state { display:inline-block; padding:0 6px; border-radius:9px; font-size:11px;
+        line-height:16px; border:1px solid currentColor; opacity:.9; cursor:help; }
+      #workers-modal .wk-state-rate_limited, #workers-modal .wk-state-waiting_for_input { color:#c98a12; }
+      #workers-modal .wk-state-stuck, #workers-modal .wk-state-auth_error,
+      #workers-modal .wk-state-disk_full, #workers-modal .wk-state-oom,
+      #workers-modal .wk-state-failed { color:#c0392b; }
+      #workers-modal .wk-state-finished_ok { color:#2e8b57; }
+    </style>
     <div class="modal-content workers-modal-content">
       <div class="modal-header">
         <h4 style="position:relative;top:-2px;">🤖 Workers</h4>
@@ -333,6 +419,8 @@ export function closeWorkers() {
   if (!_open) return;
   _open = false;
   if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
+  if (_refreshTimer) { clearTimeout(_refreshTimer); _refreshTimer = null; }
+  _closeStreams();
   if (_escHandler) { document.removeEventListener('keydown', _escHandler); _escHandler = null; }
   const modal = document.getElementById('workers-modal');
   if (modal) modal.remove();
@@ -340,6 +428,6 @@ export function closeWorkers() {
 
 export function isWorkersOpen() { return _open; }
 
-const workersModule = { openWorkers, closeWorkers, isWorkersOpen, jobHtml, pageHtml, parseTasks };
+const workersModule = { openWorkers, closeWorkers, isWorkersOpen, jobHtml, pageHtml, parseTasks, stateChip };
 if (typeof window !== 'undefined') window.workersModule = workersModule;
 export default workersModule;

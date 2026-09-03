@@ -64,8 +64,15 @@ MCP settings of Cowork / Claude Code):
 Tools the coordinator gets: `workers_guide` (how to use the workers well —
 read once per session), `dispatch_workers` (1–4 tasks, workspace, parallel,
 reviewer, model), `workers_wait` (block until done, compact result),
-`workers_status`, `workers_events` (the board's events, for a stuck worker),
-`workers_cancel`, `workers_list`.
+`workers_wait_for` (block until ONE condition holds — `phase:<name>`,
+`worker:<label>:<state>`, `event:<text>`, `changed` — and come back the moment
+it does), `workers_status`, `workers_events` (the board's events and what each
+worker's own output says about it, for a stuck worker), `workers_cancel`,
+`workers_list`.
+
+A worker whose output says it is rate-limited or sitting at a prompt is
+reported, never killed: its `progress` entry carries the `state` and the `why`
+(the line the rule matched), and the fix is to remove the cause.
 
 `FAUSTUS_MCP_FORMAT` (default `toon`, see [robot mode](#3c-robot-mode-one-envelope-and-toon))
 decides what the row-shaped tools answer with. On `toon`, `objectives_list`,
