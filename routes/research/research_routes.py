@@ -10,7 +10,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from urllib.parse import quote as _urlquote
+
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from core.middleware import INTERNAL_TOOL_USER, require_admin
@@ -26,6 +28,21 @@ def _validate_session_id(session_id: str) -> str:
     if not _SESSION_ID_RE.fullmatch(session_id):
         raise HTTPException(400, "Invalid session ID format")
     return session_id
+
+
+def _content_disposition(name: str) -> str:
+    """An ``attachment`` header both halves of the world can read (RFC 6266).
+
+    A bare, unquoted ``filename=`` truncates at the first space in every
+    browser, and a non-Latin-1 byte makes Starlette raise outright — a research
+    question is routinely "¿Es eficaz…?". So: a quoted ASCII fallback plus the
+    percent-encoded ``filename*``.
+    """
+    safe = re.sub(r"[\x00-\x1f\x7f]", "", str(name or ""))   # header injection
+    safe = re.sub(r'[\\/"]', "_", safe).strip().lstrip(".")[:180] or "export"
+    ascii_fallback = re.sub(r"[^A-Za-z0-9._-]", "_", safe)[:128] or "export"
+    return ('attachment; filename="%s"; filename*=UTF-8\'\'%s'
+            % (ascii_fallback, _urlquote(safe, safe="")))
 
 
 def _research_storage_root() -> Path:
@@ -443,6 +460,62 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
         if data.get("owner") != user:
             raise HTTPException(404, "Research not found")
         return data
+
+    @router.get("/api/research/export-formats")
+    async def research_export_formats(request: Request):
+        """Which export formats this server can actually produce.
+
+        The binary ones need optional packages. Asking first lets the panel
+        grey out a format instead of offering a download that comes back 415.
+        """
+        _require_user(request)
+        from src.report_export import available_formats
+        return {"formats": available_formats()}
+
+    @router.get("/api/research/export/{session_id}")
+    async def research_export(session_id: str, request: Request,
+                              format: str = Query("md")):
+        """Download a finished report as a document (md / docx / pdf / …).
+
+        Same ownership gate as `research_detail`: a report is private, and a
+        403 would confirm that someone else's exists.
+        """
+        from src.chat_export_model import ExportUnavailable
+        from src.report_export import REPORT_FORMATS, render_report
+
+        user = _require_user(request)
+        _validate_session_id(session_id)
+        _assert_owns_research(session_id, user)
+        path = _require_research_path(session_id)
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception as e:
+            raise HTTPException(500, f"Failed to read research: {e}")
+
+        try:
+            result = render_report(data, format)
+        except ValueError:
+            raise HTTPException(
+                400,
+                "Unsupported export format '%s'. Valid formats: %s"
+                % (format, ", ".join(REPORT_FORMATS)),
+            )
+        except ExportUnavailable as e:
+            # A missing optional package is not a server fault, and the message
+            # names the package to install — 415 with it verbatim, not a 500
+            # the user can do nothing with.
+            raise HTTPException(415, str(e))
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception("Export of research %s as %s failed", session_id, format)
+            raise HTTPException(500, f"Could not export this report as {format}: {e}")
+
+        return Response(
+            content=result.content,
+            media_type=result.media_type or "application/octet-stream",
+            headers={"Content-Disposition": _content_disposition(result.filename)},
+        )
 
     @router.post("/api/research/{session_id}/archive")
     async def research_archive(session_id: str, request: Request, archived: bool = Query(True)):
