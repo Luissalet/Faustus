@@ -273,6 +273,24 @@ def test_nested_list_survives_the_markdown_round_trip():
     assert [b.kind for b in first.items[1]] == [b.kind for b in second.items[1]]
 
 
+@pytest.mark.parametrize("src", [
+    # The commonest shape there is: a sentence, then its bullets. Serialized
+    # tight against the paragraph, sane_lists read the bullets back as a lazy
+    # continuation of it and the list vanished from the exported markdown.
+    "Los hallazgos principales:\n\n- Uno\n- Dos\n",
+    "1. Preparar\n2. Ejecutar\n\nDespués:\n\n- revisar\n- publicar\n",
+    "> Resumen:\n>\n> - alfa\n> - beta\n",
+    # A nested list must stay tight against the item's lead line, or the outer
+    # list turns loose and "- tres" is swallowed by the nested one.
+    "- uno\n- dos\n    - dos punto uno\n    - dos punto dos\n- tres\n",
+    "- lead\n\n    segundo párrafo\n\n    - anidado\n",
+    "## Título\n\nTexto:\n\n- a\n\nCierre.\n",
+])
+def test_markdown_serialization_round_trips_through_the_parser(src):
+    blocks = markdown_to_blocks(src)
+    assert markdown_to_blocks(chat_export.blocks_to_md(blocks)) == blocks
+
+
 def test_blockquote_and_hr_and_image():
     blocks = markdown_to_blocks(
         "> citado **fuerte**\n\n---\n\n![un gato](https://ej.com/gato.png)\n"

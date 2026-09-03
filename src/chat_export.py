@@ -771,7 +771,18 @@ def _table_to_md(block: Block) -> str:
     return "\n".join(lines)
 
 
-def _blocks_to_md(blocks: Sequence[Block]) -> str:
+def _blocks_to_md(blocks: Sequence[Block], *, inside_item: bool = False) -> str:
+    """Blocks as markdown, one blank line apart.
+
+    ``inside_item`` keeps a list tight against the item's *lead* paragraph,
+    which is the one place the tight join is right: a blank line there makes
+    the outer list loose, and the sibling item after the nested list is then
+    read as part of it. Everywhere else the tight join is a fidelity bug —
+    ``sane_lists`` reads the bullets as a lazy continuation of the paragraph,
+    so a sentence followed by bullets re-parses as one run-on paragraph and the
+    list is gone. Past the lead paragraph the item already holds a blank line,
+    so it is loose whatever we write and the blank costs nothing.
+    """
     parts: List[str] = []
     previous_kind = ""
     for block in blocks:
@@ -779,12 +790,18 @@ def _blocks_to_md(blocks: Sequence[Block]) -> str:
         if not text:
             continue
         if parts:
-            # Keep a list tight against the paragraph that introduces it.
-            parts.append("\n" if (block.kind == "list" and previous_kind == "para")
-                         else "\n\n")
+            tight = (inside_item and len(parts) == 1
+                     and block.kind == "list" and previous_kind == "para")
+            parts.append("\n" if tight else "\n\n")
         parts.append(text)
         previous_kind = block.kind
     return "".join(parts)
+
+
+#: The block serializers other exporters build a document out of, without the
+#: chat furniture ``render_md`` / ``render_txt`` / ``render_html`` wrap around
+#: them. Public because ``src/report_export.py`` is a real second caller.
+blocks_to_md = _blocks_to_md
 
 
 def _block_to_md(block: Block) -> str:
@@ -802,7 +819,7 @@ def _block_to_md(block: Block) -> str:
         lines: List[str] = []
         for index, item in enumerate(block.items, 1):
             marker = f"{index}. " if block.ordered else "- "
-            body = _blocks_to_md(item) or ""
+            body = _blocks_to_md(item, inside_item=True) or ""
             item_lines = body.split("\n")
             lines.append(marker + (item_lines[0] if item_lines else ""))
             for line in item_lines[1:]:
