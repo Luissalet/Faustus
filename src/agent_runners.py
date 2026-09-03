@@ -26,7 +26,7 @@ still appears too (an older Ollama, or none installed). Neither source is
 allowed to be the only one: a hardcoded list would rot, and the help alone
 cannot say how to run anything.
 
-Three rules this file keeps:
+Four rules this file keeps:
 
 * **A licence word is never invented.** ``open`` / ``subscription`` /
   ``unknown``; when the licence of an integration is not something this table
@@ -36,6 +36,11 @@ Three rules this file keeps:
   when this table carries a non-interactive invocation for it that the tool
   itself documents. Everything else is listed, is honestly marked, and waits
   for someone to add its row.
+* **A gate is never invented.** ``gate`` says how much of an agent's own
+  tool use Faustus can actually judge before it runs (src/agent_gate.py). A
+  row whose gate mechanism nobody has verified says ``none``, exactly as an
+  unverified licence says ``unknown`` — because the proof packet reads this
+  word, and a guess here would become a claim of coverage that does not exist.
 * **Nothing here runs an installer.** :func:`launch_argv` BUILDS the
   ``ollama launch`` command and returns it; running it is a separate,
   explicit act by the user (routes/agent_runner_routes.py).
@@ -46,6 +51,7 @@ none of them raise, they degrade to the built-in table alone.
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -61,6 +67,25 @@ logger = logging.getLogger(__name__)
 LICENCES: Tuple[str, ...] = ("open", "subscription", "unknown")
 #: ``cli`` can be a worker; ``app`` is a GUI and never can be.
 KINDS: Tuple[str, ...] = ("cli", "app")
+
+#: How much of an agent's own tool use Faustus can gate (src/agent_gate.py).
+#:
+#: ``hook``    the agent's own documented pre-tool hook calls back into Faustus
+#:             before every tool call, and Faustus's answer is binding. This is
+#:             the strong one: the agent cannot run a command Faustus refused.
+#: ``config``  the agent takes a per-run configuration file that constrains
+#:             what it may do (a sandbox mode, an approval policy). Weaker in
+#:             kind, not only in degree: Faustus states a policy once at spawn
+#:             and never sees an individual call, so nothing is judged and
+#:             nothing is logged per command.
+#: ``none``    Faustus does not see this agent's commands at all.
+#:
+#: The fourth rule of this table, alongside the licence word and the argv: **a
+#: gate is never invented.** A row whose gate mechanism this project has not
+#: verified says ``none``. "None" is a real answer here, exactly as "unknown"
+#: is for a licence — an unverified guess would be worse than no gate, because
+#: the proof packet would report coverage that does not exist.
+GATES: Tuple[str, ...] = ("hook", "config", "none")
 
 #: How long the parsed help is reused before ``ollama launch --help`` is run
 #: again. The catalogue is read by a page that polls; this keeps that from
@@ -100,11 +125,23 @@ class Runner:
     env: Dict[str, str] = field(default_factory=dict)
     cwd_is_workspace: bool = True
     detect: Tuple[str, ...] = ()            # executables to look for on PATH
+    #: How much of this agent's own tool use Faustus can actually gate
+    #: (src/agent_gate.py). One of :data:`GATES`, and never a guess — see the
+    #: fourth rule in the module docstring.
+    gate: str = "none"
+    #: Tokens added to ``argv`` only when the gate is active, with the same
+    #: placeholder rules. Kept apart from ``argv`` so an ungated run of the same
+    #: runner is byte-identical to what it was before the gate existed.
+    gate_argv: Tuple[str, ...] = ()
     notes: str = ""
 
     def runnable_as_worker(self) -> bool:
         """A GUI is never a worker, and neither is a row with no invocation."""
         return self.kind == "cli" and bool(self.argv)
+
+    def gated(self) -> bool:
+        """Whether Faustus can put its own guard in front of this agent."""
+        return self.gate in GATES and self.gate != "none"
 
 
 # ── the built-in table ──────────────────────────────────────────────────────
@@ -133,9 +170,19 @@ _BUILTIN: Tuple[Runner, ...] = (
         argv=("claude", "-p", "{task}", "--model", "{model}"),
         env={"ANTHROPIC_BASE_URL": "{endpoint}"},
         detect=("claude",),
+        gate="hook",
+        # `--settings` takes inline JSON, so the hook is installed for THIS run
+        # and the user's own Claude Code configuration is never written to.
+        # `--output-format stream-json` (which requires `--verbose`) is what
+        # lets src/external_worker.py reconcile the tool calls the CLI reports
+        # against the ones the gate was asked about: the stream is written by
+        # the CLI, so a call that appears there and not in the gate's ledger is
+        # a call the hook did not fire for, and it is reported as such.
+        gate_argv=("--output-format", "stream-json", "--verbose", "--settings", "{settings}"),
         notes="Print mode (`claude -p`) runs one prompt and exits. `ollama launch claude` "
               "points it at the local Ollama; without an endpoint it uses whatever the "
-              "user's own Claude Code config says.",
+              "user's own Claude Code config says. Its PreToolUse hook runs before every "
+              "tool call and a hook denial is binding, so Faustus gates this one.",
     ),
     Runner(
         key="chatgpt", label="ChatGPT", aliases=("codex-app", "codex-desktop", "codex-gui"),
@@ -169,8 +216,14 @@ _BUILTIN: Tuple[Runner, ...] = (
         argv=("codex", "exec", "{task}", "--model", "{model}"),
         env={"OPENAI_BASE_URL": "{endpoint}"},
         detect=("codex",),
+        # `none`, not `config`. Codex documents a sandbox mode and an approval
+        # policy, which is the shape a `config` gate would take — but this
+        # project has not verified the file, the key names or the precedence
+        # against a real binary, and the table's rule is that an unverified
+        # gate is `none`. Verifying it is one row's work.
+        gate="none",
         notes="`codex exec` is the non-interactive subcommand. It still runs its own "
-              "shell for every command it decides to run.",
+              "shell for every command it decides to run: Faustus does not gate it.",
     ),
     Runner(
         key="hermes-desktop", label="Hermes Desktop", kind="app", licence="unknown",
@@ -364,7 +417,8 @@ def _merged(help_map: Dict[str, Dict[str, Any]]) -> List[Runner]:
             rows.append(Runner(key=r.key, label=str(live.get("label") or r.label), aliases=aliases,
                                kind=r.kind, licence=r.licence, install=r.install, argv=r.argv,
                                stdin_task=r.stdin_task, env=dict(r.env),
-                               cwd_is_workspace=r.cwd_is_workspace, detect=r.detect, notes=r.notes))
+                               cwd_is_workspace=r.cwd_is_workspace, detect=r.detect,
+                               gate=r.gate, gate_argv=r.gate_argv, notes=r.notes))
         else:
             rows.append(r)
     for key, live in help_map.items():
@@ -442,6 +496,8 @@ def to_row(runner: Runner, *, which: Any = None, versions: bool = False) -> Dict
         "path": exe or "",
         "runnable_as_worker": bool(runner.runnable_as_worker() and exe),
         "invocation_known": bool(runner.argv),
+        "gate": runner.gate if runner.gate in GATES else "none",
+        "gate_note": gate_note(runner),
         "notes": runner.notes,
     }
     if versions:
@@ -473,6 +529,7 @@ def summary(*, help_source: Any = None, which: Any = None, versions: bool = Fals
         "timeout_s": timeout_s(),
         "installed_count": sum(1 for r in rows if r["installed"]),
         "runnable_count": sum(1 for r in rows if r["runnable_as_worker"]),
+        "gated_count": sum(1 for r in rows if r["gate"] != "none"),
         "ollama_help": bool(help_text() if help_source is None else str(help_source or "").strip()),
         "guard_note": GUARD_NOTE,
     }
@@ -482,6 +539,29 @@ def summary(*, help_source: Any = None, which: Any = None, versions: bool = Fals
 #: every proof of a job that used one. One sentence, one meaning.
 GUARD_NOTE = ("an external agent runs its own shell: Faustus's command guard does not see the "
               "commands it runs, only what changed on disk afterwards")
+
+#: What a gated runner can honestly say instead. Deliberately narrower than the
+#: sentence above it replaces: the gate sees TOOL CALLS, and a program started
+#: by an allowed tool call has children the gate never hears about.
+GATED_NOTE = ("Faustus's own guard judges every tool call this agent makes before it runs, and "
+              "its refusal is binding — but a program an allowed command starts has children the "
+              "gate does not see")
+
+#: How a `config` gate differs in kind, not only in degree. Unused by the
+#: shipped table today (no row is verified as `config`); here so that the row
+#: that earns it has the sentence waiting rather than inventing one.
+CONFIG_GATE_NOTE = ("Faustus states a policy once when this agent starts and never sees an "
+                    "individual call: nothing is judged per command and nothing is logged per "
+                    "command")
+
+
+def gate_note(runner: Runner) -> str:
+    """The one sentence this runner's gate honestly supports."""
+    if runner.gate == "hook":
+        return GATED_NOTE
+    if runner.gate == "config":
+        return CONFIG_GATE_NOTE
+    return GUARD_NOTE
 
 
 # ── the launch command (built, never run here) ──────────────────────────────
@@ -531,7 +611,8 @@ def _fill(token: str, values: Dict[str, str]) -> Tuple[str, bool]:
 
 
 def build_argv(runner: Runner, task: str, *, model: Optional[str] = None,
-               cwd: Optional[str] = None, endpoint: Optional[str] = None) -> List[str]:
+               cwd: Optional[str] = None, endpoint: Optional[str] = None,
+               settings: Optional[str] = None) -> List[str]:
     """The argv that runs ONE task with this runner.
 
     A token whose placeholder resolved to nothing is dropped, and so is the
@@ -539,11 +620,19 @@ def build_argv(runner: Runner, task: str, *, model: Optional[str] = None,
     become ``--model`` with nothing after it. With ``stdin_task`` the
     ``{task}`` token is dropped from the argv (the caller writes the task to
     stdin instead).
+
+    ``settings`` is the per-run configuration a gated invocation needs. It fills
+    ``{settings}`` in ``gate_argv``, which is appended ONLY when it is given —
+    so an ungated run of the same row produces exactly the argv it produced
+    before the gate existed.
     """
+    config = str(settings or "")
     values = {"task": str(task or ""), "model": str(model or ""),
-              "cwd": str(cwd or ""), "endpoint": str(endpoint or "")}
+              "cwd": str(cwd or ""), "endpoint": str(endpoint or ""),
+              "settings": config}
     out: List[str] = []
-    for token in runner.argv:
+    tokens = list(runner.argv) + (list(runner.gate_argv) if config else [])
+    for token in tokens:
         if runner.stdin_task and token.strip() == "{task}":
             continue
         text, empty = _fill(str(token), values)
@@ -553,6 +642,31 @@ def build_argv(runner: Runner, task: str, *, model: Optional[str] = None,
             continue
         out.append(text)
     return out
+
+
+def hook_settings(runner: Runner, *, command: str) -> str:
+    """The inline ``--settings`` JSON that installs Faustus's pre-tool hook.
+
+    Inline, per run, and never written to disk: the user's own Claude Code
+    configuration is not Faustus's to edit, and a gate that lived in the user's
+    settings file would outlive the run that needed it.
+
+    **This string carries no credential.** The hook reaches the gate through
+    two environment variables the child is given (src/agent_gate.py: the URL
+    and, separately, the token — whose name ends in ``TOKEN`` so that
+    ``argv_shown`` stars its value out). An empty string for a runner with no
+    hook gate, so the caller's ``if settings:`` is the only test it needs.
+    """
+    if runner.gate != "hook" or not str(command or "").strip():
+        return ""
+    return json.dumps({
+        "hooks": {
+            "PreToolUse": [
+                {"matcher": "*",
+                 "hooks": [{"type": "command", "command": str(command), "timeout": 20}]},
+            ],
+        },
+    }, separators=(",", ":"))
 
 
 def build_env(runner: Runner, *, base: Optional[Dict[str, str]] = None, model: Optional[str] = None,
@@ -580,8 +694,8 @@ def table_env(runner: Runner, *, model: Optional[str] = None, cwd: Optional[str]
 
 
 __all__ = [
-    "DEFAULT_TIMEOUT_S", "GUARD_NOTE", "KINDS", "LICENCES", "NOT_RUNNABLE_NOTE", "Runner",
-    "build_argv", "build_env", "catalogue", "enabled", "get", "help_text", "launch_argv",
-    "parse_help", "reset_cache", "runners", "summary", "table_env", "timeout_s", "to_row",
-    "version_of",
+    "CONFIG_GATE_NOTE", "DEFAULT_TIMEOUT_S", "GATED_NOTE", "GATES", "GUARD_NOTE", "KINDS",
+    "LICENCES", "NOT_RUNNABLE_NOTE", "Runner", "build_argv", "build_env", "catalogue",
+    "enabled", "gate_note", "get", "help_text", "hook_settings", "launch_argv", "parse_help",
+    "reset_cache", "runners", "summary", "table_env", "timeout_s", "to_row", "version_of",
 ]
