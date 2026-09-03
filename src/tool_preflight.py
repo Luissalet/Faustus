@@ -77,12 +77,6 @@ class PreflightContext:
     # hand it the same value the tool would get from the loop.
     owner: Optional[str] = None
     tools: Optional[FrozenSet[str]] = None
-    # Whether the post-external-context approval gate is armed for this run, and
-    # whether there is a document open that an approval could actually be sealed
-    # against. Both default to the safe answer ("gate not armed"), so a caller
-    # that does not set them prunes nothing — see `_document_rule`.
-    approval_gate_armed: bool = False
-    sealable_document: bool = False
 
 
 def _coerce_context(ctx) -> PreflightContext:
@@ -100,8 +94,6 @@ def _coerce_context(ctx) -> PreflightContext:
         session_id=str(get("session_id", "") or ""),
         owner=owner if owner is None else str(owner),
         tools=None if tools is None else frozenset(str(t) for t in tools),
-        approval_gate_armed=bool(get("approval_gate_armed", False)),
-        sealable_document=bool(get("sealable_document", False)),
     )
 
 
@@ -259,40 +251,6 @@ def _desktop_rule(ctx: PreflightContext) -> Dict[str, str]:
     return {}
 
 
-# ── Rule 5: legacy document tools with nothing to seal ────────────────────
-
-# `edit_document`, `suggest_document` and `update_document` resolve their target
-# at dispatch time, falling back to a process-global or most-recent document.
-# That is fine on a clean run. It is NOT fine once the post-external-context
-# approval gate is armed: the gate has to seal an exact action, a target that
-# can change while a card is pending is not one, and `src/agent_loop.py` refuses
-# them outright with
-#
-#     "Open the exact document to edit, then request this action again so its
-#      id and version can be sealed."
-#
-# The refusal is right; offering them in that same turn is not. Seen live: a
-# saved skill pulled `suggest_document` into the selection of a turn with no
-# document open, and the round advertised a tool it then refused — exactly the
-# trap the loop's own `[tool-coherence] OFFERED THEN BLOCKED` alarm exists to
-# catch. The rule mirrors the runtime condition rather than approximating it:
-# both halves must hold, so a clean run keeps these tools and loses nothing.
-DOCUMENT_SEAL_TOOLS: FrozenSet[str] = frozenset(
-    {"edit_document", "suggest_document", "update_document"}
-)
-
-DOCUMENT_SEAL_REASON = (
-    "no document is open whose id and version an approval could be sealed "
-    "against — open the exact document, then ask for the edit"
-)
-
-
-def _document_rule(ctx: PreflightContext) -> Dict[str, str]:
-    if not ctx.approval_gate_armed or ctx.sealable_document:
-        return {}
-    return {name: DOCUMENT_SEAL_REASON for name in DOCUMENT_SEAL_TOOLS}
-
-
 # ── Registry ──────────────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
@@ -309,7 +267,6 @@ RULES = (
     PreflightRule("email", _email_tool_names, _email_rule),
     PreflightRule("integrations", lambda: frozenset({"api_call"}), _integration_rule),
     PreflightRule("desktop", _desktop_tool_names, _desktop_rule),
-    PreflightRule("document_seal", lambda: DOCUMENT_SEAL_TOOLS, _document_rule),
 )
 
 
