@@ -4,7 +4,7 @@
 
 - Base del fork: commit upstream `c9dd68d8` (27-08-2026, "refactor(docs): separate Pages site source").
 - Rama: **una sola, `master`** (`D:\LocalAI\odysseus`), que trackea `origin/master` en `github.com/Luissalet/Faustus`. Las ramas `feat/projects` y `feat/reliability` y la worktree de pruebas se consolidaron el 31-08.
-- Cifras a 03-09-2026 (17:00, en `master`): **284 commits**, +101.000 líneas sobre la base; **85 módulos nuevos** en `src/`, `routes/`, `services/` y `static/js/`, **158 ficheros de tests nuevos**. Suite completa: **8.661 tests en verde**, ~6 min en Linux (2 fallos preexistentes del entorno: `markitdown` sin conversor docx y el escáner de marca sobre un docstring en español); e2e Playwright 12 flujos. En Windows hay además 12 fallos de plataforma y 13 dependientes del `data/` local, todos presentes también en el commit base (§24.4).
+- Cifras a 03-09-2026 (19:00, en `master`): **298 commits**, +112.000 líneas sobre la base; **97 módulos nuevos** en `src/`, `routes/`, `services/` y `static/js/`, **168 ficheros de tests nuevos**. Suite completa: **9.100 tests en verde**, ~6 min en Linux (2 fallos preexistentes del entorno: `markitdown` sin conversor docx y el escáner de marca sobre un docstring en español); e2e Playwright 12 flujos. En Windows hay además 12 fallos de plataforma y 13 dependientes del `data/` local, todos presentes también en el commit base (§24.4).
 - Máquina de referencia: RTX 4070 Ti 12 GB **+ RTX 5060 Ti 16 GB (eGPU, desde el 02-09)**, 128 GB RAM, Windows 11, Ollama 0.33.x; modelos `qwen3-coder:30b`, `qwen3.5:9b` (visión), `qwen3.8:27b`, `qwen3-coder-next`.
 
 ---
@@ -825,6 +825,105 @@ podar ahí quitaría una herramienta legítima, y `tests/test_external_context_t
 hacer—. El arreglo correcto va **en el punto de uso**, no al inicio del turno, y merece un cambio que se pueda
 razonar por sí solo en vez de colarse en una tanda. Queda el diagnóstico escrito, que vale más que un parche
 que rompe otra cosa.
+
+
+## 26. Traer tu pasado, y no dar nada por probado (03-09-2026, noche)
+
+Lo que quedaba del informe: la feature de migración, el paso `prove`, la recuperación tras un corte,
+la salud honesta, el ballast de disco y la procedencia de lo que scrapea el navegador. Con esto el
+tablero de `D:\LocalAi\inspiration\ESTADO_IMPLEMENTACION.md` queda entero en verde.
+
+### 26.1 Importa tu pasado, y búscalo sin haber descargado nada
+- `src/history_import.py` normaliza a un modelo canónico (`Conversation → Message`) en su propio
+  SQLite los exports de **ChatGPT, Claude, LM Studio y del propio Faustus**. Las cinco reglas del
+  módulo son las que separan un importador de un triturador de archivos: un parser que no reconoce
+  el fichero **dice que no en vez de adivinar**; una conversación rota **se salta con su motivo** y
+  las otras cuatrocientas entran igual; el import es **idempotente** por `(source, external_id)`;
+  una fecha que no se puede leer queda en **`None`, jamás "ahora"** (estampar la hora del import
+  haría que todo el archivo pareciera de hoy y corrompería cualquier orden posterior); y los
+  exports grandes **se leen en streaming**, porque un `conversations.json` real pesa cientos de MB.
+- Honestidad sobre las fuentes: ChatGPT y Claude están verificados contra documentación real; el de
+  LM Studio está **INFERIDO y marcado como tal** en el módulo, porque su propia documentación dice
+  que la estructura no es fiable. Un formato inferido que se presenta como verificado es una mentira
+  que solo se descubre corrompiendo el archivo de alguien.
+- `src/hash_embed.py` + `src/two_tier_search.py`: embeddings por **FNV-1a proyectado a 384 dims y
+  normalizado L2** — sin modelo, sin red y deterministas entre procesos — fusionados con BM25 por
+  **RRF `Σ 1/(60+rank)`**, y refinados con el embedder real cuando lo hay. Un Faustus recién
+  instalado que no ha descargado nada **sigue buscando**.
+- El dato incómodo, medido y documentado en el módulo en vez de escondido: con el **RRF plano del
+  original**, la búsqueda de herramientas salía **peor que BM25 solo** (10/21 aciertos frente a
+  13/21) — las dos vías leen los mismos tokens, así que no son independientes y RRF asume que lo
+  son. La vía hash se pondera a 0.5 y la tabla de medidas está en el docstring.
+- **Verificado en vivo**: un export de ChatGPT con una rama abandonada importa **solo la buena**; la
+  conversación malformada se salta con su motivo; la de fecha ilegible queda con `started_at: null`;
+  reimportar da 0 creadas / 2 actualizadas; y la búsqueda encuentra la conversación correcta con
+  `tier: hybrid, degraded: true`, es decir sin ChromaDB.
+
+### 26.2 `prove`: una mutación no es la finalización del objetivo
+`src/prove.py` cierra el ciclo que faltaba en `/api/dispatch` (§22 ya hacía prepare → revalidate →
+commit → observe). Devuelve un paquete canónico con **cuatro veredictos**, y el que importa es
+`unproved`: *el trabajo pudo ocurrir y nada puede demostrarlo*. **No es un fallo**, y es un valor
+distinto de `partial` y de un error — confundirlos es exactamente lo que el original prohíbe.
+La lista de incertidumbre nunca está vacía cuando hay motivo (sin runner de tests, checkpoint
+imposible, lista truncada, fallback por mtime, un worker cancelado), y la identidad es un SHA-256
+con **prefijo de longitud en cada campo variable** antes de concatenar, así la paginación del
+transporte no puede cambiarla.
+
+Medido en vivo con un worker real: cambió el fichero de verdad, su afirmación coincidía con lo
+observado en disco, y el veredicto fue **`partial` (0.65)** con
+`no_verification_runner: "nada corrió que pudiera probar el trabajo"`. Esa es la respuesta honesta,
+y es justo la que un sistema complaciente no daría.
+
+### 26.3 Recuperación tras un corte, y salud que no se supone buena
+- `src/crash_recovery.py` agrupa **solo por mtime** (los procesos que mueren juntos dejan de
+  escribir a la vez) en la ventana `[boot − lookback, boot + slack]`, y **agrupa primero y filtra
+  después**, porque filtrar antes desplaza el clúster real. El plan **refija el mismo modelo y los
+  mismos parámetros** que tenía el trabajo, y nada se declara reanudado sin **sondear la tabla de
+  procesos**. No reanuda solo: marca `interrupted` con el motivo. `psutil` no es dependencia
+  declarada, así que la hora de arranque sale de `/proc/stat btime`, `GetTickCount64` o
+  `kern.boottime`, y **si no se puede saber, la función no hace nada** en vez de adivinar.
+- `src/health.py`: un componente **sin datos aporta 0**, no se le supone bien; ausencia de señal no
+  es ausencia de problema. En vivo: 90/A con 6 de 7 componentes reportando y el séptimo diciendo
+  literalmente *"no data source yet — nothing has reported this, which is not the same as nothing
+  being wrong"*. Ningún componente inventado: solo lo que ese endpoint ya medía, más el espacio en
+  disco.
+
+### 26.4 Ballast, y procedencia de lo que el navegador trae
+- `src/disk_ballast.py`: ficheros preasignados que se liberan con un `unlink` instantáneo para
+  comprar margen real mientras se decide qué borrar; urgencia por EWMA + aceleración + un PID con
+  las constantes del original; y scoring de artefactos re-derivables con **veto total si hay un
+  `.git/` dentro**. **Nunca borra**: mueve a cuarentena con `undo`. Sale en modo `observe`, así que
+  instalarlo no toca un solo byte hasta que el usuario lo active.
+- `src/web_provenance.py` ancla cada bloque que el navegador entrega al modelo con su url, su rango
+  de caracteres y un hash, de modo que una afirmación posterior se puede contrastar con lo que
+  realmente se descargó. Y una honestidad deliberada: no tenemos el pipeline de capturas por tiles
+  del original, así que el ancla es **rango + hash, no coordenada de píxel**, y el docstring lo dice
+  en vez de insinuar que hacemos lo que no hacemos.
+- `src/claim_verify.py` es la escalera de 5 capas de barato a caro, **sin LLM en las cuatro
+  primeras**. La capa 4 —los números y las entidades de la afirmación tienen que aparecer en la
+  fuente— es la que caza una cifra inventada, y **solo refuta, nunca confirma**: pasarla no es
+  apoyo, o una paráfrasis con las entidades correctas se daría por probada. La capa 5 va etiquetada
+  como juicio del modelo y su número **no se mezcla** con el score determinista, igual que la regla
+  de honestidad de los expertos (§24.1).
+
+### 26.5 Tres cosas que solo aparecieron usando la app
+- **El importador vivía bajo `/api/history`**, donde el historial de chats ya tiene
+  `GET /api/history/{session_id}`. Ese parámetro de ruta se traga a todos sus hermanos: en vivo,
+  `/api/history/conversations` respondía *"Session conversations not found"*. Solo sobrevivía
+  `POST /import`, porque el router viejo no tiene POST. Sus tests montaban **solo su propio
+  router**, así que no podían verlo; ahora hay uno que monta los dos en el orden de `app.py`.
+- **Su test de streaming era flaky**: un umbral absoluto sobre `ru_maxrss`, que es una marca de agua
+  del proceso entero, así que el mismo código pasaba y fallaba en ejecuciones consecutivas. Medir la
+  carga como control tampoco servía —una marca de agua no se puede leer dos veces en un proceso: la
+  segunda daba ~0 y la comparación pasaba **midiendo nada**—. Ahora usa `tracemalloc`, que sí se
+  reinicia, con un suelo en el control para que una comparación sin sentido falle en vez de pasar.
+- **`/api/storage/*` era alcanzable por el modelo**: el mismo agujero que la auditoría de §18
+  encontró en Local models. `app_api` hace loopback con el token interno, que `require_admin` acepta
+  sin sesión de usuario ni tarjeta de aprobación, y esas escrituras reservan gigas, los liberan y
+  **mueven ficheros del usuario** — en una máquina cuya presión de disco es justo lo que la feature
+  gestiona. Un modelo que acaba de leer una web que dice "libera espacio" no debe poder actuar sobre
+  ella. Bloqueadas; `GET /status` sigue abierto a propósito, porque leer qué llena el disco y qué se
+  vetó es exactamente lo que el modelo debe hacer para **contárselo al usuario**.
 
 ---
 
