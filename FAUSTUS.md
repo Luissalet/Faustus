@@ -4,7 +4,7 @@
 
 - Base del fork: commit upstream `c9dd68d8` (27-08-2026, "refactor(docs): separate Pages site source").
 - Rama: **una sola, `master`** (`D:\LocalAI\odysseus`), que trackea `origin/master` en `github.com/Luissalet/Faustus`. Las ramas `feat/projects` y `feat/reliability` y la worktree de pruebas se consolidaron el 31-08.
-- Cifras a 03-09-2026 (03:00, en `master`): **233 commits**, +76.500 líneas sobre la base (512 ficheros tocados); **56 módulos nuevos** en `src/`, `routes/` y `static/js/`, **128 ficheros de tests nuevos** (945 en total). Suite completa: **7.809 tests en verde**, 14 saltados (12 son los e2e sin `ODYSSEUS_E2E`), ~5,5 min en Linux (1 fallo preexistente del entorno: `markitdown` sin conversor docx); e2e Playwright 12 flujos.
+- Cifras a 03-09-2026 (12:00, en `master`): **259 commits**, +89.300 líneas sobre la base (541 ficheros tocados); **68 módulos nuevos** en `src/`, `routes/`, `services/` y `static/js/`, **141 ficheros de tests nuevos**. Suite completa: **8.231 tests en verde**, ~6 min en Linux (2 fallos preexistentes del entorno: `markitdown` sin conversor docx y el escáner de marca sobre un docstring en español); e2e Playwright 12 flujos.
 - Máquina de referencia: RTX 4070 Ti 12 GB **+ RTX 5060 Ti 16 GB (eGPU, desde el 02-09)**, 128 GB RAM, Windows 11, Ollama 0.33.x; modelos `qwen3-coder:30b`, `qwen3.5:9b` (visión), `qwen3.8:27b`, `qwen3-coder-next`.
 
 ---
@@ -533,6 +533,132 @@ Petición de Luis: revisar el modo de workers para asegurar que es fiable y que 
 - **El chat Workers** graba el mismo bloque `harness` que un turno de chat: badge 🛡, chips de ficheros con **diff contra el checkpoint del trabajo** (Accept / Reject / *Restore to before this turn*), línea de tests. De paso, un bug preexistente de `chatRenderer`: el clic en un badge 🛡 restaurado moría con `metadata is not defined` — los chips nunca aparecían al recargar.
 - **Verificado en vivo (7001, carpeta sin git)**: tarea vaga *"10 % off from 10 units"* con un test plantado que exige `ValueError` para cantidades negativas → el worker hizo lo suyo, **el pytest de Faustus pilló "DID NOT RAISE ValueError"**, `fixer-1` recibió la salida y añadió la comprobación → 9 passed, diff del checkpoint = solo `cart.py`, respuesta de 3,2 KB, 40 s. Un verificador que falla a propósito con `fix_rounds: 0` → `partial`; un segundo trabajo en una subcarpeta → `queued` con el motivo, cancelado limpio; un POST repetido con la misma clave → el mismo trabajo; y desde el chat Workers, el diff de `cart.py` contra el checkpoint con Accept / Reject.
 - Tests: `tests/test_dispatch_reliability.py` (27, nacidos de los 16 repro de la auditoría) + los de dispatch / página / locks adaptados. Suite: 7.809 en verde.
+
+
+## 23. Las ideas del "Agentic Coding Flywheel", traídas a una sola app (03-09-2026, mañana)
+
+Luis dejó en `D:\LocalAi\inspiration\` dos informes: el barrido de 53 repos de Jeffrey Emanuel
+(Dicklesworthstone) buscando mecanismos robables, y tres ideas propias. Su ecosistema son ~90 CLIs sueltas
+pegadas con tmux; la apuesta de Faustus es **absorber los mecanismos dentro de una sola superficie** donde
+no haya que saber qué es un lease, un bead ni un pane. El estado de cada idea se lleva en
+`D:\LocalAi\inspiration\ESTADO_IMPLEMENTACION.md`.
+
+### 23.1 Dashboard de objetivos por proyecto (la idea nº1 de Luis)
+El problema real: el estado de un plan vivía dentro de un chat. Al cerrar un turno el agente decía "falta X"
+y ese "falta X" se perdía en el scroll; para saber por dónde iba un proyecto había que entrar en la sesión y
+leer hacia atrás.
+
+- **Almacén** (`services/objectives.py`): `<workspace>/.odysseus/objectives.jsonl` como verdad versionable —
+  una línea por objetivo y las **dependencias como aristas separadas** (el modelo de `beads_rust`), más
+  `objectives_log.jsonl` append-only con cada delta, conflicto y evidencia. Escritura atómica, fichero
+  corrupto → `.corrupt` y arranque en vacío: nunca rompe un mensaje.
+- **El agente nunca reescribe la lista**: emite **deltas tipados `ADD` / `EDIT` / `KILL` con `rationale`**
+  (el patrón de `brenner_bot`) y un **compilador determinista** los ordena (ADD→EDIT→KILL), los valida
+  (título duplicado, id desconocido, estado inválido, ciclo en las dependencias, `KILL` de un agente sin
+  rationale) y **marca conflicto en vez de pisar una edición humana** (`base_updated_at` + `last_actor`).
+- **Priorización por grafo** (`beads_viewer`): `PageRank×0.30 + betweenness×0.30 + blocker_ratio×0.20 +
+  staleness×0.10 + priority×0.10` sobre las dependencias declaradas, con **priority hints** cuando el orden
+  estructural diverge del que puso el humano. Todo en stdlib y determinista.
+- **Lectura obligatoria**: el bloque de objetivos entra en el system prompt del proyecto, y
+  `post_compact_reminder()` (`src/context_compactor.py`) lo **reinyecta después de cada compactación** junto
+  a las reglas del proyecto — el truco de `post_compact_reminder`, que arregla el fallo real de "el agente
+  olvida el plan a mitad de sesión larga".
+- Superficies: tool `project_objectives`, `GET/POST/PATCH/DELETE /api/projects/{id}/objectives` (+ `/deltas`),
+  sección **Objectives** en el hub del proyecto (estado, prioridad, "blocked by", badge ⚡ del hint, actividad),
+  y las tools MCP `objectives_list` / `objectives_apply`. Evidencia automática: un trabajo de `/api/dispatch`
+  que menciona un `OBJ-n` deja un registro de evidencia con confianza según el verdict.
+- **Verificado en vivo (7001)**: alta y edición desde la UI, deltas de agente aplicados con el `KILL` sin
+  rationale rechazado como conflicto, y `qwen3.5:9b` marcando `OBJ-1` como *done* y añadiendo `OBJ-6` con la
+  herramienta. Test de aceptación que dio Luis — *"este mismo punto podría haberlo puesto en objetivos y al
+  entrar lo revisas tú"* — cumplido.
+
+### 23.2 Guarda de comandos destructivos (`dcg` + `slb` + recibos de decisión)
+`src/command_guard.py` clasifica cada comando en **SAFE / CAUTION / DANGEROUS / CRITICAL** con la mecánica
+exacta del original: **whitelist-first**, rechazo rápido por substring antes de tocar una regex, packs por
+dominio (`fs`, `git`, `db`, `containers`, `system`), **lookahead** para bloquear `--force` pero no
+`--force-with-lease`, **escaneo de heredocs y de `python -c` / `bash -c`** (el comando peligroso suele ir
+escondido dentro) y **fail-open con presupuesto de latencia**: si la guarda tarda, deja pasar en vez de colgar
+el turno. Recall > precisión, como en el original.
+
+- La aprobación **no es un sistema nuevo**: se ata al mecanismo de aprobación exacta que Faustus ya tenía,
+  que sella el **SHA-256 del comando** y lo **revalida justo antes de ejecutar** (la idea de `slb`) — un
+  comando distinto en un byte no viaja en esa aprobación. Un DANGEROUS/CRITICAL se pregunta **aunque haya
+  un permiso de sesión concedido antes para otra cosa**: la guarda va delante del bypass.
+- **Checkpoint antes de ejecutar** el comando aprobado (el snapshot de rollback de `slb`, sobre el repo
+  sombra que ya teníamos).
+- **Recibos encadenados por hash** (`franken_engine` en pequeño): cada decisión ≥ CAUTION deja un registro con
+  `prev_hash`, y `verify_chain()` detecta cualquier edición retroactiva. Bypass en 3 niveles: allowlist con
+  caducidad y motivo, variable de entorno de un solo uso atada al hash, y la tarjeta de aprobación.
+- Modos `off` / `observe` / `enforce` (por defecto `enforce`), `/api/command-guard/*` y la tool MCP
+  `guard_explain` para que un coordinador pueda consultar un comando antes de despacharlo.
+- **Verificado en vivo**: `rm -rf ./tmp_prueba_guard` → tarjeta con fingerprint → aprobar → checkpoint →
+  ejecutado **una vez** → dos recibos (`blocked`, `approved`) con la cadena íntegra;
+  `git push --force-with-lease` sale SAFE y `dd of=/dev/sda` CRITICAL.
+
+### 23.3 Memoria que aprende de los resultados y olvida sola
+Lo que había (AGENTS.md, memoria del proyecto) es **estático y escrito a mano**. Esto son las dos capas del
+informe, que son capas y no alternativas: `eidetic_engine` (el almacén explicable) + `cass_memory` (la
+síntesis de reglas accionables).
+
+- `src/memory_engine.py`: SQLite propio con **cuatro niveles de vida media distinta** (working 1 d, episodic
+  30 d, semantic 180 d, **procedural que solo decae por contradicción**), **trust class** por origen
+  (human_explicit .85 / agent_validated .65 / agent_assertion .50 / legacy_import .30), evidence spans que
+  apuntan al chat de origen, y el scoring del original: `0.5^(días/90)` con el **daño pesando ×4**.
+  Recuperación híbrida **0.45 léxico + 0.45 semántico + 0.10 grafo** con **degradación explícita**
+  (sin modelo de vectores se renormaliza a solo-léxico; nunca un error), y `pack()` determinista con
+  presupuesto de caracteres.
+- `src/memory_curator.py`: **100 % determinista, sin LLM** — dedupe por similitud, conflictos, escalera de
+  madurez candidate → established → proven → deprecated, poda, y la jugada que da nombre a la idea: si
+  `harmful_ratio > 50 %` con al menos 3 señales, **la regla se invierte en anti-patrón** (`AVOID: …`).
+- **El bucle de aprendizaje**: el bloque de reglas se inyecta en el prompt del agente, se anota **qué reglas
+  entraron en el turno**, y cuando el turno termina con verificación real (tests del proyecto / veredicto del
+  arnés) se apunta `helpful` o `harmful` a esas reglas. Sin señal, nada — no se inventa feedback.
+- Superficies: tool `memory_rules`, `/api/memory-engine/*`, MCP `memory_pack`, y la pestaña **Rules** en Brain
+  (nivel, madurez, trust, score, filtros, 👍/👎, "Run curator").
+- **Verificado en vivo**: tres 👎 sobre una regla la convirtieron en anti-patrón y `qwen3.5:9b`, en el turno
+  siguiente, la citó como tal y por su id.
+
+### 23.4 Robot mode, TOON y el envelope estándar — y el fallo que solo aparece midiendo
+`src/toon.py` (key folding, arrays tabulares con cabecera, `decode` que round-trippea todo),
+`src/robot_envelope.py` (`{ok, data, error_code, error, elapsed_ms, schema_version}`, la forma de
+`frankenterm`) y `?robot=1` / `?format=toon` en las lecturas que consume una máquina (dispatch, objetivos,
+memoria, guarda, uso del sistema). La respuesta **sin parámetros es byte-idéntica** a la de antes, con test.
+
+Lo interesante es el fallo: la primera versión pasaba el payload de la UI por TOON y, **medido contra la
+7001, salía MÁS grande** (ratios 1.15–1.28) — los arrays no eran tabulares porque cada fila llevaba listas
+anidadas, y la indentación costaba más que las llaves de JSON. El ahorro de TOON vive en su forma tabular, así
+que robot mode no debía re-codificar el payload del navegador sino **proyectarlo** a filas planas de solo
+escalares (`src/robot_projection.py`), que es lo que "robot mode" significa en el original. Tras el arreglo,
+medido en vivo: **memoria 0.29, objetivos 0.37, guarda 0.44, uso del sistema 0.47** (53–71 % menos). La
+proyección es lossy a propósito y la respuesta normal sigue trayéndolo todo.
+
+### 23.5 Cuarteto de fiabilidad
+- **Detector de convergencia** (`src/convergence.py`, de `automated_plan_reviser_pro`) con la fórmula exacta
+  `0.35·tendencia_de_tamaño + 0.35·velocidad_de_cambio + 0.30·tendencia_de_similitud` y las bandas 0.75 / 0.50.
+  `fix_rounds` deja de ser un contador fijo y pasa a ser un **máximo**: el bucle para solo cuando las rondas
+  dejan de cambiar algo (`stopped_by: convergence`), y por eso el tope sube de 2 a 4 mientras el detector está
+  activo. Apagado, el comportamiento es idéntico al de antes (con test que lo fija).
+- **Outcomes de cuatro valores** (`src/tool_outcome.py`, de `fastmcp_rust`): `success / expected_error /
+  cancelled / panic`. Un worker que **para el usuario ya no cuenta como fallo** en el resumen del turno, y un
+  bloqueo por política es un error esperado, no un pánico.
+- **Timeout de idle adaptativo** (`src/adaptive_timeout.py`, de `claude_code_agent_farm`): 3 × la mediana de
+  los ciclos recientes, acotado a [30, 600]. Con un matiz que la fórmula cruda no tenía: aquí **solo puede
+  alargar** el watchdog, nunca acortarlo — matar una compilación silenciosa es peor que esperar de más.
+- **StdioProtectionWrapper** (`src/stdio_guard.py`, de `ultimate_mcp_client`): un `print()` despistado del
+  código de la app corrompía el stream JSON-RPC de un servidor MCP stdio. El guard redirige stdout a stderr
+  mientras hay sesión, es reentrante y se activa **dentro** de `stdio_server()` (fuera desviaría el propio
+  protocolo). Puesto en los cinco servidores stdio.
+
+### 23.6 Cómo se hizo y qué queda
+Método: subagentes en worktrees con propiedad **disjunta** de ficheros y un contrato escrito por feature,
+luego linearizado con merge + cherry-pick, parches al PC y **verificación en la instancia 7001 con el
+navegador integrado y modelos locales de verdad** — que es donde apareció el fallo de TOON, que ninguna suite
+de tests con fixtures sintéticos habría encontrado.
+
+Suite completa tras la tanda: **8.231 en verde** (2 fallos preexistentes del entorno). Pendiente del informe:
+grafo de conocimiento 2D como vista de auditoría (G2), agentes especializados con corpus propio (G3, la más
+diferencial), `wait-for`/`events` como primitivas de orquestación, búsqueda de dos niveles e importación de
+historiales de ChatGPT/Claude/LM Studio, torneo multi-modelo con fusión, el paso `prove`, y el ballast de disco.
 
 ---
 
