@@ -50,18 +50,28 @@ _REPORT_ALLOWED_ATTRS.setdefault("img", set()).update({"src", "alt", "title"})
 # Helpers
 # ---------------------------------------------------------------------------
 
+# One fenced code block, opener to matching closer. Written once because two
+# passes need the same answer: the table of contents strips fences before it
+# scans for headings, and the linkifier below refuses to rewrite inside one.
+# Two spellings drifting apart is how a fence becomes code to one pass and
+# prose to the other, which desyncs every anchor in the table of contents.
+_FENCE_BLOCK = (
+    r"^[\ \t]*(?P<fence>`{3,}|~{3,})[^\n]*\n(?s:.*?)^[\ \t]*(?P=fence)[\ \t]*$"
+)
+_FENCE_BLOCK_RE = re.compile(_FENCE_BLOCK, re.M | re.X)
+
 # Stretches of markdown where a URL is content, not a link waiting to be made.
 # Rewriting inside one corrupts it: a fenced example gains literal `[u](u)`
 # noise, an inline span is cut in half, and `<a href="…">` becomes unparseable
 # markup. Ordered so the widest construct wins at a given position.
 _PROTECTED_RE = re.compile(
-    r"""(?mx)
-      ^[\ \t]*(?P<fence>`{3,}|~{3,})[^\n]*\n(?s:.*?)^[\ \t]*(?P=fence)[\ \t]*$
+    _FENCE_BLOCK + r"""
     | ^[\ \t]{0,3}\[[^\]\n]+\]:[\ \t]*\S+
     | !?\[(?:[^\[\]\n]|\[[^\[\]\n]*\])*\]\((?:[^()\n]|\([^()\n]*\))*\)
     | (?P<tick>`+)[^`\n]*(?P=tick)
     | <[^<>\s][^<>]*>
-    """
+    """,
+    re.M | re.X,
 )
 
 # `(?<!\]\()` is a second line of defence for a markdown destination whose
@@ -189,7 +199,7 @@ def _extract_headings(md_text: str) -> List[Dict[str, str]]:
     # markdown renderer, so counting it here desynced the TOC anchor ids
     # (built by zipping these headings against the rendered <h2>/<h3>), making
     # every later TOC link point at the wrong section.
-    md_text = re.sub(r'(?ms)^[ \t]*(`{3,}|~{3,})[^\n]*\n.*?^[ \t]*\1[ \t]*$', '', md_text)
+    md_text = _FENCE_BLOCK_RE.sub('', md_text)
 
     def _plain_heading_text(text: str) -> str:
         text = text.strip().rstrip("#").strip()
