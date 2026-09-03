@@ -271,6 +271,16 @@ DEFAULT_SETTINGS = {
     # injected; the experts, their corpora and their indexes stay on disk.
     "agent_experts": True,
     "agent_expert_context_chars": 2500,
+    # Provenance graph (src/provenance_graph.py): the 2D audit view over the
+    # memory and the workspace, built ONLY from declared edges — a dependency
+    # the user wrote, an evidence span, a checkpoint diff, a citation that
+    # resolves to a page, a literally verified text overlap. Off = the
+    # /api/provenance reads answer with enabled:false and the page hides; the
+    # records themselves are untouched, since the graph only ever reads them.
+    "agent_provenance_graph": True,
+    # Hard node budget for one graph. Past it the build stops and says
+    # truncated — an illegible blob is worse than a partial answer.
+    "agent_provenance_max_nodes": 2000,
     # "@" file mentions from the composer (src/file_mentions.py): the paths the
     # user picked are re-resolved server-side and handed to the model, and small
     # mentioned files ride along inline so it does not spend a round on

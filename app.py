@@ -851,6 +851,11 @@ app.include_router(setup_memory_engine_routes())
 from routes.expert_routes import setup_expert_routes
 app.include_router(setup_expert_routes())
 
+# Provenance graph: the 2D audit view over the memory and the workspace, built
+# from declared edges only — never one a model asserted (src/provenance_graph.py).
+from routes.provenance_routes import setup_provenance_routes
+app.include_router(setup_provenance_routes())
+
 # Live system usage (ollama ps + nvidia-smi + RAM/CPU) for the chat usage widget.
 from routes.system_usage_routes import setup_system_usage_routes
 app.include_router(setup_system_usage_routes())

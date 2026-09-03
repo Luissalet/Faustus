@@ -420,6 +420,22 @@ GROUPS: list[dict[str, Any]] = [
                  200, 40_000, step=100),
         ],
     ),
+    _group(
+        "provenance", "Provenance graph",
+        "The audit view over the memory and the workspace: why the agent believes a thing, what is "
+        "floating unreferenced, what is said twice, and what breaks if you touch a file.",
+        [
+            _bool("agent_provenance_graph", "Provenance graph",
+                  "Build the 2D graph from DECLARED edges only — a dependency you wrote, a stored "
+                  "evidence span, a checkpoint's diff, a citation that resolves to a page, a text "
+                  "overlap verified by exact comparison. No edge a model asserted. Off = the "
+                  "/api/provenance reads report it as disabled; nothing stored is changed either way."),
+            _int("agent_provenance_max_nodes", "Graph node budget",
+                 "Hard cap on the nodes one graph may hold. The build stops there and says so instead "
+                 "of drawing an illegible blob.",
+                 50, 20_000, step=50),
+        ],
+    ),
 ]
 
 
