@@ -72,6 +72,15 @@ DEFAULT_SETTINGS = {
     # Which rule packs run: "all" or a comma list of fs, git, db,
     # containers, system.
     "agent_command_guard_packs": "all",
+    # Disk ballast (src/disk_ballast.py): preallocated files that can be
+    # unlinked instantly for real headroom, plus the scoring of what Faustus
+    # itself created and could go. "observe" = measure and report, move
+    # nothing (the default: shipping this changes nothing); "canary" = at most
+    # 10 quarantines an hour; "enforce" = quarantine at the rate asked for.
+    # Nothing is ever deleted directly in any mode — a candidate is MOVED to
+    # DATA_DIR/_quarantine with an undo, and a .git directory anywhere inside
+    # it vetoes it outright.
+    "agent_disk_ballast": "observe",
     # Public base URL used to build clickable deep-links in outgoing alerts
     # (e.g., urgency alert email). Example: "https://chat.example.com"
     "app_public_url": "",

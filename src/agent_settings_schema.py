@@ -364,6 +364,20 @@ GROUPS: list[dict[str, Any]] = [
         ],
     ),
     _group(
+        "storage", "Disk ballast",
+        "Preallocated files that can be unlinked instantly when the disk gets tight, and the scoring "
+        "of what Faustus itself created and could go. Nothing is ever deleted directly: a candidate is "
+        "MOVED to data/_quarantine with an undo, and anything with a .git directory inside it is never "
+        "touched at all.",
+        [
+            _select("agent_disk_ballast", "Ballast mode",
+                    "observe = measure, score and report, move nothing (the default); canary = at most "
+                    "10 quarantines an hour; enforce = quarantine at the rate asked for. Quarantined "
+                    "items are swept 24 hours later, and can be restored until then.",
+                    ["observe", "canary", "enforce"]),
+        ],
+    ),
+    _group(
         "gpu", "GPU placement",
         "Which card the local Ollama fills first (two or more GPUs). Per-model pins in Local models → Options always win.",
         [
