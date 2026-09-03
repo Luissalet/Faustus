@@ -1459,6 +1459,358 @@ async function handleImportFile(file) {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Learned rules — the memory-engine UI (GET/POST/DELETE /api/memory-engine/*).
+// Outcome-scored rules the agent learns; the Curator dedupes/promotes/inverts.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── Learned rules: pure helpers (dependency-free; extracted and run under node by tests) ──
+// Everything between these markers must stay free of DOM, module and window
+// references so tests/test_memory_rules_page_js.py can execute it in bare node.
+
+/** Local escape: same table as ui.js esc(), but import-free for tests. */
+function lrEsc(value) {
+  return String(value == null ? '' : value).replace(/[&<>"']/g, ch => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]
+  ));
+}
+
+/** Sanitize a server-provided token (level/maturity) for use in a class name. */
+function lrToken(value) {
+  return String(value == null ? '' : value).toLowerCase().replace(/[^a-z0-9_-]/g, '');
+}
+
+const LR_LEVELS = ['working', 'episodic', 'semantic', 'procedural'];
+const LR_STATUS_RANK = { active: 0, anti_pattern: 1, deprecated: 2 };
+
+/** Fill defaults so a partial item from the API never breaks the render. */
+function normalizeLearnedItem(raw) {
+  const item = raw && typeof raw === 'object' ? raw : {};
+  const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+  return {
+    id: String(item.id == null ? '' : item.id),
+    text: String(item.text == null ? '' : item.text),
+    level: String(item.level || 'semantic'),
+    category: String(item.category || ''),
+    trust_class: String(item.trust_class || ''),
+    status: String(item.status || 'active'),
+    maturity: String(item.maturity || 'candidate'),
+    effective_score: num(item.effective_score),
+    harmful_ratio: num(item.harmful_ratio),
+    project: String(item.project || ''),
+    created_at: item.created_at || '',
+    updated_at: item.updated_at || '',
+  };
+}
+
+/** Defensive shape for GET /items: {"items":[...]}, a bare list, or {"data": ...}. */
+function normalizeLearnedItems(raw) {
+  let list = [];
+  if (Array.isArray(raw)) list = raw;
+  else if (raw && typeof raw === 'object') {
+    if (Array.isArray(raw.items)) list = raw.items;
+    else if (Array.isArray(raw.data)) list = raw.data;
+    else if (raw.data && typeof raw.data === 'object' && Array.isArray(raw.data.items)) list = raw.data.items;
+  }
+  return list.filter(entry => entry && typeof entry === 'object' && entry.id != null).map(normalizeLearnedItem);
+}
+
+/** Accept both a bare created/updated item and an {"item": ...} wrapper. */
+function unwrapLearnedItem(raw) {
+  if (raw && typeof raw === 'object' && raw.item && typeof raw.item === 'object') return raw.item;
+  return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+}
+
+/** active first, then anti-patterns, then deprecated; score desc, id asc inside a group. */
+function sortLearnedRules(items) {
+  return (items || []).slice().sort((a, b) => {
+    const ra = LR_STATUS_RANK[a && a.status] ?? 3;
+    const rb = LR_STATUS_RANK[b && b.status] ?? 3;
+    if (ra !== rb) return ra - rb;
+    const sa = Number(a && a.effective_score) || 0;
+    const sb = Number(b && b.effective_score) || 0;
+    if (sb !== sa) return sb - sa;
+    return String((a && a.id) || '').localeCompare(String((b && b.id) || ''));
+  });
+}
+
+/** filter: 'all' | 'active' | 'anti'. Unknown values fall back to 'all'. */
+function filterLearnedRules(items, filter) {
+  const list = items || [];
+  if (filter === 'active') return list.filter(item => item && item.status === 'active');
+  if (filter === 'anti') return list.filter(item => item && item.status === 'anti_pattern');
+  return list.slice();
+}
+
+/** Effective score as a number + tiny bar (score clamped to [0,1] for the fill). */
+function learnedScoreHtml(score) {
+  const n = Number(score);
+  const value = Number.isFinite(n) ? n : 0;
+  const pct = Math.max(0, Math.min(100, Math.round(value * 100)));
+  return `<span class="lr-score" title="Effective score: trust × freshness + helpful − 4 × harmful"><span class="lr-score-bar" aria-hidden="true"><span class="lr-score-fill" style="width:${pct}%"></span></span><span class="lr-score-num">${value.toFixed(2)}</span></span>`;
+}
+
+/** Inline curator report ({deduped, inverted, promoted, demoted, pruned, total_active}). */
+function curatorReportHtml(report) {
+  if (!report || typeof report !== 'object') return '';
+  const stat = (key) => `<span class="lr-report-stat"><b>${Number(report[key]) || 0}</b> ${key}</span>`;
+  const total = Number(report.total_active);
+  return `<div class="lr-report" data-lr-report>Curator: ${['deduped', 'inverted', 'promoted', 'demoted', 'pruned'].map(stat).join('')}<span class="lr-report-stat lr-report-total"><b>${Number.isFinite(total) ? total : 0}</b> active</span></div>`;
+}
+
+function learnedRuleRowHtml(raw) {
+  const item = normalizeLearnedItem(raw);
+  const anti = item.status === 'anti_pattern';
+  const classes = ['lr-row'];
+  if (anti) classes.push('is-anti');
+  if (item.status === 'deprecated' || item.maturity === 'deprecated') classes.push('is-deprecated');
+  const harmPct = Math.round((Number(item.harmful_ratio) || 0) * 100);
+  return `
+    <div class="${classes.join(' ')}" data-lr-row="${lrEsc(item.id)}">
+      <div class="lr-row-main">
+        ${anti ? '<span class="lr-avoid-badge">AVOID</span>' : ''}
+        <span class="lr-text">${lrEsc(item.text)}</span>
+      </div>
+      <div class="lr-row-meta">
+        <span class="lr-chip lr-level lr-level-${lrToken(item.level)}">${lrEsc(item.level)}</span>
+        <span class="lr-chip lr-maturity lr-maturity-${lrToken(item.maturity)}">${lrEsc(item.maturity)}</span>
+        ${item.trust_class ? `<span class="lr-trust" title="Trust class">${lrEsc(item.trust_class)}</span>` : ''}
+        ${learnedScoreHtml(item.effective_score)}
+        ${harmPct > 0 ? `<span class="lr-harm" title="Decay-weighted share of harmful feedback">${harmPct}% harmful</span>` : ''}
+        <span class="lr-row-actions">
+          <button type="button" class="lr-fb-btn" data-lr-feedback="${lrEsc(item.id)}" data-lr-kind="helpful" title="This rule helped" aria-label="Mark helpful">👍</button>
+          <button type="button" class="lr-fb-btn" data-lr-feedback="${lrEsc(item.id)}" data-lr-kind="harmful" title="This rule hurt" aria-label="Mark harmful">👎</button>
+          <button type="button" class="lr-del-btn" data-lr-delete="${lrEsc(item.id)}" title="Delete rule" aria-label="Delete rule">✕</button>
+        </span>
+      </div>
+    </div>`;
+}
+
+/**
+ * The whole Learned-rules section body. state: {filter, error, report,
+ * loading}. Always renders the filter chips and the add form, even when
+ * empty or failing.
+ */
+function learnedRulesSectionHtml(items, state = {}) {
+  const filter = state.filter || 'all';
+  const all = sortLearnedRules(items || []);
+  const visible = filterLearnedRules(all, filter);
+  const activeCount = all.filter(item => item.status === 'active').length;
+  const antiCount = all.filter(item => item.status === 'anti_pattern').length;
+  const chips = [
+    ['all', `All (${all.length})`],
+    ['active', `Active (${activeCount})`],
+    ['anti', `Anti-patterns (${antiCount})`],
+  ].map(([value, label]) =>
+    `<button type="button" class="lr-filter-chip${value === filter ? ' active' : ''}" data-lr-filter="${value}">${label}</button>`
+  ).join('');
+  const rows = state.loading
+    ? '<div class="lr-empty">Loading learned rules…</div>'
+    : (visible.map(learnedRuleRowHtml).join('') ||
+       `<div class="lr-empty">${all.length ? 'Nothing matches this filter.' : 'No learned rules yet — add one below, or let the agent learn from outcomes.'}</div>`);
+  const levelOptions = LR_LEVELS
+    .map(level => `<option value="${level}"${level === 'procedural' ? ' selected' : ''}>${level}</option>`).join('');
+  return `
+    <div class="lr-head">
+      <h2 class="lr-title">Learned rules <span class="lr-count">${all.length}</span></h2>
+      <button type="button" class="lr-curate-btn" data-lr-curate title="Deterministic curator: dedupe, promote/demote, invert, prune">Run curator</button>
+    </div>
+    <p class="lr-desc">Outcome-scored rules the agent learns and forgets on its own — repeated harmful feedback inverts a rule into an anti-pattern.</p>
+    <div class="lr-filters">${chips}</div>
+    <p class="lr-error" data-lr-error${state.error ? '' : ' hidden'}>${lrEsc(state.error || '')}</p>
+    ${curatorReportHtml(state.report)}
+    <div class="lr-list">${rows}</div>
+    <form class="lr-add" data-lr-add>
+      <input type="text" data-lr-add-text class="lr-add-input" placeholder="Add a rule… e.g. 'Run the tests before committing'" maxlength="500" autocomplete="off" spellcheck="false" aria-label="New rule text" />
+      <select data-lr-add-level class="lr-add-level" aria-label="Level of the new rule">${levelOptions}</select>
+      <button type="submit" class="lr-add-btn">Add rule</button>
+    </form>`;
+}
+// ── Learned rules: end pure helpers ──
+
+const LR_HOST_ID = 'learned-rules-section';
+
+let _lr = { items: [], filter: 'all', report: null, error: '', loading: false, loaded: false };
+
+/** fetch wrapper for /api/memory-engine/*: non-2xx → Error carrying {"detail"}. */
+async function _lrReq(path, options = {}) {
+  const res = await fetch(`${window.location.origin}/api/memory-engine${path}`, {
+    headers: { 'Content-Type': 'application/json' },
+    ...options,
+  });
+  let data = null;
+  try { data = await res.json(); } catch (e) { /* non-JSON body */ }
+  if (!res.ok) {
+    const detail = data && data.detail != null
+      ? (typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail))
+      : '';
+    throw new Error(detail || `HTTP ${res.status}`);
+  }
+  return data;
+}
+
+/** Inline error slot — never a native dialog. Empty message hides it again. */
+function _lrInlineError(message) {
+  const host = document.getElementById(LR_HOST_ID);
+  const slot = host && host.querySelector('[data-lr-error]');
+  if (!slot) return;
+  slot.textContent = message || '';
+  slot.hidden = !message;
+}
+
+export function renderLearnedRules() {
+  const host = document.getElementById(LR_HOST_ID);
+  if (!host) return;
+  host.innerHTML = learnedRulesSectionHtml(_lr.items, {
+    filter: _lr.filter,
+    error: _lr.error,
+    report: _lr.report,
+    loading: _lr.loading,
+  });
+}
+
+export async function loadLearnedRules(force = false) {
+  const host = document.getElementById(LR_HOST_ID);
+  if (!host || _lr.loading) return;
+  if (_lr.loaded && !force) { renderLearnedRules(); return; }
+  _lr.loading = true;
+  _lr.error = '';
+  renderLearnedRules();
+  try {
+    _lr.items = normalizeLearnedItems(await _lrReq('/items?limit=500'));
+    _lr.loaded = true;
+  } catch (error) {
+    console.error('Failed to load learned rules:', error);
+    _lr.error = `Could not load learned rules: ${error.message || error}`;
+  } finally {
+    _lr.loading = false;
+    renderLearnedRules();
+  }
+}
+
+async function _learnedAdd(host) {
+  const textInput = host.querySelector('[data-lr-add-text]');
+  const text = String(textInput?.value || '').trim();
+  if (!text) {
+    _lrInlineError('The rule needs some text.');
+    textInput?.focus();
+    return;
+  }
+  const level = host.querySelector('[data-lr-add-level]')?.value || 'procedural';
+  const addBtn = host.querySelector('.lr-add-btn');
+  if (addBtn) addBtn.disabled = true;
+  try {
+    unwrapLearnedItem(await _lrReq('/items', {
+      method: 'POST',
+      body: JSON.stringify({ text, level }),
+    }));
+    showToast('Rule added');
+    await loadLearnedRules(true);
+  } catch (error) {
+    if (addBtn) addBtn.disabled = false;
+    _lrInlineError(`Could not add the rule: ${error.message || error}`);
+  }
+}
+
+async function _learnedFeedback(id, kind) {
+  if (!id || (kind !== 'helpful' && kind !== 'harmful')) return;
+  try {
+    const data = await _lrReq(`/items/${encodeURIComponent(id)}/feedback`, {
+      method: 'POST',
+      body: JSON.stringify({ kind }),
+    });
+    const updated = unwrapLearnedItem(data);
+    if (updated && updated.id != null && updated.text != null) {
+      const index = _lr.items.findIndex(item => String(item.id) === String(updated.id));
+      if (index >= 0) _lr.items[index] = normalizeLearnedItem(updated);
+      renderLearnedRules();
+    } else {
+      await loadLearnedRules(true);
+    }
+    showToast(kind === 'helpful' ? 'Marked helpful 👍' : 'Marked harmful 👎');
+  } catch (error) {
+    _lrInlineError(`Feedback failed: ${error.message || error}`);
+  }
+}
+
+async function _learnedDelete(id) {
+  if (!id) return;
+  const item = _lr.items.find(entry => String(entry.id) === String(id));
+  const label = item?.text ? `\n"${item.text}"` : '';
+  if (!await uiModule.styledConfirm(`Delete this learned rule?${label}`, { confirmText: 'Delete', danger: true })) return;
+  try {
+    await _lrReq(`/items/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    showToast('Rule deleted');
+    await loadLearnedRules(true);
+  } catch (error) {
+    _lrInlineError(`Delete failed: ${error.message || error}`);
+  }
+}
+
+async function _learnedCurate(host) {
+  const btn = host.querySelector('[data-lr-curate]');
+  if (btn) { btn.disabled = true; btn.textContent = 'Curating…'; }
+  try {
+    _lr.report = await _lrReq('/curate', { method: 'POST', body: JSON.stringify({}) });
+    await loadLearnedRules(true);
+  } catch (error) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Run curator'; }
+    _lrInlineError(`Curator failed: ${error.message || error}`);
+  }
+}
+
+/** One delegated listener pair on the section host — survives re-renders. */
+function _wireLearnedRules(host) {
+  if (!host || host.dataset.lrWired === '1') return;
+  host.dataset.lrWired = '1';
+  host.addEventListener('click', (e) => {
+    const filterBtn = e.target.closest('[data-lr-filter]');
+    if (filterBtn) {
+      _lr.filter = filterBtn.dataset.lrFilter || 'all';
+      renderLearnedRules();
+      return;
+    }
+    const fbBtn = e.target.closest('[data-lr-feedback]');
+    if (fbBtn) { _learnedFeedback(fbBtn.dataset.lrFeedback, fbBtn.dataset.lrKind); return; }
+    const delBtn = e.target.closest('[data-lr-delete]');
+    if (delBtn) { _learnedDelete(delBtn.dataset.lrDelete); return; }
+    const curateBtn = e.target.closest('[data-lr-curate]');
+    if (curateBtn) _learnedCurate(host);
+  });
+  host.addEventListener('submit', (e) => {
+    if (!e.target.closest('[data-lr-add]')) return;
+    e.preventDefault();
+    _learnedAdd(host);
+  });
+}
+
+/**
+ * Mount the Learned-rules tab into the Brain modal. index.html stays
+ * untouched: the tab button and its panel are created here, before the
+ * generic .memory-tab wiring below runs, so they behave like the static tabs.
+ */
+function _ensureLearnedRulesUi() {
+  const tabs = document.querySelector('#memory-modal .memory-tabs');
+  const body = document.querySelector('#memory-modal .memory-modal-body');
+  if (!tabs || !body || document.getElementById(LR_HOST_ID)) return;
+
+  const tab = document.createElement('button');
+  tab.className = 'memory-tab';
+  tab.dataset.memoryTab = 'learned';
+  tab.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>Rules';
+  // Sit between Skills and Add, like a first-class tab.
+  tabs.insertBefore(tab, tabs.querySelector('.memory-tab[data-memory-tab="add"]') || null);
+
+  const panel = document.createElement('div');
+  panel.className = 'memory-tab-panel hidden';
+  panel.dataset.memoryPanel = 'learned';
+  panel.innerHTML = `<div class="admin-card" style="display:flex;flex-direction:column;overflow:hidden;flex:1;min-height:0;"><div id="${LR_HOST_ID}" class="learned-rules-section"></div></div>`;
+  body.appendChild(panel);
+
+  _wireLearnedRules(document.getElementById(LR_HOST_ID));
+  renderLearnedRules();
+}
+
 // Utility aliases (canonical implementations live in uiModule)
 var showToast = uiModule.showToast;
 var showError = uiModule.showError;
@@ -1466,6 +1818,10 @@ var showError = uiModule.showError;
 // Event listeners
 document.addEventListener('DOMContentLoaded', () => {
   _wireMemoryDrag();
+
+  // Mount the Learned-rules tab BEFORE the generic tab wiring below so the
+  // injected button/panel are picked up by the same loop as the static tabs.
+  _ensureLearnedRulesUi();
 
   // Memory modal tabs
   document.querySelectorAll('.memory-tab[data-memory-tab]').forEach(tab => {
@@ -1479,6 +1835,8 @@ document.addEventListener('DOMContentLoaded', () => {
       if (target === 'skills') {
         import('./skills.js').then(m => { if (m.loadSkills) m.loadSkills(true); else if (m.default?.loadSkills) m.default.loadSkills(true); });
       }
+      // Lazy-load the learned rules the first time the tab is opened.
+      if (target === 'learned') loadLearnedRules();
     });
   });
 
@@ -1543,7 +1901,9 @@ const memoryModule = {
   buildCategoryChips,
   tidyMemories,
   importMemories,
-  exportMemories
+  exportMemories,
+  loadLearnedRules,
+  renderLearnedRules
 };
 
 export default memoryModule;
