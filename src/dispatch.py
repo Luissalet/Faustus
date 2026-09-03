@@ -877,6 +877,12 @@ def _record_turn(job: DispatchJob) -> None:
             hz["tests"]["label"] = v.get("command") or v.get("kind")
             hz["tests_fix_rounds"] = max(0, int(v.get("attempts") or 1) - 1)
         meta["harness"] = hz
+        # the footer needs the usual metrics to render at all (and the 🛡
+        # badge hangs off that footer): the job's duration and local tokens
+        tot = comp.get("totals") or {}
+        meta.update({"response_time": round((job.finished or time.time()) - (job.started or job.created), 2),
+                     "input_tokens": int(tot.get("input_tokens") or 0), "output_tokens": int(tot.get("output_tokens") or 0),
+                     "usage_source": "real"})
         sm.add_message(job.session_id, ChatMessage("assistant", "\n".join(lines), metadata=meta))
         try:
             sm.save_sessions()

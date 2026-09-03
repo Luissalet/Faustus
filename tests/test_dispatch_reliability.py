@@ -434,6 +434,7 @@ async def test_files_changed_is_what_faustus_saw_on_disk_not_what_the_worker_sai
     last = [m for sid, m in fake_tool["sm"].messages if sid == job.session_id][-1]
     hz = last.metadata["harness"]
     assert hz["mutations"] == ["via_bash.txt", "old.py", "keep.py"] and hz["workspace"] == str(ws) and hz["notes"] == [job.verdict]
+    assert last.metadata["input_tokens"] == 10 and last.metadata["output_tokens"] == 5 and last.metadata["response_time"] >= 0
 
 
 @pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
