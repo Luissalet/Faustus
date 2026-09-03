@@ -191,6 +191,38 @@ def test_detect_language():
     assert h.detect_language("Please add a delete button to the cards") == "en"
 
 
+@pytest.mark.parametrize("text", [
+    "Fix the login bug", "Add a dark mode toggle", "Refactor the parser",
+    "Why is the test failing?", "Please run the linter", "Deploy to staging",
+    "Write unit tests for the cache layer", "Remove the dead code in utils",
+    "The button does not respond on mobile", "Can you check the logs?",
+    "Rename this variable", "Update dependencies", "make it faster",
+    "install the package", "commit and push", "show me the diff",
+    "read the config file", "Set up CI", "Bump the version", "git status",
+    "it crashed again", "the server returns 500", "explain the error",
+])
+def test_english_requests_are_still_english(text):
+    """The answers the hand-rolled ES/EN heuristic gave, pinned.
+
+    Delegating to the shared detector must never start wording an English
+    developer's harness note in Spanish; every one of these read "en" before.
+    """
+    assert h.detect_language(text) == "en"
+
+
+@pytest.mark.parametrize("text", [
+    "Quiero también botones para borrar los chats",
+    "Arregla el error de login",          # no accent, no stopword the old
+    "Borra el codigo muerto en utils",    # list knew: these used to read "en"
+    "el servidor devuelve 500",
+    "Crea un componente nuevo",
+    "¿Puedes revisar el archivo?",
+    "El niño juega",
+])
+def test_spanish_requests_read_as_spanish(text):
+    assert h.detect_language(text) == "es"
+
+
 def test_qwen_coder_function_markup_is_parsed_and_stripped():
     from src.agent_tools import parse_tool_blocks, strip_tool_blocks
     leaked = (

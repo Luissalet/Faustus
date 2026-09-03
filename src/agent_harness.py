@@ -35,6 +35,8 @@ import sys
 import time
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
+from src.research_citations import detect_language as _detect_language
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -275,15 +277,22 @@ _INDEX_MAX_FILES = 60000
 _INDEX_TTL_S = 20.0
 
 
+# Letters that settle Spanish on their own. Kept in front of the shared
+# detector below, which weighs ñ/¿/¡ but not the five accented vowels: a note
+# in the reader's language is worth more here than a tie-break is to a score.
+_SPANISH_LETTERS = ("¿", "¡", "ñ", "á", "é", "í", "ó", "ú")
+
+
 def detect_language(text: str) -> str:
-    """Very small ES/EN heuristic used only to pick the wording of user-facing
-    harness notes. Defaults to English."""
-    t = f" {(text or '').lower()} "
-    if any(ch in t for ch in ("¿", "¡", "ñ", "á", "é", "í", "ó", "ú")):
+    """Which of ES/EN to word a user-facing harness note in.
+
+    The same question ``research_citations`` answers for a report, done there
+    over six languages and weighted by how much each stopword actually settles;
+    the ones this module does not write notes in collapse to English.
+    """
+    if any(ch in (text or "").lower() for ch in _SPANISH_LETTERS):
         return "es"
-    es_hits = sum(t.count(w) for w in (" que ", " los ", " las ", " para ", " pero ", " también ", " está ", " hay ", " con ", " una ", " del ", " por "))
-    en_hits = sum(t.count(w) for w in (" the ", " and ", " with ", " that ", " this ", " for ", " but ", " also ", " is ", " are ", " of "))
-    return "es" if es_hits > en_hits else "en"
+    return "es" if _detect_language(text) == "es" else "en"
 
 
 # A mutation claim only counts when it is about something technical: a
