@@ -851,6 +851,12 @@ app.include_router(setup_memory_engine_routes())
 from routes.expert_routes import setup_expert_routes
 app.include_router(setup_expert_routes())
 
+# Model tournament: the same prompt to N models blind and in parallel, then
+# rounds of explicit fusion over the anonymised answers, then a judged ranking
+# (src/tournament.py). Extends the A/B comparator below, it does not replace it.
+from routes.tournament_routes import setup_tournament_routes
+app.include_router(setup_tournament_routes())
+
 # Provenance graph: the 2D audit view over the memory and the workspace, built
 # from declared edges only — never one a model asserted (src/provenance_graph.py).
 from routes.provenance_routes import setup_provenance_routes

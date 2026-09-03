@@ -271,6 +271,13 @@ DEFAULT_SETTINGS = {
     # injected; the experts, their corpora and their indexes stay on disk.
     "agent_experts": True,
     "agent_expert_context_chars": 2500,
+    # Model tournament (src/tournament.py): the same prompt to N models blind
+    # and in parallel, then rounds where each one sees all the previous answers
+    # anonymised and weaves the complementary parts into a hybrid, then a
+    # judged ranking. Off = /api/tournament refuses to START a run; everything
+    # already recorded stays readable.
+    "agent_tournament": True,
+    "agent_tournament_max_models": 4,
     # Provenance graph (src/provenance_graph.py): the 2D audit view over the
     # memory and the workspace, built ONLY from declared edges — a dependency
     # the user wrote, an evidence span, a checkpoint diff, a citation that

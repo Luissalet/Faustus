@@ -432,6 +432,23 @@ GROUPS: list[dict[str, Any]] = [
         ],
     ),
     _group(
+        "tournament", "Model tournament",
+        "The same prompt to several local models blind and in parallel, then rounds where each one "
+        "sees all the previous answers anonymised and weaves the complementary parts into a hybrid. "
+        "Two DIFFERENT models really do generate at the same time on this machine; two requests to "
+        "the same one queue behind its single slot, so the scheduler serialises those.",
+        [
+            _bool("agent_tournament", "Model tournament",
+                  "Let the Tournament page run a prompt across several models and rank the answers. "
+                  "Off = no new run can be started; the runs already recorded stay readable."),
+            _int("agent_tournament_max_models", "Models per tournament",
+                 "How many models one tournament may enter. Each one is a full generation per round, "
+                 "and only DIFFERENT models overlap — more models means a longer round, not a slower "
+                 "one per model.",
+                 2, 8, step=1),
+        ],
+    ),
+    _group(
         "provenance", "Provenance graph",
         "The audit view over the memory and the workspace: why the agent believes a thing, what is "
         "floating unreferenced, what is said twice, and what breaks if you touch a file.",
