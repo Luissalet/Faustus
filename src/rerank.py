@@ -1,0 +1,436 @@
+"""Cross-encoder reranking — the stage this app could already find but never called.
+
+Faustus has recognised rerankers for a long time without ever using one.
+:mod:`src.model_capabilities` defines ``FAMILY_RERANK`` and
+``TASK_RERANK``; :mod:`src.model_capability_readers.llamacpp` reads
+llama.cpp's ``capabilities: ["rerank"]`` and assigns that family; and
+:mod:`src.endpoint_resolver` deliberately excludes ``rerank``/``reranker``
+from chat routing so a cross-encoder is never mistaken for a chat model.
+Every piece of that was built and then nothing dialled the number: before
+this module, ``/v1/rerank`` appeared nowhere in the tree.
+
+Why a cross-encoder and not another coefficient
+-----------------------------------------------
+:mod:`src.two_tier_search` records a measurement this fork published rather
+than buried: fusing BM25 with the hash lane at equal weight scored *worse on
+tool search than BM25 alone*. The docstring there names the cause exactly —
+Reciprocal Rank Fusion assumes its lanes are independent evidence, and those
+two lanes read the same tokens, so they are not. The fork's repair was to
+weight the hash lane at 0.5.
+
+That is a coefficient patch on a structural problem, and it can only ever
+trade one lane's mistakes against the other's, because both lanes are still
+scoring *rank lists built from the same tokenizer*. A cross-encoder is a
+different kind of evidence: it reads the query and the passage text together
+and scores that pair directly, so it is not a third correlated view of the
+same token overlap. It sits on top of the fusion and reorders what fusion
+produced; the 0.5 weight underneath is left exactly as it is, because whether
+a reranker makes that weight unnecessary is a measurement for later and not
+an assumption to bake in now.
+
+The contract that matters: the stage is never silently absent
+-------------------------------------------------------------
+A reranker is optional in the same way every semantic lane in this app is
+optional — the model may not be pulled, the endpoint may be a machine that is
+off. So this module never raises and never lies. Every
+:class:`RerankResult` says whether reranking actually happened, and when it
+did not it carries a **named reason**:
+
+``no_reranker_configured``
+    Nothing on any enabled endpoint looks like a reranker. No request is
+    attempted — this is the case where the feature is simply not installed.
+``endpoint_unreachable``
+    A reranker is configured but the HTTP call failed (refused, DNS, or a
+    non-2xx status, including a server with no ``/v1/rerank`` route).
+``timeout``
+    It answered too slowly to be worth waiting for.
+``bad_response``
+    It answered 200 with something this module cannot use.
+
+In all four cases the passages come back **in the order they went in**, so a
+caller that ignores ``reason`` degrades to exactly the ranking it would have
+had without this module. That is what makes wiring the stage in safe.
+
+Bounding the work
+-----------------
+Only the head of the list is sent (:data:`RERANK_HEAD`, default 30) and each
+passage is truncated (:data:`MAX_PASSAGE_CHARS`). A cross-encoder costs one
+forward pass *per passage*, so reranking a whole corpus is quadratic-feeling
+work that turns a fast search into a hung one. The tail is not discarded: it
+keeps its fused order and follows the reranked head.
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+
+logger = logging.getLogger(__name__)
+
+__all__ = [
+    "RerankResult",
+    "REASON_NO_RERANKER",
+    "REASON_UNREACHABLE",
+    "REASON_TIMEOUT",
+    "REASON_BAD_RESPONSE",
+    "RERANK_HEAD",
+    "MAX_PASSAGE_CHARS",
+    "DEFAULT_TIMEOUT",
+    "available",
+    "rerank",
+]
+
+
+REASON_NO_RERANKER = "no_reranker_configured"
+REASON_UNREACHABLE = "endpoint_unreachable"
+REASON_TIMEOUT = "timeout"
+REASON_BAD_RESPONSE = "bad_response"
+
+REASONS = (REASON_NO_RERANKER, REASON_UNREACHABLE, REASON_TIMEOUT, REASON_BAD_RESPONSE)
+
+
+def _env_int(name: str, default: int, minimum: int) -> int:
+    try:
+        return max(minimum, int(os.getenv(name, "") or default))
+    except (TypeError, ValueError):
+        return default
+
+
+def _env_float(name: str, default: float, minimum: float) -> float:
+    try:
+        return max(minimum, float(os.getenv(name, "") or default))
+    except (TypeError, ValueError):
+        return default
+
+
+# How many fused hits are worth a forward pass each. Reranking the whole
+# corpus is how a cross-encoder turns a 5 ms search into a 5 s one.
+RERANK_HEAD = _env_int("FAUSTUS_RERANK_HEAD", 30, 1)
+# Cross-encoders truncate at their own context anyway; doing it here keeps a
+# 200 KB document from being uploaded just to be thrown away server-side.
+MAX_PASSAGE_CHARS = _env_int("FAUSTUS_RERANK_MAX_CHARS", 2_000, 200)
+# A slow reranker must not make search feel broken, so the read budget is
+# short and a breach is a named degradation rather than a stall.
+DEFAULT_TIMEOUT = _env_float("FAUSTUS_RERANK_TIMEOUT", 10.0, 0.1)
+CONNECT_TIMEOUT = 3.0
+
+
+@dataclass(frozen=True)
+class RerankResult:
+    """What came back, and — if it is not reranked — why not.
+
+    ``passages`` is always the caller's own objects, never copies: on success
+    reordered best-first, on every failure the input order untouched.
+    ``order`` gives the original index of each entry, so a caller can map back
+    without comparing objects, and ``scores`` is aligned with ``passages``
+    (``None`` for a passage past the reranked head).
+    """
+
+    passages: List[Any] = field(default_factory=list)
+    order: List[int] = field(default_factory=list)
+    scores: List[Optional[float]] = field(default_factory=list)
+    reranked: bool = False
+    reason: Optional[str] = None
+    model: Optional[str] = None
+
+    @property
+    def degraded(self) -> bool:
+        """True when the caller is holding a fused order, not a reranked one."""
+        return not self.reranked
+
+
+def _unchanged(passages: Sequence[Any], reason: Optional[str],
+               model: Optional[str] = None) -> RerankResult:
+    """The input, in the input order, wearing the reason it was not reranked."""
+    items = list(passages or ())
+    return RerankResult(passages=items, order=list(range(len(items))),
+                        scores=[None] * len(items), reranked=False,
+                        reason=reason, model=model)
+
+
+# ---------------------------------------------------------------------------
+# Discovery — reusing what endpoint_resolver already knows
+# ---------------------------------------------------------------------------
+
+# Derived from endpoint_resolver's own non-chat list rather than retyped, so
+# the two can never drift apart. A model this app refuses to route chat to
+# because it is a reranker is exactly the model this module wants; if someone
+# adds a marker there, reranking picks it up for free, and if someone removes
+# one, we stop claiming a chat model is a cross-encoder.
+def _rerank_markers() -> Tuple[str, ...]:
+    try:
+        from src.endpoint_resolver import _NON_CHAT_MODEL
+    except Exception:  # noqa: BLE001 - discovery must not take the caller down
+        return ("rerank", "reranker")
+    return tuple(marker for marker in _NON_CHAT_MODEL if "rerank" in marker) or ("rerank",)
+
+
+def _looks_like_reranker(model_id: Any) -> bool:
+    lowered = str(model_id or "").lower()
+    return any(marker in lowered for marker in _rerank_markers())
+
+
+def _rerank_url(base: str) -> str:
+    """``<base>/v1/rerank``, following build_models_url's rule about ``/v1``.
+
+    llama-server serves the route under ``/v1`` like the rest of its
+    OpenAI-compatible surface, but a user's base URL may or may not already
+    carry that segment (issue #25's problem, one route over).
+    """
+    from urllib.parse import urlparse
+
+    from src.endpoint_resolver import _append_endpoint_path, _prepare_endpoint_base
+
+    prepared = _prepare_endpoint_base(base)
+    if not (urlparse(prepared).path or "").strip("/"):
+        prepared = _append_endpoint_path(prepared, "/v1")
+    return _append_endpoint_path(prepared, "/rerank")
+
+
+def _settings_choice(owner: Optional[str]) -> Tuple[str, str]:
+    """``(endpoint_id, model)`` an admin pinned, via the usual settings path."""
+    try:
+        from src.settings import get_user_setting, load_settings
+
+        settings = load_settings()
+    except Exception:  # noqa: BLE001
+        return "", ""
+    owner_str = owner or ""
+
+    def _stg(key: str) -> str:
+        try:
+            return (get_user_setting(key, owner_str, settings.get(key, "")) or "").strip()
+        except Exception:  # noqa: BLE001
+            return ""
+
+    return _stg("rerank_endpoint_id"), _stg("rerank_model")
+
+
+def _endpoint_rows(owner: Optional[str], db) -> List[Any]:
+    from core.database import ModelEndpoint
+
+    query = db.query(ModelEndpoint).filter(ModelEndpoint.is_enabled == True)  # noqa: E712
+    if owner:
+        from src.auth_helpers import owner_filter
+
+        return list(owner_filter(query, ModelEndpoint, owner).all())
+    return list(query.all())
+
+
+def _resolve_reranker(owner: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """``{"url", "model", "headers"}`` for a reranker, or None if there is none.
+
+    Deliberately not a new discovery mechanism: the endpoint rows, the
+    enabled-model list, the runtime credentials and the auth headers all come
+    from :mod:`src.endpoint_resolver`, which is where every other backend call
+    in this app gets them.
+    """
+    try:
+        from core.database import SessionLocal
+        from src.endpoint_resolver import (
+            _endpoint_enabled_models,
+            build_headers,
+            resolve_endpoint_runtime,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("rerank: endpoint machinery unavailable (%s)", exc)
+        return None
+
+    pinned_id, pinned_model = _settings_choice(owner)
+
+    try:
+        db = SessionLocal()
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("rerank: no database session (%s)", exc)
+        return None
+    try:
+        rows = _endpoint_rows(owner, db)
+        # An explicitly pinned endpoint wins, and on it a pinned model wins:
+        # an admin who chose a reranker must not be overridden by a name match
+        # on some other endpoint.
+        if pinned_id:
+            rows = [ep for ep in rows if str(getattr(ep, "id", "")) == pinned_id] or []
+        for ep in rows:
+            models = _endpoint_enabled_models(ep)
+            if pinned_id and pinned_model:
+                model = pinned_model if pinned_model in models or not models else ""
+            else:
+                model = next((m for m in models if _looks_like_reranker(m)), "")
+            if not model:
+                continue
+            try:
+                base, api_key = resolve_endpoint_runtime(ep, owner=owner)
+                return {"url": _rerank_url(base), "model": model,
+                        "headers": build_headers(api_key, base)}
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("rerank: endpoint %s did not resolve (%s)",
+                             getattr(ep, "id", "?"), exc)
+                continue
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("rerank: endpoint lookup failed (%s)", exc)
+    finally:
+        try:
+            db.close()
+        except Exception:  # noqa: BLE001
+            pass
+    return None
+
+
+def available(owner: Optional[str] = None) -> Tuple[bool, str]:
+    """``(can we rerank, why not)``. The reason is ``""`` when we can.
+
+    Cheap enough to call before assembling passages: it asks only whether
+    anything is configured and never sends a rerank request. (A
+    subscription-backed endpoint may refresh a token while resolving its
+    credentials, which is the same cost every other backend call here pays.)
+    """
+    return (True, "") if _resolve_reranker(owner) else (False, REASON_NO_RERANKER)
+
+
+# ---------------------------------------------------------------------------
+# The call
+# ---------------------------------------------------------------------------
+
+
+def _passage_text(passage: Any) -> str:
+    """The text to score. Accepts a bare string or any ``{"text": ...}`` row."""
+    if isinstance(passage, Mapping):
+        value = passage.get("text")
+        return "" if value is None else str(value)
+    return "" if passage is None else str(passage)
+
+
+def _parse_scores(payload: Any, count: int) -> Optional[Dict[int, float]]:
+    """``{index: score}`` from a rerank response, or None if it is unusable.
+
+    llama.cpp answers ``{"results": [{"index", "relevance_score"}]}``; other
+    OpenAI-compatible servers spell the same thing ``data`` and ``score``.
+    Both are accepted, indices outside the batch are dropped rather than
+    trusted, and a response with no usable row at all is ``bad_response``
+    instead of a silently empty reranking.
+    """
+    if not isinstance(payload, Mapping):
+        return None
+    rows = payload.get("results")
+    if not isinstance(rows, list):
+        rows = payload.get("data")
+    if not isinstance(rows, list):
+        return None
+    scores: Dict[int, float] = {}
+    for row in rows:
+        if not isinstance(row, Mapping):
+            continue
+        try:
+            index = int(row.get("index"))
+        except (TypeError, ValueError):
+            continue
+        if not 0 <= index < count:
+            continue
+        raw = row.get("relevance_score")
+        if raw is None:
+            raw = row.get("score")
+        try:
+            scores[index] = float(raw)
+        except (TypeError, ValueError):
+            continue
+    return scores or None
+
+
+def rerank(query: Any, passages: Sequence[Any], *, owner: Optional[str] = None,
+           top_k: Optional[int] = None, head: Optional[int] = None,
+           timeout: Optional[float] = None) -> RerankResult:
+    """Reorder ``passages`` by a cross-encoder's score for ``query``. Never raises.
+
+    ``passages`` may be strings or ``{"text": ...}`` rows; whatever is passed
+    comes back, so metadata rides along untouched. Only the first ``head``
+    entries (default :data:`RERANK_HEAD`) are scored; the rest keep their
+    incoming order behind them. ``top_k`` truncates the result.
+
+    On any failure the result is the input order plus a named ``reason`` —
+    see the module docstring. Callers are expected to surface that reason,
+    because a search that quietly stopped reranking looks identical to one
+    that never had a reranker.
+    """
+    items = list(passages or ())
+    text = str(query if query is not None else "").strip()
+    if not items or not text:
+        # Nothing to reorder, so nothing was withheld: this is not a
+        # degradation and must not be reported as one.
+        return RerankResult(passages=items, order=list(range(len(items))),
+                            scores=[None] * len(items), reranked=True, reason=None)
+
+    route = _resolve_reranker(owner)
+    if not route:
+        # The no-reranker path must not touch the network at all — that is
+        # what makes this safe to call on every search on a machine that has
+        # never pulled a cross-encoder.
+        return _unchanged(items, REASON_NO_RERANKER)
+
+    try:
+        head_n = max(1, int(head if head is not None else RERANK_HEAD))
+    except (TypeError, ValueError):
+        head_n = RERANK_HEAD
+    head_items = items[:head_n]
+    documents = [_passage_text(item)[:MAX_PASSAGE_CHARS] for item in head_items]
+
+    try:
+        budget = float(timeout if timeout is not None else DEFAULT_TIMEOUT)
+    except (TypeError, ValueError):
+        budget = DEFAULT_TIMEOUT
+
+    payload = {"model": route["model"], "query": text, "documents": documents,
+               "top_n": len(documents)}
+
+    try:
+        import httpx
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("rerank: no HTTP client available (%s)", exc)
+        return _unchanged(items, REASON_UNREACHABLE, route.get("model"))
+
+    try:
+        with httpx.Client(timeout=httpx.Timeout(
+                connect=min(CONNECT_TIMEOUT, budget), read=budget,
+                write=budget, pool=min(CONNECT_TIMEOUT, budget))) as client:
+            response = client.post(route["url"], json=payload,
+                                   headers=route.get("headers") or {})
+            response.raise_for_status()
+            body = response.json()
+    except httpx.TimeoutException:
+        logger.info("rerank: %s did not answer within %.1fs; serving the fused order",
+                    route["url"], budget)
+        return _unchanged(items, REASON_TIMEOUT, route.get("model"))
+    except httpx.HTTPStatusError as exc:
+        status = exc.response.status_code if exc.response is not None else "?"
+        logger.info("rerank: %s answered %s; serving the fused order", route["url"], status)
+        return _unchanged(items, REASON_UNREACHABLE, route.get("model"))
+    except Exception as exc:  # noqa: BLE001 - refused, DNS, bad TLS, unparseable JSON
+        logger.info("rerank: %s unreachable (%s); serving the fused order", route["url"], exc)
+        return _unchanged(items, REASON_UNREACHABLE, route.get("model"))
+
+    scored = _parse_scores(body, len(documents))
+    if not scored:
+        logger.info("rerank: %s answered something unusable; serving the fused order",
+                    route["url"])
+        return _unchanged(items, REASON_BAD_RESPONSE, route.get("model"))
+
+    # Ties and unscored passages keep their fused position, so the reranker
+    # only ever moves what it actually had an opinion about.
+    head_order = sorted(range(len(head_items)),
+                        key=lambda i: (-scored.get(i, float("-inf")), i))
+    order = head_order + list(range(len(head_items), len(items)))
+    ordered = [items[i] for i in order]
+    ordered_scores: List[Optional[float]] = [scored.get(i) if i < len(head_items) else None
+                                             for i in order]
+
+    if top_k is not None:
+        try:
+            limit = max(1, int(top_k))
+            order, ordered, ordered_scores = (order[:limit], ordered[:limit],
+                                              ordered_scores[:limit])
+        except (TypeError, ValueError):
+            pass
+
+    return RerankResult(passages=ordered, order=order, scores=ordered_scores,
+                        reranked=True, reason=None, model=route.get("model"))
