@@ -438,6 +438,36 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "expert_review",
+            "description": "Have a specialist expert (a profile plus its OWN indexed corpus of books) review a passage of the user's text and return typed span deltas — never rewritten prose. 'review' runs the pass: each correction is {op EDIT/ADD/KILL, span, quote, replacement, rationale, rule, severity} and is either ANCHORED to the corpus (with the book and page it came from) or labelled \"model's opinion, not the corpus\"; a page is never invented. 'experts' shows a profile, 'bible' reads the project's story bible or checks a passage against it for continuity errors (the character whose eyes changed colour between chapters), 'apply' splices accepted deltas into the text, 'feedback' reports how many corrections were accepted or rejected so the expert's retrieval learns.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string",
+                               "enum": ["review", "experts", "bible", "apply", "feedback"]},
+                    "slug": {"type": "string", "description": "Which expert, e.g. 'brenner_bot'"},
+                    "text": {"type": "string",
+                             "description": "The passage to review, apply deltas to, or check for continuity"},
+                    "deltas": {"type": "array", "items": {"type": "object"},
+                               "description": "For 'apply': the deltas from a review. For 'bible': typed ADD/EDIT/KILL bible edits with a rationale"},
+                    "accept": {"type": "array", "items": {"type": "string"},
+                               "description": "For 'apply': the delta ids to accept, e.g. [\"D1\",\"D3\"]. Omit to accept all"},
+                    "max_chars": {"type": "integer", "minimum": 400, "maximum": 20000,
+                                  "description": "Scene chunk size for long text (default 3000)"},
+                    "accepted": {"type": "integer", "minimum": 0,
+                                 "description": "For 'feedback': how many corrections the user accepted"},
+                    "rejected": {"type": "integer", "minimum": 0,
+                                 "description": "For 'feedback': how many the user rejected"},
+                    "use_bible": {"type": "boolean",
+                                  "description": "For 'review': feed the project's story bible and its continuity findings into the pass (default true)"}
+                },
+                "required": ["action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "chat_with_model",
             "description": "Send a message to another AI model and get its response. Use for getting a second opinion, delegating subtasks, or AI-to-AI communication.",
             "parameters": {
@@ -1696,6 +1726,8 @@ def function_call_to_tool_block(name: str, arguments: str) -> Optional[ToolBlock
     elif tool_type == "project_objectives":
         content = json.dumps(args)
     elif tool_type == "memory_rules":
+        content = json.dumps(args)
+    elif tool_type == "expert_review":
         content = json.dumps(args)
     elif tool_type == "chat_with_model":
         content = args.get("model", "") + "\n" + args.get("message", "")

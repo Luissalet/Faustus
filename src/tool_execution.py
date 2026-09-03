@@ -687,6 +687,126 @@ async def _document_tool_dispatch(
 
 
 # ---------------------------------------------------------------------------
+# expert_review
+# ---------------------------------------------------------------------------
+
+
+def _expert_llm_call(expert: Dict, owner: Optional[str], session_id: Optional[str]):
+    """The model function `src.expert_review.review` calls, bound to the
+    expert's OWN model. Injected rather than imported by the review module so
+    the whole pipeline stays testable without a model."""
+    async def _call(messages):
+        from src.ai_interaction import AI_CHAT_TIMEOUT, _resolve_model
+        from src.llm_core import llm_call_async
+        model_spec = str((expert or {}).get("model") or "").strip()
+        url, model, headers = await asyncio.to_thread(
+            _resolve_model, model_spec or "auto", owner=owner)
+        kwargs = {}
+        try:
+            if (expert or {}).get("temperature") is not None:
+                kwargs["temperature"] = float(expert["temperature"])
+        except (TypeError, ValueError):
+            pass
+        return await llm_call_async(url, model, messages, headers=headers,
+                                    timeout=AI_CHAT_TIMEOUT, session_id=session_id,
+                                    **kwargs)
+    return _call
+
+
+async def _expert_review_action(action: str, args: Dict, session_id: Optional[str],
+                                owner: Optional[str]) -> Dict:
+    """One `expert_review` call. Returns a result dict — including the error
+    shape — and never raises anything but ExpertReviewError/ValueError, which
+    the dispatcher turns into a tool error the model can read."""
+    from src import expert_review as review_mod
+    from src import story_bible as bible_mod
+
+    def _project():
+        from services.projects import project_for_session
+        return project_for_session(session_id or "", owner)
+
+    if action == "experts":
+        slug = str(args.get("slug") or "").strip()
+        if slug:
+            expert = review_mod.load_expert(slug)
+            return {"expert": {k: expert.get(k) for k in
+                               ("slug", "name", "model", "rubric", "instructions")
+                               if k in expert}}
+        listing = None
+        for name in ("list_experts", "list_all", "all_experts", "experts"):
+            fn = review_mod._experts_fn(name)
+            if fn is None:
+                continue
+            try:
+                listing = fn()
+                break
+            except Exception:  # noqa: BLE001 - try the next spelling instead
+                continue
+        if listing is None:
+            raise review_mod.ExpertReviewError(
+                "The expert store does not expose a listing here; call "
+                "expert_review with action 'experts' and a slug to read one profile")
+        rows = []
+        for item in listing or []:
+            if isinstance(item, dict):
+                rows.append({k: item.get(k) for k in ("slug", "name", "model")
+                             if k in item})
+            else:
+                rows.append({"slug": str(item)})
+        return {"experts": rows}
+
+    if action == "bible":
+        project = _project()
+        if not project:
+            return {"error": "This chat is not attached to a project", "exit_code": 1}
+        deltas = args.get("deltas")
+        if isinstance(deltas, list) and deltas:
+            return bible_mod.apply_deltas(project, deltas, "agent", session_id=session_id)
+        text = str(args.get("text") or "")
+        if text.strip():
+            bible = bible_mod.load_bible(project)
+            return {"findings": bible_mod.check_continuity(text, bible),
+                    "candidates": bible_mod.extract_candidates(text, bible),
+                    "counts": {s: len(bible.get(s) or []) for s in bible_mod.SECTIONS}}
+        return bible_mod.payload(project)
+
+    if action == "apply":
+        text = str(args.get("text") or "")
+        deltas = args.get("deltas")
+        if not isinstance(deltas, list):
+            raise review_mod.ExpertReviewError("'apply' needs the deltas from a review")
+        accept = args.get("accept")
+        accept = list(accept) if isinstance(accept, (list, tuple)) else None
+        applied = review_mod.apply_deltas(text, deltas, accept)
+        return {"text": applied, "applied": len(accept) if accept is not None else len(deltas)}
+
+    if action == "feedback":
+        return review_mod.record_feedback(str(args.get("slug") or ""),
+                                          args.get("accepted") or 0,
+                                          args.get("rejected") or 0)
+
+    if action != "review":
+        raise review_mod.ExpertReviewError(
+            "Action must be review, experts, bible, apply or feedback")
+
+    slug = str(args.get("slug") or "").strip()
+    text = str(args.get("text") or "")
+    expert = review_mod.load_expert(slug)
+    story = None
+    if args.get("use_bible", True):
+        try:
+            project = _project()
+            if project:
+                story = bible_mod.load_bible(project)
+        except Exception as exc:  # noqa: BLE001 - the bible is optional context
+            logger.debug("expert_review could not load the story bible: %s", exc)
+    result = await review_mod.review(
+        slug, text, llm_call=_expert_llm_call(expert, owner, session_id),
+        story=story, max_chars=args.get("max_chars"))
+    return review_mod.compact_result(result)
+
+
+# ---------------------------------------------------------------------------
 # Dispatcher
 # ---------------------------------------------------------------------------
 
@@ -1238,6 +1358,20 @@ async def _execute_tool_block_impl(
                     "Action must be add, search, feedback or list")
             desc = f"memory_rules: {action}"
         except (_engine.MemoryEngineError, ValueError, TypeError,
+                json.JSONDecodeError) as exc:
+            result = {"error": str(exc), "exit_code": 1}
+    elif tool == "expert_review":
+        desc = "expert_review"
+        from src import expert_review as _review
+        try:
+            args = json.loads(content or "{}")
+            if not isinstance(args, dict):
+                raise _review.ExpertReviewError(
+                    "expert_review arguments must be an object")
+            action = str(args.get("action") or "review").strip().lower()
+            result = await _expert_review_action(action, args, session_id, owner)
+            desc = f"expert_review: {action}"
+        except (_review.ExpertReviewError, ValueError, TypeError,
                 json.JSONDecodeError) as exc:
             result = {"error": str(exc), "exit_code": 1}
     elif tool in ("chat_with_model", "ask_teacher", "list_models"):

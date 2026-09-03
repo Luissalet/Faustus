@@ -137,6 +137,14 @@ _register(
         # a fixed trust class and append-only feedback events), never to the
         # workspace — same reasoning as project_objectives above.
         "memory_rules",
+        # expert_review reads the user's own text and the expert's local
+        # corpus, and its only write is the project's own .odysseus/
+        # story_bible.json through a validated ADD/EDIT/KILL compiler — never
+        # free-form file content. Same class as project_objectives above.
+        # The result is EXTERNAL_UNTRUSTED because it carries corpus excerpts
+        # and a local model's answer about them: book text is data, never an
+        # instruction to the agent that reads it back.
+        "expert_review",
         "read_email",
         "resolve_contact",
         "scan_email_unsubscribes",

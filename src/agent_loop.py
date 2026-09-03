@@ -519,7 +519,8 @@ _DOMAIN_RULES = {
 - For long code/content (>15 lines), use `create_document` instead of pasting into chat.
 - If an active document is open, "fix this", "add X", "change Y", etc. usually refers to that document.
 - Use `edit_document` for targeted changes. Use `update_document` only for genuine full rewrites.
-- For feedback/review/suggestions on an open document, use `suggest_document`.""",
+- For feedback/review/suggestions on an open document, use `suggest_document`.
+- To review the user's writing against a specialist's OWN corpus (a style bible, an author's craft books) or to check a passage for continuity, use `expert_review`. Repeat its anchored/opinion label for every correction you pass on: a correction marked "model's opinion, not the corpus" may never be reported as coming from a book, and a page number that is not in the result is not a page number.""",
     "email": """\
 ## Email rules
 - Email UIDs are the values after `UID:` in tool output, never list row numbers.
@@ -577,7 +578,7 @@ _DOMAIN_RULES = {
 
 _DOMAIN_TOOL_MAP = {
     "web": set(WEB_TOOL_NAMES),
-    "documents": {"create_document", "edit_document", "update_document", "suggest_document", "manage_documents"},
+    "documents": {"create_document", "edit_document", "update_document", "suggest_document", "manage_documents", "expert_review"},
     "email": {"list_email_accounts", "list_emails", "read_email", "scan_email_unsubscribes", "unsubscribe_email", "send_email", "reply_to_email", "bulk_email", "archive_email", "delete_email", "mark_email_read", "resolve_contact", "manage_contact"},
     "cookbook": {"download_model", "serve_model", "serve_preset", "list_serve_presets", "list_served_models", "stop_served_model", "tail_serve_output", "list_downloads", "cancel_download", "search_hf_models", "list_cached_models", "list_cookbook_servers", "adopt_served_model"},
     "notes_calendar_tasks": {"manage_notes", "manage_calendar", "manage_tasks"},
@@ -760,6 +761,7 @@ TOOL_SECTIONS = {
     "search_project_chats": "- ```search_project_chats``` - Search only earlier transcripts from the current project. Use for prior project decisions, attempts and discussions before answering from memory or guessing.",
     "project_context": "- ```project_context``` - Inspect roots attached to the current project. Args (JSON): {\"action\":\"list|read|search\",\"item_id\":\"...\",\"path\":\"relative/file\",\"query\":\"...\"}. Attached roots are real working roots: normal file tools may read and modify them.",
     "project_objectives": "- ```project_objectives``` - Read or update the project's objectives dashboard. Args (JSON): {\"action\":\"list|apply\",\"deltas\":[{\"op\":\"ADD|EDIT|KILL\",\"id\":\"OBJ-1\",\"title\":\"...\",\"status\":\"open|in_progress|blocked|done|dropped\",\"priority\":1,\"deps\":[\"OBJ-2\"],\"rationale\":\"...\"}]}. When a turn of real work ends, update with typed deltas and a rationale; never rewrite the whole list, and only mark statuses that reflect what actually changed on disk.",
+    "expert_review": "- ```expert_review``` - Have a specialist expert (a profile plus its OWN indexed corpus of books) review a passage of the user's writing. Args (JSON): {\"action\":\"review|experts|bible|apply|feedback\",\"slug\":\"brenner_bot\",\"text\":\"...\",\"deltas\":[...],\"accept\":[\"D1\"],\"accepted\":2,\"rejected\":1}. `review` returns typed span deltas over the ORIGINAL text (EDIT/ADD/KILL with the quote they replace, a rationale, a rubric rule and a severity) — never rewritten prose. Each correction is either ANCHORED to the corpus, with the book and page it came from, or labelled \"model's opinion, not the corpus\": pass that label on to the user verbatim, never present an opinion as coming from a book, and never invent a page number. `bible` checks a passage against the project's story bible for continuity errors. Accepting or rejecting corrections is the user's call, not yours; report the outcome with `feedback`.",
     "memory_rules": "- ```memory_rules``` - The learned-memory store: rules and facts scored by what happened after they were used. Args (JSON): {\"action\":\"add|search|feedback|list\",\"text\":\"...\",\"level\":\"procedural|semantic\",\"query\":\"...\",\"id\":\"ab12cd34\",\"kind\":\"helpful|harmful\",\"reason\":\"...\"}. Add a rule ONLY when a turn taught you something reusable (a rule to follow -> level procedural; a durable fact -> semantic), never to restate the request. When a rule from the 'Learned rules' block turned out to be right or wrong, say so with feedback and its [id8] — that is how the store learns and how a bad rule gets retired.",
     "bash": """\
 ```bash
