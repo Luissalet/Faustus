@@ -489,3 +489,28 @@ def test_server_values_cannot_break_out_of_a_class_or_an_attribute():
     assert "<img" not in out["card"] and 'onload="' not in out["card"]
     assert "&lt;img src=x&gt;" in out["card"]
     assert 'onload="' not in out["state"] and "trn-state-weirdonload1" in out["state"]
+
+
+def test_the_board_follows_the_stream_and_falls_back_to_polling():
+    """The page must consume the SSE endpoint it ships with, and must never be
+    left frozen when the stream is unavailable.
+
+    The bug this pins: the server's progress frames arrive UNNAMED, so they only
+    reach `onmessage`. A page listening on a named event — or not listening at
+    all, as this one originally did — shows a board that never moves while the
+    run is live.
+    """
+    src = SRC
+    assert "EventSource(" in src, "the page never opens the stream it ships with"
+    assert "es.onmessage" in src, "unnamed progress frames only reach onmessage"
+    assert "addEventListener('end'" in src, "the terminal frame is named 'end'"
+    assert "_noStream" in src and "es.onerror" in src, \
+        "a failed stream must latch and fall back to polling"
+    # the fallback must still exist
+    assert "setTimeout(poll, POLL_MS)" in src
+
+
+def test_a_stream_and_a_poll_timer_never_run_at_once():
+    """Both feeding the board would double every request for no extra freshness."""
+    src = SRC
+    assert "if (_stream) {" in src, "poll() must not reschedule while a stream feeds it"

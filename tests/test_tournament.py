@@ -783,12 +783,24 @@ def test_robot_projection_of_a_shape_it_did_not_expect_comes_back_unchanged():
     assert tr.lean_status({})["final"] == [] and tr.lean_status({})["answers"] == []
 
 
-def test_the_event_stream_ends_with_a_done_frame(monkeypatch):
+def test_the_event_stream_ends_with_an_end_frame(monkeypatch):
+    """Progress frames are UNNAMED and the terminal one is named `end` — the
+    same shape /api/dispatch/{id}/events?stream=1 uses.
+
+    This is not cosmetic: a frame carrying an `event: <name>` line never reaches
+    `EventSource.onmessage`, only a listener registered for that exact name. Two
+    SSE endpoints in one app disagreeing about it means a page written against
+    one silently receives nothing from the other.
+    """
     c = _client(monkeypatch)
     run_id = c.post("/api/tournament", json={"prompt": "t", "models": ["a:9b", "b:8b"],
                                              "rounds": 1}).json()["id"]
     c.get(f"/api/tournament/{run_id}/wait?timeout=5")
     r = c.get(f"/api/tournament/{run_id}/events?stream=1")
     assert r.status_code == 200 and "text/event-stream" in r.headers["content-type"]
-    assert "event: event" in r.text and "event: done" in r.text
+    # progress frames reach onmessage: a bare `data:` line, no `event:` before it
+    assert "\ndata: " in ("\n" + r.text)
+    assert "event: event" not in r.text
+    # exactly one named frame, the terminal one
+    assert r.text.count("event: ") == 1 and "event: end" in r.text
     assert '"status": "done"' in r.text

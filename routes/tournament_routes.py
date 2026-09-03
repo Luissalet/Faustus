@@ -276,8 +276,16 @@ def setup_tournament_routes() -> APIRouter:
 
 async def _event_stream(run_obj: "tournament.TournamentRun"):
     """`?stream=1`: the events already recorded, then the new ones as they
-    land, then one `done` frame. Bounded in time so a forgotten tab cannot
+    land, then one `end` frame. Bounded in time so a forgotten tab cannot
     hold a worker forever; the polling shape (no `stream`) says the same thing.
+
+    Frame naming matches `/api/dispatch/{id}/events?stream=1`, and it matters:
+    an event with a `event: <name>` line does NOT reach `EventSource.onmessage`,
+    only a listener registered for that exact name. Two SSE endpoints in one app
+    disagreeing about that is a trap — a page written against one silently
+    receives nothing from the other. So progress frames are unnamed (they arrive
+    on `onmessage`) and only the terminal frame is named `end`, exactly as
+    dispatch does it.
     """
     started = time.monotonic()
     sent = 0
@@ -285,26 +293,30 @@ async def _event_stream(run_obj: "tournament.TournamentRun"):
         while True:
             events = list(run_obj.events)
             for ev in events[sent:]:
-                yield _sse("event", ev)
+                yield _sse("", ev)
             sent = len(events)
             if run_obj.status not in ("queued", "running", "judging", "cancelling"):
-                yield _sse("done", {"id": run_obj.id, "status": run_obj.status})
+                yield _sse("end", {"id": run_obj.id, "status": run_obj.status})
                 return
             if time.monotonic() - started > _STREAM_MAX_S:
-                yield _sse("done", {"id": run_obj.id, "status": run_obj.status,
-                                    "timeout": True})
+                yield _sse("end", {"id": run_obj.id, "status": run_obj.status,
+                                   "timeout": True})
                 return
             await asyncio.sleep(_STREAM_TICK_S)
     except asyncio.CancelledError:      # the browser went away
         raise
     except Exception as e:  # noqa: BLE001 - a stream never 500s a finished run
         logger.debug("tournament: event stream ended: %s", e)
-        yield _sse("done", {"id": getattr(run_obj, "id", ""), "status": "error"})
+        yield _sse("end", {"id": getattr(run_obj, "id", ""), "status": "error"})
 
 
 def _sse(name: str, data: Any) -> str:
+    """One SSE frame. An empty `name` means an unnamed frame, which is the one
+    shape `EventSource.onmessage` receives; a name is only for the terminal
+    `end` frame a listener opts into."""
     try:
         body = json.dumps(data, ensure_ascii=False, default=str)
     except Exception:  # noqa: BLE001
         body = "{}"
-    return f"event: {name}\ndata: {body}\n\n"
+    head = f"event: {name}\n" if name else ""
+    return f"{head}data: {body}\n\n"

@@ -606,13 +606,50 @@ async function startRun() {
   }
 }
 
+// The board follows a live run over SSE (/api/tournament/{id}/events?stream=1)
+// and only falls back to the 1.5 s poll when there is no EventSource, the
+// stream errors, or a proxy swallows it. `_noStream` latches on the first
+// failure so a broken stream is not re-opened on every refresh.
+// Frames arrive UNNAMED (onmessage) with a final named `end`, the same shape
+// /api/dispatch/{id}/events uses — a page written for one works with the other.
+let _stream = null;
+let _noStream = false;
+
+function stopStream() {
+  if (_stream) { try { _stream.close(); } catch (_) { /* already gone */ } _stream = null; }
+}
+
 function stopPolling() {
   if (_timer) { clearTimeout(_timer); _timer = null; }
+  stopStream();
+}
+
+function followRun() {
+  if (_stream || _noStream || typeof EventSource === 'undefined') return false;
+  if (!_run || !_run.id || !isLiveStatus(_run.status)) return false;
+  let es;
+  try {
+    es = new EventSource(`/api/tournament/${encodeURIComponent(_run.id)}/events?stream=1`);
+  } catch (_) {
+    _noStream = true;
+    return false;
+  }
+  _stream = es;
+  es.onmessage = () => { poll(); };
+  es.addEventListener('end', () => { stopStream(); poll(); });
+  es.onerror = () => {
+    // Never leave the board frozen: drop back to polling for good.
+    _noStream = true;
+    stopStream();
+    schedulePoll();
+  };
+  return true;
 }
 
 function schedulePoll() {
-  stopPolling();
-  if (!_run || !isLiveStatus(_run.status)) return;
+  if (_timer) { clearTimeout(_timer); _timer = null; }
+  if (!_run || !isLiveStatus(_run.status)) { stopStream(); return; }
+  if (followRun()) return;
   _timer = setTimeout(poll, POLL_MS);
 }
 
@@ -625,6 +662,9 @@ async function poll() {
     const host = $(BOARD_ID);
     if (host) inlineError(host, String(error && error.message ? error.message : error));
   }
+  // While a stream is feeding us, this call came FROM it: rescheduling here
+  // would start a redundant poll timer alongside it.
+  if (_stream) { if (!isLiveStatus(_run && _run.status)) stopStream(); return; }
   schedulePoll();
 }
 
