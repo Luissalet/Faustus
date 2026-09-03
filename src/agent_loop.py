@@ -8004,7 +8004,26 @@ async def stream_agent_loop(
             if block.tool_type in _VERIFIER_EFFECTFUL_TOOLS:
                 _effectful_used = True
 
-            formatted = format_tool_result(desc, result)
+            # What the MODEL sees from a browser page carries provenance
+            # anchors (src/web_provenance.py): the url, the character range and
+            # a content hash per block, so a later claim can be checked against
+            # what was actually fetched instead of taken on trust. The anchors
+            # are HTML comments, so nothing the user reads changes; only this
+            # local copy is annotated, and `annotate_page_text` returns None
+            # (keep the object untouched) whenever the setting is off, the tool
+            # returned no page text, or there is no URL to anchor to — which is
+            # what keeps a setting-off run byte-identical.
+            _model_result = result
+            if block.tool_type.startswith(_BROWSER_MCP_PREFIX):
+                try:
+                    from src.browser_view import annotate_page_text as _annotate_page
+                    _anchored = _annotate_page(block.tool_type, result)
+                    if _anchored is not None:
+                        _model_result = _anchored
+                except Exception as _wp_err:  # noqa: BLE001 - never cost a turn
+                    logger.debug("[web-provenance] skipped for %s: %s", block.tool_type, _wp_err)
+
+            formatted = format_tool_result(desc, _model_result)
             tool_results.append(formatted)
             tool_result_texts.append(formatted)
             _record = {

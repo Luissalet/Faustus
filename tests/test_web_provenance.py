@@ -210,3 +210,37 @@ def test_the_seam_never_raises(monkeypatch):
 
     monkeypatch.setattr(wp, "annotate", boom)
     assert browser_view.annotate_page_text(SNAPSHOT_TOOL, _result(), {}) is None
+
+
+# ── the seam is actually wired into the loop ──────────────────────────────
+# A provenance module nothing calls is documentation, not a feature. These pin
+# the wiring itself, because the annotation is invisible in the UI (the anchors
+# are HTML comments) and a silent disconnection would never be noticed.
+
+def _loop_source():
+    from pathlib import Path
+    return (Path(__file__).resolve().parents[1] / "src/agent_loop.py").read_text(encoding="utf-8")
+
+
+def test_the_agent_loop_annotates_browser_results_before_the_model_sees_them():
+    src = _loop_source()
+    assert "annotate_page_text as _annotate_page" in src, \
+        "the loop must call the provenance seam"
+    assert "_model_result = result" in src and "format_tool_result(desc, _model_result)" in src, \
+        "the annotated copy, not the original, is what gets formatted for the model"
+
+
+def test_only_the_model_copy_is_annotated():
+    """The tool_event, the harness ledger and everything the USER sees must keep
+    the original object: the anchors are for the model's own citations."""
+    src = _loop_source()
+    head = src.split("_model_result = result", 1)[0]
+    assert "tool_events.append(tool_event)" in head, \
+        "the UI event is built before the annotated copy exists, so it cannot carry anchors"
+
+
+def test_the_wiring_can_never_cost_a_turn():
+    src = _loop_source()
+    block = src.split("_model_result = result", 1)[1].split("formatted =", 1)[0]
+    assert "try:" in block and "except Exception" in block, \
+        "a provenance failure must degrade to the untouched result, never raise"

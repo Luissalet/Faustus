@@ -633,6 +633,18 @@ _APP_API_BLOCKLIST_METHOD_PATH = (
     ("POST",   "/api/local-models/load"),
     ("POST",   "/api/local-models/unload"),
     ("PUT",    "/api/local-models"),
+    # Storage: the same hole as Local models above, and worse in kind. These
+    # writes allocate gigabytes of ballast, free it again, and MOVE the
+    # operator's files into quarantine — on a machine whose disk pressure is
+    # the very thing the feature exists to manage. A model that read a web page
+    # asking it to "free up space" must not be able to reach them through the
+    # internal token. GET /api/storage/status (free space, urgency, the scored
+    # candidates and why each was vetoed) stays open: it is the read the model
+    # needs in order to TELL the user what it found.
+    ("POST",   "/api/storage/ballast"),
+    ("POST",   "/api/storage/release"),
+    ("POST",   "/api/storage/quarantine"),
+    ("POST",   "/api/storage/undo"),
 )
 
 
@@ -758,6 +770,12 @@ async def do_app_api(content: str, owner: Optional[str] = None) -> Dict:
             return {"error": f"{method} {path} is blocked for safety — releasing an orphaned model runner kills a "
                              "process on this machine; that is the admin's usage panel / Settings → Local models "
                              "surface. Tell the user a runner is orphaned instead.", "exit_code": 1}
+        if path.startswith("/api/storage/"):
+            return {"error": f"{method} {path} is blocked for safety — allocating or releasing ballast and moving "
+                             "the operator's files into quarantine are the admin's Storage surface, and a page the "
+                             "model just read must not be able to reach them. GET /api/storage/status is allowed: "
+                             "read it and TELL the user what is filling the disk and what could be freed.",
+                    "exit_code": 1}
         if path.startswith("/api/local-models"):
             return {"error": f"{method} {path} is blocked for safety — deleting, pulling, loading/unloading local models "
                              "and their load options are the admin's Settings → Local models surface; app_api reaches "

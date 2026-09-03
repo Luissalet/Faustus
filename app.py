@@ -870,6 +870,13 @@ app.include_router(setup_provenance_routes())
 from routes.history_import_routes import setup_history_import_routes
 app.include_router(setup_history_import_routes())
 
+# Disk headroom: preallocated ballast that can be released instantly, a scored
+# list of Faustus's own re-derivable artifacts, and quarantine-with-undo instead
+# of deletion (src/disk_ballast.py). Ships in `observe` mode, so registering it
+# measures and reports and touches nothing until the operator opts in.
+from routes.storage_routes import setup_storage_routes
+app.include_router(setup_storage_routes())
+
 # Live system usage (ollama ps + nvidia-smi + RAM/CPU) for the chat usage widget.
 from routes.system_usage_routes import setup_system_usage_routes
 app.include_router(setup_system_usage_routes())
