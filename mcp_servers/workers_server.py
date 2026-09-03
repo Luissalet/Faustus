@@ -31,6 +31,7 @@ import json
 import os
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 from pathlib import Path
@@ -325,6 +326,20 @@ TOOLS: List[Tool] = [
         }, "required": ["project"]},
     ),
     Tool(
+        name="guard_explain",
+        description=(
+            "Pre-check a shell command against Faustus's destructive-command guard BEFORE dispatching "
+            "workers that would run it: returns the tier (SAFE/CAUTION/DANGEROUS/CRITICAL), the rule "
+            "that matched, whether an allowlist entry covers it, the current guard mode, and the full "
+            "classification trace. DANGEROUS/CRITICAL commands stop for a per-command approval card in "
+            "enforce mode, so a coordinator should either avoid them, allowlist a reviewed pattern, or "
+            "expect the run to wait for the owner."
+        ),
+        inputSchema={"type": "object", "properties": {
+            "command": {"type": "string", "description": "The exact command to classify."},
+        }, "required": ["command"]},
+    ),
+    Tool(
         name="objectives_apply",
         description=(
             "Update a Faustus project's objectives with TYPED DELTAS (never a rewrite). Each delta: "
@@ -364,6 +379,31 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
             result = await asyncio.to_thread(
                 _request, "POST", f"/api/projects/{project.get('id')}/objectives/deltas", body)
             return _text(render_apply(result))
+        if name == "guard_explain":
+            command = str(args.get("command") or "")
+            if not command.strip():
+                return _text("Error: give the exact command to classify")
+            quoted = urllib.parse.quote(command, safe="")
+            data = await asyncio.to_thread(
+                _request, "GET", f"/api/command-guard/explain?command={quoted}")
+            lines = [
+                f"tier: {data.get('tier')} · rule: {data.get('rule_id') or '-'} · mode: {data.get('mode')}",
+                f"command: {data.get('command_head')}",
+            ]
+            if data.get("matched"):
+                lines.append(f"matched: {data['matched']}")
+            if data.get("allowlisted"):
+                entry = data["allowlisted"]
+                lines.append(
+                    f"allowlisted: {entry.get('kind')} {entry.get('pattern')!r}"
+                    + (f" (reason: {entry.get('reason')})" if entry.get("reason") else "")
+                )
+            if data.get("fail_open"):
+                lines.append("NOTE: classification hit its budget — fail-open verdict")
+            for step in data.get("trace") or []:
+                lines.append("  " + str(step)[:200])
+            lines.append(f"rules tested: {data.get('rules_tested')} · packs: {', '.join(data.get('packs') or [])}")
+            return _text("\n".join(lines))
         if name == "dispatch_workers":
             body = {k: v for k, v in args.items() if v is not None}
             job = await asyncio.to_thread(_request, "POST", "/api/dispatch", body)
