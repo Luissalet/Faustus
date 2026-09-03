@@ -34,6 +34,7 @@ from datetime import datetime
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Sequence
 
+from src.chat_export import is_document
 from src.chat_export_model import (
     Block,
     ExportMessage,
@@ -435,10 +436,14 @@ def _add_spans(paragraph, spans: Sequence[Span], ctx: "_Ctx") -> None:
 class _Ctx:
     """Per-export state: the document, its styles and the usable text width."""
 
-    def __init__(self, document, styles: Dict[str, Any], text_width_pt: float):
+    def __init__(self, document, styles: Dict[str, Any], text_width_pt: float,
+                 document_mode: bool = False):
         self.document = document
         self.styles = styles
         self.text_width_pt = text_width_pt
+        # A document has no speakers and no message count to report; see
+        # ``DOCUMENT_FLAG`` in src/chat_export.py.
+        self.document_mode = document_mode
 
 
 def _add_paragraph(ctx: "_Ctx", style=None, indent_cm: Optional[float] = 0.0):
@@ -636,22 +641,23 @@ def _add_tool_call(ctx: "_Ctx", call: ToolCall, indent_cm: float) -> None:
 
 def _add_message(ctx: "_Ctx", message: ExportMessage) -> None:
     indent_cm = 0.35
-    role = _role_key(getattr(message, "role", ""))
-    banner = _add_paragraph(ctx, ctx.styles["role_" + role])
-    banner.add_run(_role_label(getattr(message, "role", "")))
+    if not ctx.document_mode:
+        role = _role_key(getattr(message, "role", ""))
+        banner = _add_paragraph(ctx, ctx.styles["role_" + role])
+        banner.add_run(_role_label(getattr(message, "role", "")))
 
-    trailing = []
-    timestamp = _format_timestamp(getattr(message, "timestamp", ""))
-    if timestamp:
-        trailing.append(timestamp)
-    model = _clean(getattr(message, "model", "")).strip()
-    if model:
-        trailing.append(model)
-    if trailing:
-        run = banner.add_run("  ·  " + "  ·  ".join(trailing))
-        run.bold = False
-        run.font.size = _dx().Pt(8.5)
-        run.font.color.rgb = _dx().RGBColor.from_string(MUTED)
+        trailing = []
+        timestamp = _format_timestamp(getattr(message, "timestamp", ""))
+        if timestamp:
+            trailing.append(timestamp)
+        model = _clean(getattr(message, "model", "")).strip()
+        if model:
+            trailing.append(model)
+        if trailing:
+            run = banner.add_run("  ·  " + "  ·  ".join(trailing))
+            run.bold = False
+            run.font.size = _dx().Pt(8.5)
+            run.font.color.rgb = _dx().RGBColor.from_string(MUTED)
 
     _add_blocks(ctx, getattr(message, "blocks", None) or [], indent_cm)
 
@@ -678,8 +684,10 @@ def _add_header(ctx: "_Ctx", transcript: Transcript) -> None:
     model = _clean(getattr(transcript, "model", "")).strip()
     if model:
         meta.append("%s: %s" % (LABELS["model"], model))
-    meta.append("%d %s" % (len(messages),
-                           LABELS["messages"] if len(messages) != 1 else LABELS["message"]))
+    # "1 message" is true of a document only as an accident of how it travels.
+    if not ctx.document_mode:
+        meta.append("%d %s" % (len(messages),
+                               LABELS["messages"] if len(messages) != 1 else LABELS["message"]))
     exported_at = getattr(transcript, "exported_at", None)
     if isinstance(exported_at, datetime):
         meta.append("%s %s" % (LABELS["exported"], exported_at.strftime("%Y-%m-%d %H:%M")))
@@ -690,8 +698,10 @@ def _add_header(ctx: "_Ctx", transcript: Transcript) -> None:
         if value:
             meta.append("%s: %s" % (LABELS["session" if key == "session_id" else key], value))
 
-    paragraph = _add_paragraph(ctx, ctx.styles["meta"])
-    paragraph.add_run("  ·  ".join(meta))
+    # Only reachable for a document: a conversation always has its count.
+    if meta:
+        paragraph = _add_paragraph(ctx, ctx.styles["meta"])
+        paragraph.add_run("  ·  ".join(meta))
     _add_paragraph(ctx, ctx.styles["rule"])
 
 
@@ -738,7 +748,7 @@ def render(transcript: Transcript) -> bytes:
     styles = _build_styles(document)
     name = _clean(getattr(transcript, "name", "")).strip() or "Conversation"
     text_width_pt = _setup_page(document, name)
-    ctx = _Ctx(document, styles, text_width_pt)
+    ctx = _Ctx(document, styles, text_width_pt, document_mode=is_document(transcript))
 
     _add_header(ctx, transcript)
     messages = list(getattr(transcript, "messages", None) or [])

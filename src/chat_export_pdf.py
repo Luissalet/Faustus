@@ -49,6 +49,7 @@ from datetime import datetime
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from src.chat_export import is_document
 from src.chat_export_model import (
     Block,
     ExportMessage,
@@ -681,6 +682,9 @@ class _Ctx:
     kit: _FontKit
     styles: Dict[str, Any]
     width: float
+    # A document has no speakers and no message count to report; see
+    # ``DOCUMENT_FLAG`` in src/chat_export.py.
+    document_mode: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -920,23 +924,27 @@ def _tool_flowables(ctx: _Ctx, call: ToolCall, width: float) -> List[Any]:
 def _message_flowables(ctx: _Ctx, message: ExportMessage) -> List[Any]:
     rl = _rl()
     width = ctx.width - MESSAGE_INDENT
-    role = _role_key(getattr(message, "role", ""))
-    label = _role_label(getattr(message, "role", ""))
+    out: List[Any] = []
 
-    banner_bits = ["<b>%s</b>" % _markup(ctx.kit, label)]
-    trailing = []
-    timestamp = _format_timestamp(getattr(message, "timestamp", ""))
-    if timestamp:
-        trailing.append(timestamp)
-    model = _clean(getattr(message, "model", "")).strip()
-    if model:
-        trailing.append(model)
-    if trailing:
-        banner_bits.append('<font color="%s" size="8">%s</font>'
-                           % (COLOR_MUTED, _markup(ctx.kit, "  \u00b7  ".join(trailing))))
-    banner = rl.Paragraph("  \u00b7  ".join(banner_bits), ctx.styles["role_" + role])
+    if not ctx.document_mode:
+        role = _role_key(getattr(message, "role", ""))
+        label = _role_label(getattr(message, "role", ""))
 
-    out: List[Any] = [banner, rl.Indenter(left=MESSAGE_INDENT)]
+        banner_bits = ["<b>%s</b>" % _markup(ctx.kit, label)]
+        trailing = []
+        timestamp = _format_timestamp(getattr(message, "timestamp", ""))
+        if timestamp:
+            trailing.append(timestamp)
+        model = _clean(getattr(message, "model", "")).strip()
+        if model:
+            trailing.append(model)
+        if trailing:
+            banner_bits.append('<font color="%s" size="8">%s</font>'
+                               % (COLOR_MUTED, _markup(ctx.kit, "  \u00b7  ".join(trailing))))
+        out.append(rl.Paragraph("  \u00b7  ".join(banner_bits),
+                                ctx.styles["role_" + role]))
+
+    out.append(rl.Indenter(left=MESSAGE_INDENT))
     out.extend(_blocks_flowables(ctx, getattr(message, "blocks", None) or [], width))
 
     for call in getattr(message, "tool_calls", None) or []:
@@ -965,8 +973,10 @@ def _header_flowables(ctx: _Ctx, transcript: Transcript) -> List[Any]:
     model = _clean(getattr(transcript, "model", "")).strip()
     if model:
         meta.append("%s: %s" % (LABELS["model"], model))
-    meta.append("%d %s" % (len(messages),
-                           LABELS["messages"] if len(messages) != 1 else LABELS["message"]))
+    # "1 message" is true of a document only as an accident of how it travels.
+    if not ctx.document_mode:
+        meta.append("%d %s" % (len(messages),
+                               LABELS["messages"] if len(messages) != 1 else LABELS["message"]))
     exported_at = getattr(transcript, "exported_at", None)
     if isinstance(exported_at, datetime):
         meta.append("%s %s" % (LABELS["exported"], exported_at.strftime("%Y-%m-%d %H:%M")))
@@ -978,7 +988,9 @@ def _header_flowables(ctx: _Ctx, transcript: Transcript) -> List[Any]:
         if value:
             meta.append("%s: %s" % (LABELS["session" if key == "session_id" else key], value))
 
-    out.append(rl.Paragraph(_markup(ctx.kit, "  \u00b7  ".join(meta)), ctx.styles["meta"]))
+    # Only reachable for a document: a conversation always has its count.
+    if meta:
+        out.append(rl.Paragraph(_markup(ctx.kit, "  \u00b7  ".join(meta)), ctx.styles["meta"]))
     out.append(rl.HRFlowable(width="100%", thickness=0.8, spaceBefore=6, spaceAfter=2,
                              color=rl.colors.HexColor(COLOR_RULE)))
     return out
@@ -1055,7 +1067,8 @@ def render(transcript: Transcript) -> bytes:
     rl = _rl()
     kit = _font_kit()
     page_width, page_height = rl.A4
-    ctx = _Ctx(kit=kit, styles=_build_styles(kit), width=page_width - 2 * PAGE_MARGIN_X)
+    ctx = _Ctx(kit=kit, styles=_build_styles(kit), width=page_width - 2 * PAGE_MARGIN_X,
+               document_mode=is_document(transcript))
 
     story: List[Any] = _header_flowables(ctx, transcript)
     messages = list(getattr(transcript, "messages", None) or [])
