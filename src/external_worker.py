@@ -436,9 +436,28 @@ def run_task(runner_key: Any, task: str, *, workspace: Optional[str] = None,
     said about itself — a `rate_limited` agent is reported here and was NOT
     killed for it.
 
+    The gate (src/agent_gate.py) needs four things from the caller, and there
+    is deliberately no fifth that turns it off:
+
+    * ``workspace_roots`` — everything this agent may write. Defaults to the
+      workspace, which is what a dispatched job has;
+    * ``attended`` — whether the caller owns a surface that can put a question
+      to a human. The same assertion `src.tool_approvals` calls
+      ``allow_continuation``: a CAUTION command becomes an `ask` when someone
+      can answer it and a refusal when nobody can. A background job leaves it
+      False, which is the truth about a background job;
+    * ``locks`` / ``worker_key`` — this delegation's
+      :class:`~src.agent_tools.subagent_tools.FileLockRegistry` and this
+      worker's key in it, so the foreign agent cannot write the file a
+      built-in worker is holding;
+    * ``run_id`` — the id the gate's ledger and its receipts are filed under.
+
+    A gated result carries ``unguarded: False`` and a ``gate`` block; an
+    ungated one is exactly what it always was.
+
     Never raises: every failure — an unknown runner, one that is not
-    installed, a binary that will not start — comes back as a result with
-    ``error`` set.
+    installed, a binary that will not start, a gate that would not start —
+    comes back as a result with ``error`` set.
     """
     started = time.time()
     from src import agent_runners as reg
