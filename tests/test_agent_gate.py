@@ -559,6 +559,10 @@ def test_an_ungated_run_still_says_exactly_what_it_always_said():
     assert entry["detail"] == prove.EXTERNAL_UNGUARDED_DETAIL + " (qwen)"
     assert out["confidence"] == 0.9
     assert out["unguarded_runners"] == ["qwen"]
+    # Byte-identical to the packet this path produced before the gate existed:
+    # no gate ran, so there is nothing for a gate key to say.
+    assert "external_gate" not in out
+    assert not [o for o in out["observations"] if o["kind"] == "external_gate"]
 
 
 def test_a_fully_gated_run_drops_the_uncertainty_and_records_what_the_gate_saw():

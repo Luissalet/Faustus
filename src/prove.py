@@ -606,7 +606,11 @@ def note_external_gate(proof: Any, runners: Any, *, gates: Any = None) -> Any:
         packet["uncertainty"] = unc
         packet["observations"] = obs
         packet["confidence"] = round(max(0.0, confidence - cost), 3)
-        packet["external_gate"] = summary
+        if gated:
+            # Only ever present when a gate really ran. With nothing gated the
+            # packet is byte-identical to the one this path produced before the
+            # gate existed, which is what lets the caller adopt it in one line.
+            packet["external_gate"] = summary
         if ungated:
             # The key the dispatch payload and the runners page already read.
             packet["unguarded_runners"] = list(ungated)
