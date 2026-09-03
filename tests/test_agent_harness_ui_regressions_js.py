@@ -120,3 +120,19 @@ def test_the_todo_cache_is_bounded():
     assert "_lastTodosBySession.delete(" in _SRC, (
         "a cap needs an eviction; nothing ever removed an entry"
     )
+
+
+def test_the_restored_harness_badge_click_reads_the_saved_metrics_not_an_undefined_name():
+    """chatRenderer.displayMetrics(messageElement, metrics): the 🛡 badge's
+    click handler built the row's message id from `metadata` — a name that
+    does not exist in that function — so every click on a restored badge
+    died with a ReferenceError and the edited-file chips (diff vs. the
+    turn's checkpoint) never appeared. Seen live from a dispatched job's
+    Workers chat."""
+    src = (_REPO / "static" / "js" / "chatRenderer.js").read_text(encoding="utf-8")
+    body = _body(src, "export function displayMetrics(")
+    assert "metadata && metadata._db_id" not in body
+    assert "(metrics && metrics._db_id)" in body
+    # the only `metadata` in that body is prose
+    code_lines = [ln for ln in body.splitlines() if "metadata" in ln and not ln.strip().startswith("//")]
+    assert not [ln for ln in code_lines if re.search(r"\bmetadata\b", ln.split("//")[0])], code_lines

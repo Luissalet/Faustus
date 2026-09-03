@@ -2345,7 +2345,9 @@ export function displayMetrics(messageElement, metrics) {
           row = document.createElement('div');
           row.className = 'harness-turn-files';
           const esc2 = (t) => String(t ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-          const msgId = (metadata && metadata._db_id) || (footer.parentElement && footer.parentElement.dataset && footer.parentElement.dataset.dbId) || null;
+          // `metrics` is this function's argument (the saved metadata on
+          // restore); `metadata` was a ReferenceError that killed every click
+          const msgId = (metrics && metrics._db_id) || (footer.parentElement && footer.parentElement.dataset && footer.parentElement.dataset.dbId) || null;
           if (window.agentHarnessUI && typeof window.agentHarnessUI.restoredTurnFilesRow === 'function') {
             // Same files row the live Turn summary has: diff vs. the turn's
             // checkpoint, restore / revert, commit, review-mode controls.
