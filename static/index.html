@@ -353,6 +353,27 @@
     </div>
   </div>
 
+  <!-- ── Provenance ─────────────────────────────────────────────────────
+       The 2D AUDIT view over the declared-edge graph (src/provenance_graph.py):
+       why the agent believes a thing — traced to the chat, file and line that
+       account for it — what is floating or said twice, and what breaks if you
+       touch it. Deliberately not a 3D nebula. The toolbar, the canvas and the
+       evidence panel are all rendered by static/js/provenance.js. -->
+  <div id="provenance-modal" class="modal provenance-page hidden">
+    <div class="modal-content provenance-modal-content" role="region" aria-label="Provenance">
+      <button type="button" class="provenance-close-btn" id="close-provenance-modal" aria-label="Close provenance" title="Back to chat">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+      <div class="provenance-modal-body">
+        <div id="provenance-toolbar" class="provenance-toolbar"></div>
+        <div class="provenance-split">
+          <div id="provenance-main" class="provenance-view"></div>
+          <aside id="provenance-side" class="provenance-side" aria-label="Evidence chain"></aside>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div id="memory-modal" class="modal hidden">
     <div class="modal-content memory-modal-content" role="dialog" aria-label="Brain" style="background:var(--bg)">
       <div class="modal-header">
@@ -974,6 +995,17 @@
             <path d="M9 7h6"/>
           </svg>
           <span class="grow">Experts</span>
+        </div>
+        <div class="list-item" id="tool-provenance-btn" title="Provenance — why the agent believes a thing, traced to the chat, file and line it came from">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+            style="flex-shrink:0;opacity:0.5;">
+            <circle cx="5" cy="6" r="2"/>
+            <circle cx="19" cy="6" r="2"/>
+            <circle cx="12" cy="18" r="2"/>
+            <path d="M7 6h10"/><path d="M6.5 8l4.5 8"/><path d="M17.5 8l-4.5 8"/>
+          </svg>
+          <span class="grow">Provenance</span>
         </div>
         <div class="list-item" id="tool-gallery-btn">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -2723,6 +2755,7 @@
 <script type="module" src="/static/js/serviceHealth.js?v=20260831servicehealth1"></script>
 <script type="module" src="/static/js/noteToAgent.js?v=20260831notetoagent1"></script>
 <script type="module" src="/static/js/experts.js?v=20260903experts1"></script>
+<script type="module" src="/static/js/provenance.js?v=20260903provenance1"></script>
 <script nonce="{{CSP_NONCE}}">if('serviceWorker' in navigator){navigator.serviceWorker.register('/static/sw.js').catch(()=>{});}</script>
 </body>
 </html>
