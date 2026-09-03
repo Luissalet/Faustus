@@ -4938,6 +4938,19 @@ async def stream_agent_loop(
                         None if _relevant_tools is None
                         else frozenset(str(t) for t in _relevant_tools)
                     ),
+                    # The two facts the document-seal rule needs, read the same
+                    # way the refusal below reads them: the gate is armed, and
+                    # there is a document whose id AND version an approval could
+                    # be sealed against.
+                    approval_gate_armed=bool(
+                        run_security.external_untrusted_context_seen
+                        and not run_security.approval_gate_bypassed
+                    ),
+                    sealable_document=bool(
+                        active_document is not None
+                        and getattr(active_document, "id", None) is not None
+                        and getattr(active_document, "version_count", None) is not None
+                    ),
                 ),
                 protected=_workspace_tool_floor,
             )

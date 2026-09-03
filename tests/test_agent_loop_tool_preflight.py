@@ -623,3 +623,48 @@ def test_every_reason_reads_as_a_sentence_the_model_can_act_on():
         assert reason == reason.strip() and reason
         assert reason[0].islower(), reason      # reads inside a sentence
         assert not reason.endswith("."), reason
+
+
+# ── Rule 5: legacy document tools with nothing to seal ────────────────────
+# Found live: a saved skill pulled `suggest_document` into a turn with no
+# document open, and that same round refused it with "Open the exact document
+# to edit…". The loop's own [tool-coherence] alarm calls that a trap.
+
+def _doc_ctx(**over):
+    from src.tool_preflight import DOCUMENT_SEAL_TOOLS, PreflightContext
+    base = dict(session_id="s1", owner="luis", tools=frozenset(DOCUMENT_SEAL_TOOLS),
+                approval_gate_armed=True, sealable_document=False)
+    base.update(over)
+    return PreflightContext(**base)
+
+
+def test_document_tools_are_pruned_when_the_gate_is_armed_and_nothing_can_be_sealed():
+    from src.tool_preflight import DOCUMENT_SEAL_TOOLS, unusable_tools
+    pruned = unusable_tools(_doc_ctx())
+    assert set(pruned) == set(DOCUMENT_SEAL_TOOLS)
+    assert all("open the exact document" in r.lower() for r in pruned.values())
+
+
+def test_a_clean_run_keeps_the_document_tools():
+    """No armed gate means the runtime would have run them: pruning would cost
+    the user a tool for nothing."""
+    from src.tool_preflight import unusable_tools
+    assert unusable_tools(_doc_ctx(approval_gate_armed=False)) == {}
+
+
+def test_an_open_document_keeps_them_even_with_the_gate_armed():
+    from src.tool_preflight import unusable_tools
+    assert unusable_tools(_doc_ctx(sealable_document=True)) == {}
+
+
+def test_the_rule_says_nothing_about_tools_that_are_not_on_the_table():
+    from src.tool_preflight import unusable_tools
+    assert unusable_tools(_doc_ctx(tools=frozenset({"read_file"}))) == {}
+
+
+def test_a_caller_that_sets_neither_flag_prunes_nothing():
+    """Callers other than the loop (and older ones) must not lose tools to a
+    field they never heard of."""
+    from src.tool_preflight import unusable_tools
+    assert unusable_tools({"session_id": "s1", "owner": "luis",
+                           "tools": ["suggest_document"]}) == {}
