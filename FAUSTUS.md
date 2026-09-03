@@ -927,5 +927,143 @@ y es justo la que un sistema complaciente no daría.
 
 ---
 
+## 27. El perímetro que faltaba, y agentes que se pueden cambiar de pieza (03-09-2026, noche)
+
+Dos agujeros de perímetro encontrados en la segunda pasada por los repos de dicklesworthstone —
+donde ya casi no quedaba nada que copiar— y la respuesta a lo que pediste: *"quiero que sea versátil
+para que se puedan usar distintos modelos, agentes etc. Claude, qwen, openclaw, lo que sea, piezas
+modulares e intercambiables"*.
+
+### 27.1 Un fichero de instrucciones dentro de un repo es código de otro
+`src/workspace_trust.py` + `routes/workspace_trust_routes.py`. `AGENTS.md`, `CLAUDE.md` y compañía
+viven **dentro del repositorio que abres**, así que quien manda un PR manda instrucciones al agente.
+Faustus ahora los trata como lo que son: contenido no confiable hasta que **tú** dices que sí, una
+vez, por fichero y por hash. Cambia el fichero, vuelve a preguntar. No hay "confiar en todos".
+
+### 27.2 El modelo llegaba a `/api/storage/*` por la puerta de servicio
+`app_api` tiene un token de loopback interno para que las herramientas hablen con la propia app. Ese
+token es suficientemente privilegiado para llegar al almacenamiento. Es el mismo agujero que §18
+cerró para los modelos locales, en otra puerta. Añadido a `_APP_API_BLOCKLIST_METHOD_PATH` en
+`src/tools/system.py` con un mensaje de rechazo que explica por qué. `GET /status` se deja abierto a
+propósito: es información que el agente necesita y no revela nada.
+
+### 27.3 El entorno de un hijo que no es nuestro
+`src/native_env.py`. Faustus corre dentro de su propio virtualenv, así que su entorno lleva
+`VIRTUAL_ENV`, un `PYTHONPATH` y un `PATH` que empieza por nuestro `bin`. **Todo** subproceso que
+hereda ese entorno resuelve `python`, `pip` y sus imports contra *nuestro* venv en vez del suyo: los
+tests del proyecto del usuario, un runner externo, un CLI en python. El síntoma es el peor de todos
+—funciona en la máquina del que lo programó y importa el paquete equivocado en la del usuario.
+`native_host_environment()` quita las siete marcas del venv y las entradas de `PATH` que caen dentro
+de él, conservando orden y separador, y devuelve el `PATH` original si fuera a quedarse vacío (un
+hijo sin `PATH` no arranca: un venv filtrado es mejor que un exec roto).
+
+La distinción que hay que acertar: los hijos **nuestros** —los MCP builtin, `host_python()`— deben
+seguir heredando el venv, porque ahí es lo correcto. Aplicarlo a ciegas rompe la app; el script de
+cookbook lee `$VIRTUAL_ENV` en tiempo de ejecución para encontrar las wheels de CUDA. Está aplicado
+en `workspace_checkpoints.py` (donde `git commit` dispara el **pre-commit hook del usuario**, que
+suele ser python suyo) y la tabla completa de sitios —aplicado / omitido a propósito / pendiente—
+está en el mensaje del commit. El de mayor valor pendiente es `src/project_tests.py`.
+
+### 27.4 No hacer un commit automático en un repo a medias
+`src/git_invariants.py`. Un auto-commit que entra en un repositorio en mitad de un rebase, un merge
+o un cherry-pick es destructivo y silencioso. `check_preconditions()` informa de **todos** los
+problemas, no del primero: no es un work tree, hay una operación en curso, `HEAD` está desatado, el
+remoto o la rama no son los esperados. `canonical_git_remote()` reduce las grafías ssh/https/scp a
+`host/owner/repo` y **mantiene un alias ssh como host** —tu propio remoto es `git@Luissalet:…`, así
+que esto no es hipotético. Cuando falla, se **rechaza** el commit y se enseña por qué. No hay flag
+para saltárselo.
+
+### 27.5 Piezas intercambiables: cualquier agente como worker
+`src/agent_runners.py`, `src/external_worker.py`, `routes/agent_runner_routes.py`,
+`static/js/agentRunners.js`. El catálogo **no está escrito a mano**: se parsea del `ollama launch
+--help` que tengas instalado, así que OpenClaw, OpenCode, Hermes, Droid, Pi, Cline, Copilot CLI y
+Oh My Pi aparecen si los tienes y desaparecen si no. Un `dispatch` puede nombrar un runner y el
+worker externo corre con él; lo que ese runner **no permite comprobar** entra en el paquete de
+`prove` como incertidumbre declarada en vez de darse por bueno.
+
+## 28. Deep research que se puede citar, y sacarlo en md, docx o pdf (03-09-2026, noche)
+
+Comparaste nuestro deep research con un informe de ChatGPT Deep Research y la diferencia no era la
+longitud: era que **cada afirmación del suyo se podía seguir hasta una fuente**, y el nuestro no.
+
+### 28.1 Citas numeradas que alguien comprueba
+`src/research_citations.py` — determinista, sin LLM, sin red. Un `SourceRegistry` numera cada página
+**la primera vez que se ve** y no la renumera nunca, así que una cita escrita en la ronda 2 sigue
+resolviendo en el informe final. La identidad de una URL se normaliza (esquema y host en minúsculas,
+puerto por defecto, barra final, `#fragmento`, y una veintena de parámetros de rastreo: `utm_*`,
+`fbclid`, `gclid`), así que la misma página vista dos veces es un solo número. `www.` **no** se
+quita: hay hosts que sirven contenido distinto, y una fusión falsa atribuye una afirmación a la
+fuente equivocada sin decirlo.
+
+Lo importante no es que el modelo escriba `[n]`: es que **después alguien lo comprueba**.
+`repair_citations()` borra los marcadores colgantes —un `[7]` cuando solo hay 5 fuentes— en vez de
+dejar la mentira en el texto, funde las dos gramáticas de cita en una, y añade una sección de
+**Fuentes solo con las que realmente se citan**. Es idempotente. Nunca inventa una cita: un párrafo
+sin cita se queda sin cita, y la cifra de cobertura lo dirá.
+
+### 28.2 Gradar la evidencia sin mentir sobre lo que se ha gradado
+`grade_claims()` no reimplementa nada: llama al `src/claim_verify.py` de §26, la escalera de cinco
+capas de barato a caro. Capa 1/2 → `alta`, capa 3 → `moderada`, lo demás → `débil`.
+
+Y aquí está la regla de honestidad, que es el sentido de todo el apartado: **la nota dice si la
+fuente citada sostiene la frase, no si la frase es verdad en el mundo.** El informe de referencia se
+gana las palabras "evidencia alta" del diseño de los estudios; nosotros no podemos y no vamos a
+fingir que sí. Por eso la leyenda del informe **la genera python con los recuentos reales**, no el
+modelo: una leyenda escrita por el modelo es el modelo opinando sobre su propia fiabilidad.
+
+Consecuencia incómoda que se documenta en vez de esconderse: el umbral de la capa 3 es 0.75, así que
+una frase cierta y bien parafraseada cae a menudo en `débil`. Es exacto para lo que medimos —¿dice
+esto el extracto que guardamos?— y hay que leerlo así.
+
+### 28.3 El informe responde a *tus* preguntas, en *tu* idioma
+`_extract_subquestions()` saca las preguntas del prompt (determinista primero: saltos de línea,
+viñetas, numeración y `?`; el LLM solo como último recurso) y el informe final exige **una sección
+por pregunta, en tu orden**. Tu prompt de fisioterapia era una lista numerada y esa forma ahora
+sobrevive hasta el índice. `detect_language()` decide el idioma por reparto de stopwords sobre
+es/en/fr/de/pt/it y se pasa explícito a los prompts: se acabó que una pregunta en español devuelva
+un informe en inglés.
+
+Los prompts piden además tablas comparativas con una columna de "qué significa en la práctica",
+llamadas `> **Implicación práctica:**`, y cifras siempre en la misma frase que el estudio que las
+produjo.
+
+### 28.4 Sacarlo de la app: md, docx, pdf (y html, txt, json)
+`src/report_export.py` + `GET /api/research/export/{id}?format=`. **No se ha escrito ni un
+renderizador**: el informe se convierte en bloques con el `markdown_to_blocks` que ya existía y se
+entrega al pipeline de exportación de conversaciones (`chat_export`, `chat_export_docx`,
+`chat_export_pdf`). Título, línea de metadatos, cuerpo, apéndice de fuentes —omitido si el cuerpo ya
+trae el suyo— y pie. La ruta copia **exactamente** la puerta de propiedad del resto: 404, nunca 403,
+para no filtrar que el informe existe. `GET /api/research/export-formats` dice qué formatos se
+pueden producir ahora mismo, para no ofrecer una descarga que va a fallar.
+
+### 28.5 Dos parches del deep research de Diogenes
+- Si falla el planificador, el plan de reserva es **determinista** (las preguntas extraídas) y el
+  aviso dice qué se ha degradado. Una ejecución degradada honesta es mejor que una silenciosa.
+- Si la extracción devuelve `summary` vacío pero `evidence` con contenido, **el hallazgo se
+  conserva**: la página ya se ha pagado, tirarla es tirar el trabajo.
+
+### 28.6 Firecrawl autoalojado, portado de Diogenes
+Diogenes es un fork del mismo upstream, así que su `services/search/providers.py` es el nuestro más
+un bloque de Firecrawl: esto es un **port**, no una reescritura. `_get_firecrawl_instance()` no tiene
+fallback a la API hospedada **a propósito**, y se mantiene: caer en silencio a `api.firecrawl.dev`
+mandaría las búsquedas de un usuario local-first a un tercero. Si el appliance no responde, el deep
+research vuelve al fetcher nativo con un aviso que dice por qué; una investigación no se muere
+porque un servicio esté caído. La clave hereda el tratamiento de secreto de las demás por sufijo
+`_api_key`, sin cableado nuevo.
+
+### 28.7 No reinventar: lo que se borró
+Tres agentes en paralelo escribieron cada uno un ayudante que el árbol ya tenía. Corregido:
+`detect_language` estaba duplicado (la copia del harness delega ahora en la buena: el inglés no
+cambia en 34/34 casos y el español pasa de 8/26 a 23/26 aciertos), el patrón de bloques de código
+estaba escrito dos veces en el mismo `visual_report.py`, y los serializadores de bloques de
+`chat_export` tienen ya nombre público en vez de importarse por debajo.
+
+Y dos duplicados que **se han dejado a propósito, con la prueba**: los dos partidores de frases no
+son la misma función —forzar el de `story_bible` en el informe cambiaba la cobertura impresa de 6 a
+5 de 8 y partía `p. ej.` en fragmentos incitables—, y el escáner de zonas protegidas del linkificador
+es más débil, no más fuerte, en lo que comparten: sobre un informe cortado a mitad de un bloque de
+código, inventaba `[1] [2] [3]` a partir de `rows[1]`, `cols[2]`, `cols[3]`. Eso es exactamente la
+fuente inventada que todo el apartado 28 existe para impedir.
+
 ## Cómo mantener este documento
 Cada bloque de trabajo añade una sección (fecha, qué, por qué, ficheros, cómo se verificó, cifras) y actualiza las cifras de cabecera (`git log --oneline c9dd68d8..HEAD | wc -l`, `git diff --stat c9dd68d8..HEAD`). Los commits del fork llevan mensajes largos que explican el porqué: `git log c9dd68d8..HEAD` es la fuente detallada.
