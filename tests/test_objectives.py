@@ -356,24 +356,55 @@ def test_post_compact_reminder_outside_a_project_is_none(monkeypatch):
     assert cc.post_compact_reminder(None, "luis") is None
 
 
-def test_post_compact_reminder_carries_objectives_and_rules(project, workspace, monkeypatch):
+def _reminder_with_agents_md(project, workspace, monkeypatch, tmp_path, *, approve):
+    """One post-compaction reminder for a workspace that has an AGENTS.md.
+
+    The reminder re-injects the project's standing rules, so it is gated by the
+    same trust check as the system prompt itself (src/workspace_trust.py). The
+    store is pinned to tmp_path so this never touches the real DATA_DIR.
+    """
     from src import context_compactor as cc
+    from src import project_instructions as pi
+    from src import workspace_trust as wt
     import services.projects as projects_mod
+
+    monkeypatch.setattr(wt, "DATA_DIR", str(tmp_path / "trust"))
     _add(project, "Survive compaction", priority=1)
     with open(os.path.join(workspace, "AGENTS.md"), "w", encoding="utf-8") as fh:
         fh.write("Run pytest before claiming done.\n")
+    pi.invalidate()
+    if approve:
+        assert wt.trust(workspace, wt.digest_for(workspace), by="tester")["ok"] is True
     monkeypatch.setattr(projects_mod, "project_for_session", lambda sid, owner=None: project)
 
     class _Sess:
         id = "sess-1"
 
     msg = cc.post_compact_reminder(_Sess(), "luis")
+    pi.invalidate()
+    return msg
+
+
+def test_post_compact_reminder_carries_objectives_and_rules(project, workspace, monkeypatch, tmp_path):
+    msg = _reminder_with_agents_md(project, workspace, monkeypatch, tmp_path, approve=True)
     assert msg["role"] == "system"
     assert msg["metadata"] == {"compacted": True}   # trim keeps it resident
     assert msg["content"].startswith("[Post-compaction reminder]")
     assert "Survive compaction" in msg["content"]
     assert "AGENTS.md" in msg["content"] and "still apply" in msg["content"]
     assert "Run pytest before claiming done." in msg["content"]
+
+
+def test_post_compact_reminder_does_not_smuggle_an_unapproved_agents_md(
+        project, workspace, monkeypatch, tmp_path):
+    """The reminder is a second door into the system role, and it is gated too.
+
+    A folder whose instruction files nobody approved gets the note here as well;
+    the objectives (which the user's own project owns) still come through."""
+    msg = _reminder_with_agents_md(project, workspace, monkeypatch, tmp_path, approve=False)
+    assert "Survive compaction" in msg["content"]
+    assert "Run pytest before claiming done." not in msg["content"]
+    assert "NOT approved" in msg["content"] and "AGENTS.md" in msg["content"]
 
 
 def test_post_compact_reminder_never_raises(monkeypatch):

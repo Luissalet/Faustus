@@ -345,13 +345,43 @@ def test_repo_map_is_injected_once_before_the_user_message(project, monkeypatch)
     assert maps[0].get("metadata", {}).get("tool_gate_untrusted") is False
 
 
-def test_agents_md_is_part_of_the_system_prompt(project, monkeypatch):
-    (os.path.join(project, "AGENTS.md"))
+def _system_prompt_with_agents_md(project, monkeypatch, tmp_path, *, approve):
+    """Run one turn in a workspace that has an AGENTS.md; return the system role.
+
+    The file only reaches the system prompt for a folder whose instruction files
+    the user has approved (src/workspace_trust.py). The store is pinned to
+    tmp_path so this never touches the real DATA_DIR.
+    """
+    from src import project_instructions as pi
+    from src import workspace_trust as wt
+
+    monkeypatch.setattr(wt, "DATA_DIR", str(tmp_path / "trust"))
     with open(os.path.join(project, "AGENTS.md"), "w", encoding="utf-8") as f:
         f.write("# Rules\nRun `pytest -q` before finishing. Never touch tests/.\n")
+    pi.invalidate()
+    if approve:
+        assert wt.trust(project, wt.digest_for(project), by="tester")["ok"] is True
     _patch_common(monkeypatch, settings={"agent_project_tests": False})
     calls = _scripted_stream(monkeypatch, [("Nada que cambiar.", "stop")])
     _run(project, user="¿Qué hace calc.py?")
-    system = "\n".join(m["content"] for m in calls["messages"][0] if m.get("role") == "system" and isinstance(m.get("content"), str))
+    pi.invalidate()
+    return "\n".join(m["content"] for m in calls["messages"][0]
+                     if m.get("role") == "system" and isinstance(m.get("content"), str))
+
+
+def test_agents_md_is_part_of_the_system_prompt(project, monkeypatch, tmp_path):
+    system = _system_prompt_with_agents_md(project, monkeypatch, tmp_path, approve=True)
     assert "Project instructions from AGENTS.md" in system
     assert "Never touch tests/." in system
+
+
+def test_an_unapproved_agents_md_is_named_but_never_quoted(project, monkeypatch, tmp_path):
+    """The other half of the same wire: a folder nobody approved gets the note.
+
+    AGENTS.md travels with a clone and lands in the SYSTEM role, so until the
+    user says the file is theirs the model is told the file exists and told not
+    to treat it as policy — and not one byte of it is injected."""
+    system = _system_prompt_with_agents_md(project, monkeypatch, tmp_path, approve=False)
+    assert "NOT approved" in system and "AGENTS.md" in system
+    assert "Never touch tests/." not in system
+    assert "Project instructions from AGENTS.md" not in system
