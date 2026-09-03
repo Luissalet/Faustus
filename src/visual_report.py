@@ -50,14 +50,11 @@ _REPORT_ALLOWED_ATTRS.setdefault("img", set()).update({"src", "alt", "title"})
 # Helpers
 # ---------------------------------------------------------------------------
 
-# One fenced code block, opener to matching closer. Written once because two
-# passes need the same answer: the table of contents strips fences before it
-# scans for headings, and the linkifier below refuses to rewrite inside one.
+# One fenced code block, opener to matching closer. Shared by the two passes
+# that must agree on where one ends: the heading scan below and _PROTECTED_RE.
 # Two spellings drifting apart is how a fence becomes code to one pass and
-# prose to the other, which desyncs every anchor in the table of contents.
-_FENCE_BLOCK = (
-    r"^[\ \t]*(?P<fence>`{3,}|~{3,})[^\n]*\n(?s:.*?)^[\ \t]*(?P=fence)[\ \t]*$"
-)
+# prose to the other.
+_FENCE_BLOCK = r"^[\ \t]*(?P<fence>`{3,}|~{3,})[^\n]*\n(?s:.*?)^[\ \t]*(?P=fence)[\ \t]*$"
 _FENCE_BLOCK_RE = re.compile(_FENCE_BLOCK, re.M | re.X)
 
 # Stretches of markdown where a URL is content, not a link waiting to be made.
