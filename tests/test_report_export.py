@@ -168,6 +168,16 @@ def test_absent_metadata_never_renders_as_none(overrides):
     assert "· ·" not in md
 
 
+def test_a_report_with_no_completion_time_claims_none():
+    """The start time must not be printed as the completion time."""
+    data = research_json(completed_at=None)
+    md = text_of(data)
+    assert "Completed" not in md
+    # The filename still gets a stamp, from the start time.
+    assert report_filename(data, "md") == "research_Es_eficaz_la_fisioterapia_" \
+                                          "para_el_dolor_lumbar_cronico_20260225_061320.md"
+
+
 def test_a_report_with_nothing_but_a_question_still_renders():
     md = text_of({"query": "Solo la pregunta"})
     assert md.startswith("# Solo la pregunta")

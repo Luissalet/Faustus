@@ -24,10 +24,11 @@ The pipeline was built for chats, and two of its renderers say so out loud:
   banner. On a report that is wrong twice over — a duplicated title and a
   speaker label on a document with no speakers — so those three formats are
   composed here from the *same* block serializers those renderers use
-  (``_blocks_to_md`` and friends), skipping only the chat furniture around
-  them. They are private names in that module; the seam this module would
-  rather import is a public ``blocks_to_md`` / ``blocks_to_txt`` /
-  ``blocks_to_html``.
+  (``_block_to_md``, ``_blocks_to_txt``, ``_blocks_to_html``), skipping only
+  the chat furniture around them. They are private names in that module; the
+  seam this module would rather import is a public ``blocks_to_md`` /
+  ``blocks_to_txt`` / ``blocks_to_html``. Markdown also needs its own join —
+  see :func:`_render_markdown`.
 * ``src/chat_export_docx.py`` and ``src/chat_export_pdf.py`` take a Transcript
   and *always* emit a header ("N messages · Exported …") and a role banner per
   message. Neither is suppressible from the outside, and editing those files is
@@ -145,9 +146,13 @@ def _report_markdown(data: Dict[str, Any]) -> str:
     return _text(data.get("raw_report")) or _text(data.get("result"))
 
 
-def _completed_at(data: Dict[str, Any]) -> Optional[datetime]:
-    """``completed_at`` as a datetime — it is stored as a unix timestamp."""
-    for key in ("completed_at", "started_at"):
+def _time_of(data: Dict[str, Any], *keys: str) -> Optional[datetime]:
+    """The first of *keys* that holds a usable time, as a datetime.
+
+    ``_save_result`` writes unix timestamps; be tolerant of an ISO string in
+    case an older file or another writer used one.
+    """
+    for key in keys:
         raw = data.get(key)
         if isinstance(raw, (int, float)) and raw > 0:
             try:
@@ -168,7 +173,10 @@ def _metadata_bits(data: Dict[str, Any]) -> List[str]:
     stats = _stats(data)
     bits: List[str] = []
 
-    completed = _completed_at(data)
+    # Only completed_at earns the word "Completed": falling back to the start
+    # time here would label the moment the research began as the moment it
+    # finished.
+    completed = _time_of(data, "completed_at")
     if completed is not None:
         bits.append("Completed %s" % completed.strftime("%Y-%m-%d %H:%M"))
 
@@ -349,7 +357,8 @@ def report_filename(data: Dict[str, Any], ext: str) -> str:
     by the second they were downloaded in.
     """
     ext = sanitize_export_filename(_text(ext).lstrip(".")) or "md"
-    stamp = (_completed_at(data) or datetime.now()).strftime("%Y%m%d_%H%M%S")
+    stamp = (_time_of(data, "completed_at", "started_at")
+             or datetime.now()).strftime("%Y%m%d_%H%M%S")
     slug = _slug(_text(data.get("query")), 60)
     stem = "research_%s_%s" % (slug, stamp) if slug else "research_%s" % stamp
     return sanitize_export_filename("%s.%s" % (stem, ext))
