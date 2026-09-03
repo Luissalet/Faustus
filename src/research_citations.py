@@ -879,7 +879,13 @@ IMPLICATION_LABELS = {
     "pt": "Implicação prática", "it": "Implicazione pratica",
 }
 VERDICT_WORDS = {
-    "es": {VERDICT_SUPPORTED: "respaldada", VERDICT_REFUTED: "no respaldada",
+    # Spanish deliberately says "cifras en la fuente", not "respaldada": we
+    # checked that the sentence's figures occur in the text we kept, which is
+    # provenance for the numbers, not agreement between sentence and source —
+    # a page arguing AGAINST a 2% rise still contains "2%". Every other
+    # language here already names the narrow thing; Spanish was the outlier.
+    "es": {VERDICT_SUPPORTED: "cifras en la fuente",
+           VERDICT_REFUTED: "cifras ausentes de la fuente",
            VERDICT_UNCHECKED: "sin comprobar"},
     "en": {VERDICT_SUPPORTED: "in the source", VERDICT_REFUTED: "not in the source",
            VERDICT_UNCHECKED: "not checked"},

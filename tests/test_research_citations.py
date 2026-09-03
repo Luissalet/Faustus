@@ -630,14 +630,15 @@ def test_a_clean_report_does_not_carry_a_zero_accusation():
     clean = {"cited_sentences": 57, "total_sentences": 80, "citations": 57,
              "verdicts": {VERDICT_SUPPORTED: 6, VERDICT_REFUTED: 0,
                           VERDICT_UNCHECKED: 51}}
+    words = VERDICT_WORDS["es"]
     legend = build_legend(clean, "es")
-    assert "respaldada: 6" in legend
-    assert "sin comprobar: 51" in legend
-    assert "no respaldada: 0" not in legend
+    assert f"{words[VERDICT_SUPPORTED]}: 6" in legend
+    assert f"{words[VERDICT_UNCHECKED]}: 51" in legend
+    assert f"{words[VERDICT_REFUTED]}: 0" not in legend
     dirty = dict(clean, citations=58,
                  verdicts={VERDICT_SUPPORTED: 6, VERDICT_REFUTED: 1,
                            VERDICT_UNCHECKED: 51})
-    assert "no respaldada: 1" in build_legend(dirty, "es")
+    assert f"{words[VERDICT_REFUTED]}: 1" in build_legend(dirty, "es")
 
 
 @pytest.mark.parametrize("language", ["es", "en", "fr", "de", "pt", "it"])
