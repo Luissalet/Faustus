@@ -51,8 +51,9 @@ Which shapes are verified and which are inferred
   ``uuid``, ``name``, ``created_at`` and ``chat_messages``, each message with
   ``sender`` ("human"/"assistant"), ``text`` and/or a ``content`` list of
   typed blocks.
-* **Faustus / Odysseus** — verified in-tree against
-  ``src.chat_export.transcript_to_dict``.
+* **Faustus** — its own export, verified in-tree against
+  ``src.chat_export.transcript_to_dict``; upstream produces the same shape, so
+  an export made before the fork was renamed imports unchanged.
 * **LM Studio — INFERRED.** LM Studio's own documentation gives the folder
   (``~/.lmstudio/conversations/``) and the fact that the files are JSON, and
   then says in as many words that the structure is not to be relied on. Both

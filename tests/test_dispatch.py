@@ -419,9 +419,10 @@ def test_config_route_says_where_a_job_would_run(box, monkeypatch):
 
 
 def test_the_workers_skill_ships_inside_the_claude_code_bundle(monkeypatch):
-    """Luis: "guárdala en una carpeta en Odysseus localizable". The skill lives
-    next to the `odysseus` one, so /api/claude/plugin.zip (Settings →
-    Integrations → Add a Claude Agent) drops it into ~/.claude/skills/ too."""
+    """Luis: "guárdala en una carpeta localizable" (dicho cuando el fork aún
+    llevaba el nombre de upstream). The skill lives next to the `odysseus` one,
+    so /api/claude/plugin.zip (Settings → Integrations → Add a Claude Agent)
+    drops it into ~/.claude/skills/ too."""
     import io
     import zipfile
     from pathlib import Path
