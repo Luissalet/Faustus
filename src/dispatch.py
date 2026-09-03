@@ -42,6 +42,12 @@ What makes the answer trustworthy (none of it comes from the worker):
 Jobs in the same workspace run one at a time (a second one waits, `queued`);
 a retried POST with the same `Idempotency-Key` returns the first job.
 
+A SEQUENTIAL job whose tasks name objectives (`OBJ-3`) runs them in the order
+the project's objectives graph ranks those objectives, not the order they were
+typed (`order_tasks_by_impact`, `agent_objective_ordering`). That is the whole
+of it: ONE job's task list, recorded in `task_order` and said in the verdict.
+There is no queue across jobs and no scheduler here.
+
 Jobs live in memory with a JSON mirror under DATA_DIR/dispatch/ (rotated at
 MAX_JOBS_KEPT) so a finished job can still be read after a restart (a
 running one is reported as `interrupted`).
@@ -163,6 +169,12 @@ def prove_on() -> bool:
         return False
 
 
+def objective_ordering_on() -> bool:
+    """`agent_objective_ordering`. Off = the tasks of a job run in the order
+    they were written, which is what they have always done."""
+    return bool(_setting("agent_objective_ordering", True))
+
+
 def _outcomes_on() -> bool:
     """`agent_tool_outcomes`. Off = a stopped worker counts as an error."""
     try:
@@ -270,6 +282,11 @@ class DispatchJob:
         # ended for a reason other than "the rounds ran out", which one.
         self.convergence: Optional[Dict[str, Any]] = None
         self.stopped_by: Optional[str] = None
+        # What the objectives graph did to the task list before the job ran
+        # ({"by": "impact", "from": [...], "to": [...]}), so the reordering is
+        # visible and auditable instead of silent. None when nothing moved and
+        # while `agent_objective_ordering` is off.
+        self.task_order: Optional[Dict[str, Any]] = None
         # The proof packet (src/prove.py): what the evidence and the
         # verification really SHOW, with every reason the confidence is not 1
         # named. None while `agent_dispatch_prove` is off.
@@ -305,6 +322,8 @@ class DispatchJob:
             "max_rounds": self.args.get("max_rounds"), "timeout_s": self.args.get("timeout_s"),
             "verify": self.verify, "verify_scope": self.verify_scope, "fix_rounds": self.fix_rounds,
         }
+        if self.task_order is not None:
+            d["task_order"] = self.task_order
         if include_result:
             d["result"] = self.result
             d["changes"] = self.changes
@@ -858,6 +877,91 @@ def build_args(body: Dict[str, Any]) -> Dict[str, Any]:
     return args
 
 
+def _task_text(task: Any) -> str:
+    """The words of one task the objective ids are read out of."""
+    t = task if isinstance(task, dict) else {}
+    return f"{t.get('name') or ''} {t.get('instruction') or ''}"
+
+
+def _task_label(task: Any, index: int) -> str:
+    """How one task is named in the `task_order` record — the same name the
+    board, `progress` and the worker reports use, so the record can be read
+    against them."""
+    t = task if isinstance(task, dict) else {}
+    return _squash(t.get("name") or t.get("instruction") or f"worker-{index + 1}", 60)
+
+
+def order_tasks_by_impact(tasks: Any, workspace: Optional[str]) -> Tuple[List[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    """Order the tasks of ONE job by the impact score of the objective each
+    one names, highest first.
+
+    The score is the one `services/objectives.py` already computes over the
+    project's declared dependency graph (PageRank .30 + betweenness .30 +
+    blocker_ratio .20 + staleness .10 + priority .10); a task that names
+    several objectives takes the highest of them, because a task is worth what
+    the most important thing it unblocks is worth.
+
+    **The scope is one job's task list and nothing else.** There is no queue
+    across jobs, no global scheduler and no re-ordering of anything already
+    running: ordering the tasks a caller sent together is the honest amount of
+    ordering this evidence supports. A task that names no objective — or names
+    one the workspace's objectives file does not have — keeps its own position;
+    only the tasks that DO carry a score are permuted, among the slots they
+    already occupied.
+
+    Returns ``(tasks, record)``, where `record` is the
+    ``{"by": "impact", "from": [...], "to": [...]}`` audit entry and is None
+    whenever nothing was reordered. Never raises: the caller's list comes back
+    unchanged if anything at all goes wrong.
+    """
+    rows = list(tasks or [])
+    try:
+        if len(rows) < 2 or not all(isinstance(t, dict) for t in rows):
+            return rows, None
+        from services import objectives as objectives_svc
+        project = {"workspace": str(workspace or "")}
+        path = objectives_svc.objectives_path(project)
+        if not path or not os.path.isfile(path):
+            return rows, None
+        state = objectives_svc.load_state(project)
+        scores = objectives_svc.impact_scores(state)
+        if not scores:
+            return rows, None
+        scored: List[Tuple[int, float]] = []
+        for i, task in enumerate(rows):
+            best: Optional[float] = None
+            for oid in objectives_svc.mentioned_ids(_task_text(task)):
+                row = scores.get(oid)
+                if not isinstance(row, dict):
+                    continue          # an id this workspace does not have: no score
+                try:
+                    value = float(row.get("score") or 0.0)
+                except (TypeError, ValueError):
+                    continue
+                if best is None or value > best:
+                    best = value
+            if best is not None:
+                scored.append((i, best))
+        if len(scored) < 2:
+            return rows, None
+        slots = [i for i, _ in scored]
+        # Highest score first; ties keep the order they were written in, so
+        # the same job always produces the same list.
+        ranked = [i for i, _ in sorted(scored, key=lambda r: (-r[1], r[0]))]
+        if ranked == slots:
+            return rows, None
+        out = list(rows)
+        for slot, src in zip(slots, ranked):
+            out[slot] = rows[src]
+        record = {"by": "impact",
+                  "from": [_task_label(t, i) for i, t in enumerate(rows)],
+                  "to": [_task_label(t, i) for i, t in enumerate(out)]}
+        return out, record
+    except Exception as e:  # noqa: BLE001 - a job never fails over its own ordering
+        logger.debug("dispatch: objective ordering unavailable: %s", e)
+        return rows, None
+
+
 def _verify_options(body: Dict[str, Any]) -> Tuple[str, str, int, float]:
     raw = body.get("verify")
     if raw is None or raw is True:
@@ -1070,6 +1174,12 @@ def _settle(job: DispatchJob) -> None:
                 parts.append(proof_line)
         except Exception as e:  # noqa: BLE001
             logger.debug("dispatch %s: proof line unavailable: %s", job.id, e)
+    if job.task_order:
+        # Only when it actually changed something (task_order is None
+        # otherwise): the human reading the line must be able to see that the
+        # tasks did not run in the order they were written, and why.
+        parts.append("tasks ordered by objective impact: "
+                     + _squash(" → ".join(str(n) for n in job.task_order.get("to") or []), 160))
     blocked = _blocked_workers(job)
     if blocked:
         # Reported, not acted on: a rate-limited or prompting worker was never
@@ -1124,18 +1234,15 @@ def worker_states(job: DispatchJob) -> Dict[str, Dict[str, Any]]:
 def _record_objective_evidence(job: DispatchJob) -> None:
     """Append evidence records for every OBJ-<n> the job's tasks name, when
     the job's chat belongs to a project that has that objective."""
-    texts = " ".join(
-        f"{t.get('name') or ''} {t.get('instruction') or ''}"
-        for t in job.args.get("tasks") or [] if isinstance(t, dict)
-    )
-    ids = sorted(set(re.findall(r"\bOBJ-\d+\b", texts)))
+    from services import objectives as objectives_svc
+    texts = " ".join(_task_text(t) for t in job.args.get("tasks") or [] if isinstance(t, dict))
+    ids = sorted(objectives_svc.mentioned_ids(texts))
     if not ids:
         return
     from services.projects import project_for_session
     project = project_for_session(job.session_id or "", job.owner)
     if not project:
         return
-    from services import objectives as objectives_svc
     state = objectives_svc.load_state(project)
     changes = job.changes or {}
     changed = list(changes.get("added") or []) + list(changes.get("modified") or [])
@@ -1406,8 +1513,18 @@ async def start(owner: Optional[str], body: Dict[str, Any], *, runner: Optional[
     verify, scope, fix_rounds, verify_timeout = _verify_options(body)
     url, model, headers = resolve_route(owner, body.get("model"))
     gen = _clean_gen(body.get("gen_overrides"))
+    # The impact score the objectives graph already computes finally decides
+    # something: a SEQUENTIAL job's tasks run in the order the graph ranks the
+    # objectives they name (`agent_objective_ordering`). A parallel job has no
+    # order to fix, so it is left exactly as it was sent.
+    task_order = None
+    if objective_ordering_on() and not args.get("parallel"):
+        ordered, task_order = order_tasks_by_impact(args.get("tasks"), workspace)
+        if task_order is not None:
+            args = dict(args, tasks=ordered)
     job = DispatchJob(owner, args, workspace, url, model, headers, _title(args), gen,
                       verify=verify, verify_scope=scope, fix_rounds=fix_rounds, verify_timeout_s=verify_timeout)
+    job.task_order = task_order
     job.session_id = _make_session(job)
     async with _lock:
         _jobs[job.id] = job
@@ -1481,6 +1598,7 @@ def _load(job_id: str) -> Optional[DispatchJob]:
     job.convergence = d.get("convergence")
     job.stopped_by = d.get("stopped_by")
     job.proof = d.get("proof")
+    job.task_order = d.get("task_order")
     # a job that was running when the server stopped never finished
     job.status = "interrupted" if d.get("status") in _LIVE else (d.get("status") or "done")
     if job.status == "interrupted" and not job.verdict:
@@ -1847,6 +1965,10 @@ never the transcript. Trust `changes` + `verification` over the prose.
 A `running` answer carries `progress` per worker, `phase`, `ceiling_s` (the
 most it can still take) and `wait_again: true` — call `workers_wait` again;
 do NOT re-dispatch the same task because one wait returned early.
+`task_order` appears when Faustus ran a sequential job's tasks in a different
+order from the one you sent: the objectives they name are ranked by the
+project's dependency graph and the highest-impact one goes first. `from` and
+`to` say what moved; tasks naming no objective never move.
 A worker's `progress` entry may also carry `state` and `why`: what its OWN
 output says about it — `rate_limited`, `waiting_for_input`, `stuck`,
 `auth_error`, `disk_full`, `oom` — with the literal that proves it. Such a

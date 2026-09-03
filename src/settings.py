@@ -385,6 +385,12 @@ DEFAULT_SETTINGS = {
     # and nothing observable changed, which is honest, not a failure.
     # Off = the job payload and the verdict line are exactly what they were.
     "agent_dispatch_prove": True,
+    # Order ONE dispatched job's tasks by the impact score its project's
+    # objectives graph already computes (services/objectives.py), highest
+    # first, when the job is sequential. A task that names no objective keeps
+    # its place. This is not a scheduler: nothing is ordered across jobs.
+    # Off = the tasks run in the order they were written.
+    "agent_objective_ordering": True,
     # At startup, look for records that stopped being written at the same
     # instant around the last boot (src/crash_recovery.py) — which is what a
     # power cut leaves behind — and mark those jobs `interrupted` with the

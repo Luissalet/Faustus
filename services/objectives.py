@@ -49,6 +49,8 @@ MAX_SECTION_CHARS = 2500         # "## Project objectives" system-prompt cap
 MAX_REMINDER_CHARS = 1200        # post-compaction reminder cap
 
 _ID_RE = re.compile(r"^OBJ-(\d+)$")
+#: An OBJ id as it appears INSIDE free text (a task, a commit message).
+_MENTION_RE = re.compile(r"\bOBJ-\d+\b")
 
 
 class ObjectiveError(ValueError):
@@ -215,6 +217,27 @@ def next_id(state: Dict[str, Any]) -> str:
     including dropped objectives, which are kept so history stays diffable."""
     top = max((_id_num(oid) for oid in state.get("objectives") or {}), default=0)
     return f"OBJ-{top + 1}"
+
+
+def mentioned_ids(text: Any) -> List[str]:
+    """Every ``OBJ-<n>`` a piece of free text names, in order of first mention
+    and without repeats.
+
+    One definition of "this text talks about that objective", shared by the
+    callers that read a task, an instruction or a commit message and have to
+    agree on the answer. Total: anything at all in, a list out — this is read
+    on the dispatch settle path and must never raise.
+    """
+    try:
+        found = _MENTION_RE.findall(str(text or ""))
+    except Exception as e:  # noqa: BLE001 - hot path, never raise
+        logger.debug("mentioned_ids failed: %s", e)
+        return []
+    out: List[str] = []
+    for oid in found:
+        if oid not in out:
+            out.append(oid)
+    return out
 
 
 # ----------------------------------------------------------------------

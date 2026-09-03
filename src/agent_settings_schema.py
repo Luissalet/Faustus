@@ -440,6 +440,12 @@ GROUPS: list[dict[str, Any]] = [
                   "(nothing ran that could show it — honest, not a failure) or contradicted (the disk or "
                   "the tests say otherwise), with the confidence and a named reason for every point it "
                   "lost. Off = the job answers exactly what it answered before."),
+            _bool("agent_objective_ordering", "Order a job's tasks by objective impact",
+                  "When a sequential dispatched job's tasks name objectives (OBJ-1, OBJ-2) and the folder "
+                  "has an objectives file, run them in the order the objectives graph already ranks them "
+                  "— PageRank, betweenness, what each one blocks, staleness and your priority — instead of "
+                  "the order they were typed. A task that names no objective keeps its place, the job "
+                  "records what it reordered, and nothing is ordered across jobs. Off = the written order."),
             _bool("agent_crash_recovery", "Find what a power cut interrupted",
                   "At startup, look for jobs and runs whose records all stopped being written at the same "
                   "instant around the last boot — what a power cut leaves behind — and mark them "
