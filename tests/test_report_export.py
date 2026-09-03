@@ -372,6 +372,19 @@ def test_transcript_rejects_a_non_dict():
         build_report_transcript("not a dict")
 
 
+def test_title_stays_in_the_body_for_the_text_formats():
+    blocks = build_report_transcript(research_json()).messages[0].blocks
+    assert blocks[0].kind == "heading" and blocks[0].level == 1
+
+
+def test_title_leaves_the_body_when_the_renderer_prints_it_itself():
+    transcript = build_report_transcript(research_json(), title_in_body=False)
+    blocks = transcript.messages[0].blocks
+    assert transcript.name == SPANISH_QUERY
+    assert not (blocks[0].kind == "heading" and blocks[0].level == 1)
+    assert blocks[0].spans[0].italic                # straight to the metadata line
+
+
 def test_docx_contains_the_report_text():
     pytest.importorskip("docx")
     texts = docx_texts(render_report(research_json(), "docx").content)
@@ -379,6 +392,9 @@ def test_docx_contains_the_report_text():
     assert SPANISH_QUERY in joined
     assert "Resumen" in joined
     assert "Cochrane review" in joined
+    # The renderer prints the transcript name as the document title, so the
+    # body must not repeat the question straight underneath it.
+    assert joined.count(SPANISH_QUERY) == 1
     # Chat chrome the renderer imposes and this module cannot switch off: the
     # role banner is neutral ("Report"), never a speaker.
     assert "Assistant" not in joined

@@ -248,13 +248,19 @@ def _sources_blocks(data: Dict[str, Any]) -> List[Block]:
 
 
 def build_report_blocks(data: Dict[str, Any], *,
-                        exported_at: Optional[datetime] = None) -> List[Block]:
-    """The whole report as blocks: title, metadata, body, sources, footer."""
+                        exported_at: Optional[datetime] = None,
+                        title_in_body: bool = True) -> List[Block]:
+    """The whole report as blocks: title, metadata, body, sources, footer.
+
+    ``title_in_body=False`` leaves the h1 out, for a renderer that prints
+    ``transcript.name`` as the document title itself — see
+    :func:`build_report_transcript`.
+    """
     exported_at = exported_at or datetime.now()
     blocks: List[Block] = []
 
     query = _text(data.get("query"))
-    if query:
+    if query and title_in_body:
         blocks.append(_heading(query, 1))
 
     bits = _metadata_bits(data)
@@ -274,13 +280,18 @@ def build_report_blocks(data: Dict[str, Any], *,
     return blocks
 
 
-def build_report_transcript(data: Dict[str, Any]) -> Transcript:
+def build_report_transcript(data: Dict[str, Any], *,
+                            title_in_body: bool = True) -> Transcript:
     """Wrap the report blocks in the Transcript the renderers consume.
 
     ``model`` and ``session_id`` are deliberately left empty: the docx and pdf
     renderers print them in a header of their own, directly above the report's
     metadata line, which would say the same thing twice. Both travel in
     ``extra`` instead, where the json export picks them up.
+
+    Those two renderers also print ``name`` as the document's title, so they
+    ask for ``title_in_body=False`` — otherwise page one opens with the
+    question, and then the question again as the body's first heading.
     """
     if not isinstance(data, dict):
         raise TypeError("research data must be a dict")
@@ -290,7 +301,8 @@ def build_report_transcript(data: Dict[str, Any]) -> Transcript:
     query = _text(data.get("query")) or "Research report"
     message = ExportMessage(
         role=REPORT_ROLE,
-        blocks=build_report_blocks(data, exported_at=exported_at),
+        blocks=build_report_blocks(data, exported_at=exported_at,
+                                   title_in_body=title_in_body),
         raw_text=_report_markdown(data),
     )
     return Transcript(
@@ -413,10 +425,11 @@ def render_report(data: Dict[str, Any], fmt: str, *,
             % (fmt, ", ".join(REPORT_FORMATS))
         )
 
-    transcript = build_report_transcript(data)
+    binary = key in ("docx", "pdf")
+    transcript = build_report_transcript(data, title_in_body=not binary)
     out_name = _resolve_filename(data, key, filename)
 
-    if key in ("docx", "pdf"):
+    if binary:
         result = render(transcript, key, filename=out_name)
         return ExportResult(content=result.content, media_type=result.media_type,
                             filename=out_name)
