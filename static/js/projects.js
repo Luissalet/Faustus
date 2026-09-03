@@ -216,6 +216,13 @@ export const addProjectContext = (id, path) =>
   req(`/${id}/context`, { method: 'POST', body: JSON.stringify({ path }) });
 export const removeProjectContext = (id, itemId) =>
   req(`/${id}/context/${encodeURIComponent(itemId)}`, { method: 'DELETE' });
+export const listObjectives = (id) => req(`/${id}/objectives`);
+export const createObjective = (id, body) =>
+  req(`/${id}/objectives`, { method: 'POST', body: JSON.stringify(body) });
+export const updateObjective = (id, oid, body) =>
+  req(`/${id}/objectives/${encodeURIComponent(oid)}`, { method: 'PATCH', body: JSON.stringify(body) });
+export const deleteObjective = (id, oid) =>
+  req(`/${id}/objectives/${encodeURIComponent(oid)}`, { method: 'DELETE' });
 
 // ------------------------------------------------------------ active project
 
@@ -510,6 +517,254 @@ function scrollToMessage(messageId, attempts = 20) {
   tick(attempts);
 }
 
+// ── Objectives: pure helpers (dependency-free; extracted and run under node by tests) ──
+// Everything between these markers must stay free of DOM, module and window
+// references so tests/test_objectives_page_js.py can execute it in bare node.
+
+/** Local escape: same table as ui.js esc(), but import-free for tests. */
+function objEsc(value) {
+  return String(value == null ? '' : value).replace(/[&<>"']/g, ch => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]
+  ));
+}
+
+const OBJ_STATUSES = [
+  ['open', 'open'],
+  ['in_progress', 'in progress'],
+  ['blocked', 'blocked'],
+  ['done', 'done'],
+];
+
+function objectiveIdNum(id) {
+  const match = /(\d+)\s*$/.exec(String(id || ''));
+  return match ? Number(match[1]) : 0;
+}
+
+function objIsClosed(objective) {
+  return objective?.status === 'done' || objective?.status === 'dropped';
+}
+
+/** Accept both the bare created/updated objective and a {"objective": ...} wrapper. */
+function unwrapObjective(raw) {
+  if (raw && typeof raw === 'object' && raw.objective && typeof raw.objective === 'object') return raw.objective;
+  return raw && typeof raw === 'object' ? raw : {};
+}
+
+/** Defensive shape for GET …/objectives: bare envelope or {"data": envelope}. */
+function normalizeObjectivesPayload(raw) {
+  let body = raw && typeof raw === 'object' ? raw : {};
+  if (!Array.isArray(body.objectives) && body.data && typeof body.data === 'object') body = body.data;
+  return {
+    objectives: Array.isArray(body.objectives) ? body.objectives : [],
+    edges: Array.isArray(body.edges) ? body.edges : [],
+    scores: body.scores && typeof body.scores === 'object' ? body.scores : {},
+    log: Array.isArray(body.log) ? body.log : [],
+  };
+}
+
+/** "OBJ-1, 2 obj-3" → ["OBJ-1", "OBJ-2", "OBJ-3"]; junk is dropped. */
+function parseDepIds(text) {
+  return String(text || '')
+    .split(/[,\s]+/)
+    .map(part => part.trim().toUpperCase())
+    .filter(part => /^(OBJ-)?\d+$/.test(part))
+    .map(part => (part.startsWith('OBJ-') ? part : `OBJ-${part}`));
+}
+
+/** done/dropped last, then priority (1 first), then numeric id. */
+function sortObjectives(objectives) {
+  const closed = (objective) => (objIsClosed(objective) ? 1 : 0);
+  const priority = (objective) => Math.min(4, Math.max(1, Number(objective.priority) || 3));
+  return (objectives || []).slice().sort((a, b) =>
+    (closed(a) - closed(b)) || (priority(a) - priority(b)) || (objectiveIdNum(a.id) - objectiveIdNum(b.id)));
+}
+
+/** Ids this objective depends on: edge {from: X, to: Y} means X is blocked by Y. */
+function objectiveBlockers(id, edges) {
+  return (edges || []).filter(edge => edge && edge.from === id).map(edge => String(edge.to || '')).filter(Boolean);
+}
+
+function objectiveRowHtml(objective, data, expanded) {
+  const id = String(objective.id || '');
+  const status = String(objective.status || 'open');
+  const dropped = status === 'dropped';
+  const priority = Math.min(4, Math.max(1, Number(objective.priority) || 3));
+  const statuses = dropped ? [...OBJ_STATUSES, ['dropped', 'dropped']] : OBJ_STATUSES;
+  const statusOptions = statuses
+    .map(([value, label]) => `<option value="${value}"${value === status ? ' selected' : ''}>${label}</option>`).join('');
+  const priorityOptions = [1, 2, 3, 4]
+    .map(p => `<option value="${p}"${p === priority ? ' selected' : ''}>P${p}</option>`).join('');
+  const hint = data?.scores?.[id]?.hint;
+  const blockers = objectiveBlockers(id, data?.edges);
+  return `
+    <div class="project-obj-row${objIsClosed(objective) ? ' is-closed' : ''}${dropped ? ' is-dropped' : ''}" data-obj-row="${objEsc(id)}">
+      <div class="project-obj-main">
+        <span class="project-obj-id">${objEsc(id)}</span>
+        <button type="button" class="project-obj-title" data-obj-toggle="${objEsc(id)}" title="${expanded ? 'Hide notes' : 'Show notes'}">${objEsc(objective.title || '')}</button>
+        ${hint ? `<span class="project-obj-hint" title="${objEsc(hint)}">⚡</span>` : ''}
+        <select class="project-obj-status is-${objEsc(status)}" data-obj-status="${objEsc(id)}" aria-label="Status of ${objEsc(id)}"${dropped ? ' disabled' : ''}>${statusOptions}</select>
+        <select class="project-obj-priority" data-obj-priority="${objEsc(id)}" aria-label="Priority of ${objEsc(id)}"${dropped ? ' disabled' : ''}>${priorityOptions}</select>
+        ${dropped ? '' : `<button type="button" class="project-obj-delete" data-obj-delete="${objEsc(id)}" aria-label="Drop ${objEsc(id)}" title="Drop objective">✕</button>`}
+      </div>
+      ${blockers.length ? `<div class="project-obj-deps">blocked by ${blockers.map(objEsc).join(', ')}</div>` : ''}
+      ${expanded ? `
+      <div class="project-obj-notes">
+        <textarea data-obj-notes="${objEsc(id)}" rows="3" placeholder="Notes for ${objEsc(id)}…" spellcheck="false">${objEsc(objective.notes || '')}</textarea>
+        <button type="button" class="projects-secondary-btn project-obj-notes-save" data-obj-save-notes="${objEsc(id)}">Save notes</button>
+      </div>` : ''}
+    </div>`;
+}
+
+/** Last ~10 audit records, newest first, as plain rows. */
+function objectivesLogHtml(log) {
+  const rows = (Array.isArray(log) ? log : []).slice(-10).reverse().map(entry => {
+    const when = entry.ts ? String(entry.ts).replace('T', ' ').slice(0, 16) : '';
+    const who = entry.actor || entry.source || '';
+    const what = entry.op ? `${entry.kind === 'conflict' ? 'conflict ' : ''}${entry.op}` : (entry.kind || '');
+    const why = entry.rationale || entry.reason || entry.note || '';
+    return `<div class="project-obj-log-row"><time>${objEsc(when)}</time><span class="project-obj-log-actor">${objEsc(who)}</span><span class="project-obj-log-op">${objEsc(what)}</span><span class="project-obj-log-id">${objEsc(entry.id || '')}</span><span class="project-obj-log-why">${objEsc(why)}</span></div>`;
+  }).join('');
+  return `
+    <details class="project-obj-activity">
+      <summary>Activity</summary>
+      <div class="project-obj-log">${rows || '<p class="project-muted">No objective activity yet.</p>'}</div>
+    </details>`;
+}
+
+/**
+ * The whole Objectives section body. opts: {showDropped, expanded (Set|array
+ * of ids), error}. Always renders the add form, even when empty or failing.
+ */
+function objectivesSectionHtml(data, opts = {}) {
+  const showDropped = !!opts.showDropped;
+  const expanded = new Set(opts.expanded || []);
+  const all = sortObjectives(data?.objectives || []);
+  const droppedCount = all.filter(objective => objective.status === 'dropped').length;
+  const count = all.length - droppedCount;
+  const visible = showDropped ? all : all.filter(objective => objective.status !== 'dropped');
+  const rows = visible.map(objective => objectiveRowHtml(objective, data, expanded.has(objective.id))).join('');
+  const addPriorityOptions = [1, 2, 3, 4]
+    .map(p => `<option value="${p}"${p === 3 ? ' selected' : ''}>P${p}</option>`).join('');
+  return `
+    <div class="project-section-head">
+      <div><h3>Objectives <span class="project-obj-count">${count}</span></h3><p>What this project is trying to get done — the agent reads and updates these</p></div>
+      <label class="project-obj-show-dropped"><input type="checkbox" data-obj-show-dropped${showDropped ? ' checked' : ''} /> show dropped${droppedCount ? ` (${droppedCount})` : ''}</label>
+    </div>
+    <p class="project-obj-error" data-obj-error${opts.error ? '' : ' hidden'}>${objEsc(opts.error || '')}</p>
+    <div class="project-obj-list">${rows || '<p class="project-muted">No objectives yet. Add the first one below.</p>'}</div>
+    <form class="project-obj-add" data-obj-add>
+      <input type="text" data-obj-add-title placeholder="Add an objective…" maxlength="200" autocomplete="off" spellcheck="false" />
+      <select data-obj-add-priority aria-label="Priority of the new objective">${addPriorityOptions}</select>
+      <input type="text" data-obj-add-deps placeholder="blocked by (OBJ-1, OBJ-2)" autocomplete="off" spellcheck="false" />
+      <button type="submit" class="projects-secondary-btn project-obj-add-btn">Add</button>
+    </form>
+    ${objectivesLogHtml(data?.log)}`;
+}
+// ── Objectives: end pure helpers ──
+
+let _obj = { projectId: null, data: null, showDropped: false, expanded: new Set() };
+
+function objInlineError(host, message) {
+  const slot = host.querySelector('[data-obj-error]');
+  if (!slot) return;
+  slot.textContent = message || '';
+  slot.hidden = !message;
+}
+
+async function renderObjectives(project, refetch = true) {
+  const host = $('project-objectives');
+  if (!host) return;
+  if (_obj.projectId !== project.id) _obj = { projectId: project.id, data: null, showDropped: false, expanded: new Set() };
+  let error = '';
+  if (refetch || !_obj.data) {
+    try {
+      _obj.data = normalizeObjectivesPayload(await listObjectives(project.id));
+    } catch (err) {
+      _obj.data = _obj.data || normalizeObjectivesPayload(null);
+      error = `Could not load the objectives: ${err.message || err}`;
+    }
+  }
+  host.innerHTML = objectivesSectionHtml(_obj.data, { showDropped: _obj.showDropped, expanded: _obj.expanded, error });
+  wireObjectives(project, host);
+}
+
+async function patchObjective(project, host, oid, body) {
+  try {
+    unwrapObjective(await updateObjective(project.id, oid, body));
+    await renderObjectives(project);
+  } catch (error) {
+    objInlineError(host, `Could not update ${oid}: ${error.message || error}`);
+  }
+}
+
+function wireObjectives(project, host) {
+  host.querySelector('[data-obj-show-dropped]')?.addEventListener('change', event => {
+    _obj.showDropped = !!event.currentTarget.checked;
+    renderObjectives(project, false);
+  });
+  host.querySelectorAll('[data-obj-toggle]').forEach(button => {
+    button.addEventListener('click', () => {
+      const id = button.dataset.objToggle;
+      if (_obj.expanded.has(id)) _obj.expanded.delete(id);
+      else _obj.expanded.add(id);
+      renderObjectives(project, false);
+    });
+  });
+  host.querySelectorAll('[data-obj-status]').forEach(select => {
+    select.addEventListener('change', () => patchObjective(project, host, select.dataset.objStatus, { status: select.value }));
+  });
+  host.querySelectorAll('[data-obj-priority]').forEach(select => {
+    select.addEventListener('change', () => patchObjective(project, host, select.dataset.objPriority, { priority: Number(select.value) || 3 }));
+  });
+  host.querySelectorAll('[data-obj-save-notes]').forEach(button => {
+    button.addEventListener('click', () => {
+      const id = button.dataset.objSaveNotes;
+      const notes = host.querySelector(`[data-obj-notes="${CSS.escape(String(id))}"]`)?.value || '';
+      patchObjective(project, host, id, { notes });
+    });
+  });
+  host.querySelectorAll('[data-obj-delete]').forEach(button => {
+    button.addEventListener('click', async () => {
+      const id = button.dataset.objDelete;
+      const objective = (_obj.data?.objectives || []).find(item => item.id === id);
+      const ok = await uiModule.styledConfirm?.(
+        `Drop ${id}${objective?.title ? ` — “${objective.title}”` : ''}? It stays in the history as dropped.`,
+        { title: 'Drop objective', confirmText: 'Drop', cancelText: 'Cancel', danger: true },
+      );
+      if (!ok) return;
+      try {
+        await deleteObjective(project.id, id);
+        _obj.expanded.delete(id);
+        await renderObjectives(project);
+      } catch (error) {
+        objInlineError(host, `Could not drop ${id}: ${error.message || error}`);
+      }
+    });
+  });
+  host.querySelector('[data-obj-add]')?.addEventListener('submit', async event => {
+    event.preventDefault();
+    const titleInput = host.querySelector('[data-obj-add-title]');
+    const title = String(titleInput?.value || '').trim();
+    if (!title) {
+      objInlineError(host, 'The objective needs a title.');
+      titleInput?.focus();
+      return;
+    }
+    const body = { title, priority: Number(host.querySelector('[data-obj-add-priority]')?.value) || 3 };
+    const deps = parseDepIds(host.querySelector('[data-obj-add-deps]')?.value);
+    if (deps.length) body.deps = deps;
+    const addButton = host.querySelector('.project-obj-add-btn');
+    if (addButton) addButton.disabled = true;
+    try {
+      unwrapObjective(await createObjective(project.id, body));
+      await renderObjectives(project);
+    } catch (error) {
+      if (addButton) addButton.disabled = false;
+      objInlineError(host, `Could not add the objective: ${error.message || error}`);
+    }
+  });
+}
+
 function hubHtml(project) {
   const instructions = String(project.instructions || '').trim();
   const attached = Array.isArray(project.context_items) ? project.context_items : [];
@@ -550,6 +805,10 @@ function hubHtml(project) {
           <section class="project-recents">
             <div class="project-section-head"><div><h3>Recent chats</h3><p>Conversations in ${esc(project.folder)}</p></div>${!project.archived ? '<button type="button" class="project-text-btn" id="project-empty-chat">New chat</button>' : ''}</div>
             <div class="project-chat-list">${chatRowsHtml(project)}</div>
+          </section>
+
+          <section class="project-recents project-objectives-block">
+            <div id="project-objectives" class="project-objectives"><p class="project-muted">Loading objectives…</p></div>
           </section>
 
           <section class="project-recents project-audit">
@@ -643,6 +902,7 @@ export function openDetail(project) {
     });
   });
   renderMemoryList(project);
+  renderObjectives(project);
   renderAudit(project);
   if (!project.archived) populateProjectModelSelect();
 }
@@ -1139,4 +1399,8 @@ export default {
   writeMemory,
   addProjectContext,
   removeProjectContext,
+  listObjectives,
+  createObjective,
+  updateObjective,
+  deleteObjective,
 };

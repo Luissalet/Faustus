@@ -43458,3 +43458,55 @@ body:has(.sidebar.right-side) .project-active-pill { right: 12px; }
   .lm-discover-head { flex-direction: column; align-items: stretch; }
   .lm-discover-q { max-width: none; }
 }
+
+/* ── Project objectives ─────────────────────────────────────────────────────
+   The Objectives section of the project hub (static/js/projects.js →
+   renderObjectives). Everything is derived from the theme tokens the rest of
+   the Projects panel uses (--fg/--bg/--panel/--border plus the semantic
+   --color-success / --warn / --red / --accent), so both themes work without
+   per-theme overrides. */
+.project-objectives { display: flex; flex-direction: column; gap: 10px; }
+.project-obj-count { display: inline-block; min-width: 18px; padding: 0 6px; margin-left: 6px; border-radius: 9px; font-size: 11px; font-weight: 600; text-align: center; vertical-align: 2px; background: color-mix(in srgb, var(--fg) 10%, transparent); color: color-mix(in srgb, var(--fg) 75%, transparent); }
+.project-obj-show-dropped { display: flex; align-items: center; gap: 6px; font-size: 11px; white-space: nowrap; cursor: pointer; color: color-mix(in srgb, var(--fg) 60%, transparent); }
+.project-obj-show-dropped input[type="checkbox"] { width: 13px; height: 13px; margin: 0; padding: 0; accent-color: var(--accent, var(--red)); }
+.project-obj-error { margin: 0; font-size: 12px; color: var(--color-error, var(--red)); }
+.project-obj-list { display: flex; flex-direction: column; }
+.project-obj-row { display: flex; flex-direction: column; gap: 5px; padding: 8px 0; border-bottom: 1px solid color-mix(in srgb, var(--border) 30%, transparent); }
+.project-obj-row:last-child { border-bottom: 0; }
+.project-obj-row.is-closed { opacity: .62; }
+.project-obj-row.is-dropped { opacity: .45; }
+.project-obj-main { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.project-obj-id { flex: 0 0 auto; font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace); font-size: 10.5px; font-weight: 600; padding: 1px 6px; border-radius: 5px; border: 1px solid color-mix(in srgb, var(--border) 80%, transparent); background: color-mix(in srgb, var(--fg) 4%, transparent); color: color-mix(in srgb, var(--fg) 70%, transparent); }
+/* The title is a <button> (expands the notes): undo the global button chrome. */
+.project-obj-title { flex: 1 1 auto; min-width: 0; height: auto; padding: 0; border: 0; background: transparent; text-align: left; font-size: 13px; color: var(--fg); cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-obj-title:hover { background: transparent; color: var(--fg); text-decoration: underline; }
+.project-obj-row.is-closed .project-obj-title { text-decoration: line-through; }
+.project-obj-hint { flex: 0 0 auto; font-size: 12px; line-height: 1; padding: 2px 5px; border-radius: 5px; cursor: help; border: 1px solid color-mix(in srgb, var(--warn, #f0ad4e) 45%, var(--border)); background: color-mix(in srgb, var(--warn, #f0ad4e) 16%, transparent); color: color-mix(in srgb, var(--warn, #f0ad4e) 75%, var(--fg)); }
+.project-obj-status, .project-obj-priority { flex: 0 0 auto; height: auto; padding: 2px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--fg); font-size: 11px; }
+.project-obj-status:disabled, .project-obj-priority:disabled { opacity: .6; cursor: default; }
+/* Status chips: subtle tints on the select itself */
+.project-obj-status.is-open { border-color: color-mix(in srgb, var(--fg) 30%, var(--border)); background: color-mix(in srgb, var(--fg) 6%, var(--panel)); }
+.project-obj-status.is-in_progress { border-color: color-mix(in srgb, var(--accent, var(--red)) 50%, var(--border)); background: color-mix(in srgb, var(--accent, var(--red)) 12%, var(--panel)); color: color-mix(in srgb, var(--accent, var(--red)) 70%, var(--fg)); }
+.project-obj-status.is-blocked { border-color: color-mix(in srgb, var(--warn, #f0ad4e) 55%, var(--border)); background: color-mix(in srgb, var(--warn, #f0ad4e) 14%, var(--panel)); color: color-mix(in srgb, var(--warn, #f0ad4e) 72%, var(--fg)); }
+.project-obj-status.is-done { border-color: color-mix(in srgb, var(--color-success, #4caf50) 50%, var(--border)); background: color-mix(in srgb, var(--color-success, #4caf50) 12%, var(--panel)); color: color-mix(in srgb, var(--color-success, #4caf50) 65%, var(--fg)); }
+.project-obj-status.is-dropped { border-color: var(--border); background: transparent; color: color-mix(in srgb, var(--fg) 45%, transparent); }
+.project-obj-delete { flex: 0 0 auto; width: 22px; height: 22px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border: 1px solid transparent; border-radius: 6px; background: transparent; font-size: 12px; line-height: 1; color: color-mix(in srgb, var(--fg) 45%, transparent); cursor: pointer; }
+.project-obj-delete:hover { background: color-mix(in srgb, var(--color-error, var(--red)) 14%, transparent); border-color: color-mix(in srgb, var(--color-error, var(--red)) 55%, var(--border)); color: var(--color-error, var(--red)); }
+.project-obj-deps { font-size: 11px; padding-left: 2px; color: color-mix(in srgb, var(--warn, #f0ad4e) 60%, var(--fg)); }
+.project-obj-notes { display: flex; flex-direction: column; gap: 6px; }
+.project-obj-notes textarea { width: 100%; min-height: 60px; resize: vertical; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--fg); font-size: 12px; font-family: inherit; }
+.project-obj-notes-save { align-self: flex-end; }
+.project-obj-add { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding-top: 4px; }
+.project-obj-add input[type="text"] { flex: 1 1 160px; min-width: 0; height: auto; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--fg); font-size: 12px; }
+.project-obj-add input[data-obj-add-deps] { flex: 0 1 190px; }
+.project-obj-add select { flex: 0 0 auto; height: auto; padding: 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); color: var(--fg); font-size: 12px; }
+.project-obj-activity summary { cursor: pointer; font-size: 12px; color: color-mix(in srgb, var(--fg) 65%, transparent); }
+.project-obj-activity summary:hover { color: var(--fg); }
+.project-obj-log { display: flex; flex-direction: column; margin-top: 6px; }
+.project-obj-log-row { display: flex; flex-wrap: wrap; gap: 2px 10px; padding: 4px 0; border-bottom: 1px solid color-mix(in srgb, var(--border) 25%, transparent); font-size: 11px; color: color-mix(in srgb, var(--fg) 75%, transparent); }
+.project-obj-log-row:last-child { border-bottom: 0; }
+.project-obj-log-row time { font-variant-numeric: tabular-nums; opacity: .7; }
+.project-obj-log-actor { font-weight: 500; }
+.project-obj-log-op { font-weight: 600; font-size: 9.5px; letter-spacing: .04em; text-transform: uppercase; align-self: center; }
+.project-obj-log-id { font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace); }
+.project-obj-log-why { flex: 1 1 100%; opacity: .8; }
