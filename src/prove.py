@@ -416,11 +416,11 @@ def _prove(evidence: Any, verification: Any, claims: Any, *, now: Optional[float
         verdict = "contradicted"
     elif v.passed and claims_settled and not stopped and not unfinished and (observed or not claim_rows):
         verdict = "proved"
-    elif not v.ran and not observed and not claim_rows:
-        verdict = "unproved"
-    elif not v.ran and not observed and claim_rows and not contradicted:
-        # Claims with nothing observable behind them and no runner: the work
-        # may have happened and nothing here can show it.
+    elif not v.ran and not observed:
+        # Nothing ran that could prove it and nothing observable changed —
+        # including the case where a worker CLAIMS work: a claim is not an
+        # observation, and with no exact diff to contradict it (that branch is
+        # above) the honest answer is that nothing here can show it.
         verdict = "unproved"
     else:
         verdict = "partial"
