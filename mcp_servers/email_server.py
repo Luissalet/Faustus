@@ -32,6 +32,14 @@ from mcp.types import Tool, TextContent
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+# stdout belongs to the JSON-RPC stream: one print() from the app code this
+# server imports would corrupt it and kill the session. The guard
+# (src/stdio_guard.py) sends stdout writes to stderr while the session runs.
+try:
+    from src.stdio_guard import guard as stdout_guard
+except Exception:  # pragma: no cover - the server must start regardless
+    from contextlib import nullcontext as stdout_guard
+
 server = Server("email")
 EMAIL_SOCKET_TIMEOUT = float(os.environ.get("EMAIL_SOCKET_TIMEOUT", "20"))
 from src.constants import DATA_DIR as _DATA_DIR, APP_DB, EMAIL_CACHE_DB, SETTINGS_FILE as _SETTINGS_FILE, MAIL_ATTACHMENTS_DIR
@@ -2902,10 +2910,14 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 # ── Main ──
 
 async def run():
+    # The guard goes up INSIDE stdio_server(): that context manager wraps the
+    # real sys.stdout.buffer when it is entered, so the protocol keeps the
+    # handle and everything else is diverted to stderr.
     async with stdio_server() as (read_stream, write_stream):
-        await server.run(
-            read_stream, write_stream, server.create_initialization_options()
-        )
+        with stdout_guard():
+            await server.run(
+                read_stream, write_stream, server.create_initialization_options()
+            )
 
 
 if __name__ == "__main__":

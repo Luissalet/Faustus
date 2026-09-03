@@ -3,6 +3,13 @@ builtin_mcp.py
 
 Auto-registration of built-in MCP servers on startup.
 Each server runs as a stdio subprocess managed by McpManager.
+
+Those subprocesses are not isolated from the app: `mcp_servers/*.py` import
+src.memory, src.rag_manager, the email stack. stdout there is the JSON-RPC
+stream, so each server raises `src/stdio_guard.py` around its session and a
+stray print() from any of that code lands on stderr instead of corrupting the
+protocol (setting `agent_mcp_stdio_guard`). Nothing in THIS module writes to a
+server's stdout — it only spawns them.
 """
 
 import asyncio
