@@ -30,9 +30,15 @@ the one retry after a connection error can never start a second job.
 **Output format.** The tools whose answer is ROWS — `objectives_list`,
 `guard_explain`, `workers_status` — ask the endpoint for `?format=toon` and
 hand the coordinator that text as it comes: the standard envelope
-(src/robot_envelope.py) in TOON, where a uniform array is one header line plus
-one line per row instead of every key repeated per row (~40-60 % fewer
-characters than the same rows in JSON), and where nothing is summarised away.
+(src/robot_envelope.py) carrying the lean projection of the payload
+(src/robot_projection.py) in TOON, where a uniform array is one header line
+plus one line per row instead of every key repeated per row. Measured end to
+end against the plain JSON body of the same read: 0.40 for `workers_status`
+and 0.41 for `objectives_list` (tests/test_robot_projection.py). The
+projection is lossy by design — it drops what a coordinator does not act on,
+such as the task instructions it sent itself — never summarised prose.
+`guard_explain` has no projection: one classification of one command is
+already scalars, so it travels as it stands.
 ``FAUSTUS_MCP_FORMAT=text`` goes back to the human wording below, which is
 also the automatic fallback whenever an older Faustus (or a hiccup) does not
 answer the robot-mode call. The tools whose answer is NOT rows keep their

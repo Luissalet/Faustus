@@ -8,8 +8,8 @@ corpus (nesting, folded keys, tabular arrays with commas and quotes inside
 cells, unicode, empty containers, strings that look like numbers) and then
 measures what the compaction actually buys.
 
-Measured here (the figures quoted in website/fable-workers.md), against JSON
-with COMPACT separators — the hardest baseline there is:
+Measured here on ALREADY-ROW-SHAPED payloads, against JSON with COMPACT
+separators — the hardest baseline there is:
 
     learned-memory items (15 rows)   4306 → 2334 chars   ratio 0.54  (-46 %)
     command-guard receipts (25 rows) 4658 → 2779 chars   ratio 0.60  (-40 %)
@@ -19,9 +19,15 @@ And the honest counter-example, measured and asserted too: an objectives
 dashboard plus usage comes out ~1.15× compact JSON. Almost nothing in a
 dashboard is tabular — the scores are one object per objective id, and each
 log record carries a `fields` object of its own — so TOON's two-space indent
-per nesting level has no repeated keys to earn it back. That is why the MCP
-server asks for TOON on the row-shaped reads and keeps its own rendering
-elsewhere, and why the docs quote the tabular figure.
+per nesting level has no repeated keys to earn it back.
+
+That counter-example is the general case, not the exception: every payload the
+endpoints really build has per-row lists or objects in it, and re-encoding one
+as it stands came out BIGGER than the JSON it replaced. So the encoder is not
+where robot mode saves anything — src/robot_projection.py is, by turning each
+payload into flat scalar rows first. The end-to-end figures the docs quote
+(0.17-0.54 of the plain JSON body) are measured in
+tests/test_robot_projection.py, on realistic payloads.
 """
 from __future__ import annotations
 
@@ -276,10 +282,11 @@ def test_a_tabular_payload_is_a_real_reduction(name, payload, ceiling):
 
 
 def test_the_row_shaped_payloads_clear_the_0_75_bar():
-    """The headline claim, and the one the docs quote: on the payloads that
-    ARE tabular — the learned-memory items and the guard receipts a
-    coordinator reads — TOON costs under three quarters of the same rows in
-    compact JSON, because the keys are named once instead of once per row."""
+    """The encoder's own claim: on payloads that ARE already tabular, TOON
+    costs under three quarters of the same rows in compact JSON, because the
+    keys are named once instead of once per row. (The endpoints only hand it
+    payloads of this shape because src/robot_projection.py makes them one
+    first — see the fixtures here: no row carries a list or an object.)"""
     for payload in (_memory_items(), _guard_log()):
         assert toon.estimate_savings(payload)["ratio"] < 0.75
     # and the win grows with the number of rows: the header is paid once
@@ -292,9 +299,10 @@ def test_the_realistic_objectives_plus_usage_payload_is_recorded():
     objectives dashboard is per-key score objects and log records whose
     `fields` is itself an object, so almost none of it is tabular and TOON's
     two-space indent per nesting level has nothing to earn it back. It comes
-    out about a tenth LARGER than compact JSON — which is why the MCP server
-    asks for TOON on the row-shaped reads and keeps its own rendering for the
-    prose ones, and why the docs quote the tabular figure, not this one."""
+    out about a tenth LARGER than compact JSON — which is exactly why robot
+    mode does not send this object at all: it sends the projection of it
+    (src/robot_projection.py), whose rows are scalars and whose measured cost
+    is 0.41 of the plain JSON body."""
     payload = {"objectives": _objectives(), "usage": _usage()}
     measured = toon.estimate_savings(payload)
     assert 1.0 <= measured["ratio"] < 1.25, measured

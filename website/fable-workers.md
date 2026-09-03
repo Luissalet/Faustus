@@ -70,7 +70,8 @@ reviewer, model), `workers_wait` (block until done, compact result),
 `FAUSTUS_MCP_FORMAT` (default `toon`, see [robot mode](#3c-robot-mode-one-envelope-and-toon))
 decides what the row-shaped tools answer with. On `toon`, `objectives_list`,
 `workers_status` and `guard_explain` ask the endpoint for `?format=toon` and
-hand that envelope through — complete and machine-readable, nothing summarised
+hand that envelope through — the machine view of the read, as rows: a third
+to a half the characters of the same read in JSON, with no prose summarised
 away. On `text` they go back to the one-glance human wording, which is also
 the automatic fallback whenever the robot-mode call does not come back. The
 two tools whose answer is not rows keep their wording either way: `memory_pack`
@@ -146,13 +147,23 @@ Two query parameters turn it on, per request:
 | Parameter | Answer |
 |---|---|
 | *(none)* | exactly what the browser page gets today, byte for byte |
-| `?robot=1` | the envelope, as JSON |
-| `?format=toon` | the envelope as **TOON**, `text/plain; charset=utf-8` |
+| `?robot=1` | the lean projection, in the envelope, as JSON |
+| `?format=toon` | the same envelope as **TOON**, `text/plain; charset=utf-8` |
 
 On: `GET /api/dispatch/{id}`, `GET /api/dispatch/{id}/events`,
 `GET /api/projects/{id}/objectives`, `GET /api/memory-engine/items`,
 `GET /api/memory-engine/pack`, `GET /api/command-guard/log`,
 `GET /api/command-guard/explain`, `GET /api/system/usage`.
+
+**What robot mode sends is not the page's payload.** It is the *machine view*
+of the read (`src/robot_projection.py`): the same facts as flat, scalar-only
+rows — one row per memory item, objective, receipt, GPU, loaded model, worker,
+event. A list inside a row becomes one cell (an objective's `deps` becomes
+`blocked_by: OBJ-3,OBJ-2`), a 32-character id becomes its `id8`, a worker's
+file list becomes a count beside the job-level union of the paths, and what
+the coordinator already knows — the task instructions it sent, the enum tables
+the UI paints dropdowns from, the per-receipt chain digests only the server
+walks — is left out. The plain, no-parameter answer still carries all of it.
 
 **TOON** (Token-Oriented Object Notation, `src/toon.py`) is a line-oriented
 encoding for exactly this: a uniform array of objects is written as one
@@ -162,44 +173,64 @@ every key again in every record. `GET /api/command-guard/log?format=toon`:
 ```
 ok: true
 data:
-  status: success
-  receipts[3]{ts,tool,tier,rule,action,command_head}:
-    2026-08-30T12:34:56+00:00,bash,DANGEROUS,fs.rm_rf,blocked,rm -rf build/
-    2026-08-30T12:35:02+00:00,bash,SAFE,"",allowed,pytest -q
-    2026-08-30T12:36:11+00:00,python,CAUTION,fs.write,allowlisted,"open('out.txt','w')"
+  receipts[3]{ts,tool,tier,rule,action,command_head,note,hash8}:
+    2026-08-30T12:34:56+00:00,bash,DANGEROUS,fs.rm_rf,blocked,rm -rf build/,"",9f1c8e0a
+    2026-08-30T12:35:02+00:00,bash,SAFE,"",allowed,pytest -q,"",3b77a201
+    2026-08-30T12:36:11+00:00,python,CAUTION,fs.write,allowlisted,"open('out.txt','w')",the allowlist entry expires in 40 minutes,c04e91bd
   chain:
     ok: true
-    entries: 3
+    length: 3
+    broken_at: null
 error_code: null
 error: null
 elapsed_ms: 4
 schema_version: 1
 ```
 
-Measured by `tests/test_toon.py` against JSON with **compact** separators —
-which is exactly the body `?robot=1` sends, so this is like for like:
+### What it really saves
 
-| Payload | JSON | TOON | Saved |
-|---|---|---|---|
-| learned-memory items, 15 rows | 4306 chars | 2334 | **46 %** |
-| command-guard receipts, 25 rows | 4658 chars | 2779 | **40 %** |
-| system usage (GPU + model rows) | 540 chars | 406 | **25 %** |
-| objectives dashboard + usage | 7255 chars | 8351 | **−15 %** |
+Measured end to end — the bytes of `?format=toon` against the bytes of the
+plain JSON body of the same read, on realistic payloads (memory items carrying
+three helpful and two harmful feedback events apiece, objectives with deps and
+hints, a two-GPU box with three models loaded, a job with three workers and a
+failed verification). The fixtures and the assertions are in
+`tests/test_robot_projection.py`:
 
-The last row is the honest one. TOON is paid for by repeated keys, and a
-dashboard has almost none: its scores are one object per objective id and
-each log record carries a `fields` object of its own, so nothing collapses
-into a table and the two-space indent per nesting level costs more than
-JSON's braces. **Use `format=toon` for the row-shaped reads** — receipts,
-memory items, GPU and model tables, a job's workers — and `robot=1` for the
-rest, where you want the uniform envelope but not the encoding.
+| Read | plain JSON | envelope only | **lean** | Saved |
+|---|---|---|---|---|
+| `/api/memory-engine/items?limit=5` | 8085 chars | 8513 (1.05×) | **1364** | **83 %** |
+| `/api/command-guard/log?limit=25` | 11484 chars | 12553 (1.09×) | **3883** | **66 %** |
+| `/api/dispatch/{id}` | 4962 chars | 5993 (1.21×) | **1974** | **60 %** |
+| `/api/projects/{id}/objectives` | 5676 chars | 6726 (1.18×) | **2310** | **59 %** |
+| `/api/system/usage` | 2567 chars | 3274 (1.28×) | **1321** | **49 %** |
+| `/api/dispatch/{id}/events` | 3710 chars | 4749 (1.28×) | **1992** | **46 %** |
+
+The middle column is why the projection exists, and it is worth reading before
+reaching for TOON anywhere else. Enveloping a real payload and re-encoding it
+**as it stands** is a LOSS on every one of these reads — against a running
+instance it measured 1.15× on the memory items, 1.24× on the objectives, 1.23×
+on the usage document, and a 7 % win on the guard log. TOON is paid for by keys
+repeated once per row, and none of these payloads had rows: every memory item
+carries its evidence and feedback arrays, every objective a `deps` list and a
+score in a separate per-id object, every GPU its own model list, every receipt
+an optional `note` most records lack — so nothing collapsed into a table and
+the two-space indent per nesting level cost more than JSON's braces. (A cell
+holding a comma or a quote is quoted, as the third receipt above shows, so a
+row always parses back into exactly the values it was written from.)
+
+Projecting first is what makes the table fire, and then the encoding pays.
+Both robot modes send the lean view: `robot=1` when you want it as JSON,
+`format=toon` when you want it small.
 
 Round-tripping is the property the tests hammer: `toon.decode(text)` gives
 back exactly the object Faustus meant to send — nesting, folded single-key
 paths (`config.database.host: localhost`), quoted cells holding commas or
 quotes, unicode, empty containers, and strings that merely look like numbers
 (`"3"` stays a string). A decoder is ~80 lines; the format is documented in
-full at the top of `src/toon.py`.
+full at the top of `src/toon.py`. Two reads have no projection because they
+are already scalars and prose: `GET /api/memory-engine/pack` (the block a
+worker would be given, verbatim) and `GET /api/command-guard/explain` (one
+classification of one command).
 
 ## What makes the answer trustworthy
 

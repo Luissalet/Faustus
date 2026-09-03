@@ -5,8 +5,8 @@ COORDINATING MODEL (Fable/Claude through the MCP server or the robot-mode
 endpoints). JSON spends a large share of its characters on punctuation that
 repeats once per row — `{"id":1,"name":"ana","active":true}` names every key
 again for every record. TOON names them once, in a header, and writes the rows
-as CSV-ish lines — 40-46 % fewer characters than compact JSON on the row-shaped
-payloads a coordinator reads (measured in tests/test_toon.py)::
+as CSV-ish lines — 40-46 % fewer characters than compact JSON on payloads that
+are ALREADY row-shaped (measured in tests/test_toon.py)::
 
     ok: true
     data.objectives[3]{id,status,priority,title}:
@@ -38,6 +38,13 @@ The grammar, in full:
   tabular either — it is written out as items, which for deeply nested data
   can cost slightly more than compact JSON (two spaces per line per level,
   with no repeated keys to save). TOON pays on rows; that is the trade.
+
+  That trade is why ``src/robot_projection.py`` exists. Every payload the
+  endpoints really build breaks the all-scalar rule somewhere — memory items
+  carry their feedback events, objectives their deps, a GPU its model list —
+  so encoding one AS IT STANDS is a loss, measured at 1.05-1.28× the JSON it
+  replaced. Robot mode projects each payload to flat scalar rows first, and
+  only then is this encoder the right one to reach for.
 * Any other array is ``- `` items — scalars inline, containers as a bare ``-``
   followed by an indented block.
 * Empty containers are ``key: []`` / ``key: {}``; ``None`` is ``null``.
