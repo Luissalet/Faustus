@@ -66,7 +66,14 @@ def _safe_upload_name(name: Any) -> str:
 
 
 def setup_history_import_routes() -> APIRouter:
-    router = APIRouter(prefix="/api/history", tags=["history-import"])
+# NOT "/api/history": the chat history already owns
+# `GET /api/history/{session_id}` (routes/history/history_routes.py), and that
+# path parameter swallows every sibling — live, `/api/history/conversations`
+# and `/api/history/stats` came back "Session conversations not found",
+# because FastAPI matched them as a session id. Only `POST /import` survived,
+# since the older router has no POST. The imported archive is its own resource
+# and gets its own prefix.
+    router = APIRouter(prefix="/api/history-import", tags=["history-import"])
 
     # ── import ────────────────────────────────────────────────────────────
 

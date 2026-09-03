@@ -640,17 +640,52 @@ def test_a_large_export_is_streamed_not_loaded(store, tmp_path):
     size = os.path.getsize(path)
     assert size > 12_000_000, "the fixture has to be big enough to matter"
 
-    before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-    seen = 0
-    for parsed in history.ChatGPTParser().parse(str(path)):
-        assert isinstance(parsed, history.Conversation)
-        seen += 1
-    grew_bytes = (resource.getrusage(resource.RUSAGE_SELF).ru_maxrss - before) * 1024
+    # Measured with tracemalloc, and RELATIVE to actually loading the file.
+    #
+    # Two earlier shapes of this test were wrong in instructive ways. An
+    # absolute budget on `ru_maxrss` was genuinely flaky — the same code passed
+    # and failed on consecutive runs, because that number is a process-wide
+    # high-water mark that moves with whatever else the interpreter allocated.
+    # Measuring the load as a control did not fix it either: a high-water mark
+    # cannot be measured twice in one process, so the second reading came back
+    # ~0 and the comparison silently measured nothing. tracemalloc reports the
+    # Python heap peak and can be reset between measurements, which is what the
+    # claim actually needs.
+    import tracemalloc
 
+    def _peak(work):
+        tracemalloc.start()
+        try:
+            tracemalloc.reset_peak()
+            result = work()
+            _current, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        return result, peak
+
+    def _stream():
+        seen = 0
+        for parsed in history.ChatGPTParser().parse(str(path)):
+            assert isinstance(parsed, history.Conversation)
+            seen += 1
+        return seen
+
+    def _load():
+        with open(path, encoding="utf-8") as handle:
+            return len(json.load(handle))
+
+    seen, streamed = _peak(_stream)
     assert seen == count
-    assert grew_bytes < size / 2, (
-        f"peak RSS grew {grew_bytes} bytes for a {size}-byte file — that is a load, "
-        "not a stream")
+    loaded_count, loaded = _peak(_load)
+    assert loaded_count == count
+
+    # The control must be big enough for the comparison to mean anything.
+    assert loaded > size / 4, (
+        f"the control load only peaked at {loaded} bytes for a {size}-byte "
+        "file — the comparison cannot be trusted, so neither can the result")
+    assert streamed < loaded / 4, (
+        f"streaming peaked at {streamed} bytes where loading the same file "
+        f"peaked at {loaded} — that is a load, not a stream")
 
 
 def test_the_wrapper_object_form_streams_too(store, tmp_path):
@@ -788,7 +823,7 @@ def client(store):
 
 
 def test_api_previews_then_imports_then_lists_reads_searches_and_deletes(client, exports):
-    preview = client.post("/api/history/import",
+    preview = client.post("/api/history-import/import",
                           json={"path": str(exports), "dry_run": True})
     assert preview.status_code == 200
     body = preview.json()
@@ -797,10 +832,10 @@ def test_api_previews_then_imports_then_lists_reads_searches_and_deletes(client,
     assert {row["where"] for row in body["skipped"]} >= {"claude.json#cl-2"}
     assert not os.path.exists(history.db_path())
 
-    done = client.post("/api/history/import", json={"path": str(exports)}).json()
+    done = client.post("/api/history-import/import", json={"path": str(exports)}).json()
     assert done["dry_run"] is False and done["created"] == 6
 
-    listed = client.get("/api/history/conversations").json()
+    listed = client.get("/api/history-import/conversations").json()
     assert len(listed["conversations"]) == 6
     assert set(listed["conversations"][0]) == {
         "id", "source", "external_id", "title", "started_at", "ended_at",
@@ -809,65 +844,65 @@ def test_api_previews_then_imports_then_lists_reads_searches_and_deletes(client,
     assert listed["sources"] == list(history.SOURCES)
     assert listed["enabled"] is True
 
-    filtered = client.get("/api/history/conversations?source=claude").json()
+    filtered = client.get("/api/history-import/conversations?source=claude").json()
     assert [row["title"] for row in filtered["conversations"]] == ["Sourdough"]
-    by_title = client.get("/api/history/conversations?q=docker").json()
+    by_title = client.get("/api/history-import/conversations?q=docker").json()
     assert [row["title"] for row in by_title["conversations"]] == ["Docker GPU"]
 
     conv_id = history.conversation_key("claude", "cl-1")
-    detail = client.get(f"/api/history/conversations/{conv_id}").json()
+    detail = client.get(f"/api/history-import/conversations/{conv_id}").json()
     assert [m["role"] for m in detail["conversation"]["messages"]] == ["user", "assistant"]
 
-    found = client.get("/api/history/search?q=mozzarella&k=3").json()
+    found = client.get("/api/history-import/search?q=mozzarella&k=3").json()
     assert found["hits"][0]["title"] == "Flat chat"
     assert found["degraded"] is True and found["tier"] in ("lexical", "hybrid")
 
-    figures = client.get("/api/history/stats").json()
+    figures = client.get("/api/history-import/stats").json()
     assert figures["conversations"] == 6
     assert figures["known_sources"] == list(history.SOURCES)
 
-    assert client.delete(f"/api/history/conversations/{conv_id}").json()["deleted"] is True
-    assert client.get(f"/api/history/conversations/{conv_id}").status_code == 404
+    assert client.delete(f"/api/history-import/conversations/{conv_id}").json()["deleted"] is True
+    assert client.get(f"/api/history-import/conversations/{conv_id}").status_code == 404
 
 
 def test_api_accepts_an_uploaded_file(client, exports):
     with open(exports / "claude.json", "rb") as handle:
         payload = handle.read()
 
-    preview = client.post("/api/history/import",
+    preview = client.post("/api/history-import/import",
                           files={"file": ("claude.json", payload, "application/json")},
                           data={"dry_run": "1"})
     assert preview.status_code == 200 and preview.json()["conversations"] == 1
     assert preview.json()["dry_run"] is True
     assert not os.listdir(history.uploads_dir()), "a preview leaves no upload behind"
 
-    done = client.post("/api/history/import",
+    done = client.post("/api/history-import/import",
                        files={"file": ("claude.json", payload, "application/json")})
     assert done.json()["created"] == 1 and done.json()["uploaded"] is True
     assert os.listdir(history.uploads_dir()) == ["claude.json"]
-    assert client.get("/api/history/stats").json()["conversations"] == 1
+    assert client.get("/api/history-import/stats").json()["conversations"] == 1
 
 
 def test_api_reports_bad_input_without_a_500(client, tmp_path):
-    assert client.post("/api/history/import", json={}).status_code == 400
-    assert client.post("/api/history/import", json={"path": ""}).status_code == 400
-    assert client.post("/api/history/import",
+    assert client.post("/api/history-import/import", json={}).status_code == 400
+    assert client.post("/api/history-import/import", json={"path": ""}).status_code == 400
+    assert client.post("/api/history-import/import",
                        json={"path": str(tmp_path / "gone")}).status_code == 400
-    assert client.post("/api/history/import",
+    assert client.post("/api/history-import/import",
                        json={"path": str(tmp_path), "source": "telepathy"}).status_code == 400
-    assert client.post("/api/history/import", content=b"not json",
+    assert client.post("/api/history-import/import", content=b"not json",
                        headers={"content-type": "application/json"}).status_code == 400
-    assert client.post("/api/history/import",
+    assert client.post("/api/history-import/import",
                        files={"nope": ("x.json", b"{}")}).status_code == 400
-    assert client.get("/api/history/conversations/missing").status_code == 404
-    assert client.delete("/api/history/conversations/missing").status_code == 404
-    assert client.get("/api/history/search?q=").json()["hits"] == []
+    assert client.get("/api/history-import/conversations/missing").status_code == 404
+    assert client.delete("/api/history-import/conversations/missing").status_code == 404
+    assert client.get("/api/history-import/search?q=").json()["hits"] == []
 
 
 def test_an_upload_filename_cannot_escape_the_upload_folder(client, exports):
     with open(exports / "claude.json", "rb") as handle:
         payload = handle.read()
-    client.post("/api/history/import",
+    client.post("/api/history-import/import",
                 files={"file": ("../../etc/passwd", payload, "application/json")})
     stored = os.listdir(history.uploads_dir())
     assert stored == ["passwd.json"], stored
@@ -876,13 +911,13 @@ def test_an_upload_filename_cannot_escape_the_upload_folder(client, exports):
 
 
 def test_robot_mode_projects_the_reads_and_leaves_the_plain_ones_alone(client, exports):
-    client.post("/api/history/import", json={"path": str(exports)})
+    client.post("/api/history-import/import", json={"path": str(exports)})
 
-    plain = client.get("/api/history/conversations")
-    again = client.get("/api/history/conversations")
+    plain = client.get("/api/history-import/conversations")
+    again = client.get("/api/history-import/conversations")
     assert plain.content == again.content, "a call with no parameters is byte-identical"
 
-    robot = client.get("/api/history/conversations?robot=1").json()
+    robot = client.get("/api/history-import/conversations?robot=1").json()
     assert set(robot) == {"ok", "data", "error_code", "error", "elapsed_ms", "schema_version"}
     assert robot["ok"] is True and robot["error_code"] is None
     row = robot["data"]["conversations"][0]
@@ -891,23 +926,79 @@ def test_robot_mode_projects_the_reads_and_leaves_the_plain_ones_alone(client, e
     undated = [r for r in robot["data"]["conversations"] if r["started_at"] is None]
     assert undated, "a null date stays null in the projection too"
 
-    hits = client.get("/api/history/search?q=mozzarella&robot=1").json()
+    hits = client.get("/api/history-import/search?q=mozzarella&robot=1").json()
     assert hits["ok"] is True
     assert hits["data"]["tier"] in ("lexical", "hybrid")
     assert hits["data"]["degraded"] is True
     assert set(hits["data"]["hits"][0]) == {
         "conversation_id", "title", "source", "role", "ts", "score", "snippet"}
 
-    figures = client.get("/api/history/stats?robot=1").json()
+    figures = client.get("/api/history-import/stats?robot=1").json()
     assert figures["ok"] is True and figures["data"]["conversations"] == 6
 
-    toon = client.get("/api/history/conversations?format=toon")
+    toon = client.get("/api/history-import/conversations?format=toon")
     assert toon.headers["content-type"].startswith("text/plain")
     assert "conversations" in toon.text
 
 
 def test_robot_mode_envelopes_a_failure_too(client):
-    body = client.get("/api/history/conversations/missing?robot=1")
+    body = client.get("/api/history-import/conversations/missing?robot=1")
     assert body.status_code == 404
     payload = body.json()
     assert payload["ok"] is False and payload["error_code"] == "http_404"
+
+
+# ── the collision that only showed up on the running app ──────────────────
+# The importer's tests mount ONLY its own router, so they never saw that the
+# chat history already owns `GET /api/history/{session_id}` — a path parameter
+# that swallows every sibling. Live, `/api/history/conversations` answered
+# "Session conversations not found". Only `POST /import` had survived, because
+# the older router has no POST. These mount BOTH, the way the app does.
+
+def _both_routers():
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from routes.history_import_routes import setup_history_import_routes
+    from routes.history.history_routes import setup_history_routes
+
+    app = FastAPI()
+    # The chat-history router first, exactly as app.py orders them: if the
+    # importer only works when it wins the race, it does not work.
+    try:
+        app.include_router(setup_history_routes())
+    except TypeError:
+        # its factory takes collaborators in some versions; the prefix clash is
+        # what matters, so a bare route with the same shape proves the same thing
+        @app.get("/api/history/{session_id}")
+        def _chat_history(session_id: str):
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail="Session %s not found" % session_id)
+    app.include_router(setup_history_import_routes())
+    return TestClient(app, raise_server_exceptions=False)
+
+
+def test_the_importer_does_not_live_under_the_chat_history_prefix():
+    from routes.history_import_routes import setup_history_import_routes
+    router = setup_history_import_routes()
+    assert router.prefix != "/api/history", (
+        "GET /api/history/{session_id} swallows every sibling path — the "
+        "importer needs its own prefix"
+    )
+    assert router.prefix.startswith("/api/")
+
+
+def test_every_importer_read_survives_the_chat_history_router(tmp_path, monkeypatch):
+    import src.history_import as hi
+    monkeypatch.setattr(hi, "DATA_DIR", str(tmp_path))
+    hi.reset_store() if hasattr(hi, "reset_store") else None
+    c = _both_routers()
+    for path in ("/conversations", "/stats", "/search?q=x"):
+        url = f"{setup_prefix()}{path}"
+        r = c.get(url)
+        assert r.status_code != 404 or "not found" not in str(r.json()).lower() \
+            or "Session" not in str(r.json()), f"{url} was swallowed by the chat history: {r.json()}"
+
+
+def setup_prefix():
+    from routes.history_import_routes import setup_history_import_routes
+    return setup_history_import_routes().prefix

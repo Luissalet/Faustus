@@ -24,7 +24,9 @@
 
 import uiModule from './ui.js';
 
-const API = `${window.location.origin}/api/history`;
+// /api/history-import, not /api/history: the chat history owns
+// `GET /api/history/{session_id}`, whose path parameter swallows any sibling.
+const API = `${window.location.origin}/api/history-import`;
 
 // ── History: pure helpers (dependency-free; extracted and run under node by tests) ──
 // Everything between these markers must stay free of DOM, module and window
@@ -463,7 +465,7 @@ let _list = { source: '', query: '', error: '', loading: false };
 let _import = { path: '', source: '', error: '', busy: false, preview: null, pending: null };
 let _results = null;
 
-/** fetch wrapper for /api/history/*: a non-2xx becomes an Error with {detail}. */
+/** fetch wrapper for /api/history-import/*: a non-2xx becomes an Error with {detail}. */
 async function req(path, options = {}) {
   const res = await fetch(`${API}${path}`, {
     credentials: 'same-origin',
