@@ -10,6 +10,20 @@ model nothing and a vision model is not fed a frame it did not ask for.
 URL and title come from the action's own text result — Playwright prints
 `- Page URL:` / `- Page Title:` lines — and fall back to one cheap
 `browser_tabs list` call when the result carries neither.
+
+The other direction — provenance
+--------------------------------
+:func:`annotate_page_text` is the seam where page text becomes model-visible
+content. When ``agent_web_provenance`` is on (default) it hands back a COPY of
+the tool result whose text carries one ``<!-- source: … -->`` comment per
+block (``src/web_provenance.py``), so the model can cite what it read and the
+user can check the citation against the page. The anchor is a character range
+plus a content hash, never a pixel coordinate — see that module's docstring.
+
+It returns ``None`` whenever nothing should change: the setting off, a tool
+that returns no page text, a refused or parked action, a result with no URL to
+anchor to. A caller that keeps its own result object on ``None`` therefore
+produces a byte-identical run with the setting off.
 """
 
 from __future__ import annotations
@@ -54,6 +68,21 @@ BROWSER_VIEW_ACTIONS = frozenset(
 
 SCREENSHOT_TOOL = BROWSER_MCP_PREFIX + "browser_take_screenshot"
 TABS_TOOL = BROWSER_MCP_PREFIX + "browser_tabs"
+
+# Tools whose text result IS page content the model reads. Console, network
+# and tab listings are the browser talking about itself, not the page, so
+# anchoring them to a URL would be a claim about the page that is not true.
+BROWSER_TEXT_TOOLS = frozenset(
+    {
+        "browser_snapshot",
+        "browser_navigate",
+        "browser_navigate_back",
+    }
+)
+
+# The result keys a browser tool may put its text in, in the order the rest of
+# this module already looks at them.
+_TEXT_KEYS = ("stdout", "output")
 
 _URL_RE = re.compile(r"^\s*-\s*Page URL:\s*(.+?)\s*$", re.MULTILINE)
 _TITLE_RE = re.compile(r"^\s*-\s*Page Title:\s*(.*?)\s*$", re.MULTILINE)
@@ -182,3 +211,93 @@ async def after_browser_action(
             logger.debug(f"[browser-view] tabs lookup after {tool_name} failed: {exc}")
 
     return {"url": url, "title": title, "screenshot": screenshot}
+
+
+# ---------------------------------------------------------------------------
+# Provenance: the seam where page text becomes model-visible content
+# ---------------------------------------------------------------------------
+
+
+def is_page_text_tool(tool_name: Any) -> bool:
+    """True for the browser tools whose text result is page CONTENT."""
+    return (
+        isinstance(tool_name, str)
+        and tool_name.startswith(BROWSER_MCP_PREFIX)
+        and tool_name[len(BROWSER_MCP_PREFIX):] in BROWSER_TEXT_TOOLS
+    )
+
+
+def provenance_enabled(settings: Optional[Mapping[str, Any]] = None) -> bool:
+    from src.web_provenance import enabled
+    return enabled(settings)
+
+
+def annotate_page_text(
+    tool_name: Any,
+    result: Any,
+    settings: Optional[Mapping[str, Any]] = None,
+    *,
+    url: str = "",
+    fetched_at: str = "",
+) -> Optional[dict]:
+    """A COPY of ``result`` whose page text carries provenance anchors.
+
+    Returns ``None`` — meaning "keep the result you already have, untouched" —
+    when the setting is off, the tool returns no page text, the action was
+    refused or is waiting at the approval card, or there is no URL to anchor
+    to. That is what makes a setting-off run byte-identical: on ``None`` the
+    caller never rebuilds the object.
+
+    ``url`` and ``fetched_at`` are injectable so this is testable without a
+    clock; by default the URL comes from the result's own ``- Page URL:`` line
+    and the timestamp is now, in UTC.
+
+    Never raises.
+    """
+    try:
+        if not is_page_text_tool(tool_name):
+            return None
+        if not isinstance(result, dict):
+            return None
+        if result.get("blocked") or result.get("approval_required"):
+            return None
+        if not provenance_enabled(settings):
+            return None
+
+        key = ""
+        text = ""
+        for candidate in _TEXT_KEYS:
+            value = result.get(candidate)
+            if isinstance(value, str) and value.strip():
+                key, text = candidate, value
+                break
+        if not key:
+            return None
+
+        page_url = url or parse_page_info(text)[0]
+        if not page_url:
+            return None
+        if "<!-- source:" in text:
+            return None  # already anchored; never anchor an anchor
+
+        from datetime import datetime, timezone
+
+        from src import web_provenance
+
+        stamp = fetched_at or datetime.now(timezone.utc).isoformat()
+        annotated = web_provenance.annotate(text, url=page_url, fetched_at=stamp)
+        if annotated == text:
+            return None
+
+        out = dict(result)
+        out[key] = annotated
+        out["provenance"] = {
+            "url": page_url,
+            "fetched_at": stamp,
+            "blocks": len(web_provenance.extract_provenance(annotated)),
+            "anchor": "character range + sha256 of the fetched text, not pixels",
+        }
+        return out
+    except Exception as exc:  # noqa: BLE001 - provenance is additive, never fatal
+        logger.debug(f"[browser-view] provenance skipped for {tool_name}: {exc}")
+        return None

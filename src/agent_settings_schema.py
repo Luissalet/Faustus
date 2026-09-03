@@ -364,6 +364,20 @@ GROUPS: list[dict[str, Any]] = [
         ],
     ),
     _group(
+        "provenance", "Web provenance",
+        "What the browser scrapes is anchored to where it came from, so a citation can be checked and "
+        "text that changed since the fetch is detectable.",
+        [
+            _bool("agent_web_provenance", "Anchor page text",
+                  "Page text handed to the model carries one invisible HTML comment per block naming the "
+                  "URL, the character range in the fetched document and a sha256 of that range, so a "
+                  "citation can be checked against the source and a block that changed since the fetch is "
+                  "reported as drifted. The anchor is a character range plus a hash, not a pixel "
+                  "coordinate — nothing here knows where on the screen the text was. Off = the text is "
+                  "passed to the model byte for byte as before."),
+        ],
+    ),
+    _group(
         "storage", "Disk ballast",
         "Preallocated files that can be unlinked instantly when the disk gets tight, and the scoring "
         "of what Faustus itself created and could go. Nothing is ever deleted directly: a candidate is "

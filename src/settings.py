@@ -81,6 +81,12 @@ DEFAULT_SETTINGS = {
     # DATA_DIR/_quarantine with an undo, and a .git directory anywhere inside
     # it vetoes it outright.
     "agent_disk_ballast": "observe",
+    # Web provenance (src/web_provenance.py): page text the integrated browser
+    # hands the model carries one HTML comment per block naming the URL, the
+    # character range and a sha256 of that range, so a citation can be checked
+    # against the source and text that drifted since the fetch is detectable.
+    # Comments are invisible in the rendered text; off = byte-identical.
+    "agent_web_provenance": True,
     # Public base URL used to build clickable deep-links in outgoing alerts
     # (e.g., urgency alert email). Example: "https://chat.example.com"
     "app_public_url": "",
