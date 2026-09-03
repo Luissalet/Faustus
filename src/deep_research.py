@@ -175,6 +175,12 @@ Requirements:
 - Close each major section with a one-line blockquote callout in this shape:
   > **{implication}:** what someone should actually do with this.
 - Say where the sources agree and where they disagree, naming the numbers.
+- BREADTH: every numbered source above was fetched and read for THIS question,
+  so each one has something the others do not. Draw on the whole list rather
+  than leaning on the first two — where a later source covers a section better,
+  cite it there. This is not a licence to pad: never attach a number to a
+  sentence it did not support. A source with genuinely nothing to add is left
+  out, and the report says so in one clause rather than citing it emptily.
 - Open with a short executive summary and end with a conclusion that answers
   the question directly.
 - Do NOT write a "how to read this report" section, and do NOT write a

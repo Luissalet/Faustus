@@ -769,12 +769,21 @@ def _verdict_of(result: Dict[str, Any], sentence: str, source: str) -> str:
 
 
 def compute_coverage(audit: CitationAudit,
-                     checked: Sequence[CheckedClaim]) -> Dict[str, Any]:
+                     checked: Sequence[CheckedClaim],
+                     registry: Optional["SourceRegistry"] = None) -> Dict[str, Any]:
     counts = {verdict: 0 for verdict in VERDICTS}
     for item in checked or []:
         if item.verdict in counts:
             counts[item.verdict] += 1
+    # Breadth, measured live: a 9B model handed seven read sources wrote 75
+    # markers and used two of them. A report resting on two pages is a
+    # different object from one spanning seven, and the reader cannot tell
+    # from the prose — the numbers all look the same on the page.
+    sources_used = len([n for n in (audit.used or [])
+                        if registry is None or registry.source(n)])
     return {
+        "sources_used": sources_used,
+        "sources_total": len(registry) if registry is not None else sources_used,
         # Not len(audit.claims): a marker in a two-word table cell is repaired
         # and checked, but it is not a sentence, so it belongs in neither half
         # of the coverage ratio.
@@ -913,6 +922,19 @@ def implication_label(language: str) -> str:
     return IMPLICATION_LABELS.get((language or "").lower(), IMPLICATION_LABELS["en"])
 
 
+# Breadth is a separate sentence rather than another slot in the bodies above,
+# because it is only worth printing when it says something: a report that used
+# every source it gathered is unremarkable, and the line would be noise.
+_LEGEND_BREADTH = {
+    "es": "Se apoya en {used} de las {total} fuentes leídas.",
+    "en": "It draws on {used} of the {total} sources read.",
+    "fr": "Il s'appuie sur {used} des {total} sources lues.",
+    "de": "Er stützt sich auf {used} von {total} gelesenen Quellen.",
+    "pt": "Apoia-se em {used} das {total} fontes lidas.",
+    "it": "Si basa su {used} delle {total} fonti lette.",
+}
+
+
 _LEGEND_BODY = {
     "es": ("Cada frase con datos lleva un marcador `[n]` que remite a la fuente "
            "numerada en «Fuentes». {cited} de las {total} frases del informe "
@@ -1031,12 +1053,18 @@ def build_legend(coverage: Dict[str, Any], language: str = "en") -> str:
     citations = int((coverage or {}).get("citations") or sum(n for _v, n in tally))
     pct = int(round(100.0 * cited / total)) if total else 0
     body = _LEGEND_BODY.get((language or "").lower(), _LEGEND_BODY["en"])
-    return (legend_heading(language) + "\n\n"
-            + body.format(cited=cited, total=total, pct=pct, counts=rendered,
-                          citations=citations,
-                          supported=words[VERDICT_SUPPORTED],
-                          refuted=words[VERDICT_REFUTED],
-                          unchecked=words[VERDICT_UNCHECKED]))
+    text = body.format(cited=cited, total=total, pct=pct, counts=rendered,
+                       citations=citations,
+                       supported=words[VERDICT_SUPPORTED],
+                       refuted=words[VERDICT_REFUTED],
+                       unchecked=words[VERDICT_UNCHECKED])
+    used = int((coverage or {}).get("sources_used") or 0)
+    gathered = int((coverage or {}).get("sources_total") or 0)
+    if gathered and used < gathered:
+        line = _LEGEND_BREADTH.get((language or "").lower(), _LEGEND_BREADTH["en"])
+        head, sep, rest = text.partition("\n\n")
+        text = head + " " + line.format(used=used, total=gathered) + sep + rest
+    return legend_heading(language) + "\n\n" + text
 
 
 # ---------------------------------------------------------------------------
@@ -1166,7 +1194,7 @@ def finalize_report(report_md: Any, registry: Optional[SourceRegistry] = None,
     text = _drop_legend_section(_as_text(report_md))
     repaired, audit = repair_citations(text, registry, language=language)
     checked = check_claims(audit.claims, registry)
-    coverage = compute_coverage(audit, checked)
+    coverage = compute_coverage(audit, checked, registry)
 
     final = _insert_legend(repaired, build_legend(coverage, language))
     # Re-audit so the spans point into the text we are actually returning. The

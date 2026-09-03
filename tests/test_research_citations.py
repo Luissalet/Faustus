@@ -752,3 +752,48 @@ def test_audit_survives_junk(junk):
 def test_claim_dataclass_is_comparable():
     a = Claim(text="x [1]", numbers=[1], start=0, end=5)
     assert a.numbers == [1] and a.start == 0 and a.end == 5
+
+
+# ---------------------------------------------------------------------------
+# Breadth — measured live: a 9B model handed 7 read sources cited 2 of them
+# ---------------------------------------------------------------------------
+
+
+def test_the_legend_says_how_many_of_the_gathered_sources_the_report_used():
+    """A report resting on two pages reads exactly like one spanning seven.
+    The prose cannot show the difference; the count can."""
+    reg = _registry("https://a.test/1", "https://b.test/2", "https://c.test/3")
+    report = ("El entrenamiento aumentó la densidad ósea un 2% en doce "
+              "meses [1]. La carga óptima ronda el 70% del 1RM segun los "
+              "ensayos revisados [2]. El riesgo articular se concentra en las "
+              "primeras ocho semanas de adaptación [2].\n")
+    _final, audit, checked = finalize_report(report, reg, "es")
+    coverage = audit.coverage
+    assert coverage["sources_used"] == 2
+    assert coverage["sources_total"] == 3
+    assert "2 de las 3 fuentes" in build_legend(coverage, "es")
+    assert "2 of the 3 sources" in build_legend(coverage, "en")
+
+
+def test_a_report_that_used_every_source_says_nothing_about_breadth():
+    """The line is only worth its space when it reports a shortfall."""
+    reg = _registry("https://a.test/1", "https://b.test/2")
+    report = ("La adherencia cayó un 30% al tercer mes en la cohorte "
+              "seguida [1]. El grupo control mantuvo su peso durante todo el "
+              "seguimiento de un año [2].\n")
+    _final, audit, _checked = finalize_report(report, reg, "es")
+    assert audit.coverage["sources_used"] == 2
+    for language in ("es", "en", "fr", "de", "pt", "it"):
+        assert "fuentes leídas" not in build_legend(audit.coverage, language)
+        assert "sources read" not in build_legend(audit.coverage, language)
+
+
+def test_every_language_can_render_the_breadth_line():
+    coverage = {"cited_sentences": 3, "total_sentences": 6, "citations": 3,
+                "sources_used": 2, "sources_total": 5,
+                "verdicts": {VERDICT_SUPPORTED: 3, VERDICT_REFUTED: 0,
+                             VERDICT_UNCHECKED: 0}}
+    for language in ("es", "en", "fr", "de", "pt", "it"):
+        legend = build_legend(coverage, language)
+        assert "{used}" not in legend and "{total}" not in legend
+        assert "2" in legend and "5" in legend
