@@ -54,6 +54,15 @@ Two rules the packet keeps:
   first, so the transport's ordering — or a page boundary that repeats a row —
   cannot change the identity of the same evidence.
 
+One thing a proof cannot derive for itself has its own entry point:
+:func:`note_external_gate`. Whether the agents that did the work were ones
+Faustus wrote — and, when they were not, whether Faustus's own guard judged
+their tool calls before they ran (src/agent_gate.py) — is knowledge the
+dispatch path holds and this module does not. It has three honest answers, and
+the middle one is the reason the function exists: a run that was gated with
+something left unjudged keeps a NARROWER uncertainty rather than losing the
+entry entirely.
+
 Pure, stdlib-only, injectable clock, and total: every entry point returns a
 Proof, never an exception. An internal failure answers `unproved` with an
 `internal_error` uncertainty, because a module that cannot read its own inputs
@@ -82,6 +91,10 @@ WORKER_CANCELLED = "worker_cancelled"
 WORKER_UNFINISHED = "worker_unfinished"
 NO_OBSERVABLE_CHANGE = "no_observable_change"
 INTERNAL_ERROR = "internal_error"
+#: An agent Faustus did not write ran its own shell and nothing judged it.
+EXTERNAL_UNGUARDED = "external_agent_unguarded"
+#: The narrower one: that agent's calls WERE judged, except for these.
+EXTERNAL_TOOLS_UNJUDGED = "external_agent_tools_unjudged"
 
 #: How much each named uncertainty costs the confidence. They are subtracted
 #: from 1.0 and then capped by the verdict's own ceiling.
@@ -100,6 +113,12 @@ PENALTY: Dict[str, float] = {
     TRUNCATED_CHANGES: 0.15,
     PRE_EXISTING_FAILURES: 0.10,
     MTIME_ONLY: 0.10,
+    EXTERNAL_UNGUARDED: 0.10,
+    # Deliberately lighter than the blanket entry above. A gated run whose gate
+    # met three tools it had never heard of is in a different position from one
+    # nothing looked at, and a proof that priced them the same would give a
+    # reader no reason to prefer the gate.
+    EXTERNAL_TOOLS_UNJUDGED: 0.05,
 }
 
 #: The most confidence each verdict may carry, whatever the penalties say.
@@ -463,6 +482,137 @@ def _prove(evidence: Any, verification: Any, claims: Any, *, now: Optional[float
         "schema_version": SCHEMA_VERSION,
         "at": at,
     }
+
+
+# ── what an agent Faustus did not write was, or was not, judged by ──────────
+
+#: The sentence the blanket entry carries. Unchanged from the day the external
+#: runner path shipped: a run nothing looked at still reads exactly the same.
+EXTERNAL_UNGUARDED_DETAIL = ("an external agent ran its own shell; Faustus's command guard did not "
+                             "see its commands")
+EXTERNAL_UNGUARDED_PENALTY = PENALTY[EXTERNAL_UNGUARDED]
+
+
+def _gate_ledgers(gates: Any) -> Dict[str, Dict[str, Any]]:
+    """`gates` → {runner key: ledger}. Accepts a mapping or a list of ledgers."""
+    out: Dict[str, Dict[str, Any]] = {}
+    if isinstance(gates, dict):
+        items: Iterable[Any] = gates.items()
+    elif isinstance(gates, (list, tuple)):
+        items = ((str((g or {}).get("runner") or ""), g) for g in gates if isinstance(g, dict))
+    else:
+        return out
+    for key, led in items:
+        name = _text(key).strip()
+        if name and isinstance(led, dict):
+            out[name] = led
+    return out
+
+
+def note_external_gate(proof: Any, runners: Any, *, gates: Any = None) -> Any:
+    """Say, in the proof, what Faustus's own guard did and did not see.
+
+    This is the entry src/prove.py cannot derive for itself: whether the agents
+    that did the work were ones Faustus wrote. It has three answers and they
+    are genuinely different, so it gives three:
+
+    * **nothing gated it** — the blanket ``external_agent_unguarded``, exactly
+      the entry and exactly the sentence the external-runner path has carried
+      since it shipped. This is still the answer for every runner whose row
+      says ``gate: "none"``;
+    * **gated, and the gate judged everything** — the entry is DROPPED and an
+      observation takes its place with the counts: how many calls were judged,
+      how many refused. The confidence does not pay for a hole that is not
+      there;
+    * **gated, with something it did not judge** — a *narrower* entry,
+      ``external_agent_tools_unjudged``, naming the tools. A gate that met a
+      tool it had never heard of allowed it (better than breaking a foreign CLI
+      the day it ships one) and the calls the CLI reported without a matching
+      receipt are counted here too. Reporting partial coverage as full coverage
+      would be precisely the dishonesty this module exists to prevent, so this
+      case never rounds up to the second one.
+
+    ``gates`` is ``{runner key: ledger}`` from src/agent_gate.py (or a list of
+    ledgers carrying their own ``runner``). With no ledgers at all, every
+    runner is ungated and the answer is byte-identical to what it was before
+    the gate existed. Never raises: a proof that cannot be annotated is
+    returned as it stands.
+    """
+    packet = proof
+    keys = [_text(r).strip() for r in (runners or ()) if _text(r).strip()]
+    if not isinstance(packet, dict) or not keys:
+        return packet
+    try:
+        unc = list(packet.get("uncertainty") or [])
+        if any(u.get("kind") in (EXTERNAL_UNGUARDED, EXTERNAL_TOOLS_UNJUDGED) for u in unc):
+            return packet
+        ledgers = _gate_ledgers(gates)
+
+        gated: List[str] = []
+        ungated: List[str] = []
+        judged = denied = unjudged = unseen = 0
+        tools: List[str] = []
+        for key in keys:
+            led = ledgers.get(key) or {}
+            if not led.get("gated"):
+                ungated.append(key)
+                continue
+            gated.append(key)
+            judged += int(led.get("calls") or 0)
+            denied += int(led.get("denied") or 0)
+            unjudged += int(led.get("unjudged") or 0)
+            unseen += int(led.get("unseen") or 0)
+            for name in list(led.get("unjudged_tools") or []) + list(led.get("unseen_tools") or []):
+                if _text(name) and _text(name) not in tools:
+                    tools.append(_text(name))
+
+        added: List[Dict[str, str]] = []
+        if ungated:
+            added.append(_entry(EXTERNAL_UNGUARDED,
+                                EXTERNAL_UNGUARDED_DETAIL + " (" + ", ".join(ungated[:4]) + ")"))
+        if gated and (unjudged or unseen):
+            detail = (f"Faustus gated {', '.join(gated[:4])} and judged {judged} tool call(s), "
+                      f"but {unjudged + unseen} of them were not judged")
+            if tools:
+                detail += " (" + ", ".join(sorted(tools)[:8]) + ")"
+            detail += (": a tool name the gate does not recognise is allowed and recorded, and a "
+                       "call the agent's own stream reports without a gate receipt is counted here "
+                       "too")
+            added.append(_entry(EXTERNAL_TOOLS_UNJUDGED, detail[:400]))
+
+        obs = list(packet.get("observations") or [])
+        if gated:
+            obs.append(_entry("external_gate",
+                              f"Faustus's guard judged {judged} tool call(s) from "
+                              f"{', '.join(gated[:4])} before they ran and refused {denied}"))
+        summary = {"gated": gated, "unguarded": ungated, "judged": judged, "denied": denied,
+                   "unjudged": unjudged, "unseen": unseen}
+        if tools:
+            summary["unjudged_tools"] = sorted(tools)
+
+        if not added:
+            packet["observations"] = obs
+            packet["external_gate"] = summary
+            return packet
+
+        unc.extend(added)
+        unc.sort(key=lambda u: (-PENALTY.get(str(u.get("kind")), EXTERNAL_UNGUARDED_PENALTY),
+                                str(u.get("kind"))))
+        try:
+            confidence = float(packet.get("confidence") or 0.0)
+        except (TypeError, ValueError):
+            confidence = 0.0
+        cost = sum(PENALTY.get(str(u.get("kind")), EXTERNAL_UNGUARDED_PENALTY) for u in added)
+        packet["uncertainty"] = unc
+        packet["observations"] = obs
+        packet["confidence"] = round(max(0.0, confidence - cost), 3)
+        packet["external_gate"] = summary
+        if ungated:
+            # The key the dispatch payload and the runners page already read.
+            packet["unguarded_runners"] = list(ungated)
+    except Exception:  # noqa: BLE001 - a proof that cannot be annotated is returned as it is
+        return packet
+    return packet
 
 
 def top_uncertainty(proof: Any) -> Optional[Dict[str, str]]:
