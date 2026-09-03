@@ -749,7 +749,7 @@ def _verdict_of(result: Dict[str, Any], sentence: str, source: str) -> str:
         return VERDICT_UNCHECKED
     if result.get("supported"):
         return VERDICT_SUPPORTED
-    from src.claim_verify import numbers_in
+    from src.claim_verify import numbers_in  # deferred, as in check_claims
 
     figures = numbers_in(sentence)
     if not figures:
