@@ -719,7 +719,18 @@ def post_compact_reminder(session, owner: Optional[str] = None) -> Optional[Dict
         if workspace:
             try:
                 from src import project_instructions as _pinstr
-                info = _pinstr.read(workspace)
+                # Same gate as the system prompt itself (src/agent_loop.py): the
+                # post-compact reminder re-injects these rules, so an unapproved
+                # folder's file must not come back in through this door either.
+                # Defaults to trusted on any failure — never blank the user's own
+                # rules because a config file would not parse.
+                _trusted = True
+                try:
+                    from src import workspace_trust as _wtrust
+                    _trusted = _wtrust.instructions_trusted(workspace)
+                except Exception:  # noqa: BLE001 - import-time only
+                    _trusted = True
+                info = _pinstr.read(workspace) if _trusted else {}
                 if info.get("text"):
                     pointer = (
                         f"The project's standing rules in {info.get('rel')} still apply "
@@ -730,6 +741,10 @@ def post_compact_reminder(session, owner: Optional[str] = None) -> Optional[Dict
                         parts.append(pointer + "\n" + rules)
                     else:
                         parts.append(pointer)
+                elif not _trusted:
+                    note = _pinstr.block(workspace, trusted=False).strip()
+                    if note:
+                        parts.append(note)
             except Exception:  # noqa: BLE001 - best effort
                 pass
 

@@ -260,6 +260,16 @@ DEFAULT_SETTINGS = {
     # user's message (src/project_instructions.py, src/repo_map.py).
     "agent_project_instructions": True,
     "agent_project_instructions_max_chars": 6000,
+    # Trust-on-first-use for those instruction files (src/workspace_trust.py).
+    # AGENTS.md travels with a clone and lands in the SYSTEM prompt, so an
+    # unapproved folder gets a neutral note naming the files instead of their
+    # text. "off" = today's behaviour, the file is always injected. "ask"
+    # (default) auto-trusts a folder Faustus has already checkpointed — linking
+    # a folder must stay cheap — and holds back the rest until approved.
+    # "strict" auto-trusts nothing. A failure anywhere in the machinery falls
+    # back to injecting the block: blanking the user's own rules is worse than a
+    # missed check.
+    "agent_workspace_trust": "ask",
     "agent_repo_map": True,
     "agent_repo_map_tokens": 1500,
     # An un-ranged read_file on a file too big to return whole (src/read_plan.py):

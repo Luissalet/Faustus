@@ -645,6 +645,20 @@ _APP_API_BLOCKLIST_METHOD_PATH = (
     ("POST",   "/api/storage/release"),
     ("POST",   "/api/storage/quarantine"),
     ("POST",   "/api/storage/undo"),
+    # Workspace instruction trust (src/workspace_trust.py). Approving a folder
+    # puts its AGENTS.md into the SYSTEM prompt of every future turn — it is the
+    # single most authority-granting POST in the app, and the model asking for it
+    # is by construction the one that would benefit from an unvetted file. A
+    # model that just read an AGENTS.md must not be able to approve it.
+    #
+    # Redundant today: `/api/workspace-trust` already starts with the
+    # `/api/workspace` PREFIX above, so the whole surface is out of reach and
+    # the read is out of reach with it (the model is told the state in prose
+    # instead — see the dedicated message in do_app_api). Listed anyway, because
+    # the prefix rule blocking it is an accident of spelling and this one is a
+    # decision: if `/api/workspace` is ever narrowed to an exact segment match,
+    # the write must stay blocked.
+    ("POST",   "/api/workspace-trust"),
 )
 
 
@@ -730,6 +744,18 @@ async def do_app_api(content: str, owner: Optional[str] = None) -> Dict:
     if not path.startswith("/"):
         path = "/" + path
     if any(path.startswith(p) for p in _APP_API_BLOCKLIST_PREFIXES):
+        if path.startswith("/api/workspace-trust"):
+            # Caught by the /api/workspace prefix above, but it is a different
+            # surface and deserves its own reason: approving a folder's
+            # AGENTS.md puts it in the system prompt of every future turn, and
+            # the model asking is by construction the one that would benefit
+            # from an unvetted file.
+            return {"error": f"Path blocked for safety: {path}. Approving (or revoking) a folder's "
+                             "instruction files is the user's consent to give, not yours — an "
+                             "AGENTS.md that travels with a cloned repo reaches the system prompt "
+                             "of every turn. Tell the user their folder's instruction files are "
+                             "waiting for approval and let them do it in Faustus.",
+                    "exit_code": 1}
         if path.startswith("/api/workspace"):
             return {"error": f"Path blocked for safety: {path}. /api/workspace is the browser UI's own surface: "
                              "its POSTs (revert, checkpoint restore/reset, commit, instructions, open_editor, reveal) "
@@ -775,6 +801,13 @@ async def do_app_api(content: str, owner: Optional[str] = None) -> Dict:
                              "the operator's files into quarantine are the admin's Storage surface, and a page the "
                              "model just read must not be able to reach them. GET /api/storage/status is allowed: "
                              "read it and TELL the user what is filling the disk and what could be freed.",
+                    "exit_code": 1}
+        if path.startswith("/api/workspace-trust"):
+            return {"error": f"{method} {path} is blocked for safety — approving a folder's "
+                             "AGENTS.md / CLAUDE.md puts it in the system prompt of every future "
+                             "turn, and that consent is the user's to give, not yours. "
+                             "GET /api/workspace-trust?workspace=… is allowed: read it and TELL "
+                             "the user which files are waiting for their approval.",
                     "exit_code": 1}
         if path.startswith("/api/local-models"):
             return {"error": f"{method} {path} is blocked for safety — deleting, pulling, loading/unloading local models "

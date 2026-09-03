@@ -832,6 +832,13 @@ app.include_router(setup_cookbook_routes())
 from routes.workspace_routes import setup_workspace_routes
 app.include_router(setup_workspace_routes())
 
+# Trust-on-first-use for a folder's own AGENTS.md / CLAUDE.md / .cursorrules
+# (src/workspace_trust.py): those files reach the SYSTEM prompt of every turn, so
+# a folder Faustus has never seen has to be approved once, sealed to the files'
+# content digest.
+from routes.workspace_trust_routes import setup_workspace_trust_routes
+app.include_router(setup_workspace_trust_routes())
+
 # Projects (chat folder + workspace + standing instructions + file-backed memory)
 from routes.project_routes import setup_project_routes
 app.include_router(setup_project_routes())

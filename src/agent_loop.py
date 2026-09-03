@@ -2904,9 +2904,26 @@ def _build_system_prompt(
         # Standing instructions kept in the repo itself (AGENTS.md / CLAUDE.md /
         # .odysseus/INSTRUCTIONS.md): conventions, how to run the tests, what
         # not to touch. Cached by mtime — byte-identical until the file changes.
+        #
+        # These files travel with a clone, and this is the one input that reaches
+        # the SYSTEM role without going through src/prompt_security.py, so
+        # src/workspace_trust.py gates them per folder and per content digest
+        # (FAUSTUS). `instructions_trusted` never raises and answers True on any
+        # failure, and the `True` below is a second floor under that: a wrong
+        # removal here silently blanks the user's OWN standing instructions,
+        # which is worse than a missed check — the discipline src/tool_preflight.py
+        # states for a different mechanism. Setting `agent_workspace_trust: off`
+        # skips the call entirely and reproduces today's behaviour exactly.
         try:
             from src import project_instructions as _pinstr
-            agent_prompt += _pinstr.block(workspace)
+            _instr_trusted = True
+            try:
+                from src import workspace_trust as _wtrust
+                _instr_trusted = _wtrust.instructions_trusted(workspace)
+            except Exception as _wt_err:      # pragma: no cover - import-time only
+                logger.debug("[instructions] trust check unavailable: %s", _wt_err)
+                _instr_trusted = True
+            agent_prompt += _pinstr.block(workspace, trusted=_instr_trusted)
         except Exception as _pi_err:
             logger.debug("[instructions] injection failed: %s", _pi_err)
     elif (

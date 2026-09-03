@@ -212,6 +212,12 @@ GROUPS: list[dict[str, Any]] = [
             _int("agent_project_instructions_max_chars", "Instructions max chars",
                  "Longer instruction files are cut at this size.",
                  0, 200_000),
+            _select("agent_workspace_trust", "Instruction file trust",
+                    "AGENTS.md travels with a cloned repo and goes into the system prompt. "
+                    "'ask' holds an unknown folder's instruction files back until you approve them "
+                    "(a folder Faustus already has checkpoints for is approved automatically); "
+                    "'strict' approves nothing automatically; 'off' always injects the file.",
+                    ["off", "ask", "strict"]),
             _bool("agent_repo_map", "Repository map",
                   "Files + symbols of the workspace before the user's message, so the model does not "
                   "spend rounds on ls / grep."),
