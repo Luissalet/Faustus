@@ -6,6 +6,7 @@ import themeModule from '../theme.js';
 import createResearchSynapse from '../researchSynapse.js';
 import spinnerModule from '../spinner.js';
 import { sortModelIds } from '../modelSort.js';
+import { downloadExport } from '../chatExport.js';
 
 // Rotating research textarea placeholders — pick one at random each
 // time the panel is rendered so the example keeps feeling fresh.
@@ -206,6 +207,7 @@ const _retryIcon = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" 
 const _chevronIcon = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
 const _editIcon = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
 const _chatIcon = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
+const _downloadIcon = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
 
 export function init(apiBase, markdownMod, sessionMod) {
   _apiBase = apiBase;
@@ -885,6 +887,110 @@ function _promptParallelOrSequential(count, anchorBtn) {
   });
 }
 
+// ── Export a finished report as a document ──
+
+const _REPORT_EXPORT_FORMATS = [
+  { id: 'md', label: 'Markdown' },
+  { id: 'docx', label: 'Word (.docx)' },
+  { id: 'pdf', label: 'PDF' },
+];
+
+// Which formats the server can actually build (docx/pdf need optional
+// packages). Asked once per page: the answer can't change without a restart.
+let _exportFormatsProbe = null;
+function _exportFormats() {
+  if (!_exportFormatsProbe) {
+    _exportFormatsProbe = fetch(`${_apiBase}/api/research/export-formats`, { credentials: 'same-origin' })
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => (d && d.formats) || {})
+      // Probe failed: offer everything rather than hiding a format that works.
+      // A format that doesn't comes back 415 with a message naming the fix.
+      .catch(() => ({}));
+  }
+  return _exportFormatsProbe;
+}
+
+async function _downloadReport(job, fmt, row) {
+  if (row) row.disabled = true;
+  await downloadExport(
+    `${_apiBase}/api/research/export/${encodeURIComponent(job.id)}?format=${fmt}`,
+    {
+      fallbackName: `research.${fmt}`,
+      // A 415 carries the server's own message, which names the package the
+      // operator has to install — showing "export failed" would throw away
+      // the only part the user can act on.
+      onError: (msg) => alert(msg),
+    },
+  );
+  if (row) row.disabled = false;
+}
+
+/** Format picker for a finished report, anchored to its Export button.
+ *  Same popover shape, positioning and dismissal as the run-mode picker. */
+function _openExportMenu(anchorBtn, job) {
+  const existing = document.getElementById('research-export-popover');
+  if (existing) { existing.remove(); return; }
+  if (!anchorBtn || !job) return;
+
+  const rect = anchorBtn.getBoundingClientRect();
+  const pop = document.createElement('div');
+  pop.id = 'research-export-popover';
+  pop.className = 'research-run-mode-popover';
+  pop.innerHTML = _REPORT_EXPORT_FORMATS.map(f =>
+    `<button class="research-run-mode-row" data-export-fmt="${f.id}">${_downloadIcon}<span class="rrm-title">${_esc(f.label)}</span></button>`
+  ).join('');
+  document.body.appendChild(pop);
+
+  const popHeight = pop.offsetHeight;
+  const margin = 6;
+  const spaceBelow = window.innerHeight - rect.bottom;
+  const goUp = spaceBelow < popHeight + margin && rect.top > popHeight + margin;
+  const top = goUp ? (rect.top - popHeight - margin) : (rect.bottom + margin);
+  const right = Math.max(8, window.innerWidth - rect.right);
+  pop.style.top = `${Math.round(top)}px`;
+  pop.style.right = `${Math.round(right)}px`;
+  pop.classList.add(goUp ? 'rrm-up' : 'rrm-down');
+
+  const close = () => {
+    pop.remove();
+    document.removeEventListener('click', onDocClick, true);
+    document.removeEventListener('keydown', onKey, true);
+  };
+  const onDocClick = (e) => {
+    if (pop.contains(e.target) || e.target === anchorBtn) return;
+    close();
+  };
+  const onKey = (e) => {
+    if (e.key === 'Escape') { e.preventDefault(); close(); }
+  };
+  setTimeout(() => {
+    document.addEventListener('click', onDocClick, true);
+    document.addEventListener('keydown', onKey, true);
+  }, 0);
+
+  pop.querySelectorAll('[data-export-fmt]').forEach(row => {
+    row.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (row.disabled) return;
+      close();
+      _downloadReport(job, row.dataset.exportFmt, anchorBtn);
+    });
+  });
+
+  // Grey out what this server can't produce, once the probe answers. Done
+  // after the menu is up so opening it never waits on a request.
+  _exportFormats().then(available => {
+    if (!pop.isConnected) return;
+    pop.querySelectorAll('[data-export-fmt]').forEach(row => {
+      if (available[row.dataset.exportFmt] !== false) return;
+      row.disabled = true;
+      row.style.opacity = '0.4';
+      row.style.cursor = 'default';
+      row.title = 'Not available on this server — a package is missing.';
+    });
+  });
+}
+
 function _buildJobCard(job) {
   const card = document.createElement('div');
   card.className = `research-job-card ${job.status}${job._fromLibrary ? ' from-library' : ''}`;
@@ -1010,6 +1116,7 @@ function _buildJobCard(job) {
         ${thumbnail}
         <button class="research-job-action research-job-action-report" data-action="report" title="Visual report">${_externalIcon} Visual Report</button>
         <button class="research-job-action" data-action="chat" title="Open follow-up chat with this research as context">${_chatIcon} Discuss</button>
+        <button class="research-job-action" data-action="export" title="Download as Markdown, Word or PDF">${_downloadIcon} Export</button>
         <button class="research-job-action research-job-action-dim" data-action="copy" title="Copy report to clipboard">${_copyIcon}</button>
         <button class="research-job-action research-job-action-dim" data-action="dismiss" title="Clear from list">${_cancelIcon}</button>
         <button class="research-job-action research-job-action-dim" data-action="delete" title="Delete from disk">${_trashIcon} Delete</button>
@@ -1035,6 +1142,10 @@ function _buildJobCard(job) {
     card.querySelector('[data-action="chat"]').addEventListener('click', (e) => {
       e.stopPropagation();
       _chatAboutResearch(job.id, e.currentTarget);
+    });
+    card.querySelector('[data-action="export"]').addEventListener('click', (e) => {
+      e.stopPropagation();
+      _openExportMenu(e.currentTarget, job);
     });
     card.querySelector('[data-action="delete"]').addEventListener('click', async (e) => {
       e.stopPropagation();
