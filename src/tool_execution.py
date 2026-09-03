@@ -1168,6 +1168,78 @@ async def _execute_tool_block_impl(
             except (objectives_svc.ObjectiveError, ValueError, TypeError,
                     json.JSONDecodeError) as exc:
                 result = {"error": str(exc), "exit_code": 1}
+    elif tool == "memory_rules":
+        desc = "memory_rules"
+        from src import memory_engine as _engine
+        # Scope: the session's project folder when it has one, "" otherwise.
+        # A rule learned outside a project is a rule everywhere, which is
+        # exactly how scoped_items() reads an empty project.
+        _project = ""
+        try:
+            from services.projects import project_for_session
+            _project = str((project_for_session(session_id or "", owner) or {}).get("workspace") or "")
+        except Exception:  # noqa: BLE001 - no project is not an error here
+            _project = ""
+
+        def _row(item):
+            pub = _engine.public_item(item)
+            return {"id": pub["id8"], "full_id": pub["id"], "text": pub["text"],
+                    "level": pub["level"], "status": pub["status"],
+                    "maturity": pub["maturity"], "trust_class": pub["trust_class"],
+                    "score": pub["effective_score"], "harmful_ratio": pub["harmful_ratio"]}
+
+        try:
+            args = json.loads(content or "{}")
+            if not isinstance(args, dict):
+                raise _engine.MemoryEngineError("memory_rules arguments must be an object")
+            action = str(args.get("action") or "list").strip().lower()
+            limit = max(1, min(50, int(args.get("limit") or 10)))
+            if action == "add":
+                item = _engine.add_item(
+                    args.get("text"),
+                    owner=str(owner or ""),
+                    project=_project,
+                    level=args.get("level") or "procedural",
+                    category=args.get("category") or "",
+                    trust_class="agent_assertion",
+                    evidence=[{"kind": "chat", "session_id": session_id or "",
+                               "excerpt": str(args.get("text") or "")[:200]}],
+                )
+                result = {"added": _row(item),
+                          "note": "stored as agent_assertion (trust 0.50) — it earns trust "
+                                  "from what happens on the turns it is used in"}
+            elif action == "search":
+                hits = _engine.search(args.get("query") or "", str(owner or ""),
+                                      _project, k=limit)
+                result = {"results": [_row(h) for h in hits],
+                          "degraded": bool(hits and hits[0].get("degraded"))}
+            elif action == "feedback":
+                full_id = _engine.resolve_id(args.get("id"))
+                if not full_id:
+                    raise _engine.MemoryEngineError(
+                        f"no memory item matches id '{args.get('id')}'")
+                item = _engine.add_feedback(full_id, args.get("kind"),
+                                            reason=str(args.get("reason") or ""),
+                                            ref=str(session_id or "agent"))
+                if not item:
+                    raise _engine.MemoryEngineError(f"no memory item matches id '{full_id}'")
+                result = {"updated": _row(item)}
+            elif action == "list":
+                items = _engine.scoped_items(str(owner or ""), _project,
+                                             ("active", "anti_pattern"))
+                if args.get("level"):
+                    items = [i for i in items
+                             if i.get("level") == str(args.get("level")).strip().lower()]
+                rows = sorted((_row(i) for i in items),
+                              key=lambda r: (-r["score"], r["full_id"]))
+                result = {"items": rows[:limit], "total": len(rows)}
+            else:
+                raise _engine.MemoryEngineError(
+                    "Action must be add, search, feedback or list")
+            desc = f"memory_rules: {action}"
+        except (_engine.MemoryEngineError, ValueError, TypeError,
+                json.JSONDecodeError) as exc:
+            result = {"error": str(exc), "exit_code": 1}
     elif tool in ("chat_with_model", "ask_teacher", "list_models"):
         # Migrated to the agent_tools registry (#3629): dispatched through
         # TOOL_HANDLERS with the owner/session ctx these tools need, instead

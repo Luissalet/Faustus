@@ -254,6 +254,12 @@ DEFAULT_SETTINGS = {
     # 8k window, so on a small model one unasked-for read evicts the user's own
     # message on the next trim. An unproven window keeps the full ceiling.
     "agent_read_window_fraction": 0.25,
+    # Learned memory (src/memory_engine.py): the rules and memories the store
+    # scored from turn outcomes, packed into the prompt beside the skills
+    # block. Off = nothing is injected and no outcome is attributed; the store
+    # keeps whatever it already learned.
+    "agent_learned_memory": True,
+    "agent_learned_memory_chars": 1800,
     # "@" file mentions from the composer (src/file_mentions.py): the paths the
     # user picked are re-resolved server-side and handed to the model, and small
     # mentioned files ride along inline so it does not spend a round on

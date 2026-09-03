@@ -414,6 +414,30 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "memory_rules",
+            "description": "The learned-memory store: rules and facts that are SCORED by what happened after they were used, decay on their own, and are inverted into anti-patterns when they keep causing failures. 'add' records a new one (level 'procedural' for a rule you should follow, 'semantic' for a durable fact); 'search' returns the ones relevant to a query with their ids and scores; 'feedback' credits or blames one by id after you saw it help or hurt; 'list' shows what is stored. Add a rule only when a turn actually taught you something reusable — not to restate the request.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["add", "search", "feedback", "list"]},
+                    "text": {"type": "string", "description": "The rule or fact, for action 'add'"},
+                    "level": {"type": "string", "enum": ["procedural", "semantic", "episodic", "working"],
+                              "description": "'procedural' (default) for a rule to follow, 'semantic' for a durable fact"},
+                    "category": {"type": "string", "description": "Optional free-text grouping, e.g. 'testing'"},
+                    "query": {"type": "string", "description": "Search text for action 'search'"},
+                    "id": {"type": "string", "description": "Item id for action 'feedback' (the [id8] prefix is enough)"},
+                    "kind": {"type": "string", "enum": ["helpful", "harmful"],
+                             "description": "Which way the feedback goes, for action 'feedback'"},
+                    "reason": {"type": "string", "description": "Why, for action 'feedback'"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 50}
+                },
+                "required": ["action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "chat_with_model",
             "description": "Send a message to another AI model and get its response. Use for getting a second opinion, delegating subtasks, or AI-to-AI communication.",
             "parameters": {
@@ -1670,6 +1694,8 @@ def function_call_to_tool_block(name: str, arguments: str) -> Optional[ToolBlock
     elif tool_type == "project_context":
         content = json.dumps(args)
     elif tool_type == "project_objectives":
+        content = json.dumps(args)
+    elif tool_type == "memory_rules":
         content = json.dumps(args)
     elif tool_type == "chat_with_model":
         content = args.get("model", "") + "\n" + args.get("message", "")

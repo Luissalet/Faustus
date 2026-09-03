@@ -133,6 +133,10 @@ _register(
         # readers rather than the workspace writers — a turn-end status
         # update must not trip the file-write approval gate.
         "project_objectives",
+        # memory_rules writes only to its own SQLite store (validated levels,
+        # a fixed trust class and append-only feedback events), never to the
+        # workspace — same reasoning as project_objectives above.
+        "memory_rules",
         "read_email",
         "resolve_contact",
         "scan_email_unsubscribes",

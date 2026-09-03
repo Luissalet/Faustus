@@ -222,6 +222,12 @@ GROUPS: list[dict[str, Any]] = [
                    "Share of the model's context window one un-ranged read may occupy; the cap only ever "
                    "comes down from the fixed maximum.",
                    0.01, 1, 0.05),
+            _bool("agent_learned_memory", "Learned rules",
+                  "Inject the rules and memories the store learned from turn outcomes (Brain → Learned "
+                  "rules), and credit or blame them with the turn's verification result."),
+            _int("agent_learned_memory_chars", "Learned rules chars",
+                 "Character budget of that block. 0 = never inject it.",
+                 0, 20_000),
             _bool("agent_file_mentions", "@ file mentions",
                   "Paths picked with @ in the composer are re-resolved server-side and handed to the model."),
             _int("agent_file_mention_inline_chars", "Mention inline chars",

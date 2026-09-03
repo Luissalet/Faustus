@@ -760,6 +760,7 @@ TOOL_SECTIONS = {
     "search_project_chats": "- ```search_project_chats``` - Search only earlier transcripts from the current project. Use for prior project decisions, attempts and discussions before answering from memory or guessing.",
     "project_context": "- ```project_context``` - Inspect roots attached to the current project. Args (JSON): {\"action\":\"list|read|search\",\"item_id\":\"...\",\"path\":\"relative/file\",\"query\":\"...\"}. Attached roots are real working roots: normal file tools may read and modify them.",
     "project_objectives": "- ```project_objectives``` - Read or update the project's objectives dashboard. Args (JSON): {\"action\":\"list|apply\",\"deltas\":[{\"op\":\"ADD|EDIT|KILL\",\"id\":\"OBJ-1\",\"title\":\"...\",\"status\":\"open|in_progress|blocked|done|dropped\",\"priority\":1,\"deps\":[\"OBJ-2\"],\"rationale\":\"...\"}]}. When a turn of real work ends, update with typed deltas and a rationale; never rewrite the whole list, and only mark statuses that reflect what actually changed on disk.",
+    "memory_rules": "- ```memory_rules``` - The learned-memory store: rules and facts scored by what happened after they were used. Args (JSON): {\"action\":\"add|search|feedback|list\",\"text\":\"...\",\"level\":\"procedural|semantic\",\"query\":\"...\",\"id\":\"ab12cd34\",\"kind\":\"helpful|harmful\",\"reason\":\"...\"}. Add a rule ONLY when a turn taught you something reusable (a rule to follow -> level procedural; a durable fact -> semantic), never to restate the request. When a rule from the 'Learned rules' block turned out to be right or wrong, say so with feedback and its [id8] — that is how the store learns and how a bad rule gets retired.",
     "bash": """\
 ```bash
 <shell command>
@@ -2530,8 +2531,13 @@ def _build_system_prompt(
     suppress_skills: bool = False,
     active_email: Optional[Dict[str, str]] = None,
     workspace: Optional[str] = None,
+    session_id: Optional[str] = None,
 ) -> List[Dict]:
-    """Build agent system prompt, inject MCP/document context, merge consecutive system msgs."""
+    """Build agent system prompt, inject MCP/document context, merge consecutive system msgs.
+
+    ``session_id`` is only used to remember WHICH learned-memory items were put
+    in front of the model this turn (src/memory_engine.py), so the turn's
+    verification result can be credited or blamed on exactly those items."""
     global _cached_base_prompt, _cached_base_prompt_key
     if suppress_local_context:
         active_document = None
@@ -2609,6 +2615,7 @@ def _build_system_prompt(
     # the trusted system role. Bound up front so the insert block below can
     # always check it.
     _skills_message = None
+    _memory_message = None
     _email_style_message = None
     _integ_message = None
     _mcp_desc_message = None
@@ -3043,6 +3050,42 @@ def _build_system_prompt(
         except Exception as _sk_err:
             logger.debug(f"skill injection failed (non-fatal): {_sk_err}")
 
+    # ── Learned memory (src/memory_engine.py) ────────────────────────────
+    # The rules and memories the store scored from what actually happened on
+    # the turns they were used in, packed deterministically under a character
+    # budget. Two things matter here:
+    #   * it rides in the SAME untrusted lane as the skills block — item text
+    #     comes from the agent and from the user, so it can never sit in the
+    #     trusted system role;
+    #   * the ids that go in are remembered against this session, so the
+    #     turn's verification result (tests / auto-review, attributed at the
+    #     scorecard hook below) lands on exactly the rules that were shown.
+    # Wrapped whole: a broken store costs the block, never the turn.
+    if not suppress_local_context:
+        try:
+            from src import memory_engine as _mem_engine
+            if _mem_engine.injection_enabled():
+                _mem_budget = _mem_engine.injection_budget()
+                if _mem_budget > 0:
+                    _mem_detail = _mem_engine.pack_detail(
+                        owner or "",
+                        workspace or "",
+                        _extract_last_user_message(messages) or "",
+                        _mem_budget,
+                    )
+                    if _mem_detail.get("text"):
+                        _memory_message = untrusted_context_message(
+                            "learned memory",
+                            "These were learned from earlier turns and scored by what happened "
+                            "afterwards. Follow the rules; treat anti-patterns as things that "
+                            "already went wrong. Correct one with `memory_rules` "
+                            "(action='feedback') when it turns out to be right or wrong.\n\n"
+                            + _mem_detail["text"],
+                        )
+                        _mem_engine.note_injected(session_id, _mem_detail.get("ids") or [])
+        except Exception as _mem_err:  # noqa: BLE001 - prompt path, never raise
+            logger.debug(f"learned-memory injection failed (non-fatal): {_mem_err}")
+
     # Integration descriptions — user-editable fields, must not be in system role.
     if not suppress_local_context:
         try:
@@ -3125,6 +3168,7 @@ def _build_system_prompt(
         _integ_message,
         _mcp_desc_message,
         _skills_message,
+        _memory_message,
         _datetime_message,
     ):
         if injected:
@@ -3146,6 +3190,9 @@ def _build_system_prompt(
         last_user_idx += 1
     if _skills_message:
         merged.insert(last_user_idx, _skills_message)
+        last_user_idx += 1
+    if _memory_message:
+        merged.insert(last_user_idx, _memory_message)
         last_user_idx += 1
     if _datetime_message:
         merged.insert(last_user_idx, _datetime_message)
@@ -5147,6 +5194,7 @@ async def stream_agent_loop(
             suppress_skills=_low_signal_turn,
             active_email=active_email,
             workspace=workspace,
+            session_id=session_id,
         )
         if doc_mode and not plan_mode and not approved_plan and not guide_only:
             route_messages = _minimal_odysseus_doc_messages(
@@ -8234,6 +8282,25 @@ async def stream_agent_loop(
                 ))
             except Exception as _sc_err:
                 logger.debug("[scorecard] record failed: %s", _sc_err)
+    # Learned memory (src/memory_engine.py): the SAME verification signal the
+    # scorecard records is what the store learns from. Tests that ran and
+    # passed credit every procedural rule this turn's prompt carried; tests
+    # that failed blame them. Anything inconclusive attributes nothing at all
+    # — an unmeasured turn must never invent feedback — but the turn's
+    # injected ids are released either way, so one turn is credited once.
+    try:
+        from src import memory_engine as _mem_engine
+        _mem_outcome = _mem_engine.outcome_from_harness(_hsum)
+        _mem_result = _mem_engine.record_outcome(
+            session_id, _mem_outcome,
+            ref=str(session_id or ""),
+            reason=f"turn verification: {_mem_outcome}" if _mem_outcome else "",
+        )
+        if _mem_result.get("applied"):
+            logger.info("[learned-memory] %s on %d rule(s) from this turn",
+                        _mem_result.get("kind"), _mem_result["applied"])
+    except Exception as _mem_err:  # noqa: BLE001 - turn end, never raise
+        logger.debug("[learned-memory] outcome attribution failed: %s", _mem_err)
     yield f"data: {json.dumps({'type': 'metrics', 'data': metrics})}\n\n"
 
     # Teacher-escalation: inline takeover visible in the chat stream.
