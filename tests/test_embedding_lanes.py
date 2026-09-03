@@ -242,26 +242,45 @@ def test_build_embedding_lanes_uses_fastembed_when_custom_unavailable(monkeypatc
     assert built[0].collection_name == "odysseus_tool_index_fastembed"
 
 
-def test_custom_lane_preserves_default_embedding_client_probe(monkeypatch):
+def test_custom_lane_skips_implicit_default_when_unconfigured(monkeypatch):
     import src.embedding_lanes as lanes
     import src.embeddings as embeddings
 
     embeddings.reset_http_embed_state()
     monkeypatch.setattr(lanes, "_load_custom_endpoint", lambda: {})
 
-    calls = []
+    class UnexpectedClient:
+        def __init__(self, *args, **kwargs):
+            raise AssertionError("unconfigured custom lane must not probe the Ollama default")
 
-    class DefaultClient(FakeEmbedder):
+    monkeypatch.setattr(embeddings, "EmbeddingClient", UnexpectedClient)
+
+    assert lanes._build_custom_client() is None
+    embeddings.reset_http_embed_state()
+
+
+def test_custom_lane_built_when_operator_saved_an_endpoint(monkeypatch):
+    import src.embedding_lanes as lanes
+    import src.embeddings as embeddings
+
+    embeddings.reset_http_embed_state()
+    saved = "http://embeddings.test/v1/embeddings"
+    monkeypatch.setattr(
+        lanes,
+        "_load_custom_endpoint",
+        lambda: {"url": saved, "model": "nomic-embed-text", "api_key": ""},
+    )
+
+    class SavedClient(FakeEmbedder):
         def __init__(self, url=None, model=None, api_key=None):
-            calls.append({"url": url, "model": model, "api_key": api_key})
-            super().__init__(768, model or "all-minilm:l6-v2", url or "http://localhost:11434/v1/embeddings")
+            super().__init__(768, model or "nomic-embed-text", url or saved)
 
-    monkeypatch.setattr(embeddings, "EmbeddingClient", DefaultClient)
+    monkeypatch.setattr(embeddings, "EmbeddingClient", SavedClient)
 
     client = lanes._build_custom_client()
 
-    assert calls == [{"url": None, "model": None, "api_key": None}]
-    assert client.url == "http://localhost:11434/v1/embeddings"
+    assert isinstance(client, SavedClient)
+    assert client.url == saved
     embeddings.reset_http_embed_state()
 
 
@@ -270,6 +289,7 @@ def test_custom_lane_uses_http_down_latch(monkeypatch):
     import src.embeddings as embeddings
 
     embeddings.reset_http_embed_state()
+    monkeypatch.setenv("EMBEDDING_URL", "http://embeddings.invalid/v1/embeddings")
     calls = []
 
     class DownClient:

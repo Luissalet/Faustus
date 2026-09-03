@@ -122,6 +122,15 @@ def _build_fastembed_client():
 def _build_custom_client():
     from src.embeddings import EmbeddingClient, get_embedding_client
 
+    # The application has a zero-config FastEmbed lane.  Do not turn the
+    # EmbeddingClient's historical Ollama default into an implicit custom lane:
+    # on hosts without Ollama this only produces a connection-refused warning
+    # before falling back to the same FastEmbed client we build below.  A custom
+    # lane exists only when the operator explicitly saved or exported an
+    # embedding endpoint.
+    if not _load_custom_endpoint().get("url"):
+        return None
+
     client = get_embedding_client()
     if isinstance(client, EmbeddingClient):
         return client
