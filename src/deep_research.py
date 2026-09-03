@@ -192,37 +192,53 @@ _CATEGORY_CITATION_RULE = (
     "evidence list, and figures stay in the same sentence as their source"
 )
 
+# The sections each category mandates. They are handed to the model through
+# _sections_block, the one place in the prompt that names the report's headings
+# and the one place the language instruction reaches — an "## The Claim" in a
+# Spanish report is what happens when a second list of English section names is
+# mandated further down the prompt.
+_CATEGORY_SECTIONS = {
+    "product": ("Top Picks", "The Options", "Verdict"),
+    "comparison": ("Comparison Table", "The Options", "Best For",
+                   "Shared Considerations"),
+    "howto": ("Quick Guide", "Prerequisites", "Steps", "Common Mistakes"),
+    "factcheck": ("The Claim", "Evidence For", "Evidence Against", "Verdict",
+                  "Nuance and Caveats"),
+}
+
+# Not one line below contains a "#". A prompt line that spells a heading marker
+# is a line the model can paste into the report as a heading, which is how
+# "- Create ## Evidence For and ## Evidence Against sections" arrived in a
+# finished report as the single heading "## Evidence For and ## Evidence
+# Against". Section names live in _CATEGORY_SECTIONS, one per line; the rules
+# only ever refer to them in quotes.
 _CATEGORY_FORMATS = {
     "product": """IMPORTANT FORMAT OVERRIDE — this is a PRODUCT research report:
-- Structure as a RANKED LIST of products/options (best first)
-- For EACH product include: name as ### heading, approximate price, 2-3 sentence summary, **Pros:** bullet list, **Cons:** bullet list, **Where to buy:** URLs as links
-- Start with a quick-compare markdown table of top picks (columns: Name, Price, Best For, Rating)
-- End with a ## Verdict section picking Best Overall and Best Value
-- Still include source citations inline""",
+- Rank the options best first, and say what the ranking is based on
+- Under "Top Picks", open with a markdown comparison table whose columns are Name, Price, Best For and Rating
+- Under "The Options", give every product its own third-level heading carrying its name, then its approximate price, a two or three sentence summary, a "Pros:" bullet list, a "Cons:" bullet list, and where to buy it as links
+- Under "Verdict", name a Best Overall and a Best Value, and say what decides between them""",
 
     "comparison": """IMPORTANT FORMAT OVERRIDE — this is a COMPARISON report:
-- Create a ## Comparison Table as a markdown table comparing ALL options across key criteria (rows = criteria, columns = options)
-- Use checkmarks, ratings, or short values in cells
-- Write a ## section per option with its strengths, weaknesses, and ideal use case
-- End with ## Best For verdicts (e.g., "**Best for small teams:** Option A because...")
-- Include a ## Shared Considerations section for things that apply to all options""",
+- Under "Comparison Table", put one markdown table covering every option against the criteria that matter, rows for criteria and columns for options, with short values, ratings or checkmarks in the cells
+- Under "The Options", give every option its own third-level heading with its strengths, its weaknesses and the reader it suits
+- Under "Best For", name a winner for each kind of reader, in the shape "Best for small teams: Option A, because ..."
+- Under "Shared Considerations", cover what applies to every option alike""",
 
     "howto": """IMPORTANT FORMAT OVERRIDE — this is a HOW-TO guide:
-- Start with ## Quick Guide — a super concise numbered list (one line per step, no details, just the action). Example: 1. Install X  2. Run Y  3. Configure Z
-- Then ## Prerequisites listing what's needed before starting
-- Then the detailed steps: ## Step 1: ..., ## Step 2: ...
-- Each step should have a clear heading and detailed instructions
-- Use blockquotes (> ) for tips and warnings: > **Tip:** ... or > **Warning:** ...
-- End with ## Common Mistakes section
-- Add estimated time and difficulty level near the top""",
+- Under "Quick Guide", a numbered list with one line per step, the action only and no detail, plus the estimated time and the difficulty
+- Under "Prerequisites", everything the reader needs before starting
+- Under "Steps", give every step its own numbered third-level heading with the full instructions under it
+- Use blockquotes for tips and warnings, in the shape "> **Tip:** ..." or "> **Warning:** ..."
+- Under "Common Mistakes", what goes wrong in practice and how to avoid it""",
 
     "factcheck": """IMPORTANT FORMAT OVERRIDE — this is a FACT-CHECK report:
-- Start with ## The Claim restating what's being checked
-- Create ## Evidence For and ## Evidence Against sections
-- Each piece of evidence should be a ### with source name, what it found, and how strong the evidence is
-- Include a ## Verdict section with one of: **Supported**, **Mixed Evidence**, or **Unsupported**
-- End with ## Nuance & Caveats for important context and limitations
-- Be balanced and cite sources for every claim""",
+- Under "The Claim", restate exactly what is being checked
+- Under "Evidence For", give every supporting piece of evidence its own third-level heading naming the source, what it found and how strong it is
+- Under "Evidence Against", do the same for every piece of evidence that cuts the other way
+- Under "Verdict", choose exactly one of Supported, Mixed Evidence or Unsupported, and say what decided it
+- Under "Nuance and Caveats", the context and the limits that change how the verdict should be read
+- Stay balanced: the two evidence sections are weighed against each other, not stacked""",
 }
 
 CATEGORY_PROMPTS = {name: text + _CATEGORY_CITATION_RULE
@@ -997,9 +1013,14 @@ class DeepResearcher:
             language_line=self._language_line(),
             implication=implication_label(getattr(self, "report_language", "en")),
         )
-        cat_extra = CATEGORY_PROMPTS.get(self.category or "", "")
-        if cat_extra:
-            prompt += "\n\n" + cat_extra
+        # No category override once the user asked their own sub-questions:
+        # _sections_block has already made those the report's sections, and the
+        # override would mandate a second, different skeleton over the top of
+        # them. Sub-questions win — they are what was actually asked.
+        if not (getattr(self, "subquestions", None) or []):
+            cat_extra = CATEGORY_PROMPTS.get(self.category or "", "")
+            if cat_extra:
+                prompt += "\n\n" + cat_extra
 
         try:
             result = await self._llm(
@@ -1155,12 +1176,32 @@ class DeepResearcher:
         return "\n\n".join(parts)
 
     def _sections_block(self) -> str:
-        """The report's required ## sections — the user's questions, in order."""
+        """The report's required ## sections — the user's questions, in order.
+
+        Sub-questions beat the category's skeleton whenever the user asked any:
+        their questions already impose a structure, and a model handed two
+        structures obeys both. The run that motivated this rule came back with
+        a fact-check skeleton *and* a section per question, in one report.
+        """
         subs = getattr(self, "subquestions", None) or []
-        if not subs:
-            return ("(The user did not ask separate sub-questions — organise the "
-                    "report by theme, one ## section per major aspect.)")
-        return "\n".join(f"{i}. {q}" for i, q in enumerate(subs, 1))
+        if subs:
+            return "\n".join(f"{i}. {q}" for i, q in enumerate(subs, 1))
+        sections = _CATEGORY_SECTIONS.get(getattr(self, "category", "") or "")
+        if sections:
+            return ("\n".join(f"{i}. {name}" for i, name in enumerate(sections, 1))
+                    + "\n" + self._translated_headings_line())
+        return ("(The user did not ask separate sub-questions — organise the "
+                "report by theme, one ## section per major aspect.)")
+
+    def _translated_headings_line(self) -> str:
+        """Why this exists: the section names above are written in English, and
+        a Spanish report carrying an English "## The Claim" is the most visible
+        way a category override goes wrong."""
+        name = LANGUAGE_NAMES.get(getattr(self, "report_language", "") or "en",
+                                  "English")
+        return (f"Those section names are written above in English. Write them "
+                f"in {name} in the report — a heading in any other language is "
+                f"a defect.")
 
     def _language_line(self) -> str:
         """An explicit instruction, because a Spanish question used to come back

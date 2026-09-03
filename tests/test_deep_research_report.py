@@ -303,6 +303,51 @@ def test_a_category_override_reaches_the_final_report_prompt():
     assert "numbered marker like [3]" in prompt
 
 
+def test_no_category_prompt_spells_a_heading_the_model_can_paste_through():
+    """A real report came back carrying the heading
+
+        ## Evidence For and ## Evidence Against
+
+    which is the factcheck prompt's own line, minus the words around it. A
+    prompt line that spells a heading marker is a line that can be pasted, so
+    none of them spell one.
+    """
+    for name, prompt in CATEGORY_PROMPTS.items():
+        assert "#" not in prompt, (name, prompt)
+
+
+def test_the_factcheck_sections_are_named_one_per_line():
+    prompt = CATEGORY_PROMPTS["factcheck"]
+    for section in ("The Claim", "Evidence For", "Evidence Against", "Verdict"):
+        lines = [ln for ln in prompt.splitlines() if f'"{section}"' in ln]
+        assert len(lines) == 1, (section, lines)
+    # and no line mandates two sections at once, which is the shape that fused.
+    assert 'and "Evidence Against"' not in prompt
+
+
+def test_a_category_supplies_the_sections_and_says_to_translate_them():
+    researcher = _researcher(category="factcheck")
+    researcher.report_language = "es"
+    prompt = _rendered_final_prompt(researcher)
+    assert "1. The Claim" in prompt
+    assert "Write them in Spanish in the report" in prompt
+    # The English name is never handed over as a ready-made heading.
+    assert "## The Claim" not in prompt
+
+
+def test_the_user_s_own_questions_beat_the_category_skeleton():
+    """The category mandated a fact-check skeleton over a question that already
+    carried three sub-questions, and the model built both — one report with a
+    ## The Claim and a section per question."""
+    researcher = _researcher(category="factcheck")
+    researcher.report_language = "es"
+    researcher.subquestions = ["¿Qué evidencia hay?", "¿Cuánto tarda?"]
+    prompt = _rendered_final_prompt(researcher)
+    assert "1. ¿Qué evidencia hay?\n2. ¿Cuánto tarda?" in prompt
+    assert "FACT-CHECK report" not in prompt
+    assert "The Claim" not in prompt
+
+
 def test_evidence_is_handed_over_as_a_numbered_list_keyed_to_the_registry():
     researcher = _researcher()
     findings = [
