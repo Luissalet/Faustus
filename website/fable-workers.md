@@ -53,7 +53,8 @@ MCP settings of Cowork / Claude Code):
       "args": ["D:/LocalAI/odysseus/mcp_servers/workers_server.py"],
       "env": {
         "FAUSTUS_URL": "http://127.0.0.1:7000",
-        "FAUSTUS_API_TOKEN": "ody_…"
+        "FAUSTUS_API_TOKEN": "ody_…",
+        "FAUSTUS_MCP_FORMAT": "toon"
       }
     }
   }
@@ -65,6 +66,16 @@ read once per session), `dispatch_workers` (1–4 tasks, workspace, parallel,
 reviewer, model), `workers_wait` (block until done, compact result),
 `workers_status`, `workers_events` (the board's events, for a stuck worker),
 `workers_cancel`, `workers_list`.
+
+`FAUSTUS_MCP_FORMAT` (default `toon`, see [robot mode](#3c-robot-mode-one-envelope-and-toon))
+decides what the row-shaped tools answer with. On `toon`, `objectives_list`,
+`workers_status` and `guard_explain` ask the endpoint for `?format=toon` and
+hand that envelope through — complete and machine-readable, nothing summarised
+away. On `text` they go back to the one-glance human wording, which is also
+the automatic fallback whenever the robot-mode call does not come back. The
+two tools whose answer is not rows keep their wording either way: `memory_pack`
+returns a prose block of learned rules, and `workers_events` a deliberate tail
+(the last 80 of up to 400 events). Tool names and arguments never change.
 
 **Making any Fable-type model understand it.** Three layers, so it works
 whether the model reads skills, tool descriptions or nothing at all:
@@ -115,6 +126,80 @@ Admins only (a plain user gets a 403 before the request is looked at: a
 worker runs shell commands in any folder the caller names). Jobs are
 mirrored to `DATA_DIR/dispatch/<id>.json` (the newest 200 are kept); a job
 the server was restarted under reads back as `interrupted`.
+
+## 3c. Robot mode: one envelope, and TOON
+
+The reads a machine cares about answer in a **standard envelope** when you
+ask for it, so a coordinator writes one parser instead of one per endpoint:
+
+```json
+{"ok": true, "data": {…}, "error_code": null, "error": null,
+ "elapsed_ms": 12, "schema_version": 1}
+```
+
+`ok` is exactly `error_code is null` — on a failure too, so a missing job is
+`{"ok": false, "error_code": "http_404", "error": "no such dispatch job", …}`
+with the 404 still on the response, never FastAPI's bare `{"detail": …}`.
+
+Two query parameters turn it on, per request:
+
+| Parameter | Answer |
+|---|---|
+| *(none)* | exactly what the browser page gets today, byte for byte |
+| `?robot=1` | the envelope, as JSON |
+| `?format=toon` | the envelope as **TOON**, `text/plain; charset=utf-8` |
+
+On: `GET /api/dispatch/{id}`, `GET /api/dispatch/{id}/events`,
+`GET /api/projects/{id}/objectives`, `GET /api/memory-engine/items`,
+`GET /api/memory-engine/pack`, `GET /api/command-guard/log`,
+`GET /api/command-guard/explain`, `GET /api/system/usage`.
+
+**TOON** (Token-Oriented Object Notation, `src/toon.py`) is a line-oriented
+encoding for exactly this: a uniform array of objects is written as one
+header naming the keys plus one comma-joined line per row, instead of naming
+every key again in every record. `GET /api/command-guard/log?format=toon`:
+
+```
+ok: true
+data:
+  status: success
+  receipts[3]{ts,tool,tier,rule,action,command_head}:
+    2026-08-30T12:34:56+00:00,bash,DANGEROUS,fs.rm_rf,blocked,rm -rf build/
+    2026-08-30T12:35:02+00:00,bash,SAFE,"",allowed,pytest -q
+    2026-08-30T12:36:11+00:00,python,CAUTION,fs.write,allowlisted,"open('out.txt','w')"
+  chain:
+    ok: true
+    entries: 3
+error_code: null
+error: null
+elapsed_ms: 4
+schema_version: 1
+```
+
+Measured by `tests/test_toon.py` against JSON with **compact** separators —
+which is exactly the body `?robot=1` sends, so this is like for like:
+
+| Payload | JSON | TOON | Saved |
+|---|---|---|---|
+| learned-memory items, 15 rows | 4306 chars | 2334 | **46 %** |
+| command-guard receipts, 25 rows | 4658 chars | 2779 | **40 %** |
+| system usage (GPU + model rows) | 540 chars | 406 | **25 %** |
+| objectives dashboard + usage | 7255 chars | 8351 | **−15 %** |
+
+The last row is the honest one. TOON is paid for by repeated keys, and a
+dashboard has almost none: its scores are one object per objective id and
+each log record carries a `fields` object of its own, so nothing collapses
+into a table and the two-space indent per nesting level costs more than
+JSON's braces. **Use `format=toon` for the row-shaped reads** — receipts,
+memory items, GPU and model tables, a job's workers — and `robot=1` for the
+rest, where you want the uniform envelope but not the encoding.
+
+Round-tripping is the property the tests hammer: `toon.decode(text)` gives
+back exactly the object Faustus meant to send — nesting, folded single-key
+paths (`config.database.host: localhost`), quoted cells holding commas or
+quotes, unicode, empty containers, and strings that merely look like numbers
+(`"3"` stays a string). A decoder is ~80 lines; the format is documented in
+full at the top of `src/toon.py`.
 
 ## What makes the answer trustworthy
 
