@@ -39,6 +39,7 @@ from core.platform_compat import (
 )
 
 from src.constants import BG_JOBS_DIR, BG_JOBS_FILE
+from src.native_env import native_host_environment
 
 _JOBS_DIR = Path(BG_JOBS_DIR)
 _STORE = Path(BG_JOBS_FILE)
@@ -136,6 +137,12 @@ def launch(command: str, session_id: str, cwd: Optional[str] = None,
         stderr=subprocess.DEVNULL,
         stdin=subprocess.DEVNULL,
         cwd=cwd or None,
+        # `#!bg` is the agent's Bash tool in detached form, and the commands it
+        # is told to send here are installs and downloads — the very ones that
+        # must not land in Faustus's virtualenv. Inheriting our environment
+        # would make `#!bg pip install x` install into OUR site-packages while
+        # the same command in the foreground correctly installs into theirs.
+        env=native_host_environment(),
         **detached_popen_kwargs(),  # detach from the request lifecycle (setsid / DETACHED_PROCESS)
     )
 

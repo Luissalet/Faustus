@@ -125,6 +125,12 @@ async def test_posix_bash_keeps_existing_shell_path(monkeypatch):
     result = await subprocess_tools._create_bash_subprocess("pwd", cwd="/tmp/work")
 
     assert result is process
+    assert captured["command"] == "pwd"
     # The shell gets its own session so a stuck command's whole process tree
     # can be killed (killpg) on timeout / cancel.
-    assert captured == {"command": "pwd", "kwargs": {"cwd": "/tmp/work", "start_new_session": True}}
+    assert captured["kwargs"]["cwd"] == "/tmp/work"
+    assert captured["kwargs"]["start_new_session"] is True
+    # `env` is the host's environment minus Faustus's virtualenv, so that a
+    # user command does not resolve against our interpreter; what it holds is
+    # asserted in tests/test_native_env_wiring.py. Nothing else is passed.
+    assert set(captured["kwargs"]) == {"cwd", "start_new_session", "env"}

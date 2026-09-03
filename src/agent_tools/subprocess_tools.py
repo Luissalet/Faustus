@@ -12,6 +12,7 @@ from typing import Optional, Callable, Awaitable, Tuple, Dict
 from core.platform_compat import IS_WINDOWS, find_bash
 from src import process_ownership
 from src.constants import MAX_OUTPUT_CHARS
+from src.native_env import VENV_MARKERS, native_host_environment
 
 logger = logging.getLogger(__name__)
 
@@ -197,6 +198,14 @@ async def _create_bash_subprocess(command: str, **kwargs):
     argument; Git Bash inherits that native Windows directory and exposes it
     using its normal ``/c/...`` representation.
     """
+    # The agent's shell runs the USER's commands in the USER's workspace, so it
+    # is a foreign child: a `pip install` or `pytest` here must reach their
+    # interpreter, not ours. The caller hands us ctx["subproc_env"], a copy of
+    # Faustus's own environment, which names our virtualenv in VIRTUAL_ENV,
+    # leads PATH with our bin/ and can carry a PYTHONPATH — inherited, the
+    # command silently resolves against our site-packages. Filtering the base
+    # we were given (rather than replacing it) keeps the caller's TERM/HOME.
+    kwargs["env"] = native_host_environment(kwargs.get("env"))
     if IS_WINDOWS:
         bash = find_bash()
         if not bash:
@@ -259,9 +268,21 @@ async def _ensure_tmux_session(name: str, cwd: str, env: Optional[dict]) -> None
     if await _tmux_has_session(name):
         await _run_exec("tmux", "send-keys", "-t", name, "stty -echo", "C-m", timeout=5)
         return
+    # The same venv leak as _create_bash_subprocess, on the path POSIX takes
+    # whenever tmux is installed. The session's shell is spawned by the tmux
+    # SERVER, which inherited Faustus's environment, so passing `env=` to the
+    # client here would change nothing — this `env` command is the only place
+    # that decides what the agent's commands actually see. Unset the markers
+    # and hand it a PATH our venv's bin no longer leads.
+    native_path = native_host_environment().get("PATH") or ""
+    scrub = [part for marker in VENV_MARKERS for part in ("-u", marker)]
+    if native_path:
+        # Only when we have one: `PATH=` would leave the shell unable to exec.
+        scrub.append(f"PATH={native_path}")
     await _run_exec(
         "tmux", "new-session", "-d", "-s", name, "-c", cwd,
         "env",
+        *scrub,
         f"TERM={env.get('TERM', 'xterm-256color') if env else 'xterm-256color'}",
         f"COLUMNS={env.get('COLUMNS', '120') if env else '120'}",
         f"LINES={env.get('LINES', '40') if env else '40'}",

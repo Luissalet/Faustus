@@ -34,6 +34,8 @@ import sys
 import time
 from typing import Any, Dict, Iterable, List, Optional
 
+from src.native_env import native_host_environment
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT_S = 300
@@ -304,7 +306,16 @@ def related_test_files(workspace: str, changed: Iterable[str], limit: int = 12) 
 # ---------------------------------------------------------------------------
 
 def _clean_env() -> Dict[str, str]:
-    env = dict(os.environ)
+    # The project's tests must run against the PROJECT's interpreter. Faustus
+    # lives in a virtualenv, so its own environment names that venv in
+    # VIRTUAL_ENV, leads PATH with our bin/, and may carry a PYTHONPATH:
+    # inherited, all three make the suite's `python`, `pip` and imports resolve
+    # to OUR site-packages, and the failure is silent — green here, ImportError
+    # on the user's machine. Nothing here depends on that inheritance: the
+    # runner is always an absolute path (`_python_for` / `_fallback_python`),
+    # and static_checks resolves its tools with `shutil.which` in THIS process
+    # before the child environment is built, so neither can become unfindable.
+    env = native_host_environment()
     env.setdefault("CI", "1")                   # jest/vitest: no watch mode
     env.setdefault("PYTHONIOENCODING", "utf-8")
     env.setdefault("PYTHONUTF8", "1")

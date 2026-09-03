@@ -6,6 +6,8 @@ from typing import Optional, AsyncIterator
 import asyncio
 from pathlib import Path
 
+from src.native_env import native_host_environment
+
 
 @dataclass
 class ShellResult:
@@ -58,6 +60,11 @@ class ShellService:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=cwd,
+                # A command handed to this service is someone else's, run from
+                # the user's home — never Faustus's own python. Faustus lives in
+                # a virtualenv, so inheriting its environment would point that
+                # command's `python`/`pip` and imports at our site-packages.
+                env=native_host_environment(),
             )
             stdout_b, stderr_b = await asyncio.wait_for(
                 proc.communicate(), timeout=timeout
@@ -106,6 +113,7 @@ class ShellService:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=self.cwd,
+                env=native_host_environment(),   # as in execute(): not our venv
             )
 
             q: asyncio.Queue = asyncio.Queue()

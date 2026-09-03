@@ -751,12 +751,21 @@ async def action_consolidate_memory(owner: str, **kwargs) -> Tuple[str, bool]:
 
 async def _run_subprocess(argv, *, shell: bool = False, timeout: int = 120, label: str = "Command") -> Tuple[str, bool]:
     """Shared subprocess runner. Wraps the blocking subprocess.run in
-    asyncio.to_thread so the event loop stays responsive."""
+    asyncio.to_thread so the event loop stays responsive.
+
+    Every caller runs a command or script the USER wrote, so the child is a
+    foreign one and must not inherit the marks of Faustus's virtualenv: with
+    VIRTUAL_ENV set, our bin/ leading PATH and possibly a PYTHONPATH, a script
+    that says `python` or `pip` silently gets our interpreter and our
+    site-packages instead of the machine's."""
     import asyncio
     import subprocess
+
+    from src.native_env import native_host_environment
     try:
         result = await asyncio.to_thread(
             subprocess.run, argv, shell=shell, capture_output=True, text=True, timeout=timeout,
+            env=native_host_environment(),
         )
         output = (result.stdout or "").strip()
         if result.returncode != 0 and result.stderr:
