@@ -24,11 +24,8 @@ The pipeline was built for chats, and two of its renderers say so out loud:
   banner. On a report that is wrong twice over — a duplicated title and a
   speaker label on a document with no speakers — so those three formats are
   composed here from the *same* block serializers those renderers use
-  (``_block_to_md``, ``_blocks_to_txt``, ``_blocks_to_html``), skipping only
-  the chat furniture around them. They are private names in that module; the
-  seam this module would rather import is a public ``blocks_to_md`` /
-  ``blocks_to_txt`` / ``blocks_to_html``. Markdown also needs its own join —
-  see :func:`_render_markdown`.
+  (``blocks_to_md``, ``blocks_to_txt``, ``blocks_to_html``), skipping only the
+  chat furniture around them.
 * ``src/chat_export_docx.py`` and ``src/chat_export_pdf.py`` take a Transcript
   and *always* emit a header ("N messages · Exported …") and a role banner per
   message. Neither is suppressible from the outside, and editing those files is
@@ -51,10 +48,10 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Sequence
 
 from src.chat_export import (
-    _HTML_CSS,
-    _block_to_md,
-    _blocks_to_html,
-    _blocks_to_txt,
+    HTML_CSS,
+    blocks_to_html,
+    blocks_to_md,
+    blocks_to_txt,
     markdown_to_blocks,
     normalize_format,
     render,
@@ -376,16 +373,8 @@ def _resolve_filename(data: Dict[str, Any], ext: str, filename: str) -> str:
 # ---------------------------------------------------------------------------
 
 def _render_markdown(blocks: Sequence[Block]) -> str:
-    """Serialize the blocks with a blank line between every one of them.
-
-    Deliberately not ``_blocks_to_md``: that one keeps a list tight against the
-    paragraph introducing it (one newline, no blank line), and the ``markdown``
-    package's ``sane_lists`` extension then reads those "- " lines as a lazy
-    continuation of the paragraph. A report whose bullets sit under a sentence
-    would re-parse as one run-on paragraph — the md export has to survive being
-    read back. Per-block serialization is still theirs.
-    """
-    return "\n\n".join(part for part in (_block_to_md(b) for b in blocks) if part)
+    """The report body as markdown that survives being parsed back again."""
+    return blocks_to_md(blocks)
 
 
 def _render_html_document(transcript: Transcript, blocks: Sequence[Block]) -> str:
@@ -395,9 +384,9 @@ def _render_html_document(transcript: Transcript, blocks: Sequence[Block]) -> st
     "Conversation" header; the blocks go straight into ``.msg-body`` here so
     they still pick up that stylesheet's typography.
     """
-    from src.chat_export import _esc  # local: only this function needs it
+    from src.chat_export import escape_html  # local: only this function needs it
 
-    title = _esc(transcript.name or "Research report")
+    title = escape_html(transcript.name or "Research report")
     return "\n".join([
         "<!DOCTYPE html>",
         '<html lang="en">',
@@ -405,12 +394,12 @@ def _render_html_document(transcript: Transcript, blocks: Sequence[Block]) -> st
         '<meta charset="utf-8">',
         '<meta name="viewport" content="width=device-width, initial-scale=1">',
         f"<title>{title}</title>",
-        f"<style>{_HTML_CSS}</style>",
+        f"<style>{HTML_CSS}</style>",
         "</head>",
         "<body>",
         '<main class="doc">',
         '<article class="msg-body">',
-        _blocks_to_html(blocks),
+        blocks_to_html(blocks),
         "</article>",
         "</main>",
         "</body>",
@@ -447,7 +436,7 @@ def render_report(data: Dict[str, Any], fmt: str, *,
     if key == "md":
         text = _render_markdown(blocks) + "\n"
     elif key == "txt":
-        text = _blocks_to_txt(blocks) + "\n"
+        text = blocks_to_txt(blocks) + "\n"
     elif key == "html":
         text = _render_html_document(transcript, blocks)
     else:

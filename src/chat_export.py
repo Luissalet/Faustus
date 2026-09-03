@@ -84,8 +84,14 @@ from src.chat_export_model import (
 )
 
 __all__ = [
+    "HTML_CSS",
+    "block_to_md",
+    "blocks_to_html",
+    "blocks_to_md",
+    "blocks_to_txt",
     "build_transcript",
     "content_to_text",
+    "escape_html",
     "export_session",
     "markdown_to_blocks",
     "render",
@@ -838,6 +844,9 @@ def _block_to_md(block: Block) -> str:
     return ""
 
 
+block_to_md = _block_to_md
+
+
 def _tool_calls_to_md(calls: Sequence[ToolCall]) -> str:
     if not calls:
         return ""
@@ -942,6 +951,9 @@ def _blocks_to_txt(blocks: Sequence[Block], indent: str = "") -> str:
         out.append(text)
         previous_kind = block.kind
     return "".join(out)
+
+
+blocks_to_txt = _blocks_to_txt
 
 
 def _block_to_txt(block: Block, indent: str = "") -> str:
@@ -1192,9 +1204,14 @@ li{margin:.2rem 0}
 }
 """.strip()
 
+HTML_CSS = _HTML_CSS
+
 
 def _esc(text: Any) -> str:
     return _html.escape(_text_value(text), quote=True)
+
+
+escape_html = _esc
 
 
 def _span_to_html(span: Span) -> str:
@@ -1219,6 +1236,9 @@ def _spans_to_html(spans: Sequence[Span]) -> str:
 
 def _blocks_to_html(blocks: Sequence[Block]) -> str:
     return "".join(_block_to_html(block) for block in blocks)
+
+
+blocks_to_html = _blocks_to_html
 
 
 def _block_to_html(block: Block) -> str:
