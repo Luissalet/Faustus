@@ -13,7 +13,10 @@ is a document someone can hand to a colleague":
     researcher appends its own "## Fuentes", and this module appends one when
     it doesn't — and the report must never carry both;
   * a Spanish question with accents and a "?" has to become a filename a
-    Windows machine will accept.
+    Windows machine will accept;
+  * the docx and pdf a colleague actually receives open as a *document* —
+    the question, the export date, the report's own metadata line — and not
+    as a chat transcript of one message spoken by "Report".
 
 The binary formats are exercised through ``pytest.importorskip`` so the suite
 stays green without python-docx / reportlab, and the *unavailable* path is
@@ -28,7 +31,7 @@ from datetime import datetime
 
 import pytest
 
-from src.chat_export import markdown_to_blocks
+from src.chat_export import DOCUMENT_FLAG, is_document, markdown_to_blocks
 from src.chat_export_model import ExportUnavailable
 from src.report_export import (
     REPORT_FORMATS,
@@ -366,6 +369,13 @@ def test_json_carries_the_research_metadata_and_the_block_model():
 # the transcript handed to the binary renderers
 # ---------------------------------------------------------------------------
 
+def test_the_transcript_is_flagged_as_a_document():
+    """The whole fix: the renderers are told this is not a conversation."""
+    transcript = build_report_transcript(research_json())
+    assert transcript.extra[DOCUMENT_FLAG] is True
+    assert is_document(transcript) is True
+
+
 def test_transcript_holds_one_message_with_a_non_chat_role():
     transcript = build_report_transcript(research_json())
     assert transcript.name == SPANISH_QUERY
@@ -405,10 +415,21 @@ def test_docx_contains_the_report_text():
     # The renderer prints the transcript name as the document title, so the
     # body must not repeat the question straight underneath it.
     assert joined.count(SPANISH_QUERY) == 1
-    # Chat chrome the renderer imposes and this module cannot switch off: the
-    # role banner is neutral ("Report"), never a speaker.
+    # No speaker banner over a document that has no speakers.
     assert "Assistant" not in joined
     assert "User" not in joined
+    assert "Report" not in joined
+
+
+def test_docx_opens_with_the_question_the_export_date_and_the_metadata_line():
+    """The first three lines of the file someone is handed, in order."""
+    pytest.importorskip("docx")
+    texts = docx_texts(render_report(research_json(), "docx").content)
+    assert texts[0] == SPANISH_QUERY
+    assert re.fullmatch(r"Exported \d{4}-\d{2}-\d{2} \d{2}:\d{2}", texts[1])
+    assert texts[2].startswith("Completed ")
+    # The count of a chat with one turn in it, on a document with no turns.
+    assert not any("message" in text for text in texts[:3])
 
 
 def test_pdf_contains_the_report_text():
@@ -421,6 +442,9 @@ def test_pdf_contains_the_report_text():
     assert "fisioterapia" in text
     assert "Resumen" in text
     assert "Assistant" not in text
+    assert "1 message" not in text
+    assert not re.search(r"^\s*Report\s*$", text, re.M)
+    assert re.search(r"^Exported \d{4}-\d{2}-\d{2} \d{2}:\d{2}$", text, re.M)
 
 
 def test_missing_binary_dependency_surfaces_as_export_unavailable(monkeypatch):

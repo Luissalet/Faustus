@@ -17,7 +17,7 @@ not already carry one, and a footer.
 
 Where this bends around the conversation exporter
 -------------------------------------------------
-The pipeline was built for chats, and two of its renderers say so out loud:
+The pipeline was built for chats, and its renderers say so out loud:
 
 * ``render_md`` / ``render_txt`` / ``render_html`` open with
   "Conversation: <name>", a message count, and a per-message ``### ASSISTANT``
@@ -26,17 +26,12 @@ The pipeline was built for chats, and two of its renderers say so out loud:
   composed here from the *same* block serializers those renderers use
   (``blocks_to_md``, ``blocks_to_txt``, ``blocks_to_html``), skipping only the
   chat furniture around them.
-* ``src/chat_export_docx.py`` and ``src/chat_export_pdf.py`` take a Transcript
-  and *always* emit a header ("N messages · Exported …") and a role banner per
-  message. Neither is suppressible from the outside, and editing those files is
-  not this change's business. The report therefore travels as a single message
-  whose role is ``"report"``: unknown roles fall back to the neutral grey
-  "system" styling in both renderers, so the banner reads "Report" instead of
-  "Assistant". The minimal fix, when someone owns those files: honour a
-  ``transcript.extra["document"]`` flag by skipping the role banner in
-  ``_add_message`` / ``_message_flowables`` and the message count in
-  ``_add_header`` / ``_header_flowables``. ``extra`` already exists on
-  Transcript and is ignored by both.
+* ``src/chat_export_docx.py`` and ``src/chat_export_pdf.py`` used to open every
+  document with "1 message · Exported …" and a grey role banner over the body.
+  They now honour ``DOCUMENT_FLAG`` in ``transcript.extra`` (see
+  ``src/chat_export.py``), which this module sets: the banner and the count go,
+  the title, the metadata line and the page furniture stay. Everything a
+  conversation gets, a report still gets — the flag is the only difference.
 """
 
 from __future__ import annotations
@@ -48,6 +43,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Sequence
 
 from src.chat_export import (
+    DOCUMENT_FLAG,
     HTML_CSS,
     blocks_to_html,
     blocks_to_md,
@@ -80,9 +76,10 @@ __all__ = [
 #: Formats a report can be asked for. ``md`` first: it is the lossless one.
 REPORT_FORMATS = ("md", "docx", "pdf", "html", "txt", "json")
 
-#: The role the single report message carries. Not a chat role, so the docx and
-#: pdf renderers style its banner neutrally instead of colouring it as a
-#: speaker — see the module docstring.
+#: The role the single report message carries. Nothing renders it any more —
+#: the docx and pdf banners are gone and the text formats are composed here —
+#: but the json export writes every message's role out, and "report" is the
+#: honest answer there for a document with no speaker.
 REPORT_ROLE = "report"
 
 #: A body that already ends in its own sources section must not get a second
@@ -289,14 +286,20 @@ def build_report_transcript(data: Dict[str, Any], *,
                             title_in_body: bool = True) -> Transcript:
     """Wrap the report blocks in the Transcript the renderers consume.
 
-    ``model`` and ``session_id`` are deliberately left empty: the docx and pdf
-    renderers print them in a header of their own, directly above the report's
-    metadata line, which would say the same thing twice. Both travel in
-    ``extra`` instead, where the json export picks them up.
+    ``extra`` carries :data:`~src.chat_export.DOCUMENT_FLAG`, which tells the
+    docx and pdf renderers this is a document: no role banner over the body, no
+    "1 message" in the header. What their header keeps is the export date,
+    which is the one fact about the *file* that the report's own metadata line
+    (about the research) does not carry.
 
-    Those two renderers also print ``name`` as the document's title, so they
-    ask for ``title_in_body=False`` — otherwise page one opens with the
-    question, and then the question again as the body's first heading.
+    ``model`` and ``session_id`` are deliberately left empty: those renderers
+    print them in that same header, directly above the report's metadata line,
+    which would say the same thing twice. Both travel in ``extra`` instead,
+    where the json export picks them up.
+
+    They also print ``name`` as the document's title, so they ask for
+    ``title_in_body=False`` — otherwise page one opens with the question, and
+    then the question again as the body's first heading.
     """
     if not isinstance(data, dict):
         raise TypeError("research data must be a dict")
@@ -316,6 +319,7 @@ def build_report_transcript(data: Dict[str, Any], *,
         exported_at=exported_at,
         messages=[message],
         extra={
+            DOCUMENT_FLAG: True,
             "kind": "research_report",
             "query": query,
             "status": _text(data.get("status")),
