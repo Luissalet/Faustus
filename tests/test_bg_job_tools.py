@@ -73,6 +73,44 @@ def test_kill_finished_job_is_noop(store):
     assert store["killed"] == []  # no signal sent to an already-finished job
 
 
+def test_kill_refuses_a_stale_record_and_says_why(store, monkeypatch):
+    """A record still marked `running` whose process died without writing its
+    exit file must not hand its stored pid to kill_process_tree: the OS has
+    already put that number back in the pool."""
+    _seed(job_id="job0001", pid=4321)
+    monkeypatch.setattr(bg_jobs, "_pid_alive", lambda pid: False)
+
+    rec = bg_jobs.kill("job0001")
+
+    assert store["killed"] == [], "a dead job's pid must never be signalled"
+    assert rec["status"] == "failed" and rec["died"] is True
+    assert "4321" in rec["kill_refused"]
+    assert "no longer owns" in rec["kill_refused"]
+
+
+def test_kill_refuses_a_job_that_finished_before_the_kill_landed(store):
+    """The race the refresh closes: the job wrote its exit file while the
+    agent was deciding to stop it."""
+    _seed(job_id="job0001", pid=4321)
+    (bg_jobs._JOBS_DIR / "job0001.exit").write_text("0\n", encoding="utf-8")
+
+    rec = bg_jobs.kill("job0001")
+
+    assert store["killed"] == []
+    assert rec["status"] == "done" and rec["exit_code"] == 0
+    assert "kill_refused" in rec
+
+
+def test_a_refused_kill_leaves_the_record_alone(store, monkeypatch):
+    """The explanation is for the caller; it must not be written to the store."""
+    _seed(job_id="job0001", pid=4321)
+    monkeypatch.setattr(bg_jobs, "_pid_alive", lambda pid: False)
+
+    bg_jobs.kill("job0001")
+
+    assert "kill_refused" not in bg_jobs._load()["job0001"]
+
+
 def test_result_text_reports_killed(store):
     rec = _seed(job_id="job0001")
     bg_jobs.kill("job0001")

@@ -38,6 +38,7 @@ from core.platform_compat import (
     pid_alive,
 )
 
+from src import process_ownership
 from src.constants import BG_JOBS_DIR, BG_JOBS_FILE
 from src.native_env import native_host_environment
 
@@ -273,9 +274,16 @@ def list_for_session(session_id: str) -> List[Dict[str, Any]]:
 def kill(job_id: str) -> Optional[Dict[str, Any]]:
     """Terminate a running job's process tree and mark it killed. Returns the
     updated record, or None if the id is unknown. Idempotent: a job that already
-    finished is returned unchanged. Sets followed_up so the monitor does not also
-    fire an auto-continue for a job the agent deliberately stopped."""
-    jobs = _load()
+    finished is returned unchanged, with `kill_refused` saying why nothing was
+    signalled. Sets followed_up so the monitor does not also fire an
+    auto-continue for a job the agent deliberately stopped."""
+    # refresh() before reading, not _load(): a record still marked `running`
+    # whose process died without writing its exit file would otherwise hand a
+    # stored pid straight to kill_process_tree. A pid the OS has already reaped
+    # is back in the pool, and killing it takes down whatever holds it now.
+    # refresh() is what turns that record into `failed`, so the branch below
+    # never fires for a process that is gone.
+    jobs = refresh()
     rec = jobs.get(job_id)
     if rec is None:
         return None
@@ -287,6 +295,17 @@ def kill(job_id: str) -> Optional[Dict[str, Any]]:
         rec["killed"] = True
         rec["followed_up"] = True
         _save(jobs)
+        return rec
+    # Reached only after refresh() has reconciled this record against disk, so
+    # the job is genuinely over. Say that rather than returning a record the
+    # caller could read as "killed" — `process_ownership.describe` names what
+    # holds the pid now, which is the point: it is no longer ours.
+    rec = dict(rec)
+    rec["kill_refused"] = (
+        f"Job {job_id} already {rec.get('status')}; nothing was signalled. "
+        f"Faustus no longer owns {process_ownership.describe(rec.get('pid'))} — "
+        "the OS may have handed that number to an unrelated process."
+    )
     return rec
 
 
