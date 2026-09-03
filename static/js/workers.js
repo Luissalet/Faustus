@@ -95,7 +95,7 @@ export function pageHtml(jobs, expanded, { workspace = '', busy = false } = {}) 
         <label class="wk-field wk-field-sm">Model <input type="text" id="wk-model" placeholder="configured worker model"></label>
         <button type="submit" class="admin-btn-add" id="wk-run" ${busy ? 'disabled' : ''}>${busy ? 'Starting…' : 'Run'}</button>
       </div>
-      <div class="wk-hint">Each line is one task = one worker (max 4). The workers are confined to the folder; the job gets its own <em>Workers</em> chat with the control board. Same door Fable uses from Cowork — see <code>docs/FABLE_WORKERS.md</code>.</div>
+      <div class="wk-hint">Each line is one task = one worker (max 4). The workers are confined to the folder; the job gets its own <em>Workers</em> chat with the control board. Same door Fable uses from Cowork — see <code>website/fable-workers.md</code>.</div>
     </form>
     <div class="wk-list" id="wk-list">${list}</div>`;
 }

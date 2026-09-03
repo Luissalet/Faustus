@@ -76,7 +76,7 @@ def test_page_has_the_box_the_folder_and_an_empty_state():
                                    busy: pageHtml([], new Set(), { busy: true }) }));
     """)
     assert 'id="wk-task"' in out["empty"] and 'value="D:\\proj"' in out["empty"] and "No jobs yet" in out["empty"]
-    assert 'id="wk-parallel" checked' in out["empty"] and "docs/FABLE_WORKERS.md" in out["empty"]
+    assert 'id="wk-parallel" checked' in out["empty"] and "website/fable-workers.md" in out["empty"]
     assert "Starting…" in out["busy"] and "disabled" in out["busy"]
 
 

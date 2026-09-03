@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # GPU placement — which card Ollama fills first
 
 With two or more cards Faustus shows every card (usage panel: *Combined /

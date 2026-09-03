@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # Fable workers — let an expensive model plan and review while local workers do the work
 
 The idea: Claude (Fable) in Cowork / Claude Desktop / Claude Code is good at
@@ -69,7 +73,7 @@ whether the model reads skills, tool descriptions or nothing at all:
 2. `workers_guide` / `GET /api/dispatch/guide` returns the coordinator's
    guide (below) — when to dispatch, how to write a task, how to read a
    result, the plan → dispatch → wait → check loop.
-3. `docs/skills/faustus-workers/SKILL.md` is a ready-made **skill** for
+3. `integrations/faustus-workers/SKILL.md` is a ready-made **skill** for
    Cowork / Claude Code: copy the folder into the client's skills directory
    (Cowork: Settings → Skills → add; Claude Code: `.claude/skills/`) and the
    model picks the workers up on its own for file/test/refactor work.
