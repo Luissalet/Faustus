@@ -330,3 +330,115 @@ def test_release_button_posts_the_pid_and_is_off_limits_to_the_view_switch_handl
     handler = src.split("panel.addEventListener('click'", 1)[1].split("});", 1)[0]
     assert handler.index("data-su-release") < handler.index("data-su-gpu-view")
     assert "rows.push(orphansHtml(d));" in src
+
+
+# ── the health block (src/health.py, rendered by the panel) ─────────────────
+
+_HEALTH = {
+    "score": 62, "grade": "C", "collected": True, "reporting": 5, "of": 7, "schema_version": 1,
+    "missing": ["gpu", "vram"],
+    "components": [
+        {"name": "ollama", "label": "Ollama reachable", "value": "reachable · 2 model(s) loaded",
+         "weight": 20, "state": "ok", "why": "answering at http://127.0.0.1:11434"},
+        {"name": "gpu", "label": "GPU visible to nvidia-smi", "value": None, "weight": 15,
+         "state": "no_data", "why": "nvidia-smi is not on this machine"},
+        {"name": "vram", "label": "VRAM headroom", "value": None, "weight": 15, "state": "no_data", "why": ""},
+        {"name": "host", "label": "RAM headroom", "value": "31% used", "weight": 15, "state": "ok",
+         "why": "31% of system RAM in use"},
+        {"name": "disk", "label": "Disk headroom", "value": "12.0 GB free (8%)", "weight": 15, "state": "warn",
+         "why": "12.0 GB free of 150 GB where Faustus writes"},
+        {"name": "runners", "label": "No orphaned runners", "value": "2 orphaned", "weight": 10, "state": "bad",
+         "why": "2 runner(s) no Ollama server owns"},
+        {"name": "dispatch", "label": "Recent dispatched jobs", "value": "3 job(s), 0 failed", "weight": 10,
+         "state": "ok", "why": "3 job(s) in the last hour, none failed"},
+    ],
+}
+
+
+@pytest.mark.skipif(not _HAS_NODE, reason="node not installed")
+def test_health_section_shows_the_score_and_says_no_data_source_instead_of_a_zero():
+    out = _run(f"""
+      const d = {{ ...TWO, health: {json.dumps(_HEALTH)} }};
+      console.log(JSON.stringify({{ html: m.healthHtml(d), none: m.healthHtml(TWO), missing: m.healthHtml({{}}),
+                                   level: [m.healthLevel({{ score: 91 }}), m.healthLevel({{ score: 62 }}),
+                                           m.healthLevel({{ score: 41 }}), m.healthLevel({{ score: 12 }}),
+                                           m.healthLevel(null)],
+                                   word: m.NO_SOURCE }}));
+    """)
+    html = out["html"]
+    # a server that does not send the block (agent_health_score off) renders nothing at all
+    assert out["none"] == "" and out["missing"] == ""
+    assert out["word"] == "no data source yet"
+    assert '<div class="su-h">Health <span class="su-muted">5 of 7 signals reporting</span></div>' in html
+    assert '<span class="su-val">62/100 · C</span>' in html
+    assert 'su-meter "><span style="width:62.0%"' in html                 # 60+ is not painted as a problem
+    # every component, and the two with no source say the words — not "0"
+    assert '<span class="su-label">Ollama reachable</span>' in html and 'reachable · 2 model(s) loaded' in html
+    assert html.count("no data source yet") == 2                          # gpu and vram, nothing else
+    assert ('<span class="su-label">GPU visible to nvidia-smi</span>'
+            '<span class="su-val su-muted">· no data source yet</span>') in html
+    assert '2 orphaned' in html and '12.0 GB free (8%)' in html
+    # the meter is inverted against the VRAM meters: a LOW score is the red one
+    assert out["level"] == ["", "", "warm", "hot", "hot"]
+
+
+@pytest.mark.skipif(not _HAS_NODE, reason="node not installed")
+def test_a_machine_nothing_was_collected_from_says_so_next_to_its_zero():
+    out = _run("""
+      const health = { score: 0, grade: 'F', collected: false, reporting: 0, of: 2, missing: ['ollama', 'gpu'],
+        components: [{ name: 'ollama', label: 'Ollama reachable', value: null, weight: 20, state: 'no_data', why: '' },
+                     { name: 'gpu', label: 'GPU visible to nvidia-smi', value: null, weight: 15, state: 'no_data', why: '' }] };
+      console.log(JSON.stringify({ html: m.healthHtml({ ...TWO, health }) }));
+    """)
+    html = out["html"]
+    assert '<span class="su-val">0/100 · F</span>' in html and 'su-meter hot' in html
+    assert '0 of 2 signals reporting' in html
+    assert 'nothing has been measured, not because anything was measured as bad' in html
+
+
+@pytest.mark.skipif(not _HAS_NODE, reason="node not installed")
+def test_a_section_with_no_source_says_so_instead_of_drawing_zeros():
+    out = _run("""
+      console.log(JSON.stringify({
+        host: m.hostSectionHtml(TWO),
+        hostNone: m.hostSectionHtml({ errors: ['psutil: No module named psutil'] }),
+        hostEmpty: m.hostSectionHtml({ ram: {}, cpu: {} }),
+        ollamaNone: m.ollamaSectionHtml({}),
+        ollamaThere: m.ollamaSectionHtml(TWO),
+      }));
+    """)
+    # today's host section, unchanged
+    assert '<div class="su-h">Host</div>' in out["host"]
+    assert '20.0 / 64.0 GB (31%)' in out["host"] and '32 threads' in out["host"]
+    # …and the honest version when psutil said nothing
+    assert 'no data source yet — psutil: No module named psutil' in out["hostNone"]
+    assert '0.0 / 0.0 GB' not in out["hostEmpty"] and 'no data source yet' in out["hostEmpty"]
+    # an absent ollama block is not "unreachable" — nothing asked. A block that
+    # IS there and says unreachable keeps saying exactly that.
+    assert 'no data source yet' in out["ollamaNone"] and 'Cannot reach Ollama' not in out["ollamaNone"]
+    assert 'Cannot reach Ollama' in MODULE_JS
+    assert 'no data source yet' not in out["ollamaThere"]
+
+
+@pytest.mark.skipif(not _HAS_NODE, reason="node not installed")
+def test_hostile_health_strings_are_escaped_too():
+    evil = "<img src=x onerror=1>"
+    out = _run(f"""
+      const health = {{ score: 5, grade: {json.dumps(evil)}, collected: true, reporting: 1, of: 1, missing: [],
+        components: [{{ name: 'x', label: {json.dumps(evil)}, value: {json.dumps(evil)}, weight: 1,
+                       state: 'bad', why: {json.dumps(evil)} }}] }};
+      console.log(JSON.stringify({{ html: m.healthHtml({{ ...TWO, health }}),
+                                   host: m.hostSectionHtml({{ errors: [{json.dumps("psutil: " + evil)}] }}) }}));
+    """)
+    for key in ("html", "host"):
+        assert evil not in out[key], key
+        assert "&lt;img src=x onerror=1&gt;" in out[key], key
+
+
+def test_the_panel_puts_health_first_and_uses_the_extracted_host_section():
+    panel = MODULE_JS.split("function renderPanel(d) {", 1)[1].split("\n}\n", 1)[0]
+    assert panel.index("rows.push(healthHtml(d));") < panel.index("rows.push(gpuSectionsHtml(d, _gpuView));")
+    assert "rows.push(hostSectionHtml(d));" in panel
+    for name in ("export function healthHtml(d)", "export function healthLevel(h)",
+                 "export function hostSectionHtml(d)", "export const NO_SOURCE = 'no data source yet';"):
+        assert name in MODULE_JS, name

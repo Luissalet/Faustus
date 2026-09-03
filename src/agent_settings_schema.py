@@ -418,6 +418,11 @@ GROUPS: list[dict[str, Any]] = [
                   "interrupted with the reason. It produces a plan that re-pins each job's own model and "
                   "parameters, and resumes nothing by itself; when the machine will not say when it booted "
                   "it does nothing at all. Off = no scan."),
+            _bool("agent_health_score", "Honest health score",
+                  "Add a health block to the system usage panel where a signal nobody collected counts as "
+                  "zero and says \"no data source yet\" instead of a plausible zero — so a machine nothing "
+                  "has been collected from does not look healthy by default. Off = the usage endpoint and "
+                  "the panel are exactly what they were."),
             _bool("agent_tool_outcomes", "Four-value outcomes",
                   "Record success / expected_error / cancelled / panic for worker runs, tool results and "
                   "scorecard turns. A worker YOU stopped counts as cancelled, not as a failure. "

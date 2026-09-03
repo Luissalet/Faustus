@@ -360,7 +360,11 @@ export function gpuSectionsHtml(d, mode = 'combined') {
 /** The Ollama section: each loaded model with its GPU/CPU split, size,
  *  context, keep-alive and — when the server knows — where it sits. */
 export function ollamaSectionHtml(d) {
-  const o = (d && d.ollama) || {};
+  if (!d || !d.ollama) {
+    // No block at all is not "unreachable" — nothing asked. Say that.
+    return `<div class="su-section"><div class="su-h">Ollama</div><div class="su-muted">${esc(NO_SOURCE)}</div></div>`;
+  }
+  const o = d.ollama || {};
   const models = o.models || [];
   return `<div class="su-section"><div class="su-h">Ollama <span class="su-muted">${esc((o.base || '').replace(/^https?:\/\//, ''))}${o.reachable ? '' : ' · unreachable'}</span></div>` +
     (models.length ? models.map(m => `<div class="su-model"><div class="su-model-name">${esc(m.name)}<span class="su-muted"> ${esc(m.parameter_size || '')} ${esc(m.quantization || '')}</span></div>` +
@@ -371,6 +375,67 @@ export function ollamaSectionHtml(d) {
       `<div class="su-row"><span class="su-label">Keep-alive</span><span class="su-val">${esc(untilText(m.expires_at)) || '—'}</span></div></div>`).join('')
       : `<div class="su-muted">${o.reachable ? 'No model loaded (ollama ps is empty).' : 'Cannot reach Ollama.'}</div>`) +
     `</div>`;
+}
+
+// ── health ──────────────────────────────────────────────────────────────────
+
+/** What a panel says when NOTHING has reported a signal. It is not a zero and
+ *  it is not a green tick: a machine nothing has been collected from is an
+ *  unknown machine, not a healthy one. */
+export const NO_SOURCE = 'no data source yet';
+
+const STATE_MARK = { ok: '●', warn: '▲', bad: '■', no_data: '·' };
+
+/** '' | 'warm' | 'hot' for the health meter. Inverted against the VRAM
+ *  meters on purpose: there a high number is bad, here a LOW one is. */
+export function healthLevel(h) {
+  const n = h && h.score != null ? Number(h.score) : null;
+  if (n == null || Number.isNaN(n)) return 'hot';
+  return n >= 60 ? '' : n >= 40 ? 'warm' : 'hot';
+}
+
+/** The health section: the score, what each signal said, and — for every
+ *  signal with no source — the words instead of a plausible zero. '' when the
+ *  server sends no health block (`agent_health_score` off), so the panel is
+ *  then exactly the one it was before. */
+export function healthHtml(d) {
+  const h = d && d.health;
+  if (!h || !Array.isArray(h.components)) return '';
+  const score = Number(h.score) || 0;
+  const p = Math.max(0, Math.min(100, score));
+  const rows = h.components.map(c => {
+    const state = String((c && c.state) || 'no_data');
+    const nodata = state === 'no_data';
+    const val = nodata ? NO_SOURCE : (c && c.value != null && c.value !== '' ? String(c.value) : '—');
+    return `<div class="su-row" title="${esc((c && c.why) || '')}">` +
+      `<span class="su-label">${esc((c && (c.label || c.name)) || 'signal')}</span>` +
+      `<span class="su-val${nodata ? ' su-muted' : ''}">${esc(STATE_MARK[state] || '·')} ${esc(val)}</span></div>`;
+  }).join('');
+  const reporting = `${h.reporting != null ? h.reporting : 0} of ${h.of != null ? h.of : (h.components.length || 0)} signals reporting`;
+  return `<div class="su-section"><div class="su-h">Health <span class="su-muted">${esc(reporting)}</span></div>` +
+    `<div class="su-row"><span class="su-label">Score</span>` +
+    `<span class="su-meter ${healthLevel(h)}"><span style="width:${p.toFixed(1)}%"></span></span>` +
+    `<span class="su-val">${esc(String(score))}/100 · ${esc(String(h.grade || '—'))}</span></div>` +
+    rows +
+    (h.collected === false
+      ? `<div class="su-muted">${esc(NO_SOURCE)} for any signal — this is a zero because nothing has been ` +
+        `measured, not because anything was measured as bad.</div>`
+      : '') +
+    `</div>`;
+}
+
+/** The host section (RAM / CPU). With no source it says so instead of drawing
+ *  0 % of 0 GB, which would read like a measurement. */
+export function hostSectionHtml(d) {
+  if (d && d.ram && d.ram.total) {
+    return `<div class="su-section"><div class="su-h">Host</div>` +
+      bar('RAM', d.ram.used, d.ram.total, '', `${gb(d.ram.used)} / ${gb(d.ram.total)} GB (${pct(d.ram.percent)})`) +
+      (d.cpu && d.cpu.percent != null ? bar('CPU', d.cpu.percent, 100, '%', `${pct(d.cpu.percent)}${d.cpu.count ? ' · ' + d.cpu.count + ' threads' : ''}`) : '') +
+      `</div>`;
+  }
+  const why = (d && Array.isArray(d.errors) ? d.errors : []).filter(e => String(e).startsWith('psutil'));
+  return `<div class="su-section"><div class="su-h">Host</div>` +
+    `<div class="su-muted">${esc(NO_SOURCE)}${why.length ? ' — ' + esc(why.join('; ')) : ''}</div></div>`;
 }
 
 /** Runners no Ollama server owns any more (a restart leaves them behind),
@@ -408,6 +473,7 @@ async function _release(pid, btn) {
 
 function renderPanel(d) {
   const rows = [];
+  rows.push(healthHtml(d));
   rows.push(gpuSectionsHtml(d, _gpuView));
   rows.push(orphansHtml(d));
   rows.push(ollamaSectionHtml(d));
@@ -426,12 +492,7 @@ function renderPanel(d) {
         : `<div class="su-muted">A CUDA process always parks a few hundred MB here — that is not a spill.</div>`) +
       `</div>`);
   }
-  if (d.ram && d.ram.total) {
-    rows.push(`<div class="su-section"><div class="su-h">Host</div>` +
-      bar('RAM', d.ram.used, d.ram.total, '', `${gb(d.ram.used)} / ${gb(d.ram.total)} GB (${pct(d.ram.percent)})`) +
-      (d.cpu && d.cpu.percent != null ? bar('CPU', d.cpu.percent, 100, '%', `${pct(d.cpu.percent)}${d.cpu.count ? ' · ' + d.cpu.count + ' threads' : ''}`) : '') +
-      `</div>`);
-  }
+  rows.push(hostSectionHtml(d));
   rows.push(`<div class="su-foot su-muted">updated ${new Date((d.ts || Date.now() / 1000) * 1000).toLocaleTimeString()} · polling every ${(_streaming ? BUSY_MS : IDLE_MS) / 1000}s${_streaming ? ' (streaming)' : ''} · <code>/usage off</code> to hide</div>`);
   _panel.innerHTML = rows.join('');
 }

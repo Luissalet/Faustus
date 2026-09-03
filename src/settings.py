@@ -371,6 +371,12 @@ DEFAULT_SETTINGS = {
     # parameters and resumes nothing by itself. Without a boot time from the
     # platform it does nothing at all. Off = no scan.
     "agent_crash_recovery": True,
+    # An honest health score on /api/system/usage (src/health.py): a component
+    # nothing reported contributes 0 and says "no data source yet", so a
+    # machine nothing has been collected from scores near zero instead of
+    # looking healthy by default — absence of signal is not absence of
+    # problem. Off = the endpoint and the panel answer exactly as before.
+    "agent_health_score": True,
     # Four-value outcomes for tool calls and worker runs (src/tool_outcome.py):
     # success / expected_error / cancelled / panic. A worker YOU stopped is
     # `cancelled` and no longer counts as a failed one. Off = the old arithmetic,

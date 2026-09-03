@@ -1484,6 +1484,32 @@ def _load(job_id: str) -> Optional[DispatchJob]:
     return job
 
 
+def recent_counts(window_s: float = 3600.0, *, now: Optional[float] = None) -> Dict[str, int]:
+    """How the jobs of the last `window_s` ended, from what is ALREADY in
+    memory — no listdir, no mirror is read. A caller polling this every few
+    seconds (the usage widget) must not turn a health reading into disk work,
+    and a process that has run no job answers `jobs: 0`, which is honestly "no
+    signal" rather than "everything is fine"."""
+    t = time.time() if now is None else now
+    out = {"jobs": 0, "done": 0, "partial": 0, "failed": 0, "cancelled": 0, "live": 0}
+    for job in list(_jobs.values()):
+        stamp = job.finished or job.started or job.created or 0.0
+        if not stamp or t - float(stamp) > float(window_s):
+            continue
+        out["jobs"] += 1
+        if job.status in _LIVE:
+            out["live"] += 1
+        elif job.status == "done":
+            out["done"] += 1
+        elif job.status == "partial":
+            out["partial"] += 1
+        elif job.status in ("cancelled", "cancelling"):
+            out["cancelled"] += 1
+        else:                                   # error, interrupted
+            out["failed"] += 1
+    return out
+
+
 def visible_to(job: DispatchJob, owner: Optional[str]) -> bool:
     """One predicate for the list and the by-id read: a named owner sees
     only their jobs; single-user / anonymous mode (owner "" or None) sees

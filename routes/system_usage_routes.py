@@ -25,8 +25,19 @@ GET /api/system/usage
   "sysmem_fallback": {"exposed": false, "manual_only": true, "steps": [...]},
   "cpu": {"percent": 12.5, "count": 32},
   "ram": {"used": 40.1e9, "total": 137.0e9, "percent": 29.3},
-  "errors": ["nvidia-smi: not found"]        # non-fatal collection problems
+  "errors": ["nvidia-smi: not found"],       # non-fatal collection problems
+  "health": {"score": 62, "grade": "C", "collected": true,   # src/health.py
+             "components": [{"name", "label", "value", "weight", "state", "why"}],
+             "missing": ["gpu", "vram"]}     # a signal with NO source scores 0
 }
+
+The `health` block is built only from what this document really carries (plus
+the disk headroom where Faustus writes and how the last hour's dispatched jobs
+ended, both read without a subprocess). A component nothing reported counts as
+**zero**, not as "fine": a machine nothing has been collected from is not a
+healthy machine, it is an unknown one, and the panel says "no data source yet"
+instead of drawing a plausible zero. `agent_health_score` off removes the key
+and the answer is byte-identical to what it was.
 
 `gpu` is each card's own VRAM; `gpu_mem` is the part nvidia-smi cannot see —
 system RAM the driver paged GPU allocations into over PCIe. Ollama filling
@@ -66,6 +77,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 from src import gpu_placement, nvidia_drs, vram_fit
 from src import gpu_shared_memory
+from src import health
 from src import robot_envelope as robot
 from src import robot_projection as lean
 from core.middleware import require_admin
@@ -263,6 +275,124 @@ def _collect_host() -> Dict[str, Any]:
     return out
 
 
+def _disk_reading() -> Optional[Dict[str, Any]]:
+    """Headroom where Faustus writes (DATA_DIR): one statvfs, no subprocess.
+    None when the path cannot be measured — that is a missing source, not a
+    full disk."""
+    try:
+        from src.constants import DATA_DIR
+        usage = shutil.disk_usage(DATA_DIR)
+    except Exception:  # noqa: BLE001 - no DATA_DIR, no filesystem answer
+        return None
+    total = int(getattr(usage, "total", 0) or 0)
+    free = int(getattr(usage, "free", 0) or 0)
+    if total <= 0:
+        return None
+    pct = 100.0 * free / total
+    gb = free / (1024 ** 3)
+    if gb < 2 or pct < 5:
+        state = "bad"
+    elif pct < 15:
+        state = "warn"
+    else:
+        state = "ok"
+    return health.reading(state, f"{gb:.1f} GB free of {total / (1024 ** 3):.0f} GB where Faustus writes",
+                          f"{gb:.1f} GB free ({pct:.0f}%)")
+
+
+def _dispatch_reading() -> Optional[Dict[str, Any]]:
+    """How the dispatched jobs of the last hour ended, from what src/dispatch.py
+    already holds in memory. A process that has run none says `no_data` — no
+    job is not the same as no problem."""
+    try:
+        from src import dispatch
+        counts = dispatch.recent_counts(3600.0)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("health: dispatch counts unavailable: %s", e)
+        return None
+    if not counts.get("jobs"):
+        return None
+    if counts.get("failed"):
+        state, note = "bad", f"{counts['failed']} of {counts['jobs']} failed in the last hour"
+    elif counts.get("partial"):
+        state, note = "warn", f"{counts['partial']} of {counts['jobs']} came back partial in the last hour"
+    else:
+        state, note = "ok", f"{counts['jobs']} job(s) in the last hour, none failed"
+    return health.reading(state, note, f"{counts['jobs']} job(s), {counts.get('failed', 0)} failed")
+
+
+def health_signals(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Readings from what THIS endpoint really collected — nothing invented.
+
+    A section this machine has no source for is left out of the mapping
+    entirely, so src/health.py records it as `no_data`, counts it as zero and
+    lists it in `missing`: the panel then says "no data source yet" instead of
+    drawing a plausible zero.
+    """
+    signals: Dict[str, Any] = {}
+
+    ollama = data.get("ollama")
+    if isinstance(ollama, dict) and ("reachable" in ollama or ollama.get("base")):
+        if ollama.get("reachable"):
+            loaded = len(ollama.get("models") or [])
+            signals["ollama"] = health.reading("ok", f"answering at {ollama.get('base') or 'its base URL'}",
+                                               f"reachable · {loaded} model(s) loaded")
+        else:
+            signals["ollama"] = health.reading("bad", f"unreachable: {ollama.get('error') or 'no answer'}",
+                                               "unreachable")
+
+    gpus = data.get("gpu") or []
+    errors = [str(e) for e in (data.get("errors") or [])]
+    smi_missing = any("not found" in e for e in errors if e.startswith("nvidia-smi"))
+    if gpus:
+        signals["gpu"] = health.reading("ok", f"nvidia-smi answered for {len(gpus)} card(s)",
+                                        f"{len(gpus)} card(s)")
+    elif not smi_missing and any(e.startswith("nvidia-smi") for e in errors):
+        signals["gpu"] = health.reading("bad", "; ".join(e for e in errors if e.startswith("nvidia-smi"))[:200],
+                                        "nvidia-smi failed")
+    # nvidia-smi absent → no signal at all (a box with no NVIDIA card has no
+    # GPU data source; it is not a card in trouble).
+
+    pool = data.get("gpu_pool") or {}
+    spilling = bool(((data.get("gpu_mem") or {}).get("ollama") or {}).get("spilling"))
+    if pool.get("mem_total"):
+        free = float(pool.get("mem_free") or max(0.0, float(pool["mem_total"]) - float(pool.get("mem_used") or 0)))
+        pct = 100.0 * free / float(pool["mem_total"])
+        if spilling:
+            signals["vram"] = health.reading("bad", "weights are paging into system memory over PCIe",
+                                             f"{pct:.0f}% free · SPILLING")
+        else:
+            state = "ok" if pct >= 15 else ("warn" if pct >= 5 else "bad")
+            signals["vram"] = health.reading(state, f"{free / 1024:.1f} GB free across {int(pool.get('count') or len(gpus))} card(s)",
+                                             f"{pct:.0f}% free")
+
+    ram = data.get("ram") or {}
+    if ram.get("total"):
+        used_pct = float(ram.get("percent") or 0)
+        state = "ok" if used_pct < 85 else ("warn" if used_pct < 95 else "bad")
+        signals["host"] = health.reading(state, f"{used_pct:.0f}% of system RAM in use", f"{used_pct:.0f}% used")
+
+    disk = _disk_reading()
+    if disk:
+        signals["disk"] = disk
+
+    if gpus:
+        # Orphan runners are found THROUGH the cards; with no nvidia-smi there
+        # is no source for them, and an empty list would read as "none".
+        orphans = data.get("orphans") or []
+        if not orphans:
+            signals["runners"] = health.reading("ok", "no runner is holding VRAM without a server", "none")
+        else:
+            state = "warn" if len(orphans) < 3 else "bad"
+            signals["runners"] = health.reading(state, f"{len(orphans)} runner(s) no Ollama server owns",
+                                                f"{len(orphans)} orphaned")
+
+    dispatch_reading = _dispatch_reading()
+    if dispatch_reading:
+        signals["dispatch"] = dispatch_reading
+    return signals
+
+
 def _collect_policy() -> Dict[str, Any]:
     now = time.time()
     if _policy_cache["data"] is not None and now - _policy_cache["ts"] < _POLICY_TTL:
@@ -317,6 +447,15 @@ async def collect_usage() -> Dict[str, Any]:
             "ram": host.get("ram", {}),
             "errors": errors,
         }
+        # The honest health block (src/health.py): every signal above that this
+        # box really has a source for, and a named zero for every one it does
+        # not. Additive — with `agent_health_score` off the document is exactly
+        # the one this endpoint has always answered.
+        try:
+            if health.enabled():
+                data["health"] = health.score(health_signals(data))
+        except Exception as e:  # noqa: BLE001 - a gauge never breaks the gauges
+            logger.debug("health block unavailable: %s", e)
         _cache["ts"] = now
         _cache["data"] = data
         return data
