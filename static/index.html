@@ -353,6 +353,26 @@
     </div>
   </div>
 
+  <!-- ── Imported history ───────────────────────────────────────────────
+       A ChatGPT or Claude data export, a folder of LM Studio chats, or one of
+       this app's own JSON exports, normalised into DATA_DIR/history.db and
+       searched in two tiers — which needs no model and no network, so an
+       archive is searchable the minute it is imported. The import always
+       previews first (a dry run that writes nothing, not even the database)
+       and every conversation it could not read is listed WITH its reason.
+       Both bodies are rendered by static/js/historyImport.js. -->
+  <div id="history-modal" class="modal history-page hidden">
+    <div class="modal-content history-modal-content" role="region" aria-label="Imported history">
+      <button type="button" class="history-close-btn" id="close-history-modal" aria-label="Close imported history" title="Back to chat">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+      <div class="history-modal-body">
+        <div id="history-main" class="history-view"></div>
+        <div id="history-reader" class="history-view hidden"></div>
+      </div>
+    </div>
+  </div>
+
   <!-- ── Tournament ─────────────────────────────────────────────────────
        The same prompt to several models, BLIND and in parallel, then rounds
        where each model sees every answer anonymised (Solution A/B/C — a name
@@ -1026,6 +1046,16 @@
             <path d="M9 7h6"/>
           </svg>
           <span class="grow">Experts</span>
+        </div>
+        <div class="list-item" id="tool-history-btn" title="Imported history — your ChatGPT, Claude, LM Studio and Faustus conversations, brought here and searchable">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+            style="flex-shrink:0;opacity:0.5;">
+            <path d="M3 12a9 9 0 1 0 3-6.7L3 8"/>
+            <path d="M3 3v5h5"/>
+            <path d="M12 7v5l3 2"/>
+          </svg>
+          <span class="grow">Imported history</span>
         </div>
         <div class="list-item" id="tool-provenance-btn" title="Provenance — why the agent believes a thing, traced to the chat, file and line it came from">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -2788,6 +2818,7 @@
 <script type="module" src="/static/js/experts.js?v=20260903experts1"></script>
 <script type="module" src="/static/js/tournament.js?v=20260903tournament1"></script>
 <script type="module" src="/static/js/provenance.js?v=20260903provenance1"></script>
+<script type="module" src="/static/js/historyImport.js?v=20260903history1"></script>
 <script nonce="{{CSP_NONCE}}">if('serviceWorker' in navigator){navigator.serviceWorker.register('/static/sw.js').catch(()=>{});}</script>
 </body>
 </html>

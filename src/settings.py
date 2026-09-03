@@ -288,6 +288,12 @@ DEFAULT_SETTINGS = {
     # Hard node budget for one graph. Past it the build stops and says
     # truncated — an illegible blob is worse than a partial answer.
     "agent_provenance_max_nodes": 2000,
+    # Imported history (src/history_import.py): a ChatGPT / Claude / LM Studio
+    # / Faustus export normalised into DATA_DIR/history.db and searched in two
+    # tiers. Off = the /api/history reads answer with enabled:false and the
+    # page hides; nothing already imported is touched, since turning the
+    # switch off is a visibility decision, not a delete.
+    "agent_history_import": True,
     # "@" file mentions from the composer (src/file_mentions.py): the paths the
     # user picked are re-resolved server-side and handed to the model, and small
     # mentioned files ride along inline so it does not spend a round on

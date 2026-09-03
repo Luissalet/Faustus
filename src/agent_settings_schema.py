@@ -481,6 +481,19 @@ GROUPS: list[dict[str, Any]] = [
                  50, 20_000, step=50),
         ],
     ),
+    _group(
+        "history", "Imported history",
+        "Your conversations from somewhere else, brought here. A ChatGPT or Claude data export, an "
+        "LM Studio chat folder or one of Faustus's own JSON exports is normalised into its own "
+        "store and searched in two tiers — which needs no model and no network, so a freshly "
+        "installed Faustus can search an archive the minute it has imported one.",
+        [
+            _bool("agent_history_import", "Imported history",
+                  "Show the Imported history page and answer the /api/history reads. Off = the page "
+                  "hides and the reads report it as disabled; everything already imported stays on "
+                  "disk untouched, because turning a switch off is not a delete."),
+        ],
+    ),
 ]
 
 

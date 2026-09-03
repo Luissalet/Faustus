@@ -862,6 +862,14 @@ app.include_router(setup_tournament_routes())
 from routes.provenance_routes import setup_provenance_routes
 app.include_router(setup_provenance_routes())
 
+# Imported history: a ChatGPT / Claude / LM Studio / Faustus export normalised
+# into DATA_DIR/history.db and searched in two tiers, so an archive is
+# searchable on a machine that has downloaded no model at all
+# (src/history_import.py + src/two_tier_search.py). Named *_import_routes
+# because routes/history_routes.py is the CHAT history's compatibility shim.
+from routes.history_import_routes import setup_history_import_routes
+app.include_router(setup_history_import_routes())
+
 # Live system usage (ollama ps + nvidia-smi + RAM/CPU) for the chat usage widget.
 from routes.system_usage_routes import setup_system_usage_routes
 app.include_router(setup_system_usage_routes())
