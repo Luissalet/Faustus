@@ -84,6 +84,7 @@ from src.chat_export_model import (
 )
 
 __all__ = [
+    "DOCUMENT_FLAG",
     "HTML_CSS",
     "block_to_md",
     "blocks_to_html",
@@ -93,6 +94,7 @@ __all__ = [
     "content_to_text",
     "escape_html",
     "export_session",
+    "is_document",
     "markdown_to_blocks",
     "render",
     "render_md",
@@ -103,6 +105,41 @@ __all__ = [
     "sanitize_export_filename",
     "default_filename",
 ]
+
+
+# ---------------------------------------------------------------------------
+# documents
+# ---------------------------------------------------------------------------
+
+#: Key in ``Transcript.extra`` meaning: this transcript is a *document*, not a
+#: conversation. It has an author but no speakers, and it holds a single
+#: "message" only because that is the shape this pipeline transports blocks in.
+#: A renderer that draws chat furniture — a per-message role banner, a message
+#: count in the header — leaves that furniture out when the flag is set, and
+#: renders everything else exactly as it does for a conversation.
+#:
+#: Set by ``src/report_export.py``; absent on every other caller, so a
+#: conversation export is untouched. Honoured by the docx and pdf renderers,
+#: which are the only ones a document has to travel through: ``render_md`` /
+#: ``render_txt`` / ``render_html`` below still write the chat frame, and
+#: report_export composes those three from the block serializers instead.
+#:
+#: It lives here rather than in ``src/chat_export_model.py`` because it is an
+#: instruction to the renderers, not part of a transcript's data shape.
+DOCUMENT_FLAG = "document"
+
+
+def is_document(transcript: Any) -> bool:
+    """True when *transcript* carries :data:`DOCUMENT_FLAG`.
+
+    Deliberately tolerant: ``extra`` is a free-form dict filled in by callers
+    this module does not control, so an absent or malformed one means
+    "conversation" rather than an exception raised halfway through an export.
+    """
+    extra = getattr(transcript, "extra", None)
+    if not isinstance(extra, dict):
+        return False
+    return bool(extra.get(DOCUMENT_FLAG))
 
 
 # ---------------------------------------------------------------------------
