@@ -13,15 +13,18 @@ Three jobs:
    model actually wrote, delete the ones that point at nothing, fold the second
    citation dialect (``[text](url)``) into the first, and print a sources list
    containing exactly the sources that were cited.
-3. :func:`grade_claims` asks :mod:`src.claim_verify` whether the cited source's
-   own text supports each cited sentence.
+3. :func:`check_claims` asks :mod:`src.claim_verify` whether the figures a
+   cited sentence carries occur in the text we stored for the source it cites.
 
-The honesty rule that shapes (3): the grade says *whether the source we stored
-says this*. It says nothing about whether the claim is true, and nothing about
-the quality of the study behind it. A report that printed "high evidence"
-without that caveat would be making a claim about its own reliability that
-nothing in this file could support, so :func:`build_legend` prints the caveat
-in the same breath as the counts and is generated here rather than by a model.
+The honesty rule that shapes (3): most of a report cannot be checked this way,
+and saying so is the whole job. A model writing Spanish prose out of English
+pages produces sentences that share almost no vocabulary with their sources, so
+a scale scoring the overlap scores the translation rather than the sourcing --
+which is how a genuinely well-sourced report came back with 51 of its 57
+citations marked "weak". There is therefore no scale here. There are three
+outcomes: the sentence's figures are in the source it cites, they are
+demonstrably not, or there was nothing we could check. Only the middle one is
+an accusation, and :func:`build_legend` prints it only when it happened.
 """
 
 from __future__ import annotations
@@ -32,12 +35,15 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-# Grades are stable machine values, deliberately the Spanish words the spec
-# fixed; the words a reader sees are localised in GRADE_WORDS below.
-GRADE_HIGH = "alta"
-GRADE_MEDIUM = "moderada"
-GRADE_WEAK = "débil"
-GRADES = (GRADE_HIGH, GRADE_MEDIUM, GRADE_WEAK)
+# Three outcomes, not a three-point scale. A scale invites the reader to
+# average it, and "we did not check" is not a worse grade than "the source has
+# the figure" -- it is not on the same axis at all. Stable machine values,
+# deliberately the Spanish words the spec fixed; the words a reader sees are
+# localised in VERDICT_WORDS below.
+VERDICT_SUPPORTED = "respaldada"
+VERDICT_REFUTED = "no respaldada"
+VERDICT_UNCHECKED = "sin comprobar"
+VERDICTS = (VERDICT_SUPPORTED, VERDICT_REFUTED, VERDICT_UNCHECKED)
 
 MAX_TEXT_CHARS = 2_000_000
 MAX_SOURCE_NUMBER = 999
@@ -490,7 +496,7 @@ def audit_citations(report_md: Any, registry: Optional[SourceRegistry] = None) -
     markers = [m for m in find_markers(text) if not _in_spans(m.start, protected)]
     # Headings are navigation, not assertions: counting them as sentences would
     # depress the coverage figure for a well-structured report and reward a wall
-    # of prose. They are also not graded, so a marker in one is only repaired.
+    # of prose. They are also not checked, so a marker in one is only repaired.
     units = [u for u in _sentence_units(text, protected)
              if not _HEADING_RE.match(text[u[0]:u[1]])]
     counted = [u for u in units
@@ -631,20 +637,24 @@ def _sources_section(numbers: Iterable[int], registry: SourceRegistry,
 
 
 # ---------------------------------------------------------------------------
-# Grading
+# Checking
 # ---------------------------------------------------------------------------
 
 
 @dataclass
-class GradedClaim:
+class CheckedClaim:
     claim: Claim
     number: int
-    grade: str
+    verdict: str
     layer: Optional[int]
     why: str
 
 
-_GRADE_RANK = {GRADE_WEAK: 0, GRADE_MEDIUM: 1, GRADE_HIGH: 2}
+# Which verdict a sentence keeps when it cites several sources. A figure found
+# in any cited source is sourced, so SUPPORTED wins outright; REFUTED outranks
+# UNCHECKED so that one co-cited page we stored nothing for cannot silence a
+# figure another cited page demonstrably lacks.
+_VERDICT_RANK = {VERDICT_UNCHECKED: 0, VERDICT_REFUTED: 1, VERDICT_SUPPORTED: 2}
 
 
 def strip_markers(text: Any) -> str:
@@ -664,85 +674,116 @@ def _drop_dangling_markers_all(text: str) -> Tuple[str, List[int]]:
     return _drop_dangling_markers(text, 0)
 
 
-def grade_claims(claims: Sequence[Claim],
-                 registry: Optional[SourceRegistry] = None) -> List[GradedClaim]:
-    """Grade each cited sentence against the text of the source it cites.
+def check_claims(claims: Sequence[Claim],
+                 registry: Optional[SourceRegistry] = None) -> List[CheckedClaim]:
+    """Check each cited sentence's figures against the source it cites.
 
-    ``alta`` when ``claim_verify`` settled it at layer 1 or 2 (the sentence is
-    in the source, verbatim or modulo case/accents/punctuation), ``moderada``
-    at layer 3 (enough of its content words are there and none of its figures
-    or names are missing), ``débil`` otherwise — including the case where the
-    cited number has no source at all.
+    ``respaldada`` when ``claim_verify`` settled the sentence in the source's
+    favour (layers 1-3), or when the sentence carries figures and the source
+    contains every one of them. ``no respaldada`` when the sentence carries a
+    figure the cited source demonstrably lacks — layer 4, the only rung of the
+    ladder that ever settles a claim *against* the source. ``sin comprobar``
+    for everything else: no figures in the sentence, or nothing stored for the
+    page, so we have no finding either way.
 
-    Note the asymmetry inherited from the ladder: layer 4 only ever settles a
-    claim *against* the source, so "supported at layer 3/4" is layer 3 in
-    practice. A claim nothing settled (layer ``None``) is ``débil``, because
-    the cited source's own text did not support it.
+    Figures carry the whole check on purpose. A number is the one part of a
+    claim that survives being translated and paraphrased, so this is the only
+    question that can be asked of a Spanish sentence drawn from an English
+    page. Names cannot refute anything here for the same reason in reverse:
+    "DMO" is simply not the word an English source uses for BMD.
     """
-    from src.claim_verify import verify  # imported here: grading is optional work
+    from src.claim_verify import verify  # imported here: checking is optional work
 
     registry = registry if registry is not None else SourceRegistry()
-    out: List[GradedClaim] = []
+    out: List[CheckedClaim] = []
     for claim in claims or []:
         sentence = strip_markers(getattr(claim, "text", ""))
-        best: Optional[GradedClaim] = None
+        best: Optional[CheckedClaim] = None
         for number in getattr(claim, "numbers", []) or []:
             entry = registry.source(number)
             if not entry:
-                candidate = GradedClaim(claim=claim, number=number, grade=GRADE_WEAK,
-                                        layer=None,
-                                        why=f"source [{number}] is not in the registry")
+                candidate = CheckedClaim(
+                    claim=claim, number=number, verdict=VERDICT_UNCHECKED,
+                    layer=None, why=f"source [{number}] is not in the registry")
             else:
-                result = verify(sentence, _source_text(entry))
-                candidate = GradedClaim(
-                    claim=claim, number=number, grade=_grade_of(result),
+                source = _source_text(entry)
+                result = verify(sentence, source)
+                candidate = CheckedClaim(
+                    claim=claim, number=number,
+                    verdict=_verdict_of(result, sentence, source),
                     layer=result.get("layer"), why=str(result.get("why", "")))
-            if best is None or _GRADE_RANK[candidate.grade] > _GRADE_RANK[best.grade]:
+            if best is None or _VERDICT_RANK[candidate.verdict] > _VERDICT_RANK[best.verdict]:
                 best = candidate
         if best is None:
-            best = GradedClaim(claim=claim, number=0, grade=GRADE_WEAK, layer=None,
-                               why="the sentence carries no resolvable citation")
+            best = CheckedClaim(claim=claim, number=0, verdict=VERDICT_UNCHECKED,
+                                layer=None,
+                                why="the sentence carries no resolvable citation")
         out.append(best)
     return out
 
 
 def _source_text(entry: Dict[str, Any]) -> str:
-    """What we actually hold of a page — the extraction, not the whole page.
+    """The widest text we hold for a page — the extraction, not the whole page.
 
-    This bounds what any grade can mean, and the legend says so: we can only
-    check the sentence against the excerpt we stored.
+    Evidence first because it is the longer field, then anything summary and
+    title add that is not already in it: a sentence checked against half of
+    what we stored would be called unchecked for a reason that is ours, not
+    the report's. This still bounds what any verdict can mean, and the legend
+    says so.
     """
-    return "\n".join(p for p in (entry.get("summary"), entry.get("evidence"),
-                                 entry.get("title")) if p)
+    text = ""
+    for part in (entry.get("evidence"), entry.get("summary"), entry.get("title")):
+        part = (part or "").strip()
+        if part and part not in text:
+            text = f"{text}\n{part}" if text else part
+    return text
 
 
-def _grade_of(result: Dict[str, Any]) -> str:
-    if not result.get("supported"):
-        return GRADE_WEAK
-    layer = result.get("layer")
-    if layer in (1, 2):
-        return GRADE_HIGH
-    if layer in (3, 4):
-        return GRADE_MEDIUM
-    return GRADE_WEAK
+def _verdict_of(result: Dict[str, Any], sentence: str, source: str) -> str:
+    """Map one ``claim_verify`` result onto the three outcomes.
+
+    ``claim_verify`` is the engine and is not touched; this is the whole of the
+    translation from its ladder to the words a reader sees.
+    """
+    if not (source or "").strip():
+        return VERDICT_UNCHECKED
+    if result.get("supported"):
+        return VERDICT_SUPPORTED
+    from src.claim_verify import numbers_in
+
+    figures = numbers_in(sentence)
+    if not figures:
+        # Nothing in the sentence that survives paraphrase, so the ladder's
+        # silence is about our reach, not about the claim.
+        return VERDICT_UNCHECKED
+    # unsupported_terms is missing figures followed by missing names, and a
+    # name is never a numeric literal, so intersecting with the sentence's own
+    # figures picks out exactly the missing figures. Layer 4 only: it is the
+    # one layer that refutes, and a term reported by any other layer means
+    # "not matched word-for-word", which is not the same accusation.
+    if result.get("layer") == 4:
+        missing = set(result.get("unsupported_terms") or [])
+        if missing.intersection(figures):
+            return VERDICT_REFUTED
+    return VERDICT_SUPPORTED
 
 
 def compute_coverage(audit: CitationAudit,
-                     graded: Sequence[GradedClaim]) -> Dict[str, Any]:
-    counts = {grade: 0 for grade in GRADES}
-    for item in graded or []:
-        if item.grade in counts:
-            counts[item.grade] += 1
+                     checked: Sequence[CheckedClaim]) -> Dict[str, Any]:
+    counts = {verdict: 0 for verdict in VERDICTS}
+    for item in checked or []:
+        if item.verdict in counts:
+            counts[item.verdict] += 1
     return {
         # Not len(audit.claims): a marker in a two-word table cell is repaired
-        # and graded, but it is not a sentence, so it belongs in neither half
+        # and checked, but it is not a sentence, so it belongs in neither half
         # of the coverage ratio.
         "cited_sentences": audit.cited_sentences,
         "total_sentences": audit.total_sentences,
-        # Every graded citation, sentences and table cells alike. The legend
-        # prints it beside the grade counts so the two add up for the reader.
-        "citations": len(graded or []),
-        "graded": counts,
+        # Every checked citation, sentences and table cells alike. The legend
+        # prints it beside the counts so the two add up for the reader.
+        "citations": len(checked or []),
+        "verdicts": counts,
     }
 
 
@@ -837,13 +878,19 @@ IMPLICATION_LABELS = {
     "fr": "Implication pratique", "de": "Praktische Konsequenz",
     "pt": "Implicação prática", "it": "Implicazione pratica",
 }
-GRADE_WORDS = {
-    "es": {GRADE_HIGH: "alta", GRADE_MEDIUM: "moderada", GRADE_WEAK: "débil"},
-    "en": {GRADE_HIGH: "high", GRADE_MEDIUM: "moderate", GRADE_WEAK: "weak"},
-    "fr": {GRADE_HIGH: "élevé", GRADE_MEDIUM: "modéré", GRADE_WEAK: "faible"},
-    "de": {GRADE_HIGH: "hoch", GRADE_MEDIUM: "mittel", GRADE_WEAK: "schwach"},
-    "pt": {GRADE_HIGH: "alta", GRADE_MEDIUM: "moderada", GRADE_WEAK: "fraca"},
-    "it": {GRADE_HIGH: "alta", GRADE_MEDIUM: "moderata", GRADE_WEAK: "debole"},
+VERDICT_WORDS = {
+    "es": {VERDICT_SUPPORTED: "respaldada", VERDICT_REFUTED: "no respaldada",
+           VERDICT_UNCHECKED: "sin comprobar"},
+    "en": {VERDICT_SUPPORTED: "in the source", VERDICT_REFUTED: "not in the source",
+           VERDICT_UNCHECKED: "not checked"},
+    "fr": {VERDICT_SUPPORTED: "dans la source", VERDICT_REFUTED: "absente de la source",
+           VERDICT_UNCHECKED: "non vérifiée"},
+    "de": {VERDICT_SUPPORTED: "in der Quelle", VERDICT_REFUTED: "nicht in der Quelle",
+           VERDICT_UNCHECKED: "ungeprüft"},
+    "pt": {VERDICT_SUPPORTED: "na fonte", VERDICT_REFUTED: "ausente da fonte",
+           VERDICT_UNCHECKED: "não verificada"},
+    "it": {VERDICT_SUPPORTED: "nella fonte", VERDICT_REFUTED: "assente nella fonte",
+           VERDICT_UNCHECKED: "non verificata"},
 }
 _LEGEND_HEADINGS = tuple(_LEGEND_TITLES.values())
 
@@ -864,45 +911,94 @@ _LEGEND_BODY = {
     "es": ("Cada frase con datos lleva un marcador `[n]` que remite a la fuente "
            "numerada en «Fuentes». {cited} de las {total} frases del informe "
            "({pct} %) llevan cita.\n\n"
-           "Respaldo de la fuente citada en las {citations} citas del informe — {counts}.\n\n"
-           "Estas etiquetas solo indican si el texto que recogimos de la fuente "
-           "citada contiene la frase; no dicen si la afirmación es cierta en el "
-           "mundo, ni qué calidad tiene el estudio que hay detrás."),
+           "Cifras contrastadas con la fuente citada, en las {citations} citas "
+           "del informe — {counts}.\n\n"
+           "Contrastar aquí significa una sola cosa: buscar las cifras de la "
+           "frase en el texto que guardamos de la fuente que cita. "
+           "«{supported}» es que estaban todas; «{refuted}» es que a la fuente "
+           "citada le falta alguna; «{unchecked}» es que la frase no traía "
+           "cifras, o que el extracto que guardamos no llega a cubrirla — no es "
+           "una objeción a la afirmación, y es lo normal cuando el informe está "
+           "escrito en un idioma y sus fuentes en otro, porque las cifras "
+           "sobreviven a la traducción y el resto del texto no. Ninguna de las "
+           "tres etiquetas dice si la afirmación es cierta en el mundo, ni qué "
+           "calidad tiene el estudio que hay detrás."),
     "en": ("Every factual sentence carries a `[n]` marker pointing at the "
            "numbered entry under \"Sources\". {cited} of this report's {total} "
            "sentences ({pct}%) carry one.\n\n"
-           "Support from the cited source, across this report's {citations} citations — {counts}.\n\n"
-           "These labels only say whether the text we collected from the cited "
-           "source contains the sentence — not whether the claim is true in the "
-           "world, and not how good the study behind it is."),
-    "fr": ("Chaque phrase factuelle porte un marqueur `[n]` renvoyant à la source "
-           "numérotée dans « Sources ». {cited} des {total} phrases du rapport "
-           "({pct} %) en portent un.\n\n"
-           "Appui de la source citée, sur les {citations} citations du rapport — {counts}.\n\n"
-           "Ces étiquettes indiquent seulement si le texte recueilli de la source "
-           "citée contient la phrase ; elles ne disent pas si l'affirmation est "
-           "vraie, ni quelle est la qualité de l'étude derrière elle."),
-    "de": ("Jeder Sachsatz trägt eine Markierung `[n]`, die auf den nummerierten "
-           "Eintrag unter „Quellen“ verweist. {cited} der {total} Sätze dieses "
-           "Berichts ({pct} %) tragen eine.\n\n"
-           "Deckung durch die zitierte Quelle, über die {citations} Zitate des Berichts — {counts}.\n\n"
-           "Diese Kennzeichnungen sagen nur, ob der von uns erfasste Text der "
-           "zitierten Quelle den Satz enthält — nicht, ob die Aussage wahr ist, "
-           "und nicht, wie gut die Studie dahinter ist."),
+           "Figures checked against the cited source, across this report's "
+           "{citations} citations — {counts}.\n\n"
+           "Checking here means one thing: looking for the sentence's figures "
+           "in the text we stored for the source it cites. \"{supported}\" "
+           "means every one of them was there; \"{refuted}\" means the cited "
+           "source lacks one; \"{unchecked}\" means the sentence carried no "
+           "figures, or the excerpt we kept does not reach it — that is not an "
+           "objection to the claim, and it is the ordinary outcome when the "
+           "report is written in one language and its sources are in another, "
+           "because figures survive translation and the rest of the text does "
+           "not. None of the three labels says whether the claim is true in the "
+           "world, or how good the study behind it is."),
+    "fr": ("Chaque phrase factuelle porte un marqueur `[n]` renvoyant à la "
+           "source numérotée dans « Sources ». {cited} des {total} phrases du "
+           "rapport ({pct} %) en portent un.\n\n"
+           "Chiffres confrontés à la source citée, sur les {citations} "
+           "citations du rapport — {counts}.\n\n"
+           "Confronter signifie ici une seule chose : chercher les chiffres de "
+           "la phrase dans le texte que nous avons conservé de la source "
+           "qu'elle cite. « {supported} » : ils y étaient tous ; "
+           "« {refuted} » : il en manque un à la source citée ; "
+           "« {unchecked} » : la phrase ne portait aucun chiffre, ou l'extrait "
+           "conservé ne va pas jusque-là — ce n'est pas une objection à "
+           "l'affirmation, et c'est le cas ordinaire quand le rapport est "
+           "écrit dans une langue et ses sources dans une autre, car les "
+           "chiffres survivent à la traduction et le reste du texte non. "
+           "Aucune des trois étiquettes ne dit si l'affirmation est vraie, ni "
+           "quelle est la qualité de l'étude derrière elle."),
+    "de": ("Jeder Sachsatz trägt eine Markierung `[n]`, die auf den "
+           "nummerierten Eintrag unter „Quellen“ verweist. {cited} der {total} "
+           "Sätze dieses Berichts ({pct} %) tragen eine.\n\n"
+           "Zahlen gegen die zitierte Quelle geprüft, über die {citations} "
+           "Zitate des Berichts — {counts}.\n\n"
+           "Prüfen heißt hier genau eines: die Zahlen des Satzes in dem Text zu "
+           "suchen, den wir von der zitierten Quelle gespeichert haben. "
+           "„{supported}“ heißt, sie standen alle darin; „{refuted}“ heißt, der "
+           "zitierten Quelle fehlt eine davon; „{unchecked}“ heißt, der Satz "
+           "trug keine Zahlen, oder der gespeicherte Auszug reicht nicht so "
+           "weit — das ist kein Einwand gegen die Aussage, und es ist der "
+           "Normalfall, wenn der Bericht in einer Sprache und seine Quellen in "
+           "einer anderen geschrieben sind, denn Zahlen überstehen die "
+           "Übersetzung und der übrige Text nicht. Keine der drei "
+           "Kennzeichnungen sagt, ob die Aussage wahr ist oder wie gut die "
+           "Studie dahinter ist."),
     "pt": ("Cada frase com dados leva um marcador `[n]` que remete para a fonte "
            "numerada em «Fontes». {cited} das {total} frases do relatório "
            "({pct} %) levam citação.\n\n"
-           "Apoio da fonte citada, nas {citations} citações do relatório — {counts}.\n\n"
-           "Estas etiquetas só indicam se o texto que recolhemos da fonte citada "
-           "contém a frase; não dizem se a afirmação é verdadeira, nem qual é a "
-           "qualidade do estudo por trás dela."),
+           "Números confrontados com a fonte citada, nas {citations} citações "
+           "do relatório — {counts}.\n\n"
+           "Confrontar aqui significa uma só coisa: procurar os números da "
+           "frase no texto que guardámos da fonte que ela cita. «{supported}» é "
+           "que estavam todos lá; «{refuted}» é que falta algum à fonte citada; "
+           "«{unchecked}» é que a frase não trazia números, ou que o excerto "
+           "que guardámos não chega lá — não é uma objeção à afirmação, e é o "
+           "normal quando o relatório está escrito numa língua e as suas fontes "
+           "noutra, porque os números sobrevivem à tradução e o resto do texto "
+           "não. Nenhuma das três etiquetas diz se a afirmação é verdadeira, "
+           "nem qual é a qualidade do estudo por trás dela."),
     "it": ("Ogni frase con dati porta un marcatore `[n]` che rimanda alla fonte "
            "numerata in «Fonti». {cited} delle {total} frasi del rapporto "
            "({pct} %) portano una citazione.\n\n"
-           "Sostegno della fonte citata, sulle {citations} citazioni del rapporto — {counts}.\n\n"
-           "Queste etichette dicono solo se il testo raccolto dalla fonte citata "
-           "contiene la frase; non dicono se l'affermazione è vera, né quale sia "
-           "la qualità dello studio che c'è dietro."),
+           "Cifre confrontate con la fonte citata, sulle {citations} citazioni "
+           "del rapporto — {counts}.\n\n"
+           "Confrontare qui significa una cosa sola: cercare le cifre della "
+           "frase nel testo che abbiamo conservato della fonte che cita. "
+           "«{supported}» vuol dire che c'erano tutte; «{refuted}» che alla "
+           "fonte citata ne manca una; «{unchecked}» che la frase non portava "
+           "cifre, o che l'estratto conservato non arriva a coprirla — non è "
+           "un'obiezione all'affermazione, ed è il caso normale quando il "
+           "rapporto è scritto in una lingua e le sue fonti in un'altra, perché "
+           "le cifre sopravvivono alla traduzione e il resto del testo no. "
+           "Nessuna delle tre etichette dice se l'affermazione è vera, né quale "
+           "sia la qualità dello studio che c'è dietro."),
 }
 
 
@@ -919,16 +1015,22 @@ def build_legend(coverage: Dict[str, Any], language: str = "en") -> str:
     total = int((coverage or {}).get("total_sentences") or 0)
     if cited <= 0:
         return ""
-    counts = (coverage or {}).get("graded") or {}
-    words = GRADE_WORDS.get((language or "").lower(), GRADE_WORDS["en"])
-    rendered = " · ".join(f"{words[g]}: {int(counts.get(g) or 0)}" for g in GRADES)
-    citations = int((coverage or {}).get("citations")
-                    or sum(int(counts.get(g) or 0) for g in GRADES))
+    counts = (coverage or {}).get("verdicts") or {}
+    words = VERDICT_WORDS.get((language or "").lower(), VERDICT_WORDS["en"])
+    tally = [(v, int(counts.get(v) or 0)) for v in VERDICTS]
+    # A "not in the source: 0" prints an accusation the report never earned;
+    # a clean report should not have to carry one to be read.
+    rendered = " · ".join(f"{words[v]}: {n}" for v, n in tally
+                          if n or v != VERDICT_REFUTED)
+    citations = int((coverage or {}).get("citations") or sum(n for _v, n in tally))
     pct = int(round(100.0 * cited / total)) if total else 0
     body = _LEGEND_BODY.get((language or "").lower(), _LEGEND_BODY["en"])
     return (legend_heading(language) + "\n\n"
             + body.format(cited=cited, total=total, pct=pct, counts=rendered,
-                          citations=citations))
+                          citations=citations,
+                          supported=words[VERDICT_SUPPORTED],
+                          refuted=words[VERDICT_REFUTED],
+                          unchecked=words[VERDICT_UNCHECKED]))
 
 
 # ---------------------------------------------------------------------------
@@ -1047,8 +1149,8 @@ def _insert_legend(text: str, legend: str) -> str:
 
 
 def finalize_report(report_md: Any, registry: Optional[SourceRegistry] = None,
-                    language: str = "en") -> Tuple[str, CitationAudit, List[GradedClaim]]:
-    """Repair the citations, grade them, print the legend and the sources list.
+                    language: str = "en") -> Tuple[str, CitationAudit, List[CheckedClaim]]:
+    """Repair the citations, check them, print the legend and the sources list.
 
     Idempotent: the legend and the sources section are stripped before the work
     starts and regenerated after it, so finalizing an already-finalized report
@@ -1057,8 +1159,8 @@ def finalize_report(report_md: Any, registry: Optional[SourceRegistry] = None,
     registry = registry if registry is not None else SourceRegistry()
     text = _drop_legend_section(_as_text(report_md))
     repaired, audit = repair_citations(text, registry, language=language)
-    graded = grade_claims(audit.claims, registry)
-    coverage = compute_coverage(audit, graded)
+    checked = check_claims(audit.claims, registry)
+    coverage = compute_coverage(audit, checked)
 
     final = _insert_legend(repaired, build_legend(coverage, language))
     # Re-audit so the spans point into the text we are actually returning. The
@@ -1067,4 +1169,4 @@ def finalize_report(report_md: Any, registry: Optional[SourceRegistry] = None,
     final_audit = audit_citations(final, registry)
     final_audit.removed = audit.removed
     final_audit.coverage = coverage
-    return final, final_audit, graded
+    return final, final_audit, checked

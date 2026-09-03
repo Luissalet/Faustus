@@ -490,7 +490,8 @@ async def test_a_full_run_produces_a_report_whose_every_marker_resolves(monkeypa
     assert "## Cómo leer este informe" in report
     assert "## Fuentes" in report
     assert "## Sources" not in report
-    assert "no dicen si la afirmación es cierta" in report
+    assert "no es una objeción a la afirmación" in report
+    assert "dice si la afirmación es cierta en el mundo" in report
 
     # The sources list carries exactly the sources cited, as links.
     tail = report.split("## Fuentes")[1]

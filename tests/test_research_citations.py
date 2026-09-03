@@ -1,6 +1,6 @@
 """Tests for src/research_citations.py — the deterministic half of the deep
 research quality work: stable source numbers, marker parsing, citation repair
-and evidence grading.
+and checking a cited sentence's figures against the source it cites.
 
 Written before the module (house rule: parsing tests first). Everything here is
 pure python — no network, no LLM, no DB — so these are the tests that must stay
@@ -9,20 +9,21 @@ green forever even when the model behind research changes.
 import pytest
 
 from src.research_citations import (
-    GRADE_HIGH,
-    GRADE_MEDIUM,
-    GRADE_WEAK,
+    VERDICT_REFUTED,
+    VERDICT_SUPPORTED,
+    VERDICT_UNCHECKED,
+    VERDICT_WORDS,
     Claim,
     SourceRegistry,
     audit_citations,
     build_legend,
     canonical_url,
+    check_claims,
     compute_coverage,
     detect_language,
     domain_of,
     finalize_report,
     find_markers,
-    grade_claims,
     repair_citations,
     sources_heading,
 )
@@ -376,7 +377,7 @@ def test_repair_ignores_markers_inside_code_fences():
 
 
 # ---------------------------------------------------------------------------
-# Grading — uses the real src.claim_verify ladder, no stubs
+# Checking — uses the real src.claim_verify ladder, no stubs
 # ---------------------------------------------------------------------------
 
 
@@ -385,77 +386,158 @@ SOURCE_TEXT = (
     "excentrico durante 12 semanas y reduce el dolor de forma significativa."
 )
 
+# An English page of the kind a Spanish report is routinely written from. It
+# shares its figures with the Spanish sentences below and almost nothing else.
+ENGLISH_SOURCE = (
+    "Resistance training increased lumbar spine bone mineral density by 2% "
+    "over 12 months in postmenopausal women, while femoral neck density was "
+    "unchanged. Adherence was 85%."
+)
 
-def _graded_registry():
+
+def _checked_registry():
     reg = SourceRegistry()
     reg.add({"url": "https://a.test/alfredson", "title": "Alfredson",
              "summary": SOURCE_TEXT, "evidence": SOURCE_TEXT})
     return reg
 
 
-def test_a_claim_the_source_states_verbatim_grades_alta():
-    reg = _graded_registry()
+def test_a_claim_the_source_states_verbatim_is_supported():
+    reg = _checked_registry()
     md = ("El protocolo de Alfredson consiste en 180 repeticiones diarias de "
           "trabajo excentrico durante 12 semanas [1].\n")
     audit = audit_citations(md, reg)
-    graded = grade_claims(audit.claims, reg)
-    assert [g.grade for g in graded] == [GRADE_HIGH]
-    assert graded[0].number == 1
-    assert graded[0].layer in (1, 2)
+    checked = check_claims(audit.claims, reg)
+    assert [c.verdict for c in checked] == [VERDICT_SUPPORTED]
+    assert checked[0].number == 1
+    assert checked[0].layer in (1, 2)
 
 
-def test_a_claim_with_a_figure_the_source_does_not_have_grades_debil():
-    reg = _graded_registry()
+def test_a_figure_the_cited_source_does_not_have_is_the_one_accusation_worth_printing():
+    reg = _checked_registry()
     md = ("El protocolo de Alfredson consiste en 400 repeticiones diarias de "
           "trabajo excentrico durante 12 semanas [1].\n")
     audit = audit_citations(md, reg)
-    graded = grade_claims(audit.claims, reg)
-    assert [g.grade for g in graded] == [GRADE_WEAK]
-    assert "400" in graded[0].why
+    checked = check_claims(audit.claims, reg)
+    assert [c.verdict for c in checked] == [VERDICT_REFUTED]
+    assert "400" in checked[0].why
+
+
+def test_a_spanish_sentence_drawn_from_an_english_page_is_supported_by_its_figures():
+    """The defect this whole file was rewritten for.
+
+    The model writes Spanish; the page is English; no amount of token overlap
+    will ever connect them. But 2% is 2% in both languages, and the sentence
+    is only claiming the figure. Under the old three-point scale this was
+    "débil" — a report of 57 such citations printed 51 of them as weak and
+    read as untrustworthy when it was nothing of the kind.
+    """
+    reg = SourceRegistry()
+    reg.add({"url": "https://a.test/bmd", "title": "Resistance training and BMD",
+             "summary": ENGLISH_SOURCE, "evidence": ENGLISH_SOURCE})
+    md = ("El entrenamiento de fuerza incrementó la DMO de la columna lumbar "
+          "en un 2% a los 12 meses [1].\n")
+    checked = check_claims(audit_citations(md, reg).claims, reg)
+    assert [c.verdict for c in checked] == [VERDICT_SUPPORTED]
+
+
+def test_a_missing_name_alone_never_refutes_a_sentence():
+    """A Spanish acronym is absent from an English page by construction.
+
+    claim_verify's layer 4 refuses the sentence over "DMO"; treating that as
+    "not in the source" would print an accusation about the translation.
+    """
+    reg = SourceRegistry()
+    reg.add({"url": "https://a.test/bmd", "title": "T",
+             "summary": ENGLISH_SOURCE, "evidence": ENGLISH_SOURCE})
+    md = "La DMO subió un 2% [1].\n"
+    checked = check_claims(audit_citations(md, reg).claims, reg)
+    assert checked[0].layer == 4          # the engine did refuse it
+    assert checked[0].verdict == VERDICT_SUPPORTED
+
+
+def test_a_sentence_with_no_figures_is_not_checkable_and_says_so():
+    reg = SourceRegistry()
+    reg.add({"url": "https://a.test/bmd", "title": "T",
+             "summary": ENGLISH_SOURCE, "evidence": ENGLISH_SOURCE})
+    md = "El ejercicio mejoró la calidad de vida de las participantes [1].\n"
+    checked = check_claims(audit_citations(md, reg).claims, reg)
+    assert [c.verdict for c in checked] == [VERDICT_UNCHECKED]
+
+
+def test_a_source_we_stored_no_text_for_is_unchecked_not_refuted():
+    """We fetched nothing, so we found nothing — which is not a finding."""
+    reg = SourceRegistry()
+    reg.add({"url": "https://a.test/empty"})
+    md = "El dolor bajó un 40% en 12 semanas [1].\n"
+    checked = check_claims(audit_citations(md, reg).claims, reg)
+    assert [c.verdict for c in checked] == [VERDICT_UNCHECKED]
 
 
 def test_the_citation_marker_is_not_mistaken_for_one_of_the_claim_s_figures():
     """`[12]` in the text is a source number, not a datum. If the marker is left
-    in the claim, claim_verify's layer 4 hunts for "12" in the source and grades
-    every sentence weak — the bug this test pins."""
+    in the claim, claim_verify's layer 4 hunts for "12" in the source and calls
+    every sentence unsupported — the bug this test pins."""
     reg = SourceRegistry()
     for i in range(1, 13):
         reg.add({"url": f"https://a.test/{i}", "title": f"S{i}",
                  "summary": SOURCE_TEXT, "evidence": SOURCE_TEXT})
     md = ("El protocolo de Alfredson consiste en 180 repeticiones diarias de "
           "trabajo excentrico durante 12 semanas [12].\n")
-    graded = grade_claims(audit_citations(md, reg).claims, reg)
-    assert graded[0].grade == GRADE_HIGH
+    checked = check_claims(audit_citations(md, reg).claims, reg)
+    assert checked[0].verdict == VERDICT_SUPPORTED
 
 
-def test_grading_a_claim_that_only_overlaps_lands_in_the_middle():
+def test_a_reordered_paraphrase_of_the_source_is_supported():
     reg = SourceRegistry()
     reg.add({"url": "https://a.test/1", "title": "T",
              "summary": "Loading protocols reduce patellar tendon pain in athletes.",
              "evidence": "Loading protocols reduce patellar tendon pain in athletes."})
     md = "Patellar tendon pain in athletes reduce loading protocols [1].\n"
-    graded = grade_claims(audit_citations(md, reg).claims, reg)
-    assert graded[0].grade == GRADE_MEDIUM
+    checked = check_claims(audit_citations(md, reg).claims, reg)
+    assert checked[0].verdict == VERDICT_SUPPORTED
 
 
-def test_a_claim_citing_several_sources_keeps_the_strongest_verdict():
+def test_a_figure_found_in_any_cited_source_settles_the_sentence():
     reg = SourceRegistry()
-    reg.add({"url": "https://a.test/1", "title": "Weak", "summary": "unrelated text",
-             "evidence": "unrelated text"})
-    reg.add({"url": "https://a.test/2", "title": "Strong", "summary": SOURCE_TEXT,
+    reg.add({"url": "https://a.test/1", "title": "Elsewhere",
+             "summary": "unrelated text", "evidence": "unrelated text"})
+    reg.add({"url": "https://a.test/2", "title": "Right one", "summary": SOURCE_TEXT,
              "evidence": SOURCE_TEXT})
     md = ("El protocolo de Alfredson consiste en 180 repeticiones diarias de "
           "trabajo excentrico durante 12 semanas [1, 2].\n")
-    graded = grade_claims(audit_citations(md, reg).claims, reg)
-    assert graded[0].grade == GRADE_HIGH
-    assert graded[0].number == 2
+    checked = check_claims(audit_citations(md, reg).claims, reg)
+    assert checked[0].verdict == VERDICT_SUPPORTED
+    assert checked[0].number == 2
 
 
-def test_grading_a_dangling_number_is_weak_not_a_crash():
-    reg = _graded_registry()
-    md = "Something entirely invented [9].\n"
-    graded = grade_claims(audit_citations(md, reg).claims, reg)
-    assert [g.grade for g in graded] == [GRADE_WEAK]
+def test_an_empty_co_citation_cannot_silence_a_figure_another_source_lacks():
+    """Otherwise one page we stored nothing for buries the only count that is
+    worth printing."""
+    reg = SourceRegistry()
+    reg.add({"url": "https://a.test/1", "title": "Real page",
+             "summary": SOURCE_TEXT, "evidence": SOURCE_TEXT})
+    reg.add({"url": "https://a.test/2"})
+    md = "El protocolo usa 400 repeticiones diarias durante 12 semanas [1, 2].\n"
+    checked = check_claims(audit_citations(md, reg).claims, reg)
+    assert checked[0].verdict == VERDICT_REFUTED
+
+
+def test_checking_a_dangling_number_is_unchecked_not_a_crash():
+    reg = _checked_registry()
+    md = "Algo enteramente inventado, con un 99% de nada [9].\n"
+    checked = check_claims(audit_citations(md, reg).claims, reg)
+    assert [c.verdict for c in checked] == [VERDICT_UNCHECKED]
+
+
+def test_a_page_whose_summary_is_empty_is_still_checked_against_its_evidence():
+    """Half the stored text is not the widest text we hold, and a sentence
+    called unchecked for that reason is our failure, not the report's."""
+    reg = SourceRegistry()
+    reg.add({"url": "https://a.test/1", "title": "T", "evidence": ENGLISH_SOURCE})
+    md = "La adherencia fue del 85% [1].\n"
+    checked = check_claims(audit_citations(md, reg).claims, reg)
+    assert [c.verdict for c in checked] == [VERDICT_SUPPORTED]
 
 
 def test_a_table_label_is_not_counted_as_a_sentence():
@@ -496,24 +578,25 @@ def test_the_legend_counts_add_up_to_the_citations_it_names():
         "| A | 10mg [1] |\n"
     )
     audit = audit_citations(md, reg)
-    graded = grade_claims(audit.claims, reg)
-    cov = compute_coverage(audit, graded)
+    checked = check_claims(audit.claims, reg)
+    cov = compute_coverage(audit, checked)
     assert cov["cited_sentences"] == 1      # the cell is not a sentence
-    assert cov["citations"] == 2            # but it is a citation, and graded
-    assert sum(cov["graded"].values()) == cov["citations"]
+    assert cov["citations"] == 2            # but it is a citation, and checked
+    assert sum(cov["verdicts"].values()) == cov["citations"]
     legend = build_legend(cov, "es")
     assert "2 citas" in legend
 
 
-def test_coverage_counts_sentences_and_grades():
-    reg = _graded_registry()
+def test_coverage_counts_sentences_and_verdicts():
+    reg = _checked_registry()
     md = ("El protocolo de Alfredson consiste en 180 repeticiones diarias de "
           "trabajo excentrico durante 12 semanas [1]. Esta frase no lleva cita.\n")
     audit = audit_citations(md, reg)
-    cov = compute_coverage(audit, grade_claims(audit.claims, reg))
+    cov = compute_coverage(audit, check_claims(audit.claims, reg))
     assert cov["cited_sentences"] == 1
     assert cov["total_sentences"] == 2
-    assert cov["graded"] == {GRADE_HIGH: 1, GRADE_MEDIUM: 0, GRADE_WEAK: 0}
+    assert cov["verdicts"] == {VERDICT_SUPPORTED: 1, VERDICT_REFUTED: 0,
+                               VERDICT_UNCHECKED: 0}
 
 
 # ---------------------------------------------------------------------------
@@ -521,22 +604,57 @@ def test_coverage_counts_sentences_and_grades():
 # ---------------------------------------------------------------------------
 
 
-def test_legend_states_what_the_grades_do_not_mean():
-    cov = {"cited_sentences": 3, "total_sentences": 4,
-           "graded": {GRADE_HIGH: 1, GRADE_MEDIUM: 1, GRADE_WEAK: 1}}
+def test_the_legend_says_what_checking_meant_and_what_it_did_not():
+    cov = {"cited_sentences": 3, "total_sentences": 4, "citations": 3,
+           "verdicts": {VERDICT_SUPPORTED: 1, VERDICT_REFUTED: 1,
+                        VERDICT_UNCHECKED: 1}}
     es = build_legend(cov, "es")
     assert es.startswith("## Cómo leer este informe")
-    # The whole point of A3: no sentence may imply scientific strength.
-    assert "no dicen si la afirmación es cierta" in es
+    # What checking meant — figures, and only figures.
+    assert "buscar las cifras de la frase" in es
+    # "sin comprobar" is not a verdict about the claim, and the legend says so.
+    assert "no es una objeción a la afirmación" in es
+    # And no label may imply scientific strength.
+    assert "dice si la afirmación es cierta en el mundo" in es
     assert "3" in es and "4" in es
     en = build_legend(cov, "en")
     assert en.startswith("## How to read this report")
-    assert "not whether the claim is true" in en
+    assert "looking for the sentence's figures" in en
+    assert "not an objection to the claim" in en
+    assert "whether the claim is true in the world" in en
+
+
+def test_a_clean_report_does_not_carry_a_zero_accusation():
+    """"not in the source: 0" is a sentence about a failure that did not
+    happen; printing it invites the reader to look for one."""
+    clean = {"cited_sentences": 57, "total_sentences": 80, "citations": 57,
+             "verdicts": {VERDICT_SUPPORTED: 6, VERDICT_REFUTED: 0,
+                          VERDICT_UNCHECKED: 51}}
+    legend = build_legend(clean, "es")
+    assert "respaldada: 6" in legend
+    assert "sin comprobar: 51" in legend
+    assert "no respaldada: 0" not in legend
+    dirty = dict(clean, citations=58,
+                 verdicts={VERDICT_SUPPORTED: 6, VERDICT_REFUTED: 1,
+                           VERDICT_UNCHECKED: 51})
+    assert "no respaldada: 1" in build_legend(dirty, "es")
+
+
+@pytest.mark.parametrize("language", ["es", "en", "fr", "de", "pt", "it"])
+def test_every_language_names_all_three_outcomes(language):
+    cov = {"cited_sentences": 2, "total_sentences": 2, "citations": 2,
+           "verdicts": {VERDICT_SUPPORTED: 1, VERDICT_REFUTED: 1,
+                        VERDICT_UNCHECKED: 0}}
+    legend = build_legend(cov, language)
+    words = VERDICT_WORDS[language]
+    for verdict in (VERDICT_SUPPORTED, VERDICT_REFUTED, VERDICT_UNCHECKED):
+        assert words[verdict] in legend, verdict
 
 
 def test_legend_is_empty_when_nothing_was_cited():
     cov = {"cited_sentences": 0, "total_sentences": 5,
-           "graded": {GRADE_HIGH: 0, GRADE_MEDIUM: 0, GRADE_WEAK: 0}}
+           "verdicts": {VERDICT_SUPPORTED: 0, VERDICT_REFUTED: 0,
+                        VERDICT_UNCHECKED: 0}}
     assert build_legend(cov, "es") == ""
 
 
@@ -546,24 +664,24 @@ def test_legend_is_empty_when_nothing_was_cited():
 
 
 def test_finalize_adds_legend_repairs_and_appends_sources():
-    reg = _graded_registry()
+    reg = _checked_registry()
     md = ("# Tendinopatía rotuliana\n\n"
           "## Hallazgos\n\n"
           "El protocolo de Alfredson consiste en 180 repeticiones diarias de "
           "trabajo excentrico durante 12 semanas [1]. Una invención [8].\n")
-    out, audit, graded = finalize_report(md, reg, "es")
+    out, audit, checked = finalize_report(md, reg, "es")
     assert out.startswith("# Tendinopatía rotuliana")
     assert "## Cómo leer este informe" in out
     assert out.index("## Cómo leer este informe") < out.index("## Hallazgos")
     assert "[8]" not in out
     assert "## Fuentes" in out
     assert audit.removed == [8]
-    assert [g.grade for g in graded] == [GRADE_HIGH]
+    assert [c.verdict for c in checked] == [VERDICT_SUPPORTED]
     assert audit.coverage["cited_sentences"] == 1
 
 
 def test_finalize_is_idempotent():
-    reg = _graded_registry()
+    reg = _checked_registry()
     md = ("# T\n\nEl protocolo de Alfredson consiste en 180 repeticiones diarias "
           "de trabajo excentrico durante 12 semanas [1]. Otra [8].\n")
     once, _, _ = finalize_report(md, reg, "es")
@@ -573,7 +691,7 @@ def test_finalize_is_idempotent():
 
 
 def test_finalize_puts_the_legend_first_when_there_is_no_title():
-    reg = _graded_registry()
+    reg = _checked_registry()
     md = "El protocolo de Alfredson usa 180 repeticiones diarias [1].\n"
     out, _, _ = finalize_report(md, reg, "es")
     assert out.startswith("## Cómo leer este informe")
