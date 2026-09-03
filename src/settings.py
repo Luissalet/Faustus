@@ -357,6 +357,13 @@ DEFAULT_SETTINGS = {
     # of when it ends. Off = that URL answers the same JSON it always did, and
     # the page polls every 3 s as before.
     "agent_dispatch_sse": True,
+    # The `prove` step (src/prove.py): a finished dispatched job carries a
+    # canonical proof packet — verdict (proved / partial / unproved /
+    # contradicted), confidence, and a NAMED list of every reason the
+    # confidence is not 1. `unproved` is its own value: no verification runner
+    # and nothing observable changed, which is honest, not a failure.
+    # Off = the job payload and the verdict line are exactly what they were.
+    "agent_dispatch_prove": True,
     # Four-value outcomes for tool calls and worker runs (src/tool_outcome.py):
     # success / expected_error / cancelled / panic. A worker YOU stopped is
     # `cancelled` and no longer counts as a failed one. Off = the old arithmetic,

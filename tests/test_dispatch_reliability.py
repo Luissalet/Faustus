@@ -429,7 +429,15 @@ async def test_files_changed_is_what_faustus_saw_on_disk_not_what_the_worker_sai
     assert c["files_changed"] == ["via_bash.txt", "old.py", "keep.py"]
     assert c["claimed_only"] == ["ghost.py"]
     assert c["workers"][0]["files_changed"] == ["old.py", "ghost.py"]          # the claim, per worker, kept
-    assert job.verdict == "1/1 workers done · 3 files changed on disk · not verified: verification disabled by the request (verify: none)"
+    # …and the proof step (src/prove.py) says what all that PROVES: nothing ran
+    # that could show it, so `partial`, with the reason named (the off state of
+    # `agent_dispatch_prove` restores this line exactly — see
+    # tests/test_prove.py::test_the_setting_off_leaves_the_payload_and_the_verdict_exactly_as_they_were).
+    assert job.verdict == ("1/1 workers done · 3 files changed on disk · not verified: verification disabled by "
+                           "the request (verify: none) · proof partial (0.3) — no_verification_runner: nothing "
+                           "ran that could prove the work: verification disabled by the r…")
+    assert c["proof"]["verdict"] == "partial" and c["proof"]["schema_version"] == 1
+    assert [u["kind"] for u in c["proof"]["uncertainty"]][:1] == ["no_verification_runner"]
     # the Workers chat gets the same `harness` block a chat turn persists (badge, file chips vs the checkpoint)
     last = [m for sid, m in fake_tool["sm"].messages if sid == job.session_id][-1]
     hz = last.metadata["harness"]

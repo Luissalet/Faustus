@@ -406,6 +406,12 @@ GROUPS: list[dict[str, Any]] = [
                   "Workers page fills in while the job runs, with a heartbeat every 15 s and a final "
                   "event carrying the verdict. Off = the page polls every 3 seconds as before and the "
                   "events endpoint answers the same JSON it always did."),
+            _bool("agent_dispatch_prove", "Prove what the workers did",
+                  "A finished dispatched job carries a proof packet: proved (the verification passed and "
+                  "every claimed file really changed), partial (something is unaccounted for), unproved "
+                  "(nothing ran that could show it — honest, not a failure) or contradicted (the disk or "
+                  "the tests say otherwise), with the confidence and a named reason for every point it "
+                  "lost. Off = the job answers exactly what it answered before."),
             _bool("agent_tool_outcomes", "Four-value outcomes",
                   "Record success / expected_error / cancelled / panic for worker runs, tool results and "
                   "scorecard turns. A worker YOU stopped counts as cancelled, not as a failure. "

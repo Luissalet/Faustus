@@ -29,6 +29,12 @@ What makes the answer trustworthy (none of it comes from the worker):
                  output before verifying again (`fix_rounds` — a MAXIMUM: the
                  loop also stops by itself when the rounds stop producing
                  change, see src/convergence.py);
+  * proof       — the step after observing (src/prove.py): "a mutation is not
+                 the completion of the objective". `result.proof` reconciles
+                 what was observed with what was claimed and answers `proved`,
+                 `partial`, `unproved` (no runner and nothing observable
+                 changed — honest, not a failure) or `contradicted`, with a
+                 confidence and a NAMED reason for every point it is missing;
   * honest status — `done` only when every worker finished and the
                  verification passed (or could not run); otherwise `partial`
                  with the reason in `verdict`; a cancelled job still reports
@@ -147,6 +153,16 @@ def sse_on() -> bool:
     return bool(_setting("agent_dispatch_sse", True))
 
 
+def prove_on() -> bool:
+    """`agent_dispatch_prove`. Off = the result payload and the verdict line
+    are exactly what they were before src/prove.py existed."""
+    try:
+        from src import prove
+        return prove.enabled()
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _outcomes_on() -> bool:
     """`agent_tool_outcomes`. Off = a stopped worker counts as an error."""
     try:
@@ -254,6 +270,10 @@ class DispatchJob:
         # ended for a reason other than "the rounds ran out", which one.
         self.convergence: Optional[Dict[str, Any]] = None
         self.stopped_by: Optional[str] = None
+        # The proof packet (src/prove.py): what the evidence and the
+        # verification really SHOW, with every reason the confidence is not 1
+        # named. None while `agent_dispatch_prove` is off.
+        self.proof: Optional[Dict[str, Any]] = None
         self.events: Deque[Dict[str, Any]] = deque(maxlen=EVENTS_KEPT)
         self.task: Optional[asyncio.Task] = None
         self._waiters: List[asyncio.Event] = []
@@ -294,6 +314,8 @@ class DispatchJob:
                 d["convergence"] = self.convergence
             if self.stopped_by:
                 d["stopped_by"] = self.stopped_by
+            if self.proof is not None:
+                d["proof"] = self.proof
         return d
 
     def ceiling_s(self) -> int:
@@ -544,6 +566,11 @@ def compact(job: DispatchJob) -> Dict[str, Any]:
         res["convergence"] = job.convergence
     if job.stopped_by:
         res["stopped_by"] = job.stopped_by
+    # The proof of what the job really did (src/prove.py). Absent while
+    # `agent_dispatch_prove` is off, so the payload stays byte-for-byte the one
+    # a coordinator has been reading.
+    if job.proof is not None:
+        res["proof"] = job.proof
     if job.status not in _LIVE:
         res["exit_code"] = 0 if job.status == "done" else 1
     d["result"] = res
@@ -955,6 +982,38 @@ def _worker_statuses(result: Optional[Dict[str, Any]]) -> List[str]:
     return [str(r.get("status") or "") for r in (result or {}).get("subagents") or [] if isinstance(r, dict)]
 
 
+def _build_proof(job: "DispatchJob") -> Optional[Dict[str, Any]]:
+    """The `prove` step (src/prove.py): reconcile what Faustus OBSERVED on disk
+    and what the verification did with what the workers CLAIMED, and say what
+    that proves — with every reason the confidence is not 1 named.
+
+    The claims are the workers' own `mutations` lists: their word, which is
+    exactly the thing being checked, never the source of the answer.
+    """
+    if not prove_on():
+        return None
+    try:
+        from src import prove
+        claimed: List[str] = []
+        workers: List[Dict[str, Any]] = []
+        for r in (job.result or {}).get("subagents") or []:
+            if not isinstance(r, dict):
+                continue
+            workers.append({"name": r.get("name"), "status": r.get("status"), "outcome": _worker_outcome(r)})
+            for p in list(r.get("mutations") or [])[:40]:
+                p = str(p)
+                if p not in claimed:
+                    claimed.append(p)
+        if job.status in ("cancelled", "cancelling", "interrupted"):
+            # The job itself was stopped: that is not a worker's failure, and
+            # it is not something the proof may leave out either.
+            workers.append({"name": "job", "status": job.status, "outcome": "cancelled"})
+        return prove.prove(job.changes, job.verification, {"paths": claimed, "workers": workers})
+    except Exception as e:  # noqa: BLE001 - the settle path never fails over the proof
+        logger.debug("dispatch %s: proof unavailable: %s", job.id, e)
+        return None
+
+
 def _settle(job: DispatchJob) -> None:
     """The honest top-level answer, from the worker set and the verification —
     never from `exit_code` alone (a stalled or stopped worker has no error)."""
@@ -971,6 +1030,7 @@ def _settle(job: DispatchJob) -> None:
             job.status = "partial"
         else:
             job.status = "done"
+    job.proof = _build_proof(job)
     parts = []
     n = len(statuses)
     if n:
@@ -994,6 +1054,17 @@ def _settle(job: DispatchJob) -> None:
         parts.append(f"fix rounds converged ({c.get('score')}, {c.get('confidence')})"
                      if job.stopped_by == "convergence"
                      else f"fix-round convergence {c.get('score')} ({c.get('confidence')})")
+    if job.proof:
+        # The verdict says what is PROVED, not only what happened: a job whose
+        # workers finished and whose tests could not run is `done` and
+        # `unproved`, and both words belong on the line.
+        try:
+            from src import prove
+            proof_line = prove.line(job.proof, detail_chars=70)
+            if proof_line:
+                parts.append(proof_line)
+        except Exception as e:  # noqa: BLE001
+            logger.debug("dispatch %s: proof line unavailable: %s", job.id, e)
     blocked = _blocked_workers(job)
     if blocked:
         # Reported, not acted on: a rate-limited or prompting worker was never
@@ -1404,6 +1475,7 @@ def _load(job_id: str) -> Optional[DispatchJob]:
     job.checkpoint = d.get("checkpoint")
     job.convergence = d.get("convergence")
     job.stopped_by = d.get("stopped_by")
+    job.proof = d.get("proof")
     # a job that was running when the server stopped never finished
     job.status = "interrupted" if d.get("status") in _LIVE else (d.get("status") or "done")
     if job.status == "interrupted" and not job.verdict:
