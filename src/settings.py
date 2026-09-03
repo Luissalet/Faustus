@@ -265,6 +265,12 @@ DEFAULT_SETTINGS = {
     # keeps whatever it already learned.
     "agent_learned_memory": True,
     "agent_learned_memory_chars": 1800,
+    # Specialist experts (services/experts.py): a local agent with its own
+    # corpus — a rubric, the user's own PDFs on disk, and citations that
+    # resolve back to the page they came from. Off = no expert block is
+    # injected; the experts, their corpora and their indexes stay on disk.
+    "agent_experts": True,
+    "agent_expert_context_chars": 2500,
     # "@" file mentions from the composer (src/file_mentions.py): the paths the
     # user picked are re-resolved server-side and handed to the model, and small
     # mentioned files ride along inline so it does not spend a round on

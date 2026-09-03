@@ -405,6 +405,21 @@ GROUPS: list[dict[str, Any]] = [
                   "kills the session."),
         ],
     ),
+    _group(
+        "experts", "Specialist experts",
+        "Local specialists with their own corpus: a rubric, your own PDFs on disk, and citations "
+        "that resolve back to the page. Nothing is uploaded and there is no size limit beyond the disk.",
+        [
+            _bool("agent_experts", "Specialist experts",
+                  "Let an expert contribute its instructions, its rubric and its top corpus excerpts to a "
+                  "turn. Off = no expert block is injected; the experts, their corpora and their indexes "
+                  "stay exactly as they are on disk."),
+            _int("agent_expert_context_chars", "Expert block budget (chars)",
+                 "Hard character budget for one expert's block: its instructions and rubric, its cited "
+                 "corpus excerpts ([C1], [C2]…) and its own learned rules.",
+                 200, 40_000, step=100),
+        ],
+    ),
 ]
 
 
