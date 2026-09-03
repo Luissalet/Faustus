@@ -10,6 +10,7 @@ import time
 import collections
 from typing import Optional, Callable, Awaitable, Tuple, Dict
 from core.platform_compat import IS_WINDOWS, find_bash
+from src import process_ownership
 from src.constants import MAX_OUTPUT_CHARS
 
 logger = logging.getLogger(__name__)
@@ -71,16 +72,35 @@ def _record_cycle(key: str, started: float) -> None:
         pass
 
 
-def _kill_tree(proc) -> None:
+def _kill_tree(proc) -> Optional[str]:
     """Kill the subprocess AND its children. On Windows the Git-for-Windows
     launcher (bin\\bash.exe) execs the real usr\\bin\\bash.exe which spawns the
     command: a bare proc.kill() only removed the launcher and left a
     foreground `uvicorn` running forever (seen live). taskkill /T takes the
     tree; on POSIX the shell runs in its own session so killpg does.
 
+    Only a live process object this application spawned is killed. Both spellings
+    are unconditional and take the children with them, so a pid that has gone
+    back to the OS — the process exited, the number was reused — would take down
+    whatever holds it now; on this user's machine that is plausibly the Ollama
+    server with models resident. src/process_ownership.py decides; the refusal
+    text is returned (and logged) rather than raised, since every caller here is
+    a cleanup path that must keep going. There is no override argument on
+    purpose: the caller upstream is a model.
+
     Synchronous (taskkill takes well under a second); `_kill_tree_async` is the
     variant for the event loop."""
-    pid = getattr(proc, "pid", None)
+    verdict = process_ownership.check(proc)
+    if not verdict.owned:
+        refusal = process_ownership.refusal_message(verdict)
+        if verdict.code == "exited":
+            # A process that finished on its own is the ordinary case on the
+            # cancel path, not something to warn about.
+            logger.debug(refusal)
+        else:
+            logger.warning(refusal)
+        return refusal
+    pid = verdict.pid
     try:
         if IS_WINDOWS and pid:
             subprocess.run(
@@ -101,17 +121,19 @@ def _kill_tree(proc) -> None:
         proc.kill()
     except Exception:
         pass
+    return None
 
 
-async def _kill_tree_async(proc) -> None:
+async def _kill_tree_async(proc) -> Optional[str]:
     """`_kill_tree` off the event loop (taskkill is a blocking subprocess)."""
     try:
-        await asyncio.to_thread(_kill_tree, proc)
+        return await asyncio.to_thread(_kill_tree, proc)
     except Exception:
         try:
             proc.kill()
         except Exception:
             pass
+    return None
 
 
 # Commands that never exit on their own (servers, dev watchers, tails). Run in
@@ -365,6 +387,8 @@ async def _run_subprocess_streaming(
     """Run `proc` to completion. Returns (stdout, stderr, returncode, timed_out);
     `timed_out` is True for the hard timeout and the string "idle" when the
     command was killed for printing nothing for `idle_timeout` seconds."""
+    # Record the spawn so a kill can tell a live child from a recycled pid.
+    process_ownership.note_started(proc)
     started = time.time()
     stdout_full: list[str] = []
     stderr_full: list[str] = []
@@ -456,6 +480,7 @@ async def _run_subprocess_streaming(
                 await asyncio.wait_for(t, timeout=1)
             except Exception:
                 pass
+        process_ownership.forget(proc)
 
     return (
         "\n".join(stdout_full),
