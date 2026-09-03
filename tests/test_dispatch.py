@@ -415,3 +415,27 @@ def test_config_route_says_where_a_job_would_run(box, monkeypatch):
     assert v["kind"] == "pytest" and "pytest" in v["label"]
     monkeypatch.setattr(dispatch, "resolve_route", lambda owner, model=None: (_ for _ in ()).throw(ValueError("no model configured for dispatch")))
     assert c.get("/api/dispatch/config").json()["error"] == "no model configured for dispatch"
+
+
+def test_the_workers_skill_ships_inside_the_claude_code_bundle(monkeypatch):
+    """Luis: "guárdala en una carpeta en Odysseus localizable". The skill lives
+    next to the `odysseus` one, so /api/claude/plugin.zip (Settings →
+    Integrations → Add a Claude Agent) drops it into ~/.claude/skills/ too."""
+    import io
+    import zipfile
+    from pathlib import Path
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    import routes.codex_routes as cr
+
+    repo = Path(__file__).resolve().parents[1]
+    skill = repo / "integrations" / "claude" / "skills" / "faustus-workers" / "SKILL.md"
+    assert skill.is_file() and "faustus-workers" in skill.read_text(encoding="utf-8")
+    assert (repo / "integrations" / "faustus-workers" / "README.md").read_text(encoding="utf-8").count("integrations/claude/skills/faustus-workers") >= 1
+    monkeypatch.setattr(cr, "require_authenticated_request", lambda request: None)
+    app = FastAPI()
+    app.include_router(cr.setup_claude_routes())
+    r = TestClient(app).get("/api/claude/plugin.zip")
+    assert r.status_code == 200
+    names = zipfile.ZipFile(io.BytesIO(r.content)).namelist()
+    assert "skills/faustus-workers/SKILL.md" in names and "skills/odysseus/SKILL.md" in names

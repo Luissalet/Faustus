@@ -73,10 +73,12 @@ whether the model reads skills, tool descriptions or nothing at all:
 2. `workers_guide` / `GET /api/dispatch/guide` returns the coordinator's
    guide (below) — when to dispatch, how to write a task, how to read a
    result, the plan → dispatch → wait → check loop.
-3. `integrations/faustus-workers/SKILL.md` is a ready-made **skill** for
-   Cowork / Claude Code: copy the folder into the client's skills directory
-   (Cowork: Settings → Skills → add; Claude Code: `.claude/skills/`) and the
-   model picks the workers up on its own for file/test/refactor work.
+3. `integrations/claude/skills/faustus-workers/SKILL.md` is a ready-made **skill** for
+   Cowork / Claude Code: Claude Code gets it inside the bundle Settings →
+   Integrations → Add a Claude Agent downloads (`/api/claude/plugin.zip` →
+   `~/.claude/skills/`); for Cowork copy the folder into the client's skills
+   (Settings → Skills → add). The model then picks the workers up on its own
+   for file/test/refactor work.
 
 In Cowork, then, this is the whole interaction:
 
