@@ -19,7 +19,9 @@ tokens go to planning and review:
     }
 
 Tools: workers_guide (read first), dispatch_workers (start a job),
-workers_wait (block until done, then the compact result), workers_status,
+workers_wait (block until done, then the compact result), workers_wait_for
+(block until ONE condition holds — a phase, a worker state, an event, a file
+change — and return the moment it does), workers_status,
 workers_events, workers_cancel, workers_list, objectives_list/objectives_apply,
 guard_explain, and memory_pack (what this machine has already learned). It
 talks HTTP to the running
@@ -190,6 +192,12 @@ def render(job: Dict[str, Any]) -> str:
                 bits.append(f"{p['elapsed_s']} s")
             if p.get("stalled"):
                 bits.append(f"STALLED ({p.get('stall_reason') or '?'})")
+            if p.get("state"):
+                # What the worker's OWN output says. It was reported, not
+                # killed — the coordinator fixes the cause, it does not
+                # re-dispatch the same task.
+                bits.append(f"{str(p['state']).upper()}"
+                            + (f" ({p['why']})" if p.get("why") else "") + " — reported, not killed")
             lines.append("  " + " · ".join(str(b) for b in bits))
     if status in _LIVE_STATUSES and job.get("wait_again"):
         lines.append(f"still running — call workers_wait again (up to {job.get('ceiling_s') or '?'} s more); do not re-dispatch")
@@ -244,6 +252,48 @@ def render(job: Dict[str, Any]) -> str:
 
 
 _LIVE_STATUSES = ("queued", "running", "verifying", "cancelling")
+
+#: States a worker is REPORTED in, never killed for (src/output_rules.py).
+_BLOCKED_STATES = ("rate_limited", "waiting_for_input", "stuck")
+
+
+def render_states(states: Any) -> List[str]:
+    """What each worker's own output says about it, as lines for a render.
+
+    A worker in a blocked state was left running on purpose: the fix is to
+    remove the cause (the quota, the prompt, the disk), never to kill it.
+    """
+    lines: List[str] = []
+    if not isinstance(states, dict):
+        return lines
+    for worker, st in states.items():
+        if not isinstance(st, dict) or not st.get("state"):
+            continue
+        state = str(st.get("state"))
+        bits = [f"state: {worker} is {state}"]
+        if st.get("matched"):
+            bits.append(f"matched {st['matched']!r}")
+        if st.get("why"):
+            bits.append(str(st["why"])[:200])
+        if state in _BLOCKED_STATES:
+            bits.append("reported, NOT killed — fix the cause, do not re-dispatch")
+        lines.append("  " + " · ".join(bits))
+    return lines
+
+
+def render_wait_for(answer: Dict[str, Any]) -> str:
+    """A conditional wait's answer: whether it held, and the job as it stands."""
+    if not isinstance(answer, dict):
+        return str(answer)
+    if "met" not in answer:                    # an older Faustus: the plain job
+        return render(answer)
+    met = bool(answer.get("met"))
+    head = (f"condition {answer.get('condition')!r}: {'MET' if met else 'not met'} "
+            f"after {answer.get('waited_s')} s")
+    if not met:
+        head += " — a timeout is not an error: wait again, or read the status below"
+    state = answer.get("state")
+    return head + ("\n" + render(state) if isinstance(state, dict) else "")
 
 
 def _resolve_project(ident: str) -> Dict[str, Any]:
@@ -371,13 +421,35 @@ TOOLS: List[Tool] = [
         }, "required": ["job_id"]},
     ),
     Tool(
+        name="workers_wait_for",
+        description=(
+            "Block until ONE condition holds for a dispatched job and return the moment it does — "
+            "not on a poll tick. `condition` is one of: `done` (same as workers_wait), "
+            "`phase:<name>` (the job reaches a phase, e.g. `phase:verification`), "
+            "`worker:<label>:<state>` (a worker's own output says rate_limited / waiting_for_input / "
+            "stuck / auth_error / disk_full / oom / finished_ok / failed — `*` for any worker), "
+            "`event:<text>` (any board event contains it), or `changed` (anything changed on disk). "
+            "Answers {met, condition, waited_s, state}: `met: false` means the timeout ran out, which "
+            "is NOT an error — wait again. A worker reported in a blocked state was never killed for "
+            "it: read `why` and fix the cause instead of re-dispatching."
+        ),
+        inputSchema={"type": "object", "properties": {
+            "job_id": {"type": "string"},
+            "condition": {"type": "string", "default": "done",
+                          "description": "done | changed | phase:<name> | worker:<label>:<state> | event:<text>"},
+            "timeout_s": {"type": "integer", "minimum": 5, "maximum": 600, "default": 300},
+        }, "required": ["job_id"]},
+    ),
+    Tool(
         name="workers_status",
         description="Current status of a dispatched job (progress per worker while it runs; the compact result when done).",
         inputSchema={"type": "object", "properties": {"job_id": {"type": "string"}}, "required": ["job_id"]},
     ),
     Tool(
         name="workers_events",
-        description="The control-board events of a job so far (last 400) — for diagnosing a stuck worker.",
+        description=("The control-board events of a job so far (last 400) — for diagnosing a stuck worker. "
+                     "Names the state each worker's own output reports (rate limited, waiting for input, "
+                     "stuck…) with the literal that proves it; such a worker is reported, never killed."),
         inputSchema={"type": "object", "properties": {"job_id": {"type": "string"}}, "required": ["job_id"]},
     ),
     Tool(
@@ -537,14 +609,22 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
             if compact:
                 return _text(compact)
             return _text(render(await asyncio.to_thread(_request, "GET", f"/api/dispatch/{job_id}")))
+        if name == "workers_wait_for":
+            t = min(_MAX_WAIT, max(5.0, float(args.get("timeout_s") or 300)))
+            condition = str(args.get("condition") or "done").strip() or "done"
+            path = (f"/api/dispatch/{job_id}/wait?timeout={int(t)}"
+                    f"&condition={urllib.parse.quote(condition, safe='')}")
+            answer = await asyncio.to_thread(_request, "GET", path, None, t + 15)
+            return _text(render_wait_for(answer))
         if name == "workers_events":
             # Not the robot-mode body: this render is a deliberate TAIL (the
             # last 80 of up to 400 events, 300 chars each). Passing the
             # endpoint's answer through would hand the coordinator five times
             # the events untruncated — the opposite of the point.
-            data = await asyncio.to_thread(_request, "GET", f"/api/dispatch/{job_id}/events")
+            data = await asyncio.to_thread(_request, "GET", f"/api/dispatch/{job_id}/events?states=1")
             evs = data.get("events") or []
             lines = [f"job {data.get('id')} · {data.get('status')} · {len(evs)} events"]
+            lines.extend(render_states(data.get("states")))
             for ev in evs[-80:]:
                 lines.append("  " + json.dumps(ev, ensure_ascii=False)[:300])
             return _text("\n".join(lines))

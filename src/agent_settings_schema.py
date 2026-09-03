@@ -395,6 +395,17 @@ GROUPS: list[dict[str, Any]] = [
                   "rounds stop producing change — the size, edit distance and similarity of successive "
                   "rounds. `fix_rounds` becomes a maximum instead of an exact count, and a request may ask "
                   "for up to 4 of them. Off = the fixed counter, capped at 2."),
+            _bool("agent_worker_state_detection", "Read a worker's state from its output",
+                  "Classify each worker's own output while it runs with rule packs — rate limited, "
+                  "waiting for input, stuck (the same line over and over), auth error, disk full, out "
+                  "of memory — and show the state with the literal that proves it on the board and in "
+                  "a dispatched job's progress. A worker in one of those states is REPORTED, never "
+                  "killed for it. Off = progress says exactly what it said before."),
+            _bool("agent_dispatch_sse", "Live job events",
+                  "Stream a dispatched job's board events as they happen (server-sent events) so the "
+                  "Workers page fills in while the job runs, with a heartbeat every 15 s and a final "
+                  "event carrying the verdict. Off = the page polls every 3 seconds as before and the "
+                  "events endpoint answers the same JSON it always did."),
             _bool("agent_tool_outcomes", "Four-value outcomes",
                   "Record success / expected_error / cancelled / panic for worker runs, tool results and "
                   "scorecard turns. A worker YOU stopped counts as cancelled, not as a failure. "

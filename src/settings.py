@@ -338,6 +338,18 @@ DEFAULT_SETTINGS = {
     # count, and a caller may ask for more of them because the loop ends itself.
     # Off = exactly today's fixed counter (and a maximum of 2 fix rounds).
     "agent_fix_round_convergence": True,
+    # Read each worker's OWN output for a state while it runs (rule packs in
+    # src/output_rules.py): rate_limited, waiting_for_input, stuck, auth_error,
+    # disk_full, oom. The state and the literal that proves it appear in that
+    # worker's `progress` entry — a worker in one of them is REPORTED, never
+    # killed for it. Off = `progress` carries exactly what it carried before.
+    "agent_worker_state_detection": True,
+    # Live board: GET /api/dispatch/{id}/events?stream=1 answers as an SSE
+    # stream (one event as it happens, a heartbeat every 15 s, a final `end`
+    # with the verdict) so the Workers page fills in while a job runs instead
+    # of when it ends. Off = that URL answers the same JSON it always did, and
+    # the page polls every 3 s as before.
+    "agent_dispatch_sse": True,
     # Four-value outcomes for tool calls and worker runs (src/tool_outcome.py):
     # success / expected_error / cancelled / panic. A worker YOU stopped is
     # `cancelled` and no longer counts as a failed one. Off = the old arithmetic,

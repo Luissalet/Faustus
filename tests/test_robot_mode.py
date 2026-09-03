@@ -677,8 +677,11 @@ async def test_the_row_shaped_tools_hand_the_toon_through_and_the_others_do_not(
             return DASHBOARD
         if path.startswith("/api/memory-engine/pack"):
             return PACK
-        if path.endswith("/events"):
-            return {"id": "j1", "status": "done", "events": JOB_EVENTS}
+        if "/events" in path:
+            # `?states=1` asks for the detected worker states alongside them
+            return {"id": "j1", "status": "done", "events": JOB_EVENTS,
+                    "states": {"w1": {"state": "rate_limited", "why": "429 Too Many Requests",
+                                      "matched": "429", "seen": ["rate_limited"]}}}
         return COMPACT_JOB
 
     monkeypatch.setattr(ws, "_request", fake)
@@ -696,8 +699,12 @@ async def test_the_row_shaped_tools_hand_the_toon_through_and_the_others_do_not(
     assert pack[0].text.startswith("learned memory") and "\\n" not in pack[0].text
     events = await ws.call_tool("workers_events", {"job_id": "j1"})
     assert events[0].text.startswith("job j1 · done · 3 events")
+    # and it names what the worker's own output said, with the literal and
+    # the fact that nobody killed it for it
+    assert "state: w1 is rate_limited" in events[0].text and "matched '429'" in events[0].text
+    assert "reported, NOT killed" in events[0].text
     assert not any(as_text for path, as_text in asked
-                   if "pack" in path or path.endswith("/events"))
+                   if "pack" in path or "/events" in path)
 
 
 @pytest.mark.asyncio
@@ -747,6 +754,6 @@ async def test_the_mcp_tool_roster_is_unchanged_by_the_format_work(monkeypatch):
     tests/test_dispatch.py pins stays exactly as it was."""
     ws = _load_workers_server(monkeypatch)
     assert [t.name for t in ws.TOOLS] == [
-        "dispatch_workers", "workers_wait", "workers_status", "workers_events",
+        "dispatch_workers", "workers_wait", "workers_wait_for", "workers_status", "workers_events",
         "workers_cancel", "workers_guide", "workers_list", "objectives_list",
         "guard_explain", "memory_pack", "objectives_apply"]

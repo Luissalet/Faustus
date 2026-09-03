@@ -39,6 +39,21 @@ a retried POST with the same `Idempotency-Key` returns the first job.
 Jobs live in memory with a JSON mirror under DATA_DIR/dispatch/ (rotated at
 MAX_JOBS_KEPT) so a finished job can still be read after a restart (a
 running one is reported as `interrupted`).
+
+Waiting is a CONDITION, not a sleep (`wait_for`): a caller blocks until the
+job is done, reaches a phase, a worker enters a state read off its own output
+(src/output_rules.py), an event says something, or the workspace changes on
+disk — and it resolves the moment the condition holds, because the job's own
+progress updates set the `asyncio.Event` the waiter sleeps on. There is no
+poll tick inside. A timeout is not an error: it answers `met: False` with how
+long it waited, the way the four-value outcomes in this tree already do.
+Those same updates feed the live event stream
+(`GET /api/dispatch/{id}/events?stream=1`, routes/dispatch_routes.py).
+
+A worker detected `rate_limited` or `waiting_for_input` is REPORTED, never
+killed: the state and the literal that proves it land in that worker's
+`progress` entry while it runs, and the existing supervisor/ceiling logic
+still owns every decision to stop anything.
 """
 from __future__ import annotations
 
@@ -71,6 +86,23 @@ _VERIFY_TIMEOUT_S = 300
 _VERIFY_CMD_CHARS = 500
 _IDEMPOTENCY_TTL_S = 3600
 _LIVE = ("queued", "running", "verifying", "cancelling")
+# How much of each worker's own output is kept for the state rules. The rules
+# only read their own tail (src/output_rules.py); this bounds what a job holds.
+_OUTPUT_TAIL_CHARS = 8192
+# The event keys that carry a worker's OWN words (its live command tail, a
+# tool's output, its last words, its error) — the only text the rules read.
+_OUTPUT_KEYS = ("tail", "output", "final_text", "message")
+# `wait_for(condition=...)`: the prefixes a condition may take.
+WAIT_CONDITIONS = ("done", "changed", "phase:<name>", "worker:<label>:<state>", "event:<text>")
+# `changed` re-reads the workspace on every job update; two scans closer
+# together than this reuse the previous answer (a flooding worker must not
+# turn one wait into a tree walk per line).
+_CHANGED_SCAN_MIN_INTERVAL_S = 0.25
+# Live events (SSE): a comment every STREAM_HEARTBEAT_S so no proxy closes an
+# idle stream, and the stream itself never outlives the job's own ceiling by
+# more than STREAM_MARGIN_S.
+STREAM_HEARTBEAT_S = 15.0
+STREAM_MARGIN_S = 120.0
 _SNAPSHOT_MAX_FILES = 60_000
 _SNAPSHOT_SKIP = frozenset({".git", "node_modules", "__pycache__", ".venv", "venv", "env", ".mypy_cache", ".pytest_cache",
                             ".ruff_cache", ".tox", "dist", "build", ".idea", ".vscode", "target", ".next", ".cache",
@@ -101,6 +133,18 @@ def _setting(key: str, default: Any) -> Any:
 def _convergence_on() -> bool:
     """`agent_fix_round_convergence`. Off = the fixed fix-round counter."""
     return bool(_setting("agent_fix_round_convergence", True))
+
+
+def state_detection_on() -> bool:
+    """`agent_worker_state_detection`. Off = a worker's output is never read
+    for a state and `progress` carries exactly what it carried before."""
+    return bool(_setting("agent_worker_state_detection", True))
+
+
+def sse_on() -> bool:
+    """`agent_dispatch_sse`. Off = `/{id}/events?stream=1` answers with the
+    same JSON body the endpoint has always returned."""
+    return bool(_setting("agent_dispatch_sse", True))
 
 
 def _outcomes_on() -> bool:
@@ -214,6 +258,16 @@ class DispatchJob:
         self.task: Optional[asyncio.Task] = None
         self._waiters: List[asyncio.Event] = []
         self._entered = False                 # _run has begun (its finally will settle the job)
+        # What each worker's own output says about it (src/output_rules.py):
+        # name → {state, why, matched, confidence, seen: [...]}. Never a
+        # reason to kill anything — it is what `progress` reports.
+        self.worker_states: Dict[str, Dict[str, Any]] = {}
+        self._output: Dict[str, str] = {}      # name → the tail of its output
+        # Every event ever appended (the deque rotates at EVENTS_KEPT): a
+        # stream that has sent N of them knows what is new without stamping
+        # a sequence number onto the events themselves.
+        self.events_produced = 0
+        self._updates: List[asyncio.Event] = []   # woken on every change (wait_for, SSE)
 
     # ── views ────────────────────────────────────────────────────────────
 
@@ -268,6 +322,80 @@ class DispatchJob:
         for ev in self._waiters:
             ev.set()
         self._waiters.clear()
+        self._wake()
+
+    # ── live updates: what makes a wait resolve at once ──────────────────
+
+    def _wake(self) -> None:
+        """Wake every condition waiter and every open stream. Called from the
+        job's own progress path, so a `wait_for` resolves on the update that
+        made its condition true instead of on a poll tick."""
+        try:
+            for ev in list(self._updates):
+                ev.set()
+        except Exception as e:  # noqa: BLE001 - a notification never breaks a job
+            logger.debug("dispatch %s: wake failed: %s", self.id, e)
+
+    def subscribe(self) -> asyncio.Event:
+        """An Event set on every change to this job. The caller MUST call
+        :meth:`unsubscribe` in a finally (a client that disconnects mid-stream
+        must not leave a waiter behind)."""
+        ev = asyncio.Event()
+        self._updates.append(ev)
+        return ev
+
+    def unsubscribe(self, ev: asyncio.Event) -> None:
+        try:
+            self._updates.remove(ev)
+        except ValueError:
+            pass
+
+    def note_worker_event(self, ev: Dict[str, Any]) -> None:
+        """One board event from a worker: kept as it is (the events endpoint
+        answers exactly what it always did), read for a state, and broadcast."""
+        self.events.append(ev)
+        self.events_produced += 1
+        try:
+            self._detect(ev)
+        except Exception as e:  # noqa: BLE001 - the rules never break a job
+            logger.debug("dispatch %s: state detection failed: %s", self.id, e)
+        self._wake()
+
+    def _detect(self, ev: Dict[str, Any]) -> None:
+        """Classify the newest words of one worker (`agent_worker_state_detection`).
+
+        A `rate_limited` or `waiting_for_input` worker is RECORDED here and
+        surfaced in `progress`; nothing in this path stops a worker — that
+        stays with the supervisor and the job ceiling.
+        """
+        if not state_detection_on():
+            return
+        name = str(ev.get("name") or "").strip()
+        if not name or name == "job":
+            return
+        chunk = "\n".join(str(ev.get(k)) for k in _OUTPUT_KEYS if ev.get(k)).strip()
+        if not chunk:
+            return
+        from src import output_rules
+        buf = (self._output.get(name, "") + "\n" + chunk)[-_OUTPUT_TAIL_CHARS:]
+        self._output[name] = buf
+        verdict = output_rules.classify_output(buf)
+        entry = self.worker_states.setdefault(name, {"seen": []})
+        states = list(verdict.get("states") or [])
+        if not states:
+            for key in ("state", "why", "matched", "confidence"):
+                entry.pop(key, None)
+            return
+        matches = verdict.get("matches") or []
+        entry["state"] = states[0]
+        entry["states"] = states
+        entry["why"] = output_rules.why(verdict, states[0])
+        entry["matched"] = str((matches[0] or {}).get("literal") or "") if matches else ""
+        entry["confidence"] = verdict.get("confidence")
+        entry["ts"] = time.time()
+        for s in states:
+            if s not in entry["seen"]:
+                entry["seen"].append(s)
 
     def _persist(self) -> None:
         try:
@@ -284,6 +412,8 @@ class DispatchJob:
         ev.setdefault("ts", time.time())
         ev.setdefault("name", "job")
         self.events.append(ev)
+        self.events_produced += 1
+        self._wake()
 
 
 # ── the compact answer ──────────────────────────────────────────────────────
@@ -432,6 +562,14 @@ def compact(job: DispatchJob) -> Dict[str, Any]:
                 for k in ("round", "elapsed_s", "idle_s", "last_tool", "tool", "stalled", "stall_reason", "status"):
                     if k in ev:
                         cur[k] = ev[k]
+        # What the worker's own output says about it, while it runs rather
+        # than after (`agent_worker_state_detection`; off = nothing is added).
+        for name, st in (job.worker_states or {}).items():
+            if not st.get("state") or name not in latest:
+                continue
+            latest[name]["state"] = st["state"]
+            if st.get("why"):
+                latest[name]["why"] = st["why"]
         d["progress"] = latest
         d["wait_again"] = True
         d["ceiling_s"] = job.ceiling_s()
@@ -856,6 +994,11 @@ def _settle(job: DispatchJob) -> None:
         parts.append(f"fix rounds converged ({c.get('score')}, {c.get('confidence')})"
                      if job.stopped_by == "convergence"
                      else f"fix-round convergence {c.get('score')} ({c.get('confidence')})")
+    blocked = _blocked_workers(job)
+    if blocked:
+        # Reported, not acted on: a rate-limited or prompting worker was never
+        # killed for it, and the verdict says so instead of hiding it.
+        parts.append("reported (not killed): " + ", ".join(f"{n} {s}" for n, s in blocked[:4]))
     if job.status == "cancelled":
         parts.insert(0, "cancelled")
     elif job.status == "error":
@@ -868,6 +1011,38 @@ def _settle(job: DispatchJob) -> None:
         _record_objective_evidence(job)
     except Exception as e:  # noqa: BLE001 - settle path, never raise
         logger.debug("objective evidence for %s failed: %s", job.id, e)
+
+
+def _blocked_workers(job: DispatchJob) -> List[Tuple[str, str]]:
+    """(worker, state) for every worker whose own output said it could not
+    progress by itself at some point — `rate_limited`, `waiting_for_input`,
+    `stuck`. A report for the human and the coordinator; never a verdict on
+    the worker, and never a reason to stop one."""
+    try:
+        from src import output_rules
+        out: List[Tuple[str, str]] = []
+        for name, st in sorted((job.worker_states or {}).items()):
+            for state in st.get("seen") or ():
+                if state in output_rules.BLOCKED_STATES:
+                    out.append((name, state))
+        return out
+    except Exception as e:  # noqa: BLE001 - the verdict never fails over a note
+        logger.debug("dispatch %s: blocked-worker note failed: %s", job.id, e)
+        return []
+
+
+def worker_states(job: DispatchJob) -> Dict[str, Dict[str, Any]]:
+    """Each worker's detected state, its `why` and the literal that proves it
+    — the block `?states=1` adds to the events answer. Empty with
+    `agent_worker_state_detection` off."""
+    out: Dict[str, Dict[str, Any]] = {}
+    for name, st in (job.worker_states or {}).items():
+        if not st.get("state"):
+            continue
+        out[name] = {"state": st.get("state"), "why": st.get("why") or "",
+                     "matched": st.get("matched") or "", "confidence": st.get("confidence"),
+                     "seen": list(st.get("seen") or ())}
+    return out
 
 
 def _record_objective_evidence(job: DispatchJob) -> None:
@@ -915,7 +1090,7 @@ async def _run(job: DispatchJob) -> None:
         async def _cb(payload: Dict[str, Any]) -> None:
             ev = payload.get("subagent") if isinstance(payload, dict) else None
             if isinstance(ev, dict):
-                job.events.append(dict(ev))
+                job.note_worker_event(dict(ev))
 
         token = te._active_workspace.set(job.workspace or None)
         roots_token = te._active_workspace_roots.set((job.workspace,) if job.workspace else ())
@@ -1296,6 +1471,198 @@ async def wait(job: DispatchJob, timeout: float) -> bool:
             job._waiters.remove(ev)
 
 
+# ── wait_for: block on a condition, not on a sleep ──────────────────────────
+
+def parse_condition(raw: Any) -> Dict[str, Any]:
+    """Parse a `wait_for` condition, or raise ValueError naming every form.
+
+    `done` (the default), `changed`, `phase:<name>`, `event:<text>` and
+    `worker:<label>:<state>` — where `<state>` is one src/output_rules.py can
+    actually report and `<label>` is a worker's name (`*` for any of them).
+    """
+    text = str(raw if raw is not None else "").strip()
+    if not text:
+        text = "done"
+    low = text.lower()
+    if low == "done":
+        return {"kind": "done", "raw": "done"}
+    if low == "changed":
+        return {"kind": "changed", "raw": "changed"}
+    head, sep, rest = text.partition(":")
+    head = head.strip().lower()
+    rest = rest.strip()
+    if sep and head in ("phase", "event") and rest:
+        return {"kind": head, "text": rest.lower(), "raw": text}
+    if sep and head == "worker" and rest:
+        label, sep2, state = rest.rpartition(":")
+        label, state = label.strip(), state.strip().lower()
+        if sep2 and label:
+            from src import output_rules
+            if state in output_rules.STATES:
+                return {"kind": "worker", "label": label, "state": state, "raw": text}
+    raise ValueError(_condition_error(text))
+
+
+def _condition_error(text: str) -> str:
+    from src import output_rules
+    return (f"unknown wait condition {text[:80]!r} — use one of: {', '.join(WAIT_CONDITIONS)}; "
+            f"<state> is one of {', '.join(output_rules.STATES)}")
+
+
+def _event_text(ev: Dict[str, Any]) -> str:
+    """The words of one event — its values, not its keys, so `event:tool` asks
+    about a tool the worker ran and not about the shape of the record."""
+    bits: List[str] = []
+    for value in ev.values():
+        if isinstance(value, bool):
+            continue
+        if isinstance(value, (str, int, float)):
+            bits.append(str(value))
+        elif isinstance(value, (list, tuple)):
+            bits.extend(str(x) for x in value if isinstance(x, (str, int, float)) and not isinstance(x, bool))
+    return " ".join(bits)
+
+
+def condition_holds(job: DispatchJob, cond: Dict[str, Any], changed: bool = False) -> bool:
+    """Does the condition hold right now? Pure, cheap and never raising: it
+    runs on every progress update of the job."""
+    try:
+        kind = cond.get("kind")
+        if kind == "done":
+            return job.status not in _LIVE
+        if kind == "changed":
+            return bool(changed)
+        if kind == "phase":
+            needle = str(cond.get("text") or "")
+            return any(ev.get("name") == "job" and needle in str(ev.get("message") or "").lower()
+                       for ev in job.events)
+        if kind == "event":
+            needle = str(cond.get("text") or "")
+            return any(needle in _event_text(ev).lower() for ev in job.events)
+        if kind == "worker":
+            label, state = str(cond.get("label") or ""), str(cond.get("state") or "")
+            for name, st in (job.worker_states or {}).items():
+                if label not in ("*", "any") and name != label:
+                    continue
+                if state in (st.get("seen") or ()):
+                    return True
+            return False
+    except Exception as e:  # noqa: BLE001 - a predicate on a hot path never raises
+        logger.debug("dispatch %s: condition check failed: %s", job.id, e)
+    return False
+
+
+async def _changed_snapshot(job: DispatchJob) -> Optional[Dict[str, Tuple[int, int]]]:
+    if not job.workspace:
+        return None
+    try:
+        snap, _trunc = await asyncio.to_thread(_snapshot, job.workspace)
+        return snap
+    except Exception as e:  # noqa: BLE001
+        logger.debug("dispatch %s: changed-snapshot failed: %s", job.id, e)
+        return None
+
+
+def _wait_answer(job: DispatchJob, cond: Dict[str, Any], met: bool, started: float) -> Dict[str, Any]:
+    return {"met": bool(met), "condition": str(cond.get("raw") or "done"),
+            "waited_s": round(max(0.0, time.monotonic() - started), 3), "state": compact(job)}
+
+
+async def wait_for(job: Any, *, condition: str = "done", timeout_s: float = 120.0) -> Dict[str, Any]:
+    """Block until `condition` holds for this job, and no longer.
+
+    `job` is a job id or a :class:`DispatchJob`. Returns
+    ``{"met", "condition", "waited_s", "state"}`` — `state` being the same
+    compact job answer `GET /api/dispatch/{id}` gives. A timeout is NOT an
+    error: it answers ``met: False`` with how long it waited, so a coordinator
+    can decide whether to wait again.
+
+    It resolves the moment the condition becomes true, because the waiter
+    sleeps on an :class:`asyncio.Event` the job's own progress path sets
+    (:meth:`DispatchJob._wake`) — there is no poll tick inside. The one
+    exception is `changed`, which cannot be pushed by a job at all: it re-reads
+    the workspace when the job reports something, at most once every
+    ``_CHANGED_SCAN_MIN_INTERVAL_S``.
+
+    A condition that can no longer become true (anything but `done` on a job
+    that has finished) returns at once with ``met: False`` instead of holding
+    the caller until its timeout.
+
+    `worker:<label>:<state>` reads the states `agent_worker_state_detection`
+    records; with that setting off no worker ever enters one, so such a wait
+    answers `met: False` exactly as it would have before the setting existed.
+    """
+    started = time.monotonic()
+    cond = parse_condition(condition)
+    target = job if isinstance(job, DispatchJob) else get(str(job or ""))
+    if target is None:
+        raise ValueError(f"no such dispatch job: {str(job)[:80]}")
+    try:
+        limit = max(0.0, float(timeout_s))
+    except (TypeError, ValueError):
+        limit = 120.0
+    deadline = started + limit
+    baseline = await _changed_snapshot(target) if cond["kind"] == "changed" else None
+    if cond["kind"] == "changed" and baseline is None:
+        return _wait_answer(target, cond, False, started)   # no workspace to watch
+    changed = False
+    scanned_at = -_CHANGED_SCAN_MIN_INTERVAL_S
+    while True:
+        # Subscribe BEFORE testing: an update between the test and the sleep
+        # then wakes us instead of being lost.
+        waiter = target.subscribe()
+        try:
+            due = True
+            if cond["kind"] == "changed":
+                due = (time.monotonic() - scanned_at) >= _CHANGED_SCAN_MIN_INTERVAL_S
+                if due and baseline is not None:
+                    scanned_at = time.monotonic()
+                    now = await _changed_snapshot(target)
+                    changed = now is not None and now != baseline
+            if condition_holds(target, cond, changed):
+                return _wait_answer(target, cond, True, started)
+            if cond["kind"] != "done" and target.status not in _LIVE and due:
+                return _wait_answer(target, cond, False, started)   # it never can now
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return _wait_answer(target, cond, False, started)
+            if not due:
+                remaining = min(remaining, _CHANGED_SCAN_MIN_INTERVAL_S)
+            try:
+                await asyncio.wait_for(waiter.wait(), timeout=remaining)
+            except asyncio.TimeoutError:
+                pass
+        finally:
+            target.unsubscribe(waiter)
+
+
+def new_events(job: DispatchJob, sent: int) -> Tuple[List[Dict[str, Any]], int]:
+    """The events appended since a stream last read (and the new watermark).
+
+    The deque rotates at EVENTS_KEPT, so a slow client can miss the oldest —
+    it is told the newest instead of being told nothing, and no sequence
+    number is stamped onto the events themselves (the plain events answer
+    stays exactly what it was).
+    """
+    produced = int(getattr(job, "events_produced", 0) or 0)
+    try:
+        seen = int(sent)
+    except (TypeError, ValueError):
+        seen = 0
+    if seen >= produced:
+        return [], produced
+    n = min(produced - seen, len(job.events))
+    return (list(job.events)[-n:] if n > 0 else []), produced
+
+
+def stream_end(job: DispatchJob, reason: str = "") -> Dict[str, Any]:
+    """The `end` event of a live stream: the verdict the job settled on."""
+    out = {"id": job.id, "status": job.status, "verdict": job.verdict or "", "error": job.error or ""}
+    if reason:
+        out["reason"] = reason
+    return out
+
+
 def cancel(job: DispatchJob) -> bool:
     """Stop the job. The status is `cancelling` until the worker tasks have
     unwound (their commands killed, the transcripts saved) and `_run`'s
@@ -1377,6 +1744,21 @@ never the transcript. Trust `changes` + `verification` over the prose.
 A `running` answer carries `progress` per worker, `phase`, `ceiling_s` (the
 most it can still take) and `wait_again: true` — call `workers_wait` again;
 do NOT re-dispatch the same task because one wait returned early.
+A worker's `progress` entry may also carry `state` and `why`: what its OWN
+output says about it — `rate_limited`, `waiting_for_input`, `stuck`,
+`auth_error`, `disk_full`, `oom` — with the literal that proves it. Such a
+worker is reported, never killed: read `why`, and fix the cause (raise the
+quota, answer the prompt in the board's chat, free the disk) instead of
+re-dispatching the same task.
+
+## Waiting for something other than the end
+`workers_wait_for(job_id, condition, timeout_s)` blocks until ONE condition
+holds and returns the moment it does: `done` (the default, same as
+`workers_wait`), `phase:<name>` (the job reaches a phase, e.g.
+`phase:verification`), `worker:<label>:<state>` (a worker enters one of the
+states above; `*` for any worker), `event:<text>` (any board event contains
+it) or `changed` (anything changed on disk). `met: false` means the timeout
+ran out, not that anything went wrong — wait again or read the status.
 
 ## Loop
 plan → dispatch → wait (again if still running) → read verdict + changes +

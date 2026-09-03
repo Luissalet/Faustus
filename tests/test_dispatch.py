@@ -372,9 +372,9 @@ def test_mcp_render_is_one_glance_and_names_the_board(monkeypatch):
         "w1": {"last_event": "tick", "round": 3, "last_tool": "bash", "elapsed_s": 40, "stalled": True, "stall_reason": "idle"}}}
     assert "w1: tick · round 3 · tool bash · 40 s · STALLED (idle)" in ws.render(running)
     names = [t.name for t in ws.TOOLS]
-    assert names == ["dispatch_workers", "workers_wait", "workers_status", "workers_events", "workers_cancel",
-                     "workers_guide", "workers_list", "objectives_list", "guard_explain", "memory_pack",
-                     "objectives_apply"]
+    assert names == ["dispatch_workers", "workers_wait", "workers_wait_for", "workers_status", "workers_events",
+                     "workers_cancel", "workers_guide", "workers_list", "objectives_list", "guard_explain",
+                     "memory_pack", "objectives_apply"]
 
 
 def test_the_guide_is_served_to_token_holders_and_says_the_essentials(box, monkeypatch):

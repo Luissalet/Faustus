@@ -10,8 +10,22 @@
   GET  /api/dispatch/guide           the coordinator guide
   GET  /api/dispatch/{id}            status + compact result (+ progress while running)
   GET  /api/dispatch/{id}/wait?timeout=N   long-poll (≤ 1800 s), then the same as GET
+  GET  /api/dispatch/{id}/wait?condition=  block on a CONDITION instead of the end:
+                                     done | changed | phase:<name> | event:<text> |
+                                     worker:<label>:<state> → {met, condition, waited_s,
+                                     state}. Resolves the moment it holds (src/dispatch.py
+                                     wakes it from the job's own progress path), and a
+                                     timeout answers `met: false` — not an error.
   GET  /api/dispatch/{id}/events     the board's events so far (last 400)
+  GET  /api/dispatch/{id}/events?stream=1  the same events LIVE as text/event-stream:
+                                     `data: {json}` per event, a `: heartbeat` comment
+                                     every 15 s, a final `event: end` with the verdict.
+                                     `?states=1` (non-streaming) adds what each worker's
+                                     own output says about it.
   POST /api/dispatch/{id}/cancel
+
+Without `stream=1` — and with `agent_dispatch_sse` off — `/{id}/events`
+answers with exactly the JSON body it always did, byte for byte.
 
 Robot mode (src/robot_envelope.py): `GET /api/dispatch/{id}` and
 `/{id}/events` also take `?robot=1` (the standard envelope, JSON) or
@@ -32,10 +46,14 @@ this prefix (delegate_agents is its tool for that, with the chat's own gate).
 """
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
-from typing import Any, Dict
+import time
+from typing import Any, AsyncIterator, Dict
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import StreamingResponse
 
 from src import dispatch
 from src import robot_envelope as robot
@@ -46,6 +64,55 @@ logger = logging.getLogger(__name__)
 
 SCOPE = "agents:dispatch"
 _MAX_WAIT_S = 1800.0
+_TRUE = ("1", "true", "yes", "on")
+
+
+def _flag(value: Any) -> bool:
+    return str(value or "").strip().lower() in _TRUE
+
+
+async def event_stream(request: Request, job: "dispatch.DispatchJob") -> AsyncIterator[str]:
+    """The board's events as they happen, then one `end` carrying the verdict.
+
+    The same SSE shape the rest of the app streams with (`data: {json}` per
+    event, a `: heartbeat` comment so no proxy closes an idle stream, and
+    `Cache-Control: no-cache` + `X-Accel-Buffering: no` on the response): see
+    routes/chat_routes.py and routes/local_models_routes.py.
+
+    It is woken by the job's own progress path (`DispatchJob._wake`), so an
+    event is forwarded as it is appended and there is no poll inside. It is
+    bounded by the job's ceiling plus a margin — a stream may not outlive the
+    work it watches — and it unsubscribes in `finally`, so a client that walks
+    away mid-stream leaves no waiter behind on the job.
+    """
+    sent = 0
+    deadline = time.monotonic() + float(job.ceiling_s()) + dispatch.STREAM_MARGIN_S
+    waiter = job.subscribe()
+    try:
+        while True:
+            # clear BEFORE reading: an event appended during the read leaves
+            # the flag set, so the next wait returns at once instead of losing it
+            waiter.clear()
+            rows, sent = dispatch.new_events(job, sent)
+            for ev in rows:
+                yield "data: " + json.dumps(ev, ensure_ascii=False, default=str) + "\n\n"
+            if job.status not in dispatch._LIVE:
+                yield "event: end\ndata: " + json.dumps(dispatch.stream_end(job), ensure_ascii=False) + "\n\n"
+                return
+            left = deadline - time.monotonic()
+            if left <= 0:
+                yield ("event: end\ndata: "
+                       + json.dumps(dispatch.stream_end(job, "the stream reached the job's ceiling"),
+                                    ensure_ascii=False) + "\n\n")
+                return
+            if await request.is_disconnected():
+                return
+            try:
+                await asyncio.wait_for(waiter.wait(), timeout=min(dispatch.STREAM_HEARTBEAT_S, left))
+            except asyncio.TimeoutError:
+                yield ": heartbeat\n\n"
+    finally:
+        job.unsubscribe(waiter)
 
 
 def _is_admin(owner: str) -> bool:
@@ -155,20 +222,37 @@ def setup_dispatch_routes() -> APIRouter:
         return dispatch.compact(_get(request, job_id))
 
     @router.get("/{job_id}/wait")
-    async def wait(request: Request, job_id: str, timeout: float = 120.0):
+    async def wait(request: Request, job_id: str, timeout: float = 120.0, condition: str = ""):
+        """Without `condition` this is exactly what it always was: block until
+        the job ends, then answer the compact job. With one, block until THAT
+        condition holds and answer `{met, condition, waited_s, state}` — a
+        timeout is `met: false`, never an error."""
         job = _get(request, job_id)
         try:
             t = float(timeout)
         except (TypeError, ValueError):
             t = 120.0
-        await dispatch.wait(job, max(0.0, min(t, _MAX_WAIT_S)))
-        return dispatch.compact(job)
+        t = max(0.0, min(t, _MAX_WAIT_S))
+        if not str(condition or "").strip():
+            await dispatch.wait(job, t)
+            return dispatch.compact(job)
+        try:
+            return await dispatch.wait_for(job, condition=condition, timeout_s=t)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
 
     @router.get("/{job_id}/events")
-    async def events(request: Request, job_id: str):
+    async def events(request: Request, job_id: str, stream: str = "", states: str = ""):
         def payload() -> Dict[str, Any]:
             job = _get(request, job_id)
-            return {"id": job.id, "status": job.status, "events": list(job.events)}
+            out: Dict[str, Any] = {"id": job.id, "status": job.status, "events": list(job.events)}
+            if _flag(states):
+                out["states"] = dispatch.worker_states(job)
+            return out
+        if _flag(stream) and dispatch.sse_on() and not robot.wants(request):
+            job = _get(request, job_id)
+            return StreamingResponse(event_stream(request, job), media_type="text/event-stream",
+                                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
         if robot.wants(request):
             return await robot.reply(request, lambda: lean.dispatch_events(payload()))
         return payload()
