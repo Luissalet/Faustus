@@ -341,6 +341,19 @@ GROUPS: list[dict[str, Any]] = [
         ],
     ),
     _group(
+        "command_guard", "Command guard",
+        "Destructive shell commands are classified before they run; the dangerous tiers wait for your approval.",
+        [
+            _select("agent_command_guard_mode", "Guard mode",
+                    "off = no classification; observe = classify and log receipts only; enforce = DANGEROUS/"
+                    "CRITICAL bash/python commands need an exact approval card before they run.",
+                    ["off", "observe", "enforce"]),
+            _text("agent_command_guard_packs", "Rule packs",
+                  "Which rule packs classify commands: 'all' or a comma list of fs, git, db, containers, system.",
+                  placeholder="all"),
+        ],
+    ),
+    _group(
         "gpu", "GPU placement",
         "Which card the local Ollama fills first (two or more GPUs). Per-model pins in Local models → Options always win.",
         [

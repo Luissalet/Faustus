@@ -7,10 +7,13 @@ run-local integrity gates before dispatch.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
+import threading
 import uuid
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from enum import Enum
 from types import MappingProxyType
@@ -337,6 +340,187 @@ def tool_requires_per_call_approval(tool_name: Any) -> bool:
     if not isinstance(tool_name, str) or tool_name not in ALWAYS_APPROVE_TOOLS:
         return False
     return desktop_control_mode() == "ask_each"
+
+
+# ---------------------------------------------------------------------------
+# Destructive command guard (src/command_guard.py) — enforcement seam
+#
+# The classifier is pure and deterministic; this section binds it to settings
+# and to the run gate. Both check sites (agent_loop before the card, and
+# tool_execution right before running) call `decision_for`, so one memoized
+# evaluation answers both — the double check costs nothing and can never
+# disagree with itself. The approved-replay path does NOT come through here:
+# a sealed exact approval is claimed digest-first in tool_execution, which is
+# the only door past a DANGEROUS/CRITICAL verdict (the slb revalidation).
+# ---------------------------------------------------------------------------
+
+GUARD_SHELL_TOOLS = frozenset({"bash", "python"})
+COMMAND_GUARD_MODES = ("off", "observe", "enforce")
+DEFAULT_COMMAND_GUARD_MODE = "enforce"
+
+
+def command_guard_mode() -> str:
+    """`agent_command_guard_mode`, normalised; unknown values fail closed to
+    the default (enforce)."""
+    try:
+        raw = get_setting("agent_command_guard_mode", DEFAULT_COMMAND_GUARD_MODE)
+    except Exception:  # noqa: BLE001 - settings unavailable: fail closed
+        return DEFAULT_COMMAND_GUARD_MODE
+    mode = str(raw or "").strip().lower()
+    return mode if mode in COMMAND_GUARD_MODES else DEFAULT_COMMAND_GUARD_MODE
+
+
+def _command_guard_packs() -> frozenset[str]:
+    from src import command_guard
+    try:
+        raw = get_setting("agent_command_guard_packs", "all")
+    except Exception:  # noqa: BLE001
+        raw = "all"
+    return command_guard.packs_from_setting(raw)
+
+
+# Tiny LRU so the loop check and the execution re-check share one evaluation
+# (and one receipt). One-shot env bypasses are cached for exactly the two
+# checks of the one execution they cover, then evicted, so a consumed bypass
+# cannot quietly become a standing allowance.
+_GUARD_CACHE_MAX = 256
+_guard_cache: "OrderedDict[tuple, list]" = OrderedDict()
+_guard_cache_lock = threading.Lock()
+
+
+def _reset_command_guard_cache() -> None:
+    with _guard_cache_lock:
+        _guard_cache.clear()
+
+
+def _guard_cache_key(tool_name: str, content: Any, mode: str, packs: frozenset[str]) -> tuple:
+    text = content if isinstance(content, str) else ("" if content is None else str(content))
+    digest = hashlib.sha256(text.encode("utf-8", "replace")).hexdigest()
+    return (tool_name, digest, mode, tuple(sorted(packs)))
+
+
+def _command_guard_denial(tool_name: Any, content: Any, run_id: str = "") -> Optional[str]:
+    """None to allow, or the approval-card reason. NEVER raises (fail-open)."""
+    try:
+        if not isinstance(tool_name, str) or tool_name not in GUARD_SHELL_TOOLS:
+            return None
+        mode = command_guard_mode()
+        if mode == "off":
+            return None
+        packs = _command_guard_packs()
+        key = _guard_cache_key(tool_name, content, mode, packs)
+        with _guard_cache_lock:
+            cached = _guard_cache.get(key)
+            if cached is not None:
+                denial, remaining = cached
+                if remaining is not None:
+                    remaining -= 1
+                    if remaining <= 0:
+                        _guard_cache.pop(key, None)
+                    else:
+                        cached[1] = remaining
+                else:
+                    _guard_cache.move_to_end(key)
+                return denial
+        from src import command_guard
+        verdict = command_guard.gate_check(
+            tool_name, content, mode=mode, packs=packs, session=run_id,
+        )
+        denial = verdict.get("denial")
+        # A one-shot bypass covers ONE execution: the loop check that just
+        # consumed it plus the dispatcher's re-check of the same call.
+        remaining = 1 if verdict.get("one_shot") else None
+        with _guard_cache_lock:
+            _guard_cache[key] = [denial, remaining]
+            while len(_guard_cache) > _GUARD_CACHE_MAX:
+                _guard_cache.popitem(last=False)
+        return denial
+    except Exception as exc:  # noqa: BLE001 - never break the hot path
+        logger.warning("command guard failed open: %r", exc)
+        return None
+
+
+def _guard_classification(tool_name: Any, content: Any):
+    """Pure classification (no receipts, no allowlist), or None off-path."""
+    if not isinstance(tool_name, str) or tool_name not in GUARD_SHELL_TOOLS:
+        return None
+    from src import command_guard
+    return command_guard.classify_tool(tool_name, content, packs=_command_guard_packs())
+
+
+def command_guard_requires_approval(tool_name: Any, content: Any) -> bool:
+    """Whether this exact call is of the guard-sealed kind.
+
+    Used by src/tool_execution.py to exempt a sealed DANGEROUS/CRITICAL
+    command approval from the armed-run (external-context) precondition —
+    the guard seals cards on clean runs too. Deterministic recomputation
+    from the sealed content; the digest claim still revalidates every byte.
+    """
+    try:
+        if command_guard_mode() != "enforce":
+            return False
+        decision = _guard_classification(tool_name, content)
+        if decision is None:
+            return False
+        from src.command_guard import tier_at_least
+        return tier_at_least(decision.tier, "DANGEROUS")
+    except Exception:  # noqa: BLE001 - fail toward the stricter precondition
+        return False
+
+
+def command_guard_wants_checkpoint(tool_name: Any, content: Any) -> bool:
+    """Whether a workspace checkpoint should precede this command."""
+    try:
+        if command_guard_mode() == "off":
+            return False
+        decision = _guard_classification(tool_name, content)
+        if decision is None:
+            return False
+        from src.command_guard import tier_at_least
+        return tier_at_least(decision.tier, "DANGEROUS")
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def command_guard_metadata(tool_name: Any, content: Any) -> Optional[dict]:
+    """{"tier", "rule"} for a DANGEROUS/CRITICAL command, else None."""
+    try:
+        if command_guard_mode() == "off":
+            return None
+        decision = _guard_classification(tool_name, content)
+        if decision is None:
+            return None
+        from src.command_guard import tier_at_least
+        if not tier_at_least(decision.tier, "DANGEROUS"):
+            return None
+        return {"tier": decision.tier, "rule": decision.rule_id}
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def record_approved_guard_execution(
+    tool_name: Any,
+    content: Any,
+    *,
+    session: Any = "",
+    metadata: Optional[dict] = None,
+) -> None:
+    """Receipt for a sealed destructive command the user approved. Never raises."""
+    try:
+        meta = metadata or command_guard_metadata(tool_name, content)
+        if not meta:
+            return
+        from src import command_guard
+        command_guard.append_receipt(
+            session=session,
+            tool=tool_name,
+            command=content,
+            tier=meta.get("tier", ""),
+            rule=meta.get("rule", ""),
+            action="approved",
+        )
+    except Exception:  # noqa: BLE001
+        pass
 KNOWN_CAPABILITY_TOOLS = frozenset(TOOL_CAPABILITIES)
 
 _UNKNOWN_CAPABILITIES = _capabilities(
@@ -1012,6 +1196,14 @@ class ToolRunSecurityContext:
                     "(desktop_control_mode=ask_each); approve this exact action to run it."
                 ),
             )
+        # Destructive command guard: sits BEFORE the approval_gate_bypassed
+        # early-allow on purpose — a task/chat-scope grant given earlier for
+        # something else must not auto-run a NEW dangerous command. The only
+        # way past this denial is the sealed exact approval claimed (digest
+        # revalidated) in src/tool_execution.py. Fails open on internal error.
+        guard_denial = _command_guard_denial(tool_name, content, run_id=self.run_id)
+        if guard_denial is not None:
+            return ToolGateDecision(False, guard_denial)
         if self.approval_gate_bypassed:
             return ToolGateDecision(True)
         if not self.external_untrusted_context_seen:

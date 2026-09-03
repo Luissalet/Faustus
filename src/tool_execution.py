@@ -27,7 +27,12 @@ from src.tool_security import (
     is_public_blocked_tool,
     owner_is_admin_or_single_user,
 )
-from src.tool_capabilities import ALWAYS_APPROVE_TOOLS, ToolRunSecurityContext, blocked_tool_result
+from src.tool_capabilities import (
+    ALWAYS_APPROVE_TOOLS,
+    ToolRunSecurityContext,
+    blocked_tool_result,
+    command_guard_requires_approval,
+)
 from src.tool_approvals import ExactToolApproval
 from src.tool_policy import ToolPolicy
 from src.constants import MAX_OUTPUT_CHARS, MAX_READ_CHARS, MAX_DIFF_LINES, DATA_DIR
@@ -727,8 +732,19 @@ async def execute_tool_block(
         # An always-approve tool (desktop input, FAUSTUS) is sealed and
         # approved per call whether or not the run ever saw external
         # context, so the "armed run" precondition below does not apply to
-        # it; the digest still binds the exact action.
-        _per_call_tool = exact_approval.pending.tool_name in ALWAYS_APPROVE_TOOLS
+        # it; the digest still binds the exact action. A DANGEROUS/CRITICAL
+        # shell command sealed by the destructive command guard is the same
+        # kind of per-call approval — its card is created on clean runs too —
+        # and the check is a deterministic recomputation from the SEALED
+        # content, so it cannot widen to a different command (the claim below
+        # still revalidates the digest byte for byte).
+        _per_call_tool = (
+            exact_approval.pending.tool_name in ALWAYS_APPROVE_TOOLS
+            or command_guard_requires_approval(
+                exact_approval.pending.tool_name,
+                exact_approval.pending.content,
+            )
+        )
         if not isinstance(security_context, ToolRunSecurityContext) or (
             not _per_call_tool
             and (

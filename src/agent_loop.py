@@ -46,7 +46,10 @@ from src.tool_capabilities import (
     blocked_tool_result,
     capabilities_for_action,
     capabilities_for_tool,
+    command_guard_metadata,
+    command_guard_wants_checkpoint,
     messages_contain_external_untrusted_context,
+    record_approved_guard_execution,
     tool_result_is_successful,
     tool_result_should_arm_gate,
 )
@@ -5353,7 +5356,13 @@ async def stream_agent_loop(
         if not _checkpoints_on or _ledger.checkpoint is not None:
             return None
         trig = tool_type in _CHECKPOINT_TRIGGER_TOOLS or (
-            tool_type in _harness.SHELL_TOOLS and _harness.shell_command_looks_mutating(content or "")
+            tool_type in _harness.SHELL_TOOLS and (
+                _harness.shell_command_looks_mutating(content or "")
+                # Checkpoint-before-destructive: a command the guard rates
+                # DANGEROUS/CRITICAL takes the turn baseline even when the
+                # mutation heuristic misses it (e.g. `git push --force`).
+                or command_guard_wants_checkpoint(tool_type, content)
+            )
         )
         if not trig:
             return None
@@ -5526,6 +5535,23 @@ async def stream_agent_loop(
                     + "\n\n"
                 )
             desc, approved_result = await approved_tool_task
+            # Destructive command guard: the user approved this sealed
+            # DANGEROUS/CRITICAL command, so stamp the verdict (and the
+            # checkpoint that preceded it) into the result metadata and the
+            # hash-chained receipts log. Never raises; no-op for other tools.
+            _guard_meta = command_guard_metadata(
+                approved.tool_name, approved.content
+            )
+            if _guard_meta and isinstance(approved_result, dict):
+                if isinstance(_ledger.checkpoint, dict):
+                    _guard_meta["checkpoint"] = _ledger.checkpoint.get("sha")
+                approved_result.setdefault("guard", _guard_meta)
+                record_approved_guard_execution(
+                    approved.tool_name,
+                    approved.content,
+                    session=session_id,
+                    metadata=_guard_meta,
+                )
         finally:
             if not approved_tool_task.done():
                 approved_tool_task.cancel()

@@ -64,6 +64,14 @@ DEFAULT_SETTINGS = {
     # "ask_each" = approval card on EVERY call, "ask_task" = the normal
     # scoped approval gate, "off" = not offered at all.
     "desktop_control_mode": "ask_each",
+    # Destructive command guard (src/command_guard.py): classifies bash/python
+    # commands into SAFE/CAUTION/DANGEROUS/CRITICAL. "enforce" = the two
+    # destructive tiers need a sealed exact approval before running,
+    # "observe" = classify and log receipts only, "off" = no classification.
+    "agent_command_guard_mode": "enforce",
+    # Which rule packs run: "all" or a comma list of fs, git, db,
+    # containers, system.
+    "agent_command_guard_packs": "all",
     # Public base URL used to build clickable deep-links in outgoing alerts
     # (e.g., urgency alert email). Example: "https://chat.example.com"
     "app_public_url": "",
