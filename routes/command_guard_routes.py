@@ -6,9 +6,13 @@ standing authority downgrade, and the receipts log names commands.
 
 The two reads (``/explain`` and ``/log``) also answer in robot mode
 (``?robot=1`` / ``?format=toon``, src/robot_envelope.py): a coordinating model
-pre-checking a command before it dispatches workers gets the standard envelope
-— and the receipts tail, which is the tabular payload TOON compresses best.
-Without those query parameters the answers are unchanged.
+pre-checking a command before it dispatches workers gets the standard envelope.
+``/log`` sends the LEAN projection of the tail (src/robot_projection.py) — one
+flat row per receipt, without the 192 characters of chain digest per record
+that only ``verify_chain`` walks and whose verdict is right there in
+``chain``. ``/explain`` is one classification of one command, scalars and two
+short string lists, so robot mode sends it as it stands. Without those query
+parameters the answers are unchanged.
 """
 
 import logging
@@ -19,6 +23,7 @@ from pydantic import BaseModel
 
 from core.middleware import require_admin
 from src import robot_envelope as robot
+from src import robot_projection as lean
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +78,7 @@ def setup_command_guard_routes() -> APIRouter:
                 "chain": command_guard.verify_chain(),
             }
         if robot.wants(request):
-            return await robot.reply(request, payload)
+            return await robot.reply(request, lambda: lean.guard_log(payload()))
         return payload()
 
     @router.get("/api/command-guard/allowlist")

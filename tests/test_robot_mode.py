@@ -1,19 +1,26 @@
 """Robot mode — the uniform envelope on the machine-facing reads
 (src/robot_envelope.py + the eight endpoints that opt in).
 
-Two things are being defended here.
+Three things are being defended here.
 
 1. **The browser did not change.** Every touched endpoint is called with NO
    query parameters and the raw bytes are compared against the shape written
    into this file — the pre-change answer, spelled out, not re-derived from
    the code under test. If robot mode ever leaks into the default path a page
    in Faustus breaks, so that assertion is the point of the file.
-2. **A coordinator gets one shape.** `?robot=1` wraps the very same payload in
+2. **A coordinator gets one shape.** `?robot=1` wraps the answer in
    {ok, data, error_code, error, elapsed_ms, schema_version}; `?format=toon`
    sends that envelope as text/plain TOON that `toon.decode` parses back into
    exactly the JSON one; and a failure (missing job, missing project, a
    collector that blew up) comes back as an envelope with ok:false and an
    error_code, never as FastAPI's bare {"detail": …}.
+3. **Robot mode sends the LEAN view.** `data` is not the browser's payload:
+   it is the flat, scalar-only projection (src/robot_projection.py) that makes
+   TOON's tabular form fire — which is the whole point of asking for it. Each
+   `LEAN_*` below spells that projection out by hand, the same way the plain
+   payloads are spelled out, so a change to the row shape has to be a change
+   to this file too. What the projection SAVES is measured, on realistic
+   payloads, in tests/test_robot_projection.py.
 """
 from __future__ import annotations
 
@@ -25,7 +32,7 @@ import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
-from src import robot_envelope, toon
+from src import robot_envelope, robot_projection, toon
 
 
 def _body(payload) -> bytes:
@@ -34,10 +41,15 @@ def _body(payload) -> bytes:
     return json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
 
 
-def _check(client, path, expected, params=None):
+def _check(client, path, expected, lean=None, params=None):
     """The three modes of one endpoint: default byte-identical, ?robot=1
-    enveloped, ?format=toon the same envelope as TOON text."""
+    enveloped, ?format=toon the same envelope as TOON text.
+
+    `lean` is what robot mode carries — the projection of `expected`. The two
+    endpoints whose answer is already scalar-only (the memory pack, one guard
+    classification) have none, and send `expected` itself."""
     params = dict(params or {})
+    lean = expected if lean is None else lean
     plain = client.get(path, params=params)
     assert plain.status_code == 200
     assert plain.content == _body(expected), plain.content
@@ -46,7 +58,7 @@ def _check(client, path, expected, params=None):
     robot = client.get(path, params={**params, "robot": "1"})
     assert robot.status_code == 200
     envelope = robot.json()
-    assert envelope["ok"] is True and envelope["data"] == expected
+    assert envelope["ok"] is True and envelope["data"] == lean, envelope["data"]
     assert envelope["error_code"] is None and envelope["error"] is None
     assert envelope["schema_version"] == 1 and isinstance(envelope["elapsed_ms"], int)
     assert set(envelope) == {"ok", "data", "error_code", "error", "elapsed_ms",
@@ -56,8 +68,10 @@ def _check(client, path, expected, params=None):
     assert compact.status_code == 200
     assert compact.headers["content-type"] == "text/plain; charset=utf-8"
     parsed = toon.decode(compact.text)
-    assert parsed["ok"] is True and parsed["data"] == expected
+    assert parsed["ok"] is True and parsed["data"] == lean
     assert parsed["schema_version"] == 1
+    # both robot modes carry the same thing — one is JSON of it, one is TOON
+    assert parsed["data"] == envelope["data"]
     return compact.text
 
 
@@ -151,6 +165,27 @@ JOB_EVENTS = [
     {"event": "started", "message": "w1", "ts": 2.0},
     {"event": "tick", "message": "w1 round 2", "ts": 3.0},
 ]
+# What robot mode sends instead: `result` unwrapped, the workers as one table
+# of fixed columns, and the tasks/knobs the coordinator itself sent left out.
+_WORKER = {"role": "", "outcome": "", "tool_calls": 0, "failed_calls": 0,
+           "input_tokens": 0, "output_tokens": 0, "duration_s": None, "files": 0,
+           "checks_failed": 0, "error": "", "summary": ""}
+LEAN_JOB = {
+    "id": "abc123", "status": "partial", "title": "Workers · add apply_tax",
+    "verdict": "1/2 workers done (timeout) · 2 files changed on disk",
+    "error": "", "workspace": "/srv/proj", "model": "qwen3.5:9b", "duration_s": 60.0,
+    "workers": [{"name": "w1", "status": "done", "rounds": 4, **_WORKER},
+                {"name": "w2", "status": "error", "rounds": 4, **_WORKER}],
+    "totals": {"tool_calls": 9, "rounds": 8, "errors": 1},
+    "files_changed": ["cart.py", "tests/test_cart.py"],
+}
+_EVENT = {"name": "", "status": "", "round": None, "tool": "", "elapsed_s": None}
+LEAN_EVENTS = {
+    "id": "abc123", "status": "partial",
+    "events": [{"ts": 1.0, "event": "job", "message": "checkpointing the workspace", **_EVENT},
+               {"ts": 2.0, "event": "started", "message": "w1", **_EVENT},
+               {"ts": 3.0, "event": "tick", "message": "w1 round 2", **_EVENT}],
+}
 
 
 @pytest.fixture()
@@ -170,11 +205,17 @@ def dispatch_client(monkeypatch):
 
 
 def test_dispatch_status_and_events_answer_in_all_three_modes(dispatch_client):
-    text = _check(dispatch_client, "/api/dispatch/abc123", COMPACT_JOB)
-    # the workers rows collapsed into a table instead of repeating the keys
-    assert "workers[2]{name,status,rounds}:" in text
+    text = _check(dispatch_client, "/api/dispatch/abc123", COMPACT_JOB, LEAN_JOB)
+    # the workers rows collapsed into a table instead of repeating the keys —
+    # the same fourteen columns whether or not a worker filled them in
+    assert ("workers[2]{name,role,status,outcome,rounds,tool_calls,failed_calls,"
+            "input_tokens,output_tokens,duration_s,files,checks_failed,error,"
+            "summary}:") in text
     events = {"id": "abc123", "status": "partial", "events": JOB_EVENTS}
-    _check(dispatch_client, "/api/dispatch/abc123/events", events)
+    compact = _check(dispatch_client, "/api/dispatch/abc123/events", events, LEAN_EVENTS)
+    # the board's lines are one table too, though the job and the harness put
+    # different keys on the events they emit
+    assert "events[3]{ts,name,event,status,round,tool,elapsed_s,message}:" in compact
 
 
 def test_an_unknown_dispatch_job_is_a_404_envelope_not_a_bare_detail(dispatch_client):
@@ -211,6 +252,19 @@ DASHBOARD = {
     "scores": {"OBJ-1": {"score": 0.61, "hint": None}, "OBJ-2": {"score": 0.2, "hint": None}},
     "log": [{"ts": "2026-08-30T12:34:56+00:00", "kind": "delta", "op": "ADD", "id": "OBJ-1"}],
 }
+# Robot mode: the impact score folded into each row, `deps` joined into one
+# `blocked_by` cell, and no per-id `scores` object at all.
+LEAN_DASHBOARD = {
+    "objectives": [
+        {"id": "OBJ-1", "status": "open", "priority": 1, "title": "Ship the API",
+         "owner": "user", "updated_at": "", "score": 0.61, "hint": "", "blocked_by": ""},
+        {"id": "OBJ-2", "status": "done", "priority": 2, "title": "Write the docs",
+         "owner": "user", "updated_at": "", "score": 0.2, "hint": "", "blocked_by": ""},
+    ],
+    "edges": [],
+    "log": [{"ts": "2026-08-30T12:34:56+00:00", "kind": "delta", "actor": "",
+             "op": "ADD", "id": "OBJ-1", "note": ""}],
+}
 
 
 @pytest.fixture()
@@ -240,12 +294,19 @@ def objectives_client(monkeypatch):
 
 
 def test_the_objectives_dashboard_answers_in_all_three_modes(objectives_client):
-    text = _check(objectives_client, "/api/projects/p1/objectives", DASHBOARD)
-    # No table here, and that is the documented limit rather than a bug: every
-    # objective carries a `deps` list, so the rows are not all-scalar and the
-    # array is written out as items. The dashboard still round-trips exactly.
-    assert "objectives:" in text and "\n    -\n" in text
-    assert toon.decode(text)["data"]["objectives"] == DASHBOARD["objectives"]
+    text = _check(objectives_client, "/api/projects/p1/objectives", DASHBOARD,
+                  LEAN_DASHBOARD)
+    # This used to be the counter-example: every objective carries a `deps`
+    # list and its score lived in a separate per-id object, so the rows were
+    # not all-scalar and TOON wrote them out as `- ` items, LARGER than the
+    # JSON it replaced. The projection is what turned it into a table.
+    assert ("objectives[2]{id,status,priority,title,owner,updated_at,score,hint,"
+            "blocked_by}:") in text
+    assert "\n    objectives:\n" not in text     # not `- ` items any more
+    assert toon.decode(text)["data"]["objectives"] == LEAN_DASHBOARD["objectives"]
+    # the audit tail is one row here, and TOON needs two before a header earns
+    # its keep — that is the format's rule, and it still round-trips
+    assert toon.decode(text)["data"]["log"] == LEAN_DASHBOARD["log"]
 
 
 def test_a_missing_project_and_a_folderless_one_come_back_as_envelopes(objectives_client):
@@ -269,6 +330,18 @@ ITEMS = {
 }
 PACK = {"status": "success", "pack": "# Learned\n- run the tests\n", "ids": ["a" * 32],
         "degraded": False, "chars": 26, "budget": 2000, "enabled": True}
+# Robot mode: one row per item, the 32-char id shortened to its id8, the
+# feedback events reduced to their counts, and the enum tables the Brain page
+# paints its dropdowns from left out.
+_ITEM = {"status": "", "maturity": "", "trust_class": "", "helpful_count": 0,
+         "harmful_count": 0, "updated_at": ""}
+LEAN_ITEMS = {
+    "items": [{"id8": "aaaaaaaa", "level": "procedural", "effective_score": 0.71,
+               "harmful_ratio": 0.0, "text": "Always run the tests", **_ITEM},
+              {"id8": "bbbbbbbb", "level": "procedural", "effective_score": 0.44,
+               "harmful_ratio": 0.0, "text": "Never touch the public API", **_ITEM}],
+    "stats": {"active": 2, "semantic_lane": False},
+}
 
 
 @pytest.fixture()
@@ -298,8 +371,11 @@ def memory_client(monkeypatch):
 
 
 def test_the_learned_items_and_the_pack_answer_in_all_three_modes(memory_client):
-    text = _check(memory_client, "/api/memory-engine/items", ITEMS)
-    assert "items[2]{id,id8,text,level,effective_score,harmful_ratio}:" in text
+    text = _check(memory_client, "/api/memory-engine/items", ITEMS, LEAN_ITEMS)
+    assert ("items[2]{id8,level,status,maturity,trust_class,effective_score,"
+            "harmful_ratio,helpful_count,harmful_count,updated_at,text}:") in text
+    assert "a" * 32 not in text          # the full ids do not travel
+    # the pack is prose the model is handed as it stands: no projection
     packed = _check(memory_client, "/api/memory-engine/pack", PACK)
     # a multi-line block survives as one escaped scalar, newlines and all
     assert "\\n" in packed and toon.decode(packed)["data"]["pack"] == PACK["pack"]
@@ -336,6 +412,19 @@ GUARD_LOG = {
     ],
     "chain": {"ok": True, "entries": 2, "broken_at": None},
 }
+# Robot mode: the same rows with an always-present `note` and eight characters
+# of the chain hash in place of the three 64-character digests per receipt.
+LEAN_GUARD_LOG = {
+    "receipts": [
+        {"ts": "2026-08-30T12:34:56+00:00", "tool": "bash", "tier": "DANGEROUS",
+         "rule": "fs.rm_rf", "action": "blocked", "command_head": "rm -rf build/",
+         "note": "", "hash8": ""},
+        {"ts": "2026-08-30T12:35:02+00:00", "tool": "bash", "tier": "SAFE",
+         "rule": "", "action": "allowed", "command_head": "pytest -q",
+         "note": "", "hash8": ""},
+    ],
+    "chain": {"ok": True, "entries": 2, "broken_at": None},
+}
 EXPLAIN = {"status": "success", "mode": "enforce", "packs": ["db", "fs"],
            "allowlisted": None, "tier": "DANGEROUS", "rule_id": "fs.rm_rf",
            "matched": "rm -rf", "command_head": "rm -rf build/", "trace": ["fs pack hit"],
@@ -364,8 +453,9 @@ def guard_client(monkeypatch):
 
 
 def test_the_guard_log_and_explain_answer_in_all_three_modes(guard_client):
-    text = _check(guard_client, "/api/command-guard/log", GUARD_LOG)
-    assert "receipts[2]{ts,tool,tier,rule,action,command_head}:" in text
+    text = _check(guard_client, "/api/command-guard/log", GUARD_LOG, LEAN_GUARD_LOG)
+    assert "receipts[2]{ts,tool,tier,rule,action,command_head,note,hash8}:" in text
+    # one classification of one command is already scalars: no projection
     _check(guard_client, "/api/command-guard/explain", EXPLAIN,
            params={"command": "rm -rf build/"})
 
@@ -397,6 +487,22 @@ USAGE = {
     "models": [{"name": "qwen3.5:9b", "size_vram": 9123456789, "gpu": 0}],
     "orphans": [],
 }
+# Robot mode: one row per card and per loaded model, every column present on
+# every row whether or not this collector filled it in.
+_GPU = {"temp": None, "power": None, "power_limit": None, "mem_free": None}
+LEAN_USAGE = {
+    "ts": 1767268496.12,
+    "gpus": [{"index": 0, "name": "RTX 4090", "util": 87, "mem_used": 18234,
+              "mem_total": 24564, **_GPU},
+             {"index": 1, "name": "RTX 3090", "util": 3, "mem_used": 2048,
+              "mem_total": 24576, **_GPU}],
+    "models": [{"name": "qwen3.5:9b", "size": None, "size_vram": 9123456789,
+                "gpu_pct": None, "cpu_pct": None, "placement": "", "gpus": "",
+                "context_length": None, "parameter_size": "", "quantization": "",
+                "expires_at": ""}],
+    "orphans": [],
+    "ollama": {"reachable": False, "loaded": 1},
+}
 
 
 @pytest.fixture()
@@ -414,8 +520,8 @@ def usage_client(monkeypatch):
 
 
 def test_system_usage_answers_in_all_three_modes(usage_client):
-    text = _check(usage_client, "/api/system/usage", USAGE)
-    assert "gpus[2]{index,name,mem_total,mem_used,util}:" in text
+    text = _check(usage_client, "/api/system/usage", USAGE, LEAN_USAGE)
+    assert "gpus[2]{index,name,util,temp,power,power_limit,mem_used,mem_free,mem_total}:" in text
 
 
 def test_a_failed_collector_is_a_500_envelope_in_robot_mode(usage_client, monkeypatch):
@@ -592,6 +698,47 @@ async def test_the_row_shaped_tools_hand_the_toon_through_and_the_others_do_not(
     assert events[0].text.startswith("job j1 · done · 3 events")
     assert not any(as_text for path, as_text in asked
                    if "pack" in path or path.endswith("/events"))
+
+
+@pytest.mark.asyncio
+async def test_the_row_tools_still_read_well_with_the_lean_tables(monkeypatch):
+    """The three tools that hand the TOON straight to the coordinator now get
+    the projected shape. Nothing a model needs may have gone missing on the
+    way: the objectives still name their ids, statuses and scores, the job
+    still carries its verdict and its per-worker rows, and the classification
+    (which has no projection) is untouched."""
+    ws = _load_workers_server(monkeypatch)
+    monkeypatch.delenv("FAUSTUS_MCP_FORMAT", raising=False)
+
+    def fake(method, path, body=None, timeout=30.0, retries=1, as_text=False):
+        if not as_text:
+            if path == "/api/projects":
+                return [{"id": "p1", "name": "Covernet", "folder": "covernet",
+                         "workspace": "/srv/proj"}]
+            return COMPACT_JOB
+        assert path.endswith("format=toon")
+        if "/objectives" in path:
+            data = robot_projection.objectives(DASHBOARD)
+        elif "/command-guard/explain" in path:
+            data = EXPLAIN                       # no projection: already scalars
+        else:
+            data = robot_projection.dispatch_status(COMPACT_JOB)
+        return toon.encode(robot_envelope.envelope(data))
+
+    monkeypatch.setattr(ws, "_request", fake)
+
+    rows = (await ws.call_tool("objectives_list", {"project": "p1"}))[0].text
+    assert rows.startswith("project Covernet (p1)")
+    assert "objectives[2]{id,status,priority,title,owner,updated_at,score,hint,blocked_by}:" in rows
+    assert 'OBJ-1,open,1,Ship the API,user,"",0.61,"",""' in rows
+
+    status = (await ws.call_tool("workers_status", {"job_id": "j1"}))[0].text
+    assert "verdict: 1/2 workers done (timeout) · 2 files changed on disk" in status
+    assert "workers[2]{name,role,status,outcome,rounds," in status
+    assert '\n    w2,"",error,"",4,' in status and "files_changed:" in status
+
+    guard = (await ws.call_tool("guard_explain", {"command": "rm -rf build/"}))[0].text
+    assert "tier: DANGEROUS" in guard and "rule_id: fs.rm_rf" in guard
 
 
 @pytest.mark.asyncio

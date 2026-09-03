@@ -13,6 +13,11 @@ The two reads (``/items`` and ``/pack``) also answer in robot mode
 (``?robot=1`` / ``?format=toon``, src/robot_envelope.py) for a coordinating
 model reading this machine's learned rules; a call without those query
 parameters answers exactly as it always did.
+
+``/items`` sends the LEAN projection there (src/robot_projection.py): one flat
+row per item — the score fields, the feedback COUNTS and the text — without
+the event arrays behind them. ``/pack`` is already the one block the model
+would be given, so robot mode sends it as it stands.
 """
 
 from __future__ import annotations
@@ -25,6 +30,7 @@ from pydantic import BaseModel
 
 from core.middleware import require_admin
 from src import robot_envelope as robot
+from src import robot_projection as lean
 from src.auth_helpers import effective_user
 
 logger = logging.getLogger(__name__)
@@ -84,7 +90,7 @@ def setup_memory_engine_routes() -> APIRouter:
                 "trust_classes": dict(engine.TRUST_CLASSES),
             }
         if robot.wants(request):
-            return await robot.reply(request, payload)
+            return await robot.reply(request, lambda: lean.memory_items(payload()))
         return payload()
 
     @router.post("/items")

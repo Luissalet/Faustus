@@ -16,8 +16,11 @@
 Robot mode (src/robot_envelope.py): `GET /api/dispatch/{id}` and
 `/{id}/events` also take `?robot=1` (the standard envelope, JSON) or
 `?format=toon` (the same envelope as compact TOON text) — for the
-coordinating model, which then reads one shape instead of two. Without a
-query parameter the answers are exactly what they always were.
+coordinating model, which then reads one shape instead of two. Both carry the
+LEAN projection of the job (src/robot_projection.py): the workers and the
+events as flat tables, the verdict and the verification as scalars, without
+the tasks the coordinator itself sent. Without a query parameter the answers
+are exactly what they always were.
 
 Callers: an ADMIN signed in with a cookie (single-user mode counts), or an
 API token with the `agents:dispatch` scope minted by an admin — the token
@@ -36,6 +39,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 from src import dispatch
 from src import robot_envelope as robot
+from src import robot_projection as lean
 from src.auth_helpers import require_user
 
 logger = logging.getLogger(__name__)
@@ -146,7 +150,8 @@ def setup_dispatch_routes() -> APIRouter:
     @router.get("/{job_id}")
     async def status(request: Request, job_id: str):
         if robot.wants(request):
-            return await robot.reply(request, lambda: dispatch.compact(_get(request, job_id)))
+            return await robot.reply(
+                request, lambda: lean.dispatch_status(dispatch.compact(_get(request, job_id))))
         return dispatch.compact(_get(request, job_id))
 
     @router.get("/{job_id}/wait")
@@ -165,7 +170,7 @@ def setup_dispatch_routes() -> APIRouter:
             job = _get(request, job_id)
             return {"id": job.id, "status": job.status, "events": list(job.events)}
         if robot.wants(request):
-            return await robot.reply(request, payload)
+            return await robot.reply(request, lambda: lean.dispatch_events(payload()))
         return payload()
 
     @router.post("/{job_id}/cancel")

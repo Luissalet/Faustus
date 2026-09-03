@@ -18,22 +18,30 @@ stamp taken when the route started, so it cannot go backwards across a clock
 change. ``schema_version`` lets a coordinator notice the day the shape moves.
 
 The body is rendered as JSON (``format=json``, the default) or as TOON
-(``format=toon``, ``src/toon.py`` — the compact form, ~40-60 % fewer characters
-on tabular payloads).
+(``format=toon``, ``src/toon.py``).
+
+What goes in ``data`` is not the browser's payload: it is the LEAN projection
+of it (``src/robot_projection.py``) — the same facts as flat, scalar-only
+rows. That is where robot mode's savings come from. Enveloping the full
+payload and re-encoding it was measured at 1.05-1.28× the plain JSON body
+(TOON pays for rows, and no real payload here HAS rows until it is projected);
+the projection brings the same reads to 0.17-0.54 of it, measured end to end
+in tests/test_robot_projection.py.
 
 Turning it on is per request and never changes a default answer:
 
 * ``?robot=1`` — envelope, in JSON;
 * ``?format=toon`` — envelope, as ``text/plain`` TOON (implies robot mode);
 * no query parameter at all — the endpoint answers exactly as it always did,
-  byte for byte. The browser pages keep working with no change.
+  byte for byte, with nothing projected away. The browser pages keep working
+  with no change.
 
 Routes use it in three lines — `reply` in an ``async def`` route,
 `reply_sync` in a plain ``def`` one (which FastAPI keeps running in its
 threadpool, so a blocking payload builder stays off the event loop)::
 
     if robot_envelope.wants(request):
-        return await robot_envelope.reply(request, lambda: _payload())
+        return await robot_envelope.reply(request, lambda: lean.thing(_payload()))
     return _payload()
 
 Everything here is defensive: both replies turn an ``HTTPException`` into an

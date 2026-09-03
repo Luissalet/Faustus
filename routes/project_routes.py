@@ -8,7 +8,11 @@ be able to reach those paths through this router either.
 
 ``GET /{project_id}/objectives`` also answers in robot mode
 (``?robot=1`` / ``?format=toon``, src/robot_envelope.py) for a coordinating
-model; without a query parameter the dashboard answer is unchanged.
+model, carrying the LEAN projection of the dashboard
+(src/robot_projection.py): one flat row per objective with its impact score
+folded in and its deps joined into ``blocked_by``, plus the edges and the
+audit tail as their own tables. Without a query parameter the dashboard
+answer is unchanged.
 """
 
 import logging
@@ -19,6 +23,7 @@ from pydantic import BaseModel, Field
 
 from core.middleware import require_admin
 from src import robot_envelope as robot
+from src import robot_projection as lean
 from src.auth_helpers import effective_user
 from services.projects import (
     MAX_INSTRUCTIONS,
@@ -334,7 +339,7 @@ def setup_project_routes() -> APIRouter:
             project = _objectives_project(project_id, effective_user(request))
             return dashboard_payload(project, log_limit=50)
         if robot.wants(request):
-            return robot.reply_sync(request, payload)
+            return robot.reply_sync(request, lambda: lean.objectives(payload()))
         return payload()
 
     @router.post("/{project_id}/objectives")
