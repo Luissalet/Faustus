@@ -44143,3 +44143,219 @@ body:has(.sidebar.right-side) .project-active-pill { right: 12px; }
   overflow-wrap: anywhere;
 }
 .pv-dup-offsets { margin: 6px 0 0; font-size: 10.5px; color: var(--pv-muted); font-variant-numeric: tabular-nums; }
+
+/* ── Tournament ── (static/js/tournament.js: the setup form, the per-model
+   board and the ranked results table. Theme variables only — no literal
+   colours anywhere in this block, so every theme preset gets it for free, and
+   class selectors only, so the id-free guard the Learned-rules and Experts
+   blocks rely on keeps holding.) */
+.tournament-page {
+  pointer-events: auto;
+  align-items: stretch;
+  justify-content: stretch;
+  background: var(--bg);
+  z-index: 245;
+  --trn-muted: color-mix(in srgb, var(--fg) 58%, transparent);
+  --trn-faint: color-mix(in srgb, var(--fg) 6%, transparent);
+}
+@media (min-width: 769px) {
+  .tournament-page {
+    left: calc(var(--icon-rail-w, 48px) + var(--sidebar-w, 0px));
+    width: calc(100% - (var(--icon-rail-w, 48px) + var(--sidebar-w, 0px)));
+  }
+}
+.tournament-page .tournament-modal-content {
+  width: 100%; height: 100%; max-height: none; padding: 0; overflow: hidden;
+  border: 0; border-radius: 0; background: var(--bg); box-shadow: none; font-size: 14px;
+}
+.tournament-page .tournament-modal-content::before { content: none; }
+.tournament-modal-body { flex: 1 1 auto; min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; }
+.tournament-view {
+  width: min(1180px, 100%); min-height: 100%; margin: 0 auto;
+  padding: 54px 46px 48px; box-sizing: border-box;
+}
+.tournament-close-btn {
+  position: absolute; top: 18px; right: 20px; z-index: 8; width: 34px; height: 34px;
+  display: inline-flex; align-items: center; justify-content: center; padding: 0;
+  border: 1px solid transparent; border-radius: 9px; background: transparent;
+  color: color-mix(in srgb, var(--fg) 62%, transparent); cursor: pointer;
+}
+.tournament-close-btn:hover {
+  color: var(--fg); border-color: var(--border);
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+}
+
+/* the setup form */
+.trn-setup { max-width: 92ch; }
+.trn-head h3 { margin: 0; font-size: clamp(24px, 2.6vw, 34px); font-weight: 650; letter-spacing: -0.03em; line-height: 1.1; color: var(--fg); }
+.trn-sub { margin: 8px 0 20px; font-size: 13px; line-height: 1.6; color: var(--trn-muted); max-width: 68ch; }
+.trn-hint { margin: 8px 0 14px; font-size: 11.5px; color: var(--trn-muted); }
+.trn-note {
+  margin: 0 0 14px; padding: 9px 12px; border-radius: 9px; font-size: 12px;
+  border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent);
+  background: color-mix(in srgb, var(--warn) 12%, transparent); color: var(--fg);
+}
+.trn-error {
+  margin: 0 0 14px; padding: 9px 12px; border-radius: 9px; font-size: 12px;
+  border: 1px solid color-mix(in srgb, var(--red) 55%, transparent);
+  background: color-mix(in srgb, var(--red) 12%, transparent); color: var(--fg);
+  overflow-wrap: anywhere;
+}
+.trn-label {
+  display: block; margin: 14px 0 6px; font-size: 9.5px; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--trn-muted);
+}
+.trn-prompt {
+  width: 100%; box-sizing: border-box; resize: vertical; font-family: inherit; font-size: 13px;
+  line-height: 1.55; padding: 10px 12px; border-radius: 9px; border: 1px solid var(--border);
+  background: var(--bg); color: var(--fg);
+}
+.trn-prompt:focus, .trn-input:focus, .trn-select:focus { outline: none; border-color: var(--accent, var(--fg)); }
+.trn-input {
+  height: auto; width: 5.5em; font-family: inherit; font-size: 12px; padding: 6px 9px;
+  border-radius: 7px; border: 1px solid var(--border); background: var(--bg); color: var(--fg);
+}
+.trn-select {
+  height: auto; font-family: inherit; font-size: 12px; padding: 6px 9px; border-radius: 7px;
+  border: 1px solid var(--border); background: var(--select-bg, var(--bg));
+  color: var(--select-fg, var(--fg));
+}
+.trn-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 6px; }
+.trn-row .trn-label { margin: 0; }
+.trn-models { display: flex; flex-wrap: wrap; gap: 8px; }
+.trn-model {
+  display: inline-flex; align-items: center; gap: 7px; cursor: pointer; font-size: 12px;
+  padding: 6px 11px; border-radius: 999px; border: 1px solid var(--border);
+  background: var(--trn-faint); color: var(--fg);
+}
+.trn-model:hover { border-color: var(--accent, var(--fg)); }
+.trn-model.is-on {
+  border-color: var(--accent, var(--fg));
+  background: color-mix(in srgb, var(--accent, var(--fg)) 16%, transparent);
+}
+.trn-model.is-full { opacity: 0.45; cursor: not-allowed; }
+.trn-model-ep { font-size: 10px; color: var(--trn-muted); }
+.trn-models-count { margin-top: 7px; font-size: 11px; color: var(--trn-muted); }
+.trn-empty { padding: 16px 0; font-size: 12.5px; color: var(--trn-muted); }
+
+/* buttons — each one paints itself, so each one owns its hover (the global
+   button:hover would otherwise repaint it panel-coloured under the cursor) */
+.trn-btn {
+  height: auto; font-family: inherit; font-size: 12.5px; padding: 8px 15px; cursor: pointer;
+  border-radius: 8px; border: 1px solid var(--border);
+  background: var(--trn-faint); color: var(--fg);
+}
+.trn-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--fg) 12%, transparent); border-color: var(--accent, var(--fg));
+}
+.trn-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.trn-run-btn {
+  margin-top: 12px; font-weight: 600;
+  border-color: var(--accent, var(--fg));
+  background: color-mix(in srgb, var(--accent, var(--fg)) 18%, transparent);
+}
+.trn-run-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--accent, var(--fg)) 30%, transparent); }
+.trn-cancel-btn {
+  margin-left: auto; border-color: color-mix(in srgb, var(--red) 55%, transparent);
+  background: color-mix(in srgb, var(--red) 12%, transparent);
+}
+.trn-cancel-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--red) 24%, transparent); }
+.trn-back-btn { margin-left: auto; background: var(--trn-faint); }
+.trn-back-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--fg) 12%, transparent); }
+.trn-merge-btn {
+  margin-top: 14px; font-weight: 600;
+  border-color: var(--accent, var(--fg));
+  background: color-mix(in srgb, var(--accent, var(--fg)) 16%, transparent);
+}
+.trn-merge-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--accent, var(--fg)) 28%, transparent); }
+
+/* earlier runs */
+.trn-past-list { margin: 28px 0 0; display: flex; flex-direction: column; gap: 6px; }
+.trn-past-list h4 { margin: 0 0 4px; font-size: 12px; font-weight: 650; color: var(--trn-muted); }
+.trn-past {
+  height: auto; display: flex; align-items: center; gap: 10px; text-align: left; cursor: pointer;
+  font-family: inherit; font-size: 12px; padding: 8px 12px; border-radius: 9px;
+  border: 1px solid var(--border); background: var(--panel); color: var(--fg);
+}
+.trn-past:hover { border-color: var(--accent, var(--fg)); background: color-mix(in srgb, var(--fg) 8%, transparent); }
+.trn-past-prompt { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trn-past-meta { font-size: 10.5px; color: var(--trn-muted); white-space: nowrap; }
+
+/* the board */
+.trn-board-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.trn-board-meta { font-size: 11.5px; color: var(--trn-muted); font-variant-numeric: tabular-nums; }
+.trn-board-status, .trn-card-state, .trn-past-status {
+  padding: 2px 9px; border-radius: 999px; font-size: 10.5px; letter-spacing: 0.02em;
+  border: 1px solid var(--border); background: var(--trn-faint); color: var(--trn-muted);
+}
+.trn-state-done, .trn-state-answered { color: var(--green); border-color: color-mix(in srgb, var(--green) 45%, transparent); }
+.trn-state-running, .trn-state-judging { color: var(--accent, var(--fg)); border-color: color-mix(in srgb, var(--accent, var(--fg)) 45%, transparent); }
+.trn-state-error { color: var(--red); border-color: color-mix(in srgb, var(--red) 50%, transparent); }
+.trn-state-cancelled, .trn-state-cancelling, .trn-state-interrupted { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 50%, transparent); }
+.trn-stopped {
+  font-size: 11px; padding: 2px 9px; border-radius: 999px; color: var(--trn-muted);
+  border: 1px solid var(--border);
+}
+.trn-stopped.is-converged {
+  color: var(--green); border-color: color-mix(in srgb, var(--green) 45%, transparent);
+  background: color-mix(in srgb, var(--green) 10%, transparent);
+}
+.trn-cards {
+  display: grid; gap: 12px; align-items: start;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+.trn-card {
+  border: 1px solid var(--border); border-radius: 11px; padding: 12px 13px;
+  background: var(--panel); min-width: 0;
+}
+.trn-card.is-error { border-color: color-mix(in srgb, var(--red) 45%, transparent); }
+.trn-card.is-cancelled { border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+.trn-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.trn-card-model { font-size: 12.5px; font-weight: 620; overflow-wrap: anywhere; }
+.trn-card-detail { margin: 8px 0 0; font-size: 11.5px; color: var(--red); overflow-wrap: anywhere; }
+.trn-rounds { display: flex; gap: 5px; flex-wrap: wrap; margin: 9px 0 0; }
+.trn-round-chip {
+  height: auto; cursor: pointer; font-family: inherit; font-size: 10.5px; padding: 3px 9px;
+  border-radius: 999px; border: 1px solid var(--border); background: transparent; color: var(--trn-muted);
+}
+.trn-round-chip:hover { color: var(--fg); border-color: var(--accent, var(--fg)); }
+.trn-round-chip.is-on {
+  color: var(--fg); border-color: var(--accent, var(--fg));
+  background: color-mix(in srgb, var(--accent, var(--fg)) 16%, transparent);
+}
+.trn-answer {
+  margin: 9px 0 0; max-height: 16lh; overflow: auto; white-space: pre-wrap;
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11.5px; line-height: 1.5; overflow-wrap: anywhere;
+  padding: 9px 10px; border-radius: 8px; background: var(--trn-faint); color: var(--fg);
+}
+.trn-answer.is-waiting { font-style: italic; color: var(--trn-muted); font-family: inherit; }
+.trn-card-foot { margin: 7px 0 0; font-size: 10.5px; color: var(--trn-muted); font-variant-numeric: tabular-nums; }
+
+/* the results table */
+.trn-results { margin: 26px 0 0; }
+.trn-results h4 { margin: 0 0 8px; font-size: 15px; font-weight: 650; }
+.trn-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.trn-table th {
+  text-align: left; padding: 6px 9px; font-size: 9.5px; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--trn-muted); border-bottom: 1px solid var(--border);
+}
+.trn-table td { padding: 7px 9px; border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent); }
+.trn-result-row.is-winner { background: color-mix(in srgb, var(--green) 10%, transparent); }
+.trn-result-row.is-error, .trn-result-row.is-cancelled { color: var(--trn-muted); }
+.trn-rank, .trn-score, .trn-total, .trn-tiebreak { font-variant-numeric: tabular-nums; text-align: right; }
+.trn-result-model { overflow-wrap: anywhere; }
+.trn-crown { margin-left: 6px; color: var(--green); }
+.trn-outcome {
+  margin-left: 7px; padding: 1px 7px; border-radius: 999px; font-size: 9.5px;
+  border: 1px solid color-mix(in srgb, var(--warn) 50%, transparent); color: var(--warn);
+}
+.trn-score.is-null, .trn-total { color: var(--trn-muted); }
+.trn-ranking { margin: 10px 0 0; font-size: 11.5px; }
+.trn-ranking.is-judge { color: var(--trn-muted); }
+.trn-ranking.is-deterministic, .trn-ranking.is-mixed {
+  color: var(--warn); padding: 7px 11px; border-radius: 9px;
+  border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
+  background: color-mix(in srgb, var(--warn) 10%, transparent);
+}
+.trn-judge, .trn-convergence { margin: 7px 0 0; font-size: 11px; color: var(--trn-muted); overflow-wrap: anywhere; }
