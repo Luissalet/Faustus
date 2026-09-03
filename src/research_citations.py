@@ -296,6 +296,9 @@ def find_markers(report_md: Any) -> List[Marker]:
             continue
         if match.end() < len(text) and text[match.end()] == "(":
             continue  # markdown link
+        if (text[match.end():match.end() + 1] == ":"
+                and text[:match.start()].rsplit("\n", 1)[-1].strip() == ""):
+            continue  # `[1]: https://…` is a link reference definition
         numbers = [int(d) for d in _DIGITS_RE.findall(match.group(0))]
         numbers = [n for n in numbers if 1 <= n <= MAX_SOURCE_NUMBER]
         if not numbers:
@@ -435,7 +438,11 @@ def _attach_orphan_markers(text: str, units: List[Tuple[int, int]]) -> List[Tupl
     out: List[Tuple[int, int]] = []
     for start, end in units:
         match = _LEADING_MARKERS_RE.match(text[start:end])
-        if match and out and match.end() > 0:
+        # Never carry a marker across a "|": the neighbouring unit is then the
+        # cell to the left, and a table row would collect its whole row's
+        # citations into its first cell.
+        crossing_cells = "|" in text[out[-1][1]:start] if out else False
+        if match and out and not crossing_cells and match.end() > 0:
             carry = start + match.end()
             prev_start, _prev_end = out[-1]
             out[-1] = (prev_start, carry)

@@ -178,6 +178,14 @@ def test_a_dangling_marker_still_parses_as_a_marker():
     assert _nums("Unsupported claim [99].") == [[99]]
 
 
+def test_a_link_reference_definition_is_not_a_citation():
+    """`[1]: https://…` at the start of a line defines a markdown link label,
+    not a claim about source 1."""
+    assert _nums("[1]: https://a.test/1\n\nA real claim here [2].\n") == [[2]]
+    # Mid-sentence it still is one: "as shown [1]: the rate fell".
+    assert _nums("As shown [1]: the rate fell.") == [[1]]
+
+
 def test_zero_and_negative_and_huge_are_not_markers():
     assert _nums("[0] and [-1] and [1.5]") == []
 
@@ -231,6 +239,24 @@ def test_soft_wrapped_paragraph_is_one_sentence():
     audit = audit_citations(md, reg)
     assert len(audit.claims) == 1
     assert "twelve week" in audit.claims[0].text
+
+
+def test_a_marker_opening_a_table_cell_stays_in_that_cell():
+    """Without a guard, the leading-marker fixup carries `[2]` back into the
+    cell on its left and the whole row's citations pile up in one column."""
+    reg = _registry("https://a.test/1", "https://b.test/2")
+    md = ("| A | B |\n|---|---|\n"
+          "| [1] loading works well | [2] shockwave adds nothing |\n")
+    audit = audit_citations(md, reg)
+    assert [c.numbers for c in audit.claims] == [[1], [2]]
+    assert "shockwave" not in audit.claims[0].text
+
+
+def test_a_marker_opening_a_list_item_stays_in_that_item():
+    reg = _registry("https://a.test/1", "https://b.test/2")
+    md = "- [1] Heavy slow resistance works\n- [2] Isometrics ease pain acutely\n"
+    audit = audit_citations(md, reg)
+    assert [c.numbers for c in audit.claims] == [[1], [2]]
 
 
 def test_used_dangling_and_uncited():
