@@ -26,7 +26,9 @@ What makes the answer trustworthy (none of it comes from the worker):
                  the coordinator gave) in the workspace after the workers,
                  compares failures with the checkpoint (pre-existing vs new),
                  and, when they fail, sends ONE fixer worker with the failure
-                 output before verifying again (`fix_rounds`);
+                 output before verifying again (`fix_rounds` — a MAXIMUM: the
+                 loop also stops by itself when the rounds stop producing
+                 change, see src/convergence.py);
   * honest status — `done` only when every worker finished and the
                  verification passed (or could not run); otherwise `partial`
                  with the reason in `verdict`; a cancelled job still reports
@@ -61,6 +63,10 @@ _DEFAULT_TIMEOUT_S = 900
 _DEFAULT_MAX_ROUNDS = 20
 _DEFAULT_FIX_ROUNDS = 1
 _MAX_FIX_ROUNDS = 2
+# With the convergence detector on, the fix loop ends itself as soon as the
+# rounds stop producing change, so a caller may ask for more of them without
+# buying a fixed number of pointless workers.
+_MAX_FIX_ROUNDS_CONVERGENCE = 4
 _VERIFY_TIMEOUT_S = 300
 _VERIFY_CMD_CHARS = 500
 _IDEMPOTENCY_TTL_S = 3600
@@ -82,6 +88,91 @@ def _data_dir() -> str:
         return os.path.join(DATA_DIR, "dispatch")
     except Exception:  # pragma: no cover
         return os.path.join(os.getcwd(), "data", "dispatch")
+
+
+def _setting(key: str, default: Any) -> Any:
+    try:
+        from src.settings import get_setting
+        return get_setting(key, default)
+    except Exception:  # noqa: BLE001 - a job never fails over a settings read
+        return default
+
+
+def _convergence_on() -> bool:
+    """`agent_fix_round_convergence`. Off = the fixed fix-round counter."""
+    return bool(_setting("agent_fix_round_convergence", True))
+
+
+def _outcomes_on() -> bool:
+    """`agent_tool_outcomes`. Off = a stopped worker counts as an error."""
+    try:
+        from src import tool_outcome
+        return tool_outcome.enabled()
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _max_fix_rounds() -> int:
+    return _MAX_FIX_ROUNDS_CONVERGENCE if _convergence_on() else _MAX_FIX_ROUNDS
+
+
+def _timing_key(workspace: Optional[str]) -> str:
+    """The adaptive-timeout bucket a job's duration is remembered under: one
+    per workspace, because how long a job takes is a property of the project."""
+    return "dispatch:" + (_ws_key(workspace) or "-")
+
+
+def _adaptive_ceiling(workspace: Optional[str], fixed: int) -> int:
+    """The fixed ceiling, raised to what jobs in this workspace really take."""
+    try:
+        from src import adaptive_timeout as at
+        if not at.enabled():
+            return fixed
+        key = _timing_key(workspace)
+        value = at.idle_timeout(key, fixed, lo=fixed, hi=max(fixed, fixed * 3))
+        if value > fixed:
+            at.note_difference(key, value, fixed, what="job ceiling")
+            return int(value)
+    except Exception as e:  # noqa: BLE001 - a poller hint, never load-bearing
+        logger.debug("dispatch: adaptive ceiling unavailable: %s", e)
+    return fixed
+
+
+def _record_job_duration(job: "DispatchJob") -> None:
+    """Feed this job's wall-clock into the adaptive recorder (best effort)."""
+    try:
+        from src import adaptive_timeout as at
+        if not at.enabled() or not job.started or not job.finished:
+            return
+        at.record(_timing_key(job.workspace), float(job.finished) - float(job.started))
+    except Exception as e:  # noqa: BLE001
+        logger.debug("dispatch: could not record the job duration: %s", e)
+
+
+def _round_artifact(job: "DispatchJob", v: Dict[str, Any]) -> str:
+    """What one fix round LEFT BEHIND, as the convergence detector reads it:
+    the verification's verdict and failures, the tail of its output and the
+    files that changed on disk. Two rounds that leave the same artifact
+    changed nothing between them."""
+    changes = job.changes or {}
+    touched = sorted(list(changes.get("added") or []) + list(changes.get("modified") or [])
+                     + list(changes.get("deleted") or []))[:CHANGES_LISTED]
+    parts = [
+        str(v.get("summary") or ""),
+        "\n".join(str(f) for f in (v.get("failures") or [])[:20]),
+        str(v.get("output_tail") or "")[-2000:],
+        "changed: " + ", ".join(touched),
+    ]
+    return "\n".join(p for p in parts if p.strip())
+
+
+def _assess_convergence(rounds: List[str]) -> Optional[Dict[str, Any]]:
+    try:
+        from src import convergence
+        return convergence.assess(rounds)
+    except Exception as e:  # noqa: BLE001 - the fix loop runs without it
+        logger.debug("dispatch: convergence unavailable: %s", e)
+        return None
 
 
 class DispatchJob:
@@ -115,6 +206,10 @@ class DispatchJob:
         self.changes: Optional[Dict[str, Any]] = None        # observed by Faustus, not claimed by a worker
         self.verification: Optional[Dict[str, Any]] = None
         self.checkpoint: Optional[str] = None
+        # Convergence of the fix loop (src/convergence.py) and, when the loop
+        # ended for a reason other than "the rounds ran out", which one.
+        self.convergence: Optional[Dict[str, Any]] = None
+        self.stopped_by: Optional[str] = None
         self.events: Deque[Dict[str, Any]] = deque(maxlen=EVENTS_KEPT)
         self.task: Optional[asyncio.Task] = None
         self._waiters: List[asyncio.Event] = []
@@ -141,16 +236,25 @@ class DispatchJob:
             d["changes"] = self.changes
             d["verification"] = self.verification
             d["checkpoint"] = self.checkpoint
+            if self.convergence is not None:
+                d["convergence"] = self.convergence
+            if self.stopped_by:
+                d["stopped_by"] = self.stopped_by
         return d
 
     def ceiling_s(self) -> int:
         """The most wall-clock the job can take: every worker's timeout in
         turn at the configured parallelism, a reviewer, the verification and
-        the fix loop — so a coordinator knows how long to keep waiting."""
+        the fix loop — so a coordinator knows how long to keep waiting.
+
+        With `agent_adaptive_idle_timeout` on, jobs that really took longer
+        than this estimate in this workspace raise it (never lower it: a
+        coordinator that stops waiting early re-dispatches work that is still
+        running)."""
         tasks = len(self.args.get("tasks") or [])
         try:
-            from src.agent_tools.subagent_tools import _setting
-            par = max(1, int(_setting("agent_subagent_max_parallel", 2) or 1))
+            from src.agent_tools.subagent_tools import _setting as _sa_setting
+            par = max(1, int(_sa_setting("agent_subagent_max_parallel", 2) or 1))
         except Exception:
             par = 2
         per = int(self.args.get("timeout_s") or _DEFAULT_TIMEOUT_S)
@@ -158,7 +262,7 @@ class DispatchJob:
         n = per * max(1, waves) + (per if self.args.get("reviewer") else 0)
         if self.verify != "none":
             n += int(self.verify_timeout_s) * (1 + self.fix_rounds) + per * self.fix_rounds
-        return int(n)
+        return int(_adaptive_ceiling(self.workspace, n))
 
     def _notify(self) -> None:
         for ev in self._waiters:
@@ -216,6 +320,8 @@ def compact_from_result(result: Optional[Dict[str, Any]], *, summary_chars: int 
         "tool_calls": 0, "failed_calls": 0, "rounds": 0, "input_tokens": 0, "output_tokens": 0, "errors": 0}}
     if not isinstance(result, dict):
         return out
+    outcomes_on = _outcomes_on()
+    cancelled = 0
     changed: List[str] = []
     for r in result.get("subagents") or []:
         if not isinstance(r, dict):
@@ -231,6 +337,8 @@ def compact_from_result(result: Optional[Dict[str, Any]], *, summary_chars: int 
             "summary": _squash(r.get("final_text"), summary_chars),
             "session_id": r.get("session_id"),
         }
+        if outcomes_on:
+            w["outcome"] = _worker_outcome(r)
         sc = r.get("static_checks")
         if sc:
             w["static_checks"] = _compact_static_checks(sc)
@@ -247,9 +355,15 @@ def compact_from_result(result: Optional[Dict[str, Any]], *, summary_chars: int 
         t["input_tokens"] += w["input_tokens"]
         t["output_tokens"] += w["output_tokens"]
         # any worker that did not finish its task counts — stalled, stopped
-        # and timed-out workers have no `error` and used to be 0 errors
-        if w["error"] or (w["status"] not in ("done", None)):
+        # and timed-out workers have no `error` and used to be 0 errors.
+        # A worker the USER stopped is the exception (four-value outcomes): it
+        # is `cancelled`, counted apart, and never blamed on the model.
+        if outcomes_on and w.get("outcome") == "cancelled":
+            cancelled += 1
+        elif w["error"] or (w["status"] not in ("done", None)):
             t["errors"] += 1
+    if cancelled:
+        out["totals"]["cancelled"] = cancelled
     out["files_changed"] = changed
     if result.get("lock_conflicts"):
         out["lock_conflicts"] = [f"{c.get('worker')} → {c.get('path')}" for c in list(result["lock_conflicts"])[:10]
@@ -258,6 +372,20 @@ def compact_from_result(result: Optional[Dict[str, Any]], *, summary_chars: int 
         out["dropped_tasks"] = int(result["dropped_tasks"])
     out["exit_code"] = result.get("exit_code")
     return out
+
+
+def _worker_outcome(r: Dict[str, Any]) -> Optional[str]:
+    """The four-value outcome of one worker report: the one the worker itself
+    recorded when it is there, else read from its status and error."""
+    try:
+        from src import tool_outcome
+        known = tool_outcome.value_of(r.get("outcome"))
+        if known:
+            return known
+        return tool_outcome.classify_status(r.get("status") or r.get("stop_reason"),
+                                            error=r.get("error")).value
+    except Exception:  # noqa: BLE001 - the compact answer never fails over this
+        return None
 
 
 def _seed_progress(job: DispatchJob) -> Dict[str, Dict[str, Any]]:
@@ -282,6 +410,10 @@ def compact(job: DispatchJob) -> Dict[str, Any]:
         res["changes"] = job.changes
     if job.verification is not None:
         res["verification"] = job.verification
+    if job.convergence is not None:
+        res["convergence"] = job.convergence
+    if job.stopped_by:
+        res["stopped_by"] = job.stopped_by
     if job.status not in _LIVE:
         res["exit_code"] = 0 if job.status == "done" else 1
     d["result"] = res
@@ -575,7 +707,7 @@ def _verify_options(body: Dict[str, Any]) -> Tuple[str, str, int, float]:
         fix = int(body.get("fix_rounds", _DEFAULT_FIX_ROUNDS) if body.get("fix_rounds") is not None else _DEFAULT_FIX_ROUNDS)
     except (TypeError, ValueError):
         raise ValueError("fix_rounds must be an integer")
-    fix = max(0, min(_MAX_FIX_ROUNDS, fix))
+    fix = max(0, min(_max_fix_rounds(), fix))
     try:
         vt = float(body.get("verify_timeout_s") or _VERIFY_TIMEOUT_S)
     except (TypeError, ValueError):
@@ -719,6 +851,11 @@ def _settle(job: DispatchJob) -> None:
             parts.append(f"verification inconclusive ({v.get('summary')})")
         else:
             parts.append(f"not verified: {v.get('summary')}")
+    c = job.convergence
+    if c:
+        parts.append(f"fix rounds converged ({c.get('score')}, {c.get('confidence')})"
+                     if job.stopped_by == "convergence"
+                     else f"fix-round convergence {c.get('score')} ({c.get('confidence')})")
     if job.status == "cancelled":
         parts.insert(0, "cancelled")
     elif job.status == "error":
@@ -793,6 +930,8 @@ async def _run(job: DispatchJob) -> None:
             job._event(event="job", message="running the verification")
             job.verification = await _verify(job)
             attempt = 0
+            convergence_on = _convergence_on()
+            round_artifacts: List[str] = []
             while verification_failed(job.verification) and attempt < job.fix_rounds and job.result.get("subagents"):
                 attempt += 1
                 job._event(event="job", message=f"verification failed — fix round {attempt}")
@@ -814,6 +953,19 @@ async def _run(job: DispatchJob) -> None:
                 again["previous"] = [{"summary": job.verification.get("summary"), "failures": job.verification.get("failures")}] \
                     + list(job.verification.get("previous") or [])
                 job.verification = again
+                # Convergence (src/convergence.py): when successive rounds stop
+                # producing change, the rounds still on the counter would only
+                # spend workers. `fix_rounds` is the maximum, not a quota.
+                if convergence_on:
+                    round_artifacts.append(_round_artifact(job, again))
+                    verdict = _assess_convergence(round_artifacts)
+                    if verdict is not None:
+                        job.convergence = verdict
+                        if verdict.get("converged") and attempt < job.fix_rounds:
+                            job.stopped_by = "convergence"
+                            job._event(event="job",
+                                       message=f"fix rounds converged after {attempt} — {verdict.get('reason')}")
+                            break
         else:
             job.verification = {"mode": "off", "ran": False, "ok": None,
                                 "summary": "verification disabled by the request (verify: none)"}
@@ -841,6 +993,7 @@ async def _run(job: DispatchJob) -> None:
             _release_workspace(ws_key, job.id)
         job.finished = time.time()
         _settle(job)
+        _record_job_duration(job)
         _record_turn(job)
         job._persist()
         job._notify()
@@ -1074,6 +1227,8 @@ def _load(job_id: str) -> Optional[DispatchJob]:
     job.changes = d.get("changes")
     job.verification = d.get("verification")
     job.checkpoint = d.get("checkpoint")
+    job.convergence = d.get("convergence")
+    job.stopped_by = d.get("stopped_by")
     # a job that was running when the server stopped never finished
     job.status = "interrupted" if d.get("status") in _LIVE else (d.get("status") or "done")
     if job.status == "interrupted" and not job.verdict:
@@ -1198,9 +1353,11 @@ and on checking the result, not on reading files or running tests yourself.
    the workspace — the workers' own claims are never the proof. Without it
    the project's test runner is auto-detected (`verify: "auto"`);
    `verify_scope: "all"` runs the whole suite instead of the tests related
-   to the changed files. `fix_rounds` (default 1, max 2): when the
-   verification fails, one fixer worker gets the failure output and the
-   verification runs again.
+   to the changed files. `fix_rounds` (default 1, max 2 — 4 while the
+   convergence detector is on) is a MAXIMUM: when the verification fails,
+   one fixer worker gets the failure output and the verification runs again,
+   and the loop stops by itself as soon as the rounds stop changing anything
+   (`result.convergence`, `result.stopped_by: "convergence"`).
 
 ## Reading the result
 `status`: `done` = every worker finished AND the verification passed (or
@@ -1213,9 +1370,10 @@ evidence is still there). `verdict` says it in one line.
 worker said it changed but did not. `result.verification` is the run Faustus
 made: `ok`, `summary`, `failures`, `pre_existing` (failed before the job
 too), `command`, `output_tail`; `attempts` > 1 means a fix round ran.
-Per worker: status, files it claims, tool/round/token counts and its last
-words (≤ 1200 chars) — never the transcript. Trust `changes` + `verification`
-over the prose.
+Per worker: status, files it claims, tool/round/token counts, its `outcome`
+(`success` / `expected_error` / `cancelled` / `panic` — a worker the user
+stopped is `cancelled`, not a failure) and its last words (≤ 1200 chars) —
+never the transcript. Trust `changes` + `verification` over the prose.
 A `running` answer carries `progress` per worker, `phase`, `ceiling_s` (the
 most it can still take) and `wait_again: true` — call `workers_wait` again;
 do NOT re-dispatch the same task because one wait returned early.
