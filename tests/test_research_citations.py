@@ -432,6 +432,53 @@ def test_grading_a_dangling_number_is_weak_not_a_crash():
     assert [g.grade for g in graded] == [GRADE_WEAK]
 
 
+def test_a_table_label_is_not_counted_as_a_sentence():
+    """The coverage ratio must not be padded with column headers and one-word
+    cells: nobody would cite "Dose", so counting it understates the report."""
+    reg = _registry("https://a.test/1")
+    md = (
+        "| Protocol | Dose | So what |\n"
+        "|---|---|---|\n"
+        "| Alfredson | 180/day [1] | Slow but proven over many trials |\n"
+    )
+    audit = audit_citations(md, reg)
+    # The marker in the "180/day" cell is still found and still repairable.
+    assert [c.numbers for c in audit.claims] == [[1]]
+    # But only the one full-sentence cell counts toward coverage.
+    assert audit.total_sentences == 1
+    assert audit.cited_sentences == 0
+
+
+def test_a_full_sentence_in_a_table_cell_does_count():
+    reg = _registry("https://a.test/1")
+    md = (
+        "| Protocol | Verdict |\n"
+        "|---|---|\n"
+        "| Alfredson | Pain fell measurably over twelve weeks [1] |\n"
+    )
+    audit = audit_citations(md, reg)
+    assert audit.total_sentences == 1
+    assert audit.cited_sentences == 1
+
+
+def test_the_legend_counts_add_up_to_the_citations_it_names():
+    reg = _registry("https://a.test/1")
+    md = (
+        "A properly written sentence that carries a citation [1].\n\n"
+        "| Drug | Dose |\n"
+        "|---|---|\n"
+        "| A | 10mg [1] |\n"
+    )
+    audit = audit_citations(md, reg)
+    graded = grade_claims(audit.claims, reg)
+    cov = compute_coverage(audit, graded)
+    assert cov["cited_sentences"] == 1      # the cell is not a sentence
+    assert cov["citations"] == 2            # but it is a citation, and graded
+    assert sum(cov["graded"].values()) == cov["citations"]
+    legend = build_legend(cov, "es")
+    assert "2 citas" in legend
+
+
 def test_coverage_counts_sentences_and_grades():
     reg = _graded_registry()
     md = ("El protocolo de Alfredson consiste en 180 repeticiones diarias de "

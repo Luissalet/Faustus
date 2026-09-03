@@ -319,6 +319,15 @@ _TABLE_SEP_RE = re.compile(r"^\s{0,3}\|[\s\-:|]+\|?\s*$")
 _SENT_SPLIT_RE = re.compile(r"(?<=[.!?…])[\"'”’)\]]*\s+(?=[\[\"'“¿¡(]|[A-ZÁÉÍÓÚÑÜÀÈÌÒÙÂÊÎÔÛÄÖÜÇ0-9])")
 _LEADING_MARKERS_RE = re.compile(r"^\s*(?:\[\s*\d{1,3}(?:\s*[,;]\s*\d{1,3})*\s*\][\s.,;:]*)+")
 _HAS_LETTER_RE = re.compile(r"[^\W\d_]", re.UNICODE)
+_WORDISH_RE = re.compile(r"[^\W_]+", re.UNICODE)
+# Below this, a unit is a label, a fragment or a bare figure — a table cell
+# reading "Alfredson", a wrapped "> preocupa." — not a sentence a reader would
+# expect to carry a citation. Counting those would understate coverage.
+_MIN_SENTENCE_WORDS = 4
+
+
+def _counts_as_sentence(text: str) -> bool:
+    return len(_WORDISH_RE.findall(strip_markers(text))) >= _MIN_SENTENCE_WORDS
 
 
 def _line_spans(text: str) -> List[Tuple[int, int]]:
@@ -339,6 +348,7 @@ def _sentence_units(text: str, protected: Sequence[Tuple[int, int]]) -> List[Tup
     """
     groups: List[Tuple[int, int]] = []
     current: Optional[List[int]] = None
+    lines = _line_spans(text)
 
     def flush() -> None:
         nonlocal current
@@ -346,7 +356,7 @@ def _sentence_units(text: str, protected: Sequence[Tuple[int, int]]) -> List[Tup
             groups.append((current[0], current[1]))
             current = None
 
-    for start, end in _line_spans(text):
+    for index, (start, end) in enumerate(lines):
         line = text[start:end]
         if _in_spans(start, protected):
             flush()
@@ -359,6 +369,11 @@ def _sentence_units(text: str, protected: Sequence[Tuple[int, int]]) -> List[Tup
             continue
         if _TABLE_ROW_RE.match(line):
             flush()
+            # The row above the |---| separator holds column labels, not
+            # claims. Treating "Dose" as a sentence would pad the denominator
+            # of the coverage figure with words nobody could cite.
+            if _is_table_header(text, lines, index):
+                continue
             groups.extend(_table_cell_spans(text, start, end))
             continue
         if _HEADING_RE.match(line) or _LIST_RE.match(line) or _QUOTE_RE.match(line):
@@ -375,6 +390,15 @@ def _sentence_units(text: str, protected: Sequence[Tuple[int, int]]) -> List[Tup
     for start, end in groups:
         units.extend(_split_sentences(text, start, end))
     return _attach_orphan_markers(text, units)
+
+
+def _is_table_header(text: str, lines: Sequence[Tuple[int, int]], index: int) -> bool:
+    for start, end in lines[index + 1:]:
+        line = text[start:end]
+        if not line.strip():
+            return False
+        return bool(_TABLE_SEP_RE.match(line))
+    return False
 
 
 def _table_cell_spans(text: str, start: int, end: int) -> List[Tuple[int, int]]:
@@ -443,6 +467,7 @@ class CitationAudit:
     claims: List[Claim] = field(default_factory=list)
     removed: List[int] = field(default_factory=list)
     total_sentences: int = 0
+    cited_sentences: int = 0
     coverage: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -461,7 +486,10 @@ def audit_citations(report_md: Any, registry: Optional[SourceRegistry] = None) -
     # of prose. They are also not graded, so a marker in one is only repaired.
     units = [u for u in _sentence_units(text, protected)
              if not _HEADING_RE.match(text[u[0]:u[1]])]
-    audit.total_sentences = sum(1 for s, e in units if _HAS_LETTER_RE.search(text[s:e]))
+    counted = [u for u in units
+               if _HAS_LETTER_RE.search(text[u[0]:u[1]])
+               and _counts_as_sentence(text[u[0]:u[1]])]
+    audit.total_sentences = len(counted)
 
     by_unit: Dict[Tuple[int, int], List[int]] = {}
     for marker in markers:
@@ -480,6 +508,8 @@ def audit_citations(report_md: Any, registry: Optional[SourceRegistry] = None) -
                 seen.append(n)
         audit.claims.append(Claim(text=text[unit[0]:unit[1]].strip(), numbers=seen,
                                   start=unit[0], end=unit[1]))
+
+    audit.cited_sentences = sum(1 for unit in counted if unit in by_unit)
 
     for claim in audit.claims:
         for n in claim.numbers:
@@ -697,8 +727,14 @@ def compute_coverage(audit: CitationAudit,
         if item.grade in counts:
             counts[item.grade] += 1
     return {
-        "cited_sentences": len(audit.claims),
+        # Not len(audit.claims): a marker in a two-word table cell is repaired
+        # and graded, but it is not a sentence, so it belongs in neither half
+        # of the coverage ratio.
+        "cited_sentences": audit.cited_sentences,
         "total_sentences": audit.total_sentences,
+        # Every graded citation, sentences and table cells alike. The legend
+        # prints it beside the grade counts so the two add up for the reader.
+        "citations": len(graded or []),
         "graded": counts,
     }
 
@@ -821,42 +857,42 @@ _LEGEND_BODY = {
     "es": ("Cada frase con datos lleva un marcador `[n]` que remite a la fuente "
            "numerada en «Fuentes». {cited} de las {total} frases del informe "
            "({pct} %) llevan cita.\n\n"
-           "Respaldo de la fuente citada — {counts}.\n\n"
+           "Respaldo de la fuente citada en las {citations} citas del informe — {counts}.\n\n"
            "Estas etiquetas solo indican si el texto que recogimos de la fuente "
            "citada contiene la frase; no dicen si la afirmación es cierta en el "
            "mundo, ni qué calidad tiene el estudio que hay detrás."),
     "en": ("Every factual sentence carries a `[n]` marker pointing at the "
            "numbered entry under \"Sources\". {cited} of this report's {total} "
            "sentences ({pct}%) carry one.\n\n"
-           "Support from the cited source — {counts}.\n\n"
+           "Support from the cited source, across this report's {citations} citations — {counts}.\n\n"
            "These labels only say whether the text we collected from the cited "
            "source contains the sentence — not whether the claim is true in the "
            "world, and not how good the study behind it is."),
     "fr": ("Chaque phrase factuelle porte un marqueur `[n]` renvoyant à la source "
            "numérotée dans « Sources ». {cited} des {total} phrases du rapport "
            "({pct} %) en portent un.\n\n"
-           "Appui de la source citée — {counts}.\n\n"
+           "Appui de la source citée, sur les {citations} citations du rapport — {counts}.\n\n"
            "Ces étiquettes indiquent seulement si le texte recueilli de la source "
            "citée contient la phrase ; elles ne disent pas si l'affirmation est "
            "vraie, ni quelle est la qualité de l'étude derrière elle."),
     "de": ("Jeder Sachsatz trägt eine Markierung `[n]`, die auf den nummerierten "
            "Eintrag unter „Quellen“ verweist. {cited} der {total} Sätze dieses "
            "Berichts ({pct} %) tragen eine.\n\n"
-           "Deckung durch die zitierte Quelle — {counts}.\n\n"
+           "Deckung durch die zitierte Quelle, über die {citations} Zitate des Berichts — {counts}.\n\n"
            "Diese Kennzeichnungen sagen nur, ob der von uns erfasste Text der "
            "zitierten Quelle den Satz enthält — nicht, ob die Aussage wahr ist, "
            "und nicht, wie gut die Studie dahinter ist."),
     "pt": ("Cada frase com dados leva um marcador `[n]` que remete para a fonte "
            "numerada em «Fontes». {cited} das {total} frases do relatório "
            "({pct} %) levam citação.\n\n"
-           "Apoio da fonte citada — {counts}.\n\n"
+           "Apoio da fonte citada, nas {citations} citações do relatório — {counts}.\n\n"
            "Estas etiquetas só indicam se o texto que recolhemos da fonte citada "
            "contém a frase; não dizem se a afirmação é verdadeira, nem qual é a "
            "qualidade do estudo por trás dela."),
     "it": ("Ogni frase con dati porta un marcatore `[n]` che rimanda alla fonte "
            "numerata in «Fonti». {cited} delle {total} frasi del rapporto "
            "({pct} %) portano una citazione.\n\n"
-           "Sostegno della fonte citata — {counts}.\n\n"
+           "Sostegno della fonte citata, sulle {citations} citazioni del rapporto — {counts}.\n\n"
            "Queste etichette dicono solo se il testo raccolto dalla fonte citata "
            "contiene la frase; non dicono se l'affermazione è vera, né quale sia "
            "la qualità dello studio che c'è dietro."),
@@ -879,10 +915,13 @@ def build_legend(coverage: Dict[str, Any], language: str = "en") -> str:
     counts = (coverage or {}).get("graded") or {}
     words = GRADE_WORDS.get((language or "").lower(), GRADE_WORDS["en"])
     rendered = " · ".join(f"{words[g]}: {int(counts.get(g) or 0)}" for g in GRADES)
+    citations = int((coverage or {}).get("citations")
+                    or sum(int(counts.get(g) or 0) for g in GRADES))
     pct = int(round(100.0 * cited / total)) if total else 0
     body = _LEGEND_BODY.get((language or "").lower(), _LEGEND_BODY["en"])
     return (legend_heading(language) + "\n\n"
-            + body.format(cited=cited, total=total, pct=pct, counts=rendered))
+            + body.format(cited=cited, total=total, pct=pct, counts=rendered,
+                          citations=citations))
 
 
 # ---------------------------------------------------------------------------
