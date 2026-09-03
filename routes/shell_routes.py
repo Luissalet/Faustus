@@ -618,6 +618,13 @@ async def _generate_pty(cmd: str, timeout: int, request: Request):
     flags = fcntl.fcntl(master_fd, fcntl.F_GETFL)
     fcntl.fcntl(master_fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
 
+    # Deliberately inherits this process's environment, venv and all. Every
+    # caller of /api/shell/stream is the Cookbook, whose runner scripts are
+    # Faustus's own: they put our venv's bin on PATH on purpose (see
+    # cookbook_helpers._local_tooling_path_export) and read ${VIRTUAL_ENV:-…} to
+    # find the CUDA wheels that /api/cookbook/install-package pip-installed into
+    # OUR site-packages. native_host_environment here would strand a local vLLM
+    # or SGLang serve without libnvrtc. Not a foreign child; do not "fix" it.
     proc = await asyncio.create_subprocess_shell(
         cmd,
         stdin=slave_fd,
@@ -774,6 +781,8 @@ async def _generate_tmux(cmd: str, request: Request):
 
     tmux_cmd = f"tmux new-session -d -s {session_id} {shlex.quote(str(script_path))}"
 
+    # Inherits our environment for the same reason as _generate_pty above: the
+    # script this starts is a Cookbook runner that depends on Faustus's venv.
     proc = await asyncio.create_subprocess_shell(
         tmux_cmd,
         stdout=asyncio.subprocess.PIPE,
@@ -1797,6 +1806,10 @@ def setup_shell_routes() -> APIRouter:
         }
         if pip_name not in known:
             return {"ok": False, "error": f"Unknown package: {pip_name}"}
+        # Faustus's OWN interpreter, installing into Faustus's OWN venv — that
+        # is the whole point of this route, and where the Cookbook's serve
+        # runners later look for the engine. Never hand this a native
+        # environment: it is not a foreign child.
         cmd = [_sys.executable, "-m", "pip", "install", pip_name]
         proc = await asyncio.create_subprocess_exec(
             *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
