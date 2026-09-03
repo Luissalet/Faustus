@@ -34,6 +34,7 @@ import sys
 import time
 from typing import Any, Dict, Iterable, List, Optional
 
+from src import output_oracle
 from src.native_env import native_host_environment
 
 logger = logging.getLogger(__name__)
@@ -348,6 +349,9 @@ def run_tests(
     result: Dict[str, Any] = {
         "ran": False, "kind": spec.get("kind"), "label": spec.get("label"), "scope": "all",
         "ok": None, "exit_code": None, "timed_out": False, "duration_s": 0.0,
+        # None = nothing was declared for this run, so nothing was checked.
+        # Never collapse it to True: that reads "we never looked" as "it passed".
+        "output_matched": None,
         "summary": "", "failures": [], "output_tail": "", "inconclusive": False,
         "command": "", "cwd": workspace,
     }
@@ -422,6 +426,17 @@ def run_tests(
     if not result["timed_out"]:
         parsed = parse_output(spec.get("kind") or "", exit_code, out)
         result.update(parsed)
+        # Exit 0 is not evidence the suite ran: a collection that found nothing
+        # and a custom command that succeeded at doing nothing both report it.
+        # `expected_output_contains` was declared with the plan, before this
+        # run, so its absence is evidence and forces exit 65.
+        result["exit_code"], result["output_matched"] = output_oracle.apply(
+            result.get("exit_code") or 0, out, spec.get("expected_output_contains"))
+        if result["output_matched"] is False:
+            # `ok` came from parse_output, which only saw the runner's own
+            # exit 0. Left alone it would contradict the code just forced, and
+            # a verification layer the verdict disagrees with is worthless.
+            result["ok"] = False
     return result
 
 
@@ -659,7 +674,7 @@ def compact(res: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     """What gets persisted with the message / emitted to the UI."""
     if not res:
         return None
-    keys = ("ran", "kind", "label", "scope", "ok", "exit_code", "timed_out", "duration_s",
+    keys = ("ran", "kind", "label", "scope", "ok", "exit_code", "output_matched", "timed_out", "duration_s",
             "summary", "failures", "inconclusive", "command", "related_files",
             "new_failures", "pre_existing", "pre_existing_only", "exempt", "baseline")
     out = {k: res.get(k) for k in keys if k in res}
