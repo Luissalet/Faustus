@@ -683,6 +683,69 @@ def trim_for_context(messages: List[Dict], context_length: int, reserve_tokens: 
     return result
 
 
+def post_compact_reminder(session, owner: Optional[str] = None) -> Optional[Dict]:
+    """A system message re-injecting what compaction tends to lose mid-session:
+    the project's objectives and a pointer to its standing instructions.
+
+    A summary is lossy by design, and the plan is the first thing it loses —
+    the model then "forgets the plan mid-session". This rebuilds the standing
+    context from disk right after the summary. Returns None outside a project
+    (or when there is nothing to remind about), and swallows every failure:
+    a broken objectives file must never break compaction.
+    """
+    try:
+        session_id = getattr(session, "id", None)
+        if session_id is None and isinstance(session, dict):
+            session_id = session.get("id")
+        if not session_id:
+            return None
+        from services.projects import project_for_session
+        project = project_for_session(str(session_id), owner)
+        if not project:
+            return None
+
+        parts: List[str] = []
+        try:
+            from services import objectives as _objectives
+            obj_block = _objectives.objectives_block(
+                project, cap=_objectives.MAX_REMINDER_CHARS
+            )
+            if obj_block:
+                parts.append(obj_block)
+        except Exception:  # noqa: BLE001 - best effort
+            pass
+
+        workspace = project.get("workspace") or ""
+        if workspace:
+            try:
+                from src import project_instructions as _pinstr
+                info = _pinstr.read(workspace)
+                if info.get("text"):
+                    pointer = (
+                        f"The project's standing rules in {info.get('rel')} still apply "
+                        "after this compaction."
+                    )
+                    rules = _pinstr.block(workspace).strip()
+                    if rules and len(rules) <= 1500:
+                        parts.append(pointer + "\n" + rules)
+                    else:
+                        parts.append(pointer)
+            except Exception:  # noqa: BLE001 - best effort
+                pass
+
+        if not parts:
+            return None
+        return {
+            "role": "system",
+            # Marked like the summary so trim_for_context keeps it resident.
+            "metadata": {"compacted": True},
+            "content": "[Post-compaction reminder]\n" + "\n\n".join(parts),
+        }
+    except Exception as e:  # noqa: BLE001 - compaction path, never raise
+        logger.debug("post_compact_reminder failed: %s", e)
+        return None
+
+
 async def maybe_compact(
     session,
     endpoint_url: str,
@@ -780,7 +843,11 @@ async def maybe_compact(
         "content": f"[Conversation summary — earlier messages were compacted]\n{summary}",
     }
 
-    compacted = system_msgs + [summary_msg] + recent
+    # Post-compaction reminder (project objectives + standing instructions):
+    # the summary is lossy and the plan is the first thing it loses. Never
+    # allowed to break compaction — the helper returns None on any failure.
+    reminder = post_compact_reminder(session, owner)
+    compacted = system_msgs + [summary_msg] + ([reminder] if reminder else []) + recent
 
     # Update the session history to match. The rows to delete are named
     # individually by the history stamps the prompt builder left on them

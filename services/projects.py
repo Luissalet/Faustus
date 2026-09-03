@@ -736,6 +736,20 @@ class ProjectStore:
             parts.append("## Project instructions\n" + instructions)
 
         if workspace:
+            # Project objectives dashboard (services/objectives.py). Only
+            # present when the project has at least one non-dropped objective;
+            # the section only changes when the objectives change, so the
+            # KV-cache note below stays true enough. A broken objectives file
+            # must cost the section, never the message.
+            try:
+                from services import objectives as _objectives
+                obj_block = _objectives.objectives_block(project)
+                if obj_block:
+                    parts.append(obj_block)
+            except Exception as e:  # noqa: BLE001 - prompt path, never raise
+                logger.debug("objectives_block failed for %s: %s", name, e)
+
+        if workspace:
             parts.append(
                 "## Project memory\n"
                 f"Durable notes for this project live as Markdown in "
