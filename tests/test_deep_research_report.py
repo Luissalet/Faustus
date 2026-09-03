@@ -86,6 +86,61 @@ def test_subquestions_are_capped_and_deduplicated():
     assert len(_researcher()._extract_subquestions(long_list)) == 12
 
 
+# The real question, in the shape it was really typed: everything on one line,
+# with the user's own "1)" "2)" "3)" markers inline. It produced four headings,
+# the first of which was the entire prompt and the last three of which kept the
+# user's numbers and got renumbered on top of them.
+INLINE_QUESTION = (
+    "Cuales son los efectos del entrenamiento de fuerza sobre la densidad osea "
+    "en mujeres posmenopausicas? 1) Que evidencia hay sobre la carga optima? "
+    "2) Cuanto tiempo hace falta para ver cambios? 3) Que riesgos tiene?"
+)
+
+
+def test_an_inline_enumeration_splits_into_the_lead_question_and_its_items():
+    subs = _researcher()._extract_subquestions(INLINE_QUESTION)
+    assert subs == [
+        "Cuales son los efectos del entrenamiento de fuerza sobre la densidad "
+        "osea en mujeres posmenopausicas?",
+        "Que evidencia hay sobre la carga optima?",
+        "Cuanto tiempo hace falta para ver cambios?",
+        "Que riesgos tiene?",
+    ]
+
+
+def test_the_lead_question_is_what_precedes_the_first_marker_not_the_whole_text():
+    subs = _researcher()._extract_subquestions(INLINE_QUESTION)
+    # The prompt in full must not become a section of its own — it was the
+    # report's "## 1." and it repeated everything that followed it.
+    assert not any("1)" in s or "2)" in s or "3)" in s for s in subs)
+    assert not any(s.count("?") > 1 for s in subs)
+
+
+def test_a_number_inside_prose_is_not_an_enumeration():
+    """The case a naive split ruins: "el grupo 1)" is a group, not a list item.
+
+    A wrong split here does not just mislabel something — it writes a section
+    heading out of half a sentence and sends a search round after it.
+    """
+    subs = _researcher()._extract_subquestions(
+        "¿Qué mostró el ensayo? En el análisis, el grupo 1) tuvo menos dolor "
+        "que el grupo 2) al final del seguimiento.")
+    assert subs == ["¿Qué mostró el ensayo?"]
+
+
+def test_a_single_question_with_no_enumeration_yields_exactly_one_entry():
+    assert _researcher()._extract_subquestions(
+        "¿Cuánto tarda la recuperación de una tendinopatía rotuliana?"
+    ) == ["¿Cuánto tarda la recuperación de una tendinopatía rotuliana?"]
+
+
+def test_a_question_that_contains_another_extracted_question_is_dropped():
+    subs = _researcher()._extract_subquestions(
+        "¿Qué efectos tiene la carga excéntrica y cuánto tarda la recuperación?\n"
+        "1. ¿Cuánto tarda la recuperación?\n")
+    assert subs == ["¿Cuánto tarda la recuperación?"]
+
+
 def test_junk_in_gives_an_empty_list_not_an_exception():
     for junk in (None, "", 42, "   "):
         assert _researcher()._extract_subquestions(junk) == []

@@ -12,7 +12,7 @@ import logging
 import re
 import time
 from datetime import datetime
-from typing import Callable, Dict, List, Optional, Set
+from typing import Callable, Dict, List, Optional, Set, Tuple
 
 from src.research_utils import strip_thinking, is_low_quality
 
@@ -231,6 +231,12 @@ CATEGORY_PROMPTS = {name: text + _CATEGORY_CITATION_RULE
 # A line that opens with "1.", "1)", "(1)", "-", "*", "•" or "a)" is an item in
 # the user's own outline, so it counts as a sub-question even without a "?".
 _SUBQ_MARKER_RE = re.compile(r"^\s{0,6}(?:\(?\d{1,2}[.)]|[-*\u2022\u2023+]|[a-hA-H][.)])\s+")
+
+# The same outline typed on one line: "...posmenopausicas? 1) Que evidencia
+# hay? 2) Cuanto tiempo?". Digits only, and only where the marker follows the
+# end of a sentence rather than a word — that lookbehind is what keeps "el
+# grupo 1) tuvo menos dolor" from being read as a list.
+_INLINE_ENUM_RE = re.compile(r"(?:^|(?<=[?!.:;\uff1f]))\s*\(?(\d{1,2})[.)]\s+")
 MAX_SUBQUESTIONS = 12
 _MIN_SUBQUESTION_CHARS = 12
 _MAX_SUBQUESTION_CHARS = 300
@@ -249,6 +255,33 @@ def _split_on_question_marks(text: str) -> List[str]:
     if tail.strip():
         parts.append(tail)
     return parts
+
+
+def _enumerated_chunks(body: str) -> List[Tuple[str, bool]]:
+    """One line into ``(text, came_from_an_enumeration)`` chunks.
+
+    Two markers minimum and strictly ascending numbers, because one stray "1)"
+    in prose is far more common than a one-item list, and a wrong split here
+    costs the reader a whole bogus section of the report.
+
+    The lead question is whatever precedes the first marker. Taking the whole
+    line instead is what put the entire prompt in the report as section 1 and
+    then repeated its tail as sections 2 to 4.
+    """
+    markers = list(_INLINE_ENUM_RE.finditer(body))
+    numbers = [int(m.group(1)) for m in markers]
+    if len(markers) < 2 or any(b <= a for a, b in zip(numbers, numbers[1:])):
+        return [(body, False)]
+    chunks: List[Tuple[str, bool]] = []
+    lead = body[:markers[0].start()].strip()
+    if lead:
+        chunks.append((lead, False))
+    for index, match in enumerate(markers):
+        end = markers[index + 1].start() if index + 1 < len(markers) else len(body)
+        # match.end() is past the marker, so "1) " never survives into a
+        # heading the report generator would then number a second time.
+        chunks.append((body[match.end():end].strip(), True))
+    return chunks
 
 # ---------------------------------------------------------------------------
 # DeepResearcher
@@ -559,18 +592,26 @@ class DeepResearcher:
             body = (_SUBQ_MARKER_RE.sub("", line) if bulleted else line).strip()
             if not body:
                 continue
-            for piece in _split_on_question_marks(body):
-                piece = piece.strip(" \t-\u2013\u2014\u2022*")
-                if len(piece) < _MIN_SUBQUESTION_CHARS:
-                    continue
-                if bulleted or piece.endswith("?"):
-                    found.append(piece)
+            for chunk, enumerated in _enumerated_chunks(body):
+                for piece in _split_on_question_marks(chunk):
+                    piece = piece.strip(" \t-\u2013\u2014\u2022*")
+                    if len(piece) < _MIN_SUBQUESTION_CHARS:
+                        continue
+                    if bulleted or enumerated or piece.endswith("?"):
+                        found.append(piece)
         return self._clean_subquestions(found)
 
     @staticmethod
     def _clean_subquestions(items) -> List[str]:
-        """Trim, deduplicate case- and punctuation-insensitively, cap at 12."""
+        """Trim, deduplicate, drop any question that swallows another, cap at 12.
+
+        The containment rule is the backstop for a question typed as one
+        paragraph: however the split goes, an entry that contains another entry
+        is the framing, not a question, and giving it a section of its own
+        repeats the whole prompt as a heading.
+        """
         out: List[str] = []
+        keys: List[str] = []
         seen = set()
         for item in items or []:
             try:
@@ -584,9 +625,11 @@ class DeepResearcher:
                 continue
             seen.add(key)
             out.append(text[:_MAX_SUBQUESTION_CHARS])
-            if len(out) >= MAX_SUBQUESTIONS:
-                break
-        return out
+            keys.append(key)
+        kept = [text for index, text in enumerate(out)
+                if not any(other != keys[index] and other in keys[index]
+                           for other in keys)]
+        return kept[:MAX_SUBQUESTIONS]
 
     async def _classify_category(self, question: str) -> Optional[str]:
         """Fast LLM call to classify the research question into a category."""
