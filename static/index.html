@@ -1946,6 +1946,7 @@
                   <div class="adm-provider-menu hidden" id="search-provider-menu"></div>
                 </div>
                 <select id="set-searchProvider" class="settings-select" style="display:none;">
+                  <option value="firecrawl" data-search-logo="firecrawl">Firecrawl (self-hosted)</option>
                   <option value="searxng" data-search-logo="searxng">SearXNG (self-hosted)</option>
                   <option value="duckduckgo" data-search-logo="duckduckgo">DuckDuckGo (free, no key)</option>
                   <option value="brave" data-search-logo="brave">Brave Search</option>
@@ -1974,6 +1975,10 @@
               <div id="set-searchUrlRow" class="settings-row">
                 <label class="settings-label">URL</label>
                 <input id="set-searchUrl" type="text" placeholder="http://localhost:8080 (optional)" class="settings-select">
+              </div>
+              <div id="set-firecrawlUrlRow" class="settings-row" style="display:none;">
+                <label class="settings-label">URL</label>
+                <input id="set-firecrawlUrl" type="text" placeholder="http://localhost:3002" class="settings-select">
               </div>
               <div id="set-searchKeyRow" class="settings-row" style="display:none;">
                 <label class="settings-label">API Key</label>
@@ -2007,6 +2012,7 @@
                 <span style="margin-left:auto;display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;flex-shrink:0;color:var(--fg);" id="set-researchSearch-logo"></span>
                 <select id="set-researchSearch" class="settings-select" style="width:358.5px;flex:0 0 auto;max-width:calc(100% - 24px);">
                   <option value="" data-search-logo="">Same as web search</option>
+                  <option value="firecrawl" data-search-logo="firecrawl">Firecrawl</option>
                   <option value="searxng" data-search-logo="searxng">SearXNG</option>
                   <option value="duckduckgo" data-search-logo="duckduckgo">DuckDuckGo</option>
                   <option value="tavily" data-search-logo="tavily">Tavily</option>
