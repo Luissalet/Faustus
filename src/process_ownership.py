@@ -66,15 +66,33 @@ def _pid_of(proc: Any) -> Optional[int]:
     return pid
 
 
+# Latched so a host without psutil pays the failed import once, not on every
+# spawn: note_started runs on the hot path of every bash/python tool call.
+_psutil_module: Any = None
+_psutil_probed = False
+
+
+def _psutil() -> Any:
+    """The psutil module, or None. Optional on purpose: a missing psutil must
+    weaken the recycled-pid check, never break a kill."""
+    global _psutil_module, _psutil_probed
+    if not _psutil_probed:
+        try:
+            import psutil
+
+            _psutil_module = psutil
+        except Exception:
+            _psutil_module = None
+        _psutil_probed = True
+    return _psutil_module
+
+
 def _create_time(pid: int) -> Optional[float]:
-    """The OS creation time of `pid`, or None when it cannot be read.
-
-    psutil is an optional dependency here on purpose: a missing psutil must
-    weaken the recycled-pid check, never break a kill.
-    """
+    """The OS creation time of `pid`, or None when it cannot be read."""
+    psutil = _psutil()
+    if psutil is None:
+        return None
     try:
-        import psutil
-
         return float(psutil.Process(int(pid)).create_time())
     except Exception:
         return None
@@ -148,12 +166,13 @@ def describe(pid: Optional[int]) -> str:
     """`name.exe (pid 1234)` when psutil can say, else `pid 1234`."""
     if not pid:
         return "that process"
-    try:
-        import psutil
-
-        return f"{psutil.Process(int(pid)).name()} (pid {pid})"
-    except Exception:
-        return f"pid {pid}"
+    psutil = _psutil()
+    if psutil is not None:
+        try:
+            return f"{psutil.Process(int(pid)).name()} (pid {pid})"
+        except Exception:
+            pass
+    return f"pid {pid}"
 
 
 def manual_stop_hint(pid: Optional[int]) -> str:
