@@ -845,6 +845,12 @@ app.include_router(setup_scorecard_routes())
 from routes.memory_engine_routes import setup_memory_engine_routes
 app.include_router(setup_memory_engine_routes())
 
+# Specialist experts: a local agent with its own corpus — profile + rubric,
+# the user's own PDFs on disk, and citations that resolve back to the page
+# (services/experts.py).
+from routes.expert_routes import setup_expert_routes
+app.include_router(setup_expert_routes())
+
 # Live system usage (ollama ps + nvidia-smi + RAM/CPU) for the chat usage widget.
 from routes.system_usage_routes import setup_system_usage_routes
 app.include_router(setup_system_usage_routes())
