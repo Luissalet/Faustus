@@ -8,6 +8,11 @@ see the EXACT block the model would be given for a query.
 
 Admin-only, like the rest of the brain: the store holds standing instructions
 the agent will follow, so writing to it is an authority change.
+
+The two reads (``/items`` and ``/pack``) also answer in robot mode
+(``?robot=1`` / ``?format=toon``, src/robot_envelope.py) for a coordinating
+model reading this machine's learned rules; a call without those query
+parameters answers exactly as it always did.
 """
 
 from __future__ import annotations
@@ -19,6 +24,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from core.middleware import require_admin
+from src import robot_envelope as robot
 from src.auth_helpers import effective_user
 
 logger = logging.getLogger(__name__)
@@ -61,20 +67,25 @@ def setup_memory_engine_routes() -> APIRouter:
     ) -> Dict[str, Any]:
         """Items with their COMPUTED effective_score / harmful_ratio."""
         from src import memory_engine as engine
-        owner = _owner(request)
-        try:
-            items = engine.list_items(owner=owner, project=project, status=status,
-                                      level=level, limit=limit)
-        except engine.MemoryEngineError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
-        now = engine._utcnow()
-        return {
-            "status": "success",
-            "items": [engine.public_item(item, now) for item in items],
-            "stats": engine.stats(owner, project),
-            "levels": list(engine.LEVELS),
-            "trust_classes": dict(engine.TRUST_CLASSES),
-        }
+
+        def payload() -> Dict[str, Any]:
+            owner = _owner(request)
+            try:
+                items = engine.list_items(owner=owner, project=project, status=status,
+                                          level=level, limit=limit)
+            except engine.MemoryEngineError as exc:
+                raise HTTPException(status_code=400, detail=str(exc))
+            now = engine._utcnow()
+            return {
+                "status": "success",
+                "items": [engine.public_item(item, now) for item in items],
+                "stats": engine.stats(owner, project),
+                "levels": list(engine.LEVELS),
+                "trust_classes": dict(engine.TRUST_CLASSES),
+            }
+        if robot.wants(request):
+            return await robot.reply(request, payload)
+        return payload()
 
     @router.post("/items")
     async def create_item(request: Request, body: ItemCreate,
@@ -138,20 +149,25 @@ def setup_memory_engine_routes() -> APIRouter:
         """The exact block the model would see — nothing regenerated, the same
         function the prompt builder calls."""
         from src import memory_engine as engine
-        try:
-            detail = engine.pack_detail(_owner(request), project, query,
-                                        engine.injection_budget())
-        except Exception as exc:  # noqa: BLE001 - mirrors pack()'s own posture
-            logger.debug("memory engine: pack preview failed: %s", exc)
-            detail = {"text": "", "ids": [], "degraded": False}
-        return {
-            "status": "success",
-            "pack": detail.get("text") or "",
-            "ids": detail.get("ids") or [],
-            "degraded": bool(detail.get("degraded")),
-            "chars": len(detail.get("text") or ""),
-            "budget": engine.injection_budget(),
-            "enabled": engine.injection_enabled(),
-        }
+
+        def payload() -> Dict[str, Any]:
+            try:
+                detail = engine.pack_detail(_owner(request), project, query,
+                                            engine.injection_budget())
+            except Exception as exc:  # noqa: BLE001 - mirrors pack()'s own posture
+                logger.debug("memory engine: pack preview failed: %s", exc)
+                detail = {"text": "", "ids": [], "degraded": False}
+            return {
+                "status": "success",
+                "pack": detail.get("text") or "",
+                "ids": detail.get("ids") or [],
+                "degraded": bool(detail.get("degraded")),
+                "chars": len(detail.get("text") or ""),
+                "budget": engine.injection_budget(),
+                "enabled": engine.injection_enabled(),
+            }
+        if robot.wants(request):
+            return await robot.reply(request, payload)
+        return payload()
 
     return router

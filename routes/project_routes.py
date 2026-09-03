@@ -5,6 +5,10 @@ Admin-gated throughout, for the same reason ``workspace_routes`` is: a project
 carries a host filesystem path, and the memory endpoints read and write real
 files under it. A caller who is not allowed to use the file/shell tools must not
 be able to reach those paths through this router either.
+
+``GET /{project_id}/objectives`` also answers in robot mode
+(``?robot=1`` / ``?format=toon``, src/robot_envelope.py) for a coordinating
+model; without a query parameter the dashboard answer is unchanged.
 """
 
 import logging
@@ -14,6 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from core.middleware import require_admin
+from src import robot_envelope as robot
 from src.auth_helpers import effective_user
 from services.projects import (
     MAX_INSTRUCTIONS,
@@ -324,8 +329,13 @@ def setup_project_routes() -> APIRouter:
         _admin: None = Depends(require_admin),
     ) -> Dict[str, Any]:
         from services.objectives import dashboard_payload
-        project = _objectives_project(project_id, effective_user(request))
-        return dashboard_payload(project, log_limit=50)
+
+        def payload() -> Dict[str, Any]:
+            project = _objectives_project(project_id, effective_user(request))
+            return dashboard_payload(project, log_limit=50)
+        if robot.wants(request):
+            return robot.reply_sync(request, payload)
+        return payload()
 
     @router.post("/{project_id}/objectives")
     def create_objective(

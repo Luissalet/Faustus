@@ -40,6 +40,11 @@ went.
 Everything is best-effort: a missing nvidia-smi or an unreachable Ollama just
 leaves that section empty. Results are cached for ~1s so several browser tabs
 polling at once do not fork nvidia-smi per request.
+
+``GET /api/system/usage`` also answers in robot mode (``?robot=1`` /
+``?format=toon``, src/robot_envelope.py) — the GPU and model rows are exactly
+the tabular shape TOON collapses to one header plus one line per row. A call
+without those query parameters answers as it always did.
 """
 from __future__ import annotations
 
@@ -56,6 +61,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 from src import gpu_placement, nvidia_drs, vram_fit
 from src import gpu_shared_memory
+from src import robot_envelope as robot
 from core.middleware import require_admin
 from src.auth_helpers import require_user
 
@@ -416,12 +422,18 @@ def setup_system_usage_routes() -> APIRouter:
 
     @router.get("/usage")
     async def usage(request: Request):
-        require_user(request)
-        try:
-            return await collect_usage()
-        except Exception as e:
-            logger.warning("usage collection failed: %s", e)
-            raise HTTPException(500, "usage collection failed")
+        async def payload():
+            require_user(request)
+            try:
+                return await collect_usage()
+            except Exception as e:
+                logger.warning("usage collection failed: %s", e)
+                raise HTTPException(500, "usage collection failed")
+        # Robot mode (?robot=1 / ?format=toon): the same numbers in the standard
+        # envelope, for a coordinator deciding whether this machine has room.
+        if robot.wants(request):
+            return await robot.reply(request, payload)
+        return await payload()
 
     @router.post("/gpu/orphans/release")
     async def release_orphan_runner(request: Request):

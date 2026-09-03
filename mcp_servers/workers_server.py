@@ -12,7 +12,8 @@ tokens go to planning and review:
           "command": "D:/LocalAI/odysseus/venv/Scripts/python.exe",
           "args": ["D:/LocalAI/odysseus/mcp_servers/workers_server.py"],
           "env": {"FAUSTUS_URL": "http://127.0.0.1:7000",
-                  "FAUSTUS_API_TOKEN": "ody_..."}      # Settings → API tokens → profile "fable_workers"
+                  "FAUSTUS_API_TOKEN": "ody_...",      # Settings → API tokens → profile "fable_workers"
+                  "FAUSTUS_MCP_FORMAT": "toon"}        # toon (default) | text
         }
       }
     }
@@ -25,6 +26,21 @@ talks HTTP to the running
 Faustus (routes/dispatch_routes.py) — nothing runs in this process, so a crash
 here cannot take a worker with it. A dispatch carries an Idempotency-Key, so
 the one retry after a connection error can never start a second job.
+
+**Output format.** The tools whose answer is ROWS — `objectives_list`,
+`guard_explain`, `workers_status` — ask the endpoint for `?format=toon` and
+hand the coordinator that text as it comes: the standard envelope
+(src/robot_envelope.py) in TOON, where a uniform array is one header line plus
+one line per row instead of every key repeated per row (~40-60 % fewer
+characters than the same rows in JSON), and where nothing is summarised away.
+``FAUSTUS_MCP_FORMAT=text`` goes back to the human wording below, which is
+also the automatic fallback whenever an older Faustus (or a hiccup) does not
+answer the robot-mode call. The tools whose answer is NOT rows keep their
+human rendering in both modes: `memory_pack` returns a prose block of learned
+rules (TOON would escape its newlines into one line), and `workers_events`
+renders a deliberate tail — the last 80 of up to 400 events, clipped — which
+passing the raw answer through would undo. Tool names and arguments never
+change with the format.
 """
 from __future__ import annotations
 
@@ -51,17 +67,49 @@ BASE = (os.environ.get("FAUSTUS_URL") or "http://127.0.0.1:7000").rstrip("/")
 TOKEN = (os.environ.get("FAUSTUS_API_TOKEN") or "").strip()
 _TIMEOUT = 30.0
 _MAX_WAIT = 600.0
+DEFAULT_FORMAT = "toon"
+
+
+def mcp_format() -> str:
+    """"toon" (default — the compact envelope the endpoints render) or "text"
+    (the human wording below). Read per call so the operator can flip it
+    without rebuilding anything."""
+    value = (os.environ.get("FAUSTUS_MCP_FORMAT") or DEFAULT_FORMAT).strip().lower()
+    return "text" if value == "text" else "toon"
+
+
+def _text_request(method: str, path: str, timeout: float = _TIMEOUT) -> str:
+    """The endpoint's own body, decoded and unparsed — for the robot-mode reads
+    whose TOON text is handed to the coordinator as it comes."""
+    return _request(method, path, None, timeout, as_text=True)
+
+
+def _toon(path: str, timeout: float = _TIMEOUT) -> Optional[str]:
+    """The robot-mode answer of `path` as TOON text, or None when this Faustus
+    does not do robot mode (or anything else went wrong) — the caller then
+    renders the human form instead."""
+    if mcp_format() != "toon":
+        return None
+    joiner = "&" if "?" in path else "?"
+    try:
+        text = _text_request("GET", f"{path}{joiner}format=toon", timeout)
+    except Exception:  # noqa: BLE001 - the human rendering is the fallback
+        return None
+    text = (text or "").strip()
+    # An older Faustus ignores the parameter and answers JSON: only a body that
+    # actually starts with the envelope's first line is TOON.
+    return text if text.startswith("ok: ") else None
 
 
 def _request(method: str, path: str, body: Optional[Dict[str, Any]] = None, timeout: float = _TIMEOUT,
-             retries: int = 1) -> Dict[str, Any]:
+             retries: int = 1, as_text: bool = False):
     data = json.dumps(body).encode("utf-8") if body is not None else None
     idem = uuid.uuid4().hex if method == "POST" and path == "/api/dispatch" else None
     attempt = 0
     while True:
         req = urllib.request.Request(BASE + path, data=data, method=method)
         req.add_header("Content-Type", "application/json")
-        req.add_header("Accept", "application/json")
+        req.add_header("Accept", "text/plain, application/json" if as_text else "application/json")
         if TOKEN:
             req.add_header("Authorization", f"Bearer {TOKEN}")
         if idem:
@@ -91,6 +139,8 @@ def _request(method: str, path: str, body: Optional[Dict[str, Any]] = None, time
                 continue
             reason = getattr(e, "reason", e)
             raise RuntimeError(f"Faustus is not reachable at {BASE}: {reason}")
+    if as_text:
+        return raw
     try:
         return json.loads(raw)
     except json.JSONDecodeError:
@@ -402,7 +452,11 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
     try:
         if name == "objectives_list":
             project = await asyncio.to_thread(_resolve_project, str(args.get("project") or ""))
-            data = await asyncio.to_thread(_request, "GET", f"/api/projects/{project.get('id')}/objectives")
+            path = f"/api/projects/{project.get('id')}/objectives"
+            compact = await asyncio.to_thread(_toon, path)
+            if compact:
+                return _text(f"project {project.get('name')} ({project.get('id')})\n{compact}")
+            data = await asyncio.to_thread(_request, "GET", path)
             return _text(render_objectives(project, data))
         if name == "objectives_apply":
             project = await asyncio.to_thread(_resolve_project, str(args.get("project") or ""))
@@ -422,6 +476,9 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
                     pass
             query = urllib.parse.urlencode({"project": project,
                                             "query": str(args.get("query") or "")})
+            # Always the human form: /pack answers with a PROSE block of rules
+            # the worker would be given, not rows — TOON would fold its
+            # newlines into one escaped line and cost more, not less.
             data = await asyncio.to_thread(_request, "GET", f"/api/memory-engine/pack?{query}")
             return _text(render_pack(data))
         if name == "guard_explain":
@@ -429,8 +486,11 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
             if not command.strip():
                 return _text("Error: give the exact command to classify")
             quoted = urllib.parse.quote(command, safe="")
-            data = await asyncio.to_thread(
-                _request, "GET", f"/api/command-guard/explain?command={quoted}")
+            path = f"/api/command-guard/explain?command={quoted}"
+            compact = await asyncio.to_thread(_toon, path)
+            if compact:
+                return _text(compact)
+            data = await asyncio.to_thread(_request, "GET", path)
             lines = [
                 f"tier: {data.get('tier')} · rule: {data.get('rule_id') or '-'} · mode: {data.get('mode')}",
                 f"command: {data.get('command_head')}",
@@ -459,8 +519,15 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
             job = await asyncio.to_thread(_request, "GET", f"/api/dispatch/{job_id}/wait?timeout={int(t)}", None, t + 15)
             return _text(render(job))
         if name == "workers_status":
+            compact = await asyncio.to_thread(_toon, f"/api/dispatch/{job_id}")
+            if compact:
+                return _text(compact)
             return _text(render(await asyncio.to_thread(_request, "GET", f"/api/dispatch/{job_id}")))
         if name == "workers_events":
+            # Not the robot-mode body: this render is a deliberate TAIL (the
+            # last 80 of up to 400 events, 300 chars each). Passing the
+            # endpoint's answer through would hand the coordinator five times
+            # the events untruncated — the opposite of the point.
             data = await asyncio.to_thread(_request, "GET", f"/api/dispatch/{job_id}/events")
             evs = data.get("events") or []
             lines = [f"job {data.get('id')} · {data.get('status')} · {len(evs)} events"]
