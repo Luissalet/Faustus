@@ -1131,6 +1131,19 @@ async def _startup_event():
             logger.warning("Recovered %d interrupted agent run(s) from the previous process", len(_interrupted))
     except Exception as e:
         logger.warning(f"Interrupted-run recovery skipped: {e}")
+    # A power cut, not a restart: records that all stopped being written at the
+    # same instant around the last boot (src/crash_recovery.py). It marks those
+    # dispatched jobs `interrupted` with the reason and leaves a resume PLAN —
+    # it never resumes anything, and without a boot time it does nothing. Off
+    # the critical path in a thread, and never a reason for startup to fail.
+    try:
+        from src import crash_recovery as _crash_recovery
+        _crash = await asyncio.to_thread(_crash_recovery.boot_scan)
+        app.state.crash_recovery = _crash
+        if _crash.get("plan"):
+            logger.warning("Crash recovery: %s", _crash.get("reason"))
+    except Exception as e:
+        logger.warning(f"Crash-recovery scan skipped: {e}")
     # Strong refs to fire-and-forget startup tasks. Without this, Python may
     # GC tasks created with `asyncio.create_task(...)` before they finish.
     _startup_tasks: list[asyncio.Task] = getattr(app.state, "_startup_tasks", [])

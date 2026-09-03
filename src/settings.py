@@ -364,6 +364,13 @@ DEFAULT_SETTINGS = {
     # and nothing observable changed, which is honest, not a failure.
     # Off = the job payload and the verdict line are exactly what they were.
     "agent_dispatch_prove": True,
+    # At startup, look for records that stopped being written at the same
+    # instant around the last boot (src/crash_recovery.py) — which is what a
+    # power cut leaves behind — and mark those jobs `interrupted` with the
+    # reason. It produces a PLAN that re-pins each job's own model and
+    # parameters and resumes nothing by itself. Without a boot time from the
+    # platform it does nothing at all. Off = no scan.
+    "agent_crash_recovery": True,
     # Four-value outcomes for tool calls and worker runs (src/tool_outcome.py):
     # success / expected_error / cancelled / panic. A worker YOU stopped is
     # `cancelled` and no longer counts as a failed one. Off = the old arithmetic,

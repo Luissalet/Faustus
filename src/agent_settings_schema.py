@@ -412,6 +412,12 @@ GROUPS: list[dict[str, Any]] = [
                   "(nothing ran that could show it — honest, not a failure) or contradicted (the disk or "
                   "the tests say otherwise), with the confidence and a named reason for every point it "
                   "lost. Off = the job answers exactly what it answered before."),
+            _bool("agent_crash_recovery", "Find what a power cut interrupted",
+                  "At startup, look for jobs and runs whose records all stopped being written at the same "
+                  "instant around the last boot — what a power cut leaves behind — and mark them "
+                  "interrupted with the reason. It produces a plan that re-pins each job's own model and "
+                  "parameters, and resumes nothing by itself; when the machine will not say when it booted "
+                  "it does nothing at all. Off = no scan."),
             _bool("agent_tool_outcomes", "Four-value outcomes",
                   "Record success / expected_error / cancelled / panic for worker runs, tool results and "
                   "scorecard turns. A worker YOU stopped counts as cancelled, not as a failure. "
