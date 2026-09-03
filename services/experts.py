@@ -1346,7 +1346,9 @@ def search(slug: Any, query: Any, k: int = DEFAULT_SEARCH_K, *,
         tier = "reranked"
         # The cross-encoder's score is what produced this order, so it is what
         # the hit reports; leaving the fused score in place would let a caller
-        # that re-sorts by score silently undo the reranking.
+        # that re-sorts by score silently undo the reranking. A chunk past the
+        # reranked head keeps its fused score, so the two scales can meet in
+        # one list — the order of the hits, not their scores, is the answer.
         scores = {cid: rerank_scores.get(cid, scores.get(cid, 0.0)) for cid in ordered}
 
     hits = [_hit(by_id[cid], scores.get(cid, 0.0), tier) for cid in ordered[:k] if cid in by_id]

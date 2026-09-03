@@ -569,7 +569,9 @@ def _search(corpus: Iterable[Any], query: Any, k: int, embedder: Any,
             # The reranker's own score is what produced this order, so it is
             # what the hit reports; a fused score left in place would let a
             # caller that re-sorts by score silently undo the reranking. It is
-            # on the cross-encoder's scale, which may be negative logits.
+            # on the cross-encoder's scale, which may be negative logits, and
+            # a document past the reranked head keeps its fused score — only
+            # `rank` is comparable across the two, which is why it exists.
             scores = {doc_id: rerank_scores.get(doc_id, scores.get(doc_id, 0.0))
                       for doc_id in ordered}
 
