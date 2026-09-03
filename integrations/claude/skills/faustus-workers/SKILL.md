@@ -26,9 +26,15 @@ do not read files or run tests yourself when a worker can.
 4. Read the compact result top-down: `verdict`, then `changed on disk`
    (what Faustus saw — a worker's `claims:` are its own word; `claimed but
    NOT changed` lists the claims that did not happen), then `verification:`
-   (passed / FAILED with the failing tests / not run). `partial` means a
-   worker ended `stalled` / `timeout` / `error` or the verification failed:
-   read what changed and dispatch the remainder as a narrower task.
+   (passed / FAILED with the failing tests / not run), then `proof:` — what
+   the job can actually SHOW, as `proved` / `partial` / `unproved` /
+   `contradicted` with a confidence and the reason it is not 1. `partial`
+   means a worker ended `stalled` / `timeout` / `error` or the verification
+   failed: read what changed and dispatch the remainder as a narrower task.
+   `proof: unproved` is neither a failure nor a success — the work may have
+   happened and nothing can show it; say exactly that, and give the next job
+   a `verify` command. Never report a job as done on `unproved` or
+   `contradicted`.
 5. Answer the user with what changed, what Faustus verified (the command and
    its result), and the board link (`board:`) for the details. Say plainly
    which parts came from the workers.

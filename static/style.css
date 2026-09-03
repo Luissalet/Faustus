@@ -24242,6 +24242,15 @@ body:not(.welcome-ready) #welcome-screen {
 .wk-verify-passed { border-left: 3px solid var(--ok, #4caf50); }
 .wk-verify-failed { border-left: 3px solid var(--red, #e06c75); }
 .wk-verify-inconclusive, .wk-verify-none { border-left: 3px solid var(--warn, #e5c07b); }
+/* The proof packet (src/prove.py) beside the verification: what the job can
+   actually SHOW, not what it did. `unproved` is amber, never red — it is not
+   a failure. */
+.wk-proof { padding: 6px 8px; border-radius: 6px; line-height: 1.5; background: color-mix(in srgb, var(--fg) 4%, transparent); }
+.wk-proof-ok { border-left: 3px solid var(--ok, #4caf50); }
+.wk-proof-warn { border-left: 3px solid var(--warn, #e5c07b); }
+.wk-proof-bad { border-left: 3px solid var(--red, #e06c75); }
+.wk-proof-conf { opacity: .8; }
+.wk-proof-why { font-family: var(--mono, monospace); font-size: 11.5px; margin-top: 4px; }
 .wk-fails { margin: 4px 0 0 16px; padding: 0; }
 .wk-fails li { font-family: var(--mono, monospace); font-size: 11.5px; }
 .wk-tail summary { cursor: pointer; opacity: .75; }

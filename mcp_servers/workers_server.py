@@ -35,7 +35,7 @@ hand the coordinator that text as it comes: the standard envelope
 (src/robot_envelope.py) carrying the lean projection of the payload
 (src/robot_projection.py) in TOON, where a uniform array is one header line
 plus one line per row instead of every key repeated per row. Measured end to
-end against the plain JSON body of the same read: 0.40 for `workers_status`
+end against the plain JSON body of the same read: 0.39 for `workers_status`
 and 0.41 for `objectives_list` (tests/test_robot_projection.py). The
 projection is lossy by design — it drops what a coordinator does not act on,
 such as the task instructions it sent itself — never summarised prose.
@@ -163,6 +163,43 @@ def _request(method: str, path: str, body: Optional[Dict[str, Any]] = None, time
         raise RuntimeError(f"Faustus returned non-JSON for {method} {path}")
 
 
+#: What each proof verdict means to a coordinator deciding what to do next.
+#: `unproved` is the one that must never be read as a failure: the work may
+#: have happened and nothing here can show it.
+_PROOF_ADVICE = {
+    "proved": "the verification passed and every claimed file really changed",
+    "partial": "something is unaccounted for — read the uncertainty below before reporting this as done",
+    "unproved": "nothing ran that could show the work — NOT a failure and not a success; give it something to verify with",
+    "contradicted": "the disk or the tests say otherwise — do not report this as done",
+}
+
+
+def render_proof(proof: Any) -> List[str]:
+    """The proof packet (src/prove.py) as lines for a render: the verdict, the
+    confidence and the heaviest named reason the confidence is not 1.
+
+    A coordinator that only reads the rendered result used to see the proof
+    solely if it happened to parse it out of the verdict string. The verdict
+    word and the number are the answer to "may I report this as done?", so
+    they are their own line here.
+    """
+    if not isinstance(proof, dict) or not proof.get("verdict"):
+        return []
+    verdict = str(proof.get("verdict"))
+    line = f"proof: {verdict} (confidence {proof.get('confidence')})"
+    advice = _PROOF_ADVICE.get(verdict)
+    if advice:
+        line += f" — {advice}"
+    lines = [line]
+    rows = proof.get("uncertainty")
+    rows = rows if isinstance(rows, list) else []
+    top = rows[0] if rows and isinstance(rows[0], dict) else None
+    if top:
+        lines.append(f"  why not certain: {top.get('kind')} — {str(top.get('detail') or '')[:300]}"
+                     + (f" (+{len(rows) - 1} more)" if len(rows) > 1 else ""))
+    return lines
+
+
 def render(job: Dict[str, Any]) -> str:
     """The compact result as text the coordinator can read in one glance."""
     res = job.get("result") or {}
@@ -224,6 +261,7 @@ def render(job: Dict[str, Any]) -> str:
                 lines.append("  output tail: " + str(v["output_tail"])[-600:].replace("\n", "\n    "))
         else:
             lines.append(f"verification: not run — {v.get('summary')}")
+    lines.extend(render_proof(res.get("proof")))
     for w in res.get("workers") or []:
         head = (f"[{w.get('name')}] {w.get('status')}" + (f" ({w.get('stop_reason')})" if w.get("stop_reason") and w.get("stop_reason") != "complete" else "")
                 + f" · {w.get('rounds')} rounds · {w.get('tool_calls')} tools ({w.get('failed_calls')} failed)"

@@ -207,6 +207,31 @@ def usage_payload() -> dict:
         "cpu": {"percent": 12.5, "count": 32},
         "ram": {"used": 40_100_000_000, "total": 137_000_000_000, "percent": 29.3},
         "errors": [],
+        # The honest health block (src/health.py) the endpoint adds: six of the
+        # seven components reporting, and the seventh saying, at length, that
+        # nobody has collected it.
+        "health": {
+            "score": 90, "grade": "A", "collected": True, "reporting": 6, "of": 7,
+            "missing": ["dispatch"], "schema_version": 1,
+            "components": [
+                {"name": "ollama", "label": "Ollama reachable", "value": "reachable · 3 model(s) loaded",
+                 "weight": 20, "state": "ok", "why": "answering at http://127.0.0.1:11434"},
+                {"name": "gpu", "label": "GPU visible to nvidia-smi", "value": "2 card(s)",
+                 "weight": 15, "state": "ok", "why": "nvidia-smi answered for 2 card(s)"},
+                {"name": "vram", "label": "VRAM headroom", "value": "32% free",
+                 "weight": 15, "state": "ok", "why": "15.2 GB free across 2 card(s)"},
+                {"name": "host", "label": "RAM headroom", "value": "29% used",
+                 "weight": 15, "state": "ok", "why": "29% of system RAM in use"},
+                {"name": "disk", "label": "Disk headroom", "value": "11% free",
+                 "weight": 15, "state": "warn", "why": "104.3 GB free (11%)"},
+                {"name": "runners", "label": "No orphaned runners", "value": "1 orphaned",
+                 "weight": 10, "state": "warn", "why": "1 runner(s) no Ollama server owns"},
+                {"name": "dispatch", "label": "Recent dispatched jobs", "value": None,
+                 "weight": 10, "state": "no_data",
+                 "why": ("no data source yet — nothing has reported this, which is not the same "
+                         "as nothing being wrong")},
+            ],
+        },
     }
 
 
@@ -273,6 +298,25 @@ def dispatch_payload() -> dict:
             "convergence": {"score": 0.81, "confidence": "moderate", "converged": False,
                             "rounds": 2, "reason": "rounds are still changing things",
                             "components": {"size": 0.7, "velocity": 0.9, "similarity": 0.8}},
+            "proof": {
+                "verdict": "contradicted", "confidence": 0.1, "schema_version": 1,
+                "at": 1767268496.12,
+                "identity": "9f2c1b7ad4e0" * 5 + "aabb",
+                "uncertainty": [
+                    {"kind": "verification_failed",
+                     "detail": "the verification ran and failed: 1 failed, 118 passed in 12.40s"},
+                    {"kind": "claim_not_on_disk",
+                     "detail": "a worker says it wrote docs/cart.md and the checkpoint diff does not contain it"},
+                    {"kind": "worker_unfinished",
+                     "detail": "worker-3 ended as error, so what it did or did not do is not settled"},
+                ],
+                "observations": [
+                    {"kind": "changes_observed",
+                     "detail": "6 path(s) changed on disk against the checkpoint"},
+                    {"kind": "claims_matched",
+                     "detail": "6 of the 7 claimed paths are in the observed changes"},
+                ],
+            },
             "exit_code": 1,
         },
     }
@@ -432,7 +476,7 @@ def test_guard_receipts_drop_the_chain_hashes_but_keep_the_verdict():
     assert lean["chain"] == {"ok": True, "length": 25, "broken_at": None}
 
 
-def test_system_usage_is_three_tables_and_the_pool_figures():
+def test_system_usage_is_four_tables_and_the_pool_figures():
     lean = robot_projection.system_usage(usage_payload())
     assert list(lean["gpus"][0]) == list(robot_projection._GPU_COLUMNS)
     assert list(lean["models"][0]) == list(robot_projection._MODEL_COLUMNS)
@@ -445,6 +489,41 @@ def test_system_usage_is_three_tables_and_the_pool_figures():
     # the per-card model list and the driver-panel prose are gone
     assert "models" not in lean["gpus"][0] and "uuid" not in lean["gpus"][0]
     assert lean["sysmem_fallback_exposed"] is False
+
+
+def test_the_health_block_reaches_robot_mode_as_a_table():
+    """Robot mode used to drop `health` entirely: the projection has a fixed
+    field list, so the key src/health.py added never reached a coordinator
+    reading `?robot=1`. The arithmetic comes across, and the components are
+    the uniform rows TOON exists for."""
+    payload = usage_payload()
+    lean = robot_projection.system_usage(payload)
+    assert lean["health"] == {"score": 90, "grade": "A", "reporting": 6, "of": 7,
+                              "collected": True, "missing": ["dispatch"]}
+    assert [list(row) for row in lean["health_components"]] == \
+        [list(robot_projection._HEALTH_COLUMNS)] * 7
+    assert lean["health_components"][0] == {"name": "ollama", "state": "ok", "weight": 20,
+                                            "value": "reachable · 3 model(s) loaded"}
+    # The component nobody collected keeps its `no_data` state — a coordinator
+    # must be able to see that this is an absent reading, not a measured zero.
+    assert lean["health_components"][-1] == {"name": "dispatch", "state": "no_data",
+                                             "weight": 10, "value": ""}
+    # The per-row prose does not travel: robot mode is lossy on purpose, and
+    # the plain response still carries every word of it.
+    assert all("why" not in row and "label" not in row for row in lean["health_components"])
+    assert payload["health"]["components"][-1]["why"].startswith("no data source yet")
+    # …and it really is a table in the encoded bytes
+    assert ("health_components[7]{name,state,weight,value}:"
+            in toon.encode(robot_envelope.envelope(lean)))
+
+
+def test_a_usage_payload_with_no_health_block_projects_exactly_as_before():
+    """`agent_health_score` off means the endpoint answers no `health` key at
+    all — and then the lean view is byte-for-byte the one it always was."""
+    payload = usage_payload()
+    payload.pop("health")
+    lean = robot_projection.system_usage(payload)
+    assert "health" not in lean and "health_components" not in lean
 
 
 def test_dispatch_status_flattens_the_workers_and_keeps_the_verdict():
@@ -461,6 +540,17 @@ def test_dispatch_status_flattens_the_workers_and_keeps_the_verdict():
     assert "output_tail" not in lean["verification"]
     assert lean["convergence"]["converged"] is False
     assert "components" not in lean["convergence"]
+    # The proof (src/prove.py) reaches the coordinator as its own scalars —
+    # the verdict word, the number, and the heaviest named doubt — instead of
+    # only inside the verdict string.
+    assert lean["proof"] == {"verdict": "contradicted", "confidence": 0.1,
+                             "uncertainty_kind": "verification_failed",
+                             "uncertainty_detail": "the verification ran and failed: "
+                                                   "1 failed, 118 passed in 12.40s",
+                             "uncertainty_count": 3}
+    # the rest of the packet — the observations and the 64-char identity — is
+    # in the plain response, not in the lean one
+    assert "observations" not in lean and "identity" not in json.dumps(lean)
     assert lean["changes"] == {"source": "checkpoint", "count": 6, "truncated": False}
     assert len(lean["files_changed"]) == 6 and lean["claimed_only"] == ["docs/cart.md"]
     # what the coordinator itself sent does not come back
@@ -578,7 +668,12 @@ def test_the_measured_ratios_are_recorded_for_the_docs():
         "/api/memory-engine/items?limit=5": 0.17,
         "/api/projects/{id}/objectives": 0.41,
         "/api/command-guard/log?limit=25": 0.34,
-        "/api/system/usage": 0.51,
-        "/api/dispatch/{id}": 0.40,
+        # usage 0.51 → 0.46 and dispatch 0.40 → 0.39 when the health block and
+        # the proof packet joined the fixtures: both are prose-heavy in the
+        # plain body (a `why` sentence per component, a `detail` per doubt) and
+        # tabular or scalar in the lean view, so folding them in made the
+        # saving bigger rather than smaller.
+        "/api/system/usage": 0.46,
+        "/api/dispatch/{id}": 0.39,
         "/api/dispatch/{id}/events": 0.54,
     }, measured

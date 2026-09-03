@@ -199,17 +199,17 @@ schema_version: 1
 Measured end to end — the bytes of `?format=toon` against the bytes of the
 plain JSON body of the same read, on realistic payloads (memory items carrying
 three helpful and two harmful feedback events apiece, objectives with deps and
-hints, a two-GPU box with three models loaded, a job with three workers and a
-failed verification). The fixtures and the assertions are in
-`tests/test_robot_projection.py`:
+hints, a two-GPU box with three models loaded and its health block, a job with
+three workers, a failed verification and its proof packet). The fixtures and
+the assertions are in `tests/test_robot_projection.py`:
 
 | Read | plain JSON | envelope only | **lean** | Saved |
 |---|---|---|---|---|
 | `/api/memory-engine/items?limit=5` | 8085 chars | 8513 (1.05×) | **1364** | **83 %** |
 | `/api/command-guard/log?limit=25` | 11484 chars | 12553 (1.09×) | **3883** | **66 %** |
-| `/api/dispatch/{id}` | 4962 chars | 5993 (1.21×) | **1974** | **60 %** |
+| `/api/dispatch/{id}` | 5676 chars | 6701 (1.18×) | **2186** | **61 %** |
 | `/api/projects/{id}/objectives` | 5676 chars | 6726 (1.18×) | **2310** | **59 %** |
-| `/api/system/usage` | 2567 chars | 3274 (1.28×) | **1321** | **49 %** |
+| `/api/system/usage` | 3676 chars | 4084 (1.11×) | **1687** | **54 %** |
 | `/api/dispatch/{id}/events` | 3710 chars | 4749 (1.28×) | **1992** | **46 %** |
 
 The middle column is why the projection exists, and it is worth reading before

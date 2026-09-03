@@ -335,6 +335,7 @@ _MODEL_COLUMNS = ("name", "size", "size_vram", "gpu_pct", "cpu_pct", "placement"
                   "gpus", "context_length", "parameter_size", "quantization",
                   "expires_at")
 _ORPHAN_COLUMNS = ("pid", "name", "gpus", "bytes", "started")
+_HEALTH_COLUMNS = ("name", "state", "weight", "value")
 
 
 def _gpu_row(card: Any) -> Dict[str, Any]:
@@ -380,9 +381,30 @@ def _orphan_row(runner: Any) -> Dict[str, Any]:
     }
 
 
+def _health_row(component: Any) -> Dict[str, Any]:
+    row = _dict(component)
+    return {
+        "name": _text(row.get("name"), 40),
+        "state": _text(row.get("state"), 20),
+        "weight": _int(row.get("weight")),
+        "value": _text(row.get("value"), 80),
+    }
+
+
 @_never_raises
 def system_usage(payload: Dict[str, Any]) -> Dict[str, Any]:
-    """What this machine has room for, as three tables and some folded keys.
+    """What this machine has room for, as four tables and some folded keys.
+
+    The fourth is the health block (src/health.py): one row per component —
+    ``name``, ``state``, ``weight``, ``value`` — which is exactly TOON's
+    tabular condition, plus the score, the grade, how many of the components
+    reported and which ones did not. It is folded in rather than dropped
+    because a coordinator reading ``?robot=1`` must be able to see that a
+    component said ``no_data``: a score of 0 nobody collected is a different
+    claim from a score of 0 that was measured, and only ``collected`` and
+    ``missing`` tell them apart. Each row's ``label`` and its ``why`` prose
+    stay behind — robot mode is lossy on purpose and the plain response still
+    carries them.
 
     One row per card, per loaded model and per orphaned runner; the pool sums
     the fit arithmetic works against stay as scalar keys. Dropped: each card's
@@ -419,6 +441,25 @@ def system_usage(payload: Dict[str, Any]) -> Dict[str, Any]:
     errors = _strings(payload.get("errors"), 20)
     if errors:
         out["errors"] = errors
+    health = _dict(payload.get("health"))
+    if health:
+        # The honest health score (src/health.py). Robot mode used to drop it
+        # entirely — the projection has a fixed field list, so a `health` key
+        # added later never reached a coordinator reading ?robot=1. The
+        # arithmetic and the two numbers that qualify it come across, and the
+        # per-component readings are exactly the uniform rows TOON exists for.
+        out["health"] = {
+            "score": _num(health.get("score")),
+            "grade": _text(health.get("grade"), 4),
+            # `reporting of of` is what makes the score readable: 0 with
+            # nothing collected is not the same claim as 0 with everything
+            # measured, and `collected` is the flag that separates them.
+            "reporting": _int(health.get("reporting")),
+            "of": _int(health.get("of")),
+            "collected": bool(health.get("collected")),
+            "missing": _strings(health.get("missing"), 40),
+        }
+        out["health_components"] = [_health_row(c) for c in _seq(health.get("components"))]
     return out
 
 
@@ -497,6 +538,30 @@ def _verification(value: Any) -> Dict[str, Any]:
     return verdict
 
 
+def _proof(value: Any) -> Dict[str, Any]:
+    """The proof packet (src/prove.py) as four scalars: the verdict word, the
+    confidence, and the heaviest named reason the confidence is not 1 —
+    ``uncertainty`` is ordered by weight, so its first row is that reason.
+
+    The rest of the list, the observations and the identity hash stay out: a
+    coordinator deciding whether it may report the job as done needs the word,
+    the number and the top doubt, and can read the full packet from the plain
+    response.
+    """
+    row = _dict(value)
+    out: Dict[str, Any] = {
+        "verdict": _text(row.get("verdict"), 40),
+        "confidence": _num(row.get("confidence")),
+    }
+    doubts = _seq(row.get("uncertainty"))
+    top = _dict(doubts[0]) if doubts else {}
+    if top:
+        out["uncertainty_kind"] = _text(top.get("kind"), 60)
+        out["uncertainty_detail"] = _text(top.get("detail"), 300)
+    out["uncertainty_count"] = len(doubts)
+    return out
+
+
 @_never_raises
 def dispatch_status(payload: Dict[str, Any]) -> Dict[str, Any]:
     """A job as one table of workers plus the verdict scalars.
@@ -511,6 +576,11 @@ def dispatch_status(payload: Dict[str, Any]) -> Dict[str, Any]:
     (``owner``, ``session_id``, ``chat_url``, ``created``/``started``/
     ``finished`` — ``duration_s`` is the number), and the ``changes`` split by
     kind, whose paths ``files_changed`` already lists.
+
+    ``proof`` (src/prove.py) is folded to the verdict word, the confidence and
+    the top named doubt: the answer to "may I report this as done?" is the part
+    a coordinator reads, and it must not be reachable only by parsing the
+    verdict string.
     """
     result = _dict(payload.get("result"))
     changes = _dict(result.get("changes"))
@@ -537,6 +607,8 @@ def dispatch_status(payload: Dict[str, Any]) -> Dict[str, Any]:
         out["verification"] = _verification(result.get("verification"))
     if result.get("convergence") is not None:
         out["convergence"] = _scalars(result.get("convergence"), drop=("components",))
+    if result.get("proof") is not None:
+        out["proof"] = _proof(result.get("proof"))
     for key in ("stopped_by", "exit_code", "dropped_tasks"):
         _carry(out, key, result.get(key))
     progress = _dict(payload.get("progress"))

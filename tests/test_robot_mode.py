@@ -486,6 +486,23 @@ USAGE = {
     "gpu_count": 2,
     "models": [{"name": "qwen3.5:9b", "size_vram": 9123456789, "gpu": 0}],
     "orphans": [],
+    # The honest health block (src/health.py). It is the key robot mode used
+    # to drop: the projection's field list is fixed, so anything added to the
+    # endpoint later has to be folded in deliberately.
+    "health": {
+        "score": 61, "grade": "C", "collected": True, "reporting": 2, "of": 3,
+        "missing": ["disk"], "schema_version": 1,
+        "components": [
+            {"name": "ollama", "label": "Ollama reachable", "value": "unreachable",
+             "weight": 20, "state": "bad", "why": "unreachable: connection refused"},
+            {"name": "gpu", "label": "GPU visible to nvidia-smi", "value": "2 card(s)",
+             "weight": 15, "state": "ok", "why": "nvidia-smi answered for 2 card(s)"},
+            {"name": "disk", "label": "Disk headroom", "value": None,
+             "weight": 15, "state": "no_data",
+             "why": "no data source yet — nothing has reported this, which is not the "
+                    "same as nothing being wrong"},
+        ],
+    },
 }
 # Robot mode: one row per card and per loaded model, every column present on
 # every row whether or not this collector filled it in.
@@ -502,6 +519,13 @@ LEAN_USAGE = {
                 "expires_at": ""}],
     "orphans": [],
     "ollama": {"reachable": False, "loaded": 1},
+    "health": {"score": 61, "grade": "C", "reporting": 2, "of": 3, "collected": True,
+               "missing": ["disk"]},
+    "health_components": [
+        {"name": "ollama", "state": "bad", "weight": 20, "value": "unreachable"},
+        {"name": "gpu", "state": "ok", "weight": 15, "value": "2 card(s)"},
+        {"name": "disk", "state": "no_data", "weight": 15, "value": ""},
+    ],
 }
 
 
@@ -522,6 +546,28 @@ def usage_client(monkeypatch):
 def test_system_usage_answers_in_all_three_modes(usage_client):
     text = _check(usage_client, "/api/system/usage", USAGE, LEAN_USAGE)
     assert "gpus[2]{index,name,util,temp,power,power_limit,mem_used,mem_free,mem_total}:" in text
+    # The health block reaches robot mode: the arithmetic folded, the readings
+    # as a table, and the component nobody collected still saying `no_data` —
+    # a coordinator must not read an absent reading as a measured zero.
+    assert "health_components[3]{name,state,weight,value}:" in text
+    assert "disk,no_data,15," in text
+    assert "score: 61" in text and "reporting: 2" in text and "collected: true" in text
+    assert "missing:\n      - disk" in text
+
+
+def test_system_usage_without_a_health_block_is_what_it_always_was(usage_client, monkeypatch):
+    """`agent_health_score` off = the endpoint answers no `health` key, and
+    the lean view is exactly the one it answered before the block existed."""
+    import routes.system_usage_routes as sur
+    payload = {k: v for k, v in USAGE.items() if k != "health"}
+    lean = {k: v for k, v in LEAN_USAGE.items() if k not in ("health", "health_components")}
+
+    async def collect():
+        return payload
+
+    monkeypatch.setattr(sur, "collect_usage", collect)
+    text = _check(usage_client, "/api/system/usage", payload, lean)
+    assert "health" not in text
 
 
 def test_a_failed_collector_is_a_500_envelope_in_robot_mode(usage_client, monkeypatch):

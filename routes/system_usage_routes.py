@@ -57,10 +57,14 @@ polling at once do not fork nvidia-smi per request.
 document (src/robot_projection.py): one flat, scalar-only row per card, per
 loaded model and per orphaned runner — which is the tabular shape TOON
 collapses to one header plus one line per row — with the pool sums, the CPU
-and the RAM as folded scalar keys beside them. The per-card model list, the
-per-model `per_gpu` split, the card UUIDs and the driver-panel prose stay in
-the full answer. A call without those query parameters answers as it always
-did.
+and the RAM as folded scalar keys beside them — plus the `health` block as a
+fourth table (`name`, `state`, `weight`, `value` per component) with the score,
+the grade, `reporting` of `of` and `missing` folded beside it, so a coordinator
+in robot mode can see that a component said `no_data` rather than reading an
+absent reading as a measured zero. The per-card model list, the per-model
+`per_gpu` split, the card UUIDs, each component's `label` and `why` prose and
+the driver-panel prose stay in the full answer. A call without those query
+parameters answers as it always did.
 """
 from __future__ import annotations
 

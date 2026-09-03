@@ -1965,6 +1965,15 @@ never the transcript. Trust `changes` + `verification` over the prose.
 A `running` answer carries `progress` per worker, `phase`, `ceiling_s` (the
 most it can still take) and `wait_again: true` — call `workers_wait` again;
 do NOT re-dispatch the same task because one wait returned early.
+`result.proof` is the step after that: what the job can actually SHOW.
+`verdict` is `proved` (the verification passed and every claimed file really
+changed), `partial` (something is unaccounted for), `unproved` (nothing ran
+that could show it) or `contradicted` (the disk or the tests say otherwise),
+with a `confidence` and `uncertainty`, a NAMED reason for every point it is
+missing. `unproved` is NOT a failure and NOT a success: report it as "the work
+may have happened and nothing here can show it", and give the next job a
+`verify` command so it can. Never report a job as done on `unproved` or
+`contradicted`.
 `task_order` appears when Faustus ran a sequential job's tasks in a different
 order from the one you sent: the objectives they name are ranked by the
 project's dependency graph and the highest-impact one goes first. `from` and

@@ -54,6 +54,38 @@ export function stateChip(p) {
   return `<span class="wk-state wk-state-${attr(state)}" title="${attr(title)}">${esc(label)}</span>`;
 }
 
+/** What each proof verdict (src/prove.py) means, in the words the page owes
+ *  the reader. `unproved` is the one that must not read as a failure: the
+ *  work may have happened and nothing Faustus has can show it. */
+const PROOF_WORD = {
+  proved: 'the tests passed and every claimed file really changed',
+  partial: 'something is unaccounted for',
+  unproved: 'nothing ran that could show it — not a failure, not a success',
+  contradicted: 'the disk or the tests say otherwise',
+};
+const PROOF_TONE = { proved: 'ok', partial: 'warn', unproved: 'warn', contradicted: 'bad' };
+
+/** The proof packet as a chip beside the verification block: the verdict word,
+ *  the confidence, and every named reason the confidence is not 1 in the
+ *  title. Empty when the job has no proof (`agent_dispatch_prove` off, or an
+ *  older job), so the block is purely additive. Exported for tests. */
+export function proofChip(proof) {
+  const verdict = String((proof && proof.verdict) || '');
+  if (!verdict) return '';
+  const tone = PROOF_TONE[verdict] || 'warn';
+  const rows = Array.isArray(proof.uncertainty) ? proof.uncertainty : [];
+  const doubts = rows.map(u => `${(u && u.kind) || '?'}: ${(u && u.detail) || ''}`);
+  const title = doubts.length
+    ? `why the confidence is not 1 — ${doubts.join(' · ')}`
+    : 'nothing is left unaccounted for';
+  const top = rows.length && rows[0] ? `${rows[0].kind}: ${rows[0].detail || ''}` : '';
+  return `<div class="wk-proof wk-proof-${attr(tone)}" title="${attr(title)}">` +
+    `<b>Proof: ${esc(verdict)}</b> <span class="wk-proof-conf">confidence ${esc(proof.confidence)}</span>` +
+    `${PROOF_WORD[verdict] ? ` <span class="wk-muted">— ${esc(PROOF_WORD[verdict])}</span>` : ''}` +
+    (top ? `<div class="wk-proof-why">${esc(top)}${rows.length > 1 ? ` <span class="wk-muted">(+${rows.length - 1} more)</span>` : ''}</div>` : '') +
+    `</div>`;
+}
+
 function verificationHtml(v) {
   if (!v) return '';
   if (!v.ran) return `<div class="wk-verify wk-verify-none">Not verified — ${esc(v.summary || '')}</div>`;
@@ -127,6 +159,7 @@ export function jobHtml(job, expanded = false) {
   if (!live) {
     rows.push(changesHtml(res.changes, res.claimed_only));
     rows.push(verificationHtml(v));
+    rows.push(proofChip(res.proof));
   }
   for (const w of workers) {
     const files = Array.isArray(w.files_changed) ? w.files_changed : [];
