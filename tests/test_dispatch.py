@@ -46,7 +46,7 @@ def test_compact_keeps_the_facts_and_drops_the_transcript():
     assert w1["files_changed"] == ["cart.py", "tests/test_cart.py"] and w1["rounds"] == 4 and w1["tool_calls"] == 7
     assert w1["summary"].startswith("Added apply_tax(total, rate) and its test; 3 passed.")
     assert len(w1["summary"]) <= dispatch.SUMMARY_CHARS and w1["summary"].endswith("…")
-    assert w1["static_checks"] == {"ok": True} and w1["git"] == {"clean": False}
+    assert w1["static_checks"] == {"ok": True} and "git" not in w1      # the tree's git state is the job's, once
     assert c["files_changed"] == ["cart.py", "tests/test_cart.py"]
     assert c["totals"] == {"tool_calls": 9, "failed_calls": 1, "rounds": 8, "input_tokens": 12500,
                            "output_tokens": 910, "errors": 1}
@@ -137,7 +137,9 @@ def test_start_runs_the_delegation_in_its_own_workers_chat_and_compacts(box):
         assert await dispatch.wait(job, 5)
         return job
     job = asyncio.run(run())
-    assert job.status == "done" and job.result is TOOL_RESULT
+    # w2 timed out: the job is honest about it at the top level
+    assert job.status == "partial" and job.result is TOOL_RESULT
+    assert "1/2 workers done (error)" in job.verdict
     # the delegation payload the tool got is the parsed one
     sent = box["executed"][0]
     assert sent["tasks"][0]["instruction"] == "add apply_tax" and sent["max_rounds"] == dispatch._DEFAULT_MAX_ROUNDS
@@ -153,16 +155,22 @@ def test_start_runs_the_delegation_in_its_own_workers_chat_and_compacts(box):
     last = box["sm"].messages[-1][1]
     assert last.role == "assistant" and "Dispatched job" in last.content and "changed cart.py" in last.content
     ev = last.metadata["tool_events"][0]
-    assert ev["tool"] == "delegate_agents" and ev["dispatch_id"] == job.id and ev["exit_code"] == 0
+    assert ev["tool"] == "delegate_agents" and ev["dispatch_id"] == job.id and ev["exit_code"] == 1
     assert [r["name"] for r in ev["subagents"]] == ["w1", "w2"] and ev["subagents"][0]["mutations"] == ["cart.py", "tests/test_cart.py"]
     assert box["sm"].saved >= 1
     c = dispatch.compact(job)
-    assert c["status"] == "done" and c["chat_url"] == f"/#{job.session_id}"
+    assert c["status"] == "partial" and c["chat_url"] == f"/#{job.session_id}"
     assert c["result"]["workers"][0]["name"] == "w1" and "progress" not in c
+    # what Faustus saw on disk (nothing: the fake tool wrote nothing) is
+    # the truth; the worker's claim is kept per worker and flagged
+    assert c["result"]["changes"]["count"] == 0 and c["result"]["files_changed"] == []
+    assert c["result"]["claimed_only"] == ["cart.py", "tests/test_cart.py"]
+    assert c["result"]["workers"][0]["files_changed"] == ["cart.py", "tests/test_cart.py"]
     # and the JSON mirror lets it be read after a restart
     dispatch.reset_for_tests()
     again = dispatch.get(job.id)
-    assert again is not None and again.status == "done" and again.result["subagents"][0]["name"] == "w1"
+    assert again is not None and again.status == "partial" and again.result["subagents"][0]["name"] == "w1"
+    assert again.verdict == job.verdict and dispatch.compact(again)["result"]["claimed_only"] == ["cart.py", "tests/test_cart.py"]
 
 
 def test_progress_is_visible_while_running_and_wait_times_out_honestly(box):
@@ -178,7 +186,7 @@ def test_progress_is_visible_while_running_and_wait_times_out_honestly(box):
         assert await dispatch.wait(job, 5) is True
         return job
     job = asyncio.run(run())
-    assert job.status == "done"
+    assert job.status == "partial"
 
 
 def test_cancel_stops_a_running_job(box):
@@ -188,10 +196,11 @@ def test_cancel_stops_a_running_job(box):
         job = await dispatch.start("luis", {"tasks": ["slow"], "workspace": box["ws"]})
         await asyncio.sleep(0.1)
         assert dispatch.cancel(job) is True
-        await asyncio.sleep(0.05)
+        assert job.status == "cancelling"           # until the workers have unwound
+        assert await dispatch.wait(job, 2) is True
         return job
     job = asyncio.run(run())
-    assert job.status == "cancelled" and dispatch.cancel(job) is False
+    assert job.status == "cancelled" and dispatch.cancel(job) is False and job.verdict.startswith("cancelled")
 
 
 def test_a_bad_workspace_is_refused_before_anything_starts(box):
@@ -239,8 +248,26 @@ def _client(monkeypatch, *, token_scopes=None, cookie_user="luis"):
         return await call_next(request)
 
     monkeypatch.setattr(dr, "require_user", lambda request: getattr(request.state, "current_user", None) or "")
+    monkeypatch.setattr(dr, "_is_admin", lambda owner: True)
     app.include_router(dr.setup_dispatch_routes())
-    return TestClient(app)
+    # entered: one event loop for the client's lifetime, so the background
+    # job task survives the POST that started it (as under uvicorn)
+    client = TestClient(app).__enter__()
+    _OPEN_CLIENTS.append(client)
+    return client
+
+
+_OPEN_CLIENTS = []
+
+
+@pytest.fixture(autouse=True)
+def _close_clients():
+    yield
+    while _OPEN_CLIENTS:
+        try:
+            _OPEN_CLIENTS.pop().__exit__(None, None, None)
+        except Exception:
+            pass
 
 
 def test_route_needs_the_dispatch_scope_on_an_api_token(box, monkeypatch):
@@ -255,10 +282,11 @@ def test_route_runs_a_job_for_a_token_with_the_scope_and_hides_other_owners(box,
     assert r.status_code == 200, r.text
     job_id = r.json()["id"]
     r = c.get(f"/api/dispatch/{job_id}/wait?timeout=5")
-    assert r.status_code == 200 and r.json()["status"] == "done"
+    assert r.status_code == 200 and r.json()["status"] == "partial"
     assert r.json()["result"]["workers"][0]["files_changed"] == ["cart.py", "tests/test_cart.py"]
     assert c.get("/api/dispatch").json()["jobs"][0]["id"] == job_id
-    assert c.get(f"/api/dispatch/{job_id}/events").json()["events"][0]["event"] == "started"
+    evs = c.get(f"/api/dispatch/{job_id}/events").json()["events"]
+    assert [e["event"] for e in evs[:3]] == ["job", "job", "started"] and evs[0]["message"] == "checkpointing the workspace"
     # another user's cookie session does not see it
     other = _client(monkeypatch, cookie_user="eve")
     assert other.get(f"/api/dispatch/{job_id}").status_code == 404
@@ -335,7 +363,7 @@ def test_mcp_render_is_one_glance_and_names_the_board(monkeypatch):
     assert text.startswith("job abc123def456 · done · Workers · add apply_tax")
     assert "board: http://127.0.0.1:7000/#sess-1" in text
     assert "[w1] done · 4 rounds · 7 tools (1 failed) · 12000/900 tok" in text
-    assert "changed: cart.py, tests/test_cart.py" in text and "says: Added apply_tax" in text
+    assert "claims: cart.py, tests/test_cart.py" in text and "says: Added apply_tax" in text
     assert "[w2] error (timeout)" in text and "error: timeout" in text
     assert "lock conflicts: w2 → cart.py" in text
     assert "totals: 9 tool calls, 8 rounds, 12500/910 local tokens, 1 errors" in text
@@ -353,8 +381,8 @@ def test_the_guide_is_served_to_token_holders_and_says_the_essentials(box, monke
     r = c.get("/api/dispatch/guide")
     assert r.status_code == 200
     g = r.json()["guide"]
-    for must in ("Self-contained", "parallel", "workspace", "files_changed", "never returns the\ntranscript",
-                 "plan → dispatch → wait → check"):
+    for must in ("Self-contained", "parallel", "workspace", "files_changed", "never the transcript",
+                 "plan → dispatch → wait (again if still running)", "`verify`", "claimed_only", "wait_again"):
         assert must in g, must
     assert _client(monkeypatch, token_scopes=["chat"]).get("/api/dispatch/guide").status_code == 403
 
@@ -376,6 +404,14 @@ def test_resolve_route_prefers_the_configured_dispatch_model_over_the_default(mo
 
 def test_config_route_says_where_a_job_would_run(box, monkeypatch):
     c = _client(monkeypatch, token_scopes=["agents:dispatch"])
-    assert c.get("/api/dispatch/config").json() == {"model": "qwen3.5:9b", "server": "127.0.0.1:11434", "error": ""}
+    assert c.get("/api/dispatch/config").json() == {"model": "qwen3.5:9b", "server": "127.0.0.1:11434", "error": "", "verifier": None}
+    # with a workspace: the verifier Faustus would run there (none in an empty folder)
+    v = c.get("/api/dispatch/config", params={"workspace": box["ws"]}).json()["verifier"]
+    assert v == {"mode": "auto", "label": "", "kind": ""}
+    import pathlib
+    (pathlib.Path(box["ws"]) / "tests").mkdir()
+    (pathlib.Path(box["ws"]) / "tests" / "test_a.py").write_text("def test_a(): pass\n")
+    v = c.get("/api/dispatch/config", params={"workspace": box["ws"]}).json()["verifier"]
+    assert v["kind"] == "pytest" and "pytest" in v["label"]
     monkeypatch.setattr(dispatch, "resolve_route", lambda owner, model=None: (_ for _ in ()).throw(ValueError("no model configured for dispatch")))
     assert c.get("/api/dispatch/config").json()["error"] == "no model configured for dispatch"

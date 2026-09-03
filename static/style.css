@@ -24228,6 +24228,26 @@ body:not(.welcome-ready) #welcome-screen {
 .wk-error { color: var(--red, #e06c75); }
 .wk-tasks summary { cursor: pointer; opacity: .75; }
 .wk-task { padding: 2px 0 2px 8px; }
+.wk-status-partial, .wk-status-verifying, .wk-status-cancelling, .wk-status-stopped { border-color: var(--warn, #e5c07b); color: var(--warn, #e5c07b); }
+.wk-status-cancelled { opacity: .7; }
+.wk-verdict { font-weight: 600; line-height: 1.4; }
+.wk-vword-ok { color: var(--ok, #4caf50); }
+.wk-vword-bad { color: var(--red, #e06c75); }
+.wk-changes, .wk-verify, .wk-claimed { padding: 6px 8px; border-radius: 6px; line-height: 1.5; background: color-mix(in srgb, var(--fg) 4%, transparent); }
+.wk-changes code, .wk-claimed code { font-size: 11px; margin-right: 4px; }
+.wk-chg-added { color: var(--ok, #4caf50); }
+.wk-chg-modified { color: var(--color-accent, #00aaff); }
+.wk-chg-deleted { color: var(--red, #e06c75); }
+.wk-claimed { color: var(--warn, #e5c07b); }
+.wk-verify-passed { border-left: 3px solid var(--ok, #4caf50); }
+.wk-verify-failed { border-left: 3px solid var(--red, #e06c75); }
+.wk-verify-inconclusive, .wk-verify-none { border-left: 3px solid var(--warn, #e5c07b); }
+.wk-fails { margin: 4px 0 0 16px; padding: 0; }
+.wk-fails li { font-family: var(--mono, monospace); font-size: 11.5px; }
+.wk-tail summary { cursor: pointer; opacity: .75; }
+.wk-tail pre { max-height: 220px; overflow: auto; font-size: 11px; white-space: pre-wrap; margin: 4px 0 0; }
+.wk-phase { font-style: italic; }
+#wk-count { align-self: center; white-space: nowrap; }
 .tasks-activity-card,
 .tasks-activity-list {
   min-height: 0;

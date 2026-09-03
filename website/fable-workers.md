@@ -94,22 +94,69 @@ the ordering and the review; it does not read files through the workers.
 $h = @{ Authorization = "Bearer ody_…" }
 $job = Invoke-RestMethod -Method Post http://127.0.0.1:7000/api/dispatch -Headers $h -ContentType application/json -Body (@{
   tasks = @("Add apply_tax(total, rate) to cart.py with a test; pytest must pass")
-  workspace = "D:\proj"; parallel = $true
+  workspace = "D:\proj"; parallel = $true; verify = "python -m pytest -q"
 } | ConvertTo-Json)
-Invoke-RestMethod "http://127.0.0.1:7000/api/dispatch/$($job.id)/wait?timeout=300" -Headers $h | ConvertTo-Json -Depth 6
+Invoke-RestMethod "http://127.0.0.1:7000/api/dispatch/$($job.id)/wait?timeout=600" -Headers $h | ConvertTo-Json -Depth 6
 ```
 
 | Route | What |
 |---|---|
-| `POST /api/dispatch` | `{tasks, workspace?, model?, parallel?, reviewer?, max_rounds?, timeout_s?, context?}` → the job |
-| `GET /api/dispatch/{id}` | status; per-worker progress while it runs; the compact result when done |
-| `GET /api/dispatch/{id}/wait?timeout=N` | long-poll up to 600 s |
+| `POST /api/dispatch` | `{tasks, workspace, model?, parallel?, reviewer?, max_rounds?, timeout_s?, context?, verify?, verify_scope?, fix_rounds?, client_request_id?}` → the job. Header `Idempotency-Key`: a retry returns the same job |
+| `GET /api/dispatch/{id}` | status; per-worker progress, `phase`, `ceiling_s` and `wait_again` while it runs; the compact result when done |
+| `GET /api/dispatch/{id}/wait?timeout=N` | long-poll up to 1800 s |
 | `GET /api/dispatch/{id}/events` | the board's last 400 events |
-| `POST /api/dispatch/{id}/cancel` | stop it |
+| `POST /api/dispatch/{id}/cancel` | stop it (`cancelling` until the workers have unwound, then `cancelled` with what changed) |
 | `GET /api/dispatch` | recent jobs |
+| `GET /api/dispatch/config?workspace=` | the model/server a job would run on and the verifier Faustus would run in that folder |
 
-Jobs are mirrored to `DATA_DIR/dispatch/<id>.json`; a job the server was
-restarted under reads back as `interrupted`.
+Admins only (a plain user gets a 403 before the request is looked at: a
+worker runs shell commands in any folder the caller names). Jobs are
+mirrored to `DATA_DIR/dispatch/<id>.json` (the newest 200 are kept); a job
+the server was restarted under reads back as `interrupted`.
+
+## What makes the answer trustworthy
+
+None of it is taken from the worker's word:
+
+* **Evidence.** The workspace is checkpointed before the job (the harness's
+  shadow repo — the user's own `.git` is never touched) and diffed after
+  it. `result.changes` (`added` / `modified` / `deleted`, content-exact) is
+  what really changed; `result.files_changed` is that list; a file a worker
+  *said* it changed but did not shows up as `result.claimed_only`. Without
+  git on the box an mtime snapshot of the tree does the same job.
+* **Verification by Faustus.** After the workers, Faustus runs `verify` in
+  the workspace itself — the command you gave (`pytest -q`, `npm test`,
+  `make check`…) or, with `auto`, the project's detected test runner over
+  the tests related to the changed files (`verify_scope: "all"` for the
+  whole suite). Failures are compared with the checkpoint: a test that
+  already failed before the job is `pre_existing` and does not block.
+  `result.verification` carries `ok`, `summary`, `failures`, `command`,
+  `output_tail`. No runner and no command → `ok: null`, "not verified" —
+  never "passed".
+* **One bounded fix round.** When the verification fails, one fixer worker
+  gets the failing command's output plus the original tasks, and the
+  verification runs again (`fix_rounds`, default 1, max 2; `attempts` in
+  the result says how many). Still failing → the job is `partial`.
+* **Honest status.** `done` only when every worker finished and the
+  verification passed or could not run; `partial` when a worker ended
+  `error` / `timeout` / `stalled` / `stopped` or the verification failed;
+  `verdict` says it in one line (`1/2 workers done (timeout) · 3 files
+  changed on disk · verification FAILED (1 failed)`).
+* **One machine.** The "at most N workers at once" semaphore is shared by
+  every delegation on the endpoint (a chat's `/agents` and two jobs at the
+  same time no longer run 3 × N workers against one Ollama); jobs in the
+  same workspace (or a nested one) run one at a time — the second waits as
+  `queued` and says so in `phase`; a worker's file locks are released when
+  it finishes, so a dependent task in a sequential run may edit what the
+  previous one wrote.
+* **Bounded answer.** Per worker: the failures of the static checks, at most
+  40 claimed paths, 1200 chars of last words; the tree's git state once per
+  job. A 4-worker worst case is ~2.5k tokens; a real job ~500.
+
+The coordinator's text is written into the Workers chat marked as external,
+untrusted context (the tool gate treats it like any pasted document), and
+`gen_overrides` may carry sampling knobs only — never `main_gpu`, `num_gpu`
+or `keep_alive`, which would override the GPU placement policy.
 
 ## The coordinator's guide (what `workers_guide` returns)
 
@@ -137,20 +184,39 @@ restarted under reads back as `interrupted`.
     3. Say what NOT to do when it matters ("do not touch the public API",
        "keep Python 3.11 compatibility").
     4. 1–4 tasks per job. Independent tasks → `parallel: true`; dependent ones →
-       `parallel: false` (they run in order) or separate jobs.
-    5. `workspace` is the folder the workers are confined to. Always set it.
+       `parallel: false` (they run in order, and a later task may edit what an
+       earlier one wrote). Jobs in the same workspace run one at a time.
+    5. `workspace` is required: the folder the workers are confined to.
+    6. `verify` is the command that proves the job is done (`pytest -q`,
+       `npm test`, `make check`…). Faustus runs it ITSELF after the workers, in
+       the workspace — the workers' own claims are never the proof. Without it
+       the project's test runner is auto-detected (`verify: "auto"`);
+       `verify_scope: "all"` runs the whole suite instead of the tests related
+       to the changed files. `fix_rounds` (default 1, max 2): when the
+       verification fails, one fixer worker gets the failure output and the
+       verification runs again.
 
     ## Reading the result
-    `workers_wait` returns, per worker: status (`done`, `error`, `timeout`,
-    `stalled`, `stopped`), files changed, static checks, git state, tool/round
-    counts, and the worker's last words (≤ 1200 chars). It never returns the
-    transcript. Trust files changed + tests over the worker's prose: if the
-    summary claims a change but `files_changed` is empty, it did not happen.
-    A worker that ended `stalled` or `timeout` did part of the work — look at
-    `files_changed`, then dispatch the remainder as a new, narrower task.
+    `status`: `done` = every worker finished AND the verification passed (or
+    could not run — read `verification.summary`); `partial` = some worker ended
+    `error` / `timeout` / `stalled` / `stopped`, or the verification failed;
+    `error` = nothing ran; `cancelled` / `interrupted` = stopped early (the
+    evidence is still there). `verdict` says it in one line.
+    `result.changes` is what Faustus SAW change on disk (checkpoint diff) —
+    `result.files_changed` is that list; `result.claimed_only` names files a
+    worker said it changed but did not. `result.verification` is the run Faustus
+    made: `ok`, `summary`, `failures`, `pre_existing` (failed before the job
+    too), `command`, `output_tail`; `attempts` > 1 means a fix round ran.
+    Per worker: status, files it claims, tool/round/token counts and its last
+    words (≤ 1200 chars) — never the transcript. Trust `changes` + `verification`
+    over the prose.
+    A `running` answer carries `progress` per worker, `phase`, `ceiling_s` (the
+    most it can still take) and `wait_again: true` — call `workers_wait` again;
+    do NOT re-dispatch the same task because one wait returned early.
 
     ## Loop
-    plan → dispatch → wait → check → (dispatch fixes) → answer the user.
+    plan → dispatch → wait (again if still running) → read verdict + changes +
+    verification → (dispatch a narrower fix if needed) → answer the user.
     Do not re-do a worker's work yourself; send a narrower task instead. Tell the
     user which changes came from the workers and point them at the board
     (`chat_url`) if they want the details.

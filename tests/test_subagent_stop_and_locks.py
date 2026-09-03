@@ -214,10 +214,17 @@ def test_note_write_result_survives_an_undeterminable_target(tmp_path):
 # ── BUG 5b: locks are keyed by run.id, not by the model-chosen name ────────
 
 @pytest.mark.asyncio
-async def test_two_workers_with_the_same_name_still_lock_each_other(delegation):
+async def test_two_workers_with_the_same_name_are_distinct_owners_and_a_finished_worker_frees_its_files(delegation):
+    """Locks are keyed by run.id, never by the model-written name (two
+    "worker"s used to be one owner). And a lock lives as long as its worker:
+    once the first has FINISHED, the second — the dependent task in a
+    sequential run — may edit the same file (it used to be refused)."""
     reasons = []
+    owners = []
 
     async def _loop(endpoint_url, model, messages, **kwargs):
+        guard = st._LOCK_CTX.get()
+        owners.append((guard.worker, guard.registry.owner.get(guard.registry.norm("src/shared.py"))))
         reasons.append(st.write_block_reason("edit_file", json.dumps({"path": "src/shared.py"})))
         yield _harness_summary(["src/shared.py"])
         yield "data: [DONE]\n\n"
@@ -231,8 +238,15 @@ async def test_two_workers_with_the_same_name_still_lock_each_other(delegation):
     }), {"session_id": "parent", "owner": None, "progress_cb": None})
 
     assert reasons[0] is None, "the owner of a file must not be blocked from it"
-    assert reasons[1], "a same-named second worker was treated as the same lock owner"
-    assert "src/shared.py" in reasons[1] and "worker" in reasons[1]
+    assert reasons[1] is None, "the first worker had finished: its files are free for the dependent task"
+    (k1, o1), (k2, o2) = owners
+    assert k1 != k2 and o1 == k1 and o2 is None          # distinct keys; released before the second ran
+    # while the first still holds the file, a same-named second worker IS blocked
+    reg = st.FileLockRegistry(None)
+    reg.names["sa0-a"] = reg.names["sa1-b"] = "worker"
+    reg.claim("sa0-a", ["src/shared.py"])
+    assert reg.blocked_by("sa1-b", ["src/shared.py"]) == "sa0-a"
+    assert reg.release("sa0-a") == ["src/shared.py"] and reg.blocked_by("sa1-b", ["src/shared.py"]) is None
     # The two runs are distinct owners, so the overlap warning survives too.
     assert "WARNING — files changed by MORE THAN ONE worker" in result["output"]
 

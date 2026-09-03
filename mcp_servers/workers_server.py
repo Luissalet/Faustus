@@ -19,8 +19,10 @@ tokens go to planning and review:
 
 Tools: workers_guide (read first), dispatch_workers (start a job),
 workers_wait (block until done, then the compact result), workers_status,
-workers_events, workers_cancel, workers_list. It talks HTTP to the running Faustus (routes/dispatch_routes.py)
-— nothing runs in this process, so a crash here cannot take a worker with it.
+workers_events, workers_cancel, workers_list. It talks HTTP to the running
+Faustus (routes/dispatch_routes.py) — nothing runs in this process, so a crash
+here cannot take a worker with it. A dispatch carries an Idempotency-Key, so
+the one retry after a connection error can never start a second job.
 """
 from __future__ import annotations
 
@@ -30,6 +32,7 @@ import os
 import sys
 import urllib.error
 import urllib.request
+import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -47,25 +50,44 @@ _TIMEOUT = 30.0
 _MAX_WAIT = 600.0
 
 
-def _request(method: str, path: str, body: Optional[Dict[str, Any]] = None, timeout: float = _TIMEOUT) -> Dict[str, Any]:
+def _request(method: str, path: str, body: Optional[Dict[str, Any]] = None, timeout: float = _TIMEOUT,
+             retries: int = 1) -> Dict[str, Any]:
     data = json.dumps(body).encode("utf-8") if body is not None else None
-    req = urllib.request.Request(BASE + path, data=data, method=method)
-    req.add_header("Content-Type", "application/json")
-    req.add_header("Accept", "application/json")
-    if TOKEN:
-        req.add_header("Authorization", f"Bearer {TOKEN}")
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 — the operator's own server
-            raw = resp.read().decode("utf-8") or "{}"
-    except urllib.error.HTTPError as e:
-        detail = ""
+    idem = uuid.uuid4().hex if method == "POST" and path == "/api/dispatch" else None
+    attempt = 0
+    while True:
+        req = urllib.request.Request(BASE + path, data=data, method=method)
+        req.add_header("Content-Type", "application/json")
+        req.add_header("Accept", "application/json")
+        if TOKEN:
+            req.add_header("Authorization", f"Bearer {TOKEN}")
+        if idem:
+            req.add_header("Idempotency-Key", idem)
         try:
-            detail = e.read().decode("utf-8")[:600]
-        except Exception:
-            pass
-        raise RuntimeError(f"Faustus answered HTTP {e.code} for {method} {path}: {detail}")
-    except urllib.error.URLError as e:
-        raise RuntimeError(f"Faustus is not reachable at {BASE}: {e.reason}")
+            with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 — the operator's own server
+                raw = resp.read().decode("utf-8") or "{}"
+            break
+        except urllib.error.HTTPError as e:
+            detail = ""
+            try:
+                detail = e.read().decode("utf-8")[:600]
+            except Exception:
+                pass
+            hint = ""
+            if e.code == 401:
+                hint = (" — no FAUSTUS_API_TOKEN in this server's env" if not TOKEN
+                        else " — the FAUSTUS_API_TOKEN is not accepted (revoked? another Faustus?)")
+            elif e.code == 403:
+                hint = " — the token needs the agents:dispatch scope (profile 'fable_workers') and an admin owner"
+            raise RuntimeError(f"Faustus answered HTTP {e.code} for {method} {path}: {detail}{hint}")
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            # one retry: a dispatch carries its Idempotency-Key, so a POST
+            # that did go through returns the same job instead of a second one
+            if attempt < retries and (method != "POST" or idem):
+                attempt += 1
+                continue
+            reason = getattr(e, "reason", e)
+            raise RuntimeError(f"Faustus is not reachable at {BASE}: {reason}")
     try:
         return json.loads(raw)
     except json.JSONDecodeError:
@@ -75,15 +97,22 @@ def _request(method: str, path: str, body: Optional[Dict[str, Any]] = None, time
 def render(job: Dict[str, Any]) -> str:
     """The compact result as text the coordinator can read in one glance."""
     res = job.get("result") or {}
-    lines = [f"job {job.get('id')} · {job.get('status')} · {job.get('title') or ''}".rstrip(" ·")]
+    status = str(job.get("status") or "")
+    lines = [f"job {job.get('id')} · {status} · {job.get('title') or ''}".rstrip(" ·")]
+    if job.get("verdict"):
+        lines.append(f"verdict: {job['verdict']}")
     if job.get("error"):
         lines.append(f"error: {job['error']}")
     if job.get("workspace"):
         lines.append(f"workspace: {job['workspace']} · model: {job.get('model') or '?'} · {job.get('duration_s')} s")
     if job.get("chat_url"):
         lines.append(f"board: {BASE}{job['chat_url']}")
+    if status in ("interrupted", "cancelled", "cancelling"):
+        lines.append("this job did not finish — read the changes below, then re-dispatch the remaining work as a narrower task")
+    if job.get("phase") and status in _LIVE_STATUSES:
+        lines.append(f"phase: {job['phase']}")
     prog = job.get("progress") or {}
-    if prog and job.get("status") in ("queued", "running"):
+    if prog and status in _LIVE_STATUSES:
         for name, p in prog.items():
             bits = [f"{name}: {p.get('last_event')}"]
             if p.get("round") is not None:
@@ -95,6 +124,31 @@ def render(job: Dict[str, Any]) -> str:
             if p.get("stalled"):
                 bits.append(f"STALLED ({p.get('stall_reason') or '?'})")
             lines.append("  " + " · ".join(str(b) for b in bits))
+    if status in _LIVE_STATUSES and job.get("wait_again"):
+        lines.append(f"still running — call workers_wait again (up to {job.get('ceiling_s') or '?'} s more); do not re-dispatch")
+    ch = res.get("changes")
+    if isinstance(ch, dict):
+        parts = [f"{k} " + ", ".join(ch.get(k) or []) for k in ("added", "modified", "deleted") if ch.get(k)]
+        lines.append(f"changed on disk ({ch.get('source')}): " + ("; ".join(parts) if parts else "nothing")
+                     + (" (list truncated)" if ch.get("truncated") else ""))
+        git = ch.get("git") or {}
+        if git.get("shortstat"):
+            lines.append(f"  git now: {git['shortstat']}")
+    if res.get("claimed_only"):
+        lines.append("claimed but NOT changed: " + ", ".join(res["claimed_only"]))
+    v = res.get("verification")
+    if isinstance(v, dict):
+        if v.get("ran"):
+            state = "passed" if v.get("ok") else ("inconclusive" if v.get("inconclusive") else "FAILED")
+            extra = f"{v.get('command')}" + (f", {v['attempts']} attempts" if v.get("attempts") else "")
+            lines.append(f"verification: {state} — {v.get('summary')} ({extra})")
+            for f in (v.get("failures") or [])[:8]:
+                pre = " (pre-existing)" if f in (v.get("pre_existing") or []) else ""
+                lines.append(f"  - {f}{pre}")
+            if not v.get("ok") and v.get("output_tail"):
+                lines.append("  output tail: " + str(v["output_tail"])[-600:].replace("\n", "\n    "))
+        else:
+            lines.append(f"verification: not run — {v.get('summary')}")
     for w in res.get("workers") or []:
         head = (f"[{w.get('name')}] {w.get('status')}" + (f" ({w.get('stop_reason')})" if w.get("stop_reason") and w.get("stop_reason") != "complete" else "")
                 + f" · {w.get('rounds')} rounds · {w.get('tool_calls')} tools ({w.get('failed_calls')} failed)"
@@ -103,11 +157,12 @@ def render(job: Dict[str, Any]) -> str:
         if w.get("error"):
             lines.append(f"  error: {w['error']}")
         if w.get("files_changed"):
-            lines.append("  changed: " + ", ".join(w["files_changed"][:20]))
-        if w.get("static_checks"):
-            lines.append(f"  static checks: {json.dumps(w['static_checks'])[:300]}")
-        if w.get("git"):
-            lines.append(f"  git: {json.dumps(w['git'])[:300]}")
+            lines.append("  claims: " + ", ".join(w["files_changed"][:20]))
+        sc = w.get("static_checks")
+        if isinstance(sc, dict) and sc.get("failed"):
+            lines.append(f"  static checks: {json.dumps(sc['failed'])[:300]}")
+        elif sc and not isinstance(sc, dict):
+            lines.append(f"  static checks: {json.dumps(sc)[:300]}")
         if w.get("summary"):
             lines.append("  says: " + w["summary"])
     if res.get("lock_conflicts"):
@@ -121,14 +176,20 @@ def render(job: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+_LIVE_STATUSES = ("queued", "running", "verifying", "cancelling")
+
+
 TOOLS: List[Tool] = [
     Tool(
         name="dispatch_workers",
         description=(
             "Hand mechanical work to Faustus's LOCAL workers (Ollama on this machine) and get back a compact "
             "result — never a transcript. Give 1–4 self-contained tasks (each an instruction, optionally files "
-            "and a model), the workspace folder they may touch, and whether they may run in parallel. Returns "
-            "the job id and the Faustus chat where the control board lives. Then call workers_wait."
+            "and a model), the workspace folder they are confined to (required), the command that proves the "
+            "job is done (`verify`; Faustus runs it itself after the workers, auto-detects the test runner when "
+            "omitted, and sends one fixer worker with the failure output when it fails), and whether the tasks "
+            "may run in parallel. Returns the job id and the Faustus chat where the control board lives. Then "
+            "call workers_wait (again, while it says wait_again)."
         ),
         inputSchema={
             "type": "object",
@@ -146,20 +207,25 @@ TOOLS: List[Tool] = [
                     ]},
                     "description": "Self-contained tasks; say exactly what 'done' means (tests to pass, files to change).",
                 },
-                "workspace": {"type": "string", "description": "Absolute folder the workers are confined to."},
+                "workspace": {"type": "string", "description": "Absolute folder the workers are confined to (required)."},
                 "context": {"type": "string", "description": "Shared context every worker gets (short)."},
+                "verify": {"type": "string", "description": "Shell command run by Faustus in the workspace after the workers to prove the job ('pytest -q', 'npm test'…). 'auto' (default) detects the project's test runner; 'none' skips."},
+                "verify_scope": {"type": "string", "enum": ["related", "all"], "default": "related",
+                                 "description": "auto mode: the tests related to the changed files, or the whole suite."},
+                "fix_rounds": {"type": "integer", "minimum": 0, "maximum": 2, "default": 1,
+                               "description": "When the verification fails: how many times one fixer worker gets the failure output before Faustus gives up (status `partial`)."},
                 "parallel": {"type": "boolean", "default": True},
                 "reviewer": {"type": "boolean", "default": False, "description": "Add a reviewer worker after the others."},
                 "model": {"type": "string", "description": "Model on the dispatch endpoint (default: the configured worker model)."},
                 "max_rounds": {"type": "integer", "minimum": 3, "maximum": 40},
                 "timeout_s": {"type": "integer", "minimum": 60, "maximum": 7200},
             },
-            "required": ["tasks"],
+            "required": ["tasks", "workspace"],
         },
     ),
     Tool(
         name="workers_wait",
-        description="Block until a dispatched job finishes (up to timeout_s, default 300) and return its compact result.",
+        description="Block until a dispatched job finishes (up to timeout_s, default 300) and return its compact result: verdict, what changed on disk, the verification Faustus ran, and each worker's status. If it answers `still running`, call it again — never re-dispatch the same task.",
         inputSchema={"type": "object", "properties": {
             "job_id": {"type": "string"},
             "timeout_s": {"type": "integer", "minimum": 5, "maximum": 600, "default": 300},

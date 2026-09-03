@@ -25,21 +25,51 @@ function fmtGb(b) { const n = Number(b) || 0; return n >= 1073741824 ? `${(n / 1
 function fmtDur(s) { const n = Math.round(Number(s) || 0); return n < 90 ? `${n} s` : n < 3600 ? `${Math.round(n / 60)} min` : `${(n / 3600).toFixed(1)} h`; }
 function when(ts) { if (!ts) return ''; try { return new Date(ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); } catch (_) { return ''; } }
 
-const STATUS_WORD = { queued: 'queued', running: 'running', done: 'done', error: 'error', cancelled: 'cancelled', interrupted: 'interrupted' };
+const STATUS_WORD = { queued: 'queued', running: 'running', verifying: 'verifying', done: 'done', partial: 'partial', error: 'error',
+  cancelling: 'cancelling', cancelled: 'cancelled', interrupted: 'interrupted' };
+const LIVE = new Set(['queued', 'running', 'verifying', 'cancelling']);
+export function isLive(status) { return LIVE.has(status); }
+
+function verificationHtml(v) {
+  if (!v) return '';
+  if (!v.ran) return `<div class="wk-verify wk-verify-none">Not verified — ${esc(v.summary || '')}</div>`;
+  const state = v.ok ? 'passed' : (v.inconclusive ? 'inconclusive' : 'failed');
+  const fails = Array.isArray(v.failures) ? v.failures : [];
+  const pre = new Set(Array.isArray(v.pre_existing) ? v.pre_existing : []);
+  return `<div class="wk-verify wk-verify-${state}"><b>Verification ${esc(state)}</b> — ${esc(v.summary || '')}` +
+    `${v.command ? ` <code>${esc(v.command)}</code>` : ''}${v.attempts > 1 ? ` · ${esc(v.attempts)} attempts` : ''}` +
+    (fails.length ? `<ul class="wk-fails">${fails.map(f => `<li>${esc(f)}${pre.has(f) ? ' <span class="wk-muted">(failed before the job too)</span>' : ''}</li>`).join('')}</ul>` : '') +
+    (!v.ok && v.output_tail ? `<details class="wk-tail"><summary>output</summary><pre>${esc(String(v.output_tail).slice(-1500))}</pre></details>` : '') +
+    `</div>`;
+}
+
+function changesHtml(ch, claimedOnly) {
+  if (!ch) return '';
+  const kinds = [['added', 'added'], ['modified', 'modified'], ['deleted', 'deleted']];
+  const parts = kinds.filter(([k]) => Array.isArray(ch[k]) && ch[k].length)
+    .map(([k, label]) => `<span class="wk-chg-${k}">${label}:</span> ${ch[k].map(f => `<code>${esc(f)}</code>`).join(' ')}`);
+  const claimed = Array.isArray(claimedOnly) && claimedOnly.length
+    ? `<div class="wk-claimed">Claimed by a worker but not changed: ${claimedOnly.map(f => `<code>${esc(f)}</code>`).join(' ')}</div>` : '';
+  return `<div class="wk-changes"><b>Changed on disk</b> <span class="wk-muted">(${esc(ch.source || '')}${ch.truncated ? ', list truncated' : ''})</span>: ` +
+    (parts.length ? parts.join(' · ') : 'nothing') + `</div>${claimed}`;
+}
 
 /** One job row + (expanded) its compact result. Exported for tests. */
 export function jobHtml(job, expanded = false) {
   const st = STATUS_WORD[job.status] || job.status || '';
-  const live = job.status === 'queued' || job.status === 'running';
+  const live = isLive(job.status);
   const res = job.result || {};
   const workers = Array.isArray(res.workers) ? res.workers : [];
   const changed = Array.isArray(res.files_changed) ? res.files_changed : [];
+  const v = res.verification;
+  const vword = v && v.ran ? (v.ok ? 'verified' : (v.inconclusive ? 'unverified' : 'verification failed')) : '';
   const head =
     `<div class="wk-job-head" data-wk-toggle="${attr(job.id)}">` +
     `<span class="wk-status wk-status-${attr(st)}">${esc(st)}</span>` +
-    `<span class="wk-title" title="${attr(job.title || '')}">${esc(job.title || 'Workers')}</span>` +
+    `<span class="wk-title" title="${attr(job.verdict || job.title || '')}">${esc(job.title || 'Workers')}</span>` +
     `<span class="wk-meta">${esc(when(job.created))}${job.duration_s != null ? ' · ' + esc(fmtDur(job.duration_s)) : ''}` +
     `${changed.length ? ` · ${changed.length} file${changed.length > 1 ? 's' : ''} changed` : ''}` +
+    `${vword ? ` · <span class="wk-vword wk-vword-${v.ok ? 'ok' : 'bad'}">${esc(vword)}</span>` : ''}` +
     `${res.totals && res.totals.errors ? ` · ${res.totals.errors} error${res.totals.errors > 1 ? 's' : ''}` : ''}</span>` +
     `<span class="wk-actions">` +
     (job.session_id ? `<button type="button" class="admin-btn-sm" data-wk-open="${attr(job.session_id)}" title="Open the Workers chat: the control board, steer / stop, the transcripts">Board</button>` : '') +
@@ -48,7 +78,9 @@ export function jobHtml(job, expanded = false) {
   if (!expanded) return `<div class="wk-job" data-wk-job="${attr(job.id)}">${head}</div>`;
   const rows = [];
   if (job.error) rows.push(`<div class="wk-error">${esc(job.error)}</div>`);
+  if (job.verdict && !live) rows.push(`<div class="wk-verdict">${esc(job.verdict)}</div>`);
   if (live) {
+    if (job.phase) rows.push(`<div class="wk-muted wk-phase">${esc(job.phase)}${job.ceiling_s ? ` · at most ${esc(fmtDur(job.ceiling_s))} more` : ''}</div>`);
     const prog = job.progress || {};
     const names = Object.keys(prog);
     rows.push(`<div class="wk-progress">${names.length ? names.map(n => {
@@ -61,22 +93,27 @@ export function jobHtml(job, expanded = false) {
       return `<div class="wk-worker-line"><span class="wk-wname">${esc(n)}</span> ${bits.join(' · ')}</div>`;
     }).join('') : '<span class="wk-muted">starting…</span>'}</div>`);
   }
+  if (!live) {
+    rows.push(changesHtml(res.changes, res.claimed_only));
+    rows.push(verificationHtml(v));
+  }
   for (const w of workers) {
     const files = Array.isArray(w.files_changed) ? w.files_changed : [];
     const wst = w.status || '';
     rows.push(`<div class="wk-worker">` +
       `<div class="wk-worker-line"><span class="wk-status wk-status-${attr(wst)}">${esc(wst)}</span>` +
-      `<span class="wk-wname">${esc(w.name || 'worker')}</span>` +
+      `<span class="wk-wname">${esc(w.name || 'worker')}${w.role && w.role !== 'worker' ? ` <span class="wk-muted">(${esc(w.role)})</span>` : ''}</span>` +
       `<span class="wk-muted">${esc(w.rounds || 0)} rounds · ${esc(w.tool_calls || 0)} tools${w.failed_calls ? ' (' + esc(w.failed_calls) + ' failed)' : ''} · ${esc(w.input_tokens || 0)}/${esc(w.output_tokens || 0)} tok${w.stop_reason && w.stop_reason !== 'complete' ? ' · ' + esc(w.stop_reason) : ''}</span></div>` +
       (w.error ? `<div class="wk-error">${esc(w.error)}</div>` : '') +
-      (files.length ? `<div class="wk-files">changed: ${files.map(f => `<code>${esc(f)}</code>`).join(' ')}</div>` : '') +
+      (files.length ? `<div class="wk-files">claims: ${files.map(f => `<code>${esc(f)}</code>`).join(' ')}</div>` : '') +
       (w.summary ? `<div class="wk-summary">${esc(w.summary)}</div>` : '') +
       `</div>`);
   }
   if (Array.isArray(res.lock_conflicts) && res.lock_conflicts.length) rows.push(`<div class="wk-muted">Writes refused by the file locks: ${esc(res.lock_conflicts.join('; '))}</div>`);
   if (res.dropped_tasks) rows.push(`<div class="wk-error">${esc(res.dropped_tasks)} task(s) were not run (max 4 per job) — run them again.</div>`);
   const tasks = Array.isArray(job.tasks) ? job.tasks : [];
-  rows.push(`<details class="wk-tasks"><summary>${tasks.length} task${tasks.length === 1 ? '' : 's'} · ${esc(job.workspace || 'no workspace')} · ${esc(job.model || '')}</summary>` +
+  rows.push(`<details class="wk-tasks"><summary>${tasks.length} task${tasks.length === 1 ? '' : 's'} · ${esc(job.workspace || 'no workspace')} · ${esc(job.model || '')}` +
+    `${job.verify && job.verify !== 'auto' ? ` · verify: ${esc(job.verify)}` : ''}</summary>` +
     tasks.map((t, i) => `<div class="wk-task"><b>${i + 1}.</b> ${esc(t.instruction || '')}${t.files && t.files.length ? ` <span class="wk-muted">[${esc(t.files.join(', '))}]</span>` : ''}</div>`).join('') + `</details>`);
   return `<div class="wk-job wk-job-open" data-wk-job="${attr(job.id)}">${head}<div class="wk-job-body">${rows.join('')}</div></div>`;
 }
@@ -84,25 +121,46 @@ export function jobHtml(job, expanded = false) {
 /** The whole modal body. Exported for tests. */
 export function pageHtml(jobs, expanded, { workspace = '', busy = false } = {}) {
   const list = jobs.length ? jobs.map(j => jobHtml(j, expanded.has(j.id))).join('')
-    : '<div class="admin-empty">No jobs yet. Describe a task above and press Run — the workers do it on the local models; you get back what changed and whether the tests pass.</div>';
+    : '<div class="admin-empty">No jobs yet. Describe a task above and press Run — the workers do it on the local models; Faustus checks what changed and runs the tests itself; you read the verdict.</div>';
   return `
     <form class="wk-form" id="wk-form">
-      <textarea id="wk-task" rows="4" placeholder="What should the workers do? Say what 'done' means, e.g. “In cart.py add apply_discount(total, pct) with validation and a test in tests/test_cart.py; pytest -q must pass.” One task per line for several workers." ${busy ? 'disabled' : ''}></textarea>
+      <textarea id="wk-task" rows="4" placeholder="What should the workers do? Say what 'done' means, e.g. “In cart.py add apply_discount(total, pct) with validation and a test in tests/test_cart.py; pytest -q must pass.” Separate several tasks with a blank line or a list (- / 1.) — one worker each." ${busy ? 'disabled' : ''}></textarea>
       <div class="wk-form-row">
-        <label class="wk-field">Folder <input type="text" id="wk-workspace" placeholder="D:\\projects\\app" value="${attr(workspace)}" ${busy ? 'disabled' : ''}></label>
-        <label class="wk-check" title="Independent tasks run at the same time (one worker each); off = one after another"><input type="checkbox" id="wk-parallel" checked> parallel</label>
+        <label class="wk-field">Folder <input type="text" id="wk-workspace" placeholder="D:\\projects\\app" value="${attr(workspace)}" required ${busy ? 'disabled' : ''}></label>
+        <label class="wk-check" title="Independent tasks run at the same time (one worker each); off = one after another (a later task may edit what an earlier one wrote)"><input type="checkbox" id="wk-parallel" checked> parallel</label>
         <label class="wk-check" title="Add a reviewer worker after the others"><input type="checkbox" id="wk-reviewer"> reviewer</label>
         <label class="wk-field wk-field-sm">Model <input type="text" id="wk-model" placeholder="configured worker model"></label>
         <button type="submit" class="admin-btn-add" id="wk-run" ${busy ? 'disabled' : ''}>${busy ? 'Starting…' : 'Run'}</button>
       </div>
-      <div class="wk-hint">Each line is one task = one worker (max 4). The workers are confined to the folder; the job gets its own <em>Workers</em> chat with the control board. Same door Fable uses from Cowork — see <code>website/fable-workers.md</code>.</div>
+      <div class="wk-form-row">
+        <label class="wk-field" title="Run by Faustus in the folder after the workers — their own claims are never the proof. Empty = the project's test runner is detected (pytest, npm test, cargo, go, make test)">Verify with <input type="text" id="wk-verify" placeholder="auto-detect the test runner"></label>
+        <label class="wk-field wk-field-sm" title="When the verification fails: how many times one fixer worker gets the failure output before Faustus gives up">Fix rounds <input type="number" id="wk-fix" min="0" max="2" value="1"></label>
+        <span class="wk-muted" id="wk-count">1 worker</span>
+      </div>
+      <div class="wk-hint">A blank line or a list marker starts a new task = one worker (max 4). The workers are confined to the folder; Faustus checkpoints it before, diffs it after, runs the verification itself and marks the job <em>partial</em> when anything did not finish. The job gets its own <em>Workers</em> chat with the control board. Same door Fable uses from Cowork — see <code>website/fable-workers.md</code>.</div>
     </form>
     <div class="wk-list" id="wk-list">${list}</div>`;
 }
 
-/** Split the box into tasks: one per non-empty line (numbered lists accepted). */
+/** Split the box into tasks: a blank line or a list marker (-, *, •, 1., 2))
+ *  starts a new one; a soft-wrapped paragraph stays ONE task (one line per
+ *  task used to turn a wrapped sentence into three workers). Max 4. */
 export function parseTasks(text) {
-  return String(text || '').split(/\r?\n/).map(l => l.replace(/^\s*(?:[-*•]|\d+[.)])\s+/, '').trim()).filter(Boolean).slice(0, 4);
+  const marker = /^\s*(?:[-*•]|\d+[.)])\s+/;
+  const tasks = [];
+  let cur = null;
+  for (const raw of String(text || '').split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) { if (cur) { tasks.push(cur); cur = null; } continue; }
+    if (marker.test(raw)) {
+      if (cur) tasks.push(cur);
+      cur = line.replace(marker, '').trim();
+    } else {
+      cur = cur ? `${cur} ${line}` : line;
+    }
+  }
+  if (cur) tasks.push(cur);
+  return tasks.filter(Boolean).slice(0, 4);
 }
 
 async function _json(url, opts = {}) {
@@ -126,7 +184,8 @@ async function _refreshJobs() {
     const data = await _json('/api/dispatch?limit=50');
     const jobs = Array.isArray(data.jobs) ? data.jobs : [];
     // rows come without results; fetch the compact result for the expanded and the live ones
-    const want = jobs.filter(j => _expanded.has(j.id) || j.status === 'running' || j.status === 'queued');
+    const want = jobs.filter(j => _expanded.has(j.id) || isLive(j.status));
+    for (const id of Array.from(_expanded)) if (!jobs.some(j => j.id === id)) _expanded.delete(id);
     const full = await Promise.all(want.map(j => _json(`/api/dispatch/${encodeURIComponent(j.id)}`).catch(() => j)));
     const byId = new Map(full.map(j => [j.id, j]));
     _jobs = jobs.map(j => byId.get(j.id) || j);
@@ -141,7 +200,7 @@ function _renderList() {
   if (!list) return;
   list.innerHTML = _jobs.length ? _jobs.map(j => jobHtml(j, _expanded.has(j.id))).join('')
     : '<div class="admin-empty">No jobs yet. Describe a task above and press Run.</div>';
-  const live = _jobs.some(j => j.status === 'running' || j.status === 'queued');
+  const live = _jobs.some(j => isLive(j.status));
   if (live && !_pollTimer) _pollTimer = setInterval(_refreshJobs, 3000);
   if (!live && _pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
 }
@@ -150,11 +209,15 @@ async function _run(modal) {
   const box = modal.querySelector('#wk-task');
   const tasks = parseTasks(box.value);
   if (!tasks.length) { box.focus(); return; }
-  const workspace = (modal.querySelector('#wk-workspace').value || '').trim();
+  const wsInput = modal.querySelector('#wk-workspace');
+  const workspace = (wsInput.value || '').trim();
+  if (!workspace) { _toast('Say which folder the workers may touch', 3000); wsInput.focus(); return; }
   const body = {
-    tasks, parallel: modal.querySelector('#wk-parallel').checked, reviewer: modal.querySelector('#wk-reviewer').checked,
+    tasks, workspace, parallel: modal.querySelector('#wk-parallel').checked, reviewer: modal.querySelector('#wk-reviewer').checked,
+    fix_rounds: Math.max(0, Math.min(2, parseInt(modal.querySelector('#wk-fix').value, 10) || 0)),
   };
-  if (workspace) body.workspace = workspace;
+  const verify = (modal.querySelector('#wk-verify').value || '').trim();
+  if (verify) body.verify = verify;
   const model = (modal.querySelector('#wk-model').value || '').trim();
   if (model) body.model = model;
   const btn = modal.querySelector('#wk-run');
@@ -224,6 +287,28 @@ export function openWorkers() {
   modal.querySelector('#wk-task').addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); _run(modal); }
   });
+  // "N workers" as you type, so a pasted paragraph never surprises
+  modal.querySelector('#wk-task').addEventListener('input', (e) => {
+    const n = parseTasks(e.target.value).length;
+    const el = modal.querySelector('#wk-count');
+    if (el) el.textContent = `${Math.max(1, n)} worker${n === 1 || n === 0 ? '' : 's'}${n > 1 ? ' (one per task)' : ''}`;
+  });
+  // the verifier Faustus would run in that folder, shown as the placeholder
+  const wsInput = modal.querySelector('#wk-workspace');
+  let verifierTimer = null;
+  const showVerifier = () => {
+    const ws = (wsInput.value || '').trim();
+    const inp = modal.querySelector('#wk-verify');
+    if (!inp) return;
+    if (!ws) { inp.placeholder = 'auto-detect the test runner'; return; }
+    _json(`/api/dispatch/config?workspace=${encodeURIComponent(ws)}`).then(cfg => {
+      const v = cfg && cfg.verifier;
+      if (!v) return;
+      inp.placeholder = v.error ? v.error : (v.label ? `auto: ${v.label}` : 'no test runner found here — give a command');
+    }).catch(() => {});
+  };
+  wsInput.addEventListener('input', () => { clearTimeout(verifierTimer); verifierTimer = setTimeout(showVerifier, 500); });
+  showVerifier();
   _escHandler = (e) => { if (e.key === 'Escape') closeWorkers(); };
   document.addEventListener('keydown', _escHandler);
   // say which model a job would run on before Run (the configured worker

@@ -134,6 +134,20 @@ class FileLockRegistry:
                 return self.owner[key]
         return None
 
+    def release(self, worker: str) -> List[str]:
+        """Give back every file `worker` owns — called when the worker has
+        FINISHED, so a later worker (a dependent task in a sequential run, a
+        fixer after verification, the next job in the same folder) may edit
+        what it wrote. While it ran nobody else could; after it ran there is
+        no second writer to clobber. Returns the released display paths."""
+        mine = [k for k, w in self.owner.items() if w == worker]
+        out = [self.display.get(k, k) for k in mine]
+        for k in mine:
+            self.owner.pop(k, None)
+            self.display.pop(k, None)
+            self.provisional.discard(k)
+        return out
+
     def owned_by(self, worker: str) -> List[str]:
         return [self.display[k] for k, w in self.owner.items() if w == worker]
 
@@ -251,6 +265,39 @@ def _setting(key: str, default: Any = None) -> Any:
         return get_setting(key, default)
     except Exception:
         return default
+
+
+# One GPU per machine, not one per delegate_agents CALL: the "at most N
+# workers generate at once" semaphore is shared by every delegation on the
+# same endpoint (a chat's /agents and two dispatched jobs at the same time
+# used to run 3 × N workers against one Ollama, all queueing on the model's
+# single slot while each worker's wall-clock timeout ticked). Keyed by the
+# event loop too — asyncio primitives bind to the loop that first waits on
+# them, and the test suite runs one loop per test.
+_SLOTS: Dict[tuple, asyncio.Semaphore] = {}
+
+
+def shared_slots(endpoint_url: str, size: int) -> Optional[asyncio.Semaphore]:
+    if size <= 0:
+        return None
+    try:
+        loop_key = id(asyncio.get_running_loop())
+    except RuntimeError:
+        loop_key = 0
+    try:
+        from urllib.parse import urlparse
+        host = (urlparse(endpoint_url or "").netloc or endpoint_url or "").lower()
+    except Exception:
+        host = str(endpoint_url or "")
+    key = (loop_key, host, int(size))
+    sem = _SLOTS.get(key)
+    if sem is None:
+        # a different size for the same host means the setting changed:
+        # forget the old semaphores of that host (their waiters finish on them)
+        for k in [k for k in _SLOTS if k[0] == loop_key and k[1] == host]:
+            _SLOTS.pop(k, None)
+        sem = _SLOTS[key] = asyncio.Semaphore(int(size))
+    return sem
 
 
 def _cancel_task(task: asyncio.Task) -> None:
@@ -941,9 +988,17 @@ class DelegateAgentsTool:
         # model queue on its single slot — so a worker model of its own,
         # pinned to the other card in Local models → Options (main_gpu), is
         # what makes the coordinator and the workers overlap at all.
-        worker_model = str(_setting("agent_subagent_worker_model", "") or "").strip()
-        if worker_model and worker_model.lower() != "auto":
-            model = worker_model
+        # A caller that resolved the route itself (a dispatched job: it
+        # reports `job.model` to the coordinator) passes it in ctx and it is
+        # honoured as-is — the sub-agent setting is for CHATS, whose parent
+        # model is the coordinator's, and it named the coordinator's endpoint.
+        explicit_model = str(ctx.get("model") or "").strip()
+        if explicit_model:
+            model = explicit_model
+        else:
+            worker_model = str(_setting("agent_subagent_worker_model", "") or "").strip()
+            if worker_model and worker_model.lower() != "auto":
+                model = worker_model
         workspace = get_active_workspace()
         roots = list(get_active_workspace_roots() or ()) or None
         gen_overrides = ctx.get("gen_overrides") if isinstance(ctx.get("gen_overrides"), dict) else None
@@ -975,7 +1030,7 @@ class DelegateAgentsTool:
             max_parallel = int(_setting("agent_subagent_max_parallel", 2) or 0)
         except (TypeError, ValueError):
             max_parallel = 2
-        slots = asyncio.Semaphore(max(1, max_parallel)) if max_parallel > 0 else None
+        slots = shared_slots(endpoint_url, max(1, max_parallel)) if max_parallel > 0 else None
 
         async def watchdog(run: SubagentRun, emit) -> None:
             """Heartbeat + deterministic supervisor. Emits a `tick` every
@@ -1085,6 +1140,12 @@ class DelegateAgentsTool:
                 run.finished = run.finished or time.time()
                 if dog is not None and not dog.done():
                     dog.cancel()
+                # Its files are free again: a dependent task later in a
+                # sequential run (or a fixer after verification) may edit
+                # what this worker wrote — until now the locks outlived the
+                # worker and the second task in "parallel: false" was refused.
+                if locks is not None:
+                    locks.release(run.id)
                 # The transcript is saved HERE, after the stop reason is final
                 # (stopped / stalled / timeout), not in _run_subagent's finally.
                 _save_transcript(run, sm)

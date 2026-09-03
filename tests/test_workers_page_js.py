@@ -77,16 +77,42 @@ def test_page_has_the_box_the_folder_and_an_empty_state():
     """)
     assert 'id="wk-task"' in out["empty"] and 'value="D:\\proj"' in out["empty"] and "No jobs yet" in out["empty"]
     assert 'id="wk-parallel" checked' in out["empty"] and "website/fable-workers.md" in out["empty"]
+    assert 'id="wk-verify"' in out["empty"] and 'id="wk-fix"' in out["empty"] and 'id="wk-workspace"' in out["empty"] and " required" in out["empty"]
     assert "Starting…" in out["busy"] and "disabled" in out["busy"]
 
 
 @pytest.mark.skipif(not _HAS_NODE, reason="node not installed")
-def test_one_task_per_line_numbered_lists_accepted_max_four():
+def test_blank_lines_and_list_markers_split_tasks_max_four():
     out = _run("""
       console.log(JSON.stringify({
-        lines: parseTasks('add a test\\n\\n2. fix the bug  \\n- write docs\\n• fourth\\nfifth'),
+        lines: parseTasks('add a test\\n\\n2. fix the bug  \\n- write docs\\n• fourth\\n\\nfifth'),
         one: parseTasks('  just one  '), none: parseTasks(''),
       }));
     """)
     assert out["lines"] == ["add a test", "fix the bug", "write docs", "fourth"]
     assert out["one"] == ["just one"] and out["none"] == []
+
+
+@pytest.mark.skipif(not _HAS_NODE, reason="node not installed")
+def test_a_finished_job_shows_the_verdict_what_changed_on_disk_and_the_verification():
+    job = dict(JOB, status="partial", verdict="1/1 workers done · 2 files changed on disk · verification FAILED (1 failed)",
+               result=dict(JOB["result"], files_changed=["cart.py", "new.py"], claimed_only=["tests/test_cart.py"],
+                           changes={"source": "checkpoint", "count": 2, "added": ["new.py"], "modified": ["cart.py"], "deleted": [], "truncated": False},
+                           verification={"mode": "auto", "ran": True, "ok": False, "summary": "1 failed", "command": "python -m pytest -q",
+                                         "failures": ["tests/test_cart.py::test_total — assert 0 == 3"], "pre_existing": [], "attempts": 2,
+                                         "output_tail": "E  assert 0 == 3 <b>"}))
+    out = _run(f"""
+      const JOB = {json.dumps(job)};
+      console.log(JSON.stringify({{ closed: jobHtml(JOB, false), open: jobHtml(JOB, true),
+        verifying: jobHtml({{ id: 'v', status: 'verifying', title: 't', created: 1, phase: 'running the verification', ceiling_s: 1200, tasks: [], progress: {{}} }}, true) }}));
+    """)
+    closed, opened, verifying = out["closed"], out["open"], out["verifying"]
+    assert 'wk-status-partial">partial<' in closed and "2 files changed" in closed and "verification failed" in closed
+    assert "wk-verdict" in opened and "verification FAILED (1 failed)" in opened
+    assert "Changed on disk" in opened and "wk-chg-added" in opened and "<code>new.py</code>" in opened
+    assert "Claimed by a worker but not changed" in opened and "<code>tests/test_cart.py</code>" in opened
+    assert "Verification failed" in opened and "2 attempts" in opened and "test_total — assert 0 == 3" in opened
+    assert "assert 0 == 3 &lt;b&gt;" in opened and "<b>" not in opened.split("wk-tail")[1].split("</pre>")[0]
+    assert "claims: <code>cart.py</code>" in opened
+    assert 'wk-status-verifying">verifying<' in verifying and "running the verification" in verifying and "at most 20 min more" in verifying
+    assert 'data-wk-cancel="v"' in verifying
