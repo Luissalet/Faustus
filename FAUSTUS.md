@@ -1065,5 +1065,89 @@ es más débil, no más fuerte, en lo que comparten: sobre un informe cortado a 
 código, inventaba `[1] [2] [3]` a partir de `rows[1]`, `cols[2]`, `cols[3]`. Eso es exactamente la
 fuente inventada que todo el apartado 28 existe para impedir.
 
+## 29. Buscador sin límite, y lo que enseñó una ejecución de verdad (03-09-2026, noche)
+
+Todo lo de §28 se verificó en el 7001 con `qwen3.5:9b` contra fuentes reales. Lo que sigue es lo que
+esa ejecución enseñó, que no se podía saber leyendo el código.
+
+### 29.1 DuckDuckGo no es un buscador, es un scrape
+La segunda investigación seguida murió con «Search engine unavailable». DuckDuckGo no tiene API
+pública: se le raspa el HTML, y corta en cuanto haces dos seguidas. Era el proveedor por defecto de
+facto solo porque es el único que no necesita configurar nada.
+
+La respuesta no era añadir un proveedor —ya había siete— sino **levantar el que ya estaba definido**:
+SearXNG en el `docker-compose.yml` del propio repo, fijado a una versión concreta y con la API JSON
+activada. Corre en la máquina, agrega decenas de motores, sin clave y sin cuota. Con Firecrawl
+(§28.6) al lado queda el par que Diogenes hizo canónico: **SearXNG descubre, Firecrawl lee**.
+
+Medido, misma pregunta, mismo modelo: DuckDuckGo dio **10 URLs en 2 rondas**; SearXNG dio **36 en 3**.
+
+Nota de operación, porque costó una hora: Docker Desktop arrancado desde un shell con el entorno
+recortado falla con `unable to get 'ProgramData'` y luego con rutas `unix://C:\...` mal formadas. No
+es Docker: es un hijo heredando un entorno roto de su padre — **exactamente la clase de fallo que
+`native_host_environment()` (§27.3) existe para impedir**, encontrada por accidente y desde el otro
+lado. Se arranca como lo haría un doble clic y funciona.
+
+### 29.2 Los cuatro defectos que solo aparecen ejecutando
+1. **La gradación medía lo que no era.** 51 de 57 citas salían «débil» en un informe visiblemente
+   bien documentado. La causa es estructural: el modelo escribe en español, varias fuentes están en
+   inglés, y las capas de `claim_verify` buscan cifras, nombres propios y un 0.75 de solape de
+   tokens. Una paráfrasis traducida no pasa ninguna. Ahora se comprueba **solo lo que se puede
+   comprobar entre idiomas —las cifras— y se dice que el resto no se comprobó**, que es distinto de
+   decir que es débil. Tres resultados en vez de una escala: cifras en la fuente / cifras ausentes
+   de la fuente / sin comprobar. En la ejecución de verificación: **9 confirmadas, 3 con cifras que
+   no están en la fuente que citan, 49 sin comprobar**. Esas 3 son la señal que importa, y la escala
+   vieja las enterraba dentro de «débil: 51».
+2. Se coló texto del prompt como encabezado: `## Evidence For and ## Evidence Against`. Ningún
+   prompt de categoría lleva ya un `#`, y eso es lo que comprueba el test.
+3. Encabezados en inglés en un informe en español, y una categoría mal detectada («factcheck» para
+   una pregunta abierta) que imponía su esqueleto encima del del usuario. Regla nueva: **si hay
+   subpreguntas explícitas, la categoría no manda**. Las preguntas del usuario ganan.
+4. La primera «subpregunta» era la pregunta entera, y los `1)` `2)` `3)` del usuario salían
+   renumerados encima de los nuestros. Ahora la pregunta principal es lo que va **antes** del primer
+   marcador, y `el grupo 1) tuvo menos dolor` sigue siendo prosa, no una enumeración.
+
+Verificado tras el arreglo, misma forma de pregunta: encabezados `## 1. ¿Qué sabemos...?` a
+`## 4. ¿Para quién está contraindicado?`, todo en español, sin esqueleto de categoría encima.
+
+### 29.3 Un informe apoyado en dos páginas se lee igual que uno apoyado en siete
+El hallazgo más incómodo, y solo visible midiendo: el modelo recibió **7 fuentes que él mismo había
+leído, escribió 75 marcadores y usó 2**. Todos los marcadores resuelven, así que la comprobación de
+citas pasa y no dice nada. Pero un informe que descansa en dos páginas es otra cosa que uno que
+abarca siete, y en la prosa no se distingue: los números se ven igual.
+
+Dos cambios, y ninguno puede fabricar una cita. El prompt dice ahora que cada fuente numerada se
+buscó y se leyó **para esta pregunta**, así que donde una fuente posterior cubra mejor una sección
+hay que citarla ahí — y en la misma frase, que una fuente sin nada que aportar se deja fuera en vez
+de citarse en vacío, porque inflar la cuenta es peor que tenerla baja. Y la leyenda imprime la
+amplitud, **pero solo cuando se queda corta**: un informe que usó todo lo que reunió no dice nada,
+porque la línea sería ruido.
+
+### 29.4 El cromo de chat en un documento
+El PDF abría con «1 message · Exported…» y una barra gris que decía «Report». Los renderizadores de
+docx y pdf son los del export de conversaciones, y anunciaban un mensaje y su rol. Un `Transcript`
+puede marcarse ahora como documento y ambos se saltan esa parte. Lo demás no se toca: se comprobó
+**byte a byte** que una conversación exportada sale idéntica antes y después, con las dos huellas
+(zip por contenido de miembros, PDF con `invariant`).
+
+### 29.5 Lo que no se hizo, y por qué
+De la segunda tanda de Diogenes, la mitad ya estaba: el **auditor de skills** es byte a byte el
+nuestro; el `reconnect()` de ChromaDB es una añadidura **nuestra** que ellos no tienen; el guardado
+de un secreto redactado ya está protegido por tres hechos separados (los admins reciben los ajustes
+sin redactar, el POST es solo-admin, y el POST es un patch que ignora las claves ausentes) — se
+añadió el test de regresión igualmente, y se comprobó que falla si se rompe cualquiera de los tres.
+`download_models.py` es para los motores nativos de Diogenes y no aplica.
+
+Lo que sí faltaba y se portó: la **lane de embeddings implícita** (una lane personalizada existe solo
+si el operador guardó un endpoint, no porque `EmbeddingClient` tenga un Ollama por defecto), el
+**oráculo de salida** (`src/output_oracle.py`: un paso declara qué debe contener su salida **al
+crear el plan**, y si falta el código de salida se fuerza a 65 — `output_matched` es `None` cuando no
+se declaró nada, que es «sin comprobar», no «pasó»), y **no matar un proceso que no arrancamos
+nosotros**: `_kill_tree` mataba por pid sin preguntar si el pid seguía siendo de nuestro hijo, y en
+la ruta de cancelación el proceso suele haber terminado ya —un pid reciclado se lleva por delante un
+árbol ajeno con `/T`. Ahora se autoriza por objeto vivo y hora de creación, sin bandera para
+saltárselo, porque quien llama aquí es un modelo y una bandera que un modelo puede poner no es una
+salvaguarda.
+
 ## Cómo mantener este documento
 Cada bloque de trabajo añade una sección (fecha, qué, por qué, ficheros, cómo se verificó, cifras) y actualiza las cifras de cabecera (`git log --oneline c9dd68d8..HEAD | wc -l`, `git diff --stat c9dd68d8..HEAD`). Los commits del fork llevan mensajes largos que explican el porqué: `git log c9dd68d8..HEAD` es la fuente detallada.
