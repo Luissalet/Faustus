@@ -19,7 +19,9 @@ tokens go to planning and review:
 
 Tools: workers_guide (read first), dispatch_workers (start a job),
 workers_wait (block until done, then the compact result), workers_status,
-workers_events, workers_cancel, workers_list. It talks HTTP to the running
+workers_events, workers_cancel, workers_list, objectives_list/objectives_apply,
+guard_explain, and memory_pack (what this machine has already learned). It
+talks HTTP to the running
 Faustus (routes/dispatch_routes.py) — nothing runs in this process, so a crash
 here cannot take a worker with it. A dispatch carries an Idempotency-Key, so
 the one retry after a connection error can never start a second job.
@@ -222,6 +224,21 @@ def render_objectives(project: Dict[str, Any], data: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def render_pack(data: Dict[str, Any]) -> str:
+    """The learned-memory block exactly as a local worker would receive it."""
+    block = str(data.get("pack") or "").strip()
+    if not data.get("enabled", True):
+        head = "learned memory: injection is OFF (Settings -> Agent -> Learned rules)"
+    elif not block:
+        return ("nothing learned yet for this scope — Faustus fills this store from turn "
+                "outcomes, and the owner can add rules in the Brain page")
+    else:
+        head = f"learned memory · {data.get('chars')} of {data.get('budget')} chars"
+    if data.get("degraded"):
+        head += " · semantic lane unavailable (lexical retrieval only)"
+    return head + ("\n" + block if block else "")
+
+
 def render_apply(result: Dict[str, Any]) -> str:
     lines = []
     applied = result.get("applied") or []
@@ -340,6 +357,20 @@ TOOLS: List[Tool] = [
         }, "required": ["command"]},
     ),
     Tool(
+        name="memory_pack",
+        description=(
+            "What Faustus has LEARNED and would put in a local worker's prompt right now: the "
+            "procedural rules it scored from earlier turn outcomes, the memories relevant to a "
+            "query, and the anti-patterns it inverted after they kept causing failures. Read it "
+            "before writing task instructions so you do not re-teach what this machine already "
+            "knows — or contradict a rule it learned the hard way."
+        ),
+        inputSchema={"type": "object", "properties": {
+            "project": {"type": "string", "description": "Project id, sidebar folder or name; omit for the unscoped rules."},
+            "query": {"type": "string", "description": "What the work is about; drives the 'Relevant memories' section."},
+        }},
+    ),
+    Tool(
         name="objectives_apply",
         description=(
             "Update a Faustus project's objectives with TYPED DELTAS (never a rewrite). Each delta: "
@@ -379,6 +410,20 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
             result = await asyncio.to_thread(
                 _request, "POST", f"/api/projects/{project.get('id')}/objectives/deltas", body)
             return _text(render_apply(result))
+        if name == "memory_pack":
+            project = str(args.get("project") or "")
+            if project:
+                # A known project resolves to the folder the store scopes by;
+                # anything else is passed through as a literal scope filter.
+                try:
+                    row = await asyncio.to_thread(_resolve_project, project)
+                    project = str(row.get("workspace") or row.get("folder") or project)
+                except RuntimeError:
+                    pass
+            query = urllib.parse.urlencode({"project": project,
+                                            "query": str(args.get("query") or "")})
+            data = await asyncio.to_thread(_request, "GET", f"/api/memory-engine/pack?{query}")
+            return _text(render_pack(data))
         if name == "guard_explain":
             command = str(args.get("command") or "")
             if not command.strip():

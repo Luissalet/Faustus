@@ -840,6 +840,11 @@ app.include_router(setup_project_routes())
 from routes.scorecard_routes import setup_scorecard_routes
 app.include_router(setup_scorecard_routes())
 
+# Learned memory: the store that scores, decays and inverts what it learned
+# from turn outcomes (src/memory_engine.py + src/memory_curator.py).
+from routes.memory_engine_routes import setup_memory_engine_routes
+app.include_router(setup_memory_engine_routes())
+
 # Live system usage (ollama ps + nvidia-smi + RAM/CPU) for the chat usage widget.
 from routes.system_usage_routes import setup_system_usage_routes
 app.include_router(setup_system_usage_routes())
