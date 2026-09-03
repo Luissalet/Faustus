@@ -43,4 +43,11 @@ def test_reconnect_passes_full_server_config():
         args=["--flag"],
         env={"KEY": "val"},
         url=None,
+        # inherit_env is part of "full server metadata" now (FAUSTUS). This row
+        # does not carry the attribute at all — it predates the column, exactly
+        # like a real DB whose migration has not run — and the reconnect must
+        # therefore ask for the FULL environment, which is what that server has
+        # always had. A row like this coming back minimal is the regression the
+        # migration exists to prevent.
+        inherit_env=True,
     )

@@ -14,7 +14,13 @@ import httpx
 from core.database import McpServer, SessionLocal
 from core.middleware import require_admin
 from src.constants import DATA_DIR, MCP_OAUTH_DIR
-from src.mcp_manager import McpManager
+from src.mcp_manager import (
+    McpManager,
+    new_server_inherits_env,
+    read_stderr_tail,
+    server_inherits_env,
+    stderr_log_path,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -150,6 +156,13 @@ def setup_mcp_routes(mcp_manager: McpManager):
                     "auth_url": status.get("auth_url"),
                     "has_oauth": oauth_cfg is not None,
                     "needs_oauth": needs_oauth,
+                    # Which environment this server's child process gets, and
+                    # where its stderr goes (FAUSTUS). Said out loud on every
+                    # read so the UI can show the mode instead of the user
+                    # having to guess why a server can or cannot see a variable.
+                    "inherit_env": server_inherits_env(srv),
+                    "env_mode": "inherited" if server_inherits_env(srv) else "minimal",
+                    "stderr_log": stderr_log_path(srv.id) if srv.transport == "stdio" else "",
                 })
             return result
         finally:
@@ -166,12 +179,24 @@ def setup_mcp_routes(mcp_manager: McpManager):
         url: str = Form(None),
         oauth_file: str = Form(None),
         oauth_config: str = Form(None),
+        inherit_env: str = Form(None),
     ):
         """Add a new MCP server config and attempt connection. Admin-only:
         registering a stdio server is equivalent to executing arbitrary
-        binaries on the host."""
+        binaries on the host.
+
+        `inherit_env` (FAUSTUS): omitted, the default comes from
+        `agent_mcp_min_env` — a new third-party server gets the structural
+        variables and its own declared env, not every provider API key in the
+        app. Servers added before this existed keep the full environment; only
+        NEW ones start minimal.
+        """
         require_admin(request)
         server_id = str(uuid.uuid4())[:8]
+        if inherit_env is None or str(inherit_env).strip() == "":
+            inherits = new_server_inherits_env()
+        else:
+            inherits = str(inherit_env).strip().lower() in ("1", "true", "yes", "on")
 
         # Validate
         if transport == "stdio" and not command:
@@ -247,6 +272,7 @@ def setup_mcp_routes(mcp_manager: McpManager):
                 url=url,
                 is_enabled=True,
                 oauth_config=json.dumps(parsed_oauth_config) if parsed_oauth_config else None,
+                inherit_env=inherits,
             )
             db.add(srv)
             db.commit()
@@ -268,6 +294,7 @@ def setup_mcp_routes(mcp_manager: McpManager):
                 args=parsed_args,
                 env=parsed_env,
                 url=url,
+                inherit_env=inherits,
             )
 
         status = mcp_manager.get_server_status(server_id)
@@ -282,6 +309,9 @@ def setup_mcp_routes(mcp_manager: McpManager):
             "needs_oauth": needs_oauth,
             "needs_auth": needs_auth,
             "auth_url": status.get("auth_url"),
+            "inherit_env": inherits,
+            "env_mode": "inherited" if inherits else "minimal",
+            "stderr_log": stderr_log_path(server_id) if transport == "stdio" else "",
         }
 
     @router.post("/servers/{server_id}/reconnect")
@@ -298,6 +328,7 @@ def setup_mcp_routes(mcp_manager: McpManager):
 
             args = json.loads(srv.args) if srv.args else []
             env = json.loads(srv.env) if srv.env else {}
+            inherits = server_inherits_env(srv)
             connected = await mcp_manager.connect_server(
                 server_id=server_id,
                 name=srv.name,
@@ -306,6 +337,7 @@ def setup_mcp_routes(mcp_manager: McpManager):
                 args=args,
                 env=env,
                 url=srv.url,
+                inherit_env=inherits,
             )
 
             status = mcp_manager.get_server_status(server_id)
@@ -316,6 +348,10 @@ def setup_mcp_routes(mcp_manager: McpManager):
                 "error": status.get("error"),
                 "auth_url": status.get("auth_url"),
                 "needs_auth": status.get("status") == "needs_auth",
+                "inherit_env": inherits,
+                "env_mode": "inherited" if inherits else "minimal",
+                "stderr_log": stderr_log_path(server_id) if srv.transport == "stdio" else "",
+                "stderr_tail": "" if connected else read_stderr_tail(server_id),
             }
         finally:
             db.close()
@@ -367,6 +403,7 @@ def setup_mcp_routes(mcp_manager: McpManager):
                     args=args,
                     env=env,
                     url=srv.url,
+                    inherit_env=server_inherits_env(srv),
                 )
             else:
                 await mcp_manager.disconnect_server(server_id)
@@ -374,6 +411,69 @@ def setup_mcp_routes(mcp_manager: McpManager):
             return {"id": server_id, "is_enabled": enabled}
         finally:
             db.close()
+
+    @router.patch("/servers/{server_id}/env-mode")
+    async def set_env_mode(server_id: str, request: Request, inherit_env: str = Form(...)):
+        """Switch one server between the full environment and the minimal one.
+
+        Applied on the next connect, and the server is reconnected here when it
+        is enabled so the change is real rather than pending. Admin-only, like
+        every other write on this router."""
+        require_admin(request)
+        inherits = str(inherit_env).strip().lower() in ("1", "true", "yes", "on")
+        db = SessionLocal()
+        try:
+            srv = db.query(McpServer).filter(McpServer.id == server_id).first()
+            if not srv:
+                raise HTTPException(404, "Server not found")
+            srv.inherit_env = inherits
+            db.commit()
+            name, transport, command = srv.name, srv.transport, srv.command
+            args = json.loads(srv.args) if srv.args else []
+            env = json.loads(srv.env) if srv.env else {}
+            url, enabled = srv.url, bool(srv.is_enabled)
+        finally:
+            db.close()
+
+        connected = None
+        if enabled:
+            await mcp_manager.disconnect_server(server_id)
+            connected = await mcp_manager.connect_server(
+                server_id=server_id, name=name, transport=transport, command=command,
+                args=args, env=env, url=url, inherit_env=inherits,
+            )
+        status = mcp_manager.get_server_status(server_id)
+        return {
+            "id": server_id,
+            "inherit_env": inherits,
+            "env_mode": "inherited" if inherits else "minimal",
+            "connected": connected,
+            "status": status.get("status", "disconnected"),
+            "error": status.get("error"),
+            "stderr_log": stderr_log_path(server_id) if transport == "stdio" else "",
+        }
+
+    @router.get("/servers/{server_id}/stderr")
+    def server_stderr(server_id: str, request: Request, lines: int = 200):
+        """The tail of this server's stderr log (FAUSTUS).
+
+        The reason a server did not start is almost always the first thing it
+        printed, and in the packaged Windows build there is no console to print
+        it to. This is that output, per server, bounded."""
+        require_admin(request)
+        db = SessionLocal()
+        try:
+            srv = db.query(McpServer).filter(McpServer.id == server_id).first()
+            if not srv and not mcp_manager.is_builtin(server_id):
+                raise HTTPException(404, "Server not found")
+        finally:
+            db.close()
+        capped = max(1, min(int(lines or 200), 2000))
+        return {
+            "id": server_id,
+            "path": stderr_log_path(server_id),
+            "tail": read_stderr_tail(server_id, capped),
+        }
 
     @router.delete("/servers/{server_id}")
     async def delete_server(server_id: str, request: Request):
@@ -603,6 +703,7 @@ def setup_mcp_routes(mcp_manager: McpManager):
                 args=args,
                 env=env,
                 url=srv.url,
+                inherit_env=server_inherits_env(srv),
             )
 
             if connected:

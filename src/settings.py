@@ -343,6 +343,15 @@ DEFAULT_SETTINGS = {
     # code in the same process corrupts that stream. The guard (src/stdio_guard.py)
     # sends stdout writes to stderr while a stdio session is live. Off = no guard.
     "agent_mcp_stdio_guard": True,
+    # What a stdio MCP subprocess inherits (src/mcp_manager.py). A third-party
+    # server used to get the whole process environment — every provider API key
+    # and the internal loopback token. On, a NEWLY added server gets only the
+    # structural variables (PATH, HOME/USERPROFILE, TEMP, SYSTEMROOT/COMSPEC,
+    # LANG) plus its own declared env. This governs the DEFAULT FOR NEW SERVERS
+    # ONLY: every server already configured keeps `inherit_env: true` and is
+    # untouched, because a server that silently loses the variable it was
+    # reading is a break the user cannot debug.
+    "agent_mcp_min_env": True,
     # Detached runs: on-disk replay log (survives restarts) and the task
     # queue — local endpoints share one lane, N runs at a time (1 = one GPU,
     # one generation); 0 = unlimited. API endpoints queue only when their

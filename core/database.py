@@ -582,6 +582,16 @@ class McpServer(TimestampMixin, Base):
     oauth_config = Column(Text, nullable=True)   # JSON: provider, keys_file, token_file, scopes
     disabled_tools = Column(Text, nullable=True)  # JSON array of tool names to hide from LLM
     oauth_tokens = Column(EncryptedText, nullable=True)  # JSON {tokens, client_info} for generic MCP OAuth, encrypted at rest
+    # Whether this stdio server's child process gets the WHOLE app environment
+    # (every provider API key and the internal loopback token) or only the
+    # structural variables plus its own declared `env` (src/mcp_manager.py).
+    #
+    # The Python-side default is True and the migration backfills 1, so every
+    # server configured before this column existed keeps working exactly as it
+    # did — a server that silently loses the variable it was reading is a
+    # regression the user cannot debug. New servers are created with False by
+    # the code that adds them, driven by `agent_mcp_min_env`.
+    inherit_env = Column(Boolean, default=True, nullable=True)
 
 
 class Comparison(TimestampMixin, Base):
@@ -1714,6 +1724,33 @@ def _migrate_add_mcp_oauth_tokens_column():
     except Exception as e:
         logging.getLogger(__name__).warning(f"oauth_tokens migration: {e}")
 
+def _migrate_add_mcp_inherit_env_column():
+    """Add inherit_env to mcp_servers, defaulting EXISTING rows to inherit.
+
+    The point of the column is to stop handing a third-party subprocess every
+    API key in the process, but a migration that flipped working servers to a
+    minimal environment would break whichever of them was quietly reading
+    something from it — with no error the user could act on, because the server
+    would simply misbehave. So the migration is deliberately the no-op
+    direction: `DEFAULT 1` for everything already configured, and a backfill for
+    any row a partial migration left NULL. Only servers added AFTER this land
+    with 0 (see routes/mcp/mcp_routes.py and `agent_mcp_min_env`)."""
+    try:
+        with engine.connect() as conn:
+            cols = [r[1] for r in conn.execute(text("PRAGMA table_info(mcp_servers)"))]
+            if not cols:
+                return
+            if "inherit_env" not in cols:
+                conn.execute(text("ALTER TABLE mcp_servers ADD COLUMN inherit_env BOOLEAN DEFAULT 1"))
+                conn.commit()
+                logging.getLogger(__name__).info(
+                    "Added inherit_env column to mcp_servers (existing servers keep the full environment)")
+            conn.execute(text("UPDATE mcp_servers SET inherit_env = 1 WHERE inherit_env IS NULL"))
+            conn.commit()
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"inherit_env migration: {e}")
+
+
 def _migrate_add_task_v2_columns():
     """Add cron_expression, then_task_id, webhook_token to scheduled_tasks."""
     new_cols = {
@@ -2128,6 +2165,7 @@ def init_db():
     _migrate_add_task_automation_columns()
     _migrate_add_disabled_tools()
     _migrate_add_mcp_oauth_tokens_column()
+    _migrate_add_mcp_inherit_env_column()
     _migrate_add_task_v2_columns()
     _migrate_add_notifications_enabled()
     _migrate_drop_ping_notes_tasks()

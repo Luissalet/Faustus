@@ -471,6 +471,11 @@ GROUPS: list[dict[str, Any]] = [
                   "While a built-in MCP server is serving, stdout writes from app code in the same process "
                   "go to stderr instead. One stray print() on stdout corrupts the JSON-RPC stream and "
                   "kills the session."),
+            _bool("agent_mcp_min_env", "Minimal environment for new MCP servers",
+                  "A stdio MCP server is a third-party program. On, a NEWLY added one gets only PATH, "
+                  "HOME, TEMP, the Windows essentials and its own declared variables — not every provider "
+                  "API key in the app. Servers you already have keep the full environment either way; "
+                  "change one on its own card."),
         ],
     ),
     _group(

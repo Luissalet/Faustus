@@ -261,12 +261,19 @@ async def do_manage_mcp(content: str, owner: Optional[str] = None) -> Dict:
         if _mcp_err:
             return {"error": f"manage_mcp: refused unsafe server registration: {_mcp_err}", "exit_code": 1}
         sid = str(_uuid.uuid4())[:8]
+        # A server registered from here is a NEW one, so it follows the same
+        # default as one added in the UI (`agent_mcp_min_env`): the structural
+        # variables plus its own declared env, not every provider key in the
+        # process. Nothing already configured is affected.
+        from src.mcp_manager import new_server_inherits_env
+        inherits = new_server_inherits_env()
         db = SessionLocal()
         try:
             srv = McpServer(id=sid, name=name, transport="stdio", command=command,
                             args=json.dumps(cmd_args) if isinstance(cmd_args, list) else cmd_args,
                             env=json.dumps(env) if isinstance(env, dict) else env,
-                            is_enabled=True, created_at=datetime.utcnow(), updated_at=datetime.utcnow())
+                            is_enabled=True, inherit_env=inherits,
+                            created_at=datetime.utcnow(), updated_at=datetime.utcnow())
             db.add(srv)
             db.commit()
         finally:
@@ -280,6 +287,7 @@ async def do_manage_mcp(content: str, owner: Optional[str] = None) -> Dict:
                     sid, name, "stdio", command=command,
                     args=cmd_args if isinstance(cmd_args, list) else json.loads(cmd_args),
                     env=env if isinstance(env, dict) else json.loads(env),
+                    inherit_env=inherits,
                 )
                 st = mcp.get_server_status(sid)
                 tool_count = st.get("tool_count", 0)
@@ -322,6 +330,7 @@ async def do_manage_mcp(content: str, owner: Optional[str] = None) -> Dict:
                 if srv:
                     _args = json.loads(srv.args) if srv.args else []
                     _env = json.loads(srv.env) if srv.env else {}
+                    from src.mcp_manager import server_inherits_env
                     await mcp.connect_server(
                         server_id=sid,
                         name=srv.name,
@@ -330,6 +339,7 @@ async def do_manage_mcp(content: str, owner: Optional[str] = None) -> Dict:
                         args=_args,
                         env=_env,
                         url=srv.url,
+                        inherit_env=server_inherits_env(srv),
                     )
                     st = mcp.get_server_status(sid)
                     return {"response": f"Reconnected '{srv.name}' ({st.get('tool_count', 0)} tools)", "exit_code": 0}
