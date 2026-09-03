@@ -236,8 +236,8 @@ written down, including when the borrowed formula turned out to be worse than th
 
 As of 2026-09-03, against the fork point (`c9dd68d8`):
 
-| | |
-|---|---|
+| Measure | Value |
+|:--|:--|
 | Commits on top of upstream | 297 |
 | Lines changed | +122,000 / −1,500 across 588 files |
 | New modules in `src/`, `routes/`, `services/`, `static/js/` | 101 |
