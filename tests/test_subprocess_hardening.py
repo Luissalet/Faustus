@@ -117,7 +117,7 @@ def test_worker_timeout_is_reported_and_releases_the_busy_flag(monkeypatch):
         def save_sessions(self): pass
     monkeypatch.setattr(ai, "get_session_manager", lambda: _SM())
     monkeypatch.setattr(sa, "DEFAULT_WORKER_TIMEOUT_S", 1)
-    monkeypatch.setattr(sa, "parse_delegation_args", lambda c: {"tasks": [{"name": "w", "instruction": "start the server", "model": ""}],
+    monkeypatch.setattr(sa, "parse_delegation_args", lambda c, **kw: {"tasks": [{"name": "w", "instruction": "start the server", "model": ""}],
                                                                "parallel": True, "max_rounds": 5, "shared_context": "", "timeout_s": 1})
     import src.tool_execution as te
     monkeypatch.setattr(te, "get_active_workspace", lambda: None)

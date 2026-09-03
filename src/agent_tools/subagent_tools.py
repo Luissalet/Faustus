@@ -166,7 +166,18 @@ class _LockGuard:
 
 
 _LOCK_CTX: contextvars.ContextVar[Optional[_LockGuard]] = contextvars.ContextVar("odysseus_subagent_locks", default=None)
+#: The running worker's derived permissions (src/subagent_permissions.py), set
+#: alongside the lock guard in `_run_subagent` and inherited by every tool task
+#: the agent loop spawns. None outside a definition-driven worker, which is
+#: what keeps every existing delegation on exactly its old path.
+_PERMS_CTX: contextvars.ContextVar[Any] = contextvars.ContextVar("odysseus_subagent_perms", default=None)
 _WRITE_TOOLS = frozenset({"write_file", "edit_file", "apply_patch"})
+#: Tools whose first argument is ONE path this module can read out with
+#: certainty. `grep`/`glob`/`ls` take a root plus a pattern and answer about a
+#: tree, so a `read` rule is not applied to them: refusing a listing on a path
+#: rule would be theatre, and allowing one while claiming the rule held would
+#: be worse.
+_READ_TOOLS = frozenset({"read_file"})
 
 
 def _targets(tool: str, content: Any) -> Optional[List[str]]:
@@ -189,9 +200,88 @@ def _targets(tool: str, content: Any) -> Optional[List[str]]:
     return [str(t) for t in targets if t]
 
 
+def _read_target(tool: str, content: Any) -> Optional[str]:
+    """The single path `read_file` was asked for, or None when it cannot be
+    read out of the arguments."""
+    if tool not in _READ_TOOLS:
+        return None
+    if isinstance(content, dict):
+        path = content.get("path")
+        return str(path).strip() if isinstance(path, str) and path.strip() else None
+    raw = str(content or "").strip()
+    if not raw:
+        return None
+    if raw.startswith("{"):
+        try:
+            data = json.loads(raw)
+        except (TypeError, ValueError):
+            return None
+        path = data.get("path") if isinstance(data, dict) else None
+        return str(path).strip() if isinstance(path, str) and path.strip() else None
+    first = raw.split("\n", 1)[0].strip()
+    return first or None
+
+
+def permission_block_reason(tool: Any, content: Any) -> Optional[str]:
+    """The agent definition's own answer to "may this worker run this call?".
+
+    Checked BEFORE the file locks and, unlike them, never bypassed: the
+    reviewer's lock bypass exists because nobody else is writing while it runs,
+    which says nothing about what its own definition allows it to do. A
+    read-only reviewer that could write as soon as it was the reviewer would be
+    the exact failure this file is supposed to make impossible.
+
+    An undeterminable target fails CLOSED, and only while the definition
+    actually restricts that action — the same shape the lock guard uses, for
+    the same reason: a write whose target is unknown cannot be checked against
+    a pattern, and a rule that can be walked past by writing an unparseable
+    call is not a rule.
+    """
+    perms = _PERMS_CTX.get()
+    if perms is None or not isinstance(tool, str) or not tool:
+        return None
+    if perms.tool_denied(tool):
+        return (f"{tool}: refused — {perms.why_tool_denied(tool)} (agent definition). Do not call it "
+                f"again in this turn; do the part of the task your tools reach and say in your "
+                f"report what you could not do and why.")
+    action = "write" if tool in _WRITE_TOOLS else ("read" if tool in _READ_TOOLS else "")
+    if not action or not perms.restricts_action(action):
+        return None
+    workspace = getattr(perms, "workspace", "") or None
+    if action == "write":
+        targets = _targets(tool, content)
+        if targets is None:
+            return (f"{tool}: refused — this call's target file(s) could not be determined (a patch "
+                    f"that deletes a file, or arguments this server could not parse) and agent "
+                    f"`{perms.slug or 'this worker'}` has path rules that must be checked against a "
+                    f"path. Re-issue it as a write_file/edit_file naming ONE path.")
+    else:
+        one = _read_target(tool, content)
+        targets = [one] if one else None
+        if targets is None:
+            return None      # nothing to check; `read_file` with no path fails on its own
+    from src.subagent_permissions import normalise_path
+    for raw in targets or ():
+        path = normalise_path(raw, workspace)
+        if perms.path_denied(action, path):
+            return (f"{tool}: refused — {perms.why_path_denied(action, path)} and `{path}` matches it. "
+                    f"This is the agent definition this worker was started with, not a lock another "
+                    f"worker holds: retrying will not help. Report what that file needs instead.")
+    return None
+
+
 def write_block_reason(tool: Any, content: Any) -> Optional[str]:
     """Called by the tool dispatcher before a write runs. Returns the error
-    text when the current worker must not touch that file, else None."""
+    text when the current worker must not touch that file, else None.
+
+    Two gates, in this order: what the worker's own agent definition allows,
+    then what another worker in the same delegation already owns. The first is
+    about authority and the second about collision, and only the second is
+    ever bypassed.
+    """
+    denied = permission_block_reason(tool, content)
+    if denied:
+        return denied
     guard = _LOCK_CTX.get()
     if guard is None or guard.bypass or not isinstance(tool, str) or tool not in _WRITE_TOOLS:
         return None
@@ -422,19 +512,52 @@ _LEAN_KEEP_FAMILIES = (
 _LEAN_KEEP_RE = re.compile("|".join(f"(?:{rx.pattern})" for rx, _ in _LEAN_KEEP_FAMILIES), re.I)
 
 
-def worker_disabled_tools(instruction: str) -> set:
+def worker_disabled_tools(instruction: str, permissions: Any = None) -> set:
     """The worker's denylist: the hard set plus, when the lean mode is on,
     the tools a scoped worker never needs — minus the family (web, memory,
-    skills, background jobs, contacts, notes, tasks) the task text asks for."""
+    skills, background jobs, contacts, notes, tasks) the task text asks for.
+
+    With an agent definition's derived permissions (src/subagent_permissions.py)
+    its own denials are added, its allowlist becomes the deny of everything
+    else, and `delegate_agents` comes BACK out of the hard set — the only way
+    out of that set, and only ever for a definition a human wrote.
+
+    The lean denylist is a GUESS about what this task needs; a definition's
+    `tools` list is a statement about what this agent is. So a name the
+    definition allows is taken back out of the lean guess: keeping it would
+    let a keyword in the instruction decide what a human already decided.
+
+    None of this is the last word. The agent loop's workspace tool floor
+    deliberately restores read_file / ls / edit_file / apply_patch for a bound
+    folder — a worker that cannot read its own project is not a worker — which
+    would quietly hand a read-only reviewer the edit path back. That is why
+    the definitions are ALSO enforced at execution time, in
+    :func:`write_block_reason`, where no floor reaches.
+    """
     out = set(SUBAGENT_DISABLED_TOOLS)
-    if not _as_bool(_setting("agent_subagent_lean_tools", True), True):
+    allowed = getattr(permissions, "allowed_tools", None) if permissions is not None else None
+    if _as_bool(_setting("agent_subagent_lean_tools", True), True):
+        keep: set = set()
+        text = str(instruction or "")
+        for rx, tools in _LEAN_KEEP_FAMILIES:
+            if rx.search(text):
+                keep |= tools
+        lean = set(SUBAGENT_LEAN_DENYLIST) - keep
+        if allowed is not None:
+            lean -= set(allowed)
+        out |= lean
+    if permissions is None:
         return out
-    text = str(instruction or "")
-    keep: set = set()
-    for rx, tools in _LEAN_KEEP_FAMILIES:
-        if rx.search(text):
-            keep |= tools
-    return out | (set(SUBAGENT_LEAN_DENYLIST) - keep)
+    out |= set(getattr(permissions, "denied_tools", ()) or ())
+    if allowed is not None:
+        try:
+            from src.agent_defs import known_tools
+            out |= {t for t in known_tools() if t not in allowed}
+        except Exception:  # noqa: BLE001 - vocabulary unavailable; the
+            pass          # execution guard still refuses what is not allowed
+    if getattr(permissions, "may_delegate", False):
+        out.discard("delegate_agents")
+    return out
 
 
 def _short(text: Any, n: int = 160) -> str:
@@ -442,9 +565,43 @@ def _short(text: Any, n: int = 160) -> str:
     return s if len(s) <= n else s[: n - 1] + "…"
 
 
-def parse_delegation_args(content: str) -> Dict[str, Any]:
+def _active_workspace_or_none() -> Optional[str]:
+    """The bound folder, for the agent definitions a repo may carry. Best
+    effort: outside a turn there is none and the repo definitions simply do
+    not exist, which is the same answer the trust gate would give."""
+    try:
+        from src.tool_execution import get_active_workspace
+        return get_active_workspace() or None
+    except Exception:  # noqa: BLE001 - no turn, no workspace
+        return None
+
+
+def _resume_handle(raw: Any) -> Optional[Dict[str, str]]:
+    """``{"kind","id","runner"}`` for a worker to be CONTINUED rather than
+    rebuilt, or None. A bare string is read as a chat session id."""
+    if isinstance(raw, str) and raw.strip():
+        return {"kind": "session", "id": raw.strip()[:120], "runner": ""}
+    if isinstance(raw, dict):
+        ident = str(raw.get("id") or raw.get("session_id") or "").strip()
+        if not ident:
+            return None
+        kind = str(raw.get("kind") or "session").strip().lower()
+        return {"kind": ("runner" if kind == "runner" else "session"), "id": ident[:120],
+                "runner": str(raw.get("runner") or "").strip()[:60]}
+    return None
+
+
+def parse_delegation_args(content: str, *, workspace: Optional[str] = None) -> Dict[str, Any]:
     """Accept {"tasks":[{"name","instruction"}...], "parallel": bool,
-    "max_rounds": int} — or, leniently, a plain list of instruction strings."""
+    "max_rounds": int} — or, leniently, a plain list of instruction strings.
+
+    A task may also name an `agent` (src/agent_defs.py): the definition fills
+    in the model, the runner, the system prompt, the tool allowlist, the
+    permission rules and the default file claims, and anything the task states
+    explicitly still wins. A payload that names NO agent produces exactly the
+    dict this parser has always produced, key for key — that is a test
+    (tests/test_agent_defs.py), not an intention.
+    """
     raw = (content or "").strip()
     if not raw:
         raise ValueError("delegate_agents: JSON object with a 'tasks' list is required")
@@ -487,9 +644,13 @@ def parse_delegation_args(content: str) -> Dict[str, Any]:
     for i, t in enumerate(tasks_raw[:MAX_SUBAGENTS]):
         files: List[str] = []
         model = ""
+        agent = ""
+        resume: Optional[Dict[str, str]] = None
         if isinstance(t, str):
             instruction, name = t.strip(), ""
         elif isinstance(t, dict):
+            agent = str(t.get("agent") or "").strip()[:60]
+            resume = _resume_handle(t.get("resume"))
             instruction = str(t.get("instruction") or t.get("task") or t.get("content") or "").strip()
             name = str(t.get("name") or t.get("title") or "").strip()
             raw_files = t.get("files") or t.get("owns") or []
@@ -513,7 +674,18 @@ def parse_delegation_args(content: str) -> Dict[str, Any]:
             continue
         if not name or _TASK_FILES_RE.match(name) or _TASK_MODEL_RE.match(name):
             name = _short(instruction, 48)
-        tasks.append({"name": name[:80], "instruction": instruction[:8000], "model": model[:120], "files": files})
+        row: Dict[str, Any] = {"name": name[:80], "instruction": instruction[:8000],
+                               "model": model[:120], "files": files}
+        # `agent` and `resume` are carried ONLY when the caller named one —
+        # the discipline `runner` already keeps in src/dispatch.py. A task with
+        # neither key must produce the dict this parser produced before they
+        # existed, because a coordinator that never heard of agent definitions
+        # has to keep working byte for byte.
+        if agent:
+            row["agent"] = agent
+        if resume:
+            row["resume"] = resume
+        tasks.append(row)
     if not tasks:
         raise ValueError("delegate_agents: no usable tasks (each needs an 'instruction')")
     reviewer = data.get("reviewer", data.get("review"))
@@ -536,7 +708,12 @@ def parse_delegation_args(content: str) -> Dict[str, Any]:
     except (TypeError, ValueError):
         timeout_s = float(DEFAULT_WORKER_TIMEOUT_S)
     timeout_s = max(MIN_WORKER_TIMEOUT_S, min(timeout_s, 7200))
-    return {
+    job_agent = str(data.get("agent") or "").strip()[:60]
+    if job_agent:
+        for row in tasks:
+            row.setdefault("agent", job_agent)
+    reviewer_agent = str(data.get("reviewer_agent") or "").strip()[:60]
+    out = {
         "tasks": tasks,
         "parallel": _as_bool(data.get("parallel"), True),
         "max_rounds": max(3, min(max_rounds, 40)),
@@ -548,6 +725,44 @@ def parse_delegation_args(content: str) -> Dict[str, Any]:
         # used to vanish silently and the model believed they were done).
         "dropped_tasks": dropped,
     }
+    if any(row.get("agent") for row in tasks) or reviewer_agent:
+        _apply_agent_defs(out, reviewer_agent,
+                          workspace if workspace is not None else _active_workspace_or_none())
+    return out
+
+
+def _apply_agent_defs(args: Dict[str, Any], reviewer_agent: str, workspace: Optional[str]) -> None:
+    """Fill the tasks in from the definitions they name.
+
+    Called only when something named an agent, so a payload that names none
+    never reaches this path at all.
+
+    A definition that does not resolve REFUSES the call. Running the task as
+    the plain, unrestricted worker it would otherwise have been is the one
+    outcome that must not happen quietly: the caller asked for a reviewer that
+    cannot write and would have got a worker that can. Nothing has started
+    when this runs, so refusing costs the other tasks nothing but a corrected
+    spelling.
+    """
+    from src import agent_defs
+    errors = agent_defs.resolve_tasks(args.get("tasks") or (), workspace=workspace)
+    if errors:
+        raise ValueError("delegate_agents: " + "; ".join(e["reason"] for e in errors)
+                         + ". A task whose agent definition is missing would run as an ordinary "
+                           "worker with none of its restrictions, so the call is refused instead.")
+    if not reviewer_agent:
+        return
+    definition = agent_defs.get(reviewer_agent, workspace)
+    if definition is None:
+        raise ValueError(f"delegate_agents: unknown agent definition for the reviewer: "
+                         f"{reviewer_agent!r}")
+    if definition.mode != "reviewer":
+        raise ValueError(f"delegate_agents: agent `{definition.slug}` has mode `{definition.mode}`, "
+                         f"so it cannot fill the reviewer slot — the reviewer runs over everyone "
+                         f"else's work with the file locks off, and only a definition that says "
+                         f"`mode: reviewer` may.")
+    args["reviewer_agent"] = definition.slug
+    args["reviewer"] = True
 
 
 class SubagentRun:
@@ -559,6 +774,33 @@ class SubagentRun:
         self.model_override = task.get("model") or ""
         self.files: List[str] = list(task.get("files") or [])
         self.role = role
+        # ── the agent definition this worker came from (src/agent_defs.py) ──
+        # Every one of these is empty/None for a task that named no agent, and
+        # each is read at exactly one enforcement point below.
+        self.agent = str(task.get("agent") or "")
+        self.agent_def: Optional[Dict[str, Any]] = task.get("agent_def") if isinstance(task.get("agent_def"), dict) else None
+        self.system_prompt = str(task.get("system_prompt") or "")
+        self.endpoint_id = str(task.get("endpoint_id") or "")
+        self.max_rounds_override = task.get("max_rounds") or None
+        self.timeout_s_override = task.get("timeout_s") or None
+        #: Derived by DelegateAgentsTool before the run starts; None means an
+        #: unrestricted worker, i.e. exactly today's behaviour.
+        self.permissions: Any = None
+        #: The reviewer that runs AFTER everyone bypasses the file locks
+        #: because nobody else is still writing. That is a fact about WHEN it
+        #: runs, so it is set by the caller that schedules it — never derived
+        #: from `role`, which a definition can also set.
+        self.bypass_locks = False
+        #: Continue a worker instead of rebuilding one (`resume`): the child
+        #: chat session a previous round already used, or an external runner's
+        #: own session handle.
+        resume = task.get("resume") if isinstance(task.get("resume"), dict) else None
+        self.resume_kind = str((resume or {}).get("kind") or "")
+        self.resume_id = str((resume or {}).get("id") or "")
+        self.resumed = False
+        #: An external runner's session handle, as reported by the run. Carried
+        #: so a later round can reach THAT agent rather than a fresh one.
+        self.runner_session = ""
         self.stopped_by_user = False
         # Set by stop_worker(): "the cancellation about to arrive targets ME",
         # as opposed to the coordinator being cancelled (the user pressed Stop).
@@ -643,6 +885,13 @@ class SubagentRun:
             "input_tokens": self.input_tokens, "output_tokens": self.output_tokens,
             "started_at": self.started, "ended_at": self.finished,
             "steered": self.steered, "supervisor": list(self.supervisor),
+            # Conditional, like `outcome` above: a worker with no definition
+            # reports the dict it has always reported.
+            **({"agent": self.agent} if self.agent else {}),
+            **({"agent_def": self.agent_def} if self.agent_def else {}),
+            **({"permissions": self.permissions.to_dict()} if self.permissions is not None else {}),
+            **({"resumed": True, "resumed_from": self.resume_id} if self.resumed else {}),
+            **({"runner_session": self.runner_session} if self.runner_session else {}),
         }
 
 
@@ -680,7 +929,16 @@ async def _run_subagent(
         taken = locks.claim(run.id, run.files) if run.files else []
         if taken:
             logger.info("delegate_agents: %s wanted %s but they belong to another worker", run.name, taken)
-        _LOCK_CTX.set(_LockGuard(locks, run.id, bypass=(run.role == "reviewer")))
+        # `bypass_locks` is set by whoever SCHEDULED the reviewer slot, not read
+        # off `run.role`: an agent definition can say `mode: reviewer` too, and
+        # a definition-driven reviewer running as an ordinary task runs
+        # alongside the others — handing it the bypass would let it clobber the
+        # very files it was started to look at.
+        _LOCK_CTX.set(_LockGuard(locks, run.id, bypass=bool(run.bypass_locks)))
+    # Inherited by every tool task the agent loop spawns, the same way the lock
+    # guard is; None for a worker with no definition, which is the whole of
+    # what keeps an ordinary delegation on its old path.
+    _PERMS_CTX.set(run.permissions)
 
     sm = get_session_manager()
     parent_name = ""
@@ -690,13 +948,25 @@ async def _run_subagent(
             parent_name = getattr(parent, "name", "") or ""
         except Exception:
             parent_name = ""
-    child_sid = str(uuid.uuid4())[:8]
+    # Resume: continue the worker that made the change, in its own session,
+    # rather than building a new one from the original task plus the failure
+    # text. The expensive half of a fix round is re-deriving context the first
+    # worker already had — the files it read, the model of the problem it
+    # built. `prior` is what that session already holds; with none of it (the
+    # session was pruned, the manager has no history) this degrades silently to
+    # a fresh worker, which is exactly today's behaviour.
+    prior: List[Dict[str, Any]] = []
+    if run.resume_kind == "session" and run.resume_id and sm:
+        prior = _session_messages(sm, run.resume_id)
+        if prior:
+            run.resumed = True
+    child_sid = run.resume_id if run.resumed else str(uuid.uuid4())[:8]
     run.session_id = child_sid
     run.parent_session_id = parent_session_id
     # The worker starts NOW (a queued worker waited before this point).
     run.started = time.time()
     run.last_event_at = run.started
-    if sm:
+    if sm and not run.resumed:
         try:
             sm.create_session(
                 session_id=child_sid,
@@ -718,7 +988,13 @@ async def _run_subagent(
         except Exception as e:
             logger.warning("delegate_agents: child session creation failed: %s", e)
 
-    if run.role == "reviewer":
+    if run.system_prompt:
+        # The definition's body IS the system prompt (src/agent_defs.py). It
+        # replaces the built-in preamble rather than being appended to it: two
+        # descriptions of the same job, disagreeing, is how a worker ends up
+        # doing neither.
+        preamble = run.system_prompt
+    elif run.role == "reviewer":
         preamble = (
             "You are the REVIEWER sub-agent of a delegated job: the other workers have finished. "
             "Your task: review what they changed as a whole — consistency between their parts "
@@ -747,13 +1023,34 @@ async def _run_subagent(
                 "for this job. If a write is refused because another worker owns the file, do not retry — "
                 "describe the needed change in your report."
             )
+    if run.system_prompt and run.files:
+        # The lock sentence is mechanical, not editorial: a definition author
+        # cannot know which files this particular task was given, so it is
+        # appended to their prompt rather than replaced by it.
+        preamble += (
+            "\n\nFILES YOU OWN (exclusive — other workers cannot write them, and you must not write "
+            "any file owned by another worker): " + ", ".join(run.files[:40])
+        )
+    if run.permissions is not None:
+        blocked = sorted(run.permissions.denied_tools)[:12]
+        if blocked:
+            preamble += ("\n\nTools you do NOT have in this run: " + ", ".join(blocked)
+                         + ". They are refused at the point of use, so do not plan around calling them.")
     if shared_context:
         preamble += "\n\nShared context from the coordinator:\n" + shared_context
-    messages = [{"role": "user", "content": f"{preamble}\n\nYOUR TASK: {run.instruction}"}]
+    if run.resumed:
+        messages = prior + [{"role": "user", "content":
+                             "Same session, next round.\n\nYOUR TASK: " + run.instruction}]
+    else:
+        messages = [{"role": "user", "content": f"{preamble}\n\nYOUR TASK: {run.instruction}"}]
 
     await emit({"event": "started", "name": run.name, "instruction": _short(run.instruction, 240), "session_id": child_sid,
                 "role": run.role, "files": run.files, "model": run.model_override or model,
-                "started_at": run.started, "max_rounds": max_rounds, "timeout_s": timeout_s})
+                "started_at": run.started, "max_rounds": max_rounds, "timeout_s": timeout_s,
+                # A worker card must be able to say which definition it came
+                # from; a run whose authority is invisible cannot be audited.
+                **({"agent": run.agent} if run.agent else {}),
+                **({"resumed_from": run.resume_id} if run.resumed else {})})
     # Sidebar activity: the worker chat blinks while it works, then shows as
     # finished-unread — same as a chat the user started themselves.
     try:
@@ -779,7 +1076,7 @@ async def _run_subagent(
             headers=headers, temperature=0.3, max_tokens=0,
             max_rounds=max_rounds, session_id=child_sid, owner=owner,
             workspace=workspace, workspace_roots=workspace_roots,
-            disabled_tools=worker_disabled_tools(run.instruction),
+            disabled_tools=worker_disabled_tools(run.instruction, run.permissions),
             security_gate_bypass=True, _is_teacher_run=True,
             gen_overrides=gen_overrides,
             harness_options=_worker_opts,
@@ -866,6 +1163,42 @@ async def _run_subagent(
         if save_transcript:
             _save_transcript(run, sm)
     await emit({"event": "done", **run.report(), "final_text": _short(run.text, 300)})
+
+
+#: How much of a resumed session is replayed into the next round. The point of
+#: resuming is the context the worker already built, not its whole transcript:
+#: a 20-round worker's history would not fit and the tail is where the state is.
+RESUME_MESSAGES = 12
+RESUME_CHARS = 4000
+
+
+def _session_messages(sm: Any, session_id: str) -> List[Dict[str, Any]]:
+    """The tail of a child worker's own chat, as loop messages.
+
+    Empty for every reason a session can be unavailable — pruned, never
+    created, a manager that keeps no history — and an empty list is what makes
+    the caller fall back to a fresh worker instead of failing. Resume is a
+    saving, never a dependency.
+    """
+    try:
+        session = sm.get_session(session_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("delegate_agents: resume lookup for %s failed: %s", session_id, exc)
+        return []
+    if session is None:
+        return []
+    raw = list(getattr(session, "messages", None) or ())[-RESUME_MESSAGES:]
+    out: List[Dict[str, Any]] = []
+    for message in raw:
+        role = str(getattr(message, "role", "") or (message.get("role") if isinstance(message, dict) else ""))
+        content = getattr(message, "content", None)
+        if content is None and isinstance(message, dict):
+            content = message.get("content")
+        text = str(content or "").strip()
+        if role not in ("user", "assistant") or not text:
+            continue
+        out.append({"role": role, "content": text[:RESUME_CHARS]})
+    return out
 
 
 def _save_transcript(run: SubagentRun, sm: Any) -> None:
@@ -981,17 +1314,93 @@ def _build_report_text(runs: List[SubagentRun], workspace: Optional[str], locks:
     return "\n".join(lines)
 
 
+def _parent_standing(ctx: dict, workspace: Optional[str], roots: Optional[List[str]]) -> Any:
+    """The permissions of whoever is doing the delegating.
+
+    Read from the CONTEXTVAR first, not from `ctx`: a nested delegation is a
+    tool call inside a worker's own loop, and the context var is the one
+    channel that reaches it without every intermediate layer agreeing to pass
+    a dict along. A restriction that survives only when six call sites
+    remember to forward it is not a restriction.
+    """
+    from src.subagent_permissions import coordinator_permissions
+    parent = _PERMS_CTX.get()
+    if parent is None:
+        parent = ctx.get("permissions")
+    if parent is not None:
+        return parent
+    return coordinator_permissions(workspace_roots=roots or (), workspace=str(workspace or ""))
+
+
+def _attach_permissions(runs: List["SubagentRun"], ctx: dict, workspace: Optional[str],
+                        roots: Optional[List[str]]) -> str:
+    """Derive each worker's permissions before it starts. Returns the refusal
+    to hand back, or "".
+
+    A worker whose task named no definition, started by a parent with nothing
+    on it, keeps ``permissions = None`` — the guard and the denylist both read
+    None as "no definition", so an ordinary delegation runs the code it has
+    always run.
+    """
+    from src import agent_defs
+    from src.subagent_permissions import DepthExceeded, derive
+    parent = _parent_standing(ctx, workspace, roots)
+    restricted_parent = bool(getattr(parent, "rules", ()) or getattr(parent, "denied_tools", ())
+                             or getattr(parent, "allowed_tools", None) is not None)
+    vocabulary = agent_defs.known_tools()
+    for run in runs:
+        definition = agent_defs.from_dict(run.agent_def) if run.agent_def else None
+        if definition is None and not restricted_parent:
+            continue
+        try:
+            run.permissions = derive(parent, definition, parent_depth=int(getattr(parent, "depth", 0)),
+                                     workspace_roots=roots or (), workspace=str(workspace or ""),
+                                     vocabulary=vocabulary)
+        except DepthExceeded as exc:
+            return f"delegate_agents: {exc}"
+        if run.agent_def is not None and run.permissions.caveats:
+            run.agent_def = dict(run.agent_def, caveats=list(run.permissions.caveats))
+    return ""
+
+
+def _endpoint_for(run: "SubagentRun", default_url: str, owner: Optional[str]) -> str:
+    """The endpoint one worker runs on: its definition's `endpoint_id` when
+    that id resolves, the coordinator's otherwise.
+
+    A fallback is never silent. An `endpoint_id` that does not resolve today
+    (an endpoint that was deleted, disabled, or belongs to another owner) is a
+    routing fact, not a permission, so the run proceeds — but it says on its
+    own card that it did not run where the definition said it would.
+    """
+    if not run.endpoint_id:
+        return default_url
+    try:
+        from src.endpoint_resolver import resolve_endpoint_by_id
+        resolved = resolve_endpoint_by_id(run.endpoint_id, run.model_override or None, owner=owner)
+    except Exception as exc:  # noqa: BLE001 - a route lookup never fails a run
+        logger.debug("delegate_agents: endpoint %s unavailable: %s", run.endpoint_id, exc)
+        resolved = None
+    if resolved and resolved[0]:
+        return str(resolved[0])
+    note = (f"endpoint `{run.endpoint_id}` from the agent definition did not resolve; this worker ran "
+            f"on the coordinator's endpoint instead")
+    logger.info("delegate_agents: %s", note)
+    if run.agent_def is not None:
+        run.agent_def = dict(run.agent_def, caveats=list(run.agent_def.get("caveats") or []) + [note])
+    return default_url
+
+
 class DelegateAgentsTool:
     async def execute(self, content: str, ctx: dict) -> dict:
+        from src.tool_execution import get_active_workspace, get_active_workspace_roots
         try:
-            args = parse_delegation_args(content)
+            args = parse_delegation_args(content, workspace=get_active_workspace() or None)
         except ValueError as e:
             return {"error": str(e), "exit_code": 1}
         parent_sid = ctx.get("session_id")
         owner = ctx.get("owner")
         progress_cb = ctx.get("progress_cb")
         from src.ai_interaction import get_session_manager
-        from src.tool_execution import get_active_workspace, get_active_workspace_roots
         sm = get_session_manager()
         parent = sm.get_session(parent_sid) if (sm and parent_sid) else None
         if parent is None:
@@ -1024,6 +1433,13 @@ class DelegateAgentsTool:
         gen_overrides = ctx.get("gen_overrides") if isinstance(ctx.get("gen_overrides"), dict) else None
 
         runs = [SubagentRun(i, t) for i, t in enumerate(args["tasks"])]
+        # The permissions of each worker, derived (never inherited) from the
+        # parent's own standing plus the worker's definition. A task with no
+        # definition and an unrestricted parent derives to None and takes the
+        # path it always took.
+        depth_error = _attach_permissions(runs, ctx, workspace, roots)
+        if depth_error:
+            return {"error": depth_error, "exit_code": 1}
         # One id per delegate_agents CALL: the board keys its state by it, so
         # a second /agents in the same chat does not pile onto the first.
         delegation_id = uuid.uuid4().hex[:8]
@@ -1112,6 +1528,17 @@ class DelegateAgentsTool:
             queued = slots is not None and slots.locked()
             if queued:
                 await emit({"event": "queued"})
+            # A definition's own ceilings, when it has them. Both are already
+            # clamped to the delegation parser's own bounds at load time, so a
+            # definition can narrow a worker but never buy it more than a task
+            # could have asked for directly.
+            rounds = run.max_rounds_override or max_rounds or args["max_rounds"]
+            limit = float(run.timeout_s_override or args["timeout_s"])
+            # A definition may name the endpoint its worker runs on. The GPU
+            # slot stays keyed on the COORDINATOR's endpoint on purpose: it
+            # bounds how many workers generate at once on this box, and reading
+            # it per-endpoint would raise that bound rather than honour it.
+            worker_url = _endpoint_for(run, endpoint_url, owner)
             try:
                 if slots is not None:
                     await slots.acquire()
@@ -1123,19 +1550,19 @@ class DelegateAgentsTool:
                     await asyncio.wait_for(
                         _run_subagent(
                             run,
-                            endpoint_url=endpoint_url, model=run.model_override or model, headers=headers, owner=owner,
-                            workspace=workspace, workspace_roots=roots, max_rounds=max_rounds or args["max_rounds"],
+                            endpoint_url=worker_url, model=run.model_override or model, headers=headers, owner=owner,
+                            workspace=workspace, workspace_roots=roots, max_rounds=rounds,
                             shared_context=args["shared_context"], parent_session_id=parent_sid,
                             emit=emit, gen_overrides=gen_overrides, locks=locks, harness_options=harness_options,
-                            timeout_s=args["timeout_s"], save_transcript=False,
+                            timeout_s=limit, save_transcript=False,
                         ),
-                        timeout=args["timeout_s"],
+                        timeout=limit,
                     )
                 finally:
                     if slots is not None:
                         slots.release()
             except asyncio.TimeoutError:
-                run.error = run.error or f"worker timed out after {args['timeout_s']}s (its running command was killed)"
+                run.error = run.error or f"worker timed out after {limit}s (its running command was killed)"
                 run.stop_reason = "timeout"
                 run.finished = run.finished or time.time()
                 await emit({"event": "error", "message": run.error})
@@ -1218,8 +1645,22 @@ class DelegateAgentsTool:
                 + ("\n\nWrites refused by the file locks (the change may still be needed): "
                    + "; ".join(f"{c['worker']} → {c['path']}" for c in locks.conflicts[:10]) if locks.conflicts else "")
             )
-            reviewer = SubagentRun(len(runs), {"name": REVIEWER_NAME, "instruction": instruction,
-                                               "model": args.get("reviewer_model") or "", "files": []}, role="reviewer")
+            reviewer_task: Dict[str, Any] = {"name": REVIEWER_NAME, "instruction": instruction,
+                                             "model": args.get("reviewer_model") or "", "files": []}
+            reviewer_slug = str(args.get("reviewer_agent") or "")
+            if reviewer_slug:
+                # Vetted in parse_delegation_args: only a `mode: reviewer`
+                # definition reaches here, so the swap cannot quietly put a
+                # worker that writes into the slot that bypasses the locks.
+                reviewer_task["agent"] = reviewer_slug
+                from src import agent_defs as _defs
+                _defs.resolve_task(reviewer_task, workspace=workspace)
+            reviewer = SubagentRun(len(runs), reviewer_task, role="reviewer")
+            # The reviewer runs after everyone else, so nobody is still writing:
+            # this is the ONE place that fact is true, and the one place the
+            # bypass is granted.
+            reviewer.bypass_locks = True
+            _attach_permissions([reviewer], ctx, workspace, roots)
             try:
                 await _launch(reviewer, max_rounds=max(6, min(args["max_rounds"], 16)))
             except asyncio.CancelledError:

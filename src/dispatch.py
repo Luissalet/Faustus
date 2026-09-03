@@ -881,7 +881,17 @@ def verification_failed(v: Optional[Dict[str, Any]]) -> bool:
 
 
 def _fixer_instruction(job: DispatchJob, v: Dict[str, Any], attempt: int) -> str:
-    tasks = "\n".join(f"{i}. {_squash(t.get('instruction'), 400)}" for i, t in enumerate(job.args.get("tasks") or [], 1))
+    """What the fix round asks for — the same words whether or not the worker
+    is resumed.
+
+    It was tempting to drop the task recap for a resumed worker, since its own
+    session already carries it. It is not safe: this side decides to resume
+    OPTIMISTICALLY and the worker side is the one that finds out whether the
+    session still has any history (it may have been pruned, or the manager may
+    keep none). Trimming here would produce the one outcome worse than today's
+    — a thin instruction AND no recovered context. Resume stays purely
+    additive: same words, plus whatever the session still remembers.
+    """
     lines = [
         f"[Verification failed after the workers' changes — fix round {attempt}]",
         f"The command `{v.get('command') or v.get('summary')}` FAILED in the workspace: {v.get('summary') or 'failed'}.",
@@ -894,6 +904,7 @@ def _fixer_instruction(job: DispatchJob, v: Dict[str, Any], attempt: int) -> str
         lines.append("Output (tail):")
         lines.append(tail[-2000:])
     lines.append("")
+    tasks = "\n".join(f"{i}. {_squash(t.get('instruction'), 400)}" for i, t in enumerate(job.args.get("tasks") or [], 1))
     lines.append("The workers were asked to:")
     lines.append(tasks)
     if job.changes and job.changes.get("count"):
@@ -906,6 +917,55 @@ def _fixer_instruction(job: DispatchJob, v: Dict[str, Any], attempt: int) -> str
     return "\n".join(lines)
 
 
+def resume_enabled() -> bool:
+    """`agent_fixer_resume`. On by default: rebuilding a worker from the task
+    plus the failure text makes it re-read the same files and rebuild the same
+    model of the problem, which is the expensive half of a fix round and the
+    reason `fix_rounds` is capped at 2."""
+    return bool(_setting("agent_fixer_resume", True))
+
+
+def _resume_target(job: DispatchJob, v: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+    """The worker a fix round should CONTINUE, or None for today's fresh one.
+
+    Preference, in order: the worker that touched a file the verification is
+    complaining about, then any worker that changed something, then the last
+    one that ran at all. Later beats earlier throughout, because the most
+    recent session is the one holding the most recent state.
+
+    Returns ``{"kind", "id", "runner", "name", "model"}`` — the handle plus
+    what the fixer needs to be the same worker. None whenever nothing is
+    resumable, which is every job that ran before this existed.
+    """
+    rows = [r for r in (job.result or {}).get("subagents") or [] if isinstance(r, dict)]
+    related = {str(p) for p in ((v or {}).get("related_files") or [])}
+    best: Optional[Dict[str, Any]] = None
+    best_rank = -1
+    for row in rows:
+        if row.get("role") in ("reviewer", "fixer"):
+            continue
+        handle = str(row.get("runner_session") or "")
+        kind = "runner" if handle else "session"
+        if not handle:
+            handle = str(row.get("session_id") or "")
+        if not handle:
+            continue
+        mutations = [str(m) for m in (row.get("mutations") or [])]
+        rank = 0
+        if mutations:
+            rank = 2 if (related and any(m in related for m in mutations)) else 1
+        if rank >= best_rank:                 # >= so the LAST of equal rank wins
+            best_rank = rank
+            best = {"kind": kind, "id": handle, "runner": str(row.get("runner") or ""),
+                    "name": str(row.get("name") or ""), "model": str(row.get("model") or ""),
+                    # The definition the resumed worker ran under travels with
+                    # the handle. Continuing a restricted worker's session as
+                    # an unrestricted fixer would launder exactly the
+                    # restriction the definition exists to hold.
+                    "agent": str(row.get("agent") or "")}
+    return best
+
+
 # ── running a job ───────────────────────────────────────────────────────────
 
 def _parse_tasks(raw: Any) -> List[Dict[str, Any]]:
@@ -916,15 +976,22 @@ def _parse_tasks(raw: Any) -> List[Dict[str, Any]]:
 
 def build_args(body: Dict[str, Any]) -> Dict[str, Any]:
     """The delegate_agents payload for a dispatch request (validated by the
-    tool's own parser so a job and a chat delegation cannot disagree)."""
+    tool's own parser so a job and a chat delegation cannot disagree).
+
+    `agent` / `reviewer_agent` are resolved HERE as well as inside the tool,
+    because a definition may name a `runner` and `vet_runners` has to refuse a
+    job whose agent is not installed BEFORE any worker spends its time. The
+    resolution is idempotent, so the second pass inside the tool is free.
+    """
     from src.agent_tools.subagent_tools import parse_delegation_args
     payload: Dict[str, Any] = {"tasks": body.get("tasks")}
-    for k in ("parallel", "reviewer", "max_rounds", "timeout_s", "reviewer_model"):
+    for k in ("parallel", "reviewer", "max_rounds", "timeout_s", "reviewer_model",
+              "agent", "reviewer_agent"):
         if body.get(k) is not None:
             payload[k] = body[k]
     if body.get("context"):
         payload["context"] = str(body["context"])[:8000]
-    args = parse_delegation_args(json.dumps(payload))
+    args = parse_delegation_args(json.dumps(payload), workspace=str(body.get("workspace") or "") or None)
     if not args.get("tasks"):
         raise ValueError("tasks is required: a list of instructions or {instruction, files?, model?, name?}")
     if not body.get("max_rounds"):
@@ -1211,6 +1278,24 @@ def vet_runners(args: Dict[str, Any]) -> None:
                              f"{row['install']}")
 
 
+def _external_resume_supported() -> bool:
+    """Whether THIS build's `external_worker.run_task` can continue a run.
+
+    Asked of the signature rather than assumed, because the two halves ship
+    separately: the dispatch side carries the handle and prefers resume the
+    moment the runner table and the worker can act on it, and until then a job
+    behaves exactly as it does today instead of raising TypeError at the worst
+    possible moment.
+    """
+    try:
+        import inspect
+        from src import external_worker
+        return "resume" in inspect.signature(external_worker.run_task).parameters
+    except Exception as exc:  # noqa: BLE001 - a capability probe never fails a job
+        logger.debug("dispatch: external resume probe failed: %s", exc)
+        return False
+
+
 def _external_timeout(job: "DispatchJob") -> float:
     """The hard bound on ONE external agent: the smaller of the job's
     per-worker timeout and `agent_external_runner_timeout_s`. Never raises —
@@ -1258,6 +1343,12 @@ def _external_report(task: Dict[str, Any], index: int, result: Dict[str, Any]) -
         "timed_out": bool(result.get("timed_out")),
         "state": result.get("state") or "",
         "why": result.get("why") or "",
+        # The runner's own session identity, when it reports one. Absent from
+        # every runner today (see the report accompanying this change: one line
+        # in src/agent_runners.py and one in src/external_worker.py), and the
+        # empty string is what makes `_resume_target` fall through to today's
+        # fresh fixer rather than to a handle nobody can use.
+        "runner_session": str(result.get("session") or result.get("session_id") or ""),
     }
 
 
@@ -1290,9 +1381,17 @@ async def _run_external(job: DispatchJob, tasks: List[Dict[str, Any]], cb: Calla
             except Exception as e:  # noqa: BLE001 - a board event never breaks a run
                 logger.debug("dispatch %s: external output event failed: %s", job.id, e)
 
+        extra: Dict[str, Any] = {}
+        handle = task.get("resume") if isinstance(task.get("resume"), dict) else None
+        if handle and handle.get("kind") == "runner" and handle.get("id") and _external_resume_supported():
+            # `claude -p --resume <id>`, OpenCode's task id: continuing the
+            # agent that made the change instead of starting a new one that has
+            # to read its way back to the same understanding.
+            extra["resume"] = str(handle["id"])
         result = await asyncio.to_thread(
             external_worker.run_task, key, str(task.get("instruction") or ""),
             workspace=job.workspace, model=str(task.get("model") or "") or None,
+            **extra,
             # Two ceilings apply and the smaller wins: the job's own
             # per-worker timeout, and `agent_external_runner_timeout_s` (the
             # bound the operator put on any third-party binary). Neither one
@@ -1594,11 +1693,31 @@ async def _run(job: DispatchJob) -> None:
             while verification_failed(job.verification) and attempt < job.fix_rounds and job.result.get("subagents"):
                 attempt += 1
                 job._event(event="job", message=f"verification failed — fix round {attempt}")
+                # Reach the worker that made the change, in its own session,
+                # instead of building a new one from the original tasks plus
+                # the failure text. Degrades to exactly that when nothing is
+                # resumable — which is every job whose workers reported no
+                # session handle at all.
+                target = _resume_target(job, job.verification) if resume_enabled() else None
+                fixer: Dict[str, Any] = {
+                    "name": f"fixer-{attempt}", "files": [],
+                    "model": (target or {}).get("model") or "",
+                    "instruction": _fixer_instruction(job, job.verification, attempt),
+                }
+                if target:
+                    fixer["resume"] = {"kind": target["kind"], "id": target["id"],
+                                       "runner": target["runner"]}
+                    if target.get("agent"):
+                        fixer["agent"] = target["agent"]
+                    if target["kind"] == "runner":
+                        fixer["runner"] = target["runner"]
+                    job._event(event="job",
+                               message=f"fix round {attempt} continues `{target['name']}` in its own session")
                 fixer_args = dict(job.args)
-                fixer_args.update({"tasks": [{"name": f"fixer-{attempt}", "instruction": _fixer_instruction(job, job.verification, attempt),
-                                              "files": [], "model": ""}],
-                                   "parallel": False, "reviewer": False, "dropped_tasks": 0})
-                fix = await _delegate(job, fixer_args, _cb)
+                fixer_args.update({"tasks": [fixer], "parallel": False, "reviewer": False,
+                                   "dropped_tasks": 0})
+                fix = await (_run_external(job, [fixer], _cb) if fixer.get("runner")
+                             else _delegate(job, fixer_args, _cb))
                 for r in fix.get("subagents") or []:
                     if isinstance(r, dict):
                         r["role"] = "fixer"
