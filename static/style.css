@@ -44535,3 +44535,131 @@ body:has(.sidebar.right-side) .project-active-pill { right: 12px; }
 .his-msg-head { display: flex; align-items: center; gap: 10px; margin: 0 0 6px; font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.6; }
 .his-msg-date { font-variant-numeric: tabular-nums; }
 .his-msg-body { font-size: 12.5px; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* ── Agent runners ── (static/js/agentRunners.js: the table of CLI agents that
+   can be one of Faustus's workers. Theme variables only — no literal colours,
+   and no id selectors, so the guard that reads everything after the Experts
+   marker stays green.) */
+.runners-page {
+  pointer-events: auto;
+  align-items: stretch;
+  justify-content: stretch;
+  background: var(--bg);
+  z-index: 245;
+}
+@media (min-width: 769px) {
+  .runners-page {
+    left: calc(var(--icon-rail-w, 48px) + var(--sidebar-w, 0px));
+    width: calc(100% - (var(--icon-rail-w, 48px) + var(--sidebar-w, 0px)));
+  }
+}
+.runners-page .runners-modal-content {
+  width: 100%; height: 100%; max-height: none; padding: 0; overflow: hidden;
+  border: 0; border-radius: 0; background: var(--bg); box-shadow: none; font-size: 14px;
+}
+.runners-page .runners-modal-content::before { content: none; }
+.runners-modal-body { flex: 1 1 auto; min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; }
+.runners-view {
+  width: min(1180px, 100%); min-height: 100%; margin: 0 auto;
+  padding: 54px 46px 48px; box-sizing: border-box;
+}
+.runners-close-btn {
+  position: absolute; top: 18px; right: 20px; z-index: 8; width: 34px; height: 34px;
+  display: inline-flex; align-items: center; justify-content: center; padding: 0;
+  border: 1px solid transparent; border-radius: 9px; background: transparent;
+  color: color-mix(in srgb, var(--fg) 62%, transparent); cursor: pointer;
+}
+.runners-close-btn:hover {
+  color: var(--fg); border-color: var(--border);
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+}
+
+/* head + toolbar */
+.run-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 18px; flex-wrap: wrap; }
+.run-title { margin: 0; font-size: clamp(24px, 2.6vw, 34px); font-weight: 650; letter-spacing: -0.03em; line-height: 1.1; color: var(--fg); }
+.run-desc { margin: 8px 0 0; font-size: 13px; color: var(--color-muted, color-mix(in srgb, var(--fg) 55%, transparent)); max-width: 68ch; }
+.run-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.run-search {
+  height: auto; background: var(--bg); color: var(--fg); border: 1px solid var(--border);
+  border-radius: 7px; padding: 6px 10px; font-size: 12px; font-family: inherit;
+}
+.run-search:focus { outline: none; border-color: var(--accent, var(--fg)); }
+.run-btn {
+  height: auto; font-family: inherit; font-size: 12px; padding: 5px 11px; border-radius: 7px;
+  border: 1px solid var(--border); background: transparent; color: var(--fg); cursor: pointer;
+}
+.run-btn:hover { border-color: var(--accent, var(--fg)); background: color-mix(in srgb, var(--fg) 5%, transparent); }
+.run-launch { border-color: color-mix(in srgb, var(--accent, var(--fg)) 45%, var(--border)); }
+
+/* the sentence this feature is not allowed to hide */
+.run-guard {
+  margin: 0 0 12px; padding: 10px 14px; border-radius: 9px; font-size: 12.5px; line-height: 1.6;
+  color: var(--fg); border: 1px solid color-mix(in srgb, var(--warn, var(--accent, var(--fg))) 42%, var(--border));
+  background: color-mix(in srgb, var(--warn, var(--accent, var(--fg))) 8%, transparent);
+}
+.run-note {
+  margin: 0 0 10px; font-size: 12.5px; line-height: 1.6;
+  color: var(--color-muted, color-mix(in srgb, var(--fg) 60%, transparent));
+}
+.run-note.is-on { color: var(--fg); }
+.run-counts { margin: 0 0 14px; font-size: 11.5px; letter-spacing: 0.02em; color: color-mix(in srgb, var(--fg) 52%, transparent); }
+.run-error { margin: 0 0 12px; font-size: 12.5px; color: var(--danger, var(--fg)); }
+.run-guard code, .run-note code {
+  font-size: 11.5px; padding: 1px 5px; border-radius: 5px;
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+}
+
+/* the table */
+.run-table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 11px; }
+.run-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.run-table th {
+  text-align: left; font-weight: 600; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em;
+  padding: 10px 14px; color: color-mix(in srgb, var(--fg) 55%, transparent);
+  border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--fg) 3%, transparent);
+  white-space: nowrap;
+}
+.run-table td { padding: 12px 14px; vertical-align: top; border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent); }
+.run-table tr:last-child td { border-bottom: 0; }
+.run-row.is-installed .run-name { color: var(--fg); }
+.run-name { display: block; font-weight: 600; color: color-mix(in srgb, var(--fg) 78%, transparent); }
+.run-key {
+  display: inline-block; margin-top: 3px; font-size: 11px; padding: 1px 6px; border-radius: 5px;
+  background: color-mix(in srgb, var(--fg) 8%, transparent); color: var(--fg);
+}
+.run-aliases { display: block; margin-top: 3px; font-size: 11px; color: color-mix(in srgb, var(--fg) 48%, transparent); }
+.run-notes { display: block; margin-top: 6px; max-width: 46ch; font-size: 11.5px; line-height: 1.5; color: color-mix(in srgb, var(--fg) 52%, transparent); }
+
+/* the licence word, printed verbatim */
+.run-licence {
+  display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; letter-spacing: 0.02em;
+  border: 1px solid var(--border); color: var(--fg);
+}
+.run-licence.is-open { border-color: color-mix(in srgb, var(--ok, var(--accent, var(--fg))) 50%, var(--border)); }
+.run-licence.is-subscription { border-color: color-mix(in srgb, var(--warn, var(--accent, var(--fg))) 50%, var(--border)); }
+.run-licence.is-unknown { color: color-mix(in srgb, var(--fg) 58%, transparent); border-style: dashed; }
+
+/* installed and "can be a worker" are two facts, shown as two */
+.run-installed, .run-worker {
+  display: inline-block; font-size: 11.5px; color: color-mix(in srgb, var(--fg) 55%, transparent);
+}
+.run-installed.is-yes, .run-worker.is-yes { color: var(--fg); font-weight: 600; }
+.run-version { display: block; margin-top: 4px; font-size: 11px; color: color-mix(in srgb, var(--fg) 45%, transparent); }
+.run-worker-detail { display: block; margin-top: 4px; max-width: 34ch; font-size: 11px; line-height: 1.5; color: color-mix(in srgb, var(--fg) 50%, transparent); }
+.run-command {
+  display: block; margin-bottom: 6px; font-size: 11.5px; white-space: nowrap;
+  padding: 3px 7px; border-radius: 6px; background: color-mix(in srgb, var(--fg) 7%, transparent); color: var(--fg);
+}
+.run-cell-launch { white-space: nowrap; }
+.run-empty { padding: 26px 14px; text-align: center; color: color-mix(in srgb, var(--fg) 55%, transparent); }
+
+/* the launch output, live */
+.run-log {
+  margin: 16px 0 0; padding: 12px 14px; max-height: 320px; overflow: auto;
+  border: 1px solid var(--border); border-radius: 9px; font-size: 11.5px; line-height: 1.55;
+  white-space: pre-wrap; overflow-wrap: anywhere; color: var(--fg);
+  background: color-mix(in srgb, var(--fg) 4%, transparent);
+}
+@media (max-width: 768px) {
+  .runners-view { padding: 46px 16px 32px; }
+  .run-notes, .run-worker-detail { max-width: none; }
+}

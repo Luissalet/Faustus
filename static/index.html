@@ -353,6 +353,24 @@
     </div>
   </div>
 
+  <!-- ── Agent runners ──────────────────────────────────────────────────
+       The CLI agents `ollama launch` knows, merged with Faustus's own table of
+       how to run ONE task with each of them, so any of them can be a worker
+       inside the same harness. The page prints the licence word verbatim, keeps
+       "installed" and "can be a worker" apart, and says above the table the one
+       thing this feature cannot promise: Faustus's command guard does not see
+       inside another agent's own shell. Rendered by static/js/agentRunners.js. -->
+  <div id="agent-runners-modal" class="modal runners-page hidden">
+    <div class="modal-content runners-modal-content" role="region" aria-label="Agent runners">
+      <button type="button" class="runners-close-btn" id="close-agent-runners-modal" aria-label="Close agent runners" title="Back to chat">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+      <div class="runners-modal-body">
+        <div id="agent-runners-body" class="runners-view"></div>
+      </div>
+    </div>
+  </div>
+
   <!-- ── Imported history ───────────────────────────────────────────────
        A ChatGPT or Claude data export, a folder of LM Studio chats, or one of
        this app's own JSON exports, normalised into DATA_DIR/history.db and
@@ -1046,6 +1064,15 @@
             <path d="M9 7h6"/>
           </svg>
           <span class="grow">Experts</span>
+        </div>
+        <div class="list-item" id="tool-agent-runners-btn" title="Agent runners — run Claude Code, OpenCode, Qwen Code or any other CLI agent as one of Faustus's workers">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+            style="flex-shrink:0;opacity:0.5;">
+            <path d="M4 17l6-6-6-6"/>
+            <path d="M12 19h8"/>
+          </svg>
+          <span class="grow">Agent runners</span>
         </div>
         <div class="list-item" id="tool-history-btn" title="Imported history — your ChatGPT, Claude, LM Studio and Faustus conversations, brought here and searchable">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -2819,6 +2846,7 @@
 <script type="module" src="/static/js/tournament.js?v=20260903tournament1"></script>
 <script type="module" src="/static/js/provenance.js?v=20260903provenance1"></script>
 <script type="module" src="/static/js/historyImport.js?v=20260903history1"></script>
+<script type="module" src="/static/js/agentRunners.js?v=20260903runners1"></script>
 <script nonce="{{CSP_NONCE}}">if('serviceWorker' in navigator){navigator.serviceWorker.register('/static/sw.js').catch(()=>{});}</script>
 </body>
 </html>
