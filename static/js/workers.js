@@ -140,7 +140,7 @@ export function pageHtml(jobs, expanded, { workspace = '', busy = false } = {}) 
       </div>
       <div class="wk-form-row">
         <label class="wk-field" title="Run by Faustus in the folder after the workers — their own claims are never the proof. Empty = the project's test runner is detected (pytest, npm test, cargo, go, make test)">Verify with <input type="text" id="wk-verify" placeholder="auto-detect the test runner"></label>
-        <label class="wk-field wk-field-sm" title="When the verification fails: how many times one fixer worker gets the failure output before Faustus gives up">Fix rounds <input type="number" id="wk-fix" min="0" max="2" value="1"></label>
+        <label class="wk-field wk-field-sm" title="When the verification fails: at most how many times one fixer worker gets the failure output before Faustus gives up. Faustus stops earlier by itself when the rounds stop changing anything.">Fix rounds <input type="number" id="wk-fix" min="0" max="4" value="1"></label>
         <span class="wk-muted" id="wk-count">1 worker</span>
       </div>
       <div class="wk-hint">A blank line or a list marker starts a new task = one worker (max 4). The workers are confined to the folder; Faustus checkpoints it before, diffs it after, runs the verification itself and marks the job <em>partial</em> when anything did not finish. The job gets its own <em>Workers</em> chat with the control board. Same door Fable uses from Cowork — see <code>website/fable-workers.md</code>.</div>
@@ -220,7 +220,7 @@ async function _run(modal) {
   if (!workspace) { _toast('Say which folder the workers may touch', 3000); wsInput.focus(); return; }
   const body = {
     tasks, workspace, parallel: modal.querySelector('#wk-parallel').checked, reviewer: modal.querySelector('#wk-reviewer').checked,
-    fix_rounds: Math.max(0, Math.min(2, parseInt(modal.querySelector('#wk-fix').value, 10) || 0)),
+    fix_rounds: Math.max(0, Math.min(4, parseInt(modal.querySelector('#wk-fix').value, 10) || 0)),
   };
   const verify = (modal.querySelector('#wk-verify').value || '').trim();
   if (verify) body.verify = verify;

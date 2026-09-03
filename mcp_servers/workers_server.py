@@ -61,6 +61,14 @@ from mcp.types import Tool, TextContent
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+# stdout belongs to the JSON-RPC stream: one print() from the app code this
+# server imports would corrupt it and kill the session. The guard
+# (src/stdio_guard.py) sends stdout writes to stderr while the session runs.
+try:
+    from src.stdio_guard import guard as stdout_guard
+except Exception:  # pragma: no cover - the server must start regardless
+    from contextlib import nullcontext as stdout_guard
+
 server = Server("faustus-workers")
 
 BASE = (os.environ.get("FAUSTUS_URL") or "http://127.0.0.1:7000").rstrip("/")
@@ -337,8 +345,8 @@ TOOLS: List[Tool] = [
                 "verify": {"type": "string", "description": "Shell command run by Faustus in the workspace after the workers to prove the job ('pytest -q', 'npm test'…). 'auto' (default) detects the project's test runner; 'none' skips."},
                 "verify_scope": {"type": "string", "enum": ["related", "all"], "default": "related",
                                  "description": "auto mode: the tests related to the changed files, or the whole suite."},
-                "fix_rounds": {"type": "integer", "minimum": 0, "maximum": 2, "default": 1,
-                               "description": "When the verification fails: how many times one fixer worker gets the failure output before Faustus gives up (status `partial`)."},
+                "fix_rounds": {"type": "integer", "minimum": 0, "maximum": 4, "default": 1,
+                               "description": "When the verification fails: at MOST how many times one fixer worker gets the failure output before Faustus gives up (status `partial`). Faustus stops earlier on its own when the rounds stop changing anything (convergence). The server clamps values above its own cap (2 with the convergence detector off, 4 with it on)."},
                 "parallel": {"type": "boolean", "default": True},
                 "reviewer": {"type": "boolean", "default": False, "description": "Add a reviewer worker after the others."},
                 "model": {"type": "string", "description": "Model on the dispatch endpoint (default: the configured worker model)."},
@@ -552,8 +560,12 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
 
 
 async def main() -> None:
+    # The guard goes up INSIDE stdio_server(): that context manager wraps the
+    # real sys.stdout.buffer when it is entered, so the protocol keeps the
+    # handle and everything else is diverted to stderr.
     async with stdio_server() as (read_stream, write_stream):
-        await server.run(read_stream, write_stream, server.create_initialization_options())
+        with stdout_guard():
+            await server.run(read_stream, write_stream, server.create_initialization_options())
 
 
 if __name__ == "__main__":
