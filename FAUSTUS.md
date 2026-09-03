@@ -4,7 +4,7 @@
 
 - Base del fork: commit upstream `c9dd68d8` (27-08-2026, "refactor(docs): separate Pages site source").
 - Rama: **una sola, `master`** (`D:\LocalAI\odysseus`), que trackea `origin/master` en `github.com/Luissalet/Faustus`. Las ramas `feat/projects` y `feat/reliability` y la worktree de pruebas se consolidaron el 31-08.
-- Cifras a 03-09-2026 (16:00, en `master`): **278 commits**, +97.000 líneas sobre la base; **79 módulos nuevos** en `src/`, `routes/`, `services/` y `static/js/`, **150 ficheros de tests nuevos**. Suite completa: **8.427 tests en verde**, ~6 min en Linux (2 fallos preexistentes del entorno: `markitdown` sin conversor docx y el escáner de marca sobre un docstring en español); e2e Playwright 12 flujos. En Windows hay además 12 fallos de plataforma y 13 dependientes del `data/` local, todos presentes también en el commit base (§24.4).
+- Cifras a 03-09-2026 (17:00, en `master`): **284 commits**, +101.000 líneas sobre la base; **85 módulos nuevos** en `src/`, `routes/`, `services/` y `static/js/`, **158 ficheros de tests nuevos**. Suite completa: **8.661 tests en verde**, ~6 min en Linux (2 fallos preexistentes del entorno: `markitdown` sin conversor docx y el escáner de marca sobre un docstring en español); e2e Playwright 12 flujos. En Windows hay además 12 fallos de plataforma y 13 dependientes del `data/` local, todos presentes también en el commit base (§24.4).
 - Máquina de referencia: RTX 4070 Ti 12 GB **+ RTX 5060 Ti 16 GB (eGPU, desde el 02-09)**, 128 GB RAM, Windows 11, Ollama 0.33.x; modelos `qwen3-coder:30b`, `qwen3.5:9b` (visión), `qwen3.8:27b`, `qwen3-coder-next`.
 
 ---
@@ -752,6 +752,79 @@ es regresión. Los otros 13 aparecen solo en el árbol de Luis y se reproducen *
 apuntando a una copia de su `data/`: son dependientes de sus datos locales, no del código. (No es el
 `default_model`: limpiarlo no los arregla.) En Linux la suite completa queda en **8.427 en verde** con
 los 2 fallos de entorno conocidos.
+
+
+## 25. Esperar por una condición, y un torneo entre modelos (03-09-2026, tarde)
+
+Las dos piezas que quedaban del Tier 2 del informe, y el fallo de coherencia que aparecieron al probarlas.
+
+### 25.1 `wait-for` y eventos en vivo (`frankenterm`)
+La regla del original es **bloquear por una condición, no por un `sleep`**, y **leer el estado de un worker de
+su propia salida** en vez de configurarlo a mano. La lista de pendientes del fork decía exactamente eso: el
+tablero de sub-agentes solo aparecía al terminar el trabajo.
+
+- `src/output_rules.py` clasifica los últimos 8 KB de la salida de cada worker en
+  `rate_limited / waiting_for_input / stuck / auth_error / disk_full / oom`, con substrings primero y regex
+  solo para el pack que ya casó, y **devuelve la línea que hizo saltar la regla**: el tablero dice *por qué*
+  cree que un worker está atascado en vez de afirmarlo. Un worker así **se reporta, nunca se mata** — la
+  política de `srps` que ya habíamos adoptado.
+- `wait_for(job, condition, timeout)` acepta `done`, `phase:<n>`, `worker:<label>:<estado>`, `event:<texto>` y
+  `changed`. Resuelve por `asyncio.Event` que la propia ruta de progreso del trabajo despierta, **sin ningún
+  bucle de espera dentro**; los tests miden el tiempo transcurrido, así que una implementación por polling
+  los suspende. Un timeout devuelve `met: false`, no un error (el mismo criterio que los outcomes de cuatro
+  valores). El estado es no-pegajoso para mostrar y pegajoso para esperar, para que una condición no se
+  pierda porque el estado envejeció fuera de la ventana.
+- `/api/dispatch/{id}/events?stream=1` emite SSE en vivo con latido cada 15 s y una trama final; **la
+  respuesta sin parámetros sigue siendo byte-idéntica** (con test). La página Workers se llena en directo y
+  vuelve al sondeo de siempre si el stream falla, se apaga por ajuste o lo corta un proxy.
+
+### 25.2 Torneo multi-modelo con fusión explícita
+El protocolo del original: mismo prompt a N modelos **a ciegas y en paralelo** en la ronda 0, luego rondas
+donde cada modelo ve todas las respuestas con la instrucción de *tomar lo mejor de todas cuando sea
+complementario, no conflictivo*, y un juicio con tres métricas 0–100.
+
+- Las respuestas viajan **anonimizadas**, y no solo sin etiqueta: si un modelo local abre con "Como Qwen…",
+  ese nombre se borra del texto, porque si no filtra su identidad por su propia prosa.
+- **Respeta lo que medimos en esta máquina** (§20): dos peticiones al mismo modelo van en serie, dos modelos
+  distintos generan a la vez. Un lock por modelo y el semáforo de GPU compartido, **en ese orden** — al revés
+  hay interbloqueo en cuanto una tarea tiene la última ranura y espera un lock que otra sostiene esperando
+  ranura.
+- Para antes con el **detector de convergencia** de §23.5: `rounds` es un máximo, y hace falta que *todos* los
+  modelos hayan convergido, no la media — un modelo asentado no debe cortar una ronda que los demás siguen
+  aprovechando.
+- Un juicio mal formado no se rellena: esa nota queda en `null` y el orden pasa a un desempate determinista
+  **etiquetado como tal** (`ranking: judge | mixed | deterministic`), porque llamar "juzgado" a medio juicio
+  sería mentir. Un modelo que falla o se cancela no tumba el torneo.
+- La página muestra una tarjeta por modelo llenándose por rondas, la tabla ordenada con las tres notas, y un
+  botón **Merge** que arma el prompt de síntesis y lo deja en el compositor.
+- **Probado en vivo**: `qwen3.5:9b` contra `qwen3-coder:30b`, ronda 0 arrancando ambos en el mismo instante,
+  dos rondas, juez real (100/85/90 frente a 100/85/85) y `ranking: judge`.
+
+### 25.3 Los dos endpoints SSE hablaban dialectos distintos
+Al abrir el stream del torneo con un `EventSource` normal no llegaba nada, mientras el mismo código contra
+`/api/dispatch/{id}/events` funcionaba. La causa es una regla del protocolo que es fácil no ver: una trama con
+línea `event: <nombre>` **no llega nunca a `EventSource.onmessage`**, solo a un listener registrado para ese
+nombre exacto. Dispatch mandaba tramas sin nombre más una final `event: end`; el torneo nombraba todas
+`event: event`. Dos endpoints SSE en la misma app discrepando en eso significa que una página escrita contra
+uno es sorda al otro. Unificado al dialecto de dispatch. De paso: la página del torneo **no abría el stream
+que ella misma traía** — sondeaba cada 1,5 segundos —, y ahora lo sigue con el mismo fallback con pestillo que
+usa la de Workers.
+
+### 25.4 Una trampa de herramientas diagnosticada, y por qué NO se arregló
+Bisecando los fallos de la suite en Windows (§24.4) hasta la carpeta culpable —`data/skills/`, una sola
+skill— salió la causa concreta: con esa skill presente, un turno **sin documento abierto ofrece
+`suggest_document` y ese mismo turno lo rechaza** con *"Open the exact document to edit, then request this
+action again so its id and version can be sealed"*. Es exactamente la trampa que la alarma
+`[tool-coherence] OFFERED THEN BLOCKED` del propio bucle existe para cazar, y a un modelo pequeño le cuesta
+una ronda entera más los tokens del esquema.
+
+Se escribió una regla de preflight que la podaba, y **se revirtió a propósito**. El preflight corre una sola
+vez al empezar el turno, y un documento puede nacer *durante* el turno (`create_document` y después editarlo):
+podar ahí quitaría una herramienta legítima, y `tests/test_external_context_tool_gate.py` fija justo ese caso
+—el esquema se mantiene en la mesa para que la acción se pueda expresar, y el runtime la rechaza enseñando qué
+hacer—. El arreglo correcto va **en el punto de uso**, no al inicio del turno, y merece un cambio que se pueda
+razonar por sí solo en vez de colarse en una tanda. Queda el diagnóstico escrito, que vale más que un parche
+que rompe otra cosa.
 
 ---
 
