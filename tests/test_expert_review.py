@@ -83,6 +83,13 @@ def experts(monkeypatch):
     module.citation = citation
     module.record_feedback = record_feedback
     monkeypatch.setitem(sys.modules, "services.experts", module)
+    # `import services.experts as m` binds the ATTRIBUTE of the parent package,
+    # which the real module already set on `services` the first time anything
+    # imported it. Patching sys.modules alone therefore stubs nothing once
+    # tests/test_experts.py has run in the same session — the stub has to
+    # shadow the attribute too.
+    import services as _services_pkg
+    monkeypatch.setattr(_services_pkg, "experts", module, raising=False)
     module.calls = calls
     return module
 
