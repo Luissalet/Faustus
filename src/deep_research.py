@@ -18,6 +18,13 @@ from src.research_utils import strip_thinking, is_low_quality
 
 from src.goal_based_extractor import EXTRACTOR_SYSTEM
 from src.prompt_security import untrusted_context_message
+from src.research_citations import (
+    LANGUAGE_NAMES,
+    SourceRegistry,
+    detect_language,
+    finalize_report,
+    implication_label,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +73,9 @@ You are a research assistant planning web searches.
 
 **Original question:** {question}
 
+**Sub-questions the user asked — every one of them needs evidence:**
+{sections}
+
 **Research plan:**
 {research_plan}
 
@@ -86,16 +96,26 @@ You are updating an evolving research report.
 
 **Original question:** {question}
 
+**Sub-questions the report must end up covering:**
+{sections}
+
 **Current report:**
 {report}
 
-**New findings from this round:**
-{new_findings}
+**New evidence from this round — each source carries the number you cite it by:**
+{sources}
 
-Integrate the new findings into the existing report. Produce an updated, well-organized \
-report that answers the original question as completely as possible given all evidence so far. \
-Remove redundancy, resolve contradictions, and maintain logical flow. \
-Keep source URLs as inline citations where relevant.
+{language_line}
+
+Integrate the new evidence into the existing report. Produce an updated, \
+well-organized report that answers the original question as completely as \
+possible given all evidence so far. Remove redundancy, resolve contradictions, \
+and maintain logical flow.
+
+Citations: end every factual sentence with a numbered marker like [3], or \
+[3, 5] when two sources support it. Use ONLY numbers from the evidence list \
+above or numbers already present in the current report. Never invent one, and \
+keep every figure in the same sentence as the source it came from.
 
 Write only the updated report — no preamble or meta-commentary.
 """
@@ -125,27 +145,54 @@ Example: "NO — We still lack information about the economic impact."
 """
 
 FINAL_REPORT_PROMPT = """\
-Write a **long, detailed, comprehensive** research report answering this question:
+Write a long, detailed, comprehensive research report answering this question.
 
 **Question:** {question}
 
-**All collected evidence and analysis:**
+**Sections the report must have, as ## headings, in exactly this order:**
+{sections}
+
+**Numbered evidence — the only sources you may cite:**
+{sources}
+
+**All collected analysis so far:**
 {report}
 
+{language_line}
+
 Requirements:
-- Write at MINIMUM 1500 words — this should be a thorough, magazine-quality article
-- Use clear ## headings and ### subheadings to organize into logical sections
-- Each section should have multiple detailed paragraphs, not just bullet points
-- Synthesize and analyze the information — explain WHY things matter, draw comparisons, provide context
-- Include specific data points, numbers, and statistics from the evidence
-- Include source URLs as inline citations [like this](url)
-- Note where sources agree and where they disagree
-- Add a brief executive summary at the top
-- End with a clear conclusion that directly answers the question
-- Write in an engaging, informative style — not dry or robotic
+- At MINIMUM 1500 words. Multiple detailed paragraphs per section, not bullet
+  lists. Use ### subheadings inside a section when it needs them.
+- CITATIONS: every factual sentence ends with a numbered marker — [3], or
+  [3, 5] when two sources support it. Use ONLY numbers from the evidence list
+  above. Never invent a number and never cite a source you did not use.
+- Every figure travels with its source in the same sentence: write "the trial
+  reported a 40% drop over 12 weeks [3]", never a bare "40%" that the reader
+  cannot trace back.
+- When the question involves more than one option, protocol or approach,
+  include at least one markdown comparison table. Its LAST column says what the
+  row means in practice for the reader — it does not restate the data.
+- Close each major section with a one-line blockquote callout in this shape:
+  > **{implication}:** what someone should actually do with this.
+- Say where the sources agree and where they disagree, naming the numbers.
+- Open with a short executive summary and end with a conclusion that answers
+  the question directly.
+- Do NOT write a "how to read this report" section, and do NOT write a
+  sources list at the end. Both are generated afterwards, in code, from the
+  citations you actually used.
+- Write in an engaging, informative style — not dry or robotic.
 """
 
-CATEGORY_PROMPTS = {
+# Appended to every category override: the format may change, the obligation to
+# cite by number does not. Without this line a category prompt silently
+# reintroduces its own citation style and the audit finds nothing to check.
+_CATEGORY_CITATION_RULE = (
+    "\n- Citations do not change with the format: every factual sentence still "
+    "ends with a numbered marker like [3], taken only from the numbered "
+    "evidence list, and figures stay in the same sentence as their source"
+)
+
+_CATEGORY_FORMATS = {
     "product": """IMPORTANT FORMAT OVERRIDE — this is a PRODUCT research report:
 - Structure as a RANKED LIST of products/options (best first)
 - For EACH product include: name as ### heading, approximate price, 2-3 sentence summary, **Pros:** bullet list, **Cons:** bullet list, **Where to buy:** URLs as links
@@ -177,6 +224,31 @@ CATEGORY_PROMPTS = {
 - End with ## Nuance & Caveats for important context and limitations
 - Be balanced and cite sources for every claim""",
 }
+
+CATEGORY_PROMPTS = {name: text + _CATEGORY_CITATION_RULE
+                    for name, text in _CATEGORY_FORMATS.items()}
+
+# A line that opens with "1.", "1)", "(1)", "-", "*", "•" or "a)" is an item in
+# the user's own outline, so it counts as a sub-question even without a "?".
+_SUBQ_MARKER_RE = re.compile(r"^\s{0,6}(?:\(?\d{1,2}[.)]|[-*\u2022\u2023+]|[a-hA-H][.)])\s+")
+MAX_SUBQUESTIONS = 12
+_MIN_SUBQUESTION_CHARS = 12
+_MAX_SUBQUESTION_CHARS = 300
+
+
+def _split_on_question_marks(text: str) -> List[str]:
+    """One paragraph into its question-shaped pieces, each keeping its '?'."""
+    parts: List[str] = []
+    buf: List[str] = []
+    for ch in text:
+        buf.append(ch)
+        if ch in "?\uff1f":
+            parts.append("".join(buf))
+            buf = []
+    tail = "".join(buf)
+    if tail.strip():
+        parts.append(tail)
+    return parts
 
 # ---------------------------------------------------------------------------
 # DeepResearcher
@@ -241,6 +313,14 @@ class DeepResearcher:
         self.findings: List[Dict] = []
         self.evolving_report: str = ""
         self.research_plan: str = ""
+        # The user's own questions, in their order — they become the report's
+        # ## sections, so a numbered list asked for survives to the contents.
+        self.subquestions: List[str] = []
+        self.report_language: str = "en"
+        # Numbers are handed out as findings arrive, so a marker written in
+        # round two still resolves in the report written after round eight.
+        self.citations = SourceRegistry()
+        self.citation_audit = None
 
     def cancel(self):
         """Request cooperative cancellation of the research loop."""
@@ -265,8 +345,14 @@ class DeepResearcher:
             prior_urls: URLs already visited (won't be re-fetched).
         """
         self._start_time = time.time()
+        self.report_language = detect_language(question)
+        self.subquestions = self._extract_subquestions(question)
         findings: List[Dict] = list(prior_findings) if prior_findings else []
         report = prior_report or ""
+        # A continuation inherits the earlier run's pages; registering them
+        # first keeps their numbers below the ones this run hands out.
+        for finding in findings:
+            self.citations.add(finding)
 
         # PLAN: Analyze the question and create a research strategy
         if not prior_report:
@@ -314,6 +400,8 @@ class DeepResearcher:
             round_findings = await self._search_and_extract(queries, question)
             if round_findings:
                 findings.extend(round_findings)
+                for finding in round_findings:
+                    self.citations.add(finding)
                 consecutive_empty_rounds = 0
                 logger.info(f"Round {round_num}: extracted {len(round_findings)} findings")
                 self._emit(phase="reading", round=round_num,
@@ -367,6 +455,7 @@ class DeepResearcher:
 
         self.evolving_report = report  # preserve pre-synthesis report
         final = await self._final_report(question, report)
+        final = self._finalize_citations(final)
         elapsed = time.time() - self._start_time
         logger.info(
             f"Research complete: {self.round_count} rounds, "
@@ -397,7 +486,15 @@ class DeepResearcher:
     # PLAN: create research strategy
     # ------------------------------------------------------------------
     async def _create_plan(self, question: str) -> str:
-        """LLM analyzes the question and creates a research plan."""
+        """LLM analyzes the question and creates a research plan.
+
+        The user's own sub-questions are extracted deterministically first and
+        win over anything the planner invents: they are the shape the report's
+        contents has to keep. The planner only supplies a decomposition when
+        the question was one dense paragraph with none to extract.
+        """
+        self.report_language = detect_language(question)
+        self.subquestions = self._extract_subquestions(question)
         prompt = current_date_context() + RESEARCH_PLAN_PROMPT.format(question=question)
         try:
             response = await self._llm(
@@ -409,9 +506,11 @@ class DeepResearcher:
             # Try to parse as JSON for structured plan
             parsed = self._parse_json_object(response)
             if parsed:
+                if len(self.subquestions) < 2 and parsed.get("sub_questions"):
+                    self.subquestions = self._clean_subquestions(parsed["sub_questions"])
                 parts = []
-                if parsed.get("sub_questions"):
-                    parts.append("Sub-questions: " + "; ".join(parsed["sub_questions"]))
+                if self.subquestions:
+                    parts.append("Sub-questions: " + "; ".join(self.subquestions))
                 if parsed.get("key_topics"):
                     parts.append("Key topics: " + ", ".join(parsed["key_topics"]))
                 if parsed.get("success_criteria"):
@@ -419,9 +518,75 @@ class DeepResearcher:
                 return "\n".join(parts) if parts else response
             return response
         except Exception as e:
-            logger.warning(f"Research planning failed: {e}")
-            self._emit(phase="warning", message="Planning step failed, proceeding with direct search")
-            return ""
+            # A degraded run the user can see beats a silent one: name what
+            # broke and what we are doing instead, and hand the loop a real
+            # plan built from the questions they actually asked rather than the
+            # empty string that used to make every later round search blind.
+            reason = f"{type(e).__name__}: {e}"
+            logger.warning(f"Research planning failed: {reason}")
+            fallback = self.subquestions or [str(question).strip()]
+            fallback = [q for q in fallback if q] or ["the question as asked"]
+            noun = "question" if len(fallback) == 1 else "questions"
+            self._emit(
+                phase="warning",
+                message=(f"Planning step failed ({reason}); researching the "
+                         f"{len(fallback)} {noun} directly."),
+            )
+            return "Sub-questions: " + "; ".join(fallback)
+
+    # ------------------------------------------------------------------
+    # Sub-questions — the user's outline, kept
+    # ------------------------------------------------------------------
+    def _extract_subquestions(self, question) -> List[str]:
+        """The questions the user actually asked, in their order and wording.
+
+        Deterministic on purpose. A numbered list, a bulleted list and a
+        paragraph that packs several "?" all decompose here without a model;
+        a dense paragraph with none returns [], and `_create_plan` then falls
+        back to the planner's own decomposition. Never raises.
+        """
+        try:
+            if question is None:
+                return []
+            text = question if isinstance(question, str) else str(question)
+        except Exception:  # noqa: BLE001
+            return []
+        found: List[str] = []
+        for line in text.splitlines():
+            if not line.strip():
+                continue
+            bulleted = bool(_SUBQ_MARKER_RE.match(line))
+            body = (_SUBQ_MARKER_RE.sub("", line) if bulleted else line).strip()
+            if not body:
+                continue
+            for piece in _split_on_question_marks(body):
+                piece = piece.strip(" \t-\u2013\u2014\u2022*")
+                if len(piece) < _MIN_SUBQUESTION_CHARS:
+                    continue
+                if bulleted or piece.endswith("?"):
+                    found.append(piece)
+        return self._clean_subquestions(found)
+
+    @staticmethod
+    def _clean_subquestions(items) -> List[str]:
+        """Trim, deduplicate case- and punctuation-insensitively, cap at 12."""
+        out: List[str] = []
+        seen = set()
+        for item in items or []:
+            try:
+                text = (item if isinstance(item, str) else str(item)).strip()
+            except Exception:  # noqa: BLE001
+                continue
+            if not text:
+                continue
+            key = re.sub(r"\W+", " ", text.lower()).strip()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            out.append(text[:_MAX_SUBQUESTION_CHARS])
+            if len(out) >= MAX_SUBQUESTIONS:
+                break
+        return out
 
     async def _classify_category(self, question: str) -> Optional[str]:
         """Fast LLM call to classify the research question into a category."""
@@ -476,6 +641,7 @@ class DeepResearcher:
 
         prompt = current_date_context() + QUERY_GEN_PROMPT.format(
             question=question,
+            sections=self._sections_block(),
             research_plan=self.research_plan or "(No plan — search broadly.)",
             report=report or "(No findings yet.)",
             round_num=round_num,
@@ -647,8 +813,18 @@ class DeepResearcher:
                 parsed["url"] = url
                 parsed["title"] = title or page.get("title", "")
                 parsed["og_image"] = page.get("og_image", "")
+                summary = parsed.get("summary")
+                summary = summary.strip() if isinstance(summary, str) else ""
+                evidence = parsed.get("evidence")
+                evidence = evidence.strip() if isinstance(evidence, str) else ""
+                # An empty `summary` beside real `evidence` is the extractor
+                # skipping a field, not a verdict that the page was useless.
+                # is_low_quality("") is True, so this finding used to be thrown
+                # away along with the fetch we already paid for.
+                if not summary and evidence:
+                    return parsed
                 # Skip findings where the LLM says the page is useless
-                if is_low_quality(parsed.get("summary", "")):
+                if is_low_quality(summary):
                     logger.info(f"Skipping low-quality extraction from {url}")
                     return None
                 return parsed
@@ -675,12 +851,12 @@ class DeepResearcher:
         window = findings[-self.synthesis_window:]
         if len(findings) > self.synthesis_window:
             logger.info(f"Synthesis using last {self.synthesis_window} of {len(findings)} findings")
-        findings_text = self._format_findings(window)
-
         prompt = SYNTHESIZE_PROMPT.format(
             question=question,
+            sections=self._sections_block(),
             report=current_report or "(First round — no report yet.)",
-            new_findings=findings_text,
+            sources=self._numbered_findings(window),
+            language_line=self._language_line(),
         )
 
         try:
@@ -739,6 +915,10 @@ class DeepResearcher:
         prompt = FINAL_REPORT_PROMPT.format(
             question=question,
             report=report,
+            sections=self._sections_block(),
+            sources=self._registered_sources_block(),
+            language_line=self._language_line(),
+            implication=implication_label(getattr(self, "report_language", "en")),
         )
         cat_extra = CATEGORY_PROMPTS.get(self.category or "", "")
         if cat_extra:
@@ -897,6 +1077,94 @@ class DeepResearcher:
             parts.append(f"**Finding {i}** — [{title}]({url})\n{content}")
         return "\n\n".join(parts)
 
+    def _sections_block(self) -> str:
+        """The report's required ## sections — the user's questions, in order."""
+        subs = getattr(self, "subquestions", None) or []
+        if not subs:
+            return ("(The user did not ask separate sub-questions — organise the "
+                    "report by theme, one ## section per major aspect.)")
+        return "\n".join(f"{i}. {q}" for i, q in enumerate(subs, 1))
+
+    def _language_line(self) -> str:
+        """An explicit instruction, because a Spanish question used to come back
+        as an English report — the most visible quality gap we had."""
+        code = getattr(self, "report_language", "") or "en"
+        name = LANGUAGE_NAMES.get(code, "English")
+        return (f"**Language:** Write the report in {name} — the language the "
+                f"question was asked in. Headings, tables and callouts included.")
+
+    def _numbered_findings(self, findings: List[Dict]) -> str:
+        """This round's evidence as `[n] Title — url` + content.
+
+        The numbers come from the run's registry rather than from this list's
+        position, so a marker the model writes now still points at the same
+        page in the final report several rounds later.
+        """
+        registry = getattr(self, "citations", None)
+        parts = []
+        for index, finding in enumerate(findings or [], 1):
+            if registry is not None:
+                number = registry.add(finding)
+                if not number:
+                    # No URL means no marker could ever point at it; offering it
+                    # for citation would produce a source the reader cannot open.
+                    continue
+            else:
+                number = index
+            url = finding.get("url", "")
+            title = finding.get("title") or url or "Untitled"
+            summary = finding.get("summary") or ""
+            evidence = finding.get("evidence") or ""
+            content = summary or (evidence[:1000] if evidence else "(no content)")
+            parts.append(f"[{number}] {title} — {url}\n{content}")
+        return "\n\n".join(parts) if parts else "(No citable evidence yet.)"
+
+    def _registered_sources_block(self, limit: int = 80) -> str:
+        """Every source the run registered, for the final report prompt."""
+        registry = getattr(self, "citations", None)
+        entries = registry.all()[:limit] if registry is not None else []
+        if not entries:
+            return ("(No numbered sources were registered — do not write any "
+                    "[n] markers.)")
+        parts = []
+        for entry in entries:
+            content = (entry.get("summary")
+                       or (entry.get("evidence") or "")[:1000]
+                       or "(no content)")
+            title = entry.get("title") or entry.get("url") or "Untitled"
+            parts.append(f"[{entry['n']}] {title} — {entry.get('url', '')}\n{content}")
+        return "\n\n".join(parts)
+
+    def _finalize_citations(self, report: str) -> str:
+        """Repair, grade and annotate the finished report.
+
+        Runs after the expensive part of the job, so it must not be able to
+        destroy it: if anything here throws, the user still gets the report the
+        model wrote and a warning saying its citations went unchecked.
+        """
+        try:
+            final, audit, _graded = finalize_report(
+                report, self.citations, getattr(self, "report_language", "en"))
+            self.citation_audit = audit
+            coverage = audit.coverage or {}
+            logger.info(
+                "Citations: %d of %d sources cited, %d of %d sentences carry one",
+                len([n for n in audit.used if self.citations.source(n)]),
+                len(self.citations),
+                int(coverage.get("cited_sentences") or 0),
+                int(coverage.get("total_sentences") or 0),
+            )
+            if audit.removed:
+                logger.info("Removed citations pointing at nothing: %s", audit.removed)
+            return final
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"Citation check failed: {e}", exc_info=True)
+            self._emit(phase="warning",
+                       message=(f"Citations could not be checked "
+                                f"({type(e).__name__}: {e}); the report is "
+                                f"returned unverified."))
+            return report
+
     def _fallback_report(self, question: str, findings: List[Dict]) -> str:
         """Compile gathered findings into a basic report.
 
@@ -926,4 +1194,14 @@ class DeepResearcher:
             stats["Search"] = ", ".join(self.providers_used)
         if self.category:
             stats["Category"] = self.category.capitalize()
+        audit = getattr(self, "citation_audit", None)
+        registry = getattr(self, "citations", None)
+        if audit is not None and registry is not None:
+            cited = len([n for n in audit.used if registry.source(n)])
+            stats["Citations"] = f"{cited} of {len(registry)} sources"
+            coverage = audit.coverage or {}
+            total = int(coverage.get("total_sentences") or 0)
+            if total > 0:
+                share = 100.0 * int(coverage.get("cited_sentences") or 0) / total
+                stats["Claims cited"] = f"{int(round(share))}%"
         return stats

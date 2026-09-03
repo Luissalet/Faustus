@@ -456,7 +456,11 @@ def audit_citations(report_md: Any, registry: Optional[SourceRegistry] = None) -
 
     protected = _protected_spans(text)
     markers = [m for m in find_markers(text) if not _in_spans(m.start, protected)]
-    units = _sentence_units(text, protected)
+    # Headings are navigation, not assertions: counting them as sentences would
+    # depress the coverage figure for a well-structured report and reward a wall
+    # of prose. They are also not graded, so a marker in one is only repaired.
+    units = [u for u in _sentence_units(text, protected)
+             if not _HEADING_RE.match(text[u[0]:u[1]])]
     audit.total_sentences = sum(1 for s, e in units if _HAS_LETTER_RE.search(text[s:e]))
 
     by_unit: Dict[Tuple[int, int], List[int]] = {}
