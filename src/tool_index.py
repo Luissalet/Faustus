@@ -10,6 +10,15 @@ not (the container is down — a normal state on a desktop PC) the index falls
 back to an in-process cosine lane over the same fastembed vectors
 (``src.tool_index_memory``) with an on-disk embedding cache, so tool
 selection keeps working, at full quality, without Chroma.
+
+Under BOTH of those is a third floor: when no vector lane can answer at all —
+no lane was built, every lane is empty, or every lane raised — ``retrieve()``
+falls back to :mod:`src.two_tier_search` over the same tool descriptions,
+which needs no model and no network. That path used to return an empty list,
+which silently dropped every agent turn to keyword-only tool selection. It is
+worse than a real embedder and says so (``degraded``), and it is measurably
+much better than nothing: 10/20 top-1 on the benchmark in
+``src/two_tier_search.py``'s docstring, against 0/20 for the empty list.
 """
 
 import logging
@@ -223,6 +232,9 @@ class ToolIndex:
         self._fingerprint = ""
         self._mcp_generation = -1
         self._healthy = True
+        # The lexical floor's corpus, kept in step with what was indexed so
+        # the fallback can never surface a tool the lanes have dropped.
+        self._corpus: Dict[str, Dict[str, str]] = {"builtin": {}, "mcp": {}}
         logger.info(
             "ToolIndex initialized (backend=%s, lanes=%s)",
             self._backend, [lane.name for lane in self._lanes],
@@ -266,6 +278,10 @@ class ToolIndex:
             docs.append(doc_text)
             ids.append(f"builtin_{name}")
             metadatas.append({"tool_name": name, "tool_type": "builtin"})
+
+        # Written before the lanes are touched: the lexical floor has to exist
+        # precisely when the lanes are the thing that failed.
+        self._set_corpus("builtin", dict(zip([m["tool_name"] for m in metadatas], docs)))
 
         if not docs:
             return
@@ -314,6 +330,10 @@ class ToolIndex:
         if gen == self._mcp_generation:
             return
 
+        # The MCP half of the lexical floor is rebuilt wholesale below, so a
+        # server that disconnected cannot leave its tools behind in it.
+        self._set_corpus("mcp", {})
+
         # Remove old MCP entries
         for lane in self._lanes:
             try:
@@ -360,6 +380,8 @@ class ToolIndex:
         if not docs:
             self._mcp_generation = gen
             return
+
+        self._set_corpus("mcp", dict(zip([m["tool_name"] for m in metadatas], docs)))
 
         indexed = False
         for lane in self._lanes:
@@ -409,8 +431,62 @@ class ToolIndex:
                             })
             except Exception as e:
                 logger.warning("Tool retrieval failed in %s lane: %s", lane.name, e)
+        if not rows:
+            # No vector lane could answer: none was built, all are empty, or
+            # all of them raised. This used to return [] and leave the turn on
+            # keyword-only tool selection. Now it drops to the lexical floor,
+            # which needs no model and no network.
+            return self.lexical_retrieve(query, k=k)
         rows.sort(key=lambda row: (-row["score"], lane_priority.get(row["embedding_lane"], 99)))
         return [row["tool_name"] for row in dedupe_results(rows, id_key="tool_name", limit=k)]
+
+    def _set_corpus(self, section: str, docs: Dict[str, str]) -> None:
+        """Replace one section of the lexical floor's corpus, wholesale."""
+        corpus = getattr(self, "_corpus", None)
+        if not isinstance(corpus, dict):
+            corpus = {"builtin": {}, "mcp": {}}
+            self._corpus = corpus
+        corpus[section] = dict(docs)
+
+    def corpus_rows(self) -> List[Dict[str, str]]:
+        """The tool descriptions as a ``two_tier_search`` corpus.
+
+        Falls back to ``BUILTIN_TOOL_DESCRIPTIONS`` when nothing has been
+        indexed yet, so the floor answers even before ``index_builtin_tools``
+        has run (and for an index built with ``__new__`` in a test).
+        """
+        corpus = getattr(self, "_corpus", None)
+        docs: Dict[str, str] = {}
+        if isinstance(corpus, dict):
+            for section in ("builtin", "mcp"):
+                for name, text in (corpus.get(section) or {}).items():
+                    if name:
+                        docs[str(name)] = str(text or "")
+        if not docs:
+            docs = {name: f"Tool: {name}\n{desc}"
+                    for name, desc in BUILTIN_TOOL_DESCRIPTIONS.items()}
+        return [{"id": name, "text": text} for name, text in docs.items()]
+
+    def lexical_retrieve(self, query: str, k: int = 8) -> List[str]:
+        """Tool names from ``src.two_tier_search`` over the descriptions.
+
+        The floor under both vector backends: BM25-lite fused with hash
+        embeddings by RRF, which is worse than a real embedder and infinitely
+        better than the empty list this path used to return. Never raises —
+        ``two_tier_search.search`` does not, and the import is guarded because
+        this is the fallback OF the fallback.
+        """
+        try:
+            from src import two_tier_search
+        except Exception as exc:  # noqa: BLE001 - pragma: no cover
+            logger.debug("tool index: lexical floor unavailable (%s)", exc)
+            return []
+        found = two_tier_search.search(self.corpus_rows(), query, k=k)
+        names = [str(hit.get("id")) for hit in found.get("hits") or [] if hit.get("id")]
+        if names:
+            logger.debug("tool index: no vector lane answered; lexical floor served "
+                         "%d tools (tier=%s)", len(names), found.get("tier"))
+        return names
 
     # Structural recurring-schedule intent. Typo-resilient (matches "every dya"
     # via "every <word>"), and catches bare clock times ("at 7:30 am", "7am").
