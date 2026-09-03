@@ -37,6 +37,9 @@ import threading
 import time
 from typing import Any, Dict, Iterable, List, Optional
 
+from src.git_invariants import check_preconditions
+from src.native_env import native_host_environment
+
 logger = logging.getLogger(__name__)
 
 CHECKPOINT_REF = "refs/heads/checkpoints"
@@ -105,7 +108,10 @@ def shadow_dir(workspace: str) -> str:
 
 
 def _git_env() -> Dict[str, str]:
-    env = dict(os.environ)
+    # No git call in this module wants our virtualenv, and `restore()` runs
+    # `git checkout`, which fires the user's post-checkout hook when they have
+    # set core.hooksPath globally — their hook, run against our interpreter.
+    env = native_host_environment()
     env.update({
         "GIT_AUTHOR_NAME": "Faustus checkpoints",
         "GIT_AUTHOR_EMAIL": "odysseus@localhost",
@@ -592,7 +598,8 @@ def user_repo_root(workspace: str) -> Optional[str]:
     root = _norm_root(workspace)
     try:
         proc = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=root, capture_output=True,
-                              text=True, encoding="utf-8", errors="replace", timeout=10)
+                              text=True, encoding="utf-8", errors="replace", timeout=10,
+                              env=native_host_environment(extra={"GIT_TERMINAL_PROMPT": "0"}))
     except (OSError, subprocess.SubprocessError):
         return None
     if proc.returncode != 0:
@@ -606,6 +613,16 @@ def user_git_commit(workspace: str, paths: Iterable[str], message: str) -> Dict[
     top = user_repo_root(workspace)
     if not top:
         return {"ok": False, "error": "not a git repository"}
+    # Committing into a repository that is mid-rebase or on a detached HEAD is
+    # destructive and leaves no trace the person would recognise as a failure,
+    # so it is refused and reported rather than attempted. There is deliberately
+    # no way to override this.
+    pre = check_preconditions(top)
+    if not pre.ok:
+        for problem in pre.problems:
+            logger.warning("[checkpoint] refusing to commit in %s: %s", top, problem)
+        return {"ok": False, "error": " ".join(pre.problems)[:400],
+                "problems": list(pre.problems), "refused": True}
     root = _norm_root(workspace)
     rels: List[str] = []
     for p in paths:
@@ -621,8 +638,10 @@ def user_git_commit(workspace: str, paths: Iterable[str], message: str) -> Dict[
     if not rels:
         return {"ok": False, "error": "no files inside the repository"}
     message = (message or "").strip() or "Changes made by the Faustus agent"
-    env = dict(os.environ)
-    env["GIT_TERMINAL_PROMPT"] = "0"
+    # `git commit` runs the repository's pre-commit hook — the user's own code,
+    # often python. With our virtualenv inherited it resolves against our
+    # interpreter and our site-packages instead of their project's.
+    env = native_host_environment(extra={"GIT_TERMINAL_PROMPT": "0"})
     try:
         add = subprocess.run(["git", "add", "-A", "--", *rels], cwd=top, capture_output=True, text=True,
                              encoding="utf-8", errors="replace", timeout=30, env=env)
