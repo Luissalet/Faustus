@@ -395,6 +395,25 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "project_objectives",
+            "description": "Read or update the current project's objectives dashboard. 'list' returns the objectives with dependencies and impact scores; 'apply' submits typed deltas — never rewrite the whole list. Each delta: {\"op\":\"ADD|EDIT|KILL\",\"id\":\"OBJ-1\" (EDIT/KILL),\"title\",\"status\":\"open|in_progress|blocked|done|dropped\",\"priority\":1-4 (1 highest),\"notes\",\"deps\":[\"OBJ-2\"],\"rationale\",\"base_updated_at\"}. Statuses must reflect what actually changed on disk, not intentions.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["list", "apply"]},
+                    "deltas": {
+                        "type": "array",
+                        "items": {"type": "object"},
+                        "description": "Typed deltas for action 'apply' (ADD/EDIT/KILL as described above)"
+                    }
+                },
+                "required": ["action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "chat_with_model",
             "description": "Send a message to another AI model and get its response. Use for getting a second opinion, delegating subtasks, or AI-to-AI communication.",
             "parameters": {
@@ -1649,6 +1668,8 @@ def function_call_to_tool_block(name: str, arguments: str) -> Optional[ToolBlock
     elif tool_type in ("search_chats", "search_project_chats"):
         content = args.get("query", "")
     elif tool_type == "project_context":
+        content = json.dumps(args)
+    elif tool_type == "project_objectives":
         content = json.dumps(args)
     elif tool_type == "chat_with_model":
         content = args.get("model", "") + "\n" + args.get("message", "")

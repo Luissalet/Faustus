@@ -124,6 +124,12 @@ _register(
     {
         "list_email_accounts",
         "list_emails",
+        # project_objectives' writes are typed deltas to the project's own
+        # .odysseus/objectives.jsonl (validated by a deterministic compiler,
+        # never free-form file content), so it is classed with the project
+        # readers rather than the workspace writers — a turn-end status
+        # update must not trip the file-write approval gate.
+        "project_objectives",
         "read_email",
         "resolve_contact",
         "scan_email_unsubscribes",

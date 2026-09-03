@@ -58,6 +58,26 @@ class ContextAddRequest(BaseModel):
     path: str = Field(..., min_length=1, max_length=4096)
 
 
+class ObjectiveCreateRequest(BaseModel):
+    title: str = Field(..., min_length=1, max_length=200)
+    status: Optional[str] = Field(None, max_length=20)
+    priority: Optional[int] = Field(None, ge=1, le=4)
+    notes: Optional[str] = Field(None, max_length=4000)
+    deps: Optional[List[str]] = None
+
+
+class ObjectiveUpdateRequest(BaseModel):
+    title: Optional[str] = Field(None, min_length=1, max_length=200)
+    status: Optional[str] = Field(None, max_length=20)
+    priority: Optional[int] = Field(None, ge=1, le=4)
+    notes: Optional[str] = Field(None, max_length=4000)
+    deps: Optional[List[str]] = None
+
+
+class ObjectiveDeltasRequest(BaseModel):
+    deltas: List[Dict[str, Any]] = Field(..., min_length=1, max_length=50)
+
+
 def setup_project_routes() -> APIRouter:
     router = APIRouter(prefix="/api/projects", tags=["projects"])
 
@@ -268,6 +288,117 @@ def setup_project_routes() -> APIRouter:
                 "context_count": len(project.get("context_items") or []),
             }
         }
+
+    # ------------------------------------------------------------------
+    # Objectives dashboard (services/objectives.py)
+    # ------------------------------------------------------------------
+
+    def _objectives_project(project_id: str, owner: Optional[str]) -> Dict[str, Any]:
+        project = _get_or_404(project_id, owner)
+        if not (project.get("workspace") or ""):
+            raise HTTPException(400, "Project has no folder bound, so it has no objectives")
+        return project
+
+    def _apply_or_raise(
+        project: Dict[str, Any],
+        deltas: List[Dict[str, Any]],
+        actor: str,
+    ) -> Dict[str, Any]:
+        """Apply one dashboard-originated delta, mapping conflicts to HTTP
+        errors (a single-delta UI action should fail loudly, unlike the
+        agent's batch endpoint which reports conflicts in-band)."""
+        from services.objectives import ObjectiveError, apply_deltas
+        try:
+            result = apply_deltas(project, deltas, actor)
+        except ObjectiveError as e:
+            raise HTTPException(400, str(e))
+        if result["conflicts"]:
+            reason = "; ".join(str(c.get("reason") or "conflict") for c in result["conflicts"])
+            raise HTTPException(404 if "does not exist" in reason else 400, reason)
+        return result
+
+    @router.get("/{project_id}/objectives")
+    def list_objectives(
+        project_id: str,
+        request: Request,
+        _admin: None = Depends(require_admin),
+    ) -> Dict[str, Any]:
+        from services.objectives import dashboard_payload
+        project = _objectives_project(project_id, effective_user(request))
+        return dashboard_payload(project, log_limit=50)
+
+    @router.post("/{project_id}/objectives")
+    def create_objective(
+        project_id: str,
+        payload: ObjectiveCreateRequest,
+        request: Request,
+        _admin: None = Depends(require_admin),
+    ) -> Dict[str, Any]:
+        project = _objectives_project(project_id, effective_user(request))
+        delta: Dict[str, Any] = {"op": "ADD", "title": payload.title}
+        for key in ("status", "priority", "notes", "deps"):
+            value = getattr(payload, key)
+            if value is not None:
+                delta[key] = value
+        result = _apply_or_raise(project, [delta], "user")
+        oid = result["applied"][0]["id"]
+        created = next(o for o in result["state"]["objectives"] if o["id"] == oid)
+        return created
+
+    @router.patch("/{project_id}/objectives/{objective_id}")
+    def update_objective(
+        project_id: str,
+        objective_id: str,
+        payload: ObjectiveUpdateRequest,
+        request: Request,
+        _admin: None = Depends(require_admin),
+    ) -> Dict[str, Any]:
+        project = _objectives_project(project_id, effective_user(request))
+        delta: Dict[str, Any] = {"op": "EDIT", "id": objective_id}
+        delta.update(payload.model_dump(exclude_none=True))
+        if len(delta) == 2:
+            raise HTTPException(400, "Nothing to update")
+        result = _apply_or_raise(project, [delta], "user")
+        updated = next(
+            (o for o in result["state"]["objectives"] if o["id"] == objective_id), None
+        )
+        if not updated:
+            raise HTTPException(404, "Objective not found")
+        return updated
+
+    @router.delete("/{project_id}/objectives/{objective_id}")
+    def drop_objective(
+        project_id: str,
+        objective_id: str,
+        request: Request,
+        _admin: None = Depends(require_admin),
+    ) -> Dict[str, Any]:
+        """Drops the objective (status 'dropped'); the record is kept so the
+        audit history stays diffable."""
+        project = _objectives_project(project_id, effective_user(request))
+        _apply_or_raise(
+            project,
+            [{"op": "KILL", "id": objective_id, "rationale": "removed from dashboard"}],
+            "user",
+        )
+        return {"success": True, "id": objective_id}
+
+    @router.post("/{project_id}/objectives/deltas")
+    def apply_objective_deltas(
+        project_id: str,
+        payload: ObjectiveDeltasRequest,
+        request: Request,
+        _admin: None = Depends(require_admin),
+    ) -> Dict[str, Any]:
+        """Batch typed deltas as actor 'agent' (for MCP/dispatch callers).
+        Conflicts are reported in-band, never as an HTTP error — a partially
+        applicable batch still applies the valid deltas."""
+        from services.objectives import ObjectiveError, apply_deltas
+        project = _objectives_project(project_id, effective_user(request))
+        try:
+            return apply_deltas(project, payload.deltas, "agent")
+        except ObjectiveError as e:
+            raise HTTPException(400, str(e))
 
     # ------------------------------------------------------------------
     # Memory files

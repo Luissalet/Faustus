@@ -179,6 +179,63 @@ def render(job: Dict[str, Any]) -> str:
 _LIVE_STATUSES = ("queued", "running", "verifying", "cancelling")
 
 
+def _resolve_project(ident: str) -> Dict[str, Any]:
+    """Resolve a project by id, sidebar folder or name (case-insensitive)."""
+    ident = (ident or "").strip()
+    if not ident:
+        raise RuntimeError("give the project id, its sidebar folder, or its name")
+    rows = _request("GET", "/api/projects")
+    if not isinstance(rows, list):
+        rows = rows.get("projects") or []
+    key = ident.casefold()
+    for row in rows:
+        if str(row.get("id") or "") == ident:
+            return row
+    for row in rows:
+        if str(row.get("folder") or "").strip().casefold() == key \
+                or str(row.get("name") or "").strip().casefold() == key:
+            return row
+    known = ", ".join(f"{r.get('name')} ({r.get('id')})" for r in rows) or "none"
+    raise RuntimeError(f"no project matches '{ident}' — known projects: {known}")
+
+
+def render_objectives(project: Dict[str, Any], data: Dict[str, Any]) -> str:
+    """The objectives dashboard as text the coordinator can read in one glance."""
+    objs = data.get("objectives") or []
+    scores = data.get("scores") or {}
+    lines = [f"project {project.get('name')} ({project.get('id')}) · {len(objs)} objective(s)"]
+    for o in objs:
+        oid = o.get("id")
+        line = f"{oid} [{o.get('status')}] (P{o.get('priority')}) {o.get('title')}"
+        deps = [d for d in o.get("deps") or []]
+        if deps:
+            line += " · deps: " + ", ".join(deps)
+        s = scores.get(oid) or {}
+        if s.get("score") is not None:
+            line += f" · impact {s['score']}"
+        if s.get("hint"):
+            line += f" · HINT: {s['hint']}"
+        lines.append(line)
+    if not objs:
+        lines.append("no objectives yet — objectives_apply with ADD deltas creates them")
+    return "\n".join(lines)
+
+
+def render_apply(result: Dict[str, Any]) -> str:
+    lines = []
+    applied = result.get("applied") or []
+    conflicts = result.get("conflicts") or []
+    lines.append(f"{len(applied)} delta(s) applied · {len(conflicts)} conflict(s)")
+    for a in applied:
+        lines.append(f"  {a.get('op')} {a.get('id')} · {json.dumps(a.get('fields') or {}, ensure_ascii=False)[:200]}")
+    for c in conflicts:
+        lines.append(f"  CONFLICT {c.get('op') or '?'} {c.get('id') or ''}: {c.get('reason')}")
+    for o in (result.get("state") or {}).get("objectives") or []:
+        if o.get("status") != "dropped":
+            lines.append(f"{o.get('id')} [{o.get('status')}] (P{o.get('priority')}) {o.get('title')}")
+    return "\n".join(lines)
+
+
 TOOLS: List[Tool] = [
     Tool(
         name="dispatch_workers",
@@ -256,6 +313,31 @@ TOOLS: List[Tool] = [
         description="Recent dispatched jobs (id, status, title).",
         inputSchema={"type": "object", "properties": {"limit": {"type": "integer", "default": 20}}},
     ),
+    Tool(
+        name="objectives_list",
+        description=(
+            "The objectives dashboard of a Faustus project: every objective with status, priority, "
+            "dependencies and a structural impact score. Mention the relevant OBJ-id in dispatched task "
+            "instructions so the outcome is recorded as evidence on that objective."
+        ),
+        inputSchema={"type": "object", "properties": {
+            "project": {"type": "string", "description": "Project id, sidebar folder or name."},
+        }, "required": ["project"]},
+    ),
+    Tool(
+        name="objectives_apply",
+        description=(
+            "Update a Faustus project's objectives with TYPED DELTAS (never a rewrite). Each delta: "
+            "{op: ADD|EDIT|KILL, id (EDIT/KILL), title, status: open|in_progress|blocked|done|dropped, "
+            "priority: 1-4 (1 highest), notes, deps: [OBJ-ids], rationale}. Conflicts are reported "
+            "in-band; valid deltas in the same batch still apply."
+        ),
+        inputSchema={"type": "object", "properties": {
+            "project": {"type": "string", "description": "Project id, sidebar folder or name."},
+            "deltas": {"type": "array", "minItems": 1, "items": {"type": "object"},
+                       "description": "Typed ADD/EDIT/KILL deltas as described above."},
+        }, "required": ["project", "deltas"]},
+    ),
 ]
 
 
@@ -272,6 +354,16 @@ def _text(s: str) -> List[TextContent]:
 async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
     args = arguments or {}
     try:
+        if name == "objectives_list":
+            project = await asyncio.to_thread(_resolve_project, str(args.get("project") or ""))
+            data = await asyncio.to_thread(_request, "GET", f"/api/projects/{project.get('id')}/objectives")
+            return _text(render_objectives(project, data))
+        if name == "objectives_apply":
+            project = await asyncio.to_thread(_resolve_project, str(args.get("project") or ""))
+            body = {"deltas": args.get("deltas") or []}
+            result = await asyncio.to_thread(
+                _request, "POST", f"/api/projects/{project.get('id')}/objectives/deltas", body)
+            return _text(render_apply(result))
         if name == "dispatch_workers":
             body = {k: v for k, v in args.items() if v is not None}
             job = await asyncio.to_thread(_request, "POST", "/api/dispatch", body)

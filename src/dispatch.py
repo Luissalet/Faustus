@@ -724,6 +724,39 @@ def _settle(job: DispatchJob) -> None:
     elif job.status == "error":
         parts.insert(0, f"error: {job.error}")
     job.verdict = " · ".join(parts)[:400] or job.status
+    # Objectives evidence (services/objectives.py): a task that names an
+    # OBJ-id gets its outcome recorded on that objective's audit log. Pure
+    # bookkeeping — a failure here must never affect the dispatch result.
+    try:
+        _record_objective_evidence(job)
+    except Exception as e:  # noqa: BLE001 - settle path, never raise
+        logger.debug("objective evidence for %s failed: %s", job.id, e)
+
+
+def _record_objective_evidence(job: DispatchJob) -> None:
+    """Append evidence records for every OBJ-<n> the job's tasks name, when
+    the job's chat belongs to a project that has that objective."""
+    texts = " ".join(
+        f"{t.get('name') or ''} {t.get('instruction') or ''}"
+        for t in job.args.get("tasks") or [] if isinstance(t, dict)
+    )
+    ids = sorted(set(re.findall(r"\bOBJ-\d+\b", texts)))
+    if not ids:
+        return
+    from services.projects import project_for_session
+    project = project_for_session(job.session_id or "", job.owner)
+    if not project:
+        return
+    from services import objectives as objectives_svc
+    state = objectives_svc.load_state(project)
+    changes = job.changes or {}
+    changed = list(changes.get("added") or []) + list(changes.get("modified") or [])
+    note = (f"{len(changed)} file(s) changed: " + ", ".join(changed[:8])) if changed \
+        else "no files changed on disk"
+    confidence = 0.6 if job.status == "done" else 0.4
+    for oid in ids:
+        if oid in (state.get("objectives") or {}):
+            objectives_svc.add_evidence(project, oid, "dispatch", job.id, confidence, note)
 
 
 async def _run(job: DispatchJob) -> None:

@@ -1125,6 +1125,33 @@ async def _execute_tool_block_impl(
                 desc = f"project_context: {action}"
             except (ProjectError, ValueError, TypeError, json.JSONDecodeError) as exc:
                 result = {"error": str(exc), "exit_code": 1}
+    elif tool == "project_objectives":
+        desc = "project_objectives"
+        from services.projects import project_for_session
+        project = project_for_session(session_id or "", owner)
+        if not project:
+            result = {"error": "This chat is not attached to a project", "exit_code": 1}
+        else:
+            from services import objectives as objectives_svc
+            try:
+                args = json.loads(content or "{}")
+                if not isinstance(args, dict):
+                    raise objectives_svc.ObjectiveError(
+                        "Project objectives arguments must be an object")
+                action = str(args.get("action") or "list").strip().lower()
+                if action == "list":
+                    result = objectives_svc.list_payload(project)
+                elif action == "apply":
+                    result = objectives_svc.apply_deltas(
+                        project, args.get("deltas") or [], "agent",
+                        session_id=session_id,
+                    )
+                else:
+                    raise objectives_svc.ObjectiveError("Action must be list or apply")
+                desc = f"project_objectives: {action}"
+            except (objectives_svc.ObjectiveError, ValueError, TypeError,
+                    json.JSONDecodeError) as exc:
+                result = {"error": str(exc), "exit_code": 1}
     elif tool in ("chat_with_model", "ask_teacher", "list_models"):
         # Migrated to the agent_tools registry (#3629): dispatched through
         # TOOL_HANDLERS with the owner/session ctx these tools need, instead

@@ -580,7 +580,7 @@ _DOMAIN_TOOL_MAP = {
     "notes_calendar_tasks": {"manage_notes", "manage_calendar", "manage_tasks"},
     "ui": {"ui_control"},
     "sessions": {"create_session", "list_sessions", "manage_session", "send_to_session", "search_chats", "search_project_chats"},
-    "files": {"bash", "python", "read_file", "write_file", "edit_file", "apply_patch", "todowrite", "grep", "glob", "ls", "get_workspace", "project_context", "manage_bg_jobs"},
+    "files": {"bash", "python", "read_file", "write_file", "edit_file", "apply_patch", "todowrite", "grep", "glob", "ls", "get_workspace", "project_context", "project_objectives", "manage_bg_jobs"},
     "settings": {"manage_settings", "manage_endpoints", "manage_mcp", "manage_webhooks", "manage_tokens", "app_api"},
     "contacts": {"resolve_contact", "manage_contact"},
     "integrations": {"api_call"},
@@ -756,6 +756,7 @@ def _domain_rules_for_tools(tool_names: set) -> list[str]:
 TOOL_SECTIONS = {
     "search_project_chats": "- ```search_project_chats``` - Search only earlier transcripts from the current project. Use for prior project decisions, attempts and discussions before answering from memory or guessing.",
     "project_context": "- ```project_context``` - Inspect roots attached to the current project. Args (JSON): {\"action\":\"list|read|search\",\"item_id\":\"...\",\"path\":\"relative/file\",\"query\":\"...\"}. Attached roots are real working roots: normal file tools may read and modify them.",
+    "project_objectives": "- ```project_objectives``` - Read or update the project's objectives dashboard. Args (JSON): {\"action\":\"list|apply\",\"deltas\":[{\"op\":\"ADD|EDIT|KILL\",\"id\":\"OBJ-1\",\"title\":\"...\",\"status\":\"open|in_progress|blocked|done|dropped\",\"priority\":1,\"deps\":[\"OBJ-2\"],\"rationale\":\"...\"}]}. When a turn of real work ends, update with typed deltas and a rationale; never rewrite the whole list, and only mark statuses that reflect what actually changed on disk.",
     "bash": """\
 ```bash
 <shell command>
