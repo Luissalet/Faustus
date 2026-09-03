@@ -52,9 +52,29 @@ def _setting(key: str, default: Any) -> Any:
         return default
 
 
+def _outcome_of(status: str) -> Optional[str]:
+    """The four-value outcome (src/tool_outcome.py) of a run status: a run the
+    user stopped is `cancelled`, not an error. None while the setting is off
+    (so nothing new is written and nothing counts differently) and None while
+    the run is still going — an unfinished run has no outcome yet."""
+    if str(status or "").strip().lower() in ("", "running", "queued", "pending"):
+        return None
+    try:
+        from src import tool_outcome
+        if not tool_outcome.enabled():
+            return None
+        return tool_outcome.classify_status(status).value
+    except Exception:  # noqa: BLE001 - bookkeeping, never load-bearing
+        return None
+
+
 class _Run:
     __slots__ = ("buffer", "subscribers", "status", "task", "evict_task", "run_id", "last_key",
                  "lane", "queued_position", "log", "started_at", "label")
+
+    @property
+    def outcome(self) -> Optional[str]:
+        return _outcome_of(self.status)
 
     def __init__(self, lane: Optional[str] = None, label: str = "") -> None:
         self.buffer: list = []          # ordered SSE event strings (replay log)
@@ -200,7 +220,11 @@ class _RunLog:
         self._write({"seq": seq, "ev": ev, "r": replaced} if replaced else {"seq": seq, "ev": ev}, flush=not is_delta)
 
     def finish(self, status: str) -> None:
-        self._write({"status": status, "ts": time.time()}, flush=True)
+        line = {"status": status, "ts": time.time()}
+        outcome = _outcome_of(status)
+        if outcome:
+            line["outcome"] = outcome
+        self._write(line, flush=True)
         with self._lock:
             try:
                 if self._f is not None:
@@ -303,6 +327,14 @@ def queued_positions() -> Dict[str, int]:
 def get_status(session_id: str) -> Optional[str]:
     r = _RUNS.get(session_id)
     return r.status if r else None
+
+
+def get_outcome(session_id: str) -> Optional[str]:
+    """The run's four-value outcome (`success` / `expected_error` /
+    `cancelled` / `panic`), or None when there is no run (or the setting is
+    off). A run the user stopped is `cancelled`, never a failure."""
+    r = _RUNS.get(session_id)
+    return r.outcome if r else None
 
 
 def get_run_id(session_id: str) -> Optional[str]:
@@ -788,6 +820,11 @@ def recover_interrupted_runs(session_manager=None) -> List[Dict[str, Any]]:
         entry = {"session_id": sid, "run_id": info.get("run_id"), "ts": info.get("ts"),
                  "label": info.get("label") or "", "chars": len(partial["text"]),
                  "tool_calls": len(partial["tool_events"]), "saved_message": False}
+        # A restart is not the model failing: the run was cut short, like a
+        # Stop — `cancelled`, never an error (src/tool_outcome.py).
+        interrupted_outcome = _outcome_of("interrupted")
+        if interrupted_outcome:
+            entry["outcome"] = interrupted_outcome
         if session_manager is not None and not partial["saved"]:
             try:
                 sess = session_manager.get_session(sid)

@@ -1897,6 +1897,9 @@ def _compact_subagent_reports(reports) -> list:
         out.append({
             "id": r.get("id"), "name": r.get("name"), "session_id": r.get("session_id"),
             "status": r.get("status"), "stop_reason": r.get("stop_reason"), "error": r.get("error"),
+            # Four-value outcome (src/tool_outcome.py) when the worker recorded
+            # one: a worker the user stopped is `cancelled`, not a failure.
+            **({"outcome": r["outcome"]} if r.get("outcome") else {}),
             "tool_calls": r.get("tool_calls"), "failed_calls": r.get("failed_calls"),
             "mutations": list(r.get("mutations") or [])[:40], "duration_s": r.get("duration_s"),
             "final_text": str(r.get("final_text") or "")[:400],

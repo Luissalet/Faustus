@@ -9,6 +9,11 @@ so the user can pick a model with data instead of vibes; the bench
 (agent-bench/) gets the same numbers for free because its runs go through the
 normal chat API.
 
+Every row also carries the turn's four-value `outcome` (src/tool_outcome.py):
+a turn the user STOPPED is `cancelled`, counted apart in `aggregate()` and
+never blamed on the model. Rows written before that field exist read the same
+way through `entry_outcome()`.
+
 Append-only JSONL, one process, best-effort: a write failure is logged and
 ignored. Never raises.
 """
@@ -72,6 +77,7 @@ def build_entry(
     output_tokens: Optional[int] = None,
     asked_user: bool = False,
     task_tag: Optional[str] = None,
+    cancelled: bool = False,
 ) -> Dict[str, Any]:
     stop = str(harness.get("stop_reason") or "complete")
     mutations = list(harness.get("mutations") or [])
@@ -106,6 +112,11 @@ def build_entry(
         "tok_s": round(float(tokens_per_second), 1) if tokens_per_second else None,
         "output_tokens": int(output_tokens) if output_tokens else None,
     }
+    # Four-value outcome (src/tool_outcome.py), additive: old rows without it
+    # are read through `entry_outcome()`, which classifies them the same way.
+    outcome = _classify(stop, cancelled=cancelled)
+    if outcome:
+        entry["outcome"] = outcome
     if tests and tests.get("ran"):
         entry["tests"] = "inconclusive" if tests.get("inconclusive") else ("pass" if tests.get("ok") else "fail")
         entry["tests_fix_rounds"] = int(harness.get("tests_fix_rounds") or 0)
@@ -114,6 +125,26 @@ def build_entry(
         entry["review_errors"] = len([f for f in (review.get("findings") or []) if f.get("severity") == "error"])
         entry["review_model"] = review.get("model")
     return entry
+
+
+def _classify(stop_reason: str, *, cancelled: bool = False, error: Any = None) -> Optional[str]:
+    """The turn's outcome, or None while `agent_tool_outcomes` is off."""
+    try:
+        from src import tool_outcome
+        if not tool_outcome.enabled():
+            return None
+        return tool_outcome.classify_status(stop_reason, error=error, cancelled=cancelled).value
+    except Exception:  # noqa: BLE001 - the scorecard never raises
+        return None
+
+
+def entry_outcome(entry: Dict[str, Any]) -> Optional[str]:
+    """The outcome of one scorecard row — the stored one, or the same
+    classification applied to a row written before the field existed."""
+    stored = entry.get("outcome")
+    if isinstance(stored, str) and stored:
+        return stored
+    return _classify(str(entry.get("stop_reason") or "complete"))
 
 
 def _rotate_if_needed(path: str) -> bool:
@@ -217,6 +248,9 @@ def aggregate(entries: Iterable[Dict[str, Any]], *, only_workspace: bool = False
     rows: List[Dict[str, Any]] = []
     for model, items in by.items():
         n = len(items)
+        # Turns the user stopped are not the model failing: they are counted
+        # apart (and were never in `finished`, so no rate moves).
+        cancelled = len([e for e in items if entry_outcome(e) == "cancelled"])
         with_changes = [e for e in items if e.get("files_changed")]
         tests_ran = [e for e in items if e.get("tests") in ("pass", "fail")]
         reviewed = [e for e in items if e.get("review") in ("ok", "issues")]
@@ -242,6 +276,7 @@ def aggregate(entries: Iterable[Dict[str, Any]], *, only_workspace: bool = False
             "review_ok_rate": _rate(len([e for e in reviewed if e.get("review") == "ok"]), len(reviewed)),
             "reviewed": len(reviewed),
             "stalls": len([e for e in items if e.get("stop_reason") in ("rounds_exhausted", "intent_nudge_exhausted", "loop_breaker", "budget_exceeded")]),
+            "cancelled": cancelled,
             "avg_tok_s": round(sum(float(e.get("tok_s") or 0) for e in items if e.get("tok_s")) / max(1, len([e for e in items if e.get("tok_s")])), 1) if any(e.get("tok_s") for e in items) else None,
             "last_ts": max(int(e.get("ts") or 0) for e in items),
         })

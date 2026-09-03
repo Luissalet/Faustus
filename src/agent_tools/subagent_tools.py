@@ -611,10 +611,27 @@ class SubagentRun:
         self.repeat_count = self.repeat_count + 1 if sig == self.last_tool_sig else 1
         self.last_tool_sig = sig
 
+    def outcome(self) -> Optional[str]:
+        """The four-value outcome of this run (src/tool_outcome.py): a worker
+        the user stopped is `cancelled`, not a failed one. None while the
+        `agent_tool_outcomes` setting is off."""
+        try:
+            from src import tool_outcome
+            if not tool_outcome.enabled():
+                return None
+            return tool_outcome.classify_status(
+                self.stop_reason, error=self.error,
+                cancelled=bool(self.stopped_by_user and self.stop_reason in ("stopped", "cancelled")),
+            ).value
+        except Exception:  # noqa: BLE001 - a report is never worth an exception
+            return None
+
     def report(self) -> Dict[str, Any]:
+        outcome = self.outcome()
         return {
             "id": self.id, "name": self.name, "session_id": self.session_id,
             "status": "error" if self.error else ("done" if self.stop_reason in ("complete",) else self.stop_reason),
+            **({"outcome": outcome} if outcome else {}),
             "stop_reason": self.stop_reason, "error": self.error,
             "tool_calls": self.tool_calls, "failed_calls": self.failed_calls,
             "mutations": self.mutations, "rejections": self.rejections, "rounds": self.rounds,
@@ -870,6 +887,9 @@ def _save_transcript(run: SubagentRun, sm: Any) -> None:
             "stop_reason": run.stop_reason, "steered": run.steered,
             "supervisor": list(run.supervisor),
         }
+        outcome = run.outcome()
+        if outcome:
+            meta["subagent"]["outcome"] = outcome
         if run.error:
             meta["subagent"]["error"] = run.error
         if run.stop_reason in ("stopped", "stalled", "timeout"):
