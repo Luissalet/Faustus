@@ -786,10 +786,22 @@ class DeepResearcher:
         display = title or url
         self._emit(phase="reading", url=url, title=display,
                    total_sources=len(self.urls_fetched))
-        from src.search import fetch_webpage_content, firecrawl_scrape
+        from src.search import fetch_webpage_content
 
         page = None
-        if self._active_search_provider() == "firecrawl":
+        # Resolving the provider reads settings, which this per-source path
+        # never had to do before. A settings layer that cannot be read must
+        # mean "use the native fetcher", not lose the source.
+        try:
+            use_firecrawl = self._active_search_provider() == "firecrawl"
+        except Exception:
+            use_firecrawl = False
+        if use_firecrawl:
+            # Imported inside the branch, not beside fetch_webpage_content: a
+            # run on any other provider must not depend on the Firecrawl symbol
+            # resolving at all.
+            from src.search import firecrawl_scrape
+
             scrape_timeout = min(180, max(30, self.extraction_timeout))
             page = await asyncio.to_thread(firecrawl_scrape, url, scrape_timeout)
             if not page.get("success") or not page.get("content"):

@@ -521,3 +521,27 @@ def test_research_survives_a_native_fetcher_that_raises(monkeypatch):
     )
 
     assert finding is None
+
+
+def test_research_falls_back_when_the_provider_cannot_be_resolved(monkeypatch):
+    import asyncio
+
+    native_calls = []
+    _install_search_module(
+        monkeypatch,
+        scrape=lambda url, timeout: {"success": True, "content": "appliance text"},
+        fetch=lambda url, timeout: native_calls.append(url) or dict(_NATIVE_PAGE),
+    )
+    r = _researcher(monkeypatch, provider=None)
+
+    def _unreadable():
+        raise RuntimeError("settings store is unavailable")
+
+    monkeypatch.setattr(r, "_active_search_provider", _unreadable)
+
+    finding = asyncio.run(r._fetch_and_extract("https://example.com", "q", ""))
+
+    # Resolving the provider is a settings read that this per-source path did
+    # not do before Firecrawl existed. It must not be able to lose a source.
+    assert native_calls == ["https://example.com"]
+    assert finding is not None
