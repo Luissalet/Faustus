@@ -40,6 +40,7 @@ function verificationHtml(v) {
     `${v.command ? ` <code>${esc(v.command)}</code>` : ''}${v.attempts > 1 ? ` · ${esc(v.attempts)} attempts` : ''}` +
     (fails.length ? `<ul class="wk-fails">${fails.map(f => `<li>${esc(f)}${pre.has(f) ? ' <span class="wk-muted">(failed before the job too)</span>' : ''}</li>`).join('')}</ul>` : '') +
     (!v.ok && v.output_tail ? `<details class="wk-tail"><summary>output</summary><pre>${esc(String(v.output_tail).slice(-1500))}</pre></details>` : '') +
+    (Array.isArray(v.previous) && v.previous.length ? `<div class="wk-muted">Before the fix round${v.previous.length > 1 ? 's' : ''}: ${v.previous.map(p => esc((p.summary || '') + ((p.failures || []).length ? ' — ' + p.failures.slice(0, 3).join('; ') : ''))).join(' · ')}</div>` : '') +
     `</div>`;
 }
 
@@ -60,16 +61,21 @@ export function jobHtml(job, expanded = false) {
   const live = isLive(job.status);
   const res = job.result || {};
   const workers = Array.isArray(res.workers) ? res.workers : [];
-  const changed = Array.isArray(res.files_changed) ? res.files_changed : [];
   const v = res.verification;
-  const vword = v && v.ran ? (v.ok ? 'verified' : (v.inconclusive ? 'unverified' : 'verification failed')) : '';
+  // a list row has no result: read the count and the verification word off the verdict line
+  const verdict = String(job.verdict || '');
+  const vm = verdict.match(/(\d+) files? changed on disk/);
+  const changed = Array.isArray(res.files_changed) && job.result ? res.files_changed : (vm ? new Array(parseInt(vm[1], 10)).fill('') : []);
+  const vok = v && v.ran ? !!v.ok : /verification passed/.test(verdict);
+  const vword = v && v.ran ? (v.ok ? 'verified' : (v.inconclusive ? 'unverified' : 'verification failed'))
+    : (/verification passed/.test(verdict) ? 'verified' : (/verification FAILED/.test(verdict) ? 'verification failed' : ''));
   const head =
     `<div class="wk-job-head" data-wk-toggle="${attr(job.id)}">` +
     `<span class="wk-status wk-status-${attr(st)}">${esc(st)}</span>` +
     `<span class="wk-title" title="${attr(job.verdict || job.title || '')}">${esc(job.title || 'Workers')}</span>` +
     `<span class="wk-meta">${esc(when(job.created))}${job.duration_s != null ? ' · ' + esc(fmtDur(job.duration_s)) : ''}` +
     `${changed.length ? ` · ${changed.length} file${changed.length > 1 ? 's' : ''} changed` : ''}` +
-    `${vword ? ` · <span class="wk-vword wk-vword-${v.ok ? 'ok' : 'bad'}">${esc(vword)}</span>` : ''}` +
+    `${vword ? ` · <span class="wk-vword wk-vword-${vok ? 'ok' : 'bad'}">${esc(vword)}</span>` : ''}` +
     `${res.totals && res.totals.errors ? ` · ${res.totals.errors} error${res.totals.errors > 1 ? 's' : ''}` : ''}</span>` +
     `<span class="wk-actions">` +
     (job.session_id ? `<button type="button" class="admin-btn-sm" data-wk-open="${attr(job.session_id)}" title="Open the Workers chat: the control board, steer / stop, the transcripts">Board</button>` : '') +

@@ -430,6 +430,10 @@ async def test_files_changed_is_what_faustus_saw_on_disk_not_what_the_worker_sai
     assert c["claimed_only"] == ["ghost.py"]
     assert c["workers"][0]["files_changed"] == ["old.py", "ghost.py"]          # the claim, per worker, kept
     assert job.verdict == "1/1 workers done · 3 files changed on disk · not verified: verification disabled by the request (verify: none)"
+    # the Workers chat gets the same `harness` block a chat turn persists (badge, file chips vs the checkpoint)
+    last = [m for sid, m in fake_tool["sm"].messages if sid == job.session_id][-1]
+    hz = last.metadata["harness"]
+    assert hz["mutations"] == ["via_bash.txt", "old.py", "keep.py"] and hz["workspace"] == str(ws) and hz["notes"] == [job.verdict]
 
 
 @pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
@@ -511,7 +515,9 @@ async def test_faustus_runs_the_project_tests_itself_after_the_workers(fake_tool
     assert len(fake_tool["calls"]) == 1                      # no fix round was needed
     # the Workers chat carries the verdict the way a chat turn would (Verified card)
     last = [m for sid, m in fake_tool["sm"].messages if sid == job.session_id][-1]
-    assert last.metadata["project_tests"]["ok"] is True and "Verification: 1 passed" in last.content
+    hz = last.metadata["harness"]
+    assert hz["tests"]["ok"] is True and hz["tests"]["label"].endswith("tests/test_cart.py") and hz["tests_fix_rounds"] == 0
+    assert hz["mutations"] == ["cart.py", "conftest.py", "tests/test_cart.py"] and "Verification: 1 passed" in last.content
 
 
 async def test_a_failing_verification_gets_one_fix_round_with_the_failure_output(fake_tool, monkeypatch):

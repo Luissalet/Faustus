@@ -707,7 +707,8 @@ def _settle(job: DispatchJob) -> None:
         parts.append(f"{n - len([s for s in statuses if s != 'done'])}/{n} workers done"
                      + (" (" + ", ".join(sorted({s for s in statuses if s != 'done'})) + ")" if any(s != "done" for s in statuses) else ""))
     if job.changes is not None:
-        parts.append(f"{job.changes.get('count', 0)} files changed on disk")
+        n_ch = int(job.changes.get("count") or 0)
+        parts.append(f"{n_ch} file{'s' if n_ch != 1 else ''} changed on disk")
     v = job.verification
     if v:
         if v.get("ran") and v.get("ok") is True:
@@ -856,8 +857,26 @@ def _record_turn(job: DispatchJob) -> None:
             "dispatch_id": job.id,
         }
         meta = {"tool_events": [ev], "model": job.model, "source": "dispatch", "dispatch_id": job.id}
+        # The same `harness` block a chat turn persists (chatRenderer reads
+        # metadata.harness): the 🛡 badge, the edited-file chips with "diff vs
+        # before this turn" against the job's checkpoint, the tests line.
+        hz: Dict[str, Any] = {
+            "stop_reason": "complete" if job.status == "done" else job.status,
+            "mutations": list(comp.get("files_changed") or []),
+            "tool_calls": int((comp.get("totals") or {}).get("tool_calls") or 0),
+            "failed_calls": int((comp.get("totals") or {}).get("failed_calls") or 0),
+            "rejections": 0, "workspace": job.workspace, "checkpoint": job.checkpoint,
+            "notes": [job.verdict] if job.verdict else [],
+        }
+        if job.changes and job.changes.get("git"):
+            hz["git"] = {"changed_count": job.changes["git"].get("dirty_count"), "shortstat": job.changes["git"].get("shortstat"), "changed": []}
         if v and v.get("ran"):
-            meta["project_tests"] = {k: v.get(k) for k in ("ok", "summary", "command", "failures", "kind", "scope", "output_tail") if k in v}
+            hz["tests"] = {k: v.get(k) for k in ("ran", "ok", "summary", "command", "failures", "kind", "scope", "output_tail",
+                                                 "inconclusive", "related_files", "duration_s", "pre_existing", "pre_existing_only",
+                                                 "new_failures", "timed_out") if k in v}
+            hz["tests"]["label"] = v.get("command") or v.get("kind")
+            hz["tests_fix_rounds"] = max(0, int(v.get("attempts") or 1) - 1)
+        meta["harness"] = hz
         sm.add_message(job.session_id, ChatMessage("assistant", "\n".join(lines), metadata=meta))
         try:
             sm.save_sessions()

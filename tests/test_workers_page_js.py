@@ -116,3 +116,12 @@ def test_a_finished_job_shows_the_verdict_what_changed_on_disk_and_the_verificat
     assert "claims: <code>cart.py</code>" in opened
     assert 'wk-status-verifying">verifying<' in verifying and "running the verification" in verifying and "at most 20 min more" in verifying
     assert 'data-wk-cancel="v"' in verifying
+
+
+@pytest.mark.skipif(not _HAS_NODE, reason="node not installed")
+def test_a_list_row_without_a_result_reads_the_verdict_line():
+    row = {"id": "r1", "status": "done", "title": "Workers · x", "created": 1.0, "duration_s": 40.1, "session_id": "s",
+           "verdict": "2/2 workers done · 1 file changed on disk · verification passed (9 passed)", "tasks": []}
+    out = _run(f"console.log(JSON.stringify({{ row: jobHtml({json.dumps(row)}, false), bad: jobHtml({json.dumps(dict(row, status='partial', verdict='1/1 workers done · 3 files changed on disk · verification FAILED (1 failed)'))}, false) }}));")
+    assert "1 file changed" in out["row"] and 'wk-vword-ok">verified<' in out["row"]
+    assert "3 files changed" in out["bad"] and 'wk-vword-bad">verification failed<' in out["bad"]
