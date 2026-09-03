@@ -174,17 +174,21 @@ class GateRun:
 
     _bucket: float = field(default=_BUCKET_CAPACITY)
     _bucket_at: float = field(default_factory=time.monotonic)
+    # The listener answers each hook request on its own thread, so a run that
+    # makes two tool calls at once has two threads counting on this row.
+    _tally: threading.Lock = field(default_factory=threading.Lock)
 
     def take_token(self) -> bool:
         """Token bucket. False when this run is asking too fast."""
-        now = time.monotonic()
-        self._bucket = min(_BUCKET_CAPACITY,
-                           self._bucket + (now - self._bucket_at) * _BUCKET_REFILL_PER_S)
-        self._bucket_at = now
-        if self._bucket < 1.0:
-            return False
-        self._bucket -= 1.0
-        return True
+        with self._tally:
+            now = time.monotonic()
+            self._bucket = min(_BUCKET_CAPACITY,
+                               self._bucket + (now - self._bucket_at) * _BUCKET_REFILL_PER_S)
+            self._bucket_at = now
+            if self._bucket < 1.0:
+                return False
+            self._bucket -= 1.0
+            return True
 
     def ledger(self) -> Dict[str, Any]:
         """What the gate saw, as plain data for the proof packet."""
@@ -248,6 +252,13 @@ def open_run(run_id: Any, *, runner: Any = "", owner: Any = "",
         expires_at=time.time() + float(TOKEN_TTL_S if ttl_s is None else ttl_s),
     )
     with _lock:
+        # Re-registering a run id revokes the previous run's token rather than
+        # leaving it pointing at the new run: a token outliving the run it was
+        # minted for is the one thing this registry must never allow.
+        stale = _runs.pop(rid, None)
+        if stale is not None:
+            _by_token.pop(stale.token, None)
+            stale.finished = True
         _runs[rid] = run
         _by_token[run.token] = rid
     return run
@@ -593,24 +604,25 @@ def record(run: Optional[GateRun], decision: GateDecision, *, tool_use_id: Any =
     """
     try:
         if run is not None:
-            run.calls += 1
-            if decision.decision == _DENY:
-                run.denied += 1
-            elif decision.decision == _ASK:
-                run.asked += 1
-            else:
-                run.allowed += 1
-            if not decision.judged:
-                run.unjudged += 1
-                key = decision.tool or "?"
-                run.unjudged_tools[key] = run.unjudged_tools.get(key, 0) + 1
-            if decision.updated_input:
-                run.corrected += 1
-            if decision.tier == "error":
-                run.errors += 1
-            uid = str(tool_use_id or "")
-            if uid:
-                run.seen_ids.add(uid)
+            with run._tally:
+                run.calls += 1
+                if decision.decision == _DENY:
+                    run.denied += 1
+                elif decision.decision == _ASK:
+                    run.asked += 1
+                else:
+                    run.allowed += 1
+                if not decision.judged:
+                    run.unjudged += 1
+                    key = decision.tool or "?"
+                    run.unjudged_tools[key] = run.unjudged_tools.get(key, 0) + 1
+                if decision.updated_input:
+                    run.corrected += 1
+                if decision.tier == "error":
+                    run.errors += 1
+                uid = str(tool_use_id or "")
+                if uid:
+                    run.seen_ids.add(uid)
     except Exception as e:  # noqa: BLE001
         logger.debug("agent_gate: could not tally a decision: %s", e)
     try:
@@ -677,8 +689,14 @@ def handle_hook(token: Any, payload: Any, *, client_host: Any = "127.0.0.1",
     body = payload if isinstance(payload, dict) else {}
     tool_name = str(body.get("tool_name") or "")
     tool_input = _tool_input(body.get("tool_input"))
-    decision = judge(tool_name, tool_input, cwd=body.get("cwd") or run.cwd,
-                     run_id=run.run_id, run=run)
+    # The payload's `cwd` is the agent's, and the agent is the party being
+    # judged: it is used only when it is itself inside a workspace root, so a
+    # relative path can never be re-anchored against a directory this run was
+    # not given.
+    claimed_cwd = str(body.get("cwd") or "")
+    here = claimed_cwd if (claimed_cwd and _inside_any(run.workspace_roots, claimed_cwd)) \
+        else run.cwd
+    decision = judge(tool_name, tool_input, cwd=here, run_id=run.run_id, run=run)
     record(run, decision, tool_use_id=body.get("tool_use_id"),
            command=_payload_text(tool_name, tool_input))
     return 200, {"hookSpecificOutput": decision.hook_output()}
@@ -758,6 +776,10 @@ def write_hook_script(directory: Any) -> str:
     folder = str(directory)
     os.makedirs(folder, exist_ok=True)
     path = os.path.join(folder, "faustus_pretooluse_hook.py")
+    if os.path.exists(path):
+        # It was written read-only; a second write would fail on the mode
+        # rather than on anything interesting.
+        os.chmod(path, 0o600)
     with open(path, "w", encoding="utf-8") as fh:
         fh.write(HOOK_SCRIPT)
     try:

@@ -353,6 +353,16 @@ def test_the_token_is_not_the_apps_internal_token(workspace):
     assert gate.handle_hook(INTERNAL_TOOL_TOKEN, {"tool_name": "Read"})[0] == 404
 
 
+def test_re_registering_a_run_id_revokes_the_old_token(workspace):
+    """A token that outlived the run it was minted for would be the one thing
+    this registry must never allow."""
+    first = _run(workspace)
+    second = _run(workspace)
+    assert first.token != second.token
+    assert gate.handle_hook(first.token, {"tool_name": "Read"})[0] == 404
+    assert gate.handle_hook(second.token, {"tool_name": "Read"})[0] == 200
+
+
 def test_two_runs_get_different_tokens(workspace):
     a = gate.open_run("r1", workspace_roots=[str(workspace)])
     b = gate.open_run("r2", workspace_roots=[str(workspace)])
@@ -395,6 +405,22 @@ def test_the_answer_is_the_hook_shape_claude_code_expects(workspace):
     assert out["permissionDecision"] == "deny"
     assert out["permissionDecisionReason"]
     assert "updatedInput" not in out
+
+
+def test_a_cwd_the_agent_claims_is_only_used_when_it_is_inside_the_workspace(workspace,
+                                                                             tmp_path):
+    """The payload's `cwd` comes from the party being judged. Trusting one
+    that points outside the run's roots would let a relative path be
+    re-anchored against a directory this run was never given."""
+    run = _run(workspace)
+    _, body = gate.handle_hook(run.token, {"tool_name": "Write",
+                                           "tool_input": {"file_path": "escape.txt"},
+                                           "cwd": str(tmp_path)})
+    out = body["hookSpecificOutput"]
+    assert out["permissionDecision"] == "allow"
+    # Anchored on the RUN's workspace, not on the directory the payload named.
+    assert "updatedInput" not in out
+    assert str(tmp_path / "escape.txt") not in json.dumps(body)
 
 
 def test_a_correction_travels_as_updated_input(workspace):
