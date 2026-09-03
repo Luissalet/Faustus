@@ -380,6 +380,7 @@ def test_memory_lane_retrieval_quality_smoke(monkeypatch, tmp_path):
     assert "manage_calendar" in index.retrieve("calendar event management: list, create, update", k=5)
     email = index.retrieve("list emails for a folder, newest first", k=5)
     assert "list_emails" in email
+    assert "verify_claim" in index.retrieve("fact check a statistic before citing it", k=5)
 
     tools = index.get_tools_for_query("send an email to bob", k=8)
     assert "send_email" in tools and "manage_memory" in tools

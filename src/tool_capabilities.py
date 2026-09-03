@@ -88,6 +88,18 @@ _register(
     ToolEffect.USER_INTERACTION,
 )
 _register(
+    # verify_claim is a pure function of its own two arguments
+    # (src/claim_verify.py): it reads no file, opens no socket — the `url` it
+    # takes is a label recorded on the answer, never fetched — writes nothing
+    # and calls no model. So it carries no effect beyond reading back what the
+    # caller already handed it. The RESULT is untrusted all the same: it quotes
+    # the claim and the terms missing from the source, and both of those came
+    # from a fetched page or a document, not from Faustus.
+    {"verify_claim"},
+    ToolEffect.READ_PUBLIC,
+    result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
+)
+_register(
     {
         "list_cached_models",
         "list_cookbook_servers",

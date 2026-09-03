@@ -807,6 +807,60 @@ async def _expert_review_action(action: str, args: Dict, session_id: Optional[st
 
 
 # ---------------------------------------------------------------------------
+# verify_claim
+# ---------------------------------------------------------------------------
+
+#: Said only when nothing settled the claim — the one moment a model would
+#: otherwise wait for a rung that is not there.
+_NO_LAYER_5 = ("layer 5 (model judgement) is not available from this tool: it needs a judge "
+               "model and the point of this ladder is that it is deterministic. `layer: null` "
+               "means nothing here could show the claim, which is not the same as false")
+
+
+def _verify_claim_action(content: str) -> Dict:
+    """One `verify_claim` call: the deterministic ladder of src/claim_verify.py
+    over the claim and the source the model already has.
+
+    No judge is injected, on purpose — layers 1 to 4 need no model, and layer 5
+    would put a model's opinion where a caller reads a deterministic score.
+    The module itself never raises; what can go wrong here is the CALL: junk
+    instead of JSON, or a call with nothing to check.
+    """
+    from src import claim_verify
+    args = json.loads(content or "{}")
+    if not isinstance(args, dict):
+        raise ValueError("verify_claim arguments must be an object with 'claim' and 'source'")
+    claim = args.get("claim")
+    source = args.get("source")
+    claim = "" if claim is None else str(claim)
+    source = "" if source is None else str(source)
+    if not claim.strip():
+        raise ValueError("verify_claim: 'claim' is required — the sentence to check")
+    if not source.strip():
+        raise ValueError("verify_claim: 'source' is required — the text the claim must be "
+                         "supported by. Nothing is fetched: pass the text you already have")
+    verdict = claim_verify.verify(claim, source)
+    out: Dict = {
+        "supported": verdict["supported"],
+        "layer": verdict["layer"],
+        "confidence": verdict["confidence"],
+        "why": verdict["why"],
+        "unsupported_terms": verdict["unsupported_terms"],
+        "label": verdict["label"],
+        "claim": claim[:1000],
+        "source_chars": len(source),
+    }
+    url = str(args.get("url") or "").strip()
+    if url:
+        # Where the text came from, recorded so the verdict can be cited. It
+        # is never fetched: the source of truth is the text in the call.
+        out["source_url"] = url[:2048]
+    if verdict["layer"] is None:
+        out["note"] = _NO_LAYER_5
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Dispatcher
 # ---------------------------------------------------------------------------
 
@@ -1373,6 +1427,13 @@ async def _execute_tool_block_impl(
             desc = f"expert_review: {action}"
         except (_review.ExpertReviewError, ValueError, TypeError,
                 json.JSONDecodeError) as exc:
+            result = {"error": str(exc), "exit_code": 1}
+    elif tool == "verify_claim":
+        desc = "verify_claim"
+        try:
+            result = _verify_claim_action(content)
+            desc = f"verify_claim: layer {result.get('layer')}" if "layer" in result else desc
+        except (ValueError, TypeError, json.JSONDecodeError) as exc:
             result = {"error": str(exc), "exit_code": 1}
     elif tool in ("chat_with_model", "ask_teacher", "list_models"):
         # Migrated to the agent_tools registry (#3629): dispatched through

@@ -468,6 +468,25 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "verify_claim",
+            "description": "Check one claim against the source text it is supposed to come from, deterministically and without any model. Four layers, cheapest first: (1) the claim occurs verbatim; (2) it occurs after folding case, accents and punctuation; (3) enough of its content words occur; (4) every figure and every capitalised name in the claim occurs in the source — the layer that catches a fabricated number or an invented citation, and the only one that can settle a claim AGAINST you, naming what is missing in `unsupported_terms`. Passing layer 4 is NOT support: a paraphrase can carry the right names and still be false. Returns {supported, layer, confidence, why, unsupported_terms, label}; `layer: null` means no layer could settle it, which is 'not shown', not 'false'. THERE IS NO LAYER 5 HERE: the model-judgement rung needs a judge model and this tool is the deterministic ladder on purpose, so do not expect it to adjudicate meaning. Pass the source text you already have — nothing is fetched — and `url` only to record where that text came from.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "claim": {"type": "string",
+                              "description": "The single sentence to check, written as you would state it"},
+                    "source": {"type": "string",
+                               "description": "The text it must be supported by: the page, document or excerpt you already have in this turn"},
+                    "url": {"type": "string",
+                            "description": "Optional: where the source text came from. Recorded on the answer so the verdict can be cited; it is NOT fetched"}
+                },
+                "required": ["claim", "source"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "chat_with_model",
             "description": "Send a message to another AI model and get its response. Use for getting a second opinion, delegating subtasks, or AI-to-AI communication.",
             "parameters": {
@@ -1728,6 +1747,8 @@ def function_call_to_tool_block(name: str, arguments: str) -> Optional[ToolBlock
     elif tool_type == "memory_rules":
         content = json.dumps(args)
     elif tool_type == "expert_review":
+        content = json.dumps(args)
+    elif tool_type == "verify_claim":
         content = json.dumps(args)
     elif tool_type == "chat_with_model":
         content = args.get("model", "") + "\n" + args.get("message", "")
