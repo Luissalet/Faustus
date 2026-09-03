@@ -66,6 +66,17 @@ A worker detected `rate_limited` or `waiting_for_input` is REPORTED, never
 killed: the state and the literal that proves it land in that worker's
 `progress` entry while it runs, and the existing supervisor/ceiling logic
 still owns every decision to stop anything.
+
+A task may name a `runner` (src/agent_runners.py): an agent Faustus did not
+write — Claude Code, OpenCode, Qwen Code, whatever `ollama launch` knows —
+run as a worker through src/external_worker.py. Everything above still
+happens around it: the checkpoint before, the diff after, `claimed_only`,
+Faustus's own verification, the fix round, the proof. What does NOT happen is
+the one thing this app is otherwise careful about: **Faustus's command guard
+cannot see inside another agent's own shell**, so a job that used one carries
+an explicit `external_agent_unguarded` entry in its proof's uncertainty list
+and says so in its verdict. A task with no `runner` runs exactly as it always
+has, byte for byte.
 """
 from __future__ import annotations
 
@@ -104,6 +115,20 @@ _OUTPUT_TAIL_CHARS = 8192
 # The event keys that carry a worker's OWN words (its live command tail, a
 # tool's output, its last words, its error) — the only text the rules read.
 _OUTPUT_KEYS = ("tail", "output", "final_text", "message")
+# A task run by an agent Faustus did not write (src/external_worker.py): the
+# named reason that goes into the proof's uncertainty list, and the sentence it
+# carries. The proof exists to name every reason its confidence is not 1; an
+# unguarded external shell is the biggest one this app can have.
+EXTERNAL_UNGUARDED = "external_agent_unguarded"
+EXTERNAL_UNGUARDED_DETAIL = ("an external agent ran its own shell; Faustus's command guard did not "
+                             "see its commands")
+# What that entry costs the proof's confidence. The same weight src/prove.py
+# gives an uncertainty it has no penalty for, so re-sorting the list by
+# `prove.PENALTY` keeps it exactly where prove itself would have put it.
+EXTERNAL_UNGUARDED_PENALTY = 0.1
+# How much of an external agent's output is kept as its "last words".
+EXTERNAL_SUMMARY_CHARS = 2000
+
 # `wait_for(condition=...)`: the prefixes a condition may take.
 WAIT_CONDITIONS = ("done", "changed", "phase:<name>", "worker:<label>:<state>", "event:<text>")
 # `changed` re-reads the workspace on every job update; two scans closer
@@ -181,6 +206,17 @@ def _outcomes_on() -> bool:
         from src import tool_outcome
         return tool_outcome.enabled()
     except Exception:  # noqa: BLE001
+        return False
+
+
+def external_runners_on() -> bool:
+    """`agent_external_runners`. **Off by default** — it runs third-party
+    binaries on this machine. Off = a task naming a `runner` is refused with
+    the reason, and a job without one is untouched."""
+    try:
+        from src import agent_runners
+        return agent_runners.enabled()
+    except Exception:  # noqa: BLE001 - never raise into a hot path
         return False
 
 
@@ -291,6 +327,10 @@ class DispatchJob:
         # verification really SHOW, with every reason the confidence is not 1
         # named. None while `agent_dispatch_prove` is off.
         self.proof: Optional[Dict[str, Any]] = None
+        # The external agents this job ran, if any (src/agent_runners.py). An
+        # empty list is the normal case and adds NOTHING to the payload: a job
+        # with no runner is byte-identical to one from before this existed.
+        self.runners_used: List[str] = []
         self.events: Deque[Dict[str, Any]] = deque(maxlen=EVENTS_KEPT)
         self.task: Optional[asyncio.Task] = None
         self._waiters: List[asyncio.Event] = []
@@ -335,6 +375,12 @@ class DispatchJob:
                 d["stopped_by"] = self.stopped_by
             if self.proof is not None:
                 d["proof"] = self.proof
+        if self.runners_used:
+            # Only ever present when an external agent really ran: what the
+            # command guard could not see has to be readable in the payload,
+            # not only in the proof.
+            d["runners"] = list(self.runners_used)
+            d["unguarded"] = True
         return d
 
     def ceiling_s(self) -> int:
@@ -520,6 +566,17 @@ def compact_from_result(result: Optional[Dict[str, Any]], *, summary_chars: int 
             w["static_checks"] = _compact_static_checks(sc)
         if r.get("supervisor"):
             w["supervisor"] = [_squash(x, 160) for x in list(r.get("supervisor") or [])[:4]]
+        if r.get("runner"):
+            # An external agent (src/external_worker.py). These keys exist ONLY
+            # on such a row: a built-in worker's row is what it always was.
+            w["runner"] = str(r.get("runner"))
+            w["unguarded"] = True
+            if r.get("argv_shown"):
+                w["argv_shown"] = _squash(r.get("argv_shown"), 400)
+            if r.get("state"):
+                w["state"] = str(r.get("state"))
+                if r.get("why"):
+                    w["why"] = _squash(r.get("why"), 200)
         out["workers"].append(w)
         for p in w["files_changed"]:
             if p not in changed:
@@ -874,7 +931,32 @@ def build_args(body: Dict[str, Any]) -> Dict[str, Any]:
         args["max_rounds"] = _DEFAULT_MAX_ROUNDS
     if not body.get("timeout_s"):
         args["timeout_s"] = _DEFAULT_TIMEOUT_S
+    _attach_runners(args, body)
     return args
+
+
+def _attach_runners(args: Dict[str, Any], body: Dict[str, Any]) -> None:
+    """Carry `runner` from the request onto the parsed tasks.
+
+    The delegation parser keeps only the four fields a built-in worker needs
+    (`name`, `instruction`, `model`, `files`), so the runner is re-attached
+    here: the job-wide `runner` applies to every task, and a per-task one
+    overrides it when the request's task list lines up with the parsed one
+    (the parser drops tasks with no instruction, so it may not).
+
+    A task with no runner keeps no `runner` key at all — that is what makes a
+    job without one identical to a job from before this existed.
+    """
+    job_wide = str(body.get("runner") or "").strip()
+    tasks = args.get("tasks") or []
+    raw = body.get("tasks")
+    per_task: List[str] = []
+    if isinstance(raw, list) and len(raw) == len(tasks):
+        per_task = [str((t or {}).get("runner") or "").strip() if isinstance(t, dict) else "" for t in raw]
+    for i, task in enumerate(tasks):
+        chosen = (per_task[i] if i < len(per_task) and per_task[i] else job_wide)
+        if chosen:
+            task["runner"] = chosen
 
 
 def _task_text(task: Any) -> str:
@@ -1078,6 +1160,180 @@ def _release_workspace(key: str, job_id: str) -> None:
         ev.set()
 
 
+# ── external agents: a worker Faustus did not write ─────────────────────────
+
+def task_runner(task: Any) -> str:
+    """The runner key of one task, or "" for the built-in sub-agent."""
+    return str((task or {}).get("runner") or "").strip() if isinstance(task, dict) else ""
+
+
+def runner_keys(args: Dict[str, Any]) -> List[str]:
+    """Every distinct runner named by a job's tasks, in the order they appear."""
+    out: List[str] = []
+    for t in (args or {}).get("tasks") or []:
+        key = task_runner(t)
+        if key and key not in out:
+            out.append(key)
+    return out
+
+
+def vet_runners(args: Dict[str, Any]) -> None:
+    """Refuse a job whose runners cannot do the work, BEFORE anything starts.
+
+    A missing runner must not cost the job's other workers their time and
+    tokens for a result that was never going to be complete, so this raises
+    ValueError (a 400 with the reason) instead of failing one task halfway
+    through. It says exactly what to do: turn the setting on, or install the
+    agent with its `ollama launch` line.
+    """
+    keys = runner_keys(args)
+    if not keys:
+        return
+    if not external_runners_on():
+        raise ValueError(
+            "this job asks for an external agent runner (" + ", ".join(keys) + ") and "
+            "`agent_external_runners` is off. It ships off because it runs third-party binaries on "
+            "this machine, and Faustus's command guard cannot see inside another agent's own shell. "
+            "Turn it on in Settings → Agent & automation."
+        )
+    from src import agent_runners as reg
+    for key in keys:
+        runner = reg.get(key)
+        if runner is None:
+            known = ", ".join(r.key for r in reg.runners()[:24])
+            raise ValueError(f"unknown agent runner: {key!r}. Known: {known}")
+        row = reg.to_row(runner)
+        if not row["invocation_known"]:
+            raise ValueError(f"{runner.label} is {reg.NOT_RUNNABLE_NOTE}: Faustus has no row saying how "
+                             f"to run one task with it (src/agent_runners.py)")
+        if not row["installed"]:
+            raise ValueError(f"{runner.label} is not installed on this machine. Install it with: "
+                             f"{row['install']}")
+
+
+def _external_timeout(job: "DispatchJob") -> float:
+    """The hard bound on ONE external agent: the smaller of the job's
+    per-worker timeout and `agent_external_runner_timeout_s`. Never raises —
+    a settings read that fails leaves the job's own timeout standing."""
+    try:
+        per_worker = float(job.args.get("timeout_s") or _DEFAULT_TIMEOUT_S)
+    except (TypeError, ValueError):
+        per_worker = float(_DEFAULT_TIMEOUT_S)
+    try:
+        from src import agent_runners as reg
+        return max(1.0, min(per_worker, float(reg.timeout_s())))
+    except Exception as e:  # noqa: BLE001
+        logger.debug("dispatch %s: external timeout unavailable: %s", job.id, e)
+        return max(1.0, per_worker)
+
+
+def _external_report(task: Dict[str, Any], index: int, result: Dict[str, Any]) -> Dict[str, Any]:
+    """One external run, in the shape the compact answer already reads.
+
+    `mutations` is EMPTY on purpose: an external agent files no claim about
+    what it changed, so the observed diff is the whole story and
+    `claimed_only` has nothing to accuse it of. Rounds, tool calls and tokens
+    are 0 for the same reason — Faustus did not run that loop and does not get
+    to report numbers for it.
+    """
+    status = str(result.get("status") or ("done" if result.get("ok") else "error"))
+    summary = _squash(result.get("output_tail"), EXTERNAL_SUMMARY_CHARS)
+    return {
+        "id": index, "name": str(task.get("name") or f"worker-{index + 1}"),
+        "session_id": None, "status": status,
+        "stop_reason": ("complete" if status == "done" else status),
+        "error": _squash(result.get("error"), 300) or None,
+        "tool_calls": 0, "failed_calls": 0, "rounds": 0, "mutations": [], "rejections": [],
+        "input_tokens": 0, "output_tokens": 0, "duration_s": result.get("seconds"),
+        "model": str(task.get("model") or ""), "role": "external",
+        "final_text": summary, "instruction": str(task.get("instruction") or ""),
+        "files": list(task.get("files") or []), "supervisor": [],
+        "outcome": result.get("outcome"),
+        # What the guard could not see, on the worker row itself.
+        "runner": result.get("runner") or task_runner(task),
+        "runner_label": result.get("label") or "",
+        "argv_shown": result.get("argv_shown") or "",
+        "unguarded": True,
+        "exit_code": result.get("exit_code"),
+        "timed_out": bool(result.get("timed_out")),
+        "state": result.get("state") or "",
+        "why": result.get("why") or "",
+    }
+
+
+async def _run_external(job: DispatchJob, tasks: List[Dict[str, Any]], cb: Callable) -> Dict[str, Any]:
+    """Run the tasks that name an external agent, one at a time.
+
+    Sequential even when the job is parallel: these are whole agent processes
+    with their own models and their own shells in the SAME workspace, and
+    nothing here can hold a file lock over what one of them does. One at a
+    time is the only honest concurrency this path can offer.
+    """
+    from src import agent_runners as reg
+    from src import external_worker
+    reports: List[Dict[str, Any]] = []
+    for i, task in enumerate(tasks):
+        key = task_runner(task)
+        name = str(task.get("name") or f"worker-{i + 1}")
+        # Recorded BEFORE the agent starts, never after it finishes: a job
+        # cancelled mid-run still has to say that something ran unguarded.
+        if key and key not in job.runners_used:
+            job.runners_used.append(key)
+        await cb({"subagent": {"event": "started", "name": name, "runner": key,
+                               "message": f"external agent `{key}` — {reg.GUARD_NOTE}"}})
+
+        def _emit(line: str, _name: str = name) -> None:
+            # The agent's own words, on the board: the state rules read them
+            # (rate limited / waiting for input / stuck) and REPORT, never kill.
+            try:
+                job.note_worker_event({"event": "tool", "name": _name, "tail": str(line)[-2000:]})
+            except Exception as e:  # noqa: BLE001 - a board event never breaks a run
+                logger.debug("dispatch %s: external output event failed: %s", job.id, e)
+
+        result = await asyncio.to_thread(
+            external_worker.run_task, key, str(task.get("instruction") or ""),
+            workspace=job.workspace, model=str(task.get("model") or "") or None,
+            # Two ceilings apply and the smaller wins: the job's own
+            # per-worker timeout, and `agent_external_runner_timeout_s` (the
+            # bound the operator put on any third-party binary). Neither one
+            # may be raised by the other.
+            timeout_s=_external_timeout(job),
+            on_output=_emit,
+            should_cancel=lambda: job.status in ("cancelling", "cancelled"),
+        )
+        report = _external_report(task, i, result)
+        reports.append(report)
+        await cb({"subagent": {"event": "done", "name": name, "status": report["status"],
+                               "runner": key,
+                               "message": _squash(report.get("error") or report["final_text"], 200)}})
+    ok = all(r["status"] == "done" for r in reports)
+    return {"subagents": reports, "exit_code": 0 if ok else 1,
+            "output": f"{len(reports)} external agent worker(s) ran outside the command guard",
+            "dropped_tasks": 0}
+
+
+async def _work(job: DispatchJob, args: Dict[str, Any], cb: Callable) -> Dict[str, Any]:
+    """One round of workers: the built-in sub-agents, the external agents, or
+    both. With no task naming a runner this is exactly `_delegate(job, args,
+    cb)` and nothing else runs."""
+    tasks = list(args.get("tasks") or [])
+    external = [t for t in tasks if task_runner(t)]
+    if not external:
+        return await _delegate(job, args, cb)
+    internal = [t for t in tasks if not task_runner(t)]
+    result: Dict[str, Any] = {"subagents": [], "exit_code": 0, "output": ""}
+    if internal:
+        result = await _delegate(job, dict(args, tasks=internal), cb)
+        if not isinstance(result, dict):
+            result = {"subagents": [], "exit_code": 1, "output": str(result)}
+    ext = await _run_external(job, external, cb)
+    merged = dict(result)
+    merged["subagents"] = list(result.get("subagents") or []) + list(ext.get("subagents") or [])
+    merged["output"] = " · ".join(x for x in (str(result.get("output") or ""), str(ext.get("output") or "")) if x)
+    merged["exit_code"] = 0 if (result.get("exit_code") in (0, None) and ext.get("exit_code") == 0) else 1
+    return merged
+
+
 async def _delegate(job: DispatchJob, args: Dict[str, Any], cb: Callable) -> Dict[str, Any]:
     from src.agent_tools.subagent_tools import DelegateAgentsTool
     tool = DelegateAgentsTool()
@@ -1117,10 +1373,48 @@ def _build_proof(job: "DispatchJob") -> Optional[Dict[str, Any]]:
             # The job itself was stopped: that is not a worker's failure, and
             # it is not something the proof may leave out either.
             workers.append({"name": "job", "status": job.status, "outcome": "cancelled"})
-        return prove.prove(job.changes, job.verification, {"paths": claimed, "workers": workers})
+        packet = prove.prove(job.changes, job.verification, {"paths": claimed, "workers": workers})
+        return _note_unguarded(packet, job.runners_used)
     except Exception as e:  # noqa: BLE001 - the settle path never fails over the proof
         logger.debug("dispatch %s: proof unavailable: %s", job.id, e)
         return None
+
+
+def _note_unguarded(packet: Optional[Dict[str, Any]], runners: List[str]) -> Optional[Dict[str, Any]]:
+    """Add the `external_agent_unguarded` entry to a proof, and pay for it.
+
+    src/prove.py names every reason its confidence is not 1. The reason it
+    cannot name by itself is the one this module knows: an agent Faustus did
+    not write ran its own shell, and the command guard saw none of it. Hiding
+    that would make the proof a lie about exactly the thing this app is
+    careful about — so the entry goes in, the confidence drops by the same
+    weight prove gives an unnamed uncertainty, and the list is re-sorted the
+    way prove sorts it (heaviest first) so it reads as one list, not as two.
+
+    Nothing here raises: a proof that cannot be annotated is returned as it is.
+    """
+    if not packet or not runners:
+        return packet
+    try:
+        from src import prove
+        entry = {"kind": EXTERNAL_UNGUARDED,
+                 "detail": EXTERNAL_UNGUARDED_DETAIL + " (" + ", ".join(runners[:4]) + ")"}
+        unc = list(packet.get("uncertainty") or [])
+        if any(u.get("kind") == EXTERNAL_UNGUARDED for u in unc):
+            return packet
+        unc.append(entry)
+        unc.sort(key=lambda u: (-prove.PENALTY.get(str(u.get("kind")), EXTERNAL_UNGUARDED_PENALTY),
+                                str(u.get("kind"))))
+        try:
+            confidence = float(packet.get("confidence") or 0.0)
+        except (TypeError, ValueError):
+            confidence = 0.0
+        packet["uncertainty"] = unc
+        packet["confidence"] = round(max(0.0, confidence - EXTERNAL_UNGUARDED_PENALTY), 3)
+        packet["unguarded_runners"] = list(runners)
+    except Exception as e:  # noqa: BLE001 - the settle path never fails over the proof
+        logger.debug("dispatch: could not note the unguarded runners: %s", e)
+    return packet
 
 
 def _settle(job: DispatchJob) -> None:
@@ -1180,6 +1474,11 @@ def _settle(job: DispatchJob) -> None:
         # tasks did not run in the order they were written, and why.
         parts.append("tasks ordered by objective impact: "
                      + _squash(" → ".join(str(n) for n in job.task_order.get("to") or []), 160))
+    if job.runners_used:
+        # Said on the line a human reads, not only inside the proof packet: the
+        # verification and the diff below are Faustus's; the commands that
+        # produced them were not seen by anything.
+        parts.append("external agent(s) ran unguarded: " + ", ".join(job.runners_used[:4]))
     blocked = _blocked_workers(job)
     if blocked:
         # Reported, not acted on: a rate-limited or prompting worker was never
@@ -1277,7 +1576,9 @@ async def _run(job: DispatchJob) -> None:
 
         token = te._active_workspace.set(job.workspace or None)
         roots_token = te._active_workspace_roots.set((job.workspace,) if job.workspace else ())
-        job.result = await _delegate(job, job.args, _cb)
+        # `_work` is `_delegate` when no task names a runner — the same call,
+        # the same result, byte for byte.
+        job.result = await _work(job, job.args, _cb)
         if job.result.get("error") and not job.result.get("subagents"):
             job.error = _squash(job.result.get("error"), 500)
         # evidence + verification, then the bounded fix loop
@@ -1501,6 +1802,9 @@ async def start(owner: Optional[str], body: Dict[str, Any], *, runner: Optional[
         if existing is not None:
             return existing
     args = build_args(body)
+    # An external agent that is off, unknown or not installed is refused here,
+    # before a Workers chat exists and before any other worker starts.
+    vet_runners(args)
     raw_ws = str(body.get("workspace") or "").strip()
     if not raw_ws:
         # without one the workers' cwd is Faustus's own data dir (sessions,
@@ -1599,6 +1903,9 @@ def _load(job_id: str) -> Optional[DispatchJob]:
     job.stopped_by = d.get("stopped_by")
     job.proof = d.get("proof")
     job.task_order = d.get("task_order")
+    # What ran outside the command guard has to survive a restart: a job read
+    # back from its mirror still says which external agents it used.
+    job.runners_used = [str(k) for k in (d.get("runners") or []) if str(k)]
     # a job that was running when the server stopped never finished
     job.status = "interrupted" if d.get("status") in _LIVE else (d.get("status") or "done")
     if job.status == "interrupted" and not job.verdict:
@@ -1984,6 +2291,20 @@ output says about it — `rate_limited`, `waiting_for_input`, `stuck`,
 worker is reported, never killed: read `why`, and fix the cause (raise the
 quota, answer the prompt in the board's chat, free the disk) instead of
 re-dispatching the same task.
+
+## Using an agent Faustus did not write
+A task may name a `runner` (`{"instruction": "…", "runner": "claude"}`, or
+job-wide `"runner": "opencode"`): the agent with that key does the work instead
+of a local sub-agent. `GET /api/agent-runners` lists what this machine has,
+with the licence word and whether each one can be a worker at all. Everything
+above still applies — the checkpoint, the diff, `claimed_only`, Faustus's own
+verification, the proof — with ONE difference you must pass on to the user:
+**Faustus's command guard cannot see inside another agent's own shell.** No
+destructive-command guard, no approval card, no file locks; only what changed
+on disk afterwards. Such a job says so in its `verdict` and carries
+`external_agent_unguarded` in `result.proof.uncertainty`. The feature is off by
+default; a job naming a runner that is off, unknown or not installed is refused
+with the reason and nothing starts.
 
 ## Waiting for something other than the end
 `workers_wait_for(job_id, condition, timeout_s)` blocks until ONE condition

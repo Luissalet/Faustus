@@ -423,6 +423,16 @@ DEFAULT_SETTINGS = {
     # looking healthy by default — absence of signal is not absence of
     # problem. Off = the endpoint and the panel answer exactly as before.
     "agent_health_score": True,
+    # Let a dispatched task name an agent Faustus did not write as its worker
+    # (src/agent_runners.py, src/external_worker.py): Claude Code, OpenCode,
+    # Qwen Code — whatever `ollama launch` knows and this machine has. It runs
+    # inside the same harness (checkpoint, diff, verification, proof), but
+    # Faustus's command guard CANNOT see inside another agent's own shell, so
+    # every job that uses one carries `external_agent_unguarded` in its proof.
+    # OFF by default: it runs third-party binaries on this machine.
+    "agent_external_runners": False,
+    # The hard bound on one external agent's run; its process TREE is killed.
+    "agent_external_runner_timeout_s": 900,
     # Four-value outcomes for tool calls and worker runs (src/tool_outcome.py):
     # success / expected_error / cancelled / panic. A worker YOU stopped is
     # `cancelled` and no longer counts as a failed one. Off = the old arithmetic,

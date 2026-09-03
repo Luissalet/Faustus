@@ -479,6 +479,28 @@ GROUPS: list[dict[str, Any]] = [
         ],
     ),
     _group(
+        "runners", "External agent runners",
+        "Run an agent Faustus did not write as one of its workers — Claude Code, OpenCode, Qwen "
+        "Code, whatever `ollama launch` knows and this machine has installed. Faustus's command "
+        "guard CANNOT see inside another agent's own shell, so a job that uses one says so in its "
+        "verdict and carries `external_agent_unguarded` in its proof.",
+        [
+            _bool("agent_external_runners", "Let a job use an external agent",
+                  "A dispatched task may name a `runner` (see the Agent runners page) and that "
+                  "agent does the work instead of a local sub-agent, inside the same harness: the "
+                  "checkpoint before, the diff after, Faustus's own verification and the proof. "
+                  "What is NOT the same: nothing sees the commands that agent runs — no "
+                  "destructive-command guard, no approval card, no file locks — only what changed "
+                  "on disk afterwards. Off (the default, because this starts third-party binaries "
+                  "on your machine) = a job naming a runner is refused with that reason."),
+            _int("agent_external_runner_timeout_s", "External agent timeout (s)",
+                 "How long one external agent may run before its whole process TREE is killed. It "
+                 "is the only clock on it: an agent that says it is rate limited or is waiting for "
+                 "input is reported on the board, never killed for it.",
+                 10, 7200, step=30),
+        ],
+    ),
+    _group(
         "experts", "Specialist experts",
         "Local specialists with their own corpus: a rubric, your own PDFs on disk, and citations "
         "that resolve back to the page. Nothing is uploaded and there is no size limit beyond the disk.",
