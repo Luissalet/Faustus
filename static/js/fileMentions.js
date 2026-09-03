@@ -63,6 +63,28 @@ export function applyPick(value, caret, start, rel) {
   return { value: head + insert + sep + tail, caret: head.length + insert.length + sep.length };
 }
 
+// ── extra suggestion sources ───────────────────────────────────────────────
+// One documented hook so another module can offer rows in this popup without
+// this file knowing what they are (static/js/experts.js registers the
+// "@expert:<slug>" rows). A source is `(query) => [{rel, name, dir, cat}]` and
+// must answer synchronously; `rel` is inserted verbatim after the "@", so a row
+// whose rel is "expert:brenner" writes "@expert:brenner " into the composer.
+const _sources = [];
+
+export function registerMentionSource(fn) {
+  if (typeof fn === 'function' && !_sources.includes(fn)) _sources.push(fn);
+}
+
+function _extraRows(query) {
+  const out = [];
+  for (const fn of _sources) {
+    try {
+      for (const row of (fn(query) || [])) if (row && row.rel) out.push(row);
+    } catch (_) { /* a bad source never breaks the file picker */ }
+  }
+  return out;
+}
+
 function _ensurePopup() {
   let el = document.getElementById(POPUP_ID);
   if (el) return el;
@@ -96,9 +118,12 @@ function _render(popup, items, selectedIdx, query, note) {
     popup.innerHTML = `<div class="slash-ac-empty">No workspace file matches <code>${_esc(query)}</code></div>`;
     return;
   }
-  let html = '<div class="slash-ac-cat">Workspace files</div>';
+  let html = '';
+  let cat = '';
   for (let i = 0; i < items.length; i++) {
     const it = items[i];
+    const label = it.cat || 'Workspace files';
+    if (label !== cat) { cat = label; html += `<div class="slash-ac-cat">${_esc(cat)}</div>`; }
     const sel = i === selectedIdx ? ' slash-ac-row-sel' : '';
     const dir = it.dir ? `<span class="slash-ac-help">${_esc(it.dir)}/</span>` : '';
     html += `<div class="slash-ac-row${sel}" role="option" data-idx="${i}" data-rel="${_esc(it.rel)}">`
@@ -163,12 +188,20 @@ export function initFileMentions(textarea, opts = {}) {
   const refresh = () => {
     const found = activeQuery(textarea.value, textarea.selectionStart);
     if (!found) { hide(); return; }
+    const extra = _extraRows(found.query);
     const workspace = getWorkspace();
     if (!workspace) {
       // Nothing to complete against — say so once rather than silently doing
-      // nothing, since "@ does nothing" reads as a broken feature.
+      // nothing, since "@ does nothing" reads as a broken feature. Registered
+      // sources still have something to offer, so show those instead.
       ctx = found;
       show();
+      if (extra.length) {
+        items = extra.slice(0, MAX_VISIBLE);
+        selectedIdx = 0;
+        _render(popup, items, selectedIdx, found.query, '');
+        return;
+      }
       _render(popup, [], 0, found.query, 'Bind a workspace folder to mention files with @');
       return;
     }
@@ -187,7 +220,7 @@ export function initFileMentions(textarea, opts = {}) {
       if (mySeq !== seq) return;                    // a newer keystroke won
       const still = activeQuery(textarea.value, textarea.selectionStart);
       if (!still || still.query !== found.query) return;
-      items = rows.slice(0, MAX_VISIBLE);
+      items = extra.concat(rows).slice(0, MAX_VISIBLE);
       selectedIdx = 0;
       if (!items.length && found.query.length > 2) { hide(); return; }
       show();
@@ -256,4 +289,4 @@ export function initFileMentions(textarea, opts = {}) {
   });
 }
 
-export default { initFileMentions, activeQuery, applyPick, currentWorkspace };
+export default { initFileMentions, activeQuery, applyPick, currentWorkspace, registerMentionSource };
