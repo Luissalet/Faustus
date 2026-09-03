@@ -858,6 +858,14 @@ app.include_router(setup_memory_engine_routes())
 from routes.expert_routes import setup_expert_routes
 app.include_router(setup_expert_routes())
 
+# Agent runners: the CLI agents `ollama launch` knows, merged with Faustus's
+# own table of how to run ONE task with each of them, so a dispatched task can
+# name a `runner` and an agent Faustus did not write does the work inside the
+# same harness (src/agent_runners.py, src/external_worker.py). The catalogue
+# reads; POST /{key}/launch installs, is admin-only and is blocked from app_api.
+from routes.agent_runner_routes import setup_agent_runner_routes
+app.include_router(setup_agent_runner_routes())
+
 # Model tournament: the same prompt to N models blind and in parallel, then
 # rounds of explicit fusion over the anonymised answers, then a judged ranking
 # (src/tournament.py). Extends the A/B comparator below, it does not replace it.

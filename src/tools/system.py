@@ -628,6 +628,13 @@ _APP_API_BLOCKLIST_METHOD_PATH = (
     # Dispatching workers is the OUTSIDE coordinator's door; inside a chat the
     # model has delegate_agents, which goes through the chat's own gate.
     ("POST",   "/api/dispatch"),
+    # `ollama launch` INSTALLS a third-party coding agent on the operator's
+    # machine and configures it — a host-control action, the same kind as the
+    # package install and the engine rebuild above. The model must not reach it
+    # through the internal token. GET /api/agent-runners (what is installed,
+    # what each one costs in licence terms, what the launch command would be)
+    # stays open: that is the read the model needs to TELL the user.
+    ("POST",   "/api/agent-runners"),
     ("DELETE", "/api/local-models"),
     ("POST",   "/api/local-models/pull"),
     ("POST",   "/api/local-models/load"),
@@ -792,6 +799,11 @@ async def do_app_api(content: str, owner: Optional[str] = None) -> Dict:
         if path.startswith("/api/dispatch"):
             return {"error": f"{method} {path} is blocked — /api/dispatch is the door for an outside coordinator. "
                              "Inside a chat use the `delegate_agents` tool to run workers.", "exit_code": 1}
+        if path.startswith("/api/agent-runners"):
+            return {"error": f"{method} {path} is blocked for safety — `ollama launch` INSTALLS a third-party "
+                             "coding agent on this machine and configures it. That is the admin's Agent runners "
+                             "page. GET /api/agent-runners is open: read it and tell the user which agents are "
+                             "installed and what the launch command would be.", "exit_code": 1}
         if path.startswith("/api/system/gpu/orphans"):
             return {"error": f"{method} {path} is blocked for safety — releasing an orphaned model runner kills a "
                              "process on this machine; that is the admin's usage panel / Settings → Local models "
