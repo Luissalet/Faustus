@@ -294,6 +294,33 @@ def test_a_marked_mirror_still_loads_as_an_interrupted_job_in_dispatch(tmp_path,
     dispatch.reset_for_tests()
 
 
+async def test_a_dispatch_mirror_carries_the_pid_that_wrote_it_but_the_payload_does_not(tmp_path, monkeypatch):
+    """What makes the "whose process is gone" half of the scan real: the pid
+    lives in the mirror on disk, never in the API answer."""
+    from src import dispatch
+    monkeypatch.setattr(dispatch, "_data_dir", lambda: str(tmp_path / "dispatch"))
+    dispatch.reset_for_tests()
+    try:
+        job = dispatch.DispatchJob("luis", {"tasks": []}, str(tmp_path), "", "m", None, "Workers")
+        job._persist()
+        doc = json.loads((tmp_path / "dispatch" / f"{job.id}.json").read_text(encoding="utf-8"))
+        assert doc["pid"] == os.getpid()
+        assert "pid" not in job.to_dict() and "pid" not in dispatch.compact(job)
+        # …and a live pid keeps the scan's hands off a job that is still running
+        os.utime(tmp_path / "dispatch" / f"{job.id}.json", (BOOT - 30, BOOT - 30))
+        clusters = cr.find_interrupted(str(tmp_path), boot_time=BOOT)
+        assert clusters == []
+    finally:
+        dispatch.reset_for_tests()
+
+
+def test_the_scan_stops_reading_after_the_file_bound(tmp_path, monkeypatch):
+    monkeypatch.setattr(cr, "_MAX_FILES_PER_FOLDER", 3)
+    for i in range(6):
+        _mirror(tmp_path, f"{i:012d}", BOOT - 30 - i)
+    assert len(cr.scan_records(str(tmp_path))) == 3
+
+
 def test_the_boot_scan_does_nothing_at_all_with_the_setting_off(tmp_path, monkeypatch):
     _mirror(tmp_path, "aaaaaaaaaaaa", BOOT - 42)
     monkeypatch.setattr(cr, "boot_time", lambda: BOOT)

@@ -424,8 +424,13 @@ class DispatchJob:
             d = _data_dir()
             os.makedirs(d, exist_ok=True)
             tmp = os.path.join(d, f".{self.id}.tmp")
+            # The pid goes in the MIRROR only, never in the API payload: it is
+            # what src/crash_recovery.py probes before calling a job that was
+            # left `running` interrupted. A pid that still answers means the
+            # job belongs to a process that is alive, not to a power cut.
+            doc = dict(self.to_dict(), pid=os.getpid())
             with open(tmp, "w", encoding="utf-8") as fh:
-                json.dump(self.to_dict(), fh, ensure_ascii=False, indent=1)
+                json.dump(doc, fh, ensure_ascii=False, indent=1)
             os.replace(tmp, os.path.join(d, f"{self.id}.json"))
         except Exception as e:  # noqa: BLE001 — a mirror, never load-bearing
             logger.debug("dispatch: persist failed: %s", e)

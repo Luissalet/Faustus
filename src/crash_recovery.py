@@ -65,6 +65,10 @@ DEFAULT_SLACK_S = 300.0
 
 _MAX_MIRROR_BYTES = 4 * 1024 * 1024
 _TAIL_BYTES = 64 * 1024
+#: Files read per folder. The mirrors rotate at 200 and the run logs are pruned
+#: at 48 h, so this is only a bound on a folder somebody filled by hand — a
+#: boot scan may never turn into a long walk while startup waits for it.
+_MAX_FILES_PER_FOLDER = 2000
 
 Cluster = Dict[str, Any]
 
@@ -297,9 +301,14 @@ def scan_records(data_dir: Any) -> List[Dict[str, Any]]:
             names = sorted(os.listdir(folder))
         except OSError:
             continue
+        read = 0
         for name in names:
             if not name.endswith(suffix) or name.startswith("."):
                 continue
+            read += 1
+            if read > _MAX_FILES_PER_FOLDER:
+                logger.debug("crash_recovery: stopped at %d files in %s", _MAX_FILES_PER_FOLDER, folder)
+                break
             path = os.path.join(folder, name)
             ts = _mtime(path)
             if ts is None:
@@ -389,7 +398,11 @@ def find_interrupted(data_dir: Any, *, boot_time: Optional[float] = None,
     clusters: List[Cluster] = []
     for members in group_by_mtime(records, gap_s=gap_s):
         interrupted = [r for r in members if r.get("live") and lo <= float(r["mtime"]) <= hi]
-        # A record whose recorded process is STILL ALIVE was not interrupted.
+        # A record whose recorded process is STILL ALIVE was not interrupted —
+        # the dispatch mirrors carry the pid that wrote them. After a reboot a
+        # pid can have been reused, and then this skips a job that really was
+        # cut short: the wrong answer in the safe direction (dispatch still
+        # reports it `interrupted` when it loads it), never the other way.
         alive = [r for r in interrupted if r.get("pid") is not None and pid_alive(r.get("pid")) is True]
         if alive:
             still = {id(r) for r in alive}
