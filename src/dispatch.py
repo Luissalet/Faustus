@@ -856,7 +856,11 @@ def _record_turn(job: DispatchJob) -> None:
             "subagents": _compact_subagent_reports(reports) if reports else [],
             "dispatch_id": job.id,
         }
-        meta = {"tool_events": [ev], "model": job.model, "source": "dispatch", "dispatch_id": job.id}
+        # with tool_events present the renderer takes the bubbles from
+        # round_texts (never from content): the verdict is the text of a
+        # second, tool-less round, i.e. it appears under the board
+        meta = {"tool_events": [ev], "model": job.model, "source": "dispatch", "dispatch_id": job.id,
+                "round_texts": ["", "\n".join(lines)], "round_models": [job.model, job.model]}
         # The same `harness` block a chat turn persists (chatRenderer reads
         # metadata.harness): the 🛡 badge, the edited-file chips with "diff vs
         # before this turn" against the job's checkpoint, the tests line.

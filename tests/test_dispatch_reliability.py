@@ -435,6 +435,7 @@ async def test_files_changed_is_what_faustus_saw_on_disk_not_what_the_worker_sai
     hz = last.metadata["harness"]
     assert hz["mutations"] == ["via_bash.txt", "old.py", "keep.py"] and hz["workspace"] == str(ws) and hz["notes"] == [job.verdict]
     assert last.metadata["input_tokens"] == 10 and last.metadata["output_tokens"] == 5 and last.metadata["response_time"] >= 0
+    assert last.metadata["round_texts"] == ["", last.content] and job.verdict in last.content
 
 
 @pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
