@@ -23,7 +23,12 @@ Why it is built this way
   rankings are fused with Reciprocal Rank Fusion (``Σ 1/(60+rank)``) and the
   answer says ``tier: "hybrid"``. When it is missing or raises, tier 1 is
   served with ``degraded: True``. A freshly installed Faustus that has
-  downloaded nothing still searches its own books.
+  downloaded nothing still searches its own books. Tier 3 reorders whichever
+  of those ran with a cross-encoder (:mod:`src.rerank`) when one is
+  configured, and the answer says ``tier: "reranked"`` only when it genuinely
+  was; when no reranker is reachable the fused order is served with
+  ``rerank_reason`` naming why, because a retrieval stage that goes quietly
+  missing is indistinguishable from one that was never wanted.
 
 * **Phase 1 is RAG + citations.** No fine-tuning, no LoRA: those need hundreds
   of accepted/rejected corrections that only real use produces, and a PDF
@@ -93,6 +98,10 @@ CORPUS_EXTENSIONS: Tuple[str, ...] = (
 DEFAULT_CONTEXT_CHARS = 2500
 DEFAULT_SEARCH_K = 6
 RRF_K = 60.0                     # the report's Reciprocal Rank Fusion constant
+# How many fused chunks go to the cross-encoder. Larger than a typical k on
+# purpose: a reranker earns its cost by promoting a chunk fusion buried at
+# rank 20, which it can only do if it is shown rank 20.
+RERANK_HEAD = 30
 BM25_K1 = 1.5
 BM25_B = 0.75
 MAX_EXCERPT_CHARS = 600          # per-citation excerpt cap
@@ -1204,6 +1213,67 @@ def _semantic_ranking(slug: str, query: str, k: int) -> Tuple[List[str], bool]:
     return [chunk_id for _, chunk_id in ranked], True
 
 
+def _rerank_ranking(reranker: Any, query: str, ordered: List[str],
+                    by_id: Dict[str, Dict[str, Any]],
+                    owner: Optional[str]) -> Tuple[List[str], Dict[str, float], Optional[str]]:
+    """``(order, scores, reason)``. ``reason`` is None only when it really ran.
+
+    A reordering of the fused head, never a filter — the chunks past
+    :data:`RERANK_HEAD` keep their fused position and follow, so switching the
+    stage on can promote a chunk but can never lose one. ``reranker`` is
+    ``True`` for whatever :mod:`src.rerank` resolves, or a callable with that
+    module's ``rerank(query, passages)`` signature.
+    """
+    call = None
+    if reranker is True:
+        try:
+            from src.rerank import rerank as _rerank
+
+            def call(q, passages):
+                return _rerank(q, passages, owner=owner, head=RERANK_HEAD)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("experts: no rerank module (%s); serving the fused order", exc)
+            return ordered, {}, "no_reranker_configured"
+    elif callable(reranker):
+        call = reranker
+    if call is None:
+        return ordered, {}, "no_reranker_configured"
+
+    head_ids = ordered[:RERANK_HEAD]
+    passages = [by_id[cid] for cid in head_ids if cid in by_id]
+    if not passages:
+        return ordered, {}, "no_reranker_configured"
+
+    try:
+        result = call(query, passages)
+    except Exception as exc:  # noqa: BLE001 - nothing here raises into a hot path
+        logger.info("experts: the rerank stage raised (%s); serving the fused order", exc)
+        return ordered, {}, "endpoint_unreachable"
+
+    if not getattr(result, "reranked", False):
+        return ordered, {}, str(getattr(result, "reason", None) or "bad_response")
+
+    indices = list(getattr(result, "order", None) or [])
+    if indices and all(isinstance(i, int) and 0 <= i < len(passages) for i in indices):
+        reordered = [str(passages[i].get("id")) for i in indices]
+    else:
+        reordered = [str(row.get("id")) for row in (getattr(result, "passages", None) or [])
+                     if isinstance(row, dict)]
+    reordered = [cid for cid in reordered if cid in by_id]
+    if not reordered:
+        return ordered, {}, "bad_response"
+
+    scores: Dict[str, float] = {}
+    for cid, value in zip(reordered, list(getattr(result, "scores", None) or [])):
+        try:
+            scores[cid] = float(value)
+        except (TypeError, ValueError):
+            continue
+
+    seen = set(reordered)
+    return reordered + [cid for cid in ordered if cid not in seen], scores, None
+
+
 def _hit(chunk: Dict[str, Any], score: float, tier: str) -> Dict[str, Any]:
     return {
         "chunk_id": str(chunk.get("id") or ""),
@@ -1217,14 +1287,23 @@ def _hit(chunk: Dict[str, Any], score: float, tier: str) -> Dict[str, Any]:
     }
 
 
-def search(slug: Any, query: Any, k: int = DEFAULT_SEARCH_K) -> Dict[str, Any]:
-    """``{"hits": [...], "tier": "lexical"|"hybrid", "degraded": bool}``.
+def search(slug: Any, query: Any, k: int = DEFAULT_SEARCH_K, *,
+           owner: Optional[str] = None, reranker: Any = True) -> Dict[str, Any]:
+    """``{"hits", "tier", "degraded", "rerank_reason"}``.
 
     Tier 1 (BM25-lite) always runs. When this expert has a working embedding
     collection the two rankings are fused with Reciprocal Rank Fusion
     (``Σ 1/(60+rank)``) and the tier is ``hybrid``; when the vector store is
-    missing or raises the answer is tier 1 with ``degraded: True``. NEVER an
-    error — a Faustus that has downloaded nothing still searches.
+    missing or raises the answer is tier 1 with ``degraded: True``. Tier 3
+    reorders that with a cross-encoder when one is configured, making the tier
+    ``reranked``. NEVER an error — a Faustus that has downloaded nothing still
+    searches.
+
+    ``rerank_reason`` is ``None`` when the cross-encoder ran and otherwise
+    names why it did not (see :mod:`src.rerank`); the order in hand is then
+    the fused one, exactly as it was before this stage existed. ``degraded``
+    is left to the retrieval lanes — a reranked hybrid is still a retrieval
+    with no real embedder in it.
     """
     slug = _clean_slug(slug)
     try:
@@ -1256,11 +1335,24 @@ def search(slug: Any, query: Any, k: int = DEFAULT_SEARCH_K) -> Dict[str, Any]:
             for rank, chunk_id in enumerate(ranking, start=1):
                 fused[chunk_id] = fused.get(chunk_id, 0.0) + 1.0 / (RRF_K + rank)
         ordered = sorted(fused, key=lambda cid: (-fused[cid], cid))
-        hits = [_hit(by_id[cid], fused[cid], tier) for cid in ordered[:k] if cid in by_id]
+        scores = fused
     else:
-        hits = [_hit(by_id[cid], lexical[cid], tier) for cid in lexical_ranked[:k]]
+        ordered = list(lexical_ranked)
+        scores = lexical
 
-    return {"hits": hits, "tier": tier, "degraded": degraded}
+    ordered, rerank_scores, rerank_reason = _rerank_ranking(
+        reranker, text, ordered, by_id, owner)
+    if rerank_reason is None:
+        tier = "reranked"
+        # The cross-encoder's score is what produced this order, so it is what
+        # the hit reports; leaving the fused score in place would let a caller
+        # that re-sorts by score silently undo the reranking.
+        scores = {cid: rerank_scores.get(cid, scores.get(cid, 0.0)) for cid in ordered}
+
+    hits = [_hit(by_id[cid], scores.get(cid, 0.0), tier) for cid in ordered[:k] if cid in by_id]
+
+    return {"hits": hits, "tier": tier, "degraded": degraded,
+            "rerank_reason": rerank_reason}
 
 
 # ---------------------------------------------------------------------------

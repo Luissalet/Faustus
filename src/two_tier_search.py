@@ -12,6 +12,7 @@ So there are two tiers and three answers:
 ============  ==================================================  ==========
 ``tier``      what ran                                            ``degraded``
 ============  ==================================================  ==========
+``reranked``  any tier below, reordered by a cross-encoder        unchanged
 ``refined``   tier 1, with a real embedder mixed over it (α=0.7)  ``False``
 ``hybrid``    BM25-lite + :mod:`src.hash_embed`, fused by RRF     ``True``
 ``lexical``   BM25-lite alone (nothing could be vectorised)       ``True``
@@ -21,6 +22,15 @@ So there are two tiers and three answers:
 and ``tier`` says how far down it went. A caller that shows results without
 showing the tier is lying by omission, which is why every surface built on
 this prints it.
+
+``reranked`` is the one tier that is *opt-in*: it needs a cross-encoder over
+HTTP, and this module does no I/O of its own (see the closing paragraph), so
+it only happens when the caller passes ``reranker``. It is a stage on top of
+the others rather than a replacement for one, which is why it leaves
+``degraded`` alone — ``degraded`` still answers about the retrieval lanes,
+and a hybrid retrieval that was reranked is still a retrieval with no real
+embedder in it. Whether the rerank stage ran, and if not why not, is its own
+field: ``rerank_reason``, one of the named reasons in :mod:`src.rerank`.
 
 What is different from the expert corpus search
 -----------------------------------------------
@@ -105,6 +115,7 @@ __all__ = [
     "RRF_K",
     "ALPHA",
     "TIERS",
+    "RERANK_HEAD",
     "bm25_scores",
     "rrf",
     "search",
@@ -132,7 +143,13 @@ BM25_B = 0.75
 TIER_LEXICAL = "lexical"
 TIER_HYBRID = "hybrid"
 TIER_REFINED = "refined"
-TIERS = (TIER_LEXICAL, TIER_HYBRID, TIER_REFINED)
+TIER_RERANKED = "reranked"
+TIERS = (TIER_LEXICAL, TIER_HYBRID, TIER_REFINED, TIER_RERANKED)
+
+# How many fused hits go to the cross-encoder. Deliberately larger than a
+# typical k: the whole value of a reranker is promoting a document fusion put
+# at rank 20, which cannot happen if it only ever sees the top 8.
+RERANK_HEAD = 30
 
 DEFAULT_K = 8
 MAX_K = 200
@@ -304,6 +321,78 @@ def _semantic_ranking(embedder: Any, query: str, rows: List[Dict[str, Any]],
 
 
 # ---------------------------------------------------------------------------
+# Tier 3: a cross-encoder over what fusion produced
+# ---------------------------------------------------------------------------
+
+
+def _rerank_stage(reranker: Any, query: str, ordered: List[str],
+                  originals: Dict[str, Dict[str, Any]],
+                  head: int) -> Tuple[List[str], Dict[str, float], Optional[str]]:
+    """``(order, scores, reason)``. ``reason`` is None only when it really ran.
+
+    Reranking is a *reordering* of the fused head, never a filter: the tail
+    past ``head`` keeps its fused position and follows, so turning the stage
+    on can move a document up but can never make one vanish.
+
+    ``reranker`` is either ``True`` (use the configured cross-encoder in
+    :mod:`src.rerank`, imported lazily so this module keeps costing nothing to
+    import) or a callable with that function's signature — which is how the
+    tests, and any caller with its own scorer, inject one.
+    """
+    call = None
+    if reranker is True:
+        try:
+            from src.rerank import rerank as call
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("two-tier search: no rerank module (%s); staying on the fused order", exc)
+            return ordered, {}, "no_reranker_configured"
+    elif callable(reranker):
+        call = reranker
+    if call is None:
+        return ordered, {}, "no_reranker_configured"
+
+    head_ids = ordered[:max(1, int(head or RERANK_HEAD))]
+    passages = [originals[doc_id] for doc_id in head_ids if doc_id in originals]
+    if not passages:
+        return ordered, {}, "no_reranker_configured"
+
+    try:
+        result = call(query, passages)
+    except Exception as exc:  # noqa: BLE001 - an injected scorer is caller code
+        # src.rerank never raises; a custom one might, and a search that 500s
+        # because its optional third tier threw is exactly what this module
+        # exists to prevent.
+        logger.info("two-tier search: the rerank stage raised (%s); serving the fused order", exc)
+        return ordered, {}, "endpoint_unreachable"
+
+    if not getattr(result, "reranked", False):
+        return ordered, {}, str(getattr(result, "reason", None) or "bad_response")
+
+    indices = list(getattr(result, "order", None) or [])
+    if indices and all(isinstance(i, int) and 0 <= i < len(passages) for i in indices):
+        reordered = [str(passages[i].get("id")) for i in indices]
+    else:
+        # A scorer that returns rows rather than indices still has to be
+        # honoured; fall back to reading the ids off what it handed back.
+        reordered = [str(row.get("id")) for row in (getattr(result, "passages", None) or [])
+                     if isinstance(row, dict)]
+    reordered = [doc_id for doc_id in reordered if doc_id in originals]
+    if not reordered:
+        return ordered, {}, "bad_response"
+
+    scores: Dict[str, float] = {}
+    for doc_id, value in zip(reordered, list(getattr(result, "scores", None) or [])):
+        try:
+            scores[doc_id] = float(value)
+        except (TypeError, ValueError):
+            continue
+
+    seen = set(reordered)
+    tail = [doc_id for doc_id in ordered if doc_id not in seen]
+    return reordered + tail, scores, None
+
+
+# ---------------------------------------------------------------------------
 # Corpus normalisation
 # ---------------------------------------------------------------------------
 
@@ -344,13 +433,21 @@ def _hit(original: Dict[str, Any], score: float, rank_index: int, tier: str) -> 
 
 def _result(hits: List[Dict[str, Any]], tier: str, degraded: bool,
             lanes: List[str], started: float,
-            clock: Callable[[], float]) -> Dict[str, Any]:
+            clock: Callable[[], float],
+            rerank_requested: bool = False,
+            rerank_reason: Optional[str] = None) -> Dict[str, Any]:
     try:
         elapsed = max(0.0, (clock() - started) * 1000.0)
     except Exception:  # noqa: BLE001 - an injected clock is caller code
         elapsed = 0.0
-    return {"hits": hits, "tier": tier, "degraded": degraded,
-            "elapsed_ms": round(elapsed, 3), "lanes": lanes}
+    out = {"hits": hits, "tier": tier, "degraded": degraded,
+           "elapsed_ms": round(elapsed, 3), "lanes": lanes}
+    # The key exists only for a caller that asked for reranking. Every
+    # existing caller passes no reranker and must get back the dict it always
+    # got, key for key — that is the compatibility guarantee.
+    if rerank_requested:
+        out["rerank_reason"] = rerank_reason
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -359,7 +456,8 @@ def _result(hits: List[Dict[str, Any]], tier: str, degraded: bool,
 
 
 def search(corpus: Iterable[Any], query: Any, k: int = DEFAULT_K, *,
-           embedder: Any = None,
+           embedder: Any = None, reranker: Any = None,
+           rerank_head: int = RERANK_HEAD,
            clock: Callable[[], float] = time.perf_counter) -> Dict[str, Any]:
     """Rank ``corpus`` against ``query``. Never raises.
 
@@ -369,7 +467,15 @@ def search(corpus: Iterable[Any], query: Any, k: int = DEFAULT_K, *,
 
     Returns ``{"hits", "tier", "degraded", "elapsed_ms", "lanes"}`` where
     ``lanes`` names what actually contributed (``bm25``, ``hash``,
-    ``embedder``) — the evidence behind ``tier``.
+    ``embedder``, ``rerank``) — the evidence behind ``tier``.
+
+    ``reranker`` opts into tier 3: ``True`` uses whatever cross-encoder
+    :mod:`src.rerank` can resolve, or pass a callable with that module's
+    ``rerank(query, passages)`` signature. When it is given the answer gains
+    ``rerank_reason``, which is ``None`` when nothing was withheld — the stage
+    ran, or there was nothing to rank — and otherwise names why the order you
+    are holding is the fused one. ``tier`` says ``reranked`` only when it
+    genuinely was.
     """
     # The injected clock is caller code, so even the first tick is guarded:
     # "never raises" has to include the stopwatch.
@@ -378,13 +484,15 @@ def search(corpus: Iterable[Any], query: Any, k: int = DEFAULT_K, *,
     except Exception:  # noqa: BLE001
         started = 0.0
     try:
-        return _search(corpus, query, k, embedder, started, clock)
+        return _search(corpus, query, k, embedder, reranker, rerank_head, started, clock)
     except Exception as exc:  # noqa: BLE001 - "never an error" is the contract
         logger.warning("two-tier search failed entirely (%s); answering empty", exc)
-        return _result([], TIER_LEXICAL, True, [], started, clock)
+        return _result([], TIER_LEXICAL, True, [], started, clock,
+                       rerank_requested=reranker is not None)
 
 
 def _search(corpus: Iterable[Any], query: Any, k: int, embedder: Any,
+            reranker: Any, rerank_head: int,
             started: float, clock: Callable[[], float]) -> Dict[str, Any]:
     try:
         k = max(1, min(int(k or DEFAULT_K), MAX_K))
@@ -396,8 +504,10 @@ def _search(corpus: Iterable[Any], query: Any, k: int, embedder: Any,
     if not rows or not text:
         # Nothing to rank, so nothing to degrade: do not wake an embedder to
         # report an empty corpus, and do not claim a degradation that has no
-        # consequence.
-        return _result([], TIER_LEXICAL, False, [], started, clock)
+        # consequence. The same reasoning covers the reranker, which is why
+        # the reason here is None rather than a complaint.
+        return _result([], TIER_LEXICAL, False, [], started, clock,
+                       rerank_requested=reranker is not None)
 
     # ── tier 1, lane A: BM25-lite ──────────────────────────────────────────
     lexical = bm25_scores(text, [(row["id"], row["text"]) for row in rows])
@@ -446,10 +556,29 @@ def _search(corpus: Iterable[Any], query: Any, k: int, embedder: Any,
             degraded = False
 
     ordered = _ordered(scores)
-    hits = [_hit(originals[doc_id], scores[doc_id], index, tier)
+
+    # ── tier 3: a cross-encoder over the fused head, opt-in ────────────────
+    rerank_reason: Optional[str] = None
+    if reranker is not None:
+        reranked_order, rerank_scores, rerank_reason = _rerank_stage(
+            reranker, text, ordered, originals, rerank_head)
+        if rerank_reason is None:
+            lanes.append("rerank")
+            ordered = reranked_order
+            tier = TIER_RERANKED
+            # The reranker's own score is what produced this order, so it is
+            # what the hit reports; a fused score left in place would let a
+            # caller that re-sorts by score silently undo the reranking. It is
+            # on the cross-encoder's scale, which may be negative logits.
+            scores = {doc_id: rerank_scores.get(doc_id, scores.get(doc_id, 0.0))
+                      for doc_id in ordered}
+
+    hits = [_hit(originals[doc_id], scores.get(doc_id, 0.0), index, tier)
             for index, doc_id in enumerate(ordered[:k], start=1)
             if doc_id in originals]
-    return _result(hits, tier, degraded, lanes, started, clock)
+    return _result(hits, tier, degraded, lanes, started, clock,
+                   rerank_requested=reranker is not None,
+                   rerank_reason=rerank_reason)
 
 
 # ---------------------------------------------------------------------------
