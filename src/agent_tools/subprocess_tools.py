@@ -32,6 +32,45 @@ def _idle_timeout_seconds() -> float:
         return float(DEFAULT_IDLE_TIMEOUT)
 
 
+def _effective_idle_timeout(key: str) -> float:
+    """The configured idle bound, widened to what this box really does.
+
+    `agent_adaptive_idle_timeout` (src/adaptive_timeout.py): 3 x the median of
+    the last commands of this kind, clamped to [30, 600] s. Two deliberate
+    restrictions on top of the raw formula:
+
+      * it only ever GRANTS time. Shortening the bound would kill the very
+        commands the watchdog exists to protect — a long silent build on a box
+        whose other commands are quick — so the configured value is the floor;
+      * a bound configured BELOW the adaptive window (under 30 s, or 0 =
+        disabled) is a deliberate, tighter choice and is used verbatim.
+
+    Returns the fixed value unchanged when the setting is off.
+    """
+    base = _idle_timeout_seconds()
+    try:
+        from src import adaptive_timeout as at
+        if not base or base < at.MIN_TIMEOUT_S or not at.enabled():
+            return base
+        value = at.idle_timeout(key, base)
+        if value > base:
+            at.note_difference(key, value, base)
+            return float(value)
+    except Exception as e:  # noqa: BLE001 - a tool call never fails over this
+        logger.debug("adaptive idle timeout unavailable for %s: %s", key, e)
+    return base
+
+
+def _record_cycle(key: str, started: float) -> None:
+    """Remember how long one completed command took (best effort)."""
+    try:
+        from src import adaptive_timeout as at
+        if at.enabled():
+            at.record(key, time.time() - float(started))
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _kill_tree(proc) -> None:
     """Kill the subprocess AND its children. On Windows the Git-for-Windows
     launcher (bin\\bash.exe) execs the real usr\\bin\\bash.exe which spawns the
@@ -451,6 +490,7 @@ class BashTool:
         launcher = foreground_server_launch(content)
         if launcher:
             return _blocked_server_result(launcher, "bash")
+        started_at = time.time()
         # tmux is a POSIX persistence path. A stray MSYS/Cygwin tmux.exe on
         # native Windows must not bypass the Git Bash launcher below: the tmux
         # setup hard-codes /bin/bash and cannot safely consume a native cwd.
@@ -475,6 +515,7 @@ class BashTool:
             err = stderr.rstrip()
             if err:
                 output = (output + "\nSTDERR: " + err).strip() if output else "STDERR: " + err
+            _record_cycle("bash", started_at)
             return {
                 "output": _truncate(output, MAX_OUTPUT_CHARS) or "(no output)",
                 "exit_code": rc or 0,
@@ -491,13 +532,15 @@ class BashTool:
             )
         except RuntimeError as e:
             return {"error": f"bash: {e}", "exit_code": 1}
+        idle_s = _effective_idle_timeout("bash")
         stdout, stderr, rc, timed_out = await _run_subprocess_streaming(
             proc,
             timeout=DEFAULT_BASH_TIMEOUT,
             progress_cb=progress_cb,
+            idle_timeout=idle_s,
         )
         if timed_out == "idle":
-            return _idle_result("bash", _idle_timeout_seconds(), stdout, stderr)
+            return _idle_result("bash", idle_s, stdout, stderr)
         if timed_out:
             return {"error": f"bash: timed out after {DEFAULT_BASH_TIMEOUT}s — process killed", "exit_code": 124, "stdout": _truncate(stdout, MAX_OUTPUT_CHARS), "stderr": _truncate(stderr, MAX_OUTPUT_CHARS)}
         output = stdout.rstrip()
@@ -505,6 +548,7 @@ class BashTool:
         if err:
             output = (output + "\nSTDERR: " + err).strip() if output else "STDERR: " + err
         output = _truncate(output, MAX_OUTPUT_CHARS)
+        _record_cycle("bash", started_at)
         return {"output": output or "(no output)", "exit_code": rc or 0}
 
 class PythonTool:
@@ -512,6 +556,7 @@ class PythonTool:
         from src.tool_execution import agent_cwd, _truncate
         progress_cb = ctx.get("progress_cb")
         _subproc_env = ctx.get("subproc_env")
+        started_at = time.time()
         proc = await asyncio.create_subprocess_exec(
             (sys.executable or "python"), "-I", "-c", content,
             stdout=asyncio.subprocess.PIPE,
@@ -519,13 +564,15 @@ class PythonTool:
             env=_subproc_env,
             cwd=agent_cwd(),
         )
+        idle_s = _effective_idle_timeout("python")
         stdout, stderr, rc, timed_out = await _run_subprocess_streaming(
             proc,
             timeout=DEFAULT_PYTHON_TIMEOUT,
             progress_cb=progress_cb,
+            idle_timeout=idle_s,
         )
         if timed_out == "idle":
-            return _idle_result("python", _idle_timeout_seconds(), stdout, stderr)
+            return _idle_result("python", idle_s, stdout, stderr)
         if timed_out:
             return {"error": f"python: timed out after {DEFAULT_PYTHON_TIMEOUT}s — process killed", "exit_code": 124, "stdout": _truncate(stdout, MAX_OUTPUT_CHARS), "stderr": _truncate(stderr, MAX_OUTPUT_CHARS)}
         output = stdout.rstrip()
@@ -533,4 +580,5 @@ class PythonTool:
         if err:
             output = (output + "\nSTDERR: " + err).strip() if output else "STDERR: " + err
         output = _truncate(output, MAX_OUTPUT_CHARS)
+        _record_cycle("python", started_at)
         return {"output": output or "(no output)", "exit_code": rc or 0}
