@@ -39,6 +39,19 @@
   box-shadow: none;
 }
 
+/* Links inherit, and prose links opt in with .fs-link: a navigation row or
+   a tab that happens to be an <a> must not turn blue and underlined. */
+.fs-app :where(a) {
+  color: inherit;
+  text-decoration: none;
+}
+
+.fs-app .fs-link {
+  color: var(--fs-focus);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .fs-app :where(code, pre, kbd, samp) {
   font-family: var(--fs-font-code);
   font-size: var(--fs-code-size);

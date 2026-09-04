@@ -30,6 +30,10 @@ SCREENS = {
     "01_inicio": "/?shell=studio",
     "02_activity_deep_link": "/activity",
     "03_gallery": "/?gallery=1",
+    "04_projects": "/projects",
+    "05_project_context": "/projects/100d012d1ff3?tab=contexto",
+    "06_automations": "/automations",
+    "07_library": "/library",
 }
 
 
@@ -38,7 +42,12 @@ def main() -> int:
     with sync_playwright() as p:
         browser = p.chromium.launch()
         for name, (width, height) in VIEWPORTS.items():
-            context = browser.new_context(viewport={"width": width, "height": height})
+            # Headless Chromium reports light; the product's default and the
+            # theme every manual pass saw is dark, so the evidence matches it.
+            context = browser.new_context(
+                viewport={"width": width, "height": height},
+                color_scheme=os.environ.get("ODYSSEUS_STUDIO_SCHEME", "dark"),
+            )
             page = context.new_page()
             # The flag lives in localStorage, so the first URL must set it.
             # Not networkidle: Faustus holds long-lived connections open, so
