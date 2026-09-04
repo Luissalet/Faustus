@@ -35,6 +35,30 @@ async function post(path: string, body?: unknown): Promise<Record<string, unknow
   }
 }
 
+export interface WorkspaceFileText {
+  path: string;
+  rel: string;
+  size: number;
+  binary: boolean;
+  truncated: boolean;
+  text: string;
+  lines: number;
+}
+
+/** Text of one file inside the bound workspace (the side viewer). */
+export async function readWorkspaceFile(workspace: string, path: string, signal?: AbortSignal): Promise<WorkspaceFileText> {
+  const raw = await getJson<Partial<WorkspaceFileText>>(`/api/workspace/file?${q({ workspace, path })}`, signal);
+  return {
+    path: raw.path ?? path,
+    rel: raw.rel ?? path,
+    size: raw.size ?? 0,
+    binary: Boolean(raw.binary),
+    truncated: Boolean(raw.truncated),
+    text: raw.text ?? '',
+    lines: raw.lines ?? 0,
+  };
+}
+
 export interface FileDiff {
   git: boolean;
   diff: string;

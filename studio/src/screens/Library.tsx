@@ -1,6 +1,6 @@
 import { Library as LibraryIcon, Search } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router';
+import { Link, useSearchParams } from 'react-router';
 import { EmptyState, Skeleton } from '../components';
 import { loadLibrary, type Artifact } from '../adapters/library';
 import { relativeTime } from '../adapters/home';
@@ -169,7 +169,13 @@ export function LibraryScreen() {
               )}
               <div className="fs-card__body">
                 <span className="fs-card__kind">{artifact.kind}</span>
-                <span className="fs-card__title">{artifact.title}</span>
+                {artifact.kind === 'documento' ? (
+                  <Link className="fs-card__title fs-link" to={`/studio?doc=${encodeURIComponent(artifact.id.replace(/^doc-/, ''))}`} title="Abrir en el editor de Studio">
+                    {artifact.title}
+                  </Link>
+                ) : (
+                  <span className="fs-card__title">{artifact.title}</span>
+                )}
                 <span className="fs-card__meta">
                   {[artifact.meta, artifact.session, relativeTime(artifact.createdAt)]
                     .filter(Boolean)

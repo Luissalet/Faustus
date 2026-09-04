@@ -194,3 +194,31 @@ su área y baja el baseline. Ningún módulo Studio nuevo la aumenta.
 32. **`[~]` `changeset.verdict` llega como `partial` con 65 % en un turno
     de un solo fichero creado tal cual se pidió.** Es del revisor del
     servidor, no de la UI; Studio lo enseña sin maquillar.
+
+## Añadido tras el lote H (04-09-2026, sub-agentes, panel lateral, documentos)
+
+33. **`[~]` `qwen3.5:9b` no llama a `delegate_agents` con `/agents`.** El
+    campo `delegate_tasks` viaja igual que en la anterior y el servidor
+    sustituye el mensaje por la instrucción de delegación, pero el modelo de
+    prueba escribió los ficheros él mismo y lo dijo. El tablero en vivo está
+    verificado con el reductor (`studio/checks/model.check.mjs`, secuencia
+    sintética de eventos `subagent`) y el restaurado con sesiones reales
+    (`bench t3v2_q35b …`, 3 workers). Probar en vivo con un modelo que
+    delegue.
+34. **`[~]` Ningún `browser_view` real en el 7001.** El panel «Navegador»
+    se alimenta de `browser_view` y de las capturas de `tool_output` por el
+    mismo camino (`safeFrameSrc`, misma lista blanca de data: URL que la
+    anterior); solo se ha visto el estado vacío y la apertura por `/browser`.
+35. **`[~]` El historial guarda la traza (`tool_events`) pero no los
+    fotogramas del navegador ni el documento en streaming**: tras recargar,
+    el panel vuelve vacío y el documento se abre por su id desde «Abrir el
+    documento» en el carril o desde la Biblioteca. Igual que la anterior.
+36. **`[~]` Editor de documentos básico.** Textarea con vista previa,
+    versiones, PDF, archivar y sugerencias. Lo que no tiene: diff palabra a
+    palabra al aceptar/rechazar cambios del agente, visor y anotación de PDF,
+    firma, borradores de correo, ordenar y limpiar la biblioteca
+    (`document.js`, 11 000 líneas). Son islas candidatas (DECISIONES §10).
+37. **`[!]` Trampa de herramientas: `Get-Content | Set-Content` en
+    PowerShell 5.1 destroza el UTF-8** (mojibake en tildes y emoji). Para
+    tocar fuentes desde el puente, `edit_block` o `[System.IO.File]` con
+    `UTF8Encoding($false)`; nunca los cmdlets sin `-Encoding`.

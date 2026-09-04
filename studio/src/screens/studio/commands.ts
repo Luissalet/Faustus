@@ -36,6 +36,14 @@ export const COMMANDS: SlashCommand[] = [
   { name: 'export', usage: '/export md|pdf|docx|html|txt|json', help: 'Descarga esta conversación.' },
   { name: 'rename', usage: '/rename nombre', help: 'Renombra la conversación.' },
   { name: 'stats', usage: '/stats', help: 'Tokens y tiempos de esta conversación.' },
+  {
+    name: 'agents',
+    usage: '/agents tarea uno | tarea dos [--review] [--serial]',
+    help: 'Delega cada parte a un sub-agente (hasta 4). [f1, f2] antes de una tarea le da esos ficheros en exclusiva; {modelo} elige su modelo.',
+  },
+  { name: 'doc', usage: '/doc [título]', help: 'Abre el panel de documento (con título, crea uno nuevo).' },
+  { name: 'browser', usage: '/browser', help: 'Abre el panel con lo que ve el agente en el navegador.' },
+  { name: 'open', usage: '/open ruta', help: 'Abre un fichero de la carpeta de trabajo en el panel lateral.' },
   { name: 'projects', usage: '/projects', help: 'Ir a Proyectos.', route: '/projects' },
   { name: 'library', usage: '/library', help: 'Ir a la Biblioteca.', route: '/library' },
   { name: 'gallery', usage: '/gallery', help: 'Ir a las imágenes.', route: '/library?type=imagen' },
@@ -116,4 +124,45 @@ export function genFromArgs(name: string, args: string, current: GenOverrides): 
     default:
       return next;
   }
+}
+
+/**
+ * `/agents a | b | c --review --serial` → a delegation. Each part is one
+ * worker; `[f1, f2]` in front gives it those files, `{model}` its model.
+ * Returns an error text instead when the input cannot be delegated.
+ */
+export function parseDelegation(args: string): { tasks: { name: string; instruction: string; files?: string[]; model?: string }[]; parallel: boolean; reviewer: boolean } | string {
+  let raw = args.trim();
+  const flags = { reviewer: false, parallel: true };
+  raw = raw
+    .replace(/(^|\s)--(review|reviewer|serial|sequential)\b/g, (_m, _sp, f: string) => {
+      if (f === 'review' || f === 'reviewer') flags.reviewer = true;
+      else flags.parallel = false;
+      return ' ';
+    })
+    .trim();
+  const parts = raw
+    .split(/\s*(?:\||;;|\n)\s*/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (!parts.length) {
+    return 'Uso: /agents tarea uno | tarea dos | tarea tres — cada parte es un sub-agente. [fichero1, fichero2] delante le da esos ficheros en exclusiva; {modelo} elige su modelo; --review añade un revisor; --serial los ejecuta uno tras otro.';
+  }
+  if (parts.length > 4) return 'Como mucho 4 sub-agentes por llamada. Junta tareas o repite /agents después.';
+  const tasks = parts.map((p) => {
+    const model = /^\s*\{([^}]+)\}/.exec(p)?.[1]?.trim();
+    const files = /^\s*(?:\{[^}]+\}\s*)?\[([^\]]+)\]/.exec(p)?.[1]
+      ?.split(',')
+      .map((f) => f.trim())
+      .filter(Boolean);
+    const bare = (/^\s*(?:\{[^}]+\}\s*)?(?:\[[^\]]+\]\s*)?([\s\S]*)$/.exec(p)?.[1] ?? p).trim() || p;
+    return { name: bare.length > 40 ? `${bare.slice(0, 38)}…` : bare, instruction: p, files, model };
+  });
+  return { tasks, parallel: flags.parallel, reviewer: flags.reviewer };
+}
+
+/** The readable label the chat bubble shows for a delegation. */
+export function delegationLabel(d: { tasks: { name: string; files?: string[]; model?: string }[]; reviewer: boolean; parallel: boolean }): string {
+  const label = d.tasks.map((t) => `${t.model ? `{${t.model}} ` : ''}${t.files?.length ? `[${t.files.join(', ')}] ` : ''}${t.name}`).join(' | ');
+  return `🤖 ${d.tasks.length} sub-agente${d.tasks.length === 1 ? '' : 's'}${d.reviewer ? ' + revisor' : ''}${d.parallel ? '' : ' (en serie)'}: ${label}`;
 }

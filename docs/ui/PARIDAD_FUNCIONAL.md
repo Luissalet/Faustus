@@ -18,7 +18,7 @@ las toca ninguna pantalla.
 |---|---|---|---|
 | Chat / agente | `/` + `chat.js` | `/studio` | **Parcial** — ver §3 y §4 |
 | Proyectos (lista, detalle, contexto, memoria, objetivos) | `projects-modal` | `/projects`, `/projects/{id}` | **Parcial** — falta crear/editar/borrar proyecto y los mandos del agente por proyecto (workspace de confianza, propuesta, checkpoints, tests, revisor); pestaña *Agent activity* |
-| Biblioteca de documentos | `/library`, `documentLibrary.js` | `/library` (federada con galería) | **Parcial** — abrir/editar/versionar un documento sigue en la anterior |
+| Biblioteca de documentos | `/library`, `documentLibrary.js` | `/library` (federada con galería); un documento se abre en el panel lateral de Studio (`/studio?doc=`) con editor, guardar, renombrar, versiones y restaurar, PDF, archivar | **Parcial** — importar PDF, anotaciones y firma, borradores de correo, ordenar/limpiar la biblioteca: anterior |
 | Galería de imágenes | `/gallery`, `gallery.js`, `galleryEditor.js` | `/library?type=imagen` | **Parcial** — editor de imagen, borrar, descargar y tirar de una imagen al chat: anterior |
 | Tareas programadas | `/tasks`, `tasks.js` | `/automations` | **Parcial** — crear, editar, pausar, ejecutar ahora: anterior |
 | Actividad (runs de tareas, media, aprobaciones) | repartido en `/tasks`, `/gallery`, pill de aprobaciones | `/activity` | **Parcial** — aprobar desde la lista y abrir el detalle del run: anterior |
@@ -75,7 +75,8 @@ las toca ninguna pantalla.
 | Adjuntos (ficheros, imágenes, pegar, arrastrar) | sí | **Migrado** (ver PENDIENTES §26 sobre el 7001) |
 | Menciones `@fichero` | lista con búsqueda difusa | **Migrado** (`@ruta:línea` y `@expert:` se escriben a mano; sin fichas pulsables) |
 | `#` regla permanente, `/remember` | sí | **Migrado** |
-| Comandos `/` | 15 propios (help, models, compact, truncate, temp, maxtokens, topp, think, gen, remember, export, rename, stats…) y el resto enruta a su pantalla o a la anterior | **Parcial** |
+| Comandos `/` | 22 propios (help, models, compact, truncate, versions, restore, checkpoints, temp, maxtokens, topp, think, gen, remember, export, rename, stats, agents, doc, browser, open…) y el resto enruta a su pantalla o a la anterior | **Parcial** |
+| `/agents` (delegar a sub-agentes, `[ficheros]`, `{modelo}`, `--review`, `--serial`) | sí, mismo campo `delegate_tasks` | **Migrado** |
 | Citar selección ❝ | — | **Anterior** |
 | ↑ recuperar último mensaje | — | **Anterior** |
 | Controles por chat (`/temp`, `/maxtokens`, `/topp`, `/think`, `/gen`) | sí, con chip visible | **Migrado** |
@@ -87,7 +88,7 @@ las toca ninguna pantalla.
 | Función | Studio | Estado |
 |---|---|---|
 | Streaming, razonamiento, métricas, fuentes web, imagen generada | sí | **Migrado** |
-| Traza de herramientas con comando y salida | sí (en el carril) | **Migrado** (más visible que antes) |
+| Traza de herramientas con comando y salida | sí (en el carril), con el diff coloreado de cada escritura, la captura de las herramientas de escritorio y «Ver el fichero» / «Abrir el documento»; se reconstruye del historial (`tool_events`) al recargar, igual que la tarjeta del arnés (`harness`) | **Migrado** (más visible que antes) |
 | Aprobación de herramienta (aprobar / toda la tarea / denegar) | sí | **Migrado** |
 | `ask_user` con opciones | sí (botones) | **Migrado** |
 | Fallback de modelo, errores del servidor | sí | **Migrado** |
@@ -96,13 +97,14 @@ las toca ninguna pantalla.
 | Markdown completo (tablas, notas al pie) | lector reducido | **Parcial** |
 | Tarjetas 🛡 del arnés (Turn summary, Verified/Unverified, comprobaciones por ronda, tests, análisis estático, cambios frente a lo afirmado) | tarjeta bajo la respuesta (`harness_check`, `harness_summary`) | **Migrado** |
 | Panel Progress (`todowrite`), plan en vivo (`plan_update`) | lista de progreso y tarjeta de plan dentro del turno | **Migrado** |
-| Tablero de sub-agentes (`delegate_agents`), steer/stop por worker | — | **Anterior** |
-| Vista en vivo del navegador (`browser_view`) | — | **Anterior** |
-| Documentos del editor (`doc_*`), sugerencias | — | **Anterior** |
+| Tablero de sub-agentes (`delegate_agents`): tarjetas por worker con estado, actividad, tiempo, rondas, herramientas, tokens, ficheros, última línea, dirigir (steer), parar, abrir su chat, repetir; se reconstruye del historial | tablero dentro del turno (`SubagentBoard`) | **Migrado** (en vivo verificado con el reductor y una secuencia sintética: el modelo de prueba no llegó a llamar a `delegate_agents`; restaurado verificado con sesiones reales) |
+| Vista en vivo del navegador (`browser_view`), capturas del escritorio | pestaña «Navegador» del panel lateral: fotograma, título y URL, tira de los últimos 8, «en vivo», abrir solo (misma clave `odysseus.browserView.auto`) | **Migrado** (sin provocar un `browser_view` real en el 7001; las capturas de `tool_output` van por el mismo camino) |
+| Documentos del editor (`doc_stream_*`, `doc_update`, `doc_suggestions`) | pestaña «Documento» del panel lateral: se abre solo cuando el agente escribe, con editor, guardar (versiona), renombrar, vista previa, versiones y restaurar, PDF, archivar, y las sugerencias del agente una a una (aplicar / saltar / todas) | **Migrado** (editor básico; modo diff palabra a palabra, PDF anotado y firma: anterior) |
 | Ficheros editados con diff y revertir, volver al checkpoint del turno, confirmar en git con mensaje propuesto | en la tarjeta del arnés | **Migrado** |
 | Context ledger | porcentaje de contexto en el pie del turno | **Migrado** (ledger detallado: anterior) |
 | Pill de uso de GPU, salud de servicios | — | **Anterior** |
-| Fichas de mención pulsables, visor lateral de ficheros | — | **Anterior** |
+| Visor lateral de ficheros | pestaña «Fichero» del panel: desde «Ver el fichero» en el carril o `/open ruta` | **Migrado** |
+| Fichas de mención pulsables | — | **Anterior** |
 | Scroll to bottom | automático mientras sigues el stream | **Migrado** |
 
 ## 5. Atajos de teclado

@@ -1,14 +1,16 @@
 import { Check, ChevronDown, Copy, FileText, Pencil, RefreshCw, Trash2, X } from 'lucide-react';
 import { lazy, Suspense, useState } from 'react';
 import { Button, IconButton } from '../../components';
-import type { AskUser } from '../../adapters/chat';
+import type { AskUser, DelegationTask } from '../../adapters/chat';
 import { attachmentUrl, isImage } from '../../adapters/composer';
 import { Rich } from '../rich';
 import { formatMetrics, type Step, type Turn } from './model';
 
 /* The harness card carries diff, revert and commit: a chunk that arrives
-   with the first agent turn that has something to show, not on page load. */
+   with the first agent turn that has something to show, not on page load.
+   Same for the sub-agent board: most turns never delegate. */
 const Harness = lazy(() => import('./Harness'));
+const SubagentBoard = lazy(() => import('./SubagentBoard'));
 
 export type Decision = 'approve' | 'approve_task' | 'deny';
 
@@ -22,9 +24,41 @@ export interface TranscriptProps {
   onRegenerate: (turn: Turn) => void;
   onDelete: (turn: Turn) => void;
   onNotice: (text: string, tone?: 'info' | 'warning' | 'danger') => void;
+  /** Side panel hooks: a workspace file, a living document, a worker to re-run. */
+  onOpenFile?: (path: string) => void;
+  onOpenDoc?: (docId: string) => void;
+  onRerun?: (task: DelegationTask) => void;
 }
 
-function ToolRail({ steps, live }: { steps: Step[]; live: boolean }) {
+const FILE_TOOLS = /^(read_file|write_file|edit_file|apply_patch|create_file|multi_edit|replace_across_files)$/;
+
+/** The unified diff of a file write, coloured line by line. */
+export function DiffLines({ text }: { text: string }) {
+  return (
+    <pre className="fs-diff" data-testid="step-diff">
+      {text.split('\n').map((line, i) => {
+        let cls = 'fs-diff-ctx';
+        let body = line;
+        if (line.startsWith('+++') || line.startsWith('---')) cls = 'fs-diff-meta';
+        else if (line.startsWith('@@')) cls = 'fs-diff-hunk';
+        else if (line.startsWith('+')) {
+          cls = 'fs-diff-add';
+          body = line.slice(1);
+        } else if (line.startsWith('-')) {
+          cls = 'fs-diff-del';
+          body = line.slice(1);
+        } else if (line.startsWith(' ')) body = line.slice(1);
+        return (
+          <span key={i} className={cls}>
+            {body || ' '}
+          </span>
+        );
+      })}
+    </pre>
+  );
+}
+
+function ToolRail({ steps, live, onOpenFile, onOpenDoc }: { steps: Step[]; live: boolean; onOpenFile?: (path: string) => void; onOpenDoc?: (docId: string) => void }) {
   const [expanded, setExpanded] = useState(false);
   const leadingDone = steps.findIndex((s) => s.state !== 'succeeded');
   const doneCount = leadingDone === -1 ? steps.length : leadingDone;
@@ -42,15 +76,37 @@ function ToolRail({ steps, live }: { steps: Step[]; live: boolean }) {
         </button>
       )}
       {visible.map((step) =>
-        step.output || step.command ? (
+        step.output || step.command || step.diff || step.screenshot ? (
           <details key={step.id} className="fs-trace__step fs-studio__step" data-state={step.state}>
             <summary>
               <span className="fs-trace__node" aria-hidden="true" />
               <span className="fs-trace__label">{step.label}</span>
+              {step.diff && (
+                <span className="fs-trace__meta fs-diff-stat">
+                  {step.diff.newFile && <em>nuevo</em>}
+                  {step.diff.added > 0 && <ins>+{step.diff.added}</ins>}
+                  {step.diff.removed > 0 && <del>−{step.diff.removed}</del>}
+                </span>
+              )}
               {step.meta && <span className="fs-trace__meta">{step.meta}</span>}
             </summary>
-            {step.command && step.command !== step.label && <pre className="fs-studio__cmd">{step.command}</pre>}
+            {(onOpenFile && FILE_TOOLS.test(step.tool) && step.command) || (onOpenDoc && step.docId) ? (
+              <p className="fs-studio__step-links">
+                {onOpenFile && FILE_TOOLS.test(step.tool) && step.command && (
+                  <button type="button" className="fs-link" onClick={() => onOpenFile((step.diff?.file || step.command || '').split('\n')[0].trim())}>
+                    Ver el fichero
+                  </button>
+                )}
+                {onOpenDoc && step.docId && (
+                  <button type="button" className="fs-link" onClick={() => onOpenDoc(step.docId as string)}>
+                    Abrir el documento
+                  </button>
+                )}
+              </p>
+            ) : null}
+            {step.diff ? <DiffLines text={step.diff.text} /> : step.command && step.command !== step.label && <pre className="fs-studio__cmd">{step.command}</pre>}
             {step.output && <pre className="fs-studio__out">{step.output.slice(0, 6000)}</pre>}
+            {step.screenshot && <img className="fs-studio__shot" src={step.screenshot} alt="Captura de la herramienta" loading="lazy" />}
           </details>
         ) : (
           <div key={step.id} className="fs-trace__step" data-state={step.state}>
@@ -237,6 +293,9 @@ function AssistantTurn({
   onRegenerate,
   onDelete,
   onNotice,
+  onOpenFile,
+  onOpenDoc,
+  onRerun,
 }: {
   turn: Turn;
   busy: boolean;
@@ -245,6 +304,9 @@ function AssistantTurn({
   onRegenerate: () => void;
   onDelete: () => void;
   onNotice: TranscriptProps['onNotice'];
+  onOpenFile?: TranscriptProps['onOpenFile'];
+  onOpenDoc?: TranscriptProps['onOpenDoc'];
+  onRerun?: TranscriptProps['onRerun'];
 }) {
   const waiting = turn.streaming && !turn.text && turn.steps.length === 0;
   return (
@@ -269,7 +331,12 @@ function AssistantTurn({
             />
           </Suspense>
         )}
-        {turn.steps.length > 0 && <ToolRail steps={turn.steps} live={turn.streaming} />}
+        {turn.steps.length > 0 && <ToolRail steps={turn.steps} live={turn.streaming} onOpenFile={onOpenFile} onOpenDoc={onOpenDoc} />}
+        {turn.workers.length > 0 && (
+          <Suspense fallback={null}>
+            <SubagentBoard workers={turn.workers} live={turn.streaming} onRerun={onRerun ?? (() => undefined)} onNotice={onNotice} />
+          </Suspense>
+        )}
         {waiting && !turn.thinking && (
           <p className="fs-studio__waiting" aria-live="polite">
             <span className="fs-studio__pulse" /> Pensando
@@ -329,7 +396,7 @@ function AssistantTurn({
   );
 }
 
-export function Transcript({ turns, busy, onApproval, onAnswer, onEdit, onRegenerate, onDelete, onNotice }: TranscriptProps) {
+export function Transcript({ turns, busy, onApproval, onAnswer, onEdit, onRegenerate, onDelete, onNotice, onOpenFile, onOpenDoc, onRerun }: TranscriptProps) {
   return (
     <div className="fs-studio__turns">
       {turns.map((turn, index) =>
@@ -353,6 +420,9 @@ export function Transcript({ turns, busy, onApproval, onAnswer, onEdit, onRegene
             }}
             onDelete={() => onDelete(turn)}
             onNotice={onNotice}
+            onOpenFile={onOpenFile}
+            onOpenDoc={onOpenDoc}
+            onRerun={onRerun}
           />
         ),
       )}

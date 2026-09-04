@@ -1,5 +1,5 @@
-import { ExternalLink, MessageSquare, X } from 'lucide-react';
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { ExternalLink, MessageSquare, PanelRight, X } from 'lucide-react';
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { IconButton, Skeleton } from '../components';
 import {
@@ -11,8 +11,11 @@ import {
   sendTurn,
   stopChat,
   type ChatSession,
+  type Delegation,
+  type DelegationTask,
   type ModelRoute,
 } from '../adapters/chat';
+import { createDoc } from '../adapters/documents';
 import {
   attachmentsFromMetadata,
   getRagActive,
@@ -41,17 +44,20 @@ import { listCheckpoints } from '../adapters/workspace';
 import { BrandMark } from '../shell/BrandMark';
 import { useSpotlight } from '../shell/useSpotlight';
 import { ModelPicker } from './ModelPicker';
-import { COMMANDS, genFromArgs, parseCommand } from './studio/commands';
+import { COMMANDS, delegationLabel, genFromArgs, parseCommand, parseDelegation } from './studio/commands';
 import { Composer, type Knobs } from './studio/Composer';
-import { apply, blankTurn, cleanUserText, type Turn } from './studio/model';
+import { apply, blankTurn, cleanUserText, restoreFromMetadata, type Turn } from './studio/model';
+import { initialPanel, panelReducer } from './studio/panel';
 import { SessionsPane } from './studio/SessionsPane';
 import { Transcript, type Decision } from './studio/Transcript';
 import './projects.css';
 import './home.css';
 import './studio.css';
 
-/* Rare, and the eager bundle has a budget: the folder picker arrives when opened. */
+/* Rare, and the eager bundle has a budget: the folder picker and the side
+   panel (browser frames, document editor, file viewer) arrive when opened. */
 const WorkspaceDialog = lazy(() => import('./studio/WorkspaceDialog'));
+const SidePanel = lazy(() => import('./studio/SidePanel'));
 
 const ROUTE_KEY = 'faustus_studio_route';
 const KNOBS_KEY = 'faustus_studio_knobs';
@@ -119,6 +125,7 @@ export function StudioScreen() {
   const [wsOpen, setWsOpen] = useState(false);
   const [gen, setGen] = useState<GenOverrides>({});
   const [modelSignal, setModelSignal] = useState(0);
+  const [panel, panelDispatch] = useReducer(panelReducer, initialPanel);
 
   const controllerRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -215,7 +222,10 @@ export function StudioScreen() {
         turn.attachments = atts;
         turn.dbId = typeof m.metadata._db_id === 'string' ? m.metadata._db_id : undefined;
         turn.edited = Boolean(m.metadata.edited);
-        if (m.role === 'assistant') turn.metrics = metricsFrom(m.metadata);
+        if (m.role === 'assistant') {
+          turn.metrics = metricsFrom(m.metadata);
+          return restoreFromMetadata(turn, m.metadata);
+        }
         return turn;
       });
       return { ...result, turns: mapped };
@@ -236,6 +246,7 @@ export function StudioScreen() {
     setLoadError(null);
     setNotice(null);
     setAttachments([]);
+    panelDispatch({ type: 'session-switch' });
     if (!sessionId) {
       setTurns([]);
       setTitle('');
@@ -269,6 +280,16 @@ export function StudioScreen() {
     setParams(next, { replace: true });
     setDrawerOpen(true);
     requestAnimationFrame(() => searchRef.current?.focus());
+  }, [params, setParams]);
+
+  /* The Library opens a document in the side panel: ?doc=<id>. */
+  useEffect(() => {
+    const docParam = params.get('doc');
+    if (!docParam) return;
+    panelDispatch({ type: 'doc', doc: { streaming: false, id: docParam, title: '', language: '', content: '', version: 0, suggestions: [] } });
+    const next = new URLSearchParams(params);
+    next.delete('doc');
+    setParams(next, { replace: true });
   }, [params, setParams]);
 
   /* Inicio's quick starts arrive with the sentence begun: ?draft=… */
@@ -348,12 +369,13 @@ export function StudioScreen() {
     async (
       sid: string,
       message: string,
-      options: { approval?: { id: string; decision: Decision }; attachments?: Attachment[] } = {},
+      options: { approval?: { id: string; decision: Decision }; attachments?: Attachment[]; delegation?: Delegation } = {},
     ) => {
       const controller = new AbortController();
       controllerRef.current = controller;
       setBusy(true);
       pinnedRef.current = true;
+      panelDispatch({ type: 'turn-start' });
       if (options.approval) {
         patchLast((t) => {
           // The server also streams the permission question as text; once
@@ -372,19 +394,22 @@ export function StudioScreen() {
         for await (const event of sendTurn({
           sessionId: sid,
           message,
-          mode: knobs.mode,
+          // A delegation only makes sense with tools: it forces agent mode.
+          mode: options.delegation ? 'agent' : knobs.mode,
           planMode: knobs.mode === 'agent' && knobs.plan,
-          allowBash: knobs.mode === 'agent' && knobs.bash,
+          allowBash: (knobs.mode === 'agent' || Boolean(options.delegation)) && knobs.bash,
           allowWebSearch: knobs.web,
           useRag: knobs.rag,
-          workspace: knobs.mode === 'agent' ? workspace || undefined : undefined,
+          workspace: knobs.mode === 'agent' || options.delegation ? workspace || undefined : undefined,
           route,
           attachments: options.attachments?.map((a) => a.id),
           genOverrides: Object.keys(gen).length ? (gen as Record<string, number | boolean>) : undefined,
           approval: options.approval,
+          delegateTasks: options.delegation,
           signal: controller.signal,
         })) {
           patchLast((t) => apply(t, event));
+          panelDispatch({ type: 'event', event, busy: true });
         }
       } catch (error) {
         if (!controller.signal.aborted) patchLast((t) => apply(t, { type: 'error', message: (error as Error).message }));
@@ -394,6 +419,7 @@ export function StudioScreen() {
           controllerRef.current = null;
           setBusy(false);
         }
+        panelDispatch({ type: 'turn-end' });
         refreshSessions();
         void syncIds(sid);
       }
@@ -564,6 +590,49 @@ export function StudioScreen() {
           }
           return true;
         }
+        case 'agents': {
+          const parsed = parseDelegation(args);
+          if (typeof parsed === 'string') {
+            say(parsed, 'warning');
+            return true;
+          }
+          if (busy) {
+            say('Espera a que termine el turno actual antes de delegar.', 'warning');
+            return true;
+          }
+          const label = delegationLabel(parsed);
+          const sid = await ensureSession(label);
+          if (sid) void run(sid, label, { delegation: parsed });
+          return true;
+        }
+        case 'doc': {
+          if (args) {
+            try {
+              const doc = await createDoc({ title: args, sessionId });
+              panelDispatch({ type: 'doc', doc: { streaming: false, id: doc.id, title: doc.title, language: doc.language, content: doc.content, version: doc.versionCount, suggestions: [] } });
+            } catch (error) {
+              say(`No he podido crear el documento: ${(error as Error).message}`, 'danger');
+            }
+          } else {
+            panelDispatch({ type: 'open', tab: 'doc' });
+          }
+          return true;
+        }
+        case 'browser':
+          panelDispatch({ type: 'open', tab: 'browser' });
+          return true;
+        case 'open': {
+          if (!workspace) {
+            say('Para abrir un fichero hace falta una carpeta de trabajo.', 'warning');
+            return true;
+          }
+          if (!args) {
+            say('Uso: /open ruta/al/fichero (relativa a la carpeta de trabajo).', 'warning');
+            return true;
+          }
+          panelDispatch({ type: 'file', workspace, path: args });
+          return true;
+        }
         case 'stats': {
           const list = turns ?? [];
           const out = list.filter((t) => t.role === 'assistant' && t.metrics);
@@ -576,7 +645,23 @@ export function StudioScreen() {
           return false;
       }
     },
-    [say, navigate, gen, workspace, sessionId, turnsFromHistory, refreshSessions, turns, current, route],
+    [say, navigate, gen, workspace, sessionId, turnsFromHistory, refreshSessions, turns, current, route, busy, ensureSession, run],
+  );
+
+  /** A worker's task delegated again (its "Repetir…" button). */
+  const rerunWorker = useCallback(
+    (task: DelegationTask) => {
+      if (busy) {
+        say('Espera a que termine la delegación antes de repetir un worker.', 'warning');
+        return;
+      }
+      const delegation: Delegation = { tasks: [task], parallel: false, reviewer: false };
+      const label = delegationLabel(delegation);
+      void ensureSession(label).then((sid) => {
+        if (sid) void run(sid, label, { delegation });
+      });
+    },
+    [busy, say, ensureSession, run],
   );
 
   /* ── Send ── */
@@ -683,7 +768,7 @@ export function StudioScreen() {
   const isEmpty = !sessionId && turns !== null && turns.length === 0;
 
   return (
-    <div className="fs-studio" data-testid="studio" data-drawer={drawerOpen || undefined}>
+    <div className="fs-studio" data-testid="studio" data-drawer={drawerOpen || undefined} data-panel={panel.open || undefined}>
       <SessionsPane
         sessions={sessions}
         currentId={sessionId}
@@ -706,6 +791,12 @@ export function StudioScreen() {
             {sessionId ? current?.name || title || 'Conversación' : 'Nueva conversación'}
           </h1>
           <div className="fs-studio__head-actions">
+            <IconButton
+              icon={PanelRight}
+              label={panel.open ? 'Cerrar el panel lateral' : 'Panel lateral: navegador, documento, fichero'}
+              size="sm"
+              onClick={() => panelDispatch(panel.open ? { type: 'close' } : { type: 'open' })}
+            />
             {sessionId && (
               <IconButton
                 icon={ExternalLink}
@@ -777,6 +868,9 @@ export function StudioScreen() {
               onRegenerate={(turn) => void regenerateFrom(turn)}
               onDelete={onDelete}
               onNotice={say}
+              onOpenFile={workspace ? (path) => panelDispatch({ type: 'file', workspace, path }) : undefined}
+              onOpenDoc={(docId) => panelDispatch({ type: 'doc', doc: { streaming: false, id: docId, title: '', language: '', content: '', version: 0, suggestions: [] } })}
+              onRerun={rerunWorker}
             />
           )}
         </div>
@@ -810,6 +904,12 @@ export function StudioScreen() {
           textareaRef={textareaRef}
         />
       </section>
+
+      {panel.open && (
+        <Suspense fallback={<aside className="fs-panel" aria-busy="true" />}>
+          <SidePanel state={panel} dispatch={panelDispatch} onNotice={say} />
+        </Suspense>
+      )}
 
       {wsOpen && (
         <Suspense fallback={null}>

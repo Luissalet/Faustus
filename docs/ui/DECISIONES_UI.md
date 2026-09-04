@@ -173,3 +173,26 @@ El acabado no se deja para el final ni se juzga por capturas del propio agente.
 - Commits como Luissalet, changesets pequeños, sin mezclar migración visual,
   cambio de API y refactor en el mismo ticket.
 - `static/style.css` no crece: lo nuevo vive en el árbol de Studio.
+
+## 10. Los módulos gigantes de la anterior: pantalla propia primero, isla solo si hace falta
+
+(04-09, tras «hazlo entero».) El JS de la anterior son ~6 MB: `document.js`
+(515 KB), `emailLibrary.js` (419 KB), `settings.js` (315 KB), `notes.js`
+(253 KB), el cookbook (~830 KB entre cuatro ficheros), `galleryEditor.js`
+(190 KB). Reescribirlos línea a línea no es el objetivo; tener sus funciones
+en Studio sí.
+
+- **Regla:** cada destino se reescribe en React contra los mismos endpoints
+  con lo que la gente usa a diario, y PARIDAD_FUNCIONAL.md dice qué falta.
+  Así se han hecho ya el chat, el arnés, los sub-agentes y el editor de
+  documentos (básico).
+- **Islas:** una función de un módulo gigante que no compensa reescribir
+  todavía (visor y anotación de PDF, firma, editor de imagen, tournament,
+  hwfit del cookbook…) puede montarse como *isla*: Studio importa el módulo
+  ES de la anterior en un contenedor propio dentro del shell nuevo, con sus
+  estilos acotados. Cuenta como **Parcial** en el libro, nunca como Migrado,
+  y lleva fecha para sustituirse. Ninguna isla todavía; se anota aquí la
+  primera que entre.
+- Lo que no puede pasar: que una función desaparezca por el camino. Si una
+  pantalla nueva no la tiene y no hay isla, la fila sigue en «Anterior» y
+  `?shell=legacy` sigue sirviéndola.

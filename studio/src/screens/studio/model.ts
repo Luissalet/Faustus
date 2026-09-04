@@ -1,12 +1,16 @@
 import type { RunStatus } from '../../components';
-import type {
-  AskUser,
-  ChatEvent,
-  HarnessCheck,
-  HarnessSummary,
-  Todo,
-  TurnMetrics,
-  WebSource,
+import {
+  summaryFrom,
+  toolEventsFrom,
+  type AskUser,
+  type ChatEvent,
+  type HarnessCheck,
+  type HarnessSummary,
+  type StepDiff,
+  type SubagentPayload,
+  type Todo,
+  type TurnMetrics,
+  type WebSource,
 } from '../../adapters/chat';
 import type { Attachment } from '../../adapters/composer';
 
@@ -25,6 +29,65 @@ export interface Step {
   command?: string;
   output?: string;
   round: number;
+  /** A file write/edit as the server diffed it. */
+  diff?: StepDiff;
+  /** Validated raster data: URL (desktop_screenshot, browser tools). */
+  screenshot?: string;
+  /** The living document this call created or changed. */
+  docId?: string;
+}
+
+/** One sub-agent (delegate_agents worker), folded from its stream events —
+ *  the legacy board's state, field for field, so nothing it showed is lost. */
+export interface Worker {
+  id: string;
+  delegation: string;
+  index: number | null;
+  name: string;
+  role: string;
+  model: string;
+  files: string[];
+  instruction: string;
+  instructionFull: string;
+  sessionId: string;
+  status: 'queued' | 'running' | 'done' | 'failed' | 'stopped' | 'partial';
+  firstSeen: number;
+  startedLocal: number | null;
+  startedAt: number | null;
+  endedAt: number | null;
+  endedLocal: number | null;
+  lastEventAt: number;
+  sawTick: boolean;
+  tickElapsed: number | null;
+  tickAt: number | null;
+  round: number | null;
+  maxRounds: number | null;
+  rounds: number | null;
+  toolCalls: number;
+  failedCalls: number;
+  lastTool: string;
+  lastCmd: string;
+  lastToolOk: boolean | null;
+  lastOut: string;
+  tail: string;
+  toolElapsed: number | null;
+  toolInFlight: boolean;
+  inTok: number | null;
+  outTok: number | null;
+  idleS: number | null;
+  stalled: boolean;
+  stallReason: string;
+  stallAt: number | null;
+  timeoutS: number | null;
+  steers: { text: string; source: string; at: number; local?: boolean }[];
+  supervisor: { action: string; reason: string }[];
+  note: string;
+  error: string;
+  stopReason: string;
+  finalText: string;
+  mutations: string[];
+  durationS: number | null;
+  stopRequested: boolean;
 }
 
 export interface Turn {
@@ -53,6 +116,8 @@ export interface Turn {
   todos?: Todo[];
   plan?: string;
   contextPercent?: number;
+  /** Sub-agents of this turn's delegate_agents calls, in arrival order. */
+  workers: Worker[];
   streaming: boolean;
 }
 
@@ -72,8 +137,173 @@ export function blankTurn(role: Turn['role'], text = ''): Turn {
     images: [],
     attachments: [],
     checks: [],
+    workers: [],
     streaming: role === 'assistant',
   };
+}
+
+/* ── Sub-agents ── */
+
+export function newWorker(id: string, delegation: string, now: number): Worker {
+  return {
+    id, delegation, index: null, name: '', role: 'worker', model: '', files: [], instruction: '', instructionFull: '',
+    sessionId: '', status: 'running', firstSeen: now, startedLocal: null, startedAt: null, endedAt: null, endedLocal: null,
+    lastEventAt: now, sawTick: false, tickElapsed: null, tickAt: null, round: null, maxRounds: null, rounds: null,
+    toolCalls: 0, failedCalls: 0, lastTool: '', lastCmd: '', lastToolOk: null, lastOut: '', tail: '', toolElapsed: null,
+    toolInFlight: false, inTok: null, outTok: null, idleS: null, stalled: false, stallReason: '', stallAt: null,
+    timeoutS: null, steers: [], supervisor: [], note: '', error: '', stopReason: '', finalText: '', mutations: [],
+    durationS: null, stopRequested: false,
+  };
+}
+
+const s = (v: unknown): string => (v === undefined || v === null ? '' : String(v));
+const n = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : typeof v === 'string' && v.trim() && Number.isFinite(Number(v)) ? Number(v) : null);
+
+/** Fold one `subagent` payload into a worker (pure; the legacy _saApply). */
+export function applyWorker(prev: Worker, sa: SubagentPayload, now: number): Worker {
+  const w: Worker = { ...prev, steers: prev.steers.slice(), supervisor: prev.supervisor.slice(), lastEventAt: now };
+  if (sa.name) w.name = s(sa.name);
+  if (sa.role) w.role = s(sa.role);
+  if (n(sa.index) !== null) w.index = n(sa.index);
+  if (sa.session_id) w.sessionId = s(sa.session_id);
+  if (sa.model) w.model = s(sa.model);
+  if (Array.isArray(sa.files)) w.files = sa.files.map(String);
+  if (sa.instruction) w.instruction = s(sa.instruction);
+  if (sa.instruction_full) w.instructionFull = s(sa.instruction_full);
+  if (n(sa.max_rounds) !== null) w.maxRounds = n(sa.max_rounds);
+  if (n(sa.timeout_s) !== null) w.timeoutS = n(sa.timeout_s);
+  if ((n(sa.started_at) ?? 0) > 0) w.startedAt = n(sa.started_at);
+  if ((n(sa.ended_at) ?? 0) > 0) w.endedAt = n(sa.ended_at);
+  if (n(sa.input_tokens) !== null) w.inTok = n(sa.input_tokens);
+  if (n(sa.output_tokens) !== null) w.outTok = n(sa.output_tokens);
+  if (n(sa.rounds) !== null) w.rounds = n(sa.rounds);
+  switch (sa.event) {
+    case 'queued':
+      w.status = 'queued';
+      w.note = sa.reason ? s(sa.reason) : 'esperando un hueco en la GPU';
+      break;
+    case 'started':
+      w.status = 'running';
+      w.startedLocal = now;
+      w.note = '';
+      break;
+    case 'round':
+      if (n(sa.round) !== null) w.round = n(sa.round);
+      w.stalled = false;
+      break;
+    case 'tool':
+      w.stalled = false;
+      if (sa.tool) w.lastTool = s(sa.tool);
+      if (sa.phase === 'start') {
+        w.lastCmd = s(sa.command);
+        w.lastToolOk = null;
+        w.lastOut = '';
+        w.tail = '';
+        w.toolElapsed = null;
+        w.toolInFlight = true;
+      } else if (sa.phase === 'progress') {
+        w.toolInFlight = true;
+        if (sa.tail !== undefined && sa.tail !== null) w.tail = s(sa.tail);
+        if (n(sa.elapsed_s) !== null) w.toolElapsed = n(sa.elapsed_s);
+      } else {
+        w.toolInFlight = false;
+        w.toolCalls += 1;
+        if (sa.ok === false) w.failedCalls += 1;
+        w.lastToolOk = sa.ok !== false;
+        w.lastOut = s(sa.output);
+        w.tail = '';
+        w.toolElapsed = null;
+      }
+      break;
+    case 'tick':
+      w.sawTick = true;
+      if (n(sa.elapsed_s) !== null) {
+        w.tickElapsed = n(sa.elapsed_s);
+        w.tickAt = now;
+      }
+      if (n(sa.round) !== null) w.round = n(sa.round);
+      if (sa.last_tool) w.lastTool = s(sa.last_tool);
+      if (n(sa.tool_calls) !== null) w.toolCalls = Math.max(w.toolCalls, n(sa.tool_calls) ?? 0);
+      if (n(sa.idle_s) !== null) w.idleS = n(sa.idle_s);
+      if (sa.stalled) {
+        if (!w.stalled) w.stallAt = now;
+        w.stalled = true;
+        w.stallReason = s(sa.stall_reason);
+      } else {
+        w.stalled = false;
+      }
+      break;
+    case 'steer': {
+      const text = s(sa.text);
+      const source = s(sa.source) || 'user';
+      const last = w.steers[w.steers.length - 1];
+      if (last && last.text === text && last.source === source && last.local && now - last.at < 60000) {
+        w.steers[w.steers.length - 1] = { ...last, local: false };
+      } else {
+        w.steers.push({ text, source, at: now });
+      }
+      break;
+    }
+    case 'supervisor':
+      w.supervisor.push({ action: s(sa.action), reason: s(sa.reason) });
+      break;
+    case 'harness': {
+      const reasons = Array.isArray(sa.reasons) ? sa.reasons.map(String) : [];
+      w.note = `🛡 ${s(sa.status)}${reasons.length ? ': ' + reasons.join(', ') : ''}`;
+      break;
+    }
+    case 'guard':
+      w.note = `⚠ ${s(sa.kind) || 'guard'}`;
+      break;
+    case 'error':
+      w.status = 'failed';
+      w.error = s(sa.message) || 'error';
+      break;
+    case 'done': {
+      const stopped = sa.stop_reason === 'stopped';
+      const ok = !sa.error && sa.stop_reason === 'complete';
+      w.status = sa.error ? 'failed' : ok ? 'done' : stopped ? 'stopped' : 'partial';
+      w.stopReason = s(sa.stop_reason);
+      w.error = sa.error ? s(sa.error) : w.error;
+      w.finalText = s(sa.final_text);
+      w.mutations = Array.isArray(sa.mutations) ? sa.mutations.map(String) : w.mutations;
+      if (n(sa.tool_calls) !== null) w.toolCalls = n(sa.tool_calls) ?? 0;
+      if (n(sa.failed_calls) !== null) w.failedCalls = n(sa.failed_calls) ?? 0;
+      if (n(sa.duration_s) !== null) w.durationS = n(sa.duration_s);
+      if (!w.endedAt) w.endedLocal = now;
+      w.stalled = false;
+      w.tail = '';
+      w.toolInFlight = false;
+      if (Array.isArray(sa.steered)) {
+        for (const item of sa.steered) {
+          const text = typeof item === 'string' ? item : s((item as Record<string, unknown>)?.text);
+          const source = typeof item === 'string' ? 'user' : s((item as Record<string, unknown>)?.source) || 'user';
+          if (text && !w.steers.some((x) => x.text === text)) w.steers.push({ text, source, at: now });
+        }
+      }
+      if (Array.isArray(sa.supervisor) && !w.supervisor.length) {
+        w.supervisor = sa.supervisor.map((x) =>
+          typeof x === 'string' ? { action: x, reason: '' } : { action: s((x as Record<string, unknown>)?.action), reason: s((x as Record<string, unknown>)?.reason) },
+        );
+      }
+      break;
+    }
+    default:
+      break;
+  }
+  return w;
+}
+
+export const workerLive = (w: Worker) => w.status === 'queued' || w.status === 'running';
+
+/** A worker from the record history keeps (`tool_events[i].subagents[j]`). */
+export function workerFromPersisted(sa: SubagentPayload, i: number): Worker {
+  const w = applyWorker(newWorker(s(sa.id ?? sa.session_id ?? i), s(sa.delegation), 0), { ...sa, event: 'done' }, 0);
+  w.index = n(sa.index) ?? i;
+  if (sa.stop_reason === undefined && !sa.error && sa.status === 'done') w.status = 'done';
+  // Older records carry the reviewer's role only in its name.
+  if (!sa.role && /^reviewer$/i.test(w.name)) w.role = 'reviewer';
+  return w;
 }
 
 /** A tool name the model uses → the words a person reads on the rail. */
@@ -175,6 +405,9 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
         command: index === -1 ? event.command : turn.steps[index].command,
         output: event.output,
         round: index === -1 ? turn.rounds : turn.steps[index].round,
+        diff: event.diff,
+        screenshot: event.screenshot,
+        docId: event.docId,
       };
       const steps = turn.steps.slice();
       if (index === -1) steps.push(finished);
@@ -220,13 +453,84 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
       return { ...turn, summary: event.summary };
     case 'context':
       return event.percent === undefined ? turn : { ...turn, contextPercent: event.percent };
+    case 'subagent': {
+      const sa = event.payload;
+      const id = s(sa.id ?? sa.session_id);
+      if (!id) return turn;
+      const delegation = s(sa.delegation);
+      const now = Date.now();
+      const workers = turn.workers.slice();
+      const at = workers.findIndex((w) => w.id === id && (!delegation || !w.delegation || w.delegation === delegation));
+      if (at === -1) workers.push(applyWorker(newWorker(id, delegation, now), sa, now));
+      else workers[at] = applyWorker(workers[at], sa, now);
+      return { ...turn, workers };
+    }
+    // Frames and documents belong to the side panel, not to the turn.
+    case 'frame':
+    case 'doc_open':
+    case 'doc_delta':
+    case 'doc_update':
+    case 'doc_suggestions':
+      return turn;
     case 'done':
       return {
         ...turn,
         streaming: false,
-        steps: turn.steps.map((s) => (s.state === 'running' ? { ...s, state: 'cancelled' } : s)),
+        steps: turn.steps.map((step) => (step.state === 'running' ? { ...step, state: 'cancelled' } : step)),
+        workers: turn.workers.map((w) => (workerLive(w) ? { ...w, status: 'partial' as const, stopReason: w.stopReason || 'sin señal' } : w)),
       };
   }
+}
+
+/**
+ * What history keeps of an agent turn, back into the turn: the tool rail
+ * (`tool_events`, with diffs, screenshots and sub-agent records), the
+ * harness card (`harness`), web sources and an approval still pending.
+ * The legacy renderer rebuilds the same things from the same fields.
+ */
+export function restoreFromMetadata(turn: Turn, meta: Record<string, unknown>): Turn {
+  const events = toolEventsFrom(meta);
+  if (!events.length && !meta.harness && !meta.web_sources) return turn;
+  const steps: Step[] = [];
+  const workers: Worker[] = [];
+  let ask: AskUser | undefined;
+  let rounds = turn.rounds;
+  for (const ev of events) {
+    const parked = ev.exitCode === null && /^Waiting for an exact user approval/i.test(ev.output.trim());
+    const ok = ev.exitCode === null || ev.exitCode === 0;
+    const pending = parked && ev.ask !== undefined && !ev.askResolved;
+    steps.push({
+      id: uid('step'),
+      tool: ev.tool,
+      label: stepLabel(ev.tool, ev.command),
+      state: pending ? 'waiting' : parked ? 'cancelled' : ok ? 'succeeded' : 'failed',
+      meta: pending ? 'permiso pedido' : parked ? (ev.askResolved ? 'permiso respondido' : 'permiso pedido') : !ok ? `exit ${ev.exitCode}` : undefined,
+      command: ev.command,
+      output: parked ? '' : ev.output,
+      round: ev.round,
+      diff: ev.diff,
+      screenshot: ev.screenshot,
+      docId: ev.docId,
+    });
+    rounds = Math.max(rounds, ev.round);
+    ev.subagents.forEach((sa, i) => workers.push(workerFromPersisted(sa, i)));
+    if (ev.ask && !ev.askResolved) ask = ev.ask;
+  }
+  const harness = meta.harness && typeof meta.harness === 'object' ? (meta.harness as Record<string, unknown>) : null;
+  const sources = Array.isArray(meta.web_sources)
+    ? (meta.web_sources as Record<string, unknown>[])
+        .map((x) => ({ title: s(x.title) || s(x.url), url: s(x.url) }))
+        .filter((x) => x.url)
+    : turn.sources;
+  return {
+    ...turn,
+    steps: steps.length ? steps : turn.steps,
+    workers: workers.length ? workers : turn.workers,
+    rounds,
+    ask: ask ?? turn.ask,
+    summary: harness ? summaryFrom(harness) : turn.summary,
+    sources,
+  };
 }
 
 /** The user's text as it was typed, without the file blocks the server

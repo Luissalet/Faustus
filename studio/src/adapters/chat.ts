@@ -98,12 +98,67 @@ export interface HarnessSummary {
   };
 }
 
+/** A file write/edit as the server diffed it (also persisted in history). */
+export interface StepDiff {
+  text: string;
+  file: string;
+  added: number;
+  removed: number;
+  newFile: boolean;
+}
+
+/** One frame of what the agent sees: a browser page or the desktop. */
+export interface BrowserFrame {
+  src: string;
+  url: string;
+  title: string;
+  tool: string;
+  source: 'browser' | 'desktop';
+  at: number;
+}
+
+/** A living document the agent created or changed (routes/document). */
+export interface DocSnapshot {
+  id: string;
+  title: string;
+  language: string;
+  version: number;
+  content: string;
+}
+
+export interface DocSuggestion {
+  id: string;
+  find: string;
+  replace: string;
+  reason: string;
+}
+
+/** The raw `subagent` payload of a tool_progress event (delegate_agents);
+ *  every field optional, the reducer in screens/studio/model.ts folds it. */
+export type SubagentPayload = Record<string, unknown>;
+
 /** Everything the stream can say, narrowed to what the screen renders. */
 export type ChatEvent =
   | { type: 'delta'; text: string; thinking: boolean }
   | { type: 'tool_start'; tool: string; command: string; fullCommand?: string; round: number }
   | { type: 'tool_progress'; tool: string; message: string }
-  | { type: 'tool_output'; tool: string; command: string; output: string; exitCode: number | null }
+  | {
+      type: 'tool_output';
+      tool: string;
+      command: string;
+      output: string;
+      exitCode: number | null;
+      diff?: StepDiff;
+      docId?: string;
+      /** A validated raster data: URL (desktop_screenshot and browser tools). */
+      screenshot?: string;
+    }
+  | { type: 'subagent'; payload: SubagentPayload }
+  | { type: 'frame'; frame: BrowserFrame }
+  | { type: 'doc_open'; title: string; language: string }
+  | { type: 'doc_delta'; content: string }
+  | { type: 'doc_update'; doc: DocSnapshot }
+  | { type: 'doc_suggestions'; docId: string; suggestions: DocSuggestion[] }
   | { type: 'round'; round: number }
   | { type: 'ask_user'; ask: AskUser }
   | { type: 'metrics'; metrics: TurnMetrics }
@@ -268,7 +323,23 @@ export interface SendOptions {
   genOverrides?: Record<string, number | boolean>;
   /** Answering a tool approval: the message goes empty and these travel. */
   approval?: { id: string; decision: 'approve' | 'approve_task' | 'deny' };
+  /** `/agents`: the delegation travels as its own field; the server swaps
+   *  it in for the model and keeps `message` as the readable label. */
+  delegateTasks?: Delegation;
   signal?: AbortSignal;
+}
+
+export interface DelegationTask {
+  name: string;
+  instruction: string;
+  files?: string[];
+  model?: string;
+}
+
+export interface Delegation {
+  tasks: DelegationTask[];
+  parallel: boolean;
+  reviewer: boolean;
 }
 
 function timezoneHeaders(): Record<string, string> {
@@ -282,6 +353,115 @@ function timezoneHeaders(): Record<string, string> {
     'X-Tz-Offset': String(-new Date().getTimezoneOffset()),
     'X-Tz-Name': name,
   };
+}
+
+/** Only a raster data: URL may become an <img src>; the legacy renderer's
+ *  safeToolScreenshotSrc applies the same rule (XSS through SVG/HTML). */
+export function safeFrameSrc(raw: unknown): string {
+  const src = String(raw ?? '').trim();
+  return /^data:image\/(?:png|jpe?g|gif|webp);base64,[a-z0-9+/=\s]+$/i.test(src) ? src : '';
+}
+
+function frameFrom(raw: Record<string, unknown>): BrowserFrame | null {
+  const src = safeFrameSrc(raw.screenshot);
+  if (!src) return null;
+  const tool = str(raw.tool);
+  const source = raw.source === 'desktop' || /^desktop_/.test(tool) ? 'desktop' : 'browser';
+  return {
+    src,
+    url: str(raw.url).slice(0, 2048),
+    title: (str(raw.title) || (source === 'desktop' ? 'Escritorio' : '')).slice(0, 300),
+    tool,
+    source,
+    at: Date.now(),
+  };
+}
+
+export function diffFrom(raw: unknown): StepDiff | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const d = raw as Record<string, unknown>;
+  const text = str(d.text);
+  if (!text) return undefined;
+  return {
+    text,
+    file: str(d.file, 'diff'),
+    added: num(d.added) ?? 0,
+    removed: num(d.removed) ?? 0,
+    newFile: Boolean(d.new_file),
+  };
+}
+
+/** `harness_summary` data, and the `harness` block history keeps. */
+export function summaryFrom(data: Record<string, unknown>): HarnessSummary {
+  const cs = (data.changeset && typeof data.changeset === 'object' ? data.changeset : null) as Record<string, unknown> | null;
+  return {
+    toolCalls: num(data.tool_calls) ?? 0,
+    failedCalls: num(data.failed_calls) ?? 0,
+    mutations: asArray<unknown>(data.mutations).map(String),
+    stopReason: str(data.stop_reason, 'complete'),
+    notes: asArray<unknown>(data.notes).map(String),
+    checkpoint: str(data.checkpoint) || undefined,
+    workspace: str(data.workspace) || undefined,
+    tests: data.tests && typeof data.tests === 'object' ? (data.tests as Record<string, unknown>) : undefined,
+    review: data.review && typeof data.review === 'object' ? (data.review as Record<string, unknown>) : undefined,
+    staticAnalysis:
+      data.static_analysis && typeof data.static_analysis === 'object' ? (data.static_analysis as Record<string, unknown>) : undefined,
+    changeset: cs
+      ? {
+          verdict: str(cs.verdict) || undefined,
+          confidence: num(cs.confidence),
+          unsupported: asArray<Record<string, unknown>>(cs.unsupported_claims).map((p) => str(p.path)),
+          unclaimed: asArray<unknown>(cs.unclaimed_changes).map((p) =>
+            typeof p === 'string' ? p : str((p as Record<string, unknown>).path),
+          ),
+          rendered: str(cs.rendered) || undefined,
+        }
+      : undefined,
+  };
+}
+
+/** A persisted tool call (`metadata.tool_events[i]` of an assistant message). */
+export interface HistoryToolEvent {
+  round: number;
+  tool: string;
+  command: string;
+  output: string;
+  exitCode: number | null;
+  diff?: StepDiff;
+  screenshot?: string;
+  docId?: string;
+  ask?: AskUser;
+  askResolved: boolean;
+  subagents: SubagentPayload[];
+}
+
+export function toolEventsFrom(meta: Record<string, unknown>): HistoryToolEvent[] {
+  return asArray<Record<string, unknown>>(meta.tool_events).map((ev) => {
+    const askRaw = (ev.ask_user && typeof ev.ask_user === 'object' ? ev.ask_user : null) as Record<string, unknown> | null;
+    return {
+      round: num(ev.round) ?? 1,
+      tool: str(ev.tool, 'tool'),
+      command: str(ev.command),
+      output: str(ev.output),
+      exitCode: num(ev.exit_code) ?? null,
+      diff: diffFrom(ev.diff),
+      screenshot: safeFrameSrc(ev.screenshot) || undefined,
+      docId: str(ev.doc_id) || undefined,
+      ask: askRaw
+        ? {
+            question: str(askRaw.question),
+            options: asArray<unknown>(askRaw.options).map((o) =>
+              typeof o === 'string' ? o : str((o as Record<string, unknown>).label ?? (o as Record<string, unknown>).value),
+            ),
+            multi: Boolean(askRaw.multi),
+            kind: askRaw.kind === 'tool_approval' ? 'tool_approval' : 'question',
+            approvalId: str(askRaw.approval_id) || undefined,
+          }
+        : undefined,
+      askResolved: Boolean(askRaw?.resolved) || Boolean(ev.approved),
+      subagents: asArray<SubagentPayload>(ev.subagents),
+    };
+  });
 }
 
 /** One raw `data:` payload → zero or one typed events. */
@@ -307,6 +487,11 @@ function decode(raw: Record<string, unknown>, sseEvent: string | null): ChatEven
         round: num(raw.round) ?? 1,
       };
     case 'tool_progress':
+      // delegate_agents reports its workers through tool_progress with a
+      // `subagent` payload (src/agent_tools/subagent_tools.py).
+      if (raw.subagent && typeof raw.subagent === 'object') {
+        return { type: 'subagent', payload: raw.subagent as SubagentPayload };
+      }
       return {
         type: 'tool_progress',
         tool: str(raw.tool, 'tool'),
@@ -319,6 +504,38 @@ function decode(raw: Record<string, unknown>, sseEvent: string | null): ChatEven
         command: str(raw.command),
         output: str(raw.output),
         exitCode: num(raw.exit_code) ?? null,
+        diff: diffFrom(raw.diff),
+        docId: str(raw.doc_id) || undefined,
+        screenshot: safeFrameSrc(raw.screenshot) || undefined,
+      };
+    case 'browser_view': {
+      const frame = frameFrom(raw);
+      return frame ? { type: 'frame', frame } : null;
+    }
+    case 'doc_stream_open':
+      return { type: 'doc_open', title: str(raw.title), language: str(raw.language) };
+    case 'doc_stream_delta':
+      return { type: 'doc_delta', content: str(raw.content) };
+    case 'doc_update':
+      return raw.doc_id
+        ? {
+            type: 'doc_update',
+            doc: {
+              id: String(raw.doc_id),
+              title: str(raw.title),
+              language: str(raw.language),
+              version: num(raw.version) ?? 1,
+              content: str(raw.content),
+            },
+          }
+        : null;
+    case 'doc_suggestions':
+      return {
+        type: 'doc_suggestions',
+        docId: str(raw.doc_id),
+        suggestions: asArray<Record<string, unknown>>(raw.suggestions)
+          .map((s) => ({ id: String(s.id ?? ''), find: str(s.find), replace: str(s.replace), reason: str(s.reason) }))
+          .filter((s) => s.id && s.find),
       };
     case 'agent_step':
       return { type: 'round', round: num(raw.round) ?? 1 };
@@ -381,36 +598,8 @@ function decode(raw: Record<string, unknown>, sseEvent: string | null): ChatEven
           detail: str(raw.detail ?? raw.reason ?? raw.message) || undefined,
         },
       };
-    case 'harness_summary': {
-      const cs = (data.changeset && typeof data.changeset === 'object' ? data.changeset : null) as Record<string, unknown> | null;
-      return {
-        type: 'summary',
-        summary: {
-          toolCalls: num(data.tool_calls) ?? 0,
-          failedCalls: num(data.failed_calls) ?? 0,
-          mutations: asArray<unknown>(data.mutations).map(String),
-          stopReason: str(data.stop_reason, 'complete'),
-          notes: asArray<unknown>(data.notes).map(String),
-          checkpoint: str(data.checkpoint) || undefined,
-          workspace: str(data.workspace) || undefined,
-          tests: data.tests && typeof data.tests === 'object' ? (data.tests as Record<string, unknown>) : undefined,
-          review: data.review && typeof data.review === 'object' ? (data.review as Record<string, unknown>) : undefined,
-          staticAnalysis:
-            data.static_analysis && typeof data.static_analysis === 'object' ? (data.static_analysis as Record<string, unknown>) : undefined,
-          changeset: cs
-            ? {
-                verdict: str(cs.verdict) || undefined,
-                confidence: num(cs.confidence),
-                unsupported: asArray<Record<string, unknown>>(cs.unsupported_claims).map((p) => str(p.path)),
-                unclaimed: asArray<unknown>(cs.unclaimed_changes).map((p) =>
-                  typeof p === 'string' ? p : str((p as Record<string, unknown>).path),
-                ),
-                rendered: str(cs.rendered) || undefined,
-              }
-            : undefined,
-        },
-      };
-    }
+    case 'harness_summary':
+      return { type: 'summary', summary: summaryFrom(data) };
     case 'context_ledger':
       return {
         type: 'context',
@@ -451,6 +640,7 @@ export async function* sendTurn(options: SendOptions): AsyncGenerator<ChatEvent>
     fd.append('tool_approval_id', options.approval.id);
     fd.append('tool_approval_decision', options.approval.decision);
   }
+  if (options.delegateTasks) fd.append('delegate_tasks', JSON.stringify(options.delegateTasks));
 
   const response = await fetch('/api/chat_stream', {
     method: 'POST',
