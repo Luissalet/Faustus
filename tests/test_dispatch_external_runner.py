@@ -21,6 +21,7 @@ And the invariant that protects everything that came before: **a job with no
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 import sys
 from types import SimpleNamespace
@@ -192,7 +193,7 @@ def test_an_external_agent_runs_inside_the_harness_and_the_proof_says_it_was_ung
     assert proof["confidence"] < 0.7 and proof["uncertainty"]
     # the list is one list, sorted the way prove sorts it (heaviest first)
     from src import prove
-    weights = [prove.PENALTY.get(k, dispatch.EXTERNAL_UNGUARDED_PENALTY) for k in kinds]
+    weights = [prove.PENALTY.get(k, prove.EXTERNAL_UNGUARDED_PENALTY) for k in kinds]
     assert weights == sorted(weights, reverse=True)
     # and the human-readable line says it too
     assert "external agent(s) ran unguarded: fake" in job.verdict
@@ -385,12 +386,237 @@ def test_the_external_timeout_is_the_smaller_of_the_two_ceilings(box, monkeypatc
 def test_the_proof_annotation_is_total():
     """A proof that cannot be annotated comes back as it was; a job with no
     runner is never annotated at all."""
-    assert dispatch._note_unguarded(None, ["x"]) is None
+    from src import prove
+
+    assert prove.note_external_gate(None, ["x"]) is None
     packet = {"confidence": 0.9, "uncertainty": [{"kind": "mtime_only", "detail": "d"}]}
-    assert dispatch._note_unguarded(dict(packet), []) == packet
-    once = dispatch._note_unguarded(dict(packet), ["fake"])
+    assert prove.note_external_gate(dict(packet), []) == packet
+    once = prove.note_external_gate(dict(packet), ["fake"])
     assert once["confidence"] == 0.8 and len(once["uncertainty"]) == 2
-    twice = dispatch._note_unguarded(once, ["fake"])
+    twice = prove.note_external_gate(once, ["fake"])
     assert twice["confidence"] == 0.8, "the entry is added once, not once per call"
-    junk = dispatch._note_unguarded({"confidence": "nonsense", "uncertainty": None}, ["fake"])
+    junk = prove.note_external_gate({"confidence": "nonsense", "uncertainty": None}, ["fake"])
     assert junk["confidence"] == 0.0 and junk["uncertainty"][0]["kind"] == dispatch.EXTERNAL_UNGUARDED
+
+
+# --------------------------------------------------------------------------
+# The safety net for that swap: with nothing gated, the new annotator must
+# produce the packet the old one produced, entry for entry and value for
+# value. `_reference_note_unguarded` below is a frozen copy of the
+# `dispatch._note_unguarded` that stood here before `prove.note_external_gate`
+# replaced it — kept as an ORACLE rather than as code that runs in production,
+# because "byte-identical to what shipped" is a claim, and a claim in a
+# comment is worth nothing.
+# --------------------------------------------------------------------------
+
+def _reference_note_unguarded(packet, runners):
+    """The pre-change `dispatch._note_unguarded`, verbatim. Do not fix it."""
+    from src import prove
+
+    if not packet or not runners:
+        return packet
+    try:
+        entry = {"kind": dispatch.EXTERNAL_UNGUARDED,
+                 "detail": prove.EXTERNAL_UNGUARDED_DETAIL + " (" + ", ".join(runners[:4]) + ")"}
+        unc = list(packet.get("uncertainty") or [])
+        if any(u.get("kind") == dispatch.EXTERNAL_UNGUARDED for u in unc):
+            return packet
+        unc.append(entry)
+        unc.sort(key=lambda u: (-prove.PENALTY.get(str(u.get("kind")), prove.EXTERNAL_UNGUARDED_PENALTY),
+                                str(u.get("kind"))))
+        try:
+            confidence = float(packet.get("confidence") or 0.0)
+        except (TypeError, ValueError):
+            confidence = 0.0
+        packet["uncertainty"] = unc
+        packet["confidence"] = round(max(0.0, confidence - prove.EXTERNAL_UNGUARDED_PENALTY), 3)
+        packet["unguarded_runners"] = list(runners)
+    except Exception:  # noqa: BLE001
+        pass
+    return packet
+
+
+def _real_packets():
+    """Proof packets as `_build_proof` really makes them — `prove.prove` output,
+    not hand-built dicts, and with a fixed `now` so the identity is stable."""
+    from src import prove
+
+    changes = {"count": 1, "added": ["cart.py"], "modified": [], "deleted": [], "truncated": False}
+    cases = [
+        (changes, {"ran": True, "ok": True, "command": "pytest"}, {"paths": [], "workers": []}),
+        (changes, {"ran": True, "ok": False, "command": "pytest", "failures": ["test_tax"]},
+         {"paths": ["cart.py"], "workers": [{"name": "w1", "status": "done"}]}),
+        (changes, {"ran": False, "ok": None}, {"paths": ["gone.py"], "workers": []}),
+        (None, None, {"paths": [], "workers": [{"name": "w1", "status": "stopped",
+                                                "outcome": "cancelled"}]}),
+    ]
+    return [prove.prove(ev, ver, cl, now=1_700_000_000.0) for ev, ver, cl in cases]
+
+
+@pytest.mark.parametrize("runners", [["fake"], ["fake", "qwen"], ["a", "b", "c", "d", "e"]])
+def test_note_external_gate_with_no_gates_is_the_old_annotation_exactly(runners):
+    """This is what makes the swap in `_build_proof` safe: a job whose runners
+    are all ungated — which is every job today whose runner row says
+    `gate: "none"` — gets the packet it has always got."""
+    from src import prove
+
+    for packet in _real_packets():
+        old = _reference_note_unguarded(copy.deepcopy(packet), list(runners))
+        for gates in ({}, None, [], {"nobody": {"gated": False}}):
+            new = prove.note_external_gate(copy.deepcopy(packet), list(runners), gates=gates)
+            assert new == old, f"gates={gates!r} runners={runners!r}"
+
+
+def test_a_gated_run_is_the_one_thing_that_differs():
+    """The equivalence above is a safety net, not the point: a ledger saying
+    the gate really ran must change the answer, or none of this was worth
+    doing."""
+    from src import prove
+
+    packet = _real_packets()[0]
+    led = {"gated": True, "calls": 7, "denied": 2, "unjudged": 0, "unseen": 0}
+    gated = prove.note_external_gate(copy.deepcopy(packet), ["fake"], gates={"fake": led})
+    assert gated != _reference_note_unguarded(copy.deepcopy(packet), ["fake"])
+    assert dispatch.EXTERNAL_UNGUARDED not in [u["kind"] for u in gated["uncertainty"]]
+    assert "unguarded_runners" not in gated
+    assert gated["external_gate"]["judged"] == 7 and gated["external_gate"]["denied"] == 2
+    # and it does not pay for a hole that is not there
+    assert gated["confidence"] == packet["confidence"]
+
+
+# --------------------------------------------------------------------------
+# The gate, on the path that matters
+#
+# `src/agent_gate.py`, its route and the runner rows' `gate` descriptors were
+# all built and tested — and `dispatch._run_external` passed `run_task` none of
+# the arguments that arm any of it, so a dispatched Claude Code run was
+# ungated while the docs, the settings copy and the proof all said the gate
+# existed for it. These pin the wiring itself, not the gate's own behaviour
+# (tests/test_agent_gate.py owns that).
+# --------------------------------------------------------------------------
+
+GATED_LEDGER = {"gated": True, "calls": 9, "denied": 1, "unjudged": 0, "unseen": 0,
+                "stream_tool_calls": 9, "subagent_tool_calls": 0}
+
+
+def _gated_result(**over):
+    out = {"ok": True, "exit_code": 0, "outcome": "success", "output_tail": "wrote cart.py",
+           "output_chars": 13, "state": "", "states": [], "why": "", "matched": "",
+           "seconds": 0.4, "argv_shown": "claude -p …", "runner": "claudeish",
+           "label": "Fake Claude", "status": "done", "error": "", "timed_out": False,
+           "cancelled": False, "killed": False, "unguarded": False,
+           "guard_note": "gated", "gate": dict(GATED_LEDGER)}
+    out.update(over)
+    return out
+
+
+@pytest.fixture
+def spy(box, monkeypatch):
+    """Replace the worker itself and record exactly what dispatch handed it."""
+    from src import external_worker
+
+    calls = []
+
+    def fake_run_task(runner_key, task, **kwargs):
+        calls.append({"runner": runner_key, "task": task, **kwargs})
+        return _gated_result(runner=str(runner_key))
+
+    monkeypatch.setattr(external_worker, "run_task", fake_run_task)
+    box["register"]("claudeish", AGENT)
+    box["calls"] = calls
+    return box
+
+
+def _run_one(box, **body):
+    async def run():
+        job = await dispatch.start("luis", {"tasks": [{"instruction": "add apply_tax",
+                                                       "runner": "claudeish"}],
+                                            "workspace": box["ws"], "verify": "none", **body})
+        assert await dispatch.wait(job, 30)
+        return job
+
+    return asyncio.run(run())
+
+
+def test_dispatch_hands_the_worker_everything_the_gate_needs(spy):
+    job = _run_one(spy)
+    assert len(spy["calls"]) == 1
+    call = spy["calls"][0]
+
+    # The id the gate's ledger and its receipts are filed under. One per TASK,
+    # so two tasks in one job cannot share a run token.
+    assert call["run_id"] == f"{job.id}-0"
+    # Everything this agent may write.
+    assert call["workspace_roots"] == [job.workspace]
+    assert call["owner"] == "luis"
+    # A dispatched job is a background asyncio task: nobody can answer a
+    # CAUTION prompt, so the gate must refuse rather than ask.
+    assert call["attended"] is False
+    # And the honest absence: this path cannot reach the delegation's file
+    # locks, so it claims none rather than naming a holder it cannot check.
+    assert "locks" not in call and "worker_key" not in call
+
+
+def test_two_tasks_on_one_runner_get_two_run_ids(spy):
+    async def run():
+        job = await dispatch.start("luis", {"tasks": [
+            {"instruction": "one", "runner": "claudeish"},
+            {"instruction": "two", "runner": "claudeish"},
+        ], "workspace": spy["ws"], "verify": "none"})
+        assert await dispatch.wait(job, 30)
+        return job
+
+    job = asyncio.run(run())
+    assert [c["run_id"] for c in spy["calls"]] == [f"{job.id}-0", f"{job.id}-1"]
+
+
+def test_a_gated_run_reports_unguarded_false_all_the_way_out(spy):
+    job = _run_one(spy)
+
+    assert job.runner_gates == {"claudeish": GATED_LEDGER}
+    report = (job.result or {})["subagents"][0]
+    assert report["unguarded"] is False
+
+    c = dispatch.compact(job)["result"]
+    assert c["workers"][0]["unguarded"] is False
+
+    proof = c["proof"]
+    kinds = [u["kind"] for u in proof["uncertainty"]]
+    assert dispatch.EXTERNAL_UNGUARDED not in kinds
+    assert "unguarded_runners" not in proof
+    assert proof["external_gate"] == {"gated": ["claudeish"], "unguarded": [], "judged": 9,
+                                      "denied": 1, "unjudged": 0, "unseen": 0}
+    assert any(o["kind"] == "external_gate" for o in proof["observations"])
+
+
+def test_a_runner_the_gate_could_not_reach_is_still_reported_unguarded(spy, monkeypatch):
+    """The other half of the same wire: a result with no ledger — every runner
+    whose row says `gate: "none"` — is exactly what it always was."""
+    from src import external_worker
+
+    monkeypatch.setattr(external_worker, "run_task",
+                        lambda runner_key, task, **kw: _gated_result(
+                            runner=str(runner_key), unguarded=True, gate={}))
+    job = _run_one(spy)
+
+    assert job.runner_gates == {}
+    assert (job.result or {})["subagents"][0]["unguarded"] is True
+    proof = dispatch.compact(job)["result"]["proof"]
+    assert dispatch.EXTERNAL_UNGUARDED in [u["kind"] for u in proof["uncertainty"]]
+    assert proof["unguarded_runners"] == ["claudeish"]
+    assert "external_gate" not in proof
+
+
+#: The real signature, captured before any fixture replaces `run_task`. The
+#: spy takes `**kwargs`, so a renamed argument would land in it silently and
+#: the gate would go back to never arming with every test still green.
+_REAL_RUN_TASK_SIG = __import__("inspect").signature(
+    __import__("src.external_worker", fromlist=["run_task"]).run_task)
+
+
+def test_the_arming_arguments_are_the_ones_run_task_declares(spy):
+    _run_one(spy)
+    call = dict(spy["calls"][0])
+    runner, task = call.pop("runner"), call.pop("task")
+    # TypeError here means dispatch is passing a name the worker does not have.
+    _REAL_RUN_TASK_SIG.bind(runner, task, **call)

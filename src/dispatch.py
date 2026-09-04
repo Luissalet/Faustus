@@ -116,16 +116,13 @@ _OUTPUT_TAIL_CHARS = 8192
 # tool's output, its last words, its error) — the only text the rules read.
 _OUTPUT_KEYS = ("tail", "output", "final_text", "message")
 # A task run by an agent Faustus did not write (src/external_worker.py): the
-# named reason that goes into the proof's uncertainty list, and the sentence it
-# carries. The proof exists to name every reason its confidence is not 1; an
-# unguarded external shell is the biggest one this app can have.
+# named reason that goes into the proof's uncertainty list. The proof exists to
+# name every reason its confidence is not 1; an unguarded external shell is the
+# biggest one this app can have. The sentence and the penalty live in
+# src/prove.py with `note_external_gate`, which now writes the entry — two
+# copies of a sentence a reader compares between a payload and a proof is how
+# they drift apart.
 EXTERNAL_UNGUARDED = "external_agent_unguarded"
-EXTERNAL_UNGUARDED_DETAIL = ("an external agent ran its own shell; Faustus's command guard did not "
-                             "see its commands")
-# What that entry costs the proof's confidence. The same weight src/prove.py
-# gives an uncertainty it has no penalty for, so re-sorting the list by
-# `prove.PENALTY` keeps it exactly where prove itself would have put it.
-EXTERNAL_UNGUARDED_PENALTY = 0.1
 # How much of an external agent's output is kept as its "last words".
 EXTERNAL_SUMMARY_CHARS = 2000
 
@@ -331,6 +328,11 @@ class DispatchJob:
         # empty list is the normal case and adds NOTHING to the payload: a job
         # with no runner is byte-identical to one from before this existed.
         self.runners_used: List[str] = []
+        # What Faustus's own guard did in front of each of them
+        # (src/agent_gate.py): runner key → the run's ledger. Empty for every
+        # runner whose row says `gate: "none"`, which is what keeps
+        # `note_external_gate` on exactly the answer `_note_unguarded` gave.
+        self.runner_gates: Dict[str, Dict[str, Any]] = {}
         self.events: Deque[Dict[str, Any]] = deque(maxlen=EVENTS_KEPT)
         self.task: Optional[asyncio.Task] = None
         self._waiters: List[asyncio.Event] = []
@@ -570,7 +572,10 @@ def compact_from_result(result: Optional[Dict[str, Any]], *, summary_chars: int 
             # An external agent (src/external_worker.py). These keys exist ONLY
             # on such a row: a built-in worker's row is what it always was.
             w["runner"] = str(r.get("runner"))
-            w["unguarded"] = True
+            # Read through from the run's own report, not asserted: a runner
+            # Faustus can gate (src/agent_gate.py) says False, and the compact
+            # answer must not contradict the worker row it was built from.
+            w["unguarded"] = bool(r.get("unguarded", True))
             if r.get("argv_shown"):
                 w["argv_shown"] = _squash(r.get("argv_shown"), 400)
             if r.get("state"):
@@ -1338,7 +1343,11 @@ def _external_report(task: Dict[str, Any], index: int, result: Dict[str, Any]) -
         "runner": result.get("runner") or task_runner(task),
         "runner_label": result.get("label") or "",
         "argv_shown": result.get("argv_shown") or "",
-        "unguarded": True,
+        # What the RUN says, not what this path used to assume. A row whose
+        # gate really ran (src/agent_gate.py) reports False here, and hardcoding
+        # True would republish the promise the gate exists to retire. A result
+        # with no such key — an old mirror, a refusal — is unguarded.
+        "unguarded": bool(result.get("unguarded", True)),
         "exit_code": result.get("exit_code"),
         "timed_out": bool(result.get("timed_out")),
         "state": result.get("state") or "",
@@ -1392,6 +1401,24 @@ async def _run_external(job: DispatchJob, tasks: List[Dict[str, Any]], cb: Calla
             external_worker.run_task, key, str(task.get("instruction") or ""),
             workspace=job.workspace, model=str(task.get("model") or "") or None,
             **extra,
+            # ── what arms the gate (src/agent_gate.py) ────────────────────
+            # Without these the worker takes its ungated defaults and a runner
+            # whose row says `gate: "hook"` runs with nothing in front of it —
+            # which is what this path did for as long as the gate existed.
+            run_id=f"{job.id}-{i}",
+            # Everything this agent may write. The worker falls back to its own
+            # cwd when the list is empty, so a job with no workspace is refused
+            # by the same check it always was.
+            workspace_roots=[job.workspace],
+            owner=job.owner,
+            # False, and it is the truth about a dispatched job rather than a
+            # default nobody chose: this runs as a background asyncio task with
+            # no surface that can put a CAUTION command to a human, so the gate
+            # must refuse those rather than ask. `locks` is left out for the
+            # same kind of reason — the delegation's FileLockRegistry is built
+            # inside DelegateAgentsTool.execute and never reaches here, and a
+            # deny naming a holder this path cannot check would be a fiction.
+            attended=False,
             # Two ceilings apply and the smaller wins: the job's own
             # per-worker timeout, and `agent_external_runner_timeout_s` (the
             # bound the operator put on any third-party binary). Neither one
@@ -1400,6 +1427,12 @@ async def _run_external(job: DispatchJob, tasks: List[Dict[str, Any]], cb: Calla
             on_output=_emit,
             should_cancel=lambda: job.status in ("cancelling", "cancelled"),
         )
+        gate = result.get("gate")
+        if isinstance(gate, dict) and gate:
+            # Per runner KEY, not per task: the proof speaks about the agents a
+            # job used. Two tasks on one runner and the last ledger wins, which
+            # is the same granularity `runners_used` already reports.
+            job.runner_gates[key] = gate
         report = _external_report(task, i, result)
         reports.append(report)
         await cb({"subagent": {"event": "done", "name": name, "status": report["status"],
@@ -1473,47 +1506,15 @@ def _build_proof(job: "DispatchJob") -> Optional[Dict[str, Any]]:
             # it is not something the proof may leave out either.
             workers.append({"name": "job", "status": job.status, "outcome": "cancelled"})
         packet = prove.prove(job.changes, job.verification, {"paths": claimed, "workers": workers})
-        return _note_unguarded(packet, job.runners_used)
+        # With no ledgers this is byte-for-byte the blanket
+        # `external_agent_unguarded` entry this path has always filed
+        # (tests/test_dispatch_external_runner.py pins the equivalence); with
+        # one it says what the gate judged and what it did not, which is the
+        # only thing that makes a gated run worth more than an ungated one.
+        return prove.note_external_gate(packet, job.runners_used, gates=job.runner_gates)
     except Exception as e:  # noqa: BLE001 - the settle path never fails over the proof
         logger.debug("dispatch %s: proof unavailable: %s", job.id, e)
         return None
-
-
-def _note_unguarded(packet: Optional[Dict[str, Any]], runners: List[str]) -> Optional[Dict[str, Any]]:
-    """Add the `external_agent_unguarded` entry to a proof, and pay for it.
-
-    src/prove.py names every reason its confidence is not 1. The reason it
-    cannot name by itself is the one this module knows: an agent Faustus did
-    not write ran its own shell, and the command guard saw none of it. Hiding
-    that would make the proof a lie about exactly the thing this app is
-    careful about — so the entry goes in, the confidence drops by the same
-    weight prove gives an unnamed uncertainty, and the list is re-sorted the
-    way prove sorts it (heaviest first) so it reads as one list, not as two.
-
-    Nothing here raises: a proof that cannot be annotated is returned as it is.
-    """
-    if not packet or not runners:
-        return packet
-    try:
-        from src import prove
-        entry = {"kind": EXTERNAL_UNGUARDED,
-                 "detail": EXTERNAL_UNGUARDED_DETAIL + " (" + ", ".join(runners[:4]) + ")"}
-        unc = list(packet.get("uncertainty") or [])
-        if any(u.get("kind") == EXTERNAL_UNGUARDED for u in unc):
-            return packet
-        unc.append(entry)
-        unc.sort(key=lambda u: (-prove.PENALTY.get(str(u.get("kind")), EXTERNAL_UNGUARDED_PENALTY),
-                                str(u.get("kind"))))
-        try:
-            confidence = float(packet.get("confidence") or 0.0)
-        except (TypeError, ValueError):
-            confidence = 0.0
-        packet["uncertainty"] = unc
-        packet["confidence"] = round(max(0.0, confidence - EXTERNAL_UNGUARDED_PENALTY), 3)
-        packet["unguarded_runners"] = list(runners)
-    except Exception as e:  # noqa: BLE001 - the settle path never fails over the proof
-        logger.debug("dispatch: could not note the unguarded runners: %s", e)
-    return packet
 
 
 def _settle(job: DispatchJob) -> None:
