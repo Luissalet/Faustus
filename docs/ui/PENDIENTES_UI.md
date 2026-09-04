@@ -134,3 +134,37 @@ su área y baja el baseline. Ningún módulo Studio nuevo la aumenta.
     si el shell viene del bridge: hay que exportarla antes
     (`_claude_tmp/ollama_up.ps1`). No es de Faustus, pero cuesta veinte minutos
     la primera vez.
+
+## Añadido tras el lote F (04-09-2026, paridad del compositor)
+
+24. **`[!]` Dos copias de React por una query de cache-busting.** Un chunk
+    perezoso importa lo que comparte con la entrada como `../studio.js`
+    (sin `?v=`), y el navegador lo trata como un módulo distinto de
+    `studio.js?v=…`: dos React, «invalid hook call», el shell entero
+    desmontado al abrir el primer diálogo perezoso. Arreglo: la entrada es
+    diminuta (`main.tsx` enlaza la hoja y hace un `import()` de `app.tsx`),
+    los chunks llevan hash y la hoja de estilos se importa `?url` y se
+    enlaza desde la entrada. `index.html` ya no enlaza el CSS. Cualquier
+    vuelta a nombres estables sin hash reabre esto.
+25. **`[~]` Presupuesto en bruto superado: 373 KB / 118,7 KB gzip.** El
+    gzip sigue bajo los 120 KB, que es lo que viaja; el bruto pasa de 350.
+    Se propone dejar el bruto como aviso y el gzip como límite duro, con
+    Proyectos, Biblioteca, Automatizaciones, Actividad, el diálogo de
+    carpeta y el de sesión como chunks perezosos. Decisión pendiente en
+    DECISIONES §1.
+26. **`[!]` Adjuntos rechazados en el 7001, en cualquier cliente.** Con
+    `AUTH_ENABLED=false` la subida guarda `owner=None` y la sesión tiene
+    `owner='admin'`; `reserve_upload` exige igualdad y `document_processor`
+    avisa «not found or not authorized», así que el modelo no ve el fichero.
+    Studio manda exactamente lo que manda la anterior (`attachments` con los
+    ids de `/api/upload`). Verificar en el 7000 con auth; si allí funciona,
+    es un fallo del modo sin auth en el servidor, no de la UI.
+27. **`[~]` El historial no guarda `metadata.attachments`** en este servidor
+    (el mensaje del usuario vuelve sin ellos), así que tras recargar, un
+    turno con adjuntos los pierde visualmente. Studio los enseña mientras la
+    sesión está abierta.
+28. **`[~]` `/versions` y restaurar siguen en la anterior.** El endpoint
+    existe (`/api/session/{id}/versions`, `…/restore`) y el adaptador ya lo
+    envuelve; falta la vista.
+29. **`[~]` Comandos `/` que enrutan a la anterior** pierden el argumento:
+    `/research tema` abre la interfaz anterior sin el tema.

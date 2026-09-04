@@ -12,13 +12,23 @@ export default defineConfig({
     sourcemap: false,
     rollupOptions: {
       output: {
-        // Stable filenames — FastAPI serves these with its own cache
-        // headers, and the nonce mechanism handles CSP. No content
-        // hashes: the build script checks freshness by comparing
-        // source mtime against the bundle.
+        // The entry and the stylesheet keep stable names: index.html's
+        // bootstrap references them with a `?v=` query for cache-busting.
+        //
+        // Chunks carry a content hash and the entry is kept almost empty
+        // (main.tsx does one dynamic import of app.tsx). Both are
+        // load-bearing. A lazy chunk imports whatever it shares with the
+        // entry FROM the entry, by relative URL — `../studio.js`, no
+        // query — and the browser treats that as a second module next to
+        // `studio.js?v=…`: two Reacts, "invalid hook call", the whole
+        // tree unmounting the first time a lazy dialog opened. With all
+        // real code in hashed chunks, the entry owns nothing anyone else
+        // needs, and a new build changes the chunk names, so nothing stale
+        // can be reused either. No manualChunks: a forced vendor chunk
+        // would drag the gallery-only Radix menus into every page load.
         entryFileNames: 'studio.js',
-        chunkFileNames: 'chunks/[name].js',
-        assetFileNames: 'assets/[name][extname]',
+        chunkFileNames: 'chunks/[name]-[hash].js',
+        assetFileNames: 'assets/[name]-[hash][extname]',
       },
     },
   },

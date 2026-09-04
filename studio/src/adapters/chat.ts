@@ -36,6 +36,8 @@ export interface HistoryMessage {
   role: 'user' | 'assistant';
   content: string;
   metadata: Record<string, unknown>;
+  /** Position in the server's history, which truncate counts from. */
+  index: number;
 }
 
 export interface TurnMetrics {
@@ -135,14 +137,16 @@ export async function loadHistory(
     signal,
   );
   const history = asArray<Partial<HistoryMessage>>(raw.history)
-    .filter((m) => m.role === 'user' || m.role === 'assistant')
-    .map((m) => ({
+    .map((m, index) => ({ m, index }))
+    .filter(({ m }) => m.role === 'user' || m.role === 'assistant')
+    .map(({ m, index }) => ({
       role: m.role as 'user' | 'assistant',
       content: str(m.content),
       metadata: (m.metadata && typeof m.metadata === 'object' ? m.metadata : {}) as Record<
         string,
         unknown
       >,
+      index,
     }));
   return { name: raw.name ?? '', model: raw.model ?? '', history };
 }
@@ -217,6 +221,10 @@ export interface SendOptions {
   useRag?: boolean;
   workspace?: string;
   route?: ModelRoute | null;
+  /** Upload ids from /api/upload. */
+  attachments?: string[];
+  /** Per-session sampling knobs (/temp, /maxtokens…), validated server-side. */
+  genOverrides?: Record<string, number | boolean>;
   /** Answering a tool approval: the message goes empty and these travel. */
   approval?: { id: string; decision: 'approve' | 'approve_task' | 'deny' };
   signal?: AbortSignal;
@@ -332,6 +340,10 @@ export async function* sendTurn(options: SendOptions): AsyncGenerator<ChatEvent>
     fd.append('selected_model', options.route.model);
     if (options.route.endpointUrl) fd.append('selected_endpoint_url', options.route.endpointUrl);
     if (options.route.endpointId) fd.append('selected_endpoint_id', options.route.endpointId);
+  }
+  if (options.attachments?.length) fd.append('attachments', JSON.stringify(options.attachments));
+  if (options.genOverrides && Object.keys(options.genOverrides).length) {
+    fd.append('gen_overrides', JSON.stringify(options.genOverrides));
   }
   if (options.approval) {
     fd.append('tool_approval_id', options.approval.id);

@@ -1,4 +1,5 @@
-import { Fragment, type ReactNode } from 'react';
+import { Check, Copy } from 'lucide-react';
+import { Fragment, useState, type ReactNode } from 'react';
 
 /**
  * A deliberately small reader for what models actually write: fenced
@@ -97,6 +98,34 @@ function prose(block: string, keyPrefix: string): ReactNode[] {
   return nodes;
 }
 
+function CodeBlock({ lang, code }: { lang: string; code: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="fs-rich__codewrap">
+      <pre className="fs-rich__code" data-lang={lang || undefined}>
+        <code>{code}</code>
+      </pre>
+      <button
+        type="button"
+        className="fs-rich__copy"
+        aria-label={copied ? 'Copiado' : 'Copiar código'}
+        title={copied ? 'Copiado' : 'Copiar código'}
+        onClick={() => {
+          navigator.clipboard
+            .writeText(code)
+            .then(() => {
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1400);
+            })
+            .catch(() => undefined);
+        }}
+      >
+        {copied ? <Check size={13} aria-hidden="true" /> : <Copy size={13} aria-hidden="true" />}
+      </button>
+    </div>
+  );
+}
+
 export function Rich({ text }: { text: string }) {
   const parts = text.split(/```/);
   return (
@@ -106,11 +135,7 @@ export function Rich({ text }: { text: string }) {
           const firstBreak = part.indexOf('\n');
           const lang = firstBreak === -1 ? '' : part.slice(0, firstBreak).trim();
           const code = firstBreak === -1 ? part : part.slice(firstBreak + 1);
-          return (
-            <pre key={index} className="fs-rich__code" data-lang={lang || undefined}>
-              <code>{code.replace(/\n$/, '')}</code>
-            </pre>
-          );
+          return <CodeBlock key={index} lang={lang} code={code.replace(/\n$/, '')} />;
         }
         return <Fragment key={index}>{prose(part, `b${index}`)}</Fragment>;
       })}

@@ -1,29 +1,7 @@
-import {
-  ArrowUp,
-  Bot,
-  Check,
-  ChevronDown,
-  ExternalLink,
-  Globe,
-  ListTodo,
-  MessageSquare,
-  Plus,
-  Search,
-  Square,
-  Terminal,
-  X,
-} from 'lucide-react';
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type KeyboardEvent,
-} from 'react';
-import { Link, useSearchParams } from 'react-router';
-import { Button, IconButton, Skeleton, type RunStatus } from '../components';
+import { ExternalLink, MessageSquare, X } from 'lucide-react';
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router';
+import { IconButton, Skeleton } from '../components';
 import {
   createSession,
   listModels,
@@ -32,79 +10,47 @@ import {
   metricsFrom,
   sendTurn,
   stopChat,
-  type AskUser,
-  type ChatEvent,
   type ChatSession,
   type ModelRoute,
-  type TurnMetrics,
-  type WebSource,
 } from '../adapters/chat';
-import { relativeTime } from '../adapters/home';
+import {
+  attachmentsFromMetadata,
+  getRagActive,
+  getWorkspace,
+  rememberRule,
+  setRagActive,
+  setWorkspace as persistWorkspace,
+  type Attachment,
+  type GenOverrides,
+} from '../adapters/composer';
+import {
+  compactSession,
+  deleteMessages,
+  editMessage,
+  exportUrl,
+  renameSession,
+  truncateSession,
+  type ExportFormat,
+  EXPORT_FORMATS,
+} from '../adapters/sessions';
 import { BrandMark } from '../shell/BrandMark';
 import { useSpotlight } from '../shell/useSpotlight';
 import { ModelPicker } from './ModelPicker';
-import { Rich } from './rich';
+import { COMMANDS, genFromArgs, parseCommand } from './studio/commands';
+import { Composer, type Knobs } from './studio/Composer';
+import { apply, blankTurn, cleanUserText, type Turn } from './studio/model';
+import { SessionsPane } from './studio/SessionsPane';
+import { Transcript, type Decision } from './studio/Transcript';
 import './projects.css';
 import './home.css';
 import './studio.css';
 
-/* ── Model ── */
-
-interface Step {
-  id: string;
-  tool: string;
-  label: string;
-  state: RunStatus;
-  meta?: string;
-  command?: string;
-  output?: string;
-  round: number;
-}
-
-interface Turn {
-  id: string;
-  role: 'user' | 'assistant';
-  text: string;
-  thinking: string;
-  steps: Step[];
-  rounds: number;
-  metrics?: TurnMetrics;
-  sources: WebSource[];
-  images: string[];
-  ask?: AskUser;
-  note?: string;
-  error?: string;
-  streaming: boolean;
-}
-
-type Mode = 'chat' | 'agent';
-
-interface Knobs {
-  mode: Mode;
-  web: boolean;
-  bash: boolean;
-  plan: boolean;
-}
+/* Rare, and the eager bundle has a budget: the folder picker arrives when opened. */
+const WorkspaceDialog = lazy(() => import('./studio/WorkspaceDialog'));
 
 const ROUTE_KEY = 'faustus_studio_route';
 const KNOBS_KEY = 'faustus_studio_knobs';
-
-let counter = 0;
-const uid = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${(counter++).toString(36)}`;
-
-function blankTurn(role: Turn['role'], text = ''): Turn {
-  return {
-    id: uid(role),
-    role,
-    text,
-    thinking: '',
-    steps: [],
-    rounds: 1,
-    sources: [],
-    images: [],
-    streaming: role === 'assistant',
-  };
-}
+const GEN_KEY = 'faustus_studio_gen';
 
 function readJson<T>(key: string, fallback: T): T {
   try {
@@ -123,279 +69,6 @@ function writeJson(key: string, value: unknown) {
   }
 }
 
-/** A tool name the model uses → the words a person reads on the rail. */
-const TOOL_WORDS: Record<string, string> = {
-  bash: 'Terminal',
-  python: 'Python',
-  read_file: 'Leer',
-  write_file: 'Escribir',
-  edit_file: 'Editar',
-  list_files: 'Listar',
-  search: 'Buscar',
-  web_search: 'Buscar en la web',
-  fetch_url: 'Abrir URL',
-  browser: 'Navegador',
-  create_document: 'Crear documento',
-  update_document: 'Actualizar documento',
-  generate_image: 'Generar imagen',
-  delegate_agents: 'Delegar',
-};
-
-function stepLabel(tool: string, command: string): string {
-  const word = TOOL_WORDS[tool] ?? tool.replace(/_/g, ' ');
-  const brief = command.trim().split('\n')[0].slice(0, 96);
-  return brief ? `${word} · ${brief}` : word;
-}
-
-function formatMetrics(m: TurnMetrics): string {
-  const parts: string[] = [];
-  if (m.model) parts.push(m.model);
-  if (m.outputTokens !== undefined) parts.push(`${m.outputTokens} tok`);
-  if (m.tokensPerSecond !== undefined) parts.push(`${m.tokensPerSecond.toFixed(1)} tok/s`);
-  if (m.responseTime !== undefined) parts.push(`${m.responseTime.toFixed(1)} s`);
-  if (m.contextPercent !== undefined) parts.push(`contexto ${Math.round(m.contextPercent)}%`);
-  return parts.join(' · ');
-}
-
-function lastRunning(steps: Step[], tool: string): number {
-  for (let i = steps.length - 1; i >= 0; i--) {
-    if (steps[i].state === 'running' && steps[i].tool === tool) return i;
-  }
-  return -1;
-}
-
-/** Applies one stream event to the assistant turn at the end of the list. */
-function apply(turn: Turn, event: ChatEvent): Turn {
-  switch (event.type) {
-    case 'delta':
-      return event.thinking
-        ? { ...turn, thinking: turn.thinking + event.text }
-        : { ...turn, text: turn.text + event.text };
-    case 'tool_start': {
-      // After an approval the server replays the same tool's start: the
-      // step that was waiting becomes the one that runs, not a twin.
-      const held = turn.steps.findIndex((s) => s.state === 'waiting' && s.tool === event.tool);
-      if (held !== -1) {
-        const steps = turn.steps.slice();
-        steps[held] = { ...steps[held], state: 'running', meta: undefined };
-        return { ...turn, steps };
-      }
-      return {
-        ...turn,
-        rounds: Math.max(turn.rounds, event.round),
-        steps: [
-          ...turn.steps,
-          {
-            id: uid('step'),
-            tool: event.tool,
-            label: stepLabel(event.tool, event.command),
-            state: 'running',
-            command: event.fullCommand ?? event.command,
-            round: event.round,
-          },
-        ],
-      };
-    }
-    case 'tool_progress': {
-      const index = lastRunning(turn.steps, event.tool);
-      if (index === -1) return turn;
-      const steps = turn.steps.slice();
-      steps[index] = { ...steps[index], meta: event.message.slice(0, 60) };
-      return { ...turn, steps };
-    }
-    case 'tool_output': {
-      const index = lastRunning(turn.steps, event.tool);
-      const finished: Step = {
-        id: index === -1 ? uid('step') : turn.steps[index].id,
-        tool: event.tool,
-        label: index === -1 ? stepLabel(event.tool, event.command) : turn.steps[index].label,
-        state: event.exitCode === null || event.exitCode === 0 ? 'succeeded' : 'failed',
-        meta: event.exitCode !== null && event.exitCode !== 0 ? `exit ${event.exitCode}` : undefined,
-        command: index === -1 ? event.command : turn.steps[index].command,
-        output: event.output,
-        round: index === -1 ? turn.rounds : turn.steps[index].round,
-      };
-      const steps = turn.steps.slice();
-      if (index === -1) steps.push(finished);
-      else steps[index] = finished;
-      return { ...turn, steps };
-    }
-    case 'round':
-      return { ...turn, rounds: Math.max(turn.rounds, event.round) };
-    case 'ask_user':
-      return {
-        ...turn,
-        ask: event.ask,
-        steps: turn.steps.map((s) => (s.state === 'running' ? { ...s, state: 'waiting' } : s)),
-      };
-    case 'metrics':
-      return { ...turn, metrics: { ...turn.metrics, ...event.metrics } };
-    case 'sources':
-      return { ...turn, sources: event.sources };
-    case 'image':
-      return { ...turn, images: [...turn.images, event.url] };
-    case 'fallback':
-      return {
-        ...turn,
-        note: `${event.selected || 'El modelo elegido'} no ha respondido; ha contestado ${event.answeredBy}.`,
-      };
-    case 'terminal':
-      return event.failed ? { ...turn, error: event.message ?? 'El modelo ha fallado.' } : turn;
-    case 'error':
-      return { ...turn, error: event.message };
-    case 'done':
-      return {
-        ...turn,
-        streaming: false,
-        steps: turn.steps.map((s) => (s.state === 'running' ? { ...s, state: 'cancelled' } : s)),
-      };
-  }
-}
-
-/* ── Pieces ── */
-
-function ToolRail({ steps, live }: { steps: Step[]; live: boolean }) {
-  const [expanded, setExpanded] = useState(false);
-  const leadingDone = steps.findIndex((s) => s.state !== 'succeeded');
-  const doneCount = leadingDone === -1 ? steps.length : leadingDone;
-  const collapse = !expanded && !live && doneCount > 3;
-  const visible = collapse ? steps.slice(doneCount) : steps;
-
-  return (
-    <div className="fs-trace fs-studio__trace" data-testid="studio-trace">
-      {collapse && (
-        <button
-          type="button"
-          className="fs-trace__collapsed"
-          onClick={() => setExpanded(true)}
-          aria-expanded={false}
-          data-testid="trace-expand"
-        >
-          <span aria-hidden="true" />
-          <span>
-            <ChevronDown size={13} aria-hidden="true" /> {doneCount} pasos completados
-          </span>
-        </button>
-      )}
-      {visible.map((step) =>
-        step.output || step.command ? (
-          <details key={step.id} className="fs-trace__step fs-studio__step" data-state={step.state}>
-            <summary>
-              <span className="fs-trace__node" aria-hidden="true" />
-              <span className="fs-trace__label">{step.label}</span>
-              {step.meta && <span className="fs-trace__meta">{step.meta}</span>}
-            </summary>
-            {step.command && step.command !== step.label && (
-              <pre className="fs-studio__cmd">{step.command}</pre>
-            )}
-            {step.output && <pre className="fs-studio__out">{step.output.slice(0, 6000)}</pre>}
-          </details>
-        ) : (
-          <div key={step.id} className="fs-trace__step" data-state={step.state}>
-            <span className="fs-trace__node" aria-hidden="true" />
-            <span className="fs-trace__label">{step.label}</span>
-            {step.meta && <span className="fs-trace__meta">{step.meta}</span>}
-          </div>
-        ),
-      )}
-    </div>
-  );
-}
-
-function AskCard({
-  ask,
-  busy,
-  onApproval,
-  onAnswer,
-}: {
-  ask: AskUser;
-  busy: boolean;
-  onApproval: (decision: 'approve' | 'approve_task' | 'deny') => void;
-  onAnswer: (text: string) => void;
-}) {
-  if (ask.kind === 'tool_approval') {
-    return (
-      <div className="fs-studio__ask" data-testid="studio-approval">
-        <p className="fs-studio__ask-title">Necesita tu permiso</p>
-        {ask.question && <p className="fs-prose">{ask.question}</p>}
-        <div className="fs-studio__ask-actions">
-          <Button variant="primary" icon={Check} label="Aprobar" disabled={busy} onClick={() => onApproval('approve')} />
-          <Button label="Aprobar toda la tarea" disabled={busy} onClick={() => onApproval('approve_task')} />
-          <Button variant="danger" icon={X} label="Denegar" disabled={busy} onClick={() => onApproval('deny')} />
-        </div>
-      </div>
-    );
-  }
-  return (
-    <div className="fs-studio__ask" data-testid="studio-question">
-      <p className="fs-studio__ask-title">Te pregunta</p>
-      <p className="fs-prose">{ask.question}</p>
-      {ask.options.length > 0 && (
-        <div className="fs-studio__ask-actions">
-          {ask.options.map((option) => (
-            <Button key={option} label={option} size="sm" disabled={busy} onClick={() => onAnswer(option)} />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function AssistantTurn({
-  turn,
-  busy,
-  onApproval,
-  onAnswer,
-}: {
-  turn: Turn;
-  busy: boolean;
-  onApproval: (decision: 'approve' | 'approve_task' | 'deny') => void;
-  onAnswer: (text: string) => void;
-}) {
-  const waiting = turn.streaming && !turn.text && turn.steps.length === 0;
-  return (
-    <article className="fs-turn fs-turn--assistant" data-streaming={turn.streaming || undefined} data-testid="turn-assistant">
-      <span className="fs-turn__node" aria-hidden="true" />
-      <div className="fs-turn__body">
-        {turn.thinking && (
-          <details className="fs-studio__thinking">
-            <summary>
-              Razonamiento {turn.streaming && !turn.text ? <span className="fs-studio__pulse" /> : null}
-            </summary>
-            <p className="fs-prose">{turn.thinking}</p>
-          </details>
-        )}
-        {turn.steps.length > 0 && <ToolRail steps={turn.steps} live={turn.streaming} />}
-        {waiting && !turn.thinking && (
-          <p className="fs-studio__waiting" aria-live="polite">
-            <span className="fs-studio__pulse" /> Pensando
-          </p>
-        )}
-        {turn.text && <Rich text={turn.text} />}
-        {turn.streaming && turn.text && <span className="fs-studio__cursor" aria-hidden="true" />}
-        {turn.images.map((url) => (
-          <img key={url} className="fs-studio__image" src={url} alt="Imagen generada" loading="lazy" />
-        ))}
-        {turn.sources.length > 0 && (
-          <p className="fs-studio__sources">
-            {turn.sources.slice(0, 6).map((s) => (
-              <a key={s.url} className="fs-link" href={s.url} target="_blank" rel="noreferrer">
-                {s.title.slice(0, 48)}
-              </a>
-            ))}
-          </p>
-        )}
-        {turn.ask && <AskCard ask={turn.ask} busy={busy} onApproval={onApproval} onAnswer={onAnswer} />}
-        {turn.note && <p className="fs-notice" data-tone="warning">{turn.note}</p>}
-        {turn.error && <p className="fs-notice" data-tone="danger">{turn.error}</p>}
-        {turn.metrics && !turn.streaming && (
-          <p className="fs-turn__metrics">{formatMetrics(turn.metrics)}</p>
-        )}
-      </div>
-    </article>
-  );
-}
-
 const SUGGESTIONS = [
   'Explícame este repositorio como si acabara de llegar al equipo',
   'Busca en la web qué ha cambiado esta semana en el tema que te diga',
@@ -403,44 +76,76 @@ const SUGGESTIONS = [
   'Revisa el último commit y dime qué puede romperse',
 ];
 
+interface Notice {
+  text: string;
+  tone: 'info' | 'warning' | 'danger';
+}
+
 /**
  * Studio (UI-030/031/032).
  *
  * Where the work happens. One transcript, one composer, and the execution
  * rail threaded through every agent turn so the tools the model ran are
  * visible in the reply instead of buried behind a "show details" toggle.
+ * This file wires the pieces; the pieces live in ./studio/.
  */
 export function StudioScreen() {
   const [params, setParams] = useSearchParams();
+  const navigate = useNavigate();
   const sessionId = params.get('s');
 
   const [sessions, setSessions] = useState<ChatSession[] | null>(null);
   const [routes, setRoutes] = useState<ModelRoute[]>([]);
   const [routeId, setRouteId] = useState<string | null>(() => readJson<{ id: string | null }>(ROUTE_KEY, { id: null }).id);
-  const [knobs, setKnobs] = useState<Knobs>(() =>
-    readJson<Knobs>(KNOBS_KEY, { mode: 'agent', web: false, bash: true, plan: false }),
-  );
+  const [knobs, setKnobsState] = useState<Knobs>(() => ({
+    ...readJson<Knobs>(KNOBS_KEY, { mode: 'agent', web: false, bash: true, plan: false, rag: false }),
+    rag: getRagActive(),
+  }));
   const [turns, setTurns] = useState<Turn[] | null>(sessionId ? null : []);
   const [title, setTitle] = useState('');
   const [draft, setDraft] = useState('');
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [busy, setBusy] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<Notice | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [filter, setFilter] = useState('');
-  const searchRef = useRef<HTMLInputElement>(null);
+  const [workspace, setWorkspaceState] = useState(() => getWorkspace());
+  const [wsOpen, setWsOpen] = useState(false);
+  const [gen, setGen] = useState<GenOverrides>({});
+  const [modelSignal, setModelSignal] = useState(0);
 
   const controllerRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const pinnedRef = useRef(true);
   const freshRef = useRef<string | null>(null);
   const spotlight = useSpotlight();
 
-  const route = useMemo(
-    () => routes.find((r) => r.id === routeId) ?? routes[0] ?? null,
-    [routes, routeId],
-  );
+  const route = useMemo(() => routes.find((r) => r.id === routeId) ?? routes[0] ?? null, [routes, routeId]);
   const current = useMemo(() => sessions?.find((s) => s.id === sessionId) ?? null, [sessions, sessionId]);
+
+  const say = useCallback((text: string, tone: Notice['tone'] = 'info') => {
+    setNotice({ text, tone });
+  }, []);
+
+  const setKnobs = useCallback((update: (k: Knobs) => Knobs) => {
+    setKnobsState((k) => {
+      const next = update(k);
+      if (next.rag !== k.rag) setRagActive(next.rag);
+      return next;
+    });
+  }, []);
+
+  const setWorkspace = useCallback((path: string) => {
+    persistWorkspace(path);
+    setWorkspaceState(path);
+  }, []);
+
+  const refreshSessions = useCallback(() => {
+    listSessions().then(setSessions).catch(() => undefined);
+  }, []);
 
   /* Sessions and models: once. */
   useEffect(() => {
@@ -449,6 +154,32 @@ export function StudioScreen() {
     listModels(controller.signal).then(setRoutes).catch(() => setRoutes([]));
     return () => controller.abort();
   }, []);
+
+  /* Per-session generation knobs. */
+  useEffect(() => {
+    setGen(sessionId ? readJson<GenOverrides>(`${GEN_KEY}_${sessionId}`, {}) : {});
+  }, [sessionId]);
+  useEffect(() => {
+    if (sessionId) writeJson(`${GEN_KEY}_${sessionId}`, gen);
+  }, [gen, sessionId]);
+
+  const turnsFromHistory = useCallback(
+    async (sid: string, signal?: AbortSignal) => {
+      const result = await loadHistory(sid, signal);
+      const mapped = result.history.map((m) => {
+        const atts = m.role === 'user' ? attachmentsFromMetadata(m.metadata) : [];
+        const turn = blankTurn(m.role, m.role === 'user' ? cleanUserText(m.content, atts.length > 0) : m.content);
+        turn.streaming = false;
+        turn.attachments = atts;
+        turn.dbId = typeof m.metadata._db_id === 'string' ? m.metadata._db_id : undefined;
+        turn.edited = Boolean(m.metadata.edited);
+        if (m.role === 'assistant') turn.metrics = metricsFrom(m.metadata);
+        return turn;
+      });
+      return { ...result, turns: mapped };
+    },
+    [],
+  );
 
   /* History: whenever the session in the URL changes — except the session
      this screen just created for a first message, whose stream is live. */
@@ -461,6 +192,8 @@ export function StudioScreen() {
     controllerRef.current = null;
     setBusy(false);
     setLoadError(null);
+    setNotice(null);
+    setAttachments([]);
     if (!sessionId) {
       setTurns([]);
       setTitle('');
@@ -468,21 +201,14 @@ export function StudioScreen() {
     }
     setTurns(null);
     const controller = new AbortController();
-    loadHistory(sessionId, controller.signal)
+    turnsFromHistory(sessionId, controller.signal)
       .then((result) => {
         setTitle(result.name);
-        setTurns(
-          result.history.map((m) => {
-            const turn = blankTurn(m.role, m.content);
-            turn.streaming = false;
-            if (m.role === 'assistant') turn.metrics = metricsFrom(m.metadata);
-            return turn;
-          }),
-        );
+        setTurns(result.turns);
         pinnedRef.current = true;
         if (result.model) {
           const match = (r: ModelRoute) => r.model === result.model;
-          setRouteId((id) => (routes.find(match)?.id ?? id));
+          setRouteId((id) => routes.find(match)?.id ?? id);
         }
       })
       .catch(() => {
@@ -546,25 +272,46 @@ export function StudioScreen() {
     });
   }, []);
 
+  /** After a turn lands, borrow the server's ids so edit/delete can work. */
+  const syncIds = useCallback(
+    async (sid: string) => {
+      try {
+        const result = await turnsFromHistory(sid);
+        setTurns((list) => {
+          if (!list) return list;
+          const out = list.slice();
+          // Match from the end: our last turns are the server's last turns.
+          for (let i = 0, j = 1; i < out.length && j <= result.turns.length; i++, j++) {
+            const mine = out[out.length - j];
+            const theirs = result.turns[result.turns.length - j];
+            if (!mine || !theirs || mine.role !== theirs.role) break;
+            out[out.length - j] = { ...mine, dbId: theirs.dbId, edited: theirs.edited, attachments: mine.attachments.length ? mine.attachments : theirs.attachments };
+          }
+          return out;
+        });
+      } catch {
+        /* ids stay unknown; the actions simply hide */
+      }
+    },
+    [turnsFromHistory],
+  );
+
   const run = useCallback(
     async (
       sid: string,
       message: string,
-      approval?: { id: string; decision: 'approve' | 'approve_task' | 'deny' },
+      options: { approval?: { id: string; decision: Decision }; attachments?: Attachment[] } = {},
     ) => {
       const controller = new AbortController();
       controllerRef.current = controller;
       setBusy(true);
       pinnedRef.current = true;
-      if (approval) {
-        patchLast((t) => ({
-          ...t,
-          ask: undefined,
-          streaming: true,
-          text: t.text.trim() ? `${t.text.trimEnd()}\n\n` : '',
-        }));
+      if (options.approval) {
+        patchLast((t) => ({ ...t, ask: undefined, streaming: true, text: t.text.trim() ? `${t.text.trimEnd()}\n\n` : '' }));
       } else {
-        setTurns((list) => [...(list ?? []), blankTurn('user', message), blankTurn('assistant')]);
+        const user = blankTurn('user', message);
+        user.attachments = options.attachments ?? [];
+        setTurns((list) => [...(list ?? []), user, blankTurn('assistant')]);
       }
       try {
         for await (const event of sendTurn({
@@ -574,51 +321,192 @@ export function StudioScreen() {
           planMode: knobs.mode === 'agent' && knobs.plan,
           allowBash: knobs.mode === 'agent' && knobs.bash,
           allowWebSearch: knobs.web,
-          workspace: current?.folder ?? undefined,
+          useRag: knobs.rag,
+          workspace: knobs.mode === 'agent' ? workspace || undefined : undefined,
           route,
-          approval,
+          attachments: options.attachments?.map((a) => a.id),
+          genOverrides: Object.keys(gen).length ? (gen as Record<string, number | boolean>) : undefined,
+          approval: options.approval,
           signal: controller.signal,
         })) {
           patchLast((t) => apply(t, event));
         }
       } catch (error) {
-        if (!controller.signal.aborted) {
-          patchLast((t) => apply(t, { type: 'error', message: (error as Error).message }));
-        }
+        if (!controller.signal.aborted) patchLast((t) => apply(t, { type: 'error', message: (error as Error).message }));
         patchLast((t) => apply(t, { type: 'done' }));
       } finally {
         if (controllerRef.current === controller) {
           controllerRef.current = null;
           setBusy(false);
         }
-        listSessions().then(setSessions).catch(() => undefined);
+        refreshSessions();
+        void syncIds(sid);
       }
     },
-    [knobs, current, route, patchLast],
+    [knobs, workspace, route, gen, patchLast, refreshSessions, syncIds],
   );
 
-  const send = useCallback(
-    async (text: string) => {
-      const message = text.trim();
-      if (!message || busy) return;
-      setDraft('');
-      let sid = sessionId;
-      if (!sid) {
-        try {
-          sid = await createSession(message.slice(0, 60), route);
-        } catch {
-          setLoadError('No he podido crear la conversación. ¿Está el servidor de modelos configurado?');
-          return;
-        }
-        setTitle(message.slice(0, 60));
+  const ensureSession = useCallback(
+    async (name: string): Promise<string | null> => {
+      if (sessionId) return sessionId;
+      try {
+        const sid = await createSession(name.slice(0, 60), route);
+        setTitle(name.slice(0, 60));
         freshRef.current = sid;
         const next = new URLSearchParams(params);
         next.set('s', sid);
         setParams(next, { replace: true });
+        return sid;
+      } catch {
+        say('No he podido crear la conversación. ¿Está el servidor de modelos configurado?', 'danger');
+        return null;
       }
-      void run(sid, message);
     },
-    [busy, sessionId, route, params, setParams, run],
+    [sessionId, route, params, setParams, say],
+  );
+
+  /* ── Slash commands ── */
+  const runCommand = useCallback(
+    async (name: string, args: string): Promise<boolean> => {
+      const command = COMMANDS.find((c) => c.name === name);
+      if (!command) {
+        say(`No conozco /${name}. Escribe /help para ver los comandos.`, 'warning');
+        return true;
+      }
+      if (command.route) {
+        if (command.legacy) window.location.href = command.route.includes('?') ? command.route : `${command.route}?shell=legacy`;
+        else navigate(command.route);
+        return true;
+      }
+      switch (name) {
+        case 'help':
+          say(COMMANDS.map((c) => `${c.usage} — ${c.help}`).join('\n'));
+          return true;
+        case 'models':
+          setModelSignal((n) => n + 1);
+          return true;
+        case 'temp':
+        case 'maxtokens':
+        case 'topp':
+        case 'think':
+        case 'gen': {
+          const next = genFromArgs(name, args, gen);
+          setGen(next);
+          say(Object.keys(next).length ? 'Ajustes de generación aplicados a este chat.' : 'Ajustes de generación retirados.');
+          return true;
+        }
+        case 'remember': {
+          if (!workspace) {
+            say('Para guardar una regla hace falta una carpeta de trabajo.', 'warning');
+            return true;
+          }
+          try {
+            const result = await rememberRule(workspace, args);
+            say(result.duplicate ? 'Esa regla ya estaba en las instrucciones del proyecto.' : `Regla guardada en ${result.path ?? 'las instrucciones del proyecto'}.`);
+          } catch (error) {
+            say(`No he podido guardar la regla: ${(error as Error).message}`, 'danger');
+          }
+          return true;
+        }
+        case 'compact': {
+          if (!sessionId) return true;
+          try {
+            const result = await compactSession(sessionId);
+            say(result.compacted ? 'Historial compactado.' : result.detail ?? 'No había bastante que compactar.');
+            const refreshed = await turnsFromHistory(sessionId);
+            setTurns(refreshed.turns);
+          } catch (error) {
+            say(`No he podido compactar: ${(error as Error).message}`, 'danger');
+          }
+          return true;
+        }
+        case 'truncate': {
+          const keep = Number.parseInt(args, 10);
+          if (!sessionId || !keep || keep < 1) {
+            say('Uso: /truncate N — conserva los N primeros mensajes y borra el resto.', 'warning');
+            return true;
+          }
+          try {
+            await truncateSession(sessionId, keep, 'truncate');
+            const refreshed = await turnsFromHistory(sessionId);
+            setTurns(refreshed.turns);
+            say(`Conservados los ${keep} primeros mensajes. /versions recupera los borrados.`);
+          } catch (error) {
+            say(`No he podido truncar: ${(error as Error).message}`, 'danger');
+          }
+          return true;
+        }
+        case 'versions':
+          say('Las versiones anteriores de este chat siguen en la interfaz anterior (/versions allí).', 'warning');
+          return true;
+        case 'export': {
+          if (!sessionId) return true;
+          const fmt = (args.trim().toLowerCase() || 'md') as ExportFormat;
+          if (!EXPORT_FORMATS.includes(fmt)) {
+            say(`Formatos: ${EXPORT_FORMATS.join(', ')}.`, 'warning');
+            return true;
+          }
+          window.open(exportUrl(sessionId, fmt), '_blank', 'noopener');
+          return true;
+        }
+        case 'rename': {
+          if (!sessionId || !args) {
+            say('Uso: /rename nombre nuevo', 'warning');
+            return true;
+          }
+          try {
+            await renameSession(sessionId, args);
+            setTitle(args);
+            refreshSessions();
+          } catch (error) {
+            say(`No he podido renombrar: ${(error as Error).message}`, 'danger');
+          }
+          return true;
+        }
+        case 'stats': {
+          const list = turns ?? [];
+          const out = list.filter((t) => t.role === 'assistant' && t.metrics);
+          const tokens = out.reduce((n, t) => n + (t.metrics?.outputTokens ?? 0), 0);
+          const seconds = out.reduce((n, t) => n + (t.metrics?.responseTime ?? 0), 0);
+          say(`${list.length} mensajes · ${tokens} tokens generados · ${seconds.toFixed(1)} s de modelo · ${current?.model ?? route?.model ?? 'sin modelo'}`);
+          return true;
+        }
+        default:
+          return false;
+      }
+    },
+    [say, navigate, gen, workspace, sessionId, turnsFromHistory, refreshSessions, turns, current, route],
+  );
+
+  /* ── Send ── */
+  const send = useCallback(
+    async (text: string) => {
+      const message = text.trim();
+      if ((!message && attachments.length === 0) || busy) return;
+
+      const parsed = message ? parseCommand(message) : null;
+      if (parsed) {
+        setDraft('');
+        await runCommand(parsed.name, parsed.args);
+        return;
+      }
+
+      // `#regla` on its own line: a standing rule for the project, not a message.
+      if (/^#(?!#)\s*\S/.test(message) && !message.includes('\n')) {
+        setDraft('');
+        await runCommand('remember', message.replace(/^#\s*/, ''));
+        return;
+      }
+
+      setDraft('');
+      const sent = attachments;
+      setAttachments([]);
+      setNotice(null);
+      const sid = await ensureSession(message || sent.map((a) => a.name).join(', '));
+      if (!sid) return;
+      void run(sid, message, { attachments: sent });
+    },
+    [attachments, busy, runCommand, ensureSession, run],
   );
 
   const stop = useCallback(() => {
@@ -629,13 +517,54 @@ export function StudioScreen() {
     setBusy(false);
   }, [sessionId, patchLast]);
 
-  const onKey = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
-      event.preventDefault();
-      void send(draft);
-    }
-    if (event.key === 'Escape' && busy) stop();
-  };
+  /* ── Message actions ── */
+  const regenerateFrom = useCallback(
+    async (turn: Turn, text?: string) => {
+      if (!sessionId || !turns) return;
+      const index = turns.findIndex((t) => t.id === turn.id);
+      if (index === -1) return;
+      try {
+        await truncateSession(sessionId, index, text === undefined ? 'regenerate' : 'edit');
+      } catch (error) {
+        say(`No he podido preparar la regeneración: ${(error as Error).message}`, 'danger');
+        return;
+      }
+      setTurns(turns.slice(0, index));
+      void run(sessionId, text ?? turn.text, { attachments: turn.attachments });
+    },
+    [sessionId, turns, run, say],
+  );
+
+  const onEdit = useCallback(
+    async (turn: Turn, text: string, regenerate: boolean) => {
+      if (!sessionId) return;
+      if (regenerate) {
+        await regenerateFrom(turn, text);
+        return;
+      }
+      if (!turn.dbId) return;
+      try {
+        await editMessage(sessionId, turn.dbId, text);
+        setTurns((list) => list?.map((t) => (t.id === turn.id ? { ...t, text, edited: true } : t)) ?? list);
+      } catch (error) {
+        say(`No he podido guardar la edición: ${(error as Error).message}`, 'danger');
+      }
+    },
+    [sessionId, regenerateFrom, say],
+  );
+
+  const onDelete = useCallback(
+    async (turn: Turn) => {
+      if (!sessionId || !turn.dbId) return;
+      try {
+        await deleteMessages(sessionId, [turn.dbId]);
+        setTurns((list) => list?.filter((t) => t.id !== turn.id) ?? list);
+      } catch (error) {
+        say(`No he podido borrar el mensaje: ${(error as Error).message}`, 'danger');
+      }
+    },
+    [sessionId, say],
+  );
 
   const openSession = (id: string | null) => {
     const next = new URLSearchParams(params);
@@ -646,99 +575,33 @@ export function StudioScreen() {
     requestAnimationFrame(() => textareaRef.current?.focus());
   };
 
-  const pending = turns?.length ? turns[turns.length - 1].ask : undefined;
+  const pending = turns?.length ? Boolean(turns[turns.length - 1].ask) : false;
   const isEmpty = !sessionId && turns !== null && turns.length === 0;
-
-  const needle = filter.trim().toLowerCase();
-  const visibleSessions = needle
-    ? sessions?.filter((s) => `${s.name} ${s.model}`.toLowerCase().includes(needle))
-    : sessions;
-
-  const sessionList = (
-    <div className="fs-studio__list" role="list">
-      {!sessions && <Skeleton label="Cargando conversaciones" count={6} height="44px" />}
-      {visibleSessions?.map((s, i) => (
-        <Link
-          key={s.id}
-          to={`/studio?s=${encodeURIComponent(s.id)}`}
-          role="listitem"
-          className="fs-studio__session fs-enter"
-          style={{ ['--i' as string]: Math.min(i, 8) }}
-          aria-current={s.id === sessionId ? 'page' : undefined}
-          data-testid="studio-session"
-          onClick={(event) => {
-            event.preventDefault();
-            openSession(s.id);
-          }}
-        >
-          <span className="fs-studio__session-name">{s.name}</span>
-          <span className="fs-studio__session-meta">
-            {s.mode === 'agent' && <Bot size={11} aria-label="Agente" />}
-            {s.model ? s.model.split('/').pop() : 'sin modelo'}
-            {s.lastMessageAt && ` · ${relativeTime(s.lastMessageAt)}`}
-          </span>
-        </Link>
-      ))}
-      {sessions && sessions.length === 0 && (
-        <p className="fs-studio__hint">Todavía no hay conversaciones. La primera la empiezas abajo.</p>
-      )}
-      {sessions && sessions.length > 0 && visibleSessions?.length === 0 && (
-        <p className="fs-studio__hint">Ninguna conversación se llama así.</p>
-      )}
-    </div>
-  );
-
-  const modelMenu = (
-    <ModelPicker routes={routes} current={route} onPick={(r) => setRouteId(r.id)} />
-  );
 
   return (
     <div className="fs-studio" data-testid="studio" data-drawer={drawerOpen || undefined}>
-      <aside className="fs-studio__sessions" aria-label="Conversaciones">
-        <div className="fs-studio__sessions-head">
-          <span className="fs-panel__label" style={{ margin: 0 }}>Conversaciones</span>
-          <IconButton icon={Plus} label="Nueva conversación" size="sm" onClick={() => openSession(null)} />
-        </div>
-        <label className="fs-search fs-studio__search">
-          <Search size={14} aria-hidden="true" />
-          <input
-            ref={searchRef}
-            type="search"
-            value={filter}
-            placeholder="Buscar…"
-            aria-label="Buscar conversaciones"
-            onChange={(event) => setFilter(event.target.value)}
-            data-testid="studio-search"
-          />
-        </label>
-        {sessionList}
-      </aside>
-      {drawerOpen && (
-        <button
-          type="button"
-          className="fs-studio__scrim"
-          aria-label="Cerrar la lista de conversaciones"
-          onClick={() => setDrawerOpen(false)}
-        />
-      )}
+      <SessionsPane
+        sessions={sessions}
+        currentId={sessionId}
+        filter={filter}
+        setFilter={setFilter}
+        searchRef={searchRef}
+        onOpen={openSession}
+        onChanged={refreshSessions}
+        onNotice={say}
+      />
+      {drawerOpen && <button type="button" className="fs-studio__scrim" aria-label="Cerrar la lista de conversaciones" onClick={() => setDrawerOpen(false)} />}
 
       <section className="fs-studio__stage">
         <header className="fs-studio__head">
-          <button
-            type="button"
-            className="fs-studio__chip fs-studio__drawer-btn"
-            aria-expanded={drawerOpen}
-            onClick={() => setDrawerOpen((v) => !v)}
-            data-testid="studio-drawer"
-          >
+          <button type="button" className="fs-studio__chip fs-studio__drawer-btn" aria-expanded={drawerOpen} onClick={() => setDrawerOpen((v) => !v)} data-testid="studio-drawer">
             <MessageSquare size={13} aria-hidden="true" />
             <span>Conversaciones</span>
           </button>
           <h1 className="fs-studio__title" title={title || undefined}>
-            {sessionId ? title || current?.name || 'Conversación' : 'Nueva conversación'}
+            {sessionId ? current?.name || title || 'Conversación' : 'Nueva conversación'}
           </h1>
           <div className="fs-studio__head-actions">
-            {modelMenu}
             {sessionId && (
               <IconButton
                 icon={ExternalLink}
@@ -758,7 +621,11 @@ export function StudioScreen() {
               <Skeleton label="Cargando la conversación" count={4} height="64px" />
             </div>
           )}
-          {loadError && <p className="fs-notice" data-tone="danger">{loadError}</p>}
+          {loadError && (
+            <p className="fs-notice" data-tone="danger">
+              {loadError}
+            </p>
+          )}
 
           {isEmpty && (
             <div className="fs-studio__hero fs-spot" onMouseMove={spotlight}>
@@ -770,8 +637,10 @@ export function StudioScreen() {
                 ¿Qué <em>hacemos</em> hoy?
               </h2>
               <p className="fs-prose">
-                Escribe abajo. En modo agente usa herramientas y te enseña cada paso en el carril;
-                en modo chat solo conversa.
+                Escribe abajo. En modo agente usa herramientas y te enseña cada paso en el carril; en modo chat solo conversa.
+                <br />
+                <code>@fichero</code> menciona un fichero del workspace, <code>#regla</code> guarda una instrucción permanente,{' '}
+                <code>/comando</code> hace el resto.
               </p>
               <div className="fs-studio__suggestions">
                 {SUGGESTIONS.map((text, i) => (
@@ -793,133 +662,55 @@ export function StudioScreen() {
           )}
 
           {turns && turns.length > 0 && (
-            <div className="fs-studio__turns">
-              {turns.map((turn) =>
-                turn.role === 'user' ? (
-                  <article key={turn.id} className="fs-turn fs-turn--user" data-testid="turn-user">
-                    <div className="fs-turn__bubble">{turn.text}</div>
-                  </article>
-                ) : (
-                  <AssistantTurn
-                    key={turn.id}
-                    turn={turn}
-                    busy={busy}
-                    onApproval={(decision) => {
-                      if (sessionId && turn.ask?.approvalId) {
-                        void run(sessionId, '', { id: turn.ask.approvalId, decision });
-                      }
-                    }}
-                    onAnswer={(text) => void send(text)}
-                  />
-                ),
-              )}
-            </div>
+            <Transcript
+              turns={turns}
+              busy={busy}
+              onApproval={(turn, decision) => {
+                if (sessionId && turn.ask?.approvalId) void run(sessionId, '', { approval: { id: turn.ask.approvalId, decision } });
+              }}
+              onAnswer={(text) => void send(text)}
+              onEdit={onEdit}
+              onRegenerate={(turn) => void regenerateFrom(turn)}
+              onDelete={onDelete}
+            />
           )}
         </div>
 
-        <form
-          className="fs-studio__composer fs-panel"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void send(draft);
-          }}
-          data-testid="studio-composer"
-        >
-          <textarea
-            ref={textareaRef}
-            className="fs-studio__input"
-            rows={1}
-            value={draft}
-            placeholder={
-              pending
-                ? 'Responde arriba, o escribe para seguir…'
-                : knobs.mode === 'agent'
-                  ? 'Dime qué quieres que haga…'
-                  : 'Escribe un mensaje…'
-            }
-            aria-label="Mensaje"
-            onChange={(event) => setDraft(event.target.value)}
-            onKeyDown={onKey}
-            onInput={(event) => {
-              const el = event.currentTarget;
-              el.style.blockSize = 'auto';
-              el.style.blockSize = `${Math.min(el.scrollHeight, 220)}px`;
-            }}
-            data-testid="studio-input"
-          />
-          <div className="fs-studio__bar">
-            <div className="fs-studio__seg" role="radiogroup" aria-label="Modo">
-              <span className="fs-studio__seg-thumb" data-mode={knobs.mode} aria-hidden="true" />
-              <button
-                type="button"
-                role="radio"
-                aria-checked={knobs.mode === 'chat'}
-                onClick={() => setKnobs((k) => ({ ...k, mode: 'chat' }))}
-                data-testid="studio-mode-chat"
-              >
-                <MessageSquare size={13} aria-hidden="true" /> Chat
-              </button>
-              <button
-                type="button"
-                role="radio"
-                aria-checked={knobs.mode === 'agent'}
-                onClick={() => setKnobs((k) => ({ ...k, mode: 'agent' }))}
-                data-testid="studio-mode-agent"
-              >
-                <Bot size={13} aria-hidden="true" /> Agente
-              </button>
-            </div>
-            <div className="fs-studio__knobs">
-              <button
-                type="button"
-                className="fs-studio__chip"
-                aria-pressed={knobs.web}
-                onClick={() => setKnobs((k) => ({ ...k, web: !k.web }))}
-                data-testid="studio-knob-web"
-              >
-                <Globe size={13} aria-hidden="true" /> Web
-              </button>
-              {knobs.mode === 'agent' && (
-                <>
-                  <button
-                    type="button"
-                    className="fs-studio__chip"
-                    aria-pressed={knobs.bash}
-                    onClick={() => setKnobs((k) => ({ ...k, bash: !k.bash }))}
-                    data-testid="studio-knob-bash"
-                  >
-                    <Terminal size={13} aria-hidden="true" /> Terminal
-                  </button>
-                  <button
-                    type="button"
-                    className="fs-studio__chip"
-                    aria-pressed={knobs.plan}
-                    onClick={() => setKnobs((k) => ({ ...k, plan: !k.plan }))}
-                    data-testid="studio-knob-plan"
-                  >
-                    <ListTodo size={13} aria-hidden="true" /> Plan
-                  </button>
-                </>
-              )}
-            </div>
-            <div className="fs-studio__send">
-              {busy ? (
-                <IconButton icon={Square} label="Parar" onClick={stop} testId="studio-stop" />
-              ) : (
-                <button
-                  type="submit"
-                  className="fs-studio__go"
-                  disabled={!draft.trim()}
-                  aria-label="Enviar"
-                  data-testid="studio-send"
-                >
-                  <ArrowUp size={18} aria-hidden="true" />
-                </button>
-              )}
-            </div>
+        {notice && (
+          <div className="fs-notice fs-studio__notice" data-tone={notice.tone} role="status" data-testid="studio-notice">
+            <pre className="fs-studio__notice-text">{notice.text}</pre>
+            <IconButton icon={X} label="Cerrar aviso" size="sm" onClick={() => setNotice(null)} />
           </div>
-        </form>
+        )}
+
+        <Composer
+          draft={draft}
+          setDraft={setDraft}
+          busy={busy}
+          pending={pending}
+          knobs={knobs}
+          setKnobs={setKnobs}
+          workspace={workspace}
+          onPickWorkspace={() => setWsOpen(true)}
+          onClearWorkspace={() => setWorkspace('')}
+          gen={gen}
+          onClearGen={() => setGen({})}
+          attachments={attachments}
+          setAttachments={(update) => setAttachments(update)}
+          sessionId={sessionId}
+          onSend={(text) => void send(text)}
+          onStop={stop}
+          onNotice={say}
+          modelPicker={<ModelPicker routes={routes} current={route} onPick={(r) => setRouteId(r.id)} openSignal={modelSignal} />}
+          textareaRef={textareaRef}
+        />
       </section>
+
+      {wsOpen && (
+        <Suspense fallback={null}>
+          <WorkspaceDialog open initial={workspace} onClose={() => setWsOpen(false)} onPick={setWorkspace} />
+        </Suspense>
+      )}
     </div>
   );
 }

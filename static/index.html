@@ -2878,13 +2878,10 @@
       if (asked === 'legacy') localStorage.removeItem('faustus_studio_shell');
       var on = params.has('gallery') || localStorage.getItem('faustus_studio_shell') === '1';
       if (!on) return;
-      // The entry stylesheet is a separate file: Vite only writes the <link>
-      // into its own index.html, which we do not serve. Lazy chunks bring
-      // their own CSS at import time, so this is the one that needs a link.
-      var css = document.createElement('link');
-      css.rel = 'stylesheet';
-      css.href = '/static/studio/assets/index.css?v={{ASSET_V:studio/assets/index.css}}';
-      document.head.appendChild(css);
+      // Only the entry script. The stylesheet has a content hash in its
+      // name and the entry injects it itself (studio/src/main.tsx): a
+      // second <link> to the same file under a different URL is how the
+      // cascade ended up with two copies of every rule.
       var s = document.createElement('script');
       s.type = 'module';
       s.src = '/static/studio/studio.js?v={{ASSET_V:studio/studio.js}}';

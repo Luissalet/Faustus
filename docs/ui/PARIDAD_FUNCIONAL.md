@@ -37,7 +37,7 @@ las toca ninguna pantalla.
 | Historial importado | `history-modal` | — | **Anterior** |
 | Agent runners | `agent-runners-modal` | — | **Anterior** |
 | Agent definitions | `agent-defs` | — | **Anterior** |
-| Workspace de la sesión (elegir carpeta, `Change folder`) | pantalla de bienvenida y compositor | hereda la carpeta ya vinculada | **Parcial** |
+| Workspace de la sesión (elegir carpeta, `Change folder`) | pantalla de bienvenida y compositor | chip de carpeta + diálogo | **Migrado** |
 | Skills (auditoría, publicar, importar) | `skills-audit-panel` | — | **Anterior** |
 | Ajustes (todas las secciones, 81 opciones del agente, endpoints, modelos locales, atajos) | `settings-modal` | — | **Anterior** |
 | Tema (editor de colores, importar/exportar) | `theme-modal` | tokens propios; los temas personalizados siguen aplicando vía `legacy-bridge.css` | **Anterior** (editor) |
@@ -50,12 +50,13 @@ las toca ninguna pantalla.
 |---|---|---|
 | Lista de conversaciones, buscar (Ctrl+K) | sí (`/studio`, filtro + paleta) | **Migrado** |
 | Nueva conversación | sí | **Migrado** |
-| Renombrar, archivar, borrar, favorito, carpeta, importante | — | **Anterior** |
+| Renombrar, archivar, borrar, favorito | diálogo «…» por conversación | **Migrado** (carpeta de agrupación: anterior) |
 | Selección múltiple (archivar/borrar) | — | **Anterior** |
 | Ordenar sesiones | — (por recencia fija) | **Anterior** |
 | Manage Chats (biblioteca de chats) | — | **Anterior** |
-| Exportar conversación (md, txt, json, html, docx, pdf, lote) | — | **Anterior** |
-| Fork, truncar, versiones, compactar (`/versions`, `/checkpoints`, `/compact`) | — | **Anterior** |
+| Exportar conversación (md, txt, json, html, docx, pdf) | diálogo «…» y `/export` | **Migrado** (lote: anterior) |
+| Truncar y compactar (`/truncate`, `/compact`) | sí | **Migrado** |
+| Fork, versiones y restaurar (`/versions`, `/checkpoints`) | — | **Anterior** |
 | Modo Nobody / incógnito | — | **Anterior** |
 | Colapsar barra lateral | cajón en ≤1023 px | **Migrado** |
 
@@ -66,17 +67,17 @@ las toca ninguna pantalla.
 | Enviar, Shift+Enter, parar, Escape | sí | **Migrado** |
 | Modo chat / agente, plan | sí | **Migrado** |
 | Web search, shell access | sí | **Migrado** |
-| RAG por sesión | — | **Anterior** |
+| RAG por sesión | chip «Docs» (misma clave que la anterior) | **Migrado** |
 | Deep Research, Group chat, Persona, Compare desde el compositor | — | **Anterior** |
-| Elegir modelo y endpoint, refrescar | paleta (sin refrescar) | **Parcial** |
-| Carpeta de workspace (elegir, quitar, indicador) | hereda la de la sesión | **Parcial** |
-| Adjuntos (ficheros, imágenes, pegar) | — | **Anterior** |
-| Menciones `@fichero`, `@ruta:línea`, `@expert:` | — | **Anterior** |
-| `#` regla permanente, `/remember` | — | **Anterior** |
-| Comandos `/` (todos) | — | **Anterior** |
+| Elegir modelo y endpoint, refrescar | paleta y `/models` (sin refrescar) | **Parcial** |
+| Carpeta de workspace (elegir, quitar, indicador) | diálogo con árbol de carpetas, misma clave que la anterior | **Migrado** |
+| Adjuntos (ficheros, imágenes, pegar, arrastrar) | sí | **Migrado** (ver PENDIENTES §26 sobre el 7001) |
+| Menciones `@fichero` | lista con búsqueda difusa | **Migrado** (`@ruta:línea` y `@expert:` se escriben a mano; sin fichas pulsables) |
+| `#` regla permanente, `/remember` | sí | **Migrado** |
+| Comandos `/` | 15 propios (help, models, compact, truncate, temp, maxtokens, topp, think, gen, remember, export, rename, stats…) y el resto enruta a su pantalla o a la anterior | **Parcial** |
 | Citar selección ❝ | — | **Anterior** |
 | ↑ recuperar último mensaje | — | **Anterior** |
-| Controles por chat (`/temp`, `/maxtokens`, `/topp`, `/think`, `/gen`) | — | **Anterior** |
+| Controles por chat (`/temp`, `/maxtokens`, `/topp`, `/think`, `/gen`) | sí, con chip visible | **Migrado** |
 | Presets / personajes / prompt del sistema | — | **Anterior** |
 | Dictado (STT) y lectura (TTS) | — | **Anterior** |
 
@@ -89,8 +90,8 @@ las toca ninguna pantalla.
 | Aprobación de herramienta (aprobar / toda la tarea / denegar) | sí | **Migrado** |
 | `ask_user` con opciones | sí (botones) | **Migrado** |
 | Fallback de modelo, errores del servidor | sí | **Migrado** |
-| Editar, regenerar, borrar mensajes, Undo | — | **Anterior** |
-| Copiar mensaje / código | copiar texto del navegador | **Parcial** — falta el botón de copiar en bloques de código |
+| Editar, regenerar, borrar mensajes | sí (queda versión en el servidor) | **Migrado** (Undo/restaurar: anterior) |
+| Copiar mensaje / código | botones en mensaje y en cada bloque de código | **Migrado** |
 | Markdown completo (tablas, notas al pie) | lector reducido | **Parcial** |
 | Tarjetas 🛡 del arnés (Turn summary, Verified/Unverified) | — | **Anterior** |
 | Panel Progress (`todowrite`), plan en vivo (`plan_update`) | — | **Anterior** |

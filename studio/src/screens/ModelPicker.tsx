@@ -1,6 +1,6 @@
 import { Command } from 'cmdk';
 import { Check, ChevronDown, Cpu } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { overlayRoot } from '../shell/overlayRoot';
 import type { ModelRoute } from '../adapters/chat';
 import '../shell/palette.css';
@@ -17,12 +17,18 @@ export function ModelPicker({
   routes,
   current,
   onPick,
+  openSignal = 0,
 }: {
   routes: ModelRoute[];
   current: ModelRoute | null;
   onPick: (route: ModelRoute) => void;
+  /** Bump to open the palette from outside (the /models command). */
+  openSignal?: number;
 }) {
   const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (openSignal > 0) setOpen(true);
+  }, [openSignal]);
   const byEndpoint = new Map<string, ModelRoute[]>();
   for (const route of routes) {
     const list = byEndpoint.get(route.endpointName) ?? [];
