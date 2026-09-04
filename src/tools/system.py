@@ -635,6 +635,13 @@ _APP_API_BLOCKLIST_METHOD_PATH = (
     # what each one costs in licence terms, what the launch command would be)
     # stays open: that is the read the model needs to TELL the user.
     ("POST",   "/api/agent-runners"),
+    # The per-run gate an external agent's tool calls are judged by
+    # (src/agent_gate.py, routes/agent_gate_routes.py). A model reaching its
+    # own guard through this loopback would be asking what it will be allowed
+    # to do — and, with a run token, answering for itself. The route already
+    # refuses the internal-tool header and is out of the OpenAPI surface; this
+    # is the third lock, because the cost of it is one line.
+    ("POST",   "/api/agent-gate"),
     ("DELETE", "/api/local-models"),
     ("POST",   "/api/local-models/pull"),
     ("POST",   "/api/local-models/load"),
@@ -804,6 +811,12 @@ async def do_app_api(content: str, owner: Optional[str] = None) -> Dict:
                              "coding agent on this machine and configures it. That is the admin's Agent runners "
                              "page. GET /api/agent-runners is open: read it and tell the user which agents are "
                              "installed and what the launch command would be.", "exit_code": 1}
+        if path.startswith("/api/agent-gate"):
+            return {"error": f"{method} {path} is blocked for safety — that is the per-run gate an "
+                             "external agent's tool calls are judged by. Reaching it from here would "
+                             "be asking your own guard what you will be allowed to do, and answering "
+                             "for yourself. It is only ever called by the hook of a run Faustus "
+                             "started, with that run's own token.", "exit_code": 1}
         if path.startswith("/api/system/gpu/orphans"):
             return {"error": f"{method} {path} is blocked for safety — releasing an orphaned model runner kills a "
                              "process on this machine; that is the admin's usage panel / Settings → Local models "
