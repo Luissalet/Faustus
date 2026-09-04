@@ -227,6 +227,10 @@ def _read_dispatch_mirror(path: str) -> Optional[Dict[str, Any]]:
             "verify": d.get("verify"),
             "verify_scope": d.get("verify_scope"),
             "fix_rounds": d.get("fix_rounds"),
+            # The landmark the run was going to be judged against. A plan that
+            # re-pins the model and the parameters but drops this would resume
+            # a job that proves less than the original one would have.
+            "expected_output_contains": d.get("expected_output_contains"),
         },
     }
 

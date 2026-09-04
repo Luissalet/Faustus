@@ -439,6 +439,8 @@ TOOLS: List[Tool] = [
                 "verify": {"type": "string", "description": "Shell command run by Faustus in the workspace after the workers to prove the job ('pytest -q', 'npm test'…). 'auto' (default) detects the project's test runner; 'none' skips."},
                 "verify_scope": {"type": "string", "enum": ["related", "all"], "default": "related",
                                  "description": "auto mode: the tests related to the changed files, or the whole suite."},
+                "expected_output_contains": {"type": "string", "maxLength": 512,
+                                             "description": "A short landmark you expect in the verification's output ('47 passed', 'OK'). Declare it NOW, with the plan: exit 0 is not evidence a suite ran — a collection that found nothing reports it too — so if the run exits 0 without this string Faustus records the job as failed instead of passed. Omit it and nothing is checked."},
                 "fix_rounds": {"type": "integer", "minimum": 0, "maximum": 4, "default": 1,
                                "description": "When the verification fails: at MOST how many times one fixer worker gets the failure output before Faustus gives up (status `partial`). Faustus stops earlier on its own when the rounds stop changing anything (convergence). The server clamps values above its own cap (2 with the convergence detector off, 4 with it on)."},
                 "parallel": {"type": "boolean", "default": True},

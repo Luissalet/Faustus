@@ -285,7 +285,7 @@ class DispatchJob:
                  endpoint_url: str, model: str, headers: Optional[Dict[str, str]],
                  title: str, gen_overrides: Optional[Dict[str, Any]] = None,
                  verify: str = "auto", verify_scope: str = "related", fix_rounds: int = _DEFAULT_FIX_ROUNDS,
-                 verify_timeout_s: float = _VERIFY_TIMEOUT_S):
+                 verify_timeout_s: float = _VERIFY_TIMEOUT_S, expected_output: Optional[str] = None):
         self.id = uuid.uuid4().hex[:12]
         self.owner = owner
         self.args = args
@@ -299,6 +299,10 @@ class DispatchJob:
         self.verify_scope = verify_scope        # "related" | "all"
         self.fix_rounds = fix_rounds
         self.verify_timeout_s = verify_timeout_s
+        # A landmark from the verification's output, declared with the plan.
+        # It only proves anything because it was written down BEFORE the run:
+        # a string chosen after seeing the output is a description, not a test.
+        self.expected_output = expected_output
         self.created = time.time()
         self.started: Optional[float] = None
         self.finished: Optional[float] = None
@@ -364,6 +368,13 @@ class DispatchJob:
             "max_rounds": self.args.get("max_rounds"), "timeout_s": self.args.get("timeout_s"),
             "verify": self.verify, "verify_scope": self.verify_scope, "fix_rounds": self.fix_rounds,
         }
+        if self.expected_output:
+            # On the mirror, so the declaration survives a crash: what a
+            # recovery plan re-pins has to include the thing the run was going
+            # to be judged against, or the resumed job proves less than the
+            # original one would have. Absent when nothing was declared, which
+            # keeps every existing payload byte-identical.
+            d["expected_output_contains"] = self.expected_output
         if self.task_order is not None:
             d["task_order"] = self.task_order
         if include_result:
@@ -840,10 +851,17 @@ def _verification_spec(workspace: str, verify: str) -> Tuple[Optional[Dict[str, 
 
 
 def run_verification(workspace: Optional[str], verify: str, changed: List[str], *, scope: str = "related",
-                     timeout_s: float = _VERIFY_TIMEOUT_S, checkpoint_sha: Optional[str] = None) -> Dict[str, Any]:
+                     timeout_s: float = _VERIFY_TIMEOUT_S, checkpoint_sha: Optional[str] = None,
+                     expected_output: Optional[str] = None) -> Dict[str, Any]:
     """Run the project's tests (or `verify`) in the workspace, bounded, and
     return a compact verdict. `ok` is None when nothing could be run — that is
-    "not verified", never "passed"."""
+    "not verified", never "passed".
+
+    `expected_output` is a landmark the request DECLARED when it asked for the
+    job, and it travels down to `project_tests.run_tests` unchanged. Exit 0 is
+    not evidence a suite ran — a collection that found nothing reports it too —
+    so a declaration made after the run would prove nothing. This one was made
+    before it (src/output_oracle.py)."""
     if not workspace:
         return {"mode": "off", "ran": False, "ok": None, "summary": "no workspace"}
     try:
@@ -855,6 +873,7 @@ def run_verification(workspace: Optional[str], verify: str, changed: List[str], 
     if not spec:
         return {"mode": mode, "ran": False, "ok": None,
                 "summary": "no test runner detected in the workspace (give `verify` a command that proves the task)"}
+    spec["expected_output_contains"] = expected_output
     from src import project_tests as pt
     res = pt.run_tests(workspace, spec, changed=list(changed or []), scope=scope, timeout_s=timeout_s)
     if res.get("ran") and res.get("ok") is False and not res.get("inconclusive") and checkpoint_sha:
@@ -869,6 +888,12 @@ def run_verification(workspace: Optional[str], verify: str, changed: List[str], 
         "summary": _squash(res.get("summary"), 300), "failures": [_squash(f, 200) for f in (res.get("failures") or [])[:10]],
         "output_tail": str(res.get("output_tail") or "")[-1500:],
     }
+    if res.get("output_matched") is not None:
+        # Only ever present when something was declared. Without it a run the
+        # oracle overturned reads as `ok: False` beside a summary saying "47
+        # passed", and the reason is nowhere in the payload.
+        out["output_matched"] = bool(res["output_matched"])
+        out["expected_output_contains"] = str(expected_output or "")
     if res.get("related_files"):
         out["related_files"] = [str(p) for p in res["related_files"][:12]]
     for k in ("new_failures", "pre_existing"):
@@ -1116,7 +1141,7 @@ def order_tasks_by_impact(tasks: Any, workspace: Optional[str]) -> Tuple[List[Di
         return rows, None
 
 
-def _verify_options(body: Dict[str, Any]) -> Tuple[str, str, int, float]:
+def _verify_options(body: Dict[str, Any]) -> Tuple[str, str, int, float, Optional[str]]:
     raw = body.get("verify")
     if raw is None or raw is True:
         verify = "auto"
@@ -1140,7 +1165,17 @@ def _verify_options(body: Dict[str, Any]) -> Tuple[str, str, int, float]:
         vt = float(body.get("verify_timeout_s") or _VERIFY_TIMEOUT_S)
     except (TypeError, ValueError):
         raise ValueError("verify_timeout_s must be a number")
-    return verify, scope, fix, max(10.0, min(vt, 3600.0))
+    # A landmark from the output the request expects to see, declared HERE —
+    # when the plan is written, before anything has run. Validated at the same
+    # moment for the same reason: a declaration that cannot be checked must be
+    # refused while the caller is still holding it, not silently ignored later
+    # by a runner it has already reached (src/output_oracle.py).
+    expected = body.get("expected_output_contains")
+    from src import output_oracle
+    problem = output_oracle.validate_expectation(expected)
+    if problem:
+        raise ValueError(f"expected_output_contains: {problem}")
+    return verify, scope, fix, max(10.0, min(vt, 3600.0)), (str(expected) if expected else None)
 
 
 _ALLOWED_GEN = frozenset({"temperature", "top_p", "top_k", "repeat_penalty", "seed", "num_ctx", "max_tokens", "num_predict"})
@@ -1785,7 +1820,8 @@ async def _verify(job: DispatchJob) -> Dict[str, Any]:
     if job.changes:
         changed = list(job.changes.get("added") or []) + list(job.changes.get("modified") or [])
     return await asyncio.to_thread(run_verification, job.workspace, job.verify, changed, scope=job.verify_scope,
-                                   timeout_s=job.verify_timeout_s, checkpoint_sha=job.checkpoint)
+                                   timeout_s=job.verify_timeout_s, checkpoint_sha=job.checkpoint,
+                                   expected_output=job.expected_output)
 
 
 def _record_turn(job: DispatchJob) -> None:
@@ -1936,7 +1972,7 @@ async def start(owner: Optional[str], body: Dict[str, Any], *, runner: Optional[
     workspace = vet_workspace(raw_ws)
     if not workspace:
         raise ValueError(f"workspace is not a usable directory: {raw_ws}")
-    verify, scope, fix_rounds, verify_timeout = _verify_options(body)
+    verify, scope, fix_rounds, verify_timeout, expected_output = _verify_options(body)
     url, model, headers = resolve_route(owner, body.get("model"))
     gen = _clean_gen(body.get("gen_overrides"))
     # The impact score the objectives graph already computes finally decides
@@ -1949,7 +1985,8 @@ async def start(owner: Optional[str], body: Dict[str, Any], *, runner: Optional[
         if task_order is not None:
             args = dict(args, tasks=ordered)
     job = DispatchJob(owner, args, workspace, url, model, headers, _title(args), gen,
-                      verify=verify, verify_scope=scope, fix_rounds=fix_rounds, verify_timeout_s=verify_timeout)
+                      verify=verify, verify_scope=scope, fix_rounds=fix_rounds, verify_timeout_s=verify_timeout,
+                      expected_output=expected_output)
     job.task_order = task_order
     job.session_id = _make_session(job)
     async with _lock:
@@ -2009,7 +2046,9 @@ def _load(job_id: str) -> Optional[DispatchJob]:
                                        "timeout_s": d.get("timeout_s")},
                       d.get("workspace"), "", d.get("model") or "", None, d.get("title") or "Workers",
                       verify=str(d.get("verify") or "auto"), verify_scope=str(d.get("verify_scope") or "related"),
-                      fix_rounds=int(d.get("fix_rounds") or 0))
+                      fix_rounds=int(d.get("fix_rounds") or 0),
+                      expected_output=(str(d.get("expected_output_contains"))
+                                       if d.get("expected_output_contains") else None))
     job.id = d.get("id") or job_id
     job.created = float(d.get("created") or 0)
     job.started = d.get("started")

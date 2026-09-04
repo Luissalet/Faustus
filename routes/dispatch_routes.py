@@ -2,7 +2,8 @@
 
   POST /api/dispatch                 {tasks, workspace, model?, parallel?, reviewer?,
                                       max_rounds?, timeout_s?, context?, verify?,
-                                      verify_scope?, fix_rounds?, client_request_id?} → the job
+                                      verify_scope?, fix_rounds?, expected_output_contains?,
+                                      client_request_id?} → the job
                                      (header `Idempotency-Key`: a retry returns the same job)
   GET  /api/dispatch                 recent jobs (compact, no result)
   GET  /api/dispatch/config?workspace=  the resolved model/server and the verifier a
