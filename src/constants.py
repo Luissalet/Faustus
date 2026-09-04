@@ -47,6 +47,12 @@ BG_JOBS_DIR = os.path.join(DATA_DIR, "bg_jobs")
 DEEP_RESEARCH_DIR = os.path.join(DATA_DIR, "deep_research")
 MCP_OAUTH_DIR = os.path.join(DATA_DIR, "mcp_oauth")
 GENERATED_IMAGES_DIR = os.path.join(DATA_DIR, "generated_images")
+# Where a run's typed outputs are kept once collected, named by content hash.
+# `runs/` is scratch: one subdirectory per run, mounted into the sandbox as
+# /artifacts and emptied by whoever cleans up. `store/` is the kept side.
+ARTIFACTS_DIR = os.path.join(DATA_DIR, "artifacts")
+ARTIFACT_STORE_DIR = os.path.join(ARTIFACTS_DIR, "store")
+ARTIFACT_RUNS_DIR = os.path.join(ARTIFACTS_DIR, "runs")
 TTS_CACHE_DIR = os.path.join(DATA_DIR, "tts_cache")
 EMAIL_URGENCY_CACHE_DIR = os.path.join(DATA_DIR, "email_urgency_cache")
 SKILLS_DIR = os.path.join(DATA_DIR, "skills")

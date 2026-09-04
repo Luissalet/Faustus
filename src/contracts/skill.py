@@ -25,7 +25,12 @@ from .base import (
 
 # The kinds an artifact can be.  Kept closed on purpose: a `kind` nobody can
 # preview, retain or hand to a downstream skill is a string, not a type.
-ARTIFACT_KINDS = ("image", "video", "audio", "document", "code", "dataset", "json", "text", "archive")
+#: `binary` is the honest bucket, not a lazy one: a run wrote bytes we cannot
+#: type from their name, and the choice is between keeping them under a label
+#: that admits as much, guessing a label that would make the provenance table
+#: lie, or dropping the user's output. Only the first is defensible.
+ARTIFACT_KINDS = ("image", "video", "audio", "document", "code", "dataset",
+                  "json", "text", "archive", "binary")
 
 SCALAR_TYPES = ("text", "integer", "number", "boolean", "json")
 

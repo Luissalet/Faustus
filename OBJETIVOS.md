@@ -23,7 +23,7 @@ una integración posterior, no otra arquitectura paralela.
 | Fase | Qué entrega | Estado |
 |---|---|---|
 | 0 · Contratos y migración segura | El vocabulario común: 8 contratos, catálogo de backends, tabla de artefactos | ✅ 04-09-2026 — `FAUSTUS.md` §30, 73 tests |
-| 1 · Ejecución segura y artefactos | `DockerWorkspaceBackend`, router, y que el código deje de correr en el proceso web | ⏳ siguiente |
+| 1 · Ejecución segura y artefactos | `DockerWorkspaceBackend`, router, y que el código deje de correr en el proceso web | 🟡 04-09-2026 — el sandbox existe y está probado contra contenedores reales; **el agente todavía no pasa por él** (`FAUSTUS.md` §31) |
 | 2 · Runtime de skills y memoria útil | Instalar/revertir capacidades sin tocar el core; alcances de memoria y `MemoryView` | ⏳ |
 | 3 · Motor creativo | ComfyUI como servicio, plantillas versionadas, galería de artefactos con receta | ⏳ |
 | 4 · Workflows, approvals y conectores | Procesos que sobreviven a reinicios, idempotentes | ⏳ |
@@ -33,32 +33,45 @@ una integración posterior, no otra arquitectura paralela.
 
 ---
 
-## Fase 1 — ejecución segura y artefactos (P0, lo siguiente)
+## Fase 1 — ejecución segura y artefactos (P0, a medias)
 
 **Objetivo:** que código, documentos y medios dejen de depender del proceso web.
 
-- [ ] `src/execution_backends.py` y `src/execution_router.py` sobre `contracts.ExecutionSpec`.
-- [ ] `DockerWorkspaceBackend`: usuario no privilegiado, **un** workspace montado, red denegada por
-      defecto, `/artifacts` de solo salida, límites de recursos y cancelación.
-- [ ] Enrutar `src/agent_tools/subprocess_tools.py`, `src/agent_tools/filesystem_tools.py` y los
-      runs de coding por ese backend, detrás de una preferencia experimental.
-- [ ] Generalizar `src/generated_images.py` y la galería hacia artefactos multimedia usando la tabla
-      `artifacts` que ya existe.
-- [ ] Mantener `src/agent_gate.py` como **política**, no como supuesta barrera de aislamiento.
-- [ ] Sondas reales en `capability_registry.observe()` — hoy devuelve `unknown` con
-      *"no probe implemented yet"* a propósito.
+- [x] `src/execution_backends.py` y `src/execution_router.py` sobre `contracts.ExecutionSpec`.
+- [x] `DockerWorkspaceBackend`: uid 1000, **un** workspace montado, red denegada por defecto,
+      `--cap-drop ALL`, `no-new-privileges`, límites de memoria/CPU/pids, timeout que mata el
+      contenedor y cancelación por nombre. Nunca descarga una imagen por su cuenta.
+- [x] `src/artifact_store.py`: recolección por hash de contenido, tipado, deduplicación y filas con
+      procedencia. Lo que no se sabe queda a NULL.
+- [x] Sondas reales en `capability_registry.observe()`, con tres estados que no se confunden.
+- [x] `src/agent_gate.py` sigue siendo **política**; no se ha tocado.
+- [ ] **Enrutar el agente por el backend.** `src/agent_tools/subprocess_tools.py`,
+      `filesystem_tools.py` y los runs de coding siguen donde estaban. Es la parte arriesgada y
+      necesita su propia preferencia experimental y su propia sesión.
+- [ ] Generalizar `src/generated_images.py` y la galería hacia la tabla `artifacts`.
+- [ ] Cancelación cooperativa desde la UI (hoy `cancel()` existe en el backend y nadie lo llama).
+- [ ] Limpieza de `data/artifacts/runs/`: nadie borra los directorios de scratch todavía.
 
 **Criterio de parada, literal del masterplan.** No se avanza si un run puede leer `data/.app_key`,
 escapar del workspace, heredar secretos o caer al host sin confirmación.
+→ **Comprobado el 04-09 contra contenedores reales** (`tests/test_execution_backends.py`): las cuatro.
 
 **Criterios de aceptación heredados de OpenHands:**
 
-- Una skill maliciosa no puede leer fuera del workspace.
-- Un render puede cancelarse sin dejar procesos huérfanos, y conserva su salida parcial **marcada
-  como parcial** (`Artifact.partial` ya existe para eso).
-- Una clave concedida a un run no aparece en logs, prompts, snapshots ni exportaciones.
-- El usuario puede ver qué backend, modelo, skill y entradas produjeron cada salida.
-- El fallback local **nunca** se activa en silencio (ya imposible por contrato: `attended_ack`).
+- [x] Una skill maliciosa no puede leer fuera del workspace (el `data/` del host no está montado).
+- [x] Un timeout mata el contenedor y conserva la salida parcial **marcada como parcial**.
+- [x] Un secreto no declarado es un rechazo antes de arrancar; el declarado no pasa por la tabla de
+      procesos del host (`--env-file` 0600, borrado en un `finally`).
+- [x] El fallback local **nunca** se activa en silencio: requiere dos síes independientes.
+- [ ] El usuario puede ver qué backend, modelo, skill y entradas produjeron cada salida — la fila lo
+      guarda, la UI todavía no lo enseña.
+
+**Limitaciones que se aceptan a sabiendas y están escritas en el docstring del módulo:**
+
+- `/artifacts` **no** es write-only (Docker no lo tiene); lo que hay es un directorio propio y vacío
+  por run, más una foto previa para no atribuir mal la salida.
+- Un secreto dentro de un contenedor lo ve quien hable con el demonio de Docker.
+- Una allowlist de red **se rechaza**: enforzarla necesita un proxy de salida que no existe.
 
 ---
 

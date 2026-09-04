@@ -21,6 +21,19 @@ from routes.contracts_routes import setup_contracts_routes
 
 @pytest.fixture()
 def client(monkeypatch):
+    """Docker is stubbed *down* for these tests on purpose.
+
+    Whether the daemon is running on the machine running the suite is not a
+    property of the routes, and a test that asserted "available" would pass in
+    CI for the wrong reason and fail on a laptop with Docker Desktop closed.
+    What is being checked here is that the answer carries the evidence."""
+    from src import capability_registry as registry
+    from src.capability_registry import Observation
+    monkeypatch.setattr(registry, "_probe_cache", {})
+    monkeypatch.setattr(registry, "_probe_docker", lambda stamp: Observation(
+        "docker_workspace", "unavailable",
+        "backend_unavailable: the docker CLI is installed but the daemon did not answer",
+        stamp))
     monkeypatch.setattr("routes.contracts_routes.require_admin", lambda request: None)
     app = FastAPI()
     app.include_router(setup_contracts_routes())
@@ -45,7 +58,12 @@ def test_the_catalogue_keeps_intent_and_observation_apart(client):
     body = client.get("/api/contracts/backends").json()
     rows = {r["declared"]["id"]: r for r in body["backends"]}
     assert rows["local"]["observed"]["state"] == "available"
+    # Declared as built, observed as not answering — the two halves disagree
+    # on purpose, and both travel.
+    assert rows["docker_workspace"]["declared"]["implemented"] is True
     assert rows["docker_workspace"]["observed"]["state"] == "unavailable"
+    assert "daemon did not answer" in rows["docker_workspace"]["observed"]["evidence"]
+    assert rows["media_worker"]["declared"]["implemented"] is False
     assert body["docker"]["means"] == "a CLI on PATH does not prove a daemon is running"
 
 
@@ -90,7 +108,9 @@ def test_the_backend_rendering_says_why_something_is_unavailable(client):
     text = ws.render_backends(client.get("/api/contracts/backends").json())
     assert "local [available]" in text
     assert "docker_workspace [unavailable]" in text
-    assert "not built yet" in text
+    assert "daemon did not answer" in text          # built, and not answering
+    assert "media_worker [unavailable]" in text
+    assert "not built yet" in text                  # a different problem, said differently
     assert "attended-only" in text
     assert "a CLI on PATH does not prove a daemon is running" in text
 
@@ -117,3 +137,57 @@ def test_a_clean_manifest_does_not_invent_an_undeclared_line(client):
         client.post("/api/contracts/skill/validate", json={"manifest": GOOD}).json())
     assert "UNDECLARED" not in text
     assert "approval cards: none" in text
+
+
+# ── planning a run without running it ──────────────────────────────────────
+
+def test_planning_says_where_it_would_go_and_creates_nothing(client, tmp_path, monkeypatch):
+    from src import capability_registry as registry
+    from src.capability_registry import Observation
+    monkeypatch.setattr(registry, "_probe_cache", {})
+    monkeypatch.setattr(registry, "_probe_docker", lambda stamp: Observation(
+        "docker_workspace", "available", "docker 99.0 (stubbed)", stamp))
+
+    root = tmp_path / "runs"
+    body = client.post("/api/contracts/skill/plan", json={
+        "manifest": GOOD, "workspace": str(tmp_path), "run_id": "plan-1",
+        "artifacts_root": str(root)}).json()
+
+    assert body["ok"] is True
+    decision = body["decision"]
+    assert decision["ok"] is True and decision["backend"] == "docker_workspace"
+    assert decision["spec"]["isolation"] == "container"
+    assert decision["spec"]["network"] is False
+    assert not root.exists(), "planning must not leave a scratch directory behind"
+
+
+def test_planning_with_docker_down_refuses_and_does_not_offer_the_host(client, tmp_path):
+    body = client.post("/api/contracts/skill/plan", json={
+        "manifest": GOOD, "workspace": str(tmp_path), "run_id": "plan-2"}).json()
+    decision = body["decision"]
+    assert decision["ok"] is False
+    assert decision["backend"] != "local"
+    text = ws.render_plan(body)
+    assert "WOULD NOT RUN" in text
+    assert "daemon did not answer" in text
+
+
+def test_the_plan_text_shows_the_spec_a_coordinator_should_read(client, tmp_path, monkeypatch):
+    from src import capability_registry as registry
+    from src.capability_registry import Observation
+    monkeypatch.setattr(registry, "_probe_cache", {})
+    monkeypatch.setattr(registry, "_probe_docker", lambda stamp: Observation(
+        "docker_workspace", "available", "stubbed", stamp))
+    body = client.post("/api/contracts/skill/plan",
+                       json={"manifest": GOOD, "workspace": str(tmp_path)}).json()
+    text = ws.render_plan(body)
+    assert "would run on docker_workspace (container)" in text
+    assert "network=False" in text and "secrets=none" in text
+    assert "approval cards it will raise: none" in text
+
+
+def test_the_plan_tool_is_offered_and_promises_no_side_effect():
+    plan = next(t for t in ws.TOOLS if t.name == "contracts_plan_run")
+    assert "Nothing runs" in plan.description
+    assert "never falls back to the host" in plan.description
+    assert plan.inputSchema["required"] == ["manifest"]

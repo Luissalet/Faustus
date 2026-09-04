@@ -2,9 +2,9 @@
 capability_registry.py — which backends exist, what they can do, and what we
 actually know about them right now.
 
-Read-only on purpose.  Phase 0 of the masterplan asks for a catalogue before
-an executor, so that Phase 1 has something to route against instead of growing
-a router and a backend at the same time and discovering they disagree.
+The catalogue came first on purpose (Phase 0), so that the router and the
+backends of Phase 1 had something to agree with instead of growing side by
+side and discovering they disagreed.
 
 The distinction the module is built around comes from Diogenes: *definitions
 are durable intent, observations are disposable facts*.  A declaration says
@@ -12,11 +12,11 @@ are durable intent, observations are disposable facts*.  A declaration says
 An observation says whether anything answered just now — and when nothing was
 asked, the answer is `unknown`, never `available`.
 
-The honest middle state matters more than it sounds.  `docker` on PATH proves a
-CLI is installed, not that a daemon is running, so the probe reports
-`cli_present` as its evidence and leaves the state `unknown`.  A registry that
-rounded that up to "available" would send the first real run into a timeout and
-blame the run.
+Nothing is rounded up, and the three ways a backend can be unusable stay
+apart, because each has a different fix: `not_implemented` (write the code),
+`unavailable` (start the daemon, pull the image) and `attended_only` (say yes
+on the run). A registry that collapsed them would send a run somewhere it
+cannot start, and the run would be blamed for it.
 """
 
 from __future__ import annotations
@@ -116,9 +116,11 @@ DECLARATIONS: Tuple[BackendDeclaration, ...] = (
         artifact_kinds=("document", "code", "text", "json", "dataset", "archive"),
         network_default=False,
         max_seconds_default=900,
-        implemented=False,
-        note="Phase 1. Unprivileged user, one workspace mounted read-write, "
-             "network denied by default, /artifacts write-only.",
+        implemented=True,
+        note="Unprivileged uid 1000, one workspace mounted read-write, network "
+             "denied unless the manifest asked for it, dropped capabilities, "
+             "memory/CPU/pid limits, and a timeout that kills the container. "
+             "Never pulls an image on its own.",
     ),
     BackendDeclaration(
         id="media_worker",
@@ -158,13 +160,21 @@ def declaration(backend_id: str) -> Optional[BackendDeclaration]:
 
 # ── observations ───────────────────────────────────────────────────────────
 
-def observe(backend_id: str) -> Observation:
-    """What can be said about this backend *right now*, cheaply and honestly.
+#: A probe costs a subprocess and a round trip to the daemon, and a page that
+#: lists four backends would pay it four times per refresh. The cache is short
+#: and every Observation carries the `checked_at` it was taken at, so a stale
+#: answer is visible rather than implied.
+_PROBE_TTL_S = 10.0
+_probe_cache: Dict[str, Tuple[float, Observation]] = {}
 
-    Nothing here starts a container or opens a socket; those belong to Phase 1.
-    What it can do is tell apart "there is no code for this yet" from "there is
-    code and something is missing" — and refuse to call a CLI on PATH a running
-    daemon."""
+
+def observe(backend_id: str, *, fresh: bool = False) -> Observation:
+    """What can be said about this backend *right now*.
+
+    Three states, and the middle one earns its keep: `unknown` means nobody
+    asked, which is not the same as asking and being told no. Nothing here is
+    rounded up — a `docker` binary on PATH is evidence about the machine, and
+    the daemon is asked separately."""
     stamp = now_iso()
     decl = _BY_ID.get(backend_id)
     if decl is None:
@@ -174,18 +184,49 @@ def observe(backend_id: str) -> Observation:
                            "declared but not implemented in this build", stamp)
     if backend_id == "local":
         return Observation(backend_id, "available", "this process", stamp)
-    return Observation(backend_id, "unknown", "no probe implemented yet", stamp)
+
+    if not fresh:
+        cached = _probe_cache.get(backend_id)
+        if cached and (time.monotonic() - cached[0]) < _PROBE_TTL_S:
+            return cached[1]
+
+    if backend_id == "docker_workspace":
+        observation = _probe_docker(stamp)
+    else:
+        observation = Observation(backend_id, "unknown", "no probe implemented yet", stamp)
+    _probe_cache[backend_id] = (time.monotonic(), observation)
+    return observation
 
 
-def observe_all() -> Tuple[Observation, ...]:
-    return tuple(observe(d.id) for d in DECLARATIONS)
+def _probe_docker(stamp: str) -> Observation:
+    """Ask the backend itself rather than re-deriving what "ready" means here.
+
+    A missing image is `unavailable`, not `available with a caveat`: a run sent
+    to a backend that cannot start it is a run that fails for a reason its
+    output will not explain."""
+    from src.execution_backends import DockerWorkspaceBackend
+
+    try:
+        gate = DockerWorkspaceBackend().probe()
+    except Exception as e:                       # a probe never takes the page down
+        return Observation("docker_workspace", "unknown",
+                           f"the probe itself failed: {e}", stamp)
+    if gate["ok"]:
+        return Observation("docker_workspace", "available", gate["detail"], stamp)
+    return Observation("docker_workspace", "unavailable",
+                       f"{gate['reason']}: {gate['detail']}", stamp)
+
+
+def observe_all(*, fresh: bool = False) -> Tuple[Observation, ...]:
+    return tuple(observe(d.id, fresh=fresh) for d in DECLARATIONS)
 
 
 def docker_evidence() -> Dict[str, Any]:
     """Deliberately separate from `observe`.  Finding the `docker` binary is
-    evidence about the machine, not about the backend: the daemon may be
-    stopped, the socket may be unreachable, and Phase 1 is what will find out.
-    Kept here so the Phase 1 probe has one place to grow from."""
+    evidence about the *machine*; whether the backend can take work is a
+    different question, and `observe("docker_workspace")` is the one that asks
+    the daemon and the image. Kept apart so a UI can show "you have Docker
+    installed but it is not running" instead of one flat "unavailable"."""
     path = shutil.which("docker")
     return {
         "cli_present": bool(path),
@@ -201,6 +242,7 @@ _KIND_TO_CAPABILITY = {
     "image": "image", "video": "video", "audio": "audio",
     "document": "documents", "code": "filesystem", "dataset": "filesystem",
     "text": "filesystem", "json": "filesystem", "archive": "filesystem",
+    "binary": "filesystem",
 }
 
 
@@ -246,6 +288,12 @@ def candidates(manifest: SkillManifest) -> List[Dict[str, Any]]:
         elif not decl.implemented:
             row.update(ok=False, reason="not_implemented",
                        detail=decl.note or "declared but not built yet")
+        elif obs.state != "available":
+            # Built, and not answering. Kept apart from `not_implemented`
+            # because one of them is fixed by writing code and the other by
+            # starting a daemon, and a router that conflated them would send
+            # the run somewhere it cannot start.
+            row.update(ok=False, reason="unavailable", detail=obs.evidence)
         else:
             row.update(ok=True, reason="eligible", detail="")
         out.append(row)
@@ -259,8 +307,8 @@ def why_no_backend(manifest: SkillManifest) -> str:
     rows = candidates(manifest)
     if any(r["ok"] for r in rows):
         return ""
-    order = {"not_implemented": 0, "attended_only": 1, "missing_capability": 2,
-             "not_requested": 3, "not_declared": 4}
+    order = {"unavailable": 0, "not_implemented": 1, "attended_only": 2,
+             "missing_capability": 3, "not_requested": 4, "not_declared": 5}
     rows.sort(key=lambda r: order.get(r["reason"], 9))
     nearest = rows[0]
     return (f"no backend can run {manifest.id} {manifest.version}: closest is "
@@ -269,8 +317,11 @@ def why_no_backend(manifest: SkillManifest) -> str:
 
 
 def check_spec(spec: ExecutionSpec, permissions: Permissions) -> Dict[str, Any]:
-    """The read-only half of what the Phase 1 router will do: does this spec
-    stay inside both the declaration and the manifest?
+    """Does this spec stay inside both the declaration and the manifest?
+
+    `execution_router` calls it on its own output — the router is not exempt
+    from the rule it enforces — and it is also what catches a spec built by
+    hand somewhere else.
 
     A spec may always be *narrower* than the permissions.  Anything wider is
     reported field by field — an approval was given for what the manifest

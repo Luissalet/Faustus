@@ -93,4 +93,40 @@ def setup_contracts_routes():
             "why_not": registry.why_no_backend(manifest),
         }
 
+    @router.post("/skill/plan")
+    async def plan_skill(request: Request):
+        """Where would this manifest run, and under what spec?
+
+        Answers the question a coordinator asks before dispatching, and
+        answers it without running anything, creating a scratch directory or
+        touching a backend beyond asking whether it is up."""
+        require_admin(request)
+        try:
+            payload = await request.json()
+        except Exception:
+            raise HTTPException(status_code=400, detail="Body must be JSON")
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=400, detail="Body must be a JSON object")
+
+        try:
+            manifest = SkillManifest.parse(payload.get("manifest", payload))
+        except ContractError as e:
+            return {"ok": False, "error": {"path": e.path, "message": e.message,
+                                           "detail": str(e)}}
+
+        from src import execution_router
+
+        decision = execution_router.choose(
+            manifest,
+            workspace=str(payload.get("workspace") or ""),
+            artifacts_root=str(payload.get("artifacts_root") or ""),
+            run_id=str(payload.get("run_id") or "plan"),
+            attended_ack=bool(payload.get("attended_ack") or False),
+            prefer=(payload.get("prefer") or None),
+            create_dirs=False,
+        )
+        return {"ok": True, "decision": decision.to_dict(),
+                "skill": {"id": manifest.id, "version": manifest.version},
+                "approvals": list(manifest.effective_approvals())}
+
     return router

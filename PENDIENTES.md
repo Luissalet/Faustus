@@ -86,6 +86,33 @@ a propósito · `[+]` mejora pendiente.
   deja la galería intacta. Cuando haya imágenes de verdad conviene volver a mirar los números y, en
   particular, cuántas llegan **sin `file_hash`** — esas quedan con `sha256` a NULL a propósito.
 
+- `[~]` **El sandbox existe y el agente no pasa por él.** `DockerWorkspaceBackend` está probado
+  contra contenedores reales, pero `subprocess_tools.py`, `filesystem_tools.py` y los runs de coding
+  siguen ejecutando donde ejecutaban. Tener el backend no es usarlo, y hasta que se enrute, la
+  garantía de aislamiento **no cubre nada de lo que hace el agente hoy**. Es lo siguiente de la
+  Fase 1 y va detrás de una preferencia experimental.
+
+- `[~]` **`/artifacts` no es write-only.** Docker no tiene montaje de solo escritura. Lo que hay es
+  un directorio propio y vacío por run (lo crea el router) más una foto previa en el backend para no
+  atribuir a un run la salida de otro. La afirmación fuerte del masterplan no se cumple; la débil sí,
+  y está escrita en el docstring.
+
+- `[~]` **Un secreto dentro de un contenedor lo ve quien hable con el demonio de Docker.**
+  `docker inspect` enseña el entorno de un contenedor vivo. Van por `--env-file` 0600 para que no
+  aparezcan en la tabla de procesos del host, que es la fuga que sí se puede cerrar. En esta máquina
+  hablar con el demonio ya es equivalente a root.
+
+- `[~]` **Una allowlist de red se rechaza en vez de enforzarse.** Hace falta un proxy de salida.
+  Rechazar es el lado correcto en el que fallar, pero significa que un skill que quiera red solo
+  puede tenerla entera.
+
+- `[+]` **Nadie limpia `data/artifacts/runs/`.** Cada run deja su directorio de scratch. Los
+  ficheros recolectados se mueven al store, así que lo que queda son directorios vacíos, pero
+  se acumulan.
+
+- `[+]` **`DockerWorkspaceBackend.cancel()` no lo llama nadie.** Existe y mata el contenedor por
+  nombre; falta el botón y el cableado desde los runs.
+
 - `[?]` **Ninguna skill real usa todavía un `SkillManifest`.** El contrato existe y se valida, pero
   las skills de hoy siguen siendo `SKILL.md` con frontmatter (`services/memory/skill_format.py`).
   El puente entre las dos formas es Fase 2 del masterplan; hasta entonces, que un manifiesto valide

@@ -24,8 +24,10 @@ workers_wait (block until done, then the compact result), workers_wait_for
 change — and return the moment it does), workers_status,
 workers_events, workers_cancel, workers_list, objectives_list/objectives_apply,
 guard_explain, memory_pack (what this machine has already learned), and
-contracts_backends/contracts_validate_skill (which execution backends exist,
-and whether a skill manifest would be accepted — pure, nothing is installed).
+contracts_backends / contracts_validate_skill / contracts_plan_run (which
+execution backends exist and whether each is actually up, whether a manifest
+would be accepted, and where a run would land and under what isolation — all
+three pure: nothing is installed and nothing runs).
 It talks HTTP to the running
 Faustus (routes/dispatch_routes.py) — nothing runs in this process, so a crash
 here cannot take a worker with it. A dispatch carries an Idempotency-Key, so
@@ -432,6 +434,34 @@ def render_backends(data: Dict[str, Any]) -> str:
     return "\n".join(lines) or "no backends declared"
 
 
+def render_plan(data: Dict[str, Any]) -> str:
+    """Where the run would go, under what spec, and — if nowhere — why. The
+    spec line is the point: it is what the run would be *allowed* to do, and
+    reading it before dispatching is cheaper than reading it in an audit."""
+    if not data.get("ok"):
+        err = data.get("error") or {}
+        return f"REJECTED at {err.get('path')}: {err.get('message')}"
+    d = data.get("decision") or {}
+    skill = data.get("skill") or {}
+    head = f"{skill.get('id')} {skill.get('version')}"
+    if not d.get("ok"):
+        lines = [f"{head}: WOULD NOT RUN ({d.get('reason')})", f"  {d.get('detail')}"]
+    else:
+        spec = d.get("spec") or {}
+        limits = spec.get("limits") or {}
+        lines = [
+            f"{head}: would run on {d.get('backend')} ({spec.get('isolation')})",
+            f"  network={spec.get('network')} secrets={spec.get('secret_names') or 'none'} "
+            f"timeout={limits.get('seconds')}s attended={spec.get('attended_ack')}",
+        ]
+    cards = data.get("approvals") or []
+    lines.append(f"  approval cards it will raise: {', '.join(cards) or 'none'}")
+    for row in d.get("candidates") or []:
+        if not row.get("ok"):
+            lines.append(f"  no {row.get('backend')}: {row.get('reason')}")
+    return "\n".join(lines)
+
+
 def render_validation(data: Dict[str, Any]) -> str:
     """A refusal names the field. A pass names what the manifest will cost:
     the approval cards, and every backend that cannot take it, with why."""
@@ -639,6 +669,25 @@ TOOLS: List[Tool] = [
                          "approval {required_when}."},
         }, "required": ["manifest"]},
     ),
+    Tool(
+        name="contracts_plan_run",
+        description=(
+            "Ask where a skill manifest WOULD run and under what execution spec — which "
+            "backend, what isolation, whether the network is open, which secrets cross, "
+            "what timeout — plus the approval cards it will raise. Nothing runs, nothing "
+            "is installed and no scratch directory is created. Faustus never falls back "
+            "to the host: if the sandbox is unavailable the answer is a refusal naming "
+            "the reason, not a quieter place to run."
+        ),
+        inputSchema={"type": "object", "properties": {
+            "manifest": {"type": "object", "description": "The skill manifest."},
+            "workspace": {"type": "string", "description": "Folder the run would be confined to."},
+            "prefer": {"type": "string", "description": "Backend id to try first."},
+            "attended_ack": {"type": "boolean", "description":
+                             "The user's acknowledgement that an unsandboxed host run is "
+                             "acceptable. Only ever true because a human said so."},
+        }, "required": ["manifest"]},
+    ),
 ]
 
 
@@ -696,6 +745,16 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
             data = await asyncio.to_thread(
                 _request, "POST", "/api/contracts/skill/validate", {"manifest": manifest})
             return _text(render_validation(data))
+        if name == "contracts_plan_run":
+            manifest = args.get("manifest")
+            if not isinstance(manifest, dict) or not manifest:
+                return _text("Error: give the manifest as an object")
+            body = {"manifest": manifest,
+                    "workspace": str(args.get("workspace") or ""),
+                    "prefer": str(args.get("prefer") or "") or None,
+                    "attended_ack": bool(args.get("attended_ack") or False)}
+            data = await asyncio.to_thread(_request, "POST", "/api/contracts/skill/plan", body)
+            return _text(render_plan(data))
         if name == "guard_explain":
             command = str(args.get("command") or "")
             if not command.strip():

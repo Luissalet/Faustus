@@ -1256,5 +1256,119 @@ registro lo dice en cada respuesta en vez de aparentar cuatro opciones. Nada enr
 El siguiente paso es la Fase 1, y su criterio de parada está escrito: **no se avanza si un run puede
 leer `data/.app_key`, escapar del workspace, heredar secretos o caer al host sin confirmación.**
 
+## 31. El sandbox de verdad: Fase 1 del masterplan (04-09-2026, mañana)
+
+La §30 dejó el vocabulario. Esta pone algo detrás: `src/execution_backends.py` y
+`src/execution_router.py`, un contenedor real, y la recolección de lo que ese contenedor produce.
+La diferencia entre las dos secciones es que ahora hay contenedores arrancando en los tests.
+
+### 31.1 El criterio de parada, comprobado línea a línea
+El masterplan lo escribe así: *no se avanza si un run puede leer `data/.app_key`, escapar del
+workspace, heredar secretos o caer al host sin confirmación.* Las cuatro, contra contenedores de
+verdad (`tests/test_execution_backends.py`, se saltan solas si no hay Docker):
+
+| Lo que se prueba | Resultado medido |
+|---|---|
+| Identidad y visibilidad | `uid=1000`, y `ls /workspace` devuelve **solo** el fichero del workspace |
+| `data/.app_key` | tres rutas distintas, tres `No such file or directory`; el `data/` del host no está montado. El test comprueba además que la clave **sí existe** en el host, para no aprobar en vacío |
+| Red | `--network none` por defecto: `wget` a example.com → `denied` |
+| Entorno | una variable puesta en el proceso de Faustus **no** cruza: el contenedor ve 5 líneas de `env` |
+| Secretos | el declarado llega, el no declarado sale `absent`; y pasar uno **no declarado** es un `refused` antes de arrancar nada |
+| Timeout | `sleep 60` con `seconds: 3` → matado en 3,2 s, `status: timeout`, y **se conserva el fichero a medias marcado `partial`** |
+| Imagen ausente | `refused: image_missing` con el `docker pull` exacto — **nunca se descarga sola** |
+
+Esa última es una regla, no una omisión: instalar modelos o imágenes desde una instrucción en
+lenguaje natural está en la lista de descartes del masterplan.
+
+### 31.2 Tres reglas que el código impone en vez de documentar
+1. **Solo argv.** Un comando es una lista. No hay cadena de shell que construir, así que no hay
+   error de comillas que convierta un argumento en un comando. Pasar un `str` es un rechazo con su
+   motivo, no una comodidad.
+2. **Ninguna imagen se descarga sola.**
+3. **Un rechazo no es un fallo.** `refused` = no corrió nada; `failed` = corrió y no funcionó.
+   Juntarlos es cómo «el sandbox no está instalado» acaba leyéndose como «tu código está roto».
+   El contrato `ExecutionResult` obliga: un `refused` sin motivo no se puede construir, y un
+   `completed` con código distinto de 0 tampoco.
+
+### 31.3 Fronteras honestas, escritas donde duelen
+Las que la gente da por supuestas son las que muerden, así que están en el docstring del módulo:
+
+- **`/artifacts` no es write-only.** Docker no tiene montaje de solo escritura. Lo que hay de verdad
+  es un directorio propio y vacío por run — el router lo crea — y, por si quien llama reutiliza uno,
+  el backend hace **foto antes** y solo atribuye lo que cambió.
+- **Un secreto dentro de un contenedor lo ve cualquiera que hable con el demonio de Docker**
+  (`docker inspect` enseña el entorno). En esta máquina eso ya es equivalente a root, así que la
+  frontera que cruzan los secretos es proceso-a-proceso, no usuario-a-usuario. Van por un
+  `--env-file` 0600 en vez de `-e` para que **no aparezcan en la tabla de procesos del host**, y el
+  fichero se borra en un `finally`.
+- **Una allowlist de red necesita un proxy** que este build no tiene, así que un spec que la pide se
+  **rechaza** en vez de recibir la red entera. Adivinar aquí falla del lado malo.
+
+### 31.4 El router y la única regla que justifica que sea un módulo
+**El host nunca es un fallback.** Ni con Docker caído, ni sin imagen, ni cuando el backend preferido
+no puede. `local` se alcanza solo con **dos síes independientes**: el manifiesto lo nombra *y* alguien
+lo acuerda explícitamente — y ninguno de los dos lo puede suministrar un fallo en otro sitio. Hay un
+test para la composición peligrosa: Docker caído **y** acuse presente, para un run que iba al sandbox;
+sigue siendo un rechazo.
+
+La segunda regla es más callada y trabaja igual: el spec se **deriva** de los permisos del
+manifiesto, así que ningún argumento de quien llama puede ensancharlo; y después el router pasa su
+propia salida por `capability_registry.check_spec` — no se fía ni de sí mismo.
+
+Un rechazo nunca dice «no hay backend»: dice cuál fue el más cercano y por qué
+(`no_backend`, `preferred_backend_unusable`, `spec_rejected`), y lleva **la lista completa de
+candidatos**, porque «¿por qué no eligió el de GPU?» es la pregunta que hay que poder contestar.
+
+### 31.5 Sondas de verdad, y tres formas distintas de no estar disponible
+El registro dejó de responder *"no probe implemented yet"*. Ahora pregunta, y separa tres cosas que
+tienen tres arreglos distintos: `not_implemented` (escribir el código), `unavailable` (arrancar el
+demonio, bajar la imagen) y `attended_only` (decir que sí en el run). En vivo en la 7001:
+`docker_workspace → available: docker 28.5.1, image python:3.12-slim present`, primera llamada
+0,38 s y 0,01 s la siguiente (caché de 10 s, y cada observación lleva su propio `checked_at`).
+
+### 31.6 Los artefactos, con hash y sin inventar procedencia
+`src/artifact_store.py`: se guarda **por hash de contenido** (`<sha256>.<ext>`), así que dos runs con
+los mismos bytes comparten fichero y ninguno puede pisar el artefacto de otro eligiendo su nombre —
+el nombre que eligió el run sobrevive en `label`. Medido: el segundo run con el mismo CSV →
+`deduplicated: 1`, el store sigue con 3 ficheros, y `persist` devuelve `already_there: 1`.
+
+Un tipo que no se puede inferir es **`binary`**, un valor nuevo y deliberado de `ARTIFACT_KINDS`: la
+alternativa era tirar los bytes del usuario o escribir en una tabla de auditoría un tipo que nadie
+verificó. Y lo que no se sabe queda a NULL: `provenance_gaps()` de un artefacto recién hecho
+devuelve `('model', 'inputs_digest')` porque esta capa no conoce ninguno de los dos.
+
+### 31.7 El fallo que encontró la primera ejecución real
+Los runs 2 a 5 del primer probe se apuntaron el `out.txt` que había escrito el run 1. Causa: el
+recolector listaba el directorio al terminar. En una tabla de procedencia eso no es un fallo
+cosmético, es **un registro falso**: atribuye la salida de un run a otro. Arreglo: foto antes
+(nombre → tamaño, mtime_ns) y solo se atribuye lo que cambió; más un directorio por run creado por
+el router. Hay un test que fija los tres casos (fichero anterior, fichero nuevo, fichero anterior
+modificado por este run).
+
+### 31.8 Cuatro tests de la §30 que había que reescribir
+`docker_workspace` estaba declarado *no implementado*, y cuatro tests lo afirmaban. Al implementarlo
+fallaron — y tenían razón en fallar: **describían el estado del mundo, no un invariante**. Reescritos
+para fijar la regla y no la máquina: ahora comprueban que el estado sale de **preguntar** (si dice
+`available`, la evidencia tiene que nombrar la versión del servidor y la imagen), que un CLI en el
+PATH con el demonio caído sigue siendo `unavailable`, y que la caché de la sonda no se traga el
+`checked_at`. Los tests de rutas fijan el demonio **caído** a propósito: si Docker está arriba en la
+máquina que corre la suite no es una propiedad del código, y un test que afirmara «available» pasaría
+en CI por el motivo equivocado.
+
+### 31.9 MCP: preguntar dónde caería un run antes de mandarlo
+Tercera tool de contratos, `contracts_plan_run` (ya son 15): dado un manifiesto responde en qué
+backend caería, con qué aislamiento, si la red está abierta, qué secretos cruzan, qué timeout y qué
+tarjetas de aprobación levantará — **sin ejecutar nada y sin dejar ni un directorio**. Probado por
+handshake JSON-RPC real contra la 7001, no importando el módulo.
+
+### 31.10 Lo que la Fase 1 todavía NO hace
+Lo importante de esta sección. El sandbox existe y funciona, pero **el agente todavía no pasa por
+él**: `src/agent_tools/subprocess_tools.py`, `filesystem_tools.py` y los runs de coding siguen donde
+estaban, y la galería sigue escribiendo por su ruta de siempre. Eso es el resto de la Fase 1 y es la
+parte arriesgada — cambiar por dónde ejecuta el agente merece su propia sesión y su propia
+preferencia experimental. Hasta entonces, tener el backend no significa que nada lo use.
+
+**115 tests** entre las dos fases, verdes. Probado en vivo en la 7001 y con contenedores reales.
+
 ## Cómo mantener este documento
 Cada bloque de trabajo añade una sección (fecha, qué, por qué, ficheros, cómo se verificó, cifras) y actualiza las cifras de cabecera (`git log --oneline c9dd68d8..HEAD | wc -l`, `git diff --stat c9dd68d8..HEAD`). Los commits del fork llevan mensajes largos que explican el porqué: `git log c9dd68d8..HEAD` es la fuente detallada.

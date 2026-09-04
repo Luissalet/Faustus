@@ -20,7 +20,8 @@ from .skill import (  # noqa: F401
     Permissions, SkillManifest, TypeSpec,
 )
 from .execution import (  # noqa: F401
-    ATTENDED_ONLY, ISOLATION_LEVELS, ExecutionSpec, ResourceLimits,
+    ATTENDED_ONLY, ISOLATION_LEVELS, REFUSED_REASONS, RESULT_STATUSES,
+    ExecutionResult, ExecutionSpec, ResourceLimits,
 )
 from .run import (  # noqa: F401
     OUTCOME_OF, RUN_KINDS, STATUSES, TERMINAL, TRANSITIONS, Run, check_transition,
@@ -46,6 +47,7 @@ __all__ = [
     "SkillManifest", "Permissions", "MemoryPolicy", "TypeSpec",
     "APPROVAL_TRIGGERS", "ARTIFACT_KINDS", "MEMORY_SCOPES",
     "ExecutionSpec", "ResourceLimits", "ISOLATION_LEVELS", "ATTENDED_ONLY",
+    "ExecutionResult", "RESULT_STATUSES", "REFUSED_REASONS",
     "Run", "check_transition", "STATUSES", "TERMINAL", "TRANSITIONS",
     "RUN_KINDS", "OUTCOME_OF",
     "Artifact", "Provenance", "Retention", "RETENTION_POLICIES",

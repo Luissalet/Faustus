@@ -30,17 +30,54 @@ def manifest(**over):
 def test_nothing_is_available_that_has_no_code_behind_it():
     states = {o.backend_id: o for o in reg.observe_all()}
     assert states["local"].state == "available"
-    for backend in ("docker_workspace", "media_worker", "remote_worker"):
+    for backend in ("media_worker", "remote_worker"):
         assert states[backend].state == "unavailable"
         assert "not implemented" in states[backend].evidence
 
 
-def test_a_cli_on_path_is_not_a_running_daemon():
+def test_the_docker_state_comes_from_asking_and_says_what_it_asked():
+    """Machine-independent on purpose: this asserts the *shape* of the answer,
+    because whether Docker is up here is not a property of the code."""
+    observed = reg.observe("docker_workspace", fresh=True)
+    assert observed.state in reg.STATES
+    if observed.state == "available":
+        # It only gets to say that after talking to the daemon AND finding the
+        # image; the evidence has to show both.
+        assert "docker " in observed.evidence and "image" in observed.evidence
+    else:
+        assert observed.evidence, "an unavailable backend that will not say why is useless"
+
+
+def test_a_cli_on_path_never_becomes_a_running_daemon(monkeypatch):
+    """The exact shape that would be tempting to round up: docker installed,
+    daemon not answering."""
+    from src.capability_registry import Observation
+    monkeypatch.setattr(reg, "_probe_cache", {})
+    monkeypatch.setattr(reg, "_probe_docker", lambda stamp: Observation(
+        "docker_workspace", "unavailable",
+        "backend_unavailable: the docker CLI is installed but the daemon did not answer",
+        stamp))
+    observed = reg.observe("docker_workspace")
+    assert observed.state == "unavailable"
+    assert "daemon did not answer" in observed.evidence
+
     evidence = reg.docker_evidence()
     assert set(evidence) == {"cli_present", "path", "means", "checked_at"}
     assert evidence["means"] == "a CLI on PATH does not prove a daemon is running"
-    # Whatever this machine has, finding the binary never becomes a state.
-    assert reg.observe("docker_workspace").state != "available"
+
+
+def test_the_probe_is_cached_briefly_and_every_answer_carries_its_own_timestamp(monkeypatch):
+    from src.capability_registry import Observation
+    calls = []
+    monkeypatch.setattr(reg, "_probe_cache", {})
+    monkeypatch.setattr(reg, "_probe_docker", lambda stamp: (
+        calls.append(stamp), Observation("docker_workspace", "available", "stub", stamp))[1])
+    first = reg.observe("docker_workspace")
+    second = reg.observe("docker_workspace")
+    assert len(calls) == 1                       # the second came from the cache
+    assert first.checked_at == second.checked_at  # and says when it was taken
+    reg.observe("docker_workspace", fresh=True)
+    assert len(calls) == 2
 
 
 def test_an_undeclared_backend_is_unavailable_and_says_why():

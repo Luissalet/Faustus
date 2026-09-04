@@ -172,3 +172,110 @@ class ExecutionSpec:
         if permissions.backends and self.backend not in permissions.backends:
             excess.append(f"backend:{self.backend}")
         return tuple(excess)
+
+
+# ── what came back ─────────────────────────────────────────────────────────
+
+RESULT_STATUSES = ("completed", "failed", "cancelled", "timeout", "refused")
+
+#: `refused` is not a failure of the work: nothing ran.  Keeping it apart from
+#: `failed` is what lets "the sandbox was not available" stop reading as "your
+#: code is broken".
+REFUSED_REASONS = ("backend_unavailable", "image_missing", "policy",
+                   "spec_wider_than_permissions", "unsupported")
+
+
+@dataclass(frozen=True)
+class ExecutionResult:
+    """What a backend hands back, in one shape for every backend.
+
+    `stdout_tail` is a *tail*, and `output_truncated` says so.  A log that
+    silently kept the first 8 KB and dropped the error at the end is worse
+    than one that admits it was cut: the second can be re-run with a bigger
+    budget, the first sends someone hunting for a bug that was on screen.
+    """
+
+    run_id: str
+    backend: str
+    status: str
+    exit_code: Optional[int] = None
+    reason: str = ""
+    started_at: Optional[str] = None
+    ended_at: Optional[str] = None
+    duration_ms: Optional[int] = None
+    stdout_tail: str = ""
+    stderr_tail: str = ""
+    output_truncated: bool = False
+    artifact_filenames: Tuple[str, ...] = ()
+    partial: bool = False
+    schema_version: int = SCHEMA_VERSION
+
+    _KEYS = ("run_id", "backend", "status", "exit_code", "reason", "started_at",
+             "ended_at", "duration_ms", "stdout_tail", "stderr_tail",
+             "output_truncated", "artifact_filenames", "partial", "schema_version")
+
+
+    @classmethod
+    def parse(cls, raw: Any, path: str = "result") -> "ExecutionResult":
+        data = as_mapping(raw, path)
+        reject_unknown(data, cls._KEYS, path)
+        from .base import timestamp
+        status = one_of(data, "status", path, choices=RESULT_STATUSES)
+        reason = text(data, "reason", path, required=False, max_len=500)
+        exit_code = whole(data, "exit_code", path, minimum=-255, maximum=255)
+
+        if status == "refused":
+            if not reason:
+                raise ContractError(
+                    f"{path}.reason",
+                    f"is required when status is 'refused'; one of {list(REFUSED_REASONS)} "
+                    "(a refusal nobody can explain reads as a broken run)",
+                )
+            if exit_code is not None:
+                raise ContractError(
+                    f"{path}.exit_code",
+                    "is set on a refusal, but nothing ran to produce one",
+                    got=exit_code,
+                )
+        if status == "completed" and exit_code not in (0, None):
+            raise ContractError(
+                f"{path}.exit_code",
+                "is non-zero while status says 'completed'; a command that exited "
+                "non-zero did not complete, whatever it printed",
+                got=exit_code,
+            )
+        return cls(
+            run_id=text(data, "run_id", path, required=False, max_len=64),
+            backend=ident(data, "backend", path),
+            status=status,
+            exit_code=exit_code,
+            reason=reason,
+            started_at=timestamp(data, "started_at", path),
+            ended_at=timestamp(data, "ended_at", path),
+            duration_ms=whole(data, "duration_ms", path, minimum=0),
+            stdout_tail=text(data, "stdout_tail", path, required=False,
+                             max_len=1_000_000, allow_blank=True),
+            stderr_tail=text(data, "stderr_tail", path, required=False,
+                             max_len=1_000_000, allow_blank=True),
+            output_truncated=flag(data, "output_truncated", path, default=False),
+            artifact_filenames=text_list(data, "artifact_filenames", path,
+                                         max_items=5000, max_len=512),
+            partial=flag(data, "partial", path, default=False),
+            schema_version=whole(data, "schema_version", path,
+                                 default=SCHEMA_VERSION, minimum=1),
+        )
+
+    @property
+    def ok(self) -> bool:
+        return self.status == "completed"
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "schema_version": self.schema_version, "run_id": self.run_id,
+            "backend": self.backend, "status": self.status,
+            "exit_code": self.exit_code, "reason": self.reason,
+            "started_at": self.started_at, "ended_at": self.ended_at,
+            "duration_ms": self.duration_ms, "stdout_tail": self.stdout_tail,
+            "stderr_tail": self.stderr_tail, "output_truncated": self.output_truncated,
+            "artifact_filenames": list(self.artifact_filenames), "partial": self.partial,
+        }
