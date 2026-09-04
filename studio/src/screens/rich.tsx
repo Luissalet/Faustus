@@ -1,0 +1,119 @@
+import { Fragment, type ReactNode } from 'react';
+
+/**
+ * A deliberately small reader for what models actually write: fenced
+ * code, inline code, bold, headings, lists, links and paragraphs.
+ *
+ * Not a Markdown implementation. A full one costs 40–90 KB of the 350 KB
+ * budget (DECISIONES_UI.md) to handle tables and footnotes that a chat
+ * reply almost never contains. Everything unknown falls through as text,
+ * which is the correct failure for a transcript: nothing is ever hidden.
+ */
+
+const INLINE = /(`[^`\n]+`|\*\*[^*\n]+\*\*|\[[^\]\n]+\]\((https?:\/\/[^\s)]+)\))/g;
+
+function inline(text: string, keyPrefix: string): ReactNode[] {
+  const out: ReactNode[] = [];
+  let last = 0;
+  let index = 0;
+  for (const match of text.matchAll(INLINE)) {
+    const start = match.index ?? 0;
+    if (start > last) out.push(text.slice(last, start));
+    const token = match[0];
+    const key = `${keyPrefix}-${index++}`;
+    if (token.startsWith('`')) {
+      out.push(<code key={key}>{token.slice(1, -1)}</code>);
+    } else if (token.startsWith('**')) {
+      out.push(<strong key={key}>{token.slice(2, -2)}</strong>);
+    } else {
+      const label = token.slice(1, token.indexOf(']('));
+      out.push(
+        <a key={key} className="fs-link" href={match[2]} target="_blank" rel="noreferrer">
+          {label}
+        </a>,
+      );
+    }
+    last = start + token.length;
+  }
+  if (last < text.length) out.push(text.slice(last));
+  return out;
+}
+
+function prose(block: string, keyPrefix: string): ReactNode[] {
+  const nodes: ReactNode[] = [];
+  const lines = block.split('\n');
+  let i = 0;
+  let k = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (line.trim() === '') {
+      i++;
+      continue;
+    }
+    const heading = /^(#{1,6})\s+(.*)$/.exec(line);
+    if (heading) {
+      nodes.push(
+        <p key={`${keyPrefix}-h${k++}`} className="fs-rich__heading">
+          {inline(heading[2], `${keyPrefix}-hi${k}`)}
+        </p>,
+      );
+      i++;
+      continue;
+    }
+    const bullet = /^\s*(?:[-*•]|\d+[.)])\s+/;
+    if (bullet.test(line)) {
+      const items: string[] = [];
+      const ordered = /^\s*\d+[.)]/.test(line);
+      while (i < lines.length && bullet.test(lines[i])) {
+        items.push(lines[i].replace(bullet, ''));
+        i++;
+      }
+      const List = ordered ? 'ol' : 'ul';
+      nodes.push(
+        <List key={`${keyPrefix}-l${k++}`} className="fs-rich__list">
+          {items.map((item, j) => (
+            <li key={j}>{inline(item, `${keyPrefix}-li${k}-${j}`)}</li>
+          ))}
+        </List>,
+      );
+      continue;
+    }
+    const para: string[] = [];
+    while (i < lines.length && lines[i].trim() !== '' && !bullet.test(lines[i]) && !/^#{1,6}\s/.test(lines[i])) {
+      para.push(lines[i]);
+      i++;
+    }
+    nodes.push(
+      <p key={`${keyPrefix}-p${k++}`}>
+        {para.map((text, j) => (
+          <Fragment key={j}>
+            {j > 0 && <br />}
+            {inline(text, `${keyPrefix}-pi${k}-${j}`)}
+          </Fragment>
+        ))}
+      </p>,
+    );
+  }
+  return nodes;
+}
+
+export function Rich({ text }: { text: string }) {
+  const parts = text.split(/```/);
+  return (
+    <div className="fs-rich">
+      {parts.map((part, index) => {
+        if (index % 2 === 1) {
+          const firstBreak = part.indexOf('\n');
+          const lang = firstBreak === -1 ? '' : part.slice(0, firstBreak).trim();
+          const code = firstBreak === -1 ? part : part.slice(firstBreak + 1);
+          return (
+            <pre key={index} className="fs-rich__code" data-lang={lang || undefined}>
+              <code>{code.replace(/\n$/, '')}</code>
+            </pre>
+          );
+        }
+        return <Fragment key={index}>{prose(part, `b${index}`)}</Fragment>;
+      })}
+    </div>
+  );
+}

@@ -66,6 +66,17 @@ export async function loadHome(signal?: AbortSignal): Promise<HomeData> {
   };
 }
 
+/**
+ * The server writes naive ISO stamps (`2026-08-31T15:35:30.170267`) that
+ * are UTC without saying so. Date.parse reads those as LOCAL time, which
+ * made a session from two minutes ago say "hace 2 h" in Madrid. A stamp
+ * with no zone is read as UTC; one that carries a zone is left alone.
+ */
+export function parseStamp(value: string): number {
+  const naive = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(value);
+  return Date.parse(naive ? `${value}Z` : value) || 0;
+}
+
 /** Most recently touched first; the API's order is not guaranteed. */
 export function byRecency<T extends { updated_at?: string | number | null; last_message_at?: string | null }>(
   items: T[],
@@ -73,7 +84,7 @@ export function byRecency<T extends { updated_at?: string | number | null; last_
   const stamp = (item: T): number => {
     const value = item.last_message_at ?? item.updated_at;
     if (typeof value === 'number') return value * 1000;
-    if (typeof value === 'string') return Date.parse(value) || 0;
+    if (typeof value === 'string') return parseStamp(value);
     return 0;
   };
   return [...items].sort((a, b) => stamp(b) - stamp(a));
@@ -88,7 +99,7 @@ export function byRecency<T extends { updated_at?: string | number | null; last_
  */
 export function relativeTime(value?: string | number | null): string {
   if (value === null || value === undefined) return '';
-  const ms = typeof value === 'number' ? value * 1000 : Date.parse(value);
+  const ms = typeof value === 'number' ? value * 1000 : parseStamp(value);
   if (!ms) return '';
 
   const deltaMinutes = Math.round((Date.now() - ms) / 60000);

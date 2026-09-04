@@ -109,6 +109,12 @@ romper la API.
   mantener dos interfaces vivas. Cada pantalla migrada retira su equivalente
   legacy; cuando la última se va, el flag se borra con ella.
 - El shell nuevo no escribe ningún dato que la UI antigua no sepa leer.
+- **Paridad antes de retirar (04-09, Luis): redistribuir y cambiar sí; menos
+  funciones, nunca.** `PARIDAD_FUNCIONAL.md` es el libro: una pantalla legacy
+  solo se retira cuando todas sus filas dicen «Migrado» y están verificadas
+  en el 7001. Mientras haya una sola fila en «Anterior», «Interfaz anterior»
+  sigue en la navegación y `?shell=legacy` sirve la aplicación completa e
+  idéntica. Un ticket que migra una pantalla incluye actualizar ese libro.
 
 ## 5. `DESIGN.md` es bloqueante duro
 

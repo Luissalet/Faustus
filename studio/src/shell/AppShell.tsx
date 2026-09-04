@@ -1,20 +1,26 @@
 import { LogOut } from 'lucide-react';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { BrowserRouter, NavLink, Route, Routes, useLocation } from 'react-router';
-import { Button } from '../components';
-import { ActivityScreen } from '../screens/Activity';
-import { AutomationsScreen } from '../screens/Automations';
+import { Button, Skeleton } from '../components';
 import { HomeScreen } from '../screens/Home';
-import { LibraryScreen } from '../screens/Library';
 import { NotMigrated } from '../screens/NotMigrated';
-import { ProjectScreen } from '../screens/Project';
-import { ProjectsScreen } from '../screens/Projects';
+import { StudioScreen } from '../screens/Studio';
+
 import { BrandMark } from './BrandMark';
 import { CommandPalette } from './CommandPalette';
 import { DESTINATIONS } from './routes';
 import { setStudioEnabled } from './flag';
 import { ensureOverlayRoot, removeOverlayRoot } from './overlayRoot';
 import { useShell } from './store';
+
+/* Inicio and Studio are the app; the rest arrive as route chunks the
+   first time they are opened, so the eager bundle stays inside the
+   350 KB budget (DECISIONES_UI.md) as screens keep landing. */
+const ActivityScreen = lazy(() => import('../screens/Activity').then((m) => ({ default: m.ActivityScreen })));
+const AutomationsScreen = lazy(() => import('../screens/Automations').then((m) => ({ default: m.AutomationsScreen })));
+const LibraryScreen = lazy(() => import('../screens/Library').then((m) => ({ default: m.LibraryScreen })));
+const ProjectScreen = lazy(() => import('../screens/Project').then((m) => ({ default: m.ProjectScreen })));
+const ProjectsScreen = lazy(() => import('../screens/Projects').then((m) => ({ default: m.ProjectsScreen })));
 
 /**
  * The rail.
@@ -136,11 +142,27 @@ function Rail() {
   );
 }
 
-/** Re-mounts its child on every path change so the entrance animation runs. */
+/**
+ * Re-mounts its child on every path change so the entrance animation runs.
+ * Studio owns its own scrolling (transcript up, composer pinned), so main
+ * is told which screen it holds and hands over the height.
+ */
 function RouteStage() {
   const { pathname } = useLocation();
+  const screen = pathname.startsWith('/studio') ? 'studio' : undefined;
   return (
-    <div className="fs-route" key={pathname}>
+    <main className="fs-main" id="fs-main" tabIndex={-1} data-screen={screen}>
+      <div className="fs-main__inner">
+        <RouteBody key={pathname} />
+      </div>
+    </main>
+  );
+}
+
+function RouteBody() {
+  return (
+    <div className="fs-route">
+      <Suspense fallback={<Skeleton label="Cargando la pantalla" count={4} height="56px" />}>
       <Routes>
         <Route path="/" element={<HomeScreen />} />
         {DESTINATIONS.filter((destination) => !destination.ready).map((destination) => (
@@ -150,6 +172,7 @@ function RouteStage() {
             element={<NotMigrated destination={destination} />}
           />
         ))}
+        <Route path="/studio" element={<StudioScreen />} />
         <Route path="/projects" element={<ProjectsScreen />} />
         <Route path="/projects/:projectId" element={<ProjectScreen />} />
         <Route path="/library" element={<LibraryScreen />} />
@@ -157,6 +180,7 @@ function RouteStage() {
         <Route path="/automations" element={<AutomationsScreen />} />
         <Route path="*" element={<NotMigrated />} />
       </Routes>
+      </Suspense>
     </div>
   );
 }
@@ -196,11 +220,7 @@ export function AppShell() {
           <span />
         </div>
         <Rail />
-        <main className="fs-main" id="fs-main" tabIndex={-1}>
-          <div className="fs-main__inner">
-            <RouteStage />
-          </div>
-        </main>
+        <RouteStage />
         <CommandPalette />
       </div>
     </BrowserRouter>

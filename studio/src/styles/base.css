@@ -147,3 +147,26 @@
   scrollbar-color: var(--fs-border-strong) transparent;
   scrollbar-width: thin;
 }
+
+/* ── Disclosure ──
+   The legacy stylesheet dresses every <details> as a beige callout with a
+   painted summary and a ▶ before it. Studio's disclosures (tool steps,
+   reasoning) are drawn by their own classes; the tags go back to the
+   browser's defaults here so those classes start from zero. */
+.fs-app details,
+.fs-app summary {
+  all: revert;
+}
+
+.fs-app summary::before,
+.fs-app summary::after {
+  content: none;
+}
+
+.fs-app summary {
+  list-style: none;
+}
+
+.fs-app summary::-webkit-details-marker {
+  display: none;
+}

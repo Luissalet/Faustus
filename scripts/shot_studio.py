@@ -18,7 +18,10 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 BASE = os.environ.get("ODYSSEUS_STUDIO_URL", "http://127.0.0.1:7001")
-OUT = Path(__file__).resolve().parents[1] / "docs" / "ui" / "after"
+OUT = Path(
+    os.environ.get("ODYSSEUS_STUDIO_OUT")
+    or Path(__file__).resolve().parents[1] / "docs" / "ui" / "after"
+)
 
 VIEWPORTS = {
     "desktop": (1400, 900),
@@ -34,7 +37,19 @@ SCREENS = {
     "05_project_context": "/projects/100d012d1ff3?tab=contexto",
     "06_automations": "/automations",
     "07_library": "/library",
+    "08_studio_empty": "/studio",
+    # A real session: ODYSSEUS_STUDIO_SESSION picks it, else the newest.
+    "09_studio_session": "/studio?s=__SESSION__",
 }
+
+
+def newest_session(page) -> str:
+    wanted = os.environ.get("ODYSSEUS_STUDIO_SESSION")
+    if wanted:
+        return wanted
+    sessions = page.evaluate("fetch('/api/sessions').then(r => r.json())")
+    ranked = sorted(sessions, key=lambda s: s.get("last_message_at") or "", reverse=True)
+    return ranked[0]["id"] if ranked else ""
 
 
 def main() -> int:
@@ -54,7 +69,9 @@ def main() -> int:
             # the page is never "idle" and every goto times out at 30s.
             page.goto(f"{BASE}/?shell=studio", wait_until="domcontentloaded")
             page.wait_for_timeout(1200)
+            session = newest_session(page)
             for screen, path in SCREENS.items():
+                path = path.replace("__SESSION__", session)
                 page.goto(f"{BASE}{path}", wait_until="domcontentloaded")
                 page.wait_for_timeout(1500)
                 target = OUT / f"{screen}_{name}.png"

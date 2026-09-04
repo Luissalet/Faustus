@@ -54,14 +54,18 @@ export function CommandPalette() {
 
         <Command.Group heading="Acciones" className="fs-palette__group">
           <Command.Item
-            value="Buscar conversaciones"
-            onSelect={() => {
-              setOpen(false);
-              window.location.href = '/?shell=legacy';
-            }}
+            value="Nueva conversación"
+            onSelect={() => go('/studio')}
             className="fs-palette__item"
           >
-            Buscar conversaciones (interfaz anterior)
+            Nueva conversación
+          </Command.Item>
+          <Command.Item
+            value="Buscar conversaciones"
+            onSelect={() => go('/studio?buscar=1')}
+            className="fs-palette__item"
+          >
+            Buscar conversaciones
           </Command.Item>
         </Command.Group>
       </Command.List>

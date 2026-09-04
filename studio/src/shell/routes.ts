@@ -30,7 +30,7 @@ export interface Destination {
 
 export const DESTINATIONS: Destination[] = [
   { path: '/', label: 'Inicio', icon: Home, ready: true },
-  { path: '/studio', label: 'Studio', icon: Sparkles, ready: false },
+  { path: '/studio', label: 'Studio', icon: Sparkles, ready: true },
   { path: '/projects', label: 'Proyectos', icon: FolderKanban, ready: true },
   { path: '/library', label: 'Biblioteca', icon: Library, ready: true },
   { path: '/automations', label: 'Automatizaciones', icon: Workflow, ready: true },

@@ -100,3 +100,37 @@ su área y baja el baseline. Ningún módulo Studio nuevo la aumenta.
     API justo al acabar el lote A. No da error legible: hay que mirar
     `--output-format json` para verlo. Si un lote termina en segundos y sin
     escribir nada, es esto y no un fallo del encargo.
+
+## Añadido tras Studio (04-09-2026, lote E)
+
+17. **`[!]` Studio aún no sustituye al chat legacy.** Faltan adjuntos,
+    documentos (`doc_update`, editor), comparar modelos, presets/personajes,
+    incógnito, edición y borrado de mensajes, fork y compactar. Hasta que
+    tenga eso, «Abrir en la interfaz anterior» se queda en la cabecera y
+    `static/js/chat.js` no se toca (DECISIONES_UI.md §4).
+18. **`[~]` Eventos del stream que Studio ignora a propósito.** `plan_update`,
+    `browser_view`, `doc_*`, `ui_control`, `context_ledger`, `subagent_event`,
+    `harness_*`, `round_info`, `progress_update`. Llegan y se descartan sin
+    ruido. Cada uno es una pantalla o panel pendiente, no un bug.
+19. **`[!]` Los tiempos del servidor son UTC sin zona.** `/api/sessions` y
+    `/api/history` escriben `2026-08-31T15:35:30.170267` sin `Z`. El
+    adaptador (`parseStamp` en `adapters/home.ts`) los lee como UTC. Si algún
+    endpoint escribe hora local sin zona (`next_run` de tareas es sospechoso)
+    saldrá dos horas desplazado: verificar Automatizaciones contra la hora
+    real de una tarea programada.
+20. **`[~]` `min-block-size: 0` del reset rompe filas con hijos `overflow`.**
+    `base.css` pone `min-block-size: 0` a `button`/`a` para vencer a las
+    alturas fijas del legacy; en Chrome, un enlace grid con hijos
+    `overflow: hidden` colapsa a cero. Studio lo repone por clase
+    (`.fs-studio__session`). Cualquier fila nueva con esa forma necesita lo
+    mismo o cambiar el reset por algo más quirúrgico.
+21. **`[~]` La paleta de modelos lee `/api/models` una vez por visita.** Sin
+    `refresh`, así que un endpoint que se enciende después no aparece hasta
+    recargar. Falta un «actualizar» en la paleta y respetar `models_extra`.
+22. **`[?]` Las capturas dependen del modelo local.** `shot_studio.py` fotografía
+    la sesión más reciente; con Ollama apagado el transcript de la captura
+    enseña el error de conexión, que es honesto pero no representativo.
+23. **`[~]` `ollama serve` lanzado a mano no lee `OLLAMA_MODELS` del usuario**
+    si el shell viene del bridge: hay que exportarla antes
+    (`_claude_tmp/ollama_up.ps1`). No es de Faustus, pero cuesta veinte minutos
+    la primera vez.

@@ -67,29 +67,40 @@ proporcionales, auditoría de la guía Vercel pasada o excepción documentada,
 
 ## Incremento 2 — Studio
 
-- [ ] **UI-031** ContextBar: proyecto, memoria, referencias, skill, backend y
-      presupuesto legibles y editables antes de ejecutar.
-- [ ] **UI-032** Studio de código: modos explorar/planificar/implementar/revisar,
-      workspace, diff, tests y checkpoint como paneles. El E2E de agentes sigue
-      pasando. Retira su equivalente legacy al cerrarse.
+- [x] **UI-031 (parcial)** Barra de contexto: modelo (paleta cmdk con
+      búsqueda), modo chat/agente, web, terminal y plan, persistidos.
+      **Pendiente**: proyecto, memoria, referencias, skill y presupuesto
+      editables antes de ejecutar (hoy el workspace llega solo desde la
+      carpeta de la sesión).
+- [x] **UI-032 (núcleo)** Studio en `/studio`: transcript en streaming SSE
+      contra `/api/chat_stream`, historial, sesiones con filtro, razonamiento
+      plegado, traza de herramientas viva en el carril (con comando y salida),
+      tarjeta de aprobación (aprobar / toda la tarea / denegar) que reanuda el
+      stream, parar, métricas por turno, fuentes web, imágenes generadas.
+      Probado en el 7001 con `qwen3.5:9b` en chat y en agente con `ls`.
+      **Pendiente**: diff, tests y checkpoint como paneles; adjuntos; retirar
+      el chat legacy (`static/js/chat.js`) cuando tenga lo que tiene el viejo.
 - [ ] **UI-033** Studio creativo: referencias con rol, variantes, máscara y
       receta. Aquí entra el prototipo que proponía el documento de producto.
 
 ## Incremento 3 — proyectos y artefactos
 
-- [ ] **UI-040** Projects fuera del modal: `/projects` y `/projects/{id}`.
-- [ ] **UI-041** Biblioteca federada, filtros en URL, TanStack Virtual por
-      encima de 50 entradas, imágenes con dimensiones explícitas.
+- [x] **UI-040** Projects fuera del modal: `/projects` y `/projects/{id}`.
+- [x] **UI-041** Biblioteca federada, filtros en URL. **Pendiente**: TanStack
+      Virtual por encima de 50 entradas, imágenes con dimensiones explícitas;
+      verificar con datos reales (la instancia de desarrollo está vacía).
 - [ ] **UI-042** ArtifactViewer y lineage. Requiere cerrar antes la deuda de
       identificadores (`PENDIENTES_UI.md`).
 
 ## Incremento 4 — actividad y automatización
 
-- [ ] **UI-050** Esquema común de run: queued, running, waiting-approval,
+- [x] **UI-050** Esquema común de run: queued, running, waiting-approval,
       paused, succeeded, failed, cancelled.
-- [ ] **UI-051** RunTimeline y ApprovalCard.
-- [ ] **UI-052** Automatizaciones como recetas legibles; el editor de nodos es
-      inspección avanzada, no la vista principal.
+- [x] **UI-051** RunTimeline (Actividad sobre el carril) y ApprovalCard (en
+      Studio). **Pendiente**: aprobaciones desde Actividad, no sólo desde el
+      transcript.
+- [x] **UI-052** Automatizaciones como recetas legibles; el editor de nodos
+      sigue en la interfaz anterior como inspección avanzada.
 
 ## Incremento 5 — retirar el sistema antiguo
 

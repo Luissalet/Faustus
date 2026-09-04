@@ -217,3 +217,75 @@
     var(--fs-brand) 100%
   );
 }
+
+/* ── Sauce (04-09, second verdict: "le falta sauce, sobre todo en claro") ──
+   The candy above was tuned on the dark canvas, where light ADDS (screen
+   blending, glow). On a near-white canvas, screen does nothing and a 22%
+   coral bloom reads as a faint pink smudge. Light gets its own recipe:
+   multiply blending, denser tints, a warm paper gradient, a dot grid, and
+   coloured shadows instead of glows. Dark keeps the original values. */
+:root {
+  --fs-aurora-blend: screen;
+  --fs-aurora-opacity: 0.7;
+  --fs-paper: var(--fs-canvas);
+  --fs-dots: color-mix(in srgb, var(--fs-text-1) 6%, transparent);
+  --fs-panel-shadow: 0 1px 0 var(--fs-highlight) inset;
+  --fs-lift-shadow: 0 12px 34px color-mix(in srgb, var(--fs-canvas) 60%, transparent);
+  --fs-accent-gradient: linear-gradient(120deg, var(--fs-brand), var(--fs-brand-hover) 55%, var(--fs-warning));
+}
+
+:root[data-theme='light'] {
+  --fs-aurora-blend: multiply;
+  --fs-aurora-opacity: 0.8;
+  --fs-aurora-a: color-mix(in srgb, var(--fs-brand) 42%, transparent);
+  --fs-aurora-b: color-mix(in srgb, var(--fs-info) 34%, transparent);
+  --fs-aurora-c: color-mix(in srgb, var(--fs-warning) 30%, transparent);
+  --fs-ember: color-mix(in srgb, var(--fs-brand) 26%, transparent);
+  --fs-ember-strong: color-mix(in srgb, var(--fs-brand) 50%, transparent);
+  --fs-ember-faint: color-mix(in srgb, var(--fs-brand) 12%, transparent);
+  --fs-glass: color-mix(in srgb, var(--fs-surface-2) 66%, transparent);
+  --fs-glass-strong: color-mix(in srgb, var(--fs-surface-2) 84%, transparent);
+  --fs-highlight: color-mix(in srgb, var(--fs-surface-2) 90%, transparent);
+  --fs-spotlight: color-mix(in srgb, var(--fs-brand) 18%, transparent);
+  --fs-paper: linear-gradient(
+    160deg,
+    color-mix(in srgb, var(--fs-canvas) 90%, var(--fs-warning)) 0%,
+    var(--fs-canvas) 45%,
+    color-mix(in srgb, var(--fs-canvas) 92%, var(--fs-brand)) 100%
+  );
+  --fs-dots: color-mix(in srgb, var(--fs-brand) 16%, transparent);
+  --fs-panel-shadow: 0 1px 0 var(--fs-highlight) inset,
+    0 10px 30px color-mix(in srgb, var(--fs-brand) 9%, transparent),
+    0 2px 6px color-mix(in srgb, var(--fs-text-1) 6%, transparent);
+  --fs-lift-shadow: 0 18px 44px color-mix(in srgb, var(--fs-brand) 16%, transparent),
+    0 4px 10px color-mix(in srgb, var(--fs-text-1) 8%, transparent);
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme='dark']) {
+    --fs-aurora-blend: multiply;
+    --fs-aurora-opacity: 0.8;
+    --fs-aurora-a: color-mix(in srgb, var(--fs-brand) 42%, transparent);
+    --fs-aurora-b: color-mix(in srgb, var(--fs-info) 34%, transparent);
+    --fs-aurora-c: color-mix(in srgb, var(--fs-warning) 30%, transparent);
+    --fs-ember: color-mix(in srgb, var(--fs-brand) 26%, transparent);
+    --fs-ember-strong: color-mix(in srgb, var(--fs-brand) 50%, transparent);
+    --fs-ember-faint: color-mix(in srgb, var(--fs-brand) 12%, transparent);
+    --fs-glass: color-mix(in srgb, var(--fs-surface-2) 66%, transparent);
+    --fs-glass-strong: color-mix(in srgb, var(--fs-surface-2) 84%, transparent);
+    --fs-highlight: color-mix(in srgb, var(--fs-surface-2) 90%, transparent);
+    --fs-spotlight: color-mix(in srgb, var(--fs-brand) 18%, transparent);
+    --fs-paper: linear-gradient(
+      160deg,
+      color-mix(in srgb, var(--fs-canvas) 90%, var(--fs-warning)) 0%,
+      var(--fs-canvas) 45%,
+      color-mix(in srgb, var(--fs-canvas) 92%, var(--fs-brand)) 100%
+    );
+    --fs-dots: color-mix(in srgb, var(--fs-brand) 16%, transparent);
+    --fs-panel-shadow: 0 1px 0 var(--fs-highlight) inset,
+      0 10px 30px color-mix(in srgb, var(--fs-brand) 9%, transparent),
+      0 2px 6px color-mix(in srgb, var(--fs-text-1) 6%, transparent);
+    --fs-lift-shadow: 0 18px 44px color-mix(in srgb, var(--fs-brand) 16%, transparent),
+      0 4px 10px color-mix(in srgb, var(--fs-text-1) 8%, transparent);
+  }
+}

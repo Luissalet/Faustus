@@ -21,9 +21,23 @@ html[data-studio-shell='on'] body > *:not(#studio-root):not(#fs-overlay-root) {
   z-index: 50;
   display: grid;
   grid-template-columns: 236px minmax(0, 1fr);
-  background: var(--fs-canvas);
+  background: var(--fs-paper);
   color: var(--fs-text-1);
   overflow: hidden;
+}
+
+/* A dot grid over the paper — nodes, the motif, as texture. It fades out
+   towards the bottom-right so it reads as a field, not as graph paper. */
+.fs-shell::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: radial-gradient(circle, var(--fs-dots) 1px, transparent 1.5px);
+  background-size: 22px 22px;
+  /* Any opaque colour works in a mask; a token keeps the guard honest. */
+  mask-image: radial-gradient(900px 700px at 20% 10%, var(--fs-text-1) 0%, transparent 100%);
 }
 
 /* ── Atmosphere ──
@@ -58,8 +72,8 @@ html[data-studio-shell='on'] body > *:not(#studio-root):not(#fs-overlay-root) {
   block-size: 60vmax;
   border-radius: var(--fs-radius-pill);
   filter: blur(80px);
-  opacity: 0.55;
-  mix-blend-mode: screen;
+  opacity: var(--fs-aurora-opacity);
+  mix-blend-mode: var(--fs-aurora-blend);
   will-change: transform;
 }
 
@@ -80,7 +94,7 @@ html[data-studio-shell='on'] body > *:not(#studio-root):not(#fs-overlay-root) {
   inline-size: 34vmax;
   block-size: 34vmax;
   background: var(--fs-aurora-c);
-  opacity: 0.35;
+  opacity: calc(var(--fs-aurora-opacity) * 0.65);
   animation: fs-drift-c 38s var(--fs-ease) infinite alternate;
 }
 

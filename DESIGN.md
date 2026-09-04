@@ -390,3 +390,51 @@ stays on the rail; it does not go somewhere else.
 - Not decoration. It appears only where there is a real run.
 - Not a progress bar in disguise: a step that is waiting for a person says
   so, with the approval it needs.
+
+## Character layer — atmosphere, glass and candy
+
+Added 04-09 after two verdicts on the first shell: "el primo contable de
+ChatGPT", then "le falta sauce, sobre todo en claro". Everything here is a
+token in `tokens.css`, derived from the palette with `color-mix` so the guard
+never sees a literal colour, and everything that moves stops under
+`prefers-reduced-motion`. The test for candy: strip the layer and the app
+still works — it just stops glowing.
+
+### Tokens
+
+| Token | Dark | Light | Used by |
+|---|---|---|---|
+| `--fs-ember`, `-strong`, `-faint` | brand 22 / 45 / 9 % | brand 26 / 50 / 12 % | headers, active node, user bubble |
+| `--fs-glow` | 4 px ring + 24 px bloom | same | indicator, send button, running node |
+| `--fs-aurora-a/b/c` | brand 30 %, info 26 %, warning 16 % | brand 42 %, info 34 %, warning 30 % | the three drifting blobs behind the shell |
+| `--fs-aurora-blend`, `--fs-aurora-opacity` | `screen`, 0.7 | `multiply`, 0.8 | `.fs-aurora span` |
+| `--fs-paper` | flat canvas | warm 160° gradient canvas → warning-tinted → brand-tinted | `.fs-shell` |
+| `--fs-dots` | text 6 % | brand 16 % | dot grid `.fs-shell::after`, masked to fade bottom-right |
+| `--fs-glass`, `--fs-glass-strong` | surface-1 62 %, surface-2 78 % | surface-2 66 %, 84 % | panels, tiles, composer |
+| `--fs-highlight` | text 8 % | surface-2 90 % | the 1 px light along the top of glass |
+| `--fs-panel-shadow` | inset highlight only | inset highlight + coral 9 % 30 px + ink 6 % 6 px | resting panels |
+| `--fs-lift-shadow` | canvas 60 % 34 px | coral 16 % 44 px + ink 8 % 10 px | hover on tiles/cards, composer, send |
+| `--fs-accent-gradient` | brand → brand-hover → warning | same colours, light values | primary button, send, mode thumb |
+| `--fs-title-gradient` | brand → hover → warning → brand | same | the one gradient word per screen |
+| `--fs-chamfer`, `-sm` | 14 / 9 px | same | clipped corners: the arrowhead of the mark |
+| `--fs-ease-spring`, `--fs-duration-enter`, `--fs-stagger` | 420 ms / 45 ms | same | entrances and the sliding indicator |
+
+### Why light needs its own recipe
+
+Screen blending adds light; over near-white it adds nothing. Glows are the
+same story. The light theme therefore multiplies (darkens) the aurora,
+tints the canvas itself, and replaces glows with coloured shadows, which
+are the only way a surface reads as lifted on paper.
+
+### Rules
+
+- One gradient word per screen (`.fs-home__title em`). Two is a poster.
+- Glass only on surfaces that sit over the aurora; never on text.
+- The signal (the travelling light) runs on the navigation rail and on the
+  Studio header, and nowhere else: it marks the two spines of the app.
+- Chamfers on tiles, the user bubble, the hero and the approval card.
+  Buttons and inputs keep radii; chamfering a 28 px control makes it a bug.
+- Spotlight (`.fs-spot`) on tiles and cards the pointer can hover; it does
+  not exist on touch and must not be load-bearing.
+- Nothing in this layer may be the only carrier of a state. Colour, icon
+  and text still say what is running, waiting or failed.

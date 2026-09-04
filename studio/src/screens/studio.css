@@ -1,0 +1,979 @@
+/* Studio (UI-030/031/032): the transcript, the composer, and the rail
+   threaded through every agent turn. */
+
+/* The stage owns its own scrolling, so the shell's main stops scrolling
+   and gives Studio the full height. */
+.fs-main[data-screen='studio'] {
+  padding: 0;
+  overflow: hidden;
+  display: grid;
+}
+
+.fs-main[data-screen='studio'] .fs-main__inner,
+.fs-main[data-screen='studio'] .fs-route {
+  max-inline-size: none;
+  inline-size: 100%;
+  margin: 0;
+  min-block-size: 0;
+  block-size: 100%;
+}
+
+.fs-studio {
+  position: relative;
+  display: grid;
+  grid-template-columns: 264px minmax(0, 1fr);
+  block-size: 100%;
+  min-block-size: 0;
+}
+
+/* ── Conversations ── */
+
+.fs-studio__sessions {
+  display: flex;
+  flex-direction: column;
+  min-block-size: 0;
+  border-inline-end: 1px solid var(--fs-border);
+  background: color-mix(in srgb, var(--fs-surface-1) 55%, transparent);
+  backdrop-filter: blur(12px);
+}
+
+.fs-studio__sessions-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--fs-space-5) var(--fs-space-4) var(--fs-space-3);
+}
+
+.fs-studio__search {
+  margin: 0 var(--fs-space-3) var(--fs-space-3);
+  min-inline-size: 0;
+  block-size: var(--fs-control-sm);
+}
+
+.fs-studio__list {
+  flex: 1;
+  min-block-size: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 var(--fs-space-2) var(--fs-space-4);
+  display: grid;
+  align-content: start;
+  gap: 2px;
+}
+
+.fs-studio__session {
+  position: relative;
+  display: grid;
+  gap: 2px;
+  /* base.css resets links to min-block-size: 0 to beat the legacy button
+     heights. On a grid item whose children clip their overflow, Chrome
+     then sizes those children to zero — the whole row collapsed to its
+     padding. Restored here; the legacy rule does not reach this element. */
+  min-block-size: auto;
+  padding: var(--fs-space-2) var(--fs-space-3) var(--fs-space-2) var(--fs-space-4);
+  border: 0;
+  border-radius: var(--fs-radius-control);
+  background: transparent;
+  color: var(--fs-text-2);
+  font: inherit;
+  text-align: start;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background-color var(--fs-duration-fast) var(--fs-ease),
+    color var(--fs-duration-fast) var(--fs-ease),
+    translate var(--fs-duration-normal) var(--fs-ease-out);
+}
+
+/* The rail's node, as a tick on the left edge of each conversation. It
+   becomes a coral bar with a halo on the open one. */
+.fs-studio__session::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: 4px;
+  inset-block: 50%;
+  translate: 0 -50%;
+  inline-size: 3px;
+  block-size: 6px;
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-border-strong);
+  transition:
+    block-size var(--fs-duration-normal) var(--fs-ease-spring),
+    background-color var(--fs-duration-fast) var(--fs-ease),
+    box-shadow var(--fs-duration-normal) var(--fs-ease);
+}
+
+.fs-studio__session:hover {
+  background: var(--fs-glass-strong);
+  color: var(--fs-text-1);
+  translate: 3px 0;
+}
+
+.fs-studio__session[aria-current='page'] {
+  background: var(--fs-glass-strong);
+  color: var(--fs-text-1);
+  box-shadow: inset 0 1px 0 var(--fs-highlight);
+}
+
+.fs-studio__session[aria-current='page']::before {
+  block-size: 60%;
+  background: var(--fs-brand);
+  box-shadow: 0 0 12px var(--fs-ember-strong);
+}
+
+.fs-studio__session-name {
+  font-size: var(--fs-label-size);
+  font-weight: var(--fs-label-weight);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fs-studio__session-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-1);
+  font-size: 11px;
+  color: var(--fs-text-3);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fs-studio__hint {
+  padding: var(--fs-space-3);
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-3);
+}
+
+/* ── Stage ── */
+
+.fs-studio__stage {
+  display: grid;
+  /* The single column must be minmax(0, 1fr): an implicit auto column
+     takes the nowrap title's max-content width and drags the whole stage
+     past the viewport on a phone. */
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-block-size: 0;
+  min-inline-size: 0;
+}
+
+.fs-studio__head {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-3);
+  padding: var(--fs-space-3) var(--fs-space-5);
+  border-block-end: 1px solid var(--fs-border);
+  background: var(--fs-glass);
+  backdrop-filter: blur(14px);
+}
+
+/* The rail's travelling signal, laid along the bottom edge of the header:
+   the same light that runs down the navigation runs across the stage. */
+.fs-studio__head::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 -1px 0;
+  block-size: 2px;
+  background: linear-gradient(90deg, transparent, var(--fs-brand), var(--fs-warning), transparent);
+  background-size: 34% 100%;
+  background-repeat: no-repeat;
+  background-position: -40% 0;
+  animation: fs-signal-x 5.5s linear infinite;
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+@keyframes fs-signal-x {
+  to {
+    background-position: 140% 0;
+  }
+}
+
+.fs-studio__title {
+  flex: 1;
+  min-inline-size: 0;
+  font-size: var(--fs-body-size);
+  font-weight: var(--fs-label-weight);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fs-studio__head-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+}
+
+.fs-studio__drawer-btn {
+  display: none;
+}
+
+.fs-studio__scroll {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--fs-space-5) var(--fs-space-5) var(--fs-space-4);
+  scroll-behavior: smooth;
+}
+
+.fs-studio__loading,
+.fs-studio__turns,
+.fs-studio__hero {
+  max-inline-size: 860px;
+  margin-inline: auto;
+}
+
+/* ── Hero (no conversation yet) ── */
+
+.fs-studio__hero {
+  position: relative;
+  display: grid;
+  gap: var(--fs-space-4);
+  padding: var(--fs-space-7) var(--fs-space-6);
+  margin-block-start: 6vh;
+  border: 1px solid var(--fs-border);
+  background: var(--fs-glass);
+  backdrop-filter: blur(14px);
+  box-shadow: var(--fs-panel-shadow);
+  clip-path: polygon(
+    0 0,
+    calc(100% - var(--fs-chamfer)) 0,
+    100% var(--fs-chamfer),
+    100% 100%,
+    var(--fs-chamfer) 100%,
+    0 calc(100% - var(--fs-chamfer))
+  );
+}
+
+.fs-studio__hero .fs-watermark {
+  inset-block-start: -60px;
+  inset-inline-end: -40px;
+}
+
+.fs-studio__kicker {
+  font-size: var(--fs-label-size);
+  font-weight: var(--fs-label-weight);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--fs-brand);
+}
+
+.fs-studio__hero-title {
+  font-size: clamp(2.2rem, 1.4rem + 3vw, 3.8rem);
+}
+
+.fs-studio__suggestions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--fs-space-3);
+  margin-block-start: var(--fs-space-2);
+}
+
+.fs-studio__suggestion {
+  font-weight: 400;
+  color: var(--fs-text-2);
+  font-size: var(--fs-label-size);
+  line-height: 1.45;
+}
+
+.fs-studio__suggestion:hover {
+  color: var(--fs-text-1);
+}
+
+/* ── Turns ── */
+
+.fs-studio__turns {
+  display: grid;
+  gap: var(--fs-space-5);
+}
+
+.fs-turn {
+  animation: fs-rise var(--fs-duration-enter) var(--fs-ease-out) both;
+}
+
+.fs-turn--user {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* The person's words: a chamfered glass tile, lit from above, on the
+   right. Two clipped corners — the arrowhead of the mark, twice. */
+.fs-turn__bubble {
+  max-inline-size: min(72%, 60ch);
+  padding: var(--fs-space-3) var(--fs-space-4);
+  background: linear-gradient(135deg, var(--fs-ember), var(--fs-ember-faint)), var(--fs-surface-2);
+  border: 1px solid color-mix(in srgb, var(--fs-brand) 40%, var(--fs-border));
+  box-shadow: var(--fs-panel-shadow);
+  color: var(--fs-text-1);
+  white-space: pre-wrap;
+  word-break: break-word;
+  clip-path: polygon(
+    0 0,
+    calc(100% - var(--fs-chamfer-sm)) 0,
+    100% var(--fs-chamfer-sm),
+    100% 100%,
+    var(--fs-chamfer-sm) 100%,
+    0 calc(100% - var(--fs-chamfer-sm))
+  );
+}
+
+/* The reply hangs off the rail: a node on the left, a thread below it. */
+.fs-turn--assistant {
+  position: relative;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: var(--fs-space-3);
+}
+
+.fs-turn__node {
+  position: relative;
+  inline-size: 12px;
+  block-size: 12px;
+  margin-block-start: 6px;
+  margin-inline-start: 3px;
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-brand);
+  box-shadow: 0 0 10px var(--fs-ember-strong);
+}
+
+.fs-turn__node::before {
+  content: '';
+  position: absolute;
+  inset-block-start: 16px;
+  inset-inline-start: 5px;
+  inline-size: 2px;
+  block-size: calc(100% + 24px);
+  background: linear-gradient(to bottom, var(--fs-ember-strong), transparent);
+}
+
+.fs-turn--assistant[data-streaming] .fs-turn__node::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: var(--fs-radius-pill);
+  border: 2px solid var(--fs-brand);
+  animation: fs-breathe 1.8s var(--fs-ease) infinite;
+}
+
+.fs-turn__body {
+  display: grid;
+  gap: var(--fs-space-3);
+  min-inline-size: 0;
+  padding-block-start: 2px;
+}
+
+.fs-turn__metrics {
+  font-size: 11px;
+  color: var(--fs-text-3);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+/* Streaming caret and the "thinking" pulse. */
+.fs-studio__cursor {
+  display: inline-block;
+  inline-size: 8px;
+  block-size: 1.1em;
+  margin-inline-start: 2px;
+  vertical-align: text-bottom;
+  background: var(--fs-brand);
+  box-shadow: 0 0 10px var(--fs-ember-strong);
+  animation: fs-blink 1s steps(2, start) infinite;
+}
+
+@keyframes fs-blink {
+  to {
+    visibility: hidden;
+  }
+}
+
+.fs-studio__waiting {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  color: var(--fs-text-3);
+  font-size: var(--fs-label-size);
+}
+
+.fs-studio__pulse {
+  display: inline-block;
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-brand);
+  box-shadow: 0 0 10px var(--fs-ember-strong);
+  animation: fs-breathe 1.4s var(--fs-ease) infinite;
+}
+
+/* ── Rich text ── */
+
+.fs-rich {
+  display: grid;
+  gap: var(--fs-space-3);
+  color: var(--fs-text-1);
+  line-height: var(--fs-body-line);
+  max-inline-size: 72ch;
+  word-break: break-word;
+}
+
+.fs-rich p {
+  margin: 0;
+}
+
+.fs-rich__heading {
+  font-weight: var(--fs-title-weight);
+  letter-spacing: var(--fs-title-tracking);
+  margin-block-start: var(--fs-space-2);
+}
+
+.fs-rich__list {
+  margin: 0;
+  padding-inline-start: 1.4em;
+  display: grid;
+  gap: var(--fs-space-1);
+}
+
+.fs-rich code {
+  font-family: var(--fs-font-code);
+  font-size: 0.9em;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--fs-surface-3);
+  color: var(--fs-text-1);
+}
+
+.fs-rich__code {
+  position: relative;
+  margin: 0;
+  padding: var(--fs-space-3) var(--fs-space-4);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: color-mix(in srgb, var(--fs-canvas) 80%, transparent);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  font-family: var(--fs-font-code);
+  font-size: var(--fs-code-size);
+  line-height: 1.55;
+}
+
+.fs-rich__code code {
+  padding: 0;
+  background: none;
+  font-size: inherit;
+}
+
+.fs-rich__code[data-lang]::before {
+  content: attr(data-lang);
+  position: absolute;
+  inset-block-start: 6px;
+  inset-inline-end: 10px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fs-text-3);
+}
+
+/* ── Tools on the rail ── */
+
+.fs-studio__trace {
+  padding: var(--fs-space-1) var(--fs-space-2);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-glass);
+  backdrop-filter: blur(10px);
+  box-shadow: var(--fs-panel-shadow);
+}
+
+details.fs-studio__step {
+  display: block;
+  padding: 0;
+}
+
+details.fs-studio__step > summary {
+  display: grid;
+  grid-template-columns: 18px 1fr auto;
+  align-items: baseline;
+  gap: var(--fs-space-3);
+  padding-block: var(--fs-space-2);
+  padding-inline-end: var(--fs-space-2);
+  cursor: pointer;
+  list-style: none;
+}
+
+details.fs-studio__step > summary::-webkit-details-marker {
+  display: none;
+}
+
+details.fs-studio__step > summary:hover .fs-trace__label {
+  color: var(--fs-text-1);
+}
+
+.fs-studio__cmd,
+.fs-studio__out {
+  margin: 0 0 var(--fs-space-2) 22px;
+  padding: var(--fs-space-2) var(--fs-space-3);
+  border-radius: var(--fs-radius-control);
+  background: color-mix(in srgb, var(--fs-canvas) 80%, transparent);
+  border: 1px solid var(--fs-border);
+  font-family: var(--fs-font-code);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--fs-text-2);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-block-size: 320px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.fs-studio__cmd {
+  color: var(--fs-text-1);
+  border-inline-start: 2px solid var(--fs-brand);
+}
+
+.fs-trace__meta {
+  font-size: 11px;
+  color: var(--fs-text-3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ── Thinking, asks, sources ── */
+
+.fs-studio__thinking > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  cursor: pointer;
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-3);
+  list-style: none;
+}
+
+.fs-studio__thinking > summary::-webkit-details-marker {
+  display: none;
+}
+
+.fs-studio__thinking > summary::before {
+  content: '';
+  inline-size: 14px;
+  block-size: 2px;
+  background: var(--fs-text-3);
+  border-radius: var(--fs-radius-pill);
+}
+
+.fs-studio__thinking[open] > summary::before {
+  background: var(--fs-brand);
+}
+
+.fs-studio__thinking .fs-prose {
+  margin-block-start: var(--fs-space-2);
+  padding-inline-start: var(--fs-space-4);
+  border-inline-start: 2px solid var(--fs-border);
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-3);
+}
+
+.fs-studio__ask {
+  display: grid;
+  gap: var(--fs-space-3);
+  padding: var(--fs-space-4);
+  border: 1px solid color-mix(in srgb, var(--fs-warning) 45%, var(--fs-border));
+  background: color-mix(in srgb, var(--fs-warning) 8%, var(--fs-surface-1));
+  box-shadow:
+    inset 0 1px 0 var(--fs-highlight),
+    0 0 24px color-mix(in srgb, var(--fs-warning) 14%, transparent);
+  clip-path: polygon(
+    0 0,
+    calc(100% - var(--fs-chamfer-sm)) 0,
+    100% var(--fs-chamfer-sm),
+    100% 100%,
+    0 100%
+  );
+}
+
+.fs-studio__ask-title {
+  font-size: var(--fs-label-size);
+  font-weight: var(--fs-label-weight);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fs-warning);
+}
+
+.fs-studio__ask-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-2);
+}
+
+.fs-studio__sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-2);
+  font-size: var(--fs-label-size);
+}
+
+.fs-studio__sources .fs-link {
+  padding: 2px var(--fs-space-2);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-pill);
+  color: var(--fs-text-2);
+  text-decoration: none;
+}
+
+.fs-studio__sources .fs-link:hover {
+  border-color: var(--fs-brand);
+  color: var(--fs-text-1);
+}
+
+.fs-studio__image {
+  max-inline-size: min(100%, 520px);
+  border-radius: var(--fs-radius-preview);
+  border: 1px solid var(--fs-border);
+}
+
+.fs-notice[data-tone='danger'] {
+  border-color: color-mix(in srgb, var(--fs-danger) 45%, var(--fs-border));
+  color: var(--fs-text-1);
+}
+
+/* ── Composer ──
+   A glass slab floating over the bottom of the stage. It lights up along
+   its edge when focused: the ember, drawn around the thing you are
+   writing in. */
+
+.fs-studio__composer {
+  position: relative;
+  display: grid;
+  gap: var(--fs-space-2);
+  margin: 0 auto var(--fs-space-5);
+  inline-size: min(100% - var(--fs-space-5) * 2, 860px);
+  padding: var(--fs-space-3) var(--fs-space-3) var(--fs-space-2);
+  background: var(--fs-glass-strong);
+  border-color: var(--fs-border-strong);
+  border-radius: var(--fs-radius-preview);
+  box-shadow:
+    inset 0 1px 0 var(--fs-highlight),
+    var(--fs-lift-shadow);
+  transition:
+    border-color var(--fs-duration-normal) var(--fs-ease),
+    box-shadow var(--fs-duration-normal) var(--fs-ease);
+}
+
+.fs-studio__composer:focus-within {
+  border-color: color-mix(in srgb, var(--fs-brand) 55%, var(--fs-border-strong));
+  box-shadow:
+    inset 0 1px 0 var(--fs-highlight),
+    0 0 0 4px var(--fs-ember-faint),
+    var(--fs-lift-shadow),
+    0 0 40px var(--fs-ember);
+}
+
+.fs-studio__input {
+  inline-size: 100%;
+  min-block-size: 44px;
+  max-block-size: 220px;
+  padding: var(--fs-space-2) var(--fs-space-2);
+  border: 0;
+  background: transparent;
+  color: var(--fs-text-1);
+  font: inherit;
+  font-size: var(--fs-body-size);
+  line-height: var(--fs-body-line);
+  resize: none;
+  outline: none; /* guard-ok: the composer slab carries the ring (focus-within above) */
+}
+
+.fs-studio__input:focus,
+.fs-studio__input:focus-visible {
+  border: 0;
+  background: transparent;
+  color: var(--fs-text-1);
+  box-shadow: none;
+  outline: none; /* guard-ok: the legacy textarea:focus ring; the slab lights instead */
+}
+
+/* Stop: the same circle as send, hollow, with the halo pulsing while the
+   model is still talking. */
+.fs-studio__send .fs-icon-btn {
+  inline-size: 40px;
+  block-size: 40px;
+  border-radius: var(--fs-radius-pill);
+  border: 2px solid var(--fs-brand);
+  color: var(--fs-brand);
+  background: var(--fs-ember-faint);
+  animation: fs-breathe 1.6s var(--fs-ease) infinite;
+}
+
+.fs-studio__send .fs-icon-btn:hover {
+  background: var(--fs-ember);
+  animation: none;
+  opacity: 1;
+}
+
+.fs-studio__input::placeholder {
+  color: var(--fs-text-3);
+}
+
+.fs-studio__bar {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  flex-wrap: wrap;
+}
+
+.fs-studio__knobs {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-1);
+  flex: 1;
+  flex-wrap: wrap;
+}
+
+.fs-studio__send {
+  margin-inline-start: auto;
+}
+
+/* Chips: pills that fill with ember when pressed. */
+.fs-studio__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  block-size: var(--fs-control-sm);
+  padding: 0 var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-pill);
+  background: transparent;
+  color: var(--fs-text-2);
+  font: inherit;
+  font-size: var(--fs-label-size);
+  font-weight: var(--fs-label-weight);
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background-color var(--fs-duration-fast) var(--fs-ease),
+    border-color var(--fs-duration-fast) var(--fs-ease),
+    color var(--fs-duration-fast) var(--fs-ease),
+    translate var(--fs-duration-normal) var(--fs-ease-spring);
+}
+
+.fs-studio__chip:hover {
+  color: var(--fs-text-1);
+  border-color: var(--fs-border-strong);
+  translate: 0 -1px;
+}
+
+.fs-studio__chip[aria-pressed='true'] {
+  background: var(--fs-ember);
+  border-color: color-mix(in srgb, var(--fs-brand) 60%, var(--fs-border));
+  color: var(--fs-text-1);
+  box-shadow: 0 0 14px var(--fs-ember-faint);
+}
+
+.fs-studio__chip--model span {
+  max-inline-size: 22ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--fs-font-code);
+  font-size: 12px;
+}
+
+/* Segmented control with a sliding thumb: Chat | Agente. */
+.fs-studio__seg {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  block-size: var(--fs-control-sm);
+  padding: 2px;
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-pill);
+  background: color-mix(in srgb, var(--fs-canvas) 60%, transparent);
+}
+
+.fs-studio__seg-thumb {
+  position: absolute;
+  inset-block: 2px;
+  inset-inline-start: 2px;
+  inline-size: calc(50% - 2px);
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-accent-gradient);
+  box-shadow: 0 0 14px var(--fs-ember-strong);
+  transition: translate var(--fs-duration-slow) var(--fs-ease-spring);
+}
+
+.fs-studio__seg-thumb[data-mode='agent'] {
+  translate: 100% 0;
+}
+
+.fs-studio__seg button {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 var(--fs-space-3);
+  border: 0;
+  background: transparent;
+  color: var(--fs-text-2);
+  font: inherit;
+  font-size: var(--fs-label-size);
+  font-weight: var(--fs-label-weight);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color var(--fs-duration-fast) var(--fs-ease);
+}
+
+.fs-studio__seg button[aria-checked='true'] {
+  color: var(--fs-on-brand);
+}
+
+/* The send button: the arrowhead, lit. */
+.fs-studio__go {
+  display: grid;
+  place-items: center;
+  inline-size: 40px;
+  block-size: 40px;
+  border: 0;
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-accent-gradient);
+  background-size: 200% 100%;
+  color: var(--fs-on-brand);
+  cursor: pointer;
+  box-shadow: var(--fs-glow);
+  animation: fs-shimmer-text 6s var(--fs-ease) infinite alternate;
+  transition:
+    transform var(--fs-duration-normal) var(--fs-ease-spring),
+    box-shadow var(--fs-duration-normal) var(--fs-ease),
+    background-color var(--fs-duration-fast) var(--fs-ease),
+    opacity var(--fs-duration-fast) var(--fs-ease);
+}
+
+.fs-studio__go:hover:not(:disabled) {
+  transform: translateY(-2px) rotate(-8deg) scale(1.06);
+  box-shadow: var(--fs-glow), var(--fs-lift-shadow);
+}
+
+.fs-studio__go:active:not(:disabled) {
+  transform: translateY(0) scale(0.96);
+}
+
+.fs-studio__go:disabled {
+  opacity: 0.35;
+  box-shadow: none;
+  cursor: default;
+}
+
+/* ── Drawer (tablet & phone) ── */
+
+.fs-studio__scrim {
+  display: none;
+}
+
+@media (max-width: 1023px) {
+  .fs-studio {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .fs-studio__sessions {
+    position: absolute;
+    inset: 0 auto 0 0;
+    z-index: 3;
+    inline-size: min(84vw, 320px);
+    translate: -104% 0;
+    box-shadow: var(--fs-shadow-overlay);
+    transition: translate var(--fs-duration-slow) var(--fs-ease-out);
+  }
+
+  .fs-studio[data-drawer] .fs-studio__sessions {
+    translate: 0 0;
+  }
+
+  .fs-studio__scrim {
+    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    border: 0;
+    background: color-mix(in srgb, var(--fs-canvas) 55%, transparent);
+    backdrop-filter: blur(2px);
+  }
+
+  .fs-studio__drawer-btn {
+    display: inline-flex;
+  }
+
+  .fs-studio__title {
+    font-size: var(--fs-label-size);
+  }
+
+  .fs-studio__head,
+  .fs-studio__scroll {
+    padding-inline: var(--fs-space-4);
+  }
+
+  .fs-studio__composer {
+    inline-size: calc(100% - var(--fs-space-4) * 2);
+    margin-block-end: var(--fs-space-4);
+  }
+
+  .fs-studio__hero {
+    padding: var(--fs-space-5) var(--fs-space-4);
+    margin-block-start: var(--fs-space-2);
+  }
+
+  .fs-turn__bubble {
+    max-inline-size: 88%;
+  }
+}
+
+@media (max-width: 767px) {
+  .fs-studio__chip--model span {
+    max-inline-size: 12ch;
+  }
+
+  .fs-studio__seg button {
+    padding-inline: var(--fs-space-2);
+  }
+}
+
+/* ── Reduced motion: every animation and spring above stops. ── */
+@media (prefers-reduced-motion: reduce) {
+  .fs-turn,
+  .fs-studio__cursor,
+  .fs-studio__pulse,
+  .fs-studio__go,
+  .fs-studio__head::after,
+  .fs-studio__send .fs-icon-btn,
+  .fs-turn--assistant[data-streaming] .fs-turn__node::after {
+    animation: none;
+  }
+
+  .fs-studio__session,
+  .fs-studio__session::before,
+  .fs-studio__chip,
+  .fs-studio__seg-thumb,
+  .fs-studio__go,
+  .fs-studio__sessions,
+  .fs-studio__composer {
+    transition: none;
+  }
+
+  .fs-studio__session:hover,
+  .fs-studio__chip:hover {
+    translate: none;
+  }
+
+  .fs-studio__go:hover:not(:disabled),
+  .fs-studio__go:active:not(:disabled) {
+    transform: none;
+  }
+
+  .fs-studio__scroll {
+    scroll-behavior: auto;
+  }
+}

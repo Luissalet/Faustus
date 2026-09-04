@@ -1,13 +1,6 @@
-import {
-  ArrowUpRight,
-  ChevronRight,
-  Code2,
-  FileText,
-  Image,
-  Inbox,
-  Search,
-} from 'lucide-react';
+import { ChevronRight, Code2, FileText, Image, Inbox, Search } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
+import { Link, useNavigate } from 'react-router';
 import { EmptyState, Skeleton, StatusBadge } from '../components';
 import {
   byRecency,
@@ -51,15 +44,17 @@ function Block({
   );
 }
 
+/* Each way in opens Studio with the sentence already started. */
 const QUICK_STARTS = [
-  { label: 'Crear imagen', icon: Image },
-  { label: 'Escribir', icon: FileText },
-  { label: 'Programar', icon: Code2 },
-  { label: 'Investigar', icon: Search },
+  { label: 'Crear imagen', icon: Image, draft: 'Genera una imagen de ' },
+  { label: 'Escribir', icon: FileText, draft: 'Escribe ' },
+  { label: 'Programar', icon: Code2, draft: 'Programa ' },
+  { label: 'Investigar', icon: Search, draft: 'Investiga en la web ' },
 ];
 
 export function HomeScreen() {
   const spotlight = useSpotlight();
+  const navigate = useNavigate();
   const [data, setData] = useState<HomeData | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -145,10 +140,10 @@ export function HomeScreen() {
         <Block title="Continuar" index={2}>
           <div className="fs-list fs-list--rail">
             {sessions.map((session) => (
-              <a
+              <Link
                 key={session.id}
                 className="fs-row"
-                href={`/?shell=legacy#${session.id}`}
+                to={`/studio?s=${encodeURIComponent(session.id)}`}
                 data-testid="home-session"
               >
                 <span className="fs-row__main">
@@ -164,11 +159,8 @@ export function HomeScreen() {
                   </span>
                 </span>
                 {session.mode === 'agent' && <StatusBadge status="succeeded" label="Agente" />}
-                {/* Continuing a conversation still happens in the legacy chat,
-                    so the row says it leaves rather than surprising you with
-                    a different interface after the click. */}
-                <ArrowUpRight size={15} aria-hidden="true" className="fs-row__leaves" />
-              </a>
+                <ChevronRight size={16} aria-hidden="true" className="fs-row__go" />
+              </Link>
             ))}
           </div>
         </Block>
@@ -208,11 +200,7 @@ export function HomeScreen() {
               className="fs-tile fs-spot"
               onMouseMove={spotlight}
               data-testid={`quickstart-${quick.label.toLowerCase().replace(/\s+/g, '-')}`}
-              onClick={() => {
-                // Studio is UI-032/UI-033. Until then the honest thing is to
-                // hand the intent to the interface that can actually run it.
-                window.location.href = '/?shell=legacy';
-              }}
+              onClick={() => navigate(`/studio?draft=${encodeURIComponent(quick.draft)}`)}
             >
               <span className="fs-tile__icon">
                 <quick.icon size={18} aria-hidden="true" />
@@ -229,10 +217,8 @@ export function HomeScreen() {
           title="Todavía no hay nada que continuar"
           body="Cuando empieces un trabajo aparecerá aquí, con su proyecto y lo que quedó pendiente."
           primaryAction={{
-            label: 'Empezar en la interfaz anterior',
-            onClick: () => {
-              window.location.href = '/?shell=legacy';
-            },
+            label: 'Empezar en Studio',
+            onClick: () => navigate('/studio'),
           }}
         />
       )}
