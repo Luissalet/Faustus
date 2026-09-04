@@ -87,3 +87,37 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* ── Scrollbars ──
+   The legacy stylesheet paints them in its own accent, which shows up inside
+   every Studio panel that scrolls and reads as a leftover from another app.
+   Scoped to the Studio tree, so the old interface keeps its own. */
+.fs-app *::-webkit-scrollbar {
+  inline-size: 10px;
+  block-size: 10px;
+}
+
+.fs-app *::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.fs-app *::-webkit-scrollbar-thumb {
+  background: var(--fs-border-strong);
+  border-radius: var(--fs-radius-pill);
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+.fs-app *::-webkit-scrollbar-thumb:hover {
+  background: var(--fs-text-3);
+  background-clip: content-box;
+}
+
+.fs-app *::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.fs-app {
+  scrollbar-color: var(--fs-border-strong) transparent;
+  scrollbar-width: thin;
+}

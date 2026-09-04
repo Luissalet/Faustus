@@ -1,0 +1,170 @@
+/* Proyectos: lista y detalle (UI-040). */
+
+.fs-screen {
+  display: grid;
+  gap: var(--fs-space-5);
+}
+
+.fs-screen__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--fs-space-4);
+  flex-wrap: wrap;
+}
+
+.fs-screen__title {
+  font-size: var(--fs-display-size);
+  font-weight: var(--fs-display-weight);
+  letter-spacing: var(--fs-display-tracking);
+  line-height: 1.15;
+}
+
+.fs-screen__sub {
+  color: var(--fs-text-2);
+  margin-block-start: var(--fs-space-1);
+  font-family: var(--fs-font-code);
+  font-size: var(--fs-code-size);
+}
+
+.fs-search {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  padding: 0 var(--fs-space-3);
+  block-size: var(--fs-control-md);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-1);
+  color: var(--fs-text-3);
+  min-inline-size: 240px;
+}
+
+.fs-search input {
+  flex: 1;
+  min-inline-size: 0;
+  border: 0;
+  background: transparent;
+  color: var(--fs-text-1);
+  font: inherit;
+  font-size: var(--fs-label-size);
+  outline: none; /* guard-ok: the wrapper takes the ring below, so the field
+                    and its icon light up as one control instead of two. */
+}
+
+.fs-search:focus-within {
+  border-color: var(--fs-focus);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--fs-focus) 35%, transparent);
+}
+
+/* ── Tabs ── */
+
+.fs-tabs {
+  display: flex;
+  gap: var(--fs-space-1);
+  border-block-end: 1px solid var(--fs-border);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+.fs-tab {
+  padding: var(--fs-space-2) var(--fs-space-3);
+  border: 0;
+  background: none;
+  color: var(--fs-text-3);
+  font: inherit;
+  font-size: var(--fs-label-size);
+  font-weight: var(--fs-label-weight);
+  cursor: pointer;
+  white-space: nowrap;
+  border-block-end: 2px solid transparent;
+  margin-block-end: -1px;
+  transition: color var(--fs-duration-fast) var(--fs-ease);
+}
+
+.fs-tab:hover {
+  color: var(--fs-text-2);
+}
+
+.fs-tab[aria-selected='true'] {
+  color: var(--fs-text-1);
+  border-block-end-color: var(--fs-brand);
+}
+
+/* ── Panels ── */
+
+.fs-panel {
+  padding: var(--fs-space-4);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-1);
+}
+
+.fs-panel__label {
+  font-size: var(--fs-label-size);
+  font-weight: var(--fs-label-weight);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fs-text-3);
+  margin-block-end: var(--fs-space-3);
+}
+
+/* Long-form text the user wrote: readable measure, preserved line breaks,
+   and never a monospace face just because it came from a textarea. */
+.fs-prose {
+  color: var(--fs-text-2);
+  white-space: pre-wrap;
+  max-inline-size: 68ch;
+}
+
+/* The context block is what the model literally receives, so it is shown as
+   code: exact, monospaced, scrollable, and never reflowed into prose. */
+.fs-context {
+  margin: 0;
+  padding: var(--fs-space-4);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-2);
+  color: var(--fs-text-2);
+  font-family: var(--fs-font-code);
+  font-size: var(--fs-code-size);
+  line-height: 1.55;
+  max-block-size: 60vh;
+  overflow: auto;
+  overscroll-behavior: contain;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.fs-files {
+  display: grid;
+  gap: var(--fs-space-1);
+}
+
+.fs-file {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-3);
+  padding: var(--fs-space-2) var(--fs-space-3);
+  border-block-end: 1px solid var(--fs-border);
+}
+
+.fs-file:last-child {
+  border-block-end: 0;
+}
+
+.fs-file__name {
+  flex: 1;
+  min-inline-size: 0;
+  font-family: var(--fs-font-code);
+  font-size: var(--fs-code-size);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fs-file__meta {
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-3);
+  font-variant-numeric: tabular-nums;
+}

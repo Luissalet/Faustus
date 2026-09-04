@@ -4,6 +4,8 @@ import { BrowserRouter, NavLink, Route, Routes } from 'react-router';
 import { Button } from '../components';
 import { HomeScreen } from '../screens/Home';
 import { NotMigrated } from '../screens/NotMigrated';
+import { ProjectScreen } from '../screens/Project';
+import { ProjectsScreen } from '../screens/Projects';
 import { CommandPalette } from './CommandPalette';
 import { DESTINATIONS } from './routes';
 import { setStudioEnabled } from './flag';
@@ -95,7 +97,8 @@ export function AppShell() {
                   element={<NotMigrated destination={destination} />}
                 />
               ))}
-              <Route path="/projects/:projectId" element={<NotMigrated />} />
+              <Route path="/projects" element={<ProjectsScreen />} />
+              <Route path="/projects/:projectId" element={<ProjectScreen />} />
               <Route path="*" element={<NotMigrated />} />
             </Routes>
           </div>
