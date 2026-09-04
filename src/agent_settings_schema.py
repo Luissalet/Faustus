@@ -270,6 +270,13 @@ GROUPS: list[dict[str, Any]] = [
             _int("agent_subagent_max_parallel", "Max parallel workers",
                  "Workers running at the same time; the rest wait as 'queued'. Two requests to the SAME Ollama model queue on its single slot, so this only overlaps work when workers use another model (below) or another server.",
                  1, 32),
+            _int("agent_subagent_depth", "Delegation depth ceiling",
+                 "How many generations of workers one turn may produce. 1 (the default) means the "
+                 "workers you start may not start workers of their own; 0 refuses delegation "
+                 "entirely. An agent definition may only narrow this, never widen it, and a task "
+                 "that would go deeper is refused BEFORE the worker exists — with the limit and "
+                 "this setting's name in the message.",
+                 0, 4),
             _text("dispatch_model", "Fable workers: model",
                   "Model for workers dispatched from OUTSIDE the app (POST /api/dispatch with an `agents:dispatch` API token — Fable, Claude Desktop, a script). Empty = the utility model, then the default chat model. Pin it to a card in Local models → Options."),
             _text("dispatch_endpoint_id", "Fable workers: endpoint id",
@@ -429,6 +436,12 @@ GROUPS: list[dict[str, Any]] = [
                   "rounds stop producing change — the size, edit distance and similarity of successive "
                   "rounds. `fix_rounds` becomes a maximum instead of an exact count, and a request may ask "
                   "for up to 4 of them. Off = the fixed counter, capped at 2."),
+            _bool("agent_fixer_resume", "Resume the worker a fix round is fixing",
+                  "When a dispatched job's verification fails, continue the worker that made the "
+                  "change — in its own session, with the files it already read — instead of "
+                  "building a fresh one from the task plus the failure text. Rebuilding that "
+                  "understanding is the expensive half of a fix round. A session that no longer "
+                  "has any history degrades silently to a fresh worker. Off = always a fresh one."),
             _bool("agent_worker_state_detection", "Read a worker's state from its output",
                   "Classify each worker's own output while it runs with rule packs — rate limited, "
                   "waiting for input, stuck (the same line over and over), auth error, disk full, out "

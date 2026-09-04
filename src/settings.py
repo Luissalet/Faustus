@@ -375,6 +375,11 @@ DEFAULT_SETTINGS = {
     "agent_subagent_stall_seconds": 120,
     "agent_subagent_supervisor": True,
     "agent_subagent_max_parallel": 2,
+    # How many generations of workers one turn may produce
+    # (src/subagent_permissions.py). 1 = the coordinator's workers may not
+    # delegate again. Registered here so the ceiling is visible in Settings:
+    # a limit nobody can see is one nobody knows they are relying on.
+    "agent_subagent_depth": 1,
     # Model the workers run on ("" = the coordinator's). Two different models
     # generate at the same time on Ollama; two requests to one model queue on
     # its single slot — pin the worker model to the other card (Local models →
@@ -390,6 +395,11 @@ DEFAULT_SETTINGS = {
     # count, and a caller may ask for more of them because the loop ends itself.
     # Off = exactly today's fixed counter (and a maximum of 2 fix rounds).
     "agent_fix_round_convergence": True,
+    # A fix round CONTINUES the worker that made the change instead of building
+    # a new one from the task plus the failure text (src/dispatch.py). Re-deriving
+    # context the first worker already had is the expensive half of a fix round.
+    # Off = today's fresh worker every time.
+    "agent_fixer_resume": True,
     # Read each worker's OWN output for a state while it runs (rule packs in
     # src/output_rules.py): rate_limited, waiting_for_input, stuck, auth_error,
     # disk_full, oom. The state and the literal that proves it appear in that
