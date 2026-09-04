@@ -75,7 +75,16 @@ OUTPUT_TAIL_BYTES = 64_000
 #: exist in the image — a numeric id always works.
 RUN_UID, RUN_GID = 1000, 1000
 
-DEFAULT_IMAGE = "python:3.12-slim"
+#: Built from `docker/sandbox.Dockerfile`, not pulled. `python:3.12-slim` on
+#: its own was not usable as an agent shell: `git status`, `rg TODO` and
+#: `node -v` all came back "not found", which reads like a broken sandbox
+#: rather than a bare image.
+DEFAULT_IMAGE = "faustus-sandbox:1"
+
+#: Images Faustus builds itself. A missing one of these is fixed by running the
+#: build script, and saying `docker pull` for it would send someone to a
+#: registry that has never heard of it.
+LOCAL_IMAGE_PREFIXES = ("faustus-sandbox",)
 
 
 # ── shared helpers ─────────────────────────────────────────────────────────
@@ -192,9 +201,12 @@ class DockerWorkspaceBackend:
                                  or "no output")}
         seen_image = self._docker(["image", "inspect", self.image, "--format", "{{.Id}}"], timeout=30)
         if seen_image.returncode != 0:
+            fix = (f"run: powershell -File scripts/build_sandbox_image.ps1"
+                   if self.image.startswith(LOCAL_IMAGE_PREFIXES)
+                   else f"run: docker pull {self.image}")
             return {"ok": False, "reason": "image_missing",
-                    "detail": f"{self.image} is not on this machine. Nothing is pulled "
-                              f"automatically — run: docker pull {self.image}"}
+                    "detail": f"{self.image} is not on this machine. Nothing is pulled or "
+                              f"built automatically — {fix}"}
         return {"ok": True, "reason": "", "detail":
                 f"docker {seen_daemon.stdout.decode('utf-8', 'replace').strip()}, "
                 f"image {self.image} present"}

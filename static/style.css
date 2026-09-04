@@ -9921,6 +9921,23 @@ body.fullwidth-chat .chat-history {
   font-size: 0.85em;
   opacity: 0.5;
 }
+/* Where a tool call ran (see static/js/tool_run_badge.js). Quiet by default —
+   it is a fact to have available, not a thing to shout — and only loud when it
+   says a command was refused, which is the case someone has to act on. */
+.agent-thread-where {
+  font-size: 0.72em;
+  font-family: var(--mono, ui-monospace, monospace);
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  opacity: 0.55;
+  white-space: nowrap;
+}
+.agent-thread-where.is-refused {
+  opacity: 0.95;
+  border-color: var(--danger, #c0392b);
+  color: var(--danger, #c0392b);
+}
 .agent-thread-chevron {
   font-size: 0.7em;
   transition: transform 0.2s ease;

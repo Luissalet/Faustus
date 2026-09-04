@@ -38,6 +38,9 @@ from typing import Any, Dict, Optional, Tuple
 
 from src.contracts import SkillManifest
 from src.contracts.base import now_iso
+# One definition of the default image, not two literals that drift the first
+# time somebody changes one of them.
+from src.execution_backends import DEFAULT_IMAGE
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +50,6 @@ TIMEOUT_SETTING = "agent_sandbox_timeout_s"
 NETWORK_SETTING = "agent_sandbox_network"
 MEMORY_SETTING = "agent_sandbox_memory_mb"
 
-DEFAULT_IMAGE = "python:3.12-slim"
 DEFAULT_TIMEOUT_S = 900
 DEFAULT_MEMORY_MB = 2048
 
