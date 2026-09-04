@@ -928,9 +928,10 @@ def setup_session_routes(
         db = SessionLocal()
         try:
             q = db.query(DbSession).filter(DbSession.archived == True)
-            if not user:
+            if not user and not _auth_disabled():
                 raise HTTPException(403, "Authentication required")
-            q = q.filter(DbSession.owner == user)
+            if user:
+                q = q.filter(DbSession.owner == user)
             if search:
                 safe_search = search.replace('%', r'\%').replace('_', r'\_')
                 q = q.filter(DbSession.name.ilike(f"%{safe_search}%", escape='\\'))

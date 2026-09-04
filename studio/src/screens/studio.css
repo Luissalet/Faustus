@@ -2088,3 +2088,221 @@ details.fs-studio__step > summary:hover .fs-trace__label {
     animation: none;
   }
 }
+
+
+/* ═══ Lote I: sessions tools, folders, bulk selection, Nobody mode, quote ═══ */
+
+.fs-studio__sessions-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.fs-qmenu {
+  position: relative;
+  display: inline-flex;
+}
+
+.fs-qmenu__list {
+  position: absolute;
+  inset-block-start: calc(100% + 6px);
+  z-index: 20;
+  min-inline-size: 220px;
+}
+
+.fs-qmenu__list[data-align='end'] {
+  inset-inline-end: 0;
+}
+
+.fs-qmenu__list[data-align='start'] {
+  inset-inline-start: 0;
+}
+
+.fs-qmenu__list .fs-menu__item {
+  inline-size: 100%;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  min-block-size: auto;
+}
+
+.fs-qmenu__list .fs-menu__item[data-active] {
+  background: color-mix(in srgb, var(--fs-brand) 12%, transparent);
+}
+
+.fs-studio__bulk {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fs-space-2);
+  margin: 0 var(--fs-space-3) var(--fs-space-2);
+  padding: var(--fs-space-2) var(--fs-space-3);
+  border-radius: var(--fs-radius-control);
+  background: color-mix(in srgb, var(--fs-brand) 10%, var(--fs-surface-1));
+  font-size: var(--fs-code-size);
+}
+
+.fs-studio__bulk .fs-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+  min-block-size: auto;
+}
+
+.fs-studio__bulk-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-1);
+  margin-inline-start: auto;
+}
+
+.fs-studio__bulk-actions .fs-btn[aria-disabled] {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* While selecting, the checkbox takes the first column and the link keeps
+   the flexible one; the actions button is gone, so still two columns. */
+.fs-studio__session-row[data-selecting] {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.fs-studio__session-check {
+  margin: 0 0 0 var(--fs-space-2);
+  accent-color: var(--fs-brand);
+}
+
+.fs-studio__session-row[data-selected] .fs-studio__session {
+  background: color-mix(in srgb, var(--fs-brand) 10%, transparent);
+}
+
+.fs-studio__folder {
+  margin-block-end: var(--fs-space-2);
+}
+
+.fs-studio__folder-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  inline-size: 100%;
+  padding: var(--fs-space-2) var(--fs-space-3);
+  border: 0;
+  background: transparent;
+  color: var(--fs-text-2);
+  font: inherit;
+  font-size: var(--fs-code-size);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-align: start;
+  cursor: pointer;
+  min-block-size: auto;
+}
+
+.fs-studio__folder-count {
+  margin-inline-start: auto;
+  color: var(--fs-text-3);
+  letter-spacing: 0;
+}
+
+.fs-select {
+  flex: 1;
+  min-inline-size: 0;
+  border: 0;
+  background: transparent;
+  color: var(--fs-text-1);
+  font: inherit;
+}
+
+/* Nobody mode: the frame says so without shouting. */
+
+.fs-studio__chip--incognito[aria-pressed='true'] {
+  background: var(--fs-text-1);
+  color: var(--fs-canvas);
+  border-color: var(--fs-text-1);
+}
+
+.fs-studio[data-incognito] .fs-studio__stage {
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--fs-text-1) 40%, transparent);
+}
+
+.fs-studio[data-incognito] .fs-studio__composer {
+  border-color: color-mix(in srgb, var(--fs-text-1) 45%, var(--fs-border));
+}
+
+/* Dictation */
+
+.fs-studio__mic[data-recording] {
+  border-radius: var(--fs-radius-pill);
+  background: color-mix(in srgb, var(--fs-danger) 16%, transparent);
+  animation: fs-mic-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes fs-mic-pulse {
+  50% {
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--fs-danger) 18%, transparent);
+  }
+}
+
+/* Quote a selection */
+
+.fs-studio__turns {
+  position: relative;
+}
+
+.fs-studio__quote {
+  position: absolute;
+  z-index: 5;
+  translate: -50% calc(-100% - 8px);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-surface-1);
+  color: var(--fs-text-1);
+  font: inherit;
+  font-size: var(--fs-code-size);
+  box-shadow: var(--fs-lift-shadow);
+  cursor: pointer;
+  min-block-size: auto;
+  animation: fs-quote-in var(--fs-duration-fast) var(--fs-ease-out);
+}
+
+@keyframes fs-quote-in {
+  from {
+    opacity: 0;
+    translate: -50% calc(-100% - 2px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fs-studio__mic[data-recording],
+  .fs-studio__quote {
+    animation: none;
+  }
+}
+
+/* ?????? Conversations column hidden on wide layouts (Ctrl+Alt+B) ?????? */
+
+@media (min-width: 1024px) {
+  .fs-studio[data-pane='hidden'] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .fs-studio[data-pane='hidden'][data-panel] {
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 30vw);
+  }
+
+  .fs-studio[data-pane='hidden'] .fs-studio__sessions {
+    display: none;
+  }
+
+  .fs-studio[data-pane='hidden'] .fs-studio__drawer-btn {
+    display: inline-flex;
+  }
+}

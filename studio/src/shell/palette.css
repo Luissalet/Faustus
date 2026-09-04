@@ -89,3 +89,65 @@
     animation: none;
   }
 }
+
+/* ── Preset palette: the inline "new preset" form and row extras ── */
+
+.fs-palette__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fs-space-2);
+  padding: var(--fs-space-3);
+}
+
+.fs-palette__textarea {
+  inline-size: 100%;
+  resize: vertical;
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  padding: var(--fs-space-2) var(--fs-space-3);
+  background: var(--fs-surface-1);
+  color: var(--fs-text-1);
+  font: inherit;
+  font-size: var(--fs-code-size);
+  line-height: 1.5;
+}
+
+.fs-palette__textarea:focus-visible {
+  outline: none;
+  border-color: var(--fs-brand);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--fs-brand) 22%, transparent);
+}
+
+.fs-palette__row {
+  display: flex;
+  gap: var(--fs-space-2);
+}
+
+.fs-palette__grow {
+  flex: 1;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fs-palette__hint {
+  color: var(--fs-text-3);
+  font-size: var(--fs-code-size);
+}
+
+.fs-palette__mini {
+  display: inline-flex;
+  padding: 2px;
+  border: 0;
+  border-radius: var(--fs-radius-control);
+  background: transparent;
+  color: var(--fs-text-3);
+  cursor: pointer;
+  min-block-size: auto;
+}
+
+.fs-palette__mini:hover {
+  color: var(--fs-danger);
+  background: color-mix(in srgb, var(--fs-danger) 12%, transparent);
+}

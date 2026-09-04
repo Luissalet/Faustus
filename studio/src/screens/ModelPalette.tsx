@@ -1,5 +1,5 @@
 import { Command } from 'cmdk';
-import { Check, Cpu } from 'lucide-react';
+import { Check, Cpu, RefreshCw } from 'lucide-react';
 import { overlayRoot } from '../shell/overlayRoot';
 import type { ModelRoute } from '../adapters/chat';
 import '../shell/palette.css';
@@ -12,12 +12,17 @@ export default function ModelPalette({
   routes,
   current,
   onPick,
+  onRefresh,
+  refreshing = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   routes: ModelRoute[];
   current: ModelRoute | null;
   onPick: (route: ModelRoute) => void;
+  /** Ask every endpoint again (the old picker's ↻). */
+  onRefresh?: () => void;
+  refreshing?: boolean;
 }) {
   const byEndpoint = new Map<string, ModelRoute[]>();
   for (const route of routes) {
@@ -30,6 +35,12 @@ export default function ModelPalette({
       <Command.Input placeholder="Buscar modelo…" className="fs-palette__input" />
       <Command.List className="fs-palette__list">
         <Command.Empty className="fs-palette__empty">{routes.length ? 'Ningún modelo coincide.' : 'Ningún endpoint responde.'}</Command.Empty>
+        {onRefresh && (
+          <Command.Item value="refrescar modelos endpoints" onSelect={onRefresh} className="fs-palette__item" data-testid="model-refresh" disabled={refreshing}>
+            <RefreshCw size={15} aria-hidden="true" />
+            {refreshing ? 'Preguntando a los endpoints…' : 'Refrescar la lista de modelos'}
+          </Command.Item>
+        )}
         {[...byEndpoint.entries()].map(([endpoint, list]) => (
           <Command.Group key={endpoint} heading={endpoint} className="fs-palette__group">
             {list.map((route) => (

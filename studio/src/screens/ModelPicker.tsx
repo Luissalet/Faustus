@@ -17,11 +17,15 @@ export function ModelPicker({
   routes,
   current,
   onPick,
+  onRefresh,
+  refreshing,
   openSignal = 0,
 }: {
   routes: ModelRoute[];
   current: ModelRoute | null;
   onPick: (route: ModelRoute) => void;
+  onRefresh?: () => void;
+  refreshing?: boolean;
   /** Bump to open the palette from outside (the /models command). */
   openSignal?: number;
 }) {
@@ -53,7 +57,7 @@ export function ModelPicker({
       </button>
       {loaded && (
         <Suspense fallback={null}>
-          <ModelPalette open={open} onOpenChange={setOpen} routes={routes} current={current} onPick={onPick} />
+          <ModelPalette open={open} onOpenChange={setOpen} routes={routes} current={current} onPick={onPick} onRefresh={onRefresh} refreshing={refreshing} />
         </Suspense>
       )}
     </>

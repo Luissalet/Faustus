@@ -222,3 +222,42 @@ su área y baja el baseline. Ningún módulo Studio nuevo la aumenta.
     PowerShell 5.1 destroza el UTF-8** (mojibake en tildes y emoji). Para
     tocar fuentes desde el puente, `edit_block` o `[System.IO.File]` con
     `UTF8Encoding($false)`; nunca los cmdlets sin `-Encoding`.
+
+## Añadido tras el lote I (04-09-2026, sesiones y compositor)
+
+38. **`[!]` Perdida una conversación de prueba (`6742a8f7…`) por el
+    incógnito.** Studio compartía con la anterior la clave de sesión
+    `ody-incognito-sessions`; `sessions.js` sigue corriendo debajo del
+    piloto y borra lo que hay en esa lista salvo la sesión que ÉL tiene en
+    pantalla, que nunca es la de Studio. Además la limpieza propia listaba
+    la sesión normal actual. Arreglado con clave propia
+    (`faustus_studio_incognito`) y `all.filter(id => id === keep)`. Regla:
+    ningún estado mutable de `sessionStorage`/`localStorage` se comparte con
+    la anterior mientras siga cargada debajo.
+39. **`[!]` Los atajos de la anterior actuaban dos veces.** Ctrl+Alt+N creó
+    una sesión vacía propia de `keyboard-shortcuts.js` además de la de
+    Studio. Ahora Studio escucha `keydown` en `window` en fase de captura y
+    detiene la propagación de cualquier combinación que reconozca. Ojo si
+    se añade un atajo nuevo: hay que registrarlo en `DEFAULT_KEYBINDS`.
+    Y el valor por defecto de la barra es `ctrl+b`, no `ctrl+alt+b`
+    (`settings.js` manda).
+40. **`[~]` `/api/sessions/archived` devolvía 403 con `AUTH_ENABLED=false`**
+    (la anterior tampoco podía abrir su archivo en el 7001). Corregido en
+    `session_routes.py` como ya hacía `/sessions/export`: sin usuario y con
+    auth desactivada, sin filtro de dueño.
+41. **`[~]` Micrófono y voz sin probar con hardware.** `startDictation`
+    (MediaRecorder → `/api/stt/transcribe`, o `SpeechRecognition` si el
+    servidor da 503) y `speak` (`/api/tts/synthesize` o `speechSynthesis`)
+    están escritos contra los mismos endpoints que la anterior; el
+    navegador del puente no concede permiso de micrófono. Probar a mano.
+42. **`[~]` Bundle principal en 375 KB / 117,8 KB gzip** (presupuesto 350 /
+    120). El bruto ya supera el blando; el gzip tiene 2 KB de margen. Antes
+    del siguiente lote grande dentro de Studio: convertir `Studio.tsx` en
+    ruta perezosa con `modulepreload`, o partir el reductor y los comandos.
+43. **`[~]` «Manage Chats» solo en parte.** Archivadas con búsqueda y
+    recuperar, ordenar con IA y limpiar vacías; la biblioteca de chats con
+    estadísticas y filtros por modelo y fecha sigue en la anterior.
+44. **`[~]` Casillas de selección múltiple**: la fila es una rejilla de dos
+    columnas (`minmax(0,1fr) auto`) pensada para enlace + botón; con la
+    casilla delante hacía falta `data-selecting` para invertir las columnas.
+    Cualquier otro elemento que se anteponga al enlace necesita lo mismo.

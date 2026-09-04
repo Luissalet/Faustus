@@ -2,17 +2,21 @@ import {
   ArrowUp,
   Bot,
   Database,
+  EyeOff,
   FileText,
   FolderOpen,
   Globe,
   ListTodo,
   MessageSquare,
+  Mic,
+  MicOff,
   Paperclip,
   SlidersHorizontal,
   Square,
   Terminal,
   X,
 } from 'lucide-react';
+import type { Dictation } from '../../adapters/speech';
 import {
   useCallback,
   useEffect,
@@ -47,6 +51,8 @@ export interface Knobs {
   bash: boolean;
   plan: boolean;
   rag: boolean;
+  /** Nobody mode: the conversation is not saved and memory stays closed. */
+  incognito: boolean;
 }
 
 export interface ComposerProps {
@@ -68,6 +74,10 @@ export interface ComposerProps {
   onStop: () => void;
   onNotice: (text: string, tone?: 'info' | 'warning' | 'danger') => void;
   modelPicker: ReactNode;
+  /** The preset chip (picker + clear), rendered by the screen. */
+  presetChip?: ReactNode;
+  /** ↑ on an empty composer brings back the last thing you sent. */
+  lastSent?: string;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
 }
 
@@ -98,11 +108,44 @@ export function Composer({
   onStop,
   onNotice,
   modelPicker,
+  presetChip,
+  lastSent,
   textareaRef,
 }: ComposerProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [dragging, setDragging] = useState(false);
+
+  /* ── Dictation ── */
+  const [dictation, setDictation] = useState<Dictation | null>(null);
+  const [transcribing, setTranscribing] = useState(false);
+  const toggleDictation = async () => {
+    if (dictation) {
+      dictation.stop();
+      setTranscribing(true);
+      return;
+    }
+    try {
+      // The speech adapter (recorder + browser fallbacks) loads on first use.
+      const { startDictation } = await import('../../adapters/speech');
+      const d = await startDictation();
+      setDictation(d);
+      d.done
+        .then((text) => {
+          const current = textareaRef.current?.value ?? '';
+          if (text) setDraft(current ? `${current.trimEnd()} ${text}` : text);
+          else onNotice('No he oído nada.', 'warning');
+        })
+        .catch((e: Error) => onNotice(`Dictado: ${e.message}`, 'danger'))
+        .finally(() => {
+          setDictation(null);
+          setTranscribing(false);
+          requestAnimationFrame(() => textareaRef.current?.focus());
+        });
+    } catch (e) {
+      onNotice((e as Error).message, 'danger');
+    }
+  };
 
   /* ── Suggestions: `@` files or `/` commands ── */
   const [mention, setMention] = useState<{ query: string; items: WorkspaceFile[] } | null>(null);
@@ -230,6 +273,16 @@ export function Composer({
       onSend(draft);
       return;
     }
+    if (event.key === 'ArrowUp' && !draft && lastSent) {
+      // Empty composer: bring back the last message, caret at the end.
+      event.preventDefault();
+      setDraft(lastSent);
+      requestAnimationFrame(() => {
+        const el = textareaRef.current;
+        if (el) el.setSelectionRange(el.value.length, el.value.length);
+      });
+      return;
+    }
     if (event.key === 'Escape' && busy) onStop();
   };
 
@@ -238,7 +291,14 @@ export function Composer({
       setMention(null);
       setCommands(null);
     }
-  }, [draft]);
+    // Text can land without a keystroke (a quote, ↑, a dictation, ?draft=):
+    // the box still has to grow to fit it.
+    const el = textareaRef.current;
+    if (el) {
+      el.style.blockSize = 'auto';
+      el.style.blockSize = `${Math.min(el.scrollHeight, 220)}px`;
+    }
+  }, [draft, textareaRef]);
 
   const genLabel = describeGen(gen);
   const canSend = (draft.trim().length > 0 || attachments.length > 0) && !uploading;
@@ -388,6 +448,16 @@ export function Composer({
             onClick={() => fileInputRef.current?.click()}
             testId="studio-attach"
           />
+          <span className="fs-studio__mic" data-recording={dictation ? true : undefined}>
+            <IconButton
+              icon={dictation ? MicOff : Mic}
+              label={dictation ? 'Parar el dictado' : transcribing ? 'Transcribiendo…' : 'Dictar'}
+              size="sm"
+              disabled={transcribing}
+              onClick={() => void toggleDictation()}
+              testId="studio-mic"
+            />
+          </span>
           <button
             type="button"
             className="fs-studio__chip"
@@ -452,6 +522,17 @@ export function Composer({
               </span>
             </>
           )}
+          <button
+            type="button"
+            className="fs-studio__chip fs-studio__chip--incognito"
+            aria-pressed={knobs.incognito}
+            title="Modo Nobody: no se guarda nada de esta conversación y la memoria queda cerrada"
+            onClick={() => setKnobs((k) => ({ ...k, incognito: !k.incognito }))}
+            data-testid="studio-knob-incognito"
+          >
+            <EyeOff size={13} aria-hidden="true" /> Incógnito
+          </button>
+          {presetChip}
           {genLabel && (
             <span className="fs-studio__chipgroup">
               <span className="fs-studio__chip" aria-pressed="true" title="Ajustes de generación de este chat (/temp, /maxtokens, /topp, /think, /gen)">

@@ -18,8 +18,12 @@ export interface ChatSession {
   mode: 'chat' | 'agent' | null;
   messageCount: number;
   lastMessageAt: string | null;
+  createdAt: string | null;
   folder: string | null;
   isImportant: boolean;
+  hasDocuments: boolean;
+  hasImages: boolean;
+  totalTokens: number;
 }
 
 export interface ModelRoute {
@@ -203,8 +207,12 @@ interface RawSession {
   mode?: string | null;
   message_count?: number;
   last_message_at?: string | null;
+  created_at?: string | null;
   folder?: string | null;
   is_important?: boolean;
+  has_documents?: boolean;
+  has_images?: boolean;
+  total_tokens?: number;
 }
 
 export async function listSessions(signal?: AbortSignal): Promise<ChatSession[]> {
@@ -218,8 +226,12 @@ export async function listSessions(signal?: AbortSignal): Promise<ChatSession[]>
       mode: (s.mode === 'agent' || s.mode === 'chat' ? s.mode : null) as ChatSession['mode'],
       messageCount: s.message_count ?? 0,
       lastMessageAt: s.last_message_at ?? null,
+      createdAt: s.created_at ?? null,
       folder: s.folder ?? null,
       isImportant: Boolean(s.is_important),
+      hasDocuments: Boolean(s.has_documents),
+      hasImages: Boolean(s.has_images),
+      totalTokens: typeof s.total_tokens === 'number' ? s.total_tokens : 0,
     }))
     .sort((a, b) => (b.lastMessageAt ?? '').localeCompare(a.lastMessageAt ?? ''));
 }
@@ -285,8 +297,8 @@ interface RawModelItem {
   model_type?: string;
 }
 
-export async function listModels(signal?: AbortSignal): Promise<ModelRoute[]> {
-  const raw = await getJson<{ items?: unknown }>('/api/models?background=false', signal);
+export async function listModels(signal?: AbortSignal, refresh = false): Promise<ModelRoute[]> {
+  const raw = await getJson<{ items?: unknown }>(`/api/models?background=false${refresh ? '&refresh=true' : ''}`, signal);
   const routes: ModelRoute[] = [];
   for (const item of asArray<RawModelItem>(raw.items)) {
     if (item.model_type && item.model_type !== 'llm') continue;
@@ -326,6 +338,12 @@ export interface SendOptions {
   /** `/agents`: the delegation travels as its own field; the server swaps
    *  it in for the model and keeps `message` as the readable label. */
   delegateTasks?: Delegation;
+  /** Nobody mode: nothing is persisted and memory tools stay closed. */
+  incognito?: boolean;
+  /** A preset id from /api/presets (system prompt + sampling). */
+  presetId?: string;
+  /** The document open in the panel, so the model sees what you see. */
+  activeDocId?: string;
   signal?: AbortSignal;
 }
 
@@ -641,6 +659,9 @@ export async function* sendTurn(options: SendOptions): AsyncGenerator<ChatEvent>
     fd.append('tool_approval_decision', options.approval.decision);
   }
   if (options.delegateTasks) fd.append('delegate_tasks', JSON.stringify(options.delegateTasks));
+  if (options.incognito) fd.append('incognito', 'true');
+  if (options.presetId) fd.append('preset_id', options.presetId);
+  if (options.activeDocId) fd.append('active_doc_id', options.activeDocId);
 
   const response = await fetch('/api/chat_stream', {
     method: 'POST',

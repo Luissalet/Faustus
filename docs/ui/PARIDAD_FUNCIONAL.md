@@ -50,16 +50,16 @@ las toca ninguna pantalla.
 |---|---|---|
 | Lista de conversaciones, buscar (Ctrl+K) | sí (`/studio`, filtro + paleta) | **Migrado** |
 | Nueva conversación | sí | **Migrado** |
-| Renombrar, archivar, borrar, favorito | diálogo «…» por conversación | **Migrado** (carpeta de agrupación: anterior) |
-| Selección múltiple (archivar/borrar) | — | **Anterior** |
-| Ordenar sesiones | — (por recencia fija) | **Anterior** |
-| Manage Chats (biblioteca de chats) | — | **Anterior** |
-| Exportar conversación (md, txt, json, html, docx, pdf) | diálogo «…» y `/export` | **Migrado** (lote: anterior) |
+| Renombrar, archivar, borrar, favorito, carpeta | diálogo «…» por conversación (mover a una carpeta existente, nueva o ninguna) | **Migrado** |
+| Selección múltiple (archivar/borrar/exportar zip) | menú ⇅ → «Seleccionar varias»: casillas, «todas», barra con Zip / Archivar / Borrar (confirmación) | **Migrado** |
+| Ordenar sesiones | menú ⇅: última actividad, fecha de creación, nombre, por carpeta (grupos plegables); misma clave `odysseus-session-sort` | **Migrado** |
+| Manage Chats (biblioteca de chats) | «Archivadas…» con búsqueda y «Recuperar»; «Ordenar en carpetas con IA» y «Limpiar vacías» (`/api/sessions/auto-sort`) | **Parcial** — la biblioteca completa con estadísticas y filtros por modelo/fecha: anterior |
+| Exportar conversación (md, txt, json, html, docx, pdf) | diálogo «…» y `/export`; en lote como zip desde la selección múltiple | **Migrado** |
 | Truncar y compactar (`/truncate`, `/compact`) | sí | **Migrado** |
 | Versiones y restaurar (`/versions`, `/restore`), checkpoints (`/checkpoints`) | sí | **Migrado** |
-| Fork de conversación | — | **Anterior** |
-| Modo Nobody / incógnito | — | **Anterior** |
-| Colapsar barra lateral | cajón en ≤1023 px | **Migrado** |
+| Fork de conversación | «Bifurcar desde aquí» en cada mensaje (`/api/session/{id}/fork` con `keep_count`), «Duplicar» en el diálogo, y `/fork` | **Migrado** |
+| Modo Nobody / incógnito | chip «Incógnito» y `/incognito` (Ctrl+Alt+I): la sesión se llama «Incógnito», no aparece en la lista y se borra al salir del modo o al recargar; se envía `incognito=true`. Clave propia (`faustus_studio_incognito`), no la de la anterior | **Migrado** |
+| Colapsar barra lateral | cajón en ≤1023 px; en pantallas anchas la columna se oculta con el chip «Conversaciones» o Ctrl+B y se recuerda | **Migrado** |
 
 ## 3. Compositor y turno
 
@@ -70,18 +70,18 @@ las toca ninguna pantalla.
 | Web search, shell access | sí | **Migrado** |
 | RAG por sesión | chip «Docs» (misma clave que la anterior) | **Migrado** |
 | Deep Research, Group chat, Persona, Compare desde el compositor | — | **Anterior** |
-| Elegir modelo y endpoint, refrescar | paleta y `/models` (sin refrescar) | **Parcial** |
+| Elegir modelo y endpoint, refrescar | paleta y `/models`, con «Refrescar la lista de modelos» (`?refresh=true`) | **Migrado** |
 | Carpeta de workspace (elegir, quitar, indicador) | diálogo nativo del sistema (Explorador en Windows) y, si el navegador no está en la misma máquina, diálogo con árbol de carpetas; misma clave que la anterior | **Migrado** |
 | Adjuntos (ficheros, imágenes, pegar, arrastrar) | sí | **Migrado** (ver PENDIENTES §26 sobre el 7001) |
 | Menciones `@fichero` | lista con búsqueda difusa | **Migrado** (`@ruta:línea` y `@expert:` se escriben a mano; sin fichas pulsables) |
 | `#` regla permanente, `/remember` | sí | **Migrado** |
-| Comandos `/` | 22 propios (help, models, compact, truncate, versions, restore, checkpoints, temp, maxtokens, topp, think, gen, remember, export, rename, stats, agents, doc, browser, open…) y el resto enruta a su pantalla o a la anterior | **Parcial** |
+| Comandos `/` | 26 propios (help, models, compact, truncate, versions, restore, checkpoints, temp, maxtokens, topp, think, gen, remember, export, rename, stats, agents, doc, browser, open, incognito, preset, fork, tts…) y el resto enruta a su pantalla o a la anterior | **Parcial** |
 | `/agents` (delegar a sub-agentes, `[ficheros]`, `{modelo}`, `--review`, `--serial`) | sí, mismo campo `delegate_tasks` | **Migrado** |
-| Citar selección ❝ | — | **Anterior** |
-| ↑ recuperar último mensaje | — | **Anterior** |
+| Citar selección ❝ | al seleccionar texto de un mensaje aparece «Citar»: lo añade al borrador como `> cita` | **Migrado** |
+| ↑ recuperar último mensaje | ↑ con el borrador vacío recupera lo último enviado | **Migrado** |
 | Controles por chat (`/temp`, `/maxtokens`, `/topp`, `/think`, `/gen`) | sí, con chip visible | **Migrado** |
-| Presets / personajes / prompt del sistema | — | **Anterior** |
-| Dictado (STT) y lectura (TTS) | — | **Anterior** |
+| Presets / personajes / prompt del sistema | chip de preset con paleta (incluidos y tuyos), «Nuevo preset…» y borrar los tuyos (`/api/presets/templates`), `/preset nombre`; se envía `preset_id` | **Migrado** |
+| Dictado (STT) y lectura (TTS) | micrófono en el compositor (`/api/stt/transcribe`, o reconocimiento del navegador si el servidor no tiene STT); «Leer en voz alta» por mensaje, `/tts` y Alt+Shift+T (`/api/tts/synthesize`, o `speechSynthesis` si el servidor responde 503) | **Migrado** (sin probar con micrófono real en el 7001: el navegador pide permiso) |
 
 ## 4. Transcript
 
@@ -113,7 +113,7 @@ las toca ninguna pantalla.
 |---|---|---|
 | Ctrl+K buscar / navegar | sí | **Migrado** |
 | Escape cancelar | sí (parar el stream) | **Migrado** |
-| Ctrl+Alt+N nuevo chat, Ctrl+Alt+B barra, Ctrl+Alt+F favorito, Ctrl+Alt+D borrar, Alt+Shift+T TTS, Ctrl+Alt+I incógnito, Ctrl+, ajustes, Ctrl+/ foco, Ctrl+Alt+C calendario, y los reconfigurables | — | **Anterior** |
+| Ctrl+Alt+N nuevo chat, Ctrl+B barra, Ctrl+Alt+F favorito, Ctrl+Alt+D borrar (dos veces), Alt+Shift+T TTS, Ctrl+Alt+I incógnito, Ctrl+, ajustes, Ctrl+/ foco, Ctrl+Alt+C calendario, y los reconfigurables | sí, leyendo los keybinds guardados (`/api/auth/settings`) con los mismos valores por defecto; ajustes, calendario, notas y memoria abren la pantalla anterior; galería, biblioteca y tareas sus rutas de Studio. Se capturan antes de que los vea la anterior para que no actúe dos veces | **Migrado** |
 
 ## 6. Orden de cierre de la deuda
 

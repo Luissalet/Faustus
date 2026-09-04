@@ -84,9 +84,15 @@ proporcionales, auditoría de la guía Vercel pasada o excepción documentada,
       volver al checkpoint, confirmar en git), progreso y plan en vivo,
       `/versions`, `/restore`, `/checkpoints`, selector de carpeta nativo
       (Explorador de Windows vía `/api/workspace/pick`, también en la
-      anterior). **Pendiente**: sub-agentes, navegador en vivo, documentos
-      del editor; retirar el chat legacy (`static/js/chat.js`) sólo cuando
-      PARIDAD_FUNCIONAL §3–§4 no tenga filas «Anterior».
+      anterior). Lote H: tablero de sub-agentes, panel lateral (navegador
+      en vivo, documento del editor, visor de ficheros), traza y arnés
+      restaurados del historial. Lote I: ordenar y agrupar en carpetas,
+      selección múltiple, archivadas, fork, incógnito, presets, dictado y
+      voz, citar, ↑, atajos de la anterior. **Pendiente**: Markdown
+      completo, Deep Research / Group chat / Compare desde el compositor,
+      fichas de mención, pill de GPU; retirar el chat legacy
+      (`static/js/chat.js`) sólo cuando PARIDAD_FUNCIONAL §2–§5 no tenga
+      filas «Anterior».
 - [ ] **UI-033** Studio creativo: referencias con rol, variantes, máscara y
       receta. Aquí entra el prototipo que proponía el documento de producto.
 

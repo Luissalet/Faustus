@@ -30,20 +30,25 @@ import {
 import {
   compactSession,
   deleteMessages,
+  deleteSession,
   editMessage,
   exportUrl,
+  forkSession,
   listVersions,
   renameSession,
   restoreVersion,
+  setSessionImportant,
   truncateSession,
   type ExportFormat,
   EXPORT_FORMATS,
 } from '../adapters/sessions';
 import { relativeTime } from '../adapters/home';
+import { getKeybinds, matchesCombo } from '../adapters/settings';
 import { listCheckpoints } from '../adapters/workspace';
 import { BrandMark } from '../shell/BrandMark';
 import { useSpotlight } from '../shell/useSpotlight';
 import { ModelPicker } from './ModelPicker';
+import { PresetPicker } from './PresetPicker';
 import { COMMANDS, delegationLabel, genFromArgs, parseCommand, parseDelegation } from './studio/commands';
 import { Composer, type Knobs } from './studio/Composer';
 import { apply, blankTurn, cleanUserText, restoreFromMetadata, type Turn } from './studio/model';
@@ -59,9 +64,53 @@ import './studio.css';
 const WorkspaceDialog = lazy(() => import('./studio/WorkspaceDialog'));
 const SidePanel = lazy(() => import('./studio/SidePanel'));
 
+/* The speech adapter (TTS/STT with browser fallbacks) loads on first use. */
+const speak = (text: string) => import('../adapters/speech').then((m) => m.speak(text));
+const stopSpeaking = () => void import('../adapters/speech').then((m) => m.stopSpeaking());
+
 const ROUTE_KEY = 'faustus_studio_route';
 const KNOBS_KEY = 'faustus_studio_knobs';
 const GEN_KEY = 'faustus_studio_gen';
+const PRESET_KEY = 'faustus_studio_preset';
+const PANE_KEY = 'faustus_studio_pane';
+/* Sessions opened in Nobody mode, deleted when the mode ends or the page
+   comes back. NOT the previous interface's key (`ody-incognito-sessions`):
+   its sessions.js still runs underneath the pilot and deletes whatever is
+   in that list except the session IT has on screen — which is never the
+   Studio one. Sharing the key cost a test conversation. */
+const INCOGNITO_KEY = 'faustus_studio_incognito';
+
+function incognitoIds(): string[] {
+  try {
+    const raw = JSON.parse(sessionStorage.getItem(INCOGNITO_KEY) || '[]') as unknown;
+    return Array.isArray(raw) ? raw.map(String) : [];
+  } catch {
+    return [];
+  }
+}
+
+function rememberIncognito(id: string): void {
+  try {
+    const ids = incognitoIds();
+    if (!ids.includes(id)) sessionStorage.setItem(INCOGNITO_KEY, JSON.stringify([...ids, id]));
+  } catch {
+    /* private mode */
+  }
+}
+
+/** Deletes every Nobody-mode session except `keep` (which stays listed
+ *  only if it already was one — this never turns a normal session into a
+ *  Nobody one). */
+function cleanupIncognito(keep: string | null): void {
+  const all = incognitoIds();
+  const doomed = all.filter((id) => id !== keep);
+  try {
+    sessionStorage.setItem(INCOGNITO_KEY, JSON.stringify(all.filter((id) => id === keep)));
+  } catch {
+    /* private mode */
+  }
+  for (const id of doomed) void deleteSession(id).catch(() => undefined);
+}
 
 function readJson<T>(key: string, fallback: T): T {
   try {
@@ -109,9 +158,20 @@ export function StudioScreen() {
   const [routes, setRoutes] = useState<ModelRoute[]>([]);
   const [routeId, setRouteId] = useState<string | null>(() => readJson<{ id: string | null }>(ROUTE_KEY, { id: null }).id);
   const [knobs, setKnobsState] = useState<Knobs>(() => ({
-    ...readJson<Knobs>(KNOBS_KEY, { mode: 'agent', web: false, bash: true, plan: false, rag: false }),
+    ...readJson<Knobs>(KNOBS_KEY, { mode: 'agent', web: false, bash: true, plan: false, rag: false, incognito: false }),
     rag: getRagActive(),
+    // Nobody mode never survives a reload: a fresh page is a normal page.
+    incognito: false,
   }));
+  const [preset, setPreset] = useState<{ id: string; name: string } | null>(() => {
+    const p = readJson<{ id?: string; name?: string }>(PRESET_KEY, {});
+    return p.id && p.name ? { id: p.id, name: p.name } : null;
+  });
+  const [refreshingModels, setRefreshingModels] = useState(false);
+  const [presetSignal, setPresetSignal] = useState(0);
+  /* Commands that need handlers declared further down (fork, tts): the
+     handlers are stored here after they exist, and read at call time. */
+  const extrasRef = useRef<{ fork: () => void; tts: () => void }>({ fork: () => undefined, tts: () => undefined });
   const [turns, setTurns] = useState<Turn[] | null>(sessionId ? null : []);
   const [title, setTitle] = useState('');
   const [draft, setDraft] = useState('');
@@ -120,6 +180,9 @@ export function StudioScreen() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  // Wide layouts hide the conversations column instead of sliding a drawer
+  // (the previous shell's Ctrl+Alt+B); remembered across visits.
+  const [paneHidden, setPaneHidden] = useState(() => readJson<{ hidden?: boolean }>(PANE_KEY, {}).hidden === true);
   const [filter, setFilter] = useState('');
   const [workspace, setWorkspaceState] = useState(() => getWorkspace());
   const [wsOpen, setWsOpen] = useState(false);
@@ -142,13 +205,19 @@ export function StudioScreen() {
     setNotice({ text, tone });
   }, []);
 
-  const setKnobs = useCallback((update: (k: Knobs) => Knobs) => {
-    setKnobsState((k) => {
-      const next = update(k);
-      if (next.rag !== k.rag) setRagActive(next.rag);
-      return next;
-    });
-  }, []);
+  const setKnobs = useCallback(
+    (update: (k: Knobs) => Knobs) => {
+      const next = update(knobs);
+      if (next.rag !== knobs.rag) setRagActive(next.rag);
+      if (knobs.incognito && !next.incognito && sessionId && incognitoIds().includes(sessionId)) {
+        // Leaving Nobody mode on a Nobody session: that session goes away
+        // with the mode, so the screen moves to a fresh conversation.
+        navigate('/studio');
+      }
+      setKnobsState(next);
+    },
+    [knobs, sessionId, navigate],
+  );
 
   const setWorkspace = useCallback((path: string) => {
     persistWorkspace(path);
@@ -308,10 +377,18 @@ export function StudioScreen() {
     });
   }, [params, setParams]);
 
-  useEffect(() => writeJson(KNOBS_KEY, knobs), [knobs]);
+  useEffect(() => writeJson(KNOBS_KEY, { ...knobs, incognito: false }), [knobs]);
   useEffect(() => {
     if (routeId) writeJson(ROUTE_KEY, { id: routeId });
   }, [routeId]);
+  useEffect(() => writeJson(PRESET_KEY, preset ?? {}), [preset]);
+
+  /* Nobody mode: its sessions live only while the mode is on. Leaving the
+     mode, changing session, or coming back to the page deletes them — the
+     current one survives while it is on screen in the mode. */
+  useEffect(() => {
+    cleanupIncognito(knobs.incognito ? sessionId : null);
+  }, [knobs.incognito, sessionId]);
 
   /* Follow the stream unless the reader scrolled up to look at something. */
   useLayoutEffect(() => {
@@ -406,6 +483,9 @@ export function StudioScreen() {
           genOverrides: Object.keys(gen).length ? (gen as Record<string, number | boolean>) : undefined,
           approval: options.approval,
           delegateTasks: options.delegation,
+          incognito: knobs.incognito,
+          presetId: preset?.id,
+          activeDocId: panel.doc && !panel.doc.streaming ? panel.doc.id ?? undefined : undefined,
           signal: controller.signal,
         })) {
           patchLast((t) => apply(t, event));
@@ -424,15 +504,18 @@ export function StudioScreen() {
         void syncIds(sid);
       }
     },
-    [knobs, workspace, route, gen, patchLast, refreshSessions, syncIds],
+    [knobs, workspace, route, gen, patchLast, refreshSessions, syncIds, preset, panel.doc],
   );
 
   const ensureSession = useCallback(
     async (name: string): Promise<string | null> => {
       if (sessionId) return sessionId;
       try {
-        const sid = await createSession(name.slice(0, 60), route);
-        setTitle(name.slice(0, 60));
+        // Nobody mode: the session is named so the list hides it, and it is
+        // remembered so it can be deleted when the mode ends.
+        const sid = await createSession(knobs.incognito ? 'Incognito' : name.slice(0, 60), route);
+        if (knobs.incognito) rememberIncognito(sid);
+        setTitle(knobs.incognito ? 'Incógnito' : name.slice(0, 60));
         freshRef.current = sid;
         const next = new URLSearchParams(params);
         next.set('s', sid);
@@ -443,7 +526,7 @@ export function StudioScreen() {
         return null;
       }
     },
-    [sessionId, route, params, setParams, say],
+    [sessionId, route, params, setParams, say, knobs.incognito],
   );
 
   /* ── Slash commands ── */
@@ -633,6 +716,41 @@ export function StudioScreen() {
           panelDispatch({ type: 'file', workspace, path: args });
           return true;
         }
+        case 'incognito': {
+          const v = args.toLowerCase();
+          setKnobs((k) => ({ ...k, incognito: v === 'on' ? true : v === 'off' ? false : !k.incognito }));
+          return true;
+        }
+        case 'preset': {
+          if (!args) {
+            setPresetSignal((n) => n + 1);
+            return true;
+          }
+          if (/^(off|no|none|ninguno)$/i.test(args)) {
+            setPreset(null);
+            say('Sin preset.');
+            return true;
+          }
+          try {
+            const { listPresets } = await import('../adapters/presets');
+            const all = await listPresets();
+            const hit = all.find((p) => p.name.toLowerCase() === args.toLowerCase() || p.id.toLowerCase() === args.toLowerCase()) ?? all.find((p) => p.name.toLowerCase().includes(args.toLowerCase()));
+            if (!hit) say(`No hay ningún preset que se llame «${args}». Los que hay: ${all.map((p) => p.name).join(', ')}`, 'warning');
+            else {
+              setPreset({ id: hit.id, name: hit.name });
+              say(`Preset: ${hit.name}.`);
+            }
+          } catch (error) {
+            say(`No he podido leer los presets: ${(error as Error).message}`, 'danger');
+          }
+          return true;
+        }
+        case 'fork':
+          extrasRef.current.fork();
+          return true;
+        case 'tts':
+          extrasRef.current.tts();
+          return true;
         case 'stats': {
           const list = turns ?? [];
           const out = list.filter((t) => t.role === 'assistant' && t.metrics);
@@ -645,7 +763,7 @@ export function StudioScreen() {
           return false;
       }
     },
-    [say, navigate, gen, workspace, sessionId, turnsFromHistory, refreshSessions, turns, current, route, busy, ensureSession, run],
+    [say, navigate, gen, workspace, sessionId, turnsFromHistory, refreshSessions, turns, current, route, busy, ensureSession, run, setKnobs],
   );
 
   /** A worker's task delegated again (its "Repetir…" button). */
@@ -663,6 +781,64 @@ export function StudioScreen() {
     },
     [busy, say, ensureSession, run],
   );
+
+  /** A new conversation with everything up to and including this reply. */
+  const forkFrom = useCallback(
+    async (turn: Turn) => {
+      if (!sessionId || !turns) return;
+      const index = turns.findIndex((t) => t.id === turn.id);
+      if (index === -1) return;
+      const keep = (turn.historyIndex ?? index) + 1;
+      try {
+        const copy = await forkSession(sessionId, keep);
+        refreshSessions();
+        say(`Bifurcada como «${copy.name}».`);
+        const next = new URLSearchParams(params);
+        next.set('s', copy.id);
+        setParams(next);
+      } catch (error) {
+        say(`No he podido bifurcar: ${(error as Error).message}`, 'danger');
+      }
+    },
+    [sessionId, turns, refreshSessions, say, params, setParams],
+  );
+
+  /** Selected text from a reply, as a quote at the end of the draft. */
+  const quote = useCallback(
+    (text: string) => {
+      const block = text
+        .split('\n')
+        .map((l) => `> ${l}`)
+        .join('\n');
+      setDraft((d) => (d.trim() ? `${d.trimEnd()}\n\n${block}\n\n` : `${block}\n\n`));
+      requestAnimationFrame(() => {
+        const el = textareaRef.current;
+        if (!el) return;
+        el.focus();
+        el.setSelectionRange(el.value.length, el.value.length);
+      });
+    },
+    [],
+  );
+
+  const refreshModels = useCallback(() => {
+    setRefreshingModels(true);
+    listModels(undefined, true)
+      .then((list) => {
+        setRoutes(list);
+        say(`${list.length} modelos en ${new Set(list.map((r) => r.endpointId)).size} endpoints.`);
+      })
+      .catch(() => say('No he podido refrescar los modelos.', 'danger'))
+      .finally(() => setRefreshingModels(false));
+  }, [say]);
+
+  const lastSent = useMemo(() => {
+    for (let i = (turns?.length ?? 0) - 1; i >= 0; i--) {
+      const t = turns?.[i];
+      if (t?.role === 'user' && t.text) return t.text;
+    }
+    return undefined;
+  }, [turns]);
 
   /* ── Send ── */
   const send = useCallback(
@@ -764,11 +940,142 @@ export function StudioScreen() {
     requestAnimationFrame(() => textareaRef.current?.focus());
   };
 
+  extrasRef.current = {
+    fork: () => {
+      const last = [...(turns ?? [])].reverse().find((t) => t.role === 'assistant' && t.dbId);
+      if (last) void forkFrom(last);
+      else say('No hay nada que bifurcar todavía.', 'warning');
+    },
+    tts: () => {
+      const last = [...(turns ?? [])].reverse().find((t) => t.role === 'assistant' && t.text);
+      if (last) void speak(last.text).catch(() => say('Sin voz disponible.', 'warning'));
+      else say('No hay ninguna respuesta que leer.', 'warning');
+    },
+  };
+
+  /* ── Keyboard shortcuts: the previous interface's, with its keybinds ── */
+  const shortcutsRef = useRef<Record<string, () => void>>({});
+  const deleteArmedRef = useRef(0);
+  const narrow = () => window.matchMedia('(max-width: 1023px)').matches;
+  const toggleSidebar = () => {
+    if (narrow()) {
+      setDrawerOpen((v) => !v);
+      return;
+    }
+    setPaneHidden((v) => {
+      writeJson(PANE_KEY, { hidden: !v });
+      return !v;
+    });
+  };
+  shortcutsRef.current = {
+    search: () => {
+      if (narrow()) setDrawerOpen(true);
+      else setPaneHidden(false);
+      requestAnimationFrame(() => searchRef.current?.focus());
+    },
+    toggle_sidebar: toggleSidebar,
+    new_session: () => openSession(null),
+    fav_session: () => {
+      if (!sessionId || !current) return;
+      setSessionImportant(sessionId, !current.isImportant)
+        .then(() => {
+          refreshSessions();
+          say(current.isImportant ? 'Quitada de favoritas.' : 'Marcada como favorita.');
+        })
+        .catch(() => say('No he podido cambiar la favorita.', 'danger'));
+    },
+    delete_session: () => {
+      if (!sessionId) return;
+      const now = Date.now();
+      if (now - deleteArmedRef.current > 4000) {
+        deleteArmedRef.current = now;
+        say('Pulsa el atajo otra vez en 4 s para borrar esta conversación.', 'warning');
+        return;
+      }
+      deleteArmedRef.current = 0;
+      deleteSession(sessionId)
+        .then(() => {
+          refreshSessions();
+          openSession(null);
+          say('Conversación borrada.');
+        })
+        .catch(() => say('No he podido borrarla.', 'danger'));
+    },
+    cancel: () => {
+      if (busy) stop();
+      stopSpeaking();
+    },
+    tts: () => {
+      const last = [...(turns ?? [])].reverse().find((t) => t.role === 'assistant' && t.text);
+      if (last) void speak(last.text).catch(() => say('Sin voz disponible.', 'warning'));
+    },
+    incognito: () => setKnobs((k) => ({ ...k, incognito: !k.incognito })),
+    settings: () => {
+      window.location.href = '/?shell=legacy#settings';
+    },
+    focus_input: () => textareaRef.current?.focus(),
+    open_calendar: () => {
+      window.location.href = '/calendar?shell=legacy';
+    },
+    open_compare: () => {
+      window.location.href = '/?shell=legacy';
+    },
+    open_cookbook: () => {
+      window.location.href = '/?shell=legacy';
+    },
+    open_research: () => {
+      window.location.href = '/?shell=legacy';
+    },
+    open_gallery: () => navigate('/library?type=imagen'),
+    open_library: () => navigate('/library'),
+    open_memory: () => {
+      window.location.href = '/memory?shell=legacy';
+    },
+    open_notes: () => {
+      window.location.href = '/notes?shell=legacy';
+    },
+    open_tasks: () => navigate('/automations'),
+    open_theme: () => {
+      window.location.href = '/?shell=legacy';
+    },
+  };
+  useEffect(() => {
+    let binds: Record<string, string> | null = null;
+    void getKeybinds().then((b) => {
+      binds = b;
+    });
+    const onKey = (e: KeyboardEvent) => {
+      if (!binds) return;
+      const target = e.target as HTMLElement | null;
+      const typing = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+      for (const [action, combo] of Object.entries(binds)) {
+        if (!combo || !matchesCombo(e, combo)) continue;
+        // Plain Escape inside the composer is its own affair (stop / close
+        // the pickers); the global one only runs outside text fields.
+        if (action === 'cancel' && typing) return;
+        // Ctrl+K is the shell palette's; leave it alone.
+        if (action === 'search' && combo === 'ctrl+k') return;
+        // The previous shell's keyboard-shortcuts.js still listens on the
+        // document underneath the pilot and would act twice (Ctrl+Alt+N made
+        // it create an empty session of its own). This listener runs in the
+        // capture phase on window, so stopping here keeps the key ours.
+        e.stopPropagation();
+        const fn = shortcutsRef.current[action];
+        if (!fn) return;
+        e.preventDefault();
+        fn();
+        return;
+      }
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, []);
+
   const pending = turns?.length ? Boolean(turns[turns.length - 1].ask) : false;
   const isEmpty = !sessionId && turns !== null && turns.length === 0;
 
   return (
-    <div className="fs-studio" data-testid="studio" data-drawer={drawerOpen || undefined} data-panel={panel.open || undefined}>
+    <div className="fs-studio" data-testid="studio" data-drawer={drawerOpen || undefined} data-pane={paneHidden ? 'hidden' : undefined} data-panel={panel.open || undefined} data-incognito={knobs.incognito || undefined}>
       <SessionsPane
         sessions={sessions}
         currentId={sessionId}
@@ -783,7 +1090,7 @@ export function StudioScreen() {
 
       <section className="fs-studio__stage">
         <header className="fs-studio__head">
-          <button type="button" className="fs-studio__chip fs-studio__drawer-btn" aria-expanded={drawerOpen} onClick={() => setDrawerOpen((v) => !v)} data-testid="studio-drawer">
+          <button type="button" className="fs-studio__chip fs-studio__drawer-btn" aria-expanded={drawerOpen || !paneHidden} title="Mostrar u ocultar las conversaciones (Ctrl+B)" onClick={toggleSidebar} data-testid="studio-drawer">
             <MessageSquare size={13} aria-hidden="true" />
             <span>Conversaciones</span>
           </button>
@@ -871,6 +1178,8 @@ export function StudioScreen() {
               onOpenFile={workspace ? (path) => panelDispatch({ type: 'file', workspace, path }) : undefined}
               onOpenDoc={(docId) => panelDispatch({ type: 'doc', doc: { streaming: false, id: docId, title: '', language: '', content: '', version: 0, suggestions: [] } })}
               onRerun={rerunWorker}
+              onFork={knobs.incognito ? undefined : (turn) => void forkFrom(turn)}
+              onQuote={quote}
             />
           )}
         </div>
@@ -900,7 +1209,9 @@ export function StudioScreen() {
           onSend={(text) => void send(text)}
           onStop={stop}
           onNotice={say}
-          modelPicker={<ModelPicker routes={routes} current={route} onPick={(r) => setRouteId(r.id)} openSignal={modelSignal} />}
+          modelPicker={<ModelPicker routes={routes} current={route} onPick={(r) => setRouteId(r.id)} onRefresh={refreshModels} refreshing={refreshingModels} openSignal={modelSignal} />}
+          presetChip={<PresetPicker current={preset} onPick={(p) => setPreset(p ? { id: p.id, name: p.name } : null)} onNotice={say} openSignal={presetSignal} />}
+          lastSent={lastSent}
           textareaRef={textareaRef}
         />
       </section>

@@ -1,10 +1,13 @@
-import { Check, ChevronDown, Copy, FileText, Pencil, RefreshCw, Trash2, X } from 'lucide-react';
-import { lazy, Suspense, useState } from 'react';
+import { Check, ChevronDown, Copy, FileText, GitFork, Pencil, Quote, RefreshCw, Trash2, Volume2, VolumeX, X } from 'lucide-react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { Button, IconButton } from '../../components';
 import type { AskUser, DelegationTask } from '../../adapters/chat';
 import { attachmentUrl, isImage } from '../../adapters/composer';
 import { Rich } from '../rich';
 import { formatMetrics, type Step, type Turn } from './model';
+
+/** Loaded on the first click: the speech adapter is not part of the eager bundle. */
+const speak = (text: string) => import('../../adapters/speech').then((m) => m.speak(text));
 
 /* The harness card carries diff, revert and commit: a chunk that arrives
    with the first agent turn that has something to show, not on page load.
@@ -28,6 +31,77 @@ export interface TranscriptProps {
   onOpenFile?: (path: string) => void;
   onOpenDoc?: (docId: string) => void;
   onRerun?: (task: DelegationTask) => void;
+  /** A new conversation with everything up to and including this reply. */
+  onFork?: (turn: Turn) => void;
+  /** Selected text from a reply, quoted into the composer. */
+  onQuote?: (text: string) => void;
+}
+
+/** Read a reply aloud; the button flips to stop while it plays. */
+function SpeakButton({ text }: { text: string }) {
+  const [stop, setStop] = useState<(() => void) | null>(null);
+  const [error, setError] = useState(false);
+  useEffect(() => () => stop?.(), [stop]);
+  return (
+    <IconButton
+      icon={stop ? VolumeX : Volume2}
+      label={stop ? 'Parar la lectura' : error ? 'Sin voz disponible' : 'Leer en voz alta'}
+      size="sm"
+      onClick={() => {
+        if (stop) {
+          stop();
+          setStop(null);
+          return;
+        }
+        speak(text)
+          .then((fn) => setStop(() => () => {
+            fn();
+            setStop(null);
+          }))
+          .catch(() => setError(true));
+      }}
+      testId="turn-speak"
+    />
+  );
+}
+
+/** Selecting text inside a reply offers to quote it into the composer. */
+function useQuoteSelection(onQuote?: (text: string) => void) {
+  const [pos, setPos] = useState<{ x: number; y: number; text: string } | null>(null);
+  const holder = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!onQuote) return;
+    const onUp = () => {
+      window.setTimeout(() => {
+        const sel = window.getSelection();
+        const text = sel?.toString().trim() ?? '';
+        if (!text || !sel || sel.rangeCount === 0 || !holder.current) {
+          setPos(null);
+          return;
+        }
+        const range = sel.getRangeAt(0);
+        const node = range.commonAncestorContainer;
+        const el = node.nodeType === 1 ? (node as Element) : node.parentElement;
+        if (!el || !holder.current.contains(el) || !el.closest('.fs-turn--assistant')) {
+          setPos(null);
+          return;
+        }
+        const rect = range.getBoundingClientRect();
+        const host = holder.current.getBoundingClientRect();
+        setPos({ x: rect.left - host.left + rect.width / 2, y: rect.top - host.top, text });
+      }, 0);
+    };
+    const onDown = (e: MouseEvent) => {
+      if (!(e.target as Element).closest?.('.fs-studio__quote')) setPos(null);
+    };
+    document.addEventListener('mouseup', onUp);
+    document.addEventListener('mousedown', onDown);
+    return () => {
+      document.removeEventListener('mouseup', onUp);
+      document.removeEventListener('mousedown', onDown);
+    };
+  }, [onQuote]);
+  return { holder, pos, clear: () => setPos(null) };
 }
 
 const FILE_TOOLS = /^(read_file|write_file|edit_file|apply_patch|create_file|multi_edit|replace_across_files)$/;
@@ -296,6 +370,7 @@ function AssistantTurn({
   onOpenFile,
   onOpenDoc,
   onRerun,
+  onFork,
 }: {
   turn: Turn;
   busy: boolean;
@@ -307,6 +382,7 @@ function AssistantTurn({
   onOpenFile?: TranscriptProps['onOpenFile'];
   onOpenDoc?: TranscriptProps['onOpenDoc'];
   onRerun?: TranscriptProps['onRerun'];
+  onFork?: () => void;
 }) {
   const waiting = turn.streaming && !turn.text && turn.steps.length === 0;
   return (
@@ -382,9 +458,11 @@ function AssistantTurn({
             )}
             <span className="fs-turn__actions" data-testid="turn-actions">
               {turn.text && <CopyButton text={turn.text} label="Copiar respuesta" />}
+              {turn.text && <SpeakButton text={turn.text} />}
               {turn.dbId && !busy && (
                 <>
                   <IconButton icon={RefreshCw} label="Regenerar" size="sm" onClick={onRegenerate} />
+                  {onFork && <IconButton icon={GitFork} label="Bifurcar desde aquí" size="sm" onClick={onFork} testId="turn-fork" />}
                   <IconButton icon={Trash2} label="Borrar mensaje" size="sm" onClick={onDelete} />
                 </>
               )}
@@ -396,9 +474,25 @@ function AssistantTurn({
   );
 }
 
-export function Transcript({ turns, busy, onApproval, onAnswer, onEdit, onRegenerate, onDelete, onNotice, onOpenFile, onOpenDoc, onRerun }: TranscriptProps) {
+export function Transcript({ turns, busy, onApproval, onAnswer, onEdit, onRegenerate, onDelete, onNotice, onOpenFile, onOpenDoc, onRerun, onFork, onQuote }: TranscriptProps) {
+  const quote = useQuoteSelection(onQuote);
   return (
-    <div className="fs-studio__turns">
+    <div className="fs-studio__turns" ref={quote.holder}>
+      {quote.pos && onQuote && (
+        <button
+          type="button"
+          className="fs-studio__quote"
+          style={{ insetInlineStart: quote.pos.x, insetBlockStart: quote.pos.y }}
+          onClick={() => {
+            onQuote(quote.pos?.text ?? '');
+            quote.clear();
+            window.getSelection()?.removeAllRanges();
+          }}
+          data-testid="turn-quote"
+        >
+          <Quote size={13} aria-hidden="true" /> Citar
+        </button>
+      )}
       {turns.map((turn, index) =>
         turn.role === 'user' ? (
           <UserTurn key={turn.id} turn={turn} busy={busy} onEdit={onEdit} onRegenerate={onRegenerate} onDelete={onDelete} />
@@ -423,6 +517,7 @@ export function Transcript({ turns, busy, onApproval, onAnswer, onEdit, onRegene
             onOpenFile={onOpenFile}
             onOpenDoc={onOpenDoc}
             onRerun={onRerun}
+            onFork={onFork ? () => onFork(turn) : undefined}
           />
         ),
       )}
