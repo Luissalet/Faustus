@@ -316,3 +316,56 @@ def test_help_text_is_cached(monkeypatch):
     reg.reset_cache()
     assert "claude" in reg.help_text()
     assert len(calls) == 2
+
+
+# ── resume: a prior run of the same agent, continued ───────────────────────
+#
+# The clause `--resume {session}` was added to the `claude` row so a fix round
+# can continue the worker that made the change instead of building a new one
+# that has to read its way back to the same understanding. That only stays
+# free if the drop-the-flag rule really removes BOTH tokens on a first run —
+# and "it should" is not a thing to take on trust in a table that decides what
+# process starts on someone's machine.
+
+#: What every shipped row produced BEFORE `{session}` existed, generated from
+#: the pre-change module and pasted here. A row that is not runnable as a
+#: worker produces the empty list, and that is part of the contract too.
+ARGV_BEFORE_RESUME = {
+    "claude":   ["claude", "-p", "add apply_tax", "--model", "qwen3.5:9b"],
+    "opencode": ["opencode", "run", "add apply_tax", "--model", "qwen3.5:9b"],
+    "codex":    ["codex", "exec", "add apply_tax", "--model", "qwen3.5:9b"],
+    "qwen":     ["qwen", "-p", "add apply_tax", "-m", "qwen3.5:9b"],
+}
+
+
+@pytest.mark.parametrize("key", sorted(r.key for r in reg._BUILTIN))
+def test_no_session_produces_exactly_todays_command_for_every_shipped_row(key):
+    runner = reg.get(key, help_source=HELP)
+    for kwargs in ({}, {"session": None}, {"session": ""}):
+        argv = reg.build_argv(runner, "add apply_tax", model="qwen3.5:9b",
+                              cwd="/ws", endpoint="http://127.0.0.1:11434", **kwargs)
+        assert argv == ARGV_BEFORE_RESUME.get(key, []), f"{key} {kwargs}"
+
+
+def test_a_session_adds_the_resume_clause_and_nothing_else():
+    claude = reg.get("claude", help_source=HELP)
+    assert reg.build_argv(claude, "fix it", model="qwen3.5:9b", session="sess-42") == \
+        ["claude", "-p", "fix it", "--model", "qwen3.5:9b", "--resume", "sess-42"]
+    # No model AND no session: both flags go, and neither takes the other's
+    # argument with it.
+    assert reg.build_argv(claude, "fix it") == ["claude", "-p", "fix it"]
+    # One without the other, in both directions.
+    assert reg.build_argv(claude, "fix it", session="sess-42") == \
+        ["claude", "-p", "fix it", "--resume", "sess-42"]
+    assert reg.build_argv(claude, "fix it", model="qwen3.5:9b") == \
+        ["claude", "-p", "fix it", "--model", "qwen3.5:9b"]
+
+
+def test_the_gate_clause_still_lands_after_the_resume_one():
+    """`gate_argv` is appended, so `--settings` must not end up separated from
+    its own JSON by the resume pair."""
+    claude = reg.get("claude", help_source=HELP)
+    argv = reg.build_argv(claude, "fix it", model="m", session="s", settings='{"hooks":{}}')
+    assert argv == ["claude", "-p", "fix it", "--model", "m", "--resume", "s",
+                    "--output-format", "stream-json", "--verbose", "--settings", '{"hooks":{}}']
+    assert argv[argv.index("--settings") + 1] == '{"hooks":{}}'

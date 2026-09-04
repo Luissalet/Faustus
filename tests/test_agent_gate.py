@@ -708,6 +708,10 @@ def emit(event):
     sys.stdout.flush()
 
 
+# The CLI announces its own run id before it does anything, and repeats it on
+# the final event. Faustus reads it out so a fix round can `--resume` it.
+emit({"type": "system", "subtype": "init", "session_id": "sess-e2e"})
+
 for i, call in enumerate(CALLS):
     answer = ask(call)
     if answer["permissionDecision"] == "deny":
@@ -722,7 +726,7 @@ for i, call in enumerate(CALLS):
         open(args["file_path"], "w").write(args.get("content", ""))
 
 emit({"type": "result", "subtype": "success", "is_error": False, "total_cost_usd": 0.01,
-      "result": "done"})
+      "session_id": "sess-e2e", "result": "done"})
 '''
 
 
@@ -766,6 +770,10 @@ def test_a_gated_run_judges_every_call_and_the_agent_obeys(tmp_path, workspace, 
     assert led["unjudged_tools"] == ["TotallyNewTool"]
     assert led["unseen"] == 0                      # every stream call had a receipt
     assert result["total_cost_usd"] == 0.01
+    # The handle a fix round resumes, read out of the CLI's own stream — this
+    # is the whole of what makes `--resume` more than plumbing.
+    assert result["session_id"] == "sess-e2e"
+    assert led["result"]["session_id"] == "sess-e2e"
     # The refusal was BINDING: the agent reported it instead of doing it.
     assert "refused:" in result["output_tail"]
     # …and the allowed write really happened, re-anchored into the workspace.

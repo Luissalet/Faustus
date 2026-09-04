@@ -253,3 +253,75 @@ def test_the_output_kept_is_bounded(tmp_path, monkeypatch):
     assert out["ok"] is True
     assert len(out["output_tail"]) <= external_worker.RESULT_TAIL_CHARS
     assert out["output_chars"] > external_worker.OUTPUT_TAIL_CHARS
+
+
+# ── continuing a run instead of restarting it ──────────────────────────────
+#
+# A fix round that rebuilds a worker from the task plus the failure text makes
+# it re-read the same files and rebuild the same model of the problem, which is
+# the expensive half of the round. `resume` continues the run that made the
+# change instead. It is only usable because the runner reports an id for its
+# own run — everything below pins that, from the stream up.
+
+RESUMABLE = """
+import json, sys
+print(json.dumps({"type": "system", "subtype": "init", "session_id": "sess-9"}))
+print(json.dumps({"type": "assistant", "message": {"content": [
+    {"type": "text", "text": "argv=" + " ".join(sys.argv[1:])}]}}))
+print(json.dumps({"type": "result", "subtype": "success", "is_error": False,
+                  "session_id": "sess-9", "result": "done"}))
+"""
+
+
+def _streaming_agent(tmp_path, name, body, **over):
+    """A double whose row asks for the structured stream, the way the gated
+    `claude` row does. `_Stream` is only used when the stream is asked for."""
+    script = tmp_path / f"{name}.py"
+    script.write_text(body, encoding="utf-8")
+    kw = dict(key=name, label=f"Fake {name}", kind="cli", licence="open",
+              argv=(sys.executable, str(script), "{task}", "--resume", "{session}"),
+              detect=(sys.executable,), notes="a test double")
+    kw.update(over)
+    return reg.Runner(**kw)
+
+
+def test_a_first_run_passes_no_resume_flag_at_all(tmp_path):
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    out = external_worker.run_task(_streaming_agent(tmp_path, "resumable", RESUMABLE),
+                                   "add apply_tax", workspace=str(ws))
+    assert out["ok"] is True
+    assert "--resume" not in out["argv_shown"]
+
+
+def test_a_resume_id_reaches_the_command(tmp_path):
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    out = external_worker.run_task(_streaming_agent(tmp_path, "resumable", RESUMABLE),
+                                   "fix it", workspace=str(ws), resume="sess-9")
+    assert out["ok"] is True
+    assert "--resume sess-9" in out["argv_shown"]
+    assert "argv=fix it --resume sess-9" in out["output_tail"]
+
+
+def test_the_stream_reports_the_run_id_from_its_first_event():
+    """A run that times out never emits a final `result`, and it is exactly the
+    run worth continuing — so the id is taken from the first event that
+    carries one, not only from the last."""
+    stream = external_worker._Stream()
+    stream.feed('{"type": "system", "subtype": "init", "session_id": "sess-9"}')
+    assert stream.session_id == "sess-9"
+    assert stream.result == {}, "no final event has arrived yet"
+    # A later event does not overwrite it: one run, one id.
+    stream.feed('{"type": "result", "subtype": "success", "session_id": "other"}')
+    assert stream.session_id == "sess-9"
+
+
+def test_a_runner_that_reports_no_id_carries_no_handle(tmp_path):
+    """The honest absence. `_external_report` falls through to today's fresh
+    fixer on an empty handle, so an invented one would be worse than none."""
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    out = external_worker.run_task(_agent(tmp_path, "good", GOOD), "add apply_tax",
+                                   workspace=str(ws))
+    assert "session_id" not in out

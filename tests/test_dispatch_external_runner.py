@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import inspect
 import json
 import sys
 from types import SimpleNamespace
@@ -30,6 +31,7 @@ import pytest
 
 from src import agent_runners as reg
 from src import dispatch
+from src import external_worker as external_worker_module
 
 AGENT = """
 import pathlib, sys
@@ -510,6 +512,14 @@ def _gated_result(**over):
     return out
 
 
+#: The real signature, captured at import before any fixture replaces
+#: `run_task`. The spy takes `**kwargs`, so a renamed argument would land in it
+#: silently and the gate would go back to never arming with every test still
+#: green — and `dispatch._external_resume_supported` asks the signature, so a
+#: double that did not carry it would answer the probe for the real module.
+_REAL_RUN_TASK_SIG = inspect.signature(external_worker_module.run_task)
+
+
 @pytest.fixture
 def spy(box, monkeypatch):
     """Replace the worker itself and record exactly what dispatch handed it."""
@@ -521,6 +531,7 @@ def spy(box, monkeypatch):
         calls.append({"runner": runner_key, "task": task, **kwargs})
         return _gated_result(runner=str(runner_key))
 
+    fake_run_task.__signature__ = _REAL_RUN_TASK_SIG
     monkeypatch.setattr(external_worker, "run_task", fake_run_task)
     box["register"]("claudeish", AGENT)
     box["calls"] = calls
@@ -607,16 +618,96 @@ def test_a_runner_the_gate_could_not_reach_is_still_reported_unguarded(spy, monk
     assert "external_gate" not in proof
 
 
-#: The real signature, captured before any fixture replaces `run_task`. The
-#: spy takes `**kwargs`, so a renamed argument would land in it silently and
-#: the gate would go back to never arming with every test still green.
-_REAL_RUN_TASK_SIG = __import__("inspect").signature(
-    __import__("src.external_worker", fromlist=["run_task"]).run_task)
-
-
 def test_the_arming_arguments_are_the_ones_run_task_declares(spy):
     _run_one(spy)
     call = dict(spy["calls"][0])
     runner, task = call.pop("runner"), call.pop("task")
     # TypeError here means dispatch is passing a name the worker does not have.
     _REAL_RUN_TASK_SIG.bind(runner, task, **call)
+
+
+# --------------------------------------------------------------------------
+# Resume: the handle, and the round trip that uses it
+#
+# `dispatch` carried the resume handle and probed for support long before
+# anything could produce an id. Both halves are here now, so the probe answers
+# True and a fix round can continue the run that made the change.
+# --------------------------------------------------------------------------
+
+def test_the_worker_can_be_resumed_in_this_build():
+    assert dispatch._external_resume_supported() is True
+
+
+def test_a_reported_session_id_becomes_the_workers_resume_handle():
+    report = dispatch._external_report(
+        {"name": "w1", "instruction": "add apply_tax"}, 0,
+        {"status": "done", "ok": True, "runner": "claudeish", "session_id": "sess-9"})
+    assert report["runner_session"] == "sess-9"
+    # and the chat-session id stays None: an external agent has no Faustus
+    # session, and confusing the two would resume the wrong thing.
+    assert report["session_id"] is None
+
+
+def test_a_runner_that_reported_nothing_leaves_the_fresh_fixer_path():
+    report = dispatch._external_report({"name": "w1", "instruction": "x"}, 0,
+                                       {"status": "done", "ok": True, "runner": "qwen"})
+    assert report["runner_session"] == ""
+    job = SimpleNamespace(result={"subagents": [report]})
+    assert dispatch._resume_target(job) is None
+
+
+def test_the_fix_round_prefers_the_run_that_touched_the_failing_file():
+    rows = [
+        dispatch._external_report({"name": "w1", "instruction": "x"}, 0,
+                                  {"status": "done", "ok": True, "runner": "claudeish",
+                                   "session_id": "sess-early"}),
+        dispatch._external_report({"name": "w2", "instruction": "y"}, 1,
+                                  {"status": "done", "ok": True, "runner": "claudeish",
+                                   "session_id": "sess-late"}),
+    ]
+    job = SimpleNamespace(result={"subagents": rows})
+    target = dispatch._resume_target(job, {"related_files": ["cart.py"]})
+    # An external agent files no `mutations`, so nothing outranks recency and
+    # the LAST run wins — the session holding the most recent state.
+    assert target == {"kind": "runner", "id": "sess-late", "runner": "claudeish",
+                      "name": "w2", "model": "", "agent": ""}
+
+
+def test_a_task_carrying_a_handle_is_continued_not_restarted(spy):
+    async def run():
+        job = await dispatch.start("luis", {"tasks": [{"instruction": "fix it",
+                                                       "runner": "claudeish"}],
+                                            "workspace": spy["ws"], "verify": "none"})
+        assert await dispatch.wait(job, 30)
+        return job
+
+    # The shape `_run_external` reads: what the fix loop writes onto its fixer.
+    original = dispatch._run_external
+
+    async def with_handle(job, tasks, cb):
+        for t in tasks:
+            t["resume"] = {"kind": "runner", "id": "sess-9", "runner": "claudeish"}
+        return await original(job, tasks, cb)
+
+    import unittest.mock as mock
+    with mock.patch.object(dispatch, "_run_external", with_handle):
+        asyncio.run(run())
+
+    assert spy["calls"][0]["resume"] == "sess-9"
+
+
+def test_a_session_handle_is_not_offered_to_an_external_agent(spy):
+    """`kind: "session"` is a Faustus chat session. Handing it to a foreign
+    CLI as its own run id would resume nothing and look like it had."""
+    original = dispatch._run_external
+
+    async def with_handle(job, tasks, cb):
+        for t in tasks:
+            t["resume"] = {"kind": "session", "id": "abc123", "runner": ""}
+        return await original(job, tasks, cb)
+
+    import unittest.mock as mock
+    with mock.patch.object(dispatch, "_run_external", with_handle):
+        _run_one(spy)
+
+    assert "resume" not in spy["calls"][0]

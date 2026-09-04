@@ -291,6 +291,11 @@ class _Stream:
     def __init__(self) -> None:
         self.tool_calls: List[Dict[str, str]] = []
         self.result: Dict[str, Any] = {}
+        #: The run's own id, as the CLI reports it. Taken from the FIRST event
+        #: that carries one rather than only from the final `result`, because a
+        #: run that timed out never emits a final event and is exactly the one
+        #: worth continuing.
+        self.session_id = ""
         self.parsed = 0
         self.unparsed = 0
 
@@ -308,6 +313,8 @@ class _Stream:
             self.unparsed += 1
             return line
         self.parsed += 1
+        if not self.session_id:
+            self.session_id = str(event.get("session_id") or "")
         try:
             return self._render(event)
         except Exception as e:  # noqa: BLE001 - a stream reader never kills a run
@@ -418,7 +425,8 @@ def run_task(runner_key: Any, task: str, *, workspace: Optional[str] = None,
              owner: Optional[str] = None,
              attended: bool = False,
              locks: Any = None,
-             worker_key: Optional[str] = None) -> Dict[str, Any]:
+             worker_key: Optional[str] = None,
+             resume: Optional[str] = None) -> Dict[str, Any]:
     """Run ONE task with one external agent and report what happened.
 
     ``runner_key`` is a key or alias from src/agent_runners.py — or a
@@ -451,6 +459,13 @@ def run_task(runner_key: Any, task: str, *, workspace: Optional[str] = None,
       worker's key in it, so the foreign agent cannot write the file a
       built-in worker is holding;
     * ``run_id`` — the id the gate's ledger and its receipts are filed under.
+
+    ``resume`` is a prior run of the SAME agent to continue instead of
+    starting a fresh one that has to read its way back to the same
+    understanding. The id comes from a previous result's ``session_id``, which
+    is read out of the runner's own ``stream-json`` output — so it exists only
+    for a runner whose row asks for that stream (today: the gated ones), and a
+    result without one leaves the caller on its fresh-worker path.
 
     A gated result carries ``unguarded: False`` and a ``gate`` block; an
     ungated one is exactly what it always was.
@@ -510,7 +525,8 @@ def run_task(runner_key: Any, task: str, *, workspace: Optional[str] = None,
 
     try:
         argv = reg.build_argv(runner, str(task or ""), model=model, cwd=cwd, endpoint=endpoint,
-                              settings=(gate.settings if gate is not None else None))
+                              settings=(gate.settings if gate is not None else None),
+                              session=resume)
         if not argv:
             return _fail(key, f"{runner.label}: the table produced an empty command for this task")
         table_env = reg.table_env(runner, model=model, cwd=cwd, endpoint=endpoint)
@@ -689,6 +705,11 @@ def _spawn(runner: Any, key: str, task: str, *, argv: List[str], shown: str,
         "unguarded": not bool(ledger.get("gated")),
         "guard_note": reg.gate_note(runner) if ledger.get("gated") else reg.GUARD_NOTE,
     }
+    if events is not None and events.session_id:
+        # Only ever present when the runner's own stream reported one, so a
+        # runner that reports nothing leaves the caller on its fresh-worker
+        # path instead of being handed a handle nobody can use.
+        out["session_id"] = events.session_id
     if ledger:
         out["gate"] = ledger
         cost = (ledger.get("result") or {}).get("total_cost_usd")

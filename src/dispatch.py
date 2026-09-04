@@ -1352,11 +1352,11 @@ def _external_report(task: Dict[str, Any], index: int, result: Dict[str, Any]) -
         "timed_out": bool(result.get("timed_out")),
         "state": result.get("state") or "",
         "why": result.get("why") or "",
-        # The runner's own session identity, when it reports one. Absent from
-        # every runner today (see the report accompanying this change: one line
-        # in src/agent_runners.py and one in src/external_worker.py), and the
-        # empty string is what makes `_resume_target` fall through to today's
-        # fresh fixer rather than to a handle nobody can use.
+        # The runner's own session identity, when it reports one — read out of
+        # the CLI's `stream-json` output, so it exists for a runner whose row
+        # asks for that stream and for no other. The empty string is what makes
+        # `_resume_target` fall through to today's fresh fixer rather than to a
+        # handle nobody can use.
         "runner_session": str(result.get("session") or result.get("session_id") or ""),
     }
 

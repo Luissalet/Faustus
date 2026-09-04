@@ -106,7 +106,8 @@ class Runner:
     """One agent, as data.
 
     ``argv`` placeholders: ``{task}`` (the instruction), ``{model}``,
-    ``{cwd}``, ``{endpoint}``. A token that resolves to an empty string is
+    ``{cwd}``, ``{endpoint}``, ``{session}`` (a prior run of this agent to
+    continue). A token that resolves to an empty string is
     dropped — and so is the ``-flag`` immediately before it, because
     ``--model`` with nothing after it is not a command. ``env`` values take
     the same placeholders and a value that would be empty is left unset,
@@ -167,7 +168,10 @@ _BUILTIN: Tuple[Runner, ...] = (
     Runner(
         key="claude", label="Claude Code", kind="cli", licence="subscription",
         install="ollama launch claude",
-        argv=("claude", "-p", "{task}", "--model", "{model}"),
+        # `--resume {session}` is dropped WITH its flag when no session is
+        # given (see `_fill`), so a first run produces the same command it
+        # produced before resume existed — pinned in tests/test_agent_runners.py.
+        argv=("claude", "-p", "{task}", "--model", "{model}", "--resume", "{session}"),
         env={"ANTHROPIC_BASE_URL": "{endpoint}"},
         detect=("claude",),
         gate="hook",
@@ -612,7 +616,7 @@ def _fill(token: str, values: Dict[str, str]) -> Tuple[str, bool]:
 
 def build_argv(runner: Runner, task: str, *, model: Optional[str] = None,
                cwd: Optional[str] = None, endpoint: Optional[str] = None,
-               settings: Optional[str] = None) -> List[str]:
+               settings: Optional[str] = None, session: Optional[str] = None) -> List[str]:
     """The argv that runs ONE task with this runner.
 
     A token whose placeholder resolved to nothing is dropped, and so is the
@@ -625,11 +629,16 @@ def build_argv(runner: Runner, task: str, *, model: Optional[str] = None,
     ``{settings}`` in ``gate_argv``, which is appended ONLY when it is given —
     so an ungated run of the same row produces exactly the argv it produced
     before the gate existed.
+
+    ``session`` is a prior run of the same agent to CONTINUE rather than
+    restart. It fills ``{session}``, and the drop-the-flag rule is what keeps a
+    first run byte-identical: with no session, ``--resume {session}`` leaves
+    nothing behind.
     """
     config = str(settings or "")
     values = {"task": str(task or ""), "model": str(model or ""),
               "cwd": str(cwd or ""), "endpoint": str(endpoint or ""),
-              "settings": config}
+              "settings": config, "session": str(session or "")}
     out: List[str] = []
     tokens = list(runner.argv) + (list(runner.gate_argv) if config else [])
     for token in tokens:
