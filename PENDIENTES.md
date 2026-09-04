@@ -141,12 +141,12 @@ al romperlo:
   esas rutas y **no se ha tocado**: son complementarios, no duplicados — uno aprueba un comando,
   el otro un plan.
 
-- `[~]` **Los nodos `deliver`, `skill` y `artifact_store` no están cableados a nada.** Rechazan por
-  su nombre (*«no sender is wired to the 'deliver' node type; nothing was sent»*) y eso es
-  deliberado: un run verde sin correo enviado es el peor fallo posible de un motor de workflows.
-  Pero significa que hoy un workflow solo puede disparar, condicionar, esperar y preguntar a una
-  persona. `deliver` necesita un canal (Fase 6) y `skill` el `execution_router` con un workspace
-  (Fase 1).
+- `[~]` **Los nodos `deliver` y `artifact_store` no están cableados a nada.** Rechazan por su nombre
+  (*«no sender is wired to the 'deliver' node type; nothing was sent»*) y eso es deliberado: un run
+  verde sin correo enviado es el peor fallo posible de un motor de workflows. `deliver` necesita un
+  canal (Fase 6). `skill` **sí** está cableado, pero solo para `media:<plantilla>` (§36); una skill
+  de código sigue necesitando el `execution_router` con un workspace (Fase 1), y su rechazo apunta
+  a lo que sí funciona.
 
 - `[+]` **Nadie llama a `advance()` en bucle.** Lo llaman la ruta `/api/workflows/runs/{id}/advance`,
   la tool MCP o una persona. `advance()` ya despierta los `wait` cuya hora pasó, así que un

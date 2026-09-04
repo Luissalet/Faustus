@@ -64,9 +64,13 @@ def test_a_node_type_nobody_wired_refuses_instead_of_claiming_it_worked(
 
     assert out["status"] == "failed"
     reason = out["ran"][0]["reason"]
-    assert word in reason
-    assert "nothing was sent" in reason or "nothing ran" in reason \
-        or "nothing was\nsaved" in reason or "nothing was saved" in reason
+    # Three things the refusal has to do, rather than three exact sentences —
+    # the wording moved once already when `skill` gained a wired case, and a
+    # test that pins prose fails for the wrong reason.
+    assert word in reason, "it does not say WHICH capability is missing"
+    assert "did not run" in reason or "nothing was" in reason, \
+        "it does not say that nothing happened"
+    assert "default_handlers" in reason, "it does not say how to wire it"
 
 
 def test_a_wired_sender_gets_the_config_and_the_run(store):

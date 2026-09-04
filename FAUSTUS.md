@@ -1751,8 +1751,43 @@ Van tres fases seguidas con este mismo fallo; está anotado en PENDIENTES como p
 No hay ComfyUI instalado en esta máquina, así que **nada de esto se ha ejecutado contra el motor de
 verdad**: el protocolo está implementado según su API y probado contra un servidor que la imita.
 Faltan la galería con receta y botón de «variar», los perfiles de hwfit para decir honestamente que
-un modelo no cabe, la plantilla de vídeo (necesita custom nodes que no se pueden probar a ciegas) y
-cablear el nodo `skill` de los workflows a un render — que es donde la Fase 3 se junta con la 4.
+un modelo no cabe y la plantilla de vídeo (necesita custom nodes que no se pueden probar a ciegas).
+Cablear el nodo `skill` de los workflows a un render sí se hizo, y tiene su propia sección (§36).
+
+## 36. La costura: un workflow que renderiza de verdad (04-09-2026, tarde)
+
+Con la Fase 3 y la Fase 4 en pie, la costura entre las dos es el primer hito de producto del
+masterplan en miniatura:
+
+```
+un brief → un render en el motor → una persona lo aprueba → hecho
+```
+
+Y no hizo falta maquinaria nueva en ninguna de las dos mitades. Un nodo `skill` cuyo
+`config.skill` empieza por `media:` arranca el render y **se pausa con una hora de despertar** —
+exactamente lo que hace un nodo `wait`—, y cada despertar le pregunta al motor. Como el id del
+trabajo vive en la fila de `media_runs`, un Faustus que se muera a mitad de render vuelve y sigue.
+
+Reconoce su propio intento anterior por el id del media run en `context["previous"]`, el mismo
+truco que la puerta de aprobación y por la misma razón: arrancar un segundo render porque nadie se
+acordó del primero es exactamente el fallo del que va toda la fase. Hay test de eso —despertar el
+nodo dos veces mientras el motor sigue trabajando y comprobar que el motor **recibió un solo
+trabajo**.
+
+Tres detalles que quedaron fijados escribiendo los tests:
+- Un motor que no contesta, o que olvidó el trabajo, deja el nodo **esperando**, no fallado. Que el
+  motor no responda es un hecho sobre el motor, y el nodo no decide por su cuenta que el render
+  fracasó.
+- Un render que falla para su rama y **la puerta no llega a preguntarse**: `never_reached: ['gate']`.
+  Preguntarle a una persona si aprueba una imagen que no existe es peor que no preguntar.
+- Solo `media:` está cableado. Cualquier otra skill sigue rechazando por su nombre — y el rechazo
+  **apunta a lo que sí está cableado**, que es la diferencia entre un callejón y una indicación.
+
+Probado en vivo contra la 7001 con un motor con forma de ComfyUI en el 8188: validar el workflow,
+arrancarlo (render encolado, run pausado sobre un reloj, `approval_id` vacío porque aquí no espera
+a nadie), avanzar otra vez antes de la hora (no pasa nada dos veces), esperar los 15 s, despertar
+—artefacto recogido con receta, semilla y licencia—, y la puerta humana concediendo por
+`require_human` antes de que el workflow termine.
 
 ## Cómo mantener este documento
 Cada bloque de trabajo añade una sección (fecha, qué, por qué, ficheros, cómo se verificó, cifras) y actualiza las cifras de cabecera (`git log --oneline c9dd68d8..HEAD | wc -l`, `git diff --stat c9dd68d8..HEAD`). Los commits del fork llevan mensajes largos que explican el porqué: `git log c9dd68d8..HEAD` es la fuente detallada.

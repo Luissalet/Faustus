@@ -302,23 +302,28 @@ def deliver_handler(send: Optional[Callable] = None) -> Callable:
     return handle
 
 
-def skill_handler(run: Optional[Callable] = None) -> Callable:
-    """`skill`: run a skill through the execution router.
+def skill_handler(run: Optional[Callable] = None, *,
+                  media: Optional[Callable] = None) -> Callable:
+    """`skill`: run a skill.
 
-    Same deny-by-default shape as `deliver`. The runner receives the node's
-    config and the context, and is expected to come back with an
-    `ExecutionResult`-shaped dict; a runner that raises is caught by the
-    engine and becomes a node failure, not a dead run."""
+    A `config.skill` of `media:<template>` goes to the media engine, because
+    that half is built and there is no reason to make a caller wire it up. Any
+    other skill needs a runner passed in, and refuses by name until one is —
+    same deny-by-default shape as `deliver`. A runner that raises is caught by
+    the engine and becomes a node failure, not a dead run."""
 
     def handle(node: WorkflowNode, context: Mapping[str, Any]) -> Dict[str, Any]:
-        if run is None:
-            return {"status": "failed", "reason": (
-                "no runner is wired to the 'skill' node type; nothing ran. "
-                "Pass one to default_handlers(skill=...)")}
         skill_id = str(node.config.get("skill") or "")
         if not skill_id:
             return {"status": "failed",
                     "reason": "a skill node needs `config.skill` naming the skill to run"}
+        if skill_id.startswith("media:"):
+            return dict((media or media_skill_runner())(node, context) or {})
+        if run is None:
+            return {"status": "failed", "reason": (
+                f"no runner is wired to the 'skill' node type, so {skill_id!r} did "
+                "not run. Pass one to default_handlers(skill=...) — or name a media "
+                "template as 'media:<id>', which is wired")}
         outcome = run(node, dict(context)) or {}
         if outcome.get("status") in ("failed", "refused"):
             return {"status": "failed",
@@ -327,6 +332,71 @@ def skill_handler(run: Optional[Callable] = None) -> Callable:
         return dict(outcome)
 
     return handle
+
+
+def media_skill_runner(*, poll_seconds: int = 15) -> Callable:
+    """A `skill` node that renders, for `config.skill` values like
+    `media:image.product`.
+
+    This is the seam between the media engine and the workflow engine, and it
+    needed no new machinery in either. A render takes minutes, so the node
+    starts it and **pauses with a wake time** — exactly what a `wait` does —
+    and each wake asks the engine. The engine's own job id is on the media run
+    row, so a Faustus that restarts mid-render comes back and carries on.
+
+    It recognises its own earlier pass by the media run id in
+    `context["previous"]`, which is the same trick the approval gate uses and
+    for the same reason: starting a second render because nobody remembered
+    the first is the exact failure this phase is about."""
+
+    def run(node: WorkflowNode, context: Mapping[str, Any]) -> Dict[str, Any]:
+        from src import media_runs                          # noqa: PLC0415
+
+        previous = context.get("previous") or {}
+        run_id = str(previous.get("media_run_id") or "")
+
+        if not run_id:
+            workflow_id = str(node.config.get("skill") or "")[len("media:"):]
+            started = media_runs.start(
+                workflow_id,
+                node.config.get("inputs") or {},
+                version=str(node.config.get("version") or ""),
+                owner=str(context.get("owner") or ""),
+                project_id=str(node.config.get("project_id") or ""),
+                session_id=str(node.config.get("session_id") or ""))
+            if not started.get("ok"):
+                return {"status": "failed",
+                        "reason": f"{started.get('reason')}: {started.get('detail', '')}",
+                        "media_run_id": started.get("run_id", "")}
+            run_id = started["run_id"]
+            return {"status": "paused", "media_run_id": run_id,
+                    "wake_at": _in_seconds(poll_seconds),
+                    "reason": f"rendering {workflow_id} as {run_id}"}
+
+        state = media_runs.poll(run_id)
+        status = state.get("status")
+        if status == "completed":
+            return {"media_run_id": run_id,
+                    "artifact_ids": [a["id"] for a in state.get("artifacts") or []],
+                    "artifacts": state.get("artifacts") or [],
+                    "values": state.get("values") or {}}
+        if status in ("failed", "cancelled"):
+            return {"status": "failed", "media_run_id": run_id,
+                    "reason": state.get("reason") or f"the render {status}"}
+        # Still going, or the engine could not be reached — either way this is
+        # a wait, not a failure. `unknown` included: an engine that forgot the
+        # job is a fact about the engine, and the node keeps asking rather
+        # than deciding the render failed on its behalf.
+        return {"status": "paused", "media_run_id": run_id,
+                "wake_at": _in_seconds(poll_seconds),
+                "reason": f"the render is {status}"}
+
+    return run
+
+
+def _in_seconds(seconds: int) -> str:
+    return (datetime.now(timezone.utc)
+            + timedelta(seconds=max(1, int(seconds)))).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def artifact_handler(save: Optional[Callable] = None) -> Callable:
@@ -348,6 +418,7 @@ def artifact_handler(save: Optional[Callable] = None) -> Callable:
 def default_handlers(*, approvals: Any = None, owner: str = "",
                      deliver: Optional[Callable] = None,
                      skill: Optional[Callable] = None,
+                     media: Optional[Callable] = None,
                      artifact_store: Optional[Callable] = None,
                      ttl_seconds: Optional[int] = None) -> Dict[str, Callable]:
     """Every node type the contract allows, wired or honestly refusing.
@@ -364,6 +435,6 @@ def default_handlers(*, approvals: Any = None, owner: str = "",
         "human_approval": approval_handler(approvals, owner=owner,
                                            ttl_seconds=ttl_seconds),
         "deliver": deliver_handler(deliver),
-        "skill": skill_handler(skill),
+        "skill": skill_handler(skill, media=media),
         "artifact_store": artifact_handler(artifact_store),
     }

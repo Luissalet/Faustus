@@ -153,8 +153,13 @@ Skills iniciales: `image.product` ✅, `image.reference-edit` ✅, `video.short-
   - [x] Los tipos de nodo que **alcanzan fuera** (`skill`, `deliver`, `artifact_store`) **rechazan
         por nombre** mientras nadie les conecte un runtime. Un run verde sin correo enviado sería
         el peor fallo posible de un motor de workflows.
-  - [ ] Conectar `deliver` a un canal real y `skill` al `execution_router` con workspace. Ahí es
-        donde la Fase 4 se junta con la 1 y la 6.
+  - [x] **`skill` cableado a un render** (04-09, §36): un nodo cuyo `config.skill` es
+        `media:<plantilla>` arranca el render y se pausa con hora de despertar, y cada despertar le
+        pregunta al motor. Sin maquinaria nueva: reusa la pausa por reloj de la Fase 4 y la fila de
+        `media_runs` de la Fase 3. Es el primer hito de producto en miniatura —brief → render →
+        persona aprueba— y está probado en vivo.
+  - [ ] Conectar `deliver` a un canal real y `skill` al `execution_router` para skills de código
+        con workspace. Ahí es donde la Fase 4 se junta con la 1 y la 6.
   - [ ] Un planificador que llame a `advance()` en bucle (hoy lo llama quien quiera: la ruta, la
         tool MCP o una persona; nadie lo hace solo).
 - **5 · Coding:** `ChangeSet` estándar (plan, ficheros, diff, comandos, tests reales, artefactos) y
