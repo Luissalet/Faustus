@@ -23,11 +23,16 @@ def _fenced_segments(text: str):
 
 
 def test_readme_opens_with_wordmark_title():
-    # The README opens with the fork's title (Faustus) and, right after the
-    # fork notice, the upstream wordmark image rather than an ASCII banner.
+    # What must hold: the README opens by naming Faustus, and it does it with a
+    # wordmark image rather than the ASCII banner of #1390.
+    #
+    # What must NOT be pinned: the exact markup. This test used to require the
+    # literal `# Faustus` heading AND the UPSTREAM wordmark (`alt="Odysseus"`),
+    # and both went stale the day the fork got its own cover art — a guard
+    # describing last year's README, failing for a change that was the point.
     head = "\n".join(README.read_text(encoding="utf-8").splitlines()[:25])
-    assert head.startswith("# Faustus"), "README must open with the Faustus title"
-    assert 'alt="Odysseus"' in head, "README must keep the upstream wordmark image near the top"
+    assert "Faustus" in head, "README must name the fork in its opening block"
+    assert "<img" in head, "README must open with a wordmark image, not an ASCII banner"
 
 
 def test_reintroduced_ascii_banner_stays_fenced():

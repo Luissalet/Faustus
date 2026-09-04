@@ -12,12 +12,15 @@ a propósito · `[+]` mejora pendiente.
 
 ## Lo primero que hay que mirar
 
-- `[?]` **La suite completa en Windows no está medida.** El 04-09 se descubrió que llevaba un día
-  sin poder ni recolectarse (un `import resource` sin usar, §40.6); arreglado y con un test que lo
-  impide, pero la cifra de cabecera —9.100 en verde— sigue siendo **la de Linux del 03-09**. La
-  ejecución completa en esta máquina tarda cerca de una hora y estaba a mitad cuando se escribió
-  esto. Hasta que termine, la cuenta de fallos de plataforma en Windows (12 + 13 según §24.4) es
-  una cifra heredada, no una medida de hoy.
+- `[~]` **44 tests rojos en Windows, ninguno de hoy, y 17 los provoca el `data/` local.** Medido el
+  04-09 (§40.7): la suite entera da **10.345 en verde**, 47 fallos, 6 errores, 74 saltados en
+  15 min 34 s. Comparado como debe compararse —misma carpeta, mismo `data/`, misma lista, cambiando
+  solo el commit— el commit anterior da **exactamente los mismos 44**: cero regresiones. Lo nuevo es
+  saber que **17 desaparecen en una worktree limpia**, así que no son «de Windows» sino del estado
+  local de esta máquina. Los grupos: `test_sys_usage_js` (11), `test_process_ownership` (6),
+  `test_agent_loop_offer_execute_coherence` (5), `test_report_export` (4), y los 6 errores de
+  parámetros gigantes (`test_claim_verify`, `test_output_rules`, `test_research_citations`). Ninguno
+  se ha diagnosticado uno por uno todavía; lo que está probado es que son heredados.
 
 ---
 

@@ -22,8 +22,14 @@ def test_visible_brand_is_faustus():
     assert "<title>Faustus — Login</title>" in login
     manifest = json.loads((ROOT / "static" / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["name"] == "Faustus" and manifest["short_name"] == "Faustus"
+    # The README has to say whose project this is at the top and point at
+    # FAUSTUS.md. HOW it says so is a design decision that has already changed
+    # once — a `# Faustus` heading became a centred wordmark image — so pin the
+    # name being visible up there, not the markup that renders it.
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    assert readme.startswith("# Faustus") and "FAUSTUS.md" in readme
+    head = "\n".join(readme.splitlines()[:25])
+    assert "Faustus" in head, "the README must name the fork in its opening block"
+    assert "FAUSTUS.md" in readme
     assert (ROOT / "FAUSTUS.md").read_text(encoding="utf-8").startswith("# Faustus")
 
 

@@ -4,8 +4,9 @@
 
 - Base del fork: commit upstream `c9dd68d8` (27-08-2026, "refactor(docs): separate Pages site source").
 - Rama: **una sola, `master`** (`D:\LocalAI\odysseus`), que trackea `origin/master` en `github.com/Luissalet/Faustus`. Las ramas `feat/projects` y `feat/reliability` y la worktree de pruebas se consolidaron el 31-08.
-- Cifras a 04-09-2026 (en `master`): **404 commits**, +166.900 líneas sobre la base; **160 módulos nuevos** en `src/`, `routes/`, `services/` y `static/js/`, **231 ficheros de tests nuevos**. Suite completa: **9.100 tests en verde**, ~6 min en Linux (2 fallos preexistentes del entorno: `markitdown` sin conversor docx y el escáner de marca sobre un docstring en español); e2e Playwright 12 flujos. En Windows hay además 12 fallos de plataforma y 13 dependientes del `data/` local, todos presentes también en el commit base (§24.4).
-- **Aviso sobre esa cifra de Linux:** entre el 03-09 y el 04-09 la suite **no se podía ni recolectar en Windows**. Un `import resource` sin usar —módulo que no existe en Windows— aborta la recolección entera: `Interrupted: 1 error during collection`, cero tests ejecutados, y en Linux invisible porque allí el módulo sí está. Arreglado en §40, con un test que fija la regla (`tests/test_suite_collects_on_every_platform.py`). Una cifra de tests verdes solo vale para la plataforma donde se midió.
+- Cifras a 04-09-2026 (en `master`): **405 commits**, +166.900 líneas sobre la base; **160 módulos nuevos** en `src/`, `routes/`, `services/` y `static/js/`, **232 ficheros de tests nuevos**.
+- **Suite completa, medida en esta máquina (Windows, 04-09):** **10.345 en verde**, 47 fallos, 6 errores, 74 saltados, **15 min 34 s**. Los 53 rojos están **todos** en el commit anterior a este trabajo (misma carpeta, mismo `data/`, misma lista de ficheros: 44 y 44, diferencia cero), así que ninguno es de hoy. **17 de ellos los provoca el `data/` local**: el mismo commit en una worktree limpia baja de 44 a 27. En Linux la suite iba por **9.100 en verde** el 03-09 (~6 min, 2 fallos de entorno: `markitdown` sin conversor docx y el escáner de marca sobre un docstring en español); e2e Playwright, 12 flujos.
+- **Y por qué se dice «medida en esta máquina»:** entre el 03-09 y el 04-09 la suite **no se podía ni recolectar en Windows**. Un `import resource` sin usar —módulo que no existe allí— aborta la recolección entera: `Interrupted: 1 error during collection`, cero tests ejecutados, invisible en Linux porque allí el módulo sí está (§40.6, con un test que fija la regla). Una cifra de tests verdes solo vale para la plataforma, la carpeta y el `data/` donde se midió.
 - Máquina de referencia: RTX 4070 Ti 12 GB **+ RTX 5060 Ti 16 GB (eGPU, desde el 02-09)**, 128 GB RAM, Windows 11, Ollama 0.33.x; modelos `qwen3-coder:30b`, `qwen3.5:9b` (visión), `qwen3.8:27b`, `qwen3-coder-next`.
 
 ---
@@ -2072,6 +2073,18 @@ renderizadas contra el motor real
 a través de la API de Faustus: draft 2,0 s · producto 10,1 s · variación 6,1 s · vídeo 42,4 s. El
 catálogo reporta `broken: []` y «2 de 2 motores listos». `python -m src.doctor`: 14 ok, 2 warn, 1
 absent, y el aviso incluye ahora el pool entero, no un solo motor.
+
+**La suite entera, y cómo se separó lo heredado de lo mío.** 10.345 en verde, 47 fallos, 6 errores,
+74 saltados, 15 min 34 s. Un número de rojos no dice nada por sí solo, así que se comparó contra el
+commit anterior — y el primer intento estuvo **mal montado**: una worktree limpia da 27 y la carpeta
+de trabajo da 44, lo que hacía parecer que 17 tests los había roto yo. La diferencia no era el
+código sino el **`data/` local**, que la worktree no tiene. Repetido como debía ser —misma carpeta,
+mismo `data/`, misma lista de ficheros, cambiando solo el commit— salen **44 y 44, diferencia cero**.
+De paso queda medido algo que el documento afirmaba sin número: **17 de los 44 los causa el `data/`
+de esta máquina**. Tres sí eran arreglables y se arreglaron aquí: dos imágenes de marca de Odysseus
+que ya no referencia nadie (restos del rebranding) y dos tests que fijaban la portada del README de
+hace dos versiones —`startswith("# Faustus")` y el wordmark **del upstream**— y que reventaron el día
+que el fork estrenó su propia portada. Sexta entrega de la misma trampa.
 
 Y una trampa de la máquina, para el que venga: **PowerShell 5.1 lee un `.ps1` como ANSI**, así que
 una raya larga dentro de una cadena entre comillas dobles rompe el parser con un *«string is missing
