@@ -415,6 +415,35 @@ def _as_worker(run, fn):
     return asyncio.run(_run())
 
 
+def test_endpoint_id_moves_the_worker_to_another_endpoint(store, monkeypatch):
+    row = _resolved(store, slug="onthecard",
+                    text="---\nname: onthecard\nendpoint_id: ep-2\n---\nwork\n")
+    run = st.SubagentRun(0, row)
+    monkeypatch.setattr("src.endpoint_resolver.resolve_endpoint_by_id",
+                        lambda ep, model=None, owner=None: ("http://other:11434/v1", "m", {}))
+    assert st._endpoint_for(run, "http://coordinator/v1", None) == "http://other:11434/v1"
+
+
+def test_an_endpoint_that_does_not_resolve_falls_back_and_says_so(store, monkeypatch):
+    row = _resolved(store, slug="onthecard",
+                    text="---\nname: onthecard\nendpoint_id: ep-gone\n---\nwork\n")
+    run = st.SubagentRun(0, row)
+    monkeypatch.setattr("src.endpoint_resolver.resolve_endpoint_by_id",
+                        lambda ep, model=None, owner=None: None)
+    # A route is not a permission, so the worker still runs — but it must not
+    # be able to say it ran where the definition said it would.
+    assert st._endpoint_for(run, "http://coordinator/v1", None) == "http://coordinator/v1"
+    assert any("ep-gone" in c and "did not resolve" in c for c in run.agent_def["caveats"])
+
+
+def test_a_worker_with_no_endpoint_id_never_asks_the_resolver(store, monkeypatch):
+    def _boom(*a, **kw):
+        raise AssertionError("the resolver must not be consulted without an endpoint_id")
+    monkeypatch.setattr("src.endpoint_resolver.resolve_endpoint_by_id", _boom)
+    run = st.SubagentRun(0, {"name": "w", "instruction": "x", "model": "", "files": []})
+    assert st._endpoint_for(run, "http://coordinator/v1", None) == "http://coordinator/v1"
+
+
 # ── resume ─────────────────────────────────────────────────────────────────
 
 def _job(reports):
