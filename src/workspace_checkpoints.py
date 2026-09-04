@@ -388,6 +388,22 @@ def file_at(workspace: str, sha: str, path: str) -> Optional[bytes]:
     return proc.stdout
 
 
+def has_checkpoint(workspace: str, sha: str) -> bool:
+    """Does this workspace's shadow repo actually know that checkpoint?
+
+    Worth its own function because every read here — `diff_since`,
+    `changed_since`, `file_at` — answers a sha it has never heard of with the
+    same empty result it gives for "nothing changed". Those are opposite
+    facts, and a caller that cannot tell them apart will report "no changes"
+    about a checkpoint from a different machine, a different data directory,
+    or one that a `reset()` threw away."""
+    if not workspace or not sha or not git_available():
+        return False
+    root = _norm_root(workspace)
+    proc = _run(root, ["cat-file", "-e", f"{sha}^{{commit}}"])
+    return bool(proc is not None and proc.returncode == 0)
+
+
 def exists_at(workspace: str, sha: str, path: str) -> bool:
     if not workspace or not sha or not path or not git_available():
         return False

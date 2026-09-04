@@ -27,7 +27,7 @@ una integración posterior, no otra arquitectura paralela.
 | 2 · Runtime de skills y memoria útil | Instalar/revertir capacidades sin tocar el core; alcances de memoria y `MemoryView` | 🟡 04-09-2026 — puente `SKILL.md`↔manifiesto, descubrimiento que para en el repo, `MemoryView`. Falta cablearlo al prompt y la instalación/reversión (§32) |
 | 3 · Motor creativo | ComfyUI como servicio, plantillas versionadas, galería de artefactos con receta | 🟡 04-09-2026 — cliente ComfyUI, plantillas aprobadas y renders durables con procedencia (§35). **No hay ComfyUI en esta máquina**: probado contra un servidor que imita su API. Faltan galería, hwfit y vídeo |
 | 4 · Workflows, approvals y conectores | Procesos que sobreviven a reinicios, idempotentes | 🟡 04-09-2026 — aprobaciones con puerta humana (§33) **y el núcleo de workflows durables** (§34): claim antes de actuar, pausa por persona o por reloj, ramas. Faltan los conectores y cablear `skill`/`deliver` a algo que exista |
-| 5 · Coding profesional | `ChangeSet`, repo map, LSP opcional, intents explore/plan/implement/review | 🟡 partes sueltas ya existen |
+| 5 · Coding profesional | `ChangeSet`, repo map, LSP opcional, intents explore/plan/implement/review | 🟡 04-09-2026 — el contrato `ChangeSet` existe y **delega el veredicto en `prove`** en vez de inventar un quinto vocabulario (§37): afirmación contra evidencia, `ok` de tres valores, intents que prometen. Faltan repo map, LSP y cablearlo al harness |
 | 6 · Gateway, canales y dispositivos | Un canal de bajo riesgo con pairing, nodos, después voz | ⏳ |
 | 7 · Ecosistema y operación | Hooks versionados, CLI `doctor`, telemetría, transferencia de artefactos | ⏳ |
 
@@ -165,6 +165,16 @@ Skills iniciales: `image.product` ✅, `image.reference-edit` ✅, `video.short-
 - **5 · Coding:** `ChangeSet` estándar (plan, ficheros, diff, comandos, tests reales, artefactos) y
   la unión de `auto_review`, `review_state`, `workspace_checkpoints` y `git_invariants`. Ninguna
   afirmación de arreglo termina sin diff y evidencia acorde al modo.
+  - [x] **El contrato existe** (04-09, §37): `contracts/changeset.py` + `src/changesets.py`, rutas
+        `/api/changesets/*` y 2 tools MCP. Sostiene la evidencia **por referencia** (lleva la sha
+        del checkpoint, no el texto del diff) y **no añade un quinto veredicto**: `judge()` delega
+        en `prove`. Rechaza una afirmación que la evidencia no sostiene, una exactitud no ganada, un
+        `explore` que escribió, y un resultado de una ejecución que no ocurrió.
+  - [x] `workspace_checkpoints.has_checkpoint()`: una sha desconocida ya no se contesta como «no
+        cambió nada». Salió corriéndolo contra un checkpoint de verdad.
+  - [ ] Cablearlo al `TurnLedger` y al final de un turno del agente, para que el resumen que ve el
+        usuario lleve el veredicto al lado. Hoy `from_turn()` existe y nadie lo llama.
+  - [ ] Repo map y LSP opcional; los intents como modos de verdad del harness, no solo un campo.
 - **6 · Gateway:** orden prudente — canal de texto → pairing → nodos → companion → voz → widgets.
   `contracts.ExternalIdentity` ya define el binding, la revocación con motivo y las capacidades.
 - **7 · Ecosistema:** hooks versionados sobre el bus de eventos, CLI `status/doctor/config validate`,

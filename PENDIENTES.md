@@ -157,6 +157,17 @@ al romperlo:
   lista de pausados, ni botón de reanudar. Un run pausado esperando a una persona solo se ve desde
   la lista de aprobaciones pendientes, que es la mitad de la historia.
 
+- `[+]` **El `ChangeSet` existe y nadie lo produce solo.** `from_turn()` y `from_dispatch()` están
+  escritos y probados, las rutas y las dos tools MCP funcionan, pero el `TurnLedger` termina un
+  turno sin construir uno. Hasta que el resumen que ve el usuario lleve el veredicto al lado, la
+  regla de la fase —«ninguna afirmación de arreglo sin evidencia»— la cumple quien se acuerde de
+  preguntar, que es la forma más fácil de no cumplirla.
+
+- `[~]` **`services/review_state.py` sigue siendo el dueño del aceptar/rechazar por fichero.** Un
+  `ChangeSet` es el informe; lo que una persona decidió sobre él es otra pregunta con otra vida.
+  Son complementarios hoy, pero si el ChangeSet se persiste alguna vez habrá que decidir cuál de
+  los dos guarda el checkpoint, porque ahora mismo lo llevan los dos.
+
 - `[?]` **El motor creativo no se ha ejecutado nunca contra un ComfyUI real.** No hay ComfyUI
   instalado en esta máquina y nada escucha en el 8188. El cliente implementa su API documentada y
   está probado contra un `ThreadingHTTPServer` que la imita con sus formas reales, más dos pruebas

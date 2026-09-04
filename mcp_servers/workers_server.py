@@ -499,6 +499,25 @@ def render_skills_audit(data: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def render_changeset(data: Dict[str, Any]) -> str:
+    """The report, with the doubts kept next to the verdict.
+
+    The server already renders the readable form; this adds the two lists a
+    coordinator has to see before repeating a summary — what was claimed and
+    not seen, and what changed without being mentioned — because those are
+    exactly the ones a confident sentence leaves out."""
+    if not data.get("ok"):
+        return (f"REFUSED at {data.get('field')}: {data.get('reason')}"
+                if data.get("field") else f"Error: {data.get('reason') or data}")
+    lines = [data.get("rendered") or ""]
+    if data.get("job_verdict"):
+        lines.append(f"  the job said: {data['job_verdict']}")
+    for gap in data.get("gaps") or []:
+        lines.append(f"  doubt · {gap.get('kind')}: {gap.get('detail')}")
+    lines.append(f"  fingerprint {str(data.get('fingerprint'))[:16]}")
+    return "\n".join(x for x in lines if x)
+
+
 def render_media_recipes(data: Dict[str, Any], engine: Dict[str, Any]) -> str:
     """The recipes, and what the engine can actually do right now.
 
@@ -891,6 +910,58 @@ TOOLS: List[Tool] = [
         }},
     ),
     Tool(
+        name="changeset_prove",
+        description=(
+            "Ask whether a finished dispatch job's report can be believed. Answers "
+            "with a VERDICT (proved/partial/unproved/contradicted), a confidence, "
+            "and the named doubts — plus any file the workers CLAIMED to have "
+            "changed that Faustus did not see change, and any file that changed "
+            "and nobody mentioned. Read this before repeating a worker's summary "
+            "as if it were a fact."
+        ),
+        inputSchema={"type": "object", "properties": {
+            "job_id": {"type": "string", "description":
+                       "A job id from dispatch_workers / workers_list."},
+            "intent": {"type": "string", "description":
+                       "What the job was FOR: implement (default), fix, review, "
+                       "explore or plan. It decides what evidence is owed — a "
+                       "review that changed nothing is a success, an implement "
+                       "that changed nothing is not."},
+        }, "required": ["job_id"]},
+    ),
+    Tool(
+        name="changeset_check",
+        description=(
+            "Check a report BEFORE making it. Give what you changed, what you ran "
+            "and what you are about to claim; get back the verdict, the doubts, "
+            "and every claim the evidence does not support. Pure — nothing is "
+            "stored and nothing runs. Use it when you are about to say you fixed "
+            "something."
+        ),
+        inputSchema={"type": "object", "properties": {
+            "intent": {"type": "string", "description":
+                       "explore | plan | implement | review | fix"},
+            "workspace": {"type": "string"},
+            "checkpoint": {"type": "string", "description":
+                           "The checkpoint sha the work started from. Without it "
+                           "the change list cannot be exact, and the claim check "
+                           "stays silent rather than guessing."},
+            "changes": {"type": "object", "description":
+                        "{source: none|mtime|git|checkpoint, added: [], modified: "
+                        "[], deleted: [], truncated: bool}"},
+            "verification": {"type": "object", "description":
+                             "{mode, ran, ok, pre_existing_only, command, summary, "
+                             "failures[]}. `ok` absent means NOT VERIFIED — never "
+                             "passed — and setting it without `ran` is refused."},
+            "claims": {"type": "array", "items": {"type": "object"},
+                       "description": "[{path, kind: created|modified|deleted|"
+                                      "moved|untouched, detail}]"},
+            "commands": {"type": "array", "items": {"type": "object"},
+                         "description": "[{argv: [...], exit_code}] — argv, never "
+                                        "one string."},
+        }, "required": ["intent"]},
+    ),
+    Tool(
         name="media_recipes",
         description=(
             "The approved media templates this Faustus can render, with the inputs "
@@ -1111,6 +1182,25 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
             data = await asyncio.to_thread(
                 _request, "GET", f"/api/contracts/skills/audit?workspace={workspace}")
             return _text(render_skills_audit(data))
+        if name == "changeset_prove":
+            job = str(args.get("job_id") or "").strip()
+            if not job:
+                return _text("Error: give the job_id")
+            intent = urllib.parse.quote(str(args.get("intent") or "implement"), safe="")
+            data = await asyncio.to_thread(
+                _request, "GET", f"/api/changesets/from-dispatch/{job}?intent={intent}")
+            return _text(render_changeset(data))
+        if name == "changeset_check":
+            body = {k: args.get(k) for k in
+                    ("intent", "workspace", "checkpoint", "changes",
+                     "verification", "claims", "commands", "title", "plan")
+                    if args.get(k) is not None}
+            if not body.get("intent"):
+                return _text("Error: name the intent (explore|plan|implement|"
+                             "review|fix) — it decides what evidence is owed")
+            data = await asyncio.to_thread(_request, "POST",
+                                           "/api/changesets/build", body)
+            return _text(render_changeset(data))
         if name == "media_recipes":
             data = await asyncio.to_thread(_request, "GET", "/api/media/workflows")
             engine = await asyncio.to_thread(_request, "GET", "/api/media/engine")

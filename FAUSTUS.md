@@ -1789,5 +1789,73 @@ a nadie), avanzar otra vez antes de la hora (no pasa nada dos veces), esperar lo
 —artefacto recogido con receta, semilla y licencia—, y la puerta humana concediendo por
 `require_human` antes de que el workflow termine.
 
+## 37. «Lo he arreglado», con la prueba al lado: Fase 5 del masterplan (04-09-2026, noche)
+
+La regla de esta fase es una frase: *ninguna afirmación de arreglo termina sin diff y evidencia
+acorde al modo.* `contracts/changeset.py` es esa frase hecha comprobable.
+
+Faustus ya producía **todos** los ingredientes, en módulos que no se conocían entre sí:
+`workspace_checkpoints` hace el diff, `project_tests` corre los tests y separa los fallos nuevos de
+los que ya estaban, `auto_review` lee el diff, `git_invariants` dice si es seguro comitear y
+`prove` convierte evidencia en un veredicto con dudas nombradas. Un `ChangeSet` es el sobre que los
+sostiene **por referencia** y rechaza las combinaciones que serían mentira.
+
+### 37.1 No hay un quinto vocabulario de veredicto
+Había cuatro palabras distintas para «¿funcionó?»: `prove` (proved/partial/unproved/contradicted
+con confianza y dudas), `auto_review` (ok/issues), el `verdict` de un job de dispatch (una frase
+libre) y el `ok: True|False|None` de los tests. Añadir una quinta habría sido el problema, no la
+solución. Así que `judge()` **delega en `prove`** y no inventa nada; lo único que añade son las
+dudas que el contrato ve y `prove` no —un `implement` que no tocó nada— y las añade **en el
+vocabulario de `prove`**, para que un informe no suene más seguro en un campo que en otro.
+
+### 37.2 Tres rechazos, y cada uno es una forma que un informe ha tomado de verdad
+- **Una afirmación que no nombra ningún fichero.** «Arreglado el rate limiter» con la lista de
+  cambios vacía es el informe falso más común que produce un agente, e **es indistinguible de un
+  arreglo real en un resumen**. Así que `claims` y `files` se comparan aquí, y el problema dice qué
+  pasó de verdad: *«claimed created, it was modified, not created»*.
+- **Exactitud que no se ha ganado.** `files.source` dice de dónde salió la lista. Solo un diff de
+  checkpoint es exacto; un escaneo por mtime y una lista truncada no lo son, y con ellos el chequeo
+  de afirmaciones **calla**. Reportar una afirmación como falsa apoyándose en evidencia inexacta es
+  el mismo exceso apuntando al otro lado.
+- **Un modo que prometió más de lo que hizo.** Un `explore` que escribió ficheros es una
+  contradicción — dijo que iba a mirar. No es un resultado más estricto: es otro distinto del que
+  se anunció, y el sentido de nombrar el modo es que alguien estuvo de acuerdo con él.
+
+Y una cuarta, en `Verification`: **`ok` es de tres valores y `None` significa NO VERIFICADO, nunca
+«pasó»**. Poner un resultado con `ran: false` se rechaza al parsear, porque un veredicto de una
+ejecución que no ocurrió es exactamente la afirmación que este contrato existe para negar.
+
+### 37.3 El diff se busca, no se guarda
+Un `ChangeSet` lleva la **sha** del checkpoint, no cuatrocientos kilobytes de texto que nadie ha
+leído. `diff_of()` lo trae cuando alguien mira de verdad.
+
+Y ahí salió un fallo real, corriéndolo contra un checkpoint de verdad: **todas** las lecturas de
+`workspace_checkpoints` contestan a una sha que no conocen con el mismo resultado vacío que dan
+para «no cambió nada». Son hechos opuestos. Un checkpoint de otro directorio de datos —o que un
+`reset()` se llevó— se habría reportado como «el trabajo no hizo nada», que es justo la falsa
+tranquilidad de la que va toda la fase. Ahora hay `has_checkpoint()` y la respuesta es
+`unknown_checkpoint` con la frase «an empty diff would be a different claim».
+
+### 37.4 El coincidir de rutas, en un solo sitio
+La comparación «lo que dijo que tocó» contra «lo que se ve que cambió» existía en tres sitios con
+tres formas (`agent_harness.claimed_untouched_paths`, `dispatch.claimed_only`, `prove._claims`).
+Aquí tiene una. Es tolerante al sufijo, porque un modelo dice `cart.py` por `src/cart.py`
+constantemente y llamar a eso una afirmación falsa enseñaría a todo el mundo a ignorar el chequeo —
+pero el sufijo tiene que empezar en un límite de ruta, así que `cart.py` **no** casa con
+`shopping_cart.py`. Hay test de las dos mitades.
+
+### 37.5 Cómo se verificó
+42 tests, y el que importa monta una **carpeta de verdad, un repo shadow de verdad y una edición de
+verdad**: hace el checkpoint, cambia `limiter.py`, crea `secrets.py` que nadie va a mencionar, y
+comprueba el chequeo de afirmaciones contra lo que git vio. Sale lo que tiene que salir:
+`cache.py` reclamado y no visto, `secrets.py` cambiado y no mencionado, veredicto `contradicted`
+con confianza 0,05.
+
+En vivo contra la 7001, incluido el diff real recorriendo HTTP; y las dos tools nuevas
+(`changeset_prove` sobre un job de dispatch, `changeset_check` antes de afirmar nada) por handshake
+JSON-RPC real. 28 tools registradas. Un rechazo llega como **respuesta**, no como 500: «un explore
+que escribió en cuatro ficheros» es justo la pregunta que alguien trae a este endpoint, y
+contestarla con un error lo mandaría a buscar un bug en Faustus en vez de en su propio informe.
+
 ## Cómo mantener este documento
 Cada bloque de trabajo añade una sección (fecha, qué, por qué, ficheros, cómo se verificó, cifras) y actualiza las cifras de cabecera (`git log --oneline c9dd68d8..HEAD | wc -l`, `git diff --stat c9dd68d8..HEAD`). Los commits del fork llevan mensajes largos que explican el porqué: `git log c9dd68d8..HEAD` es la fuente detallada.

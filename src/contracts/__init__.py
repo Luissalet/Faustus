@@ -46,6 +46,10 @@ from .workflow import (  # noqa: F401
     WORKFLOW_STATUSES, NodeRun, WorkflowDefinition, WorkflowNode, WorkflowRun,
     idempotency_key,
 )
+from .changeset import (  # noqa: F401
+    CHANGE_SOURCES, CLAIM_KINDS, INTENTS, READ_ONLY_INTENTS,
+    ChangeSet, Claim, Command, FileChanges, Verification,
+)
 
 __all__ = [
     "SCHEMA_VERSION", "ContractError", "fingerprint", "now_iso",
@@ -63,4 +67,6 @@ __all__ = [
     "WorkflowDefinition", "WorkflowNode", "WorkflowRun", "NodeRun",
     "idempotency_key", "NODE_TYPES", "EFFECTFUL_TYPES", "NODE_STATUSES",
     "WORKFLOW_STATUSES", "TERMINAL_NODE", "TERMINAL_WORKFLOW",
+    "ChangeSet", "Claim", "Command", "FileChanges", "Verification",
+    "INTENTS", "READ_ONLY_INTENTS", "CHANGE_SOURCES", "CLAIM_KINDS",
 ]
