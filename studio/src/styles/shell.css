@@ -1,19 +1,15 @@
-/* AppShell layout (UI-021). */
+/* AppShell layout (UI-021) — second pass, with character.
 
-/* While the pilot is mounted the legacy tree stays in the document — its
-   modules keep running and nothing is destroyed — but it must not paint.
-   Several legacy panels carry their own high z-index, so out-stacking them
-   is a race; hiding them is not. Turning the flag off removes the attribute
-   and everything comes back exactly as it was. */
+   The navigation IS the signature element. The execution-trace rail that
+   threads context → steps → artifact in a run now threads the destinations
+   of the app: a living line, one node per destination, and an indicator
+   with a coral halo that slides along the rail when you move. Same motif,
+   same vocabulary, turned up. */
+
 html[data-studio-shell='on'] body > *:not(#studio-root):not(#fs-overlay-root) {
   display: none !important;
 }
 
-/* Overlays live in their own body-level root and must stack ABOVE the shell.
-   The first attempt gave the shell a huge z-index to out-stack the legacy
-   panels, which buried every dialog and made Ctrl+K look broken. With the
-   legacy tree hidden by the rule above there is no stacking race left, so
-   two modest numbers in the right order are enough. */
 #fs-overlay-root {
   position: relative;
   z-index: 60;
@@ -24,58 +20,245 @@ html[data-studio-shell='on'] body > *:not(#studio-root):not(#fs-overlay-root) {
   inset: 0;
   z-index: 50;
   display: grid;
-  grid-template-columns: 224px minmax(0, 1fr);
+  grid-template-columns: 236px minmax(0, 1fr);
   background: var(--fs-canvas);
   color: var(--fs-text-1);
   overflow: hidden;
 }
 
+/* ── Atmosphere ──
+   A coral ember bleeding in from the top-left, a soft vignette at the
+   bottom. Gradients only — no image, no data URI, nothing for the CSP to
+   refuse. The whole thing is decorative and pointer-events: none. */
+.fs-shell::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(900px 520px at 12% -10%, var(--fs-ember) 0%, transparent 60%),
+    radial-gradient(700px 400px at 100% 110%, var(--fs-ember-faint) 0%, transparent 60%);
+}
+
+/* ── Aurora ──
+   Three blobs of light drifting behind everything, blurred into weather.
+   They are the only thing on the page that moves at rest, they move slowly
+   enough to be felt rather than watched, and reduced-motion freezes them. */
+.fs-aurora {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.fs-aurora span {
+  position: absolute;
+  inline-size: 60vmax;
+  block-size: 60vmax;
+  border-radius: var(--fs-radius-pill);
+  filter: blur(80px);
+  opacity: 0.55;
+  mix-blend-mode: screen;
+  will-change: transform;
+}
+
+.fs-aurora span:nth-child(1) {
+  inset: -30vmax auto auto -20vmax;
+  background: var(--fs-aurora-a);
+  animation: fs-drift-a 26s var(--fs-ease) infinite alternate;
+}
+
+.fs-aurora span:nth-child(2) {
+  inset: auto -25vmax -35vmax auto;
+  background: var(--fs-aurora-b);
+  animation: fs-drift-b 32s var(--fs-ease) infinite alternate;
+}
+
+.fs-aurora span:nth-child(3) {
+  inset: 30vh auto auto 35vw;
+  inline-size: 34vmax;
+  block-size: 34vmax;
+  background: var(--fs-aurora-c);
+  opacity: 0.35;
+  animation: fs-drift-c 38s var(--fs-ease) infinite alternate;
+}
+
+@keyframes fs-drift-a {
+  to {
+    transform: translate(14vw, 10vh) scale(1.15);
+  }
+}
+
+@keyframes fs-drift-b {
+  to {
+    transform: translate(-12vw, -14vh) scale(1.1);
+  }
+}
+
+@keyframes fs-drift-c {
+  to {
+    transform: translate(-10vw, 8vh) scale(0.9);
+  }
+}
+
+.fs-nav,
+.fs-main {
+  position: relative;
+  z-index: 1;
+}
+
+/* A signal travelling down the rail: the spine is alive. */
+.fs-nav__rail::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, transparent, var(--fs-brand), transparent);
+  background-size: 100% 28%;
+  background-repeat: no-repeat;
+  background-position: 0 -30%;
+  animation: fs-signal 3.8s linear infinite;
+  opacity: 0.9;
+}
+
+@keyframes fs-signal {
+  to {
+    background-position: 0 130%;
+  }
+}
+
+/* ── The rail ── */
+
 .fs-nav {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: var(--fs-space-1);
-  padding: var(--fs-space-4) var(--fs-space-3);
+  gap: 2px;
+  padding: var(--fs-space-5) var(--fs-space-3) var(--fs-space-4);
   border-inline-end: 1px solid var(--fs-border);
-  background: var(--fs-surface-1);
+  background: color-mix(in srgb, var(--fs-surface-1) 82%, transparent);
+  backdrop-filter: blur(12px);
   overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* The line the nodes sit on. Painted by the nav, so it spans exactly the
+   column of destinations and nothing else. */
+.fs-nav__rail {
+  position: absolute;
+  inset: 0 auto auto 0; /* JS translates it to span first node → last node */
+  background: var(--fs-border-strong);
+  pointer-events: none;
+  transition:
+    translate var(--fs-duration-slow) var(--fs-ease-out),
+    inline-size var(--fs-duration-slow) var(--fs-ease-out),
+    block-size var(--fs-duration-slow) var(--fs-ease-out);
+}
+
+/* The indicator: a coral node with a breathing halo. Its position is set
+   from JS as a translate, so moving between destinations is one smooth
+   slide along the rail rather than a jump. */
+.fs-nav__indicator {
+  position: absolute;
+  inset: 0 auto auto 0;
+  inline-size: 12px;
+  block-size: 12px;
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-brand);
+  box-shadow: var(--fs-glow);
+  pointer-events: none;
+  transition: translate var(--fs-duration-slow) var(--fs-ease-spring);
+  z-index: 1;
+}
+
+.fs-nav__indicator::after {
+  content: '';
+  position: absolute;
+  inset: -7px;
+  border-radius: var(--fs-radius-pill);
+  border: 2px solid var(--fs-brand);
+  animation: fs-breathe 2.4s var(--fs-ease) infinite;
 }
 
 .fs-nav__brand {
   display: flex;
   align-items: center;
-  gap: var(--fs-space-2);
-  padding: var(--fs-space-2) var(--fs-space-2) var(--fs-space-4);
+  gap: var(--fs-space-3);
+  padding: 0 var(--fs-space-2) var(--fs-space-5);
   font-size: var(--fs-title-size);
   font-weight: var(--fs-title-weight);
   letter-spacing: var(--fs-title-tracking);
 }
 
+.fs-brand-mark {
+  inline-size: 30px;
+  block-size: 30px;
+  color: var(--fs-brand);
+  filter: drop-shadow(0 0 10px var(--fs-ember-strong));
+  transition: transform var(--fs-duration-slow) var(--fs-ease-spring);
+}
+
+.fs-nav__brand:hover .fs-brand-mark {
+  transform: translateY(-2px) rotate(-6deg);
+}
+
 .fs-nav__item {
-  position: relative; /* anchors the visually-hidden label when the rail collapses */
+  position: relative;
   display: flex;
   align-items: center;
-  gap: var(--fs-space-3);
-  padding: var(--fs-space-2) var(--fs-space-3);
+  gap: var(--fs-space-4);
+  padding: var(--fs-space-2) var(--fs-space-2) var(--fs-space-2) var(--fs-space-2);
   border-radius: var(--fs-radius-control);
   color: var(--fs-text-2);
   text-decoration: none;
-  font-size: var(--fs-label-size);
+  font-size: var(--fs-body-size);
   font-weight: var(--fs-label-weight);
   transition:
+    color var(--fs-duration-fast) var(--fs-ease),
+    translate var(--fs-duration-normal) var(--fs-ease-out);
+}
+
+/* Each destination is a node on the rail. */
+.fs-nav__node {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  inline-size: 26px;
+  block-size: 26px;
+  flex: 0 0 auto;
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-surface-2);
+  border: 1px solid var(--fs-border-strong);
+  color: var(--fs-text-3);
+  transition:
     background-color var(--fs-duration-fast) var(--fs-ease),
-    color var(--fs-duration-fast) var(--fs-ease);
+    border-color var(--fs-duration-fast) var(--fs-ease),
+    color var(--fs-duration-fast) var(--fs-ease),
+    transform var(--fs-duration-normal) var(--fs-ease-spring);
 }
 
 .fs-nav__item:hover {
-  background: var(--fs-surface-2);
+  color: var(--fs-text-1);
+  translate: 3px 0;
+}
+
+.fs-nav__item:hover .fs-nav__node {
+  border-color: var(--fs-brand);
+  color: var(--fs-brand);
+  transform: scale(1.08);
+}
+
+.fs-nav__item[aria-current='page'] {
   color: var(--fs-text-1);
 }
 
-/* Selection is a left edge plus a surface, never colour alone. */
-.fs-nav__item[aria-current='page'] {
-  background: var(--fs-surface-3);
-  color: var(--fs-text-1);
-  box-shadow: inset 2px 0 0 var(--fs-brand);
+/* The active node hollows out so the sliding indicator shows through as
+   its centre: the destination and the marker become one object. */
+.fs-nav__item[aria-current='page'] .fs-nav__node {
+  background: var(--fs-canvas);
+  border-color: var(--fs-brand);
+  color: var(--fs-brand);
 }
 
 .fs-nav__spacer {
@@ -90,36 +273,88 @@ html[data-studio-shell='on'] body > *:not(#studio-root):not(#fs-overlay-root) {
 }
 
 .fs-nav__hint {
-  padding-inline: var(--fs-space-3);
+  padding-inline: var(--fs-space-2);
   font-size: 11px;
   color: var(--fs-text-3);
 }
 
+/* ── Main ── */
+
 .fs-main {
+  position: relative;
   overflow-y: auto;
-  padding: var(--fs-space-6) var(--fs-space-6) var(--fs-space-7);
+  overflow-x: hidden; /* the watermark bleeds past the edge on purpose */
+  padding: var(--fs-space-7) var(--fs-space-7) var(--fs-space-7);
 }
 
 .fs-main__inner {
-  max-inline-size: 900px;
+  max-inline-size: 960px;
   margin-inline: auto;
 }
 
+/* Route change: the new screen rises in. One animation, keyed on the
+   path, so the eye is told "you moved" without a spinner or a blank. */
+.fs-route {
+  animation: fs-rise var(--fs-duration-enter) var(--fs-ease-out) both;
+}
+
+@keyframes fs-rise {
+  from {
+    opacity: 0;
+    translate: 0 14px;
+  }
+}
+
+/* Staggered entrance for the blocks inside a screen. Each block sets its
+   own --i; the fifth and later share the last delay so a long page does not
+   drip in for seconds. */
+.fs-enter {
+  animation: fs-rise var(--fs-duration-enter) var(--fs-ease-out) both;
+  animation-delay: calc(min(var(--i, 0), 5) * var(--fs-stagger));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fs-route,
+  .fs-enter,
+  .fs-aurora span,
+  .fs-nav__rail::after {
+    animation: none;
+  }
+
+  .fs-nav__indicator {
+    transition: none;
+  }
+
+  .fs-nav__indicator::after {
+    animation: none;
+    opacity: 0.45;
+  }
+
+  .fs-nav__item:hover,
+  .fs-nav__item:hover .fs-nav__node,
+  .fs-nav__brand:hover .fs-brand-mark {
+    translate: none;
+    transform: none;
+  }
+}
+
 /* ── Responsive ──
-   Tablet drops the labels; mobile moves navigation to the bottom, where a
-   thumb can reach it, and never hides an action behind hover. */
+   Tablet collapses to nodes on the rail; mobile lays the rail across the
+   bottom, where a thumb can reach it. The indicator still slides — it just
+   slides sideways. */
 
 @media (max-width: 1279px) {
   .fs-shell {
-    grid-template-columns: 64px minmax(0, 1fr);
+    grid-template-columns: 72px minmax(0, 1fr);
   }
 
-  /* Visually hidden, NOT display:none.
-     display:none removes the text from the accessibility tree, and these
-     spans are the only accessible name the destinations have — the icons are
-     aria-hidden. Collapsing the rail was silently leaving six unnamed links
-     for anyone using a screen reader. */
-  .fs-nav__item span,
+  .fs-nav {
+    padding-inline: var(--fs-space-3);
+  }
+
+  /* Visually hidden, NOT display:none — the spans are the only accessible
+     name the destinations have. */
+  .fs-nav__item span.fs-nav__label,
   .fs-nav__foot .fs-btn span {
     position: absolute;
     inline-size: 1px;
@@ -137,16 +372,26 @@ html[data-studio-shell='on'] body > *:not(#studio-root):not(#fs-overlay-root) {
     display: none;
   }
 
-  .fs-nav__foot .fs-btn {
+  .fs-nav__brand {
+    justify-content: center;
     padding-inline: 0;
   }
 
   .fs-nav__item {
     justify-content: center;
+    padding-inline: 0;
+  }
+
+  .fs-nav__item:hover {
+    translate: 0 0;
+  }
+
+  .fs-nav__foot .fs-btn {
+    padding-inline: 0;
   }
 
   .fs-main {
-    padding: var(--fs-space-5) var(--fs-space-4) var(--fs-space-6);
+    padding: var(--fs-space-6) var(--fs-space-5) var(--fs-space-6);
   }
 }
 
@@ -173,27 +418,19 @@ html[data-studio-shell='on'] body > *:not(#studio-root):not(#fs-overlay-root) {
     display: none;
   }
 
-  /* The way back stays reachable on a phone. Hiding the footer here left the
-     pilot with no exit on the one device where there is no Ctrl+K. */
   .fs-nav__foot {
     padding: 0;
     border: 0;
   }
 
   .fs-nav__item {
-    flex-direction: column;
-    gap: 2px;
     min-inline-size: 44px;
     min-block-size: 44px;
   }
 
-  .fs-nav__item[aria-current='page'] {
-    box-shadow: inset 0 2px 0 var(--fs-brand);
-  }
-
   .fs-main {
     grid-row: 1;
-    padding: var(--fs-space-4) var(--fs-space-4) var(--fs-space-5);
+    padding: var(--fs-space-5) var(--fs-space-4) var(--fs-space-6);
     overscroll-behavior: contain;
   }
 }

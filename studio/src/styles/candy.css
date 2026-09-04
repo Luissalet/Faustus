@@ -1,0 +1,127 @@
+/* Eye candy (04-09, on request: "literalmente eye candy").
+
+   Glass, spotlight, gradient type, watermark. Every value is a token, every
+   motion stops under prefers-reduced-motion, and nothing here is load-
+   bearing: strip this file and the app still works, it just stops
+   glowing. That is the test for candy. */
+
+/* ── Glass ──
+   Translucent surface, soft blur, and a single line of light along the top
+   edge so panels read as lit from above rather than painted flat. */
+.fs-panel,
+.fs-tile,
+.fs-card,
+.fs-empty,
+.fs-notice {
+  background: var(--fs-glass);
+  backdrop-filter: blur(14px) saturate(1.2);
+  box-shadow: inset 0 1px 0 var(--fs-highlight);
+}
+
+.fs-search {
+  background: var(--fs-glass-strong);
+  backdrop-filter: blur(10px);
+}
+
+/* ── Spotlight ──
+   A pool of light that follows the pointer across the surface. --mx/--my
+   are set by the useSpotlight hook; without them the light sits in the
+   centre, so the effect degrades to a quiet highlight on keyboard focus. */
+.fs-spot {
+  position: relative;
+  overflow: hidden;
+}
+
+.fs-spot::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    220px circle at var(--mx, 50%) var(--my, 50%),
+    var(--fs-spotlight),
+    transparent 62%
+  );
+  opacity: 0;
+  transition: opacity var(--fs-duration-normal) var(--fs-ease);
+}
+
+.fs-spot:hover::after,
+.fs-spot:focus-within::after {
+  opacity: 1;
+}
+
+/* ── Gradient display word ── */
+.fs-home__title em {
+  background: var(--fs-title-gradient);
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: none;
+  animation: fs-shimmer-text 6s var(--fs-ease) infinite alternate;
+}
+
+@keyframes fs-shimmer-text {
+  to {
+    background-position: 100% 0;
+  }
+}
+
+/* ── Watermark ──
+   The arrowhead, enormous and nearly invisible, floating behind the title.
+   Structure from the brand, not a stock illustration. */
+.fs-watermark {
+  position: absolute;
+  inset-block-start: -40px;
+  inset-inline-end: -30px;
+  inline-size: 320px;
+  block-size: 320px;
+  color: var(--fs-brand);
+  opacity: 0.06;
+  filter: blur(0.5px);
+  pointer-events: none;
+  animation: fs-float 12s var(--fs-ease) infinite alternate;
+}
+
+@keyframes fs-float {
+  to {
+    transform: translateY(-14px) rotate(4deg);
+  }
+}
+
+/* ── Glowing status dot on live badges ── */
+.fs-status[data-status='running'],
+.fs-status[data-status='succeeded'] {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--fs-status-color) 35%, transparent),
+    0 0 14px color-mix(in srgb, var(--fs-status-color) 22%, transparent);
+}
+
+/* ── Buttons: a coral edge light on the primary ── */
+.fs-btn[data-variant='primary'] {
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--fs-on-brand) 12%, transparent),
+    0 6px 20px var(--fs-ember);
+}
+
+.fs-btn[data-variant='primary']:hover:not(:disabled) {
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--fs-on-brand) 12%, transparent),
+    0 10px 28px var(--fs-ember-strong);
+  translate: 0 -1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fs-home__title em,
+  .fs-watermark {
+    animation: none;
+  }
+
+  .fs-spot::after {
+    transition: none;
+  }
+
+  .fs-btn[data-variant='primary']:hover:not(:disabled) {
+    translate: none;
+  }
+}

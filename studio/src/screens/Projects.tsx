@@ -102,7 +102,7 @@ export function ProjectsScreen() {
       )}
 
       {projects && visible.length > 0 && (
-        <div className="fs-list">
+        <div className="fs-list fs-list--rail">
           {visible.map((project) => (
             <Link
               key={project.id}

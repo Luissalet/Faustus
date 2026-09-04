@@ -113,9 +113,14 @@ export function ActivityScreen() {
       )}
 
       {runs && visible.length > 0 && (
-        <div className="fs-list">
+        <div className="fs-list fs-list--rail">
           {visible.map((run) => (
-            <article className="fs-run" key={`${run.kind}-${run.id}`} data-testid="activity-run">
+            <article
+              className="fs-run"
+              key={`${run.kind}-${run.id}`}
+              data-state={run.status}
+              data-testid="activity-run"
+            >
               <span className="fs-run__kind" data-kind={run.kind}>
                 {run.kind}
               </span>

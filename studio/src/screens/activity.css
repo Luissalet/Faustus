@@ -1,8 +1,46 @@
 /* Actividad y Automatizaciones (UI-050 · UI-051 · UI-052). */
 
 .fs-run {
+  position: relative; /* anchors its node on the rail */
   display: flex;
   align-items: flex-start;
+  border-radius: var(--fs-radius-control);
+  transition:
+    background-color var(--fs-duration-fast) var(--fs-ease),
+    translate var(--fs-duration-normal) var(--fs-ease-out);
+}
+
+.fs-run:hover {
+  background: var(--fs-surface-1);
+  translate: 4px 0;
+}
+
+.fs-auto {
+  position: relative;
+  border-radius: var(--fs-radius-control);
+  transition:
+    background-color var(--fs-duration-fast) var(--fs-ease),
+    translate var(--fs-duration-normal) var(--fs-ease-out);
+}
+
+.fs-auto:hover {
+  background: var(--fs-surface-1);
+  translate: 4px 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fs-run,
+  .fs-auto {
+    transition: none;
+  }
+
+  .fs-run:hover,
+  .fs-auto:hover {
+    translate: none;
+  }
+}
+
+.fs-run {
   gap: var(--fs-space-3);
   padding: var(--fs-space-3);
   border-block-end: 1px solid var(--fs-border);

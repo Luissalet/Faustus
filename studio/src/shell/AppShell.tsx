@@ -1,26 +1,106 @@
 import { LogOut } from 'lucide-react';
-import { useEffect } from 'react';
-import { BrowserRouter, NavLink, Route, Routes } from 'react-router';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { BrowserRouter, NavLink, Route, Routes, useLocation } from 'react-router';
 import { Button } from '../components';
 import { ActivityScreen } from '../screens/Activity';
 import { AutomationsScreen } from '../screens/Automations';
 import { HomeScreen } from '../screens/Home';
+import { LibraryScreen } from '../screens/Library';
 import { NotMigrated } from '../screens/NotMigrated';
 import { ProjectScreen } from '../screens/Project';
 import { ProjectsScreen } from '../screens/Projects';
+import { BrandMark } from './BrandMark';
 import { CommandPalette } from './CommandPalette';
 import { DESTINATIONS } from './routes';
 import { setStudioEnabled } from './flag';
 import { ensureOverlayRoot, removeOverlayRoot } from './overlayRoot';
 import { useShell } from './store';
 
-function Nav() {
+/**
+ * The rail.
+ *
+ * The signature motif — a line with nodes on it — carries the navigation.
+ * The coral indicator is one element that slides to whichever node is
+ * active, measured from the DOM rather than guessed, so it lands exactly on
+ * the node in every layout: the full sidebar, the collapsed rail, and the
+ * horizontal bottom bar on a phone.
+ */
+function Rail() {
+  const { pathname } = useLocation();
+  const navRef = useRef<HTMLElement>(null);
+  const [indicator, setIndicator] = useState<{ x: number; y: number } | null>(null);
+  const [rail, setRail] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+
+  useLayoutEffect(() => {
+    const nav = navRef.current;
+    if (!nav) return;
+
+    function centre(el: Element, navRect: DOMRect) {
+      const rect = el.getBoundingClientRect();
+      return {
+        x: rect.left - navRect.left + rect.width / 2 + (nav?.scrollLeft ?? 0),
+        y: rect.top - navRect.top + rect.height / 2 + (nav?.scrollTop ?? 0),
+      };
+    }
+
+    function place() {
+      if (!nav) return;
+      const navRect = nav.getBoundingClientRect();
+      const nodes = nav.querySelectorAll<HTMLElement>('.fs-nav__node');
+
+      // The line runs from the first node to the last, in whichever direction
+      // the layout laid them out — a column on desktop, a row on a phone.
+      if (nodes.length >= 2) {
+        const first = centre(nodes[0], navRect);
+        const last = centre(nodes[nodes.length - 1], navRect);
+        const horizontal = Math.abs(last.x - first.x) > Math.abs(last.y - first.y);
+        setRail(
+          horizontal
+            ? { x: first.x, y: first.y - 1, w: last.x - first.x, h: 2 }
+            : { x: first.x - 1, y: first.y, w: 2, h: last.y - first.y },
+        );
+      }
+
+      const active = nav.querySelector<HTMLElement>('.fs-nav__item[aria-current="page"] .fs-nav__node');
+      if (!active) {
+        setIndicator(null);
+        return;
+      }
+      const c = centre(active, navRect);
+      setIndicator({ x: c.x - 6, y: c.y - 6 });
+    }
+
+    place();
+    const observer = new ResizeObserver(place);
+    observer.observe(nav);
+    window.addEventListener('resize', place);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', place);
+    };
+  }, [pathname]);
+
   return (
-    <nav className="fs-nav" aria-label="Navegación principal">
+    <nav className="fs-nav" aria-label="Navegación principal" ref={navRef}>
       <div className="fs-nav__brand">
-        <span aria-hidden="true">◆</span>
+        <BrandMark />
         <span>Faustus</span>
       </div>
+
+      {rail && (
+        <span
+          className="fs-nav__rail"
+          aria-hidden="true"
+          style={{ translate: `${rail.x}px ${rail.y}px`, inlineSize: rail.w, blockSize: rail.h }}
+        />
+      )}
+      {indicator && (
+        <span
+          className="fs-nav__indicator"
+          aria-hidden="true"
+          style={{ translate: `${indicator.x}px ${indicator.y}px` }}
+        />
+      )}
 
       {DESTINATIONS.map((destination) => (
         <NavLink
@@ -30,8 +110,10 @@ function Nav() {
           className="fs-nav__item"
           data-testid={`nav-${destination.label.toLowerCase()}`}
         >
-          <destination.icon size={17} aria-hidden="true" />
-          <span>{destination.label}</span>
+          <span className="fs-nav__node">
+            <destination.icon size={14} aria-hidden="true" />
+          </span>
+          <span className="fs-nav__label">{destination.label}</span>
         </NavLink>
       ))}
 
@@ -45,7 +127,6 @@ function Nav() {
           icon={LogOut}
           label="Interfaz anterior"
           onClick={() => {
-            // The pilot must always have a way back that costs one click.
             setStudioEnabled(false);
             window.location.href = '/?shell=legacy';
           }}
@@ -55,13 +136,35 @@ function Nav() {
   );
 }
 
+/** Re-mounts its child on every path change so the entrance animation runs. */
+function RouteStage() {
+  const { pathname } = useLocation();
+  return (
+    <div className="fs-route" key={pathname}>
+      <Routes>
+        <Route path="/" element={<HomeScreen />} />
+        {DESTINATIONS.filter((destination) => !destination.ready).map((destination) => (
+          <Route
+            key={destination.path}
+            path={destination.path}
+            element={<NotMigrated destination={destination} />}
+          />
+        ))}
+        <Route path="/projects" element={<ProjectsScreen />} />
+        <Route path="/projects/:projectId" element={<ProjectScreen />} />
+        <Route path="/library" element={<LibraryScreen />} />
+        <Route path="/activity" element={<ActivityScreen />} />
+        <Route path="/automations" element={<AutomationsScreen />} />
+        <Route path="*" element={<NotMigrated />} />
+      </Routes>
+    </div>
+  );
+}
+
 export function AppShell() {
   const setPaletteOpen = useShell((state) => state.setPaletteOpen);
 
   useEffect(() => {
-    // Marks the document so the legacy tree stops painting. Removed on
-    // unmount, so turning the pilot off restores the old interface without
-    // a reload having to do it.
     document.documentElement.setAttribute('data-studio-shell', 'on');
     ensureOverlayRoot();
     return () => {
@@ -87,24 +190,15 @@ export function AppShell() {
         <a className="fs-skip-link" href="#fs-main">
           Saltar al contenido
         </a>
-        <Nav />
+        <div className="fs-aurora" aria-hidden="true">
+          <span />
+          <span />
+          <span />
+        </div>
+        <Rail />
         <main className="fs-main" id="fs-main" tabIndex={-1}>
           <div className="fs-main__inner">
-            <Routes>
-              <Route path="/" element={<HomeScreen />} />
-              {DESTINATIONS.filter((destination) => !destination.ready).map((destination) => (
-                <Route
-                  key={destination.path}
-                  path={destination.path}
-                  element={<NotMigrated destination={destination} />}
-                />
-              ))}
-              <Route path="/projects" element={<ProjectsScreen />} />
-              <Route path="/projects/:projectId" element={<ProjectScreen />} />
-              <Route path="/activity" element={<ActivityScreen />} />
-              <Route path="/automations" element={<AutomationsScreen />} />
-              <Route path="*" element={<NotMigrated />} />
-            </Routes>
+            <RouteStage />
           </div>
         </main>
         <CommandPalette />

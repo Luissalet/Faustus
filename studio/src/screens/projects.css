@@ -14,10 +14,33 @@
 }
 
 .fs-screen__title {
-  font-size: var(--fs-display-size);
+  font-size: clamp(2.2rem, 1.4rem + 2.4vw, 3.4rem);
   font-weight: var(--fs-display-weight);
-  letter-spacing: var(--fs-display-tracking);
-  line-height: 1.15;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+}
+
+/* Every screen rises in like Inicio does. */
+.fs-screen > * {
+  animation: fs-rise var(--fs-duration-enter) var(--fs-ease-out) both;
+}
+
+.fs-screen > :nth-child(2) {
+  animation-delay: var(--fs-stagger);
+}
+
+.fs-screen > :nth-child(3) {
+  animation-delay: calc(var(--fs-stagger) * 2);
+}
+
+.fs-screen > :nth-child(n + 4) {
+  animation-delay: calc(var(--fs-stagger) * 3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fs-screen > * {
+    animation: none;
+  }
 }
 
 .fs-screen__sub {

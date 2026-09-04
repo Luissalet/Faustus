@@ -78,9 +78,14 @@ export function AutomationsScreen() {
       )}
 
       {tasks && tasks.length > 0 && (
-        <div className="fs-list">
+        <div className="fs-list fs-list--rail">
           {tasks.map((task) => (
-            <article className="fs-auto" key={task.id} data-testid="automation-row">
+            <article
+              className="fs-auto"
+              key={task.id}
+              data-state={task.status === 'active' ? 'succeeded' : 'paused'}
+              data-testid="automation-row"
+            >
               <span className="fs-auto__main">
                 <span className="fs-row__name">{task.name}</span>
                 <span className="fs-auto__recipe">

@@ -1,25 +1,42 @@
-/* Inicio (UI-030). */
+/* Inicio (UI-030) — second pass, with character. */
 
 .fs-home {
   display: grid;
-  gap: var(--fs-space-6);
+  gap: var(--fs-space-7);
 }
 
 .fs-home__head {
+  position: relative;
   display: grid;
-  gap: var(--fs-space-2);
+  gap: var(--fs-space-3);
+  padding-block: var(--fs-space-4) var(--fs-space-2);
 }
 
+/* Display type at full strength. This is the one line on the screen that
+   is allowed to be enormous, so it is. */
 .fs-home__title {
-  font-size: var(--fs-display-size);
+  font-size: clamp(2.6rem, 1.6rem + 3.6vw, 4.4rem);
   font-weight: var(--fs-display-weight);
-  letter-spacing: var(--fs-display-tracking);
-  line-height: 1.15;
+  letter-spacing: -0.035em;
+  line-height: 1.02;
+  max-inline-size: 14ch;
+  text-wrap: balance;
+}
+
+.fs-home__title em {
+  font-style: normal;
+  color: var(--fs-brand);
+  /* An ember behind the key word, not a highlighter pen. */
+  text-shadow: 0 0 28px var(--fs-ember-strong);
 }
 
 .fs-home__sub {
   color: var(--fs-text-2);
+  font-size: 1.05rem;
+  max-inline-size: 52ch;
 }
+
+/* ── Blocks ── */
 
 .fs-block {
   display: grid;
@@ -34,32 +51,54 @@
 }
 
 .fs-block__title {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
   font-size: var(--fs-label-size);
   font-weight: var(--fs-label-weight);
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--fs-text-3);
 }
 
-.fs-list {
-  display: grid;
-  gap: var(--fs-space-1);
+/* A short coral tick before each block title: the rail, in miniature. */
+.fs-block__title::before {
+  content: '';
+  inline-size: 14px;
+  block-size: 2px;
+  background: var(--fs-brand);
+  border-radius: var(--fs-radius-pill);
 }
 
-/* A row, not a card. Grouping is done with spacing and hairlines; wrapping
-   every item in a bordered box is how a page turns into a scrapbook. */
+/* ── Rows on a rail ──
+   The list is drawn on the same line the navigation uses: a hairline down
+   the left and a node per row. Continuing work and running work read as
+   the same thing, because they are. */
+.fs-list {
+  position: relative;
+  display: grid;
+  gap: 2px;
+  padding-inline-start: var(--fs-space-5);
+}
+
+.fs-list--rail::before {
+  content: '';
+  position: absolute;
+  inset-block: 14px;
+  inset-inline-start: 7px;
+  inline-size: 2px;
+  background: var(--fs-border);
+}
+
 .fs-row {
-  /* Flex, not a fixed grid: a row carries one, two or three trailing items
-     depending on what is true about it, and a two-column template silently
-     stacked the third. */
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--fs-space-3);
-  padding: var(--fs-space-3);
+  padding: var(--fs-space-3) var(--fs-space-3);
   border-radius: var(--fs-radius-control);
   background: transparent;
   border: 0;
-  border-block-end: 1px solid var(--fs-border);
   color: inherit;
   font: inherit;
   text-align: start;
@@ -67,19 +106,74 @@
   cursor: pointer;
   transition:
     background-color var(--fs-duration-fast) var(--fs-ease),
-    transform var(--fs-duration-fast) var(--fs-ease);
+    translate var(--fs-duration-normal) var(--fs-ease-out);
 }
 
-.fs-row:last-child {
-  border-block-end: 0;
+/* The node. It fills coral when the row is hovered or focused, and the
+   whole row eases to the right by a few pixels — the same gesture the
+   navigation makes, so the page has one physics. */
+.fs-list--rail > *::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: calc(var(--fs-space-5) * -1 + 3px);
+  inset-block-start: 50%;
+  translate: 0 -50%;
+  inline-size: 10px;
+  block-size: 10px;
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-canvas);
+  border: 2px solid var(--fs-border-strong);
+  transition:
+    background-color var(--fs-duration-fast) var(--fs-ease),
+    border-color var(--fs-duration-fast) var(--fs-ease),
+    box-shadow var(--fs-duration-normal) var(--fs-ease);
 }
 
-.fs-row:hover {
+.fs-row:hover,
+.fs-row:focus-visible {
   background: var(--fs-surface-1);
+  translate: 4px 0;
+}
+
+.fs-list--rail > *:hover::before,
+.fs-list--rail > *:focus-visible::before {
+  background: var(--fs-brand);
+  border-color: var(--fs-brand);
+  box-shadow: var(--fs-glow);
+}
+
+/* On Activity the node carries the state, so a glance down the rail reads
+   the whole history: green ticks, a coral pulse, a red stop. */
+.fs-list--rail > [data-state='succeeded']::before {
+  background: var(--fs-success);
+  border-color: var(--fs-success);
+}
+
+.fs-list--rail > [data-state='failed']::before {
+  background: var(--fs-danger);
+  border-color: var(--fs-danger);
+}
+
+.fs-list--rail > [data-state='waiting']::before {
+  background: var(--fs-warning);
+  border-color: var(--fs-warning);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--fs-warning) 45%, transparent);
+}
+
+.fs-list--rail > [data-state='running']::before {
+  background: var(--fs-brand);
+  border-color: var(--fs-brand);
+  box-shadow: var(--fs-glow);
+}
+
+.fs-list--rail > [data-state='cancelled']::before,
+.fs-list--rail > [data-state='paused']::before {
+  background: var(--fs-surface-3);
+  border-color: var(--fs-text-3);
 }
 
 .fs-row:active {
-  transform: scale(0.995);
+  translate: 4px 1px;
 }
 
 .fs-row__main {
@@ -105,10 +199,80 @@
   white-space: nowrap;
 }
 
+.fs-row__go,
+.fs-row__leaves {
+  color: var(--fs-text-3);
+  transition:
+    color var(--fs-duration-fast) var(--fs-ease),
+    translate var(--fs-duration-normal) var(--fs-ease-spring);
+}
+
+.fs-row:hover .fs-row__go {
+  color: var(--fs-brand);
+  translate: 4px 0;
+}
+
+.fs-row:hover .fs-row__leaves {
+  color: var(--fs-brand);
+  translate: 2px -2px;
+}
+
+/* ── Quick starts as tiles ──
+   Four ways in. Each tile is chamfered on the top-right — the arrowhead of
+   the mark, echoed — and its icon lifts on hover. */
 .fs-quickstarts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--fs-space-2);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--fs-space-3);
+}
+
+.fs-tile {
+  display: grid;
+  gap: var(--fs-space-3);
+  padding: var(--fs-space-4);
+  border: 1px solid var(--fs-border);
+  background: var(--fs-surface-1);
+  color: var(--fs-text-1);
+  font: inherit;
+  font-weight: var(--fs-label-weight);
+  text-align: start;
+  cursor: pointer;
+  clip-path: polygon(
+    0 0,
+    calc(100% - var(--fs-chamfer)) 0,
+    100% var(--fs-chamfer),
+    100% 100%,
+    0 100%
+  );
+  transition:
+    background-color var(--fs-duration-fast) var(--fs-ease),
+    border-color var(--fs-duration-fast) var(--fs-ease),
+    translate var(--fs-duration-normal) var(--fs-ease-out);
+}
+
+.fs-tile__icon {
+  display: grid;
+  place-items: center;
+  inline-size: 36px;
+  block-size: 36px;
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-3);
+  color: var(--fs-brand);
+  transition: transform var(--fs-duration-normal) var(--fs-ease-spring);
+}
+
+.fs-tile:hover {
+  background: var(--fs-surface-2);
+  border-color: var(--fs-brand);
+  translate: 0 -3px;
+}
+
+.fs-tile:hover .fs-tile__icon {
+  transform: translateY(-2px) rotate(-8deg) scale(1.08);
+}
+
+.fs-tile:active {
+  translate: 0 -1px;
 }
 
 .fs-notice {
@@ -124,34 +288,28 @@
   border-color: color-mix(in srgb, var(--fs-warning) 40%, var(--fs-border));
 }
 
-/* Affordance glyphs: quiet at rest, legible on approach. They say where a
-   row goes, so they must not compete with the row's own name. */
-.fs-row__go,
-.fs-row__leaves {
-  color: var(--fs-text-3);
-  transition:
-    color var(--fs-duration-fast) var(--fs-ease),
-    translate var(--fs-duration-fast) var(--fs-ease);
-}
-
-.fs-row:hover .fs-row__go {
-  color: var(--fs-text-2);
-  translate: 2px 0;
-}
-
-.fs-row:hover .fs-row__leaves {
-  color: var(--fs-text-2);
-  translate: 1px -1px;
-}
-
 @media (prefers-reduced-motion: reduce) {
+  .fs-row,
   .fs-row__go,
-  .fs-row__leaves {
+  .fs-row__leaves,
+  .fs-tile,
+  .fs-tile__icon {
     transition: none;
+  }
+
+  .fs-row:hover,
+  .fs-row:active,
+  .fs-tile:hover,
+  .fs-tile:active {
+    translate: none;
   }
 
   .fs-row:hover .fs-row__go,
   .fs-row:hover .fs-row__leaves {
     translate: none;
+  }
+
+  .fs-tile:hover .fs-tile__icon {
+    transform: none;
   }
 }

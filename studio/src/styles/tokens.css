@@ -174,3 +174,46 @@
   --fs-control-md: 36px;
   --fs-control-lg: 44px;
 }
+
+/* ── Character layer (added 04-09, after the "primo contable" verdict) ──
+   Atmosphere and shape tokens. Everything expressive in the shell reads
+   from these, so the mood can be tuned in one place without touching a
+   single component. */
+:root {
+  /* The ember: a coral bloom that sits behind headers and the active node. */
+  --fs-ember: color-mix(in srgb, var(--fs-brand) 22%, transparent);
+  --fs-ember-strong: color-mix(in srgb, var(--fs-brand) 45%, transparent);
+  --fs-ember-faint: color-mix(in srgb, var(--fs-brand) 9%, transparent);
+  --fs-glow: 0 0 0 4px color-mix(in srgb, var(--fs-brand) 18%, transparent),
+    0 0 24px color-mix(in srgb, var(--fs-brand) 35%, transparent);
+
+  /* The chamfer echoes the arrowhead of the mark: one clipped corner. */
+  --fs-chamfer: 14px;
+  --fs-chamfer-sm: 9px;
+
+  /* Choreography */
+  --fs-duration-enter: 420ms;
+  --fs-stagger: 45ms;
+  --fs-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --fs-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* ── Eye-candy layer ──
+   Everything here is derived from the palette with colour-mix, so the
+   candy follows the theme and the guard still sees no literal colour. */
+:root {
+  --fs-aurora-a: color-mix(in srgb, var(--fs-brand) 30%, transparent);
+  --fs-aurora-b: color-mix(in srgb, var(--fs-info) 26%, transparent);
+  --fs-aurora-c: color-mix(in srgb, var(--fs-warning) 16%, transparent);
+  --fs-glass: color-mix(in srgb, var(--fs-surface-1) 62%, transparent);
+  --fs-glass-strong: color-mix(in srgb, var(--fs-surface-2) 78%, transparent);
+  --fs-highlight: color-mix(in srgb, var(--fs-text-1) 8%, transparent);
+  --fs-spotlight: color-mix(in srgb, var(--fs-brand) 24%, transparent);
+  --fs-title-gradient: linear-gradient(
+    100deg,
+    var(--fs-brand) 0%,
+    var(--fs-brand-hover) 35%,
+    var(--fs-warning) 70%,
+    var(--fs-brand) 100%
+  );
+}

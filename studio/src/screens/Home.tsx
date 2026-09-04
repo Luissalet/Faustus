@@ -8,18 +8,15 @@ import {
   Search,
 } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
-import {
-  Button,
-  EmptyState,
-  Skeleton,
-  StatusBadge,
-} from '../components';
+import { EmptyState, Skeleton, StatusBadge } from '../components';
 import {
   byRecency,
   loadHome,
   relativeTime,
   type HomeData,
 } from '../adapters/home';
+import { BrandMark } from '../shell/BrandMark';
+import { useSpotlight } from '../shell/useSpotlight';
 import './home.css';
 
 /**
@@ -31,9 +28,20 @@ import './home.css';
  * and GPU are absent — they are settings, not the point of the screen.
  */
 
-function Block({ title, aside, children }: { title: string; aside?: ReactNode; children: ReactNode }) {
+function Block({
+  title,
+  index,
+  aside,
+  children,
+}: {
+  title: string;
+  /** Position in the entrance choreography: blocks rise in this order. */
+  index: number;
+  aside?: ReactNode;
+  children: ReactNode;
+}) {
   return (
-    <section className="fs-block">
+    <section className="fs-block fs-enter" style={{ ['--i' as string]: index }}>
       <div className="fs-block__head">
         <h2 className="fs-block__title">{title}</h2>
         {aside}
@@ -51,6 +59,7 @@ const QUICK_STARTS = [
 ];
 
 export function HomeScreen() {
+  const spotlight = useSpotlight();
   const [data, setData] = useState<HomeData | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -93,8 +102,13 @@ export function HomeScreen() {
 
   return (
     <div className="fs-home" data-testid="home">
-      <header className="fs-home__head">
-        <h1 className="fs-home__title">¿Qué quieres terminar?</h1>
+      <header className="fs-home__head fs-enter" style={{ ['--i' as string]: 0 }}>
+        <span className="fs-watermark" aria-hidden="true">
+          <BrandMark size={320} />
+        </span>
+        <h1 className="fs-home__title">
+          ¿Qué quieres <em>terminar</em>?
+        </h1>
         <p className="fs-home__sub">
           {data.approvals.length > 0
             ? `${data.approvals.length} cosa${data.approvals.length === 1 ? '' : 's'} esperan una decisión tuya.`
@@ -103,8 +117,8 @@ export function HomeScreen() {
       </header>
 
       {data.approvals.length > 0 && (
-        <Block title="Requiere tu decisión">
-          <div className="fs-list">
+        <Block title="Requiere tu decisión" index={1}>
+          <div className="fs-list fs-list--rail">
             {data.approvals.map((approval, index) => (
               <a
                 key={approval.approval_id ?? approval.id ?? index}
@@ -128,8 +142,8 @@ export function HomeScreen() {
       )}
 
       {sessions.length > 0 && (
-        <Block title="Continuar">
-          <div className="fs-list">
+        <Block title="Continuar" index={2}>
+          <div className="fs-list fs-list--rail">
             {sessions.map((session) => (
               <a
                 key={session.id}
@@ -161,8 +175,8 @@ export function HomeScreen() {
       )}
 
       {projects.length > 0 && (
-        <Block title="Proyectos">
-          <div className="fs-list">
+        <Block title="Proyectos" index={3}>
+          <div className="fs-list fs-list--rail">
             {projects.map((project) => (
               <a
                 key={project.id}
@@ -185,20 +199,26 @@ export function HomeScreen() {
         </Block>
       )}
 
-      <Block title="Empezar algo">
+      <Block title="Empezar algo" index={4}>
         <div className="fs-quickstarts">
           {QUICK_STARTS.map((quick) => (
-            <Button
+            <button
               key={quick.label}
-              variant="secondary"
-              icon={quick.icon}
-              label={quick.label}
+              type="button"
+              className="fs-tile fs-spot"
+              onMouseMove={spotlight}
+              data-testid={`quickstart-${quick.label.toLowerCase().replace(/\s+/g, '-')}`}
               onClick={() => {
                 // Studio is UI-032/UI-033. Until then the honest thing is to
                 // hand the intent to the interface that can actually run it.
                 window.location.href = '/?shell=legacy';
               }}
-            />
+            >
+              <span className="fs-tile__icon">
+                <quick.icon size={18} aria-hidden="true" />
+              </span>
+              <span>{quick.label}</span>
+            </button>
           ))}
         </div>
       </Block>

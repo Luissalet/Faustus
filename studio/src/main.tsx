@@ -24,6 +24,7 @@ import './styles/base.css';
 import './styles/legacy-bridge.css';
 import './styles/components.css';
 import './styles/shell.css';
+import './styles/candy.css';
 import { AppShell } from './shell/AppShell';
 import { isStudioEnabled } from './shell/flag';
 

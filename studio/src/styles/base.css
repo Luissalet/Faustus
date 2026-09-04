@@ -26,6 +26,19 @@
   margin: 0;
 }
 
+/* The legacy stylesheet stays loaded while the shell is mounted and styles
+   bare elements globally — a fixed height on every <button>, among others.
+   Found when the quick-start tiles rendered 34px tall. Studio controls set
+   their own box; this puts the defaults back for anything that does not. */
+.fs-app :where(button, a, input, select, textarea) {
+  block-size: auto;
+  min-block-size: 0;
+  line-height: inherit;
+  letter-spacing: inherit;
+  text-transform: none;
+  box-shadow: none;
+}
+
 .fs-app :where(code, pre, kbd, samp) {
   font-family: var(--fs-font-code);
   font-size: var(--fs-code-size);
