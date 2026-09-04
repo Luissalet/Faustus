@@ -10,7 +10,7 @@ import time
 import collections
 from typing import Optional, Callable, Awaitable, Tuple, Dict
 from core.platform_compat import IS_WINDOWS, find_bash
-from src import process_ownership
+from src import process_ownership, sandbox_exec
 from src.constants import MAX_OUTPUT_CHARS
 from src.native_env import VENV_MARKERS, native_host_environment
 
@@ -533,6 +533,14 @@ class BashTool:
         progress_cb = ctx.get("progress_cb")
         _subproc_env = ctx.get("subproc_env")
         session_id = ctx.get("session_id")
+        # The sandbox, when it is on. `run` returns None while the setting is
+        # off, and this line is then the only trace of it: the path below is
+        # byte-for-byte what it was. When it IS on and the container cannot
+        # start, `run` returns a refusal rather than None — so there is no
+        # arrangement of failures that puts the command back on the host.
+        sandboxed = await sandbox_exec.run("bash", content, ctx)
+        if sandboxed is not None:
+            return sandboxed
         launcher = foreground_server_launch(content)
         if launcher:
             return _blocked_server_result(launcher, "bash")
@@ -602,6 +610,9 @@ class PythonTool:
         from src.tool_execution import agent_cwd, _truncate
         progress_cb = ctx.get("progress_cb")
         _subproc_env = ctx.get("subproc_env")
+        sandboxed = await sandbox_exec.run("python", content, ctx)
+        if sandboxed is not None:
+            return sandboxed
         started_at = time.time()
         proc = await asyncio.create_subprocess_exec(
             (sys.executable or "python"), "-I", "-c", content,
