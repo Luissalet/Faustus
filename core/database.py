@@ -383,6 +383,66 @@ class GalleryImage(TimestampMixin, Base):
     )
 
 
+class ArtifactRow(TimestampMixin, Base):
+    """Every typed output of a run: image, video, audio, document, code, data.
+
+    Deliberately a *new* table that touches nothing.  The masterplan asks for
+    reversible migrations, and the cheapest reversible migration is the one
+    that adds a table and edits no other: the bridge back to the gallery lives
+    here in `legacy_gallery_id`, so undoing this is `DROP TABLE artifacts` and
+    the old schema is byte-identical afterwards.  Had the column gone on
+    `gallery_images` instead, the reverse would depend on the SQLite version
+    the user happens to have.
+
+    The contract is `src.contracts.Artifact`; this row is its storage.  Fields
+    it cannot know stay NULL — an image imported from the gallery has no run
+    and no recipe, and recording that gap is the point.
+    """
+    __tablename__ = "artifacts"
+
+    id          = Column(String, primary_key=True, index=True)
+    kind        = Column(String, nullable=False, index=True)   # contracts.ARTIFACT_KINDS
+    filename    = Column(String, nullable=False)               # bare name inside the store
+    sha256      = Column(String(64), nullable=True, index=True)
+    media_type  = Column(String, nullable=True)
+    byte_size   = Column(Integer, nullable=True)
+    label       = Column(Text, nullable=True, default="")
+    partial     = Column(Boolean, default=False)
+    preview_filename = Column(String, nullable=True)
+
+    owner       = Column(String, nullable=True, index=True)
+    project_id  = Column(String, nullable=True, index=True)
+    run_id      = Column(String, nullable=True, index=True)
+    session_id  = Column(String, nullable=True, index=True)
+    skill_id    = Column(String, nullable=True, index=True)
+    skill_version = Column(String, nullable=True)
+
+    # Provenance — every one of these is nullable, and NULL means "unknown",
+    # never "none".  See contracts.Provenance.unknowns().
+    model         = Column(String, nullable=True)
+    model_license = Column(String, nullable=True)
+    backend       = Column(String, nullable=True)
+    recipe        = Column(String, nullable=True)
+    recipe_version = Column(String, nullable=True)
+    inputs_digest = Column(String(64), nullable=True)
+    provenance_note = Column(Text, nullable=True, default="")
+
+    retention_policy = Column(String, nullable=False, default="keep")
+    retention_days   = Column(Integer, nullable=True)
+    retention_reason = Column(Text, nullable=True, default="")
+
+    #: The one link back to the old world.  Unique so the backfill is
+    #: idempotent: running it twice imports nothing the second time.
+    legacy_gallery_id = Column(String, nullable=True, unique=True, index=True)
+
+    schema_version = Column(Integer, nullable=False, default=1)
+
+    __table_args__ = (
+        Index("ix_artifacts_run_kind", "run_id", "kind"),
+        Index("ix_artifacts_owner_created", "owner", "created_at"),
+    )
+
+
 class EmailAccount(TimestampMixin, Base):
     """A configured IMAP/SMTP account. Supports multiple accounts per user —
     exactly one row per owner has is_default=True.
@@ -2091,6 +2151,107 @@ def _migrate_seed_email_account():
             db.close()
 
 
+_ARTIFACT_EXT_KIND = {
+    "png": "image", "jpg": "image", "jpeg": "image", "webp": "image", "gif": "image",
+    "mp4": "video", "mov": "video", "webm": "video", "mkv": "video", "m4v": "video",
+}
+
+
+def _migrate_create_artifacts_table():
+    """Additive and reversible: one new table, nothing else touched.
+
+    `create_all()` in init_db() already builds it from the model; this function
+    exists to backfill the gallery into it and to be the one place the reverse
+    is written down (see `rollback_artifacts_table`)."""
+    try:
+        with engine.connect() as conn:
+            exists = conn.execute(text(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='artifacts'"
+            )).fetchone()
+        if not exists:
+            # Nothing to backfill into yet; create_all() runs before this.
+            return
+        _backfill_artifacts_from_gallery()
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"artifacts migration: {e}")
+
+
+def _backfill_artifacts_from_gallery():
+    """Give every existing gallery image an artifact row, once.
+
+    What it deliberately does NOT do: invent the provenance the gallery never
+    recorded.  An image from before this table existed has no run, no backend
+    and no recipe, so those stay NULL and `contracts.Artifact.provenance_gaps()`
+    reports them.  A row that claimed `backend: media_worker` because that is
+    where images come from *now* would be a fabrication in an audit table.
+
+    Idempotent through `legacy_gallery_id`'s unique index: a second run imports
+    nothing and reports 0 created."""
+    log = logging.getLogger(__name__)
+    created = skipped = 0
+    reasons = {}
+    db = SessionLocal()
+    try:
+        known = {row[0] for row in db.query(ArtifactRow.legacy_gallery_id)
+                 .filter(ArtifactRow.legacy_gallery_id.isnot(None)).all()}
+        for img in db.query(GalleryImage).all():
+            if img.id in known:
+                continue
+            name = (img.filename or "").strip()
+            if not name or "/" in name or "\\" in name:
+                skipped += 1
+                reasons["filename_is_a_path"] = reasons.get("filename_is_a_path", 0) + 1
+                continue
+            ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+            kind = _ARTIFACT_EXT_KIND.get(ext)
+            if kind is None:
+                skipped += 1
+                reasons[f"unknown_extension:{ext or 'none'}"] = \
+                    reasons.get(f"unknown_extension:{ext or 'none'}", 0) + 1
+                continue
+            db.add(ArtifactRow(
+                id=f"gal_{img.id}",
+                kind=kind,
+                filename=name,
+                sha256=img.file_hash or None,
+                byte_size=img.file_size,
+                label=(img.caption or "")[:300],
+                owner=img.owner,
+                session_id=img.session_id,
+                model=img.model or None,
+                provenance_note="imported from the gallery; run, backend and recipe "
+                                "were never recorded for it",
+                retention_policy="keep",
+                legacy_gallery_id=img.id,
+                schema_version=1,
+                created_at=img.created_at,
+            ))
+            created += 1
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        log.warning(f"gallery→artifacts backfill failed: {e}")
+        return {"created": 0, "skipped": 0, "reasons": {"error": str(e)}}
+    finally:
+        db.close()
+    if created or skipped:
+        log.info(f"gallery→artifacts backfill: {created} created, {skipped} skipped {reasons}")
+    return {"created": created, "skipped": skipped, "reasons": reasons}
+
+
+def rollback_artifacts_table():
+    """The reverse.  Never called automatically — it is here so that "this
+    migration is reversible" is a function somebody can run and a test can
+    prove, rather than a sentence in a commit message."""
+    with engine.connect() as conn:
+        conn.execute(text("DROP TABLE IF EXISTS artifacts"))
+        try:
+            conn.commit()
+        except Exception:
+            pass
+    logging.getLogger(__name__).info("artifacts table dropped; schema is back to pre-migration")
+
+
 # WARNING: Foreign-key enforcement is enabled globally for all SQLite connections.
 # Any future migrations or schema changes that temporarily violate foreign-key
 # constraints will fail. To perform such operations, foreign_keys must be
@@ -2185,6 +2346,7 @@ def init_db():
     _migrate_encrypt_signatures()
     _migrate_encrypt_endpoint_keys()
     _migrate_backfill_task_folders()
+    _migrate_create_artifacts_table()
 
 
 def _migrate_backfill_task_folders():

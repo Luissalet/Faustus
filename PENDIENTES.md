@@ -79,6 +79,18 @@ a propósito · `[+]` mejora pendiente.
   las corridas de texto del OOXML y la capa de texto del PDF, no abriendo los
   ficheros.
 
+- `[?]` **El backfill de la galería a `artifacts`, contra datos de verdad.** La galería de Luis está
+  vacía hoy (0 filas en `data/app.db` y en los datos de la 7001), así que el ensayo sobre una copia
+  de la base real creó 0 artefactos. Lo que está probado es con filas sintéticas: 2 importadas, 2
+  rechazadas con motivo (`unknown_extension:txt`, `filename_is_a_path`), idempotente, y el rollback
+  deja la galería intacta. Cuando haya imágenes de verdad conviene volver a mirar los números y, en
+  particular, cuántas llegan **sin `file_hash`** — esas quedan con `sha256` a NULL a propósito.
+
+- `[?]` **Ninguna skill real usa todavía un `SkillManifest`.** El contrato existe y se valida, pero
+  las skills de hoy siguen siendo `SKILL.md` con frontmatter (`services/memory/skill_format.py`).
+  El puente entre las dos formas es Fase 2 del masterplan; hasta entonces, que un manifiesto valide
+  no significa que haya algo que lo lea.
+
 ---
 
 ## Deuda aceptada a propósito

@@ -23,8 +23,10 @@ workers_wait (block until done, then the compact result), workers_wait_for
 (block until ONE condition holds — a phase, a worker state, an event, a file
 change — and return the moment it does), workers_status,
 workers_events, workers_cancel, workers_list, objectives_list/objectives_apply,
-guard_explain, and memory_pack (what this machine has already learned). It
-talks HTTP to the running
+guard_explain, memory_pack (what this machine has already learned), and
+contracts_backends/contracts_validate_skill (which execution backends exist,
+and whether a skill manifest would be accepted — pure, nothing is installed).
+It talks HTTP to the running
 Faustus (routes/dispatch_routes.py) — nothing runs in this process, so a crash
 here cannot take a worker with it. A dispatch carries an Idempotency-Key, so
 the one retry after a connection error can never start a second job.
@@ -406,6 +408,55 @@ def render_apply(result: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def render_backends(data: Dict[str, Any]) -> str:
+    """One line per backend, intent and observation side by side. The `note`
+    is printed because "unavailable — declared but not implemented" and
+    "unavailable — the daemon is down" are different answers to the same
+    question, and a coordinator acts differently on each."""
+    lines = []
+    for row in data.get("backends") or []:
+        d, o = row.get("declared") or {}, row.get("observed") or {}
+        flags = []
+        if d.get("attended_only"):
+            flags.append("attended-only")
+        if not d.get("implemented"):
+            flags.append("not built yet")
+        lines.append(
+            f"{d.get('id')} [{o.get('state')}] isolation={d.get('isolation')} "
+            f"can={','.join(d.get('capabilities') or []) or '-'}"
+            + (f" ({'; '.join(flags)})" if flags else "")
+        )
+        lines.append(f"    evidence: {o.get('evidence')}")
+    docker = data.get("docker") or {}
+    lines.append(f"docker CLI on PATH: {docker.get('cli_present')} — {docker.get('means')}")
+    return "\n".join(lines) or "no backends declared"
+
+
+def render_validation(data: Dict[str, Any]) -> str:
+    """A refusal names the field. A pass names what the manifest will cost:
+    the approval cards, and every backend that cannot take it, with why."""
+    if not data.get("ok"):
+        err = data.get("error") or {}
+        return f"REJECTED at {err.get('path')}: {err.get('message')}"
+    approvals = data.get("approvals") or {}
+    lines = [
+        f"OK · fingerprint {str(data.get('fingerprint'))[:16]}",
+        f"needs capabilities: {', '.join(data.get('required_capabilities') or []) or '-'}",
+        f"approval cards: {', '.join(approvals.get('effective') or []) or 'none'}",
+    ]
+    implied = approvals.get("implied") or []
+    if implied:
+        lines.append(f"  …of which UNDECLARED but earned by the permissions asked for: {', '.join(implied)}")
+    for row in data.get("candidates") or []:
+        mark = "OK " if row.get("ok") else "no "
+        detail = row.get("detail") or ""
+        lines.append(f"  {mark}{row.get('backend')}: {row.get('reason')}"
+                     + (f" — {detail[:120]}" if detail else ""))
+    if not data.get("runnable"):
+        lines.append(data.get("why_not") or "nothing can run it")
+    return "\n".join(lines)
+
+
 TOOLS: List[Tool] = [
     Tool(
         name="dispatch_workers",
@@ -560,6 +611,34 @@ TOOLS: List[Tool] = [
                        "description": "Typed ADD/EDIT/KILL deltas as described above."},
         }, "required": ["project", "deltas"]},
     ),
+    Tool(
+        name="contracts_backends",
+        description=(
+            "Which execution backends Faustus declares, what each can do, and what is actually "
+            "known about it right now. Declarations are durable intent; observations are "
+            "disposable facts — a backend that is declared but not built reports 'unavailable', "
+            "and a docker CLI on PATH is never reported as a running daemon. Read this before "
+            "writing a skill manifest so its `permissions.backends` names something real."
+        ),
+        inputSchema={"type": "object", "properties": {}},
+    ),
+    Tool(
+        name="contracts_validate_skill",
+        description=(
+            "Validate a skill manifest against the Faustus contract WITHOUT installing anything. "
+            "Returns either the exact field that is wrong and why, or the manifest's fingerprint, "
+            "the approval cards it will trigger — including the ones it asked for but forgot to "
+            "declare, because asking for the network earns the card whether or not the manifest "
+            "says so — and which backends could run it, with a reason for each that could not. "
+            "Pure: no install, no run, no side effect."
+        ),
+        inputSchema={"type": "object", "properties": {
+            "manifest": {"type": "object", "description":
+                         "The manifest: id, version, title, inputs, outputs, memory, "
+                         "permissions {network, secrets, backends, filesystem, host_access}, "
+                         "approval {required_when}."},
+        }, "required": ["manifest"]},
+    ),
 ]
 
 
@@ -607,6 +686,16 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
             # newlines into one escaped line and cost more, not less.
             data = await asyncio.to_thread(_request, "GET", f"/api/memory-engine/pack?{query}")
             return _text(render_pack(data))
+        if name == "contracts_backends":
+            data = await asyncio.to_thread(_request, "GET", "/api/contracts/backends")
+            return _text(render_backends(data))
+        if name == "contracts_validate_skill":
+            manifest = args.get("manifest")
+            if not isinstance(manifest, dict) or not manifest:
+                return _text("Error: give the manifest as an object")
+            data = await asyncio.to_thread(
+                _request, "POST", "/api/contracts/skill/validate", {"manifest": manifest})
+            return _text(render_validation(data))
         if name == "guard_explain":
             command = str(args.get("command") or "")
             if not command.strip():

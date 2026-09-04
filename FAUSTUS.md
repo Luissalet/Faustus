@@ -1149,5 +1149,112 @@ la ruta de cancelación el proceso suele haber terminado ya —un pid reciclado 
 saltárselo, porque quien llama aquí es un modelo y una bandera que un modelo puede poner no es una
 salvaguarda.
 
+## 30. El vocabulario antes que el motor: Fase 0 del masterplan (04-09-2026, madrugada)
+
+El masterplan multipropósito (`D:\LocalAI\inspiration\MASTERPLAN_FAUSTUS_MULTIPROPOSITO.md`) empieza
+por una fase que no entrega ninguna función visible: **los ocho contratos**. La tentación es
+saltársela y escribir ya el sandbox. El motivo de no hacerlo es concreto: hoy tres partes de Faustus
+discrepan educadamente sobre qué es un run —`agent_runs` conoce *queued* y *stopped*,
+`crash_recovery` inventó *interrupted* para «el proceso murió y nadie puede decir si funcionó», y el
+worker distingue cancelado de fallido—, y el sitio donde eso se paga es el resumen del turno.
+
+### 30.1 Las tres reglas de `src/contracts/`
+Todo el paquete son 1.979 líneas que no tocan base de datos, disco, red ni modelo. Parsean, validan,
+huellan y **rechazan**. Un contrato que puede alcanzar un efecto secundario es un contrato que no se
+puede correr en un test, y que nadie se fiará de que diga que no.
+
+1. **Un rechazo nombra el campo y lo que vio.** `permissions.network: expected true or false (a
+   permission is never inferred from a truthy value), got 'yes' (str)`. No existe «manifiesto
+   inválido».
+2. **Una clave desconocida es un error, nunca un valor por defecto.** Un manifiesto que escribe
+   `permisions:` tiene una errata, y contestarla con el conjunto de permisos «todo denegado» la
+   escondería detrás de un run con buena pinta. El mensaje calcula el vecino a una edición:
+   *did you mean 'permissions'?*
+3. **Nada se convierte cruzando un tipo.** Quitar los blancos de una cadena es normalizar; leer `1`
+   como `True` es adivinar qué quiso decir alguien.
+
+`fingerprint()` reusa la regla de `prove.identity_of`: un campo de longitud variable nunca se
+concatena sin su longitud delante, así que `["ab","c"]` y `["a","bc"]` no pueden colisionar.
+
+### 30.2 Lo que los contratos se niegan a dejar pasar
+- **La aprobación va atada al plan que se enseñó, y guarda el plan, no solo su hash.** Cuando un plan
+  posterior no casa, `covers()` responde **qué campos se movieron**: «approval expired» manda al
+  usuario a buscar un bug; «el destinatario pasó de a@x a b@y» lo manda a mirar el plan. Hay un test
+  por cada campo que el masterplan nombra (destinatario, coste, secreto, permisos, salida) más
+  backend y versión de la skill.
+- **Pedir la red se gana la tarjeta aunque no se declare.** `implied_approvals()` deriva las tarjetas
+  de los permisos solicitados: lo que la skill pidió es la evidencia, lo que declaró es solo una
+  afirmación sobre ello.
+- **Una skill no escribe una preferencia durable del usuario.** `write_scopes: [user]` se rechaza
+  nombrando al curador, que es quien promociona con el usuario delante.
+- **El host no se alcanza por caída hacia atrás.** Un `ExecutionSpec` que nombra `local` sin
+  `attended_ack` se rechaza en el contrato, antes de que a nadie le dé tiempo a ser indulgente. Y
+  `grants_beyond()` compara el spec contra los permisos del manifiesto: un spec puede ser **más
+  estrecho**, nunca más ancho.
+- **Un nombre de artefacto es un nombre, no una ruta.** `../../data/.app_key` como `filename` es un
+  rechazo del contrato, no un problema que descubra el sistema de ficheros.
+- **`interrupted` es terminal y no es un fallo.** Su `outcome` es `None` —desconocido—, no `panic`.
+  Y una fila que dice `cancelled` y `success` a la vez es una contradicción con nombre.
+- **Una vista de memoria degradada tiene que decir qué perdió**, y lista lo que descartó **con el
+  motivo**: sin eso, la mitad del comportamiento del modelo no tiene explicación.
+- **Un evento redactado dice cuántas redacciones hizo.** Una línea de log que perdió un campo en
+  silencio es indistinguible de una que nunca lo tuvo, y solo una de las dos es segura.
+
+### 30.3 El catálogo de backends, y la distinción que trae Diogenes
+`src/capability_registry.py` separa **intención durable** de **observación desechable** (D12). Hay
+cuatro backends declarados y **tres dicen `unavailable` con la evidencia «declared but not
+implemented in this build»**, porque es la verdad del repositorio hoy. La prueba de honestidad salió
+sola al probar en vivo: en esta máquina **hay un `docker.EXE` en el PATH**, y el registro lo publica
+como `cli_present: true` con la coletilla *«a CLI on PATH does not prove a daemon is running»* — el
+estado sigue siendo `unavailable`. Redondearlo a «disponible» habría mandado el primer run de verdad
+a un timeout, y el timeout habría culpado al run.
+
+`candidates()` no oculta a los que no pueden: «¿por qué no eligió el de GPU?» es justo la pregunta
+que contesta, con un motivo por fila (`not_declared`, `not_requested`, `missing_capability`,
+`attended_only`, `not_implemented`).
+
+### 30.4 La migración que se deshace en una línea
+La tabla `artifacts` (29 columnas) **no toca ninguna tabla existente**: el puente hacia la galería
+vive en su propia columna `legacy_gallery_id`, con índice único. Por eso el reverso es
+`DROP TABLE artifacts` y el esquema queda idéntico — si la columna hubiera ido en `gallery_images`,
+deshacerlo dependería de la versión de SQLite del usuario. `rollback_artifacts_table()` existe para
+que «esta migración es reversible» sea una función que alguien puede ejecutar y un test puede probar,
+en vez de una frase en un mensaje de commit.
+
+El backfill **no inventa la procedencia que la galería nunca guardó**: una imagen anterior a esta
+tabla no tiene run, ni backend, ni receta, y esos campos quedan a NULL para que
+`provenance_gaps()` los liste. Una fila que dijera `backend: media_worker` porque es de donde salen
+las imágenes *ahora* sería una fabricación dentro de una tabla de auditoría.
+
+### 30.5 Cómo se verificó
+- **73 tests nuevos**, verdes, en 5 ficheros. El de la Fase 0 (`test_phase0_walkthrough.py`) se lee
+  como la frase del masterplan de la que sale: manifiesto → run → eventos → artefacto, con el orden
+  de eventos exacto de la referencia de OpenHands, y con la variante en la que **un secreto de más
+  detiene el walk antes de que arranque nada**.
+- **En vivo en la 7001** (instancia de pruebas, datos propios): `/api/contracts/backends` y
+  `/api/contracts/skill/validate`. El caso que importaba: un manifiesto que declara solo `publish`
+  pero pide red y secretos vuelve con `implied: ["network","secrets"]` y
+  `effective: ["network","publish","secrets"]`.
+- **Por MCP de verdad**, no importando el módulo: handshake JSON-RPC contra
+  `mcp_servers/workers_server.py` sobre stdio → 14 tools (12 + las 2 nuevas) → `tools/call` de
+  `contracts_backends` y `contracts_validate_skill` devolviendo el texto que lee el coordinador.
+- **Ensayo del backfill sobre una COPIA** de la base real: la galería de Luis está vacía hoy, así que
+  crea 0 y no hay nada que presumir; lo que sí queda probado es que no sorprende y que el rollback
+  deja la copia como estaba. La evidencia del backfill son los tests con filas sintéticas.
+- Un fallo encontrado en el propio trabajo: `test_artifacts_migration.py` pasaba solo y fallaba en la
+  suite completa. Causa: la base en memoria que comparte la suite —otros módulos vacían la galería, y
+  un backfill que no encuentra nada aprueba sus propias afirmaciones por el motivo equivocado. Ahora
+  el fichero monta **su propia base en un fichero temporal** y las cuentas son exactas (`created: 2,
+  skipped: 2`) en vez de `>= 2`.
+- `tests/test_static_checks.py::…already_there` falla, y falla **igual con los cambios guardados**
+  (`git stash`): es uno de los preexistentes de §24.4, no una regresión.
+
+### 30.6 Lo que la Fase 0 deja explícitamente sin hacer
+No hay ejecución. `docker_workspace`, `media_worker` y `remote_worker` son declaraciones, y el
+registro lo dice en cada respuesta en vez de aparentar cuatro opciones. Nada enruta todavía por
+`ExecutionSpec`: `subprocess_tools`, `filesystem_tools` y los runs de coding siguen donde estaban.
+El siguiente paso es la Fase 1, y su criterio de parada está escrito: **no se avanza si un run puede
+leer `data/.app_key`, escapar del workspace, heredar secretos o caer al host sin confirmación.**
+
 ## Cómo mantener este documento
 Cada bloque de trabajo añade una sección (fecha, qué, por qué, ficheros, cómo se verificó, cifras) y actualiza las cifras de cabecera (`git log --oneline c9dd68d8..HEAD | wc -l`, `git diff --stat c9dd68d8..HEAD`). Los commits del fork llevan mensajes largos que explican el porqué: `git log c9dd68d8..HEAD` es la fuente detallada.

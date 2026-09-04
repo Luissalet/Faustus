@@ -720,6 +720,11 @@ app.include_router(memory_router)
 from routes.skills_routes import setup_skills_routes
 app.include_router(setup_skills_routes(skills_manager))
 
+# Phase 0 contracts: the backend catalogue and a pure manifest validator.
+# Read-only by construction — no DB, no filesystem, no process.
+from routes.contracts_routes import setup_contracts_routes
+app.include_router(setup_contracts_routes())
+
 # Chat
 from routes.chat_routes import setup_chat_routes
 app.include_router(setup_chat_routes(
