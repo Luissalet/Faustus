@@ -131,9 +131,15 @@ def test_each_run_gets_its_own_output_directory(docker_up, paths, tmp_path):
 
 
 def test_a_declared_secret_with_no_value_stops_the_run_before_it_starts(docker_up, paths):
+    """`require_approval=False` on purpose: asking for a secret raises an
+    approval card (`implied_approvals`), and that gate now fires FIRST — you
+    do not hand a credential to a run nobody approved. The ordering is checked
+    in tests/test_approval_gate_on_runs.py; what is checked here is the second
+    gate, which would otherwise be unreachable in this test."""
     needs_key = manifest(permissions={"backends": ["docker_workspace"],
                                       "secrets": ["OPENAI_API_KEY"]})
-    decision, result = router.execute(needs_key, ["true"], run_id="r9", **paths)
+    decision, result = router.execute(needs_key, ["true"], run_id="r9",
+                                      require_approval=False, **paths)
     assert decision.ok is True                    # the routing was fine
     assert result.status == "refused"             # the run was not
     assert "OPENAI_API_KEY" in result.reason

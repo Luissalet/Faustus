@@ -122,8 +122,14 @@ Skills iniciales: `image.product`, `image.reference-edit`, `video.short-form`, `
         y rutas. Conceder/denegar pasa por `require_human`, que el token interno del modelo **no**
         abre; leer y pedir siguen siendo `require_admin` porque pedir permiso no es darlo. Se guarda
         el plan entero, así que un plan que deriva se responde con los campos que se movieron.
-  - [ ] **Nadie exige todavía la aprobación.** Ningún punto del código llama a `check()` antes de
-        publicar, entregar o gastar. Es lo primero de esta fase.
+  - [x] **La aprobación se exige antes de arrancar un run** (`execution_router.execute`): si el
+        manifiesto levanta tarjetas, el run no arranca, se abre la pendiente y el motivo lleva su
+        id. Incluye las tarjetas **implícitas** (pedir la red las gana aunque no se declaren), y un
+        secreto de más invalida la tarjeta concedida.
+  - [ ] Extenderlo al `bash`/`python` del agente, a los runs de coding y a los envíos que no vienen
+        de una skill. Hoy esas rutas las cubre el sistema de aprobación de *tools* que ya existía,
+        que aprueba un comando y no un plan.
+  - [ ] Los nodos de workflow (`WorkflowRun`/`NodeRun`, reintentos, idempotencia) siguen sin existir.
 - **5 · Coding:** `ChangeSet` estándar (plan, ficheros, diff, comandos, tests reales, artefactos) y
   la unión de `auto_review`, `review_state`, `workspace_checkpoints` y `git_invariants`. Ninguna
   afirmación de arreglo termina sin diff y evidencia acorde al modo.

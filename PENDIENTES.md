@@ -105,11 +105,14 @@ a propósito · `[+]` mejora pendiente.
   tests; falta cablearlo al prompt del agente y a `context_budget`/`context_ledger`. Hasta entonces
   el prompt se arma como antes y la vista no existe para el modelo.
 
-- `[!]` **Nadie exige todavía una aprobación.** El store existe, la puerta humana existe y el
-  manifiesto sabe qué tarjetas levanta — pero **ningún punto del código llama a
-  `approval_store.check()`** antes de publicar, entregar, usar un secreto o gastar. Hasta que se
-  cablee, es una puerta bien construida en una pared que no está levantada. Es lo primero de la
-  Fase 4.
+- `[~]` **La aprobación se exige en `execution_router.execute()`, y solo ahí.** Un run cuyo
+  manifiesto levanta tarjetas no arranca sin ellas, abre la tarjeta pendiente y devuelve su id en
+  el motivo. Lo que **no** pasa todavía por esa puerta: el `bash`/`python` del agente
+  (`sandbox_exec` llama a `choose` y al backend directamente, no a `execute`), los runs de coding y
+  cualquier envío de email o publicación que no venga de una skill. El sistema de aprobación de
+  *tools* que ya existía (`tool_approvals`, sellado al hash del comando) sigue siendo el que cubre
+  esas rutas y **no se ha tocado**: son complementarios, no duplicados — uno aprueba un comando,
+  el otro un plan.
 
 - `[?]` **El puente de skills contra skills de verdad.** Luis tiene **una** skill guardada, y no
   declara permisos, así que lo único comprobado con datos reales es el caso deny-by-default. Las

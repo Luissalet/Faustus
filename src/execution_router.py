@@ -152,21 +152,94 @@ def _verified(manifest: SkillManifest, backend_id: str, workspace: str,
                     reason="eligible", candidates=rows)
 
 
+def plan_for(manifest: SkillManifest, spec: ExecutionSpec, action: str, *,
+             detail: str = "") -> "ApprovalPlan":
+    """The card this run would show for one of its triggers.
+
+    Built from the manifest and the spec rather than from anything the caller
+    passes, so the plan a person approves is the plan that will run — and so a
+    later run with one more secret produces a different plan, which is the
+    whole mechanism."""
+    from src.contracts import ApprovalPlan
+    return ApprovalPlan.parse({
+        "action": action,
+        "skill_id": manifest.id,
+        "skill_version": manifest.version,
+        "backend": spec.backend,
+        "cost_units": spec.limits.cost_units,
+        "secret_names": list(spec.secret_names),
+        "permissions": manifest.permissions.to_dict(),
+        "output_kinds": list(manifest.output_kinds()),
+        "detail": detail or manifest.title,
+    })
+
+
+def approvals_missing(manifest: SkillManifest, spec: ExecutionSpec, *,
+                      owner: str = "", open_cards: bool = True) -> List[Dict[str, Any]]:
+    """Which of this run's triggers are not covered right now.
+
+    Opens a pending card for each uncovered one by default, so the answer a
+    caller gives the user is "this is waiting on you, here" rather than "you
+    need an approval" with no way to give it.
+    """
+    from src import approval_store
+
+    missing: List[Dict[str, Any]] = []
+    for action in manifest.effective_approvals():
+        plan = plan_for(manifest, spec, action)
+        verdict = approval_store.check(plan, owner=owner)
+        if verdict["ok"]:
+            continue
+        row = {"action": action, "reason": verdict["reason"],
+               "changes": verdict.get("changes") or [],
+               "approval_id": verdict.get("approval_id") or ""}
+        if open_cards and verdict["reason"] in ("no_approval", "plan_changed"):
+            card = approval_store.request(plan, owner=owner, run_id="")
+            row["pending_approval_id"] = card.id
+        missing.append(row)
+    return missing
+
+
 def execute(manifest: SkillManifest, command: Any, *, workspace: str,
             artifacts_root: str, run_id: str, attended_ack: bool = False,
             prefer: Optional[str] = None,
             secrets: Optional[Dict[str, str]] = None,
             image: Optional[str] = None,
+            owner: str = "",
+            require_approval: bool = True,
             on_event: Optional[Callable[[str, Dict[str, Any]], None]] = None,
             ) -> Tuple[Decision, Optional[ExecutionResult]]:
     """Choose, then run. Returns both so a caller can report *why* a run went
-    where it went, not only what came back."""
+    where it went, not only what came back.
+
+    A manifest that raises approval cards does not start without them. That
+    check is here rather than at each call site because a gate you have to
+    remember to call is a gate that will be forgotten once."""
     decision = choose(manifest, workspace=workspace, artifacts_root=artifacts_root,
                       run_id=run_id, attended_ack=attended_ack, prefer=prefer)
     if not decision.ok:
         if on_event:
             on_event("tool.blocked", {"reason": decision.reason, "detail": decision.detail})
         return decision, None
+
+    if require_approval and manifest.effective_approvals():
+        uncovered = approvals_missing(manifest, decision.spec, owner=owner)
+        if uncovered:
+            names = ", ".join(m["action"] for m in uncovered)
+            if on_event:
+                on_event("approval.requested", {"missing": uncovered, "run_id": run_id})
+            return decision, ExecutionResult.parse({
+                "run_id": run_id, "backend": decision.backend, "status": "refused",
+                "reason": f"policy: waiting on approval for {names}. "
+                          + "; ".join(
+                              f"{m['action']}: {m['reason']}"
+                              + (f" ({', '.join(c['field'] for c in m['changes'])} changed)"
+                                 if m["changes"] else "")
+                              + (f" — card {m['pending_approval_id']}"
+                                 if m.get("pending_approval_id") else "")
+                              for m in uncovered),
+                "started_at": now_iso(), "ended_at": now_iso(),
+            })
 
     kwargs: Dict[str, Any] = {}
     if image and decision.backend == "docker_workspace":

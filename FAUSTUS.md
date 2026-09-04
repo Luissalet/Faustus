@@ -1531,13 +1531,31 @@ sería mentir cada vez.
 `granted` → derivar un destinatario → `plan_changed` con el diff. La tabla `approvals` es aditiva
 como la de artefactos: una tabla nueva, nada tocado, el reverso es un `DROP TABLE`.
 
-**355 tests** verdes en el subconjunto de las cuatro fases.
+**322 tests** verdes en el subconjunto de las cuatro fases (7 más con la puerta cableada, §33.5).
 
-### 33.5 Lo que todavía no hace
-Nadie **exige** la aprobación aún. El manifiesto sabe qué tarjetas levanta
-(`effective_approvals()`), el store sabe si una cubre un plan, y no hay ningún punto del código que
-llame a `check()` antes de publicar, entregar o gastar. Ese cableado es Fase 4, y hasta que exista,
-esto es una puerta bien construida en una pared que todavía no se ha levantado.
+### 33.5 Y la puerta se cablea: un run que levanta tarjetas no arranca sin ellas
+El cableado va en `execution_router.execute()`, no en cada sitio que ejecuta, porque una puerta que
+hay que acordarse de llamar es una puerta que alguien olvidará una vez. Si el manifiesto levanta
+tarjetas, el run **no arranca**: se abre la pendiente y el motivo lleva su id, para que la respuesta
+sea «esto te está esperando, aquí» y no «necesitas una aprobación» sin manera de darla.
+
+Tres cosas que fija el test:
+- **Las tarjetas implícitas también se exigen.** Un manifiesto que pide la red y declara
+  `required_when: []` se para igual: `implied_approvals()` no es decoración.
+- **Un secreto de más invalida la tarjeta concedida.** Es la deriva que todo el diseño de
+  aprobaciones existe para cazar, deteniendo un run de verdad.
+- **La puerta se baja explícitamente o no se baja.** `require_approval=False` existe, se ve en el
+  call site, y no hay forma de saltársela por accidente.
+
+El orden importa y salió al romper un test: la aprobación se comprueba **antes** que los secretos.
+No se le entrega una credencial a un run que nadie ha aprobado. El test antiguo asumía el orden
+contrario; ahora dice por qué baja la puerta a propósito, y el orden tiene su propio fichero.
+
+### 33.6 Lo que todavía no pasa por esa puerta
+El `bash`/`python` del agente (`sandbox_exec` llama a `choose` y al backend directamente), los runs
+de coding, y cualquier envío o publicación que no venga de una skill. Esas rutas las cubre el
+sistema de aprobación de **tools** que ya existía —sellado al hash del comando— y que **no se ha
+tocado**: son complementarios, no duplicados. Uno aprueba un comando; el otro, un plan.
 
 ## Cómo mantener este documento
 Cada bloque de trabajo añade una sección (fecha, qué, por qué, ficheros, cómo se verificó, cifras) y actualiza las cifras de cabecera (`git log --oneline c9dd68d8..HEAD | wc -l`, `git diff --stat c9dd68d8..HEAD`). Los commits del fork llevan mensajes largos que explican el porqué: `git log c9dd68d8..HEAD` es la fuente detallada.
