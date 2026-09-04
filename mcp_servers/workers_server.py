@@ -910,6 +910,27 @@ TOOLS: List[Tool] = [
         }},
     ),
     Tool(
+        name="faustus_doctor",
+        description=(
+            "What this Faustus can ACTUALLY do right now, asked rather than assumed: "
+            "which execution backends answer, whether the sandbox image is built, "
+            "whether checkpoints work, which media templates are installed and "
+            "whether the render engine is up, approvals waiting on a person, and "
+            "workflow runs nobody has advanced. Every line that is not OK carries "
+            "the fix. Read it FIRST when something did not work — it is much faster "
+            "than finding out one refusal at a time. `absent` means this machine "
+            "does not have that capability, which is a fact, not a fault; nothing "
+            "reports ok that was not actually checked."
+        ),
+        inputSchema={"type": "object", "properties": {
+            "area": {"type": "string", "description":
+                     "Optional, comma-separated: runtime, backends, execution, "
+                     "coding, media, approvals, workflows, skills."},
+            "verbose": {"type": "boolean", "description":
+                        "Include the things that are working, one line each."},
+        }},
+    ),
+    Tool(
         name="changeset_prove",
         description=(
             "Ask whether a finished dispatch job's report can be believed. Answers "
@@ -1182,6 +1203,12 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
             data = await asyncio.to_thread(
                 _request, "GET", f"/api/contracts/skills/audit?workspace={workspace}")
             return _text(render_skills_audit(data))
+        if name == "faustus_doctor":
+            area = urllib.parse.quote(str(args.get("area") or ""), safe=",")
+            verbose = "true" if args.get("verbose") else "false"
+            data = await asyncio.to_thread(
+                _request, "GET", f"/api/doctor?area={area}&verbose={verbose}")
+            return _text(data.get("rendered") or json.dumps(data)[:4000])
         if name == "changeset_prove":
             job = str(args.get("job_id") or "").strip()
             if not job:

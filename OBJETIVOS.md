@@ -29,7 +29,7 @@ una integración posterior, no otra arquitectura paralela.
 | 4 · Workflows, approvals y conectores | Procesos que sobreviven a reinicios, idempotentes | 🟡 04-09-2026 — aprobaciones con puerta humana (§33) **y el núcleo de workflows durables** (§34): claim antes de actuar, pausa por persona o por reloj, ramas. Faltan los conectores y cablear `skill`/`deliver` a algo que exista |
 | 5 · Coding profesional | `ChangeSet`, repo map, LSP opcional, intents explore/plan/implement/review | 🟡 04-09-2026 — el contrato `ChangeSet` existe y **delega el veredicto en `prove`** en vez de inventar un quinto vocabulario (§37): afirmación contra evidencia, `ok` de tres valores, intents que prometen. Faltan repo map, LSP y cablearlo al harness |
 | 6 · Gateway, canales y dispositivos | Un canal de bajo riesgo con pairing, nodos, después voz | ⏳ |
-| 7 · Ecosistema y operación | Hooks versionados, CLI `doctor`, telemetría, transferencia de artefactos | ⏳ |
+| 7 · Ecosistema y operación | Hooks versionados, CLI `doctor`, telemetría, transferencia de artefactos | 🟡 04-09-2026 — el **doctor** existe (§38): CLI, ruta y tool MCP, nada informa OK sin comprobarse y todo lo que falla lleva el arreglo. Faltan hooks, telemetría y transferencia |
 
 ---
 
@@ -172,14 +172,23 @@ Skills iniciales: `image.product` ✅, `image.reference-edit` ✅, `video.short-
         `explore` que escribió, y un resultado de una ejecución que no ocurrió.
   - [x] `workspace_checkpoints.has_checkpoint()`: una sha desconocida ya no se contesta como «no
         cambió nada». Salió corriéndolo contra un checkpoint de verdad.
-  - [ ] Cablearlo al `TurnLedger` y al final de un turno del agente, para que el resumen que ve el
-        usuario lleve el veredicto al lado. Hoy `from_turn()` existe y nadie lo llama.
+  - [x] **Cableado al final de cada turno del agente**: las afirmaciones salen de
+        `find_claimed_paths(full_response)` —lo que dijo la RESPUESTA, no lo que registró el
+        ledger— y el veredicto viaja en la tarjeta de resumen, que solo interrumpe con el titular
+        cuando hay contradicción. Falta verlo en un turno real con un modelo real.
   - [ ] Repo map y LSP opcional; los intents como modos de verdad del harness, no solo un campo.
 - **6 · Gateway:** orden prudente — canal de texto → pairing → nodos → companion → voz → widgets.
   `contracts.ExternalIdentity` ya define el binding, la revocación con motivo y las capacidades.
 - **7 · Ecosistema:** hooks versionados sobre el bus de eventos, CLI `status/doctor/config validate`,
   OpenTelemetry, transferencia de artefactos con hash y expiración. Fleet solo después de un gateway
   unitario validado.
+  - [x] **El `doctor`** (04-09, §38): `python -m src.doctor`, `/api/doctor` y la tool
+        `faustus_doctor`. Reúne las sondas de las seis fases y contesta lo que una persona pregunta
+        de verdad. Nada informa OK sin comprobarse —un `unknown` nunca se redondea—, todo lo que no
+        está OK lleva el arreglo, y una capacidad ausente es un hecho, no un fallo (salida 1 solo
+        con un `fail` real).
+  - [ ] Hooks versionados sobre el bus de eventos y `config validate`.
+  - [ ] Telemetría (OpenTelemetry) y transferencia de artefactos con hash y expiración.
 
 ---
 

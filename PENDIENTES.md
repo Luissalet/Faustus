@@ -157,11 +157,18 @@ al romperlo:
   lista de pausados, ni botón de reanudar. Un run pausado esperando a una persona solo se ve desde
   la lista de aprobaciones pendientes, que es la mitad de la historia.
 
-- `[+]` **El `ChangeSet` existe y nadie lo produce solo.** `from_turn()` y `from_dispatch()` están
-  escritos y probados, las rutas y las dos tools MCP funcionan, pero el `TurnLedger` termina un
-  turno sin construir uno. Hasta que el resumen que ve el usuario lleve el veredicto al lado, la
-  regla de la fase —«ninguna afirmación de arreglo sin evidencia»— la cumple quien se acuerde de
-  preguntar, que es la forma más fácil de no cumplirla.
+- `[+]` **El doctor no mira la memoria, el navegador ni los modelos.** Cubre runtime, backends,
+  ejecución, coding, medios, aprobaciones, workflows y skills — que es donde han caído las seis
+  fases del masterplan. Lo que no toca todavía: si Ollama responde y con qué modelos, el estado del
+  navegador integrado, y si la memoria/Chroma está sana. Son las tres siguientes.
+
+- `[?]` **El `ChangeSet` del turno no se ha visto en un turno real todavía.** Ya se construye al
+  final de cada turno del agente y su veredicto viaja en la tarjeta de resumen (probado bajo node y
+  renderizado a mano en el navegador de la 7001). Lo que **no** se ha visto es un turno de verdad,
+  con un modelo de verdad, editando un fichero y afirmando algo: ahí es donde se sabrá si
+  `find_claimed_paths` acierta lo suficiente como para que la línea sea útil en vez de ruido. Si
+  falla, fallará por exceso —marcando como no vista una ruta que el modelo mencionó de pasada— y
+  eso se arregla en el extractor de afirmaciones, no en el contrato.
 
 - `[~]` **`services/review_state.py` sigue siendo el dueño del aceptar/rechazar por fichero.** Un
   `ChangeSet` es el informe; lo que una persona decidió sobre él es otra pregunta con otra vida.

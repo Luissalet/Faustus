@@ -1857,5 +1857,41 @@ JSON-RPC real. 28 tools registradas. Un rechazo llega como **respuesta**, no com
 que escribió en cuatro ficheros» es justo la pregunta que alguien trae a este endpoint, y
 contestarla con un error lo mandaría a buscar un bug en Faustus en vez de en su propio informe.
 
+## 38. Un doctor que no redondea hacia arriba (04-09-2026, noche)
+
+Seis fases han añadido cada una su sonda, y cada sonda es honesta por su cuenta: el registro de
+capacidades le pregunta a Docker, el backend de medios a ComfyUI, `workspace_checkpoints` a git. Lo
+que faltaba era el único sitio que las pregunta todas y contesta lo que una persona quiere saber de
+verdad, que nunca es «¿está el demonio de Docker arriba?» sino **«por qué no ha funcionado eso, y
+qué hago»**.
+
+`src/doctor.py`, con las tres reglas de siempre:
+
+**Nada informa OK sin haberse comprobado.** Una sonda que no pudo correr vuelve como `unknown` con
+el motivo, jamás como `ok`. Un `unknown` redondeado a `ok` es cómo alguien se pasa una tarde con una
+función que no iba a funcionar nunca. Y esta regla **cazó una respuesta falsa la primera vez que se
+ejecutó**: la comprobación de skills se tragaba un `TypeError` y decía «no skills stored», que es
+una afirmación sobre la máquina, no sobre la comprobación. Ahora dice que no pudo mirar — y con eso
+apareció la causa real (`SkillsManager(DATA_DIR)`) en un segundo.
+
+**Todo lo que no está OK lleva el arreglo.** «docker: unavailable» manda a un buscador; «el CLI está
+instalado pero el demonio no contestó — arranca Docker Desktop» manda a la barra de tareas. Si una
+comprobación no sabe nombrar el arreglo, eso es un hueco de la comprobación.
+
+**Una capacidad que falta no es un fallo.** No tener ComfyUI es un hecho sobre la máquina, y se
+reporta `absent`, no `fail`. Pintar de rojo cada capacidad sin usar enseña a la gente a ignorar el
+informe, que cuesta más de lo que el informe vale. Por eso el código de salida es 1 **solo** con un
+`fail` de verdad: un doctor que sale distinto de cero por cada cosa ausente no sirve en un script.
+
+Se agrupa por **estado**, no por área, con el área en la línea: agrupar por área imprimía la misma
+cabecera tres veces —una por cada estado en el que hubiera algo de esa área— que es cómo un informe
+corto empieza a parecer largo.
+
+Corre desde la CLI con la app parada (`python -m src.doctor [--verbose] [--json] [--area …]`), por
+HTTP en `/api/doctor`, y como tool MCP `faustus_doctor` — 29 tools. En esta máquina, ahora mismo,
+dice la verdad completa: Docker y la imagen del sandbox listos, checkpoints y git bien, las dos
+plantillas de medios instaladas, ComfyUI caído con la frase de arranque, y **dos workflow runs
+pausados que nadie ha avanzado**, con la ruta para hacerlo.
+
 ## Cómo mantener este documento
 Cada bloque de trabajo añade una sección (fecha, qué, por qué, ficheros, cómo se verificó, cifras) y actualiza las cifras de cabecera (`git log --oneline c9dd68d8..HEAD | wc -l`, `git diff --stat c9dd68d8..HEAD`). Los commits del fork llevan mensajes largos que explican el porqué: `git log c9dd68d8..HEAD` es la fuente detallada.

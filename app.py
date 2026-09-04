@@ -746,8 +746,12 @@ app.include_router(setup_media_routes())
 # "Prove it": a change set is assembled from records Faustus already keeps and
 # judged by src/prove.py. Nothing is stored — asking twice about the same job
 # gives the same fingerprint, which is what makes it a report.
-from routes.changesets_routes import setup_changesets_routes
+from routes.changesets_routes import setup_changesets_routes, setup_doctor_routes
 app.include_router(setup_changesets_routes())
+
+# What this machine can actually do. Every probe already existed; this is the
+# one place that asks them all and puts the fix in the sentence.
+app.include_router(setup_doctor_routes())
 
 # Chat
 from routes.chat_routes import setup_chat_routes

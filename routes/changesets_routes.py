@@ -130,3 +130,21 @@ def setup_changesets_routes():
                                   max_chars=int(payload.get("max_chars") or 400_000))
 
     return router
+
+
+def setup_doctor_routes():
+    """`/api/doctor` — what this machine can actually do, asked rather than
+    assumed. Its own tiny router so it can be mounted (and read) on its own."""
+    router = APIRouter(prefix="/api/doctor", tags=["doctor"])
+
+    @router.get("")
+    def check(request: Request, area: str = "", verbose: bool = False):
+        require_admin(request)
+        from src import doctor
+
+        areas = [a.strip() for a in area.split(",") if a.strip()] or None
+        report = doctor.run(areas=areas)
+        report["rendered"] = doctor.render(report, verbose=verbose)
+        return report
+
+    return router
