@@ -47,3 +47,29 @@ su área y baja el baseline. Ningún módulo Studio nuevo la aumenta.
 - E2E: `ODYSSEUS_E2E=1 python -m pytest tests/e2e -q` desde `venv`. Playwright
   1.62 instalado. En Windows hay un error de colección conocido en
   `tests/test_history_import.py` que no es nuestro.
+
+## Riesgos que trae la decisión de React (04-09-2026)
+
+6. **`[!]` Dos sistemas vivos.** Es la forma en que mueren estas migraciones:
+   medio repo en React, medio en el DOM antiguo, y nadie se atreve a borrar.
+   Mitigación acordada: cada pantalla migrada retira su equivalente legacy en
+   el mismo incremento. Un incremento que termina sin haber borrado nada es una
+   alarma, no un detalle.
+7. **`[?]` Build reproducible sin red.** La primera instalación de dependencias
+   necesita registro. Hay que decidir en UI-002 si se versiona el lockfile con
+   caché de npm, se vendoriza `node_modules` o se acepta que clonar exige una
+   instalación con red una vez. Node instalado: v22.19.0 (Vite lo soporta; la
+   CLI de `skills` pide >=22.20.0 y avisa, sin romper).
+8. **`[!]` Bundle obsoleto servido en silencio.** Si `Start-Faustus.ps1` sirve
+   un `static/studio/` viejo sin avisar, se depuran fantasmas durante horas.
+   Tiene que construir o fallar diciendo por qué.
+9. **`[?]` CSP con nonce.** El bundle es un `<script>` externo y encaja, pero
+   los estilos inline que inyectan algunas primitivas de Radix y las
+   animaciones hay que comprobarlos contra la CSP real, no suponerlos.
+10. **`[!]` Cobertura perdida al cambiar de markup.** La familia de tests que
+    assertaba HTML dentro de `index.html` deja de valer. Ningún test se borra
+    sin que su sustituto pase antes; lo que se quede sin cobertura se anota
+    aquí con nombre y apellidos.
+11. **`[~]` Peso y arranque.** Faustus es local-first: nada de CDN en tiempo de
+    ejecución y presupuesto de bundle declarado en UI-002. Cada dependencia
+    nueva fuera de la tabla aprobada es una decisión, no un `npm install`.

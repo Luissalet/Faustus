@@ -1,60 +1,69 @@
 # Objetivos de UI — backlog vivo
 
 Rama: `feat/studio-ui`. Estado a 04-09-2026.
-Decisiones que mandan: `DECISIONES_UI.md`. Detalle: `PLAN_CODE_UI_FAUSTUS_STUDIO.md`.
+Decisiones que mandan: `DECISIONES_UI.md` (stack React, §1). Detalle de
+pantallas: `PLAN_CODE_UI_FAUSTUS_STUDIO.md` y `UI_OVERHAUL_FAUSTUS_STUDIO.md`.
 
-Marca `[x]` sólo cuando el ticket cumple su Definition of Done (§DoD del plan):
-estados completos, teclado y foco, tres viewports, dark/light/reduced-motion,
-tests proporcionales, auditoría Vercel pasada o excepción documentada, y
-capturas antes/después.
+Marca `[x]` sólo cuando el ticket cumple la Definition of Done: estados
+completos, teclado y foco, tres viewports, dark/light/reduced-motion, tests
+proporcionales, auditoría de la guía Vercel pasada o excepción documentada,
+**abierto en el navegador del 7001** y capturas antes/después.
 
-## Incremento 1 — cimientos + Inicio
+## Incremento 1 — cimientos y primera pantalla
 
-### Lote A — autoridad visual y evidencia
+### Lote A — autoridad visual, evidencia y toolchain
 
-- [ ] **UI-000** Journeys y capturas baseline
+- [ ] **UI-000** Journeys y capturas baseline de la UI **actual**
       `tests/e2e/test_studio_baseline.py`, `docs/ui/journeys.md`.
       1400×900, 1024×768 y 390×844. Cinco journeys: crear proyecto, trabajo
       creativo, tarea de código, encontrar un resultado, resolver aprobación.
-      Con clics, tiempo y puntos de confusión anotados.
+      Con clics, tiempo y puntos de confusión anotados. Es la vara de medir:
+      sin esto, «la nueva mola más» no es comprobable.
 - [ ] **UI-001** `DESIGN.md` + `docs/ui/component-contracts.md`
       Bloqueante duro de todo lo demás.
-- [ ] **UI-010** `static/css/studio/tokens.css`, `base.css`, `legacy-bridge.css`
-      Cargados después de `style.css`. Aliases legacy vivos, temas custom
-      intactos, foco global visible, `color-scheme`, skip link, reduced motion.
+- [ ] **UI-002** Toolchain Vite y arranque integrado
+      `package.json`, `vite.config`, salida a `static/studio/`, servida con el
+      nonce existente. Build reproducible sin red. `Start-Faustus.ps1` construye
+      si el bundle falta o está obsoleto, y falla diciendo por qué antes que
+      servir uno viejo en silencio. Presupuesto de bundle declarado aquí.
 
-### Lote B — primitivos, guardas e iconos
+### Lote B — tokens, primitivos y guardas
 
-- [ ] **UI-011** Primitivos accesibles
-      Button, IconButton, StatusBadge, EmptyState, Menu, Dialog, Skeleton.
-      Test estático que prohíbe HTML interactivo crudo en módulos nuevos.
-- [ ] **UI-012** Auditor incremental de la guía Vercel
-      `tools/audit_ui_guidelines.py` + `docs/ui/audit-baseline.md` con fecha y
-      hash de la guía. Separa `legacy-known` de regresión nueva. CI falla sólo
-      por deuda nueva.
-- [ ] **UI-013** Inventario y extracción de iconos
-      `static/js/shell/components/icon.js`. Sin librería externa. Prohibido SVG
-      inline en módulos Studio.
+- [ ] **UI-010** Tokens CSS y puente con el tema legacy
+      Tokens de `DESIGN.md` como variables. Aliases vivos (`--bg`, `--panel`,
+      `--fg`, `--red`) para que los temas personalizados actuales no se rompan.
+      Foco global visible, `color-scheme`, skip link, reduced motion.
+- [ ] **UI-011** Primitivos sobre Radix
+      Button, IconButton, StatusBadge, EmptyState, Menu, Dialog, Popover,
+      Skeleton. `data-testid` estable en todos desde el primer día.
+- [ ] **UI-012** Guardas y auditoría adaptadas a JSX
+      Lint: nada de `<div>` con `onClick`, ningún control sin nombre accesible,
+      ningún color, radio o duración fuera de tokens, ningún `transition: all`.
+      Accesibilidad comprobada sobre la página renderizada en Playwright.
+      `docs/ui/audit-baseline.md` con fecha y hash de la guía Vercel.
 
 ### Lote C — shell y navegación
 
-- [ ] **UI-020** Store + router + fallback SPA
-      Lista blanca de siete rutas en `app.py`, nunca comodín. Test: 404 JSON de
-      API sigue siendo 404 JSON. Filtros en query string. Hashes de sesión
-      siguen funcionando.
-- [ ] **UI-021** AppShell bajo flag `faustus_studio_shell`
-      `localStorage` + `?shell=studio` / `?shell=legacy`. Apagado por defecto.
-      Acceso "Interfaz anterior" visible durante el piloto.
-- [ ] **UI-022** Command palette
-      `Ctrl/Cmd+K`. "Buscar conversaciones" pasa a ser un comando, no un atajo
-      rival. Navegación esencial completable sólo con teclado.
+- [ ] **UI-020** Router, store y fallback SPA
+      React Router con las siete rutas canónicas y filtros en query string.
+      Store Zustand con la forma que define el plan. En `app.py`, lista blanca
+      de siete rutas, **nunca** comodín, con test de que un 404 de API sigue
+      siendo JSON. Los hashes de sesión siguen funcionando.
+- [ ] **UI-021** AppShell React bajo flag `faustus_studio_shell`
+      Montado en el shell nuevo, DOM legacy intacto al lado. Apagado por
+      defecto, `?shell=studio` / `?shell=legacy`, acceso «Interfaz anterior»
+      visible durante el piloto.
+- [ ] **UI-022** Command palette con `cmdk`
+      `Ctrl/Cmd+K`. «Buscar conversaciones» pasa a ser un comando y deja de
+      competir por el atajo. Navegación esencial completable sólo con teclado.
 
 ### Lote D — primera pantalla real
 
 - [ ] **UI-030** Inicio
-      Continuaciones, aprobaciones pendientes, quick starts y salud sólo si
+      Continuaciones, aprobaciones pendientes, quick starts, y salud sólo si
       bloquea. Estados loading, vacío, error, offline y éxito. Sin modelos,
-      temperatura ni GPU como contenido principal.
+      temperatura ni GPU como contenido principal. Pasa por `impeccable` antes
+      de cerrarse.
 
 ## Incremento 2 — Studio
 
@@ -62,31 +71,32 @@ capturas antes/después.
       presupuesto legibles y editables antes de ejecutar.
 - [ ] **UI-032** Studio de código: modos explorar/planificar/implementar/revisar,
       workspace, diff, tests y checkpoint como paneles. El E2E de agentes sigue
-      pasando.
+      pasando. Retira su equivalente legacy al cerrarse.
 - [ ] **UI-033** Studio creativo: referencias con rol, variantes, máscara y
       receta. Aquí entra el prototipo que proponía el documento de producto.
 
 ## Incremento 3 — proyectos y artefactos
 
-- [ ] **UI-040** Sacar Projects del modal: `/projects` y `/projects/{id}`.
-- [ ] **UI-041** Biblioteca federada por adapters, filtros en URL,
-      virtualización por encima de 50 entradas.
+- [ ] **UI-040** Projects fuera del modal: `/projects` y `/projects/{id}`.
+- [ ] **UI-041** Biblioteca federada, filtros en URL, TanStack Virtual por
+      encima de 50 entradas, imágenes con dimensiones explícitas.
 - [ ] **UI-042** ArtifactViewer y lineage. Requiere cerrar antes la deuda de
-      identificadores (ver `PENDIENTES_UI.md`).
+      identificadores (`PENDIENTES_UI.md`).
 
 ## Incremento 4 — actividad y automatización
 
 - [ ] **UI-050** Esquema común de run: queued, running, waiting-approval,
-      paused, succeeded, failed, cancelled. Normalizado en frontend primero.
+      paused, succeeded, failed, cancelled.
 - [ ] **UI-051** RunTimeline y ApprovalCard.
 - [ ] **UI-052** Automatizaciones como recetas legibles; el editor de nodos es
       inspección avanzada, no la vista principal.
 
-## Incremento 5 — retirada del sistema antiguo
+## Incremento 5 — retirar el sistema antiguo
 
 - [ ] **UI-060** Migrar settings y herramientas restantes.
-- [ ] **UI-061** Eliminar puentes muertos y empezar a dividir `style.css`, sólo
-      tras confirmar cero imports y E2E equivalente.
+- [ ] **UI-061** Borrar los puentes muertos, el DOM legacy de cada pantalla ya
+      migrada y el propio flag. Empezar a dividir `style.css`, a solas y sin
+      mezclarlo con features.
 - [ ] **Skill propia `faustus-ui-studio`**: inputs `screen`, `user_job`,
       `project_type`, `existing_components`; outputs `design_brief`,
       `component_plan`, `implementation`, `visual_qa_report`.
