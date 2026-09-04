@@ -1,0 +1,52 @@
+/**
+ * Faustus Studio — self-hosted faces (UI-010).
+ *
+ * Declared again here rather than inherited from style.css, so the Studio
+ * bundle renders correctly on its own (dev server, component gallery) and
+ * does not depend on the legacy stylesheet staying loaded. The files are
+ * the ones already shipping in static/fonts/ — no new asset, no CDN.
+ *
+ * Only 400/500/600 exist as real files. DESIGN.md's scale is written
+ * against those three; asking for 650 would just make the browser
+ * synthesise or round, which is how "flat hierarchy" happens.
+ */
+
+@font-face {
+  font-family: 'Inter';
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  src: url('/static/fonts/Inter-Regular.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+  src: url('/static/fonts/Inter-Medium.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+  src: url('/static/fonts/Inter-SemiBold.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Fira Code';
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  src: url('/static/fonts/FiraCode-Regular.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Fira Code';
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+  src: url('/static/fonts/FiraCode-SemiBold.woff2') format('woff2');
+}

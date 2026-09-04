@@ -1,0 +1,54 @@
+/**
+ * Faustus Studio — legacy theme bridge (UI-010).
+ *
+ * `static/js/theme.js` writes the user's theme as inline custom properties
+ * on <html>: --bg, --fg, --panel, --border and --red (line 258 onward).
+ * Those variables are therefore ALWAYS present once a theme is applied,
+ * which is why the bridge is opt-in rather than automatic: if Studio
+ * inherited them unconditionally, the new palette could never be seen.
+ *
+ * Two modes:
+ *
+ *   <div class="fs-app">                              → Studio's own palette
+ *   <div class="fs-app" data-theme-source="faustus">  → the user's theme
+ *
+ * The second is what keeps custom themes working. Every mapping falls back
+ * to the Studio token, so a half-defined theme degrades instead of breaking.
+ *
+ * This file adds nothing to the legacy UI and changes none of its rules.
+ * The old interface must look pixel-identical after this ticket.
+ */
+
+.fs-app[data-theme-source='faustus'] {
+  --fs-canvas: var(--bg, #0c0d0f);
+  --fs-surface-1: var(--panel, #121418);
+  --fs-text-1: var(--fg, #f2f1ed);
+  --fs-border: var(--border, #2b3038);
+  --fs-brand: var(--red, #e06c75);
+
+  /*
+   * The legacy theme has no second and third surface, no muted text and no
+   * "colour on brand". They are derived so the ladder survives:
+   * colour-mix keeps the user's hue and only moves lightness.
+   */
+  --fs-surface-2: color-mix(in srgb, var(--panel, #121418) 88%, var(--fg, #f2f1ed));
+  --fs-surface-3: color-mix(in srgb, var(--panel, #121418) 78%, var(--fg, #f2f1ed));
+  --fs-border-strong: color-mix(in srgb, var(--border, #2b3038) 70%, var(--fg, #f2f1ed));
+  --fs-text-2: color-mix(in srgb, var(--fg, #f2f1ed) 78%, var(--bg, #0c0d0f));
+  --fs-text-3: color-mix(in srgb, var(--fg, #f2f1ed) 58%, var(--bg, #0c0d0f));
+
+  /*
+   * A user theme can pick any --red, so neither ink nor white is safe by
+   * construction. `contrast-color()` picks the readable one where the
+   * browser supports it; the fallback is the canvas, which is the correct
+   * choice for the light corals the palette actually ships.
+   */
+  --fs-on-brand: var(--bg, #0c0d0f);
+}
+
+@supports (color: contrast-color(red)) {
+  .fs-app[data-theme-source='faustus'] {
+    --fs-on-brand: contrast-color(var(--red, #e06c75));
+    --fs-on-danger: contrast-color(var(--fs-danger));
+  }
+}

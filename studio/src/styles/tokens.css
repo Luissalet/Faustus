@@ -1,0 +1,176 @@
+/**
+ * Faustus Studio — design tokens (UI-010).
+ *
+ * The single source of these values is DESIGN.md. Nothing in the Studio
+ * tree may hardcode a colour, radius, duration or spacing step: if a
+ * value is missing here, it is added here first.
+ *
+ * Theme resolution, in order of authority:
+ *   1. :root[data-theme="light"] / [data-theme="dark"]  — explicit choice
+ *   2. prefers-color-scheme                              — system default
+ *   3. :root                                             — dark, the base
+ */
+
+:root {
+  /* ── Surfaces: four-step warm charcoal ladder ── */
+  --fs-canvas: #0c0d0f;
+  --fs-surface-1: #121418;
+  --fs-surface-2: #191c21;
+  --fs-surface-3: #22262d;
+
+  /* ── Borders ── */
+  --fs-border: #2b3038;
+  --fs-border-strong: #3b424d;
+
+  /* ── Text ── */
+  --fs-text-1: #f2f1ed;
+  --fs-text-2: #bdc1c9;
+  --fs-text-3: #8c929e;
+
+  /* ── Brand ── */
+  --fs-brand: #e06c75;
+  --fs-brand-hover: #ec8189;
+  /* Ink on coral: 6.09:1. White would be 2.85:1 and fail AA. */
+  --fs-on-brand: #0c0d0f;
+
+  /* ── Functional ── */
+  --fs-focus: #8ab4ff;
+  --fs-success: #54aa78;
+  --fs-warning: #d9a441;
+  /* Danger as TEXT, icon and border on dark surfaces: 4.91:1. */
+  --fs-danger: #e46e76;
+  --fs-on-danger: #0c0d0f; /* 6.22:1 */
+  /* Danger as a FILL. Deeper than the coral so a destructive confirmation
+     can never be mistaken for the brand's primary action. White on it
+     measures 5.27:1; the light coral above would have been 2.85:1. */
+  --fs-danger-solid: #c8323e;
+  --fs-on-danger-solid: #ffffff;
+  --fs-info: #7198e5;
+
+  /* ── Shadow: overlays and drag only ── */
+  --fs-shadow-overlay: 0 4px 16px rgb(0 0 0 / 0.32);
+  --fs-shadow-drag: 0 8px 24px rgb(0 0 0 / 0.32);
+
+  color-scheme: dark;
+}
+
+:root[data-theme='light'] {
+  --fs-canvas: #f3f1ec;
+  --fs-surface-1: #faf9f6;
+  --fs-surface-2: #ffffff;
+  --fs-surface-3: #ebe8e1;
+
+  --fs-border: #d8d4cb;
+  --fs-border-strong: #bbb5aa;
+
+  --fs-text-1: #242321;
+  --fs-text-2: #55534e;
+  --fs-text-3: #65615a;
+
+  --fs-brand: #b3424d;
+  --fs-brand-hover: #9c3843;
+  /* The light-theme brand is deep enough for white: 5.52:1.
+     Ink would be 2.84:1 — the inverse of the dark theme, measured. */
+  --fs-on-brand: #ffffff;
+
+  --fs-focus: #315fa8;
+  --fs-success: #2d7a4f;
+  --fs-warning: #946a1a;
+  --fs-danger: #c0392b;
+  --fs-on-danger: #ffffff; /* 5.44:1 */
+  --fs-danger-solid: #a4231b; /* white on it: 7.41:1 */
+  --fs-on-danger-solid: #ffffff;
+  --fs-info: #2c5bb5;
+
+  --fs-shadow-overlay: 0 4px 16px rgb(0 0 0 / 0.08);
+  --fs-shadow-drag: 0 8px 24px rgb(0 0 0 / 0.12);
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme='dark']) {
+    --fs-canvas: #f3f1ec;
+    --fs-surface-1: #faf9f6;
+    --fs-surface-2: #ffffff;
+    --fs-surface-3: #ebe8e1;
+
+    --fs-border: #d8d4cb;
+    --fs-border-strong: #bbb5aa;
+
+    --fs-text-1: #242321;
+    --fs-text-2: #55534e;
+    --fs-text-3: #65615a;
+
+    --fs-brand: #b3424d;
+    --fs-brand-hover: #9c3843;
+    --fs-on-brand: #ffffff;
+
+    --fs-focus: #315fa8;
+    --fs-success: #2d7a4f;
+    --fs-warning: #946a1a;
+    --fs-danger: #c0392b;
+    --fs-on-danger: #ffffff;
+    --fs-danger-solid: #a4231b;
+    --fs-on-danger-solid: #ffffff;
+    --fs-info: #2c5bb5;
+
+    --fs-shadow-overlay: 0 4px 16px rgb(0 0 0 / 0.08);
+    --fs-shadow-drag: 0 8px 24px rgb(0 0 0 / 0.12);
+
+    color-scheme: light;
+  }
+}
+
+/* ── Non-colour tokens: identical in every theme ── */
+
+:root {
+  /* Typography */
+  --fs-font-ui: Inter, system-ui, -apple-system, sans-serif;
+  --fs-font-code: 'Fira Code', ui-monospace, 'Cascadia Code', monospace;
+
+  --fs-display-size: clamp(1.75rem, 1.4rem + 1.4vw, 2.25rem);
+  /* 600 is the heaviest Inter face self-hosted; asking for 650 rounds
+     to it anyway and only makes the document lie. */
+  --fs-display-weight: 600;
+  --fs-display-tracking: -0.025em;
+
+  --fs-title-size: clamp(1.25rem, 1.1rem + 0.6vw, 1.5rem);
+  --fs-title-weight: 600;
+  --fs-title-tracking: -0.01em;
+
+  --fs-body-size: 0.9375rem;
+  --fs-body-line: 1.5;
+
+  --fs-label-size: 0.8125rem;
+  --fs-label-weight: 500;
+  --fs-label-tracking: 0.01em;
+
+  --fs-code-size: 0.85rem;
+
+  /* Space — 4px base */
+  --fs-space-1: 4px;
+  --fs-space-2: 8px;
+  --fs-space-3: 12px;
+  --fs-space-4: 16px;
+  --fs-space-5: 24px;
+  --fs-space-6: 32px;
+  --fs-space-7: 48px;
+
+  /* Radius */
+  --fs-radius-control: 6px;
+  --fs-radius-panel: 10px;
+  --fs-radius-preview: 14px;
+  --fs-radius-pill: 999px;
+
+  /* Motion */
+  --fs-duration-fast: 120ms;
+  --fs-duration-normal: 180ms;
+  --fs-duration-slow: 240ms;
+  --fs-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  /* Control heights */
+  --fs-control-sm: 28px;
+  --fs-control-md: 36px;
+  --fs-control-lg: 44px;
+}

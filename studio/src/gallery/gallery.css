@@ -1,0 +1,96 @@
+/* Component gallery — a review surface, not a shipped screen. */
+
+.fs-gallery {
+  min-block-size: 100vh;
+  padding: var(--fs-space-6) var(--fs-space-5) var(--fs-space-7);
+}
+
+.fs-gallery__inner {
+  max-inline-size: 1080px;
+  margin-inline: auto;
+  display: grid;
+  gap: var(--fs-space-6);
+}
+
+.fs-gallery__head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--fs-space-4);
+  flex-wrap: wrap;
+}
+
+.fs-gallery__title {
+  font-size: var(--fs-display-size);
+  font-weight: var(--fs-display-weight);
+  letter-spacing: var(--fs-display-tracking);
+  line-height: 1.15;
+}
+
+.fs-gallery__sub {
+  color: var(--fs-text-2);
+  margin-block-start: var(--fs-space-2);
+}
+
+.fs-section {
+  display: grid;
+  gap: var(--fs-space-3);
+}
+
+.fs-section__title {
+  font-size: var(--fs-label-size);
+  font-weight: var(--fs-label-weight);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fs-text-3);
+}
+
+.fs-section__body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fs-space-3);
+  padding: var(--fs-space-4);
+  background: var(--fs-surface-1);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+}
+
+.fs-section__body[data-layout='stack'] {
+  display: grid;
+  gap: var(--fs-space-4);
+}
+
+.fs-swatches {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: var(--fs-space-2);
+  inline-size: 100%;
+}
+
+.fs-swatch {
+  display: grid;
+  gap: var(--fs-space-1);
+  padding: var(--fs-space-2);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+}
+
+.fs-swatch__chip {
+  block-size: 34px;
+  border-radius: var(--fs-radius-control);
+  border: 1px solid var(--fs-border);
+}
+
+.fs-swatch__name {
+  font-family: var(--fs-font-code);
+  font-size: 11px;
+  color: var(--fs-text-3);
+}
+
+/* Gallery-only: the standalone page owns the document. The shell inside
+   the real app never touches <body> — that belongs to the legacy UI. */
+body:has(.fs-gallery) {
+  margin: 0;
+  background: var(--fs-canvas);
+}

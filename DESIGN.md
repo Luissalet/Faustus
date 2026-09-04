@@ -57,6 +57,12 @@ All text-on-surface pairs pass WCAG AA (4.5:1 minimum).
 --fs-warning:       #d9a441;
 --fs-danger:        #e46e76;   /* CORRECTED from #df626d (was 4.41:1 on surface-3, now 4.91:1) */
 --fs-info:          #7198e5;
+
+/* Ink on a coloured fill — added 04-09 after building the primitives */
+--fs-on-brand:      #0c0d0f;   /* on coral: 6.09:1. White would be 2.85:1 */
+--fs-on-danger:     #0c0d0f;   /* 6.22:1 */
+--fs-danger-solid:  #c8323e;   /* destructive FILL only; white on it: 5.27:1 */
+--fs-on-danger-solid: #ffffff;
 ```
 
 ### Light theme
@@ -87,6 +93,13 @@ All text-on-surface pairs pass WCAG AA (4.5:1 minimum).
 --fs-warning:       #946a1a;
 --fs-danger:        #c0392b;
 --fs-info:          #2c5bb5;
+
+/* Ink on a coloured fill. The light brand is deep enough for white,
+   which is the exact inverse of the dark theme — measured, not assumed. */
+--fs-on-brand:      #ffffff;   /* 5.52:1. Ink would be 2.84:1 */
+--fs-on-danger:     #ffffff;   /* 5.44:1 */
+--fs-danger-solid:  #a4231b;   /* white on it: 7.41:1 */
+--fs-on-danger-solid: #ffffff;
 ```
 
 ### Contrast corrections summary
@@ -101,6 +114,16 @@ All text-on-surface pairs pass WCAG AA (4.5:1 minimum).
 
 ### Color rules
 
+0. **Destructive is an outline, not a fill.** A solid danger button next
+   to a solid brand button is the same red twice: "Nuevo trabajo" and
+   "Eliminar" become interchangeable at a glance. This was found by
+   building the gallery and looking at it, not by reading the spec. So
+   `danger` renders as a 1px `--fs-danger` border with `--fs-danger`
+   text, and `--fs-danger-solid` exists for exactly one case: the
+   confirming button inside a destructive dialog, where it is that
+   dialog's primary action and the brand fill is absent. The side effect
+   is correct emphasis — deleting should never be the loudest thing on a
+   screen.
 1. Coral (`--fs-brand`) identifies the brand and primary action. It is
    never used for error state. Error gets `--fs-danger`.
 2. Blue (`--fs-focus`) communicates focus, links and active execution.
@@ -125,13 +148,22 @@ No remote fonts. All faces are self-hosted WOFF2 already present in
 
 ### Type scale
 
+Only three Inter faces are self-hosted — Regular (400), Medium (500) and
+SemiBold (600). The scale below is written against those. The 650 and 620
+of the original plan do not exist as files: the browser rounds them to 600
+and the document ends up describing a weight nobody ships.
+
 | Token | Size | Weight | Line-height | Letter-spacing | Use |
 |-------|------|--------|-------------|----------------|-----|
-| `--fs-display` | 28–36 px | 650 | 1.15 | −0.025 em | Inicio and project headers |
-| `--fs-title` | 20–24 px | 620 | 1.25 | −0.01 em | Screen or artifact titles |
+| `--fs-display` | 28–36 px | 600 | 1.15 | −0.025 em | Inicio and project headers |
+| `--fs-title` | 20–24 px | 600 | 1.25 | −0.01 em | Screen or artifact titles |
 | `--fs-body` | 14–16 px | 400 | 1.5 | 0 | Content, chat messages |
-| `--fs-label` | 12–13 px | 550 | 1.4 | 0.01 em | Metadata, controls, timestamps |
+| `--fs-label` | 12–13 px | 500 | 1.4 | 0.01 em | Metadata, controls, timestamps |
 | `--fs-code` | 13–14 px | 400 | 1.5 | 0 | Inline and block code |
+
+The faces are declared again in `studio/src/styles/fonts.css` rather than
+inherited from `style.css`, so the Studio bundle renders correctly on its
+own. Same files, no new asset, no CDN.
 
 ### Typography rules
 
@@ -299,3 +331,54 @@ and disappear when their screen migrates. No new inline SVGs in Studio.
 | lucide-react | MIT | npm dependency (tree-shaken) |
 
 No remote font loading. No CDN at runtime.
+
+---
+
+## Signature element — the execution trace
+
+A design system without a signature is a set of defaults. Faustus gets
+exactly one, and it is born from what the product does rather than from
+decoration: **the execution trace**.
+
+A thin vertical rail threading `context → steps → artifact`. It appears
+wherever work happens — Studio, Actividad, and the artifact card — always
+with the same anatomy, so a run reads the same way no matter which screen
+you meet it on. It is the thing Faustus shows that the other workspaces
+bury inside a chat transcript, which is precisely why it is the signature.
+
+### Anatomy
+
+| Part | Spec |
+|------|------|
+| Rail | 2 px, `--fs-border`; the travelled portion mixes 45% `--fs-brand` |
+| Node | 10 px circle, 2 px border, coloured by state |
+| Label | `--fs-body`; `--fs-text-2`, rising to `--fs-text-1` + 500 when the step is running or waiting; `--fs-text-3` when queued |
+| Meta | `--fs-label`, `--fs-text-3`, tabular figures, right-aligned |
+| Row | `--fs-space-2` block padding; 18 px rail column |
+
+Each step paints the rail segment through its own row, so the line can
+never desync from the nodes — the first and last steps paint half a
+segment, which closes the rail at both ends without a wrapper element.
+
+### The one animation with character
+
+The running node carries a halo that breathes between 0.55 and 0.12
+opacity over 2 s. **Opacity only** — never position, never size, never
+colour. That is what lets `prefers-reduced-motion` stop it dead without
+losing any information: state is still carried by the node colour, the
+label weight and the status text.
+
+### Collapsing
+
+Beyond three consecutive finished steps, the completed run collapses into
+a single openable line ("N pasos completados") drawn with a dashed rail,
+so a twelve-step run does not push the active step off the screen. History
+stays on the rail; it does not go somewhere else.
+
+### What it must not become
+
+- Not a log viewer. Tool output, commands and evidence live in the run
+  detail, not on the rail.
+- Not decoration. It appears only where there is a real run.
+- Not a progress bar in disguise: a step that is waiting for a person says
+  so, with the approval it needs.

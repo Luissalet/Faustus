@@ -1,0 +1,618 @@
+/**
+ * Faustus Studio — primitives (UI-011).
+ *
+ * Every value here comes from tokens.css. No literal colours, radii or
+ * durations: the lint in UI-012 enforces it.
+ */
+
+/* ══ Button ══════════════════════════════════════════════════════ */
+
+.fs-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--fs-space-2);
+  height: var(--fs-control-md);
+  padding-inline: var(--fs-space-3);
+  border: 1px solid transparent;
+  border-radius: var(--fs-radius-control);
+  font: inherit;
+  font-size: var(--fs-label-size);
+  font-weight: var(--fs-label-weight);
+  letter-spacing: var(--fs-label-tracking);
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background-color var(--fs-duration-fast) var(--fs-ease),
+    border-color var(--fs-duration-fast) var(--fs-ease),
+    color var(--fs-duration-fast) var(--fs-ease),
+    transform var(--fs-duration-fast) var(--fs-ease);
+}
+
+.fs-btn:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.fs-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.fs-btn[data-size='sm'] {
+  height: var(--fs-control-sm);
+  padding-inline: var(--fs-space-2);
+}
+
+.fs-btn[data-size='lg'] {
+  height: var(--fs-control-lg);
+  padding-inline: var(--fs-space-4);
+  font-size: var(--fs-body-size);
+}
+
+.fs-btn[data-variant='primary'] {
+  background: var(--fs-brand);
+  color: var(--fs-on-brand);
+}
+
+.fs-btn[data-variant='primary']:hover:not(:disabled) {
+  background: var(--fs-brand-hover);
+}
+
+.fs-btn[data-variant='secondary'] {
+  background: var(--fs-surface-2);
+  border-color: var(--fs-border);
+  color: var(--fs-text-1);
+}
+
+.fs-btn[data-variant='secondary']:hover:not(:disabled) {
+  background: var(--fs-surface-3);
+  border-color: var(--fs-border-strong);
+}
+
+.fs-btn[data-variant='ghost'] {
+  background: transparent;
+  color: var(--fs-text-2);
+}
+
+.fs-btn[data-variant='ghost']:hover:not(:disabled) {
+  background: var(--fs-surface-2);
+  color: var(--fs-text-1);
+}
+
+/*
+ * Destructive is an OUTLINE, not a fill.
+ *
+ * Found by looking at the gallery rather than the spec: a solid danger
+ * button sits two centimetres from a solid brand button and, at coral,
+ * they are the same red. "Nuevo trabajo" and "Eliminar" cannot look
+ * alike. Differentiating by form instead of hue also gets the emphasis
+ * right — deleting should never be the loudest thing on a screen.
+ */
+.fs-btn[data-variant='danger'] {
+  background: transparent;
+  border-color: var(--fs-danger);
+  color: var(--fs-danger);
+}
+
+.fs-btn[data-variant='danger']:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--fs-danger) 14%, transparent);
+}
+
+/* The filled version exists for exactly one place: the confirming action
+   inside a destructive dialog, where it IS the primary action. */
+.fs-btn[data-variant='danger-solid'] {
+  background: var(--fs-danger-solid);
+  color: var(--fs-on-danger-solid);
+}
+
+.fs-btn[data-variant='danger-solid']:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.fs-btn__spinner {
+  animation: fs-spin 900ms linear infinite;
+}
+
+@keyframes fs-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fs-btn__spinner {
+    animation: none;
+    opacity: 0.6;
+  }
+}
+
+/* ══ IconButton ══════════════════════════════════════════════════ */
+
+.fs-icon-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: var(--fs-control-md);
+  block-size: var(--fs-control-md);
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--fs-radius-control);
+  background: transparent;
+  color: var(--fs-text-2);
+  cursor: pointer;
+  transition:
+    background-color var(--fs-duration-fast) var(--fs-ease),
+    color var(--fs-duration-fast) var(--fs-ease),
+    transform var(--fs-duration-fast) var(--fs-ease);
+}
+
+.fs-icon-btn[data-size='sm'] {
+  inline-size: var(--fs-control-sm);
+  block-size: var(--fs-control-sm);
+}
+
+.fs-icon-btn[data-variant='secondary'] {
+  background: var(--fs-surface-2);
+  border-color: var(--fs-border);
+}
+
+.fs-icon-btn:hover:not(:disabled) {
+  background: var(--fs-surface-3);
+  color: var(--fs-text-1);
+}
+
+.fs-icon-btn:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+.fs-icon-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* The touch target grows past the visual box on coarse pointers, so the
+   36px control still satisfies the 44px minimum without looking chunky. */
+@media (pointer: coarse) {
+  .fs-icon-btn::after {
+    content: '';
+    position: absolute;
+    inset: 50% auto auto 50%;
+    inline-size: 44px;
+    block-size: 44px;
+    translate: -50% -50%;
+  }
+}
+
+.fs-icon-btn__badge {
+  position: absolute;
+  inset-block-start: 2px;
+  inset-inline-end: 2px;
+  min-inline-size: 16px;
+  block-size: 16px;
+  padding-inline: 4px;
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-brand);
+  color: var(--fs-on-brand);
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 16px;
+  text-align: center;
+}
+
+.fs-icon-btn__badge[data-dot='true'] {
+  min-inline-size: 8px;
+  block-size: 8px;
+  padding: 0;
+}
+
+/* ══ StatusBadge ═════════════════════════════════════════════════
+   Icon and text carry the meaning; colour only reinforces it. */
+
+.fs-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fs-space-1);
+  padding: 2px var(--fs-space-2);
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-surface-2);
+  font-size: var(--fs-label-size);
+  font-weight: var(--fs-label-weight);
+  line-height: 1.4;
+  color: var(--fs-status-color, var(--fs-text-3));
+}
+
+.fs-status[data-size='md'] {
+  padding: var(--fs-space-1) var(--fs-space-3);
+}
+
+.fs-status[data-status='running'] {
+  --fs-status-color: var(--fs-info);
+}
+.fs-status[data-status='waiting'] {
+  --fs-status-color: var(--fs-warning);
+}
+.fs-status[data-status='succeeded'] {
+  --fs-status-color: var(--fs-success);
+}
+.fs-status[data-status='failed'] {
+  --fs-status-color: var(--fs-danger);
+}
+
+.fs-status__spin {
+  animation: fs-spin 900ms linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fs-status__spin {
+    animation: none;
+  }
+}
+
+/* ══ Skeleton ════════════════════════════════════════════════════ */
+
+.fs-skeleton {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-2);
+}
+
+.fs-skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--fs-surface-3) 80%, var(--fs-text-3)),
+    transparent
+  );
+  translate: -100% 0;
+  animation: fs-shimmer 1400ms var(--fs-ease) infinite;
+}
+
+@keyframes fs-shimmer {
+  to {
+    translate: 100% 0;
+  }
+}
+
+/* A loop is exactly what reduced motion is for: the surface stays, the
+   sweep goes, and aria-busy still announces the wait. */
+@media (prefers-reduced-motion: reduce) {
+  .fs-skeleton::after {
+    animation: none;
+    opacity: 0;
+  }
+}
+
+/* ══ EmptyState ══════════════════════════════════════════════════ */
+
+.fs-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--fs-space-3);
+  padding: var(--fs-space-7) var(--fs-space-5);
+  border: 1px dashed var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-1);
+}
+
+.fs-empty__icon {
+  color: var(--fs-text-3);
+}
+
+.fs-empty__title {
+  font-size: var(--fs-title-size);
+  font-weight: var(--fs-title-weight);
+  letter-spacing: var(--fs-title-tracking);
+}
+
+.fs-empty__body {
+  color: var(--fs-text-2);
+  max-inline-size: 46ch;
+}
+
+.fs-empty__actions {
+  display: flex;
+  gap: var(--fs-space-2);
+  margin-block-start: var(--fs-space-1);
+}
+
+/* ══ Overlays: Dialog, Menu, Popover ═════════════════════════════
+   The only three places a shadow is allowed. */
+
+.fs-overlay-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgb(0 0 0 / 0.5);
+  animation: fs-fade-in var(--fs-duration-normal) var(--fs-ease);
+}
+
+.fs-dialog {
+  position: fixed;
+  inset-block-start: 50%;
+  inset-inline-start: 50%;
+  translate: -50% -50%;
+  inline-size: min(560px, calc(100vw - var(--fs-space-5) * 2));
+  max-block-size: calc(100vh - var(--fs-space-6) * 2);
+  overflow: auto;
+  padding: var(--fs-space-5);
+  background: var(--fs-surface-3);
+  border: 1px solid var(--fs-border-strong);
+  border-radius: var(--fs-radius-panel);
+  box-shadow: var(--fs-shadow-overlay);
+  animation: fs-dialog-in var(--fs-duration-normal) var(--fs-ease);
+}
+
+.fs-dialog__title {
+  font-size: var(--fs-title-size);
+  font-weight: var(--fs-title-weight);
+  letter-spacing: var(--fs-title-tracking);
+  margin-block-end: var(--fs-space-2);
+}
+
+.fs-dialog__body {
+  color: var(--fs-text-2);
+}
+
+.fs-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--fs-space-2);
+  margin-block-start: var(--fs-space-5);
+}
+
+@keyframes fs-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes fs-dialog-in {
+  from {
+    opacity: 0;
+    translate: -50% -46%;
+    scale: 0.98;
+  }
+}
+
+.fs-menu,
+.fs-popover {
+  min-inline-size: 200px;
+  padding: var(--fs-space-1);
+  background: var(--fs-surface-3);
+  border: 1px solid var(--fs-border-strong);
+  border-radius: var(--fs-radius-panel);
+  box-shadow: var(--fs-shadow-overlay);
+  animation: fs-pop-in var(--fs-duration-fast) var(--fs-ease);
+}
+
+.fs-popover {
+  padding: var(--fs-space-4);
+  max-inline-size: 320px;
+}
+
+.fs-menu__item {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  padding: var(--fs-space-2) var(--fs-space-3);
+  border-radius: var(--fs-radius-control);
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-2);
+  cursor: pointer;
+  user-select: none;
+  outline: none;
+}
+
+/* Radix moves a data-highlighted attribute with both mouse and keyboard,
+   so hover and arrow keys land on exactly the same visual state. */
+.fs-menu__item[data-highlighted] {
+  background: var(--fs-surface-2);
+  color: var(--fs-text-1);
+}
+
+.fs-menu__item[data-disabled] {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.fs-menu__item[data-variant='danger'] {
+  color: var(--fs-danger);
+}
+
+.fs-menu__sep {
+  block-size: 1px;
+  margin: var(--fs-space-1) 0;
+  background: var(--fs-border);
+}
+
+@keyframes fs-pop-in {
+  from {
+    opacity: 0;
+    scale: 0.97;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fs-overlay-backdrop,
+  .fs-dialog,
+  .fs-menu,
+  .fs-popover {
+    animation: none;
+  }
+}
+
+/* ══ ExecutionTrace — the signature element ══════════════════════
+   A thin vertical rail threading context → steps → artifact. It is the
+   one thing Faustus shows that the other workspaces hide, so it earns
+   the only piece of deliberate character in the system.
+
+   Anatomy: 2px rail · 10px nodes · label row · right-aligned meta.
+   The active node breathes in OPACITY only — never position, never
+   size — so it survives reduced motion by simply standing still. */
+
+.fs-trace {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding-inline-start: var(--fs-space-1);
+}
+
+.fs-trace__step {
+  position: relative;
+  display: grid;
+  grid-template-columns: 18px 1fr auto;
+  align-items: baseline;
+  gap: var(--fs-space-3);
+  padding-block: var(--fs-space-2);
+  padding-inline-end: var(--fs-space-2);
+}
+
+/* The rail is drawn by the steps themselves, so it can never desync
+   from them: each step paints the segment above its own node. */
+.fs-trace__step::before {
+  content: '';
+  position: absolute;
+  inset-block: 0 auto;
+  inset-inline-start: 8px;
+  block-size: 100%;
+  inline-size: 2px;
+  background: var(--fs-border);
+}
+
+.fs-trace__step:first-child::before {
+  inset-block-start: 50%;
+  block-size: 50%;
+}
+
+.fs-trace__step:last-child::before {
+  block-size: 50%;
+}
+
+.fs-trace__step[data-state='succeeded']::before,
+.fs-trace__step[data-state='running']::before {
+  background: color-mix(in srgb, var(--fs-brand) 45%, var(--fs-border));
+}
+
+.fs-trace__node {
+  position: relative;
+  z-index: 1;
+  inline-size: 10px;
+  block-size: 10px;
+  margin-inline-start: 4px;
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-surface-3);
+  border: 2px solid var(--fs-border-strong);
+  justify-self: start;
+  align-self: center;
+}
+
+.fs-trace__step[data-state='succeeded'] .fs-trace__node {
+  background: var(--fs-success);
+  border-color: var(--fs-success);
+}
+
+.fs-trace__step[data-state='failed'] .fs-trace__node {
+  background: var(--fs-danger);
+  border-color: var(--fs-danger);
+}
+
+.fs-trace__step[data-state='waiting'] .fs-trace__node {
+  background: var(--fs-warning);
+  border-color: var(--fs-warning);
+}
+
+.fs-trace__step[data-state='running'] .fs-trace__node {
+  background: var(--fs-brand);
+  border-color: var(--fs-brand);
+}
+
+/* The halo, not the node, is what breathes. */
+.fs-trace__step[data-state='running'] .fs-trace__node::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: var(--fs-radius-pill);
+  border: 2px solid var(--fs-brand);
+  animation: fs-breathe 2s var(--fs-ease) infinite;
+}
+
+@keyframes fs-breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 0.12;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fs-trace__step[data-state='running'] .fs-trace__node::after {
+    animation: none;
+    opacity: 0.45;
+  }
+}
+
+.fs-trace__label {
+  font-size: var(--fs-body-size);
+  color: var(--fs-text-2);
+}
+
+.fs-trace__step[data-state='running'] .fs-trace__label,
+.fs-trace__step[data-state='waiting'] .fs-trace__label {
+  color: var(--fs-text-1);
+  font-weight: 550;
+}
+
+.fs-trace__step[data-state='queued'] .fs-trace__label {
+  color: var(--fs-text-3);
+}
+
+.fs-trace__meta {
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Collapsed run of finished steps: the history stays on the rail as a
+   single line you can open, instead of scrolling past twelve green ticks. */
+.fs-trace__collapsed {
+  position: relative;
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  gap: var(--fs-space-3);
+  align-items: center;
+  padding-block: var(--fs-space-2);
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-3);
+  cursor: pointer;
+  text-align: start;
+  inline-size: 100%;
+}
+
+.fs-trace__collapsed::before {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 8px;
+  inline-size: 2px;
+  background: repeating-linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--fs-brand) 45%, var(--fs-border)) 0 3px,
+    transparent 3px 7px
+  );
+}
+
+.fs-trace__collapsed:hover {
+  color: var(--fs-text-2);
+}

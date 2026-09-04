@@ -1,0 +1,88 @@
+/**
+ * Faustus Studio — base layer (UI-010).
+ *
+ * Foundations only: reset, focus, skip link, reduced motion. Component
+ * styling lives in components.css. Nothing here may reference a colour
+ * or size that is not a token from tokens.css.
+ */
+
+.fs-app,
+.fs-app *,
+.fs-app *::before,
+.fs-app *::after {
+  box-sizing: border-box;
+}
+
+.fs-app {
+  font-family: var(--fs-font-ui);
+  font-size: var(--fs-body-size);
+  line-height: var(--fs-body-line);
+  color: var(--fs-text-1);
+  background: var(--fs-canvas);
+  -webkit-font-smoothing: antialiased;
+}
+
+.fs-app :where(h1, h2, h3, h4, p, figure, blockquote) {
+  margin: 0;
+}
+
+.fs-app :where(code, pre, kbd, samp) {
+  font-family: var(--fs-font-code);
+  font-size: var(--fs-code-size);
+}
+
+/* Numbers that sit in columns must not jitter. */
+.fs-app :where(.fs-num, [data-numeric]) {
+  font-variant-numeric: tabular-nums;
+}
+
+.fs-app :where(p, li) {
+  max-width: 65ch;
+}
+
+.fs-app :where(h1, h2, h3) {
+  text-wrap: pretty;
+}
+
+/* ── Focus ──
+   One ring, everywhere, never removed. Any `outline: none` in the Studio
+   tree is a lint failure. */
+.fs-app :where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--fs-focus);
+  outline-offset: 2px;
+  border-radius: var(--fs-radius-control);
+}
+
+/* ── Skip link ──
+   Visible the moment it takes focus; out of the way otherwise. */
+.fs-skip-link {
+  position: absolute;
+  left: var(--fs-space-3);
+  top: var(--fs-space-3);
+  z-index: 100;
+  padding: var(--fs-space-2) var(--fs-space-3);
+  background: var(--fs-surface-3);
+  color: var(--fs-text-1);
+  border: 1px solid var(--fs-border-strong);
+  border-radius: var(--fs-radius-control);
+  transform: translateY(-200%);
+  transition: transform var(--fs-duration-fast) var(--fs-ease);
+}
+
+.fs-skip-link:focus-visible {
+  transform: translateY(0);
+}
+
+/* ── Reduced motion ──
+   Translation, parallax and loops stop. Opacity fades collapse to zero
+   duration rather than disappearing, so state changes stay legible. */
+@media (prefers-reduced-motion: reduce) {
+  .fs-app *,
+  .fs-app *::before,
+  .fs-app *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

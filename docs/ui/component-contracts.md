@@ -33,10 +33,11 @@ interface ButtonProps {
 
 | Prop | Effect |
 |------|--------|
-| `variant="primary"` | `--fs-brand` background, `--fs-text-1` text (dark on light) |
-| `variant="secondary"` | `--fs-surface-3` background, `--fs-text-1` text |
+| `variant="primary"` | `--fs-brand` background, `--fs-on-brand` text — CORRECTED: `--fs-text-1` on coral measures 2.85:1 and fails AA |
+| `variant="secondary"` | `--fs-surface-2` background, `--fs-border`, `--fs-text-1` text |
 | `variant="ghost"` | transparent background, `--fs-text-2` text |
-| `variant="danger"` | `--fs-danger` background, white text |
+| `variant="danger"` | OUTLINE: transparent background, `--fs-danger` border and text. See DESIGN.md colour rule 0 |
+| `variant="danger-solid"` | `--fs-danger-solid` background, white text. Only the confirming button inside a destructive dialog |
 | `loading` | replaces icon with spinner; disables interaction; `aria-busy` |
 | `disabled` | `opacity: 0.4; pointer-events: none` |
 
