@@ -304,6 +304,14 @@ Every interactive component must implement these states where applicable:
 - Composer stays visible with on-screen keyboard using `100dvh`.
 - Overlay panels use `overscroll-behavior: contain`.
 - Five most frequent actions fit without a menu; the rest goes to "More".
+  This is a rule about **actions**. The six destinations plus the pilot's exit
+  measure 44×44 each at 375 px and all fit in the bottom bar, verified in the
+  browser — so navigation is not pushed behind a "More" menu it does not need.
+- **Collapsing a label is never `display: none`.** The rail and the bottom bar
+  hide their text visually, but the icons are `aria-hidden`, so removing the
+  span from the accessibility tree leaves six links with no accessible name at
+  all. Use the clip-path visually-hidden pattern; it costs nothing and it is
+  the difference between a usable bar and an unusable one.
 
 ---
 

@@ -1,4 +1,12 @@
-import { Code2, FileText, FolderKanban, Image, Inbox, Search } from 'lucide-react';
+import {
+  ArrowUpRight,
+  ChevronRight,
+  Code2,
+  FileText,
+  Image,
+  Inbox,
+  Search,
+} from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import {
   Button,
@@ -142,6 +150,10 @@ export function HomeScreen() {
                   </span>
                 </span>
                 {session.mode === 'agent' && <StatusBadge status="succeeded" label="Agente" />}
+                {/* Continuing a conversation still happens in the legacy chat,
+                    so the row says it leaves rather than surprising you with
+                    a different interface after the click. */}
+                <ArrowUpRight size={15} aria-hidden="true" className="fs-row__leaves" />
               </a>
             ))}
           </div>
@@ -164,7 +176,9 @@ export function HomeScreen() {
                     {[project.workspace, relativeTime(project.updated_at)].filter(Boolean).join(' · ')}
                   </span>
                 </span>
-                <FolderKanban size={16} aria-hidden="true" />
+                {/* A chevron says "this goes somewhere". A folder icon on a
+                    row already labelled PROYECTOS only repeats the heading. */}
+                <ChevronRight size={16} aria-hidden="true" className="fs-row__go" />
               </a>
             ))}
           </div>

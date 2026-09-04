@@ -51,6 +51,7 @@ html[data-studio-shell='on'] body > *:not(#studio-root):not(#fs-overlay-root) {
 }
 
 .fs-nav__item {
+  position: relative; /* anchors the visually-hidden label when the rail collapses */
   display: flex;
   align-items: center;
   gap: var(--fs-space-3);
@@ -113,10 +114,26 @@ html[data-studio-shell='on'] body > *:not(#studio-root):not(#fs-overlay-root) {
     grid-template-columns: 64px minmax(0, 1fr);
   }
 
+  /* Visually hidden, NOT display:none.
+     display:none removes the text from the accessibility tree, and these
+     spans are the only accessible name the destinations have — the icons are
+     aria-hidden. Collapsing the rail was silently leaving six unnamed links
+     for anyone using a screen reader. */
   .fs-nav__item span,
-  .fs-nav__brand span,
-  .fs-nav__hint,
   .fs-nav__foot .fs-btn span {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .fs-nav__brand span,
+  .fs-nav__hint {
     display: none;
   }
 
@@ -152,9 +169,15 @@ html[data-studio-shell='on'] body > *:not(#studio-root):not(#fs-overlay-root) {
   }
 
   .fs-nav__brand,
-  .fs-nav__spacer,
-  .fs-nav__foot {
+  .fs-nav__spacer {
     display: none;
+  }
+
+  /* The way back stays reachable on a phone. Hiding the footer here left the
+     pilot with no exit on the one device where there is no Ctrl+K. */
+  .fs-nav__foot {
+    padding: 0;
+    border: 0;
   }
 
   .fs-nav__item {

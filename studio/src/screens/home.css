@@ -49,8 +49,10 @@
 /* A row, not a card. Grouping is done with spacing and hairlines; wrapping
    every item in a bordered box is how a page turns into a scrapbook. */
 .fs-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  /* Flex, not a fixed grid: a row carries one, two or three trailing items
+     depending on what is true about it, and a two-column template silently
+     stacked the third. */
+  display: flex;
   align-items: center;
   gap: var(--fs-space-3);
   padding: var(--fs-space-3);
@@ -83,6 +85,7 @@
 .fs-row__main {
   display: grid;
   gap: 2px;
+  flex: 1;
   min-inline-size: 0;
 }
 
@@ -119,4 +122,36 @@
 
 .fs-notice[data-tone='warning'] {
   border-color: color-mix(in srgb, var(--fs-warning) 40%, var(--fs-border));
+}
+
+/* Affordance glyphs: quiet at rest, legible on approach. They say where a
+   row goes, so they must not compete with the row's own name. */
+.fs-row__go,
+.fs-row__leaves {
+  color: var(--fs-text-3);
+  transition:
+    color var(--fs-duration-fast) var(--fs-ease),
+    translate var(--fs-duration-fast) var(--fs-ease);
+}
+
+.fs-row:hover .fs-row__go {
+  color: var(--fs-text-2);
+  translate: 2px 0;
+}
+
+.fs-row:hover .fs-row__leaves {
+  color: var(--fs-text-2);
+  translate: 1px -1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fs-row__go,
+  .fs-row__leaves {
+    transition: none;
+  }
+
+  .fs-row:hover .fs-row__go,
+  .fs-row:hover .fs-row__leaves {
+    translate: none;
+  }
 }
