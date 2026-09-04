@@ -443,6 +443,45 @@ class ArtifactRow(TimestampMixin, Base):
     )
 
 
+class ApprovalRow(TimestampMixin, Base):
+    """A card that was shown to a person, and what they said.
+
+    The plan is stored whole (`plan_json`) next to its fingerprint, not just
+    the fingerprint, because when a later plan does not match, the useful
+    answer is *which field moved* — "the recipient changed from a@x to b@y"
+    rather than "approval expired". `contracts.Approval.covers()` does that
+    diff and needs both plans to do it.
+
+    Additive like `artifacts`: one new table, nothing else touched, so the
+    reverse is a `DROP TABLE`.
+    """
+    __tablename__ = "approvals"
+
+    id            = Column(String, primary_key=True, index=True)
+    status        = Column(String, nullable=False, default="pending", index=True)
+    action        = Column(String, nullable=False, index=True)   # contracts.APPROVAL_TRIGGERS
+    plan_fingerprint = Column(String(64), nullable=False, index=True)
+    plan_json     = Column(Text, nullable=False)
+
+    owner         = Column(String, nullable=True, index=True)
+    project_id    = Column(String, nullable=True, index=True)
+    run_id        = Column(String, nullable=True, index=True)
+    session_id    = Column(String, nullable=True, index=True)
+
+    requested_at  = Column(String, nullable=False)
+    decided_at    = Column(String, nullable=True)
+    decided_by    = Column(String, nullable=True)
+    expires_at    = Column(String, nullable=True)
+    uses_left     = Column(Integer, nullable=False, default=1)
+    reason        = Column(Text, nullable=True, default="")
+    schema_version = Column(Integer, nullable=False, default=1)
+
+    __table_args__ = (
+        Index("ix_approvals_owner_status", "owner", "status"),
+        Index("ix_approvals_fp_status", "plan_fingerprint", "status"),
+    )
+
+
 class EmailAccount(TimestampMixin, Base):
     """A configured IMAP/SMTP account. Supports multiple accounts per user —
     exactly one row per owner has is_default=True.

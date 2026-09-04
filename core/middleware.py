@@ -82,6 +82,34 @@ def require_admin(request: Request):
         raise HTTPException(403, "Admin only")
 
 
+def require_human(request: Request):
+    """Admin, and **not the model**.
+
+    `require_admin` deliberately accepts the in-process internal-tool token so
+    the agent's loopback tool calls can reach admin routes. For most routes
+    that is correct. For the handful where the whole point is that a person
+    decided — granting an approval, above all — it is a hole with the shape of
+    a feature: the model would be able to approve its own plan by calling the
+    same endpoint the card calls.
+
+    So this gate refuses the internal token explicitly, then defers to
+    `require_admin` for everything else. It still works with auth disabled
+    (the 7001 bypass), because there the browser is the human and the token is
+    the only thing that distinguishes the model from them.
+    """
+    try:
+        hdr = request.headers.get(INTERNAL_TOOL_HEADER)
+        if hdr and secrets.compare_digest(hdr, INTERNAL_TOOL_TOKEN):
+            raise HTTPException(403, "This action has to be taken by a person, not by a tool call")
+        if getattr(request.state, "current_user", None) == INTERNAL_TOOL_USER:
+            raise HTTPException(403, "This action has to be taken by a person, not by a tool call")
+    except HTTPException:
+        raise
+    except Exception:
+        pass
+    return require_admin(request)
+
+
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """Add standard security headers to all responses."""
 

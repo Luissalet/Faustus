@@ -1476,5 +1476,68 @@ y su semántica sin cerrar el agujero que importa — el agujero es el shell, y 
 dentro. La galería sigue escribiendo por su ruta de siempre. Y el `MemoryView` es puro: construye
 la selección, pero **nadie lo ha cableado todavía al prompt del agente**.
 
+## 33. La aprobación deja de ser un contrato y pasa a ser una puerta (04-09-2026, tarde)
+
+`contracts.Approval` sabía qué significa una aprobación desde la §30. No había nada que emitiera
+una, la guardara, ni la comprobara en el momento de actuar. Esta sección es ese runtime, y la
+puerta que hace que sirva de algo.
+
+### 33.1 El agujero con forma de función
+`core/middleware.require_admin` acepta **a propósito** el token interno del proceso, porque las
+llamadas por loopback de las tools del agente no llevan la cookie del admin. Para casi todas las
+rutas eso es correcto. Para la de conceder una aprobación es un agujero con forma de feature: el
+modelo aprobaría su propio plan llamando exactamente a la misma URL que llama la tarjeta.
+
+`require_human` rechaza ese token explícitamente y luego delega en `require_admin`. Sigue
+funcionando con la auth desactivada (el bypass de la 7001), porque ahí el navegador es el humano y
+el token es lo único que distingue al modelo de él. El test que importa abre una tarjeta **con** el
+token —que sí se permite: pedir permiso no es darlo— e intenta concederla con el mismo token: 403,
+y la tarjeta sigue `pending`.
+
+Esa asimetría es el diseño entero: leer y pedir son `require_admin`; conceder y denegar son
+`require_human`. Usar la misma puerta «con cuidado» habría sido cuestión de tiempo.
+
+### 33.2 Se guarda el plan, no solo su huella
+El fallo contra el que esto se construye no es una aprobación falsificada: es un plan que **deriva
+un campo** después de firmar la tarjeta —un destinatario más, un secreto añadido, un modelo que
+resultó ser de nube— mientras la aprobación guardada sigue diciendo `granted`. Por eso la fila
+lleva el plan entero junto a su fingerprint, y cuando un plan posterior no casa, la respuesta son
+**los campos que se movieron**. Probado en vivo:
+
+```
+drifted : plan_changed [{'field': 'recipients',
+                         'approved': ['youtube:channel-1'],
+                         'now': ['youtube:channel-1', 'youtube:channel-2']}]
+```
+
+«approval expired» manda al usuario a buscar un bug. «el destinatario pasó de uno a dos» lo manda
+al plan.
+
+### 33.3 Tres reglas más, cada una con su test
+- **Un sí se gasta una vez.** `consume()` decrementa, y el segundo intento devuelve
+  `status_consumed`. Dos runs no comparten la misma aprobación.
+- **Consumir vuelve a comprobar el plan.** Un `check()` de hace un segundo no es evidencia en el
+  momento de actuar: si el plan cambió entre medias, no se gasta nada y se devuelve el diff.
+- **El plazo es absoluto, no deslizante.** Una tarjeta que se renueva cada vez que alguien la mira
+  no caduca nunca, que es lo mismo que no tener plazo y más difícil de notar.
+
+Y dos detalles de trato: decidir dos veces la misma tarjeta **explica** en vez de fallar (dos
+personas pulsando el mismo botón es normal; a la segunda se le dice quién y cuándo), y conceder sin
+`by` se rechaza — una aprobación cuyo decisor es desconocido no se puede auditar, y poner «system»
+sería mentir cada vez.
+
+### 33.4 Cómo se verificó
+18 tests del store + 6 de las rutas, y en vivo contra la 7001: abrir → `no_approval` → conceder →
+`granted` → derivar un destinatario → `plan_changed` con el diff. La tabla `approvals` es aditiva
+como la de artefactos: una tabla nueva, nada tocado, el reverso es un `DROP TABLE`.
+
+**355 tests** verdes en el subconjunto de las cuatro fases.
+
+### 33.5 Lo que todavía no hace
+Nadie **exige** la aprobación aún. El manifiesto sabe qué tarjetas levanta
+(`effective_approvals()`), el store sabe si una cubre un plan, y no hay ningún punto del código que
+llame a `check()` antes de publicar, entregar o gastar. Ese cableado es Fase 4, y hasta que exista,
+esto es una puerta bien construida en una pared que todavía no se ha levantado.
+
 ## Cómo mantener este documento
 Cada bloque de trabajo añade una sección (fecha, qué, por qué, ficheros, cómo se verificó, cifras) y actualiza las cifras de cabecera (`git log --oneline c9dd68d8..HEAD | wc -l`, `git diff --stat c9dd68d8..HEAD`). Los commits del fork llevan mensajes largos que explican el porqué: `git log c9dd68d8..HEAD` es la fuente detallada.

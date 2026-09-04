@@ -725,6 +725,12 @@ app.include_router(setup_skills_routes(skills_manager))
 from routes.contracts_routes import setup_contracts_routes
 app.include_router(setup_contracts_routes())
 
+# Approval cards. Reading and requesting are admin (the tool layer opens
+# them); granting and denying are require_human, which the agent's loopback
+# token does not open.
+from routes.approvals_routes import setup_approvals_routes
+app.include_router(setup_approvals_routes())
+
 # Chat
 from routes.chat_routes import setup_chat_routes
 app.include_router(setup_chat_routes(

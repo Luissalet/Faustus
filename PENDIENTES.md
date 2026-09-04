@@ -105,6 +105,12 @@ a propósito · `[+]` mejora pendiente.
   tests; falta cablearlo al prompt del agente y a `context_budget`/`context_ledger`. Hasta entonces
   el prompt se arma como antes y la vista no existe para el modelo.
 
+- `[!]` **Nadie exige todavía una aprobación.** El store existe, la puerta humana existe y el
+  manifiesto sabe qué tarjetas levanta — pero **ningún punto del código llama a
+  `approval_store.check()`** antes de publicar, entregar, usar un secreto o gastar. Hasta que se
+  cablee, es una puerta bien construida en una pared que no está levantada. Es lo primero de la
+  Fase 4.
+
 - `[?]` **El puente de skills contra skills de verdad.** Luis tiene **una** skill guardada, y no
   declara permisos, así que lo único comprobado con datos reales es el caso deny-by-default. Las
   claves `permissions_*`, los `outputs: [name=type]` y los alcances de memoria están probados con

@@ -26,7 +26,7 @@ una integración posterior, no otra arquitectura paralela.
 | 1 · Ejecución segura y artefactos | `DockerWorkspaceBackend`, router, y que el código deje de correr en el proceso web | 🟡 04-09-2026 — sandbox probado contra contenedores reales (§31) y **el `bash`/`python` del agente ya pasa por él** detrás de `agent_sandbox_execution` (§32). Faltan los runs de coding y la galería |
 | 2 · Runtime de skills y memoria útil | Instalar/revertir capacidades sin tocar el core; alcances de memoria y `MemoryView` | 🟡 04-09-2026 — puente `SKILL.md`↔manifiesto, descubrimiento que para en el repo, `MemoryView`. Falta cablearlo al prompt y la instalación/reversión (§32) |
 | 3 · Motor creativo | ComfyUI como servicio, plantillas versionadas, galería de artefactos con receta | ⏳ |
-| 4 · Workflows, approvals y conectores | Procesos que sobreviven a reinicios, idempotentes | ⏳ |
+| 4 · Workflows, approvals y conectores | Procesos que sobreviven a reinicios, idempotentes | 🟡 04-09-2026 — las **aprobaciones** ya son un runtime real con puerta humana (§33); los workflows, no |
 | 5 · Coding profesional | `ChangeSet`, repo map, LSP opcional, intents explore/plan/implement/review | 🟡 partes sueltas ya existen |
 | 6 · Gateway, canales y dispositivos | Un canal de bajo riesgo con pairing, nodos, después voz | ⏳ |
 | 7 · Ecosistema y operación | Hooks versionados, CLI `doctor`, telemetría, transferencia de artefactos | ⏳ |
@@ -118,6 +118,12 @@ Skills iniciales: `image.product`, `image.reference-edit`, `video.short-form`, `
   `webhook`, `skill`, `condition`, `wait`, `human_approval`, `artifact_store`, `deliver`. Los
   workflows guardan **IDs de conexión, nunca secretos**. No se avanza si al reiniciar se repite una
   publicación, un render o un email.
+  - [x] **Las aprobaciones ya son reales** (04-09, §33): tabla `approvals`, `src/approval_store.py`
+        y rutas. Conceder/denegar pasa por `require_human`, que el token interno del modelo **no**
+        abre; leer y pedir siguen siendo `require_admin` porque pedir permiso no es darlo. Se guarda
+        el plan entero, así que un plan que deriva se responde con los campos que se movieron.
+  - [ ] **Nadie exige todavía la aprobación.** Ningún punto del código llama a `check()` antes de
+        publicar, entregar o gastar. Es lo primero de esta fase.
 - **5 · Coding:** `ChangeSet` estándar (plan, ficheros, diff, comandos, tests reales, artefactos) y
   la unión de `auto_review`, `review_state`, `workspace_checkpoints` y `git_invariants`. Ninguna
   afirmación de arreglo termina sin diff y evidencia acorde al modo.
