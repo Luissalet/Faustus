@@ -34,6 +34,13 @@ def client(monkeypatch):
         "docker_workspace", "unavailable",
         "backend_unavailable: the docker CLI is installed but the daemon did not answer",
         stamp))
+    # The media engine is stubbed DOWN for the same reason as the daemon:
+    # whether a ComfyUI happens to be running on the machine running the
+    # tests is not a property of this code, and a route test that only passes
+    # when it is absent fails on the first machine that has one.
+    monkeypatch.setattr(registry, "_probe_comfyui", lambda stamp: Observation(
+        "media_worker", "unavailable",
+        "backend_unavailable: nothing answered at http://127.0.0.1:8188", stamp))
     monkeypatch.setattr("routes.contracts_routes.require_admin", lambda request: None)
     app = FastAPI()
     app.include_router(setup_contracts_routes())
@@ -63,7 +70,15 @@ def test_the_catalogue_keeps_intent_and_observation_apart(client):
     assert rows["docker_workspace"]["declared"]["implemented"] is True
     assert rows["docker_workspace"]["observed"]["state"] == "unavailable"
     assert "daemon did not answer" in rows["docker_workspace"]["observed"]["evidence"]
-    assert rows["media_worker"]["declared"]["implemented"] is False
+    # The same disagreement for the media engine: the code exists, and the
+    # engine is not answering. Both halves travel, and neither overrules the
+    # other — which is the rule this endpoint exists for.
+    assert rows["media_worker"]["declared"]["implemented"] is True
+    assert rows["media_worker"]["observed"]["state"] == "unavailable"
+    assert "nothing answered" in rows["media_worker"]["observed"]["evidence"]
+    # And one that genuinely has no code says so instead.
+    assert rows["remote_worker"]["declared"]["implemented"] is False
+    assert "not implemented" in rows["remote_worker"]["observed"]["evidence"]
     assert body["docker"]["means"] == "a CLI on PATH does not prove a daemon is running"
 
 
@@ -110,6 +125,8 @@ def test_the_backend_rendering_says_why_something_is_unavailable(client):
     assert "docker_workspace [unavailable]" in text
     assert "daemon did not answer" in text          # built, and not answering
     assert "media_worker [unavailable]" in text
+    assert "nothing answered" in text               # built, and nothing is listening
+    assert "remote_worker [unavailable]" in text
     assert "not built yet" in text                  # a different problem, said differently
     assert "attended-only" in text
     assert "a CLI on PATH does not prove a daemon is running" in text
@@ -121,7 +138,9 @@ def test_the_coordinator_reads_the_undeclared_approvals_in_the_text(client):
     assert text.startswith("OK ·")
     assert "approval cards: network, publish, secrets" in text
     assert "UNDECLARED but earned by the permissions asked for: network, secrets" in text
-    assert "no media_worker: not_implemented" in text
+    # The backend it asked for cannot take it, and the line says why it was
+    # asked rather than just that it failed — here, the engine is not running.
+    assert "no media_worker: unavailable" in text
 
 
 def test_a_rejection_renders_as_the_field_that_is_wrong(client):

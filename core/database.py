@@ -424,7 +424,18 @@ class ArtifactRow(TimestampMixin, Base):
     backend       = Column(String, nullable=True)
     recipe        = Column(String, nullable=True)
     recipe_version = Column(String, nullable=True)
+    #: Not the same as recipe+version: this says the recipe FILE had not been
+    #: edited underneath that name. "Made by image.product 1.0.0" and "made by
+    #: whatever image.product 1.0.0 was that week" are different claims.
+    recipe_fingerprint = Column(String(64), nullable=True)
     inputs_digest = Column(String(64), nullable=True)
+    #: The seed, when whatever made this had one — kept out of the digest
+    #: because a digest proves two runs matched and a seed is what somebody
+    #: types to make the picture again.
+    seed          = Column(Integer, nullable=True)
+    #: Where it ran when it was not this process, and the job it ran as.
+    engine        = Column(String, nullable=True)
+    engine_job_id = Column(String, nullable=True, index=True)
     provenance_note = Column(Text, nullable=True, default="")
 
     retention_policy = Column(String, nullable=False, default="keep")
@@ -546,6 +557,51 @@ class NodeRunRow(TimestampMixin, Base):
 
     __table_args__ = (
         Index("ix_node_runs_run_node", "workflow_run_id", "node_id"),
+    )
+
+
+class MediaRunRow(TimestampMixin, Base):
+    """One render on a media engine, and everything needed to do it again.
+
+    The row exists so a render survives the web process. ComfyUI keeps its own
+    history keyed by `engine_job_id`, so after a restart Faustus reconciles by
+    asking the engine about that id rather than by trusting a status it wrote
+    before it died.
+
+    `values_json` is the whole resolved input set — defaults and the generated
+    seed included, not only what the caller typed. A default nobody wrote down
+    is a picture that cannot be made again, which defeats the point of keeping
+    the row at all.
+    """
+    __tablename__ = "media_runs"
+
+    id          = Column(String, primary_key=True, index=True)
+    workflow_id = Column(String, nullable=False, index=True)
+    workflow_version = Column(String, nullable=False)
+    workflow_fingerprint = Column(String(64), nullable=True, index=True)
+
+    engine      = Column(String, nullable=False, default="comfyui")
+    engine_url  = Column(String, nullable=True)
+    engine_job_id = Column(String, nullable=True, index=True)
+
+    status      = Column(String, nullable=False, default="pending", index=True)
+    reason      = Column(Text, nullable=True, default="")
+    values_json = Column(Text, nullable=True)
+    models_json = Column(Text, nullable=True)
+    artifact_ids = Column(Text, nullable=True)      # comma-separated, in order
+
+    owner       = Column(String, nullable=True, index=True)
+    project_id  = Column(String, nullable=True, index=True)
+    session_id  = Column(String, nullable=True, index=True)
+    approval_id = Column(String, nullable=True, index=True)
+
+    created_at_iso = Column(String, nullable=False)
+    started_at  = Column(String, nullable=True)
+    ended_at    = Column(String, nullable=True)
+    schema_version = Column(Integer, nullable=False, default=1)
+
+    __table_args__ = (
+        Index("ix_media_runs_owner_status", "owner", "status"),
     )
 
 
@@ -2277,9 +2333,41 @@ def _migrate_create_artifacts_table():
         if not exists:
             # Nothing to backfill into yet; create_all() runs before this.
             return
+        _migrate_add_artifact_provenance_columns()
         _backfill_artifacts_from_gallery()
     except Exception as e:
         logging.getLogger(__name__).warning(f"artifacts migration: {e}")
+
+
+def _migrate_add_artifact_provenance_columns():
+    """Add the provenance columns media renders needed, to a table that
+    already exists.
+
+    `create_all()` only creates missing TABLES, never missing columns, so a
+    database from before Phase 3 has an `artifacts` table without these and
+    every insert would fail on it. Additive and idempotent: each column is
+    added only if PRAGMA says it is not there, and every one is nullable, so
+    the rows already stored stay valid and simply report these as unknown."""
+    added = []
+    with engine.connect() as conn:
+        have = {row[1] for row in conn.execute(text("PRAGMA table_info(artifacts)"))}
+        for column, ddl in (
+            ("recipe_fingerprint", "VARCHAR(64)"),
+            ("seed", "INTEGER"),
+            ("engine", "VARCHAR"),
+            ("engine_job_id", "VARCHAR"),
+        ):
+            if column in have:
+                continue
+            conn.execute(text(f"ALTER TABLE artifacts ADD COLUMN {column} {ddl}"))
+            added.append(column)
+        if "engine_job_id" in added:
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_artifacts_engine_job_id "
+                              "ON artifacts (engine_job_id)"))
+        conn.commit()
+    if added:
+        logging.getLogger(__name__).info(
+            "artifacts: added provenance columns %s", ", ".join(added))
 
 
 def _backfill_artifacts_from_gallery():

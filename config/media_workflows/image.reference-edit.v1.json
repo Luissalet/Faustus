@@ -1,0 +1,113 @@
+{
+  "id": "image.reference-edit",
+  "version": "1.0.0",
+  "title": "A variation on a picture you already have",
+  "engine": "comfyui",
+  "description": "Image to image. `strength` is how far it may move from the reference: 0.25 keeps the composition and changes the surface, 0.8 keeps little more than the layout. The reference is named, never a path — the engine looks it up in its own input folder.",
+
+  "models": [
+    {
+      "name": "sd_xl_base_1.0.safetensors",
+      "kind": "checkpoint",
+      "license": "CreativeML Open RAIL++-M",
+      "node": "CheckpointLoaderSimple",
+      "field": "ckpt_name"
+    }
+  ],
+  "requires_nodes": [
+    "CheckpointLoaderSimple", "CLIPTextEncode", "LoadImage", "VAEEncode",
+    "KSampler", "VAEDecode", "SaveImage"
+  ],
+
+  "outputs": { "image": "artifact:image" },
+
+  "inputs": {
+    "reference": {
+      "type": "artifact",
+      "required": true,
+      "title": "The picture to work from, by name, already in the engine's input folder"
+    },
+    "prompt": {
+      "type": "text",
+      "required": true,
+      "max_len": 1200,
+      "title": "What should be different about it"
+    },
+    "negative_prompt": {
+      "type": "text",
+      "default": "text, watermark, logo, blurry, low quality",
+      "max_len": 600,
+      "title": "What to keep out of it"
+    },
+    "strength": {
+      "type": "enum",
+      "choices": ["subtle", "moderate", "strong"],
+      "default": "moderate",
+      "title": "How far it may move from the reference"
+    },
+    "quality": {
+      "type": "enum",
+      "choices": ["draft", "final"],
+      "default": "draft",
+      "title": "Draft is for choosing between ideas"
+    },
+    "seed": {
+      "type": "seed",
+      "title": "Recorded either way, so the same variation can be made again"
+    }
+  },
+
+  "computed": {
+    "denoise": { "from": "strength", "map": { "subtle": 0.25, "moderate": 0.5, "strong": 0.8 } },
+    "steps":   { "from": "quality", "map": { "draft": 14, "final": 40 } },
+    "cfg":     { "from": "quality", "map": { "draft": 6.0, "final": 7.5 } },
+    "sampler": { "from": "quality", "map": { "draft": "dpmpp_2m", "final": "dpmpp_2m" } },
+    "scheduler": { "from": "quality", "map": { "draft": "karras", "final": "karras" } }
+  },
+
+  "graph": {
+    "1": {
+      "class_type": "CheckpointLoaderSimple",
+      "inputs": { "ckpt_name": "sd_xl_base_1.0.safetensors" }
+    },
+    "2": {
+      "class_type": "LoadImage",
+      "inputs": { "image": "{{reference}}" }
+    },
+    "3": {
+      "class_type": "VAEEncode",
+      "inputs": { "pixels": ["2", 0], "vae": ["1", 2] }
+    },
+    "4": {
+      "class_type": "CLIPTextEncode",
+      "inputs": { "text": "{{prompt}}", "clip": ["1", 1] }
+    },
+    "5": {
+      "class_type": "CLIPTextEncode",
+      "inputs": { "text": "{{negative_prompt}}", "clip": ["1", 1] }
+    },
+    "6": {
+      "class_type": "KSampler",
+      "inputs": {
+        "seed": "{{seed}}",
+        "steps": "{{steps}}",
+        "cfg": "{{cfg}}",
+        "sampler_name": "{{sampler}}",
+        "scheduler": "{{scheduler}}",
+        "denoise": "{{denoise}}",
+        "model": ["1", 0],
+        "positive": ["4", 0],
+        "negative": ["5", 0],
+        "latent_image": ["3", 0]
+      }
+    },
+    "7": {
+      "class_type": "VAEDecode",
+      "inputs": { "samples": ["6", 0], "vae": ["1", 2] }
+    },
+    "8": {
+      "class_type": "SaveImage",
+      "inputs": { "images": ["7", 0], "filename_prefix": "faustus/variation" }
+    }
+  }
+}

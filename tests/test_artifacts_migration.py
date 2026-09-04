@@ -45,6 +45,58 @@ def own_database(tmp_path, monkeypatch):
     own_engine.dispose()
 
 
+def test_a_table_from_before_phase_3_gains_the_provenance_columns(own_database):
+    """`create_all()` creates missing TABLES, never missing COLUMNS.
+
+    So a database that already had `artifacts` before media renders existed
+    would keep a table without `seed`, `engine` or `recipe_fingerprint`, and
+    every insert against it would fail — on the machine of whoever upgraded,
+    which is the only machine where it matters. This drops the columns to
+    recreate that database, then runs the migration.
+    """
+    from sqlalchemy import text
+
+    from core.database import _migrate_add_artifact_provenance_columns
+
+    added = ("recipe_fingerprint", "seed", "engine", "engine_job_id")
+    with own_database.connect() as conn:
+        # The index has to go first: SQLite refuses to drop a column an index
+        # still names. The migration recreates it, which is the other half of
+        # what is being checked here.
+        conn.execute(text("DROP INDEX IF EXISTS ix_artifacts_engine_job_id"))
+        # SQLite can drop columns since 3.35; the venv's is newer than that.
+        for column in added:
+            conn.execute(text(f"ALTER TABLE artifacts DROP COLUMN {column}"))
+        conn.commit()
+        have = {r[1] for r in conn.execute(text("PRAGMA table_info(artifacts)"))}
+    assert not (set(added) & have), "the setup did not actually remove them"
+
+    _migrate_add_artifact_provenance_columns()
+
+    with own_database.connect() as conn:
+        have = {r[1] for r in conn.execute(text("PRAGMA table_info(artifacts)"))}
+    assert set(added) <= have
+
+    # Idempotent: a second pass is a no-op rather than an error.
+    _migrate_add_artifact_provenance_columns()
+
+    # And the table works afterwards, with the new fields written.
+    from src import artifact_store
+    from src.contracts import Artifact
+    made = Artifact.parse({
+        "id": "art_migrationcheck", "kind": "image", "filename": "a" * 64 + ".png",
+        "sha256": "b" * 64, "byte_size": 10,
+        "provenance": {"recipe": "image.product", "recipe_version": "1.0.0",
+                       "seed": 7, "engine": "comfyui", "engine_job_id": "p1"}})
+    assert artifact_store.persist([made])["created"] == 1
+    db = db_mod.SessionLocal()
+    try:
+        row = db.get(ArtifactRow, "art_migrationcheck")
+        assert row.seed == 7 and row.engine == "comfyui"
+    finally:
+        db.close()
+
+
 @pytest.fixture()
 def gallery(own_database):
     """Four images: two importable, two that must be refused with a reason."""

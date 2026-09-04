@@ -499,6 +499,87 @@ def render_skills_audit(data: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def render_media_recipes(data: Dict[str, Any], engine: Dict[str, Any]) -> str:
+    """The recipes, and what the engine can actually do right now.
+
+    The engine line comes first because it changes the answer: a beautiful
+    catalogue in front of a ComfyUI that is not running wastes the next three
+    tool calls."""
+    lines = []
+    if engine.get("ok"):
+        lines.append(f"engine: ready — {engine.get('detail')}")
+        have = engine.get("checkpoints") or []
+        if have:
+            lines.append(f"  models on it: {', '.join(have[:8])}"
+                         + (f" (+{len(have) - 8} more)" if len(have) > 8 else ""))
+    else:
+        lines.append(f"engine: NOT READY ({engine.get('reason')}) — {engine.get('detail')}")
+
+    for wf in data.get("workflows") or []:
+        lines.append(f"{wf.get('id')} {wf.get('version')} — {wf.get('title')}")
+        for spec in wf.get("inputs") or []:
+            bits = [spec.get("type")]
+            if spec.get("choices"):
+                bits.append("one of " + "/".join(str(c) for c in spec["choices"]))
+            if spec.get("required"):
+                bits.append("REQUIRED")
+            if spec.get("default") is not None:
+                bits.append(f"default {spec['default']!r}")
+            lines.append(f"    {spec.get('name')}: {' · '.join(str(b) for b in bits)}"
+                         + (f" — {spec['title']}" if spec.get("title") else ""))
+        for model in wf.get("models") or []:
+            lines.append(f"    needs model {model.get('name')} "
+                         f"[{model.get('license') or 'licence unstated'}]")
+    for broken in data.get("broken") or []:
+        lines.append(f"  BROKEN {broken.get('file')}: {broken.get('field')}: "
+                     f"{broken.get('reason')}")
+    if not data.get("workflows"):
+        lines.append("no approved templates are installed")
+    lines.append("a render can only use one of these; there is no way to send a "
+                 "graph, on purpose")
+    return "\n".join(lines)
+
+
+def render_media_plan(data: Dict[str, Any]) -> str:
+    if not data.get("ok"):
+        head = f"WOULD NOT RUN ({data.get('reason')})"
+        if data.get("field"):
+            head += f" at {data['field']}"
+        return f"{head}: {data.get('detail')}"
+    lines = [f"{data.get('workflow')} {data.get('version')} would run:"]
+    for key, value in sorted((data.get("values") or {}).items()):
+        lines.append(f"  {key} = {value!r}")
+    for model in data.get("models") or []:
+        lines.append(f"  model {model.get('name')} "
+                     f"[{model.get('license') or 'licence unstated'}]")
+    lines.append("  nothing has been queued; call media_render to actually do it")
+    return "\n".join(lines)
+
+
+def render_media_run(data: Dict[str, Any]) -> str:
+    if not data.get("ok"):
+        detail = data.get("detail") or ""
+        return (f"{data.get('run_id') or 'media run'}: {data.get('reason')}"
+                + (f" — {detail}" if detail else ""))
+    lines = [f"{data.get('run_id')} · {data.get('status')} "
+             f"· {data.get('workflow') or ''} {data.get('version') or ''}".rstrip()]
+    if data.get("engine_job_id"):
+        lines.append(f"  engine job {data['engine_job_id']}")
+    if data.get("reason"):
+        lines.append(f"  {data['reason']}")
+    if data.get("engine_reachable") is False:
+        lines.append("  the engine could not be reached, so what it is doing is "
+                     "unknown rather than failed")
+    for art in data.get("artifacts") or []:
+        prov = art.get("provenance") or {}
+        lines.append(f"  artifact {art.get('id')} ({art.get('kind')}, "
+                     f"{art.get('byte_size')} bytes) seed={prov.get('seed')} "
+                     f"model={prov.get('model')} [{prov.get('model_license')}]")
+    if data.get("status") in ("queued", "running"):
+        lines.append("  call media_status again in a while")
+    return "\n".join(lines)
+
+
 def render_workflow_validation(data: Dict[str, Any]) -> str:
     if not data.get("ok"):
         return f"REJECTED at {data.get('field')}: {data.get('reason')}"
@@ -810,6 +891,76 @@ TOOLS: List[Tool] = [
         }},
     ),
     Tool(
+        name="media_recipes",
+        description=(
+            "The approved media templates this Faustus can render, with the inputs "
+            "each one accepts, the models it needs and their LICENCES, and whether "
+            "the engine is running and has those models. There is no way to render "
+            "anything else: a graph assembled from a prompt is not accepted anywhere "
+            "in this system, so read this first and pick one."
+        ),
+        inputSchema={"type": "object", "properties": {}},
+    ),
+    Tool(
+        name="media_plan",
+        description=(
+            "What a render WOULD be, without queueing it: every resolved value "
+            "including the defaults and the seed, the models and licences, and a "
+            "refusal naming the field if an input is not one the template accepts. "
+            "Pure — nothing is queued and no GPU is touched. Show this to a person "
+            "before spending twenty minutes of GPU on it."
+        ),
+        inputSchema={"type": "object", "properties": {
+            "workflow": {"type": "string", "description":
+                         "Template id from media_recipes, e.g. 'image.product'."},
+            "inputs": {"type": "object", "description":
+                       "Only the inputs that template declares. Anything else is a "
+                       "refusal naming the field."},
+            "version": {"type": "string", "description": "Pin a version; newest by default."},
+        }, "required": ["workflow"]},
+    ),
+    Tool(
+        name="media_render",
+        description=(
+            "Queue a render and return its run id. Returns immediately — the render "
+            "happens on the engine, and the run survives a restart of Faustus, so "
+            "poll it with media_status rather than waiting. A missing model or an "
+            "input the template rejects is answered here, before anything is queued."
+        ),
+        inputSchema={"type": "object", "properties": {
+            "workflow": {"type": "string"},
+            "inputs": {"type": "object"},
+            "version": {"type": "string"},
+            "owner": {"type": "string"},
+            "project_id": {"type": "string"},
+            "session_id": {"type": "string"},
+        }, "required": ["workflow"]},
+    ),
+    Tool(
+        name="media_status",
+        description=(
+            "Ask the engine what happened to a render and write it down. When it has "
+            "finished, this is also what collects the outputs into the artifact store "
+            "with their provenance — recipe, version, seed, model and licence. Safe "
+            "to call repeatedly and safe after a restart: it asks the engine rather "
+            "than trusting the status on the row."
+        ),
+        inputSchema={"type": "object", "properties": {
+            "run_id": {"type": "string"},
+        }, "required": ["run_id"]},
+    ),
+    Tool(
+        name="media_cancel",
+        description=(
+            "Stop a render and free the engine's queue. Does both halves — interrupts "
+            "what is running AND removes what is only queued — because a cancel that "
+            "leaves the job to start a moment later reads as a cancel that does not work."
+        ),
+        inputSchema={"type": "object", "properties": {
+            "run_id": {"type": "string"},
+        }, "required": ["run_id"]},
+    ),
+    Tool(
         name="workflow_validate",
         description=(
             "Check a workflow definition WITHOUT storing or running anything. Answers "
@@ -960,6 +1111,43 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
             data = await asyncio.to_thread(
                 _request, "GET", f"/api/contracts/skills/audit?workspace={workspace}")
             return _text(render_skills_audit(data))
+        if name == "media_recipes":
+            data = await asyncio.to_thread(_request, "GET", "/api/media/workflows")
+            engine = await asyncio.to_thread(_request, "GET", "/api/media/engine")
+            return _text(render_media_recipes(data, engine))
+        if name == "media_plan":
+            body = {"workflow": str(args.get("workflow") or ""),
+                    "inputs": args.get("inputs") or {},
+                    "version": str(args.get("version") or "")}
+            if not body["workflow"]:
+                return _text("Error: name the template, from media_recipes")
+            data = await asyncio.to_thread(_request, "POST", "/api/media/plan", body)
+            return _text(render_media_plan(data))
+        if name == "media_render":
+            body = {"workflow": str(args.get("workflow") or ""),
+                    "inputs": args.get("inputs") or {},
+                    "version": str(args.get("version") or ""),
+                    "owner": str(args.get("owner") or ""),
+                    "project_id": str(args.get("project_id") or ""),
+                    "session_id": str(args.get("session_id") or "")}
+            if not body["workflow"]:
+                return _text("Error: name the template, from media_recipes")
+            data = await asyncio.to_thread(_request, "POST", "/api/media/runs", body)
+            return _text(render_media_run(data))
+        if name == "media_status":
+            run_id = str(args.get("run_id") or "").strip()
+            if not run_id:
+                return _text("Error: give the run_id")
+            data = await asyncio.to_thread(
+                _request, "POST", f"/api/media/runs/{run_id}/poll", {})
+            return _text(render_media_run(data))
+        if name == "media_cancel":
+            run_id = str(args.get("run_id") or "").strip()
+            if not run_id:
+                return _text("Error: give the run_id")
+            data = await asyncio.to_thread(
+                _request, "POST", f"/api/media/runs/{run_id}/cancel", {})
+            return _text(render_media_run(data))
         if name == "workflow_validate":
             definition = args.get("definition")
             if not isinstance(definition, dict) or not definition:

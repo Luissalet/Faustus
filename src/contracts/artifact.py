@@ -71,12 +71,27 @@ class Provenance:
     backend: Optional[str] = None
     recipe: Optional[str] = None          # workflow/template id, versioned
     recipe_version: Optional[str] = None
+    #: The recipe's own fingerprint. `recipe` + `recipe_version` name it;
+    #: this says the file had not been edited underneath that name, which is
+    #: the difference between "made by image.product 1.0.0" and "made by
+    #: whatever image.product 1.0.0 happened to be that week".
+    recipe_fingerprint: Optional[str] = None
     inputs_digest: Optional[str] = None   # fingerprint of inputs, never the inputs
+    #: The seed, when the thing that made this had one. Not folded into
+    #: `inputs_digest`: a digest proves two runs matched, and a seed is what
+    #: someone types to make the picture again.
+    seed: Optional[int] = None
+    #: The engine and the job it ran as, when it was not this process — a
+    #: ComfyUI prompt id, a remote worker's job. It is how a file on disk is
+    #: traced back to a render somebody can still look up.
+    engine: Optional[str] = None
+    engine_job_id: Optional[str] = None
     source_artifact_ids: Tuple[str, ...] = ()
     note: str = ""
 
     _KEYS = ("model", "model_license", "backend", "recipe", "recipe_version",
-             "inputs_digest", "source_artifact_ids", "note")
+             "recipe_fingerprint", "inputs_digest", "seed", "engine",
+             "engine_job_id", "source_artifact_ids", "note")
 
 
     @classmethod
@@ -89,7 +104,12 @@ class Provenance:
             backend=text(data, "backend", path, required=False, max_len=64) or None,
             recipe=text(data, "recipe", path, required=False, max_len=200) or None,
             recipe_version=text(data, "recipe_version", path, required=False, max_len=64) or None,
+            recipe_fingerprint=sha256_hex(data, "recipe_fingerprint", path,
+                                          required=False) or None,
             inputs_digest=sha256_hex(data, "inputs_digest", path, required=False) or None,
+            seed=whole(data, "seed", path, minimum=0),
+            engine=text(data, "engine", path, required=False, max_len=64) or None,
+            engine_job_id=text(data, "engine_job_id", path, required=False, max_len=128) or None,
             source_artifact_ids=text_list(data, "source_artifact_ids", path, max_items=200, max_len=64),
             note=text(data, "note", path, required=False, max_len=1000),
         )
@@ -98,7 +118,10 @@ class Provenance:
         return {
             "model": self.model, "model_license": self.model_license,
             "backend": self.backend, "recipe": self.recipe,
-            "recipe_version": self.recipe_version, "inputs_digest": self.inputs_digest,
+            "recipe_version": self.recipe_version,
+            "recipe_fingerprint": self.recipe_fingerprint,
+            "inputs_digest": self.inputs_digest, "seed": self.seed,
+            "engine": self.engine, "engine_job_id": self.engine_job_id,
             "source_artifact_ids": list(self.source_artifact_ids), "note": self.note,
         }
 

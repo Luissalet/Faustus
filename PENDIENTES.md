@@ -10,6 +10,28 @@ a propósito · `[+]` mejora pendiente.
 
 ---
 
+## Un patrón que ya se ha repetido tres veces
+
+**Un test que afirma el estado del mundo caduca el día que alguien implementa
+lo que afirmaba que no existía.** Ha pasado en las Fases 1, 3 y 4, siempre
+igual: un test decía «este backend está *declarado pero no implementado*» o
+«las tools son *exactamente* estas doce», y la fase siguiente lo rompió — con
+razón, porque el test describía septiembre y no una regla.
+
+El arreglo es siempre el mismo y conviene hacerlo **al escribir el test**, no
+al romperlo:
+
+- fijar la regla («un backend implementado responde lo que encontró una sonda
+  real»), no el inventario («media_worker no está implementado»);
+- fijar «no se ha perdido nada» en vez de «la lista es esta» cuando lo que
+  importa es que ningún nombre desaparezca;
+- en un test de rutas, **fijar la dependencia caída a propósito**: que haya un
+  Docker o un ComfyUI corriendo en la máquina que ejecuta los tests no es una
+  propiedad de este código, y un test que solo pasa cuando falta fallará en la
+  primera máquina que lo tenga.
+
+---
+
 ## Fallos que rompen algo hoy
 
 - `[!]` **La trampa "ofrecido y luego rechazado" con `suggest_document`.**
@@ -134,6 +156,33 @@ a propósito · `[+]` mejora pendiente.
 - `[+]` **La UI no enseña los workflows.** Todo está en rutas y tools; no hay página de runs, ni
   lista de pausados, ni botón de reanudar. Un run pausado esperando a una persona solo se ve desde
   la lista de aprobaciones pendientes, que es la mitad de la historia.
+
+- `[?]` **El motor creativo no se ha ejecutado nunca contra un ComfyUI real.** No hay ComfyUI
+  instalado en esta máquina y nada escucha en el 8188. El cliente implementa su API documentada y
+  está probado contra un `ThreadingHTTPServer` que la imita con sus formas reales, más dos pruebas
+  en vivo contra la 7001 con ese servidor en el 8188. Lo que **no** está comprobado: que un ComfyUI
+  de verdad devuelva exactamente esas formas, que el grafo de las dos plantillas sea aceptado por su
+  validador, y cuánto tarda un render de verdad. La primera vez que haya uno instalado, esto es lo
+  primero que hay que volver a mirar.
+
+- `[~]` **`config/media_workflows/` trae dos plantillas de imagen y ninguna de vídeo.** Las dos usan
+  **solo nodos del core** de ComfyUI a propósito, así que funcionan en una instalación de serie con
+  un checkpoint. Una plantilla de vídeo necesita custom nodes (AnimateDiff/SVD) que no se pueden
+  probar sin tenerlos, y una plantilla escrita a ciegas es peor que ninguna.
+
+- `[+]` **Los artefactos de un render no se ven en ninguna parte.** La fila lleva receta, semilla,
+  modelo y licencia; no hay galería que lo enseñe ni botón de «variar/reproducir», que es justo lo
+  que hace útil guardar la semilla. Los dos mundos siguen separados: `generate_image` escribe en
+  `generated_images/` + `gallery_images`, y un render escribe en el almacén de artefactos.
+
+- `[+]` **Nada llama a `media_runs.poll()` solo.** Igual que `advance()` en los workflows: lo llaman
+  la ruta, la tool o una persona. Un render encolado no se recoge hasta que alguien pregunta.
+
+- `[~]` **hwfit sabe decir «no cabe» y nadie se lo pregunta antes de encolar.**
+  `rank_image_models()` ya calcula si un modelo entra en la VRAM de esta máquina, con margen del
+  10%. El criterio del masterplan —«si la GPU no es suficiente, Faustus informa y ofrece una
+  variante viable; no simula que el trabajo está corriendo»— todavía no se cumple: hoy se encola y
+  el fallo llega del motor.
 
 - `[?]` **El puente de skills contra skills de verdad.** Luis tiene **una** skill guardada, y no
   declara permisos, así que lo único comprobado con datos reales es el caso deny-by-default. Las

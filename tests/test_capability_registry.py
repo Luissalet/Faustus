@@ -27,12 +27,60 @@ def manifest(**over):
     return C.SkillManifest.parse(base)
 
 
-def test_nothing_is_available_that_has_no_code_behind_it():
-    states = {o.backend_id: o for o in reg.observe_all()}
-    assert states["local"].state == "available"
-    for backend in ("media_worker", "remote_worker"):
-        assert states[backend].state == "unavailable"
-        assert "not implemented" in states[backend].evidence
+@pytest.fixture(autouse=True)
+def no_stale_probes(monkeypatch):
+    """Every test here starts from an empty probe cache.
+
+    The cache is a 10-second memo, which is right in production and wrong
+    across tests: one test that stands up a fake engine would otherwise decide
+    what the next one observes. This caught exactly that.
+    """
+    monkeypatch.setattr(reg, "_probe_cache", {})
+
+
+def test_a_backend_with_no_code_behind_it_is_unavailable_and_says_so():
+    """The rule, not the inventory. `remote_worker` is Phase 6 and has no code,
+    so it answers `unavailable` for that reason and no other — and crucially
+    it is never probed, because there is nothing to probe."""
+    observed = reg.observe("remote_worker")
+    assert observed.state == "unavailable"
+    assert "not implemented" in observed.evidence
+
+
+def test_an_implemented_backend_has_to_be_asked_rather_than_assumed(monkeypatch):
+    """`media_worker` has code behind it now, and that is exactly why its
+    state may no longer come from the fact that the code exists.
+
+    This test used to assert "media_worker is unavailable because it is not
+    implemented". Implementing it broke that, with reason: the assertion
+    described the world in September rather than the rule. The rule is that an
+    implemented backend reports what a real probe found, so what is pinned
+    here is that the probe is what decides — both ways.
+    """
+    from src.capability_registry import Observation
+
+    monkeypatch.setattr(reg, "_probe_comfyui", lambda stamp: Observation(
+        "media_worker", "available", "ComfyUI at http://127.0.0.1:8188", stamp))
+    assert reg.observe("media_worker", fresh=True).state == "available"
+
+    monkeypatch.setattr(reg, "_probe_comfyui", lambda stamp: Observation(
+        "media_worker", "unavailable",
+        "backend_unavailable: nothing answered at http://127.0.0.1:8188", stamp))
+    down = reg.observe("media_worker", fresh=True)
+    assert down.state == "unavailable"
+    assert "nothing answered" in down.evidence
+
+
+def test_a_probe_that_blows_up_is_unknown_rather_than_taking_the_page_with_it(monkeypatch):
+    def explode(stamp):
+        raise RuntimeError("the network stack is on fire")
+
+    monkeypatch.setattr("src.media_backends.ComfyUIBackend",
+                        lambda *a, **k: (_ for _ in ()).throw(
+                            RuntimeError("the network stack is on fire")))
+    observed = reg.observe("media_worker", fresh=True)
+    assert observed.state == "unknown"
+    assert "the probe itself failed" in observed.evidence
 
 
 def test_the_docker_state_comes_from_asking_and_says_what_it_asked():
@@ -106,10 +154,26 @@ def test_the_host_is_never_a_silent_candidate():
 
 
 def test_backends_the_manifest_did_not_ask_for_stay_in_the_answer():
+    """Every declared backend appears with a reason, including the ones this
+    manifest did not name. A candidate list that only showed the eligible one
+    answers "which backend" and not "why not the others", which is the
+    question somebody actually has."""
     rows = {r["backend"]: r for r in reg.candidates(manifest())}
     assert set(rows) == {"local", "docker_workspace", "media_worker", "remote_worker"}
     assert rows["docker_workspace"]["reason"] == "not_requested"
-    assert rows["media_worker"]["reason"] == "not_implemented"
+    assert rows["remote_worker"]["reason"] == "not_requested"
+    # The one it DID ask for is answered from a probe, so its reason depends on
+    # whether an engine is running — which is not a property of this code.
+    assert rows["media_worker"]["reason"] in ("eligible", "unavailable")
+
+    # And a manifest that asks for something with no code behind it is told
+    # that. The outputs are text here on purpose: a capability gap is checked
+    # first and is a truer reason, so asking for video from a backend that
+    # has no video would report the gap and never reach "not implemented".
+    asked = {r["backend"]: r for r in reg.candidates(
+        manifest(outputs={"notes": "artifact:text"},
+                 permissions={"backends": ["remote_worker"]}))}
+    assert asked["remote_worker"]["reason"] == "not_implemented"
 
 
 def test_a_backend_the_build_does_not_know_is_named_as_such():
@@ -118,10 +182,23 @@ def test_a_backend_the_build_does_not_know_is_named_as_such():
     assert rows["quantum_worker"]["reason"] == "not_declared"
 
 
-def test_the_refusal_names_the_nearest_miss():
+def test_the_refusal_names_the_nearest_miss(monkeypatch):
+    """"No backend available" sends someone hunting. "media_worker, and here
+    is what it said when we asked it" sends them to the engine.
+
+    The engine is stubbed DOWN on purpose: whether ComfyUI happens to be
+    running on the machine running the tests is not a property of this code,
+    and a test that passes only when it is absent is a test that will fail on
+    the first machine that has it."""
+    from src.capability_registry import Observation
+
+    monkeypatch.setattr(reg, "_probe_comfyui", lambda stamp: Observation(
+        "media_worker", "unavailable",
+        "backend_unavailable: nothing answered at http://127.0.0.1:8188", stamp))
+
     why = reg.why_no_backend(manifest())
     assert why.startswith("no backend can run media.video.short-form 1.0.0")
-    assert "media_worker" in why and "not_implemented" in why
+    assert "media_worker" in why and "nothing answered" in why
 
 
 def test_a_spec_cannot_relabel_the_isolation_a_backend_provides():

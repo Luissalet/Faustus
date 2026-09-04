@@ -1651,5 +1651,108 @@ en `workers_wait_for`. Los tres se comprobaron preexistentes con `git stash` ant
 con la 1 y la 6. Y nadie llama a `advance()` en bucle todavía: lo llaman la ruta, la tool o una
 persona, que para probar la durabilidad es suficiente y para un `wait` de verdad no lo es.
 
+## 35. Recetas aprobadas, no grafos improvisados: Fase 3 del masterplan (04-09-2026, tarde)
+
+ComfyUI es el motor creativo que faltaba, y la arquitectura correcta **no** es dejar que el modelo
+monte JSON de ComfyUI. Un grafo de ComfyUI son nodos, y algunos nodos leen ficheros, escriben
+ficheros o ejecutan Python de terceros: dejar que un modelo ensamble uno es el mismo error de
+categoría que dejarle ensamblar un comando de shell, salvo que el radio incluye todos los custom
+nodes que esa máquina tenga instalados.
+
+Así que la unidad de confianza es una **plantilla versionada en disco** (`config/media_workflows/`)
+que declara qué se puede rellenar, y nada más.
+
+### 35.1 La plantilla decide, y solo la plantilla
+`src/media_workflows.py` (462 líneas, sin BD, sin red) lee una plantilla y la rellena:
+- `inputs` — lo único que alguien puede poner, con tipo y rango o lista de opciones. Una entrada
+  que no está declarada es **un rechazo que la nombra**, nunca un valor que se ignora en silencio:
+  *«this template accepts no input called 'steps'; it accepts aspect_ratio, negative_prompt,
+  prompt, quality, seed»*.
+- `computed` — lo que la plantilla deriva de esas entradas mediante **tablas de consulta**
+  (relación de aspecto → ancho y alto). Tablas, no expresiones: un fichero de plantilla es un dato
+  que alguien pega, y en cuanto puede expresar un cálculo es código.
+- `graph` — el prompt de ComfyUI con marcadores `{{nombre}}` que **solo** resuelven contra entradas
+  declaradas o valores computados. La sustitución reemplaza **cadenas enteras**, nunca dentro de
+  una más larga: una sustitución parcial dejaría que un prompt escrito por un usuario cerrase una
+  cadena JSON y abriese un campo que la plantilla nunca declaró. Tiene test con un prompt hostil.
+- Un `{{marcador}}` que nadie declaró se rechaza **al leer la plantilla**, no al usarla — si no,
+  falla en la máquina del primero que la use, normalmente delante de él.
+
+Y la ruta de una imagen de referencia tiene que ser un **nombre pelado**: el motor la busca en su
+propia carpeta de entrada, así que una ruta ahí sería leer un fichero de la máquina a través de una
+plantilla de aspecto inofensivo.
+
+### 35.2 La semilla es procedencia, no un detalle
+Una semilla que nadie eligió se genera **aquí** y se guarda. Una semilla aleatoria del lado del
+motor es una imagen que nadie puede volver a hacer nunca, que es justo lo contrario de para qué
+existe el registro. Lo mismo con los valores por defecto: el plan devuelve **todos** los valores
+resueltos, no solo lo que el usuario escribió, porque un default que nadie apuntó tampoco se puede
+reproducir.
+
+### 35.3 Comprobar antes de encolar
+`src/media_backends/comfyui.py` pregunta a `/object_info` qué nodos existen y qué checkpoints hay
+en disco **antes** de mandar nada. Preguntar cuesta un instante; un trabajo que muere veinte
+minutos después porque el checkpoint estaba escrito de otra forma cuesta una tarde — y el error que
+da ComfyUI entonces habla del desplegable de un nodo, no de un fichero que falta. El rechazo nombra
+el fichero **y dice qué sí hay**, porque la causa habitual es una letra.
+
+Nunca instala nada: ni un modelo, ni un custom node, ni un paquete. Misma regla que el backend de
+Docker, que nunca hace `pull`. Bajarse seis gigas porque un mensaje de chat lo pidió no es una
+capacidad que nadie haya autorizado.
+
+### 35.4 Un cancel son dos cosas
+`/interrupt` para lo que se está **ejecutando**; lo que sigue en cola no se entera y hay que
+borrarlo de `/queue`. Un cancel que solo interrumpe deja el trabajo arrancar diez segundos después,
+que se lee como «cancelar no funciona» y es peor que un error. Hace las dos mitades, y el test lo
+comprueba mirando las llamadas HTTP que recibió el motor.
+
+### 35.5 El render sobrevive al proceso web
+Tabla `media_runs` (aditiva). La fila lleva el id del trabajo en el motor, así que `poll()` después
+de un reinicio **le pregunta al motor** en vez de fiarse del estado que se escribió antes de morir.
+Y si el motor no contesta, eso **no** convierte el run en fallido: lo deja como estaba y dice que
+el motor no responde. Un estado escrito a ojo es como un render terminado acaba reportado como
+fallo.
+
+### 35.6 La imagen se queda con su historia
+Cada artefacto lleva receta, versión, **huella de la receta**, semilla, motor, id del trabajo,
+modelo y **licencia del modelo**. La licencia es la que todo el mundo olvida y la única que importa
+cuando el fichero ya está en manos de un cliente. `Provenance` (Fase 0) creció esos campos, y la
+tabla `artifacts` los suyos con una migración que **añade columnas a una tabla que ya existe** —
+`create_all()` crea tablas que faltan, nunca columnas, así que sin eso una base anterior a esta
+fase reventaría en cada inserción, en la máquina de quien actualizase.
+
+Lo que **no** viaja al artefacto: el prompt. Va un `inputs_digest` y una nota que apunta al
+`media_run`. Un prompt puede llevar el nombre de un cliente o un producto sin anunciar, y la fila
+del artefacto la lee más gente que la del render.
+
+### 35.7 Cómo se verificó
+**80 tests** (19 de plantillas, 20 del cliente, 18 de runs, 10 de rutas, más los del registro),
+y el cliente se prueba contra un **`ThreadingHTTPServer` de verdad** que habla el protocolo de
+ComfyUI con sus formas reales: historial indexado por prompt id, entradas de cola como listas
+posicionales, un `completed: false` que significa fallo, mensajes como pares `[nombre, payload]`.
+Cada bug que puede tener este cliente vive en la capa HTTP, y ninguno de esos aparece contra un
+mock que devuelve lo que el autor del test se imaginó — de hecho el primer fallo fue del **fake**,
+que no partía `filename_prefix` en subcarpeta + nombre como hace ComfyUI.
+
+En vivo contra la 7001, dos veces: **sin motor** (catálogo y plan funcionan, el motor se reporta
+caído con el arreglo en la frase) y **con un motor con forma de ComfyUI en el 8188**, donde el
+camino entero —MCP → HTTP → media_runs → motor → almacén de artefactos— se recorre de verdad. 26
+tools registradas; las 5 nuevas (`media_recipes`, `media_plan`, `media_render`, `media_status`,
+`media_cancel`) probadas por handshake JSON-RPC real.
+
+De nuevo cayeron cuatro tests que **describían el mundo** en vez de la regla: decían que
+`media_worker` está «declarado pero no implementado». Implementarlo los rompió, con razón. Ahora
+fijan la regla —un backend implementado responde lo que encontró una sonda **real**— y las pruebas
+de rutas fijan el motor **caído a propósito**, igual que ya hacían con el demonio de Docker: que
+haya un ComfyUI corriendo en la máquina que ejecuta los tests no es una propiedad de este código.
+Van tres fases seguidas con este mismo fallo; está anotado en PENDIENTES como patrón, no como bug.
+
+### 35.8 Lo que falta
+No hay ComfyUI instalado en esta máquina, así que **nada de esto se ha ejecutado contra el motor de
+verdad**: el protocolo está implementado según su API y probado contra un servidor que la imita.
+Faltan la galería con receta y botón de «variar», los perfiles de hwfit para decir honestamente que
+un modelo no cabe, la plantilla de vídeo (necesita custom nodes que no se pueden probar a ciegas) y
+cablear el nodo `skill` de los workflows a un render — que es donde la Fase 3 se junta con la 4.
+
 ## Cómo mantener este documento
 Cada bloque de trabajo añade una sección (fecha, qué, por qué, ficheros, cómo se verificó, cifras) y actualiza las cifras de cabecera (`git log --oneline c9dd68d8..HEAD | wc -l`, `git diff --stat c9dd68d8..HEAD`). Los commits del fork llevan mensajes largos que explican el porqué: `git log c9dd68d8..HEAD` es la fuente detallada.

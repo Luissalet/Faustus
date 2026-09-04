@@ -130,9 +130,11 @@ DECLARATIONS: Tuple[BackendDeclaration, ...] = (
         artifact_kinds=("image", "video", "audio", "json"),
         network_default=False,
         max_seconds_default=3600,
-        implemented=False,
-        note="Phase 3. ComfyUI over its API as a separate service, plus ffmpeg. "
-             "Queued, cancellable, and out of the web process.",
+        implemented=True,
+        note="ComfyUI over its API as a separate service, queued and "
+             "cancellable, out of the web process. Runs only approved "
+             "templates from config/media_workflows — never a graph the model "
+             "assembled — and installs no model and no custom node, ever.",
     ),
     BackendDeclaration(
         id="remote_worker",
@@ -192,6 +194,8 @@ def observe(backend_id: str, *, fresh: bool = False) -> Observation:
 
     if backend_id == "docker_workspace":
         observation = _probe_docker(stamp)
+    elif backend_id == "media_worker":
+        observation = _probe_comfyui(stamp)
     else:
         observation = Observation(backend_id, "unknown", "no probe implemented yet", stamp)
     _probe_cache[backend_id] = (time.monotonic(), observation)
@@ -214,6 +218,27 @@ def _probe_docker(stamp: str) -> Observation:
     if gate["ok"]:
         return Observation("docker_workspace", "available", gate["detail"], stamp)
     return Observation("docker_workspace", "unavailable",
+                       f"{gate['reason']}: {gate['detail']}", stamp)
+
+
+def _probe_comfyui(stamp: str) -> Observation:
+    """A ComfyUI that is running but has no checkpoint is `unavailable`.
+
+    That reads harsh and is the honest answer: a render sent to an engine with
+    no model fails inside the sampler, and the message ComfyUI returns then is
+    about a dropdown value, not about a missing file. Better to say so here,
+    where the fix — put a model in `models/checkpoints` — can be part of the
+    sentence."""
+    from src.media_backends import ComfyUIBackend
+
+    try:
+        gate = ComfyUIBackend().probe()
+    except Exception as e:                       # a probe never takes the page down
+        return Observation("media_worker", "unknown",
+                           f"the probe itself failed: {e}", stamp)
+    if gate["ok"]:
+        return Observation("media_worker", "available", gate["detail"], stamp)
+    return Observation("media_worker", "unavailable",
                        f"{gate['reason']}: {gate['detail']}", stamp)
 
 

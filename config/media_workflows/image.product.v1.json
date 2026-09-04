@@ -1,0 +1,105 @@
+{
+  "id": "image.product",
+  "version": "1.0.0",
+  "title": "Product shot on a clean background",
+  "engine": "comfyui",
+  "description": "Text to image with a single checkpoint. Uses only ComfyUI's built-in nodes, so it runs on a stock install with a checkpoint present and no custom nodes at all.",
+
+  "models": [
+    {
+      "name": "sd_xl_base_1.0.safetensors",
+      "kind": "checkpoint",
+      "license": "CreativeML Open RAIL++-M",
+      "node": "CheckpointLoaderSimple",
+      "field": "ckpt_name"
+    }
+  ],
+  "requires_nodes": [
+    "CheckpointLoaderSimple", "CLIPTextEncode", "EmptyLatentImage",
+    "KSampler", "VAEDecode", "SaveImage"
+  ],
+
+  "outputs": { "image": "artifact:image" },
+
+  "inputs": {
+    "prompt": {
+      "type": "text",
+      "required": true,
+      "max_len": 1200,
+      "title": "What the picture is of"
+    },
+    "negative_prompt": {
+      "type": "text",
+      "default": "text, watermark, logo, blurry, low quality, distorted proportions",
+      "max_len": 600,
+      "title": "What to keep out of it"
+    },
+    "aspect_ratio": {
+      "type": "enum",
+      "choices": ["1:1", "4:5", "3:2", "16:9"],
+      "default": "1:1",
+      "title": "Shape"
+    },
+    "quality": {
+      "type": "enum",
+      "choices": ["draft", "final"],
+      "default": "draft",
+      "title": "Draft is about four times faster and is for choosing between ideas"
+    },
+    "seed": {
+      "type": "seed",
+      "title": "Leave empty for a new one; it is recorded either way so the picture can be made again"
+    }
+  },
+
+  "computed": {
+    "width":  { "from": "aspect_ratio", "map": { "1:1": 1024, "4:5": 896, "3:2": 1216, "16:9": 1344 } },
+    "height": { "from": "aspect_ratio", "map": { "1:1": 1024, "4:5": 1152, "3:2": 832, "16:9": 768 } },
+    "steps":  { "from": "quality", "map": { "draft": 12, "final": 40 } },
+    "cfg":    { "from": "quality", "map": { "draft": 6.0, "final": 7.5 } },
+    "sampler": { "from": "quality", "map": { "draft": "dpmpp_2m", "final": "dpmpp_2m" } },
+    "scheduler": { "from": "quality", "map": { "draft": "karras", "final": "karras" } }
+  },
+
+  "graph": {
+    "1": {
+      "class_type": "CheckpointLoaderSimple",
+      "inputs": { "ckpt_name": "sd_xl_base_1.0.safetensors" }
+    },
+    "2": {
+      "class_type": "CLIPTextEncode",
+      "inputs": { "text": "{{prompt}}", "clip": ["1", 1] }
+    },
+    "3": {
+      "class_type": "CLIPTextEncode",
+      "inputs": { "text": "{{negative_prompt}}", "clip": ["1", 1] }
+    },
+    "4": {
+      "class_type": "EmptyLatentImage",
+      "inputs": { "width": "{{width}}", "height": "{{height}}", "batch_size": 1 }
+    },
+    "5": {
+      "class_type": "KSampler",
+      "inputs": {
+        "seed": "{{seed}}",
+        "steps": "{{steps}}",
+        "cfg": "{{cfg}}",
+        "sampler_name": "{{sampler}}",
+        "scheduler": "{{scheduler}}",
+        "denoise": 1.0,
+        "model": ["1", 0],
+        "positive": ["2", 0],
+        "negative": ["3", 0],
+        "latent_image": ["4", 0]
+      }
+    },
+    "6": {
+      "class_type": "VAEDecode",
+      "inputs": { "samples": ["5", 0], "vae": ["1", 2] }
+    },
+    "7": {
+      "class_type": "SaveImage",
+      "inputs": { "images": ["6", 0], "filename_prefix": "faustus/product" }
+    }
+  }
+}

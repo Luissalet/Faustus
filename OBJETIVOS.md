@@ -25,7 +25,7 @@ una integración posterior, no otra arquitectura paralela.
 | 0 · Contratos y migración segura | El vocabulario común: 8 contratos, catálogo de backends, tabla de artefactos | ✅ 04-09-2026 — `FAUSTUS.md` §30, 73 tests |
 | 1 · Ejecución segura y artefactos | `DockerWorkspaceBackend`, router, y que el código deje de correr en el proceso web | 🟡 04-09-2026 — sandbox probado contra contenedores reales (§31) y **el `bash`/`python` del agente ya pasa por él** detrás de `agent_sandbox_execution` (§32). Faltan los runs de coding y la galería |
 | 2 · Runtime de skills y memoria útil | Instalar/revertir capacidades sin tocar el core; alcances de memoria y `MemoryView` | 🟡 04-09-2026 — puente `SKILL.md`↔manifiesto, descubrimiento que para en el repo, `MemoryView`. Falta cablearlo al prompt y la instalación/reversión (§32) |
-| 3 · Motor creativo | ComfyUI como servicio, plantillas versionadas, galería de artefactos con receta | ⏳ |
+| 3 · Motor creativo | ComfyUI como servicio, plantillas versionadas, galería de artefactos con receta | 🟡 04-09-2026 — cliente ComfyUI, plantillas aprobadas y renders durables con procedencia (§35). **No hay ComfyUI en esta máquina**: probado contra un servidor que imita su API. Faltan galería, hwfit y vídeo |
 | 4 · Workflows, approvals y conectores | Procesos que sobreviven a reinicios, idempotentes | 🟡 04-09-2026 — aprobaciones con puerta humana (§33) **y el núcleo de workflows durables** (§34): claim antes de actuar, pausa por persona o por reloj, ramas. Faltan los conectores y cablear `skill`/`deliver` a algo que exista |
 | 5 · Coding profesional | `ChangeSet`, repo map, LSP opcional, intents explore/plan/implement/review | 🟡 partes sueltas ya existen |
 | 6 · Gateway, canales y dispositivos | Un canal de bajo riesgo con pairing, nodos, después voz | ⏳ |
@@ -99,16 +99,32 @@ escapar del workspace, heredar secretos o caer al host sin confirmación.
 
 ---
 
-## Fase 3 — motor creativo (P0)
+## Fase 3 — motor creativo (P0, empezada)
 
-- [ ] ComfyUI como **servicio separado** (GPL-3.0: se integra por API, no se copia código) y
-      `src/media_backends/comfyui.py` con submit/progreso/cancelación/artifacts.
-- [ ] `config/media_workflows/` con plantillas versionadas — **nunca JSON arbitrario del agente**.
-- [ ] `services/hwfit/` con perfiles de VRAM/GPU, colas y estimaciones honestas.
+- [x] ComfyUI como **servicio separado** (GPL-3.0: se integra por API, no se copia código) y
+      `src/media_backends/comfyui.py` con submit/estado/cancelación/recogida de outputs. **Nunca
+      instala** un modelo ni un custom node, y **comprueba antes de encolar**: pregunta a
+      `/object_info` qué hay y rechaza nombrando el fichero que falta.
+- [x] `config/media_workflows/` con plantillas versionadas — **nunca JSON arbitrario del agente**.
+      `src/media_workflows.py` rellena solo lo declarado; `computed` son tablas de consulta, no
+      expresiones; la sustitución reemplaza cadenas enteras, así que un prompt no puede salirse de
+      su campo. Dos plantillas de imagen que usan **solo nodos del core** de ComfyUI.
+- [x] Renders durables: tabla `media_runs`, `poll()` que reconcilia **preguntando al motor** tras un
+      reinicio, y un motor caído deja el run como estaba en vez de inventarle un fallo.
+- [x] Procedencia completa en el artefacto: receta, versión, huella, semilla, motor, id del trabajo,
+      modelo y **licencia**. El prompt **no** viaja: va un digest y una nota que apunta al run.
+- [x] Rutas `/api/media/*` (sin ninguna que acepte un grafo, y hay test de eso) y 5 tools MCP.
+- [ ] `services/hwfit/` con perfiles de VRAM/GPU, colas y estimaciones honestas. `rank_image_models`
+      ya sabe decir «no cabe»; falta atarlo a una plantilla antes de encolar.
 - [ ] Galería de artefactos con preview, receta, **licencia del modelo** y botón «variar/reproducir».
+      Hoy los artefactos existen y nadie los enseña.
+- [ ] La plantilla de vídeo: necesita custom nodes (AnimateDiff/SVD) que no se pueden probar sin
+      tenerlos instalados, y una plantilla escrita a ciegas es peor que ninguna.
+- [ ] **Nada de esto se ha ejecutado contra un ComfyUI real** — no hay uno en esta máquina. El
+      protocolo está probado contra un servidor que imita su API.
 
-Skills iniciales: `image.product`, `image.reference-edit`, `video.short-form`, `video.subtitle`,
-`audio.voiceover`, `document.report`.
+Skills iniciales: `image.product` ✅, `image.reference-edit` ✅, `video.short-form`,
+`video.subtitle`, `audio.voiceover`, `document.report`.
 
 ---
 

@@ -737,6 +737,12 @@ app.include_router(setup_approvals_routes())
 from routes.workflows_routes import setup_workflows_routes
 app.include_router(setup_workflows_routes())
 
+# Media renders on a separate engine. There is deliberately no endpoint that
+# takes a graph: a caller picks an approved template and fills its declared
+# inputs, and that is the whole surface.
+from routes.media_routes import setup_media_routes
+app.include_router(setup_media_routes())
+
 # Chat
 from routes.chat_routes import setup_chat_routes
 app.include_router(setup_chat_routes(
