@@ -1342,11 +1342,15 @@ def _attach_permissions(runs: List["SubagentRun"], ctx: dict, workspace: Optiona
     None as "no definition", so an ordinary delegation runs the code it has
     always run.
     """
-    from src import agent_defs
-    from src.subagent_permissions import DepthExceeded, derive
     parent = _parent_standing(ctx, workspace, roots)
     restricted_parent = bool(getattr(parent, "rules", ()) or getattr(parent, "denied_tools", ())
                              or getattr(parent, "allowed_tools", None) is not None)
+    if not restricted_parent and not any(run.agent_def for run in runs):
+        # Nothing to derive. Returning here keeps the tool vocabulary (and the
+        # tool index behind it) out of the path of every ordinary delegation.
+        return ""
+    from src import agent_defs
+    from src.subagent_permissions import DepthExceeded, derive
     vocabulary = agent_defs.known_tools()
     for run in runs:
         definition = agent_defs.from_dict(run.agent_def) if run.agent_def else None
@@ -1660,7 +1664,13 @@ class DelegateAgentsTool:
             # this is the ONE place that fact is true, and the one place the
             # bypass is granted.
             reviewer.bypass_locks = True
-            _attach_permissions([reviewer], ctx, workspace, roots)
+            refused = _attach_permissions([reviewer], ctx, workspace, roots)
+            if refused:
+                # Cannot happen while the reviewer sits at the same depth as
+                # the workers that already derived. Said out loud rather than
+                # dropped, because an unrestricted reviewer is the one thing
+                # this slot must never quietly become.
+                logger.warning("delegate_agents: reviewer permissions could not be derived: %s", refused)
             try:
                 await _launch(reviewer, max_rounds=max(6, min(args["max_rounds"], 16)))
             except asyncio.CancelledError:

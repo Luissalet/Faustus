@@ -1713,11 +1713,13 @@ async def _run(job: DispatchJob) -> None:
                         fixer["runner"] = target["runner"]
                     job._event(event="job",
                                message=f"fix round {attempt} continues `{target['name']}` in its own session")
-                fixer_args = dict(job.args)
-                fixer_args.update({"tasks": [fixer], "parallel": False, "reviewer": False,
-                                   "dropped_tasks": 0})
-                fix = await (_run_external(job, [fixer], _cb) if fixer.get("runner")
-                             else _delegate(job, fixer_args, _cb))
+                if fixer.get("runner"):
+                    fix = await _run_external(job, [fixer], _cb)
+                else:
+                    fixer_args = dict(job.args)
+                    fixer_args.update({"tasks": [fixer], "parallel": False, "reviewer": False,
+                                       "dropped_tasks": 0})
+                    fix = await _delegate(job, fixer_args, _cb)
                 for r in fix.get("subagents") or []:
                     if isinstance(r, dict):
                         r["role"] = "fixer"

@@ -540,22 +540,38 @@ def _load_repo(result: LoadResult, seen: Dict[str, int], workspace: str) -> None
 
     A definition that travels with a clone is instructions from whoever sent
     the pull request — the same class of input ``src/workspace_trust.py`` was
-    built for, and a far sharper one: an AGENTS.md can suggest a command, an
+    built for, and a sharper one: an AGENTS.md can suggest a command, an
     AGENT.md can hand a worker the shell and a pattern that says it is safe.
+
+    So the bar here is a standing approval, not merely the absence of a
+    refusal. ``instructions_trusted`` answers True for a folder in state
+    ``none`` — no instruction files, nothing to inject, nothing to ask about —
+    which is the right answer for its own caller and the wrong one here, where
+    the folder DOES carry something and the human has simply never been asked.
+    ``off`` is different again: the operator switched the gate off on purpose,
+    and this module does not get to reinstate it.
+
+    A folder that cannot pass carries its reason into ``errors`` rather than
+    going quiet, and the reason says the way out: approve the folder, or copy
+    the definition under DATA_DIR/agents where it is yours.
     """
+    root = os.path.join(workspace, REPO_DIR)
     try:
         from src import workspace_trust
-        if not workspace_trust.instructions_trusted(workspace):
-            result.errors.append({
-                "path": os.path.join(workspace, REPO_DIR), "slug": "",
-                "reason": "this folder's own instruction files are not approved, so the agent "
-                          "definitions it carries were not loaded (Workspace trust)",
-            })
-            return
+        if workspace_trust.mode() != "off":
+            state = str((workspace_trust.state_for(workspace) or {}).get("state") or "")
+            if state != workspace_trust.STATE_TRUSTED:
+                if os.path.isdir(root):
+                    result.errors.append({
+                        "path": root, "slug": "",
+                        "reason": f"this folder is `{state or 'unknown'}` in Workspace trust, so the "
+                                  f"agent definitions it carries were NOT loaded. Approve the folder, "
+                                  f"or copy the definition under DATA_DIR/agents to make it yours.",
+                    })
+                return
     except Exception as exc:  # noqa: BLE001 - no gate available ⇒ do not load
         logger.debug("agent_defs: trust gate unavailable for %s: %s", workspace, exc)
         return
-    root = os.path.join(workspace, REPO_DIR)
     try:
         names = sorted(os.listdir(root))
     except OSError:
@@ -659,10 +675,6 @@ def resolve_task(task: Dict[str, Any], *, workspace: Optional[str] = None,
     if definition is None:
         known = ", ".join(sorted(catalogue.by_slug())[:12])
         return {"agent": slug, "reason": f"unknown agent definition `{slug}`" + (f". Known: {known}" if known else "")}
-    if definition.mode == "reviewer" and not task.get("_reviewer_slot"):
-        # Allowed, and worth a caveat rather than a refusal: a read-only
-        # reviewer run as an ordinary task is a legitimate thing to want.
-        pass
     task["agent"] = definition.slug
     task["agent_def"] = definition.to_dict()
     if definition.prompt:
