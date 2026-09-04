@@ -250,10 +250,11 @@ su área y baja el baseline. Ningún módulo Studio nuevo la aumenta.
     servidor da 503) y `speak` (`/api/tts/synthesize` o `speechSynthesis`)
     están escritos contra los mismos endpoints que la anterior; el
     navegador del puente no concede permiso de micrófono. Probar a mano.
-42. **`[~]` Bundle principal en 375 KB / 117,8 KB gzip** (presupuesto 350 /
-    120). El bruto ya supera el blando; el gzip tiene 2 KB de margen. Antes
-    del siguiente lote grande dentro de Studio: convertir `Studio.tsx` en
-    ruta perezosa con `modulepreload`, o partir el reductor y los comandos.
+42. **`[x]` Bundle principal en 375 KB / 117,8 KB gzip** (presupuesto 350 /
+    120). Resuelto haciendo `Studio.tsx` ruta perezosa que se precarga en
+    `requestIdleCallback` tras el primer pintado: `app` 260,5 / 83,4 KB gzip y
+    `Studio` 111,8 / 35,1 KB. Queda margen para las pantallas que faltan;
+    cada una entra como chunk propio.
 43. **`[~]` «Manage Chats» solo en parte.** Archivadas con búsqueda y
     recuperar, ordenar con IA y limpiar vacías; la biblioteca de chats con
     estadísticas y filtros por modelo y fecha sigue en la anterior.

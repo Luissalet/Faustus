@@ -4,7 +4,6 @@ import { BrowserRouter, NavLink, Route, Routes, useLocation } from 'react-router
 import { Button, Skeleton } from '../components';
 import { HomeScreen } from '../screens/Home';
 import { NotMigrated } from '../screens/NotMigrated';
-import { StudioScreen } from '../screens/Studio';
 
 import { BrandMark } from './BrandMark';
 import { DESTINATIONS } from './routes';
@@ -12,9 +11,13 @@ import { setStudioEnabled } from './flag';
 import { ensureOverlayRoot, removeOverlayRoot } from './overlayRoot';
 import { useShell } from './store';
 
-/* Inicio and Studio are the app; the rest arrive as route chunks the
-   first time they are opened, so the eager bundle stays inside the
-   350 KB budget (DECISIONES_UI.md) as screens keep landing. */
+/* Inicio is the eager bundle; every other screen arrives as a route chunk
+   the first time it is opened, so the eager bundle stays inside the 350 KB
+   budget (DECISIONES_UI.md) as screens keep landing. Studio, the heaviest,
+   is fetched right after the first paint (`warmStudio`) so opening it from
+   Inicio costs nothing perceptible. */
+const loadStudio = () => import('../screens/Studio');
+const StudioScreen = lazy(() => loadStudio().then((m) => ({ default: m.StudioScreen })));
 const ActivityScreen = lazy(() => import('../screens/Activity').then((m) => ({ default: m.ActivityScreen })));
 const AutomationsScreen = lazy(() => import('../screens/Automations').then((m) => ({ default: m.AutomationsScreen })));
 const LibraryScreen = lazy(() => import('../screens/Library').then((m) => ({ default: m.LibraryScreen })));
@@ -193,6 +196,15 @@ export function AppShell() {
   useEffect(() => {
     if (paletteOpen) setPaletteLoaded(true);
   }, [paletteOpen]);
+
+  useEffect(() => {
+    // Warm the Studio chunk once the shell has painted (it is the screen
+    // almost every visit ends up in); a route hit before that just awaits
+    // the same import.
+    const idle = (window as Window & { requestIdleCallback?: (cb: () => void) => number }).requestIdleCallback;
+    if (idle) idle(() => void loadStudio());
+    else window.setTimeout(() => void loadStudio(), 300);
+  }, []);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-studio-shell', 'on');
