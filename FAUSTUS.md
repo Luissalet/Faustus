@@ -4,7 +4,8 @@
 
 - Base del fork: commit upstream `c9dd68d8` (27-08-2026, "refactor(docs): separate Pages site source").
 - Rama: **una sola, `master`** (`D:\LocalAI\odysseus`), que trackea `origin/master` en `github.com/Luissalet/Faustus`. Las ramas `feat/projects` y `feat/reliability` y la worktree de pruebas se consolidaron el 31-08.
-- Cifras a 03-09-2026 (19:00, en `master`): **298 commits**, +112.000 líneas sobre la base; **97 módulos nuevos** en `src/`, `routes/`, `services/` y `static/js/`, **168 ficheros de tests nuevos**. Suite completa: **9.100 tests en verde**, ~6 min en Linux (2 fallos preexistentes del entorno: `markitdown` sin conversor docx y el escáner de marca sobre un docstring en español); e2e Playwright 12 flujos. En Windows hay además 12 fallos de plataforma y 13 dependientes del `data/` local, todos presentes también en el commit base (§24.4).
+- Cifras a 04-09-2026 (en `master`): **404 commits**, +166.900 líneas sobre la base; **160 módulos nuevos** en `src/`, `routes/`, `services/` y `static/js/`, **231 ficheros de tests nuevos**. Suite completa: **9.100 tests en verde**, ~6 min en Linux (2 fallos preexistentes del entorno: `markitdown` sin conversor docx y el escáner de marca sobre un docstring en español); e2e Playwright 12 flujos. En Windows hay además 12 fallos de plataforma y 13 dependientes del `data/` local, todos presentes también en el commit base (§24.4).
+- **Aviso sobre esa cifra de Linux:** entre el 03-09 y el 04-09 la suite **no se podía ni recolectar en Windows**. Un `import resource` sin usar —módulo que no existe en Windows— aborta la recolección entera: `Interrupted: 1 error during collection`, cero tests ejecutados, y en Linux invisible porque allí el módulo sí está. Arreglado en §40, con un test que fija la regla (`tests/test_suite_collects_on_every_platform.py`). Una cifra de tests verdes solo vale para la plataforma donde se midió.
 - Máquina de referencia: RTX 4070 Ti 12 GB **+ RTX 5060 Ti 16 GB (eGPU, desde el 02-09)**, 128 GB RAM, Windows 11, Ollama 0.33.x; modelos `qwen3-coder:30b`, `qwen3.5:9b` (visión), `qwen3.8:27b`, `qwen3-coder-next`.
 
 ---
@@ -2033,7 +2034,38 @@ describía el mundo («esto acaba en una fila `failed`») en vez de la regla. Ah
 fijan **qué debe nombrar el rechazo** — el fichero que falta, o la carpeta donde no hay ninguno —
 sin comprometerse a que exista una fila. Van cinco fases con la misma lección.
 
-### 40.6 Cifras
+### 40.6 Un `import` sin usar que apagaba la suite entera
+Al ir a refrescar las cifras de cabecera apareció esto: en Windows la suite **no arrancaba**.
+
+```
+ERROR tests/test_history_import.py
+!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!
+1 warning, 1 error in 27.80s
+```
+
+La causa era `import resource` en `tests/test_history_import.py` — **sin usar**, un resto de una
+edición mía del día anterior (`4b7e7fd`). `resource` es POSIX: en Windows no existe. Y un
+ImportError en la **recolección** no salta ese fichero, **para la ejecución entera**: 27 segundos y
+cero tests, en una máquina donde los otros ~10.000 estaban perfectamente. Los 96 tests de ese
+fichero llevaban un día sin ejecutarse en Windows y nadie se enteró, porque en Linux el módulo sí
+está y allí todo seguía verde.
+
+Tres cosas que lo hacen digno de un test propio y no de un borrado y ya:
+
+1. **El radio del daño es inverso al tamaño del error.** Un import sin usar es el defecto más
+   pequeño que existe y se llevó por delante la suite completa.
+2. **Es invisible donde se escribe el código.** Quien desarrolle en Linux puede meter otro mañana y
+   todas sus comprobaciones seguirán en verde.
+3. **Lo que se ve no es un fallo, es la nada.** No hay un test rojo que investigar: no corrió
+   ninguno, y esa señal se confunde con «aún está arrancando».
+
+`tests/test_suite_collects_on_every_platform.py` fija la **regla**, no el módulo: un fichero de
+tests no puede importar un módulo solo-POSIX **en tiempo de import**. Dentro de una función, tras un
+`try/except ImportError` o bajo un `if os.name` está bien —nada de eso corre al recolectar—, y hay
+un test que comprueba justamente que esas formas siguen permitidas, para que la regla no se
+convierta en un estorbo que alguien acabe borrando.
+
+### 40.7 Cifras
 **676 tests en verde y 30 saltados, cero fallos**, en toda la superficie de plataforma (medios,
 workflows, contratos, changesets, doctor, aprobaciones, ejecución, dispatch). Las cuatro plantillas
 renderizadas contra el motor real

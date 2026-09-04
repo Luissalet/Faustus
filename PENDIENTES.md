@@ -10,6 +10,17 @@ a propósito · `[+]` mejora pendiente.
 
 ---
 
+## Lo primero que hay que mirar
+
+- `[?]` **La suite completa en Windows no está medida.** El 04-09 se descubrió que llevaba un día
+  sin poder ni recolectarse (un `import resource` sin usar, §40.6); arreglado y con un test que lo
+  impide, pero la cifra de cabecera —9.100 en verde— sigue siendo **la de Linux del 03-09**. La
+  ejecución completa en esta máquina tarda cerca de una hora y estaba a mitad cuando se escribió
+  esto. Hasta que termine, la cuenta de fallos de plataforma en Windows (12 + 13 según §24.4) es
+  una cifra heredada, no una medida de hoy.
+
+---
+
 ## Un patrón que ya se ha repetido tres veces
 
 **Un test que afirma el estado del mundo caduca el día que alguien implementa
