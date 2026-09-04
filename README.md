@@ -107,6 +107,13 @@ the coordinator as **~1.5k tokens**. There's an [MCP server](mcp_servers/workers
 a ready-made [skill](integrations/faustus-workers/), and a **Workers** page in the app for the same
 thing in plain language.
 
+And the worker doesn't have to be Faustus. A dispatch can name an **external agent runner** —
+OpenClaw, OpenCode, Hermes, Droid, Pi, Cline, Copilot CLI, Oh My Pi — and the job runs under it. The
+catalogue is not hand-written: it is parsed from the `ollama launch --help` you actually have
+installed, so a runner appears if you have it and disappears if you don't. Whatever a given runner
+**does not let us check** enters the `prove` package as declared uncertainty rather than being taken
+on trust.
+
 <p align="center">
   <img src="assets/branding/faustus-workers.png" alt="The Workers page: a natural-language task box, folder, verification command, and a list of jobs marked done, partial or cancelled" width="900">
 </p>
@@ -145,6 +152,50 @@ evidence spans, checkpoint file changes, corpus citations, literally-verified du
 carries a one-sentence `why`. Not a single edge is asserted by a model. It answers two questions:
 **`explain`** (why does the agent believe this?) and **`impact`** (what breaks if I touch this?).
 
+### Deep research you can cite
+
+Upstream's research wrote good prose that nobody could check. Now every page is numbered **the first
+time it is seen** and never renumbered, so a citation written in round 2 still resolves in the final
+report. URL identity is normalised — case, default port, trailing slash, fragment, a couple of dozen
+tracking parameters — but **never `www.`**, because some hosts serve different content there and a
+false merge attributes a claim to the wrong source.
+
+The point isn't that the model writes `[n]`. It's that **python then audits it**, deterministically,
+with no LLM and no network: a dangling `[7]` when there are five sources is deleted rather than left
+in the text as a lie, the two citation grammars are fused into one, and the Sources section lists
+only what is actually cited. It never fabricates a citation — an uncited paragraph stays uncited and
+the coverage figure says so.
+
+Claims are graded by the same five-layer verifier used elsewhere in the app, and the grade means
+something narrower than it looks: **whether the cited source supports the sentence, not whether the
+sentence is true in the world.** A live run made the difference matter — 51 of 57 citations came back
+"weak" in a visibly well-sourced report, because the model writes Spanish, half the sources are in
+English, and a translated paraphrase clears no lexical layer. So the scale was replaced by three
+honest outcomes: *figures found in the source* / *figures absent from the source* / *not checked*.
+On that run: 9 confirmed, **3 citing figures that are not in the source they point at**, 49
+unchecked. Those 3 are the signal, and "weak: 51" had buried them.
+
+The report also answers *your* questions in *your* language: sub-questions are pulled out of the
+prompt deterministically and become the section headings **in your order** (if you asked four
+numbered questions, the contents page has four), and the language is decided by stopword distribution
+and passed explicitly to every prompt. The legend is printed by python from real counts, never by the
+model — a model writing its own reliability legend is the thing this whole feature exists to prevent
+— and it prints breadth **only when the report fell short of what it gathered**: a report resting on
+two of the seven pages it read looks identical in prose to one that used all seven.
+
+`GET /api/research/export/{id}?format=` hands it over as **md, docx, pdf, html, txt or json**. Not one
+renderer was written for this: the report becomes blocks and goes through the conversation export
+pipeline, with the chat chrome — a role banner, "1 message · Exported…" — suppressed for documents,
+and byte-for-byte proof that an exported *conversation* is unchanged.
+
+Search behind it: **SearXNG discovers, Firecrawl reads.** DuckDuckGo was never an API — it is scraped
+HTML, and it dies on the second consecutive research. SearXNG is in this repo's `docker-compose.yml`,
+pinned and with the JSON API on, so a default install has real search: same question, same model,
+DuckDuckGo returned **10 URLs in 2 rounds**, SearXNG **36 in 3**. Self-hosted Firecrawl has no
+fallback to the hosted API **on purpose** — quietly shipping a local-first user's searches to a third
+party is not an acceptable degradation — and if the appliance is down, research falls back to the
+native fetcher with a notice saying why.
+
 ### Local-model operations
 
 - **Local models** panel — VRAM budget bar per card, what's resident right now with its GPU/CPU
@@ -175,10 +226,32 @@ carries a one-sentence `why`. Not a single edge is asserted by a model. It answe
   health score where a component with no data contributes **zero** — absence of signal is not absence
   of a problem.
 
+### The perimeter, and the environment you inherit
+
+- **An `AGENTS.md` inside a repository is somebody else's code.** Instruction files ship *with the
+  repo you open*, so whoever sends a pull request sends instructions to your agent. Faustus treats
+  them as untrusted content until you approve them — once, per file, per content hash. Change the
+  file and it asks again. There is no "trust everything".
+- **The service door.** The internal loopback token that lets the app's own tools call the app was
+  privileged enough to reach `/api/storage/*`. It's blocklisted now, with a rejection message that
+  explains why; `GET /status` stays open on purpose, because the agent needs it and it reveals
+  nothing.
+- **A child process should not inherit our virtualenv.** Faustus runs inside its own venv, so every
+  subprocess inheriting that environment resolves `python`, `pip` and its imports against *ours* —
+  the user's project tests, an external runner, a pre-commit hook. The symptom is the worst kind:
+  works on the machine of whoever wrote it, imports the wrong package on everyone else's. The venv
+  markers and the `PATH` entries inside it are stripped before spawning a child that isn't ours,
+  while our own children keep inheriting it deliberately.
+- **No automatic commit into a repository mid-operation.** A checkpoint commit landing during a
+  rebase, merge or cherry-pick is destructive and silent. Preconditions are checked — not a work
+  tree, an operation in progress, detached `HEAD`, an unexpected remote or branch — and *all* the
+  failures are reported, not just the first. The commit is refused, and there is no flag to skip it.
+
 ## Everything Odysseus already did — still here
 
 Chat with local and API models, tools, MCP, files, shell, skills and memory · **Cookbook**
-(hardware-aware model recommendations, downloads, serving) · **Deep Research** · **Compare** (blind
+(hardware-aware model recommendations, downloads, serving) · **Deep Research** *(rebuilt above)* ·
+**Compare** (blind
 side-by-side) · **Documents** (writing-first editor with AI edits and suggestions) · **Email**
 (IMAP/SMTP with triage, tags, summaries, reminders, reply drafts) · **Notes, Tasks and Calendar**
 with CalDAV sync · gallery and image editor, themes, uploads, web search, presets, sessions, 2FA.
@@ -196,7 +269,8 @@ docker compose up -d --build
 ```
 
 Open `http://localhost:7000` when the containers are healthy. The first admin password is printed in
-`docker compose logs odysseus`.
+`docker compose logs odysseus`. A pinned SearXNG comes up with it, so web search and deep research
+work on a fresh install without an API key.
 
 Native installs, GPU notes, Windows/macOS instructions, HTTPS and configuration live in the
 [setup guide](website/setup.md).
@@ -226,8 +300,9 @@ build behind a feature-owning sub-agent in a worktree, **verify in the browser a
 model** on a live instance, then audit the new modules with an adversarial sub-agent that must write
 a failing reproduction test for each finding before anything is fixed. Several of the most useful
 bugs — TOON projections that came out *larger* than JSON, two SSE endpoints in the same app speaking
-different dialects, `LOCALHOST_BYPASS` making the app unusable in a browser — were invisible to the
-test suite and only appeared from actually using the thing.
+different dialects, `LOCALHOST_BYPASS` making the app unusable in a browser, a research report whose
+75 citation markers all resolved while the whole thing rested on two of the seven pages it had read —
+were invisible to the test suite and only appeared from actually using the thing.
 
 Where a mechanism was borrowed from someone else's project, the reasoning and the measurement are
 written down, including when the borrowed formula turned out to be worse than the simple version.
@@ -238,16 +313,17 @@ As of 2026-09-03, against the fork point (`c9dd68d8`):
 
 | Measure | Value |
 |:--|:--|
-| Commits on top of upstream | 297 |
-| Lines changed | +122,000 / −1,500 across 588 files |
-| New modules in `src/`, `routes/`, `services/`, `static/js/` | 101 |
-| Tests collected | ~9,000 (`pytest --collect-only -q tests`) |
+| Commits on top of upstream | 351 |
+| Lines changed | +137,900 / −1,600 across 638 files |
+| New modules in `src/`, `routes/`, `services/`, `static/js/` | 113 |
+| New test files | 185 |
+| Tests collected | ~9,100 (`pytest --collect-only -q tests`) |
 | End-to-end flows (Playwright) | 12 |
 
 Reference machine: RTX 4070 Ti 12 GB + RTX 5060 Ti 16 GB (eGPU), 128 GB RAM, Windows 11,
-Ollama 0.33.x, running `qwen3-coder:30b`, `qwen3.5:9b`, `qwen3.8:27b`. Known platform-specific test
-failures — and the bisection proving they are not regressions — are documented in
-[`FAUSTUS.md` §24.4](FAUSTUS.md).
+Ollama 0.33.x, running `qwen3-coder:30b`, `qwen3.5:9b`, `qwen3.8:27b` and `qwen3-coder-next`. Known
+platform-specific test failures — and the bisection proving they are not regressions — are documented
+in [`FAUSTUS.md` §24.4](FAUSTUS.md).
 
 ## Relationship to Odysseus
 
@@ -267,6 +343,9 @@ model/service ports publicly.
 - Desktop input tools ask for approval **on every call**, above any per-task or per-chat approval.
 - Model-reachable API surfaces are deny-listed for mutations: the model can read what fills the disk,
   and cannot act on it.
+- Instruction files (`AGENTS.md`, `CLAUDE.md`) found inside a workspace are untrusted until you
+  approve them, per file and per content hash — see
+  [the perimeter](#the-perimeter-and-the-environment-you-inherit).
 
 The threat model is in [THREAT_MODEL.md](THREAT_MODEL.md); reporting instructions in
 [SECURITY.md](SECURITY.md). Deployment details are in the
