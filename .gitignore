@@ -37,6 +37,9 @@ logs/
 # Node
 node_modules/
 services/node_modules/
+
+# Studio build output (rebuilt by scripts/build-studio.js)
+static/studio/
 services/data/
 
 # IDE / Editor

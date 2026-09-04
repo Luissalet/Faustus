@@ -144,9 +144,16 @@ El acabado no se deja para el final ni se juzga por capturas del propio agente.
 - Cada ticket con superficie visible se abre **en el navegador**, en la
   instancia del 7001, antes de darse por cerrado. Desktop y móvil.
 - Secuencia obligatoria por pantalla: `DESIGN.md` → crítica con
-  `taste-skill@redesign-existing-projects` → implementación → `impeccable`
+  `taste-skill@redesign-existing-projects` (o `design-taste-frontend` en Inicio,
+  onboarding y superficies expresivas) → implementación → `impeccable`
   (`critique`, luego `polish`, y `delight` sólo donde aporte) → auditoría con
   `web-design-guidelines` → capturas antes/después.
+- **Awesome DESIGN.md no es una skill**, es una biblioteca de anatomías. Está
+  clonada en `D:\LocalAI\_awesome_design_md_research\design-md\` (74 marcas).
+  Se consultan **como mucho dos** documentos por patrón concreto, se registra
+  qué se toma y qué no, y no se importa una identidad ajena. También están
+  clonados `D:\LocalAI\_vercel_agent_skills_research` y
+  `D:\LocalAI\_taste_skill_research` para leer las reglas en su versión exacta.
 - `impeccable` manda en jerarquía, espaciado, estados y microinteracción; **no**
   manda sobre el presupuesto de rendimiento ni sobre `prefers-reduced-motion`.
   Una animación que no se puede interrumpir o que se ignora con movimiento
