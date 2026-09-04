@@ -397,6 +397,38 @@ function _testsLine(t) {
     (t.output_tail ? `<details class="harness-details"><summary>Output</summary><pre class="harness-pre">${esc(t.output_tail)}</pre></details>` : '');
 }
 
+// The change set (src/changesets.py): what the answer CLAIMED, against what
+// the checkpoint saw. The two lists at the bottom are the point — a reader
+// can check the file list themselves, but "it said it edited cart.py and
+// cart.py did not change" is exactly what a confident summary leaves out.
+function _changesetLine(cs) {
+  if (!cs || !cs.verdict) return '';
+  const bad = (cs.unsupported_claims || []);
+  const quiet = (cs.unclaimed_changes || []);
+  const conf = typeof cs.confidence === 'number' ? ` (${cs.confidence.toFixed(2)})` : '';
+  // The classes the harness already styles (style.css ~42780). Inventing a
+  // new one is how a red line ends up rendering as ordinary text, which is
+  // exactly what happened the first time this was looked at in a browser.
+  const state = cs.verdict === 'contradicted' ? 'is-fail'
+    : cs.verdict === 'proved' ? 'is-ok' : 'is-inconclusive';
+  const bits = [`<b>Claims vs. the diff:</b> ${esc(cs.verdict)}${esc(conf)}`];
+  if (bad.length) {
+    bits.push(`<ul class="harness-list">${bad.map(p =>
+      `<li>said it ${esc(p.claimed || 'changed')} <code>${esc(p.path)}</code> — ${esc(p.reason || 'not seen')}</li>`
+    ).join('')}</ul>`);
+  }
+  if (quiet.length) {
+    bits.push(`<div class="harness-muted">changed without being mentioned: ${
+      quiet.slice(0, 8).map(p => `<code>${esc(p)}</code>`).join(', ')}</div>`);
+  }
+  const doubts = (cs.uncertainty || []).filter(u => u && u.kind);
+  if (!bad.length && doubts.length) {
+    bits.push(`<div class="harness-muted">${doubts.slice(0, 3).map(u =>
+      esc(`${u.kind}: ${u.detail || ''}`)).join(' · ')}</div>`);
+  }
+  return `<div class="harness-foot harness-review ${state}">${bits.join('')}</div>`;
+}
+
 function _reviewLine(r) {
   if (!r || !r.verdict || r.verdict === 'skipped') return '';
   if (r.verdict === 'error') return `<div class="harness-foot harness-review is-inconclusive">⚠ Review could not run (${esc(r.model || '')}): ${esc(r.error || '')}</div>`;
@@ -540,6 +572,13 @@ export function renderHarnessSummary(json, { messageId = null } = {}) {
     parts.push(git.changed_count ? `git: ${git.changed_count} path${git.changed_count === 1 ? '' : 's'} dirty${git.shortstat ? ` (${git.shortstat.trim()})` : ''}` : 'git: clean');
   }
   if (d.tests && d.tests.ran) parts.push(d.tests.inconclusive ? 'tests: inconclusive' : (d.tests.ok ? 'tests: ✓' : 'tests: ✗'));
+  // The change set's verdict (src/changesets.py → src/prove.py). It goes in
+  // the headline only when it is worth interrupting for: a contradiction
+  // means the answer named a file the checkpoint did not see change, which is
+  // the one thing a reader cannot check for themselves from this card.
+  const _cs = d.changeset || null;
+  if (_cs && _cs.verdict === 'contradicted') parts.push('⚠ claims do not match the diff');
+  else if (_cs && _cs.verdict === 'proved') parts.push('claims check out');
   if (d.review && d.review.verdict === 'ok') parts.push('review: ✓');
   else if (d.review && d.review.verdict === 'issues') parts.push(`review: ${(d.review.findings || []).length} finding${(d.review.findings || []).length === 1 ? '' : 's'}`);
   if (d.rejections) parts.push(`${d.rejections} rejection${d.rejections === 1 ? '' : 's'}`);
@@ -556,6 +595,7 @@ export function renderHarnessSummary(json, { messageId = null } = {}) {
   }
   details.push(_testsLine(d.tests));
   details.push(_reviewLine(d.review));
+  details.push(_changesetLine(d.changeset));
   if (git && git.changed && git.changed.length) {
     details.push(`<div><b>git status:</b><pre class="harness-pre">${esc(git.changed.map(c => `${c.status.padEnd(2)} ${c.path}`).join('\n'))}</pre></div>`);
   }

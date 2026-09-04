@@ -8279,8 +8279,40 @@ async def stream_agent_loop(
         logger.info("[harness] turn summary: stop=%s tools=%s mutations=%s failed=%s rejections=%s",
                     _hsum["stop_reason"], _hsum["tool_calls"], _hsum["mutations"],
                     _hsum["failed_calls"], _hsum["rejections"])
+        # --- And the change set: what the answer CLAIMED, against what the
+        # checkpoint says actually changed. The ledger records what happened;
+        # this asks whether the sentence the user is about to read is
+        # supported by it. Its own try because a report about the turn must
+        # never be able to break the turn. ---
+        try:
+            from src import changesets as _changesets
+
+            _claimed = _harness.find_claimed_paths(full_response or "")
+            if workspace and (_hsum.get("mutations") or _claimed):
+                _changeset = _changesets.from_turn(
+                    _hsum, workspace=workspace,
+                    claims=[{"path": p, "kind": "modified"} for p in _claimed])
+                _proof = _changesets.judge(_changeset)
+                _hsum["changeset"] = {
+                    "id": _changeset.id,
+                    "fingerprint": _changeset.fingerprint(),
+                    "verdict": _proof.get("verdict"),
+                    "confidence": _proof.get("confidence"),
+                    "uncertainty": list(_proof.get("uncertainty") or ())[:6],
+                    "unsupported_claims": [dict(p) for p in
+                                           _changeset.unsupported_claims()],
+                    "unclaimed_changes": list(_changeset.unclaimed_changes())[:20],
+                    "rendered": _changesets.render(_changeset, _proof),
+                }
+                if _changeset.unsupported_claims():
+                    logger.info("[harness] the answer claimed paths the checkpoint "
+                                "did not see change: %s",
+                                [p["path"] for p in _changeset.unsupported_claims()])
+        except Exception as _cs_err:
+            logger.debug("[harness] change set failed: %s", _cs_err)
+
         if (_ledger.events or _ledger.rejections or _ledger.length_continues or _ledger.notes
-                or _hsum["stop_reason"] != "complete"):
+                or _hsum.get("changeset") or _hsum["stop_reason"] != "complete"):
             yield f"data: {json.dumps({'type': 'harness_summary', 'data': _hsum})}\n\n"
     except Exception as _hs_err:
         logger.debug("[harness] summary failed: %s", _hs_err)
