@@ -407,7 +407,9 @@
   color: var(--fs-text-2);
   cursor: pointer;
   user-select: none;
-  outline: none;
+  outline: none; /* guard-ok: Radix owns roving focus here and paints it via
+                    data-highlighted below, which keyboard and mouse share.
+                    A second native ring would double up on the same item. */
 }
 
 /* Radix moves a data-highlighted attribute with both mouse and keyboard,

@@ -73,3 +73,30 @@ su área y baja el baseline. Ningún módulo Studio nuevo la aumenta.
 11. **`[~]` Peso y arranque.** Faustus es local-first: nada de CDN en tiempo de
     ejecución y presupuesto de bundle declarado en UI-002. Cada dependencia
     nueva fuera de la tabla aprobada es una decisión, no un `npm install`.
+
+## Añadido tras el lote B (04-09-2026)
+
+12. **`[~]` Herramientas de build en `dependencies`.** El entorno tiene
+    `NODE_ENV=production` y `npm config omit=dev` globales, así que Vite,
+    TypeScript y el plugin de React se declararon como dependencias normales
+    para que se instalen. Es aceptable en un repo privado y local-first, pero
+    cualquier despliegue futuro se los llevará puestos. Documentado en
+    `docs/ui/toolchain.md`.
+13. **`[~]` La galería entra en el bundle.** Los 307 KB medidos incluyen
+    `studio/src/gallery/`, que ninguna pantalla real importará. Cuando el
+    AppShell tenga su propia entrada (UI-021), la galería debe quedar fuera
+    del bundle de producción o en un chunk perezoso; hasta entonces la cifra
+    de presupuesto está inflada a nuestro favor, que es el sentido malo.
+14. **`[?]` `npm install` falla en Windows.** `ERR_INVALID_ARG_TYPE` en el
+    postinstall de esbuild con npm 10.9.3 y Node 22.19.0. Se arregla con
+    `npm install --ignore-scripts` y luego `node node_modules/esbuild/install.js`.
+    Nadie ha comprobado si se reproduce en una máquina limpia.
+15. **`[!]` Accesibilidad solo verificada a ojo.** Las guardas de UI-012 son
+    estáticas y las ratios de contraste están calculadas a mano. No hay
+    comprobación automática sobre la página renderizada: orden de foco,
+    trampas de teclado y contraste en vivo siguen sin cubrir. Va con UI-021.
+16. **`[~]` El límite de uso de la cuenta puede parar el trabajo delegado.**
+    El Claude Code local devolvió `success` con cero tokens y cero tiempo de
+    API justo al acabar el lote A. No da error legible: hay que mirar
+    `--output-format json` para verlo. Si un lote termina en segundos y sin
+    escribir nada, es esto y no un fallo del encargo.

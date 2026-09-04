@@ -45,8 +45,9 @@
 }
 
 /* ── Focus ──
-   One ring, everywhere, never removed. Any `outline: none` in the Studio
-   tree is a lint failure. */
+   One ring, everywhere, never removed. Suppressing the focus outline
+   anywhere in the Studio tree fails the guard in
+   tests/test_studio_guards.py unless the line carries a justification. */
 .fs-app :where(a, button, input, select, textarea, [tabindex]):focus-visible {
   outline: 2px solid var(--fs-focus);
   outline-offset: 2px;
@@ -80,9 +81,9 @@
   .fs-app *,
   .fs-app *::before,
   .fs-app *::after {
-    animation-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important; /* guard-ok: the reduced-motion idiom */
     animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important; /* guard-ok: the reduced-motion idiom */
     scroll-behavior: auto !important;
   }
 }
