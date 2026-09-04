@@ -4670,8 +4670,8 @@ async def stream_agent_loop(
     # every denial that is a decision rather than a guess — guide-only,
     # block-all, the non-admin denylist, plan mode's read-only allowlist, the
     # operator's own `disabled_tools` setting and the running worker's agent
-    # definition — so what is subtracted here
-    # is exactly the set the loop had already decided must reach the model.
+    # definition — so what is subtracted here is exactly the set the loop had
+    # already decided must reach the model.
     # Clamps composed AFTER this point (the preflight, which is handed the
     # floor as `protected` and cannot name one; the odysseus-finetune no-tool
     # clamp, which disables everything for a route that ships no schemas

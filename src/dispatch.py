@@ -334,8 +334,9 @@ class DispatchJob:
         self.runners_used: List[str] = []
         # What Faustus's own guard did in front of each of them
         # (src/agent_gate.py): runner key → the run's ledger. Empty for every
-        # runner whose row says `gate: "none"`, which is what keeps
-        # `note_external_gate` on exactly the answer `_note_unguarded` gave.
+        # runner whose row says `gate: "none"`, and an empty one is what keeps
+        # `prove.note_external_gate` on the blanket answer this path has always
+        # given — not persisted, because a ledger is about a run, not a job.
         self.runner_gates: Dict[str, Dict[str, Any]] = {}
         self.events: Deque[Dict[str, Any]] = deque(maxlen=EVENTS_KEPT)
         self.task: Optional[asyncio.Task] = None
