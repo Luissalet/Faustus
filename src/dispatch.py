@@ -2501,6 +2501,13 @@ output says about it — `rate_limited`, `waiting_for_input`, `stuck`,
 worker is reported, never killed: read `why`, and fix the cause (raise the
 quota, answer the prompt in the board's chat, free the disk) instead of
 re-dispatching the same task.
+A worker may also carry `refusals`: tool calls it was not ALLOWED to make,
+one entry per tool with a `count` and the cause that stopped it (its agent
+definition, the set no sub-agent ever gets, this worker's lean toolset). A
+refusal is not a failure — the worker finished and the limit held — but it is
+the one case where re-dispatching the same task cannot work: give the work to
+a worker whose definition allows it, or narrow the task to what this one may
+do. `verdict` says `refused, not failed` when a job has any.
 
 ## Using an agent Faustus did not write
 A task may name a `runner` (`{"instruction": "…", "runner": "claude"}`, or
