@@ -1,4 +1,4 @@
-# Objetivos de UI — backlog vivo
+﻿# Objetivos de UI — backlog vivo
 
 Rama: `feat/studio-ui`. Estado a 04-09-2026.
 Decisiones que mandan: `DECISIONES_UI.md` (stack React, §1). Detalle de
@@ -13,15 +13,15 @@ proporcionales, auditoría de la guía Vercel pasada o excepción documentada,
 
 ### Lote A — autoridad visual, evidencia y toolchain
 
-- [ ] **UI-000** Journeys y capturas baseline de la UI **actual**
+- [x] **UI-000** Journeys y capturas baseline de la UI **actual**
       `tests/e2e/test_studio_baseline.py`, `docs/ui/journeys.md`.
       1400×900, 1024×768 y 390×844. Cinco journeys: crear proyecto, trabajo
       creativo, tarea de código, encontrar un resultado, resolver aprobación.
       Con clics, tiempo y puntos de confusión anotados. Es la vara de medir:
       sin esto, «la nueva mola más» no es comprobable.
-- [ ] **UI-001** `DESIGN.md` + `docs/ui/component-contracts.md`
+- [x] **UI-001** `DESIGN.md` + `docs/ui/component-contracts.md`
       Bloqueante duro de todo lo demás.
-- [ ] **UI-002** Toolchain Vite y arranque integrado
+- [x] **UI-002** Toolchain Vite y arranque integrado
       `package.json`, `vite.config`, salida a `static/studio/`, servida con el
       nonce existente. Build reproducible sin red. `Start-Faustus.ps1` construye
       si el bundle falta o está obsoleto, y falla diciendo por qué antes que
@@ -29,14 +29,14 @@ proporcionales, auditoría de la guía Vercel pasada o excepción documentada,
 
 ### Lote B — tokens, primitivos y guardas
 
-- [ ] **UI-010** Tokens CSS y puente con el tema legacy
+- [x] **UI-010** Tokens CSS y puente con el tema legacy
       Tokens de `DESIGN.md` como variables. Aliases vivos (`--bg`, `--panel`,
       `--fg`, `--red`) para que los temas personalizados actuales no se rompan.
       Foco global visible, `color-scheme`, skip link, reduced motion.
-- [ ] **UI-011** Primitivos sobre Radix
+- [x] **UI-011** Primitivos sobre Radix
       Button, IconButton, StatusBadge, EmptyState, Menu, Dialog, Popover,
       Skeleton. `data-testid` estable en todos desde el primer día.
-- [ ] **UI-012** Guardas y auditoría adaptadas a JSX
+- [x] **UI-012** Guardas y auditoría adaptadas a JSX
       Lint: nada de `<div>` con `onClick`, ningún control sin nombre accesible,
       ningún color, radio o duración fuera de tokens, ningún `transition: all`.
       Accesibilidad comprobada sobre la página renderizada en Playwright.
@@ -44,22 +44,22 @@ proporcionales, auditoría de la guía Vercel pasada o excepción documentada,
 
 ### Lote C — shell y navegación
 
-- [ ] **UI-020** Router, store y fallback SPA
+- [x] **UI-020** Router, store y fallback SPA
       React Router con las siete rutas canónicas y filtros en query string.
       Store Zustand con la forma que define el plan. En `app.py`, lista blanca
       de siete rutas, **nunca** comodín, con test de que un 404 de API sigue
       siendo JSON. Los hashes de sesión siguen funcionando.
-- [ ] **UI-021** AppShell React bajo flag `faustus_studio_shell`
+- [x] **UI-021** AppShell React bajo flag `faustus_studio_shell`
       Montado en el shell nuevo, DOM legacy intacto al lado. Apagado por
       defecto, `?shell=studio` / `?shell=legacy`, acceso «Interfaz anterior»
       visible durante el piloto.
-- [ ] **UI-022** Command palette con `cmdk`
+- [x] **UI-022** Command palette con `cmdk`
       `Ctrl/Cmd+K`. «Buscar conversaciones» pasa a ser un comando y deja de
       competir por el atajo. Navegación esencial completable sólo con teclado.
 
 ### Lote D — primera pantalla real
 
-- [ ] **UI-030** Inicio
+- [x] **UI-030** Inicio
       Continuaciones, aprobaciones pendientes, quick starts, y salud sólo si
       bloquea. Estados loading, vacío, error, offline y éxito. Sin modelos,
       temperatura ni GPU como contenido principal. Pasa por `impeccable` antes

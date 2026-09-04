@@ -24,7 +24,10 @@ export function Menu({ trigger, items, align = 'start', testId = 'menu' }: MenuP
   return (
     <RadixMenu.Root>
       <RadixMenu.Trigger asChild>{trigger}</RadixMenu.Trigger>
-      <RadixMenu.Portal>
+      {/* Portals go to #fs-overlay-root, the one body-level container the
+          shell's "hide the legacy tree" rule exempts. Defaulting to <body>
+          made every overlay invisible while the pilot was mounted. */}
+      <RadixMenu.Portal container={document.getElementById('fs-overlay-root') ?? undefined}>
         <RadixMenu.Content
           className="fs-menu"
           align={align}

@@ -2864,5 +2864,35 @@
 <script type="module" src="/static/js/agentRunners.js?v=20260903runners1"></script>
 <script type="module" src="/static/js/agentDefs.js?v=20260903agentdefs1"></script>
 <script nonce="{{CSP_NONCE}}">if('serviceWorker' in navigator){navigator.serviceWorker.register('/static/sw.js').catch(()=>{});}</script>
+<!-- Faustus Studio pilot (UI-021). Off by default: this block loads nothing
+     unless the flag is set or ?shell=studio / ?gallery=1 is in the URL, so the
+     legacy interface below is untouched in the default path. Rollback is a
+     reload with ?shell=legacy. Retired with the flag itself once the last
+     screen migrates. -->
+<script nonce="{{CSP_NONCE}}">
+  (function () {
+    try {
+      var params = new URLSearchParams(window.location.search);
+      var asked = params.get('shell');
+      if (asked === 'studio') localStorage.setItem('faustus_studio_shell', '1');
+      if (asked === 'legacy') localStorage.removeItem('faustus_studio_shell');
+      var on = params.has('gallery') || localStorage.getItem('faustus_studio_shell') === '1';
+      if (!on) return;
+      // The entry stylesheet is a separate file: Vite only writes the <link>
+      // into its own index.html, which we do not serve. Lazy chunks bring
+      // their own CSS at import time, so this is the one that needs a link.
+      var css = document.createElement('link');
+      css.rel = 'stylesheet';
+      css.href = '/static/studio/assets/index.css?v={{ASSET_V:studio/assets/index.css}}';
+      document.head.appendChild(css);
+      var s = document.createElement('script');
+      s.type = 'module';
+      s.src = '/static/studio/studio.js?v={{ASSET_V:studio/studio.js}}';
+      document.body.appendChild(s);
+    } catch (e) {
+      /* a private window without storage keeps the legacy UI, which is correct */
+    }
+  })();
+</script>
 </body>
 </html>

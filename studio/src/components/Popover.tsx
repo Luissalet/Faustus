@@ -25,7 +25,7 @@ export function Popover({
   return (
     <RadixPopover.Root>
       <RadixPopover.Trigger asChild>{trigger}</RadixPopover.Trigger>
-      <RadixPopover.Portal>
+      <RadixPopover.Portal container={document.getElementById('fs-overlay-root') ?? undefined}>
         <RadixPopover.Content
           className="fs-popover"
           align={align}

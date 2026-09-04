@@ -29,7 +29,7 @@ export function Dialog({
 }: DialogProps) {
   return (
     <RadixDialog.Root open={open} onOpenChange={onOpenChange}>
-      <RadixDialog.Portal>
+      <RadixDialog.Portal container={document.getElementById('fs-overlay-root') ?? undefined}>
         <RadixDialog.Overlay className="fs-overlay-backdrop" />
         <RadixDialog.Content className="fs-dialog" data-testid={testId}>
           <div

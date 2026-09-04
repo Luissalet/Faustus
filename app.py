@@ -1077,6 +1077,37 @@ async def serve_tasks(request: Request):
 async def serve_library(request: Request):
     return await serve_index(request)
 
+# ── Faustus Studio deep links (UI-020) ───────────────────────────────────────
+# The Studio shell is a client-side router, so a reload or a pasted link on one
+# of its routes has to come back with the SPA instead of a 404.
+#
+# These are declared ONE BY ONE on purpose. A catch-all — @app.get("/{path:path}")
+# — would also swallow every unmatched /api/... request and answer it with HTML,
+# turning a real 404 into a parse error at the caller and breaking the tests that
+# assert JSON error bodies. The whitelist costs six lines and cannot do that.
+# `/library` above is already one of the seven; `/` is the root route.
+@app.get("/studio")
+async def serve_studio(request: Request):
+    return await serve_index(request)
+
+@app.get("/projects")
+async def serve_projects(request: Request):
+    return await serve_index(request)
+
+@app.get("/projects/{project_id}")
+async def serve_project(project_id: str, request: Request):
+    # project_id is not read here: the shell resolves it client-side against
+    # /api/projects/{id}, which is the endpoint that already owns permissions.
+    return await serve_index(request)
+
+@app.get("/automations")
+async def serve_automations(request: Request):
+    return await serve_index(request)
+
+@app.get("/activity")
+async def serve_activity(request: Request):
+    return await serve_index(request)
+
 @app.get("/backgrounds")
 async def serve_backgrounds(request: Request):
     """Sandbox page for prototyping background effects. No auth required."""

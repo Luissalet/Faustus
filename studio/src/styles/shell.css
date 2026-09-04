@@ -1,0 +1,176 @@
+/* AppShell layout (UI-021). */
+
+/* While the pilot is mounted the legacy tree stays in the document — its
+   modules keep running and nothing is destroyed — but it must not paint.
+   Several legacy panels carry their own high z-index, so out-stacking them
+   is a race; hiding them is not. Turning the flag off removes the attribute
+   and everything comes back exactly as it was. */
+html[data-studio-shell='on'] body > *:not(#studio-root):not(#fs-overlay-root) {
+  display: none !important;
+}
+
+/* Overlays live in their own body-level root and must stack ABOVE the shell.
+   The first attempt gave the shell a huge z-index to out-stack the legacy
+   panels, which buried every dialog and made Ctrl+K look broken. With the
+   legacy tree hidden by the rule above there is no stacking race left, so
+   two modest numbers in the right order are enough. */
+#fs-overlay-root {
+  position: relative;
+  z-index: 60;
+}
+
+.fs-shell {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  grid-template-columns: 224px minmax(0, 1fr);
+  background: var(--fs-canvas);
+  color: var(--fs-text-1);
+  overflow: hidden;
+}
+
+.fs-nav {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fs-space-1);
+  padding: var(--fs-space-4) var(--fs-space-3);
+  border-inline-end: 1px solid var(--fs-border);
+  background: var(--fs-surface-1);
+  overflow-y: auto;
+}
+
+.fs-nav__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  padding: var(--fs-space-2) var(--fs-space-2) var(--fs-space-4);
+  font-size: var(--fs-title-size);
+  font-weight: var(--fs-title-weight);
+  letter-spacing: var(--fs-title-tracking);
+}
+
+.fs-nav__item {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-3);
+  padding: var(--fs-space-2) var(--fs-space-3);
+  border-radius: var(--fs-radius-control);
+  color: var(--fs-text-2);
+  text-decoration: none;
+  font-size: var(--fs-label-size);
+  font-weight: var(--fs-label-weight);
+  transition:
+    background-color var(--fs-duration-fast) var(--fs-ease),
+    color var(--fs-duration-fast) var(--fs-ease);
+}
+
+.fs-nav__item:hover {
+  background: var(--fs-surface-2);
+  color: var(--fs-text-1);
+}
+
+/* Selection is a left edge plus a surface, never colour alone. */
+.fs-nav__item[aria-current='page'] {
+  background: var(--fs-surface-3);
+  color: var(--fs-text-1);
+  box-shadow: inset 2px 0 0 var(--fs-brand);
+}
+
+.fs-nav__spacer {
+  flex: 1;
+}
+
+.fs-nav__foot {
+  display: grid;
+  gap: var(--fs-space-2);
+  padding-block-start: var(--fs-space-3);
+  border-block-start: 1px solid var(--fs-border);
+}
+
+.fs-nav__hint {
+  padding-inline: var(--fs-space-3);
+  font-size: 11px;
+  color: var(--fs-text-3);
+}
+
+.fs-main {
+  overflow-y: auto;
+  padding: var(--fs-space-6) var(--fs-space-6) var(--fs-space-7);
+}
+
+.fs-main__inner {
+  max-inline-size: 900px;
+  margin-inline: auto;
+}
+
+/* ── Responsive ──
+   Tablet drops the labels; mobile moves navigation to the bottom, where a
+   thumb can reach it, and never hides an action behind hover. */
+
+@media (max-width: 1279px) {
+  .fs-shell {
+    grid-template-columns: 64px minmax(0, 1fr);
+  }
+
+  .fs-nav__item span,
+  .fs-nav__brand span,
+  .fs-nav__hint,
+  .fs-nav__foot .fs-btn span {
+    display: none;
+  }
+
+  .fs-nav__foot .fs-btn {
+    padding-inline: 0;
+  }
+
+  .fs-nav__item {
+    justify-content: center;
+  }
+
+  .fs-main {
+    padding: var(--fs-space-5) var(--fs-space-4) var(--fs-space-6);
+  }
+}
+
+@media (max-width: 767px) {
+  .fs-shell {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+
+  .fs-nav {
+    grid-row: 2;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-around;
+    padding: var(--fs-space-2) var(--fs-space-2)
+      calc(var(--fs-space-2) + env(safe-area-inset-bottom));
+    border-inline-end: 0;
+    border-block-start: 1px solid var(--fs-border);
+    overflow: visible;
+  }
+
+  .fs-nav__brand,
+  .fs-nav__spacer,
+  .fs-nav__foot {
+    display: none;
+  }
+
+  .fs-nav__item {
+    flex-direction: column;
+    gap: 2px;
+    min-inline-size: 44px;
+    min-block-size: 44px;
+  }
+
+  .fs-nav__item[aria-current='page'] {
+    box-shadow: inset 0 2px 0 var(--fs-brand);
+  }
+
+  .fs-main {
+    grid-row: 1;
+    padding: var(--fs-space-4) var(--fs-space-4) var(--fs-space-5);
+    overscroll-behavior: contain;
+  }
+}

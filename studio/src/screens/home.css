@@ -1,0 +1,122 @@
+/* Inicio (UI-030). */
+
+.fs-home {
+  display: grid;
+  gap: var(--fs-space-6);
+}
+
+.fs-home__head {
+  display: grid;
+  gap: var(--fs-space-2);
+}
+
+.fs-home__title {
+  font-size: var(--fs-display-size);
+  font-weight: var(--fs-display-weight);
+  letter-spacing: var(--fs-display-tracking);
+  line-height: 1.15;
+}
+
+.fs-home__sub {
+  color: var(--fs-text-2);
+}
+
+.fs-block {
+  display: grid;
+  gap: var(--fs-space-3);
+}
+
+.fs-block__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--fs-space-3);
+}
+
+.fs-block__title {
+  font-size: var(--fs-label-size);
+  font-weight: var(--fs-label-weight);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fs-text-3);
+}
+
+.fs-list {
+  display: grid;
+  gap: var(--fs-space-1);
+}
+
+/* A row, not a card. Grouping is done with spacing and hairlines; wrapping
+   every item in a bordered box is how a page turns into a scrapbook. */
+.fs-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--fs-space-3);
+  padding: var(--fs-space-3);
+  border-radius: var(--fs-radius-control);
+  background: transparent;
+  border: 0;
+  border-block-end: 1px solid var(--fs-border);
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background-color var(--fs-duration-fast) var(--fs-ease),
+    transform var(--fs-duration-fast) var(--fs-ease);
+}
+
+.fs-row:last-child {
+  border-block-end: 0;
+}
+
+.fs-row:hover {
+  background: var(--fs-surface-1);
+}
+
+.fs-row:active {
+  transform: scale(0.995);
+}
+
+.fs-row__main {
+  display: grid;
+  gap: 2px;
+  min-inline-size: 0;
+}
+
+.fs-row__name {
+  font-weight: var(--fs-label-weight);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fs-row__meta {
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-3);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fs-quickstarts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-2);
+}
+
+.fs-notice {
+  padding: var(--fs-space-3) var(--fs-space-4);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-1);
+  color: var(--fs-text-2);
+  font-size: var(--fs-label-size);
+}
+
+.fs-notice[data-tone='warning'] {
+  border-color: color-mix(in srgb, var(--fs-warning) 40%, var(--fs-border));
+}

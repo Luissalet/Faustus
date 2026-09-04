@@ -1,0 +1,91 @@
+/* Command palette (UI-022). */
+
+.fs-palette {
+  font-family: var(--fs-font-ui);
+  font-size: var(--fs-body-size);
+  color: var(--fs-text-1);
+  position: fixed;
+  inset-block-start: 12vh;
+  inset-inline-start: 50%;
+  translate: -50% 0;
+  z-index: 60;
+  inline-size: min(560px, calc(100vw - var(--fs-space-5) * 2));
+  background: var(--fs-surface-3);
+  border: 1px solid var(--fs-border-strong);
+  border-radius: var(--fs-radius-panel);
+  box-shadow: var(--fs-shadow-overlay);
+  overflow: hidden;
+  animation: fs-pop-in var(--fs-duration-fast) var(--fs-ease);
+}
+
+.fs-palette__input {
+  inline-size: 100%;
+  padding: var(--fs-space-4);
+  /* The legacy stylesheet styles bare inputs, and this one is portalled
+     outside the shell: state the whole box rather than inherit half of it. */
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  outline: none; /* guard-ok: the dialog itself owns focus; cmdk keeps the
+                    input focused for the life of the palette, and a ring
+                    around a full-width field reads as an error state. */
+  border-block-end: 1px solid var(--fs-border);
+  background: transparent;
+  color: var(--fs-text-1);
+  font: inherit;
+  font-size: var(--fs-body-size);
+}
+
+.fs-palette__input::placeholder {
+  color: var(--fs-text-3);
+}
+
+.fs-palette__list {
+  max-block-size: 320px;
+  overflow-y: auto;
+  padding: var(--fs-space-2);
+  overscroll-behavior: contain;
+}
+
+.fs-palette__group {
+  padding-block: var(--fs-space-1);
+}
+
+.fs-palette__group [cmdk-group-heading] {
+  padding: var(--fs-space-2) var(--fs-space-3);
+  font-size: 11px;
+  font-weight: var(--fs-label-weight);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fs-text-3);
+}
+
+.fs-palette__item {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-3);
+  padding: var(--fs-space-2) var(--fs-space-3);
+  border-radius: var(--fs-radius-control);
+  color: var(--fs-text-2);
+  font-size: var(--fs-label-size);
+  cursor: pointer;
+}
+
+/* cmdk drives this attribute from both the keyboard and the pointer, so
+   arrow keys and hover land on the same visual state. */
+.fs-palette__item[data-selected='true'] {
+  background: var(--fs-surface-2);
+  color: var(--fs-text-1);
+}
+
+.fs-palette__empty {
+  padding: var(--fs-space-4);
+  color: var(--fs-text-3);
+  font-size: var(--fs-label-size);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fs-palette {
+    animation: none;
+  }
+}
