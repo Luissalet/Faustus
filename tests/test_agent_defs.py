@@ -25,6 +25,7 @@ import os
 import shutil
 import subprocess
 import sys
+import unittest.mock as mock
 from pathlib import Path
 
 import pytest
@@ -491,11 +492,27 @@ def test_an_external_runners_session_is_preferred_over_a_chat_one():
     assert target["kind"] == "runner" and target["id"] == "sess-42" and target["runner"] == "claude"
 
 
-def test_todays_external_worker_cannot_resume_and_that_is_detected():
-    """The two halves ship separately: this side carries the handle and asks
-    the signature whether the other side can act on it yet."""
-    from src import dispatch
-    assert dispatch._external_resume_supported() is False
+def test_the_external_worker_can_now_resume_and_that_is_detected():
+    """The two halves shipped separately: this side carried the handle and
+    asked the signature whether the other side could act on it yet. It can —
+    `run_task` takes `resume` and `build_argv` fills `{session}`.
+
+    The probe stays, and stays a probe: it reads the LIVE signature, so a build
+    (or a test double) whose worker cannot resume still falls back to today's
+    fresh fixer instead of raising TypeError at the worst possible moment."""
+    import inspect
+    from types import SimpleNamespace
+
+    from src import dispatch, external_worker
+
+    assert dispatch._external_resume_supported() is True
+    assert "resume" in inspect.signature(external_worker.run_task).parameters
+
+    import src
+
+    old = SimpleNamespace(run_task=lambda runner_key, task, **kw: {})
+    with mock.patch.object(src, "external_worker", old):
+        assert dispatch._external_resume_supported() is False
 
 
 def test_a_resume_handle_survives_the_delegation_parser():
