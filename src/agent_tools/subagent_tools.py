@@ -562,6 +562,44 @@ def worker_disabled_tools(instruction: str, permissions: Any = None) -> set:
     return out
 
 
+#: How many distinct (tool, policy) refusals one worker reports. A model that
+#: keeps retrying a denied tool must cost the coordinator one line with a
+#: count, not one line per attempt — the report is read by the thing that
+#: decides whether to retry, so it must not grow with the retrying.
+MAX_REFUSAL_GROUPS = 20
+
+
+def _refusal_cause(run: "SubagentRun", names: set, policy: str, origin: str) -> str:
+    """Which layer of :func:`worker_disabled_tools` actually refused a name.
+
+    That function composes one flat set out of three unrelated decisions — a
+    tool no sub-agent ever gets, a tool this agent's author did not grant, and
+    a tool a keyword guess pruned — and the loop can only report the set. So
+    every worker refusal comes back attributed to `request_denylist`, the
+    composer rather than the decision. Answering "denied by policy" for all
+    three would be the same line-with-two-causes that `ToolDenial` in
+    src/agent_loop.py was written to end, one layer further down; the reader
+    here is a coordinator choosing whether to re-dispatch, and only one of the
+    three is worth re-dispatching against.
+
+    A denial from anywhere else keeps its raw origin, and so does one this
+    cannot place: an unfamiliar word sends its reader to the source, a
+    confident wrong one sends it nowhere.
+    """
+    from src.agent_loop import DENIAL_ORIGIN_REQUEST
+    if origin != DENIAL_ORIGIN_REQUEST:
+        return f"denied by {origin or policy or 'the request policy'}"
+    if names & SUBAGENT_DISABLED_TOOLS:
+        return "not available to sub-agents"
+    permissions = run.permissions
+    if permissions is not None and any(permissions.tool_denied(n) for n in names):
+        return (f"denied by agent definition {run.agent!r}" if run.agent
+                else "denied by this worker's agent definition")
+    if names & SUBAGENT_LEAN_DENYLIST:
+        return "not in this worker's lean toolset"
+    return f"denied by {origin}"
+
+
 def _short(text: Any, n: int = 160) -> str:
     s = str(text or "").replace("\n", " ").strip()
     return s if len(s) <= n else s[: n - 1] + "…"
@@ -815,6 +853,13 @@ class SubagentRun:
         self.failed_calls = 0
         self.mutations: List[str] = []
         self.rejections = 0
+        #: Tool calls this worker was REFUSED, grouped by (tool, policy) with a
+        #: count. Deliberately not folded into `rejections` above, which counts
+        #: the harness rejecting a round's claims: one word for two causes is
+        #: the bug src/agent_loop.py's `ToolDenial` comment already paid for
+        #: once, and "the harness did not believe you" and "you are not allowed
+        #: to do that" want opposite next moves from whoever reads them.
+        self.refusals: List[Dict[str, Any]] = []
         self.stop_reason = "unknown"
         self.error: Optional[str] = None
         # `started` is reset when the worker really starts (after queueing).
@@ -855,6 +900,30 @@ class SubagentRun:
         self.repeat_count = self.repeat_count + 1 if sig == self.last_tool_sig else 1
         self.last_tool_sig = sig
 
+    def note_refusal(self, tool: Any, *, policy: Any = "", origin: Any = "",
+                     matched: Any = "") -> None:
+        """Record one refused tool call, grouped by (tool, named policy).
+
+        Grouped and counted because the sentence a coordinator can act on is
+        "it tried edit_file six times and was refused", not six sentences; the
+        count is the part that says re-dispatching the same task is pointless.
+        """
+        name = str(tool or "").strip()
+        if not name:
+            return
+        policy = str(policy or "")
+        for entry in self.refusals:
+            if entry["tool"] == name and entry["policy"] == policy:
+                entry["count"] += 1
+                return
+        if len(self.refusals) >= MAX_REFUSAL_GROUPS:
+            return
+        names = {n for n in (name, str(matched or "").strip()) if n}
+        self.refusals.append({
+            "tool": name, "policy": policy, "count": 1,
+            "why": _refusal_cause(self, names, policy, str(origin or "")),
+        })
+
     def outcome(self) -> Optional[str]:
         """The four-value outcome of this run (src/tool_outcome.py): a worker
         the user stopped is `cancelled`, not a failed one. None while the
@@ -892,6 +961,9 @@ class SubagentRun:
             **({"agent": self.agent} if self.agent else {}),
             **({"agent_def": self.agent_def} if self.agent_def else {}),
             **({"permissions": self.permissions.to_dict()} if self.permissions is not None else {}),
+            # Conditional for the same reason `outcome` is: a worker nothing
+            # refused reports exactly the dict it has always reported.
+            **({"refusals": [dict(x) for x in self.refusals]} if self.refusals else {}),
             **({"resumed": True, "resumed_from": self.resume_id} if self.resumed else {}),
             **({"runner_session": self.runner_session} if self.runner_session else {}),
         }
@@ -1112,6 +1184,16 @@ async def _run_subagent(
                 ok = ev.get("exit_code") in (0, None)
                 if not ok:
                     run.failed_calls += 1
+                if ev.get("blocked"):
+                    # A refusal arrives as exit_code 1 with a sentence, i.e.
+                    # indistinguishable from a crashed tool by the counter
+                    # alone — which is how "tools=3 failed=2" told a
+                    # coordinator to retry a call that could only be refused
+                    # again. It still counts as a failed call; what changes is
+                    # that the report can now say which of them it was.
+                    run.note_refusal(ev.get("tool"), policy=ev.get("policy_name"),
+                                     origin=ev.get("policy_origin"),
+                                     matched=ev.get("policy_matched"))
                 run.tool_events.append({"tool": ev.get("tool"), "command": ev.get("command"), "output": _short(ev.get("output"), 400), "exit_code": ev.get("exit_code")})
                 await emit({"event": "tool", "tool": ev.get("tool"), "ok": ok, "phase": "done", "output": _short(ev.get("output"), 120)})
             elif et == "round_info":
@@ -1272,6 +1354,13 @@ def _build_report_text(runs: List[SubagentRun], workspace: Optional[str], locks:
             lines.append(f"   syntax check passed for {len(r.static_checks)} file(s)")
         if r.rejections:
             lines.append(f"   harness rejections: {r.rejections}")
+        if r.refusals:
+            # Said as an outcome, not an alarm: the worker finished, the limit
+            # held, and the only wrong next move is to ask for the same thing
+            # again. Naming the tool and the cause is what makes that visible.
+            lines.append("   tool calls refused (the limit worked — do not re-ask for these): "
+                         + "; ".join(f"{x['tool']} ×{x['count']} — {x['why']}"
+                                     for x in r.refusals[:6]))
         if r.text.strip():
             lines.append("   worker report: " + _short(r.text, 900))
     # Two workers writing the same file is the classic parallel-agent failure:
