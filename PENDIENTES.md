@@ -175,20 +175,26 @@ al romperlo:
   Son complementarios hoy, pero si el ChangeSet se persiste alguna vez habrá que decidir cuál de
   los dos guarda el checkpoint, porque ahora mismo lo llevan los dos.
 
-- `[~]` **De las tres plantillas, solo `image.quick-draft` se ha renderizado de verdad.** ComfyUI
-  está instalado (`D:\LocalAI\ComfyUI`, venv propio, torch cu128) y el camino entero se ha
-  ejecutado contra él: 906 nodos, render real en 4,1 s, artefacto con procedencia, cancelación,
-  y el hito completo brief→render→aprobación (§39). Lo que **no** se ha ejecutado: `image.product`
-  y `image.reference-edit`, porque piden `sd_xl_base_1.0.safetensors` (6,9 GB) y no está
-  descargado — el motor real las rechaza nombrando el fichero, que es la mitad correcta de la
-  prueba, pero su grafo SDXL nunca ha pasado por el validador de ComfyUI.
+- `[+]` **La plantilla de vídeo es muda, corta y de una sola toma.** `video.short-form.v1` renderiza
+  de verdad (SVD, 14 fotogramas, mp4 de 93 KB en 42,4 s, §40) pero SVD es **img2vid**: necesita una
+  imagen de entrada, no sabe partir de un texto, y no hay audio, ni interpolación, ni continuidad
+  entre clips. Para «un vídeo corto» de verdad falta encadenar: imagen → clip → clip → montaje.
 
-- `[~]` **No hay plantilla de vídeo.** Necesita custom nodes (AnimateDiff/SVD) que no están
-  instalados, y una plantilla escrita a ciegas es peor que ninguna.
+- `[+]` **Nadie arranca el segundo motor.** El pool (`src/media_backends/pool.py`) reparte entre los
+  motores que encuentra en `COMFYUI_URLS`, pero levantarlos es manual (`Start-ComfyUI-Pool.ps1`) y
+  la variable se pone a mano en el arranque de la instancia. Si solo hay uno, el pool funciona con
+  uno y lo dice; nadie avisa de que la segunda GPU está ociosa porque falta un proceso.
 
-- `[?]` **Solo se ha usado la 4070 Ti.** ComfyUI cogió `cuda:0` y nadie le ha dicho otra cosa. La
-  5060 Ti está en la máquina y torch la ve (cu128, `device_count 2`), pero el reparto entre las dos
-  para renders —lo que `gpu_placement_prefer` ya hace para los LLM— no existe en el lado de medios.
+- `[~]` **Los dos motores dicen llamarse `cuda:0`.** Cada ComfyUI arranca con `--cuda-device N` y
+  entonces ve su tarjeta como el dispositivo 0, así que los dos se presentan como
+  «cuda:0 NVIDIA GeForce RTX ...». No es mentira —es lo que el motor sabe de sí mismo— y el nombre
+  de la tarjeta y la URL los distinguen, pero leído rápido parece que las dos son la misma. Si
+  alguna vez confunde a alguien, la etiqueta útil es el modelo de la tarjeta, no el índice.
+
+- `[~]` **El pool encuesta a los motores cada vez que planifica.** `survey()` pregunta
+  `/system_stats`, `/object_info` y `/queue` a cada URL en cada `plan`. Con dos motores en local son
+  milisegundos; con motores remotos o con más de dos habría que cachear como hace el registro de
+  capacidades (10 s) y refrescar en segundo plano.
 
 - `[+]` **Los artefactos de un render no se ven en ninguna parte.** La fila lleva receta, semilla,
   modelo y licencia; no hay galería que lo enseñe ni botón de «variar/reproducir», que es justo lo

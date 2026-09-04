@@ -201,6 +201,38 @@ def _tests_runner() -> Finding:
                                   "unverified, not failed"})
 
 
+def _media_engines() -> Finding:
+    """Every ComfyUI this Faustus knows about, not just the first.
+
+    On a machine with two GPUs the useful fact is usually "one of them is
+    down", and a check that stopped at the first engine would report a healthy
+    half as a healthy whole."""
+    from src.media_backends import pool
+
+    engines = pool.survey()
+    ready = [e for e in engines if e.ok]
+    if not engines:
+        return Finding("media", "engines", "absent", "none configured",
+                       fix="set COMFYUI_URL, or COMFYUI_URLS for more than one")
+    lines = "; ".join(
+        f"{e.url} {'ok' if e.ok else e.reason}"
+        + (f" [{e.gpu}{f', {e.vram_gb} GB' if e.vram_gb else ''}"
+           f"{f', {e.queued} queued' if e.queued is not None else ''}]" if e.ok else "")
+        for e in engines)
+    if not ready:
+        return Finding("media", "engines", "warn",
+                       f"0 of {len(engines)} answering — {lines}",
+                       fix=_backend_fix("media_worker", "unavailable"),
+                       facts={"engines": [e.to_dict() for e in engines]})
+    state = "ok" if len(ready) == len(engines) else "warn"
+    return Finding("media", "engines", state,
+                   f"{len(ready)} of {len(engines)} ready — {lines}",
+                   fix="" if state == "ok" else
+                       "one engine is not answering; renders still work on the "
+                       "others, just with less to go round",
+                   facts={"engines": [e.to_dict() for e in engines]})
+
+
 def _media_templates() -> Finding:
     from src import media_workflows
 
@@ -363,6 +395,7 @@ def run(*, areas: Optional[List[str]] = None) -> Dict[str, Any]:
         ("execution", "agent shell in the sandbox", _agent_sandbox),
         ("coding", "checkpoints", _checkpoints),
         ("coding", "test runner", _tests_runner),
+        ("media", "engines", _media_engines),
         ("media", "templates", _media_templates),
         ("media", "renders", _media_runs),
         ("approvals", "pending cards", _approvals),

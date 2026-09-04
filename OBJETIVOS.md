@@ -25,7 +25,7 @@ una integración posterior, no otra arquitectura paralela.
 | 0 · Contratos y migración segura | El vocabulario común: 8 contratos, catálogo de backends, tabla de artefactos | ✅ 04-09-2026 — `FAUSTUS.md` §30, 73 tests |
 | 1 · Ejecución segura y artefactos | `DockerWorkspaceBackend`, router, y que el código deje de correr en el proceso web | 🟡 04-09-2026 — sandbox probado contra contenedores reales (§31) y **el `bash`/`python` del agente ya pasa por él** detrás de `agent_sandbox_execution` (§32). Faltan los runs de coding y la galería |
 | 2 · Runtime de skills y memoria útil | Instalar/revertir capacidades sin tocar el core; alcances de memoria y `MemoryView` | 🟡 04-09-2026 — puente `SKILL.md`↔manifiesto, descubrimiento que para en el repo, `MemoryView`. Falta cablearlo al prompt y la instalación/reversión (§32) |
-| 3 · Motor creativo | ComfyUI como servicio, plantillas versionadas, galería de artefactos con receta | 🟡 04-09-2026 — cliente ComfyUI, plantillas aprobadas y renders durables con procedencia (§35), **ejecutado contra un ComfyUI real** con render de verdad en 4,1 s (§39). Faltan galería, hwfit, vídeo y SDXL |
+| 3 · Motor creativo | ComfyUI como servicio, plantillas versionadas, galería de artefactos con receta | 🟡 04-09-2026 — cliente ComfyUI, plantillas aprobadas y renders durables con procedencia (§35), **ejecutado contra un ComfyUI real** (§39) y **las 4 plantillas renderizadas de verdad, imagen y vídeo, repartidas entre las dos GPUs** (§40). Faltan galería y hwfit |
 | 4 · Workflows, approvals y conectores | Procesos que sobreviven a reinicios, idempotentes | 🟡 04-09-2026 — aprobaciones con puerta humana (§33) **y el núcleo de workflows durables** (§34): claim antes de actuar, pausa por persona o por reloj, ramas. Faltan los conectores y cablear `skill`/`deliver` a algo que exista |
 | 5 · Coding profesional | `ChangeSet`, repo map, LSP opcional, intents explore/plan/implement/review | 🟡 04-09-2026 — el contrato `ChangeSet` existe y **delega el veredicto en `prove`** en vez de inventar un quinto vocabulario (§37): afirmación contra evidencia, `ok` de tres valores, intents que prometen. Faltan repo map, LSP y cablearlo al harness |
 | 6 · Gateway, canales y dispositivos | Un canal de bajo riesgo con pairing, nodos, después voz | ⏳ |
@@ -108,7 +108,8 @@ escapar del workspace, heredar secretos o caer al host sin confirmación.
 - [x] `config/media_workflows/` con plantillas versionadas — **nunca JSON arbitrario del agente**.
       `src/media_workflows.py` rellena solo lo declarado; `computed` son tablas de consulta, no
       expresiones; la sustitución reemplaza cadenas enteras, así que un prompt no puede salirse de
-      su campo. Dos plantillas de imagen que usan **solo nodos del core** de ComfyUI.
+      su campo. Cuatro plantillas —tres de imagen y una de vídeo— que usan **solo nodos del core**
+      de ComfyUI.
 - [x] Renders durables: tabla `media_runs`, `poll()` que reconcilia **preguntando al motor** tras un
       reinicio, y un motor caído deja el run como estaba en vez de inventarle un fallo.
 - [x] Procedencia completa en el artefacto: receta, versión, huella, semilla, motor, id del trabajo,
@@ -118,18 +119,23 @@ escapar del workspace, heredar secretos o caer al host sin confirmación.
       ya sabe decir «no cabe»; falta atarlo a una plantilla antes de encolar.
 - [ ] Galería de artefactos con preview, receta, **licencia del modelo** y botón «variar/reproducir».
       Hoy los artefactos existen y nadie los enseña.
-- [ ] La plantilla de vídeo: necesita custom nodes (AnimateDiff/SVD) que no se pueden probar sin
-      tenerlos instalados, y una plantilla escrita a ciegas es peor que ninguna.
+- [x] **La plantilla de vídeo** (04-09, §40): `video.short-form.v1` con SVD y **solo nodos del
+      core** —resultó que AnimateDiff no hacía falta—. mp4 de verdad en 42,4 s. Queda que es
+      img2vid: parte de una imagen, dura 14 fotogramas y no tiene audio.
 - [x] **Ejecutado contra un ComfyUI real** (04-09, §39): instalado en `D:\LocalAI\ComfyUI` con su
       propio venv (torch cu128, que es el que tiene kernels para la 5060 Ti). Render de verdad en
       4,1 s sobre la 4070 Ti, artefacto con procedencia entera, cancelación, y el hito completo
       brief→render→aprobación. `Start-ComfyUI.ps1` / `Stop-ComfyUI.ps1` junto a los de Faustus.
-- [ ] SDXL: `image.product` y `image.reference-edit` piden un checkpoint que no está descargado, así
-      que su grafo nunca ha pasado por el validador del motor. El rechazo sí está probado.
-- [ ] Repartir renders entre las dos GPUs. ComfyUI cogió `cuda:0` y nadie le ha dicho otra cosa.
+- [x] **SDXL descargado y probado** (04-09, §40): `image.product` 10,1 s y `image.reference-edit`
+      6,1 s contra el motor real. Los cuatro grafos han pasado ya por el validador de ComfyUI.
+- [x] **Las dos GPUs** (04-09, §40): `src/media_backends/pool.py` encuesta a los motores de
+      `COMFYUI_URLS` y elige **el menos ocupado y, a igualdad, la tarjeta más pequeña que sirva**,
+      dejando la grande libre. La elección se explica en el run (`chosen_because`). Medido: dos
+      renders en paralelo, uno por GPU, 6,1 s y 8,1 s.
 
-Skills iniciales: `image.product` ✅, `image.reference-edit` ✅, `image.quick-draft` ✅ (la única
-renderizada de verdad), `video.short-form`, `video.subtitle`, `audio.voiceover`, `document.report`.
+Skills iniciales: `image.product` ✅, `image.reference-edit` ✅, `image.quick-draft` ✅,
+`video.short-form` ✅ — **las cuatro renderizadas de verdad** —; `video.subtitle`,
+`audio.voiceover`, `document.report` siguen sin existir.
 
 ---
 

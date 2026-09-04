@@ -86,14 +86,28 @@ def plan(workflow_id: str, inputs: Optional[Mapping[str, Any]] = None, *,
     if not check_engine:
         return out
 
-    engine = _backend(engine_url)
-    gate = engine.probe()
-    out["engine"] = {"url": engine.base_url, **gate}
-    if not gate["ok"]:
+    from src.media_backends import pool
+
+    picked = pool.choose(rendered, requires_nodes=list(workflow.requires_nodes),
+                         prefer=engine_url)
+    out["engines"] = picked["why"]
+    if not picked["ok"]:
         out["ok"] = False
-        out["reason"] = gate["reason"]
-        out["detail"] = gate["detail"]
+        out["reason"] = picked["reason"]
+        out["detail"] = picked["detail"]
+        # The models nobody has, gathered from what each engine said, so the
+        # answer to "why not" is a file name rather than a count.
+        missing = sorted({m for w in picked["why"]
+                          for m in (w.get("missing_models") or ())})
+        if missing:
+            out["reason"] = "missing_requirements"
+            out["missing"] = {"nodes": [], "models": missing}
         return out
+
+    engine = _backend(picked["url"])
+    out["engine"] = {"url": engine.base_url, "ok": True,
+                     "gpu": (picked.get("engine") or {}).get("gpu", ""),
+                     "chosen_because": picked.get("chosen_because", "")}
     try:
         gap = engine.missing(rendered, requires_nodes=list(workflow.requires_nodes))
     except ComfyUIError as e:
@@ -102,6 +116,7 @@ def plan(workflow_id: str, inputs: Optional[Mapping[str, Any]] = None, *,
         out["detail"] = str(e)
         return out
     if not gap["ok"]:
+        # The pool only checks checkpoints; a missing NODE is caught here.
         out["ok"] = False
         out["reason"] = "missing_requirements"
         out["detail"] = gap["detail"]
@@ -132,7 +147,17 @@ def start(workflow_id: str, inputs: Optional[Mapping[str, Any]] = None, *,
         return {"ok": False, "reason": "bad_inputs", "field": e.path,
                 "detail": e.message}
 
-    engine = _backend(engine_url)
+    # Which engine, and why not the others. With one ComfyUI this picks it and
+    # says so; with two it fills the smaller card first, which is throughput
+    # rather than politeness — see media_backends/pool.py.
+    from src.media_backends import pool
+
+    picked = pool.choose(rendered, requires_nodes=list(workflow.requires_nodes),
+                         prefer=engine_url)
+    if not picked["ok"]:
+        return {"ok": False, "reason": picked["reason"],
+                "detail": picked["detail"], "why": picked["why"]}
+    engine = _backend(picked["url"])
     run_id = f"mrun_{uuid.uuid4().hex[:20]}"
 
     db = SessionLocal()
@@ -164,7 +189,10 @@ def start(workflow_id: str, inputs: Optional[Mapping[str, Any]] = None, *,
     return {"ok": True, "run_id": run_id, "status": "queued",
             "engine_job_id": job["prompt_id"], "position": job.get("position"),
             "workflow": workflow.id, "version": workflow.version,
-            "values": rendered["values"]}
+            "values": rendered["values"],
+            "engine_url": engine.base_url,
+            "chosen_because": picked.get("chosen_because", ""),
+            "engine_gpu": (picked.get("engine") or {}).get("gpu", "")}
 
 
 def _update(run_id: str, **fields: Any) -> bool:

@@ -519,13 +519,38 @@ def render_changeset(data: Dict[str, Any]) -> str:
 
 
 def render_media_recipes(data: Dict[str, Any], engine: Dict[str, Any]) -> str:
-    """The recipes, and what the engine can actually do right now.
+    """The recipes, and what the engines can actually do right now.
 
-    The engine line comes first because it changes the answer: a beautiful
+    The engine lines come first because they change the answer: a beautiful
     catalogue in front of a ComfyUI that is not running wastes the next three
-    tool calls."""
+    tool calls.
+
+    There can be more than one engine — one per GPU is the usual reason — so
+    each is listed with its card and its models. Which one a render lands on
+    is not this tool's business (`media_render` decides and says why), but
+    what is on each of them is, because a model that exists on only one engine
+    is still a model this machine can use."""
     lines = []
-    if engine.get("ok"):
+    engines = engine.get("engines")
+    if isinstance(engines, list) and len(engines) > 1:
+        lines.append(f"engines: {engine.get('ready')} of "
+                     f"{engine.get('configured')} ready")
+        for one in engines:
+            where = one.get("gpu") or one.get("url")
+            vram = one.get("vram_gb")
+            card = f"{where} ({vram} GB)" if vram else str(where)
+            if one.get("ok"):
+                have = one.get("checkpoints") or []
+                queued = one.get("queued")
+                busy = "idle" if not queued else f"{queued} queued"
+                lines.append(f"  {one.get('url')} — {card} · {busy}")
+                if have:
+                    lines.append(f"      models: {', '.join(have[:8])}"
+                                 + (f" (+{len(have) - 8} more)" if len(have) > 8 else ""))
+            else:
+                lines.append(f"  {one.get('url')} — NOT READY "
+                             f"({one.get('reason')}): {one.get('detail')}")
+    elif engine.get("ok"):
         lines.append(f"engine: ready — {engine.get('detail')}")
         have = engine.get("checkpoints") or []
         if have:
@@ -571,6 +596,10 @@ def render_media_plan(data: Dict[str, Any]) -> str:
     for model in data.get("models") or []:
         lines.append(f"  model {model.get('name')} "
                      f"[{model.get('license') or 'licence unstated'}]")
+    chosen = data.get("engine") or {}
+    if chosen.get("chosen_because"):
+        where = chosen.get("gpu") or chosen.get("url") or ""
+        lines.append(f"  would run on {where}: {chosen['chosen_because']}")
     lines.append("  nothing has been queued; call media_render to actually do it")
     return "\n".join(lines)
 
@@ -582,6 +611,15 @@ def render_media_run(data: Dict[str, Any]) -> str:
                 + (f" — {detail}" if detail else ""))
     lines = [f"{data.get('run_id')} · {data.get('status')} "
              f"· {data.get('workflow') or ''} {data.get('version') or ''}".rstrip()]
+    where = data.get("engine_gpu") or data.get("engine_url") or ""
+    if data.get("chosen_because"):
+        # Which card it landed on and why. On a one-engine machine this is
+        # noise; on a two-GPU machine it is the difference between "it is
+        # slow" and "it queued behind the other one".
+        lines.append(f"  on {where}: {data['chosen_because']}" if where
+                     else f"  {data['chosen_because']}")
+    elif where:
+        lines.append(f"  on {where}")
     if data.get("engine_job_id"):
         lines.append(f"  engine job {data['engine_job_id']}")
     if data.get("reason"):

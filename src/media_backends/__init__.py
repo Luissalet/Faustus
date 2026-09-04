@@ -14,5 +14,9 @@ render that takes twenty minutes has no business inside the web process.
 from .comfyui import (  # noqa: F401
     ComfyUIBackend, ComfyUIError, DEFAULT_BASE_URL,
 )
+from .pool import (  # noqa: F401
+    Engine, choose, survey, urls,
+)
 
-__all__ = ["ComfyUIBackend", "ComfyUIError", "DEFAULT_BASE_URL"]
+__all__ = ["ComfyUIBackend", "ComfyUIError", "DEFAULT_BASE_URL",
+           "Engine", "choose", "survey", "urls"]

@@ -237,14 +237,35 @@ def test_a_render_that_failed_keeps_the_engine_s_own_words(world):
     assert "KSampler" in out["reason"] and "out of memory" in out["reason"]
 
 
-def test_a_missing_model_fails_the_run_before_it_is_queued_and_the_row_says_why(world):
+def test_a_render_no_engine_can_take_never_becomes_a_run_at_all(world):
+    """It is refused during engine selection, before a row exists — the same
+    place `no_such_workflow` and `bad_inputs` are refused, and for the same
+    reason: nothing reached an engine, so there is no run to record. The
+    answer carries what EVERY engine said, because "no engine available" on a
+    machine with two of them is the least useful sentence in the system."""
+    # An engine holding the WRONG model, which is the case where naming the
+    # file matters: the usual cause is one letter, not an empty folder.
+    world.checkpoints = ["dreamshaper_8.safetensors"]
+    out = media_runs.start("image.product", ASK, owner="luis")
+
+    assert out["ok"] is False
+    assert "run_id" not in out, "a request that never reached an engine left a row"
+    assert media_runs.recent() == []
+    assert "sd_xl_base_1.0.safetensors" in out["detail"]
+    assert out["why"] and all("url" in w for w in out["why"])
+    assert world.submitted == [], "it queued a job it knew would fail"
+
+
+def test_an_engine_with_no_models_at_all_is_told_where_to_put_one(world):
+    """A different refusal from "the wrong model", and it should read
+    differently: an empty folder is answered with the folder, not with a file
+    name nobody could have known."""
     world.checkpoints = []
     out = media_runs.start("image.product", ASK, owner="luis")
-    assert out["ok"] is False
-    row = media_runs.get(out["run_id"])
-    assert row["status"] == "failed"
-    assert "sd_xl_base_1.0.safetensors" in row["reason"]
-    assert world.submitted == [], "it queued a job it knew would fail"
+
+    assert out["ok"] is False and "run_id" not in out
+    assert "models/checkpoints" in out["detail"]
+    assert "does not download models" in out["detail"]
 
 
 def test_an_input_the_template_rejects_never_becomes_a_run_at_all(world):

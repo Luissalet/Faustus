@@ -1942,5 +1942,109 @@ Vídeo (necesita custom nodes), SDXL (no está descargado — y su plantilla lo 
 render grande. `python -m src.doctor` ya reporta el motor como `ok` con la GPU y el checkpoint que
 ve, así que la respuesta a «¿esto funciona aquí?» es una línea de terminal.
 
+> Los tres se cerraron esa misma noche en **§40** — y uno de ellos («vídeo necesita custom nodes»)
+> resultó ser falso. Se queda escrito porque el error importa más que la corrección.
+
+## 40. Las dos tarjetas, SDXL y un vídeo de verdad (04-09-2026, madrugada)
+
+El bloque anterior terminó con una lista de tres pegas. Luis las leyó y contestó **«tackle it then,
+dont cry me about it»**, que es la respuesta correcta: una pega que uno mismo puede cerrar no es un
+informe, es trabajo sin hacer.
+
+### 40.1 SDXL: la plantilla no tenía nada malo
+Se descargaron **SDXL base 1.0 (6,94 GB)** y **SVD (9,56 GB)**, los dos del repositorio oficial de
+Stability, con lo que la máquina tiene 20,8 GB de checkpoints. Faustus siguió sin descargar nada:
+lo hizo una persona, que es la regla.
+
+`image.product` y `image.reference-edit` funcionaron **sin tocar una línea** — 10,1 s y 6,1 s. Es el
+resultado aburrido y es el bueno: el rechazo que se probó en §39 era el motor haciendo su trabajo,
+no un grafo mal escrito escondiéndose detrás de un modelo que faltaba.
+
+### 40.2 El vídeo no necesitaba custom nodes
+`PENDIENTES.md` afirmaba que hacía falta AnimateDiff o SVD como **custom nodes**. Era falso: SVD es
+**core** de ComfyUI desde hace versiones. La plantilla `video.short-form.v1` no usa un solo nodo de
+terceros — `ImageOnlyCheckpointLoader`, `LoadImage`, `SVD_img2vid_Conditioning`,
+`VideoLinearCFGGuidance`, `KSampler`, `VAEDecode`, `CreateVideo`, `SaveVideo` — y produce un **mp4
+de 93 KB en 42,4 s**, que entra en el almacén con `kind: video` y su procedencia entera.
+
+Dos cosas que solo se aprenden intentándolo:
+
+1. **`SaveVideo` explotaba con `execute() missing 1 required positional argument: 'format'`.** La
+   forma que documentan los ejemplos de otros nodos —`"format": {"auto": {}}`— es la de un *widget
+   combo anidado* y aquí no vale; lo que quiere es la cadena pelada `"format": "auto"`. Se averiguó
+   con un grafo de tres nodos (`LoadImage` → `CreateVideo` → `SaveVideo`) que tarda un segundo, en
+   vez de pagar 42 s por cada intento con SVD detrás. **Cuando una hipótesis es barata de probar,
+   probarla sola.**
+2. **`ModelMMAP allocation failed` no era falta de VRAM.** El fichero seguía descargándose: 7,0 de
+   9,56 GB. Un `.safetensors` a medias es un mapeo imposible, no una tarjeta pequeña. Mirar el
+   tamaño antes que la GPU.
+
+### 40.3 Un pool de motores que explica por qué elige
+`src/media_backends/pool.py` (205 líneas) lee `COMFYUI_URLS` —una lista— y encuesta a cada motor:
+`/system_stats` da la GPU y su VRAM, `/object_info` los checkpoints que tiene, `/queue` lo ocupado
+que está. `choose(plan)` descarta a los que **no** tienen el modelo o el nodo que la receta pide, y
+entre los que quedan aplica la política:
+
+```python
+def _smallest_free(eligible):
+    """Least busy first, then SMALLEST card."""
+    return sorted(eligible, key=lambda e: (
+        e.queued if e.queued is not None else 0,
+        e.vram_gb if e.vram_gb is not None else 9999,
+        e.url))[0]
+```
+
+**No es la política de los LLM, y conviene no confundirlas.** `gpu_placement_prefer`
+(`src/gpu_policy.py`) es un número que **elige una persona** —«llena primero la tarjeta N», por
+defecto −1, que es dejar decidir a Ollama— y existe porque un modelo de lenguaje se queda residente
+durante horas: quiere vivir entero en una tarjeta, y clavarlo en una donde no cabe es peor que
+dejar que Ollama lo parta. Un render es transitorio: dura segundos y devuelve la tarjeta. Por eso
+aquí **no lo configura nadie** y la regla la pone el código: coge **la tarjeta más pequeña donde
+quepa** y deja la grande libre para lo que sí va a ocuparla mucho rato. Con dos motores levantados
+—8188 con `--cuda-device 0`, la 4070 Ti de 12,0 GB; 8189 con `--cuda-device 1`, la 5060 Ti de
+15,9 GB; aquí la **pequeña es la 4070 Ti**— el run lo dice con estas palabras: *«smallest card that
+fits the job (12.0 GB), leaving the bigger one free»*, o *«least busy (0 queued) of 2 engines»*
+cuando lo que decide es la cola.
+
+Medido: dos renders lanzados a la vez terminaron en **6,1 s y 8,1 s**, uno en cada GPU.
+
+Un detalle que despista: **los dos motores se presentan como `cuda:0`**, porque `--cuda-device N`
+hace que cada proceso vea su tarjeta como el dispositivo 0. No es un fallo —es lo que cada motor
+sabe de sí mismo— y el modelo de la tarjeta y la URL los distinguen, pero está anotado en
+`PENDIENTES.md` por si algún día confunde a alguien.
+
+### 40.4 El MCP creció con la función
+Una capacidad nueva que solo se ve por HTTP está a medias. `media_recipes` decía «engine: ready» en
+singular; ahora, cuando hay más de uno, lista **cada motor con su tarjeta, su cola y sus modelos**,
+y nombra al que está caído con su motivo en vez de encogerse a la lista de los que van —que en una
+máquina de dos GPUs es justo el dato que hace falta cuando un render falla por un modelo que falta:
+puede que el **otro** motor lo tenga. Y tanto `media_plan` como `media_render` dicen ahora en qué
+tarjeta caería o cayó el trabajo, **y por qué**: «está lento» y «está encolado detrás del otro» son
+problemas distintos y sin esa línea el segundo es invisible. Probado por handshake JSON-RPC real
+contra el servidor MCP —29 tools— apuntando a la instancia 7001.
+
+Un detalle de contrato: si **ningún** motor sirve, el pool **rechaza antes de escribir la fila**,
+igual que `bad_inputs` o `no_such_workflow`. Un run que existe en la base de datos es un run que
+alguien intentó de verdad.
+
+### 40.5 La trampa de tests, quinta entrega
+`test_a_missing_model_fails_the_run_before_it_is_queued_and_the_row_says_why` se rompió, y con razón:
+describía el mundo («esto acaba en una fila `failed`») en vez de la regla. Ahora hay dos tests que
+fijan **qué debe nombrar el rechazo** — el fichero que falta, o la carpeta donde no hay ninguno —
+sin comprometerse a que exista una fila. Van cinco fases con la misma lección.
+
+### 40.6 Cifras
+**676 tests en verde y 30 saltados, cero fallos**, en toda la superficie de plataforma (medios,
+workflows, contratos, changesets, doctor, aprobaciones, ejecución, dispatch). Las cuatro plantillas
+renderizadas contra el motor real
+a través de la API de Faustus: draft 2,0 s · producto 10,1 s · variación 6,1 s · vídeo 42,4 s. El
+catálogo reporta `broken: []` y «2 de 2 motores listos». `python -m src.doctor`: 14 ok, 2 warn, 1
+absent, y el aviso incluye ahora el pool entero, no un solo motor.
+
+Y una trampa de la máquina, para el que venga: **PowerShell 5.1 lee un `.ps1` como ANSI**, así que
+una raya larga dentro de una cadena entre comillas dobles rompe el parser con un *«string is missing
+the terminator»* que no señala la raya. Los scripts del pool son ASCII puro y lo dicen en su
+cabecera.
+
 ## Cómo mantener este documento
 Cada bloque de trabajo añade una sección (fecha, qué, por qué, ficheros, cómo se verificó, cifras) y actualiza las cifras de cabecera (`git log --oneline c9dd68d8..HEAD | wc -l`, `git diff --stat c9dd68d8..HEAD`). Los commits del fork llevan mensajes largos que explican el porqué: `git log c9dd68d8..HEAD` es la fuente detallada.

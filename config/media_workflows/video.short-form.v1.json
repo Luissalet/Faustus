@@ -1,0 +1,122 @@
+{
+  "id": "video.short-form",
+  "version": "1.0.0",
+  "title": "A short clip from a still you already have",
+  "engine": "comfyui",
+  "description": "Stable Video Diffusion: image to video at 1024x576, saved as mp4. NO custom nodes — ImageOnlyCheckpointLoader, SVD_img2vid_Conditioning, VideoLinearCFGGuidance, CreateVideo and SaveVideo are all in ComfyUI's core, so this runs on a stock install with the SVD checkpoint present. SVD has no text prompt: it animates the picture it is given, and `motion` is how much it is allowed to move. SaveVideo's `format` is a dynamic combo whose API form is the plain key 'auto' — a nested object is refused, which cost one render to find out.",
+
+  "models": [
+    {
+      "name": "svd_xt.safetensors",
+      "kind": "checkpoint",
+      "license": "Stability AI Non-Commercial Research Community License",
+      "node": "ImageOnlyCheckpointLoader",
+      "field": "ckpt_name"
+    }
+  ],
+  "requires_nodes": [
+    "ImageOnlyCheckpointLoader", "LoadImage", "SVD_img2vid_Conditioning",
+    "VideoLinearCFGGuidance", "KSampler", "VAEDecode", "CreateVideo", "SaveVideo"
+  ],
+
+  "outputs": { "video": "artifact:video" },
+
+  "inputs": {
+    "still": {
+      "type": "artifact",
+      "required": true,
+      "title": "The picture to animate, by name, already in the engine's input folder"
+    },
+    "motion": {
+      "type": "enum",
+      "choices": ["subtle", "moderate", "lively"],
+      "default": "moderate",
+      "title": "How much it is allowed to move — SVD's motion bucket"
+    },
+    "length": {
+      "type": "enum",
+      "choices": ["short", "standard"],
+      "default": "standard",
+      "title": "short is 14 frames, standard is 25 — about 1s and 2s at 12fps"
+    },
+    "quality": {
+      "type": "enum",
+      "choices": ["draft", "final"],
+      "default": "draft",
+      "title": "Draft is for checking the motion before spending the time"
+    },
+    "seed": {
+      "type": "seed",
+      "title": "Recorded either way; the same still and seed give the same clip"
+    }
+  },
+
+  "computed": {
+    "motion_bucket": { "from": "motion", "map": { "subtle": 63, "moderate": 127, "lively": 200 } },
+    "frames":        { "from": "length", "map": { "short": 14, "standard": 25 } },
+    "steps":         { "from": "quality", "map": { "draft": 14, "final": 25 } },
+    "cfg":           { "from": "quality", "map": { "draft": 2.5, "final": 3.0 } },
+    "sampler":       { "from": "quality", "map": { "draft": "euler", "final": "euler" } },
+    "scheduler":     { "from": "quality", "map": { "draft": "karras", "final": "karras" } }
+  },
+
+  "graph": {
+    "1": {
+      "class_type": "ImageOnlyCheckpointLoader",
+      "inputs": { "ckpt_name": "svd_xt.safetensors" }
+    },
+    "2": {
+      "class_type": "LoadImage",
+      "inputs": { "image": "{{still}}" }
+    },
+    "3": {
+      "class_type": "SVD_img2vid_Conditioning",
+      "inputs": {
+        "clip_vision": ["1", 1],
+        "init_image": ["2", 0],
+        "vae": ["1", 2],
+        "width": 1024,
+        "height": 576,
+        "video_frames": "{{frames}}",
+        "motion_bucket_id": "{{motion_bucket}}",
+        "fps": 12,
+        "augmentation_level": 0.0
+      }
+    },
+    "4": {
+      "class_type": "VideoLinearCFGGuidance",
+      "inputs": { "model": ["1", 0], "min_cfg": 1.0 }
+    },
+    "5": {
+      "class_type": "KSampler",
+      "inputs": {
+        "seed": "{{seed}}",
+        "steps": "{{steps}}",
+        "cfg": "{{cfg}}",
+        "sampler_name": "{{sampler}}",
+        "scheduler": "{{scheduler}}",
+        "denoise": 1.0,
+        "model": ["4", 0],
+        "positive": ["3", 0],
+        "negative": ["3", 1],
+        "latent_image": ["3", 2]
+      }
+    },
+    "6": {
+      "class_type": "VAEDecode",
+      "inputs": { "samples": ["5", 0], "vae": ["1", 2] }
+    },
+    "7": {
+      "class_type": "CreateVideo",
+      "inputs": { "images": ["6", 0], "fps": 12 }
+    },
+    "8": {
+      "class_type": "SaveVideo",
+      "inputs": {
+        "video": ["7", 0],
+        "filename_prefix": "faustus/clip",
+        "format": "auto"
+      }
+    }
+  }
+}

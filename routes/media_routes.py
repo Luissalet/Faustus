@@ -56,20 +56,28 @@ def setup_media_routes():
 
     @router.get("/engine")
     def engine_state(request: Request):
-        """Is there an engine, and what does it have? Answered honestly: a
-        ComfyUI with no checkpoint is not ready, and the fix is in the
-        sentence."""
+        """Every engine, not just the first. On a two-GPU machine the useful
+        fact is usually "one of them is down", and a summary that averaged
+        them would hide exactly that. A ComfyUI with no checkpoint is not
+        ready, and the fix is in the sentence."""
         require_admin(request)
-        from src.media_backends import ComfyUIBackend
-        engine = ComfyUIBackend()
-        gate = engine.probe()
-        body = {"ok": gate["ok"], "url": engine.base_url, **gate,
-                "checked_at": now_iso()}
-        if gate["ok"]:
-            try:
-                body["checkpoints"] = engine.checkpoints()
-            except Exception as e:
-                body["checkpoints_error"] = str(e)
+        from src.media_backends import pool
+
+        engines = pool.survey()
+        ready = [e for e in engines if e.ok]
+        first = ready[0] if ready else (engines[0] if engines else None)
+        body = {
+            "ok": bool(ready),
+            "checked_at": now_iso(),
+            "engines": [e.to_dict() for e in engines],
+            "ready": len(ready), "configured": len(engines),
+            # The single-engine keys stay, so nothing that read them breaks.
+            "url": first.url if first else "",
+            "reason": (first.reason if first else "not_configured"),
+            "detail": (first.detail if first else "no engines are configured"),
+        }
+        if ready:
+            body["checkpoints"] = sorted({c for e in ready for c in e.checkpoints})
         return body
 
     @router.post("/plan")
