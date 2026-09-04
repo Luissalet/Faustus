@@ -7,6 +7,10 @@ tiene sección en `FAUSTUS.md` y tests que lo prueban; si no, no está hecho.
 Fuente: `D:\LocalAI\inspiration\MASTERPLAN_FAUSTUS_MULTIPROPOSITO.md` (04-09-2026), síntesis de las
 referencias de OpenHands, Letta, n8n, Aider, ComfyUI, OpenCode y OpenClaw.
 
+**El overhaul de interfaz tiene backlog propio**, en la rama `feat/studio-ui`: `docs/ui/OBJETIVOS_UI.md`
+para lo que falta, `docs/ui/PENDIENTES_UI.md` para lo que puede romperse y `docs/ui/DECISIONES_UI.md`
+para lo ya cerrado. No dupliques tickets de UI aquí.
+
 **La decisión central:** Faustus no es otro chat con integraciones. Es el sistema operativo personal
 de trabajo creativo y técnico: el usuario formula una intención y Faustus compone una skill o un
 workflow, conserva contexto con permisos, ejecuta cada paso en el backend adecuado, pide aprobación

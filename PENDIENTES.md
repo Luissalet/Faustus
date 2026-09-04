@@ -8,6 +8,9 @@ se pueda verificar se marca como no verificado en vez de darse por bueno.
 Convención: `[!]` rompe algo hoy · `[?]` no verificado · `[~]` deuda aceptada
 a propósito · `[+]` mejora pendiente.
 
+La deuda y los riesgos del overhaul de interfaz viven aparte, en
+`docs/ui/PENDIENTES_UI.md` (rama `feat/studio-ui`).
+
 ---
 
 ## Lo primero que hay que mirar
