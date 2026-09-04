@@ -546,6 +546,21 @@ def _compact_static_checks(sc: Any) -> Any:
     return _squash(sc, 200)
 
 
+def _compact_refusals(items: Any) -> List[Dict[str, Any]]:
+    """A refused tool call as three fields: what it tried, why it was stopped,
+    how often. Not the sentence the model was handed and not its prose about
+    it — this projection is why a coordinator costs 1.5k tokens instead of
+    118k (FAUSTUS.md §21), and a refusal earns its bytes only by being the
+    thing that stops the next pointless re-dispatch."""
+    out: List[Dict[str, Any]] = []
+    for x in list(items or [])[:10]:
+        if not isinstance(x, dict) or not x.get("tool"):
+            continue
+        out.append({"tool": str(x.get("tool"))[:60], "why": _squash(x.get("why"), 120),
+                    "count": int(x.get("count") or 1)})
+    return out
+
+
 def compact_from_result(result: Optional[Dict[str, Any]], *, summary_chars: int = SUMMARY_CHARS) -> Dict[str, Any]:
     """What an outside coordinator needs and nothing more: per worker the
     status, the files it says it changed, its tool/round/token counts, the
@@ -575,6 +590,12 @@ def compact_from_result(result: Optional[Dict[str, Any]], *, summary_chars: int 
         }
         if outcomes_on:
             w["outcome"] = _worker_outcome(r)
+        if r.get("refusals"):
+            # Only when there are any: a worker nothing refused keeps the row
+            # byte-for-byte the one a coordinator has been reading.
+            refusals = _compact_refusals(r.get("refusals"))
+            if refusals:
+                w["refusals"] = refusals
         sc = r.get("static_checks")
         if sc:
             w["static_checks"] = _compact_static_checks(sc)
@@ -1615,6 +1636,13 @@ def _settle(job: DispatchJob) -> None:
         # verification and the diff below are Faustus's; the commands that
         # produced them were not seen by anything.
         parts.append("external agent(s) ran unguarded: " + ", ".join(job.runners_used[:4]))
+    refused = _refusal_notes(job)
+    if refused:
+        # A worker that changed nothing because it was not allowed to is a
+        # different outcome from one that had nothing to do, and the line
+        # could not tell them apart. Said plainly, without alarm: the worker
+        # finished, the limit held, and re-dispatching is the one wrong move.
+        parts.append("refused, not failed: " + ", ".join(refused[:4]))
     blocked = _blocked_workers(job)
     if blocked:
         # Reported, not acted on: a rate-limited or prompting worker was never
@@ -1632,6 +1660,26 @@ def _settle(job: DispatchJob) -> None:
         _record_objective_evidence(job)
     except Exception as e:  # noqa: BLE001 - settle path, never raise
         logger.debug("objective evidence for %s failed: %s", job.id, e)
+
+
+def _refusal_notes(job: DispatchJob) -> List[str]:
+    """One phrase per (worker, refused tool), for the verdict line.
+
+    Read from the worker reports rather than recomputed, so the line and the
+    compact payload can never disagree about what was refused.
+    """
+    out: List[str] = []
+    for r in ((job.result or {}).get("subagents") or []):
+        if not isinstance(r, dict):
+            continue
+        for x in list(r.get("refusals") or [])[:3]:
+            if not isinstance(x, dict) or not x.get("tool"):
+                continue
+            count = int(x.get("count") or 1)
+            out.append(f"{r.get('name')} → {x.get('tool')}"
+                       + (f" ×{count}" if count > 1 else "")
+                       + (f" ({_squash(x.get('why'), 60)})" if x.get("why") else ""))
+    return out
 
 
 def _blocked_workers(job: DispatchJob) -> List[Tuple[str, str]]:
