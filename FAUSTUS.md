@@ -1893,5 +1893,54 @@ dice la verdad completa: Docker y la imagen del sandbox listos, checkpoints y gi
 plantillas de medios instaladas, ComfyUI caído con la frase de arranque, y **dos workflow runs
 pausados que nadie ha avanzado**, con la ruta para hacerlo.
 
+## 39. Y ahora contra un ComfyUI de verdad (04-09-2026, noche)
+
+`PENDIENTES.md` decía, con todas las letras, que la Fase 3 **nunca se había ejecutado contra el
+motor real**: el protocolo estaba implementado según su API documentada y probado contra un
+servidor que la imitaba. Luis dijo «si no hay comfyui simplemente descarga su repo», así que se
+descargó, se instaló y se ejecutó.
+
+**Lo instalado:** `D:\LocalAI\ComfyUI` (clon superficial), su **propio venv** —torch 2.11.0+cu128,
+que es el que tiene kernels para la 5060 Ti (Blackwell, sm_120); los wheels cu124 por defecto no—,
+y un checkpoint pequeño, **SD 1.5 fp16 (4,3 GB)**, en vez de SDXL (6,9 GB): el objetivo era probar
+el camino entero en esta máquina, y un modelo de 512px lo hace en segundos. Con él llegó una
+plantilla nueva, `image.quick-draft`, que es una receta de verdad —«decidir QUÉ hacer», barata y de
+poca VRAM— y no un atajo para el test.
+
+`Start-ComfyUI.ps1` y `Stop-ComfyUI.ps1` quedan junto a los de Faustus. Solo loopback: un ComfyUI
+alcanzable desde la red es un lector de ficheros sin autenticar y un ejecutor de nodos arbitrarios
+en una máquina con dos GPUs dentro.
+
+### 39.1 Lo que confirmó
+Todo lo que el cliente creía sobre el protocolo era correcto: la forma de `/object_info` (906 nodos
+en esta instalación), la del historial indexado por prompt id, la de las filas de cola, la de los
+descriptores de salida con `subfolder` y `filename` separados. **Un render real en 4,1 s** sobre la
+4070 Ti, recogido como artefacto de 422 KB con su procedencia entera —receta, huella, semilla,
+modelo y licencia— y con los bytes de un PNG de verdad en el almacén.
+
+Y el camino de rechazo, que era el que más apetecía ver: la plantilla `image.product` pide
+`sd_xl_base_1.0.safetensors`, que **no** está instalado, y el motor real contesta lo que se
+esperaba — *«this ComfyUI does not have 'sd_xl_base_1.0.safetensors'; what it does have:
+v1-5-pruned-emaonly-fp16.safetensors»*. Nadie descargó nada por su cuenta.
+
+El hito de producto entero, con el motor real detrás: **brief → render de verdad → una persona
+aprueba → completado**.
+
+### 39.2 Los dos fallos que solo aparecieron aquí
+1. **Un render cancelado se reportaba como fallido.** ComfyUI registra una interrupción en la misma
+   forma que un error —`completed: false`, `status_str: error`— y lo único que los distingue es el
+   nombre del mensaje (`execution_interrupted`). Sin leerlo, a quien para un render a propósito se
+   le dice que se ha roto: una mentira pequeña que cuesta un minuto real de preocupación. El
+   servidor que imitaba la API no reproducía esto, porque nadie había visto que hiciera falta.
+2. **El fichero descargado se llamaba `draft_00001_png.png`.** El saneado del nombre quitaba el
+   punto y luego se añadía la extensión otra vez. Ahora se sanea el **tallo**, no el nombre entero.
+
+Los dos tienen test, y el fake aprendió el `interrupt()` del motor real.
+
+### 39.3 Lo que sigue sin estar probado
+Vídeo (necesita custom nodes), SDXL (no está descargado — y su plantilla lo dice), y cuánto tarda un
+render grande. `python -m src.doctor` ya reporta el motor como `ok` con la GPU y el checkpoint que
+ve, así que la respuesta a «¿esto funciona aquí?» es una línea de terminal.
+
 ## Cómo mantener este documento
 Cada bloque de trabajo añade una sección (fecha, qué, por qué, ficheros, cómo se verificó, cifras) y actualiza las cifras de cabecera (`git log --oneline c9dd68d8..HEAD | wc -l`, `git diff --stat c9dd68d8..HEAD`). Los commits del fork llevan mensajes largos que explican el porqué: `git log c9dd68d8..HEAD` es la fuente detallada.

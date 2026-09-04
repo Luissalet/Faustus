@@ -260,11 +260,16 @@ def poll(run_id: str, *, collect: bool = True) -> Dict[str, Any]:
         return {"ok": True, "run_id": run_id, **{**record, "status": state["status"]},
                 "checked": True, "ahead": state.get("ahead")}
 
-    if state["status"] == "failed":
-        _update(run_id, status="failed", reason=state.get("reason") or "the render failed",
+    if state["status"] in ("failed", "cancelled"):
+        # `cancelled` travels as itself. ComfyUI reports an interruption in the
+        # same shape as a failure, and telling somebody who stopped a render
+        # that it broke is a small lie that costs a real minute of worry.
+        _update(run_id, status=state["status"],
+                reason=state.get("reason") or f"the render {state['status']}",
                 ended_at=now_iso())
         return {"ok": True, "run_id": run_id,
-                **{**record, "status": "failed", "reason": state.get("reason", "")},
+                **{**record, "status": state["status"],
+                   "reason": state.get("reason", "")},
                 "checked": True}
 
     if state["status"] == "unknown":

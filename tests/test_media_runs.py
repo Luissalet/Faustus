@@ -210,6 +210,17 @@ def test_the_engine_being_down_makes_a_run_unknown_not_failed(world):
     assert media_runs.get(started["run_id"])["status"] == "queued"
 
 
+def test_a_render_somebody_stopped_reads_as_cancelled_not_failed(world):
+    """The engine reports an interruption in the same shape as a crash.
+    Telling a person who stopped a render that it broke is a small lie that
+    costs a real minute of worry."""
+    started = media_runs.start("image.product", ASK)
+    world.interrupt(started["engine_job_id"])
+    out = media_runs.poll(started["run_id"])
+    assert out["status"] == "cancelled"
+    assert media_runs.get(started["run_id"])["status"] == "cancelled"
+
+
 def test_an_engine_that_forgot_the_job_is_unknown_with_the_reason(world):
     started = media_runs.start("image.product", ASK)
     world.pending = []          # a restarted ComfyUI: history and queue empty

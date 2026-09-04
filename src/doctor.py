@@ -162,9 +162,10 @@ def _backend_fix(backend_id: str, state: str) -> str:
         "docker_workspace": "start Docker, then build the sandbox image with "
                             "scripts/build_sandbox_image.ps1 — Faustus never "
                             "pulls or builds an image on its own",
-        "media_worker": "start ComfyUI and put a checkpoint in its "
-                        "models/checkpoints folder; point COMFYUI_URL at it if "
-                        "it is not on http://127.0.0.1:8188",
+        "media_worker": "run D:\\LocalAI\\Start-ComfyUI.ps1 (or start ComfyUI "
+                        "however you keep it) and make sure a checkpoint is in "
+                        "its models/checkpoints folder; point COMFYUI_URL at it "
+                        "if it is not on http://127.0.0.1:8188",
         "local": "",
     }.get(backend_id, "")
 

@@ -25,7 +25,7 @@ una integración posterior, no otra arquitectura paralela.
 | 0 · Contratos y migración segura | El vocabulario común: 8 contratos, catálogo de backends, tabla de artefactos | ✅ 04-09-2026 — `FAUSTUS.md` §30, 73 tests |
 | 1 · Ejecución segura y artefactos | `DockerWorkspaceBackend`, router, y que el código deje de correr en el proceso web | 🟡 04-09-2026 — sandbox probado contra contenedores reales (§31) y **el `bash`/`python` del agente ya pasa por él** detrás de `agent_sandbox_execution` (§32). Faltan los runs de coding y la galería |
 | 2 · Runtime de skills y memoria útil | Instalar/revertir capacidades sin tocar el core; alcances de memoria y `MemoryView` | 🟡 04-09-2026 — puente `SKILL.md`↔manifiesto, descubrimiento que para en el repo, `MemoryView`. Falta cablearlo al prompt y la instalación/reversión (§32) |
-| 3 · Motor creativo | ComfyUI como servicio, plantillas versionadas, galería de artefactos con receta | 🟡 04-09-2026 — cliente ComfyUI, plantillas aprobadas y renders durables con procedencia (§35). **No hay ComfyUI en esta máquina**: probado contra un servidor que imita su API. Faltan galería, hwfit y vídeo |
+| 3 · Motor creativo | ComfyUI como servicio, plantillas versionadas, galería de artefactos con receta | 🟡 04-09-2026 — cliente ComfyUI, plantillas aprobadas y renders durables con procedencia (§35), **ejecutado contra un ComfyUI real** con render de verdad en 4,1 s (§39). Faltan galería, hwfit, vídeo y SDXL |
 | 4 · Workflows, approvals y conectores | Procesos que sobreviven a reinicios, idempotentes | 🟡 04-09-2026 — aprobaciones con puerta humana (§33) **y el núcleo de workflows durables** (§34): claim antes de actuar, pausa por persona o por reloj, ramas. Faltan los conectores y cablear `skill`/`deliver` a algo que exista |
 | 5 · Coding profesional | `ChangeSet`, repo map, LSP opcional, intents explore/plan/implement/review | 🟡 04-09-2026 — el contrato `ChangeSet` existe y **delega el veredicto en `prove`** en vez de inventar un quinto vocabulario (§37): afirmación contra evidencia, `ok` de tres valores, intents que prometen. Faltan repo map, LSP y cablearlo al harness |
 | 6 · Gateway, canales y dispositivos | Un canal de bajo riesgo con pairing, nodos, después voz | ⏳ |
@@ -120,11 +120,16 @@ escapar del workspace, heredar secretos o caer al host sin confirmación.
       Hoy los artefactos existen y nadie los enseña.
 - [ ] La plantilla de vídeo: necesita custom nodes (AnimateDiff/SVD) que no se pueden probar sin
       tenerlos instalados, y una plantilla escrita a ciegas es peor que ninguna.
-- [ ] **Nada de esto se ha ejecutado contra un ComfyUI real** — no hay uno en esta máquina. El
-      protocolo está probado contra un servidor que imita su API.
+- [x] **Ejecutado contra un ComfyUI real** (04-09, §39): instalado en `D:\LocalAI\ComfyUI` con su
+      propio venv (torch cu128, que es el que tiene kernels para la 5060 Ti). Render de verdad en
+      4,1 s sobre la 4070 Ti, artefacto con procedencia entera, cancelación, y el hito completo
+      brief→render→aprobación. `Start-ComfyUI.ps1` / `Stop-ComfyUI.ps1` junto a los de Faustus.
+- [ ] SDXL: `image.product` y `image.reference-edit` piden un checkpoint que no está descargado, así
+      que su grafo nunca ha pasado por el validador del motor. El rechazo sí está probado.
+- [ ] Repartir renders entre las dos GPUs. ComfyUI cogió `cuda:0` y nadie le ha dicho otra cosa.
 
-Skills iniciales: `image.product` ✅, `image.reference-edit` ✅, `video.short-form`,
-`video.subtitle`, `audio.voiceover`, `document.report`.
+Skills iniciales: `image.product` ✅, `image.reference-edit` ✅, `image.quick-draft` ✅ (la única
+renderizada de verdad), `video.short-form`, `video.subtitle`, `audio.voiceover`, `document.report`.
 
 ---
 

@@ -175,18 +175,20 @@ al romperlo:
   Son complementarios hoy, pero si el ChangeSet se persiste alguna vez habrá que decidir cuál de
   los dos guarda el checkpoint, porque ahora mismo lo llevan los dos.
 
-- `[?]` **El motor creativo no se ha ejecutado nunca contra un ComfyUI real.** No hay ComfyUI
-  instalado en esta máquina y nada escucha en el 8188. El cliente implementa su API documentada y
-  está probado contra un `ThreadingHTTPServer` que la imita con sus formas reales, más dos pruebas
-  en vivo contra la 7001 con ese servidor en el 8188. Lo que **no** está comprobado: que un ComfyUI
-  de verdad devuelva exactamente esas formas, que el grafo de las dos plantillas sea aceptado por su
-  validador, y cuánto tarda un render de verdad. La primera vez que haya uno instalado, esto es lo
-  primero que hay que volver a mirar.
+- `[~]` **De las tres plantillas, solo `image.quick-draft` se ha renderizado de verdad.** ComfyUI
+  está instalado (`D:\LocalAI\ComfyUI`, venv propio, torch cu128) y el camino entero se ha
+  ejecutado contra él: 906 nodos, render real en 4,1 s, artefacto con procedencia, cancelación,
+  y el hito completo brief→render→aprobación (§39). Lo que **no** se ha ejecutado: `image.product`
+  y `image.reference-edit`, porque piden `sd_xl_base_1.0.safetensors` (6,9 GB) y no está
+  descargado — el motor real las rechaza nombrando el fichero, que es la mitad correcta de la
+  prueba, pero su grafo SDXL nunca ha pasado por el validador de ComfyUI.
 
-- `[~]` **`config/media_workflows/` trae dos plantillas de imagen y ninguna de vídeo.** Las dos usan
-  **solo nodos del core** de ComfyUI a propósito, así que funcionan en una instalación de serie con
-  un checkpoint. Una plantilla de vídeo necesita custom nodes (AnimateDiff/SVD) que no se pueden
-  probar sin tenerlos, y una plantilla escrita a ciegas es peor que ninguna.
+- `[~]` **No hay plantilla de vídeo.** Necesita custom nodes (AnimateDiff/SVD) que no están
+  instalados, y una plantilla escrita a ciegas es peor que ninguna.
+
+- `[?]` **Solo se ha usado la 4070 Ti.** ComfyUI cogió `cuda:0` y nadie le ha dicho otra cosa. La
+  5060 Ti está en la máquina y torch la ve (cu128, `device_count 2`), pero el reparto entre las dos
+  para renders —lo que `gpu_placement_prefer` ya hace para los LLM— no existe en el lado de medios.
 
 - `[+]` **Los artefactos de un render no se ven en ninguna parte.** La fila lleva receta, semilla,
   modelo y licencia; no hay galería que lo enseñe ni botón de «variar/reproducir», que es justo lo

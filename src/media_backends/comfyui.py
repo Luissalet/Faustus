@@ -146,8 +146,10 @@ class ComfyUIBackend:
         except ComfyUIError as e:
             if e.reason == "unreachable":
                 return {"ok": False, "reason": "backend_unavailable",
-                        "detail": f"{e.detail}. Start ComfyUI and point Faustus at it "
-                                  f"with COMFYUI_URL if it is not on {DEFAULT_BASE_URL}."}
+                        "detail": f"{e.detail}. Start ComfyUI (on this machine: "
+                                  f"D:\\LocalAI\\Start-ComfyUI.ps1) and point Faustus "
+                                  f"at it with COMFYUI_URL if it is not on "
+                                  f"{DEFAULT_BASE_URL}."}
             return {"ok": False, "reason": "backend_unavailable", "detail": str(e)}
 
         devices = stats.get("devices") or []
@@ -284,6 +286,16 @@ class ComfyUIBackend:
                         "outputs": entry.get("outputs") or {},
                         "messages": state.get("messages") or []}
             if state.get("status_str") == "error" or completed is False:
+                # A job somebody cancelled is not a job that failed. ComfyUI
+                # records the interruption as an execution error, so without
+                # this every cancel would come back as a failure — and a user
+                # who stopped a render on purpose would be told it broke.
+                # Seen against the real engine; the imitation server did not
+                # reproduce it.
+                if _was_interrupted(state):
+                    return {"status": "cancelled", "prompt_id": prompt_id,
+                            "reason": "the render was interrupted",
+                            "messages": state.get("messages") or []}
                 return {"status": "failed", "prompt_id": prompt_id,
                         "reason": _first_error(state),
                         "messages": state.get("messages") or []}
@@ -368,10 +380,12 @@ class ComfyUIBackend:
             "subfolder": descriptor.get("subfolder") or "",
             "type": descriptor.get("type") or "output"}, raw=True)
 
-        ext = os.path.splitext(filename)[1].lower()
-        ext = "".join(c for c in ext if c.isalnum() or c == ".")[:8] or ".bin"
-        safe = "".join(c for c in os.path.basename(filename)
-                       if c.isalnum() or c in "-_")[:60] or "output"
+        stem, ext = os.path.splitext(os.path.basename(filename))
+        ext = "".join(c for c in ext.lower() if c.isalnum() or c == ".")[:8] or ".bin"
+        # Sanitise the STEM, not the whole name: keeping the extension in it
+        # produced `draft_00001_png.png` against the real engine, because the
+        # dot was stripped and then a new one appended.
+        safe = "".join(c for c in stem if c.isalnum() or c in "-_")[:60] or "output"
         os.makedirs(into, exist_ok=True)
         target = os.path.join(into, f"{safe}{ext}")
         suffix = 1
@@ -390,6 +404,20 @@ def _queue_id(item: Any) -> str:
     if isinstance(item, Mapping):
         return str(item.get("prompt_id") or "")
     return ""
+
+
+def _was_interrupted(state: Mapping[str, Any]) -> bool:
+    """Did this job stop because somebody stopped it?
+
+    ComfyUI reports an interruption in the same `completed: false` shape as a
+    real failure, and the only thing that tells them apart is the message
+    name. Reading it is the difference between "you cancelled that" and "that
+    broke"."""
+    for message in state.get("messages") or []:
+        if isinstance(message, (list, tuple)) and message and \
+                str(message[0]) == "execution_interrupted":
+            return True
+    return False
 
 
 def _first_error(state: Mapping[str, Any]) -> str:

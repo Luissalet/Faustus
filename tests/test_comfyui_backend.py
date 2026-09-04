@@ -163,6 +163,21 @@ class FakeComfy:
                 ["execution_start", {}],
                 ["execution_error", {"node_type": node, "exception_message": why}]]}}
 
+    def interrupt(self, prompt_id):
+        """What a REAL ComfyUI records when somebody stops a running job.
+
+        Identical to a failure except for the message name — `completed:
+        false` and `status_str: error` both. That is exactly why the client
+        has to read the message: without it, every cancel reads as a crash.
+        Copied from the real engine after it did this to a live render."""
+        self.running = []
+        self.pending = [p for p in self.pending if p[1] != prompt_id]
+        self.history[prompt_id] = {
+            "prompt": [], "outputs": {},
+            "status": {"completed": False, "status_str": "error", "messages": [
+                ["execution_start", {}],
+                ["execution_interrupted", {"node_id": "5", "node_type": "KSampler"}]]}}
+
     def start_running(self, prompt_id):
         self.pending = [p for p in self.pending if p[1] != prompt_id]
         self.running = [[1, prompt_id, {}]]
@@ -299,6 +314,21 @@ def test_a_failure_names_the_node_and_the_reason(engine):
     assert "KSampler" in state["reason"] and "out of memory" in state["reason"]
 
 
+def test_a_render_somebody_stopped_is_cancelled_and_not_failed(engine):
+    """Found against the real engine. ComfyUI records an interruption in the
+    same `completed: false` shape as a crash, so without reading the message
+    name every cancel would be reported as "the render failed" — which is a
+    small lie that costs somebody a real minute of worry."""
+    fake, comfy = engine
+    pid = comfy.submit(PLAN)["prompt_id"]
+    fake.start_running(pid)
+    fake.interrupt(pid)
+
+    state = comfy.status(pid)
+    assert state["status"] == "cancelled"
+    assert "interrupted" in state["reason"]
+
+
 def test_a_job_the_engine_has_never_heard_of_is_unknown_not_failed(engine):
     """ComfyUI forgets its history on restart. A job it cannot find is not a
     job that failed, and saying so lets the caller decide what to do."""
@@ -389,6 +419,11 @@ def test_downloading_writes_the_bytes_and_names_the_file_itself(tmp_path, engine
     assert open(written, "rb").read() == b"bytes-here"
     name = written.rsplit("\\", 1)[-1].rsplit("/", 1)[-1]
     assert " " not in name and ".." not in name
+    # …and it keeps ONE extension. Sanitising the whole name instead of the
+    # stem produced `draft_00001_png.png` against the real engine: the dot was
+    # stripped and then a new one appended.
+    assert name.endswith(".png") and name.count(".") == 1
+    assert not name.endswith("png.png")
 
 
 def test_two_outputs_with_the_same_name_do_not_overwrite_each_other(tmp_path, engine):
