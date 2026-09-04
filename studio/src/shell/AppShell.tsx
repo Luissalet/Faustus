@@ -7,7 +7,6 @@ import { NotMigrated } from '../screens/NotMigrated';
 import { StudioScreen } from '../screens/Studio';
 
 import { BrandMark } from './BrandMark';
-import { CommandPalette } from './CommandPalette';
 import { DESTINATIONS } from './routes';
 import { setStudioEnabled } from './flag';
 import { ensureOverlayRoot, removeOverlayRoot } from './overlayRoot';
@@ -21,6 +20,8 @@ const AutomationsScreen = lazy(() => import('../screens/Automations').then((m) =
 const LibraryScreen = lazy(() => import('../screens/Library').then((m) => ({ default: m.LibraryScreen })));
 const ProjectScreen = lazy(() => import('../screens/Project').then((m) => ({ default: m.ProjectScreen })));
 const ProjectsScreen = lazy(() => import('../screens/Projects').then((m) => ({ default: m.ProjectsScreen })));
+/* cmdk rides in with the first Ctrl+K, not with the page. */
+const CommandPalette = lazy(() => import('./CommandPalette').then((m) => ({ default: m.CommandPalette })));
 
 /**
  * The rail.
@@ -187,6 +188,11 @@ function RouteBody() {
 
 export function AppShell() {
   const setPaletteOpen = useShell((state) => state.setPaletteOpen);
+  const paletteOpen = useShell((state) => state.paletteOpen);
+  const [paletteLoaded, setPaletteLoaded] = useState(false);
+  useEffect(() => {
+    if (paletteOpen) setPaletteLoaded(true);
+  }, [paletteOpen]);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-studio-shell', 'on');
@@ -221,7 +227,11 @@ export function AppShell() {
         </div>
         <Rail />
         <RouteStage />
-        <CommandPalette />
+        {paletteLoaded && (
+          <Suspense fallback={null}>
+            <CommandPalette />
+          </Suspense>
+        )}
       </div>
     </BrowserRouter>
   );

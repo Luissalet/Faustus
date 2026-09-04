@@ -1309,3 +1309,148 @@ details.fs-studio__step > summary:hover .fs-trace__label {
     animation: none;
   }
 }
+
+/* ── The harness: what really happened this turn ── */
+
+.fs-harness {
+  display: grid;
+  gap: var(--fs-space-3);
+  padding: var(--fs-space-3) var(--fs-space-4);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-glass);
+  backdrop-filter: blur(10px);
+  box-shadow: var(--fs-panel-shadow);
+}
+
+.fs-harness[data-verdict='verified'] {
+  border-color: color-mix(in srgb, var(--fs-success) 45%, var(--fs-border));
+}
+
+.fs-harness[data-verdict='unverified'] {
+  border-color: color-mix(in srgb, var(--fs-warning) 55%, var(--fs-border));
+  box-shadow: var(--fs-panel-shadow), 0 0 22px color-mix(in srgb, var(--fs-warning) 14%, transparent);
+}
+
+.fs-harness > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  cursor: pointer;
+  list-style: none;
+  color: var(--fs-text-2);
+}
+
+.fs-harness[data-verdict='verified'] > summary {
+  color: var(--fs-success);
+}
+
+.fs-harness[data-verdict='unverified'] > summary {
+  color: var(--fs-warning);
+}
+
+.fs-harness__title {
+  font-size: var(--fs-label-size);
+  font-weight: var(--fs-label-weight);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.fs-harness > summary .fs-trace__meta {
+  flex: 1;
+  white-space: normal;
+}
+
+.fs-harness__chev {
+  transition: rotate var(--fs-duration-normal) var(--fs-ease-spring);
+}
+
+.fs-harness[open] .fs-harness__chev {
+  rotate: 180deg;
+}
+
+.fs-harness__checks,
+.fs-harness__files {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--fs-space-1);
+}
+
+.fs-harness__check {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-2);
+}
+
+.fs-harness__check[data-tone='danger'] {
+  color: var(--fs-danger);
+}
+
+.fs-harness__check[data-tone='success'] {
+  color: var(--fs-success);
+}
+
+.fs-harness__check > span:first-of-type {
+  flex: 1;
+}
+
+.fs-harness__line,
+.fs-harness__notes {
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-2);
+}
+
+.fs-harness__notes {
+  color: var(--fs-text-3);
+  font-family: var(--fs-font-code);
+  font-size: 11px;
+}
+
+.fs-harness__file {
+  display: grid;
+  gap: var(--fs-space-1);
+}
+
+.fs-harness__file[data-gone] .fs-harness__path {
+  text-decoration: line-through;
+  color: var(--fs-text-3);
+}
+
+.fs-harness__file-row {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+}
+
+.fs-harness__path {
+  flex: 1;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--fs-font-code);
+  font-size: 12px;
+  color: var(--fs-text-1);
+  border-inline-start: 2px solid var(--fs-brand);
+  padding-inline-start: var(--fs-space-2);
+}
+
+.fs-harness__diff {
+  margin: 0;
+  max-block-size: 420px;
+}
+
+.fs-harness--plan .fs-rich {
+  font-size: var(--fs-label-size);
+  margin-block-start: var(--fs-space-2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fs-harness__chev {
+    transition: none;
+  }
+}

@@ -1,10 +1,14 @@
 import { Check, ChevronDown, Copy, FileText, Pencil, RefreshCw, Trash2, X } from 'lucide-react';
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { Button, IconButton } from '../../components';
 import type { AskUser } from '../../adapters/chat';
 import { attachmentUrl, isImage } from '../../adapters/composer';
 import { Rich } from '../rich';
 import { formatMetrics, type Step, type Turn } from './model';
+
+/* The harness card carries diff, revert and commit: a chunk that arrives
+   with the first agent turn that has something to show, not on page load. */
+const Harness = lazy(() => import('./Harness'));
 
 export type Decision = 'approve' | 'approve_task' | 'deny';
 
@@ -17,6 +21,7 @@ export interface TranscriptProps {
   onEdit: (turn: Turn, text: string, regenerate: boolean) => void;
   onRegenerate: (turn: Turn) => void;
   onDelete: (turn: Turn) => void;
+  onNotice: (text: string, tone?: 'info' | 'warning' | 'danger') => void;
 }
 
 function ToolRail({ steps, live }: { steps: Step[]; live: boolean }) {
@@ -231,6 +236,7 @@ function AssistantTurn({
   onAnswer,
   onRegenerate,
   onDelete,
+  onNotice,
 }: {
   turn: Turn;
   busy: boolean;
@@ -238,6 +244,7 @@ function AssistantTurn({
   onAnswer: (text: string) => void;
   onRegenerate: () => void;
   onDelete: () => void;
+  onNotice: TranscriptProps['onNotice'];
 }) {
   const waiting = turn.streaming && !turn.text && turn.steps.length === 0;
   return (
@@ -249,6 +256,18 @@ function AssistantTurn({
             <summary>Razonamiento {turn.streaming && !turn.text ? <span className="fs-studio__pulse" /> : null}</summary>
             <p className="fs-prose">{turn.thinking}</p>
           </details>
+        )}
+        {(turn.plan || (turn.todos && turn.todos.length > 0) || (turn.streaming && turn.checks.length > 0)) && (
+          <Suspense fallback={null}>
+            <Harness
+              mode="live"
+              plan={turn.plan}
+              todos={turn.todos}
+              checks={turn.streaming ? turn.checks.slice(-3) : []}
+              answer={turn.text}
+              onNotice={onNotice}
+            />
+          </Suspense>
         )}
         {turn.steps.length > 0 && <ToolRail steps={turn.steps} live={turn.streaming} />}
         {waiting && !turn.thinking && (
@@ -271,6 +290,11 @@ function AssistantTurn({
           </p>
         )}
         {turn.ask && <AskCard ask={turn.ask} busy={busy} onApproval={onApproval} onAnswer={onAnswer} />}
+        {!turn.streaming && (turn.summary || turn.checks.length > 0) && (
+          <Suspense fallback={null}>
+            <Harness mode="final" summary={turn.summary} checks={turn.checks} answer={turn.text} onNotice={onNotice} />
+          </Suspense>
+        )}
         {turn.note && (
           <p className="fs-notice" data-tone="warning">
             {turn.note}
@@ -283,7 +307,12 @@ function AssistantTurn({
         )}
         {!turn.streaming && (
           <div className="fs-turn__foot">
-            {turn.metrics && <span className="fs-turn__metrics">{formatMetrics(turn.metrics)}</span>}
+            {turn.metrics && (
+              <span className="fs-turn__metrics">
+                {formatMetrics(turn.metrics)}
+                {turn.rounds > 1 ? ` · ${turn.rounds} rondas` : ''}
+              </span>
+            )}
             <span className="fs-turn__actions" data-testid="turn-actions">
               {turn.text && <CopyButton text={turn.text} label="Copiar respuesta" />}
               {turn.dbId && !busy && (
@@ -300,7 +329,7 @@ function AssistantTurn({
   );
 }
 
-export function Transcript({ turns, busy, onApproval, onAnswer, onEdit, onRegenerate, onDelete }: TranscriptProps) {
+export function Transcript({ turns, busy, onApproval, onAnswer, onEdit, onRegenerate, onDelete, onNotice }: TranscriptProps) {
   return (
     <div className="fs-studio__turns">
       {turns.map((turn, index) =>
@@ -323,6 +352,7 @@ export function Transcript({ turns, busy, onApproval, onAnswer, onEdit, onRegene
               }
             }}
             onDelete={() => onDelete(turn)}
+            onNotice={onNotice}
           />
         ),
       )}

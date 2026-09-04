@@ -62,6 +62,42 @@ export interface WebSource {
   url: string;
 }
 
+export interface Todo {
+  content: string;
+  status: 'pending' | 'in_progress' | 'completed';
+  priority?: string;
+  verified?: boolean;
+}
+
+export interface HarnessCheck {
+  status: string;
+  round?: number;
+  reasons?: string[];
+  label?: string;
+  model?: string;
+  detail?: string;
+}
+
+export interface HarnessSummary {
+  toolCalls: number;
+  failedCalls: number;
+  mutations: string[];
+  stopReason: string;
+  notes: string[];
+  checkpoint?: string;
+  workspace?: string;
+  tests?: Record<string, unknown>;
+  review?: Record<string, unknown>;
+  staticAnalysis?: Record<string, unknown>;
+  changeset?: {
+    verdict?: string;
+    confidence?: number;
+    unsupported: string[];
+    unclaimed: string[];
+    rendered?: string;
+  };
+}
+
 /** Everything the stream can say, narrowed to what the screen renders. */
 export type ChatEvent =
   | { type: 'delta'; text: string; thinking: boolean }
@@ -76,6 +112,11 @@ export type ChatEvent =
   | { type: 'fallback'; answeredBy: string; selected: string }
   | { type: 'terminal'; failed: boolean; message?: string }
   | { type: 'error'; message: string }
+  | { type: 'progress'; todos: Todo[] }
+  | { type: 'plan'; plan: string }
+  | { type: 'check'; check: HarnessCheck }
+  | { type: 'summary'; summary: HarnessSummary }
+  | { type: 'context'; percent?: number; tokens?: number; window?: number }
   | { type: 'done' };
 
 function str(value: unknown, fallback = ''): string {
@@ -316,6 +357,67 @@ function decode(raw: Record<string, unknown>, sseEvent: string | null): ChatEven
       return { type: 'terminal', failed: false };
     case 'error':
       return { type: 'error', message: str(raw.text ?? raw.error ?? raw.message, 'Error del servidor') };
+    case 'progress_update':
+      return {
+        type: 'progress',
+        todos: asArray<Record<string, unknown>>(raw.todos).map((t) => ({
+          content: str(t.content ?? t.text),
+          status: (['pending', 'in_progress', 'completed'].includes(str(t.status)) ? str(t.status) : 'pending') as Todo['status'],
+          priority: str(t.priority) || undefined,
+          verified: typeof t.verified === 'boolean' ? t.verified : undefined,
+        })),
+      };
+    case 'plan_update':
+      return { type: 'plan', plan: str(data.plan) };
+    case 'harness_check':
+      return {
+        type: 'check',
+        check: {
+          status: str(raw.status, 'unknown'),
+          round: num(raw.round),
+          reasons: asArray<unknown>(raw.reasons).map(String),
+          label: str(raw.label) || undefined,
+          model: str(raw.model) || undefined,
+          detail: str(raw.detail ?? raw.reason ?? raw.message) || undefined,
+        },
+      };
+    case 'harness_summary': {
+      const cs = (data.changeset && typeof data.changeset === 'object' ? data.changeset : null) as Record<string, unknown> | null;
+      return {
+        type: 'summary',
+        summary: {
+          toolCalls: num(data.tool_calls) ?? 0,
+          failedCalls: num(data.failed_calls) ?? 0,
+          mutations: asArray<unknown>(data.mutations).map(String),
+          stopReason: str(data.stop_reason, 'complete'),
+          notes: asArray<unknown>(data.notes).map(String),
+          checkpoint: str(data.checkpoint) || undefined,
+          workspace: str(data.workspace) || undefined,
+          tests: data.tests && typeof data.tests === 'object' ? (data.tests as Record<string, unknown>) : undefined,
+          review: data.review && typeof data.review === 'object' ? (data.review as Record<string, unknown>) : undefined,
+          staticAnalysis:
+            data.static_analysis && typeof data.static_analysis === 'object' ? (data.static_analysis as Record<string, unknown>) : undefined,
+          changeset: cs
+            ? {
+                verdict: str(cs.verdict) || undefined,
+                confidence: num(cs.confidence),
+                unsupported: asArray<Record<string, unknown>>(cs.unsupported_claims).map((p) => str(p.path)),
+                unclaimed: asArray<unknown>(cs.unclaimed_changes).map((p) =>
+                  typeof p === 'string' ? p : str((p as Record<string, unknown>).path),
+                ),
+                rendered: str(cs.rendered) || undefined,
+              }
+            : undefined,
+        },
+      };
+    }
+    case 'context_ledger':
+      return {
+        type: 'context',
+        percent: num(data.percent ?? data.context_percent ?? data.used_percent),
+        tokens: num(data.total ?? data.tokens ?? data.used_tokens),
+        window: num(data.window ?? data.context_length),
+      };
     default:
       return null;
   }

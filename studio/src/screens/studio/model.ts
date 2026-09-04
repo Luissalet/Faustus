@@ -1,5 +1,13 @@
 import type { RunStatus } from '../../components';
-import type { AskUser, ChatEvent, TurnMetrics, WebSource } from '../../adapters/chat';
+import type {
+  AskUser,
+  ChatEvent,
+  HarnessCheck,
+  HarnessSummary,
+  Todo,
+  TurnMetrics,
+  WebSource,
+} from '../../adapters/chat';
 import type { Attachment } from '../../adapters/composer';
 
 /**
@@ -23,6 +31,9 @@ export interface Turn {
   id: string;
   /** The message's database id, when the server has one; edits need it. */
   dbId?: string;
+  /** Position in the server's history when loaded from it; truncation
+   *  counts server messages, and the list may hide some (approval prompts). */
+  historyIndex?: number;
   role: 'user' | 'assistant';
   text: string;
   thinking: string;
@@ -36,6 +47,12 @@ export interface Turn {
   note?: string;
   error?: string;
   edited?: boolean;
+  /** The reliability harness: what it checked, and what really happened. */
+  checks: HarnessCheck[];
+  summary?: HarnessSummary;
+  todos?: Todo[];
+  plan?: string;
+  contextPercent?: number;
   streaming: boolean;
 }
 
@@ -54,6 +71,7 @@ export function blankTurn(role: Turn['role'], text = ''): Turn {
     sources: [],
     images: [],
     attachments: [],
+    checks: [],
     streaming: role === 'assistant',
   };
 }
@@ -165,12 +183,18 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
     }
     case 'round':
       return { ...turn, rounds: Math.max(turn.rounds, event.round) };
-    case 'ask_user':
-      return {
-        ...turn,
-        ask: event.ask,
-        steps: turn.steps.map((s) => (s.state === 'running' ? { ...s, state: 'waiting' } : s)),
-      };
+    case 'ask_user': {
+      // The tool that needs permission is either still running or was just
+      // closed by the server with an empty output (some approval paths emit
+      // tool_output before asking). Either way it is the last step, and it
+      // must read as "waiting" so the replayed tool_start reuses it.
+      let steps = turn.steps.map((s) => (s.state === 'running' ? { ...s, state: 'waiting' as const } : s));
+      if (steps.length && !steps.some((s) => s.state === 'waiting')) {
+        const last = steps[steps.length - 1];
+        if (!last.output) steps = [...steps.slice(0, -1), { ...last, state: 'waiting' as const, meta: undefined }];
+      }
+      return { ...turn, ask: event.ask, steps };
+    }
     case 'metrics':
       return { ...turn, metrics: { ...turn.metrics, ...event.metrics } };
     case 'sources':
@@ -186,6 +210,16 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
       return event.failed ? { ...turn, error: event.message ?? 'El modelo ha fallado.' } : turn;
     case 'error':
       return { ...turn, error: event.message };
+    case 'progress':
+      return { ...turn, todos: event.todos };
+    case 'plan':
+      return { ...turn, plan: event.plan };
+    case 'check':
+      return { ...turn, checks: [...turn.checks, event.check] };
+    case 'summary':
+      return { ...turn, summary: event.summary };
+    case 'context':
+      return event.percent === undefined ? turn : { ...turn, contextPercent: event.percent };
     case 'done':
       return {
         ...turn,

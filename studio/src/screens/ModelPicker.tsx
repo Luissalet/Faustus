@@ -1,17 +1,17 @@
-import { Command } from 'cmdk';
-import { Check, ChevronDown, Cpu } from 'lucide-react';
-import { useEffect, useState } from 'react';
-import { overlayRoot } from '../shell/overlayRoot';
+import { ChevronDown, Cpu } from 'lucide-react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import type { ModelRoute } from '../adapters/chat';
-import '../shell/palette.css';
+
+const ModelPalette = lazy(() => import('./ModelPalette'));
 
 /**
  * The model picker is a palette, not a dropdown.
  *
  * Two reasons. A box with forty models in it needs a search field, and
- * cmdk is already in the bundle for Ctrl+K; the Radix dropdown would have
+ * cmdk is the palette Ctrl+K already uses; the Radix dropdown would have
  * pulled floating-ui in for the first time — 80 KB, a quarter of the
- * budget — to draw a list the palette draws better.
+ * budget — to draw a list the palette draws better. The palette itself is
+ * a lazy chunk: the chip is on every page load, the list only when opened.
  */
 export function ModelPicker({
   routes,
@@ -26,15 +26,13 @@ export function ModelPicker({
   openSignal?: number;
 }) {
   const [open, setOpen] = useState(false);
+  const [loaded, setLoaded] = useState(false);
   useEffect(() => {
-    if (openSignal > 0) setOpen(true);
+    if (openSignal > 0) {
+      setLoaded(true);
+      setOpen(true);
+    }
   }, [openSignal]);
-  const byEndpoint = new Map<string, ModelRoute[]>();
-  for (const route of routes) {
-    const list = byEndpoint.get(route.endpointName) ?? [];
-    list.push(route);
-    byEndpoint.set(route.endpointName, list);
-  }
 
   return (
     <>
@@ -43,51 +41,21 @@ export function ModelPicker({
         className="fs-studio__chip fs-studio__chip--model"
         aria-haspopup="dialog"
         aria-expanded={open}
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          setLoaded(true);
+          setOpen(true);
+        }}
         data-testid="studio-model"
       >
         <Cpu size={13} aria-hidden="true" />
         <span>{current ? current.model : routes.length ? 'Elegir modelo' : 'Sin modelos'}</span>
         <ChevronDown size={12} aria-hidden="true" />
       </button>
-      <Command.Dialog
-        open={open}
-        onOpenChange={setOpen}
-        label="Elegir modelo"
-        className="fs-palette"
-        container={overlayRoot()}
-        data-testid="studio-models"
-      >
-        <Command.Input placeholder="Buscar modelo…" className="fs-palette__input" />
-        <Command.List className="fs-palette__list">
-          <Command.Empty className="fs-palette__empty">
-            {routes.length ? 'Ningún modelo coincide.' : 'Ningún endpoint responde.'}
-          </Command.Empty>
-          {[...byEndpoint.entries()].map(([endpoint, list]) => (
-            <Command.Group key={endpoint} heading={endpoint} className="fs-palette__group">
-              {list.map((route) => (
-                <Command.Item
-                  key={route.id}
-                  value={`${route.model} ${route.endpointName}`}
-                  onSelect={() => {
-                    onPick(route);
-                    setOpen(false);
-                  }}
-                  className="fs-palette__item"
-                  data-testid={`model-${route.model}`}
-                >
-                  {route.id === current?.id ? (
-                    <Check size={15} aria-hidden="true" />
-                  ) : (
-                    <Cpu size={15} aria-hidden="true" />
-                  )}
-                  {route.model}
-                </Command.Item>
-              ))}
-            </Command.Group>
-          ))}
-        </Command.List>
-      </Command.Dialog>
+      {loaded && (
+        <Suspense fallback={null}>
+          <ModelPalette open={open} onOpenChange={setOpen} routes={routes} current={current} onPick={onPick} />
+        </Suspense>
+      )}
     </>
   );
 }
