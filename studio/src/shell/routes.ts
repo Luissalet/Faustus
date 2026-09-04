@@ -33,8 +33,8 @@ export const DESTINATIONS: Destination[] = [
   { path: '/studio', label: 'Studio', icon: Sparkles, ready: false },
   { path: '/projects', label: 'Proyectos', icon: FolderKanban, ready: true },
   { path: '/library', label: 'Biblioteca', icon: Library, ready: false },
-  { path: '/automations', label: 'Automatizaciones', icon: Workflow, ready: false },
-  { path: '/activity', label: 'Actividad', icon: Activity, ready: false },
+  { path: '/automations', label: 'Automatizaciones', icon: Workflow, ready: true },
+  { path: '/activity', label: 'Actividad', icon: Activity, ready: true },
 ];
 
 /**

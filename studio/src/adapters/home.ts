@@ -79,17 +79,29 @@ export function byRecency<T extends { updated_at?: string | number | null; last_
   return [...items].sort((a, b) => stamp(b) - stamp(a));
 }
 
+/**
+ * Human time, in both directions.
+ *
+ * The first version only looked backwards, and an automation's next run is in
+ * the future — Automatizaciones was reading "próxima hace 7 d", which is not
+ * a sentence. Past gets "hace X", future gets "en X".
+ */
 export function relativeTime(value?: string | number | null): string {
   if (value === null || value === undefined) return '';
   const ms = typeof value === 'number' ? value * 1000 : Date.parse(value);
   if (!ms) return '';
-  const minutes = Math.round((Date.now() - ms) / 60000);
+
+  const deltaMinutes = Math.round((Date.now() - ms) / 60000);
+  const past = deltaMinutes >= 0;
+  const minutes = Math.abs(deltaMinutes);
+  const say = (amount: string) => (past ? `hace ${amount}` : `en ${amount}`);
+
   if (minutes < 1) return 'ahora';
-  if (minutes < 60) return `hace ${minutes} min`;
+  if (minutes < 60) return say(`${minutes} min`);
   const hours = Math.round(minutes / 60);
-  if (hours < 24) return `hace ${hours} h`;
+  if (hours < 24) return say(`${hours} h`);
   const days = Math.round(hours / 24);
-  if (days < 30) return `hace ${days} d`;
+  if (days < 30) return say(`${days} d`);
   const months = Math.round(days / 30);
-  return `hace ${months} meses`;
+  return say(`${months} meses`);
 }

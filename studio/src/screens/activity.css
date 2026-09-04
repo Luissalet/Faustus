@@ -1,0 +1,84 @@
+/* Actividad y Automatizaciones (UI-050 · UI-051 · UI-052). */
+
+.fs-run {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--fs-space-3);
+  padding: var(--fs-space-3);
+  border-block-end: 1px solid var(--fs-border);
+}
+
+.fs-run:last-child {
+  border-block-end: 0;
+}
+
+/* The kind of work, not its state. Deliberately quiet: it is a filing
+   label, and the eye should land on the goal and the state instead. */
+.fs-run__kind {
+  flex: 0 0 auto;
+  min-inline-size: 76px;
+  padding-block-start: 2px;
+  font-size: 11px;
+  font-weight: var(--fs-label-weight);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fs-text-3);
+}
+
+.fs-run__main {
+  display: grid;
+  gap: 2px;
+  flex: 1;
+  min-inline-size: 0;
+}
+
+/* The result line wraps to two lines and then stops. A run that failed with
+   a paragraph of stderr must not push everything else off the screen —
+   the full text belongs in the run's detail. */
+.fs-run__detail {
+  color: var(--fs-text-2);
+  font-size: var(--fs-label-size);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ── Automatizaciones ── */
+
+.fs-auto {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-3);
+  padding: var(--fs-space-3);
+  border-block-end: 1px solid var(--fs-border);
+}
+
+.fs-auto:last-child {
+  border-block-end: 0;
+}
+
+.fs-auto__main {
+  display: grid;
+  gap: 2px;
+  flex: 1;
+  min-inline-size: 0;
+}
+
+/* The recipe, in the words the product document asks for: trigger, then
+   what happens. Monospace because it is a rule, not prose. */
+.fs-auto__recipe {
+  font-family: var(--fs-font-code);
+  font-size: var(--fs-code-size);
+  color: var(--fs-text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fs-auto__when {
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

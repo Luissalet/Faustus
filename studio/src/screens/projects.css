@@ -65,6 +65,14 @@
   border-block-end: 1px solid var(--fs-border);
   overflow-x: auto;
   overscroll-behavior-x: contain;
+  /* The bar scrolls on narrow screens, but its scrollbar sat on the tab row
+     as a stray sliver. Hidden here only: content that scrolls vertically
+     keeps its bar, because there you need to know there is more. */
+  scrollbar-width: none;
+}
+
+.fs-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .fs-tab {

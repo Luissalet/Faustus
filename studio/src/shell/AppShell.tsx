@@ -2,6 +2,8 @@ import { LogOut } from 'lucide-react';
 import { useEffect } from 'react';
 import { BrowserRouter, NavLink, Route, Routes } from 'react-router';
 import { Button } from '../components';
+import { ActivityScreen } from '../screens/Activity';
+import { AutomationsScreen } from '../screens/Automations';
 import { HomeScreen } from '../screens/Home';
 import { NotMigrated } from '../screens/NotMigrated';
 import { ProjectScreen } from '../screens/Project';
@@ -99,6 +101,8 @@ export function AppShell() {
               ))}
               <Route path="/projects" element={<ProjectsScreen />} />
               <Route path="/projects/:projectId" element={<ProjectScreen />} />
+              <Route path="/activity" element={<ActivityScreen />} />
+              <Route path="/automations" element={<AutomationsScreen />} />
               <Route path="*" element={<NotMigrated />} />
             </Routes>
           </div>
