@@ -259,6 +259,42 @@ def setup_workspace_routes():
             "selectable": vet_workspace(target) is not None,
         }
 
+    @router.get("/sandbox-state")
+    def sandbox_state(request: Request):
+        """Whether shell commands from this workspace are sandboxed right now.
+
+        The picker used to tell everyone, flatly, that shell commands "are not
+        sandboxed and can reach outside" the folder. With
+        `agent_sandbox_execution` on that sentence is false, and a security
+        note that is wrong in the safe direction is still wrong — it is the
+        one line a user reads before deciding what to let the agent run.
+
+        Two flags, not one, because they mean different things: `enabled` is
+        the setting, `ready` is whether the backend would actually take the
+        work. On and not ready means commands are **refused**, never quietly
+        run on the host — which is also worth saying out loud.
+        """
+        owner = get_current_user(request)
+        if not owner_is_admin_or_single_user(owner):
+            raise HTTPException(status_code=403, detail="Admin only")
+        from src import sandbox_exec
+
+        enabled = sandbox_exec.enabled()
+        state = {"enabled": enabled, "image": sandbox_exec.image(),
+                 "network": sandbox_exec.network(), "ready": False, "detail": ""}
+        if not enabled:
+            state["detail"] = "the sandbox setting is off"
+            return state
+        try:
+            from src.execution_backends import DockerWorkspaceBackend
+            probe = DockerWorkspaceBackend(image=sandbox_exec.image()).probe()
+            state["ready"] = bool(probe["ok"])
+            state["detail"] = probe["detail"] if probe["ok"] else \
+                f"{probe['reason']}: {probe['detail']}"
+        except Exception as e:                      # a probe never breaks the picker
+            state["detail"] = f"the probe itself failed: {e}"
+        return state
+
     @router.get("/files")
     def files(
         request: Request,

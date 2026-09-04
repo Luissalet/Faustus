@@ -8,6 +8,7 @@
 import Storage, { KEYS } from './storage.js';
 import uiModule from './ui.js';
 import { makeWindowDraggable } from './windowDrag.js';
+import { shellNote } from './workspace_note.js';
 
 const API_BASE = window.location.origin;
 // Same folder glyph as the overflow menu item + pill (not an emoji).
@@ -88,8 +89,15 @@ export function syncWorkspaceIndicator(path) {
     pill.classList.toggle('active', !!path);
     pill.classList.toggle('workspace-unset', !path);
     if (path) {
-      pill.title = `Workspace: ${path}\nFile tools are confined here; shell commands start here but are not sandboxed and can reach outside it.\nClick to change it — the ✕ clears it.`;
+      const shell = _shellNote(_sandboxState, { html: false });
+      pill.title = `Workspace: ${path}\nFile tools are confined here. ${shell}\nClick to change it — the ✕ clears it.`;
       pill.setAttribute('aria-label', `Workspace ${_basename(path)} — change folder`);
+      // Correct the tooltip once the real state is known. Cheap: cached.
+      _sandbox().then((state) => {
+        if (!pill.isConnected) return;
+        pill.title = `Workspace: ${path}\nFile tools are confined here. `
+                   + `${_shellNote(state, { html: false })}\nClick to change it — the ✕ clears it.`;
+      });
     } else {
       pill.title = 'No workspace folder yet — click to choose one.\nAgent file edits and shell commands need a folder.';
       pill.setAttribute('aria-label', 'Choose a workspace folder');
@@ -148,6 +156,33 @@ export function clearWorkspace() {
   setWorkspace('');
   if (uiModule && uiModule.showToast) uiModule.showToast('Workspace cleared');
 }
+
+// ── What the shell actually does from here ─────────────────────────────────
+// This used to be one hard-coded sentence: "shell commands are not sandboxed
+// and can reach outside it". With agent_sandbox_execution on, that is false —
+// and a security note that is wrong in the *safe* direction is still wrong,
+// because it is the line a user reads before deciding what to let the agent
+// run. Fetched once and cached for a few seconds; the fallback while it is
+// unknown is the cautious sentence, never the reassuring one.
+let _sandboxState = null;
+let _sandboxAt = 0;
+
+async function _sandbox() {
+  if (_sandboxState && (Date.now() - _sandboxAt) < 15000) return _sandboxState;
+  try {
+    const res = await fetch(`${API_BASE}/api/workspace/sandbox-state`, { credentials: 'same-origin' });
+    if (!res.ok) throw new Error(String(res.status));
+    _sandboxState = await res.json();
+    _sandboxAt = Date.now();
+  } catch (_) {
+    _sandboxState = null;               // unknown: keep the cautious wording
+  }
+  return _sandboxState;
+}
+
+// The wording lives in its own import-free module so it can be tested under
+// bare node (tests/test_workspace_shell_note_js.py) without the DOM.
+const _shellNote = shellNote;
 
 async function _load(path) {
   const params = new URLSearchParams();
@@ -236,7 +271,7 @@ function _getModal() {
       <input type="text" class="styled-prompt-input workspace-cur" id="workspace-cur-path"
              spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off"
              placeholder="Type or paste a folder path, then press Enter" />
-      <p class="muted workspace-note">File tools are <strong>confined</strong> to this folder. Shell commands start here but are <strong>not sandboxed</strong> and can reach outside it. A workspace scopes the tools; it is not a security boundary.</p>
+      <p class="muted workspace-note">File tools are <strong>confined</strong> to this folder. Shell commands start here but are <strong>not sandboxed</strong> and can reach outside it.</p>
       <div class="modal-body workspace-body" id="workspace-body"></div>
       <div class="modal-footer workspace-footer">
         <button type="button" class="confirm-btn confirm-btn-secondary workspace-clear-btn" id="workspace-clear" hidden>Clear workspace</button>
@@ -297,9 +332,20 @@ export async function openWorkspaceBrowser(onPick = null, options = {}) {
   const title = modal.querySelector('.modal-header h4');
   if (title) title.innerHTML = `${_FOLDER_SVG}${uiModule.esc(_pickerOptions.title || 'Select workspace')}`;
   const note = modal.querySelector('.workspace-note');
-  if (note) note.innerHTML = _pickerOptions.includeFiles
-    ? 'Choose a file, or open a folder and add it with the button below. Project work roots can be <strong>read and modified</strong> by the agent.'
-    : 'File tools are <strong>confined</strong> to this folder. Shell commands start here but are <strong>not sandboxed</strong> and can reach outside it.';
+  if (note) {
+    // Written cautiously first, then corrected the moment the real state
+    // arrives — never the other way round.
+    note.innerHTML = _pickerOptions.includeFiles
+      ? 'Choose a file, or open a folder and add it with the button below. Project work roots can be <strong>read and modified</strong> by the agent.'
+      : `File tools are <strong>confined</strong> to this folder. ${_shellNote(null)}`;
+    if (!_pickerOptions.includeFiles) {
+      _sandbox().then((state) => {
+        if (note.isConnected) {
+          note.innerHTML = `File tools are <strong>confined</strong> to this folder. ${_shellNote(state)}`;
+        }
+      });
+    }
+  }
   const use = modal.querySelector('#workspace-use');
   if (use) use.textContent = _pickerOptions.useLabel || 'Use this folder';
   // Only when the picker is binding the global workspace (the project editor

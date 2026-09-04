@@ -86,6 +86,11 @@ a propósito · `[+]` mejora pendiente.
   deja la galería intacta. Cuando haya imágenes de verdad conviene volver a mirar los números y, en
   particular, cuántas llegan **sin `file_hash`** — esas quedan con `sha256` a NULL a propósito.
 
+- `[+]` **La UI del sandbox se queda en el picker.** El aviso del selector de carpeta y el tooltip
+  de la píldora ya dicen la verdad (contenedor / no disponible / sin sandbox), pero **el resultado
+  de un comando no enseña dónde corrió**: `sandboxed`, `image`, `isolation` y `duration_ms` viajan
+  en el dict del tool y nadie los pinta en la tarjeta BASH. Ahí es donde se mira.
+
 - `[~]` **El sandbox del agente está apagado por defecto.** `agent_sandbox_execution` enruta `bash`
   y `python` por el contenedor, y funciona; pero mientras esté apagado —que es el valor por
   defecto— el agente ejecuta donde ejecutaba siempre. Encenderlo es la decisión pendiente, y antes
