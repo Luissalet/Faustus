@@ -7412,6 +7412,13 @@ async def stream_agent_loop(
                     "policy": _denial.source,
                     "policy_name": _denial.policy,
                     "policy_origin": _denial.origin,
+                    # The spelling the DENYLIST held, which is the one a reader
+                    # downstream can test against a policy set; the model may
+                    # have called `mcp__email__send_email` for a rule written
+                    # `send_email`, and matching on what the model typed is how
+                    # a reader concludes "no rule denies this" about a call a
+                    # rule just denied.
+                    "policy_matched": _denial.matched,
                 }
                 # Fixed shape, and it says which gate closed, which named
                 # policy inside that gate closed it, where that name entered
@@ -7789,7 +7796,7 @@ async def stream_agent_loop(
                 # log line carries, so "why can't it do that?" is answerable
                 # from the stream and not only from the server's log file.
                 tool_output_data["blocked"] = True
-                for _key in ("policy", "policy_name", "policy_origin"):
+                for _key in ("policy", "policy_name", "policy_origin", "policy_matched"):
                     if result.get(_key):
                         tool_output_data[_key] = result[_key]
             if is_doc_tool and "action" in result:

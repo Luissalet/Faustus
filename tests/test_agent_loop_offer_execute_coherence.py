@@ -676,6 +676,20 @@ def test_the_blocked_result_carries_the_same_three_fields(workspace):
     assert blocked[0].get("policy") == "disabled_tools"
 
 
+def test_the_blocked_result_also_carries_the_spelling_that_matched(workspace):
+    """The one field a reader downstream can test against a policy set.
+
+    A denylist written `bash` and a call made in any of its policy-equivalent
+    spellings are the same denial; a reader given only the spelling the model
+    typed can conclude "no rule denies this" about a call a rule just denied.
+    src/agent_tools/subagent_tools.py resolves a worker's refusal cause from
+    this field, so it has to reach the stream.
+    """
+    turn = run_turn(SPANISH_REQUEST, workspace, disabled_tools={"bash"}, calls=["bash"])
+    blocked = [e for e in turn.events if e.get("type") == "tool_output" and e.get("tool") == "bash"]
+    assert blocked and blocked[0].get("policy_matched") == "bash"
+
+
 @pytest.mark.parametrize(
     "policy_kwargs,expected_source,expected_mode",
     [
