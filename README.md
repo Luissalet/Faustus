@@ -25,7 +25,9 @@
 
 Faustus is a self-hosted workspace for running large language models on your own machine — chat,
 agents, deep research, documents, email, notes, tasks, calendar, image gallery and local-model
-management, all in one app talking to Ollama over `localhost`.
+management, all in one app talking to Ollama over `localhost` — and, underneath, a small platform:
+sandboxed execution, durable workflows, human approvals and image/video renders that arrive with
+their recipe, seed and licence attached.
 
 It is a personal fork of [Odysseus](https://github.com/odysseus-dev/odysseus), and it keeps
 everything Odysseus does. What it adds is a different posture towards the model: **nothing the model
@@ -205,7 +207,9 @@ native fetcher with a notice saying why.
 - **Multi-GPU**, measured rather than assumed: which card each runner sits on and how many bytes,
   single / split / cpu placement per model, a *fill this GPU first* policy, orphan-runner detection
   and release. The numbers behind it are in [`FAUSTUS.md` §19–20](FAUSTUS.md) and
-  [`website/gpu-placement.md`](website/gpu-placement.md).
+  [`website/gpu-placement.md`](website/gpu-placement.md). Renders use a **different** rule on purpose
+  — least busy, then the *smallest* card that fits — because a language model is resident for hours
+  and a render gives the card back in seconds.
 - **Shared-memory spill detection** — the failure mode no other indicator shows: the model reports
   100% GPU while quietly paging over PCIe at 0.7 tok/s. Faustus warns, and the fit advisor proposes
   layers and KV quantisation that actually fit.
@@ -247,6 +251,45 @@ native fetcher with a notice saying why.
   tree, an operation in progress, detached `HEAD`, an unexpected remote or branch — and *all* the
   failures are reported, not just the first. The commit is refused, and there is no flag to skip it.
 
+### A platform underneath: contracts, a sandbox, approvals, workflows and a render engine
+
+The features above each grew their own vocabulary. Underneath them now sits a shared one — eight
+contracts in `src/contracts/`, deny-by-default, where **a refusal names the field it refused** rather
+than returning an empty success.
+
+- **Execution that never quietly falls back to the host.** A Docker workspace backend with uid 1000,
+  one mount, no network by default, `--cap-drop ALL`, memory/CPU/pid limits and a timeout that kills
+  the container and keeps the partial output *marked as partial*. The agent's `bash` and `python` go
+  through it behind a switch; switched on with no sandbox available, the answer is a refusal with a
+  reason — never the host.
+- **An approval gate the model cannot open.** A run that needs a human stops and asks, and the
+  question is addressed to somebody: an approval nobody is shown is not a gate.
+- **Workflows that survive a restart without doing the work twice.** The idempotency key is derived
+  from the plan — never the clock, never the attempt — and **written before the work**, not after.
+  `paused` is a state with a reason that only a person (an approval id) or the clock (`wake_at`) can
+  end, and the contract rejects a pause with neither. A retry writes `pending`, not `failed`: a
+  failed row is terminal, and treating a retry as one silently turned `max_attempts: 3` into one.
+- **A render engine driven by approved recipes, never by a graph the model wrote.** ComfyUI runs as a
+  separate service over HTTP (GPL-3.0: integrated by API, no code copied). The unit of trust is a
+  versioned template in `config/media_workflows/` with declared inputs; computed values are lookup
+  tables rather than expressions, and substitution replaces whole strings, so a prompt cannot escape
+  its own field. There is no route that accepts a graph, and there is a test asserting that. The
+  client **checks before queueing** (`/object_info`) and **never installs** anything: a missing model
+  is a refusal naming the file. Every artifact carries recipe, version, fingerprint, seed, engine,
+  job id, model and **licence** — the prompt itself does not travel, only a digest pointing at the
+  run. With more than one GPU, a pool surveys each engine and picks the least busy, then the
+  *smallest* card the job fits on, leaving the big one free, and the run records why in words. The
+  four templates — draft, product, reference-edit, and an SVD short-form video — have all rendered
+  for real on this machine: 2.0s, 10.1s, 6.1s and 42.4s.
+- **`ChangeSet`, which invents no fifth verdict.** There were already four vocabularies for "did it
+  work"; the change set **delegates to `prove`** instead of adding one. `ok` is three-valued and
+  `None` means *not verified*, and when the evidence is inexact — an mtime, a truncated diff — the
+  claim check stays quiet rather than guessing. The diff isn't stored: the sha is, and it's looked up.
+- **`python -m src.doctor`** answers "what can this machine actually do right now" in one command —
+  backends, engines, skills, approvals — and **nothing reports OK without being checked**. A probe
+  that cannot look says `unknown`, which is how a swallowed `TypeError` behind a confident "no skills
+  stored" got found in a second.
+
 ## Everything Odysseus already did — still here
 
 Chat with local and API models, tools, MCP, files, shell, skills and memory · **Cookbook**
@@ -283,11 +326,19 @@ Native installs, GPU notes, Windows/macOS instructions, HTTPS and configuration 
 ## Driving Faustus from Claude, Cowork or Claude Code
 
 The **workers MCP server** lets an outside coordinator plan and review while local models do the
-mechanical work:
+mechanical work. It has grown with the app — **29 tools**, in families:
 
 ```
-workers_guide · dispatch_workers · workers_wait · workers_status · workers_events · workers_cancel
+workers    workers_guide · dispatch_workers · workers_wait · workers_status · workers_events · workers_cancel
+workflows  workflow_validate · workflow_start · workflow_advance · workflow_status · workflow_resume
+media      media_recipes · media_plan · media_render · media_status · media_cancel
+proof      changeset_prove · changeset_check · faustus_doctor
 ```
+
+Every one of them answers in prose meant to be read, not JSON to be parsed: `media_recipes` lists
+each engine with its card, queue and models — and names a dead one *with its reason* instead of
+shrinking to the engines that answered, because on a two-GPU box that is exactly the fact you need
+when a render fails for a missing model.
 
 It needs a token with the `agents:dispatch` scope. Setup, the shape of the compact result and how to
 read it are documented in [`website/fable-workers.md`](website/fable-workers.md); the skill lives in
@@ -309,21 +360,29 @@ written down, including when the borrowed formula turned out to be worse than th
 
 ## Numbers
 
-As of 2026-09-03, against the fork point (`c9dd68d8`):
+As of 2026-09-04, against the fork point (`c9dd68d8`):
 
 | Measure | Value |
 |:--|:--|
-| Commits on top of upstream | 351 |
-| Lines changed | +137,900 / −1,600 across 638 files |
-| New modules in `src/`, `routes/`, `services/`, `static/js/` | 113 |
-| New test files | 185 |
-| Tests collected | ~9,100 (`pytest --collect-only -q tests`) |
+| Commits on top of upstream | 405 |
+| Lines changed | +167,100 / −1,600 across 741 files |
+| New modules in `src/`, `routes/`, `services/`, `static/js/` | 160 |
+| New test files | 231 |
+| Tests collected | 10,472 (`pytest --collect-only -q tests`) |
+| Full run on the reference machine | 10,345 passed · 47 failed · 6 errors · 74 skipped · 15m34s |
 | End-to-end flows (Playwright) | 12 |
 
 Reference machine: RTX 4070 Ti 12 GB + RTX 5060 Ti 16 GB (eGPU), 128 GB RAM, Windows 11,
-Ollama 0.33.x, running `qwen3-coder:30b`, `qwen3.5:9b`, `qwen3.8:27b` and `qwen3-coder-next`. Known
-platform-specific test failures — and the bisection proving they are not regressions — are documented
-in [`FAUSTUS.md` §24.4](FAUSTUS.md).
+Ollama 0.33.x, running `qwen3-coder:30b`, `qwen3.5:9b`, `qwen3.8:27b` and `qwen3-coder-next`.
+
+**About those 53 reds.** They are not regressions, and the way that was established is worth stating,
+because the first attempt was wrong. A clean `git worktree` at the previous commit reported 27
+failures against the working directory's 44 — which reads as "today broke 17 tests". It didn't: a
+worktree has no local `data/` directory, and this repo has a family of tests that depend on one. Run
+properly — same directory, same `data/`, same file list, only the commit changing — the previous
+commit fails the **same 44**. So the comparison also measured something the docs had been asserting
+without a number: **17 of the 44 come from this machine's `data/`, not from Windows**. The
+per-failure detail is in [`FAUSTUS.md` §24.4 and §40.7](FAUSTUS.md).
 
 ## Relationship to Odysseus
 
