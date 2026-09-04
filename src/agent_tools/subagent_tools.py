@@ -528,11 +528,13 @@ def worker_disabled_tools(instruction: str, permissions: Any = None) -> set:
     let a keyword in the instruction decide what a human already decided.
 
     None of this is the last word. The agent loop's workspace tool floor
-    deliberately restores read_file / ls / edit_file / apply_patch for a bound
-    folder — a worker that cannot read its own project is not a worker — which
-    would quietly hand a read-only reviewer the edit path back. That is why
-    the definitions are ALSO enforced at execution time, in
-    :func:`write_block_reason`, where no floor reaches.
+    restores read_file / ls / edit_file / apply_patch for a bound folder — a
+    worker that cannot read its own project is not a worker — and it now
+    subtracts the running worker's own denied tool NAMES before it does, so a
+    read-only reviewer is no longer offered the edit path and then refused it.
+    The definitions are still ALSO enforced at execution time, in
+    :func:`write_block_reason`, because the floor cannot know a PATH: the file
+    a call will write is in its arguments, and only that guard sees them.
     """
     out = set(SUBAGENT_DISABLED_TOOLS)
     allowed = getattr(permissions, "allowed_tools", None) if permissions is not None else None

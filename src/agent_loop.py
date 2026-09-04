@@ -617,8 +617,9 @@ _WORKSPACE_TERMINUS_TOOLS = (
 #   * read/list plus one edit path. `bash`, `python` and `write_file` are the
 #     privileged trio a caller may legitimately withhold and are NOT floored.
 #   * it never outranks an authorization decision — guide-only, block-all, the
-#     non-admin denylist, plan mode's read-only allowlist, or an operator's own
-#     `disabled_tools` setting all still win (see `_resolve_workspace_floor`).
+#     non-admin denylist, plan mode's read-only allowlist, an operator's own
+#     `disabled_tools` setting and the running worker's own agent definition
+#     all still win (see `_resolve_workspace_floor`).
 #   * it depends on the workspace being bound, never on the request's wording,
 #     because the wording is exactly what the upstream heuristics misread.
 #
@@ -4622,6 +4623,27 @@ async def stream_agent_loop(
                 floor -= {str(name) for name in _operator_off}
         except Exception as _floor_err:            # pragma: no cover - settings backend
             logger.debug("[tool-floor] operator setting lookup failed: %s", _floor_err)
+        # The running worker's own definition (src/agent_defs.py) is an
+        # authorization decision too — a human wrote the file — and
+        # `subagent_tools.write_block_reason` refuses what it denies at
+        # execution time, where no floor reaches. Restoring `edit_file` here
+        # for a reviewer defined as read-only would OFFER it and then refuse
+        # it: the trap this whole section exists to prevent, and one this
+        # codebase has already spent a debugging session on.
+        #
+        # Only the tool NAMES are subtracted. A definition's PATH rules stay at
+        # the point of use: the path a call will write is in its arguments, so
+        # it is not knowable when the floor is resolved, and a worker allowed
+        # `edit_file` but fenced to one directory must still be offered it.
+        # That is the distinction that makes this safe where pruning on a
+        # document that can appear mid-turn was not.
+        try:
+            from src.agent_tools.subagent_tools import _PERMS_CTX
+            _worker_perms = _PERMS_CTX.get()
+            if _worker_perms is not None:
+                floor = {t for t in floor if not _worker_perms.tool_denied(t)}
+        except Exception as _perm_err:             # pragma: no cover - no worker context
+            logger.debug("[tool-floor] worker permissions unavailable: %s", _perm_err)
         return floor
 
     _workspace_tool_floor = _resolve_workspace_floor()
@@ -4646,8 +4668,9 @@ async def stream_agent_loop(
     #
     # Nothing is relaxed. `_resolve_workspace_floor` above has already removed
     # every denial that is a decision rather than a guess — guide-only,
-    # block-all, the non-admin denylist, plan mode's read-only allowlist and
-    # the operator's own `disabled_tools` setting — so what is subtracted here
+    # block-all, the non-admin denylist, plan mode's read-only allowlist, the
+    # operator's own `disabled_tools` setting and the running worker's agent
+    # definition — so what is subtracted here
     # is exactly the set the loop had already decided must reach the model.
     # Clamps composed AFTER this point (the preflight, which is handed the
     # floor as `protected` and cannot name one; the odysseus-finetune no-tool
