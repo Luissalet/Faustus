@@ -1557,5 +1557,99 @@ de coding, y cualquier envío o publicación que no venga de una skill. Esas rut
 sistema de aprobación de **tools** que ya existía —sellado al hash del comando— y que **no se ha
 tocado**: son complementarios, no duplicados. Uno aprueba un comando; el otro, un plan.
 
+## 34. Procesos que sobreviven a un reinicio: Fase 4 del masterplan (04-09-2026, tarde)
+
+El criterio de parada de esta fase lo escribió el masterplan y es una sola frase: **no se avanza si
+al reiniciar se repite una publicación, un render o un email**. Todo lo demás de la sección existe
+para eso. El fallo que importa no es «el workflow se paró»: es «el workflow se ejecutó dos veces»,
+y la diferencia la nota el destinatario, no el log.
+
+### 34.1 La clave se escribe antes de actuar
+`idempotency_key()` se deriva del plan —run, nodo, `config`, entradas— y **nunca del reloj ni del
+número de intento**, porque dos intentos del mismo trabajo tienen que producir la **misma** clave.
+`store.start_node()` la inserta contra un índice único **antes** de que el manejador haga nada. Si
+ya está, el trabajo ya ocurrió (o está ocurriendo) y la respuesta es la fila, no un segundo envío.
+
+Ese orden es lo único que un `try/except` alrededor del trabajo no da nunca: el proceso puede morir
+entre el efecto y la escritura del resultado, y la fila ya dice que ese nodo fue reclamado. El test
+que fija la regla mata el proceso justo ahí (`raise SystemExit` **después** de que el handler haya
+enviado) y comprueba con una lista de efectos —no con estados— que la segunda pasada no envía.
+
+### 34.2 Pausado es un estado con motivo, no un error
+Un workflow esperando a una persona está funcionando bien. Tratarlo como fallo es como se acaba
+haciendo timeout a la persona a la que se está preguntando. Un nodo pausado tiene que decir **qué
+va a terminar la pausa**, y hay exactamente dos cosas que pueden: una persona (un `approval_id`) o
+el reloj (`result.wake_at`). El contrato rechaza una pausa sin ninguna de las dos — una pausa que
+nadie ni nada puede resolver es un cuelgue con mejores modales.
+
+`advance()` despierta solo lo que le toca por hora, así que un planificador que llame a `advance()`
+cada minuto es la implementación entera del `wait`. Y el nodo `wait` recuerda su propia hora de
+despertar: recalcular `seconds` en la segunda pasada es cómo «espera una hora» se convierte en una
+espera eterna, y tiene test.
+
+### 34.3 Un fallo para su rama, y solo la suya
+`ready_nodes()` responde `(ejecutables, bloqueados)` —los bloqueados también, porque «no pasa nada»
+y «ha terminado» se parecen demasiado desde una lista vacía—, y al terminar el run se calcula la
+inalcanzabilidad **transitiva**: si `gather` falla, no se nombra solo `write`, se nombran `write`
+**y** `send`. Contestar un nivel deja colgando la pregunta siguiente.
+
+Tres matices que salieron escribiendo los tests:
+- **`continue_on_failure` significa algo.** Estaba en el contrato desde el primer commit y el motor
+  no lo leía. Ahora un fallo tolerado no para la rama ni tumba el run — pero **se reporta**
+  (`tolerated_failures`), porque un run verde que se tragó un paso roto es peor que uno rojo.
+- **Un `skipped` también para la rama.** Es como un `condition` se convierte en una rama no tomada:
+  el nodo no produjo resultado, así que lo que lo necesitaba no tiene con qué trabajar. En un run
+  que termina bien eso se dice: `not_taken`.
+- **Un reintento se escribe `pending`, no `failed`.** Una fila `failed` es terminal y el lector del
+  grafo daría el nodo por acabado: así es como `max_attempts: 3` significaba uno en silencio.
+
+### 34.4 Nada es capaz por defecto
+`skill`, `deliver` y `artifact_store` alcanzan fuera de Faustus, y **rechazan por su nombre**
+mientras nadie les conecte un runtime: *«no sender is wired to the 'deliver' node type; nothing was
+sent … Faustus does not ship a mail client and will not pretend it did»*. Un nodo que devolviera
+`{"delivered": true}` hacia un manejador que no existe es el peor fallo posible de un motor de
+workflows: el run sale verde y el correo no salió nunca.
+
+El `condition` tampoco evalúa expresiones: compara con una lista cerrada de operadores, y una ruta
+solo se lee si se escribe `{"path": "inputs.score"}`. Un fichero de workflow es un dato que alguien
+pega; en el momento en que puede expresar una búsqueda con efectos, leer uno es peligroso. Y una
+comparación imposible (`"noventa" >= 90`) responde `not_comparable` con los dos tipos, en vez de un
+`False` que mandaría a mirar los datos en lugar de la línea que está mal.
+
+### 34.5 Dos fallos que solo aparecieron contra el servidor de verdad
+Los tests estaban verdes. La prueba en vivo contra la 7001 encontró dos cosas que ningún test
+unitario iba a ver:
+
+1. **La tarjeta que la puerta abría no era de nadie.** El `owner` del run no llegaba al
+   `approval_store`, así que la tarjeta no salía en la lista de pendientes que la persona mira. Una
+   pregunta que no se le enseña a nadie no es una puerta.
+2. **Cada consulta contaba como un reintento.** Reanudar un nodo pausado incrementaba `attempt`,
+   y el contrato lo topa en 100: un run esperando una semana, consultado cada minuto, dejaba de
+   poder leerse. Ahora volver de una pausa **continúa el mismo intento** —que además es la verdad:
+   no se reintentó nada, es que nadie había contestado— y la fila reclamada se reutiliza en vez de
+   insertar una nueva por consulta. Verificado en vivo con 30 consultas: `attempt=1`, una tarjeta.
+
+### 34.6 Ficheros y cómo se verificó
+`src/contracts/workflow.py`, tablas `workflow_runs`/`node_runs` (aditivas), `src/workflows/`
+(`store.py`, `engine.py`, `handlers.py`), `routes/workflows_routes.py`, y 5 tools MCP nuevas
+(`workflow_validate`, `workflow_start`, `workflow_advance`, `workflow_status`, `workflow_resume`).
+
+**52 tests** de la fase (20 del motor, 21 de los manejadores, 11 de las rutas), más dos pruebas en
+vivo contra la 7001: la de HTTP —validar, empezar, pausar en la puerta, conceder como persona,
+reanudar, rama no tomada— y **el handshake JSON-RPC real** contra el servidor MCP, que es el camino
+que recorre de verdad un coordinador. 21 tools registradas.
+
+De paso se arreglaron tres tests que llevaban tiempo en rojo sin que nadie los mirara. Dos de
+roster: fijaban la lista **exacta** de tools, así que cualquier fase que añadiera una los rompía —
+ahora fijan la invariante que importa, que ningún nombre desaparezca o cambie, en vez del
+inventario. Y uno de tiempos en `test_dispatch.py`, que dormía 0,1 s y daba por hecho que el worker
+ya había publicado progreso; ahora **espera a la condición**, que es lo que el propio Faustus hace
+en `workers_wait_for`. Los tres se comprobaron preexistentes con `git stash` antes de tocarlos.
+
+### 34.7 Lo que falta
+`deliver` sin canal y `skill` sin `execution_router` son las dos costuras donde la Fase 4 se junta
+con la 1 y la 6. Y nadie llama a `advance()` en bucle todavía: lo llaman la ruta, la tool o una
+persona, que para probar la durabilidad es suficiente y para un `wait` de verdad no lo es.
+
 ## Cómo mantener este documento
 Cada bloque de trabajo añade una sección (fecha, qué, por qué, ficheros, cómo se verificó, cifras) y actualiza las cifras de cabecera (`git log --oneline c9dd68d8..HEAD | wc -l`, `git diff --stat c9dd68d8..HEAD`). Los commits del fork llevan mensajes largos que explican el porqué: `git log c9dd68d8..HEAD` es la fuente detallada.

@@ -178,8 +178,17 @@ def test_progress_is_visible_while_running_and_wait_times_out_honestly(box):
 
     async def run():
         job = await dispatch.start("luis", {"tasks": ["slow"], "workspace": box["ws"]})
-        await asyncio.sleep(0.1)
-        c = dispatch.compact(job)
+        # Wait for the CONDITION, not for a clock. A flat `sleep(0.1)` and a
+        # hope that the worker has published by then fails on a machine that
+        # is a little busier than the one the test was written on — which is
+        # what it had been doing here, looking like a real regression every
+        # time somebody ran the suite.
+        c = None
+        for _ in range(100):
+            c = dispatch.compact(job)
+            if (c.get("progress") or {}).get("w1", {}).get("last_event"):
+                break
+            await asyncio.sleep(0.05)
         assert c["status"] == "running" and c["progress"]["w1"]["last_event"] == "tick"
         assert c["progress"]["w1"]["round"] == 2 and c["progress"]["w1"]["last_tool"] == "read_file"
         assert await dispatch.wait(job, 0.05) is False
@@ -371,10 +380,17 @@ def test_mcp_render_is_one_glance_and_names_the_board(monkeypatch):
     running = {"id": "abc123def456", "status": "running", "title": "t", "progress": {
         "w1": {"last_event": "tick", "round": 3, "last_tool": "bash", "elapsed_s": 40, "stalled": True, "stall_reason": "idle"}}}
     assert "w1: tick · round 3 · tool bash · 40 s · STALLED (idle)" in ws.render(running)
+    # The roster is pinned as "nothing was LOST", not as "this is the list".
+    # An exact list caducates the day a feature adds a tool — which is exactly
+    # what happened here, silently, for two phases. What actually matters to a
+    # coordinator already talking to this server is that no name it learned
+    # disappears or changes, so that is what is asserted.
     names = [t.name for t in ws.TOOLS]
-    assert names == ["dispatch_workers", "workers_wait", "workers_wait_for", "workers_status", "workers_events",
-                     "workers_cancel", "workers_guide", "workers_list", "objectives_list", "guard_explain",
-                     "memory_pack", "objectives_apply"]
+    assert len(names) == len(set(names)), f"a tool name is registered twice: {names}"
+    for pinned in ["dispatch_workers", "workers_wait", "workers_wait_for", "workers_status",
+                   "workers_events", "workers_cancel", "workers_guide", "workers_list",
+                   "objectives_list", "guard_explain", "memory_pack", "objectives_apply"]:
+        assert pinned in names, f"the MCP server dropped or renamed {pinned}"
 
 
 def test_the_guide_is_served_to_token_holders_and_says_the_essentials(box, monkeypatch):

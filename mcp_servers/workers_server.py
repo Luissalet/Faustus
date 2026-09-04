@@ -27,7 +27,12 @@ guard_explain, memory_pack (what this machine has already learned), and
 contracts_backends / contracts_validate_skill / contracts_plan_run (which
 execution backends exist and whether each is actually up, whether a manifest
 would be accepted, and where a run would land and under what isolation — all
-three pure: nothing is installed and nothing runs).
+three pure: nothing is installed and nothing runs), and
+workflow_validate / workflow_start / workflow_advance / workflow_status /
+workflow_resume (durable processes: `workflow_advance` is safe to call twice
+because a node already claimed is read from its row rather than done again,
+which is the point of the whole thing — an email does not go out a second
+time after a restart).
 It talks HTTP to the running
 Faustus (routes/dispatch_routes.py) — nothing runs in this process, so a crash
 here cannot take a worker with it. A dispatch carries an Idempotency-Key, so
@@ -494,6 +499,73 @@ def render_skills_audit(data: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def render_workflow_validation(data: Dict[str, Any]) -> str:
+    if not data.get("ok"):
+        return f"REJECTED at {data.get('field')}: {data.get('reason')}"
+    return (f"OK · {data.get('workflow')} {data.get('version')} · "
+            f"{data.get('nodes')} nodes · starts with "
+            f"{', '.join(data.get('roots') or []) or '-'} · "
+            f"fingerprint {str(data.get('fingerprint'))[:16]}")
+
+
+def render_workflow_run(data: Dict[str, Any]) -> str:
+    """One pass, told as an outcome rather than a log.
+
+    `paused` prints what would end the pause and `failed` prints what never
+    ran because of it — the two questions a coordinator asks next. A node read
+    from its claim instead of re-run is marked, because "it did not run again"
+    is the behaviour this whole phase is for and it should be visible."""
+    run_id = data.get("run_id")
+    if not data.get("ok"):
+        return f"{run_id}: {data.get('reason')}"
+    status = data.get("status")
+    lines = [f"{run_id} · {status} ({data.get('reason')})"]
+    for step in data.get("ran") or []:
+        mark = step.get("status")
+        extra = ""
+        if step.get("reason") == "already_attempted":
+            extra = "  [read from its claim — not re-run]"
+        elif step.get("reason"):
+            extra = f"  {str(step['reason'])[:200]}"
+        lines.append(f"  {step.get('node_id')}: {mark}{extra}")
+    if status == "paused":
+        waiting = data.get("waiting_on")
+        if data.get("approval_id"):
+            lines.append(f"  waiting on {waiting} → approval {data['approval_id']} "
+                         f"(a person has to answer it)")
+        else:
+            lines.append(f"  waiting on {waiting} → until {data.get('wake_at')} "
+                         f"(call advance again after that)")
+    if data.get("never_reached"):
+        lines.append(f"  never ran because of the failure: "
+                     f"{', '.join(data['never_reached'])}")
+    if data.get("not_taken"):
+        lines.append(f"  branch not taken: {', '.join(data['not_taken'])}")
+    if data.get("tolerated_failures"):
+        lines.append(f"  failed but allowed to: {', '.join(data['tolerated_failures'])}")
+    return "\n".join(lines)
+
+
+def render_workflow_state(data: Dict[str, Any]) -> str:
+    run = data.get("run") or {}
+    lines = [f"{run.get('id')} · {run.get('workflow_id')} {run.get('workflow_version')} "
+             f"· {run.get('status')}"]
+    if run.get("reason"):
+        lines.append(f"  {run['reason']}")
+    for node_id, state in (data.get("nodes") or {}).items():
+        line = f"  {node_id}: {state.get('status')} (attempt {state.get('attempt')})"
+        if state.get("approval_id"):
+            line += f" → approval {state['approval_id']}"
+        if state.get("reason"):
+            line += f" — {str(state['reason'])[:160]}"
+        lines.append(line)
+    if data.get("runnable_now"):
+        lines.append(f"  could run now: {', '.join(data['runnable_now'])}")
+    if data.get("blocked"):
+        lines.append(f"  blocked: {', '.join(data['blocked'])}")
+    return "\n".join(lines)
+
+
 def render_validation(data: Dict[str, Any]) -> str:
     """A refusal names the field. A pass names what the manifest will cost:
     the approval cards, and every backend that cannot take it, with why."""
@@ -737,6 +809,85 @@ TOOLS: List[Tool] = [
                           "repository root."},
         }},
     ),
+    Tool(
+        name="workflow_validate",
+        description=(
+            "Check a workflow definition WITHOUT storing or running anything. Answers "
+            "with the exact field that is wrong — the circle a cycle makes, the "
+            "dependency that names no node, a retry on a node that sends email without "
+            "`config.idempotent` — or with the workflow's fingerprint and which nodes "
+            "would start. Pure."
+        ),
+        inputSchema={"type": "object", "properties": {
+            "definition": {"type": "object", "description":
+                           "id, version, title and nodes[]. Each node: id, type "
+                           "(manual|schedule|webhook|skill|condition|wait|human_approval|"
+                           "artifact_store|deliver), needs[], config{}, max_attempts, "
+                           "continue_on_failure."},
+        }, "required": ["definition"]},
+    ),
+    Tool(
+        name="workflow_start",
+        description=(
+            "Store a workflow run and optionally take the first pass at it. Pass a "
+            "`dedupe_key` for anything that could arrive twice (a webhook, a retried "
+            "trigger): the same key returns the SAME run instead of starting a second "
+            "one. The run keeps the definition it started with, so editing the workflow "
+            "later does not change what this run does."
+        ),
+        inputSchema={"type": "object", "properties": {
+            "definition": {"type": "object", "description": "The workflow definition."},
+            "inputs": {"type": "object", "description":
+                       "What this run was started with; readable from conditions as "
+                       "`inputs.<name>`."},
+            "dedupe_key": {"type": "string", "description":
+                           "Trigger identity. The same key never starts a second run."},
+            "owner": {"type": "string"},
+            "project_id": {"type": "string"},
+            "trigger": {"type": "string", "description": "manual|schedule|webhook|api"},
+            "advance": {"type": "boolean", "description":
+                        "Take the first pass immediately (default false)."},
+        }, "required": ["definition"]},
+    ),
+    Tool(
+        name="workflow_advance",
+        description=(
+            "Run everything in a workflow run that can run right now, then report. SAFE "
+            "TO CALL TWICE: a node already claimed is read from its row, not done again "
+            "— that is the guarantee this exists for. Stops and says what it is waiting "
+            "on when a node needs a person or a time, and when something fails it names "
+            "what never ran because of it."
+        ),
+        inputSchema={"type": "object", "properties": {
+            "run_id": {"type": "string"},
+            "max_nodes": {"type": "integer", "description":
+                          "Stop after this many nodes in one pass (default 50)."},
+        }, "required": ["run_id"]},
+    ),
+    Tool(
+        name="workflow_status",
+        description=(
+            "Everything known about a workflow run: its status, every node with its "
+            "attempt and reason, which nodes could run now and which are blocked, and "
+            "the definition the run started with."
+        ),
+        inputSchema={"type": "object", "properties": {
+            "run_id": {"type": "string"},
+        }, "required": ["run_id"]},
+    ),
+    Tool(
+        name="workflow_resume",
+        description=(
+            "Carry on from a paused node once its approval has been answered. This does "
+            "NOT grant anything: the answer lives in the approval store and the gate "
+            "node reads it, so resuming a card nobody decided simply pauses again on the "
+            "same card. Granting is a human-only route on purpose."
+        ),
+        inputSchema={"type": "object", "properties": {
+            "run_id": {"type": "string"},
+            "node_id": {"type": "string", "description": "The paused node."},
+        }, "required": ["run_id", "node_id"]},
+    ),
 ]
 
 
@@ -809,6 +960,55 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
             data = await asyncio.to_thread(
                 _request, "GET", f"/api/contracts/skills/audit?workspace={workspace}")
             return _text(render_skills_audit(data))
+        if name == "workflow_validate":
+            definition = args.get("definition")
+            if not isinstance(definition, dict) or not definition:
+                return _text("Error: give the workflow definition as an object")
+            data = await asyncio.to_thread(
+                _request, "POST", "/api/workflows/validate", {"definition": definition})
+            return _text(render_workflow_validation(data))
+        if name == "workflow_start":
+            definition = args.get("definition")
+            if not isinstance(definition, dict) or not definition:
+                return _text("Error: give the workflow definition as an object")
+            body = {"definition": definition,
+                    "inputs": args.get("inputs") or {},
+                    "dedupe_key": str(args.get("dedupe_key") or ""),
+                    "owner": str(args.get("owner") or ""),
+                    "project_id": str(args.get("project_id") or ""),
+                    "trigger": str(args.get("trigger") or "manual"),
+                    "advance": bool(args.get("advance") or False)}
+            data = await asyncio.to_thread(_request, "POST", "/api/workflows/runs", body)
+            head = (f"{data.get('run_id')} · created"
+                    if data.get("created")
+                    else f"{data.get('run_id')} · {data.get('reason')} "
+                         f"(the same trigger, not a second run)")
+            if data.get("result"):
+                return _text(head + "\n" + render_workflow_run(data["result"]))
+            return _text(head)
+        if name == "workflow_advance":
+            run_id = str(args.get("run_id") or "").strip()
+            if not run_id:
+                return _text("Error: give the run_id")
+            body = {"max_nodes": int(args.get("max_nodes") or 50)}
+            data = await asyncio.to_thread(
+                _request, "POST", f"/api/workflows/runs/{run_id}/advance", body)
+            return _text(render_workflow_run(data))
+        if name == "workflow_status":
+            run_id = str(args.get("run_id") or "").strip()
+            if not run_id:
+                return _text("Error: give the run_id")
+            data = await asyncio.to_thread(
+                _request, "GET", f"/api/workflows/runs/{run_id}")
+            return _text(render_workflow_state(data))
+        if name == "workflow_resume":
+            run_id = str(args.get("run_id") or "").strip()
+            node_id = str(args.get("node_id") or "").strip()
+            if not run_id or not node_id:
+                return _text("Error: give both the run_id and the paused node_id")
+            data = await asyncio.to_thread(
+                _request, "POST", f"/api/workflows/runs/{run_id}/resume/{node_id}", {})
+            return _text(render_workflow_run(data))
         if name == "guard_explain":
             command = str(args.get("command") or "")
             if not command.strip():

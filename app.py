@@ -731,6 +731,12 @@ app.include_router(setup_contracts_routes())
 from routes.approvals_routes import setup_approvals_routes
 app.include_router(setup_approvals_routes())
 
+# Durable workflows. Admin, like the rest of the tool layer: the place a
+# person is actually required is a `human_approval` node inside the run, and
+# that is gated by require_human on the approvals routes.
+from routes.workflows_routes import setup_workflows_routes
+app.include_router(setup_workflows_routes())
+
 # Chat
 from routes.chat_routes import setup_chat_routes
 app.include_router(setup_chat_routes(

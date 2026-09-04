@@ -482,6 +482,73 @@ class ApprovalRow(TimestampMixin, Base):
     )
 
 
+class WorkflowRunRow(TimestampMixin, Base):
+    """One execution of a workflow definition.
+
+    The definition is stored as JSON on the row, not looked up by id at each
+    step: a definition edited while a run is paused must not change what the
+    rest of that run does. Same rule as an approval naming a skill version, and
+    for the same reason.
+    """
+    __tablename__ = "workflow_runs"
+
+    id          = Column(String, primary_key=True, index=True)
+    workflow_id = Column(String, nullable=False, index=True)
+    workflow_version = Column(String, nullable=False)
+    definition_fingerprint = Column(String(64), nullable=True, index=True)
+    definition_json = Column(Text, nullable=False)
+
+    status      = Column(String, nullable=False, default="pending", index=True)
+    owner       = Column(String, nullable=True, index=True)
+    project_id  = Column(String, nullable=True, index=True)
+    trigger     = Column(String, nullable=False, default="manual")
+    inputs_json = Column(Text, nullable=True)
+
+    created_at_iso = Column(String, nullable=False)
+    started_at  = Column(String, nullable=True)
+    ended_at    = Column(String, nullable=True)
+    reason      = Column(Text, nullable=True, default="")
+
+    #: Set by the caller when a trigger could fire twice for one real event (a
+    #: webhook redelivery, a scheduler that ran late and then on time). Unique,
+    #: so the second attempt to create the run loses instead of duplicating it.
+    dedupe_key  = Column(String, nullable=True, unique=True, index=True)
+    schema_version = Column(Integer, nullable=False, default=1)
+
+    __table_args__ = (
+        Index("ix_workflow_runs_owner_status", "owner", "status"),
+    )
+
+
+class NodeRunRow(TimestampMixin, Base):
+    """One node's attempt, written BEFORE the work happens.
+
+    `idempotency_key` is unique across the table: it is derived from the run,
+    the node and its config, so a retry carries the same key and the row
+    already there is the answer. That is what makes a restart cheap instead of
+    dangerous.
+    """
+    __tablename__ = "workflow_node_runs"
+
+    id          = Column(String, primary_key=True, index=True)
+    workflow_run_id = Column(String, nullable=False, index=True)
+    node_id     = Column(String, nullable=False, index=True)
+    status      = Column(String, nullable=False, default="pending", index=True)
+    attempt     = Column(Integer, nullable=False, default=0)
+    idempotency_key = Column(String(64), nullable=True, unique=True, index=True)
+
+    started_at  = Column(String, nullable=True)
+    ended_at    = Column(String, nullable=True)
+    reason      = Column(Text, nullable=True, default="")
+    approval_id = Column(String, nullable=True, index=True)
+    result_json = Column(Text, nullable=True)
+    schema_version = Column(Integer, nullable=False, default=1)
+
+    __table_args__ = (
+        Index("ix_node_runs_run_node", "workflow_run_id", "node_id"),
+    )
+
+
 class EmailAccount(TimestampMixin, Base):
     """A configured IMAP/SMTP account. Supports multiple accounts per user —
     exactly one row per owner has is_default=True.

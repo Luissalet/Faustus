@@ -796,10 +796,16 @@ async def test_the_row_tools_still_read_well_with_the_lean_tables(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_the_mcp_tool_roster_is_unchanged_by_the_format_work(monkeypatch):
-    """The format switch is not a new tool and removes none: the roster
-    tests/test_dispatch.py pins stays exactly as it was."""
+    """The format switch is not a new tool and removes none.
+
+    Same reading as the roster check in tests/test_dispatch.py: what this
+    guards is that nothing was lost, not that the list is frozen. Later
+    phases legitimately add tools, and an equality assertion here only ever
+    caught those — never a real regression."""
     ws = _load_workers_server(monkeypatch)
-    assert [t.name for t in ws.TOOLS] == [
-        "dispatch_workers", "workers_wait", "workers_wait_for", "workers_status", "workers_events",
-        "workers_cancel", "workers_guide", "workers_list", "objectives_list",
-        "guard_explain", "memory_pack", "objectives_apply"]
+    names = [t.name for t in ws.TOOLS]
+    assert len(names) == len(set(names)), f"a tool name is registered twice: {names}"
+    for pinned in ["dispatch_workers", "workers_wait", "workers_wait_for", "workers_status",
+                   "workers_events", "workers_cancel", "workers_guide", "workers_list",
+                   "objectives_list", "guard_explain", "memory_pack", "objectives_apply"]:
+        assert pinned in names, f"the MCP server dropped or renamed {pinned}"

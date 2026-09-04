@@ -41,6 +41,11 @@ from .memory import (  # noqa: F401
 from .identity import (  # noqa: F401
     CAPABILITIES, ExternalIdentity,
 )
+from .workflow import (  # noqa: F401
+    EFFECTFUL_TYPES, NODE_STATUSES, NODE_TYPES, TERMINAL_NODE, TERMINAL_WORKFLOW,
+    WORKFLOW_STATUSES, NodeRun, WorkflowDefinition, WorkflowNode, WorkflowRun,
+    idempotency_key,
+)
 
 __all__ = [
     "SCHEMA_VERSION", "ContractError", "fingerprint", "now_iso",
@@ -55,4 +60,7 @@ __all__ = [
     "Approval", "ApprovalPlan", "APPROVAL_STATUSES", "PLAN_FIELDS",
     "MemoryEntry", "MemoryView", "TRUST_CLASSES", "MEMORY_SOURCES", "DROP_REASONS",
     "ExternalIdentity", "CAPABILITIES",
+    "WorkflowDefinition", "WorkflowNode", "WorkflowRun", "NodeRun",
+    "idempotency_key", "NODE_TYPES", "EFFECTFUL_TYPES", "NODE_STATUSES",
+    "WORKFLOW_STATUSES", "TERMINAL_NODE", "TERMINAL_WORKFLOW",
 ]

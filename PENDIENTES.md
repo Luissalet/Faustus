@@ -119,6 +119,22 @@ a propósito · `[+]` mejora pendiente.
   esas rutas y **no se ha tocado**: son complementarios, no duplicados — uno aprueba un comando,
   el otro un plan.
 
+- `[~]` **Los nodos `deliver`, `skill` y `artifact_store` no están cableados a nada.** Rechazan por
+  su nombre (*«no sender is wired to the 'deliver' node type; nothing was sent»*) y eso es
+  deliberado: un run verde sin correo enviado es el peor fallo posible de un motor de workflows.
+  Pero significa que hoy un workflow solo puede disparar, condicionar, esperar y preguntar a una
+  persona. `deliver` necesita un canal (Fase 6) y `skill` el `execution_router` con un workspace
+  (Fase 1).
+
+- `[+]` **Nadie llama a `advance()` en bucle.** Lo llaman la ruta `/api/workflows/runs/{id}/advance`,
+  la tool MCP o una persona. `advance()` ya despierta los `wait` cuya hora pasó, así que un
+  planificador de un minuto sería la implementación entera — pero mientras no exista, un nodo
+  `wait` se queda pausado hasta que alguien pregunte.
+
+- `[+]` **La UI no enseña los workflows.** Todo está en rutas y tools; no hay página de runs, ni
+  lista de pausados, ni botón de reanudar. Un run pausado esperando a una persona solo se ve desde
+  la lista de aprobaciones pendientes, que es la mitad de la historia.
+
 - `[?]` **El puente de skills contra skills de verdad.** Luis tiene **una** skill guardada, y no
   declara permisos, así que lo único comprobado con datos reales es el caso deny-by-default. Las
   claves `permissions_*`, los `outputs: [name=type]` y los alcances de memoria están probados con

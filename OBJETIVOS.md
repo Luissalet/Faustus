@@ -26,7 +26,7 @@ una integración posterior, no otra arquitectura paralela.
 | 1 · Ejecución segura y artefactos | `DockerWorkspaceBackend`, router, y que el código deje de correr en el proceso web | 🟡 04-09-2026 — sandbox probado contra contenedores reales (§31) y **el `bash`/`python` del agente ya pasa por él** detrás de `agent_sandbox_execution` (§32). Faltan los runs de coding y la galería |
 | 2 · Runtime de skills y memoria útil | Instalar/revertir capacidades sin tocar el core; alcances de memoria y `MemoryView` | 🟡 04-09-2026 — puente `SKILL.md`↔manifiesto, descubrimiento que para en el repo, `MemoryView`. Falta cablearlo al prompt y la instalación/reversión (§32) |
 | 3 · Motor creativo | ComfyUI como servicio, plantillas versionadas, galería de artefactos con receta | ⏳ |
-| 4 · Workflows, approvals y conectores | Procesos que sobreviven a reinicios, idempotentes | 🟡 04-09-2026 — las **aprobaciones** ya son un runtime real con puerta humana (§33); los workflows, no |
+| 4 · Workflows, approvals y conectores | Procesos que sobreviven a reinicios, idempotentes | 🟡 04-09-2026 — aprobaciones con puerta humana (§33) **y el núcleo de workflows durables** (§34): claim antes de actuar, pausa por persona o por reloj, ramas. Faltan los conectores y cablear `skill`/`deliver` a algo que exista |
 | 5 · Coding profesional | `ChangeSet`, repo map, LSP opcional, intents explore/plan/implement/review | 🟡 partes sueltas ya existen |
 | 6 · Gateway, canales y dispositivos | Un canal de bajo riesgo con pairing, nodos, después voz | ⏳ |
 | 7 · Ecosistema y operación | Hooks versionados, CLI `doctor`, telemetría, transferencia de artefactos | ⏳ |
@@ -129,7 +129,18 @@ Skills iniciales: `image.product`, `image.reference-edit`, `video.short-form`, `
   - [ ] Extenderlo al `bash`/`python` del agente, a los runs de coding y a los envíos que no vienen
         de una skill. Hoy esas rutas las cubre el sistema de aprobación de *tools* que ya existía,
         que aprueba un comando y no un plan.
-  - [ ] Los nodos de workflow (`WorkflowRun`/`NodeRun`, reintentos, idempotencia) siguen sin existir.
+  - [x] **El núcleo de workflows existe** (04-09, §34): `contracts/workflow.py`, tablas
+        `workflow_runs`/`node_runs`, `src/workflows/` (store, engine, handlers), rutas
+        `/api/workflows/*` y 5 tools MCP. La clave de idempotencia se deriva del plan y **se
+        escribe antes de actuar**, así que un proceso muerto a media publicación vuelve a la fila,
+        no al envío. `pausado` es un estado con su motivo (una persona o un reloj), no un error.
+  - [x] Los tipos de nodo que **alcanzan fuera** (`skill`, `deliver`, `artifact_store`) **rechazan
+        por nombre** mientras nadie les conecte un runtime. Un run verde sin correo enviado sería
+        el peor fallo posible de un motor de workflows.
+  - [ ] Conectar `deliver` a un canal real y `skill` al `execution_router` con workspace. Ahí es
+        donde la Fase 4 se junta con la 1 y la 6.
+  - [ ] Un planificador que llame a `advance()` en bucle (hoy lo llama quien quiera: la ruta, la
+        tool MCP o una persona; nadie lo hace solo).
 - **5 · Coding:** `ChangeSet` estándar (plan, ficheros, diff, comandos, tests reales, artefactos) y
   la unión de `auto_review`, `review_state`, `workspace_checkpoints` y `git_invariants`. Ninguna
   afirmación de arreglo termina sin diff y evidencia acorde al modo.
