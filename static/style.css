@@ -41223,6 +41223,11 @@ body.theme-frosted .modal {
   border-top: 1px solid var(--border);
 }
 .workspace-note { margin: 0 0 8px; font-size: 11px; line-height: 1.4; }
+/* Native-dialog shortcuts: the in-page list is the fallback, the OS dialog
+   the preferred route, so these sit above the list rather than in the footer. */
+.workspace-native { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 18px 8px; }
+.workspace-native .confirm-btn { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
+.workspace-native .workspace-row-icon { flex: none; }
 /* Clearing is the destructive option: park it on the far left, away from
    "Use this folder". Only rendered when a folder is actually bound. */
 .workspace-footer .workspace-clear-btn { margin-right: auto; }

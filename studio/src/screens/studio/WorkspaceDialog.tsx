@@ -1,14 +1,15 @@
-import { ArrowUp, Check, Folder } from 'lucide-react';
+import { ArrowUp, Check, Folder, FolderOpen } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button, Dialog, Skeleton } from '../../components';
-import { browseWorkspace, vetWorkspace, type BrowseResult } from '../../adapters/composer';
+import { browseWorkspace, pickNative, vetWorkspace, type BrowseResult } from '../../adapters/composer';
 
 /**
- * Folder picker. Browses the server's filesystem through
+ * Folder picker, fallback edition. The chip tries the OS's own dialog first
+ * (`pickNative`); this in-page browser only appears when that cannot open —
+ * a browser on another machine, a headless host — and still offers a button
+ * to retry the native one. Browses the server's filesystem through
  * /api/workspace/browse — the same endpoint, the same admin gate — and hands
- * back a vetted path. Binding a folder is the central act of agent mode, so
- * this is a dialog with the folder tree in it, not a text field you have
- * to know the path for.
+ * back a vetted path.
  */
 export default function WorkspaceDialog({
   open,
@@ -60,6 +61,29 @@ export default function WorkspaceDialog({
     }
   };
 
+  const [nativeBusy, setNativeBusy] = useState(false);
+  const openNative = async () => {
+    setNativeBusy(true);
+    setError(null);
+    try {
+      const res = await pickNative('folder', listing?.path || initial);
+      if (res.status === 'ok' && res.path) {
+        onPick(res.path);
+        onClose();
+      } else if (res.status === 'unavailable') {
+        setError(
+          'El explorador del sistema no está disponible desde aquí (el navegador tiene que estar en la misma máquina que Faustus). Elige la carpeta en esta lista.',
+        );
+      } else if (res.detail) {
+        setError(res.detail);
+      }
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setNativeBusy(false);
+    }
+  };
+
   return (
     <Dialog
       open={open}
@@ -102,6 +126,14 @@ export default function WorkspaceDialog({
           />
         </label>
         <Button label="Ir" type="submit" size="sm" />
+        <Button
+          label="Explorador del sistema…"
+          icon={FolderOpen}
+          size="sm"
+          loading={nativeBusy}
+          onClick={() => void openNative()}
+          testId="workspace-native"
+        />
       </form>
 
       {error && (

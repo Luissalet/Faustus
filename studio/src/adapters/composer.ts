@@ -95,6 +95,60 @@ export async function vetWorkspace(path: string): Promise<string | null> {
   return raw.path ?? path;
 }
 
+/* ── Native OS picker ── */
+
+export type PickKind = 'folder' | 'file' | 'files';
+
+export interface NativePick {
+  /** 'ok' with a vetted path/paths; 'cancelled' when the user closed the
+   *  dialog; 'unavailable' when the server cannot open one (remote browser,
+   *  no display, no toolkit) and the caller should fall back to the in-page
+   *  browser. */
+  status: 'ok' | 'cancelled' | 'unavailable';
+  path?: string;
+  paths?: string[];
+  detail?: string;
+}
+
+/**
+ * Ask the server to open the real Explorer/Finder/GTK dialog on its own
+ * desktop (only possible when the browser runs on the same machine). Never
+ * throws for the "can't" cases — those return `unavailable` so the UI can
+ * show its own dialog instead; a rejected folder (vet failed) throws.
+ */
+export async function pickNative(kind: PickKind, initial = ''): Promise<NativePick> {
+  let response: Response;
+  try {
+    response = await fetch('/api/workspace/pick', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ kind, initial }),
+    });
+  } catch {
+    return { status: 'unavailable' };
+  }
+  let body: { path?: string; paths?: unknown; cancelled?: boolean; detail?: unknown } = {};
+  try {
+    body = (await response.json()) as typeof body;
+  } catch {
+    body = {};
+  }
+  const detail = body.detail === undefined ? '' : String(body.detail);
+  if (response.status === 501 || response.status === 403 || response.status === 404) {
+    return { status: 'unavailable', detail };
+  }
+  if (response.status === 409) {
+    return { status: 'cancelled', detail: detail || 'Ya hay un selector abierto.' };
+  }
+  if (!response.ok) throw new ApiError(detail || `pick responded ${response.status}`, response.status);
+  if (body.cancelled) return { status: 'cancelled' };
+  if (body.path) return { status: 'ok', path: body.path };
+  const paths = asArray<string>(body.paths).map(String).filter(Boolean);
+  if (paths.length) return { status: 'ok', paths };
+  return { status: 'cancelled' };
+}
+
 /* ── `@` mentions ── */
 
 export interface WorkspaceFile {

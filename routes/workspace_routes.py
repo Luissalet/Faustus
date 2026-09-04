@@ -80,6 +80,127 @@ def _reject_cross_origin(request: Request) -> None:
             )
 
 
+# ── native OS picker (Windows Explorer / GTK / Cocoa dialog) ──────────────
+#
+# The in-page directory browser is a fallback; when the browser sits on the
+# same machine as the server the user expects the real OS dialog. We open it
+# from a *child* python process (tkinter must own the main thread of whatever
+# process it runs in, and the server's main thread belongs to uvicorn), read
+# the chosen path from its stdout, and never let more than one dialog exist at
+# a time — a second click while one is open would otherwise stack a hidden
+# window behind the first.
+
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost", "testclient"})
+_PICK_TIMEOUT_S = 600
+_PICK_LOCK = __import__("threading").Lock()
+
+_PICK_SCRIPT = r"""
+import json, os, sys
+kind, initial = sys.argv[1], sys.argv[2]
+try:
+    import tkinter as tk
+    from tkinter import filedialog
+except Exception as e:
+    print(json.dumps({"unavailable": str(e)})); sys.exit(0)
+try:
+    root = tk.Tk()
+except Exception as e:
+    print(json.dumps({"unavailable": str(e)})); sys.exit(0)
+root.withdraw()
+root.attributes("-topmost", True)
+root.update()
+try:
+    root.focus_force()
+except Exception:
+    pass
+opts = {"parent": root}
+if initial and os.path.isdir(initial):
+    opts["initialdir"] = initial
+try:
+    if kind == "folder":
+        out = filedialog.askdirectory(title="Elegir carpeta de trabajo", mustexist=True, **opts)
+        res = {"path": os.path.normpath(out)} if out else {"cancelled": True}
+    elif kind == "file":
+        out = filedialog.askopenfilename(title="Elegir archivo", **opts)
+        res = {"path": os.path.normpath(out)} if out else {"cancelled": True}
+    else:
+        out = filedialog.askopenfilenames(title="Elegir archivos", **opts)
+        outs = list(root.tk.splitlist(out)) if out else []
+        res = {"paths": [os.path.normpath(p) for p in outs]} if outs else {"cancelled": True}
+finally:
+    try:
+        root.destroy()
+    except Exception:
+        pass
+print(json.dumps(res))
+"""
+
+
+async def _native_pick(request: Request, kind: str, initial: str) -> dict:
+    """Run the picker subprocess; raise HTTPException on the failure paths.
+
+    Polled rather than awaited so the dialog dies with the request: if the
+    browser tab closes or the fetch is aborted while the dialog is up, the
+    orphaned window would otherwise sit on the desktop holding the lock.
+    """
+    import asyncio
+    import json
+    import subprocess
+    import sys
+    import time
+
+    if not _PICK_LOCK.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail="A native picker is already open")
+    proc = None
+    try:
+        try:
+            proc = subprocess.Popen(
+                [sys.executable, "-c", _PICK_SCRIPT, kind, initial],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            )
+        except OSError as exc:
+            raise HTTPException(status_code=501, detail=f"Native picker unavailable: {exc}")
+        deadline = time.monotonic() + _PICK_TIMEOUT_S
+        while proc.poll() is None:
+            if time.monotonic() > deadline:
+                proc.kill()
+                raise HTTPException(status_code=504, detail="Native picker timed out")
+            if await request.is_disconnected():
+                proc.kill()
+                raise HTTPException(status_code=499, detail="Client went away")
+            await asyncio.sleep(0.2)
+        stdout, stderr = proc.communicate()
+    except asyncio.CancelledError:
+        if proc is not None and proc.poll() is None:
+            proc.kill()
+        raise
+    finally:
+        _PICK_LOCK.release()
+    line = (stdout or "").strip().splitlines()
+    try:
+        data = json.loads(line[-1]) if line else {}
+    except ValueError:
+        data = {}
+    if proc.returncode != 0 or not isinstance(data, dict) or not data:
+        err = (stderr or "").strip().splitlines()
+        raise HTTPException(
+            status_code=501,
+            detail="Native picker unavailable: " + (err[-1] if err else f"exit {proc.returncode}"),
+        )
+    if "unavailable" in data:
+        raise HTTPException(status_code=501, detail=f"Native picker unavailable: {data['unavailable']}")
+    if data.get("path"):
+        # Folders are vetted like a typed path so the same rules apply
+        # (no sensitive dirs, no filesystem roots) before the UI stores it.
+        if kind == "folder":
+            from src.tool_execution import vet_workspace
+            resolved = vet_workspace(data["path"])
+            if resolved is None:
+                raise HTTPException(status_code=400, detail="Esa carpeta no se puede usar como espacio de trabajo")
+            data["path"] = resolved
+    return data
+
+
 # ── git: the repo being viewed must not choose what runs ──────────────────
 #
 # These routes run git in a `cwd` the client names, inheriting the full server
@@ -335,6 +456,43 @@ def setup_workspace_routes():
         from src.tool_execution import vet_workspace
         resolved = vet_workspace(path)
         return {"ok": resolved is not None, "path": resolved}
+
+    @router.post("/pick")
+    async def pick(request: Request):
+        """Open the host OS's native file/folder dialog and return the choice.
+
+        Body: {"kind": "folder" | "file" | "files", "initial": "<dir>"}.
+        Returns {"path": ...} / {"paths": [...]} or {"cancelled": true}.
+
+        Only makes sense when the browser runs on the same machine as the
+        server (the dialog opens on the server's desktop), so it is limited to
+        direct loopback clients on top of the usual admin + same-origin gates.
+        501 when no GUI toolkit / display is available so the UI can fall back
+        to the in-page browser.
+        """
+        owner = get_current_user(request)
+        if not owner_is_admin_or_single_user(owner):
+            raise HTTPException(status_code=403, detail="Workspace selection is admin-only")
+        _reject_cross_origin(request)
+        client_host = (request.client.host if request.client else "") or ""
+        if client_host not in _LOOPBACK_HOSTS:
+            raise HTTPException(
+                status_code=403,
+                detail="The native picker only works when the browser runs on the Faustus host",
+            )
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        if not isinstance(body, dict):
+            body = {}
+        kind = str(body.get("kind") or "folder").strip().lower()
+        if kind not in ("folder", "file", "files"):
+            raise HTTPException(status_code=400, detail="kind must be folder, file or files")
+        initial = str(body.get("initial") or "").strip()
+        if initial and not os.path.isdir(os.path.expanduser(initial)):
+            initial = os.path.dirname(os.path.expanduser(initial))
+        return await _native_pick(request, kind, initial)
 
     @router.get("/vet-context")
     def vet_context(request: Request, path: str = Query(default="")):

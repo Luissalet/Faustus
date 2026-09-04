@@ -256,6 +256,53 @@ async function _navigate(path) {
   }
 }
 
+// ── Native OS dialog ────────────────────────────────────────────────────────
+// When the browser runs on the Faustus host, /api/workspace/pick opens the
+// real Explorer/Finder dialog on that desktop and returns the choice. The
+// in-page browser above stays as the fallback (remote browser, no display).
+// Resolves to {status: 'ok'|'cancelled'|'unavailable'|'error', path?, detail?}
+// and never throws.
+async function _pickNative(kind, initial) {
+  try {
+    const res = await fetch(`${API_BASE}/api/workspace/pick`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ kind, initial: initial || '' }),
+    });
+    let data = {};
+    try { data = await res.json(); } catch (_) { data = {}; }
+    if (res.status === 501 || res.status === 403 || res.status === 404) return { status: 'unavailable' };
+    if (res.status === 409) return { status: 'error', detail: 'A system dialog is already open.' };
+    if (!res.ok) return { status: 'error', detail: (data && data.detail) || `pick failed: ${res.status}` };
+    if (data && data.cancelled) return { status: 'cancelled' };
+    if (data && data.path) return { status: 'ok', path: data.path };
+    return { status: 'cancelled' };
+  } catch (_) {
+    return { status: 'unavailable' };
+  }
+}
+
+// Shared by the modal's two "system dialog" buttons. Returns true when the
+// pick was handled (chosen or cancelled) so callers can stop; false when the
+// native dialog is not available here and the in-page list is the way.
+async function _nativeFromModal(kind) {
+  const r = await _pickNative(kind, _curPath || getWorkspace());
+  if (r.status === 'ok') {
+    _choose(r.path);
+    return true;
+  }
+  if (r.status === 'cancelled') return true;
+  if (r.status === 'error') {
+    if (uiModule && uiModule.showError) uiModule.showError(r.detail);
+    return true;
+  }
+  if (uiModule && uiModule.showError) {
+    uiModule.showError('The system dialog only works when the browser runs on the Faustus machine — pick from the list instead.');
+  }
+  return false;
+}
+
 function _getModal() {
   if (_modal) return _modal;
   _modal = document.createElement('div');
@@ -272,6 +319,10 @@ function _getModal() {
              spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off"
              placeholder="Type or paste a folder path, then press Enter" />
       <p class="muted workspace-note">File tools are <strong>confined</strong> to this folder. Shell commands start here but are <strong>not sandboxed</strong> and can reach outside it.</p>
+      <div class="workspace-native">
+        <button type="button" class="confirm-btn confirm-btn-secondary" id="workspace-native-folder">${_FOLDER_SVG}Browse folders in the system dialog…</button>
+        <button type="button" class="confirm-btn confirm-btn-secondary" id="workspace-native-file" hidden>${_FILE_SVG}Pick a file in the system dialog…</button>
+      </div>
       <div class="modal-body workspace-body" id="workspace-body"></div>
       <div class="modal-footer workspace-footer">
         <button type="button" class="confirm-btn confirm-btn-secondary workspace-clear-btn" id="workspace-clear" hidden>Clear workspace</button>
@@ -282,6 +333,8 @@ function _getModal() {
   document.body.appendChild(_modal);
   _modal.querySelector('#workspace-close').addEventListener('click', closeWorkspaceBrowser);
   _modal.querySelector('#workspace-cancel').addEventListener('click', closeWorkspaceBrowser);
+  _modal.querySelector('#workspace-native-folder').addEventListener('click', () => { _nativeFromModal('folder'); });
+  _modal.querySelector('#workspace-native-file').addEventListener('click', () => { _nativeFromModal('file'); });
   // Unbinding used to live only on the pill's ✕, i.e. only for a mouse. The
   // pill's default action is now "choose a folder", so clearing needs a home
   // a keyboard can reach.
@@ -328,7 +381,22 @@ function _getModal() {
 export async function openWorkspaceBrowser(onPick = null, options = {}) {
   _onPick = typeof onPick === 'function' ? onPick : null;
   _pickerOptions = options || {};
+  // Folder-only picks go straight to the OS dialog; the in-page list is only
+  // shown when the server cannot open one from here. Mixed file-or-folder
+  // picks (project work roots) keep the list, with both native buttons in it.
+  if (!_pickerOptions.includeFiles && !_pickerOptions.inPage) {
+    const r = await _pickNative('folder', getWorkspace());
+    if (r.status === 'ok') { _choose(r.path); return; }
+    if (r.status === 'cancelled') { _onPick = null; _pickerOptions = {}; return; }
+    if (r.status === 'error') {
+      _onPick = null; _pickerOptions = {};
+      if (uiModule && uiModule.showError) uiModule.showError(r.detail);
+      return;
+    }
+  }
   const modal = _getModal();
+  const nativeFile = modal.querySelector('#workspace-native-file');
+  if (nativeFile) nativeFile.hidden = !_pickerOptions.includeFiles;
   const title = modal.querySelector('.modal-header h4');
   if (title) title.innerHTML = `${_FOLDER_SVG}${uiModule.esc(_pickerOptions.title || 'Select workspace')}`;
   const note = modal.querySelector('.workspace-note');

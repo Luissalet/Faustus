@@ -554,6 +554,128 @@ def test_browse_marks_root_unselectable_and_vet_endpoint(monkeypatch):
     assert ei.value.status_code == 403
 
 
+# ── native picker: gates before any dialog can open ────────────────────
+
+class _PickRequest:
+    """Just enough of a starlette Request for /api/workspace/pick."""
+
+    def __init__(self, host, body, headers=None):
+        self.client = type("C", (), {"host": host})()
+        self.headers = headers or {}
+        self._body = body
+
+    async def json(self):
+        return self._body
+
+    async def is_disconnected(self):
+        return False
+
+
+def _run(coro):
+    import asyncio
+    return asyncio.new_event_loop().run_until_complete(coro)
+
+
+def test_pick_endpoint_gates_and_shapes(monkeypatch):
+    import routes.workspace_routes as wr
+    from fastapi import HTTPException
+
+    router = wr.setup_workspace_routes()
+    pick = next(r.endpoint for r in router.routes if r.path == "/api/workspace/pick")
+    monkeypatch.setattr(wr, "get_current_user", lambda req: "admin")
+    monkeypatch.setattr(wr, "owner_is_admin_or_single_user", lambda owner: True)
+
+    calls = []
+
+    async def fake_pick(request, kind, initial):
+        calls.append((kind, initial))
+        return {"path": "X"} if kind == "folder" else {"paths": ["a", "b"]}
+
+    monkeypatch.setattr(wr, "_native_pick", fake_pick)
+
+    # The dialog opens on the server's desktop: a remote browser must never
+    # be able to pop it, whatever its privileges.
+    with pytest.raises(HTTPException) as ei:
+        _run(pick(_PickRequest("10.0.0.7", {"kind": "folder"})))
+    assert ei.value.status_code == 403
+    assert calls == []
+
+    # Cross-origin writes are refused like every other mutating route.
+    with pytest.raises(HTTPException) as ei:
+        _run(pick(_PickRequest("127.0.0.1", {"kind": "folder"},
+                               {"sec-fetch-site": "cross-site"})))
+    assert ei.value.status_code == 403
+    assert calls == []
+
+    with pytest.raises(HTTPException) as ei:
+        _run(pick(_PickRequest("127.0.0.1", {"kind": "registry"})))
+    assert ei.value.status_code == 400
+
+    assert _run(pick(_PickRequest("127.0.0.1", {"kind": "folder"}))) == {"path": "X"}
+    assert _run(pick(_PickRequest("::1", {"kind": "files"}))) == {"paths": ["a", "b"]}
+    # A file given as `initial` is turned into its directory; garbage bodies
+    # default to a folder pick.
+    here = os.path.abspath(__file__)
+    _run(pick(_PickRequest("127.0.0.1", {"initial": here})))
+    assert calls[-1] == ("folder", os.path.dirname(here))
+    _run(pick(_PickRequest("127.0.0.1", "not a dict")))
+    assert calls[-1][0] == "folder"
+
+    # Non-admins get the same 403 as /vet, before the loopback check.
+    monkeypatch.setattr(wr, "owner_is_admin_or_single_user", lambda owner: False)
+    with pytest.raises(HTTPException) as ei:
+        _run(pick(_PickRequest("127.0.0.1", {"kind": "folder"})))
+    assert ei.value.status_code == 403
+
+
+def test_native_pick_reads_child_json_and_vets_folders(monkeypatch, tmp_path):
+    """The child process speaks one JSON line; unavailable toolkits become a
+    501 the UI can fall back on, and a chosen folder is vetted like a typed
+    path (a filesystem root is refused even though Explorer offered it)."""
+    import routes.workspace_routes as wr
+    from fastapi import HTTPException
+
+    class FakeProc:
+        def __init__(self, out, code=0):
+            self._out, self.returncode = out, code
+
+        def poll(self):
+            return self.returncode
+
+        def communicate(self):
+            return self._out, ""
+
+        def kill(self):
+            pass
+
+    import subprocess as sp
+    scripted = {}
+    monkeypatch.setattr(sp, "Popen", lambda *a, **k: FakeProc(scripted["out"], scripted.get("code", 0)))
+    req = _PickRequest("127.0.0.1", {})
+
+    scripted["out"] = '{"unavailable": "no display"}\n'
+    with pytest.raises(HTTPException) as ei:
+        _run(wr._native_pick(req, "folder", ""))
+    assert ei.value.status_code == 501
+
+    scripted["out"] = '{"cancelled": true}\n'
+    assert _run(wr._native_pick(req, "folder", "")) == {"cancelled": True}
+
+    scripted["out"] = '{"path": "%s"}\n' % str(tmp_path).replace("\\", "\\\\")
+    out = _run(wr._native_pick(req, "folder", ""))
+    assert out["path"] == os.path.realpath(str(tmp_path))
+
+    root = os.path.abspath(os.sep)
+    scripted["out"] = '{"path": "%s"}\n' % root.replace("\\", "\\\\")
+    with pytest.raises(HTTPException) as ei:
+        _run(wr._native_pick(req, "folder", ""))
+    assert ei.value.status_code == 400
+
+    # Files are handed back untouched (the upload path validates them).
+    scripted["out"] = '{"paths": ["a.txt"]}\n'
+    assert _run(wr._native_pick(req, "files", "")) == {"paths": ["a.txt"]}
+
+
 # ── send-time privilege gate (no path oracle for non-admins) ────────────
 
 def test_request_workspace_gate(ws, monkeypatch):

@@ -78,8 +78,15 @@ proporcionales, auditoría de la guía Vercel pasada o excepción documentada,
       tarjeta de aprobación (aprobar / toda la tarea / denegar) que reanuda el
       stream, parar, métricas por turno, fuentes web, imágenes generadas.
       Probado en el 7001 con `qwen3.5:9b` en chat y en agente con `ls`.
-      **Pendiente**: diff, tests y checkpoint como paneles; adjuntos; retirar
-      el chat legacy (`static/js/chat.js`) cuando tenga lo que tiene el viejo.
+      Lote F: adjuntos, `@` menciones, `#` regla, comandos `/`, editar /
+      regenerar / borrar, renombrar / archivar / exportar. Lote G: tarjeta
+      del arnés (comprobaciones, veredicto, diff y revertir por fichero,
+      volver al checkpoint, confirmar en git), progreso y plan en vivo,
+      `/versions`, `/restore`, `/checkpoints`, selector de carpeta nativo
+      (Explorador de Windows vía `/api/workspace/pick`, también en la
+      anterior). **Pendiente**: sub-agentes, navegador en vivo, documentos
+      del editor; retirar el chat legacy (`static/js/chat.js`) sólo cuando
+      PARIDAD_FUNCIONAL §3–§4 no tenga filas «Anterior».
 - [ ] **UI-033** Studio creativo: referencias con rol, variantes, máscara y
       receta. Aquí entra el prototipo que proponía el documento de producto.
 

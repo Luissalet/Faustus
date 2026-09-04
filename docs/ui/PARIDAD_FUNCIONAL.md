@@ -37,7 +37,7 @@ las toca ninguna pantalla.
 | Historial importado | `history-modal` | — | **Anterior** |
 | Agent runners | `agent-runners-modal` | — | **Anterior** |
 | Agent definitions | `agent-defs` | — | **Anterior** |
-| Workspace de la sesión (elegir carpeta, `Change folder`) | pantalla de bienvenida y compositor | chip de carpeta + diálogo | **Migrado** |
+| Workspace de la sesión (elegir carpeta, `Change folder`) | pantalla de bienvenida y compositor | chip de carpeta → diálogo nativo del sistema (`/api/workspace/pick`), con el diálogo en página solo como respaldo | **Migrado** (y más: la anterior también abre el nativo) |
 | Skills (auditoría, publicar, importar) | `skills-audit-panel` | — | **Anterior** |
 | Ajustes (todas las secciones, 81 opciones del agente, endpoints, modelos locales, atajos) | `settings-modal` | — | **Anterior** |
 | Tema (editor de colores, importar/exportar) | `theme-modal` | tokens propios; los temas personalizados siguen aplicando vía `legacy-bridge.css` | **Anterior** (editor) |
@@ -56,7 +56,8 @@ las toca ninguna pantalla.
 | Manage Chats (biblioteca de chats) | — | **Anterior** |
 | Exportar conversación (md, txt, json, html, docx, pdf) | diálogo «…» y `/export` | **Migrado** (lote: anterior) |
 | Truncar y compactar (`/truncate`, `/compact`) | sí | **Migrado** |
-| Fork, versiones y restaurar (`/versions`, `/checkpoints`) | — | **Anterior** |
+| Versiones y restaurar (`/versions`, `/restore`), checkpoints (`/checkpoints`) | sí | **Migrado** |
+| Fork de conversación | — | **Anterior** |
 | Modo Nobody / incógnito | — | **Anterior** |
 | Colapsar barra lateral | cajón en ≤1023 px | **Migrado** |
 
@@ -70,7 +71,7 @@ las toca ninguna pantalla.
 | RAG por sesión | chip «Docs» (misma clave que la anterior) | **Migrado** |
 | Deep Research, Group chat, Persona, Compare desde el compositor | — | **Anterior** |
 | Elegir modelo y endpoint, refrescar | paleta y `/models` (sin refrescar) | **Parcial** |
-| Carpeta de workspace (elegir, quitar, indicador) | diálogo con árbol de carpetas, misma clave que la anterior | **Migrado** |
+| Carpeta de workspace (elegir, quitar, indicador) | diálogo nativo del sistema (Explorador en Windows) y, si el navegador no está en la misma máquina, diálogo con árbol de carpetas; misma clave que la anterior | **Migrado** |
 | Adjuntos (ficheros, imágenes, pegar, arrastrar) | sí | **Migrado** (ver PENDIENTES §26 sobre el 7001) |
 | Menciones `@fichero` | lista con búsqueda difusa | **Migrado** (`@ruta:línea` y `@expert:` se escriben a mano; sin fichas pulsables) |
 | `#` regla permanente, `/remember` | sí | **Migrado** |
@@ -93,13 +94,14 @@ las toca ninguna pantalla.
 | Editar, regenerar, borrar mensajes | sí (queda versión en el servidor) | **Migrado** (Undo/restaurar: anterior) |
 | Copiar mensaje / código | botones en mensaje y en cada bloque de código | **Migrado** |
 | Markdown completo (tablas, notas al pie) | lector reducido | **Parcial** |
-| Tarjetas 🛡 del arnés (Turn summary, Verified/Unverified) | — | **Anterior** |
-| Panel Progress (`todowrite`), plan en vivo (`plan_update`) | — | **Anterior** |
+| Tarjetas 🛡 del arnés (Turn summary, Verified/Unverified, comprobaciones por ronda, tests, análisis estático, cambios frente a lo afirmado) | tarjeta bajo la respuesta (`harness_check`, `harness_summary`) | **Migrado** |
+| Panel Progress (`todowrite`), plan en vivo (`plan_update`) | lista de progreso y tarjeta de plan dentro del turno | **Migrado** |
 | Tablero de sub-agentes (`delegate_agents`), steer/stop por worker | — | **Anterior** |
 | Vista en vivo del navegador (`browser_view`) | — | **Anterior** |
 | Documentos del editor (`doc_*`), sugerencias | — | **Anterior** |
-| Ficheros editados con diff y revertir, checkpoints | — | **Anterior** |
-| Context ledger, pill de uso de GPU, salud de servicios | — | **Anterior** |
+| Ficheros editados con diff y revertir, volver al checkpoint del turno, confirmar en git con mensaje propuesto | en la tarjeta del arnés | **Migrado** |
+| Context ledger | porcentaje de contexto en el pie del turno | **Migrado** (ledger detallado: anterior) |
+| Pill de uso de GPU, salud de servicios | — | **Anterior** |
 | Fichas de mención pulsables, visor lateral de ficheros | — | **Anterior** |
 | Scroll to bottom | automático mientras sigues el stream | **Migrado** |
 

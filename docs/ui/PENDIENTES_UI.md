@@ -163,8 +163,34 @@ su área y baja el baseline. Ningún módulo Studio nuevo la aumenta.
     (el mensaje del usuario vuelve sin ellos), así que tras recargar, un
     turno con adjuntos los pierde visualmente. Studio los enseña mientras la
     sesión está abierta.
-28. **`[~]` `/versions` y restaurar siguen en la anterior.** El endpoint
-    existe (`/api/session/{id}/versions`, `…/restore`) y el adaptador ya lo
-    envuelve; falta la vista.
+28. **`[x]` `/versions` y restaurar.** Cerrado: `/versions` lista, `/restore
+    <id>` restaura y `/checkpoints` lista los del workspace.
 29. **`[~]` Comandos `/` que enrutan a la anterior** pierden el argumento:
     `/research tema` abre la interfaz anterior sin el tema.
+
+## Añadido tras el lote G (04-09-2026, arnés y selector nativo)
+
+30. **`[!]` El selector de carpeta era un diálogo propio dentro de la
+    página** («esa ventana… es terrible»). Cerrado: `POST
+    /api/workspace/pick` abre el diálogo del sistema en el escritorio del
+    servidor desde un subproceso con tkinter (Explorador en Windows) y
+    devuelve la ruta ya vetada; el chip de Studio y la pill de la anterior
+    lo llaman primero y solo caen al diálogo en página si el navegador no
+    está en la misma máquina (`request.client.host` fuera de loopback), no
+    hay pantalla o no hay Tk (501). Un único diálogo a la vez (409), se
+    cierra si el cliente se va, y queda fuera del `REQUEST_HARD_TIMEOUT`
+    de 45 s porque espera a una persona. Los adjuntos ya usaban el
+    `<input type=file>` nativo. Riesgo conocido: el diálogo aparece en el
+    monitor donde esté la ventana activa, no siempre encima del navegador.
+31. **`[~]` Al aprobar una herramienta el servidor cierra la llamada
+    pendiente con un `tool_output` vacío y luego repite `tool_start`.** El
+    reductor marca ese último paso como «esperando» al recibir `ask_user`
+    para que la repetición lo reutilice en vez de duplicar la fila; y el
+    texto de la pregunta, que el servidor también manda como `delta` y
+    guarda como mensaje propio del asistente, se retira al aprobar y al
+    leer el historial (mensaje corto del asistente acabado en `?` seguido
+    de otro del asistente). Si el servidor cambia ese patrón, revisar
+    `apply('ask_user')` y `turnsFromHistory`.
+32. **`[~]` `changeset.verdict` llega como `partial` con 65 % en un turno
+    de un solo fichero creado tal cual se pidió.** Es del revisor del
+    servidor, no de la UI; Studio lo enseña sin maquillar.

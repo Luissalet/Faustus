@@ -17,6 +17,7 @@ import {
   attachmentsFromMetadata,
   getRagActive,
   getWorkspace,
+  pickNative,
   rememberRule,
   setRagActive,
   setWorkspace as persistWorkspace,
@@ -28,11 +29,15 @@ import {
   deleteMessages,
   editMessage,
   exportUrl,
+  listVersions,
   renameSession,
+  restoreVersion,
   truncateSession,
   type ExportFormat,
   EXPORT_FORMATS,
 } from '../adapters/sessions';
+import { relativeTime } from '../adapters/home';
+import { listCheckpoints } from '../adapters/workspace';
 import { BrandMark } from '../shell/BrandMark';
 import { useSpotlight } from '../shell/useSpotlight';
 import { ModelPicker } from './ModelPicker';
@@ -143,6 +148,30 @@ export function StudioScreen() {
     setWorkspaceState(path);
   }, []);
 
+  /* The folder chip opens the OS's own dialog (Explorer on Windows) when the
+   * browser runs on the server's machine; the in-page browser is only the
+   * fallback for remote browsers or hosts without a display. */
+  const [picking, setPicking] = useState(false);
+  const pickWorkspace = useCallback(async () => {
+    if (picking) return;
+    setPicking(true);
+    try {
+      const res = await pickNative('folder', workspace);
+      if (res.status === 'ok' && res.path) {
+        setWorkspace(res.path);
+        say(`Carpeta: ${res.path}`);
+      } else if (res.status === 'unavailable') {
+        setWsOpen(true);
+      } else if (res.detail) {
+        say(res.detail, 'warning');
+      }
+    } catch (err) {
+      say(err instanceof Error ? err.message : String(err), 'danger');
+    } finally {
+      setPicking(false);
+    }
+  }, [picking, workspace, setWorkspace, say]);
+
   const refreshSessions = useCallback(() => {
     listSessions().then(setSessions).catch(() => undefined);
   }, []);
@@ -166,9 +195,22 @@ export function StudioScreen() {
   const turnsFromHistory = useCallback(
     async (sid: string, signal?: AbortSignal) => {
       const result = await loadHistory(sid, signal);
-      const mapped = result.history.map((m) => {
+      // A tool approval is stored as its own short assistant message ("Allow
+      // this task to continue?") right before the real answer. Reading it
+      // back as a bubble of its own is noise; the answer that follows is the
+      // turn.
+      const kept = result.history
+        .map((m, historyIndex) => ({ m, historyIndex }))
+        .filter(({ m }, i, all) => {
+          if (m.role !== 'assistant') return true;
+          const next = all[i + 1]?.m;
+          const text = m.content.trim();
+          return !(next && next.role === 'assistant' && text.length < 160 && text.endsWith('?'));
+        });
+      const mapped = kept.map(({ m, historyIndex }) => {
         const atts = m.role === 'user' ? attachmentsFromMetadata(m.metadata) : [];
         const turn = blankTurn(m.role, m.role === 'user' ? cleanUserText(m.content, atts.length > 0) : m.content);
+        turn.historyIndex = historyIndex;
         turn.streaming = false;
         turn.attachments = atts;
         turn.dbId = typeof m.metadata._db_id === 'string' ? m.metadata._db_id : undefined;
@@ -285,7 +327,13 @@ export function StudioScreen() {
             const mine = out[out.length - j];
             const theirs = result.turns[result.turns.length - j];
             if (!mine || !theirs || mine.role !== theirs.role) break;
-            out[out.length - j] = { ...mine, dbId: theirs.dbId, edited: theirs.edited, attachments: mine.attachments.length ? mine.attachments : theirs.attachments };
+            out[out.length - j] = {
+              ...mine,
+              dbId: theirs.dbId,
+              historyIndex: theirs.historyIndex,
+              edited: theirs.edited,
+              attachments: mine.attachments.length ? mine.attachments : theirs.attachments,
+            };
           }
           return out;
         });
@@ -307,7 +355,14 @@ export function StudioScreen() {
       setBusy(true);
       pinnedRef.current = true;
       if (options.approval) {
-        patchLast((t) => ({ ...t, ask: undefined, streaming: true, text: t.text.trim() ? `${t.text.trimEnd()}\n\n` : '' }));
+        patchLast((t) => {
+          // The server also streams the permission question as text; once
+          // answered it is noise above the real answer, so drop it.
+          let text = t.text.trimEnd();
+          const q = (t.ask?.question ?? '').trim();
+          if (q && text.endsWith(q)) text = text.slice(0, -q.length).trimEnd();
+          return { ...t, ask: undefined, streaming: true, text: text ? `${text}\n\n` : '' };
+        });
       } else {
         const user = blankTurn('user', message);
         user.attachments = options.attachments ?? [];
@@ -436,9 +491,55 @@ export function StudioScreen() {
           }
           return true;
         }
-        case 'versions':
-          say('Las versiones anteriores de este chat siguen en la interfaz anterior (/versions allí).', 'warning');
+        case 'versions': {
+          if (!sessionId) return true;
+          try {
+            const versions = await listVersions(sessionId);
+            say(
+              versions.length
+                ? versions
+                    .map((v) => `${v.id}  ·  ${relativeTime(v.createdAt) || v.createdAt}  ·  ${v.reason || 'edición'}  ·  ${v.removed} mensajes\n   /restore ${v.id}`)
+                    .join('\n')
+                : 'Todavía no hay versiones: se guarda una cada vez que una edición o un regenerar quita mensajes.',
+            );
+          } catch (error) {
+            say(`No he podido leer las versiones: ${(error as Error).message}`, 'danger');
+          }
           return true;
+        }
+        case 'restore': {
+          if (!sessionId || !args) {
+            say('Uso: /restore ID (los ID salen con /versions).', 'warning');
+            return true;
+          }
+          try {
+            await restoreVersion(sessionId, args.trim());
+            const refreshed = await turnsFromHistory(sessionId);
+            setTurns(refreshed.turns);
+            say('Versión restaurada.');
+          } catch (error) {
+            say(`No he podido restaurar: ${(error as Error).message}`, 'danger');
+          }
+          return true;
+        }
+        case 'checkpoints': {
+          if (!workspace) {
+            say('Los puntos de control van con la carpeta de trabajo: elige una primero.', 'warning');
+            return true;
+          }
+          try {
+            const list = await listCheckpoints(workspace);
+            say(
+              list.length
+                ? list.map((c) => `${c.sha.slice(0, 10)}  ·  ${c.createdAt ? relativeTime(c.createdAt) || c.createdAt : ''}  ·  ${c.reason ?? ''}`).join('\n') +
+                    '\n\nPara volver a uno, usa «Volver a antes de este turno» en el resumen del turno.'
+                : 'No hay puntos de control en esta carpeta todavía.',
+            );
+          } catch (error) {
+            say(`No he podido leer los puntos de control: ${(error as Error).message}`, 'danger');
+          }
+          return true;
+        }
         case 'export': {
           if (!sessionId) return true;
           const fmt = (args.trim().toLowerCase() || 'md') as ExportFormat;
@@ -523,8 +624,11 @@ export function StudioScreen() {
       if (!sessionId || !turns) return;
       const index = turns.findIndex((t) => t.id === turn.id);
       if (index === -1) return;
+      // The server counts its own messages, which may include ones the list
+      // hides; prefer the position it gave us, fall back to the list's.
+      const keep = turn.historyIndex ?? index;
       try {
-        await truncateSession(sessionId, index, text === undefined ? 'regenerate' : 'edit');
+        await truncateSession(sessionId, keep, text === undefined ? 'regenerate' : 'edit');
       } catch (error) {
         say(`No he podido preparar la regeneración: ${(error as Error).message}`, 'danger');
         return;
@@ -672,6 +776,7 @@ export function StudioScreen() {
               onEdit={onEdit}
               onRegenerate={(turn) => void regenerateFrom(turn)}
               onDelete={onDelete}
+              onNotice={say}
             />
           )}
         </div>
@@ -691,7 +796,7 @@ export function StudioScreen() {
           knobs={knobs}
           setKnobs={setKnobs}
           workspace={workspace}
-          onPickWorkspace={() => setWsOpen(true)}
+          onPickWorkspace={() => void pickWorkspace()}
           onClearWorkspace={() => setWorkspace('')}
           gen={gen}
           onClearGen={() => setGen({})}
