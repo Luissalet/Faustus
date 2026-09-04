@@ -1370,5 +1370,111 @@ preferencia experimental. Hasta entonces, tener el backend no significa que nada
 
 **115 tests** entre las dos fases, verdes. Probado en vivo en la 7001 y con contenedores reales.
 
+## 32. Que el agente use el sandbox, y las skills se declaren (04-09-2026, mediodía)
+
+La §31 dejó un sandbox que nada usaba. Esta lo enchufa al agente y empieza la Fase 2: que las
+skills que ya existen digan lo que pueden tocar.
+
+### 32.1 El interruptor, y lo que hace apagado
+`agent_sandbox_execution` está **apagado por defecto**, y apagado significa *idéntico a ayer*:
+`sandbox_exec.run()` devuelve `None` y `BashTool`/`PythonTool` toman exactamente el camino de
+siempre. Hay un test que comprueba que el resultado tiene **solo** las claves `output` y
+`exit_code`, las mismas que tenía antes de que el módulo existiera. Un flag que cambia el
+comportamiento estando apagado es peor que no tener flag.
+
+Y **un truthy no es un sí**: `"yes"`, `"true"`, `1` y `"docker"` dejan el sandbox apagado, por la
+misma razón que en los contratos. Quien escriba eso ve que no hizo nada y lo arregla, en vez de
+recibir un sandbox que no pidió o quedarse sin uno que creía tener.
+
+### 32.2 La regla que justifica el módulo
+Encendido y **sin sandbox no se cae al host**. Demonio caído, imagen ausente o workspace que no es
+un directorio devuelven un error nombrando el motivo, con `exit_code: 126` y `sandbox_refused`, y
+el mensaje dice las dos salidas: arrancar el backend o apagar el ajuste. Probado: con una imagen
+inexistente, la cadena `THIS-MUST-NOT-RUN` no aparece en ninguna parte del resultado.
+
+Correr unsandboxed en silencio porque Docker Desktop estaba cerrado es exactamente el fallo que
+toda esta fase existe para evitar, y en los logs se vería como un éxito.
+
+### 32.3 Lo único que reescribe, y el fallo que enseñó a hacerlo bien
+Dentro del contenedor el workspace está en `/workspace`, así que un comando con una ruta absoluta
+del host no encontraría su fichero. Se reescriben las rutas que **empiezan por la raíz del
+workspace**, y el resultado dice cuántas.
+
+La primera versión sustituía solo el prefijo. Resultado: `D:\proj\demo\src\x.py` se convertía en
+`/workspace\src\x.py`, que en Linux es **un nombre de fichero con barras invertidas** — y el
+comando falla por un motivo que su salida no explica. Ahora se convierte el token de ruta entero.
+Y hace falta un límite por detrás: sin él, un workspace en `D:\proj\demo` se comía la primera
+mitad de `D:\proj\demo2\other.txt` y le pasaba al contenedor `/workspace2/other.txt`. Los dos
+casos tienen test.
+
+De vuelta, `/workspace` se traduce al camino del host, para que el siguiente paso del modelo
+nombre un fichero que el resto de Faustus puede abrir.
+
+Medido en vivo: `id -u` → `1000`, `ls` → solo el fichero del workspace, `sys.executable` →
+`/usr/local/bin/python` (el de la imagen, no el nuestro), la red denegada, y la clave de la app
+inalcanzable **desde el propio bash del agente**.
+
+### 32.4 Fase 2: una skill que no pide nada, no puede nada
+`src/skills_runtime/` convierte un `SKILL.md` en un `SkillManifest`. Dos reglas:
+
+- **Denegar por defecto.** Un SKILL.md que no dice nada sobre permisos no obtiene ninguno → ningún
+  backend → no puede ejecutar nada. Parece un bug la primera vez y es el objetivo: las skills de
+  hoy se escribieron como instrucciones para un modelo, no como capacidades, y tratar un documento
+  como si hubiera pedido el disco porque no dijo lo contrario es cómo una carpeta de skills se
+  convierte en superficie de ataque.
+- **La procedencia no eleva.** La misma skill en `.claude/skills` y en `.odysseus/skills` da un
+  manifiesto con la **misma huella**. Si el sitio donde está un fichero cambiara sus permisos, la
+  forma de conseguir un permiso sería mover el fichero.
+
+### 32.5 Dos fallos que encontró correrlo contra lo real
+**Un `backends` vacío significaba «cualquiera».** Al pasar la única skill real de Luis por el
+puente salió `runnable: True` con `backends=()`: sin backends declarados no había filtro, así que
+un manifiesto que nunca pidió dónde ejecutarse era elegible en todas partes. Lo contrario de
+denegar por defecto, y venía de la Fase 0. Arreglado: vacío es **ninguno**, nunca «todos», y el
+motivo `no_backend_declared` lo dice con la frase que hay que añadir al manifiesto.
+
+**El descubrimiento subía hasta la raíz del disco.** Un test en un directorio temporal encontró
+`find-skills`, una skill personal de Luis en su `.claude/skills` del perfil de usuario. En
+producción eso significa que cualquier workspace adoptaría en silencio las skills del home. El
+masterplan dice *hasta la raíz del repositorio* y ahora lo cumple: para en el directorio que tiene
+`.git`, y si no hay repositorio **no sube nada**. `roots_for()` devuelve además el motivo, para que
+una UI pueda decir «paré en la raíz del repo» en vez de enseñar una lista vacía.
+
+### 32.6 El formato que existe, no el que me gustaría
+El parser de frontmatter de `skill_format` lee un escalar o una lista por línea: **no admite mapas
+anidados**, así que un bloque `permissions:` no se puede escribir en un SKILL.md. En vez de
+inventar un segundo formato, el puente lee claves planas —`permissions_backends`,
+`permissions_network`, `permissions_max_seconds`— y para inputs/outputs una lista `name=type`
+(`outputs: [report=artifact:document]`), porque `name:type` pelearía con los dos puntos de
+`artifact:document`. Y como `Skill` solo conserva los campos que conoce, `manifest_from_markdown`
+lee el fichero directamente: si no, una declaración de permisos se perdería entre `from_markdown` y
+`to_frontmatter` y la skill volvería sin permisos, que se parece demasiado a no haber pedido
+ninguno.
+
+### 32.7 La vista de memoria: lo que un run vio y lo que no
+`src/memory_view.py` sobre `contracts.MemoryView`. La lista de **descartados con motivo** es la
+razón de que exista: sin ella «el modelo conocía la voz de marca» no se puede comprobar; con ella,
+una respuesta mala se parte en dos bugs distintos — una entrada que entró y despistó, o una que se
+cortó por presupuesto. El alcance es un muro, no una etiqueta: una entrada de otro proyecto no
+llega aunque el run declare `project` legible, y el descarte dice **de qué proyecto**. Los
+anti-patrones se gastan primero, porque una regla que el curador invirtió tras fallar repetidamente
+es la que más vale el presupuesto y la que menos se nota si falta.
+
+### 32.8 MCP y cómo se verificó
+Cuarta tool de contratos: `skills_capability_audit` — cuántas skills tienen manifiesto válido,
+cuántas puede ejecutar algo hoy, y el campo exacto que rechazó al resto; más las skills
+descubribles desde un workspace con su procedencia. Ya son 16 tools. Probada por handshake
+JSON-RPC real contra la 7001: *«1 skills · 1 with a valid manifest · 0 runnable right now»*, con la
+frase que dice qué añadir.
+
+**156 tests** entre las tres fases, verdes; los de contenedor arrancan contenedores de verdad.
+
+### 32.9 Lo que sigue sin hacer
+`filesystem_tools` **no** pasa por el sandbox, y es a propósito: esas herramientas ya están
+confinadas al workspace por comprobación de ruta, y meterlas en el contenedor cambiaría su latencia
+y su semántica sin cerrar el agujero que importa — el agujero es el shell, y el shell ya está
+dentro. La galería sigue escribiendo por su ruta de siempre. Y el `MemoryView` es puro: construye
+la selección, pero **nadie lo ha cableado todavía al prompt del agente**.
+
 ## Cómo mantener este documento
 Cada bloque de trabajo añade una sección (fecha, qué, por qué, ficheros, cómo se verificó, cifras) y actualiza las cifras de cabecera (`git log --oneline c9dd68d8..HEAD | wc -l`, `git diff --stat c9dd68d8..HEAD`). Los commits del fork llevan mensajes largos que explican el porqué: `git log c9dd68d8..HEAD` es la fuente detallada.

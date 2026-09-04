@@ -23,8 +23,8 @@ una integración posterior, no otra arquitectura paralela.
 | Fase | Qué entrega | Estado |
 |---|---|---|
 | 0 · Contratos y migración segura | El vocabulario común: 8 contratos, catálogo de backends, tabla de artefactos | ✅ 04-09-2026 — `FAUSTUS.md` §30, 73 tests |
-| 1 · Ejecución segura y artefactos | `DockerWorkspaceBackend`, router, y que el código deje de correr en el proceso web | 🟡 04-09-2026 — el sandbox existe y está probado contra contenedores reales; **el agente todavía no pasa por él** (`FAUSTUS.md` §31) |
-| 2 · Runtime de skills y memoria útil | Instalar/revertir capacidades sin tocar el core; alcances de memoria y `MemoryView` | ⏳ |
+| 1 · Ejecución segura y artefactos | `DockerWorkspaceBackend`, router, y que el código deje de correr en el proceso web | 🟡 04-09-2026 — sandbox probado contra contenedores reales (§31) y **el `bash`/`python` del agente ya pasa por él** detrás de `agent_sandbox_execution` (§32). Faltan los runs de coding y la galería |
+| 2 · Runtime de skills y memoria útil | Instalar/revertir capacidades sin tocar el core; alcances de memoria y `MemoryView` | 🟡 04-09-2026 — puente `SKILL.md`↔manifiesto, descubrimiento que para en el repo, `MemoryView`. Falta cablearlo al prompt y la instalación/reversión (§32) |
 | 3 · Motor creativo | ComfyUI como servicio, plantillas versionadas, galería de artefactos con receta | ⏳ |
 | 4 · Workflows, approvals y conectores | Procesos que sobreviven a reinicios, idempotentes | ⏳ |
 | 5 · Coding profesional | `ChangeSet`, repo map, LSP opcional, intents explore/plan/implement/review | 🟡 partes sueltas ya existen |
@@ -45,9 +45,14 @@ una integración posterior, no otra arquitectura paralela.
       procedencia. Lo que no se sabe queda a NULL.
 - [x] Sondas reales en `capability_registry.observe()`, con tres estados que no se confunden.
 - [x] `src/agent_gate.py` sigue siendo **política**; no se ha tocado.
-- [ ] **Enrutar el agente por el backend.** `src/agent_tools/subprocess_tools.py`,
-      `filesystem_tools.py` y los runs de coding siguen donde estaban. Es la parte arriesgada y
-      necesita su propia preferencia experimental y su propia sesión.
+- [x] **El shell del agente pasa por el sandbox**, detrás de `agent_sandbox_execution` (apagado por
+      defecto; apagado = idéntico a antes, con test). `bash` y `python` corren en el contenedor con
+      traducción de rutas del workspace. Encendido y sin sandbox: **rechazo con motivo, nunca el
+      host**.
+- [ ] `filesystem_tools` — **no se enruta a propósito**: ya está confinado por comprobación de ruta,
+      y meterlo en el contenedor cambia latencia y semántica sin cerrar el agujero que importa.
+      Revisar si aparece un caso que lo justifique.
+- [ ] Los runs de coding (`agent_harness`/dispatch) siguen fuera del sandbox.
 - [ ] Generalizar `src/generated_images.py` y la galería hacia la tabla `artifacts`.
 - [ ] Cancelación cooperativa desde la UI (hoy `cancel()` existe en el backend y nadie lo llama).
 - [ ] Limpieza de `data/artifacts/runs/`: nadie borra los directorios de scratch todavía.
@@ -75,15 +80,21 @@ escapar del workspace, heredar secretos o caer al host sin confirmación.
 
 ---
 
-## Fase 2 — runtime de skills y memoria útil (P0)
+## Fase 2 — runtime de skills y memoria útil (P0, empezada)
 
-- [ ] `src/skills_runtime/` y `src/plugins/`: instalación, permisos, versión y reversión.
-- [ ] **El puente que falta hoy:** `SKILL.md` con frontmatter ↔ `contracts.SkillManifest`. Ahora
-      mismo el contrato valida manifiestos que ninguna skill real escribe.
-- [ ] Descubrimiento explícito de `.odysseus/skills`, `.agents/skills` y `.claude/skills` hasta la
-      raíz del repo — cargando instrucciones bajo demanda y **sin elevar permisos por procedencia**.
-- [ ] Alcances `user/project/skill/run` en `memory_engine`, `memory_curator` y `services/memory/*`.
-- [ ] `src/memory_view.py` sobre `contracts.MemoryView`, atado a `context_budget` y `context_ledger`.
+- [x] **El puente:** `SKILL.md` ↔ `contracts.SkillManifest` (`src/skills_runtime/bridge.py`), con
+      claves planas `permissions_*` porque el frontmatter de este repo no admite mapas anidados.
+      Deny-by-default de verdad: sin `permissions_backends`, la skill no corre en ninguna parte.
+- [x] Descubrimiento de `.odysseus/skills`, `.agents/skills` y `.claude/skills` **hasta la raíz del
+      repositorio** (para en `.git`; sin repo no sube nada — antes llegaba al home del usuario y
+      adoptaba sus skills personales). La procedencia se registra y **nunca eleva**.
+- [x] `src/memory_view.py` sobre `contracts.MemoryView`: alcance como muro, orden determinista,
+      descartados con motivo, `explain()` para el operador.
+- [ ] Cablear `MemoryView` al prompt del agente y a `context_budget` / `context_ledger`. Hoy el
+      módulo es puro y **nadie lo llama**.
+- [ ] Alcances `user/project/skill/run` dentro de `memory_engine` y `memory_curator` (el contrato
+      los define; el motor todavía no los guarda).
+- [ ] `src/plugins/`: instalación, versión y reversión de una skill; hoy solo se lee lo que hay.
 - [ ] `creative-bible.md` y `technical-context.md` dentro de `.odysseus/`, sin exigir Git.
 
 ---

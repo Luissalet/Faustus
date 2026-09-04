@@ -86,11 +86,29 @@ a propósito · `[+]` mejora pendiente.
   deja la galería intacta. Cuando haya imágenes de verdad conviene volver a mirar los números y, en
   particular, cuántas llegan **sin `file_hash`** — esas quedan con `sha256` a NULL a propósito.
 
-- `[~]` **El sandbox existe y el agente no pasa por él.** `DockerWorkspaceBackend` está probado
-  contra contenedores reales, pero `subprocess_tools.py`, `filesystem_tools.py` y los runs de coding
-  siguen ejecutando donde ejecutaban. Tener el backend no es usarlo, y hasta que se enrute, la
-  garantía de aislamiento **no cubre nada de lo que hace el agente hoy**. Es lo siguiente de la
-  Fase 1 y va detrás de una preferencia experimental.
+- `[~]` **El sandbox del agente está apagado por defecto.** `agent_sandbox_execution` enruta `bash`
+  y `python` por el contenedor, y funciona; pero mientras esté apagado —que es el valor por
+  defecto— el agente ejecuta donde ejecutaba siempre. Encenderlo es la decisión pendiente, y antes
+  conviene usarlo un rato en la 7001: cambia latencia (≈0,4 s de arranque por comando) y rompe
+  cualquier comando que dependa de herramientas del host que la imagen no tiene.
+
+- `[~]` **Los runs de coding y la galería siguen fuera del sandbox.** El dispatch/harness ejecuta
+  por su ruta de siempre, y `generated_images` escribe por la suya. La garantía de aislamiento
+  cubre hoy el shell del agente, no todo lo que hace Faustus.
+
+- `[~]` **`filesystem_tools` no se enruta, a propósito.** Ya está confinado al workspace por
+  comprobación de ruta, y meterlo en el contenedor cambiaría latencia y semántica sin cerrar el
+  agujero que importa —el shell—, que ya está dentro. Anotado por si aparece un caso que lo
+  justifique.
+
+- `[+]` **`MemoryView` no lo llama nadie.** El módulo construye la selección y la explica, con
+  tests; falta cablearlo al prompt del agente y a `context_budget`/`context_ledger`. Hasta entonces
+  el prompt se arma como antes y la vista no existe para el modelo.
+
+- `[?]` **El puente de skills contra skills de verdad.** Luis tiene **una** skill guardada, y no
+  declara permisos, así que lo único comprobado con datos reales es el caso deny-by-default. Las
+  claves `permissions_*`, los `outputs: [name=type]` y los alcances de memoria están probados con
+  ficheros sintéticos.
 
 - `[~]` **`/artifacts` no es write-only.** Docker no tiene montaje de solo escritura. Lo que hay es
   un directorio propio y vacío por run (lo crea el router) más una foto previa en el backend para no

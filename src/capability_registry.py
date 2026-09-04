@@ -276,7 +276,16 @@ def candidates(manifest: SkillManifest) -> List[Dict[str, Any]]:
         obs = observe(decl.id)
         row: Dict[str, Any] = {"backend": decl.id, "observed": obs.to_dict(),
                                "missing": sorted(needed - set(decl.capabilities))}
-        if named and decl.id not in named:
+        if not named:
+            # Deny by default, and this is the case it was easy to get wrong:
+            # an empty `backends` list once meant "no filter", so a manifest
+            # that never asked for anywhere to run was eligible everywhere.
+            # Found by running the bridge over a real SKILL.md, which declares
+            # no permissions at all and came back runnable.
+            row.update(ok=False, reason="no_backend_declared",
+                       detail="the manifest names no backend, so nothing may run it. "
+                              "An empty list is 'none', never 'any'.")
+        elif decl.id not in named:
             row.update(ok=False, reason="not_requested",
                        detail=f"the manifest limits itself to {sorted(named)}")
         elif row["missing"]:
@@ -307,6 +316,10 @@ def why_no_backend(manifest: SkillManifest) -> str:
     rows = candidates(manifest)
     if any(r["ok"] for r in rows):
         return ""
+    if all(r["reason"] == "no_backend_declared" for r in rows):
+        return (f"{manifest.id} {manifest.version} declares no backend, so nothing may "
+                "run it. Add `permissions.backends` to the manifest — an empty list "
+                "means none, never any.")
     order = {"unavailable": 0, "not_implemented": 1, "attended_only": 2,
              "missing_capability": 3, "not_requested": 4, "not_declared": 5}
     rows.sort(key=lambda r: order.get(r["reason"], 9))

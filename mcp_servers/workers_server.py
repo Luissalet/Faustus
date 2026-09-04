@@ -462,6 +462,38 @@ def render_plan(data: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def render_skills_audit(data: Dict[str, Any]) -> str:
+    """Valid and runnable are different columns on purpose: a skill that
+    declares no backend is correct and cannot run, and painting that red would
+    teach the reader to ignore the audit."""
+    totals = data.get("totals") or {}
+    lines = [f"{totals.get('skills', 0)} skills · {totals.get('valid_manifest', 0)} with a "
+             f"valid manifest · {totals.get('runnable_now', 0)} runnable right now"]
+    for row in data.get("stored") or []:
+        if not row.get("ok"):
+            lines.append(f"  REJECTED {row.get('name')}: {row.get('error_path')}: "
+                         f"{row.get('error')}")
+            continue
+        manifest = row.get("manifest") or {}
+        perms = manifest.get("permissions") or {}
+        mark = "run" if row.get("runnable") else "---"
+        lines.append(f"  {mark} {manifest.get('id')} {manifest.get('version')} "
+                     f"backends={perms.get('backends') or 'none'}")
+        if row.get("why_not"):
+            lines.append(f"        {row['why_not']}")
+    local = data.get("workspace_skills") or []
+    if local:
+        lines.append(f"  workspace skills ({data.get('workspace_search')}):")
+        for item in local:
+            lines.append(f"    {item.get('name')} — {item.get('origin')} "
+                         f"(distance {item.get('distance')})"
+                         + (f" [{item['error']}]" if item.get("error") else ""))
+    elif data.get("workspace_search"):
+        lines.append(f"  no workspace skills — searched: {data['workspace_search']}")
+    lines.append(f"  {data.get('note')}")
+    return "\n".join(lines)
+
+
 def render_validation(data: Dict[str, Any]) -> str:
     """A refusal names the field. A pass names what the manifest will cost:
     the approval cards, and every backend that cannot take it, with why."""
@@ -688,6 +720,23 @@ TOOLS: List[Tool] = [
                              "acceptable. Only ever true because a human said so."},
         }, "required": ["manifest"]},
     ),
+    Tool(
+        name="skills_capability_audit",
+        description=(
+            "Audit every stored skill as a CAPABILITY rather than as a document: which "
+            "ones can describe themselves with a manifest, which of those any backend "
+            "could actually run, and the exact field that rejected the rest. Also lists "
+            "the skills discoverable from a workspace (.odysseus/.agents/.claude), with "
+            "where each came from — a fact for the audit that never grants anything. "
+            "Read it before assuming a skill is usable: valid and not runnable is the "
+            "normal state, because a skill that declares no backend may not run anywhere."
+        ),
+        inputSchema={"type": "object", "properties": {
+            "workspace": {"type": "string", "description":
+                          "Optional folder to search for local skills, up to its "
+                          "repository root."},
+        }},
+    ),
 ]
 
 
@@ -755,6 +804,11 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
                     "attended_ack": bool(args.get("attended_ack") or False)}
             data = await asyncio.to_thread(_request, "POST", "/api/contracts/skill/plan", body)
             return _text(render_plan(data))
+        if name == "skills_capability_audit":
+            workspace = urllib.parse.quote(str(args.get("workspace") or ""), safe="")
+            data = await asyncio.to_thread(
+                _request, "GET", f"/api/contracts/skills/audit?workspace={workspace}")
+            return _text(render_skills_audit(data))
         if name == "guard_explain":
             command = str(args.get("command") or "")
             if not command.strip():

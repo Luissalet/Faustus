@@ -14,6 +14,7 @@ instead of one prose blob a UI has to regex.
 """
 
 import logging
+import os
 
 from fastapi import APIRouter, HTTPException, Request
 
@@ -128,5 +129,44 @@ def setup_contracts_routes():
         return {"ok": True, "decision": decision.to_dict(),
                 "skill": {"id": manifest.id, "version": manifest.version},
                 "approvals": list(manifest.effective_approvals())}
+
+    @router.get("/skills/audit")
+    def skills_audit(request: Request, workspace: str = ""):
+        """Which skills can describe themselves as capabilities, and which of
+        those could actually run.
+
+        Two questions, deliberately not collapsed. Almost every skill written
+        before the bridge existed is *valid* and *not runnable*: it declares
+        no permissions, so no backend may take it. That is the deny-by-default
+        state rather than a fault, and an audit that painted both red would
+        teach people to ignore it."""
+        require_admin(request)
+        from services.memory.skills import SkillsManager
+        from src.constants import DATA_DIR
+        from src.skills_runtime import bridge, discovery
+
+        manager = SkillsManager(DATA_DIR)
+        stored = [s for s in (manager._read_skill(p) for p in manager._iter_skill_files())
+                  if s is not None]
+        results = bridge.survey(stored)
+
+        local, roots_reason = [], ""
+        if workspace and os.path.isdir(workspace):
+            roots, roots_reason = discovery.roots_for(workspace)
+            local = [d.to_dict() for d in discovery.discover(workspace)]
+
+        return {
+            "checked_at": now_iso(),
+            "stored": [r.to_dict() for r in results],
+            "totals": {
+                "skills": len(results),
+                "valid_manifest": sum(1 for r in results if r.ok),
+                "runnable_now": sum(1 for r in results if r.runnable),
+            },
+            "workspace_skills": local,
+            "workspace_search": roots_reason,
+            "note": "valid and not runnable is the deny-by-default state, not a fault: "
+                    "a skill that declares no backend may not run anywhere",
+        }
 
     return router
