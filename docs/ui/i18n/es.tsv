@@ -2569,3 +2569,337 @@ shuffled	al azar
 {n} images	{n} imágenes
 {n} images queued for tagging	{n} imágenes en cola para etiquetar
 {n} versions	{n} versiones
+2× resample	Remuestrear 2×
+4× resample	Remuestrear 4×
+A mask is active: the brush paints the mask, not the pixels.	Hay una máscara activa: el pincel pinta la máscara, no los píxeles.
+A model keeps the foreground it recognises (people, products, animals). A lasso or wand selection narrows where it looks.	Un modelo conserva el primer plano que reconoce (personas, productos, animales). Una selección de lazo o varita acota dónde mira.
+AI upscale 2×	Escalar con IA 2×
+AI upscaled	Escalado con IA
+Actual size	Tamaño real
+Add adjustment	Añadir ajuste
+Add an empty layer (Ctrl+Alt+J)	Añadir una capa vacía (Ctrl+Alt+J)
+Add mask	Añadir máscara
+Add mask from selection	Añadir máscara desde la selección
+Add the selection to the inpaint mask	Añadir la selección a la máscara de inpaint
+Add to the selection (Shift)	Sumar a la selección (Mayús)
+Adjustment opacity	Opacidad del ajuste
+After generating	Después de generar
+Alt-click (or right-click) to set the source, then paint elsewhere. The source follows the brush.	Alt+clic (o clic derecho) fija el origen; luego pinta en otro sitio. El origen sigue al pincel.
+An adjustment layer on {layer}: the pixels stay untouched and you can change or remove it later.	Una capa de ajuste sobre {layer}: los píxeles no se tocan y puedes cambiarla o quitarla después.
+Anchor	Anclaje
+Angle	Ángulo
+Applies to the active layer. You are looking at the result.	Se aplica a la capa activa. Estás viendo el resultado.
+Apply crop	Aplicar recorte
+Apply style	Aplicar estilo
+Applying…	Aplicando…
+Ask: remove the background, rotate left, sharpen…	Pide: quita el fondo, gira a la izquierda, enfoca…
+Auto	Automático
+Available once a cut-out lands.	Disponible cuando llegue un recorte.
+Available once a result lands.	Disponible cuando llegue un resultado.
+Back to the library	Volver a la biblioteca
+Background removed	Fondo quitado
+Background removed. The original layers are hidden, not gone.	Fondo quitado. Las capas originales están ocultas, no borradas.
+Bake into the layer	Fundir en la capa
+Blends the layers above the base photo into it: colour match shifts their lighting and tone; seam fix inpaints the cut-out edge (needs a local inpaint model).	Funde las capas de encima con la foto base: el ajuste de color acerca su luz y tono; el arreglo de costura repinta el borde del recorte (necesita un modelo de inpaint local).
+Brightness	Brillo
+Brush	Pincel
+Brush diameter. [ and ] change it by 10%	Diámetro del pincel. [ y ] lo cambian un 10 %
+Brush the area to redraw. Paint adds, Erase takes away; Ctrl+Alt flips it for one stroke.	Pinta la zona que hay que redibujar. Pintar suma, Borrar quita; Ctrl+Alt lo invierte durante un trazo.
+Brush the area you want to inpaint first.	Pinta primero la zona que quieres rellenar.
+Canvas size	Tamaño del lienzo
+Canvas size…	Tamaño del lienzo…
+Canvas, {w} by {h} pixels	Lienzo de {w} por {h} píxeles
+Center on canvas	Centrar en el lienzo
+Change the canvas bounds. Layers keep their pixels; what falls outside is still there, just not visible.	Cambia los límites del lienzo. Las capas conservan sus píxeles; lo que queda fuera sigue ahí, solo que no se ve.
+Clear points	Quitar puntos
+Click a region to select the similar pixels around it. Shift adds, Alt subtracts.	Pulsa una zona para seleccionar los píxeles parecidos de alrededor. Mayús suma, Alt resta.
+Click the object (Alt-click marks what to leave out), or name it and press Find. A segmentation model draws the mask.	Pulsa el objeto (Alt+clic marca lo que hay que dejar fuera) o nómbralo y pulsa Buscar. Un modelo de segmentación dibuja la máscara.
+Click the object or name it first.	Pulsa el objeto o nómbralo primero.
+Clone stamp	Tampón de clonar
+Color	Color
+Colour match	Ajuste de color
+Combine	Combinar
+Contrast	Contraste
+Copy the selected pixels to a new layer (Ctrl+C)	Copiar los píxeles seleccionados a una capa nueva (Ctrl+C)
+Copy to layer	Copiar a capa
+Could not open the image	No se pudo abrir la imagen
+Could not open the project: {error}	No se pudo abrir el proyecto: {error}
+Crop	Recortar
+Cyan – Red	Cian – Rojo
+Delete adjustment	Borrar ajuste
+Delete draft	Borrar borrador
+Delete layer	Borrar capa
+Delete mask	Borrar máscara
+Delete original layer	Borrar la capa original
+Delete pixels	Borrar píxeles
+Delete the selected pixels from the layer (Delete)	Borrar de la capa los píxeles seleccionados (Supr)
+Denoise	Quitar ruido
+Denoised	Sin ruido
+Denoising…	Quitando ruido…
+Describe an edit	Describe un cambio
+Done. Drag Edge feather and Edge to blend the result in.	Hecho. Mueve Suavizado y Borde para integrar el resultado.
+Double-click to rename	Doble clic para renombrar
+Download PNG	Descargar PNG
+Drag a rectangle, move it by its inside, then apply. Shift keeps it square.	Arrastra un rectángulo, muévelo por dentro y aplica. Mayús lo mantiene cuadrado.
+Drag the active layer. It snaps to the canvas and other layers; hold Ctrl to move freely.	Arrastra la capa activa. Se ajusta al lienzo y a las demás capas; con Ctrl se mueve libre.
+Drag the corners to scale and the top handle to rotate. Shift snaps the angle to 15°.	Arrastra las esquinas para escalar y el asa superior para girar. Mayús ajusta el ángulo a 15°.
+Draw around what you want. Escape cancels.	Dibuja alrededor de lo que quieras. Escape cancela.
+Drop to add as a layer	Suelta para añadir como capa
+Each pick replaces the selection	Cada elección sustituye la selección
+Each result lands on its own layer, so nothing is lost.	Cada resultado va a su propia capa, así no se pierde nada.
+Edge	Borde
+Edge cleanup	Limpieza del borde
+Edge feather	Suavizado del borde
+Edit adjustment	Editar ajuste
+Edit {name}	Editar {name}
+Edits save themselves as drafts while you work; the ones you have not finished show up here.	Las ediciones se guardan solas como borradores mientras trabajas; las que no has terminado aparecen aquí.
+Enhance	Mejorar
+Enhance faces	Mejorar caras
+Enhanced faces	Caras mejoradas
+Enhancing…	Mejorando…
+Enter	Intro
+Erase	Borrar
+Erase the masked content and continue the background; the prompt is ignored	Borra lo enmascarado y continúa el fondo; el prompt se ignora
+Eraser	Goma
+Escape	Escape
+Expand (+) or contract (−) the selection	Expandir (+) o contraer (−) la selección
+Feather	Suavizado
+Fill the empty, transparent parts of the canvas; the brush mask is ignored	Rellena las partes vacías y transparentes del lienzo; la máscara del pincel se ignora
+Fill the masked area with what the prompt describes	Rellena la zona enmascarada con lo que describe el prompt
+Find	Buscar
+Finding…	Buscando…
+Fit	Ajustar
+Flatten copy (keeps the originals)	Copia aplanada (conserva las originales)
+Flip horizontal	Voltear en horizontal
+Flip vertical	Voltear en vertical
+Flow	Flujo
+Free transform	Transformación libre
+From a file…	Desde un archivo…
+From the clipboard	Desde el portapapeles
+From the library…	Desde la biblioteca…
+Gamma	Gamma
+Gaussian blur	Desenfoque gaussiano
+Gaussian blur…	Desenfoque gaussiano…
+Generating…	Generando…
+Grow (+) or shrink (−) the result into the buffer generated around the brush	Agranda (+) o encoge (−) el resultado dentro del margen generado alrededor del pincel
+Harmonize	Armonizar
+Harmonize needs a second layer over the base photo; there is nothing to match against.	Armonizar necesita una segunda capa sobre la foto base; no hay con qué comparar.
+Harmonized	Armonizado
+Harmonizing…	Armonizando…
+Height	Alto
+Hide adjustment	Ocultar ajuste
+Hide layer	Ocultar capa
+Hide mask	Ocultar máscara
+Hide overlay	Ocultar superposición
+Highlights	Luces
+How much is redrawn inside the mask. 0.9–1 replaces an object, 0.6–0.8 changes material or colour, 0.3–0.5 retouches.	Cuánto se redibuja dentro de la máscara. 0,9–1 sustituye un objeto, 0,6–0,8 cambia material o color, 0,3–0,5 retoca.
+Hue	Tono
+Image	Imagen
+Image editor	Editor de imágenes
+Import from the library	Importar desde la biblioteca
+Imported	Importada
+Input black	Negro de entrada
+Input white	Blanco de entrada
+Inspector	Inspector
+Install from Cookbook	Instalar desde el Cookbook
+Invert	Invertir
+Invert the selection (Ctrl+Alt+I)	Invertir la selección (Ctrl+Alt+I)
+Keep centred	Mantener centrado
+Keep proportions	Mantener proporciones
+Keep top-left	Mantener arriba a la izquierda
+Keyboard shortcuts (?)	Atajos de teclado (?)
+Lasso	Lazo
+Layer actions	Acciones de la capa
+Layers	Capas
+Length	Longitud
+Live edge trimming of the last result: {name}	Recorte del borde en directo del último resultado: {name}
+Live on the last cut-out: {name}	En directo sobre el último recorte: {name}
+Loading drafts	Cargando borradores
+Loading images	Cargando imágenes
+Loading the image	Cargando la imagen
+Luminance histogram	Histograma de luminancia
+Magenta – Green	Magenta – Verde
+Magic wand	Varita mágica
+Mask	Máscara
+Mask brush	Pincel de máscara
+Match colour to surroundings	Igualar el color al entorno
+Matching…	Igualando…
+Merge all	Fusionar todas
+Merge down	Fusionar hacia abajo
+Merge into the mask above	Fusionar con la máscara de arriba
+Midtones	Medios tonos
+Motion blur	Desenfoque de movimiento
+Motion blur…	Desenfoque de movimiento…
+New canvas	Lienzo nuevo
+No drafts	Sin borradores
+No source yet	Aún sin origen
+Nothing to match against.	No hay con qué comparar.
+Nothing to outpaint: the canvas is fully covered.	No hay nada que extender: el lienzo está cubierto del todo.
+Object	Objeto
+Only the preview colour; the model always sees a hard mask	Solo el color de la vista previa; el modelo siempre ve una máscara dura
+Opacity	Opacidad
+Open a picture from the library, start a blank canvas, or pick up a draft.	Abre una imagen de la biblioteca, empieza un lienzo en blanco o retoma un borrador.
+Open a project file…	Abrir un archivo de proyecto…
+Open from the library	Abrir desde la biblioteca
+Original	Original
+Outpaint	Extender
+Outpainting…	Extendiendo…
+Output black	Negro de salida
+Output white	Blanco de salida
+Paint	Pintar
+Paint this mask with the brush and eraser	Pintar esta máscara con el pincel y la goma
+Pasted	Pegada
+Pick a layer to transform.	Elige una capa para transformar.
+Project loaded	Proyecto cargado
+Prompt (seam fix only)	Prompt (solo para el arreglo de costura)
+Radius	Radio
+Redo (Ctrl+Shift+Z)	Rehacer (Ctrl+Mayús+Z)
+Redraws the whole picture in a style (img2img). Needs a running diffusion model.	Redibuja toda la imagen con un estilo (img2img). Necesita un modelo de difusión en marcha.
+Reduce grain and noise	Reducir grano y ruido
+Remove background	Quitar fondo
+Removing…	Quitando…
+Replace the original	Sustituir la original
+Resample every layer (fast), or let the local model rebuild detail at 2× (slower, better).	Remuestrea todas las capas (rápido) o deja que el modelo local reconstruya el detalle a 2× (más lento, mejor).
+Resize	Redimensionar
+Restore portrait and skin detail	Recuperar el detalle del retrato y la piel
+Resumed your previous edit	Se retomó tu edición anterior
+Retune while dragging	Reajustar al arrastrar
+Rotate 180°	Girar 180°
+Rotate 90° clockwise	Girar 90° a la derecha
+Rotate 90° counter-clockwise	Girar 90° a la izquierda
+Rotation	Rotación
+Saturation	Saturación
+Save as a copy in the library (Ctrl+Shift+S)	Guardar como copia en la biblioteca (Ctrl+Mayús+S)
+Save as a copy instead	Guardar como copia
+Save failed: {error}	No se pudo guardar: {error}
+Save over the original (Ctrl+S)	Guardar sobre la original (Ctrl+S)
+Save over the original?	¿Guardar sobre la original?
+Save project file (.json, keeps every layer)	Guardar archivo de proyecto (.json, conserva todas las capas)
+Saved a copy to the library	Copia guardada en la biblioteca
+Saved as a new image in the library	Guardada como imagen nueva en la biblioteca
+Saved over the original ({size} MB)	Guardada sobre la original ({size} MB)
+Saving…	Guardando…
+Scale, rotate and flip the layer (Ctrl+Alt+T)	Escalar, girar y voltear la capa (Ctrl+Alt+T)
+Seam fix	Arreglo de costura
+Shadows	Sombras
+Sharpen	Enfocar
+Sharpen amount	Cantidad de enfoque
+Sharpened	Enfocada
+Sharpening…	Enfocando…
+Show adjustment	Mostrar ajuste
+Show layer	Mostrar capa
+Show mask	Mostrar máscara
+Show overlay	Mostrar superposición
+Smart select	Selección inteligente
+Soft edge: the stroke fades out at its perimeter	Borde suave: el trazo se desvanece en su perímetro
+Soften the selection edge	Suavizar el borde de la selección
+Softness	Suavidad
+Source at {x}, {y}	Origen en {x}, {y}
+Start from a blank, white canvas.	Empieza desde un lienzo blanco.
+Strength	Intensidad
+Style	Estilo
+Style prompt	Prompt de estilo
+Subtract	Restar
+Take away from the selection (Alt)	Restar de la selección (Alt)
+That draft no longer exists.	Ese borrador ya no existe.
+The browser did not allow reading the clipboard. Paste with Ctrl+V instead.	El navegador no dejó leer el portapapeles. Pega con Ctrl+V.
+The clipboard has no image.	El portapapeles no tiene ninguna imagen.
+The file has no layers.	El archivo no tiene capas.
+The image	La imagen
+The library has no images yet.	La biblioteca aún no tiene imágenes.
+The picture lands on its own layer; drag it into place with Move.	La imagen va a su propia capa; colócala con Mover.
+Tint	Tinte
+To mask	A máscara
+Tolerance	Tolerancia
+Tones	Tonos
+Transform	Transformar
+Undo (Ctrl+Z)	Deshacer (Ctrl+Z)
+Unsaved changes; a draft is kept automatically	Cambios sin guardar; el borrador se guarda solo
+Upscale	Escalar
+Upscaled to {w} × {h}	Escalada a {w} × {h}
+Upscale…	Escalar…
+Upscaling…	Escalando…
+What should fill the masked area	Qué debe rellenar la zona enmascarada
+Width	Ancho
+Working…	Trabajando…
+Write a style prompt first.	Escribe primero un prompt de estilo.
+Write what should fill the masked area.	Escribe qué debe rellenar la zona enmascarada.
+Yellow – Blue	Amarillo – Azul
+Zoom blur	Desenfoque de zoom
+Zoom blur…	Desenfoque de zoom…
+Zoom in	Acercar
+Zoom out	Alejar
+oil painting, impressionist…	óleo, impresionista…
+photorealistic, natural lighting, seamless blend	fotorrealista, luz natural, fusión perfecta
+rembg is not installed on this server.	rembg no está instalado en este servidor.
+the cup, the dog…	la taza, el perro…
+{name} in the library is replaced with the flattened result. The previous pixels are gone; layers stay only in the draft and in project files.	{name} se sustituye en la biblioteca por el resultado aplanado. Los píxeles anteriores desaparecen; las capas solo quedan en el borrador y en los archivos de proyecto.
+{what} failed: {error}	{what} falló: {error}
+Inpaint	Inpaint
+Arrange	Ordenar
+Select	Seleccionar
+Fix	Arreglar
+Brightness / Contrast	Brillo / Contraste
+Hue / Saturation	Tono / Saturación
+Levels	Niveles
+Color balance	Equilibrio de color
+Rotate 90°	Girar 90°
+Rotate left	Girar a la izquierda
+Turn the image clockwise	Gira la imagen a la derecha
+Turn the image counter-clockwise	Gira la imagen a la izquierda
+Flip the canvas upside down	Pone el lienzo boca abajo
+Mirror left to right	Espejo de izquierda a derecha
+Mirror top to bottom	Espejo de arriba abajo
+Make the background transparent	Deja el fondo transparente
+Increase the resolution	Aumenta la resolución
+Make details crisper	Hace los detalles más nítidos
+Enhance face	Mejorar cara
+Style edit	Edición de estilo
+Redraw the whole picture from a prompt	Redibuja toda la imagen a partir de un prompt
+Opened	Abierta
+Add layer	Añadir capa
+Duplicate layer	Duplicar capa
+Rename layer	Renombrar capa
+Lock layer	Bloquear capa
+Reorder layers	Reordenar capas
+Flatten copy	Copia aplanada
+Merge masks	Fusionar máscaras
+Clear mask	Vaciar máscara
+Invert mask	Invertir máscara
+Bake adjustment	Fundir ajuste
+Rotate 270°	Girar 270°
+Upscale 2×	Escalar 2×
+Upscale 4×	Escalar 4×
+Paint mask	Pintar máscara
+Clone	Clonar
+Move layer	Mover capa
+Delete selection	Borrar selección
+Cut to layer	Cortar a capa
+Selection to mask	Selección a máscara
+Center layer	Centrar capa
+Load project	Cargar proyecto
+Match colour	Igualar color
+Clone stamp (Alt-click sets the source)	Tampón de clonar (Alt+clic fija el origen)
+Brush size − / +	Tamaño del pincel − / +
+Pan	Desplazar
+Zoom	Zoom
+Undo / Redo	Deshacer / Rehacer
+Save over the original	Guardar sobre la original
+Save as a copy	Guardar como copia
+New layer	Capa nueva
+Select all	Seleccionar todo
+Deselect	Deseleccionar
+Invert selection	Invertir selección
+Copy the selection to a layer	Copiar la selección a una capa
+Cut the selection to a layer	Cortar la selección a una capa
+Delete the selected pixels	Borrar los píxeles seleccionados
+Paste an image as a layer	Pegar una imagen como capa
+Apply crop or transform	Aplicar recorte o transformación
+Cancel selection, crop or transform	Cancelar selección, recorte o transformación
+This list	Esta lista
+Square 1024	Cuadrado 1024
+Landscape 1536 × 1024	Horizontal 1536 × 1024
+Portrait 1024 × 1536	Vertical 1024 × 1536
+HD 1920 × 1080	HD 1920 × 1080
+Story 1080 × 1920	Historia 1080 × 1920
+Print A4 300 dpi	Impresión A4 300 ppp

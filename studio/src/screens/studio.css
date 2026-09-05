@@ -3,7 +3,8 @@
 
 /* The stage owns its own scrolling, so the shell's main stops scrolling
    and gives Studio the full height. */
-.fs-main[data-screen='studio'] {
+.fs-main[data-screen='studio'],
+.fs-shell[data-nav='rail'] .fs-main[data-screen='studio'] {
   padding: 0;
   overflow: hidden;
   display: grid;

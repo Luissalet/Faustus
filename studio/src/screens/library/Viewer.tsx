@@ -103,7 +103,7 @@ export function ImageViewer({ image, albums, index, count, onStep, onClose, onCh
 
             <div className="fs-viewer__actions">
               {/* The pixel editor is its own lot (Z2); until it lands the button waits. */}
-              {import.meta.env.DEV && <Button variant="primary" size="sm" icon={Pencil} label={t('Edit')} title={t('Open in the image editor (E)')} onClick={onEdit} testId="viewer-edit" />}
+              <Button variant="primary" size="sm" icon={Pencil} label={t('Edit')} title={t('Open in the image editor (E)')} onClick={onEdit} testId="viewer-edit" />
               <Button variant={image.favorite ? 'secondary' : 'ghost'} size="sm" icon={Heart} label={image.favorite ? t('Favourite') : t('Favourite')} title={image.favorite ? t('Remove from favourites') : t('Add to favourites')} loading={busy === 'fav'} onClick={() => void run('fav', async () => void (await toggleFavorite(image.id)))} testId="viewer-favorite" />
               <Button variant="ghost" size="sm" icon={MessageSquare} label={image.sessionId ? t('Its chat') : t('To a chat')} title={image.sessionId ? t('Open the conversation it came from') : t('Start a conversation with this image attached')} onClick={() => void toChat()} testId="viewer-chat" />
               <Button

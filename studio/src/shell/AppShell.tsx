@@ -25,6 +25,7 @@ const StudioScreen = lazy(() => loadStudio().then((m) => ({ default: m.StudioScr
 const ActivityScreen = lazy(() => import('../screens/Activity').then((m) => ({ default: m.ActivityScreen })));
 const AutomationsScreen = lazy(() => import('../screens/Automations').then((m) => ({ default: m.AutomationsScreen })));
 const LibraryScreen = lazy(() => import('../screens/Library').then((m) => ({ default: m.LibraryScreen })));
+const EditorScreen = lazy(() => import('../screens/library/editor/Editor').then((m) => ({ default: m.EditorScreen })));
 const ProjectScreen = lazy(() => import('../screens/Project').then((m) => ({ default: m.ProjectScreen })));
 const ProjectsScreen = lazy(() => import('../screens/Projects').then((m) => ({ default: m.ProjectsScreen })));
 const NotesScreen = lazy(() => import('../screens/Notes').then((m) => ({ default: m.NotesScreen })));
@@ -184,8 +185,9 @@ function Rail() {
  * is told which screen it holds and hands over the height.
  */
 function RouteStage() {
-  const { pathname } = useLocation();
-  const screen = pathname.startsWith('/studio') ? 'studio' : undefined;
+  const { pathname, search } = useLocation();
+  const editing = pathname.startsWith('/library/edit') && /[?&](img|draft|new)=/.test(search);
+  const screen = pathname.startsWith('/studio') ? 'studio' : editing ? 'editor' : undefined;
   return (
     <main className="fs-main" id="fs-main" tabIndex={-1} data-screen={screen}>
       <div className="fs-main__inner">
@@ -212,6 +214,7 @@ function RouteBody() {
         <Route path="/projects" element={<ProjectsScreen />} />
         <Route path="/projects/:projectId" element={<ProjectScreen />} />
         <Route path="/library" element={<LibraryScreen />} />
+        <Route path="/library/edit" element={<EditorScreen />} />
         <Route path="/activity" element={<ActivityScreen />} />
         <Route path="/automations" element={<AutomationsScreen />} />
         <Route path="/notes" element={<NotesScreen />} />

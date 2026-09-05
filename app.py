@@ -1128,6 +1128,11 @@ async def serve_skills(request: Request):
     # Studio's Skills (the previous interface kept them as a tab inside Brain).
     return await serve_index(request)
 
+@app.get("/library/edit")
+async def serve_library_editor(request: Request):
+    """Studio image editor (lot Z2): `?img=<id>`, `?draft=<id>` or `?new=WxH`."""
+    return await serve_index(request)
+
 @app.get("/backgrounds")
 async def serve_backgrounds(request: Request):
     """Sandbox page for prototyping background effects. No auth required."""

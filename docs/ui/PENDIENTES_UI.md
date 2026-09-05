@@ -555,3 +555,25 @@ su área y baja el baseline. Ningún módulo Studio nuevo la aumenta.
     push-to-talk, barge-in, VAD, wake word) también después del merge, sobre
     el compositor y el arnés de Studio, con su pasada de diseño: V-000 →
     V-002 → V-004 → V-003 → V-005.
+
+## Lote Z2 (editor de imagen)
+
+93. **`[→]`** El aviso «rembg no está instalado» enlaza a la anterior
+    (`/?shell=legacy`) porque el Cookbook aún no está en Studio; cuando
+    llegue, `onOpenCookbook('rembg')` debe abrir `/cookbook?install=rembg`.
+94. **`[→]`** SAM (`/api/image/mask`), inpaint, armonizar y estilo no se han
+    podido probar de extremo a extremo en el 7001: no hay endpoint de imagen
+    ni rembg instalado (la anterior tampoco funciona sin ellos). Verificado
+    el camino de error (aviso con el detalle del servidor) y el contrato.
+95. **`[ ]`** Guarda de salida: el borrador se guarda 1,5 s después de cada
+    cambio; si se navega antes, el navegador pregunta. Pendiente un
+    «guardando…» visible en la barra en vez del punto ámbar.
+96. **`[ ]`** `.fs-shell[data-nav='rail'] .fs-main` (0,2,1) pisaba el
+    `padding: 0` de las pantallas a pantalla completa por debajo de 1280px;
+    Studio y el editor lo nombran ahora con la misma especificidad. Revisar
+    si a otras pantallas les pasa lo mismo con el relleno móvil (24px en
+    vez de 16px).
+97. **`[ ]`** `static/js/theme.js` lanza `Cannot read properties of undefined
+    (reading 'bg')` en cada carga con Studio activo (el DOM del editor de tema
+    de la anterior no existe). Desaparece al borrar la anterior.
+
