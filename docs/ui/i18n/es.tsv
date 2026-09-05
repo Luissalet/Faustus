@@ -1848,3 +1848,105 @@ iCloud needs an app-specific password from appleid.apple.com.	iCloud necesita un
 Microsoft disables password login for IMAP/SMTP in most accounts and Faustus does not do Microsoft OAuth yet, so this preset only works where basic auth is still on.	Microsoft desactiva el acceso con contraseña por IMAP/SMTP en casi todas las cuentas y Faustus aún no hace OAuth de Microsoft, así que esta plantilla solo sirve donde la autenticación básica siga activa.
 Fastmail needs an app password (Settings → Privacy & Security → App passwords).	Fastmail necesita una contraseña de aplicación (Ajustes → Privacidad y seguridad → Contraseñas de aplicación).
 Yahoo needs an app password (Account security → Generate app password).	Yahoo necesita una contraseña de aplicación (Seguridad de la cuenta → Generar contraseña de aplicación).
+(5m, 1h, -1 = forever)	(5m, 1h, -1 = para siempre)
+(layers on the GPU)	(capas en la GPU)
+(model max {n})	(máximo del modelo {n})
+(pin to a card)	(fijar a una tarjeta)
+Already pulling {name}	Ya se está descargando {name}
+Applied to every request for this model on this endpoint, under anything the chat sets explicitly.	Se aplica a cada petición de este modelo en este endpoint, por debajo de lo que el chat fije explícitamente.
+Auto — Ollama picks the freest card, splits when needed	Auto — Ollama elige la tarjeta más libre y reparte cuando hace falta
+Auto — freest card, split when nothing fits one	Auto — la tarjeta más libre, repartido cuando no cabe en una
+Bigger than any one card: Ollama split the weights across {n} GPUs.	Más grande que cualquier tarjeta: Ollama repartió los pesos en {n} GPUs.
+CUDA context, cuBLAS workspace and compute buffers, gone before a single weight is loaded.	Contexto CUDA, espacio de cuBLAS y búferes de cómputo, consumidos antes de cargar un solo peso.
+Caps	Capac.
+Cleared options for {name}	Opciones de {name} borradas
+Context length the model was trained for (from /api/show)	Longitud de contexto para la que se entrenó el modelo (de /api/show)
+Could not read the local models.	No se han podido leer los modelos locales.
+Ctx	Ctx
+Delete {name} from this Ollama? The files are removed from disk; pull it again to get it back.	¿Borrar {name} de este Ollama? Los ficheros se eliminan del disco; vuelve a descargarlo para recuperarlo.
+Deleted {name}	{name} borrado
+Discover	Descubrir
+Evict from VRAM now (keep_alive 0)	Sacar de la VRAM ahora (keep_alive 0)
+Fill GPU {n} first — {name} ({gb} GB)	Llenar primero la GPU {n} — {name} ({gb} GB)
+Fill first	Llenar primero
+Filter the catalogue: coder, vision, embedding, 7b…	Filtrar el catálogo: coder, vision, embedding, 7b…
+GPU {n} — not listed on this endpoint	GPU {n} — no está en este endpoint
+Installed	Instalados
+Kill this runner and free its VRAM; the next request loads the model again	Matar este runner y liberar su VRAM; la siguiente petición vuelve a cargar el modelo
+Load	Cargar
+Load into VRAM now	Cargar en la VRAM ahora
+Loaded now	Cargados ahora
+Loading {name}…	Cargando {name}…
+Make this the default chat model (Settings → Default AI)	Hacerlo el modelo de chat por defecto (Ajustes → IA por defecto)
+Model to pull	Modelo a descargar
+Models loaded by Ollama	Modelos cargados por Ollama
+No VRAM reading for this endpoint.	Sin lectura de VRAM para este endpoint.
+No models installed on this endpoint yet — pull one below.	Todavía no hay modelos instalados en este endpoint — descarga uno abajo.
+No weights on a GPU: the model runs on the CPU.	Sin pesos en una GPU: el modelo corre en la CPU.
+Nothing in the catalogue matches "{q}". You can still type its exact name above and pull it.	Nada del catálogo coincide con «{q}». Puedes escribir su nombre exacto arriba y descargarlo.
+Nothing is loaded right now.	Ahora mismo no hay nada cargado.
+Ollama places each model on the card with the most free memory and splits a model across cards only when it does not fit one; pin a card per model in Options (main_gpu).	Ollama pone cada modelo en la tarjeta con más memoria libre y solo lo reparte entre tarjetas cuando no cabe en una; fija una tarjeta por modelo en Opciones (main_gpu).
+Options	Opciones
+Other processes on the card	Otros procesos en la tarjeta
+Placement: auto	Ubicación: auto
+Placement: fill GPU {n} first	Ubicación: llenar primero la GPU {n}
+Pull	Descargar
+Pull a model	Descargar un modelo
+Pull cancelled	Descarga cancelada
+Pull failed: {why}	Descarga fallida: {why}
+Pulled {name}	{name} descargado
+Pulling {name}…	Descargando {name}…
+Quant · params	Cuant. · parám.
+Re-read installed and loaded models	Releer los modelos instalados y cargados
+Read-only: pulling, loading and deleting models is for administrators.	Solo lectura: descargar, cargar y borrar modelos es de administradores.
+Remove the model files from this Ollama	Quitar los ficheros del modelo de este Ollama
+Runner released.	Runner liberado.
+Saved load options	Opciones de carga guardadas
+Saved options for {name}	Opciones de {name} guardadas
+Search the catalogue	Buscar en el catálogo
+Set default	Por defecto
+Size · fit	Tamaño · cabe
+Sizes are approximate (the default build of each tag). Fit is against {against} with nothing loaded: {usable} usable of {total}.	Los tamaños son aproximados (la variante por defecto de cada etiqueta). El ajuste es contra {against} sin nada cargado: {usable} usables de {total}.
+Sizes are approximate (the default build of each tag). No VRAM reading, so no fit verdict.	Los tamaños son aproximados (la variante por defecto de cada etiqueta). Sin lectura de VRAM, no hay veredicto.
+That does not look like an Ollama model name (letters, digits, . _ - / :).	Eso no parece un nombre de modelo de Ollama (letras, dígitos, . _ - / :).
+Unload	Descargar de memoria
+Unloaded {name}	{name} descargado de memoria
+VRAM: {a} models, {b} other, {c} free	VRAM: {a} modelos, {b} otros, {c} libres
+What a model's weights can take right now, KV cache not included.	Lo que pueden ocupar ahora mismo los pesos de un modelo, sin contar la caché KV.
+What the Ollama server has installed, what sits in VRAM right now, and whether each model fits the card before you load it.	Lo que tiene instalado el servidor de Ollama, lo que está en la VRAM ahora mismo y si cada modelo cabe en la tarjeta antes de cargarlo.
+Which card Ollama fills first. A model that fits the chosen card is pinned to it; bigger ones stay Auto and are split.	Qué tarjeta llena Ollama primero. Un modelo que cabe en la elegida se fija a ella; los más grandes siguen en Auto y se reparten.
+auto	auto
+budget	presupuesto
+free	libres
+holds	retiene
+kept loaded	se queda cargado
+loaded	cargado
+lost — the server restarted; pull it again to resume	perdida — el servidor se reinició; descárgalo otra vez para reanudar
+model default	valor del modelo
+models	modelos
+nothing loaded on this card	nada cargado en esta tarjeta
+one card up to {n}	una sola tarjeta hasta {n}
+other	otros
+pulling	descargando
+remote	remoto
+reserve	reserva
+this machine	este equipo
+unknown error	error desconocido
+used	usados
+your card	tu tarjeta
+{a} resident · {b} VRAM	{a} residente · {b} VRAM
+{free} free of {total} where Ollama keeps its blobs ({path}).	{free} libres de {total} donde Ollama guarda sus blobs ({path}).
+{name} is now the default chat model.	{name} es ahora el modelo de chat por defecto.
+{n} GPU	{n} GPU
+{n} GPUs	{n} GPUs
+{n} of the weights are in system RAM — expect PCIe paging and a fraction of the speed.	{n} de los pesos están en la RAM del sistema — espera paginado por PCIe y una fracción de la velocidad.
+{size} of weights will not fit {gpu} ({total}) with room for the context: pinned there, Ollama does not split, the rest runs on the CPU.	{size} de pesos no caben en {gpu} ({total}) con sitio para el contexto: fijado ahí, Ollama no reparte y el resto corre en la CPU.
+{size} on disk. Approximate — the KV cache grows on top of it with the context window.	{size} en disco. Aproximado — la caché KV crece encima con la ventana de contexto.
+{used} of {total} used · {free} free	{used} de {total} usados · {free} libres
+fits	cabe
+tight	justo
+no fit	no cabe
+Accepts images	Acepta imágenes
+Native tool calling	Llamada a herramientas nativa
+Reasoning / thinking mode	Modo de razonamiento
+Embedding model (no chat)	Modelo de embeddings (sin chat)

@@ -477,3 +477,10 @@ su área y baja el baseline. Ningún módulo Studio nuevo la aumenta.
 78. **`[~]` Recompilar mientras Ajustes está abierto** vuelve a tirar el
     shell (chunk con hash nuevo). Ya en 67; sigue sin el `catch` que
     recargue una vez.
+
+## Añadido tras el lote T (05-09-2026, Modelos locales)
+
+79. **`[~]` El legacy oculto sigue en el DOM con los mismos placeholders.**
+    Un `querySelector` global desde la consola (o un test) puede pillar el
+    formulario de la anterior en vez del de Studio. Se va cuando se retire
+    el legacy; hasta entonces, acotar a `.fs-set__body` / `.fs-main`.

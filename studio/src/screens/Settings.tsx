@@ -1,6 +1,7 @@
 import {
   Bot,
   Check,
+  HardDrive,
   UserRound,
   Users,
   Wrench,
@@ -48,6 +49,7 @@ import { UsersSection } from './settings/Users';
 import { ToolsSection } from './settings/Tools';
 import { SystemExtras } from './settings/SystemExtras';
 import { IntegrationsSection } from './settings/Integrations';
+import { LocalModelsSection } from './settings/LocalModels';
 import { authStatus } from '../adapters/account';
 import { LANGS, setLang, t, tn, useLang } from '../i18n';
 import { setTheme, useTheme, type ThemeChoice } from '../shell/theme';
@@ -65,11 +67,12 @@ import { setTheme, useTheme, type ThemeChoice } from '../shell/theme';
  * there at their tab.
  */
 
-type SectionKey = 'general' | 'models' | 'defaults' | 'voice' | 'search' | 'reminders' | 'integrations' | 'agent' | 'tools' | 'shortcuts' | 'account' | 'users' | 'system' | 'legacy';
+type SectionKey = 'general' | 'models' | 'local' | 'defaults' | 'voice' | 'search' | 'reminders' | 'integrations' | 'agent' | 'tools' | 'shortcuts' | 'account' | 'users' | 'system' | 'legacy';
 
 const SECTIONS: { key: SectionKey; label: string; icon: typeof Bot; admin?: boolean }[] = [
   { key: 'general', label: 'General', icon: Languages },
   { key: 'models', label: 'Models', icon: Server },
+  { key: 'local', label: 'Local models', icon: HardDrive },
   { key: 'defaults', label: 'Default AI', icon: Sparkles },
   { key: 'voice', label: 'Voice', icon: Mic },
   { key: 'search', label: 'Search', icon: Search },
@@ -85,7 +88,6 @@ const SECTIONS: { key: SectionKey; label: string; icon: typeof Bot; admin?: bool
 ];
 
 const LEGACY_TABS: { tab: string; label: string; help: string }[] = [
-  { tab: 'local-models', label: 'Local models', help: 'Download and serve models on this machine (Ollama, llama.cpp).' },
   { tab: 'appearance', label: 'Appearance and theme', help: 'The previous interface\'s colour editor; Studio uses its tokens and honours the saved themes.' },
 ];
 
@@ -945,6 +947,7 @@ export function SettingsScreen() {
         <div className="fs-set__body">
           {section === 'general' && <GeneralSection />}
           {section === 'models' && <ModelsSection endpoints={endpoints} onChanged={loadEps} say={say} />}
+          {section === 'local' && <LocalModelsSection admin={admin} say={say} />}
           {section === 'defaults' && <DefaultsSection settings={settings} endpoints={endpoints ?? []} onSave={onSave} say={say} />}
           {section === 'voice' && <VoiceSection settings={settings} endpoints={endpoints ?? []} onSave={onSave} say={say} />}
           {section === 'search' && <SearchSection settings={settings} onSave={onSave} say={say} />}
