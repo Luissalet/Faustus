@@ -1,46 +1,15 @@
 import { t } from '../i18n';
-import { Check, Copy } from 'lucide-react';
-import { Fragment, useState, type ReactNode } from 'react';
+import { Check, Copy, CornerDownLeft } from 'lucide-react';
+import { useId, useMemo, useState, type ReactNode } from 'react';
 import { findSensitive, getDisplay, stripEmojis, useDisplay } from '../shell/display';
+import { parseMarkdown, type Block, type Footnote, type Inline } from '../lib/markdown';
 
 /**
- * A deliberately small reader for what models actually write: fenced
- * code, inline code, bold, headings, lists, links and paragraphs.
- *
- * Not a Markdown implementation. A full one costs 40–90 KB of the 350 KB
- * budget (DECISIONES_UI.md) to handle tables and footnotes that a chat
- * reply almost never contains. Everything unknown falls through as text,
- * which is the correct failure for a transcript: nothing is ever hidden.
+ * The transcript's reader. Parsing lives in lib/markdown.ts; this turns the
+ * tree into React and keeps the two things only the shell knows about: the
+ * blur (a secret in a reply becomes a click-to-reveal button) and the emoji
+ * switch.
  */
-
-const INLINE = /(`[^`\n]+`|\*\*[^*\n]+\*\*|\[[^\]\n]+\]\((https?:\/\/[^\s)]+)\))/g;
-
-function inline(text: string, keyPrefix: string): ReactNode[] {
-  const out: ReactNode[] = [];
-  let last = 0;
-  let index = 0;
-  for (const match of text.matchAll(INLINE)) {
-    const start = match.index ?? 0;
-    if (start > last) out.push(...plain(text.slice(last, start), `${keyPrefix}-p${index}`));
-    const token = match[0];
-    const key = `${keyPrefix}-${index++}`;
-    if (token.startsWith('`')) {
-      out.push(<code key={key}>{token.slice(1, -1)}</code>);
-    } else if (token.startsWith('**')) {
-      out.push(<strong key={key}>{token.slice(2, -2)}</strong>);
-    } else {
-      const label = token.slice(1, token.indexOf(']('));
-      out.push(
-        <a key={key} className="fs-link" href={match[2]} target="_blank" rel="noreferrer">
-          {label}
-        </a>,
-      );
-    }
-    last = start + token.length;
-  }
-  if (last < text.length) out.push(...plain(text.slice(last), `${keyPrefix}-pend`));
-  return out;
-}
 
 /** A run of plain text; with the blur on, its secrets become reveal-on-click buttons. */
 function plain(text: string, key: string): ReactNode[] {
@@ -59,62 +28,48 @@ function Censored({ text }: { text: string }) {
   );
 }
 
-function prose(block: string, keyPrefix: string): ReactNode[] {
-  const nodes: ReactNode[] = [];
-  const lines = block.split('\n');
-  let i = 0;
-  let k = 0;
-  while (i < lines.length) {
-    const line = lines[i];
-    if (line.trim() === '') {
-      i++;
-      continue;
+function inlines(nodes: Inline[], key: string, uid: string): ReactNode[] {
+  const out: ReactNode[] = [];
+  nodes.forEach((node, i) => {
+    const k = `${key}-${i}`;
+    switch (node.kind) {
+      case 'text':
+        out.push(...plain(node.text, k));
+        break;
+      case 'break':
+        out.push(<br key={k} />);
+        break;
+      case 'code':
+        out.push(<code key={k}>{node.text}</code>);
+        break;
+      case 'strong':
+        out.push(<strong key={k}>{inlines(node.children, k, uid)}</strong>);
+        break;
+      case 'em':
+        out.push(<em key={k}>{inlines(node.children, k, uid)}</em>);
+        break;
+      case 'del':
+        out.push(<del key={k}>{inlines(node.children, k, uid)}</del>);
+        break;
+      case 'image':
+        out.push(<img key={k} className="fs-rich__img" src={node.src} alt={node.alt} loading="lazy" />);
+        break;
+      case 'note':
+        out.push(
+          <a key={k} className="fs-rich__ref" id={`${uid}-ref-${node.index}`} href={`#${uid}-note-${node.index}`} aria-label={t('Footnote {n}').replace('{n}', String(node.index))}>
+            {node.index}
+          </a>,
+        );
+        break;
+      default:
+        out.push(
+          <a key={k} className="fs-link" href={node.href} target="_blank" rel="noreferrer">
+            {inlines(node.children, k, uid)}
+          </a>,
+        );
     }
-    const heading = /^(#{1,6})\s+(.*)$/.exec(line);
-    if (heading) {
-      nodes.push(
-        <p key={`${keyPrefix}-h${k++}`} className="fs-rich__heading">
-          {inline(heading[2], `${keyPrefix}-hi${k}`)}
-        </p>,
-      );
-      i++;
-      continue;
-    }
-    const bullet = /^\s*(?:[-*•]|\d+[.)])\s+/;
-    if (bullet.test(line)) {
-      const items: string[] = [];
-      const ordered = /^\s*\d+[.)]/.test(line);
-      while (i < lines.length && bullet.test(lines[i])) {
-        items.push(lines[i].replace(bullet, ''));
-        i++;
-      }
-      const List = ordered ? 'ol' : 'ul';
-      nodes.push(
-        <List key={`${keyPrefix}-l${k++}`} className="fs-rich__list">
-          {items.map((item, j) => (
-            <li key={j}>{inline(item, `${keyPrefix}-li${k}-${j}`)}</li>
-          ))}
-        </List>,
-      );
-      continue;
-    }
-    const para: string[] = [];
-    while (i < lines.length && lines[i].trim() !== '' && !bullet.test(lines[i]) && !/^#{1,6}\s/.test(lines[i])) {
-      para.push(lines[i]);
-      i++;
-    }
-    nodes.push(
-      <p key={`${keyPrefix}-p${k++}`}>
-        {para.map((text, j) => (
-          <Fragment key={j}>
-            {j > 0 && <br />}
-            {inline(text, `${keyPrefix}-pi${k}-${j}`)}
-          </Fragment>
-        ))}
-      </p>,
-    );
-  }
-  return nodes;
+  });
+  return out;
 }
 
 function CodeBlock({ lang, code }: { lang: string; code: string }) {
@@ -145,21 +100,119 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
   );
 }
 
+const HEADINGS = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'] as const;
+
+function Item({ item, k, uid }: { item: { task?: boolean; done?: boolean; blocks: Block[] }; k: string; uid: string }) {
+  const only = item.blocks.length === 1 && item.blocks[0].kind === 'para' ? item.blocks[0] : null;
+  const body = only ? inlines(only.children, k, uid) : <Blocks blocks={item.blocks} k={k} uid={uid} />;
+  if (!item.task) return <li className="fs-rich__item">{body}</li>;
+  return (
+    <li className="fs-rich__item fs-rich__task" data-done={item.done || undefined}>
+      <input type="checkbox" checked={item.done ?? false} readOnly disabled aria-label={item.done ? t('Done') : t('Not done')} />
+      <span>{body}</span>
+    </li>
+  );
+}
+
+function One({ block, k, uid }: { block: Block; k: string; uid: string }) {
+  switch (block.kind) {
+    case 'heading': {
+      const H = HEADINGS[block.level - 1];
+      return (
+        <H className="fs-rich__h" data-level={block.level}>
+          {inlines(block.children, k, uid)}
+        </H>
+      );
+    }
+    case 'code':
+      return <CodeBlock lang={block.lang} code={block.code} />;
+    case 'rule':
+      return <hr className="fs-rich__rule" />;
+    case 'quote':
+      return (
+        <blockquote className="fs-rich__quote">
+          <Blocks blocks={block.blocks} k={k} uid={uid} />
+        </blockquote>
+      );
+    case 'list': {
+      const List = block.ordered ? 'ol' : 'ul';
+      return (
+        <List className="fs-rich__list" start={block.ordered && block.start !== 1 ? block.start : undefined}>
+          {block.items.map((item, i) => (
+            <Item key={i} item={item} k={`${k}-i${i}`} uid={uid} />
+          ))}
+        </List>
+      );
+    }
+    case 'table':
+      return (
+        <div className="fs-rich__tablewrap" role="region" aria-label={t('Table')} tabIndex={0}>
+          <table className="fs-rich__table">
+            <thead>
+              <tr>
+                {block.head.map((cell, i) => (
+                  <th key={i} data-align={block.align[i] ?? undefined} scope="col">
+                    {inlines(cell, `${k}-h${i}`, uid)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {block.rows.map((row, r) => (
+                <tr key={r}>
+                  {row.map((cell, c) => (
+                    <td key={c} data-align={block.align[c] ?? undefined}>
+                      {inlines(cell, `${k}-r${r}c${c}`, uid)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+    default:
+      return <p>{inlines(block.children, k, uid)}</p>;
+  }
+}
+
+function Blocks({ blocks, k, uid }: { blocks: Block[]; k: string; uid: string }) {
+  return (
+    <>
+      {blocks.map((block, i) => (
+        <One key={i} block={block} k={`${k}-${i}`} uid={uid} />
+      ))}
+    </>
+  );
+}
+
+function Notes({ notes, uid }: { notes: Footnote[]; uid: string }) {
+  return (
+    <section className="fs-rich__notes" aria-label={t('Footnotes')}>
+      <ol>
+        {notes.map((note) => (
+          <li key={note.id} id={`${uid}-note-${note.index}`}>
+            <Blocks blocks={note.blocks} k={`n${note.index}`} uid={uid} />
+            <a className="fs-rich__back" href={`#${uid}-ref-${note.index}`} title={t('Back to the text')} aria-label={t('Back to the text')}>
+              <CornerDownLeft size={12} aria-hidden="true" />
+            </a>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
 export function Rich({ text: raw }: { text: string }) {
   const display = useDisplay();
+  // useId gives ':r3:'; a colon in a fragment id is legal but awkward to link.
+  const uid = useId().replace(/:/g, 'x');
   const text = display.emojis ? raw : stripEmojis(raw);
-  const parts = text.split(/```/);
+  const { blocks, footnotes } = useMemo(() => parseMarkdown(text), [text]);
   return (
     <div className="fs-rich">
-      {parts.map((part, index) => {
-        if (index % 2 === 1) {
-          const firstBreak = part.indexOf('\n');
-          const lang = firstBreak === -1 ? '' : part.slice(0, firstBreak).trim();
-          const code = firstBreak === -1 ? part : part.slice(firstBreak + 1);
-          return <CodeBlock key={index} lang={lang} code={code.replace(/\n$/, '')} />;
-        }
-        return <Fragment key={index}>{prose(part, `b${index}`)}</Fragment>;
-      })}
+      <Blocks blocks={blocks} k="b" uid={uid} />
+      {footnotes.length > 0 && <Notes notes={footnotes} uid={uid} />}
     </div>
   );
 }

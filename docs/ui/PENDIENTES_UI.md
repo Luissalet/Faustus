@@ -590,9 +590,10 @@ su área y baja el baseline. Ningún módulo Studio nuevo la aumenta.
 100. **`[→]`** «Firmar y responder» deja el adjunto (token de `prepare-signed-
     reply`) en la entrega a Redactar, pero Redactar aún no muestra adjuntos: llega
     con el lote de Correo (adjuntar, programar, IA).
-101. **`[ ]`** La vista previa Markdown del editor usa el lector reducido
-    (`rich.tsx`): los títulos se ven en negrita sin jerarquía. Se arregla con el
-    lote de Markdown completo.
+101. **`[x]`** ~~La vista previa Markdown del editor usa el lector reducido
+    (`rich.tsx`): los títulos se ven en negrita sin jerarquía.~~ Hecho en el
+    lote AH: `lib/markdown.ts` parsea todo y `rich.tsx` lo dibuja con h1-h6
+    reales, tablas, citas, reglas, tareas y notas al pie.
 102. **`[ ]`** La lista de chats de la biblioteca es cliente (`/api/sessions` ya
     trae todo): con miles de chats convendría paginar en el servidor.
 
@@ -700,3 +701,17 @@ su área y baja el baseline. Ningún módulo Studio nuevo la aumenta.
     el siguiente escaneo completo; `gguf_files` llega vacío y el formulario no
     ofrece el selector de archivo.
 
+
+## Lote AH (Markdown completo y fichas de mención)
+
+124. **`[ ]`** El lector no hace HTML incrustado ni listas de definición ni
+    tablas con celdas combinadas: eso sigue cayendo como texto, que es el
+    fallo correcto para un transcript (nada se oculta) pero no es CommonMark
+    entero. Si algún día hace falta, el sitio es `lib/markdown.ts`.
+125. **`[ ]`** Las notas al pie usan `useId()` para el ancla, así que dos
+    turnos con `[^1]` conviven sin chocar; el salto es un `href="#..."` normal
+    y con el transcript en un contenedor con scroll propio Chrome lo centra
+    donde puede, no siempre arriba del todo.
+126. **`[ ]`** Una tabla más ancha que la columna del turno hace scroll dentro
+    de su marco (con foco de teclado); no hay indicador visual de que hay más
+    a la derecha más allá del propio corte.

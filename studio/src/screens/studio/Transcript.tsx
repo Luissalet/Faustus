@@ -1,9 +1,10 @@
 import { Check, ChevronDown, Copy, FileText, GitFork, Pencil, Quote, RefreshCw, Telescope, Trash2, Volume2, VolumeX, X } from 'lucide-react';
-import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { Fragment, lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { Button, IconButton } from '../../components';
 import type { AskUser, DelegationTask } from '../../adapters/chat';
 import { attachmentUrl, isImage } from '../../adapters/composer';
 import { Rich } from '../rich';
+import { splitMentions } from '../../lib/mentions';
 import { formatMetrics, type Step, type Turn } from './model';
 import { t } from '../../i18n';
 import { getDisplay } from '../../shell/display';
@@ -295,18 +296,50 @@ function Editor({
   );
 }
 
+/**
+ * What the user typed, with the `@path` tokens turned into chips that open
+ * the file. Gated on onOpenFile the way the previous interface gated on a
+ * bound workspace: with no folder there is nothing to open them against.
+ */
+function Said({ text, onOpenFile }: { text: string; onOpenFile?: (path: string) => void }) {
+  if (!onOpenFile || !text.includes('@')) return <>{text}</>;
+  const parts = splitMentions(text);
+  if (!parts.some((part) => part.mention)) return <>{text}</>;
+  return (
+    <>
+      {parts.map((part, i) =>
+        part.mention ? (
+          <button
+            key={i}
+            type="button"
+            className="fs-turn__mention"
+            title={t('Open {path}').replace('{path}', part.mention)}
+            onClick={() => onOpenFile(part.mention as string)}
+          >
+            {part.token}
+          </button>
+        ) : (
+          <Fragment key={i}>{part.text}</Fragment>
+        ),
+      )}
+    </>
+  );
+}
+
 function UserTurn({
   turn,
   busy,
   onEdit,
   onRegenerate,
   onDelete,
+  onOpenFile,
 }: {
   turn: Turn;
   busy: boolean;
   onEdit: TranscriptProps['onEdit'];
   onRegenerate: TranscriptProps['onRegenerate'];
   onDelete: TranscriptProps['onDelete'];
+  onOpenFile?: TranscriptProps['onOpenFile'];
 }) {
   const [editing, setEditing] = useState(false);
   return (
@@ -341,8 +374,8 @@ function UserTurn({
                   ))}
                 </ul>
               )}
-              {turn.text}
-              {turn.edited && <span className="fs-turn__edited">editado</span>}
+              <Said text={turn.text} onOpenFile={onOpenFile} />
+              {turn.edited && <span className="fs-turn__edited">{t('edited')}</span>}
             </div>
             <div className="fs-turn__actions" data-testid="turn-actions">
               <CopyButton text={turn.text} />
@@ -526,7 +559,7 @@ export function Transcript({ turns, busy, onApproval, onAnswer, onEdit, onRegene
       )}
       {turns.map((turn, index) =>
         turn.role === 'user' ? (
-          <UserTurn key={turn.id} turn={turn} busy={busy} onEdit={onEdit} onRegenerate={onRegenerate} onDelete={onDelete} />
+          <UserTurn key={turn.id} turn={turn} busy={busy} onEdit={onEdit} onRegenerate={onRegenerate} onDelete={onDelete} onOpenFile={onOpenFile} />
         ) : (
           <AssistantTurn
             key={turn.id}

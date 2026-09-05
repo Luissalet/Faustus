@@ -97,7 +97,7 @@ las toca ninguna pantalla.
 | Fallback de modelo, errores del servidor | sí | **Migrado** |
 | Editar, regenerar, borrar mensajes | sí (queda versión en el servidor) | **Migrado** (Undo/restaurar: anterior) |
 | Copiar mensaje / código | botones en mensaje y en cada bloque de código | **Migrado** |
-| Markdown completo (tablas, notas al pie) | lector reducido | **Parcial** |
+| Markdown completo (tablas, notas al pie) | lector completo (`lib/markdown.ts`): titulares h1-h6 con jerarquía real, listas anidadas y de tareas, tablas con alineación (`:--`, `--:`, `:-:`), pipe escapado y scroll propio, citas, reglas, cursiva, tachado, imágenes, autoenlaces, escapes con `\`, y notas al pie numeradas por orden de referencia con salto de ida y vuelta | **Migrado** (enlaces `javascript:` desactivados; lo desconocido sigue cayendo como texto: nada se oculta) |
 | Tarjetas 🛡 del arnés (Turn summary, Verified/Unverified, comprobaciones por ronda, tests, análisis estático, cambios frente a lo afirmado) | tarjeta bajo la respuesta (`harness_check`, `harness_summary`) | **Migrado** |
 | Panel Progress (`todowrite`), plan en vivo (`plan_update`) | lista de progreso y tarjeta de plan dentro del turno | **Migrado** |
 | Tablero de sub-agentes (`delegate_agents`): tarjetas por worker con estado, actividad, tiempo, rondas, herramientas, tokens, ficheros, última línea, dirigir (steer), parar, abrir su chat, repetir; se reconstruye del historial | tablero dentro del turno (`SubagentBoard`) | **Migrado** (en vivo verificado con el reductor y una secuencia sintética: el modelo de prueba no llegó a llamar a `delegate_agents`; restaurado verificado con sesiones reales) |
@@ -107,7 +107,7 @@ las toca ninguna pantalla.
 | Context ledger | porcentaje de contexto en el pie del turno | **Migrado** (ledger detallado: anterior) |
 | Pill de uso de GPU, salud de servicios | «Vitales» en la cabecera de Studio: traza de uso de GPU (últimos dos minutos), un tanque de VRAM por tarjeta, temperatura, modelo cargado (o «sin modelo» / «Ollama apagado»), aviso de desbordamiento a PCIe; clic → panel con salud (puntuación y señales), GPUs (conjunto y cada tarjeta con sus modelos), runners huérfanos con Liberar, Ollama (modelos con reparto GPU/CPU, tamaño, ubicación, contexto, keep-alive), memoria de GPU compartida (aviso de paginado con los pasos), equipo (RAM, CPU), hora y cadencia; sondeo cada 5 s, 1,5 s mientras responde; `/usage on|off` y ojo en el panel para ocultarlo (`faustus_studio_usage`) | **Migrado** (las vistas «combinada/separada» de la anterior se funden: el conjunto y cada tarjeta se ven a la vez) |
 | Visor lateral de ficheros | pestaña «Fichero» del panel: desde «Ver el fichero» en el carril o `/open ruta` | **Migrado** |
-| Fichas de mención pulsables | — | **Anterior** |
+| Fichas de mención pulsables | los `@ruta` del mensaje enviado se dibujan como fichas que abren el fichero en el panel lateral (`lib/mentions.ts`, mismo `MENTION_RE` que `src/file_mentions.py`); solo con carpeta vinculada, como en la anterior | **Migrado** |
 | Scroll to bottom | automático mientras sigues el stream | **Migrado** |
 
 ## 5. Atajos de teclado
