@@ -3102,3 +3102,207 @@ text	texto
 {n} source	{n} fuente
 {n} sources	{n} fuentes
 {old} → {new}	{old} → {new}
+(new mail, no original)	(correo nuevo, sin original)
+A file from this computer…	Un fichero de este equipo…
+A holiday or out-of-office answer for incoming mail{account}.	Una respuesta de vacaciones o ausencia para el correo entrante{account}.
+About this mail from {who} ({subject}):	Sobre este correo de {who} ({subject}):
+Accept, but ask for Friday instead…	Acepta, pero propón el viernes…
+Accounts (IMAP, SMTP, Google) are in Settings → Integrations	Las cuentas (IMAP, SMTP, Google) están en Ajustes → Integraciones
+Add an IMAP/SMTP or Google account in Settings → Integrations and the inbox appears here.	Añade una cuenta IMAP/SMTP o de Google en Ajustes → Integraciones y la bandeja aparecerá aquí.
+Add an account	Añadir una cuenta
+All done.	Todo hecho.
+All read.	Todo leído.
+Also move the mail to spam when unsubscribing	Mover también el correo a spam al darse de baja
+Another language…	Otro idioma…
+Answer the same sender	Responder al mismo remitente
+Approve and send	Aprobar y enviar
+As one zip	En un solo zip
+Attach	Adjuntar
+Attach from the library	Adjuntar desde la biblioteca
+Attach something	Adjuntar algo
+Attach {n}	Adjuntar {n}
+Attached {name}.	Adjuntado {name}.
+Attached {n} items.	Adjuntados {n} elementos.
+Attaching…	Adjuntando…
+Attachment actions	Acciones del adjunto
+Away reply	Respuesta de ausencia
+Cancelled.	Cancelado.
+Close the composer	Cerrar el redactor
+Composer	Redactor
+Could not approve.	No se ha podido aprobar.
+Could not attach the file.	No se ha podido adjuntar el fichero.
+Could not attach {name}.	No se ha podido adjuntar {name}.
+Could not attach.	No se ha podido adjuntar.
+Could not cancel.	No se ha podido cancelar.
+Could not clean up.	No se ha podido limpiar.
+Could not create the reminder.	No se ha podido crear el recordatorio.
+Could not delete the reminders.	No se han podido borrar los recordatorios.
+Could not discard.	No se ha podido descartar.
+Could not draft the reply.	No se ha podido redactar la respuesta.
+Could not extract the style.	No se ha podido extraer el estilo.
+Could not open the attachment as a document.	No se ha podido abrir el adjunto como documento.
+Could not open the chat.	No se ha podido abrir el chat.
+Could not read the mail settings.	No se han podido leer los ajustes del correo.
+Could not save the style.	No se ha podido guardar el estilo.
+Could not scan the folder.	No se ha podido revisar la carpeta.
+Could not schedule.	No se ha podido programar.
+Could not summarise.	No se ha podido resumir.
+Could not translate.	No se ha podido traducir.
+Could not unsubscribe.	No se ha podido dar de baja.
+Delete permanently	Borrar definitivamente
+Delete them	Borrarlos
+Deleted permanently.	Borrado definitivamente.
+Discarded.	Descartado.
+Done.	Hecho.
+Download all	Descargar todos
+Draft again with AI	Redactar de nuevo con IA
+Draft inserted ({model}).	Borrador insertado ({model}).
+Draft with AI	Redactar con IA
+Earlier	Anteriores
+Earlier messages	Mensajes anteriores
+Earlier reply	Respuesta anterior
+Every 3 days	Cada 3 días
+Every 7 days	Cada 7 días
+Everywhere	En todas partes
+Extract from sent mail	Extraer de los enviados
+Flag likely spam	Marcar el spam probable
+From {who}	De {who}
+I'm away until {date} and will answer when I'm back.	Estoy fuera hasta el {date} y responderé a la vuelta.
+In an hour	Dentro de una hora
+Keyboard	Teclado
+Keys	Teclas
+Later today	Hoy más tarde
+Loading attachments…	Cargando adjuntos…
+Loading the outbox	Cargando la bandeja de salida
+Loading the settings	Cargando los ajustes
+Loading the style	Cargando el estilo
+Looks like spam	Parece spam
+Mail settings	Ajustes del correo
+Mail: {subject}	Correo: {subject}
+Mails you schedule with "Send later", and drafts an agent writes for your approval, show up here.	Aquí aparecen los correos que programes con «Enviar más tarde» y los borradores que un agente escriba para que los apruebes.
+Mark as done	Marcar como hecho
+Mark as not done	Marcar como no hecho
+Mark as read	Marcar como leído
+Marked as not done.	Marcado como no hecho.
+Marked as not spam.	Marcado como no spam.
+Monday morning	El lunes por la mañana
+Move them to spam	Moverlos a spam
+Move to spam	Mover a spam
+Moved to spam.	Movido a spam.
+No newsletters or ads with an unsubscribe option in this folder.	No hay boletines ni publicidad con opción de baja en esta carpeta.
+Not spam	No es spam
+Note about this mail	Nota sobre este correo
+Note saved.	Nota guardada.
+Note without a date…	Nota sin fecha…
+Nothing here.	No hay nada aquí.
+Nothing to unsubscribe from	Nada de lo que darse de baja
+Nothing waiting	Nada en espera
+Once while active	Una vez mientras esté activa
+Only mails from this sender	Solo correos de este remitente
+Open Settings	Abrir Ajustes
+Open as a document	Abrir como documento
+Open the calendar event	Abrir el evento del calendario
+Open the link	Abrir el enlace
+Open the mail	Abrir el correo
+Outbox	Bandeja de salida
+Pause mail notifications while active	Pausar las notificaciones de correo mientras esté activa
+Pick a time in the future.	Elige una hora en el futuro.
+Pick a time…	Elegir una hora…
+Put appointments in the calendar	Poner las citas en el calendario
+Quick draft	Borrador rápido
+Reads the whole thread and answers every point	Lee todo el hilo y responde a cada punto
+Remind me to reply	Recordarme responder
+Reminder set for {when}.	Recordatorio puesto para {when}.
+Remove {who}	Quitar {who}
+Reply soon	Responder pronto
+Reply to {who}: {subject}	Responder a {who}: {subject}
+Reply: {subject}	Responder: {subject}
+Save sender to contacts	Guardar remitente en contactos
+Save the note	Guardar la nota
+Save the style	Guardar el estilo
+Saved to contacts.	Guardado en contactos.
+Scanning	Revisando
+Scanning {folder}…	Revisando {folder}…
+Schedule	Programar
+Scheduled	Programados
+Scheduled for {when}.	Programado para {when}.
+Select {subject}	Seleccionar {subject}
+Send anyway	Enviar igualmente
+Send later	Enviar más tarde
+Send without an attachment?	¿Enviar sin adjunto?
+Set the reminder	Poner el recordatorio
+Short and to the point	Corto y al grano
+Short sentences, warm, signs with a first name…	Frases cortas, cercano, firma con el nombre de pila…
+Show the original HTML	Ver el HTML original
+Show the reader view	Ver la vista de lectura
+Show {n} earlier messages	Ver {n} mensajes anteriores
+Show {n} remote images	Mostrar {n} imágenes remotas
+Show {tag} mails	Ver los correos {tag}
+Skip automated and no-reply senders	Saltar remitentes automáticos y no-reply
+Stop selecting	Dejar de seleccionar
+Style extracted from your sent mail.	Estilo extraído de tus enviados.
+Style saved.	Estilo guardado.
+Summarise	Resumir
+Summarise long mails	Resumir los correos largos
+Summarise with AI	Resumir con IA
+Summary	Resumen
+Tag mails (urgent, bills, receipts, travel…)	Etiquetar correos (urgente, facturas, recibos, viajes…)
+That calendar event is no longer there.	Ese evento del calendario ya no está.
+The away reply is on until {date}.	La respuesta de ausencia está activa hasta el {date}.
+The away reply is on.	La respuesta de ausencia está activa.
+The mail endpoint is not responding. Check the server log, or the account in Settings → Integrations.	El servicio de correo no responde. Mira el registro del servidor o la cuenta en Ajustes → Integraciones.
+The mail is already in {language}.	El correo ya está en {language}.
+The text mentions an attachment but nothing is attached.	El texto menciona un adjunto pero no hay nada adjunto.
+Thinking…	Pensando…
+This account has no SMTP or OAuth set up, so it cannot send. Check Settings → Integrations.	Esta cuenta no tiene SMTP ni OAuth configurados, así que no puede enviar. Míralo en Ajustes → Integraciones.
+This month	Este mes
+This week	Esta semana
+Thorough draft	Borrador completo
+To {who}	Para {who}
+Tomorrow morning	Mañana por la mañana
+Translate	Traducir
+Translated to {language}	Traducido al {language}
+Translations default to {language}.	Las traducciones van por defecto al {language}.
+Triage	Triaje
+Unsubscribe	Darse de baja
+Unsubscribe review	Revisión de bajas
+Unsubscribed from {who}.	Baja de {who} enviada.
+Until	Hasta
+Urgent	Urgente
+Used when Faustus drafts replies for you. Extract reads your sent mail and writes it down.	Se usa cuando Faustus redacta respuestas por ti. Extraer lee tus enviados y lo describe.
+Uses your writing style from the mail settings.	Usa tu estilo de escritura de los ajustes del correo.
+Waiting for your approval	Esperando tu aprobación
+What Faustus does on its own with new mail. The triage task in Automations does the work; these switches allow it.	Lo que Faustus hace por su cuenta con el correo nuevo. La tarea de triaje de Automatizaciones hace el trabajo; estos interruptores lo permiten.
+What should it say? (optional)	¿Qué debería decir? (opcional)
+When	Cuándo
+When mail arrives	Cuando llega correo
+Where to search	Dónde buscar
+Write your note…	Escribe tu nota…
+Writing style	Estilo de escritura
+Yesterday	Ayer
+attachment {n}	adjunto {n}
+j/k move · Enter opens · e archives · # deletes · s stars · d done · c composes · / searches	j/k mueve · Intro abre · e archiva · # borra · s estrella · d hecho · c redacta · / busca
+me	mí
+name@domain	nombre@dominio
+r reply · a reply all · f forward · e archive · # delete · s star · d done · u unread · Esc back	r responder · a responder a todos · f reenviar · e archivar · # borrar · s estrella · d hecho · u no leído · Esc volver
+to {who}	para {who}
+{from}–{to} of {total}	{from}–{to} de {total}
+{n} attachments	{n} adjuntos
+{n} candidates among {m} mails in {folder}.	{n} candidatos entre {m} correos de {folder}.
+{n} dealt with	{n} resueltos
+{n} in {folder}	{n} en {folder}
+{n} mail updated.	{n} correo actualizado.
+{n} mails deleted.	{n} correos borrados.
+{n} mails moved to spam.	{n} correos movidos a spam.
+{n} mails updated.	{n} correos actualizados.
+{n} unread on this page	{n} sin leer en esta página
+{ok} of {n} done; the rest failed.	{ok} de {n} hechos; el resto ha fallado.
+{who} is not a valid address.	{who} no es una dirección válida.
+Action needed	Requiere acción
+Bills	Facturas
+Receipt	Recibo
+Travel	Viajes
+Newsletter	Boletín
+Not done	Sin hacer
+Pending · 30 days	Pendientes · 30 días
+Older than 30 days	Más de 30 días

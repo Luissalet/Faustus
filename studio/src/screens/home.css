@@ -275,19 +275,6 @@
   translate: 0 -1px;
 }
 
-.fs-notice {
-  padding: var(--fs-space-3) var(--fs-space-4);
-  border: 1px solid var(--fs-border);
-  border-radius: var(--fs-radius-panel);
-  background: var(--fs-surface-1);
-  color: var(--fs-text-2);
-  font-size: var(--fs-label-size);
-}
-
-.fs-notice[data-tone='warning'] {
-  border-color: color-mix(in srgb, var(--fs-warning) 40%, var(--fs-border));
-}
-
 @media (prefers-reduced-motion: reduce) {
   .fs-row,
   .fs-row__go,

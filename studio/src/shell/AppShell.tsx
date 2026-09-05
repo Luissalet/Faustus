@@ -32,7 +32,7 @@ const ProjectsScreen = lazy(() => import('../screens/Projects').then((m) => ({ d
 const NotesScreen = lazy(() => import('../screens/Notes').then((m) => ({ default: m.NotesScreen })));
 const MemoryScreen = lazy(() => import('../screens/Memory').then((m) => ({ default: m.MemoryScreen })));
 const CalendarScreen = lazy(() => import('../screens/Calendar').then((m) => ({ default: m.CalendarScreen })));
-const EmailScreen = lazy(() => import('../screens/Email').then((m) => ({ default: m.EmailScreen })));
+const EmailScreen = lazy(() => import('../screens/email/Email').then((m) => ({ default: m.EmailScreen })));
 const SettingsScreen = lazy(() => import('../screens/Settings').then((m) => ({ default: m.SettingsScreen })));
 const AgentsScreen = lazy(() => import('../screens/Agents').then((m) => ({ default: m.AgentsScreen })));
 const SkillsScreen = lazy(() => import('../screens/Skills').then((m) => ({ default: m.SkillsScreen })));
@@ -188,7 +188,7 @@ function Rail() {
 function RouteStage() {
   const { pathname, search } = useLocation();
   const editing = (pathname.startsWith('/library/edit') && /[?&](img|draft|new)=/.test(search)) || /^\/documents\/[^/]+/.test(pathname);
-  const screen = pathname.startsWith('/studio') ? 'studio' : editing ? 'editor' : undefined;
+  const screen = pathname.startsWith('/studio') ? 'studio' : editing ? 'editor' : pathname.startsWith('/email') ? 'wide' : undefined;
   return (
     <main className="fs-main" id="fs-main" tabIndex={-1} data-screen={screen}>
       <div className="fs-main__inner">

@@ -491,6 +491,33 @@ export function CalendarScreen() {
 
   const refresh = () => setReload((n) => n + 1);
 
+  /* ?event=<uid> (a mail's calendar tag): find it in the next two years,
+     jump to its day and open it. */
+  useEffect(() => {
+    const wanted = params.get('event');
+    if (!wanted) return;
+    const c = new AbortController();
+    const now = new Date();
+    listEvents(ds(new Date(now.getFullYear(), 0, 1)), ds(new Date(now.getFullYear() + 2, 0, 1)), c.signal)
+      .then((r) => {
+        const ev = r.events.find((e) => e.uid === wanted || e.uid.startsWith(wanted));
+        if (ev) {
+          const day = eventDays(ev)[0];
+          if (day) {
+            setCursor(parseStamp(day));
+            setSelectedDay(day);
+          }
+          setDialog({ event: ev, day: null });
+        } else say(t('That calendar event is no longer there.'));
+        const next = new URLSearchParams(params);
+        next.delete('event');
+        setParams(next, { replace: true });
+      })
+      .catch(() => undefined);
+    return () => c.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.get('event')]);
+
   const byDay = useMemo(() => {
     const map = new Map<string, CalEvent[]>();
     for (const ev of events ?? []) {

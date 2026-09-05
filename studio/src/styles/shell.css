@@ -306,6 +306,11 @@ html[data-studio-shell='on'] body > *:not(#studio-root):not(#fs-overlay-root) {
   margin-inline: auto;
 }
 
+/* Three-column work screens (Correo) read better wide; prose screens keep 960. */
+.fs-main[data-screen='wide'] .fs-main__inner {
+  max-inline-size: 1480px;
+}
+
 /* Route change: the new screen rises in. One animation, keyed on the
    path, so the eye is told "you moved" without a spinner or a blank. */
 .fs-route {

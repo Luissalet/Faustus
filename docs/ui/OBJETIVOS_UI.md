@@ -140,6 +140,8 @@ proporcionales, auditoría de la guía Vercel pasada o excepción documentada,
       Galería (álbumes, etiquetas, favoritas, subir, visor, a chat: lote Z);
       editor de imagen completo en React (`/library/edit`, lote Z2: capas, máscaras,
       ajustes, selección, inpaint, quitar fondo, filtros, borradores, «Pide»);
+      Correo completo (`/email`, lote AB: triaje, etiquetas, urgencia, IA,
+      redactar con adjuntos y programación, bandeja de salida, bajas, ajustes);
       Biblioteca completa (documentos con importar/ordenar/exportar, chats, investigación,
       archivo) y editor de documentos a pantalla completa (`/documents/{id}`: barra
       Markdown, buscar, vistas, ejecutar, versiones con revisión, exportar, PDF con campos,

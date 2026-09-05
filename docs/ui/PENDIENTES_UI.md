@@ -596,3 +596,26 @@ su área y baja el baseline. Ningún módulo Studio nuevo la aumenta.
 102. **`[ ]`** La lista de chats de la biblioteca es cliente (`/api/sessions` ya
     trae todo): con miles de chats convendría paginar en el servidor.
 
+## Lote AB (correo completo)
+
+103. **`[→]`** En el 7001 (modo fixture, sin IMAP) solo se pueden probar de
+    verdad listar, leer, resumir, traducir, redactar con IA, programar y la
+    bandeja de salida; estrella, leído/no leído, hecho, archivar, mover y
+    borrar responden `success:false` («Mail operation failed») y la pantalla lo
+    enseña tal cual (la anterior no miraba el cuerpo y decía «Con estrella»
+    aunque fallara). Se prueban con una cuenta IMAP real.
+104. **`[ ]`** `PUT /api/email/config` crea una fila `EmailAccount` «Default»
+    si no hay ninguna (el servidor mete las credenciales ahí): guardar los
+    ajustes del correo sin cuenta deja una cuenta vacía en el selector. Es del
+    servidor (`update_email_config`); la pantalla no lo ha tocado en el 7001.
+105. **`[ ]`** El idioma por defecto de la traducción (`email_translate_language`)
+    se lee de la configuración pero no hay ruta que lo escriba salvo
+    `/api/settings`; el diálogo lo muestra, no lo edita.
+106. **`[ ]`** El popover «Redactar con IA» se queda abierto mientras el modelo
+    escribe (el botón muestra el giro); cerrarlo al pulsar sería más limpio,
+    pero `Popover` no es controlado.
+107. **`[→]`** La conversación en burbujas (`thread_turns`), la firma plegada
+    (`sender_signature`), las imágenes `cid:` y los adjuntos diferidos están
+    escritos contra el contrato de `/read` pero el fixture no los devuelve:
+    sin probar con correo real.
+
