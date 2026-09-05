@@ -1473,3 +1473,192 @@ usage: n/a	uso: n/d
 {n} tokens	{n} tokens
 {n}s left	quedan {n} s
 {size} that every other gauge counts as "other". Ollama restarted without its runners; releasing them is safe — the next request loads the model again.	{size} que el resto de medidores cuentan como «otros». Ollama se reinició sin sus runners; liberarlos es seguro — la siguiente petición vuelve a cargar el modelo.
+0 = no limit	0 = sin límite
+Accounts	Cuentas
+Add a user	Añadir un usuario
+Add the user	Añadir el usuario
+Administrator	Administrador
+Administrators only	Solo administradores
+All levels	Todos los niveles
+Allowed models	Modelos permitidos
+An extra layer with an authenticator app (Aegis, Google Authenticator and the like).	Una capa más con una app de autenticación (Aegis, Google Authenticator y similares).
+Anyone can create an account from the login page.	Cualquiera puede crear una cuenta desde la página de acceso.
+At least {n} characters.	Al menos {n} caracteres.
+Backup	Copia de seguridad
+Could not read the two-factor status.	No se ha podido leer el estado del segundo factor.
+Could not update the privilege.	No se ha podido cambiar el permiso.
+Could not update the tools.	No se han podido cambiar las herramientas.
+Current password	Contraseña actual
+Daily message limit	Límite diario de mensajes
+Danger zone	Zona de peligro
+Delete {what}? This cannot be undone.	¿Borrar {what}? No se puede deshacer.
+Deleted ({n} items).	Borrado ({n} elementos).
+Disable two-factor	Desactivar el segundo factor
+Enabled.	Activado.
+Enter the code.	Escribe el código.
+Enter your password.	Escribe tu contraseña.
+Every model allowed (no restriction)	Todos los modelos permitidos (sin restricción)
+Export downloaded.	Exportación descargada.
+Export or import your data (memories, presets, settings, skills, preferences) as one JSON file. Importing merges with what is there.	Exporta o importa tus datos (recuerdos, presets, ajustes, skills, preferencias) en un solo JSON. Importar se fusiona con lo que hay.
+Export the data	Exportar los datos
+Features	Funciones
+Fill in all the fields.	Rellena todos los campos.
+Full access to everything.	Acceso total a todo.
+Hide	Ocultar
+Import a file	Importar un fichero
+Imported.	Importado.
+Imported: {what}	Importado: {what}
+Irreversible. Each wipe targets one category; pick exactly what you want gone.	Irreversible. Cada borrado apunta a una categoría; elige exactamente lo que quieres que desaparezca.
+Limits	Límites
+Log out	Cerrar sesión
+Logs	Registro
+Make "{name}" an administrator? They will see and change everything.	¿Hacer administrador a «{name}»? Verá y cambiará todo.
+Make admin	Hacer admin
+New password	Contraseña nueva
+New username for "{name}":	Nuevo nombre para «{name}»:
+No model allowed	Ningún modelo permitido
+No models available.	No hay modelos disponibles.
+No tools.	No hay herramientas.
+No users.	No hay usuarios.
+None	Ninguno
+Open signup	Registro abierto
+Password	Contraseña
+Password (to disable it)	Contraseña (para desactivarlo)
+Password updated.	Contraseña actualizada.
+Privileges of {name}	Permisos de {name}
+QR code for the authenticator app	Código QR para la app de autenticación
+Really delete {what}?	¿Seguro que borras {what}?
+Remove the user "{name}"?	¿Quitar al usuario «{name}»?
+Repeat the new password	Repite la contraseña nueva
+Revoke admin	Quitar admin
+Revoke admin from "{name}"?	¿Quitar el admin a «{name}»?
+Scan it with the authenticator app, or type the secret by hand:	Escanéalo con la app de autenticación, o escribe el secreto a mano:
+Search the logs	Buscar en el registro
+Search the logs…	Buscar en el registro…
+Set up two-factor	Configurar el segundo factor
+Show	Mostrar
+Sign-in is off: everyone is the owner.	El acceso está apagado: todo el mundo es el dueño.
+Six-digit code	Código de seis cifras
+The Faustus process log (data/logs/app.log), newest at the bottom.	El registro del proceso de Faustus (data/logs/app.log), lo último abajo.
+The accounts of this installation, what each may use, and whether anyone can sign up.	Las cuentas de esta instalación, qué puede usar cada una y si cualquiera puede registrarse.
+The authenticator app is required on login.	La app de autenticación hace falta al entrar.
+The passwords do not match.	Las contraseñas no coinciden.
+This account cannot change the tools.	Esta cuenta no puede cambiar las herramientas.
+This account cannot manage users.	Esta cuenta no puede gestionar usuarios.
+Two-factor authentication	Autenticación en dos pasos
+Two-factor disabled.	Segundo factor desactivado.
+Two-factor enabled.	Segundo factor activado.
+Two-factor is on. Keep these backup codes somewhere safe; each works once if you lose the authenticator:	El segundo factor está activo. Guarda estos códigos de respaldo en un sitio seguro; cada uno vale una vez si pierdes la app:
+Unknown	Desconocido
+Update the password	Actualizar la contraseña
+User	Usuario
+User created.	Usuario creado.
+Username	Nombre de usuario
+Users without a default of their own inherit the global default model, when it is allowed for them.	Los usuarios sin un modelo por defecto propio heredan el global, cuando lo tienen permitido.
+Verify and enable	Verificar y activar
+What the agent may use. Off here is off for every model and every chat; MCP servers live under Integrations.	Lo que el agente puede usar. Apagado aquí es apagado para todos los modelos y chats; los servidores MCP están en Integraciones.
+Who is signed in on this browser, the password and the second factor.	Quién ha entrado en este navegador, la contraseña y el segundo factor.
+admin	admin
+all	todas
+auto-refresh	actualizar solo
+everything, in every category	todo, en todas las categorías
+last {n}	últimas {n}
+{n} model(s) allowed	{n} modelo(s) permitido(s)
+Agent mode	Modo agente
+Browser automation	Automatización del navegador
+Shell / Python / Files	Terminal / Python / Ficheros
+Document editor	Editor de documentos
+Deep research	Investigación profunda
+Image generation	Generación de imágenes
+Memory & skills	Memoria y skills
+Media	Medios
+Knowledge	Conocimiento
+Multi-agent	Multiagente
+Sessions	Sesiones
+Other	Otros
+Shell	Terminal
+Execute bash commands	Ejecuta órdenes de bash
+Run Python scripts	Ejecuta scripts de Python
+Read file	Leer fichero
+Read files from disk	Lee ficheros del disco
+Write file	Escribir fichero
+Write or create files	Escribe o crea ficheros
+Search the web via SearXNG	Busca en la web con SearXNG
+Search chats	Buscar chats
+Search the conversation history	Busca en el historial de conversaciones
+Create new documents	Crea documentos nuevos
+Modify existing documents	Modifica documentos existentes
+Find and replace in documents	Busca y sustituye en documentos
+Suggest changes	Sugerir cambios
+Propose document edits	Propone cambios en documentos
+Manage documents	Gestionar documentos
+List, delete, organise documents	Lista, borra y organiza documentos
+Create images with a model	Crea imágenes con un modelo
+Save and recall memories	Guarda y recupera recuerdos
+Learn and use procedures	Aprende y usa procedimientos
+RAG / documents	RAG / documentos
+Query the indexed documents	Consulta los documentos indexados
+Chat with a model	Hablar con un modelo
+Talk to another model	Habla con otro modelo
+Pipeline	Pipeline
+Multi-step model workflows	Flujos de varios pasos con modelos
+Ask the teacher	Preguntar al profesor
+Query a more capable model	Consulta a un modelo más capaz
+Send to a session	Enviar a una sesión
+Send a message to another chat	Envía un mensaje a otro chat
+Create a session	Crear una sesión
+Start a new chat session	Empieza una sesión de chat nueva
+List sessions	Listar sesiones
+Browse the existing sessions	Recorre las sesiones existentes
+Manage a session	Gestionar una sesión
+Rename, archive, configure	Renombra, archiva, configura
+List models	Listar modelos
+Show the available models	Muestra los modelos disponibles
+UI control	Control de la interfaz
+Change theme, layout, settings	Cambia tema, disposición, ajustes
+Schedule automated tasks	Programa tareas automáticas
+API call	Llamada a API
+Make HTTP requests	Hace peticiones HTTP
+Endpoints	Endpoints
+Add or remove model endpoints	Añade o quita endpoints de modelos
+MCP servers	Servidores MCP
+Manage MCP connections	Gestiona conexiones MCP
+Webhooks	Webhooks
+Configure webhook events	Configura eventos de webhook
+API tokens	Tokens de API
+Manage API access tokens	Gestiona los tokens de acceso a la API
+Change app settings	Cambia los ajustes de la app
+Screenshot	Captura de pantalla
+Capture the screen (the image goes to the model)	Captura la pantalla (la imagen va al modelo)
+List windows	Listar ventanas
+List the visible desktop windows	Lista las ventanas visibles del escritorio
+Focus a window	Enfocar una ventana
+Bring a window to the front	Trae una ventana al frente
+Click	Clic
+Mouse click (asks every time)	Clic de ratón (pregunta cada vez)
+Type text	Escribir texto
+Keyboard input (asks every time)	Entrada de teclado (pregunta cada vez)
+Key combo	Combinación de teclas
+Shortcuts like ctrl+s (asks every time)	Atajos como ctrl+s (pregunta cada vez)
+Scroll	Desplazar
+Mouse wheel (asks every time)	Rueda del ratón (pregunta cada vez)
+Delete all chats	Borrar todos los chats
+Every session, message and chat history. Documents, notes and the rest stay.	Todas las sesiones, mensajes e historial. Documentos, notas y lo demás se quedan.
+Delete all memory	Borrar toda la memoria
+Clears memory.json, the Memory table and the vector store. Skills are not affected.	Vacía memory.json, la tabla Memory y el índice vectorial. Las skills no se tocan.
+Delete all skills	Borrar todas las skills
+Drops data/skills/ (every SKILL.md). Memory is not affected.	Elimina data/skills/ (todos los SKILL.md). La memoria no se toca.
+Delete all notes	Borrar todas las notas
+Every note, to-do and checklist.	Todas las notas, tareas y listas.
+Delete all tasks	Borrar todas las tareas
+Every scheduled task and its run history.	Todas las tareas programadas y su historial de ejecuciones.
+Delete all documents	Borrar todos los documentos
+Every document and version: drafts, exports, the library.	Todos los documentos y versiones: borradores, exportaciones, la biblioteca.
+Delete all images	Borrar todas las imágenes
+Every image record and the upload folder on disk.	Todos los registros de imagen y la carpeta de subidas del disco.
+Delete the calendar	Borrar el calendario
+Every event and every calendar (CalDAV ones too; resync to restore).	Todos los eventos y calendarios (también los CalDAV; resincroniza para recuperarlos).
+Delete everything	Borrarlo todo
+All the categories above, in one go.	Todas las categorías de arriba, de una vez.
+Keys and accounts of external services: mail, CalDAV, contacts, MCP servers, agents, the vault.	Claves y cuentas de servicios externos: correo, CalDAV, contactos, servidores MCP, agentes, la bóveda.
+Installation values; for administrators, the log, the backup and the wipes.	Valores de la instalación; para administradores, el registro, la copia de seguridad y los borrados.

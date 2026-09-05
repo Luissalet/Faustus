@@ -1,6 +1,9 @@
 import {
   Bot,
   Check,
+  UserRound,
+  Users,
+  Wrench,
   ExternalLink,
   Keyboard,
   Languages,
@@ -39,6 +42,12 @@ import {
 } from '../adapters/settings';
 import './projects.css';
 import './settings.css';
+import { bool, Field, fromList, list, SaveBar, Select, str, Text, Toggle, useDraft, type Opt } from './settings/fields';
+import { AccountSection } from './settings/Account';
+import { UsersSection } from './settings/Users';
+import { ToolsSection } from './settings/Tools';
+import { SystemExtras } from './settings/SystemExtras';
+import { authStatus } from '../adapters/account';
 import { LANGS, setLang, t, tn, useLang } from '../i18n';
 import { setTheme, useTheme, type ThemeChoice } from '../shell/theme';
 
@@ -55,9 +64,9 @@ import { setTheme, useTheme, type ThemeChoice } from '../shell/theme';
  * there at their tab.
  */
 
-type SectionKey = 'general' | 'models' | 'defaults' | 'voice' | 'search' | 'reminders' | 'agent' | 'shortcuts' | 'system' | 'legacy';
+type SectionKey = 'general' | 'models' | 'defaults' | 'voice' | 'search' | 'reminders' | 'agent' | 'tools' | 'shortcuts' | 'account' | 'users' | 'system' | 'legacy';
 
-const SECTIONS: { key: SectionKey; label: string; icon: typeof Bot }[] = [
+const SECTIONS: { key: SectionKey; label: string; icon: typeof Bot; admin?: boolean }[] = [
   { key: 'general', label: 'General', icon: Languages },
   { key: 'models', label: 'Models', icon: Server },
   { key: 'defaults', label: 'Default AI', icon: Sparkles },
@@ -65,110 +74,22 @@ const SECTIONS: { key: SectionKey; label: string; icon: typeof Bot }[] = [
   { key: 'search', label: 'Search', icon: Search },
   { key: 'reminders', label: 'Reminders', icon: Check },
   { key: 'agent', label: 'Agent', icon: Bot },
+  { key: 'tools', label: 'Tools', icon: Wrench, admin: true },
   { key: 'shortcuts', label: 'Shortcuts', icon: Keyboard },
+  { key: 'account', label: 'Account', icon: UserRound },
+  { key: 'users', label: 'Users', icon: Users, admin: true },
   { key: 'system', label: 'System', icon: Settings2 },
   { key: 'legacy', label: 'In the previous interface', icon: Plug },
 ];
 
 const LEGACY_TABS: { tab: string; label: string; help: string }[] = [
   { tab: 'local-models', label: 'Local models', help: 'Download and serve models on this machine (Ollama, llama.cpp).' },
-  { tab: 'integrations', label: 'Integrations', help: 'Keys and accounts of external services used by mail, reminders and the tools.' },
-  { tab: 'email', label: 'Mail accounts', help: 'IMAP/SMTP, Google, writing style and urgency.' },
-  { tab: 'tools', label: 'Tools and MCP', help: 'MCP servers, OAuth and their tools.' },
-  { tab: 'account', label: 'Account', help: 'Password, two-factor, API tokens, vault.' },
-  { tab: 'users', label: 'Users', help: 'The accounts of this installation and their permissions.' },
+  { tab: 'integrations', label: 'Integrations', help: 'Keys and accounts of external services: mail, CalDAV, contacts, MCP servers, agents, the vault.' },
   { tab: 'appearance', label: 'Appearance and theme', help: 'The previous interface\'s colour editor; Studio uses its tokens and honours the saved themes.' },
 ];
 
 function legacyHref(tab: string): string {
   return `/?shell=legacy#settings/${tab}`;
-}
-
-/* ── Field primitives ── */
-
-type Opt = { value: string; label: string };
-
-function Field({ label, help, htmlFor, children }: { label: string; help?: string; htmlFor?: string; children: ReactNode }) {
-  return (
-    <div className="fs-set__field">
-      <label className="fs-set__label" htmlFor={htmlFor}>
-        {label}
-      </label>
-      <div className="fs-set__control">{children}</div>
-      {help && <p className="fs-set__help">{help}</p>}
-    </div>
-  );
-}
-
-function Toggle({ id, checked, onChange, label }: { id: string; checked: boolean; onChange: (v: boolean) => void; label?: string }) {
-  return (
-    <label className="fs-set__toggle" htmlFor={id}>
-      <input id={id} type="checkbox" role="switch" checked={checked} onChange={(e) => onChange(e.target.checked)} />
-      <span className="fs-set__toggle-track" aria-hidden="true" />
-      {label && <span>{label}</span>}
-    </label>
-  );
-}
-
-function Select({ id, value, options, onChange, allowEmpty }: { id: string; value: string; options: Opt[]; onChange: (v: string) => void; allowEmpty?: string }) {
-  const known = options.some((o) => o.value === value);
-  return (
-    <select id={id} className="fs-field" value={value} onChange={(e) => onChange(e.target.value)}>
-      {allowEmpty !== undefined && <option value="">{allowEmpty}</option>}
-      {!known && value && <option value={value}>{value}</option>}
-      {options.map((o) => (
-        <option key={o.value} value={o.value}>
-          {o.label}
-        </option>
-      ))}
-    </select>
-  );
-}
-
-function Text({ id, value, onChange, type = 'text', placeholder, secret }: { id: string; value: string; onChange: (v: string) => void; type?: string; placeholder?: string; secret?: boolean }) {
-  return <input id={id} type={secret ? 'password' : type} className="fs-field" value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} autoComplete={secret ? 'new-password' : 'off'} />;
-}
-
-/* A section with its own draft, dirty flag and Save. */
-function useDraft(settings: Settings | null, keys: string[]) {
-  const [draft, setDraft] = useState<Settings>({});
-  useEffect(() => {
-    if (!settings) return;
-    const next: Settings = {};
-    for (const k of keys) next[k] = settings[k];
-    setDraft(next);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings]);
-  const set = (k: string, v: unknown) => setDraft((d) => ({ ...d, [k]: v }));
-  const changed = useMemo(() => {
-    const out: Settings = {};
-    if (!settings) return out;
-    for (const k of keys) if (JSON.stringify(draft[k]) !== JSON.stringify(settings[k])) out[k] = draft[k];
-    return out;
-  }, [draft, settings, keys]);
-  return { draft, set, changed, dirty: Object.keys(changed).length > 0 };
-}
-
-function str(v: unknown, fallback = ''): string {
-  return v === null || v === undefined ? fallback : String(v);
-}
-function bool(v: unknown): boolean {
-  return v === true || v === 'true' || v === 1;
-}
-function list(v: unknown): string {
-  return Array.isArray(v) ? v.join(', ') : str(v);
-}
-function fromList(s: string): string[] {
-  return s.split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
-}
-
-function SaveBar({ dirty, saving, onSave, note }: { dirty: boolean; saving: boolean; onSave: () => void; note?: string }) {
-  return (
-    <div className="fs-set__save" data-dirty={dirty || undefined}>
-      <span className="fs-set__save-note">{dirty ? t('There are unsaved changes.') : note ?? t('No changes.')}</span>
-      <Button variant="primary" size="sm" label={t('Save')} disabled={!dirty} loading={saving} onClick={onSave} testId="settings-save" />
-    </div>
-  );
 }
 
 /* ── Models: endpoints ── */
@@ -669,7 +590,7 @@ function GeneralSection() {
   );
 }
 
-function SystemSection({ settings, onSave, say }: { settings: Settings | null; onSave: (patch: Settings) => Promise<void>; say: (t: string) => void }) {
+function SystemSection({ settings, onSave, say, admin }: { settings: Settings | null; onSave: (patch: Settings) => Promise<void>; say: (t: string) => void; admin: boolean }) {
   const { draft, set, changed, dirty } = useDraft(settings, SYSTEM_KEYS);
   const { saving, save } = useSaver(onSave, say);
   if (!settings) return <Skeleton label={t('Loading')} count={3} height="56px" />;
@@ -678,7 +599,7 @@ function SystemSection({ settings, onSave, say }: { settings: Settings | null; o
       <header className="fs-set__section-head">
         <div>
           <h2 id="fs-set-sys" className="fs-set__title">Sistema</h2>
-          <p className="fs-prose">{t('Installation values. What is not here (users, tokens, vault, 2FA) is still in the previous interface.')}</p>
+          <p className="fs-prose">{t('Installation values; for administrators, the log, the backup and the wipes.')}</p>
         </div>
       </header>
       <Field label={t('Public URL')} htmlFor="pub" help={t('For the links in mail or webhook alerts: https://chat.example.com')}>
@@ -710,6 +631,7 @@ function SystemSection({ settings, onSave, say }: { settings: Settings | null; o
         </Field>
       </div>
       <SaveBar dirty={dirty} saving={saving} onSave={() => void save(changed)} />
+      {admin && <SystemExtras say={say} />}
     </section>
   );
 }
@@ -938,7 +860,11 @@ export function SettingsScreen() {
   const [endpoints, setEndpoints] = useState<ModelEndpoint[] | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [admin, setAdmin] = useState(false);
   const epReload = useRef(0);
+  useEffect(() => {
+    authStatus().then((st) => setAdmin(st.is_admin === true || st.auth_enabled === false)).catch(() => {});
+  }, []);
 
   const say = useCallback((t: string) => {
     setNotice(t);
@@ -1008,7 +934,7 @@ export function SettingsScreen() {
       </header>
       <div className="fs-set__layout">
         <nav className="fs-set__nav" aria-label={t('Sections')}>
-          {SECTIONS.map((s) => (
+          {SECTIONS.filter((s) => !s.admin || admin).map((s) => (
             <button key={s.key} type="button" className="fs-set__nav-item" data-on={section === s.key || undefined} onClick={() => setSection(s.key)}>
               <s.icon size={14} aria-hidden="true" />
               {t(s.label)}
@@ -1023,8 +949,11 @@ export function SettingsScreen() {
           {section === 'search' && <SearchSection settings={settings} onSave={onSave} say={say} />}
           {section === 'reminders' && <RemindersSection settings={settings} onSave={onSave} say={say} />}
           {section === 'agent' && <AgentSection settings={settings} onSave={onSave} say={say} />}
+          {section === 'tools' && <ToolsSection say={say} />}
           {section === 'shortcuts' && <ShortcutsSection settings={settings} onSave={onSave} say={say} />}
-          {section === 'system' && <SystemSection settings={settings} onSave={onSave} say={say} />}
+          {section === 'account' && <AccountSection say={say} />}
+          {section === 'users' && <UsersSection say={say} />}
+          {section === 'system' && <SystemSection settings={settings} onSave={onSave} say={say} admin={admin} />}
           {section === 'legacy' && <LegacySection />}
         </div>
       </div>

@@ -454,3 +454,15 @@ su área y baja el baseline. Ningún módulo Studio nuevo la aumenta.
     muestra al selector de modelo para «Ajustar a la VRAM». El selector de
     Studio no tiene ese mando todavía; cuando lo tenga, `useUsage()` ya
     expone la última muestra.
+
+## Añadido tras el lote R (05-09-2026, Ajustes: cuenta, usuarios, herramientas)
+
+75. **`[~]` `/api/tools` devuelve etiquetas, no ids.** La tabla `TOOL_META`
+    (nombre, descripción, familia) que la anterior mantenía a mano no casa
+    con `TOOL_TAGS`: todas las herramientas caen en «Otros» con su etiqueta
+    cruda, en las dos interfaces. Lo honesto es que el servidor devuelva
+    familia y descripción con cada etiqueta.
+76. **`[~]` El 7001 corre con cuentas.** `/api/auth/status` sin cookie dice
+    `authenticated: false`; las pantallas de admin piden sesión
+    (`POST /api/auth/login {username, password}` desde la consola para
+    probar). Studio muestra «Solo administradores» en vez de un error.
