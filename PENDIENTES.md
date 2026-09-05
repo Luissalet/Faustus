@@ -430,3 +430,29 @@ tokens `ody_`, y B-004; el registro está en `FAUSTUS.md` §43. Lo que **no** ci
   la sella y la marca (`tier: UNKNOWN`, `rule: guard.degraded:*`); Studio la enseña como
   cualquier otra tarjeta de comando destructivo. Debería decir que no se sabe qué hace, que no
   es lo mismo que saber que es peligroso (va en `docs/ui/PENDIENTES_UI.md`).
+
+## Sprint 0B: lo cerrado, y lo que deja abierto
+
+El Sprint 0B (rama `feat/sec-1`, 05-09-2026) cierra B-002, B-003, B-005, B-006 y B-018 de la
+auditoría; el registro está en `FAUSTUS.md` §44. Lo que **no** cierra:
+
+- `[!]` **B-007 sigue abierto: «ofrecido y luego rechazado».** Era el sexto del sprint y se ha
+  separado a propósito. `suggest_document` puede aparecer en el conjunto de herramientas y
+  fallar al ejecutarse con *"No active document to suggest on"*. El informe pide una **única
+  función de disponibilidad evaluable en el momento de uso**, una transición de estado
+  explicable cuando una herramienta deja de valer, y que el conjunto se actualice para la
+  ronda siguiente. Podarla en el preflight ya se probó y se revirtió: el preflight corre una
+  vez y un documento puede abrirse *durante* el turno.
+- `[+]` **La misma política de UTC falta en `chat_export.py`.** B-005 se arregló donde el
+  informe lo señala (`report_export.py`), pero `chat_export.py:692` sigue usando
+  `datetime.now()` sin zona y su nombre de fichero (`:1467`) sale de ahí. Es el mismo fallo,
+  fuera del alcance del lote; el arreglo es una línea y un repaso de los tests que fijan la
+  cadena *"Exported: ..."*.
+- `[?]` **`semver_key` acepta lo que acepta el validador, que es más laxo que semver.org.**
+  El regex del contrato permite identificadores de prerelease con ceros a la izquierda
+  (`1.0.0-01`), que la especificación prohíbe. Se ha dejado como estaba para no invalidar
+  datos ya escritos; la ordenación los trata como numéricos, que es lo razonable.
+- `[~]` **El resto de factories de rutas no se han revisado una a una.** El guard de
+  `tests/test_route_factory_isolation.py` impide que aparezca un `APIRouter` de módulo nuevo,
+  pero no dice nada de otras formas de estado global en `routes/` (cachés, managers guardados
+  en el módulo). Nadie ha buscado esas.

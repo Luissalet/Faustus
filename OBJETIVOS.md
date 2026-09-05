@@ -233,6 +233,7 @@ reparte los lotes). El orden lo fija el propio informe, y SEC-1 va antes que nad
 
 | Lote | Qué entrega | Estado |
 |---|---|---|
+| **Sprint 0B** | Los parches pequeños de la auditoría: B-002, B-003, B-005, B-006, B-018 | ✅ 05-09-2026 — `FAUSTUS.md` §44, rama `feat/sec-1`, 1 commit, 37 tests nuevos. Deja B-007 (ofrecido y luego rechazado) abierto |
 | **SEC-1** | Logs OAuth, herencia de secretos, prompts en argv, credenciales reutilizables y backup inseguro | ✅ 05-09-2026 — `FAUSTUS.md` §42, rama `feat/sec-1`, 5 commits, 90 tests nuevos. Lo que no cubre está en `PENDIENTES.md` |
 | **AUTH-1** | Matriz declarativa de autorización y scopes fail-closed | ✅ 05-09-2026 — `FAUSTUS.md` §43, rama `feat/sec-1`, 2 commits, 42 tests nuevos. B-011 + C-010 (tokens) y B-004 |
 | NET-1 | Broker de salida con perfiles de confianza | ⏳ el siguiente por prioridad del informe |

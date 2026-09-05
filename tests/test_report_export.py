@@ -504,3 +504,94 @@ def test_available_formats_reports_a_missing_package_as_false(monkeypatch):
     assert formats["docx"] is False and formats["pdf"] is False
     assert formats["md"] is True
     report_export.available_formats(refresh=True)   # leave the cache honest
+
+
+# ---------------------------------------------------------------------------
+# B-005 — the export name must not follow the server's clock
+#
+# `datetime.fromtimestamp(ts)` applies the machine's local zone, so the same
+# report exported in Madrid and in London got two different filenames for the
+# same instant. The policy now: UTC for anything stored, named or compared.
+# ---------------------------------------------------------------------------
+
+import os
+import time as _time
+from datetime import datetime as _datetime, timedelta as _timedelta, timezone as _timezone
+
+from src.report_export import _time_of
+
+INSTANT = 1772000182.4                       # 2026-02-25T06:16:22.4Z
+UTC_STAMP = "20260225_061622"
+
+
+def test_time_of_always_returns_an_aware_utc_datetime():
+    for value in (INSTANT,
+                  "2026-02-25T06:16:22.4+00:00",
+                  "2026-02-25T06:16:22.4Z",
+                  "2026-02-25T07:16:22.4+01:00",
+                  "2026-02-25T06:16:22.4"):          # naive is read as UTC
+        parsed = _time_of({"completed_at": value}, "completed_at")
+        assert parsed is not None, value
+        assert parsed.tzinfo is not None, value
+        assert parsed.utcoffset() == _timedelta(0), value
+        assert parsed.strftime("%Y%m%d_%H%M%S") == UTC_STAMP, value
+
+
+def test_the_same_instant_in_three_notations_gives_one_name():
+    """Unix timestamp, ISO with Z, ISO with an offset — one filename."""
+    names = {
+        report_filename(research_json(completed_at=value), "md")
+        for value in (INSTANT,
+                      "2026-02-25T06:16:22.4Z",
+                      "2026-02-25T07:16:22.4+01:00")
+    }
+    assert len(names) == 1
+    assert UTC_STAMP in names.pop()
+
+
+def test_the_filename_ignores_the_machines_local_zone():
+    """The portable half of "run it in three zones".
+
+    On a machine that is not on UTC the local rendering of this instant is a
+    different string; the name must be the UTC one either way.
+    """
+    local = _datetime.fromtimestamp(INSTANT).strftime("%Y%m%d_%H%M%S")
+    name = report_filename(research_json(completed_at=INSTANT), "md")
+    assert UTC_STAMP in name
+    if local != UTC_STAMP:
+        assert local not in name
+
+
+@pytest.mark.skipif(not hasattr(_time, "tzset"),
+                    reason="TZ only takes effect at runtime on POSIX")
+def test_three_real_timezones_produce_the_same_name():
+    """The literal acceptance criterion, where the platform allows it."""
+    previous = os.environ.get("TZ")
+    names = set()
+    try:
+        for zone in ("UTC", "Europe/Madrid", "Pacific/Auckland"):
+            os.environ["TZ"] = zone
+            _time.tzset()
+            names.add(report_filename(research_json(completed_at=INSTANT), "md"))
+    finally:
+        if previous is None:
+            os.environ.pop("TZ", None)
+        else:
+            os.environ["TZ"] = previous
+        _time.tzset()
+    assert len(names) == 1
+    assert UTC_STAMP in names.pop()
+
+
+def test_the_metadata_line_is_the_utc_instant_too():
+    md = text_of(research_json(completed_at=INSTANT))
+    assert "Completed 2026-02-25 06:16" in md
+
+
+def test_a_garbage_time_is_ignored_rather_than_guessed():
+    assert _time_of({"completed_at": "not a date"}, "completed_at") is None
+    assert _time_of({"completed_at": 0}, "completed_at") is None
+    assert _time_of({"completed_at": None}, "completed_at") is None
+    # ...and the filename falls back to now, in UTC, not to a crash.
+    name = report_filename({"query": "x", "completed_at": "not a date"}, "md")
+    assert name.endswith(".md") and len(name) > 5

@@ -92,19 +92,24 @@ def _image_upload(name="photo.png", content=b"not really png but enough for rout
 
 
 @pytest.fixture(autouse=True)
-def _reset_router(monkeypatch):
-    # Module-level router accumulates routes across setup calls; reset it.
-    monkeypatch.setattr(up, "router", APIRouter(prefix="/api/upload", tags=["upload"]))
+def _frozen_clock(monkeypatch):
+    # B-006: no router to reset any more — setup_upload_routes builds its own,
+    # so each call here starts from an empty one by construction.
     # Freeze time so the seeded "recent upload" is deterministic.
     monkeypatch.setattr(up.time, "time", lambda: _NOW)
+
+
+def _upload_endpoint(handler):
+    """Wire the routes for this handler and hand back the upload endpoint."""
+    router, _cleanup = up.setup_upload_routes(handler)
+    return _endpoint(router)
 
 
 async def test_multifile_after_a_recent_upload_is_not_rejected():
     """The bug: one prior upload + a 3-file batch -> 429. Must now succeed."""
     h = _fake_handler()
     h.upload_rate_log["1.2.3.4"] = [_NOW - 1]  # step 1: a single file moments ago
-    up.setup_upload_routes(h)
-    endpoint = _endpoint(up.router)
+    endpoint = _upload_endpoint(h)
 
     result = await endpoint(_request(), _files(3))
 
@@ -113,8 +118,7 @@ async def test_multifile_after_a_recent_upload_is_not_rejected():
 
 async def test_fresh_multifile_upload_succeeds():
     h = _fake_handler()
-    up.setup_upload_routes(h)
-    endpoint = _endpoint(up.router)
+    endpoint = _upload_endpoint(h)
 
     result = await endpoint(_request(), _files(5))
 
@@ -127,8 +131,7 @@ async def test_genuine_recent_volume_still_throttled():
 
     h = _fake_handler()
     h.upload_rate_log["1.2.3.4"] = [_NOW - 1, _NOW - 2, _NOW - 3]  # 3 recent events
-    up.setup_upload_routes(h)
-    endpoint = _endpoint(up.router)
+    endpoint = _upload_endpoint(h)
 
     with pytest.raises(HTTPException) as ei:
         await endpoint(_request(), _files(1))
@@ -191,8 +194,7 @@ async def test_chat_image_upload_is_added_to_gallery(tmp_path, monkeypatch):
     monkeypatch.setattr(up, "GENERATED_IMAGES_DIR", str(gallery_dir))
 
     h = UploadHandler(base_dir=str(tmp_path), upload_dir=str(tmp_path / "uploads"))
-    up.setup_upload_routes(h)
-    endpoint = _endpoint(up.router)
+    endpoint = _upload_endpoint(h)
 
     result = await endpoint(_request(user="alice"), [_image_upload()])
     uploaded = result["files"][0]
@@ -222,8 +224,7 @@ async def test_non_image_chat_upload_is_not_added_to_gallery(tmp_path, monkeypat
     monkeypatch.setattr(up, "GENERATED_IMAGES_DIR", str(tmp_path / "generated_images"))
 
     h = UploadHandler(base_dir=str(tmp_path), upload_dir=str(tmp_path / "uploads"))
-    up.setup_upload_routes(h)
-    endpoint = _endpoint(up.router)
+    endpoint = _upload_endpoint(h)
 
     result = await endpoint(_request(user="alice"), [types.SimpleNamespace(
         filename="notes.txt",

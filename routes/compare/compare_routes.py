@@ -16,8 +16,6 @@ from routes.session_routes import _reject_raw_endpoint_url_for_non_admin
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/compare", tags=["compare"])
-
 
 def _owned_endpoint_by_url(db, base_url, owner):
     """ModelEndpoint whose base_url == `base_url` and is VISIBLE to `owner`
@@ -66,6 +64,12 @@ class RecordVoteRequest(BaseModel):
 
 def setup_compare_routes(session_manager: SessionManager):
     """Setup comparison routes."""
+
+    # B-006: built here, not at import time. A module-level router
+    # accumulates a copy of every route on each setup call, each closed
+    # over a different manager, and lookups then hit whichever copy they
+    # happen to find first.
+    router = APIRouter(prefix="/api/compare", tags=["compare"])
 
     @router.post("/start")
     def start_comparison(

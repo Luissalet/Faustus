@@ -37,7 +37,7 @@ import secrets
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
-from src.contracts.base import ContractError, fingerprint
+from src.contracts.base import ContractError, fingerprint, is_semver, semver_key
 
 logger = logging.getLogger(__name__)
 
@@ -203,6 +203,17 @@ def parse(raw: Any, *, source: str = "") -> MediaWorkflow:
         if not raw.get(required):
             raise TemplateError(f"{path}.{required}", "is required")
 
+    # B-018: rejected here, when the template is registered, rather than
+    # discovered when something tries to order it against another version.
+    if not is_semver(raw.get("version")):
+        raise TemplateError(
+            f"{path}.version",
+            "must be a semantic version like 1.10.0 — versions are ordered by "
+            "precedence, not as text, and a string that is not one cannot be "
+            "placed",
+            got=raw.get("version"),
+        )
+
     inputs_raw = raw.get("inputs") or {}
     if not isinstance(inputs_raw, Mapping):
         raise TemplateError(f"{path}.inputs", "expected an object keyed by name",
@@ -319,12 +330,24 @@ def catalogue(*, directory: Optional[str] = None) -> Dict[str, Any]:
 
 def load(workflow_id: str, version: str = "", *,
          directory: Optional[str] = None) -> Optional[MediaWorkflow]:
-    """One template by id, newest version unless one is named."""
+    """One template by id, highest-precedence version unless one is named.
+
+    B-018 — this used to sort `w.version` as text, which put `1.9.0` above
+    `1.10.0` and quietly ran the older template. It sorts by semver precedence
+    now (`src.contracts.base.semver_key`), so a prerelease never outranks the
+    release it precedes either.
+
+    Build metadata carries no precedence, so `1.0.0+a` and `1.0.0+b` tie; the
+    tie is broken by the version string itself, purely so the answer is the
+    same on every machine and every listing order. Two templates that differ
+    only in build metadata are a packaging mistake, not a choice this function
+    can make well.
+    """
     found = [w for w in catalogue(directory=directory)["workflows"]
              if w.id == workflow_id and (not version or w.version == version)]
     if not found:
         return None
-    return sorted(found, key=lambda w: w.version)[-1]
+    return max(found, key=lambda w: (semver_key(w.version), w.version))
 
 
 # ── filling one in ────────────────────────────────────────────────────────

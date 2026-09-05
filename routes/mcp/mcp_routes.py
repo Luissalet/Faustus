@@ -27,8 +27,6 @@ from src.mcp_manager import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/mcp", tags=["mcp"])
-
 
 def _mcp_oauth_base_dir() -> Path:
     """Directory that may contain OAuth files managed by Faustus."""
@@ -125,6 +123,12 @@ def _mcp_oauth_redirect_uri() -> str:
 
 def setup_mcp_routes(mcp_manager: McpManager):
     """Setup MCP routes with the provided manager."""
+
+    # B-006: built here, not at import time. A module-level router
+    # accumulates a copy of every route on each setup call, each closed
+    # over a different manager, and lookups then hit whichever copy they
+    # happen to find first.
+    router = APIRouter(prefix="/api/mcp", tags=["mcp"])
 
     @router.get("/servers")
     def list_servers(request: Request):

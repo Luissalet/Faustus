@@ -32,7 +32,6 @@ from src.upload_handler import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/upload", tags=["upload"])
 UPLOAD_RESPONSE_HEADERS = {"X-Content-Type-Options": "nosniff"}
 
 def _upload_ids_from_persisted_text(value: object) -> set[str]:
@@ -146,6 +145,12 @@ def _run_reference_safe_cleanup(upload_handler) -> int:
 
 def setup_upload_routes(upload_handler):
     """Setup upload routes with the provided handler"""
+
+    # B-006: built here, not at import time. A module-level router
+    # accumulates a copy of every route on each setup call, each closed
+    # over a different manager, and lookups then hit whichever copy they
+    # happen to find first.
+    router = APIRouter(prefix="/api/upload", tags=["upload"])
 
     def _upload_root() -> str:
         from src.constants import UPLOAD_DIR

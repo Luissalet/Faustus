@@ -4,7 +4,7 @@ import json
 from datetime import datetime, timedelta
 
 import pytest
-from fastapi import APIRouter, FastAPI
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from starlette.requests import Request
 from sqlalchemy import create_engine, event
@@ -146,11 +146,8 @@ def test_production_router_order_reaches_bounded_canonical_history(monkeypatch):
             raise AssertionError("bounded initial history must not hydrate all messages")
 
     manager = DisplayOnlyManager()
-    monkeypatch.setattr(
-        session_routes,
-        "router",
-        APIRouter(prefix="/api", tags=["sessions"]),
-    )
+    # B-006: setup_session_routes() builds its own router now, so there is no
+    # module-level one to swap out before calling it.
     monkeypatch.setattr(history_routes, "SessionLocal", db_factory)
     monkeypatch.setattr(history_routes, "_verify_session_owner", lambda *_args: None)
 

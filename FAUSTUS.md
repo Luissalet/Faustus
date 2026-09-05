@@ -2394,5 +2394,96 @@ verificando (31 registros, `ok: true`).
   ampliar la superficie de los tokens es un diff que alguien tiene que firmar.
 
 
+## 44. Sprint 0B: cinco fallos pequeños que nadie miraba (05-09-2026, noche)
+
+Cinco bugs P1/P2 de la auditoría en un solo commit, porque son independientes entre sí y
+ninguno justifica una rama: B-002, B-003, B-005, B-006 y B-018. Tienen algo en común que
+merece decirse: **cuatro de los cinco los tapaba un `except` demasiado ancho, un orden
+implícito o un test que fijaba el síntoma**. Ninguno se veía desde fuera.
+
+### 44.1 Las exclusiones de recurrencia desaparecían (B-002)
+
+`caldav_writeback.py` importaba `timezone` y usaba `datetime.strptime` sin importar
+`datetime`. Cada `EXDATE` lanzaba `NameError`, el `except Exception` lo registraba como *"skipping
+unparseable exdate"* y el evento salía hacia iCloud o Nextcloud sin exclusiones: la instancia
+que el usuario había borrado volvía en la siguiente sincronización.
+
+El arreglo no es la línea del import. Es que ahora hay un `parse_exdate()` explícito —
+`YYYY-MM-DD` para series de día entero, `YYYY-MM-DDTHH:MM` para las demás, y también lo que
+devuelve un servidor: segundos, `Z`, offset (un offset explícito gana a la suposición de
+`is_utc`, porque es el único dato de zona que no es una conjetura)— y que el `except` está
+partido en dos: `ValueError` es un valor malo del usuario y se salta con diagnóstico;
+cualquier otra cosa es un bug nuestro y se registra como excepción. Esa distinción es
+exactamente la que faltaba, y es la que habría hecho visible el `NameError` el primer día.
+
+13 tests nuevos, incluido el round trip ICS → modelo → ICS.
+
+### 44.2 El manejador de errores que lanzaba otro error (B-003)
+
+`/api/cookbook/hf-gguf-files` recibe `repo_id` y su `except` registraba `repo`. Cualquier
+corte de red terminaba en `NameError` y 500 en vez del `{"ok": false}` que el frontend sabe
+enseñar. Ahora hay cuatro respuestas tipadas —timeout, red, JSON inválido, lo demás— y una
+comprobación de forma: un `200` con una lista donde debía haber un objeto era un
+`AttributeError`, y ahora es *"unexpected payload"*.
+
+### 44.3 El nombre del informe dependía del reloj del servidor (B-005)
+
+`datetime.fromtimestamp(ts)` sin zona aplica la del sistema. El mismo informe exportado en
+Madrid y en Londres salía con dos nombres distintos y dos líneas de metadatos distintas para
+el mismo instante. La política queda escrita una vez, en `_time_of`: **UTC para todo lo que se
+almacena, se nombra o se compara; la zona del lector sólo para presentación, que no es asunto
+de este módulo.**
+
+Detalle que vale la pena: **cuatro de los tests que fallaban en el árbol de Luis eran esto**.
+Estaban escritos contra UTC y fallaban en Madrid desde siempre. No eran flaky, eran el bug.
+
+### 44.4 Las factories de rutas compartían un router (B-006)
+
+Cinco módulos declaraban `router = APIRouter(...)` al importar, y cada
+`setup_*_routes(manager)` añadía sus rutas al mismo objeto, cada tanda cerrada sobre un
+manager distinto. Buscar una ruta por path podía devolver la closure de otro. Es el fallo que
+colgó un test de SEC-1: la ruta encontrada llamaba al `McpManager` de otro test y `connect_server`
+intentaba lanzar `npx` de verdad.
+
+Ahora el router se construye dentro de la factory. Lo interesante no es el arreglo, son las
+**siete suites que vivían esquivándolo**: una guardaba y restauraba `sr.router.routes`, otra
+monkeypatcheaba un `APIRouter` nuevo encima del módulo, otra hacía `router.routes[before:]`
+para quedarse sólo con las suyas. Todas esas líneas se han ido, y con ellas el comentario que
+explicaba por qué hacían falta. Un test que necesita explicar cómo evita un fallo del código
+es el fallo, documentado.
+
+`tests/test_route_factory_isolation.py` construye dos de todo y comprueba que no se tocan:
+routers distintos, mismo número de rutas, y —lo que de verdad importa— que las closures de un
+router **no alcanzan** el manager del otro. Con el árbol anterior en stash: 11 de 11 en rojo.
+
+### 44.5 «La versión más reciente» se ordenaba como texto (B-018)
+
+`media_workflows.load()` hacía `sorted(found, key=lambda w: w.version)[-1]`, así que `1.9.0`
+quedaba por encima de `1.10.0` y Faustus ejecutaba la plantilla vieja teniendo la nueva al
+lado. La comparación vive ahora en `src/contracts/base.semver_key()`, junto al validador que
+ya definía qué es una versión: precedencia semver.org §11 completa, con prereleases por debajo
+de su release y metadatos de build sin precedencia ninguna.
+
+Que los metadatos de build no ordenen tiene una consecuencia que hay que decir en voz alta:
+`1.0.0+a` y `1.0.0+b` **empatan**. `load()` rompe el empate por la cadena de versión, no
+porque signifique nada, sino para que la respuesta sea la misma en todas las máquinas. Dos
+plantillas que sólo se diferencian en el build son un error de empaquetado.
+
+Y lo segundo que pedía el informe: una versión inválida se rechaza **al registrar**. Un
+`version: "banana"` sale ahora en `broken` del catálogo, con el campo señalado, en vez de
+colarse hasta el momento en que alguien intenta ordenarla.
+
+### 44.6 Lo que este sprint enseñó
+
+- **Un `except Exception` que registra en `debug` es un sitio donde esconder un bug durante
+  meses.** B-002 y B-003 son el mismo error dos veces: capturar todo y llamarlo dato malo.
+  La regla que queda: el error del usuario y el error nuestro no comparten `except`.
+- **Un test verde puede estar describiendo el fallo.** Los cuatro de B-005 fallaban en la
+  máquina de Luis y pasaban en CI; los siete módulos de B-006 pasaban precisamente porque
+  cada uno esquivaba el problema a su manera.
+- **Ordenar es una decisión de dominio.** `sorted(key=str)` sobre versiones no es un atajo,
+  es una política equivocada escrita sin querer.
+
+
 ## Cómo mantener este documento
 Cada bloque de trabajo añade una sección (fecha, qué, por qué, ficheros, cómo se verificó, cifras) y actualiza las cifras de cabecera (`git log --oneline c9dd68d8..HEAD | wc -l`, `git diff --stat c9dd68d8..HEAD`). Los commits del fork llevan mensajes largos que explican el porqué: `git log c9dd68d8..HEAD` es la fuente detallada.

@@ -3879,15 +3879,29 @@ def setup_cookbook_routes() -> APIRouter:
             async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
                 resp = await client.get(url, headers=headers)
                 if resp.status_code != 200:
+                    logger.warning("HF GGUF file scan for %s: HTTP %s", repo_id, resp.status_code)
                     return {"ok": False, "files": [], "error": f"HF API HTTP {resp.status_code}"}
                 data = resp.json()
+        except httpx.TimeoutException:
+            logger.warning("HF GGUF file scan for %s timed out", repo_id)
+            return {"ok": False, "files": [], "error": "HF API request timed out"}
+        except httpx.RequestError as exc:
+            logger.warning("HF GGUF file scan for %s failed: %s", repo_id, exc.__class__.__name__)
+            return {"ok": False, "files": [], "error": "HF API unreachable"}
+        except ValueError:  # json.JSONDecodeError — 200 with a body that is not JSON
+            logger.warning("HF GGUF file scan for %s: response was not JSON", repo_id)
+            return {"ok": False, "files": [], "error": "HF API returned invalid JSON"}
         except Exception:
-            logger.exception("HF GGUF file scan failed for %s", repo)
+            logger.exception("HF GGUF file scan failed for %s", repo_id)
             return {"ok": False, "files": [], "error": "HF API request failed"}
+        siblings = data.get("siblings") if isinstance(data, dict) else None
+        if not isinstance(siblings, list):
+            logger.warning("HF GGUF file scan for %s: unexpected payload shape", repo_id)
+            return {"ok": False, "files": [], "error": "HF API returned an unexpected payload"}
         files = [
             str(s.get("rfilename") or "")
-            for s in data.get("siblings", [])
-            if str(s.get("rfilename") or "").lower().endswith(".gguf")
+            for s in siblings
+            if isinstance(s, dict) and str(s.get("rfilename") or "").lower().endswith(".gguf")
         ]
         return {"ok": True, "repo_id": repo_id, "files": files}
 

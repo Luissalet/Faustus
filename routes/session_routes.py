@@ -277,7 +277,6 @@ def _verify_session_owner(request: Request, session_id: str, session_manager=Non
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api", tags=["sessions"])
 
 def _current_user_is_admin(request: Request, user: str | None) -> bool:
     if not user:
@@ -365,6 +364,12 @@ def setup_session_routes(
     upload_handler=None,
 ):
     """Setup session routes with the provided manager and config"""
+
+    # B-006: built here, not at import time. A module-level router
+    # accumulates a copy of every route on each setup call, each closed
+    # over a different manager, and lookups then hit whichever copy they
+    # happen to find first.
+    router = APIRouter(prefix="/api", tags=["sessions"])
 
     REQUEST_TIMEOUT = config.get("REQUEST_TIMEOUT", 20)
     SESSION_MODEL_VALIDATION_TIMEOUT = min(float(REQUEST_TIMEOUT or 20), 3.0)

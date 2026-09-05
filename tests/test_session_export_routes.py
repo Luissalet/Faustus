@@ -7,13 +7,12 @@ pin the route's own responsibilities — format validation, ownership, the
 Content-Disposition header, the batch zip and its ceilings — without waiting
 on the renderers.
 
-Fixture note: ``setup_session_routes()`` appends to the MODULE-level
-``sr.router``. Duplicate paths pile up across test modules that call it, and
-the first match wins — so a fixture that merely appends can end up serving a
-*previous* module's session manager (``tests/test_session_list_owner_scope.py``
-leaves exactly that behind). Every fixture here empties ``sr.router.routes``
-before setup and restores the snapshot on teardown, so these tests neither
-inherit nor cause that contamination.
+Fixture note: ``setup_session_routes()`` used to append to a MODULE-level
+``sr.router``, so duplicate paths piled up across test modules and the first
+match won — a fixture could end up serving a *previous* module's session
+manager. Since B-006 the factory builds and returns its own router, so each
+fixture below simply uses what it is handed; there is nothing shared left to
+save, empty or restore.
 """
 import io
 import sys
@@ -129,13 +128,8 @@ def harness(monkeypatch, tmp_path):
     double, with the module router restored afterwards."""
     import routes.session_routes as sr
 
-    # setup_session_routes() APPENDS to the module-level router, and sibling
-    # test modules call it without cleaning up (see the module docstring).
-    # Start from an empty route list so this app gets exactly one copy of each
-    # route — bound to the stubs below, not to a previous module's session
-    # manager — and hand the module back exactly as it was found.
-    saved_routes = list(sr.router.routes)
-    sr.router.routes[:] = []
+    # B-006: one factory call, one router, bound to the stubs below — no
+    # sibling test module can reach into it.
     factory = _temp_db(tmp_path)
     monkeypatch.setattr(sr, "SessionLocal", factory)
     monkeypatch.setattr(sr, "effective_user", lambda request: "alice")
@@ -156,11 +150,8 @@ def harness(monkeypatch, tmp_path):
     router = sr.setup_session_routes(sm, {})
     app = FastAPI()
     app.include_router(router)
-    try:
-        with TestClient(app) as client:
-            yield _Harness(client, sm, factory, export)
-    finally:
-        sr.router.routes[:] = saved_routes
+    with TestClient(app) as client:
+        yield _Harness(client, sm, factory, export)
 
 
 def _add_session(harness, *, name, owner="alice", model="gpt-4o", folder=None,
@@ -576,13 +567,8 @@ def real_harness(monkeypatch, tmp_path):
     import routes.session_routes as sr
     pytest.importorskip("src.chat_export")
 
-    # setup_session_routes() APPENDS to the module-level router, and sibling
-    # test modules call it without cleaning up (see the module docstring).
-    # Start from an empty route list so this app gets exactly one copy of each
-    # route — bound to the stubs below, not to a previous module's session
-    # manager — and hand the module back exactly as it was found.
-    saved_routes = list(sr.router.routes)
-    sr.router.routes[:] = []
+    # B-006: one factory call, one router, bound to the stubs below — no
+    # sibling test module can reach into it.
     factory = _temp_db(tmp_path)
     monkeypatch.setattr(sr, "SessionLocal", factory)
     monkeypatch.setattr(sr, "effective_user", lambda request: "alice")
@@ -601,11 +587,8 @@ def real_harness(monkeypatch, tmp_path):
     router = sr.setup_session_routes(sm, {})
     app = FastAPI()
     app.include_router(router)
-    try:
-        with TestClient(app) as client:
-            yield _Harness(client, sm, factory, None)
-    finally:
-        sr.router.routes[:] = saved_routes
+    with TestClient(app) as client:
+        yield _Harness(client, sm, factory, None)
 
 
 def _add_real_session(harness, name, folder=None):

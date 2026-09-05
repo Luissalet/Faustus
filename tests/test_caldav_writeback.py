@@ -13,6 +13,7 @@ from datetime import datetime
 from src.caldav_writeback import (
     build_event_ical,
     find_remote_calendar,
+    parse_exdate,
     push_event,
     _stable_cal_id,
 )
@@ -235,3 +236,124 @@ def test_writeback_rejects_unsafe_saved_url_before_remote_call(monkeypatch):
 
     assert result == {"ok": False, "error": "CalDAV URL host is not allowed"}
     assert called is False
+
+
+# ---------------------------------------------------------------------------
+# B-002 — recurrence exclusions used to vanish
+#
+# The module imported `timezone` but not `datetime`, so every exdate raised
+# NameError, the blanket `except` swallowed it as "unparseable", and the event
+# went to the server without EXDATE. A deleted occurrence came back on the
+# next sync. The bug survived because nothing asserted the EXDATE was there.
+# ---------------------------------------------------------------------------
+
+import logging
+
+import pytest
+
+
+def _exdates_from_ical(ical: str, all_day: bool) -> list:
+    """Read EXDATE back out, in the stored `_occurrence_exdate_key` shape."""
+    from icalendar import Calendar
+
+    ve = next(iter(Calendar.from_ical(ical).walk("VEVENT")))
+    prop = ve.get("exdate")
+    if prop is None:
+        return []
+    props = prop if isinstance(prop, list) else [prop]
+    out = []
+    for group in props:
+        for item in group.dts:
+            value = item.dt
+            out.append(value.strftime("%Y-%m-%d") if all_day
+                       else value.strftime("%Y-%m-%dT%H:%M"))
+    return out
+
+
+def test_build_ical_emits_exdate_for_a_utc_series():
+    ical = build_event_ical(_ev(rrule="FREQ=WEEKLY", recurrence_exdates=["2026-06-17T14:00"]))
+    assert "EXDATE:20260617T140000Z" in ical
+
+
+def test_build_ical_emits_every_exdate():
+    ical = build_event_ical(_ev(
+        rrule="FREQ=WEEKLY",
+        recurrence_exdates=["2026-06-17T14:00", "2026-06-24T14:00", "2026-07-01T14:00"],
+    ))
+    assert _exdates_from_ical(ical, all_day=False) == [
+        "2026-06-17T14:00", "2026-06-24T14:00", "2026-07-01T14:00",
+    ]
+
+
+def test_build_ical_floating_exdate_has_no_zulu():
+    ical = build_event_ical(_ev(
+        is_utc=False, rrule="FREQ=WEEKLY", recurrence_exdates=["2026-06-17T14:00"],
+    ))
+    assert "EXDATE:20260617T140000" in ical
+    assert "EXDATE:20260617T140000Z" not in ical
+
+
+def test_build_ical_all_day_exdate_is_a_date():
+    ical = build_event_ical(_ev(
+        all_day=True, is_utc=False, rrule="FREQ=WEEKLY",
+        recurrence_exdates=["2026-06-17"],
+    ))
+    assert "EXDATE;VALUE=DATE:20260617" in ical
+    assert _exdates_from_ical(ical, all_day=True) == ["2026-06-17"]
+
+
+def test_a_bad_exdate_is_skipped_and_the_good_ones_survive(caplog):
+    caplog.set_level(logging.DEBUG, logger="src.caldav_writeback")
+    ical = build_event_ical(_ev(
+        rrule="FREQ=WEEKLY",
+        recurrence_exdates=["2026-06-17T14:00", "next tuesday", "", "2026-06-24T14:00"],
+    ))
+    assert _exdates_from_ical(ical, all_day=False) == [
+        "2026-06-17T14:00", "2026-06-24T14:00",
+    ]
+    assert "skipping unparseable exdate" in caplog.text
+
+
+def test_a_bug_in_the_parser_is_not_filed_as_a_bad_value(monkeypatch, caplog):
+    """The failure mode that hid B-002: an internal error, logged as if the
+    user's data were at fault. Now it is an exception record."""
+    import src.caldav_writeback as cw
+
+    def broken(*args, **kwargs):
+        raise TypeError("parser bug")
+
+    monkeypatch.setattr(cw, "parse_exdate", broken)
+    caplog.set_level(logging.DEBUG, logger="src.caldav_writeback")
+    ical = cw.build_event_ical(_ev(rrule="FREQ=WEEKLY", recurrence_exdates=["2026-06-17T14:00"]))
+    assert "EXDATE" not in ical  # the event still serialises
+    assert "skipping unparseable exdate" not in caplog.text
+    assert any(r.levelno >= logging.ERROR for r in caplog.records)
+
+
+def test_round_trip_preserves_exdates():
+    """ICS -> model -> ICS: the exclusions are still there and still the same."""
+    stored = ["2026-06-17T14:00", "2026-06-24T14:00"]
+    first = build_event_ical(_ev(rrule="FREQ=WEEKLY", recurrence_exdates=stored))
+    read_back = _exdates_from_ical(first, all_day=False)
+    second = build_event_ical(_ev(rrule="FREQ=WEEKLY", recurrence_exdates=read_back))
+    assert read_back == stored
+    assert _exdates_from_ical(second, all_day=False) == stored
+
+
+def test_parse_exdate_accepts_what_a_server_sends_back():
+    from datetime import datetime as _dt, timezone as _tz
+
+    assert parse_exdate("2026-06-17T14:00:30", all_day=False, is_utc=True) == \
+        _dt(2026, 6, 17, 14, 0, 30, tzinfo=_tz.utc)
+    assert parse_exdate("2026-06-17T14:00:00Z", all_day=False, is_utc=False) == \
+        _dt(2026, 6, 17, 14, 0, tzinfo=_tz.utc)
+    # An explicit offset wins over the is_utc guess.
+    assert parse_exdate("2026-06-17T16:00:00+02:00", all_day=False, is_utc=True).utcoffset() \
+        is not None
+    assert parse_exdate("2026-06-17T14:00", all_day=True, is_utc=True) == _dt(2026, 6, 17).date()
+
+
+@pytest.mark.parametrize("bad", ["", "   ", "next tuesday", "2026-13-45T99:99", None])
+def test_parse_exdate_rejects_a_non_date_with_value_error(bad):
+    with pytest.raises(ValueError):
+        parse_exdate(bad, all_day=False, is_utc=True)

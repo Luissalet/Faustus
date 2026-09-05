@@ -223,8 +223,11 @@ def text_list(data: Mapping[str, Any], key: str, path: str, *,
 # ── names that other systems will have to route on ─────────────────────────
 
 _ID_RE = re.compile(r"^[a-z0-9]+(?:[._-][a-z0-9]+)*$")
-_SEMVER_RE = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)"
-                        r"(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$")
+_SEMVER_RE = re.compile(r"^(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)"
+                        r"\.(?P<patch>0|[1-9]\d*)"
+                        r"(?:-(?P<prerelease>[0-9A-Za-z.-]+))?"
+                        r"(?:\+(?P<build>[0-9A-Za-z.-]+))?$")
+_NUMERIC_ID_RE = re.compile(r"^(?:0|[1-9]\d*)$")
 _HEX64_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -255,6 +258,48 @@ def semver(data: Mapping[str, Any], key: str, path: str, *,
     if not _SEMVER_RE.fullmatch(value):
         raise ContractError(f"{path}.{key}", "must be a semantic version like 1.0.0", got=value)
     return value
+
+
+def semver_key(value: Any) -> tuple:
+    """A total order over semantic versions — the one every caller should sort
+    by, so that `1.10.0` outranks `1.9.0` instead of losing to it as text.
+
+    semver.org §11, stated once, here, where the validator that accepts these
+    strings already lives:
+
+    - major, minor and patch compare as numbers;
+    - a prerelease ranks BELOW the release it precedes: `1.0.0-rc.1` < `1.0.0`;
+    - prerelease identifiers compare field by field; a numeric field compares
+      numerically and always ranks below an alphanumeric one, and when every
+      shared field ties, the version with MORE fields wins;
+    - build metadata is ignored, so `1.0.0+a` and `1.0.0+b` have exactly the
+      same precedence. That is a tie, not an ordering — a caller that must
+      pick one of them has to say out loud how it breaks the tie.
+
+    Raises ValueError for anything this project does not accept as a version;
+    callers validate when a thing is registered, not when it is run.
+    """
+    text_value = str(value or "").strip()
+    matched = _SEMVER_RE.fullmatch(text_value)
+    if not matched:
+        raise ValueError(f"not a semantic version: {value!r}")
+    core = (int(matched.group("major")), int(matched.group("minor")),
+            int(matched.group("patch")))
+    prerelease = matched.group("prerelease")
+    if not prerelease:
+        return (core, 1, ())  # 1 > 0: a release outranks its own prereleases
+    fields = []
+    for part in prerelease.split("."):
+        if _NUMERIC_ID_RE.fullmatch(part):
+            fields.append((0, int(part), ""))
+        else:
+            fields.append((1, 0, part))
+    return (core, 0, tuple(fields))
+
+
+def is_semver(value: Any) -> bool:
+    """Whether `value` is a version this project accepts. No exception."""
+    return bool(_SEMVER_RE.fullmatch(str(value or "").strip()))
 
 
 def sha256_hex(data: Mapping[str, Any], key: str, path: str, *,

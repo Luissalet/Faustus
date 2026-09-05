@@ -77,14 +77,9 @@ def routes(monkeypatch):
     monkeypatch.setattr(sr, "_verify_session_owner", lambda *a, **kw: None)
     manager = MagicMock()
     manager.delete_session.return_value = True
-    # setup_session_routes() APPENDS to the module-level `router`. Snapshot and
-    # restore it so this file never leaves stale handlers (bound to our mock
-    # manager) behind for sibling test modules that look routes up by path.
-    snapshot = list(sr.router.routes)
-    try:
-        yield sr.setup_session_routes(manager, {}), manager
-    finally:
-        sr.router.routes[:] = snapshot
+    # B-006: the factory returns a router of its own, so these handlers —
+    # bound to our mock manager — cannot leak into a sibling test module.
+    yield sr.setup_session_routes(manager, {}), manager
 
 
 async def _never_ending(started: asyncio.Event, tool_calls: list):
