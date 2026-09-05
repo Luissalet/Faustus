@@ -35,6 +35,145 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# uploads.json is a read-modify-write store guarded only by a threading.Lock,
+# which orders writers inside one interpreter and nothing else. Every extra
+# uvicorn worker, `odysseus` CLI invocation and cron job builds its own
+# UploadHandler over the same directory, so two of them can each read the
+# index, add a different row and replace the file in turn: the second write
+# drops the first row and leaves its bytes orphaned on disk. An advisory lock
+# on a sibling file is the only exclusion primitive POSIX and Windows both
+# offer without a daemon, so every read-modify-write section takes it.
+UPLOAD_INDEX_LOCK_FILENAME = "uploads.json.lock"
+
+try:
+    UPLOAD_INDEX_LOCK_TIMEOUT = float(
+        os.environ.get("ODYSSEUS_UPLOAD_INDEX_LOCK_TIMEOUT") or 30.0
+    )
+except (TypeError, ValueError):
+    UPLOAD_INDEX_LOCK_TIMEOUT = 30.0
+
+try:
+    import fcntl as _fcntl
+except ImportError:  # Windows
+    _fcntl = None
+try:
+    import msvcrt as _msvcrt
+except ImportError:  # POSIX
+    _msvcrt = None
+
+
+class UploadIndexLock:
+    """Exclusive access to uploads.json across threads *and* processes.
+
+    Entering also drops the handler's in-memory index cache, so the read that
+    follows comes from disk. That matters because the cache is validated by a
+    stat signature: a competitor that rewrote the index between two of our
+    sections can land on the same size and timestamp granularity, and we would
+    then re-serialise a snapshot that never saw its row - the same lost update
+    the file lock exists to prevent, arriving through the cache instead.
+
+    Failure to take the file lock degrades to the historical single-process
+    behaviour rather than refusing the write: losing a row on a contended
+    multi-worker deploy is bad, refusing every upload because a lock file on a
+    network mount cannot be opened is worse.
+
+    Transitional by design. The durable answer is moving upload metadata into a
+    transactional store, which also fixes the per-process rate limiter and the
+    per-process index cache that this lock only papers over.
+    """
+
+    def __init__(self, handler: "UploadHandler", timeout: float = UPLOAD_INDEX_LOCK_TIMEOUT):
+        self._handler = handler
+        self._timeout = timeout
+        self._thread_lock = threading.Lock()
+        self._fd: Optional[int] = None
+
+    def _lock_path(self) -> str:
+        return os.path.join(self._handler.upload_dir, UPLOAD_INDEX_LOCK_FILENAME)
+
+    def _try_lock(self, fd: int) -> None:
+        if _fcntl is not None:
+            _fcntl.flock(fd, _fcntl.LOCK_EX | _fcntl.LOCK_NB)
+            return
+        # Windows byte-range locks are mandatory even between two handles of
+        # the same process, which is why the thread lock is taken first.
+        os.lseek(fd, 0, os.SEEK_SET)
+        _msvcrt.locking(fd, _msvcrt.LK_NBLCK, 1)
+
+    def _unlock(self, fd: int) -> None:
+        if _fcntl is not None:
+            _fcntl.flock(fd, _fcntl.LOCK_UN)
+            return
+        os.lseek(fd, 0, os.SEEK_SET)
+        _msvcrt.locking(fd, _msvcrt.LK_UNLCK, 1)
+
+    def _acquire_file_lock(self) -> None:
+        if _fcntl is None and _msvcrt is None:
+            return
+        try:
+            fd = os.open(self._lock_path(), os.O_RDWR | os.O_CREAT, 0o600)
+        except OSError as e:
+            logger.warning("Upload index lock file unavailable: %s", e)
+            return
+        deadline = time.monotonic() + max(0.0, self._timeout)
+        while True:
+            try:
+                self._try_lock(fd)
+                self._fd = fd
+                return
+            except OSError:
+                if time.monotonic() >= deadline:
+                    logger.warning(
+                        "Timed out after %.1fs waiting for the upload index lock; "
+                        "continuing without cross-process exclusion",
+                        self._timeout,
+                    )
+                    break
+                time.sleep(0.01)
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+
+    def _release_file_lock(self) -> None:
+        fd, self._fd = self._fd, None
+        if fd is None:
+            return
+        try:
+            self._unlock(fd)
+        except OSError as e:
+            logger.warning("Failed to release the upload index lock: %s", e)
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+
+    def acquire(self) -> bool:
+        self._thread_lock.acquire()
+        try:
+            self._acquire_file_lock()
+        except BaseException:
+            self._thread_lock.release()
+            raise
+        self._handler._index_cache = None
+        self._handler._index_signature = None
+        return True
+
+    def release(self) -> None:
+        try:
+            self._release_file_lock()
+        finally:
+            self._thread_lock.release()
+
+    def __enter__(self) -> "UploadIndexLock":
+        self.acquire()
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        self.release()
+        return False
+
+
 UploadIndexFileSignature = tuple[
     str,
     Optional[int],
@@ -230,13 +369,13 @@ class UploadHandler:
         self._upload_rate_lock = threading.Lock()
         self._upload_rate_counter = 0
         self._upload_rate_max_entries = 1000
-        # Serialise the read-modify-write of uploads.json within one
-        # Python process. Scope: single FastAPI worker (the default
-        # uvicorn deployment). Cross-process / multi-worker deployments
-        # need an additional file-level lock (flock) or a database;
-        # the atomic-rename write below keeps on-disk state consistent
-        # on its own but does not serialise writers across processes.
-        self._index_lock = threading.Lock()
+        # Serialise the read-modify-write of uploads.json. UploadIndexLock
+        # layers an advisory file lock over a threading.Lock so the guard also
+        # holds against the other worker processes that share this directory,
+        # and forces the next index read to come from disk. Every `with
+        # self._index_lock:` section below is therefore a cross-process
+        # critical section, not just an intra-process one.
+        self._index_lock = UploadIndexLock(self)
         
         # Create upload directory
         os.makedirs(self.upload_dir, exist_ok=True)
