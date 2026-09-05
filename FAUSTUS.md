@@ -4,8 +4,8 @@
 
 - Base del fork: commit upstream `c9dd68d8` (27-08-2026, "refactor(docs): separate Pages site source").
 - Rama: **una sola, `master`** (`D:\LocalAI\odysseus`), que trackea `origin/master` en `github.com/Luissalet/Faustus`. Las ramas `feat/projects` y `feat/reliability` y la worktree de pruebas se consolidaron el 31-08.
-- Cifras a 04-09-2026 (en `master`): **405 commits**, +166.900 líneas sobre la base; **160 módulos nuevos** en `src/`, `routes/`, `services/` y `static/js/`, **231 ficheros de tests nuevos**. 10.472 tests recogidos.
-- **Suite completa, medida en esta máquina (Windows, 04-09):** **10.345 en verde**, 47 fallos, 6 errores, 74 saltados, **15 min 34 s**. Los 53 rojos están **todos** en el commit anterior a este trabajo (misma carpeta, mismo `data/`, misma lista de ficheros: 44 y 44, diferencia cero), así que ninguno es de hoy. **17 de ellos los provoca el `data/` local**: el mismo commit en una worktree limpia baja de 44 a 27. En Linux la suite iba por **9.100 en verde** el 03-09 (~6 min, 2 fallos de entorno: `markitdown` sin conversor docx y el escáner de marca sobre un docstring en español); e2e Playwright, 12 flujos.
+- Cifras a 05-09-2026 (en `master`): **459 commits**, +240.400 / −204.600 líneas sobre la base en 1.327 ficheros; **160 módulos nuevos** en `src/`, `routes/`, `services/`, más **Faustus Studio** (`studio/src/`: 200 módulos, 63k líneas de TypeScript y 21k de CSS); **938 ficheros de tests**.
+- **Suite completa, medida en esta máquina (Windows, 05-09):** **9.579 en verde**, 38 fallos, 6 errores, 79 saltados, **13 min 42 s**. Los 44 rojos están comprobados **uno a uno** contra el commit anterior a este trabajo, con el método que este documento defiende (misma carpeta, mismo `data/`, misma lista de ficheros, cambiando sólo el commit): **ninguno es nuevo**, y hay **dos que el commit anterior falla y este no**. **17 de ellos los provoca el `data/` local**: el mismo commit en una worktree limpia baja de 44 a 27. En Linux la suite iba por **9.100 en verde** el 03-09 (~6 min, 2 fallos de entorno: `markitdown` sin conversor docx y el escáner de marca sobre un docstring en español); e2e Playwright, 12 flujos.
 - **Y por qué se dice «medida en esta máquina»:** entre el 03-09 y el 04-09 la suite **no se podía ni recolectar en Windows**. Un `import resource` sin usar —módulo que no existe allí— aborta la recolección entera: `Interrupted: 1 error during collection`, cero tests ejecutados, invisible en Linux porque allí el módulo sí está (§40.6, con un test que fija la regla). Una cifra de tests verdes solo vale para la plataforma, la carpeta y el `data/` donde se midió.
 - Máquina de referencia: RTX 4070 Ti 12 GB **+ RTX 5060 Ti 16 GB (eGPU, desde el 02-09)**, 128 GB RAM, Windows 11, Ollama 0.33.x; modelos `qwen3-coder:30b`, `qwen3.5:9b` (visión), `qwen3.8:27b`, `qwen3-coder-next`.
 
@@ -2090,6 +2090,99 @@ Y una trampa de la máquina, para el que venga: **PowerShell 5.1 lee un `.ps1` c
 una raya larga dentro de una cadena entre comillas dobles rompe el parser con un *«string is missing
 the terminator»* que no señala la raya. Los scripts del pool son ASCII puro y lo dicen en su
 cabecera.
+
+## 41. Faustus Studio: la interfaz entera, otra vez, en React (04/05-09-2026)
+
+La interfaz de Odysseus se había ganado su deuda honradamente: 196 KB de `app.js`, 120 ficheros y
+7,2 MB de JavaScript escrito a mano bajo `static/js/`, una hoja de estilos de 1,5 MB y un
+`index.html` de 256 KB que llevaba **todos** los modales de la aplicación como marcado. Funcionaba.
+Lo que no se podía era añadirle nada sin miedo.
+
+Se ha reescrito entera: **React 19 + TypeScript con Vite**, 200 módulos, 63k líneas de TS y 21k de
+CSS, servidas como 121 chunks con hash de contenido que suman 2,7 MB. `index.html` son ahora **84
+líneas**: metadatos, manifiesto, un `<script type="module">` y un bloque en línea que aplica el tema
+**antes de la primera pintura** —sin él, un tema oscuro sobre un sistema claro parpadea en blanco y
+se corrige después, que es lo peor que puede hacer una aplicación al abrirse—.
+
+### 41.1 La regla, y lo que costó cumplirla
+
+Luis la puso el 04-09 y no admitía interpretación: **«asegúrate de que no se pierda ninguna función
+aunque redistribuyas y cambies cosas, que no tengamos menos funciones en ningún caso»**. Se convirtió
+en `docs/ui/PARIDAD_FUNCIONAL.md`: cada pantalla, control, atajo, parámetro de query y estado vacío
+de la interfaz anterior, con su estado en Studio. **84 filas**, y nada se retiraba hasta que su fila
+dijera *Migrado* y estuviera visto en el navegador. El trabajo salió en **39 lotes numerados**, cada
+uno con su documento de estado en `docs/ui/`.
+
+La regla se pagó sola al final. Borrar la interfaz anterior destapó **seis funciones que nunca se
+habían migrado**: salud de servicios (`/api/diagnostics/services`), el catálogo de quince servidores
+MCP, las pistas de ajuste del selector de modelo, «ajustar a la VRAM» y el device flow de las dos
+suscripciones. Todas eran **rutas del servidor sin nadie que las llamara**: los tests de backend
+pasaban, porque la ruta contesta; ningún test de interfaz miraba, porque no había interfaz que
+mirara. Se portaron antes de borrar nada, y la lección es la §7 de PARIDAD: *un endpoint sin llamador
+no es una función a medias, es una función perdida, y se ve exactamente igual que una que nunca
+existió*.
+
+### 41.2 Las reglas de diseño las vigilan los tests
+
+`tests/test_studio_guards.py` corre en cada pasada: ningún literal de color fuera de `tokens.css` y
+`user-theme.css`, ningún `<div>` con `onClick` (si es un control, es un control), ningún
+`outline:none` sin sustituto comentado, ningún `transition: all` ni milisegundo suelto, ningún
+`animation:` sin su rama `prefers-reduced-motion`, ningún `<svg>` en línea, y **toda ruta que conoce
+el cliente tiene que existir en `app.py`** —una ruta que el servidor no sirve es un 404 al recargar,
+que es justo el fallo que los enlaces profundos existen para evitar—.
+
+La lógica pura (Markdown, el parser de comandos, la aritmética del horario del calendario, el ajuste
+de modelos, la exportación, las teclas, el saneado de contenido no fiable) vive en módulos `.ts` que
+once suites `studio/checks/*.check.mjs` empaquetan y ejecutan sin navegador, enganchadas a pytest.
+Escribirlas encontró **dos XSS reales** —`data:image/svg+xml` aceptado tanto por el saneador de
+imágenes de Markdown como por el lienzo de dibujo— y una exportación que iba por `window.open`, que
+no puede ver un 503: un fallo del servidor se veía exactamente igual que un éxito.
+
+### 41.3 Los tests de la anterior, y el script que se pasó de listo
+
+Los ~110 ficheros de test que contrataban el JavaScript borrado se trataron en tres oleadas: borrar
+los de contrato puro, recortar los mixtos. El recorte de la tercera oleada se hizo con un script, y
+el script quitó las líneas que **leían** el fuente borrado pero dejó los tests que las usaban: 19
+ficheros con `NameError` y unos cien rojos nuevos. No lo vio ninguna tanda dirigida; lo vio la suite
+completa. Los 19 se revisaron uno a uno contra Studio en vez de borrarlos en bloque, y de ahí
+salieron dos funciones que faltaban de verdad:
+
+- **los atajos de emoji** (`:blush:` → 😊) no existían en Studio. Portados a `lib/emoji.ts` con la
+  tabla literal de la anterior y una versión que respeta el código entre comillas —una línea de YAML
+  que diga `icon: :fire:` tiene que sobrevivir a que la pinten—, con 27 comprobaciones nuevas;
+- **`adapters/api.ts` se comía el `detail` de FastAPI** y tiraba un error genérico. La anterior tenía
+  el fallo simétrico y peor: adivinaba la causa buscando la palabra «tool» en el texto del error, lo
+  que garantizaba tragarse justo los mensajes que la puerta de aprobación existe para dar. Ahora se
+  lee el `detail`, y hay una guarda para que la heurística no vuelva.
+
+### 41.4 Y una regresión de CI que llevaba semanas en silencio
+
+Comparando como manda el README —misma carpeta, mismo `data/`, misma lista de ficheros, cambiando
+sólo el commit— apareció lo que ninguna suite había dicho en voz alta. Vite convirtió la raíz del
+repositorio en un **paquete ESM** (`"type": "module"` en `package.json`), y node decide el tipo de
+módulo por el `package.json` **más cercano**. Eso reclasificó en silencio todo `.js` del repositorio,
+incluidos los dos comprobadores CommonJS que GitHub Actions carga con `require()`
+(`.github/scripts/check-{pr,issue}-description.js`). Llevaban fallando en **cada pull request** con
+*«checkPrDescription is not a function»*. Arreglo: un `package.json` de cuatro líneas en esa carpeta
+con `"type": "commonjs"`, y una guarda que falla si la raíz es ESM y ese fichero no está.
+
+### 41.5 Cifras
+
+| | |
+|---|---|
+| Interfaz borrada | `static/app.js` + `static/js/` + `static/style.css` ≈ 9 MB |
+| Studio | 200 módulos · 63k líneas TS · 21k CSS · 121 chunks · 2,7 MB |
+| `static/index.html` | 256 KB → 84 líneas |
+| Precacheo del service worker | 50-y-pico rutas a mano → 2 |
+| Filas de paridad | 84, todas *Migrado* |
+| Lotes | 39 (`docs/ui/ESTADO_LOTE_A..AM.md`) |
+| Cadenas en español | 4.425 |
+| Commit del borrado | 489 ficheros, +4.334 / −232.407 |
+| Suite completa | 9.579 pasan · 38 fallan · 6 errores · 79 saltados · 13m42s |
+| Contra `master` | **cero fallos nuevos**, y dos que master falla y esto no |
+
+Fusionado a `master` en `82e7954` (fast-forward) y rama cerrada. La interfaz anterior no existe: no
+hay flag, no hay «volver a la anterior», no queda una línea de su DOM ni de su CSS.
 
 ## Cómo mantener este documento
 Cada bloque de trabajo añade una sección (fecha, qué, por qué, ficheros, cómo se verificó, cifras) y actualiza las cifras de cabecera (`git log --oneline c9dd68d8..HEAD | wc -l`, `git diff --stat c9dd68d8..HEAD`). Los commits del fork llevan mensajes largos que explican el porqué: `git log c9dd68d8..HEAD` es la fuente detallada.
