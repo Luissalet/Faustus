@@ -273,9 +273,11 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
         user = _get_current_user(request)
         if not user:
             raise HTTPException(401, "Not authenticated")
-        if not auth_manager.totp_confirm_enable(user, body.code):
+        backup = auth_manager.totp_confirm_enable(user, body.code)
+        if backup is None:
             raise HTTPException(400, "Invalid code — try again")
-        backup = auth_manager.users.get(user, {}).get("totp_backup_codes", [])
+        # SEC-1 (B-020): only the hashes are stored, so this response is the
+        # one and only time the codes exist in readable form.
         return {"ok": True, "backup_codes": backup}
 
     class TotpDisableRequest(BaseModel):

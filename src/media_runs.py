@@ -31,6 +31,7 @@ import logging
 import os
 import shutil
 import uuid
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Mapping, Optional
 
 from src import media_workflows as workflows
@@ -40,14 +41,47 @@ from src.media_workflows import TemplateError
 
 logger = logging.getLogger(__name__)
 
-#: Statuses a media run can be in. `unknown` is real: an engine that was
-#: restarted has forgotten the job, and that is not the same as a failure.
-STATUSES = ("pending", "queued", "running", "completed", "failed",
-            "cancelled", "unknown")
+#: Statuses a media run can be in. Three of them are about the SUBMIT rather
+#: than the render, because that is the gap where a row and a GPU can
+#: disagree: `submit_pending` is an intention written down before anything was
+#: sent, `submitted` is an id we have but a queue position we have not asked
+#: about yet, and `submit_unknown` is the honest answer when the call failed in
+#: a way that cannot rule out the engine having taken the job. `unknown` is the
+#: later cousin of that one: an engine that was restarted has forgotten a job
+#: it certainly had, which is still not the same as a failure. `pending`
+#: survives for rows written before the outbox existed.
+STATUSES = ("submit_pending", "submitted", "submit_unknown", "pending",
+            "queued", "running", "completed", "failed", "cancelled", "unknown")
+
+#: Statuses meaning "we do not know whether a job of ours is on a GPU".
+UNSETTLED_SUBMIT = ("submit_pending", "submit_unknown")
+
+#: Submit failures that PROVE the engine never took the job: it read the graph
+#: and refused it. Anything else -- a socket that died, a gateway that timed
+#: out, a reply we could not parse -- leaves the question open, and answering
+#: it with `failed` is exactly how a real render ends up burning a GPU with
+#: nothing pointing at it.
+REFUSED_BEFORE_QUEUE = frozenset({"missing_requirements", "rejected_by_engine",
+                                  "empty_graph"})
+
+#: What we call ourselves to an engine when there is no run to name. A real
+#: submit always overrides it: a constant client id correlates nothing.
+DEFAULT_CLIENT_ID = "faustus"
 
 
-def _backend(url: str = "") -> ComfyUIBackend:
-    return ComfyUIBackend(url)
+def _backend(url: str = "", *, client_id: str = "") -> ComfyUIBackend:
+    return ComfyUIBackend(url, client_id=client_id or DEFAULT_CLIENT_ID)
+
+
+def _iso_ago(seconds: int) -> str:
+    """`now_iso()` as of N seconds ago, for comparing against `created_at`.
+
+    The run timestamps are ISO-8601 UTC strings and are compared as strings,
+    so a cutoff has to be minted in exactly the same shape.
+    """
+    moment = (datetime.now(timezone.utc).replace(microsecond=0)
+              - timedelta(seconds=max(0, int(seconds))))
+    return moment.isoformat().replace("+00:00", "Z")
 
 
 # ── looking before leaping ────────────────────────────────────────────────
@@ -133,9 +167,22 @@ def start(workflow_id: str, inputs: Optional[Mapping[str, Any]] = None, *,
     """Queue a render and write the row that will outlive this process.
 
     The row is written **before** the job is queued and updated after, the
-    same ordering as a workflow node: a process that dies between the two
-    leaves a row saying `pending` with no engine id, which is recoverable and
-    honest. The other order leaves a job running that nothing remembers."""
+    same ordering as a workflow node. On its own that ordering is not enough:
+    a process killed between the two used to leave a row claiming the render
+    never reached the engine while the engine was already rendering it, and
+    nothing could ever find that job again -- not to poll it, not to cancel
+    it, not to collect its output.
+
+    So the first write is an OUTBOX entry rather than a hopeful `pending`. It
+    says `submit_pending` and carries a client id derived from this run, which
+    ComfyUI echoes back on both /queue and /history. That id is the thread
+    `reconcile()` pulls on afterwards, and it is what makes the difference
+    between a lost render and a slow one.
+
+    The failure classification matters as much as the ordering: only a refusal
+    the engine actually spoke (a missing model, a rejected graph) is written
+    down as `failed`. A socket that died mid-POST is `submit_unknown`, because
+    it cannot rule out a job now sitting on a GPU."""
     from core.database import MediaRunRow, SessionLocal
 
     workflow = workflows.load(workflow_id, version)
@@ -157,8 +204,9 @@ def start(workflow_id: str, inputs: Optional[Mapping[str, Any]] = None, *,
     if not picked["ok"]:
         return {"ok": False, "reason": picked["reason"],
                 "detail": picked["detail"], "why": picked["why"]}
-    engine = _backend(picked["url"])
     run_id = f"mrun_{uuid.uuid4().hex[:20]}"
+    client_id = client_id_for(run_id)
+    engine = _backend(picked["url"], client_id=client_id)
 
     db = SessionLocal()
     try:
@@ -166,7 +214,8 @@ def start(workflow_id: str, inputs: Optional[Mapping[str, Any]] = None, *,
             id=run_id, workflow_id=workflow.id, workflow_version=workflow.version,
             workflow_fingerprint=rendered["fingerprint"],
             engine="comfyui", engine_url=engine.base_url,
-            status="pending", reason="",
+            client_id=client_id,
+            status="submit_pending", reason="",
             values_json=json.dumps(rendered["values"], ensure_ascii=False),
             models_json=json.dumps(rendered["models"], ensure_ascii=False),
             owner=owner or None, project_id=project_id or None,
@@ -179,10 +228,23 @@ def start(workflow_id: str, inputs: Optional[Mapping[str, Any]] = None, *,
     try:
         job = engine.submit(rendered, requires_nodes=list(workflow.requires_nodes))
     except ComfyUIError as e:
-        _update(run_id, status="failed", reason=f"{e.reason}: {e.detail}",
-                ended_at=now_iso())
-        return {"ok": False, "run_id": run_id, "reason": e.reason,
-                "detail": e.detail, "workflow": workflow.id}
+        if e.reason in REFUSED_BEFORE_QUEUE or e.reason.startswith("http_4"):
+            # The engine spoke and said no. Nothing is queued, so this is a
+            # finished story rather than an open question.
+            _update(run_id, status="failed", reason=f"{e.reason}: {e.detail}",
+                    ended_at=now_iso())
+            return {"ok": False, "run_id": run_id, "status": "failed",
+                    "reason": e.reason, "detail": e.detail, "workflow": workflow.id}
+        # Everything else is unresolved on purpose. `reconcile()` asks the
+        # engine whether it is holding a job with this run's client id, which
+        # is a question that can actually be answered -- unlike "did the POST
+        # arrive before the socket closed?".
+        _update(run_id, status="submit_unknown", reason=f"{e.reason}: {e.detail}")
+        logger.warning("media run %s: the submit outcome is unknown (%s); it will "
+                       "be reconciled by client id %s", run_id, e.reason, client_id)
+        return {"ok": False, "run_id": run_id, "status": "submit_unknown",
+                "reason": e.reason, "detail": e.detail, "workflow": workflow.id,
+                "client_id": client_id, "recoverable": True}
 
     _update(run_id, status="queued", engine_job_id=job["prompt_id"],
             started_at=now_iso())
@@ -190,9 +252,113 @@ def start(workflow_id: str, inputs: Optional[Mapping[str, Any]] = None, *,
             "engine_job_id": job["prompt_id"], "position": job.get("position"),
             "workflow": workflow.id, "version": workflow.version,
             "values": rendered["values"],
-            "engine_url": engine.base_url,
+            "engine_url": engine.base_url, "client_id": client_id,
             "chosen_because": picked.get("chosen_because", ""),
             "engine_gpu": (picked.get("engine") or {}).get("gpu", "")}
+
+
+def client_id_for(run_id: str) -> str:
+    """What this run calls itself to the engine.
+
+    Deterministic, so a reconciliation pass can compute it from the row rather
+    than having to have stored it -- and so a job found on the engine names
+    the run that owns it instead of merely proving Faustus submitted it.
+    """
+    return f"{DEFAULT_CLIENT_ID}:{run_id}"
+
+
+# ── closing the outbox ────────────────────────────────────────────────────
+
+def reconcile_run(run_id: str, *, grace_seconds: int = 60,
+                  record: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
+    """Settle one run whose submit outcome was never written down.
+
+    Three outcomes, and they are genuinely different. The engine is holding a
+    job with our client id: adopt its prompt id and the run is alive again --
+    pollable, cancellable, collectable. The engine is reachable and has no such
+    job: it never got queued, which is a real failure and is recorded as one.
+    The engine cannot be reached: nothing is decided, because a status written
+    on a guess is the bug one level up.
+
+    `grace_seconds` keeps this off a submit that is merely still in flight; a
+    caller that knows the sender is gone (a startup sweep, a poll) passes 0.
+    """
+    record = dict(record) if record is not None else get(run_id)
+    if record is None:
+        return {"ok": False, "reason": "not_found", "run_id": run_id, "changed": False}
+    if record["engine_job_id"]:
+        return {"ok": True, "run_id": run_id, "reason": "already_known",
+                "changed": False}
+    if record["status"] not in UNSETTLED_SUBMIT:
+        return {"ok": True, "run_id": run_id, "reason": "nothing_to_reconcile",
+                "changed": False}
+    if record["created_at"] > _iso_ago(grace_seconds):
+        return {"ok": True, "run_id": run_id, "reason": "too_soon", "changed": False}
+
+    client_id = record.get("client_id") or ""
+    if not client_id:
+        # A row from before per-run client ids. There is nothing to correlate
+        # on, and guessing would adopt somebody else's job.
+        _update(run_id, status="failed", ended_at=now_iso(),
+                reason="this run carries no client id, so a job of its on the "
+                       "engine cannot be told from anyone else's")
+        return {"ok": True, "run_id": run_id, "reason": "no_correlation",
+                "changed": True}
+
+    engine = _backend(record["engine_url"] or "", client_id=client_id)
+    try:
+        found = engine.find_by_client_id(client_id)
+    except ComfyUIError as e:
+        return {"ok": True, "run_id": run_id, "reason": "engine_unreachable",
+                "detail": str(e), "changed": False}
+
+    if found["found"]:
+        _update(run_id, status="submitted", engine_job_id=found["prompt_id"],
+                started_at=record.get("started_at") or now_iso(),
+                reason=f"adopted from the engine's {found['where']} by client id")
+        logger.info("media run %s adopted engine job %s from %s", run_id,
+                    found["prompt_id"], found["where"])
+        return {"ok": True, "run_id": run_id, "reason": "adopted",
+                "engine_job_id": found["prompt_id"], "where": found["where"],
+                "changed": True}
+
+    _update(run_id, status="failed", ended_at=now_iso(),
+            reason="the engine is reachable and holds no job carrying this run's "
+                   "client id, so the prompt never reached the queue")
+    return {"ok": True, "run_id": run_id, "reason": "never_queued", "changed": True}
+
+
+def reconcile(*, grace_seconds: int = 60, limit: int = 50) -> Dict[str, Any]:
+    """Settle every run left in an unsettled submit state.
+
+    Meant for startup, which is exactly when the population of these is
+    largest: everything this process was submitting when it was killed. It is
+    also the orphan collector the audit asked for -- a render nobody knows
+    about is found by the metadata the engine carries for us, and once its
+    prompt id is back on the row the ordinary `poll()` collects its outputs
+    like any other run.
+    """
+    from core.database import MediaRunRow, SessionLocal
+
+    db = SessionLocal()
+    try:
+        rows = (db.query(MediaRunRow)
+                .filter(MediaRunRow.status.in_(UNSETTLED_SUBMIT),
+                        MediaRunRow.engine_job_id.is_(None))
+                .order_by(MediaRunRow.created_at_iso.asc())
+                .limit(max(1, min(limit, 500))).all())
+        pending = [_row_dict(r) for r in rows]
+    finally:
+        db.close()
+
+    settled = [reconcile_run(r["id"], grace_seconds=grace_seconds, record=r)
+               for r in pending]
+    return {"ok": True, "checked": len(settled),
+            "adopted": [s["run_id"] for s in settled if s.get("reason") == "adopted"],
+            "never_queued": [s["run_id"] for s in settled
+                             if s.get("reason") == "never_queued"],
+            "undecided": [s["run_id"] for s in settled if not s.get("changed")],
+            "runs": settled}
 
 
 def _update(run_id: str, **fields: Any) -> bool:
@@ -219,6 +385,7 @@ def _row_dict(row: Any) -> Dict[str, Any]:
         "fingerprint": row.workflow_fingerprint,
         "engine": row.engine, "engine_url": row.engine_url,
         "engine_job_id": row.engine_job_id,
+        "client_id": getattr(row, "client_id", None) or "",
         "status": row.status, "reason": row.reason or "",
         "values": json.loads(row.values_json or "{}"),
         "models": json.loads(row.models_json or "[]"),
@@ -263,17 +430,28 @@ def poll(run_id: str, *, collect: bool = True) -> Dict[str, Any]:
     which is the whole reason it asks the engine instead of reading the status
     it wrote earlier. A finished run is answered from the row without asking
     again: the artifacts are already in the store, and content-hash storage
-    means collecting twice would be harmless but pointless."""
+    means collecting twice would be harmless but pointless.
+
+    A run whose submit was never settled is reconciled here first. Polling is
+    the moment somebody is actually asking about a render, so it is also the
+    right moment to find out whether the job we lost track of is on a GPU."""
     record = get(run_id)
     if record is None:
         return {"ok": False, "reason": "not_found", "run_id": run_id}
+    if record["status"] in UNSETTLED_SUBMIT and not record["engine_job_id"]:
+        # The outbox for this run is still open. Whoever was sending it is not
+        # here any more -- we are -- so ask the engine, rather than report that
+        # a run "never reached" an engine that may be rendering it right now.
+        reconcile_run(run_id, grace_seconds=0, record=record)
+        record = get(run_id) or record
     if record["status"] in ("completed", "failed", "cancelled"):
         return {"ok": True, "run_id": run_id, **record, "checked": False}
     if not record["engine_job_id"]:
         return {"ok": True, "run_id": run_id, **record, "checked": False,
                 "detail": "this run never reached the engine"}
 
-    engine = _backend(record["engine_url"] or "")
+    engine = _backend(record["engine_url"] or "",
+                      client_id=record.get("client_id") or "")
     try:
         state = engine.status(record["engine_job_id"])
     except ComfyUIError as e:
@@ -310,6 +488,18 @@ def poll(run_id: str, *, collect: bool = True) -> Dict[str, Any]:
     if not collect:
         return {"ok": True, "run_id": run_id, **{**record, "status": "completed"},
                 "checked": True, "outputs": outputs}
+
+    if record["artifact_ids"]:
+        # A previous pass already downloaded and stored these and died before
+        # writing the status. Collecting again would be harmless -- the store
+        # is content-hashed -- and pointless; the second pass only has to
+        # finish the sentence the first one started.
+        _update(run_id, status="completed",
+                ended_at=record.get("ended_at") or now_iso())
+        return {"ok": True, "run_id": run_id,
+                **{**record, "status": "completed"},
+                "checked": True, "artifacts": [], "skipped": [],
+                "detail": "the outputs of this run were already collected"}
 
     kept = _collect(record, outputs, engine)
     _update(run_id, status="completed", ended_at=now_iso(),
@@ -390,19 +580,33 @@ def cancel(run_id: str) -> Dict[str, Any]:
 
     A cancel that leaves the job to start a moment later is worse than an
     error, so the backend does both halves. Here we only refuse to cancel
-    something that already finished — undoing that is not a cancel."""
+    something that already finished — undoing that is not a cancel.
+
+    Cancelling an already-cancelled run is not a refusal, though: the caller
+    asked for a state and the run is in it, so a retried click, a retried
+    request and a cleanup pass all get the same answer. And a run whose submit
+    was never settled is reconciled before anything is written down —
+    cancelling the ROW while the engine holds the job is precisely the orphan
+    this module exists to stop making."""
     record = get(run_id)
     if record is None:
         return {"ok": False, "reason": "not_found", "run_id": run_id}
-    if record["status"] in ("completed", "failed", "cancelled"):
+    if record["status"] == "cancelled":
+        return {"ok": True, "run_id": run_id, "status": "cancelled",
+                "reason": "already_cancelled", "idempotent": True}
+    if record["status"] in ("completed", "failed"):
         return {"ok": False, "reason": f"already_{record['status']}", "run_id": run_id}
+    if record["status"] in UNSETTLED_SUBMIT and not record["engine_job_id"]:
+        reconcile_run(run_id, grace_seconds=0, record=record)
+        record = get(run_id) or record
     if not record["engine_job_id"]:
         _update(run_id, status="cancelled", reason="cancelled before it was queued",
                 ended_at=now_iso())
         return {"ok": True, "run_id": run_id, "status": "cancelled",
                 "detail": "it had not reached the engine"}
 
-    engine = _backend(record["engine_url"] or "")
+    engine = _backend(record["engine_url"] or "",
+                      client_id=record.get("client_id") or "")
     try:
         stopped = engine.cancel(record["engine_job_id"])
     except ComfyUIError as e:

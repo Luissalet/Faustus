@@ -18,9 +18,59 @@ network.
 
 import asyncio
 import logging
-from datetime import timezone
+from datetime import date, datetime, timezone
 
 logger = logging.getLogger(__name__)
+
+
+_EXDATE_FALLBACK_FORMATS = (("%Y-%m-%dT%H:%M:%S", 19), ("%Y-%m-%dT%H:%M", 16))
+
+
+def parse_exdate(raw, *, all_day: bool, is_utc: bool):
+    """One recurrence exclusion, in the shape icalendar wants.
+
+    The stored form is the occurrence key `_occurrence_exdate_key` writes:
+    ``YYYY-MM-DD`` for an all-day series, ``YYYY-MM-DDTHH:MM`` for a timed
+    one. Values that came back from a server may carry seconds, a ``Z`` or a
+    UTC offset, so those parse too — and an explicit offset wins over
+    ``is_utc``, because it is the one piece of tz information here that is not
+    an assumption.
+
+    Raises ValueError for a value that is not a date. Anything else escaping
+    this function is a bug in it, and the caller says so rather than filing it
+    under "unparseable exdate" — which is how B-002 hid a NameError for the
+    life of the feature.
+    """
+    if isinstance(raw, datetime):
+        parsed = raw
+    elif isinstance(raw, date):
+        if all_day:
+            return raw
+        parsed = datetime(raw.year, raw.month, raw.day)
+    else:
+        text = str(raw or "").strip()
+        if not text:
+            raise ValueError("empty exdate")
+        if all_day:
+            return datetime.strptime(text[:10], "%Y-%m-%d").date()
+        normalised = text[:-1] + "+00:00" if text[-1:] in ("Z", "z") else text
+        parsed = None
+        try:
+            parsed = datetime.fromisoformat(normalised)
+        except ValueError:
+            for fmt, width in _EXDATE_FALLBACK_FORMATS:
+                try:
+                    parsed = datetime.strptime(text[:width], fmt)
+                    break
+                except ValueError:
+                    continue
+        if parsed is None:
+            raise ValueError(f"not an ISO date-time: {text!r}")
+    if all_day:
+        return parsed.date()
+    if parsed.tzinfo is not None:
+        return parsed
+    return parsed.replace(tzinfo=timezone.utc) if is_utc else parsed
 
 
 def _stable_cal_id(remote_url: str, owner: str = "", account_id: str = "") -> str:
@@ -73,13 +123,15 @@ def build_event_ical(ev: dict) -> str:
             logger.debug("CalDAV write-back: skipping unparseable rrule %r", ev.get("rrule"))
     for exdate in ev.get("recurrence_exdates") or []:
         try:
-            if ev.get("all_day"):
-                ve.add("exdate", datetime.strptime(exdate[:10], "%Y-%m-%d").date())
-            else:
-                dt = datetime.strptime(exdate[:16], "%Y-%m-%dT%H:%M")
-                ve.add("exdate", dt.replace(tzinfo=timezone.utc) if ev.get("is_utc") else dt)
+            ve.add("exdate", parse_exdate(
+                exdate, all_day=bool(ev.get("all_day")), is_utc=bool(ev.get("is_utc")),
+            ))
+        except ValueError as exc:
+            logger.debug("CalDAV write-back: skipping unparseable exdate %r (%s)", exdate, exc)
         except Exception:
-            logger.debug("CalDAV write-back: skipping unparseable exdate %r", exdate)
+            # Not a bad value — a bug here. It stays loud; a silently dropped
+            # EXDATE is a deleted occurrence coming back on the next sync.
+            logger.exception("CalDAV write-back: exdate %r failed to serialise", exdate)
 
     cal.add_component(ve)
     return cal.to_ical().decode("utf-8")

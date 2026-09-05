@@ -21,6 +21,7 @@ in the caller (so this stays import-light and unit-testable).
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shlex
 import subprocess
@@ -34,13 +35,14 @@ from core.platform_compat import (
     detached_popen_kwargs,
     find_bash,
     git_bash_path,
-    kill_process_tree,
     pid_alive,
 )
 
 from src import process_ownership
 from src.constants import BG_JOBS_DIR, BG_JOBS_FILE
 from src.native_env import native_host_environment
+
+logger = logging.getLogger(__name__)
 
 _JOBS_DIR = Path(BG_JOBS_DIR)
 _STORE = Path(BG_JOBS_FILE)
@@ -147,12 +149,24 @@ def launch(command: str, session_id: str, cwd: Optional[str] = None,
         **detached_popen_kwargs(),  # detach from the request lifecycle (setsid / DETACHED_PROCESS)
     )
 
+    # A pid is on loan from the OS: once this detached child is reaped the
+    # number goes back in the pool, and the record on disk long outlives both
+    # the process and this interpreter. So the identity that gets persisted is
+    # (pid, creation time) — the pair is unique for good, where the pid alone is
+    # unique only while the process lives — plus the POSIX process group, which
+    # is the only handle that still reaches a grandchild that re-parented to
+    # init. `id` is the run identifier the audit asks for; it is already the key
+    # this record is stored under. None for the creation time means psutil was
+    # not importable at spawn, and `_kill_job` will then refuse to signal rather
+    # than guess: see src/process_ownership.terminate_tree.
     rec = {
         "id": job_id,
         "session_id": session_id,
         "command": command,
         "status": "running",       # running | done | failed
         "pid": proc.pid,
+        "pid_created_at": process_ownership.creation_time(proc.pid),
+        "pgid": process_ownership.process_group_id(proc.pid),
         "started_at": time.time(),
         "ended_at": None,
         "exit_code": None,
@@ -216,8 +230,11 @@ def refresh() -> Dict[str, Dict[str, Any]]:
             rec["ended_at"] = now
             changed = True
         elif (now - rec.get("started_at", now)) > rec.get("max_runtime_s", DEFAULT_MAX_RUNTIME_S):
-            # Runaway / stuck — reap it but STILL surface a follow-up.
-            _kill(rec.get("pid"))
+            # Runaway / stuck — reap it but STILL surface a follow-up. The
+            # reaping may be refused (see _kill_job); the follow-up is not,
+            # because a job nobody hears back about is the failure this module
+            # exists to prevent.
+            _kill_job(rec)
             rec["status"] = "failed"
             rec["exit_code"] = -1
             rec["ended_at"] = now
@@ -238,9 +255,36 @@ def refresh() -> Dict[str, Dict[str, Any]]:
     return jobs
 
 
-def _kill(pid: Optional[int]) -> None:
-    # Cross-platform process-tree teardown (POSIX killpg / Windows taskkill /T).
-    kill_process_tree(pid)
+def _kill_job(rec: Dict[str, Any]) -> process_ownership.TreeKill:
+    """Tear down a job's process tree — but only what the record can still
+    prove is ours. Mutates `rec` with the outcome; never raises.
+
+    This is the one kill path in the application that cannot hold the process
+    object: the job is detached on purpose so it survives a restart, so all that
+    is left is a pid read back from a JSON file, possibly written by a previous
+    interpreter days ago. That is precisely the situation in which a pid means
+    nothing on its own, which is why `launch` records the creation time next to
+    it. When the comparison fails, or there is nothing recorded to compare
+    against (a record written before this release, or a host without psutil),
+    the job is marked `ownership_unknown` and NOTHING is signalled — an unkilled
+    runaway costs CPU, whereas killing the wrong pid takes down whatever the
+    operator happens to be running under that number.
+    """
+    outcome = process_ownership.terminate_tree(
+        rec.get("pid"),
+        spawned_at=rec.get("pid_created_at"),
+        pgid=rec.get("pgid"),
+    )
+    if outcome.owned:
+        logger.info("bg job %s: killed pid %s and %d verified descendant(s)",
+                    rec.get("id"), rec.get("pid"), max(0, len(outcome.signalled) - 1))
+        return outcome
+    if outcome.code == "ownership_unknown":
+        rec["ownership_unknown"] = True
+    rec["kill_refused"] = outcome.reason
+    logger.warning("bg job %s: did not signal %s — %s", rec.get("id"),
+                   process_ownership.describe(rec.get("pid")), outcome.reason)
+    return outcome
 
 
 def pending_followups() -> List[Dict[str, Any]]:
@@ -288,11 +332,14 @@ def kill(job_id: str) -> Optional[Dict[str, Any]]:
     if rec is None:
         return None
     if rec.get("status") == "running":
-        _kill(rec.get("pid"))
+        outcome = _kill_job(rec)
         rec["status"] = "failed"
         rec["exit_code"] = -1
         rec["ended_at"] = time.time()
-        rec["killed"] = True
+        # `killed` says a signal was actually sent. A refused kill still ends
+        # the record — leaving it `running` forever would be worse — but must
+        # not claim the process is gone, because it is very likely still there.
+        rec["killed"] = bool(outcome.signalled)
         rec["followed_up"] = True
         _save(jobs)
         return rec
@@ -320,4 +367,11 @@ def result_text(rec: Dict[str, Any]) -> str:
         head = "Background job process died unexpectedly (no exit code)."
     else:
         head = f"Background job finished with exit code {rec.get('exit_code')}."
+    if rec.get("kill_refused"):
+        # The agent has to know the difference between "stopped" and "given up
+        # on": in the second case the command is probably still running, and a
+        # follow-up that assumes otherwise will make wrong decisions.
+        hint = process_ownership.manual_stop_hint(rec.get("pid"))
+        head += (f" Its process was NOT signalled: {rec['kill_refused']}."
+                 + (f" Stop it yourself with `{hint}` if it is still running." if hint else ""))
     return f"{head}\nCommand: {rec.get('command')}\n\nOutput:\n{out or '(no output)'}"

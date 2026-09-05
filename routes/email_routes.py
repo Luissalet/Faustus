@@ -47,6 +47,8 @@ from routes.email_helpers import (
     _strip_think, _extract_reply, _apply_email_style_mechanics, require_owner, require_user, _assert_owns_account,
     _account_visible_to_owner,
     _q, _attach_compose_uploads, _cleanup_compose_uploads,
+    register_compose_upload, delete_compose_upload_item, lease_compose_uploads,
+    _compose_id_hint,
     _load_settings, _save_settings, _get_email_config,
     _send_smtp_message, _smtp_security_mode,
     _IMAP_TIMEOUT_SECONDS, _open_imap_connection,
@@ -4018,20 +4020,20 @@ def setup_email_routes():
 
     @router.post("/compose-upload")
     async def compose_upload(file: UploadFile = File(...), owner: str = Depends(require_owner)):
-        """Upload a file for attaching to a compose email. Returns a token."""
+        """Upload a file for attaching to a compose email.
+
+        The returned token is an opaque staging id bound to `owner` rather than
+        the old `<uuid>_<filename>` path fragment, so it discloses nothing when
+        it surfaces in a log line or a shared browser history."""
         try:
-            # Sanitize filename and generate a unique token
-            safe_name = re.sub(r"[^\w\s\-.]", "_", file.filename or "file").strip()
-            token = f"{uuid.uuid4().hex}_{safe_name}"
-            filepath = COMPOSE_UPLOADS_DIR / token
+            safe_name = _safe_compose_filename(file.filename or "file", "file")
             content = await read_upload_limited(file, EMAIL_COMPOSE_UPLOAD_MAX_BYTES, "Attachment")
-            with open(filepath, "wb") as f:
-                f.write(content)
+            row = register_compose_upload(owner, safe_name, content=content)
             return {
                 "success": True,
-                "token": token,
-                "filename": safe_name,
-                "size": len(content),
+                "token": row["id"],
+                "filename": row["filename"],
+                "size": row["size"],
             }
         except HTTPException:
             raise
@@ -4043,28 +4045,34 @@ def setup_email_routes():
         safe_name = re.sub(r"[^\w\s\-.]", "_", Path(str(name or fallback)).name).strip(". ")[:180]
         return safe_name or fallback
 
-    def _stage_compose_bytes(filename: str, content: bytes) -> dict:
+    def _stage_compose_bytes(filename: str, content: bytes, owner: str) -> dict:
         if len(content) > EMAIL_COMPOSE_UPLOAD_MAX_BYTES:
             raise HTTPException(status_code=413, detail="Attachment too large")
-        safe_name = _safe_compose_filename(filename)
-        token = f"{uuid.uuid4().hex}_{safe_name}"
-        filepath = COMPOSE_UPLOADS_DIR / token
-        with open(filepath, "wb") as f:
-            f.write(content)
-        return {"success": True, "token": token, "filename": safe_name, "size": len(content)}
+        row = register_compose_upload(
+            owner, _safe_compose_filename(filename), content=content
+        )
+        return {
+            "success": True,
+            "token": row["id"],
+            "filename": row["filename"],
+            "size": row["size"],
+        }
 
-    def _stage_compose_file(filename: str, src: Path) -> dict:
+    def _stage_compose_file(filename: str, src: Path, owner: str) -> dict:
         if not src.exists() or not src.is_file():
             raise HTTPException(status_code=404, detail="File not found")
         size = src.stat().st_size
         if size > EMAIL_COMPOSE_UPLOAD_MAX_BYTES:
             raise HTTPException(status_code=413, detail="Attachment too large")
-        safe_name = _safe_compose_filename(filename)
-        token = f"{uuid.uuid4().hex}_{safe_name}"
-        dest = COMPOSE_UPLOADS_DIR / token
-        import shutil as _shutil
-        _shutil.copyfile(str(src), str(dest))
-        return {"success": True, "token": token, "filename": safe_name, "size": size}
+        row = register_compose_upload(
+            owner, _safe_compose_filename(filename), src_path=src
+        )
+        return {
+            "success": True,
+            "token": row["id"],
+            "filename": row["filename"],
+            "size": row["size"],
+        }
 
     def _load_odysseus_attachment_source(db, kind: str, item_id: str, owner: str):
         from core.database import Document as _Doc, GalleryImage as _GI
@@ -4126,8 +4134,8 @@ def setup_email_routes():
             try:
                 src = _load_odysseus_attachment_source(db, kind, item_id, owner)
                 if "path" in src:
-                    return _stage_compose_file(src["filename"], src["path"])
-                return _stage_compose_bytes(src["filename"], src["content"])
+                    return _stage_compose_file(src["filename"], src["path"], owner)
+                return _stage_compose_bytes(src["filename"], src["content"], owner)
             finally:
                 db.close()
         except HTTPException:
@@ -4179,7 +4187,7 @@ def setup_email_routes():
                 content = buf.getvalue()
                 if not content:
                     raise HTTPException(status_code=400, detail="No valid attachments")
-                return _stage_compose_bytes("odysseus-attachments.zip", content)
+                return _stage_compose_bytes("odysseus-attachments.zip", content, owner)
             finally:
                 db.close()
         except HTTPException:
@@ -4213,16 +4221,16 @@ def setup_email_routes():
             filepath = _extract_attachment_to_disk(msg, index, target_dir)
             if not filepath:
                 return {"success": False, "error": f"Attachment index {index} not found"}
-            safe_name = re.sub(r"[^\w\s\-.]", "_", filepath.name or "attachment").strip() or "attachment"
-            token = f"{uuid.uuid4().hex}_{safe_name}"
-            dest = COMPOSE_UPLOADS_DIR / token
-            import shutil as _shutil
-            _shutil.copyfile(str(filepath), str(dest))
+            row = register_compose_upload(
+                owner,
+                _safe_compose_filename(filepath.name, "attachment"),
+                src_path=filepath,
+            )
             return {
                 "success": True,
-                "token": token,
-                "filename": safe_name,
-                "size": dest.stat().st_size,
+                "token": row["id"],
+                "filename": row["filename"],
+                "size": row["size"],
             }
         except Exception as e:
             logger.error(f"Failed to stage forwarded attachment {uid}/{index}: {e}")
@@ -4230,17 +4238,19 @@ def setup_email_routes():
 
     @router.delete("/compose-upload/{token}")
     async def delete_compose_upload(token: str, owner: str = Depends(require_owner)):
-        """Delete a staged compose upload."""
+        """Delete a staged compose upload.
+
+        Another account's staging id and an id that never existed both answer
+        404. Telling them apart would turn this endpoint into an oracle for
+        confirming ids belonging to other people."""
         try:
-            # Prevent path traversal
-            safe_token = Path(token).name
-            filepath = COMPOSE_UPLOADS_DIR / safe_token
-            if filepath.exists():
-                filepath.unlink()
-            return {"success": True}
+            deleted = delete_compose_upload_item(token, owner)
         except Exception as e:
-            logger.error(f"delete_compose_upload {token!r} failed: {e}")
+            logger.error(f"delete_compose_upload {_compose_id_hint(token)}.. failed: {e}")
             return {"success": False, "error": "Mail operation failed"}
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Attachment not found")
+        return {"success": True}
 
     async def _send_email_sync(
         to, cc, bcc, subject, body, in_reply_to, references, attachments,
@@ -4282,13 +4292,13 @@ def setup_email_routes():
 
         if has_atts:
             outer.attach(body_container)
-            _attach_compose_uploads(outer, attachments)
+            _attach_compose_uploads(outer, attachments, owner=owner)
 
         recipients = _envelope_recipients(to, cc, bcc)
 
         _send_smtp_message(cfg, cfg["from_address"], recipients, outer.as_string())
 
-        _cleanup_compose_uploads(attachments)
+        _cleanup_compose_uploads(attachments, owner=owner)
 
     @router.post("/schedule")
     async def schedule_email(req: dict, owner: str = Depends(require_owner)):
@@ -4326,6 +4336,18 @@ def setup_email_routes():
                 parsed_at = parsed_at.astimezone(_tz.utc).replace(tzinfo=None)
             send_at = parsed_at.isoformat()
 
+            attachments = [str(a) for a in (req.get("attachments") or []) if a]
+            if attachments:
+                # Lease the staged bytes until the message is due, plus a day of
+                # slack for a poller that is down at send time. Without it the
+                # draft TTL sweeps the attachment out from under any schedule
+                # set further out than the TTL.
+                lease_compose_uploads(
+                    attachments,
+                    owner,
+                    parsed_at.replace(tzinfo=_tz.utc).timestamp() + 86400,
+                )
+
             sid = _uuid.uuid4().hex[:16]
             conn = sqlite3.connect(SCHEDULED_DB)
             conn.execute("""
@@ -4341,7 +4363,7 @@ def setup_email_routes():
                 req.get("body") or "",
                 req.get("in_reply_to") or None,
                 req.get("references") or None,
-                json.dumps(req.get("attachments") or []),
+                json.dumps(attachments),
                 send_at,
                 datetime.utcnow().isoformat(),
                 req.get("account_id") or None,
@@ -4571,7 +4593,7 @@ def setup_email_routes():
 
         if has_attachments:
             outer.attach(body_container)
-            _attach_compose_uploads(outer, req.attachments)
+            _attach_compose_uploads(outer, req.attachments, owner=owner)
 
         # Build recipient list (parse the address grammar so display names with
         # commas don't get split into broken envelope addresses)
@@ -4699,7 +4721,7 @@ def setup_email_routes():
                         }
                 except Exception as e:
                     logger.warning(f"Failed to append to Sent: {e}")
-                _cleanup_compose_uploads(_atts)
+                _cleanup_compose_uploads(_atts, owner=owner)
                 return delivery_result
             except Exception as e:
                 logger.error(f"Failed to send email to {_to_label}: {e}")

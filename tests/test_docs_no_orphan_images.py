@@ -85,13 +85,16 @@ def test_pages_site_owns_its_entrypoint_and_media():
     assert REPO / "website/index.html" in website_files
     assert REPO / "docs/index.html" not in docs_files
     # docs/ui/ is the interface rebuild's working record — the parity table,
-    # the batch states, the design decisions. It is engineering material for
-    # whoever picks the work up, not a page of the published site, so it is
-    # the one subtree under docs/ that may hold Markdown.
+    # the batch states, the design decisions. docs/design/ is the same kind of
+    # thing for the backend: the note that has to exist before a migration is
+    # written, addressed to whoever writes it. Both are engineering material
+    # for whoever picks the work up, not pages of the published site, so they
+    # are the two subtrees under docs/ that may hold Markdown.
+    ENGINEERING = ("docs/ui/", "docs/design/")
     stray = [
         p for p in docs_files
         if p.suffix.lower() in VIDEO_EXTS | {".md"}
-        and not p.relative_to(REPO).as_posix().startswith("docs/ui/")
+        and not p.relative_to(REPO).as_posix().startswith(ENGINEERING)
     ]
     assert not stray, f"public Markdown belongs in website/, not docs/: {stray}"
 

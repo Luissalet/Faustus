@@ -51,14 +51,16 @@ al romperlo:
 
 ## Fallos que rompen algo hoy
 
-- `[!]` **La trampa "ofrecido y luego rechazado" con `suggest_document`.**
-  Un skill (`data/skills/ai-integration-setup`) hacía fallar 13 tests en el
-  árbol de Luis y en ningún otro. Bisecado hasta ahí. El arreglo pertenece al
-  punto de uso, no al preflight: preflight corre una vez al empezar el turno y
-  un documento puede crearse *durante* el turno, así que podar la herramienta
-  ahí quitaría una llamada legítima. Se revirtió a propósito un arreglo que
-  pasaba 89 tests pero rompía dos de `test_external_context_tool_gate.py`.
-  → El diagnóstico está escrito; el arreglo no.
+- `[x]` **La trampa "ofrecido y luego rechazado" con `suggest_document`** —
+  cerrada el 05-09-2026 (B-007, `FAUSTUS.md` §45). El arreglo está donde decía
+  el diagnóstico: en el punto de uso. `src/tool_availability.py` responde
+  "¿puede ejecutarse esto ahora?", la herramienta pregunta cuando la llaman, y
+  la negativa dice qué falta y qué lo devolvería. `agent_loop` la retira de la
+  ronda siguiente y **la reincorpora** en cuanto un `create_document` o un
+  `manage_documents` tiene éxito — que es justo lo que el preflight no podía
+  hacer. Queda sin comprobar una cosa: los 13 tests originales necesitaban
+  `data/skills/ai-integration-setup`, que ya no está en el árbol, así que la
+  reproducción exacta de aquel fallo no se ha repetido.
 
 - `[!]` **`bg_jobs.refresh()` mata por pid sin comprobar propiedad en la rama
   de timeout.** El orden del `elif` hace que `_pid_alive` nunca se alcance para
@@ -358,10 +360,228 @@ al romperlo:
 ## Sitios de fuga del venv aún sin tocar
 Cada uno es una línea (`env=native_host_environment()`), listados por valor:
 
-- `[+]` `src/agent_runners.py::build_env` → cubre `external_worker.py:247`.
+- `[x]` `src/agent_runners.py::build_env` — **hecho en SEC-1c**: ya no copia
+  `os.environ`, sino el perfil `agent`. Y el `which()` de `external_worker` busca primero en
+  el PATH del hijo y luego en el nuestro, que es lo que este punto pedía: una CLI instalada
+  en nuestro venv se sigue encontrando, y el hijo sigue sin recibir nuestro PATH.
+  Lo que decía el ticket original:
   **No es una línea segura tal cual**: `external_worker` resuelve el ejecutable
   con `shutil.which(argv[0], path=full_env["PATH"])`, así que si el usuario
   instaló su CLI en nuestro venv, limpiar el PATH lo deja "no instalado". Hace
   falta `which()` contra el PATH original y lanzar con el entorno limpio.
 - `[+]` `routes/agent_runner_routes.py:76`, `routes/codex_routes.py:532` — se
   arreglan solos con el anterior.
+
+---
+
+## SEC-1: lo cerrado, y lo que el mismo informe deja abierto
+
+El lote SEC-1 (rama `feat/sec-1`, 05-09-2026) cierra B-009, B-020, B-008, B-022 y B-010 de
+`inspiration/AUDITORIA_BACKEND_Y_FEATURES_FAUSTUS.md`; el registro está en `FAUSTUS.md` §42.
+Lo que **no** cierra, dicho aquí para que se pueda encontrar:
+
+- `[+]` **Perfiles de entorno para los otros hijos.** SEC-1c cableó los perfiles allowlist en
+  los dos consumidores que el informe señala primero —runners externos y servidores MCP—.
+  Siguen en `native_host_environment()` (que ahora sí quita el token interno, pero entrega
+  todo lo demás): `src/project_tests.py`, `src/git_invariants.py`,
+  `src/workspace_checkpoints.py`, `src/bg_jobs.py`, `src/builtin_actions.py`,
+  `services/shell/service.py` y `src/agent_tools/subprocess_tools.py`. Los perfiles `build` y
+  `git` existen para ellos. El de shell es el delicado: es la herramienta del usuario, y
+  recortarle el entorno rompe usos legítimos; necesita decisión, no sólo código.
+- `[+]` **Asistente de migración de servidores MCP antiguos.** El informe pide una migración
+  que enseñe **nombres de variables, nunca valores**, para que un servidor con
+  `inherit_env: true` pueda pasar a mínimo sabiendo qué pierde. Hoy la herencia se mantiene
+  entera (menos el token interno) y la única salida es el interruptor por servidor.
+- `[+]` **La interfaz no sabe de perfiles de backup.** `POST /api/backup/snapshot` acepta
+  `profile` y `passphrase`; Studio no los envía, así que desde la interfaz siempre sale un
+  backup `content`. Falta el selector y el campo de contraseña (va en `docs/ui/PENDIENTES_UI.md`).
+- `[?]` **Contraseña del backup completo, sólo por entorno.** `FAUSTUS_BACKUP_PASSPHRASE` es
+  deliberado: un `settings.json` vive dentro del directorio que el backup protege. Pero eso
+  significa que el backup automático **no** es completo salvo que alguien exporte la variable
+  en el arranque. Sin ella toma `content`, que es la degradación honesta.
+- `[~]` **`vault.json` y `BW_SESSION`.** El perfil `content` ya lo excluye entero, así que la
+  sesión de Bitwarden no viaja en un backup en claro. Lo que el informe pide además —no
+  persistir `BW_SESSION`, o cifrarlo con caducidad— sigue pendiente en `routes/vault`.
+- `[!]` `tests/test_agent_gate.py::test_the_hook_script_is_not_left_behind` falla en Windows
+  **desde antes de esta rama** (comprobado con el árbol guardado en stash): el directorio
+  `faustus-gate-*` del hook queda en el temporal. No es de SEC-1, pero está sin dueño.
+
+## AUTH-1: lo cerrado, y lo que el mismo informe deja abierto
+
+El lote AUTH-1 (rama `feat/sec-1`, 05-09-2026) cierra B-011, la parte de C-010 que toca a los
+tokens `ody_`, y B-004; el registro está en `FAUSTUS.md` §43. Lo que **no** cierra:
+
+- `[+]` **La matriz sólo gobierna a los tokens de API.** `core/authz.py` declara la superficie
+  de los principales `api_token`; las sesiones de cookie siguen autorizándose ruta a ruta con
+  `require_admin` y compañía. C-010 pide la matriz para **todos** los tipos de principal
+  (`user`, `api_token`, `internal`, `mcp`), con `owner_rule` aplicado de verdad y no sólo
+  declarado. `Rule.owner_rule` y `effect_class` ya viajan en cada regla precisamente para eso:
+  están escritos, todavía no se consultan.
+- `[+]` **`/api/codex/*` sigue siendo un agujero declarado.** La regla exige *todos* los
+  scopes conocidos, que es la manera honesta de decir «esto no está segmentado». Segmentarla
+  requiere decidir qué hace cada ruta de codex, y eso es trabajo de RUN-1.
+- `[?]` **El presupuesto del clasificador no es configurable.** `gate_check` llama a
+  `classify_tool` con los 50 ms por defecto. En la máquina de pruebas un comando adversario de
+  4.095 reglas evaluadas ni se acerca al límite, así que no hay prisa; si alguna vez sube
+  `budget_exceeded` en `/api/command-guard/log`, el ajuste es un setting, no un rediseño.
+- `[?]` **Una degradación se cuenta en memoria del proceso.** Los contadores viven en el
+  proceso y se pierden al reiniciar. Es suficiente para ver un clasificador rompiéndose ahora
+  mismo; no sirve para una serie temporal. Si hace falta histórico, los recibos
+  `guard_degraded` ya están en el log encadenado y son la fuente buena.
+- `[~]` **La tarjeta de un comando sin clasificar no se distingue en la interfaz.** El backend
+  la sella y la marca (`tier: UNKNOWN`, `rule: guard.degraded:*`); Studio la enseña como
+  cualquier otra tarjeta de comando destructivo. Debería decir que no se sabe qué hace, que no
+  es lo mismo que saber que es peligroso (va en `docs/ui/PENDIENTES_UI.md`).
+
+## Sprint 0B: lo cerrado, y lo que deja abierto
+
+El Sprint 0B (rama `feat/sec-1`, 05-09-2026) cierra B-002, B-003, B-005, B-006 y B-018 de la
+auditoría; el registro está en `FAUSTUS.md` §44. Lo que **no** cierra:
+
+- `[x]` **B-007 se cerró justo después**, en su propio commit (`FAUSTUS.md` §45).
+- `[+]` **La misma política de UTC falta en `chat_export.py`.** B-005 se arregló donde el
+  informe lo señala (`report_export.py`), pero `chat_export.py:692` sigue usando
+  `datetime.now()` sin zona y su nombre de fichero (`:1467`) sale de ahí. Es el mismo fallo,
+  fuera del alcance del lote; el arreglo es una línea y un repaso de los tests que fijan la
+  cadena *"Exported: ..."*.
+- `[?]` **`semver_key` acepta lo que acepta el validador, que es más laxo que semver.org.**
+  El regex del contrato permite identificadores de prerelease con ceros a la izquierda
+  (`1.0.0-01`), que la especificación prohíbe. Se ha dejado como estaba para no invalidar
+  datos ya escritos; la ordenación los trata como numéricos, que es lo razonable.
+- `[~]` **El resto de factories de rutas no se han revisado una a una.** El guard de
+  `tests/test_route_factory_isolation.py` impide que aparezca un `APIRouter` de módulo nuevo,
+  pero no dice nada de otras formas de estado global en `routes/` (cachés, managers guardados
+  en el módulo). Nadie ha buscado esas.
+
+## B-007: lo cerrado, y lo que deja abierto
+
+B-007 (rama `feat/sec-1`, 05-09-2026, `FAUSTUS.md` §45) pone la disponibilidad de herramientas
+en el punto de uso. Lo que **no** cierra:
+
+- `[+]` **Sólo hay una regla.** `src/tool_availability.py` gobierna `suggest_document`, que es
+  la que nombra el informe. `edit_document` y `update_document` tienen la misma dependencia de
+  un documento destino y siguen devolviendo su error propio; añadirlas es una entrada en
+  `_RULES`, pero hay que mirar antes qué tests fijan sus mensajes actuales.
+- `[+]` **La lista de herramientas retiradas no viaja al modelo.** Se retira el esquema, y eso
+  basta para que no se vuelva a llamar, pero al modelo no se le dice *"esto ya no está y por
+  esto"*. El `remedy` de la negativa lo explica una vez, en el resultado de esa llamada; una
+  nota en el siguiente turno sería más clara.
+- `[?]` **El registro es estático.** Las reglas se declaran en el módulo, no en el registro de
+  herramientas ni en los skills. Si un skill quisiera declarar su propia condición de
+  disponibilidad hoy no puede.
+- `[~]` **Los 13 tests del diagnóstico original no se han reproducido.** Necesitaban
+  `data/skills/ai-integration-setup`, que ya no está en `data/skills`. Si el skill reaparece,
+  vale la pena volver a correrlos antes de dar el asunto por muerto.
+
+## Frente 1 cerrado: lo que los últimos ocho lotes dejan abierto
+
+Los 25 bugs de `inspiration/AUDITORIA_BACKEND_Y_FEATURES_FAUSTUS.md` están cerrados
+(`FAUSTUS.md` §42-§51). Esto es lo que **no** cubren, dicho con nombre y motivo.
+
+### STATE-1 (B-012)
+
+- `[+]` **`save_settings` sigue siendo una escritura ciega.** Unas dos docenas de sitios hacen
+  leer-modificar-guardar con él. Ahora toman el lock y suben la revisión, así que no se
+  entrelazan, pero no pasan `expected_revision`: gana el último. Migrarlos a `update_settings`
+  es trabajo mecánico y hay que hacerlo ruta a ruta.
+- `[+]` **La misma política de UTC falta en `chat_export.py`.** B-005 se arregló en
+  `report_export.py`, que es donde lo señala el informe; `chat_export.py:692` sigue usando
+  `datetime.now()` sin zona y su nombre de fichero sale de ahí.
+- `[~]` **Dos mecanismos de lock en el mismo árbol.** STATE-1 usa `core/file_lock.py` (O_EXCL
+  con rotura por antigüedad) y UPLOAD-1 usa locks consultivos del sistema operativo, que se
+  sueltan solos al morir el proceso. Los segundos son mejores; habría que quedarse con ellos.
+
+### NET-1 (B-019)
+
+- `[!]` **Uno de los dos casos visibles del informe sigue abierto.**
+  `routes/webhook/webhook_routes.py` valida la `base_url` en la ruta, pero la petición la emite
+  `llm_call_async` en `src/llm_core.py`, que B-019 no lista. La ventana de rebinding sigue ahí
+  y necesita un lote que sea dueño de `llm_core`.
+- `[+]` **`src/url_security.py` es un tercer clasificador de direcciones privadas.** Parte de
+  la fragmentación que B-019 describe; fuera de las rutas que nombra.
+
+### SSH-1 (B-025)
+
+- `[!]` **Rompe conexiones existentes y no hay interfaz para arreglarlo.** Con el `known_hosts`
+  privado vacío, todo host remoto deja de conectar hasta emparejarlo. Los endpoints están
+  (`/api/cookbook/ssh/fingerprint`, `/pair`, `/unpair`); Studio no.
+- `[+]` **Quedan sitios con el flag antiguo:** `routes/hwfit_routes.py` y
+  `services/hwfit/hardware.py` pasan `strict_host_key_checking=False`, y
+  `core/platform_compat._ssh_exec_argv` y `routes/cookbook_helpers.run_ssh_command_async`
+  siguen aceptando ese valor. No están entre las rutas de B-025.
+- `[?]` **Nada se probó contra un SSH real.** `ssh-keyscan` está doblado en todos los tests, así
+  que la forma real de su salida y el comportamiento de `UserKnownHostsFile` con una ruta de
+  Windows están sin verificar contra un `ssh.exe` de verdad.
+
+### MAIL-1 (B-023) y UPLOAD-1 (B-021)
+
+- `[!]` **Agujero residual en `document_routes.py`.** `prepare-signed-reply` sigue dejando
+  ficheros `<uuid>_<nombre>` planos en la raíz del staging, y hay un puente que los resuelve con
+  la semántica antigua. Un token filtrado de ahí sigue siendo adjuntable por cualquier usuario
+  autenticado. El arreglo es una llamada a `register_compose_upload`; el fichero no está entre
+  los que B-023 nombra, y hay un test que fija el puente para que quitarlo sea deliberado.
+- `[+]` **El poller programado no pasa dueño.** `email_pollers.py` tiene `row_owner` a mano y
+  llama sin él. Una línea.
+- `[+]` **La limpieza de adjuntos es oportunista**, colgada de la ruta de staging, no de un
+  scheduler.
+- `[+]` **B-021 sólo tomó el camino corto.** La migración a SQLite, escribir metadatos antes de
+  publicar y el barrido de reconciliación siguen pendientes: son ART-1.
+
+### LIFE-1 (B-013, B-001)
+
+- `[+]` **Sin Job Objects en Windows.** Se persiste el pgid en POSIX; en Windows la propiedad se
+  demuestra por hora de creación. Un Job Object habría que crearlo al lanzar, en
+  `core/platform_compat`, fuera de las rutas de B-001.
+- `[+]` **`core/platform_compat.kill_process_tree` se queda como estaba**, así que
+  `routes/cookbook_routes.py` sigue llamando a `taskkill /T` sobre un pid pelado. Mismo fallo,
+  fichero no listado.
+- `[?]` **La rama POSIX está simulada.** Todos sus tests corren en Windows con `IS_WINDOWS`
+  monkeypatcheado y `os.getpgid`/`os.killpg` inyectados. Nada se ha ejecutado en POSIX real.
+- `[!]` **psutil pasa a ser necesario** para desmontar árboles, y no hay pin en `requirements`.
+  Sin él, `bg_jobs` se niega a señalar —que es la regla del informe— donde antes mataba sin
+  preguntar.
+
+### RUN-1 (B-014, B-015, B-016)
+
+- `[+]` **La clave de idempotencia no llega a los adaptadores.** Se acuña, se persiste y se
+  expone, pero no se enhebra hasta webhooks, correo ni `builtin_actions`; B-014 no los nombra.
+  `IDEMPOTENT_SINKS` está vacío a propósito: sin un destino que lo soporte, `effectively_once`
+  no se promete.
+- `[+]` **Nada llama a `heartbeat_node` ni a `recover_expired_node_leases` en bucle**, ni hay
+  enganche de `reconcile()` de media en el arranque —eso es `app.py`—.
+- `[?]` **Las tres migraciones no se han ejecutado contra una base de datos preexistente real.**
+  Los tests obtienen las columnas de `create_all`.
+- `[?]` **La forma posicional de las entradas de ComfyUI** (`client_id` dentro de `extra_data`,
+  índice 3) viene del conocimiento del formato, no de la instancia de esta máquina. Si es
+  errónea, la reconciliación no encuentra nada y los runs se quedan en `submit_unknown`: falla
+  del lado seguro, pero conviene comprobarlo.
+
+### ART-1 (B-017)
+
+- `[!]` **La migración entera está pendiente, y ese es el plan.** Fases 2 a 5 de la nota:
+  copiar `artifacts` a ocurrencias, hashear las filas de galería, y los dos cortes. Nada llama
+  todavía al almacén nuevo desde `collect()`/`persist()`; `artifacts` sigue siendo la verdad.
+- `[+]` **La recolección de basura no borra bytes por defecto**, y aunque se le pida se niega a
+  tocar lo que la tabla vieja todavía nombre. Dos censos cubren los mismos ficheros hasta la
+  fase 5 y sólo uno sabe del otro.
+- `[?]` **Las dos carreras con hilos usan SQLite sobre fichero.** Pasaron siempre aquí, pero es
+  el sitio donde esperaría inestabilidad en una máquina cargada.
+
+### CB-1 (B-024)
+
+- `[+]` **Sin Secret Broker.** El informe lista cuatro alternativas equivalentes; se implementó
+  la del fichero de un solo uso. Un broker no existe en el repositorio.
+- `[?]` **Tres tests se saltan en Windows** porque comprueban modos POSIX ejecutando el snippet
+  generado. El comportamiento se verificó a mano en un shell Linux.
+- `[?]` **Nada se ha ejecutado contra un scp o un PowerShell remotos reales:** la rama de
+  Windows remoto está verificada sólo como texto generado.
+
+### De la propia auditoría, más allá de los bugs
+
+- `[ ]` Los cambios estructurales C-001 a C-008 (RunService único, sandbox por defecto,
+  supervisor durable de trabajos, app factory, dividir los módulos gigantes, migraciones
+  formales, dependencias reproducibles, errores tipados) están **sin empezar**. LIFE-1 hizo la
+  parte de C-004 que tocaba al ciclo de vida; el resto no.
+- `[ ]` **B-008 sigue parcial.** SEC-1c cableó los perfiles de entorno en runners externos y
+  servidores MCP; los otros siete consumidores de `native_host_environment()` siguen recibiendo
+  el entorno completo menos el token interno.

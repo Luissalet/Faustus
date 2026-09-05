@@ -14,6 +14,11 @@ and `email_pollers.py` (the background loops):
 
 import os
 import base64
+import hashlib
+import secrets
+import shutil
+import tempfile
+import threading
 import time
 import imaplib
 import smtplib
@@ -512,40 +517,45 @@ def _q(name: str) -> str:
     return '"' + (name or "").replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
-def _attach_compose_uploads(outer: MIMEMultipart, tokens) -> None:
-    """Read each staged upload token, build a MIMEBase part, and attach to
-    `outer`. Tokens are sanitized via Path(token).name to prevent traversal.
-    Missing files are skipped silently. Used by /send, scheduled delivery,
-    and the agent send pipeline."""
+def _attach_compose_uploads(outer: MIMEMultipart, tokens, owner=None) -> None:
+    """Attach each staged item to `outer`, resolving it by (id, owner).
+
+    `owner=None` is the scheduled-delivery caller: the poller already selected
+    its row by owner and carries no request identity to re-check. Every
+    request-facing caller passes the authenticated user, so a staging id that
+    leaked out of one account - through an error log, a shared browser, a
+    support session - attaches nothing when replayed from another. Unknown ids
+    are skipped, and the warning carries a prefix rather than the whole
+    capability."""
     if not tokens:
         return
     for token in tokens:
-        safe_token = Path(token).name
-        path = COMPOSE_UPLOADS_DIR / safe_token
-        if not path.exists():
-            logger.warning(f"Attachment token not found: {safe_token}")
+        row = resolve_compose_upload(token, owner) or _legacy_compose_row(token)
+        if row is None:
+            logger.warning("Staged attachment %s.. is not available", _compose_id_hint(token))
             continue
-        ctype, encoding = mimetypes.guess_type(str(path))
+        # Guess from the display name: the stored file is named by its opaque
+        # id precisely so the path reveals nothing, which leaves no extension
+        # on disk to guess from.
+        ctype, encoding = mimetypes.guess_type(row["filename"])
         if ctype is None or encoding is not None:
             ctype = "application/octet-stream"
         maintype, subtype = ctype.split("/", 1)
-        with open(path, "rb") as f:
+        with open(row["path"], "rb") as f:
             part = MIMEBase(maintype, subtype)
             part.set_payload(f.read())
         encoders.encode_base64(part)
-        # Token format: "<uuid>_<original_name>"
-        original_name = safe_token.split("_", 1)[1] if "_" in safe_token else safe_token
-        part.add_header("Content-Disposition", "attachment", filename=original_name)
+        part.add_header("Content-Disposition", "attachment", filename=row["filename"])
         outer.attach(part)
 
 
-def _cleanup_compose_uploads(tokens) -> None:
-    """Best-effort unlink of staged uploads after delivery (or failure)."""
+def _cleanup_compose_uploads(tokens, owner=None) -> None:
+    """Best-effort removal of staged items after delivery (or failure)."""
     if not tokens:
         return
     for token in tokens:
         try:
-            (COMPOSE_UPLOADS_DIR / Path(token).name).unlink(missing_ok=True)
+            delete_compose_upload_item(token, owner)
         except Exception:
             pass
 
@@ -561,6 +571,344 @@ ATTACHMENTS_DIR.mkdir(parents=True, exist_ok=True)
 COMPOSE_UPLOADS_DIR = ATTACHMENTS_DIR / "_compose"
 COMPOSE_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 SCHEDULED_DB = Path(SCHEDULED_EMAILS_DB)
+
+
+# --- staged compose attachments ---------------------------------------------
+#
+# Staging used to mean "write the bytes to _compose/<uuid>_<original name> and
+# hand the client that filename back". The filename was the entire capability
+# and nothing else was checked, so whoever learned one - from an error log, a
+# shared browser history, a support session - could attach it to their own
+# message or delete it out from under its author. Abandoned drafts had no
+# creation record either, so they sat on the volume until someone noticed.
+#
+# The registry below gives each staged item an opaque id, an owner and an
+# expiry, keeps the bytes in a per-owner directory named by digest rather than
+# by account, and turns every read, send and delete into an (id, owner)
+# lookup, so a leaked id is worth nothing to anybody else.
+COMPOSE_STAGING_INDEX = ATTACHMENTS_DIR / "_compose_index.json"
+COMPOSE_ID_RE = re.compile(r"^[0-9a-f]{32}$")
+
+try:
+    COMPOSE_STAGING_TTL_SECONDS = 3600.0 * float(
+        os.environ.get("ODYSSEUS_MAIL_COMPOSE_STAGING_TTL_HOURS") or 168.0
+    )
+except (TypeError, ValueError):
+    COMPOSE_STAGING_TTL_SECONDS = 3600.0 * 168.0
+
+# Reentrant because the sweep runs under the same guard as the write that
+# triggered it.
+_COMPOSE_STAGING_LOCK = threading.RLock()
+_COMPOSE_SWEEP_INTERVAL_SECONDS = 300.0
+_compose_last_sweep = 0.0
+
+
+def _compose_id_hint(token) -> str:
+    """A prefix long enough to correlate two log lines, short enough to be
+    useless to whoever reads the log."""
+    return str(token or "")[:8]
+
+
+def _compose_owner_dir(owner: str) -> Path:
+    """Per-owner staging directory, named by digest.
+
+    A directory listing of a shared attachments volume should not enumerate
+    the accounts that use it, and the digest keeps sibling owners from being
+    able to guess each other's paths.
+    """
+    digest = hashlib.sha256(("compose:" + (owner or "")).encode("utf-8")).hexdigest()
+    return COMPOSE_UPLOADS_DIR / digest[:32]
+
+
+def _inside_compose_dir(path) -> bool:
+    try:
+        root = os.path.realpath(str(COMPOSE_UPLOADS_DIR))
+        target = os.path.realpath(str(path))
+        return os.path.commonpath([root, target]) == root
+    except Exception:
+        return False
+
+
+def _load_compose_index() -> dict:
+    try:
+        with open(COMPOSE_STAGING_INDEX, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except FileNotFoundError:
+        return {}
+    except Exception as e:
+        # Fail closed on the metadata, not on the mail: an unreadable index
+        # makes staged items unresolvable, which the send path already treats
+        # as a missing attachment.
+        logger.warning(f"Compose staging index unreadable: {e}")
+        return {}
+
+
+def _save_compose_index(index: dict) -> None:
+    COMPOSE_STAGING_INDEX.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(
+        prefix=".compose-", suffix=".tmp", dir=str(COMPOSE_STAGING_INDEX.parent)
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(index, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, str(COMPOSE_STAGING_INDEX))
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def _compose_sha256_file(path) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _compose_item_expired(row: dict, now: float) -> bool:
+    """A lease outranks the TTL: a scheduled message must keep its attachment
+    past the draft expiry, or the sweep deletes the bytes the poller is going
+    to need."""
+    try:
+        deadline = max(
+            float(row.get("expires_at") or 0.0),
+            float(row.get("lease_until") or 0.0),
+        )
+    except (TypeError, ValueError):
+        return True
+    return deadline <= now
+
+
+def _legacy_compose_row(token) -> Optional[dict]:
+    """Bridge for the pre-registry `<uuid>_<name>` files still written
+    straight into the staging root.
+
+    `routes/document/document_routes.py` stages its flattened signed-reply PDF
+    that way and is outside this change, so refusing the shape would break
+    prepare-signed-reply. These files keep their old ownerless semantics and
+    nothing in this module produces them any more; the bridge goes away with
+    the last direct writer.
+    """
+    name = Path(str(token or "")).name
+    if not name:
+        return None
+    path = COMPOSE_UPLOADS_DIR / name
+    # A registry id resolves to a per-owner *directory* here, never a file, so
+    # the two namespaces cannot collide.
+    if not path.is_file() or not _inside_compose_dir(path):
+        return None
+    display = name.split("_", 1)[1] if "_" in name else name
+    # Loud on purpose: every hit is a file whose owner nobody can check, so the
+    # log is how an operator sees the bridge is still load-bearing.
+    logger.warning(
+        "Resolving pre-registry compose attachment %s.. without an owner check",
+        _compose_id_hint(name),
+    )
+    return {"id": name, "owner": None, "path": str(path), "filename": display, "legacy": True}
+
+
+def _compose_row(item_id, owner=None) -> Optional[dict]:
+    """The (id, owner) lookup every caller funnels through. `owner=None` skips
+    the ownership check and is reserved for scheduled delivery."""
+    item_id = str(item_id or "")
+    if not COMPOSE_ID_RE.match(item_id):
+        return None
+    with _COMPOSE_STAGING_LOCK:
+        row = _load_compose_index().get(item_id)
+    if not isinstance(row, dict):
+        return None
+    if owner is not None and (row.get("owner") or "") != (owner or "").strip():
+        return None
+    return dict(row)
+
+
+def resolve_compose_upload(item_id, owner=None) -> Optional[dict]:
+    """Return the staged row for `item_id` when `owner` may have it and its
+    bytes are still present, otherwise None. Callers cannot distinguish
+    "wrong owner" from "never existed", which is the point."""
+    row = _compose_row(item_id, owner)
+    if row is None:
+        return None
+    path = Path(str(row.get("path") or ""))
+    if not _inside_compose_dir(path) or not path.is_file():
+        return None
+    return row
+
+
+def register_compose_upload(
+    owner,
+    filename,
+    *,
+    content: Optional[bytes] = None,
+    src_path=None,
+    ttl_seconds: Optional[float] = None,
+) -> dict:
+    """Stage bytes as an owned, expiring compose attachment; return the row.
+
+    The id is random and carries no part of the filename: the display name
+    travels in the response body and in the registry, never inside the
+    capability the client hands back to us.
+    """
+    if content is None and src_path is None:
+        raise ValueError("register_compose_upload needs content or src_path")
+    owner = (owner or "").strip()
+    item_id = secrets.token_hex(16)
+    target_dir = _compose_owner_dir(owner)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    path = target_dir / item_id
+    if content is not None:
+        with open(path, "wb") as f:
+            f.write(content)
+        size = len(content)
+        digest = hashlib.sha256(content).hexdigest()
+    else:
+        shutil.copyfile(str(src_path), str(path))
+        size = path.stat().st_size
+        digest = _compose_sha256_file(path)
+    try:
+        # Owner-only where the filesystem honours it; a no-op on Windows, where
+        # the per-owner directory is the containment that matters.
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+    now = time.time()
+    ttl = COMPOSE_STAGING_TTL_SECONDS if ttl_seconds is None else float(ttl_seconds)
+    row = {
+        "id": item_id,
+        "owner": owner,
+        "path": str(path),
+        "filename": str(filename or "attachment"),
+        "sha256": digest,
+        "size": size,
+        "created_at": now,
+        "expires_at": now + ttl,
+        "lease_until": 0.0,
+    }
+    with _COMPOSE_STAGING_LOCK:
+        index = _load_compose_index()
+        index[item_id] = row
+        _save_compose_index(index)
+    _sweep_expired_compose_uploads()
+    return dict(row)
+
+
+def delete_compose_upload_item(item_id, owner) -> bool:
+    """Remove a staged item, returning whether anything was removed.
+
+    False covers both "no such id" and "not yours", so the caller answers 404
+    either way and never confirms that a stranger's id is real.
+    """
+    row = _compose_row(item_id, owner)
+    if row is None:
+        if _compose_row(item_id, None) is not None:
+            return False
+        legacy = _legacy_compose_row(item_id)
+        if legacy is None:
+            return False
+        row = legacy
+    else:
+        with _COMPOSE_STAGING_LOCK:
+            index = _load_compose_index()
+            if index.pop(row["id"], None) is not None:
+                _save_compose_index(index)
+    try:
+        Path(row["path"]).unlink(missing_ok=True)
+    except OSError as e:
+        logger.warning(
+            "Failed to unlink staged attachment %s..: %s", _compose_id_hint(row["id"]), e
+        )
+    return True
+
+
+def lease_compose_uploads(item_ids, owner, until_ts: float) -> list:
+    """Hold the caller's staged items until `until_ts`, past the draft TTL.
+
+    Returns the ids actually leased: a schedule quoting somebody else's id
+    extends nothing, which is what keeps the lease from doubling as a way to
+    pin another account's attachment on disk.
+    """
+    leased = []
+    with _COMPOSE_STAGING_LOCK:
+        index = _load_compose_index()
+        changed = False
+        for raw in item_ids or []:
+            row = index.get(str(raw))
+            if not isinstance(row, dict):
+                continue
+            if (row.get("owner") or "") != (owner or "").strip():
+                continue
+            try:
+                current = float(row.get("lease_until") or 0.0)
+            except (TypeError, ValueError):
+                current = 0.0
+            if current < float(until_ts):
+                row["lease_until"] = float(until_ts)
+                changed = True
+            leased.append(str(raw))
+        if changed:
+            _save_compose_index(index)
+    return leased
+
+
+def cleanup_expired_compose_uploads(now: Optional[float] = None) -> int:
+    """Drop staged items whose TTL and lease have both passed.
+
+    The index is committed before the bytes go, so a crash between the two
+    leaves orphaned bytes rather than rows pointing at nothing - the direction
+    that degrades to wasted disk instead of a failed send.
+    """
+    now = time.time() if now is None else float(now)
+    removed = 0
+    with _COMPOSE_STAGING_LOCK:
+        index = _load_compose_index()
+        survivors = {}
+        doomed = []
+        for key, row in index.items():
+            if isinstance(row, dict) and not _compose_item_expired(row, now):
+                survivors[key] = row
+            elif isinstance(row, dict):
+                doomed.append(row)
+        if doomed:
+            _save_compose_index(survivors)
+    for row in doomed:
+        path = Path(str(row.get("path") or ""))
+        if not _inside_compose_dir(path):
+            continue
+        try:
+            path.unlink(missing_ok=True)
+            removed += 1
+        except OSError as e:
+            logger.warning(
+                "Failed to sweep staged attachment %s..: %s",
+                _compose_id_hint(row.get("id")),
+                e,
+            )
+    return removed
+
+
+def _sweep_expired_compose_uploads() -> None:
+    """Throttled opportunistic sweep, hung off the staging path.
+
+    An abandoned draft never comes back through any other code path, so the
+    only reliable moment to notice it is the next time somebody stages
+    anything at all.
+    """
+    global _compose_last_sweep
+    now = time.time()
+    with _COMPOSE_STAGING_LOCK:
+        if now - _compose_last_sweep < _COMPOSE_SWEEP_INTERVAL_SECONDS:
+            return
+        _compose_last_sweep = now
+    try:
+        cleanup_expired_compose_uploads(now)
+    except Exception as e:
+        logger.warning(f"Compose staging sweep failed: {e}")
 
 
 OWNER_SCOPED_EMAIL_CACHE_TABLES = {
@@ -1004,8 +1352,12 @@ def _load_settings():
 
 
 def _save_settings(settings):
-    from core.atomic_io import atomic_write_json
-    atomic_write_json(str(SETTINGS_FILE), settings, indent=2)
+    # B-012: through the store, so this write takes the same cross-process
+    # lock and bumps the same revision as every other one. Writing the file
+    # here directly was atomic but not serialised: two writers each read the
+    # whole document and each wrote it back, and the second erased the first.
+    from src.settings import save_settings
+    save_settings(settings, path=str(SETTINGS_FILE))
 
 
 def _get_email_config(account_id: str | None = None, owner: str = "") -> dict:

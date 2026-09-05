@@ -4,6 +4,7 @@ Config stored in data/auth.json. Uses bcrypt directly.
 """
 
 import enum
+import hashlib
 import json
 import os
 import secrets
@@ -78,6 +79,63 @@ def _verify_password(password: str, hashed: str) -> bool:
     return bcrypt.checkpw(password.encode("utf-8"), hashed.encode("utf-8"))
 
 
+# SEC-1 (B-020). What is persisted must not be presentable as a credential.
+#: Bumped when the on-disk shape of sessions.json changes. Version 1 keyed each
+#: entry by the bearer token itself, so a copy of the file was a ring of working
+#: sessions; version 2 keys by digest.
+SESSIONS_FORMAT_VERSION = 2
+
+
+def _digest(value: str) -> str:
+    """SHA-256 of a high-entropy token, hex.
+
+    No salt and no KDF, deliberately: these are 256-bit random tokens, not
+    passwords. There is no dictionary to try, so a slow hash would only make
+    every authenticated request slower. Compare with `secrets.compare_digest`.
+    """
+    return hashlib.sha256(str(value or "").encode("utf-8")).hexdigest()
+
+
+def _encrypt_totp_secret(secret: str) -> str:
+    """Encrypt the TOTP seed with the app key (`data/.app_key`).
+
+    A stored TOTP seed is a second factor in plaintext: whoever reads it can
+    generate valid codes forever. Encrypting it does not help against a
+    compromised process — the key sits next to the data — but it does mean a
+    copy of auth.json alone (a backup, a synced folder) is not enough.
+    Imported lazily so `core.auth` keeps loading if the crypto stack is not
+    importable; the secret then stays as it was rather than login breaking.
+    """
+    if not secret:
+        return secret or ""
+    try:
+        from src.secret_storage import encrypt as _encrypt
+        return _encrypt(secret)
+    except (ImportError, OSError, ValueError) as exc:
+        logger.warning("Could not encrypt the TOTP secret (%s); stored as-is", exc)
+        return secret
+
+
+def _decrypt_totp_secret(value: str) -> str:
+    """Read a TOTP seed. Legacy plaintext values pass straight through."""
+    if not value:
+        return ""
+    try:
+        from src.secret_storage import decrypt as _decrypt
+        return _decrypt(value)
+    except (ImportError, OSError, ValueError) as exc:
+        logger.error("Could not decrypt the TOTP secret: %s", exc)
+        return ""
+
+
+def _is_encrypted_secret(value: str) -> bool:
+    try:
+        from src.secret_storage import is_encrypted
+        return is_encrypted(value)
+    except ImportError:
+        return False
+
+
 class SetAdminResult(enum.Enum):
     """Outcome of AuthManager.set_admin, so callers can map each case to a
     precise response instead of guessing from a bare bool."""
@@ -110,6 +168,7 @@ class AuthManager:
         self._migrate_single_user()
         self._drop_reserved_loaded_users()
         self._migrate_legacy_admin_role()
+        self._migrate_secret_material()
 
     def _load(self):
         try:
@@ -134,28 +193,51 @@ class AuthManager:
             self._config = {}
 
     def _load_sessions(self):
-        """Load persisted session tokens from disk, pruning expired ones."""
+        """Load persisted session digests from disk, pruning expired ones."""
         try:
-            if os.path.exists(self._sessions_path):
-                with open(self._sessions_path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                now = time.time()
-                self._sessions = {k: v for k, v in data.items() if v.get("expiry", 0) > now}
-                pruned = len(data) - len(self._sessions)
-                if pruned > 0:
-                    self._save_sessions()
-                logger.info(f"Loaded {len(self._sessions)} session(s) from disk")
-        except Exception as e:
+            if not os.path.exists(self._sessions_path):
+                return
+            with open(self._sessions_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict) and data.get("version") == SESSIONS_FORMAT_VERSION:
+                stored = data.get("sessions") or {}
+            else:
+                # SEC-1 (B-020): the old file keyed every entry by the bearer
+                # token itself — reading it was enough to resume any live
+                # session. Those entries cannot be converted, because hashing
+                # them now would keep the very tokens that leaked valid. They
+                # are dropped instead, and everyone logs in once more.
+                self._sessions = {}
+                logger.warning(
+                    "sessions.json was in the pre-SEC-1 plaintext format: "
+                    "%s session(s) invalidated, users must log in again",
+                    len(data) if isinstance(data, dict) else 0,
+                )
+                self._save_sessions()
+                return
+            now = time.time()
+            self._sessions = {
+                key: value for key, value in stored.items()
+                if isinstance(value, dict) and value.get("expiry", 0) > now
+            }
+            if len(stored) != len(self._sessions):
+                self._save_sessions()
+            logger.info(f"Loaded {len(self._sessions)} session(s) from disk")
+        except (OSError, ValueError, AttributeError) as e:
             logger.error(f"Failed to load sessions: {e}")
             self._sessions = {}
 
     def _save_sessions(self):
-        """Persist session tokens to disk (atomic, lock-guarded)."""
+        """Persist session digests to disk (atomic, private, lock-guarded)."""
         try:
             with self._sessions_lock:
                 snapshot = dict(self._sessions)
-            _atomic_write_json(self._sessions_path, snapshot)
-        except Exception as e:
+            _atomic_write_json(
+                self._sessions_path,
+                {"version": SESSIONS_FORMAT_VERSION, "sessions": snapshot},
+                private=True,
+            )
+        except OSError as e:
             logger.error(f"Failed to save sessions: {e}")
 
     def _migrate_single_user(self):
@@ -218,8 +300,49 @@ class AuthManager:
         if changed:
             self._save()
 
+    def _migrate_secret_material(self):
+        """SEC-1 (B-020): encrypt plaintext TOTP seeds, hash recovery codes.
+
+        Runs on every start over auth.json as it is. An already-migrated file
+        costs one pass over the users and no write. The recovery codes cannot
+        be shown again afterwards — they were never meant to be readable from
+        disk, and anyone who still needs a set can disable and re-enable 2FA.
+        """
+        changed = False
+        rehashed = []
+        for username, user in self.users.items():
+            if not isinstance(user, dict):
+                continue
+            for field in ("totp_secret", "totp_secret_pending"):
+                value = user.get(field)
+                if value and not _is_encrypted_secret(value):
+                    encrypted = _encrypt_totp_secret(value)
+                    if encrypted != value:
+                        user[field] = encrypted
+                        changed = True
+            if "totp_backup_codes" in user:
+                legacy = user.pop("totp_backup_codes") or []
+                if legacy:
+                    kept = list(user.get("totp_backup_code_hashes") or [])
+                    user["totp_backup_code_hashes"] = kept + [
+                        _digest(str(code)) for code in legacy if str(code).strip()
+                    ]
+                    rehashed.append(username)
+                changed = True
+        if changed:
+            with self._config_lock:
+                self._save()
+        if rehashed:
+            logger.warning(
+                "Hashed plaintext recovery codes for: %s", ", ".join(sorted(rehashed))
+            )
+
     def _save(self):
-        _atomic_write_json(self.auth_path, self._config, indent=2)
+        # private=True: auth.json holds password hashes, the TOTP secret and
+        # the recovery-code hashes. On Windows `safe_chmod` is a no-op, so
+        # without an explicit ACL this file inherits whatever the data
+        # directory grants.
+        _atomic_write_json(self.auth_path, self._config, indent=2, private=True)
 
     @property
     def users(self) -> Dict[str, Any]:
@@ -492,7 +615,9 @@ class AuthManager:
             return None
         secret = pyotp.random_base32()
         with self._config_lock:
-            self._config["users"][username]["totp_secret_pending"] = secret
+            self._config["users"][username]["totp_secret_pending"] = (
+                _encrypt_totp_secret(secret)
+            )
             self._save()
         return secret
 
@@ -501,27 +626,37 @@ class AuthManager:
         totp = pyotp.TOTP(secret)
         return totp.provisioning_uri(name=username, issuer_name="Faustus")
 
-    def totp_confirm_enable(self, username: str, code: str) -> bool:
-        """Verify a TOTP code against the pending secret, then enable 2FA."""
+    def totp_confirm_enable(self, username: str, code: str) -> Optional[List[str]]:
+        """Verify a TOTP code against the pending secret, then enable 2FA.
+
+        Returns the recovery codes in plaintext, once — this is the only
+        moment they exist outside the user's own notes, because only their
+        hashes are stored. `None` means the code did not verify. Callers that
+        only test truthiness keep working: a non-empty list is truthy.
+        """
         username = username.strip().lower()
         user = self.users.get(username, {})
-        secret = user.get("totp_secret_pending")
+        secret = _decrypt_totp_secret(user.get("totp_secret_pending"))
         if not secret:
-            return False
+            return None
         totp = pyotp.TOTP(secret)
         if not totp.verify(code, valid_window=1):
-            return False
+            return None
         # Enable 2FA
+        backup = [secrets.token_hex(4) for _ in range(8)]
         with self._config_lock:
-            self._config["users"][username]["totp_secret"] = secret
-            self._config["users"][username]["totp_enabled"] = True
-            self._config["users"][username].pop("totp_secret_pending", None)
-            # Generate backup codes
-            backup = [secrets.token_hex(4) for _ in range(8)]
-            self._config["users"][username]["totp_backup_codes"] = backup
+            record = self._config["users"][username]
+            record["totp_secret"] = _encrypt_totp_secret(secret)
+            record["totp_enabled"] = True
+            record.pop("totp_secret_pending", None)
+            # Only the hashes are kept: a recovery code is a password
+            # equivalent, and the old file stored all eight in the clear and
+            # compared them the same way.
+            record["totp_backup_code_hashes"] = [_digest(c) for c in backup]
+            record.pop("totp_backup_codes", None)
             self._save()
         logger.info(f"2FA enabled for '{username}'")
-        return True
+        return backup
 
     def totp_verify(self, username: str, code: str) -> bool:
         """Verify a TOTP code for login."""
@@ -529,20 +664,32 @@ class AuthManager:
         user = self.users.get(username, {})
         if not user.get("totp_enabled"):
             return True  # 2FA not enabled, always pass
-        secret = user.get("totp_secret")
+        secret = _decrypt_totp_secret(user.get("totp_secret"))
         if not secret:
             # 2FA is enabled but no secret is stored (corrupt/partially-written
             # auth.json). Fail closed — returning True here bypassed the second
             # factor entirely.
             return False
-        # Check backup codes first
-        backup = user.get("totp_backup_codes", [])
-        if code in backup:
+        # Recovery codes first, compared as digests and in constant time.
+        offered = _digest(str(code or "").strip())
+        hashes = list(user.get("totp_backup_code_hashes") or [])
+        match = next(
+            (h for h in hashes if secrets.compare_digest(str(h), offered)),
+            None,
+        )
+        if match is not None:
             with self._config_lock:
-                backup.remove(code)
-                self._config["users"][username]["totp_backup_codes"] = backup
+                # Re-read inside the lock: two logins racing on the same code
+                # must not both consume it and both succeed.
+                record = self._config["users"][username]
+                current = list(record.get("totp_backup_code_hashes") or [])
+                if match not in current:
+                    logger.warning("Recovery code already used for '%s'", username)
+                    return False
+                current.remove(match)
+                record["totp_backup_code_hashes"] = current
                 self._save()
-            logger.info(f"Backup code used for '{username}' ({len(backup)} remaining)")
+            logger.info(f"Backup code used for '{username}' ({len(current)} remaining)")
             return True
         totp = pyotp.TOTP(secret)
         return totp.verify(code, valid_window=1)
@@ -556,6 +703,7 @@ class AuthManager:
             self._config["users"][username].pop("totp_secret", None)
             self._config["users"][username].pop("totp_secret_pending", None)
             self._config["users"][username].pop("totp_backup_codes", None)
+            self._config["users"][username].pop("totp_backup_code_hashes", None)
             self._config["users"][username]["totp_enabled"] = False
             self._save()
         logger.info(f"2FA disabled for '{username}'")
@@ -588,7 +736,8 @@ class AuthManager:
                 logger.warning("Refused to issue session for missing user '%s'", username)
                 return None
             with self._sessions_lock:
-                self._sessions[token] = {
+                # The browser keeps the token; disk keeps only its digest.
+                self._sessions[_digest(token)] = {
                     "username": username,
                     "expiry": time.time() + TOKEN_TTL,
                 }
@@ -600,12 +749,13 @@ class AuthManager:
             return False
         expired = False
         deleted_user = False
+        key = _digest(token)
         with self._sessions_lock:
-            session = self._sessions.get(token)
+            session = self._sessions.get(key)
             if session is None:
                 return False
             if time.time() > session["expiry"]:
-                self._sessions.pop(token, None)
+                self._sessions.pop(key, None)
                 expired = True
             else:
                 # SECURITY: if the user record has since been removed (admin
@@ -613,7 +763,7 @@ class AuthManager:
                 # session so the next request kicks them out instead of
                 # silently authenticating against a non-existent account.
                 if session.get("username") not in self.users:
-                    self._sessions.pop(token, None)
+                    self._sessions.pop(key, None)
                     deleted_user = True
         if expired or deleted_user:
             self._save_sessions()
@@ -626,18 +776,19 @@ class AuthManager:
             return None
         expired = False
         deleted_user = False
+        key = _digest(token)
         with self._sessions_lock:
-            session = self._sessions.get(token)
+            session = self._sessions.get(key)
             if session is None:
                 return None
             if time.time() > session["expiry"]:
-                self._sessions.pop(token, None)
+                self._sessions.pop(key, None)
                 expired = True
             else:
                 _u = session["username"]
                 # SECURITY: orphan check — same rationale as validate_token.
                 if _u not in self.users:
-                    self._sessions.pop(token, None)
+                    self._sessions.pop(key, None)
                     deleted_user = True
                 else:
                     return _u
@@ -647,17 +798,18 @@ class AuthManager:
 
     def revoke_token(self, token: str):
         with self._sessions_lock:
-            self._sessions.pop(token, None)
+            self._sessions.pop(_digest(token), None)
         self._save_sessions()
 
     def revoke_user_sessions(self, username: str, except_token: Optional[str] = None) -> int:
         """Revoke active browser sessions for a user, optionally preserving one."""
         username = username.strip().lower()
         revoked = 0
+        except_key = _digest(except_token) if except_token else None
         with self._sessions_lock:
             to_drop = [
                 token for token, session in self._sessions.items()
-                if token != except_token and (session or {}).get("username") == username
+                if token != except_key and (session or {}).get("username") == username
             ]
             for token in to_drop:
                 self._sessions.pop(token, None)

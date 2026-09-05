@@ -5,14 +5,46 @@ Single source of truth for reading/writing data/settings.json and data/features.
 All modules should import from here instead of accessing files directly.
 """
 
+import copy
 import json
+import threading
 import time
 import logging
-from typing import Any
+from typing import Any, Mapping, Optional
 
 from src.constants import SETTINGS_FILE, FEATURES_FILE
 
 logger = logging.getLogger(__name__)
+
+
+class SettingsError(ValueError):
+    """A patch this store refuses: unknown key, or a value of the wrong type."""
+
+
+class SettingsConflict(RuntimeError):
+    """Somebody else wrote between your read and your write (B-012).
+
+    Carries both revisions so the caller can decide: re-read and re-apply, or
+    tell a human their form was based on a stale page.
+    """
+
+    def __init__(self, expected: int, actual: int) -> None:
+        super().__init__(
+            f"settings changed under you: you read revision {expected}, "
+            f"disk is at {actual}"
+        )
+        self.expected = int(expected)
+        self.actual = int(actual)
+
+
+#: Where the monotonic revision lives inside the saved document. Stripped from
+#: everything this module hands out, so no caller has to know it exists.
+REVISION_KEY = "__revision__"
+
+#: Serialises this process's own readers and writers. The cross-process half
+#: is core.file_lock; both are needed — threads share the cache, processes do
+#: not, and only the file lock is visible to a second uvicorn worker.
+_WRITE_LOCK = threading.RLock()
 
 # Keys retained in the raw settings store for compatibility and rollback, but
 # deliberately unavailable through generic settings APIs or agent tools.  They
@@ -25,7 +57,7 @@ RETIRED_SETTING_KEYS = frozenset({"default_model_fallbacks"})
 # (every chat, every preprocess); without this it re-parses the JSON each call.
 # Picks up edits within _CACHE_TTL seconds, which is fine for human-edited config.
 _CACHE_TTL = 2.0
-_settings_cache: tuple[float, dict] | None = None
+_settings_cache: tuple[float, dict, int] | None = None
 _features_cache: tuple[float, dict] | None = None
 
 def _invalidate_caches():
@@ -357,6 +389,17 @@ DEFAULT_SETTINGS = {
     # untouched, because a server that silently loses the variable it was
     # reading is a break the user cannot debug.
     "agent_mcp_min_env": True,
+    # What an EXTERNAL agent CLI inherits (src/agent_runners.py, SEC-1/B-008).
+    # It used to be the whole process environment: every provider key, cloud
+    # credential and repository token the operator had exported went to a
+    # third-party binary. Now it gets the structural variables plus what its
+    # own row declares it reads. `agent_env_allow` is the explicit grant — a
+    # comma-separated list of variable names every runner may additionally
+    # read ("GITHUB_TOKEN, MY_VENDOR_KEY"). `agent_env_inherit_all` is the
+    # escape hatch: the old behaviour, one setting, logged on every run that
+    # uses it. Faustus's own internal token is withheld either way.
+    "agent_env_allow": "",
+    "agent_env_inherit_all": False,
     # Detached runs: on-disk replay log (survives restarts) and the task
     # queue — local endpoints share one lane, N runs at a time (1 = one GPU,
     # one generation); 0 = unlimited. API endpoints queue only when their
@@ -580,34 +623,203 @@ DEFAULT_FEATURES = {
 
 
 # ── Settings (data/settings.json) ──
+#
+# B-012, the two things this section has to get right:
+#
+#   1. Nothing hands out the cache's own objects. `load_settings()` used to
+#      return the cached dict itself, so a caller that mutated it changed what
+#      every other reader saw — with nothing on disk to explain it.
+#   2. Read-modify-write is one operation. Atomic writes prevent a truncated
+#      file; they do nothing about two writers who each read the same document
+#      and each write the whole thing back. `update_settings()` holds a
+#      cross-process lock for the whole cycle and checks a revision inside it.
 
-def load_settings() -> dict:
-    """Load settings merged with defaults. Always returns a complete dict."""
-    global _settings_cache
-    now = time.monotonic()
-    if _settings_cache and (now - _settings_cache[0]) < _CACHE_TTL:
-        return _settings_cache[1]
+
+def _read_raw() -> dict:
+    """The saved document exactly as it is on disk, revision included."""
     try:
         with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
             saved = json.load(f)
         if not isinstance(saved, dict):
             raise ValueError("settings must be an object")
-        merged = {**DEFAULT_SETTINGS, **saved}
+        return saved
     except (FileNotFoundError, PermissionError, json.JSONDecodeError, ValueError):
-        merged = dict(DEFAULT_SETTINGS)
-    _settings_cache = (now, merged)
-    return merged
+        return {}
 
 
-def save_settings(settings: dict):
-    """Persist settings to disk (atomic; see core.atomic_io)."""
+def _merge(saved: dict) -> tuple[dict, int]:
+    """(settings merged with defaults, revision). The revision never leaks."""
+    raw_revision = saved.get(REVISION_KEY)
+    revision = int(raw_revision) if isinstance(raw_revision, int) and raw_revision >= 0 else 0
+    merged = {**DEFAULT_SETTINGS,
+              **{k: v for k, v in saved.items() if k != REVISION_KEY}}
+    return merged, revision
+
+
+def _current() -> tuple[dict, int]:
+    """The cached (settings, revision). The dict is the CACHE'S — never
+    returned to a caller without copying first."""
+    global _settings_cache
+    with _WRITE_LOCK:
+        now = time.monotonic()
+        if _settings_cache and (now - _settings_cache[0]) < _CACHE_TTL:
+            return _settings_cache[1], _settings_cache[2]
+        merged, revision = _merge(_read_raw())
+        _settings_cache = (now, merged, revision)
+        return merged, revision
+
+
+def _snapshot(merged: dict) -> dict:
+    """A copy the caller owns, without paying for a full deepcopy.
+
+    Settings values are JSON: scalars, lists and dicts. Scalars are immutable
+    and can be shared; only the containers need copying, and copying only
+    those costs about a third of `copy.deepcopy` on this document — which
+    matters, because `get_setting` runs on every chat and every preprocess.
+    """
+    return {key: (copy.deepcopy(value) if isinstance(value, (dict, list, set)) else value)
+            for key, value in merged.items()}
+
+
+def load_settings() -> dict:
+    """Settings merged with defaults, as a copy the caller owns.
+
+    Nested containers are copied too: handing out the cache's inner list by
+    reference has exactly the same problem as handing out the dict (B-012).
+    Mutating the result changes nothing for anybody else and nothing on disk —
+    use `update_settings()` for that.
+    """
+    return _snapshot(_current()[0])
+
+
+def settings_revision() -> int:
+    """The revision a writer should hand back to `update_settings`."""
+    return _current()[1]
+
+
+def _type_matches(value: Any, default: Any) -> bool:
+    """Whether `value` is the shape this key has always had.
+
+    None always passes: clearing a setting is a legitimate edit, and plenty of
+    keys already treat "" and None alike. A default of None tells us nothing
+    about the type, so anything passes there too.
+    """
+    if value is None or default is None:
+        return True
+    if isinstance(default, bool):          # before int: bool IS an int
+        return isinstance(value, bool)
+    if isinstance(default, int):
+        return isinstance(value, int) and not isinstance(value, bool)
+    if isinstance(default, float):
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if isinstance(default, str):
+        return isinstance(value, str)
+    if isinstance(default, list):
+        return isinstance(value, list)
+    if isinstance(default, dict):
+        return isinstance(value, dict)
+    return isinstance(value, type(default))
+
+
+def _validate_patch(patch: Mapping[str, Any]) -> dict:
+    """Per-key validation, so a write cannot invent a key or change its type."""
+    checked = {}
+    for key, value in patch.items():
+        name = str(key)
+        if name == REVISION_KEY:
+            raise SettingsError(f"{REVISION_KEY} is managed by the store, not by callers")
+        if name not in DEFAULT_SETTINGS:
+            raise SettingsError(f"unknown setting {name!r}")
+        if not _type_matches(value, DEFAULT_SETTINGS[name]):
+            raise SettingsError(
+                f"{name} expects {type(DEFAULT_SETTINGS[name]).__name__}, "
+                f"got {type(value).__name__}"
+            )
+        checked[name] = value
+    return checked
+
+
+def _settings_lock(path: str):
+    from core.file_lock import FileLock
+    return FileLock(str(path) + ".lock")
+
+
+def _read_raw_from(path: str) -> dict:
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            saved = json.load(f)
+        return saved if isinstance(saved, dict) else {}
+    except (FileNotFoundError, PermissionError, json.JSONDecodeError, ValueError):
+        return {}
+
+
+def _write_document(document: dict, revision: int, path: str) -> None:
+    """Write the document with `revision` stamped in. Caller holds the locks."""
     from core.atomic_io import atomic_write_json
-    atomic_write_json(SETTINGS_FILE, settings, indent=2)
-    _invalidate_caches()
+    payload = {k: v for k, v in document.items() if k != REVISION_KEY}
+    payload[REVISION_KEY] = int(revision)
+    atomic_write_json(path, payload, indent=2)
+    if str(path) == str(SETTINGS_FILE):
+        _invalidate_caches()
+
+
+def update_settings(patch: Mapping[str, Any],
+                    expected_revision: Optional[int] = None) -> dict:
+    """Apply `patch` transactionally. The write path new code should use.
+
+    The whole read-modify-write happens under one cross-process lock, so a
+    second process cannot start its own cycle in the middle of this one. If
+    `expected_revision` is given it is checked against DISK inside that lock:
+    a writer working from a stale copy gets `SettingsConflict` instead of
+    quietly erasing somebody's change.
+
+    Returns ``{"settings": <merged>, "revision": <new revision>}``.
+    Raises `SettingsError` for an unknown key or a wrong-typed value, and
+    `core.file_lock.LockTimeout` if another writer never let go.
+    """
+    checked = _validate_patch(dict(patch or {}))
+    with _WRITE_LOCK, _settings_lock(SETTINGS_FILE):
+        saved = _read_raw()
+        _, revision = _merge(saved)
+        if expected_revision is not None and int(expected_revision) != revision:
+            raise SettingsConflict(int(expected_revision), revision)
+        document = {k: v for k, v in saved.items() if k != REVISION_KEY}
+        document.update(checked)
+        new_revision = revision + 1
+        _write_document(document, new_revision, SETTINGS_FILE)
+    merged, _ = _merge({**document, REVISION_KEY: new_revision})
+    return {"settings": merged, "revision": new_revision}
+
+
+def save_settings(settings: dict, path: Optional[str] = None):
+    """Persist a WHOLE settings document (the legacy full-document write).
+
+    Kept because a couple of dozen call sites still read-modify-write with it.
+    It now runs under the same locks and bumps the same revision, so it can no
+    longer interleave with `update_settings` — but it carries no expected
+    revision, so it is still a blind write and the last writer wins. New code
+    should use `update_settings`.
+
+    `path` exists for the modules that keep their own handle on the settings
+    file (`routes/email_helpers.py`, `routes/contacts/contacts_routes.py`) and
+    whose tests point that handle somewhere disposable. In production it is the
+    same file, and the lock is per-path, so they still serialise against
+    everybody else.
+    """
+    target = str(path or SETTINGS_FILE)
+    with _WRITE_LOCK, _settings_lock(target):
+        _, revision = _merge(_read_raw_from(target))
+        _write_document(dict(settings or {}), revision + 1, target)
 
 
 def get_setting(key: str, default: Any = None) -> Any:
-    """Read a single setting value."""
+    """Read a single setting value.
+
+    Deliberately goes through `load_settings()` rather than the cache: that
+    function is the read seam the whole codebase (and a good number of tests)
+    monkeypatches, and a reader that quietly bypassed it would answer from the
+    real settings while everything else answered from the double.
+    """
     return load_settings().get(key, default)
 
 
@@ -667,11 +879,11 @@ def get_user_setting(key: str, owner: str = "", default: Any = None) -> Any:
 # ── Features (data/features.json) ──
 
 def load_features() -> dict:
-    """Load feature flags merged with defaults."""
+    """Load feature flags merged with defaults, as a copy the caller owns."""
     global _features_cache
     now = time.monotonic()
     if _features_cache and (now - _features_cache[0]) < _CACHE_TTL:
-        return _features_cache[1]
+        return copy.deepcopy(_features_cache[1])
     try:
         with open(FEATURES_FILE, "r", encoding="utf-8") as f:
             saved = json.load(f)
@@ -681,7 +893,7 @@ def load_features() -> dict:
     except (FileNotFoundError, PermissionError, json.JSONDecodeError, ValueError):
         merged = dict(DEFAULT_FEATURES)
     _features_cache = (now, merged)
-    return merged
+    return copy.deepcopy(merged)
 
 
 def save_features(features: dict):

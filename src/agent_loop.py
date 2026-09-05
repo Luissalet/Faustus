@@ -4994,6 +4994,10 @@ async def stream_agent_loop(
     _intent_domains = set(_intent.get("domains") or set())
     _base_relevant_tools = None if _relevant_tools is None else set(_relevant_tools)
     _runtime_skill_tools: Set[str] = set()
+    # B-007: tools that refused themselves this turn (offered, then not
+    # applicable). Name -> the reason, so the withdrawal can be explained and
+    # undone when the thing that was missing appears.
+    _withdrawn_tools: Dict[str, str] = {}
 
     def _route_finetune_modes(candidate_model: str):
         is_ody = _is_odysseus_qwen_model(candidate_model)
@@ -7661,6 +7665,40 @@ async def stream_agent_loop(
                                 break
                     except Exception as _e:
                         logger.debug(f"skill requires_toolsets unlock skipped: {_e}")
+
+            # B-007: a tool that was offered and then refused itself, because
+            # what it needs is not there right now. Take it out of the NEXT
+            # round's schema list instead of letting the model call it again
+            # and collect the same refusal — and put it back the moment a tool
+            # that supplies the missing thing succeeds. Both directions are
+            # explicit; neither is a preflight guess.
+            try:
+                from src import tool_availability as _availability
+                _withdraw = _availability.withdrawn_tool(result)
+                if _withdraw and _relevant_tools is not None:
+                    if _withdraw in _relevant_tools:
+                        _relevant_tools.discard(_withdraw)
+                        if _base_relevant_tools is not None:
+                            _base_relevant_tools.discard(_withdraw)
+                    _withdrawn_tools[_withdraw] = str(result.get("reason") or "")
+                    logger.info(
+                        "[tool-availability] %s withdrawn for the next round: %s",
+                        _withdraw, _withdrawn_tools[_withdraw],
+                    )
+                elif _withdrawn_tools and not result.get("error"):
+                    for _name in list(_withdrawn_tools):
+                        if block.tool_type in _availability.restored_by(_name):
+                            _withdrawn_tools.pop(_name, None)
+                            if _relevant_tools is not None:
+                                _relevant_tools.add(_name)
+                                if _base_relevant_tools is not None:
+                                    _base_relevant_tools.add(_name)
+                            logger.info(
+                                "[tool-availability] %s restored: %s succeeded",
+                                _name, block.tool_type,
+                            )
+            except Exception as _av_err:  # noqa: BLE001 - never break a turn
+                logger.debug("tool availability bookkeeping skipped: %r", _av_err)
 
             # Extract structured web sources from web_search tool output.
             # web_search returns {"output": ..., "exit_code": 0}; check "output"

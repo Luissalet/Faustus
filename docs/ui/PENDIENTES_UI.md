@@ -819,3 +819,25 @@ su área y baja el baseline. Ningún módulo Studio nuevo la aumenta.
     credenciales de Gmail a partir del id y el secreto. Es el único preset
     con ese trato: si mañana hay otro proveedor OAuth, la forma de
     `oauth_file` habrá que generalizarla en el servidor, no en el catálogo.
+154. **`[ ]`** **AUTH-1.** La tarjeta de aprobación de un comando que el
+    guardián no ha podido clasificar llega marcada (`tier: UNKNOWN`,
+    `rule: guard.degraded:*`) y se enseña como cualquier otra tarjeta de
+    comando destructivo. No es lo mismo saber que algo es peligroso que no
+    saber qué es: debería decirlo, y explicar que la alternativa es
+    aprobarlo tal cual o meterlo en la lista blanca.
+155. **`[ ]`** **AUTH-1.** `GET /api/command-guard/log` devuelve ahora un
+    bloque `metrics` con las degradaciones del guardián
+    (`classify_errors`, `budget_exceeded`, `gate_errors`,
+    `degraded_observed`, `degraded_blocked`, `degraded_released`). Studio no
+    lo enseña en ninguna parte; un contador que sube ahí es el clasificador
+    pidiendo atención.
+156. **`[!]` SSH-1.** El backend exige ahora emparejar un host antes de
+    conectarse a él (`StrictHostKeyChecking=yes` contra un `known_hosts`
+    privado), y Studio no tiene interfaz para hacerlo. Los endpoints existen:
+    `POST /api/cookbook/ssh/fingerprint` enseña lo que ofrece el nodo,
+    `/ssh/pair` guarda el fingerprint que el humano confirme, `/ssh/unpair`
+    revoca. Hasta que haya pantalla, un nodo nuevo o un nodo cuya clave cambió
+    simplemente deja de conectar y el error no dice qué hacer.
+157. **`[ ]` MAIL-1.** Los adjuntos en composición tienen ahora caducidad. Un
+    borrador viejo puede perder sus adjuntos sin que la interfaz lo diga; el
+    índice conoce `expires_at` y no se enseña en ninguna parte.

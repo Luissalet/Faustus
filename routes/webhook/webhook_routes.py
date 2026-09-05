@@ -15,7 +15,6 @@ from src.webhook_manager import WebhookManager, validate_webhook_url, validate_e
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api", tags=["webhooks"])
 
 # Input limits
 MAX_NAME_LEN = 100
@@ -67,6 +66,12 @@ def setup_webhook_routes(
     session_manager=None,
     api_key_manager=None,
 ) -> APIRouter:
+
+    # B-006: built here, not at import time. A module-level router
+    # accumulates a copy of every route on each setup call, each closed
+    # over a different manager, and lookups then hit whichever copy they
+    # happen to find first.
+    router = APIRouter(prefix="/api", tags=["webhooks"])
 
     @router.get("/webhooks")
     def list_webhooks(request: Request):

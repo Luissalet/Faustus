@@ -558,10 +558,17 @@ async def execute_api_call(
     # loopback for locked-down deployments. Private stays allowed by default
     # because LAN integrations (Home Assistant, Miniflux, ntfy) are the
     # primary use case.
+    from src.outbound_fetch import profile_for_configured_endpoint
     from src.url_safety import check_outbound_url, _default_resolver
-    block_private = os.getenv(
-        "INTEGRATION_API_BLOCK_PRIVATE_IPS", "false"
-    ).lower() == "true"
+    # One function turns a deployment's "may this box reach the LAN?" switch
+    # into a trust profile, so integrations, image downloads and the web fetcher
+    # stop each spelling that decision slightly differently (B-019). The
+    # resolve-and-pin below stays local because the broker's fetch() is
+    # synchronous and api_call is not; only the policy moved.
+    _profile, _allow_local = profile_for_configured_endpoint(
+        block_private=os.getenv("INTEGRATION_API_BLOCK_PRIVATE_IPS", "false").lower() == "true"
+    )
+    block_private = not _allow_local
     # Resolve the host exactly once and remember the IPs the guard validated so
     # the request below can be pinned to them. check_outbound_url only reports
     # (ok, reason); a plain httpx client re-resolves the host at connect time,
@@ -801,10 +808,12 @@ def migrate_from_settings() -> None:
         "api_key": miniflux_key,
     })
 
-    # Clear migrated keys
+    # Clear migrated keys. B-012: through the store — this was a plain
+    # truncating write, so a crash mid-migration left settings.json empty and
+    # a concurrent writer lost its change either way.
     settings.pop("miniflux_url", None)
     settings.pop("miniflux_api_key", None)
-    with open(settings_path, "w", encoding="utf-8") as f:
-        json.dump(settings, f, indent=2)
+    from src.settings import save_settings
+    save_settings(settings)
 
     log.info("Migrated Miniflux integration from settings.json")

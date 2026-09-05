@@ -39,7 +39,7 @@ from __future__ import annotations
 import importlib
 import re
 import unicodedata
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Sequence
 
 from src.chat_export import (
@@ -140,25 +140,43 @@ def _report_markdown(data: Dict[str, Any]) -> str:
     return _text(data.get("raw_report")) or _text(data.get("result"))
 
 
+def _normalize_iso(text: str) -> str:
+    """``Z`` is a UTC offset; `fromisoformat` before 3.11 does not know that."""
+    return text[:-1] + "+00:00" if text[-1:] in ("Z", "z") else text
+
+
 def _time_of(data: Dict[str, Any], *keys: str) -> Optional[datetime]:
-    """The first of *keys* that holds a usable time, as a datetime.
+    """The first of *keys* that holds a usable time, as an aware UTC datetime.
 
     ``_save_result`` writes unix timestamps; be tolerant of an ISO string in
     case an older file or another writer used one.
+
+    B-005 — the policy, stated once: **UTC for anything stored, named or
+    compared; the reader's zone only for display, which is not this module's
+    job.** `datetime.fromtimestamp` without a tz applies the server's local
+    zone, so the same report exported in Madrid and in London produced two
+    different filenames and two different metadata lines for the same instant.
+    Everything that leaves this function is aware and in UTC; a naive ISO
+    string is read as UTC too, because the only writer of these files stores
+    unix timestamps and a bare local time from somewhere else is unknowable
+    anyway.
     """
     for key in keys:
         raw = data.get(key)
         if isinstance(raw, (int, float)) and raw > 0:
             try:
-                return datetime.fromtimestamp(float(raw))
+                return datetime.fromtimestamp(float(raw), tz=timezone.utc)
             except (OverflowError, OSError, ValueError):
                 continue
         text = _text(raw)
         if text:
             try:
-                return datetime.fromisoformat(text.replace("Z", "+00:00"))
+                parsed = datetime.fromisoformat(_normalize_iso(text))
             except ValueError:
                 continue
+            if parsed.tzinfo is None:
+                return parsed.replace(tzinfo=timezone.utc)
+            return parsed.astimezone(timezone.utc)
     return None
 
 
@@ -258,7 +276,7 @@ def build_report_blocks(data: Dict[str, Any], *,
     ``transcript.name`` as the document title itself — see
     :func:`build_report_transcript`.
     """
-    exported_at = exported_at or datetime.now()
+    exported_at = exported_at or datetime.now(timezone.utc)
     blocks: List[Block] = []
 
     query = _text(data.get("query"))
@@ -304,7 +322,7 @@ def build_report_transcript(data: Dict[str, Any], *,
     if not isinstance(data, dict):
         raise TypeError("research data must be a dict")
 
-    exported_at = datetime.now()
+    exported_at = datetime.now(timezone.utc)
     stats = _stats(data)
     query = _text(data.get("query")) or "Research report"
     message = ExportMessage(
@@ -358,8 +376,10 @@ def report_filename(data: Dict[str, Any], ext: str) -> str:
     by the second they were downloaded in.
     """
     ext = sanitize_export_filename(_text(ext).lstrip(".")) or "md"
+    # Always UTC (B-005): two servers in two zones name the same report the
+    # same way, and re-exporting it tomorrow does not rename it.
     stamp = (_time_of(data, "completed_at", "started_at")
-             or datetime.now()).strftime("%Y%m%d_%H%M%S")
+             or datetime.now(timezone.utc)).strftime("%Y%m%d_%H%M%S")
     slug = _slug(_text(data.get("query")), 60)
     stem = "research_%s_%s" % (slug, stamp) if slug else "research_%s" % stamp
     return sanitize_export_filename("%s.%s" % (stem, ext))

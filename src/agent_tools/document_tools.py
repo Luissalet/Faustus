@@ -719,8 +719,16 @@ class SuggestDocumentTool:
         target_id = ctx.get("doc_id", None) or _active_document_id
         owner = ctx.get("owner")
 
-        if not target_id:
-            return {"error": "No active document to suggest on"}
+        # B-007: asked here, at the point of use, not in the preflight — a
+        # document can be created during the turn. The refusal says what would
+        # make the tool available again, and the loop stops offering it until
+        # that happens.
+        from src.tool_availability import unavailable_result
+        refusal = unavailable_result("suggest_document", {
+            "doc_id": ctx.get("doc_id"), "active_document_id": _active_document_id,
+        })
+        if refusal is not None:
+            return refusal
 
         suggestions = parse_suggest_blocks(content)
         if not suggestions:

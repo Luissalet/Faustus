@@ -102,13 +102,29 @@ async def _stop_serve(session_id: str, remote_host: str = "", ssh_port: str = ""
     returned 404 and the result was logged as "failed").
     """
     import shlex
+
+    from src import ssh_trust
+
     if remote_host:
-        port_flag = f"-p {shlex.quote(str(ssh_port))} " if ssh_port and str(ssh_port) != "22" else ""
-        cmd = (
-            f"ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "
-            f"{port_flag}{shlex.quote(remote_host)} "
-            f"'tmux kill-session -t {shlex.quote(session_id)}'"
-        )
+        # ssh_trust rejects a host it cannot parse instead of quoting it into a
+        # command line. That refusal has to stay local: this runs on a 60s
+        # background tick over whatever the cookbook state file holds, and one
+        # malformed entry must not take the whole lifecycle loop down with it.
+        try:
+            cmd = ssh_trust.ssh_command(
+                remote_host,
+                f"tmux kill-session -t {shlex.quote(session_id)}",
+                ssh_port=ssh_port,
+                connect_timeout=5,
+            )
+        except ValueError as e:
+            logger.warning(
+                "cookbook_serve_lifecycle: refusing stop for %s on %r: %s",
+                session_id,
+                remote_host,
+                e,
+            )
+            return False
     else:
         cmd = f"tmux kill-session -t {shlex.quote(session_id)}"
     try:

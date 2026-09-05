@@ -22,16 +22,20 @@ from pydantic import BaseModel
 
 from core.middleware import require_admin
 from routes._validators import validate_remote_host, validate_ssh_port
+from core.atomic_io import atomic_write_text
+from core.log_safety import redact_secrets
 from core.platform_compat import (
     IS_WINDOWS,
     detached_popen_kwargs,
     find_bash,
     kill_process_tree,
     pid_alive,
+    restrict_dir_to_owner,
     safe_chmod,
     which_tool,
 )
 from routes.shell_routes import TMUX_LOG_DIR
+from src import ssh_trust
 from src.host_docker_access import (
     HOST_DOCKER_ACCESS_HINT,
     HOST_DOCKER_SOCKET_PATH,
@@ -71,6 +75,208 @@ _HF_TOKEN_STATUS_SNIPPET = (
     'Add one in Faustus Cookbook -> Settings -> HuggingFace Token."; '
     'fi'
 )
+
+
+# ── HF token grants (B-024) ─────────────────────────────────────────────────
+# Cookbook's control scripts are ordinary files that outlive the request that
+# wrote them: a `.sh` staged under the system temp dir, a `.ps1` copied into a
+# remote home whose only removal was the runner's own last line. Serializing
+# `export HF_TOKEN='...'` into them meant every crash, kill or failed preflight
+# left a readable Hugging Face credential on a disk nobody re-reads. Quoting
+# stopped injection; it never stopped persistence.
+#
+# The value now travels as a one-shot grant the runner consumes and burns: a
+# 0600 env file the shell sources exactly once, or -- where Faustus itself
+# starts the process -- the environment it hands the child, which touches no
+# filesystem at all. The executable script carries the grant's *path*, never
+# its contents.
+
+_HF_GRANT_SUFFIX = ".hfenv"
+
+#: A grant nobody claimed is a credential lying in a temp directory, so
+#: unclaimed ones are swept rather than left for the next reader. Far longer
+#: than the second a runner needs to source its file, far shorter than the
+#: lifetime of a serve session that already burned one.
+_HF_GRANT_MAX_AGE_S = 900
+
+#: Directories already locked down this process, keyed by path: the
+#: restriction costs an `icacls` call on Windows and the directory does not
+#: change identity underneath us.
+_staging_dirs_restricted: set[str] = set()
+
+
+def _staging_dir() -> Path:
+    """TMUX_LOG_DIR, made owner-only before anything is staged into it.
+
+    It lives under the system temp dir, which on POSIX is world-readable and
+    world-writable; a runner created there under the default umask was legible
+    to every other local account, and so was a grant sitting beside it.
+    """
+    path = TMUX_LOG_DIR
+    path.mkdir(parents=True, exist_ok=True)
+    key = str(path)
+    if key not in _staging_dirs_restricted:
+        restrict_dir_to_owner(path)
+        _staging_dirs_restricted.add(key)
+    return path
+
+
+def _sweep_stale_hf_grants(*, max_age_s: int = _HF_GRANT_MAX_AGE_S) -> int:
+    """Delete grants no runner ever claimed. Returns how many went.
+
+    Self-cleanup cannot promise the file is gone: a SIGKILL between staging and
+    sourcing runs neither the runner's `rm` nor its `trap`, and a preflight that
+    dies before the source line never reaches either. Sweeping on the next
+    launch bounds how long an unclaimed credential can sit there.
+    """
+    cutoff = time.time() - max_age_s
+    removed = 0
+    try:
+        candidates = list(TMUX_LOG_DIR.glob(f"*{_HF_GRANT_SUFFIX}"))
+    except OSError:
+        return 0
+    for path in candidates:
+        try:
+            if path.stat().st_mtime > cutoff:
+                continue
+            path.unlink()
+            removed += 1
+        except OSError:
+            continue
+    if removed:
+        logger.info("Swept %d unclaimed Cookbook HF token grant(s)", removed)
+    return removed
+
+
+def _write_hf_grant(session_id: str, token: str) -> Path:
+    """Stage one session's token as a file that is owner-only from byte zero.
+
+    `atomic_write_json`'s sibling with `private=True` is what makes this
+    different from writing the file and chmod'ing it after: there is no window
+    in which the umask (POSIX) or the parent's inherited ACL (Windows) decides
+    who may read a credential. The single-quoted `KEY='value'` shape is safe to
+    `.` from bash because `_validate_token` has already refused every character
+    that could close the quote.
+    """
+    path = _staging_dir() / f"{session_id}{_HF_GRANT_SUFFIX}"
+    atomic_write_text(str(path), f"HF_TOKEN='{token}'\n", private=True)
+    return path
+
+
+def _discard_staged(paths) -> None:
+    """Remove local staging copies, from the supervisor's `finally`.
+
+    A runner already scp'd has no further use for its local copy, and a launch
+    that never happened must not leave one either -- a refused scp, a non-zero
+    launch and an exception between the two all land here.
+    """
+    for path in paths:
+        if not path:
+            continue
+        try:
+            Path(path).unlink(missing_ok=True)
+        except OSError as e:
+            logger.warning("Could not remove Cookbook staging file %s: %s", path, e)
+
+
+def _bash_hf_grant_lines(grant_ref: str) -> list[str]:
+    """Bash that turns a one-shot grant file into `$HF_TOKEN` and burns it.
+
+    `grant_ref` is the path as the *target* shell must see it, already quoted by
+    the caller -- a local absolute path on this box, `"$HOME/.<session>.hfenv"`
+    on a node.
+
+    The `trap` covers the window before the file is read: a preflight that
+    exits, a Ctrl-C, the TERM the stop endpoint sends. The mode check refuses a
+    grant that is not 0600 rather than using it, because a group- or
+    world-readable file may already have been read by somebody else and
+    consuming it would only hide that; either way the file is deleted. `stat`
+    is spelled differently on GNU and BSD and is missing outright on some
+    minimal images, so when neither answers we trust the mode the writer set
+    (0600 from `atomic_write_text`, `umask 077` on a node) rather than failing
+    every gated download on a box whose `stat` we cannot parse.
+    """
+    return [
+        f"ODYSSEUS_HF_GRANT={grant_ref}",
+        "trap 'rm -f \"$ODYSSEUS_HF_GRANT\"' EXIT HUP INT TERM",
+        'if [ -f "$ODYSSEUS_HF_GRANT" ]; then',
+        '  ODYSSEUS_HF_MODE="$(stat -c %a "$ODYSSEUS_HF_GRANT" 2>/dev/null '
+        '|| stat -f %Lp "$ODYSSEUS_HF_GRANT" 2>/dev/null || echo 600)"',
+        '  if [ "$ODYSSEUS_HF_MODE" = "600" ]; then',
+        '    . "$ODYSSEUS_HF_GRANT"; export HF_TOKEN',
+        '  else',
+        '    echo "[odysseus] HF token grant refused: mode $ODYSSEUS_HF_MODE, not 600"',
+        '  fi',
+        '  rm -f "$ODYSSEUS_HF_GRANT"',
+        '  unset ODYSSEUS_HF_MODE',
+        'fi',
+    ]
+
+
+def _ps_hf_grant_lines(remote_grant: str) -> list[str]:
+    """PowerShell that reads the grant out of the user's profile and deletes it.
+
+    Windows has no umask, so the equivalent of 0600 is an explicit,
+    non-inherited DACL: `icacls` runs before the value is read, so a profile
+    directory that hands out inherited access does not get to decide who else
+    could have seen it. The `finally` deletes the file whether or not the parse
+    succeeded -- a grant that could not be understood is still a credential.
+    """
+    quoted = str(remote_grant).replace("'", "''")
+    return [
+        f"$odysseusHfGrant = Join-Path $HOME '{quoted}'",
+        "if (Test-Path -LiteralPath $odysseusHfGrant) {",
+        "  try {",
+        '    icacls $odysseusHfGrant /inheritance:r /grant:r "$($env:USERNAME):(F)" | Out-Null',
+        "    $odysseusHfRaw = Get-Content -LiteralPath $odysseusHfGrant -Raw",
+        "    $env:HF_TOKEN = (($odysseusHfRaw -split '=', 2)[1]).Trim().Trim(\"'\")",
+        "  } finally {",
+        "    $odysseusHfRaw = $null",
+        "    Remove-Item -Force -LiteralPath $odysseusHfGrant -ErrorAction SilentlyContinue",
+        "  }",
+        "}",
+    ]
+
+
+def _remote_hf_grant_push(remote: str, remote_grant: str, local_grant, *, ssh_port=None) -> str:
+    """Shell fragment that materializes the grant on a POSIX node.
+
+    The value goes over ssh's stdin, never its argv: an argument is visible in
+    the node's own process table to every local account for as long as the
+    command runs. `umask 077` means the file is never even momentarily
+    group-readable, which is the one thing an scp'd copy cannot promise --
+    scp decides the mode on the receiving side, after the bytes have landed.
+    """
+    target = f'"$HOME/{remote_grant}"'
+    write_cmd = f"umask 077; cat > {target} && chmod 600 {target}"
+    return (
+        f"{ssh_trust.ssh_command(remote, write_cmd, ssh_port=ssh_port)}"
+        f" < {shlex.quote(str(local_grant))}"
+    )
+
+
+async def _revoke_remote_hf_grant(remote: str, remote_grant: str, ssh_port=None) -> None:
+    """Delete a grant left on a node whose launch never happened.
+
+    The push is the first link of the `&&` chain, so a refused scp or a missing
+    tmux leaves the file sitting on the node with nothing to consume and burn
+    it. Best effort by design: the node may be exactly what is broken, and
+    failing the request over a cleanup tells the operator nothing they can act
+    on -- but the attempt is what keeps "the secret must not stay on the remote
+    disk" true for every fault between push and launch.
+    """
+    cmd = ssh_trust.ssh_command(
+        remote, f'rm -f "$HOME/{remote_grant}"', ssh_port=ssh_port, connect_timeout=8
+    )
+    try:
+        proc = await asyncio.create_subprocess_shell(
+            cmd,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        await asyncio.wait_for(proc.wait(), timeout=20)
+    except Exception as e:  # noqa: BLE001 - an unreachable node is the normal case here
+        logger.warning("Could not revoke the HF token grant on %s: %s", remote, e)
 
 
 def _windows_local_pid_record_line(pid_path: Path, ready_path: Path) -> str:
@@ -249,21 +455,13 @@ async def _remote_binary_available(
     windows: bool = False,
 ) -> bool:
     port = ssh_port or ""
-    port_args = ["-p", port] if port and port != "22" else []
     if windows:
         check = f'powershell -NoProfile -Command "if (Get-Command {binary} -ErrorAction SilentlyContinue) {{ exit 0 }} else {{ exit 127 }}"'
     else:
         check = f'PATH="$HOME/.local/bin:$HOME/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"; command -v {shlex.quote(binary)} >/dev/null 2>&1'
     try:
         proc = await asyncio.create_subprocess_exec(
-            "ssh",
-            "-o",
-            "ConnectTimeout=6",
-            "-o",
-            "StrictHostKeyChecking=no",
-            *port_args,
-            remote,
-            check,
+            *ssh_trust.ssh_argv(remote, port, check, connect_timeout=6),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -968,14 +1166,18 @@ def setup_cookbook_routes() -> APIRouter:
         host = validate_remote_host(req.host)
         ssh_port = validate_ssh_port(req.ssh_port)
         try:
-            code, stdout, stderr = await run_ssh_command_async(
-                host,
-                ssh_port,
-                "echo ok",
-                timeout=8,
-                connect_timeout=5,
-                strict_host_key_checking=False,
+            # Built here rather than through run_ssh_command_async because the
+            # trust flags live in ssh_trust now, and this is the attended action
+            # an operator runs right after pairing -- it has to prove the SAME
+            # argv the background paths will use, or "test-ssh says OK" means
+            # nothing about whether a download will connect.
+            proc = await asyncio.create_subprocess_exec(
+                *ssh_trust.ssh_argv(host, ssh_port, "echo ok", connect_timeout=5),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
             )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=8)
+            code = proc.returncode
         except asyncio.TimeoutError:
             return {"stdout": "", "stderr": "SSH test timed out", "exit_code": 124}
         except Exception as e:
@@ -986,10 +1188,98 @@ def setup_cookbook_routes() -> APIRouter:
             "exit_code": code,
         }
 
+    class CookbookSshPairRequest(BaseModel):
+        host: str
+        ssh_port: str | None = None
+        fingerprint: str | None = None
+
+    @router.post("/api/cookbook/ssh/fingerprint")
+    async def cookbook_ssh_fingerprint(request: Request, req: CookbookSshPairRequest):
+        """Show the host keys a node offers, without trusting any of them.
+
+        Read-only half of pairing (B-025). Nothing is stored until a human
+        confirms one of these fingerprints against the node's own console: the
+        handshake is split in two precisely so the value being compared reaches
+        the operator through a channel other than the one under test.
+        """
+        require_admin(request)
+        host = validate_remote_host(req.host)
+        ssh_port = validate_ssh_port(req.ssh_port)
+        if not host:
+            raise HTTPException(400, "host is required")
+        try:
+            offered = await asyncio.to_thread(ssh_trust.scan_host_keys, host, ssh_port)
+        except ssh_trust.SshTrustError as e:
+            raise HTTPException(502, str(e))
+        # Reuse the scan instead of letting pairing_state fetch its own: two
+        # scans could disagree, and then the fingerprint shown to the human
+        # would not be the one the verdict was computed from.
+        state = ssh_trust.pairing_state(host, ssh_port, offered=offered)
+        return {
+            "host": state["host"],
+            "state": state["state"],
+            "paired": state["stored"],
+            "offered": [
+                {"type": entry["type"], "fingerprint": entry["fingerprint"]}
+                for entry in offered
+            ],
+        }
+
+    @router.post("/api/cookbook/ssh/pair")
+    async def cookbook_ssh_pair(request: Request, req: CookbookSshPairRequest):
+        """Record a node's host key once a human has confirmed its fingerprint.
+
+        A node whose key CHANGED is refused with 409 rather than repaired. That
+        refusal is the feature: silently rewriting the stored key is how a
+        swapped identity gets waved through, so re-approval has to be a separate
+        deliberate act (unpair, then pair again).
+        """
+        require_admin(request)
+        host = validate_remote_host(req.host)
+        ssh_port = validate_ssh_port(req.ssh_port)
+        if not host:
+            raise HTTPException(400, "host is required")
+        fingerprint = (req.fingerprint or "").strip()
+        if not fingerprint:
+            raise HTTPException(400, "fingerprint is required")
+        try:
+            return await asyncio.to_thread(
+                lambda: ssh_trust.pair_host(host, ssh_port, fingerprint=fingerprint)
+            )
+        except ssh_trust.HostKeyChanged as e:
+            raise HTTPException(409, str(e))
+        except (ssh_trust.HostKeyMismatch, ValueError) as e:
+            raise HTTPException(400, str(e))
+        except ssh_trust.SshTrustError as e:
+            raise HTTPException(502, str(e))
+
+    @router.post("/api/cookbook/ssh/unpair")
+    async def cookbook_ssh_unpair(request: Request, req: CookbookSshPairRequest):
+        """Revoke every stored key for a target so it can be paired afresh.
+
+        The deliberate exit from the 409 above. Kept separate from pair so that
+        accepting a changed key always costs an explicit second decision.
+        """
+        require_admin(request)
+        host = validate_remote_host(req.host)
+        ssh_port = validate_ssh_port(req.ssh_port)
+        if not host:
+            raise HTTPException(400, "host is required")
+        try:
+            removed = ssh_trust.forget_host(host, ssh_port)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        return {"host": ssh_trust.host_pattern(host, ssh_port), "removed": removed}
+
     def _needs_binary(cmd: str, binary: str) -> bool:
         return bool(re.search(rf"(^|[\s;&|()]){re.escape(binary)}($|[\s;&|()])", cmd or ""))
 
-    def _launch_local_detached(session_id: str, bash_lines: list[str]) -> dict:
+    def _launch_local_detached(
+        session_id: str,
+        bash_lines: list[str],
+        *,
+        env_extra: dict | None = None,
+    ) -> dict:
         """Windows-native stand-in for a LOCAL tmux session (tmux doesn't exist
         on Windows). Mirrors shell_routes._generate_win_detached / bg_jobs.launch:
         runs the wrapper detached so it survives a browser/SSE disconnect (the
@@ -999,7 +1289,11 @@ def setup_cookbook_routes() -> APIRouter:
         `bash_lines` is the same bash wrapper used on POSIX. Prefers Git Bash
         for full command-syntax parity; falls back to a cmd.exe wrapper that
         runs the script through whatever bash is reachable, else best-effort
-        directly (simple commands only). Returns the launched job record."""
+        directly (simple commands only). `env_extra` carries values that have to
+        reach the job but must never be written into the wrapper it reads -- the
+        HF token (B-024): an inherited variable dies with the process, a line in
+        a `.sh` under the temp dir outlives it. Returns the launched job
+        record."""
         log_path = TMUX_LOG_DIR / f"{session_id}.log"
         pid_path = TMUX_LOG_DIR / f"{session_id}.pid"
         pid_ready_path: Path | None = None
@@ -1039,6 +1333,7 @@ def setup_cookbook_routes() -> APIRouter:
         env = os.environ.copy()
         env["PYTHONUTF8"] = "1"
         env["PYTHONIOENCODING"] = "utf-8"
+        env.update({k: v for k, v in (env_extra or {}).items() if v})
         proc = subprocess.Popen(
             argv,
             stdout=subprocess.DEVNULL,
@@ -1085,9 +1380,19 @@ def setup_cookbook_routes() -> APIRouter:
         _validate_token(req.hf_token)
         if req.remote_host and not req.env_prefix:
             req.env_prefix = _server_env_prefix_for_download(req.remote_host)
-        TMUX_LOG_DIR.mkdir(parents=True, exist_ok=True)
+        _staging_dir()
+        _sweep_stale_hf_grants()
         session_id = f"cookbook-{uuid.uuid4().hex[:8]}"
         wrapper_script = TMUX_LOG_DIR / f"{session_id}.sh"
+        # B-024 bookkeeping. `staged_for_remote` holds the local copies of files
+        # that were pushed to a node -- they have no reason to survive the push,
+        # so the supervisor's `finally` drops them however the launch ended.
+        # `local_grant` is consumed in place by a local runner, so it is dropped
+        # only when the launch it was written for never happened.
+        staged_for_remote: list[Path] = []
+        local_grant: Path | None = None
+        grant_path: Path | None = None
+        remote_grant = f".{session_id}{_HF_GRANT_SUFFIX}"
 
         # Custom download dir: point the HF cache at <dir>/hub via env vars
         # (HF_HOME + HUGGINGFACE_HUB_CACHE) instead of --local-dir. local_dir
@@ -1112,8 +1417,13 @@ def setup_cookbook_routes() -> APIRouter:
         # No script/tee needed — we'll use tmux capture-pane to read output
         lines = ["#!/bin/bash"]
         lines.extend(_user_shell_path_bootstrap())
-        if req.hf_token:
-            lines.append(f"export HF_TOKEN='{_bash_squote(req.hf_token)}'")
+        # B-024: only the LOCAL POSIX branch actually runs this script, and only
+        # there does the token need a file at all -- the Windows-local launcher
+        # hands it to the detached process through the environment, and the two
+        # remote branches below push their own grant to the node.
+        if req.hf_token and not req.remote_host and not IS_WINDOWS:
+            local_grant = _write_hf_grant(session_id, req.hf_token)
+            lines.extend(_bash_hf_grant_lines(shlex.quote(str(local_grant))))
         if _dl_hf_home_shell and not is_ollama_download:
             # Make hf download / snapshot_download honor the chosen dir via the
             # standard HF cache (gives us the models--org--name/blobs/... layout
@@ -1171,7 +1481,9 @@ def setup_cookbook_routes() -> APIRouter:
             ps_lines.append('$sessionDir = "$env:TEMP\\odysseus-sessions"')
             ps_lines.append('New-Item -ItemType Directory -Force -Path $sessionDir | Out-Null')
             if req.hf_token:
-                ps_lines.append(f"$env:HF_TOKEN = '{_ps_squote(req.hf_token)}'")
+                grant_path = _write_hf_grant(session_id, req.hf_token)
+                staged_for_remote.append(grant_path)
+                ps_lines.extend(_ps_hf_grant_lines(remote_grant))
             if req.local_dir and not is_ollama_download:
                 # Mirror the bash branch — point the HF cache at the user's dir
                 # via env vars instead of --local-dir, so resume works on flaky
@@ -1218,8 +1530,13 @@ def setup_cookbook_routes() -> APIRouter:
 
             # scp the .ps1 script, then launch it as a detached process with log + pid files
             _port = req.ssh_port
-            _Pf = f"-P {_port} " if _port and _port != "22" else ""
             _pf = f"-p {_port} " if _port and _port != "22" else ""
+            # The PowerShell payload below is double-quoted twice over, so
+            # re-flowing this line through an argv builder would rewrite quoting
+            # the remote shell depends on. Take the trust flags as a ready-made
+            # fragment instead: the line still gets them from the one module
+            # that decides what they are.
+            _trust = ssh_trust.option_flags()
             # Start-Process creates a fully detached process that survives SSH disconnect
             launch_ps = (
                 "$sd = \\\"$env:TEMP\\odysseus-sessions\\\"; "
@@ -1228,9 +1545,17 @@ def setup_cookbook_routes() -> APIRouter:
                 f"-RedirectStandardError \\\"$sd\\{session_id}.err.log\\\" "
                 f"-NoNewWindow -PassThru | ForEach-Object {{ $_.Id | Out-File \\\"$sd\\{session_id}.pid\\\" }}"
             )
+            staged_for_remote.append(runner_path)
+            # The grant goes first and separately: it is the only artifact that
+            # carries the value, and the runner is useless without it anyway.
+            _grant_push = (
+                f"{ssh_trust.scp_command(grant_path, remote, remote_grant, ssh_port=_port)} && "
+                if grant_path else ""
+            )
             setup_cmd = (
-                f"scp -O {_Pf}-q '{runner_path}' {remote}:{remote_runner} && "
-                f'ssh {_pf}{remote} "powershell -Command \\"{launch_ps}\\""'
+                f"{_grant_push}"
+                f"{ssh_trust.scp_command(runner_path, remote, remote_runner, ssh_port=_port)} && "
+                f'ssh {_trust} {_pf}{remote} "powershell -Command \\"{launch_ps}\\""'
             )
 
         elif remote:
@@ -1241,7 +1566,9 @@ def setup_cookbook_routes() -> APIRouter:
             runner_lines.append("# Auto-detect environment")
             runner_lines.append("deactivate 2>/dev/null; hash -r")
             if req.hf_token:
-                runner_lines.append(f"export HF_TOKEN='{_bash_squote(req.hf_token)}'")
+                grant_path = _write_hf_grant(session_id, req.hf_token)
+                staged_for_remote.append(grant_path)
+                runner_lines.extend(_bash_hf_grant_lines(f'"$HOME/{remote_grant}"'))
             if _dl_hf_home_shell and not is_ollama_download:
                 runner_lines.append(f"export HF_HOME={_dl_hf_home_shell}")
                 runner_lines.append(f"export HUGGINGFACE_HUB_CACHE={_dl_hf_home_shell}/hub")
@@ -1321,16 +1648,21 @@ def setup_cookbook_routes() -> APIRouter:
             runner_path = TMUX_LOG_DIR / f"{session_id}_run.sh"
             runner_path.write_text("\n".join(runner_lines) + "\n", encoding="utf-8")
             # Local temp file is scp'd then chmod'd on the remote; the local bit
-            # is irrelevant (no-op on Windows).
-            safe_chmod(runner_path, 0o755)
+            # is irrelevant (no-op on Windows). 0700, not 0755: B-024 caps every
+            # staging copy at owner-only, and nothing on this box has to run it.
+            safe_chmod(runner_path, 0o700)
 
             # scp the runner script, then create tmux session on the remote
             _port = req.ssh_port
-            _pf = f"-P {_port} " if _port and _port != "22" else ""
-            _spf = f"-p {_port} " if _port and _port != "22" else ""
+            staged_for_remote.append(runner_path)
+            _grant_push = (
+                f"{_remote_hf_grant_push(remote, remote_grant, grant_path, ssh_port=_port)} && "
+                if grant_path else ""
+            )
             setup_cmd = (
-                f"scp -O {_pf}-q '{runner_path}' {remote}:{remote_runner} && "
-                f"ssh {_spf}{remote} {shlex.quote(_remote_tmux_launch_command(session_id, remote_runner))}"
+                f"{_grant_push}"
+                f"{ssh_trust.scp_command(runner_path, remote, remote_runner, ssh_port=_port)} && "
+                f"{ssh_trust.ssh_command(remote, _remote_tmux_launch_command(session_id, remote_runner), ssh_port=_port)}"
             )
         else:
             # Local: run hf download in the background (tmux on POSIX, a detached
@@ -1361,31 +1693,57 @@ def setup_cookbook_routes() -> APIRouter:
                 lines.append(f"rm -f '{wrapper_script}'")
                 lines.append('exec "${SHELL:-/bin/bash}"')
                 wrapper_script.write_text("\n".join(lines) + "\n", encoding="utf-8")
-                wrapper_script.chmod(0o755)
+                # 0700 for the same reason as the remote staging copy (B-024).
+                wrapper_script.chmod(0o700)
             setup_cmd = None if IS_WINDOWS else f"tmux set-option -g history-limit 100000 2>/dev/null; tmux new-session -d -s {session_id} {shlex.quote(str(wrapper_script))}"
 
         logger.info(f"Model download: {req.repo_id} (backend={'ollama' if is_ollama_download else 'hf'}, include={req.include}, session={session_id}, remote={remote})")
-        logger.info(f"Download setup_cmd: {setup_cmd}")
+        # B-024: status only. Not the value, and not its length or prefix
+        # either -- a prefix names which credential leaked, a length narrows a
+        # brute force, and neither helps anyone debug a download.
+        logger.info("Download HF token: %s", "applied" if req.hf_token else "not-set")
+        logger.info("Download setup_cmd: %s", redact_secrets(setup_cmd))
 
-        if setup_cmd is None:
-            # LOCAL Windows: launch the bash wrapper detached; no tmux setup_cmd.
-            try:
-                _launch_local_detached(session_id, lines)
-            except Exception as e:
-                logger.error(f"Local detached download launch failed: {e}")
-                return {"ok": False, "error": str(e), "session_id": session_id}
-        else:
-            proc = await asyncio.create_subprocess_shell(
-                setup_cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+        launched = False
+        try:
+            if setup_cmd is None:
+                # LOCAL Windows: launch the bash wrapper detached; no tmux setup_cmd.
+                # The token rides the child's environment (B-024), so the wrapper
+                # that process reads never contains it.
+                try:
+                    _launch_local_detached(
+                        session_id,
+                        lines,
+                        env_extra={"HF_TOKEN": req.hf_token} if req.hf_token else None,
+                    )
+                except Exception as e:
+                    logger.error(f"Local detached download launch failed: {e}")
+                    return {"ok": False, "error": str(e), "session_id": session_id}
+            else:
+                proc = await asyncio.create_subprocess_shell(
+                    setup_cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                await proc.wait()
+
+                if proc.returncode != 0:
+                    stderr = (await proc.stderr.read()).decode(errors="replace")
+                    logger.error(
+                        "Download failed (rc=%s): %s",
+                        proc.returncode,
+                        redact_secrets(stderr),
+                    )
+                    return {"ok": False, "error": stderr, "session_id": session_id}
+            launched = True
+        finally:
+            # Push copies go whichever way this ended; a grant a local runner
+            # never got the chance to consume goes with them.
+            _discard_staged(
+                staged_for_remote if launched else staged_for_remote + [local_grant]
             )
-            await proc.wait()
-
-            if proc.returncode != 0:
-                stderr = (await proc.stderr.read()).decode(errors="replace")
-                logger.error(f"Download failed (rc={proc.returncode}): {stderr}")
-                return {"ok": False, "error": stderr, "session_id": session_id}
+            if not launched and grant_path is not None and remote:
+                await _revoke_remote_hf_grant(remote, remote_grant, req.ssh_port)
 
         # Log to assistant
         try:
@@ -1603,13 +1961,11 @@ def setup_cookbook_routes() -> APIRouter:
         if remote:
             # Probe over SSH. Bash's /dev/tcp gives a portable "is anything
             # listening" check without requiring ss/netstat/nmap.
-            ssh_base = ["ssh", "-o", "ConnectTimeout=4", "-o", "StrictHostKeyChecking=no"]
             if ssh_port and str(ssh_port) != "22":
                 try:
                     ssh_port = validate_ssh_port(ssh_port)
                 except HTTPException:
                     return None
-                ssh_base.extend(["-p", str(ssh_port)])
             try:
                 host_arg = validate_remote_host(remote)
             except HTTPException:
@@ -1625,7 +1981,7 @@ def setup_cookbook_routes() -> APIRouter:
             try:
                 import subprocess
                 r = subprocess.run(
-                    ssh_base + [host_arg, script],
+                    ssh_trust.ssh_argv(host_arg, ssh_port, script, connect_timeout=4),
                     capture_output=True, text=True, timeout=8,
                 )
                 if r.returncode == 0:
@@ -1681,10 +2037,11 @@ def setup_cookbook_routes() -> APIRouter:
         if local_win:
             return
         if remote:
-            ssh_args = ["ssh"]
-            if ssh_port and ssh_port != "22":
-                ssh_args.extend(["-p", str(ssh_port)])
-            capture_cmd = ssh_args + [remote, _remote_tmux_command("capture-pane", "-t", session_id, "-p", "-S", "-2000")]
+            capture_cmd = ssh_trust.ssh_argv(
+                remote,
+                ssh_port,
+                _remote_tmux_command("capture-pane", "-t", session_id, "-p", "-S", "-2000"),
+            )
         else:
             capture_cmd = ["tmux", "capture-pane", "-t", session_id, "-p", "-S", "-2000"]
 
@@ -2028,10 +2385,16 @@ def setup_cookbook_routes() -> APIRouter:
                 raise HTTPException(400, "Invalid pip package name")
         else:
             _validate_serve_model_id(req.repo_id)
-        TMUX_LOG_DIR.mkdir(parents=True, exist_ok=True)
+        _staging_dir()
+        _sweep_stale_hf_grants()
         session_id = f"serve-{uuid.uuid4().hex[:8]}"
         remote = req.remote_host
         is_windows = req.platform == "windows"
+        # B-024, same bookkeeping as the download endpoint above.
+        staged_for_remote: list[Path] = []
+        local_grant: Path | None = None
+        grant_path: Path | None = None
+        remote_grant = f".{session_id}{_HF_GRANT_SUFFIX}"
 
         # Ollama: if the user didn't pin a port, resolve the actual port we'll
         # bind to here (before runner construction) by probing the target host.
@@ -2088,7 +2451,9 @@ def setup_cookbook_routes() -> APIRouter:
             ps_lines.append('$sessionDir = "$env:TEMP\\odysseus-sessions"')
             ps_lines.append('New-Item -ItemType Directory -Force -Path $sessionDir | Out-Null')
             if req.hf_token:
-                ps_lines.append(f"$env:HF_TOKEN = '{_ps_squote(req.hf_token)}'")
+                grant_path = _write_hf_grant(session_id, req.hf_token)
+                staged_for_remote.append(grant_path)
+                ps_lines.extend(_ps_hf_grant_lines(remote_grant))
             if req.gpus:
                 ps_lines.append(f"$env:CUDA_VISIBLE_DEVICES = '{req.gpus}'")
             if req.env_prefix:
@@ -2119,8 +2484,10 @@ def setup_cookbook_routes() -> APIRouter:
             runner_path.write_text("\r\n".join(ps_lines) + "\r\n", encoding="utf-8")
 
             _port = req.ssh_port
-            _Pf = f"-P {_port} " if _port and _port != "22" else ""
             _pf = f"-p {_port} " if _port and _port != "22" else ""
+            # Same reasoning as the download path: the PowerShell payload keeps
+            # its own quoting, the trust flags come from ssh_trust.
+            _trust = ssh_trust.option_flags()
             launch_ps = (
                 "$sd = \\\"$env:TEMP\\odysseus-sessions\\\"; "
                 f"Start-Process powershell -ArgumentList '-ExecutionPolicy','Bypass','-File','$HOME\\{remote_runner}' "
@@ -2128,9 +2495,17 @@ def setup_cookbook_routes() -> APIRouter:
                 f"-RedirectStandardError \\\"$sd\\{session_id}.err.log\\\" "
                 f"-NoNewWindow -PassThru | ForEach-Object {{ $_.Id | Out-File \\\"$sd\\{session_id}.pid\\\" }}"
             )
+            staged_for_remote.append(runner_path)
+            # The grant goes first and separately: it is the only artifact that
+            # carries the value, and the runner is useless without it anyway.
+            _grant_push = (
+                f"{ssh_trust.scp_command(grant_path, remote, remote_grant, ssh_port=_port)} && "
+                if grant_path else ""
+            )
             setup_cmd = (
-                f"scp -O {_Pf}-q '{runner_path}' {remote}:{remote_runner} && "
-                f'ssh {_pf}{remote} "powershell -Command \\"{launch_ps}\\""'
+                f"{_grant_push}"
+                f"{ssh_trust.scp_command(runner_path, remote, remote_runner, ssh_port=_port)} && "
+                f'ssh {_trust} {_pf}{remote} "powershell -Command \\"{launch_ps}\\""'
             )
         else:
             # ── Linux/Termux: bash + tmux (existing flow) ──
@@ -2161,8 +2536,17 @@ def setup_cookbook_routes() -> APIRouter:
                     # user PATH entries from the already-running Faustus process.
                     runner_lines.append('export PATH="$HOME/bin:$HOME/llama.cpp/build-cuda/bin/Release:$HOME/llama.cpp/build/bin/Release:$HOME/llama.cpp/build/bin/Debug:$HOME/llama.cpp/build/bin:$PATH"')
             runner_lines.append("export FLASHINFER_DISABLE_VERSION_CHECK=1")
-            if req.hf_token:
-                runner_lines.append(f"export HF_TOKEN='{_bash_squote(req.hf_token)}'")
+            # B-024: three targets share this branch and each takes the grant
+            # differently. A node reads one pushed into its home; a local POSIX
+            # run reads one from the staging dir; a local Windows run is started
+            # by Faustus itself and inherits the value, so it needs no file.
+            if req.hf_token and remote:
+                grant_path = _write_hf_grant(session_id, req.hf_token)
+                staged_for_remote.append(grant_path)
+                runner_lines.extend(_bash_hf_grant_lines(f'"$HOME/{remote_grant}"'))
+            elif req.hf_token and not local_windows:
+                local_grant = _write_hf_grant(session_id, req.hf_token)
+                runner_lines.extend(_bash_hf_grant_lines(shlex.quote(str(local_grant))))
             if req.gpus:
                 runner_lines.append(f"export CUDA_VISIBLE_DEVICES='{req.gpus}'")
             if req.env_prefix:
@@ -2729,8 +3113,9 @@ def setup_cookbook_routes() -> APIRouter:
             runner_path = TMUX_LOG_DIR / f"{session_id}_run.sh"
             runner_path.write_text("\n".join(runner_lines) + "\n", encoding="utf-8")
             # chmod is a no-op on Windows; bash on Windows runs the script
-            # regardless of the executable bit.
-            safe_chmod(runner_path, 0o755)
+            # regardless of the executable bit. 0700, not 0755 (B-024): only the
+            # account that staged it has any business reading it.
+            safe_chmod(runner_path, 0o700)
 
             if local_windows:
                 # LOCAL Windows: launch the bash runner detached (tmux replacement).
@@ -2740,45 +3125,68 @@ def setup_cookbook_routes() -> APIRouter:
                 # If command references scripts/, scp those too
                 scp_extras = ""
                 _port = req.ssh_port
-                _Pf = f"-P {_port} " if _port and _port != "22" else ""
-                _pf = f"-p {_port} " if _port and _port != "22" else ""
                 if "scripts/diffusion_server.py" in req.cmd:
                     from core.constants import BASE_DIR
                     diff_script = Path(BASE_DIR) / "scripts" / "diffusion_server.py"
                     if diff_script.exists():
-                        scp_extras = f"scp -O {_Pf}-q '{diff_script}' {remote}:.diffusion_server.py && "
+                        scp_extras = ssh_trust.scp_command(
+                            diff_script, remote, ".diffusion_server.py", ssh_port=_port
+                        ) + " && "
                         runner_path.write_text(
                             runner_path.read_text(encoding="utf-8").replace(
                                 "scripts/diffusion_server.py", ".diffusion_server.py"
                             ),
                             encoding="utf-8",
                         )
+                staged_for_remote.append(runner_path)
+                if grant_path:
+                    scp_extras = (
+                        f"{_remote_hf_grant_push(remote, remote_grant, grant_path, ssh_port=_port)} && "
+                        + scp_extras
+                    )
                 setup_cmd = (
                     f"{scp_extras}"
-                    f"scp -O {_Pf}-q '{runner_path}' {remote}:{remote_runner} && "
-                    f"ssh {_pf}{remote} {shlex.quote(_remote_tmux_launch_command(session_id, remote_runner))}"
+                    f"{ssh_trust.scp_command(runner_path, remote, remote_runner, ssh_port=_port)} && "
+                    f"{ssh_trust.ssh_command(remote, _remote_tmux_launch_command(session_id, remote_runner), ssh_port=_port)}"
                 )
             else:
                 setup_cmd = f"tmux set-option -g history-limit 100000 2>/dev/null; tmux new-session -d -s {session_id} {shlex.quote(str(runner_path))}"
 
-        if setup_cmd is None:
-            # LOCAL Windows: launch the bash runner detached; no tmux setup_cmd.
-            try:
-                _launch_local_detached(session_id, runner_lines)
-            except Exception as e:
-                logger.error(f"Local detached serve launch failed: {e}")
-                return {"ok": False, "error": str(e), "session_id": session_id}
-        else:
-            proc = await asyncio.create_subprocess_shell(
-                setup_cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            await proc.wait()
+        # B-024: applied/not-set and nothing else -- see the download endpoint.
+        logger.info("Serve HF token: %s", "applied" if req.hf_token else "not-set")
 
-            if proc.returncode != 0:
-                stderr = (await proc.stderr.read()).decode(errors="replace")
-                return {"ok": False, "error": stderr, "session_id": session_id}
+        launched = False
+        try:
+            if setup_cmd is None:
+                # LOCAL Windows: launch the bash runner detached; no tmux setup_cmd.
+                # The token reaches it through the child's environment (B-024).
+                try:
+                    _launch_local_detached(
+                        session_id,
+                        runner_lines,
+                        env_extra={"HF_TOKEN": req.hf_token} if req.hf_token else None,
+                    )
+                except Exception as e:
+                    logger.error(f"Local detached serve launch failed: {e}")
+                    return {"ok": False, "error": str(e), "session_id": session_id}
+            else:
+                proc = await asyncio.create_subprocess_shell(
+                    setup_cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                await proc.wait()
+
+                if proc.returncode != 0:
+                    stderr = (await proc.stderr.read()).decode(errors="replace")
+                    return {"ok": False, "error": stderr, "session_id": session_id}
+            launched = True
+        finally:
+            _discard_staged(
+                staged_for_remote if launched else staged_for_remote + [local_grant]
+            )
+            if not launched and grant_path is not None and remote:
+                await _revoke_remote_hf_grant(remote, remote_grant, req.ssh_port)
 
         # Auto-register a model endpoint so the served model shows up in the model
         # picker with no manual /setup step. Diffusion models get an image
@@ -2928,8 +3336,9 @@ def setup_cookbook_routes() -> APIRouter:
     async def _run_nvidia_smi(query: str, host: str | None, ssh_port: str | None, timeout: int = 8):
         """Run nvidia-smi locally or over SSH. Returns (stdout, error_or_None)."""
         if host:
-            pf = f"-p {ssh_port} " if ssh_port and ssh_port != "22" else ""
-            cmd = f"ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no {pf}{host} '{query}'"
+            cmd = ssh_trust.ssh_command(
+                host, query, ssh_port=ssh_port, connect_timeout=5
+            )
             proc = await asyncio.create_subprocess_shell(
                 cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
             )
@@ -2951,7 +3360,6 @@ def setup_cookbook_routes() -> APIRouter:
     async def _run_gpu_shell(cmd_text: str, host: str | None, ssh_port: str | None, timeout: int = 8):
         """Run a small GPU probe shell command locally or over SSH."""
         if host:
-            pf = f"-p {ssh_port} " if ssh_port and ssh_port != "22" else ""
             quoted_cmd = shlex.quote(cmd_text)
             remote_cmd = (
                 f"if command -v sh >/dev/null 2>&1; then sh -lc {quoted_cmd}; "
@@ -2959,7 +3367,9 @@ def setup_cookbook_routes() -> APIRouter:
                 f"elif command -v zsh >/dev/null 2>&1; then zsh -lc {quoted_cmd}; "
                 "else echo 'No POSIX shell found for GPU probe' >&2; exit 127; fi"
             )
-            cmd = f"ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no {pf}{host} {shlex.quote(remote_cmd)}"
+            cmd = ssh_trust.ssh_command(
+                host, remote_cmd, ssh_port=ssh_port, connect_timeout=5
+            )
             proc = await asyncio.create_subprocess_shell(
                 cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
             )
@@ -3332,8 +3742,9 @@ def setup_cookbook_routes() -> APIRouter:
         kill_cmd = f"kill -{sig} {req.pid}"
         try:
             if host:
-                pf = f"-p {req.ssh_port} " if req.ssh_port and req.ssh_port != "22" else ""
-                cmd = f"ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no {pf}{host} '{kill_cmd}'"
+                cmd = ssh_trust.ssh_command(
+                    host, kill_cmd, ssh_port=req.ssh_port, connect_timeout=5
+                )
                 proc = await asyncio.create_subprocess_shell(
                     cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
                 )
@@ -3707,18 +4118,17 @@ def setup_cookbook_routes() -> APIRouter:
             except HTTPException:
                 continue
             sport = str(srv.get("port") or "").strip()
-            ssh_base = ["ssh", "-o", "ConnectTimeout=4", "-o", "StrictHostKeyChecking=no"]
             if sport and sport != "22":
                 try:
                     sport = validate_ssh_port(sport)
                 except HTTPException:
                     continue
-                if sport != "22":
-                    ssh_base.extend(["-p", sport])
 
             try:
                 ls = subprocess.run(
-                    ssh_base + [host, _remote_tmux_command("ls")],
+                    ssh_trust.ssh_argv(
+                        host, sport, _remote_tmux_command("ls"), connect_timeout=4
+                    ),
                     timeout=6, capture_output=True, text=True,
                 )
             except Exception:
@@ -3879,15 +4289,29 @@ def setup_cookbook_routes() -> APIRouter:
             async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
                 resp = await client.get(url, headers=headers)
                 if resp.status_code != 200:
+                    logger.warning("HF GGUF file scan for %s: HTTP %s", repo_id, resp.status_code)
                     return {"ok": False, "files": [], "error": f"HF API HTTP {resp.status_code}"}
                 data = resp.json()
+        except httpx.TimeoutException:
+            logger.warning("HF GGUF file scan for %s timed out", repo_id)
+            return {"ok": False, "files": [], "error": "HF API request timed out"}
+        except httpx.RequestError as exc:
+            logger.warning("HF GGUF file scan for %s failed: %s", repo_id, exc.__class__.__name__)
+            return {"ok": False, "files": [], "error": "HF API unreachable"}
+        except ValueError:  # json.JSONDecodeError — 200 with a body that is not JSON
+            logger.warning("HF GGUF file scan for %s: response was not JSON", repo_id)
+            return {"ok": False, "files": [], "error": "HF API returned invalid JSON"}
         except Exception:
-            logger.exception("HF GGUF file scan failed for %s", repo)
+            logger.exception("HF GGUF file scan failed for %s", repo_id)
             return {"ok": False, "files": [], "error": "HF API request failed"}
+        siblings = data.get("siblings") if isinstance(data, dict) else None
+        if not isinstance(siblings, list):
+            logger.warning("HF GGUF file scan for %s: unexpected payload shape", repo_id)
+            return {"ok": False, "files": [], "error": "HF API returned an unexpected payload"}
         files = [
             str(s.get("rfilename") or "")
-            for s in data.get("siblings", [])
-            if str(s.get("rfilename") or "").lower().endswith(".gguf")
+            for s in siblings
+            if isinstance(s, dict) and str(s.get("rfilename") or "").lower().endswith(".gguf")
         ]
         return {"ok": True, "repo_id": repo_id, "files": files}
 
@@ -4264,11 +4688,12 @@ def setup_cookbook_routes() -> APIRouter:
             cmd = ["python3", "-c", HF_CACHE_COMPLETE_PROBE, repo_id, cache_root or ""]
             try:
                 if remote_host:
-                    ssh_base = ["ssh"]
-                    if ssh_port and ssh_port != "22":
-                        ssh_base.extend(["-p", str(ssh_port)])
                     shell_cmd = " ".join(shlex.quote(x) for x in cmd)
-                    proc = subprocess.run(ssh_base + [remote_host, shell_cmd], timeout=12, capture_output=True)
+                    proc = subprocess.run(
+                        ssh_trust.ssh_argv(remote_host, ssh_port, shell_cmd),
+                        timeout=12,
+                        capture_output=True,
+                    )
                 else:
                     proc = subprocess.run(cmd, timeout=12, capture_output=True)
                 return proc.returncode == 0
@@ -4287,11 +4712,12 @@ def setup_cookbook_routes() -> APIRouter:
             cmd = ["python3", "-c", HF_CACHE_INCOMPLETE_PROBE, repo_id, cache_root or ""]
             try:
                 if remote_host:
-                    ssh_base = ["ssh"]
-                    if ssh_port and ssh_port != "22":
-                        ssh_base.extend(["-p", str(ssh_port)])
                     shell_cmd = " ".join(shlex.quote(x) for x in cmd)
-                    proc = subprocess.run(ssh_base + [remote_host, shell_cmd], timeout=12, capture_output=True)
+                    proc = subprocess.run(
+                        ssh_trust.ssh_argv(remote_host, ssh_port, shell_cmd),
+                        timeout=12,
+                        capture_output=True,
+                    )
                 else:
                     proc = subprocess.run(cmd, timeout=12, capture_output=True)
                 return proc.returncode == 0
@@ -4371,33 +4797,27 @@ def setup_cookbook_routes() -> APIRouter:
             if task_platform == "windows" and remote:
                 # Windows: check PID file + Get-Process, read log tail
                 sd = "$env:TEMP\\odysseus-sessions"
-                ssh_base = ["ssh"]
-                if _tport and _tport != "22":
-                    ssh_base.extend(["-p", str(_tport)])
+                ssh_base = ssh_trust.ssh_argv(remote, _tport)
                 check_cmd = ssh_base + [
-                    remote,
                     "powershell",
                     "-Command",
                     f"$pid = Get-Content \"{sd}\\{session_id}.pid\" -ErrorAction SilentlyContinue; "
                     "if ($pid) {{ Get-Process -Id $pid -ErrorAction SilentlyContinue | Out-Null; if ($?) {{ exit 0 }} else {{ exit 1 }} }} else {{ exit 1 }}"
                 ]
                 capture_cmd = ssh_base + [
-                    remote,
                     "powershell",
                     "-Command",
                     f"Get-Content \"{sd}\\{session_id}.log\" -Tail 10 -ErrorAction SilentlyContinue",
                 ]
             elif remote:
-                ssh_base = ["ssh"]
-                if _tport and _tport != "22":
-                    ssh_base.extend(["-p", str(_tport)])
-                check_cmd = ssh_base + [remote, _remote_tmux_command("has-session", "-t", session_id)]
+                ssh_base = ssh_trust.ssh_argv(remote, _tport)
+                check_cmd = ssh_base + [_remote_tmux_command("has-session", "-t", session_id)]
                 # Capture 500 lines (was 50) so a Python traceback survives
                 # the post-crash neofetch banner + bash prompt that otherwise
                 # fills the visible tail. Without this, output_tail ends up
                 # as just "Locale: C / Ubuntu_Odysseus ❯" and the agent
                 # can't diagnose the actual error.
-                capture_cmd = ssh_base + [remote, _remote_tmux_command("capture-pane", "-t", session_id, "-p", "-S", "-500")]
+                capture_cmd = ssh_base + [_remote_tmux_command("capture-pane", "-t", session_id, "-p", "-S", "-500")]
             elif IS_WINDOWS:
                 # LOCAL Windows task: launched as a detached process (no tmux).
                 # Liveness comes from the <session>.pid file, output from the

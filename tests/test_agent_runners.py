@@ -214,16 +214,17 @@ def test_launch_argv_builds_the_command_and_runs_nothing(monkeypatch):
 # ── the argv that runs ONE task ────────────────────────────────────────────
 
 def test_build_argv_fills_the_placeholders():
+    """The task is absent on purpose: SEC-1 (B-022) moved it to stdin."""
     claude = reg.get("claude", help_source=HELP)
     assert reg.build_argv(claude, "add a test", model="qwen3.5:9b") == \
-        ["claude", "-p", "add a test", "--model", "qwen3.5:9b"]
+        ["claude", "-p", "--model", "qwen3.5:9b"]
 
 
 def test_an_empty_placeholder_drops_its_own_flag_too():
     """`--model` with nothing after it is not a command."""
     claude = reg.get("claude", help_source=HELP)
-    assert reg.build_argv(claude, "add a test") == ["claude", "-p", "add a test"]
-    assert reg.build_argv(claude, "add a test", model="") == ["claude", "-p", "add a test"]
+    assert reg.build_argv(claude, "add a test") == ["claude", "-p"]
+    assert reg.build_argv(claude, "add a test", model="") == ["claude", "-p"]
 
 
 def test_stdin_task_keeps_the_task_out_of_the_argv():
@@ -331,7 +332,9 @@ def test_help_text_is_cached(monkeypatch):
 #: the pre-change module and pasted here. A row that is not runnable as a
 #: worker produces the empty list, and that is part of the contract too.
 ARGV_BEFORE_RESUME = {
-    "claude":   ["claude", "-p", "add apply_tax", "--model", "qwen3.5:9b"],
+    # SEC-1 (B-022): this row's task moved to stdin, so its pinned command is
+    # the pre-resume one MINUS the prompt token. Everything else is untouched.
+    "claude":   ["claude", "-p", "--model", "qwen3.5:9b"],
     "opencode": ["opencode", "run", "add apply_tax", "--model", "qwen3.5:9b"],
     "codex":    ["codex", "exec", "add apply_tax", "--model", "qwen3.5:9b"],
     "qwen":     ["qwen", "-p", "add apply_tax", "-m", "qwen3.5:9b"],
@@ -350,15 +353,15 @@ def test_no_session_produces_exactly_todays_command_for_every_shipped_row(key):
 def test_a_session_adds_the_resume_clause_and_nothing_else():
     claude = reg.get("claude", help_source=HELP)
     assert reg.build_argv(claude, "fix it", model="qwen3.5:9b", session="sess-42") == \
-        ["claude", "-p", "fix it", "--model", "qwen3.5:9b", "--resume", "sess-42"]
+        ["claude", "-p", "--model", "qwen3.5:9b", "--resume", "sess-42"]
     # No model AND no session: both flags go, and neither takes the other's
     # argument with it.
-    assert reg.build_argv(claude, "fix it") == ["claude", "-p", "fix it"]
+    assert reg.build_argv(claude, "fix it") == ["claude", "-p"]
     # One without the other, in both directions.
     assert reg.build_argv(claude, "fix it", session="sess-42") == \
-        ["claude", "-p", "fix it", "--resume", "sess-42"]
+        ["claude", "-p", "--resume", "sess-42"]
     assert reg.build_argv(claude, "fix it", model="qwen3.5:9b") == \
-        ["claude", "-p", "fix it", "--model", "qwen3.5:9b"]
+        ["claude", "-p", "--model", "qwen3.5:9b"]
 
 
 def test_the_gate_clause_still_lands_after_the_resume_one():
@@ -366,6 +369,6 @@ def test_the_gate_clause_still_lands_after_the_resume_one():
     its own JSON by the resume pair."""
     claude = reg.get("claude", help_source=HELP)
     argv = reg.build_argv(claude, "fix it", model="m", session="s", settings='{"hooks":{}}')
-    assert argv == ["claude", "-p", "fix it", "--model", "m", "--resume", "s",
+    assert argv == ["claude", "-p", "--model", "m", "--resume", "s",
                     "--output-format", "stream-json", "--verbose", "--settings", '{"hooks":{}}']
     assert argv[argv.index("--settings") + 1] == '{"hooks":{}}'

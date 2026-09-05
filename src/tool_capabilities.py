@@ -382,6 +382,23 @@ GUARD_SHELL_TOOLS = frozenset({"bash", "python"})
 COMMAND_GUARD_MODES = ("off", "observe", "enforce")
 DEFAULT_COMMAND_GUARD_MODE = "enforce"
 
+# B-004: when the guard itself breaks, enforce denies into the approval card
+# instead of waving the command through. The turn survives — this is a
+# pending decision the user can approve, not an exception.
+GUARD_FAILURE_DENIAL = (
+    "Unclassified command: the command guard itself failed, so it cannot "
+    "vouch for this call. In enforce mode an unclassified command is treated "
+    "as destructive rather than as safe. Approve this exact command to run "
+    "it, or allowlist the pattern under /api/command-guard/allowlist."
+)
+
+
+def _guard_is_enforcing() -> bool:
+    try:
+        return command_guard_mode() == "enforce"
+    except Exception:  # noqa: BLE001 - unknown settings fail closed
+        return DEFAULT_COMMAND_GUARD_MODE == "enforce"
+
 
 def command_guard_mode() -> str:
     """`agent_command_guard_mode`, normalised; unknown values fail closed to
@@ -424,7 +441,13 @@ def _guard_cache_key(tool_name: str, content: Any, mode: str, packs: frozenset[s
 
 
 def _command_guard_denial(tool_name: Any, content: Any, run_id: str = "") -> Optional[str]:
-    """None to allow, or the approval-card reason. NEVER raises (fail-open)."""
+    """None to allow, or the approval-card reason. NEVER raises.
+
+    B-004: a guard failure is NOT an allow. In enforce it returns the
+    unclassified-command denial, which the caller turns into the same sealed
+    approval card a DANGEROUS verdict would produce; in observe and off it
+    still allows, so the mode means what it says.
+    """
     try:
         if not isinstance(tool_name, str) or tool_name not in GUARD_SHELL_TOOLS:
             return None
@@ -460,7 +483,9 @@ def _command_guard_denial(tool_name: Any, content: Any, run_id: str = "") -> Opt
                 _guard_cache.popitem(last=False)
         return denial
     except Exception as exc:  # noqa: BLE001 - never break the hot path
-        logger.warning("command guard failed open: %r", exc)
+        logger.warning("command guard failed: %r", exc)
+        if _guard_is_enforcing() and isinstance(tool_name, str) and tool_name in GUARD_SHELL_TOOLS:
+            return GUARD_FAILURE_DENIAL
         return None
 
 
@@ -486,10 +511,12 @@ def command_guard_requires_approval(tool_name: Any, content: Any) -> bool:
         decision = _guard_classification(tool_name, content)
         if decision is None:
             return False
+        if decision.degraded:
+            return True  # B-004: the unclassified-command card is guard-sealed too
         from src.command_guard import tier_at_least
         return tier_at_least(decision.tier, "DANGEROUS")
-    except Exception:  # noqa: BLE001 - fail toward the stricter precondition
-        return False
+    except Exception:  # noqa: BLE001 - a guard failure seals a card as well
+        return isinstance(tool_name, str) and tool_name in GUARD_SHELL_TOOLS and _guard_is_enforcing()
 
 
 def command_guard_wants_checkpoint(tool_name: Any, content: Any) -> bool:
@@ -500,6 +527,8 @@ def command_guard_wants_checkpoint(tool_name: Any, content: Any) -> bool:
         decision = _guard_classification(tool_name, content)
         if decision is None:
             return False
+        if decision.degraded:
+            return True  # B-004: unknown command, take the checkpoint
         from src.command_guard import tier_at_least
         return tier_at_least(decision.tier, "DANGEROUS")
     except Exception:  # noqa: BLE001
@@ -507,13 +536,19 @@ def command_guard_wants_checkpoint(tool_name: Any, content: Any) -> bool:
 
 
 def command_guard_metadata(tool_name: Any, content: Any) -> Optional[dict]:
-    """{"tier", "rule"} for a DANGEROUS/CRITICAL command, else None."""
+    """{"tier", "rule"} for a DANGEROUS/CRITICAL command, else None.
+
+    B-004: a command the guard could not classify while enforcing is stamped
+    UNKNOWN, so the receipt for its approved execution says so.
+    """
     try:
         if command_guard_mode() == "off":
             return None
         decision = _guard_classification(tool_name, content)
         if decision is None:
             return None
+        if decision.degraded and _guard_is_enforcing():
+            return {"tier": "UNKNOWN", "rule": f"guard.degraded:{decision.degraded}"}
         from src.command_guard import tier_at_least
         if not tier_at_least(decision.tier, "DANGEROUS"):
             return None
@@ -1224,7 +1259,8 @@ class ToolRunSecurityContext:
         # early-allow on purpose — a task/chat-scope grant given earlier for
         # something else must not auto-run a NEW dangerous command. The only
         # way past this denial is the sealed exact approval claimed (digest
-        # revalidated) in src/tool_execution.py. Fails open on internal error.
+        # revalidated) in src/tool_execution.py. A guard failure denies here
+        # too (B-004): unclassified is treated as destructive, not as safe.
         guard_denial = _command_guard_denial(tool_name, content, run_id=self.run_id)
         if guard_denial is not None:
             return ToolGateDecision(False, guard_denial)

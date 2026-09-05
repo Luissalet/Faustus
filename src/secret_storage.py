@@ -24,7 +24,7 @@ from pathlib import Path
 
 from cryptography.fernet import Fernet, InvalidToken
 
-from core.platform_compat import safe_chmod
+from core.platform_compat import restrict_to_owner
 from src.constants import APP_KEY_FILE
 
 logger = logging.getLogger(__name__)
@@ -40,9 +40,10 @@ def _load_or_create_key() -> bytes:
     _KEY_PATH.parent.mkdir(parents=True, exist_ok=True)
     key = Fernet.generate_key()
     _KEY_PATH.write_bytes(key)
-    # POSIX: lock the key to 0o600. Windows: no-op (the user-profile data dir is
-    # already ACL-restricted); safe_chmod swallows both cases.
-    safe_chmod(_KEY_PATH, 0o600)
+    # POSIX: 0600. Windows: an explicit owner-only ACL — this key decrypts
+    # every stored secret, and "the data dir is under the user profile" stops
+    # being true the moment ODYSSEUS_DATA_DIR points at another volume.
+    restrict_to_owner(_KEY_PATH)
     logger.info(f"Generated new app key at {_KEY_PATH}")
     return key
 

@@ -511,6 +511,18 @@ GROUPS: list[dict[str, Any]] = [
                  "is the only clock on it: an agent that says it is rate limited or is waiting for "
                  "input is reported on the board, never killed for it.",
                  10, 7200, step=30),
+            _text("agent_env_allow", "Variables an external agent may read",
+                  "Comma-separated names an external agent CLI is allowed to take from this "
+                  "machine's environment, on top of the structural ones (PATH, HOME, TEMP, locale, "
+                  "CA bundle) and whatever its own row in the runner table declares. An external "
+                  "agent no longer inherits every provider key, cloud credential and repository "
+                  "token you have exported — so if one of them genuinely needs a variable, name it "
+                  "here. Example: GITHUB_TOKEN, MY_VENDOR_KEY."),
+            _bool("agent_env_inherit_all", "Give external agents the whole environment",
+                  "The old behaviour, kept as an escape hatch: every variable in this process goes "
+                  "to the third-party binary. Each run that uses it is logged. Faustus's own "
+                  "internal token is withheld either way — that part is not a setting. Off is the "
+                  "default and should stay off unless something is broken without it."),
         ],
     ),
     _group(
