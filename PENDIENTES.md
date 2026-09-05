@@ -51,14 +51,16 @@ al romperlo:
 
 ## Fallos que rompen algo hoy
 
-- `[!]` **La trampa "ofrecido y luego rechazado" con `suggest_document`.**
-  Un skill (`data/skills/ai-integration-setup`) hacía fallar 13 tests en el
-  árbol de Luis y en ningún otro. Bisecado hasta ahí. El arreglo pertenece al
-  punto de uso, no al preflight: preflight corre una vez al empezar el turno y
-  un documento puede crearse *durante* el turno, así que podar la herramienta
-  ahí quitaría una llamada legítima. Se revirtió a propósito un arreglo que
-  pasaba 89 tests pero rompía dos de `test_external_context_tool_gate.py`.
-  → El diagnóstico está escrito; el arreglo no.
+- `[x]` **La trampa "ofrecido y luego rechazado" con `suggest_document`** —
+  cerrada el 05-09-2026 (B-007, `FAUSTUS.md` §45). El arreglo está donde decía
+  el diagnóstico: en el punto de uso. `src/tool_availability.py` responde
+  "¿puede ejecutarse esto ahora?", la herramienta pregunta cuando la llaman, y
+  la negativa dice qué falta y qué lo devolvería. `agent_loop` la retira de la
+  ronda siguiente y **la reincorpora** en cuanto un `create_document` o un
+  `manage_documents` tiene éxito — que es justo lo que el preflight no podía
+  hacer. Queda sin comprobar una cosa: los 13 tests originales necesitaban
+  `data/skills/ai-integration-setup`, que ya no está en el árbol, así que la
+  reproducción exacta de aquel fallo no se ha repetido.
 
 - `[!]` **`bg_jobs.refresh()` mata por pid sin comprobar propiedad en la rama
   de timeout.** El orden del `elif` hace que `_pid_alive` nunca se alcance para
@@ -436,13 +438,7 @@ tokens `ody_`, y B-004; el registro está en `FAUSTUS.md` §43. Lo que **no** ci
 El Sprint 0B (rama `feat/sec-1`, 05-09-2026) cierra B-002, B-003, B-005, B-006 y B-018 de la
 auditoría; el registro está en `FAUSTUS.md` §44. Lo que **no** cierra:
 
-- `[!]` **B-007 sigue abierto: «ofrecido y luego rechazado».** Era el sexto del sprint y se ha
-  separado a propósito. `suggest_document` puede aparecer en el conjunto de herramientas y
-  fallar al ejecutarse con *"No active document to suggest on"*. El informe pide una **única
-  función de disponibilidad evaluable en el momento de uso**, una transición de estado
-  explicable cuando una herramienta deja de valer, y que el conjunto se actualice para la
-  ronda siguiente. Podarla en el preflight ya se probó y se revirtió: el preflight corre una
-  vez y un documento puede abrirse *durante* el turno.
+- `[x]` **B-007 se cerró justo después**, en su propio commit (`FAUSTUS.md` §45).
 - `[+]` **La misma política de UTC falta en `chat_export.py`.** B-005 se arregló donde el
   informe lo señala (`report_export.py`), pero `chat_export.py:692` sigue usando
   `datetime.now()` sin zona y su nombre de fichero (`:1467`) sale de ahí. Es el mismo fallo,
@@ -456,3 +452,23 @@ auditoría; el registro está en `FAUSTUS.md` §44. Lo que **no** cierra:
   `tests/test_route_factory_isolation.py` impide que aparezca un `APIRouter` de módulo nuevo,
   pero no dice nada de otras formas de estado global en `routes/` (cachés, managers guardados
   en el módulo). Nadie ha buscado esas.
+
+## B-007: lo cerrado, y lo que deja abierto
+
+B-007 (rama `feat/sec-1`, 05-09-2026, `FAUSTUS.md` §45) pone la disponibilidad de herramientas
+en el punto de uso. Lo que **no** cierra:
+
+- `[+]` **Sólo hay una regla.** `src/tool_availability.py` gobierna `suggest_document`, que es
+  la que nombra el informe. `edit_document` y `update_document` tienen la misma dependencia de
+  un documento destino y siguen devolviendo su error propio; añadirlas es una entrada en
+  `_RULES`, pero hay que mirar antes qué tests fijan sus mensajes actuales.
+- `[+]` **La lista de herramientas retiradas no viaja al modelo.** Se retira el esquema, y eso
+  basta para que no se vuelva a llamar, pero al modelo no se le dice *"esto ya no está y por
+  esto"*. El `remedy` de la negativa lo explica una vez, en el resultado de esa llamada; una
+  nota en el siguiente turno sería más clara.
+- `[?]` **El registro es estático.** Las reglas se declaran en el módulo, no en el registro de
+  herramientas ni en los skills. Si un skill quisiera declarar su propia condición de
+  disponibilidad hoy no puede.
+- `[~]` **Los 13 tests del diagnóstico original no se han reproducido.** Necesitaban
+  `data/skills/ai-integration-setup`, que ya no está en `data/skills`. Si el skill reaparece,
+  vale la pena volver a correrlos antes de dar el asunto por muerto.

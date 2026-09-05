@@ -2485,5 +2485,66 @@ colarse hasta el momento en que alguien intenta ordenarla.
   es una política equivocada escrita sin querer.
 
 
+## 45. B-007: ofrecido y luego rechazado (05-09-2026, noche)
+
+El sexto bug del Sprint 0B, separado porque no es un parche: es una decisión de diseño sobre
+dónde vive la pregunta *"¿puede ejecutarse esta herramienta ahora?"*.
+
+`suggest_document` podía aparecer en la lista de herramientas de un turno y, al llamarla,
+contestar *"No active document to suggest on"*. El modelo volvía a intentarlo —la misma
+negativa, una ronda perdida—. Con `data/skills/ai-integration-setup` instalado, 13 tests
+fallaban en el árbol de Luis y en ningún otro.
+
+### 45.1 Por qué el preflight era el sitio equivocado
+
+El arreglo obvio es podar la herramienta en el preflight, y ya se escribió una vez: pasaba 89
+tests y rompía dos de `test_external_context_tool_gate.py`. Se revirtió a propósito, y el
+porqué está en `PENDIENTES.md` desde entonces: **el preflight corre una vez, al empezar el
+turno, y un documento puede crearse durante el turno**. Podar ahí quita una llamada que dos
+rondas después es legítima.
+
+Ese es todo el problema: la disponibilidad no es un hecho del turno, es un hecho del momento.
+
+### 45.2 Una función, preguntada donde se usa
+
+`src/tool_availability.py` es esa función. Un registro de reglas —hoy una, `suggest_document`,
+que exige un documento destino: el de la llamada o el del editor— y tres cosas que devuelve
+cuando la respuesta es no: **qué** herramienta, **por qué** no puede, y **qué la
+devolvería** (`restored_by`). La herramienta pregunta en el punto de uso, dentro de su propio
+`execute`, y devuelve esa negativa en vez de un `{"error": ...}` suelto. El texto del error se
+mantiene palabra por palabra, para que nada que lo mirase deje de funcionar.
+
+Una regla que se rompe no bloquea la herramienta: si el predicado lanza, la respuesta es
+"disponible". Este módulo dice lo que se sabe que es condicional; el silencio no es una
+negativa.
+
+### 45.3 La transición, en los dos sentidos
+
+`agent_loop` lee la marca (`tool_unavailable`, no una comparación de cadenas) y **retira la
+herramienta de la ronda siguiente** — el reflejo exacto del mecanismo que ya existía para
+*añadir* herramientas cuando un skill las declara. Y hace lo contrario en cuanto un
+`create_document` o un `manage_documents` termina bien: la devuelve, con una línea de log que
+dice qué la devolvió.
+
+Eso es lo que el preflight no podía hacer, y es lo que convierte «ofrecido y luego rechazado»
+en una transición explicable: la herramienta desaparece de la lista con un motivo y vuelve con
+otro, en la misma conversación.
+
+### 45.4 Lo verificado, y lo que no
+
+18 tests nuevos: la función sola, la negativa que devuelve la herramienta de verdad (con y sin
+documento abierto), y el escenario que el preflight no cubre —ronda 1 se rechaza y se retira,
+ronda 2 `create_document` acierta, ronda 3 vuelve a estar y ya puede ejecutarse—. Más un guard
+que lee `agent_loop.py`, porque la contabilidad de rondas sólo es cierta si el bucle la hace.
+
+Lo que **no** se ha reproducido: los 13 tests originales necesitaban
+`data/skills/ai-integration-setup`, que ya no está en el árbol. La trampa está cubierta; aquel
+fallo concreto no se ha vuelto a ver fallar.
+
+En vivo, tras reiniciar el 7001: las siete rutas comprobadas responden 200 y el esquema
+declara 593 rutas, 593 únicas — que es además la comprobación de que las factories de B-006 no
+registran nada dos veces.
+
+
 ## Cómo mantener este documento
 Cada bloque de trabajo añade una sección (fecha, qué, por qué, ficheros, cómo se verificó, cifras) y actualiza las cifras de cabecera (`git log --oneline c9dd68d8..HEAD | wc -l`, `git diff --stat c9dd68d8..HEAD`). Los commits del fork llevan mensajes largos que explican el porqué: `git log c9dd68d8..HEAD` es la fuente detallada.
