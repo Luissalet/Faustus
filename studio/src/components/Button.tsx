@@ -1,4 +1,5 @@
 import { Loader2, type LucideIcon } from 'lucide-react';
+import type { ButtonHTMLAttributes, Ref } from 'react';
 import { slug } from './testid';
 
 export interface ButtonProps {
@@ -19,6 +20,8 @@ export interface ButtonProps {
   /** A native tooltip, for the buttons whose label is shorter than the promise. */
   title?: string;
   onClick?: () => void;
+  /** Radix triggers (`asChild`) hand down a ref and their own handlers. */
+  ref?: Ref<HTMLButtonElement>;
 }
 
 /**
@@ -38,7 +41,9 @@ export function Button({
   testId,
   title,
   onClick,
-}: ButtonProps) {
+  ref,
+  ...rest
+}: ButtonProps & Omit<ButtonHTMLAttributes<HTMLButtonElement>, keyof ButtonProps>) {
   const iconSize = size === 'lg' ? 18 : 16;
   const glyph = loading ? (
     <Loader2 className="fs-btn__spinner" size={iconSize} aria-hidden="true" />
@@ -48,6 +53,8 @@ export function Button({
 
   return (
     <button
+      {...rest}
+      ref={ref}
       type={type}
       className="fs-btn"
       data-variant={variant}

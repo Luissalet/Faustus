@@ -2491,3 +2491,81 @@ Choose a model in Studio before starting a project conversation.	Elige un modelo
 Agent activity	Actividad del agente
 The folder already has {file}; nothing written.	La carpeta ya tiene {file}; no se ha escrito nada.
 Open the project {name}	Abrir el proyecto {name}
+Add to album	Añadir al álbum
+Add to favourites	Añadir a favoritas
+Added to {name}	Añadidas a {name}
+Album	Álbum
+Album created	Álbum creado
+Album deleted	Álbum borrado
+Album renamed	Álbum renombrado
+Any model	Cualquier modelo
+Camera	Cámara
+Caption	Pie
+Clear my tags on every image	Quitar mis etiquetas de todas las imágenes
+Clear tags	Quitar etiquetas
+Clear the AI tags on every image	Quitar las etiquetas de la IA de todas las imágenes
+Clear the AI tags on every image?	¿Quitar las etiquetas de la IA de todas las imágenes?
+Clear your tags on every image?	¿Quitar tus etiquetas de todas las imágenes?
+Could not read {what}. What you see is real; that part is missing.	No se ha podido leer {what}. Lo que ves es real; eso falta.
+Delete album	Borrar álbum
+Delete the album?	¿Borrar el álbum?
+Delete {n} image?	¿Borrar {n} imagen?
+Delete {n} images?	¿Borrar {n} imágenes?
+Deleted {n} image	Borrada {n} imagen
+Deleted {n} images	Borradas {n} imágenes
+Download zip	Descargar zip
+Favourites	Favoritas
+File name	Nombre del archivo
+Filter images	Filtrar imágenes
+Generate one in Studio, or drop your photos here.	Genera una en Studio, o suelta aquí tus fotos.
+Image attached	Imagen adjuntada
+Its chat	Su conversación
+Loading the images	Cargando las imágenes
+Location	Ubicación
+Merge duplicate tags	Fusionar etiquetas duplicadas
+Moved	Movida
+Neither the gallery nor the documents responded.	Ni la galería ni los documentos han respondido.
+New album	Nuevo álbum
+No album	Sin álbum
+No images yet	Aún no hay imágenes
+No tags from the vision model yet.	Aún no hay etiquetas del modelo de visión.
+Open in the image editor (E)	Abrir en el editor de imágenes (E)
+Open the conversation it came from	Abrir la conversación de la que salió
+Open the image	Abrir la imagen
+Quality	Calidad
+Remove from album	Quitar del álbum
+Removed	Quitadas
+Rename the album	Renombrar el álbum
+Renamed	Renombrada
+Rotate	Girar
+Show more ({n} left)	Ver más (quedan {n})
+Shuffled	Al azar
+Start a conversation with this image attached	Empezar una conversación con esta imagen adjunta
+Tag every untagged image with AI	Etiquetar con IA todas las imágenes sin etiquetas
+Tag with AI	Etiquetar con IA
+Tagged	Etiquetada
+Tags merged	Etiquetas fusionadas
+Tags saved	Etiquetas guardadas
+Taken	Tomada
+The file goes with it. This cannot be undone.	El archivo se va con ella. No se puede deshacer.
+The images stay; only the album goes.	Las imágenes se quedan; solo se va el álbum.
+To a chat	A una conversación
+Try another text, tag or album.	Prueba otro texto, etiqueta o álbum.
+Upload	Subir
+Uploaded {n} image	Subida {n} imagen
+Uploaded {n} images	Subidas {n} imágenes
+Uploaded {n}; {m} failed: {names}	Subidas {n}; {m} fallaron: {names}
+Uploading {done} of {total}…	Subiendo {done} de {total}…
+Your tags	Tus etiquetas
+comma-separated	separadas por comas
+documents	documentos
+shuffled	al azar
+{n} album	{n} álbum
+{n} albums	{n} álbumes
+{n} artefact	{n} artefacto
+{n} artefacts	{n} artefactos
+{n} image	{n} imagen
+{n} image queued for tagging	{n} imagen en cola para etiquetar
+{n} images	{n} imágenes
+{n} images queued for tagging	{n} imágenes en cola para etiquetar
+{n} versions	{n} versiones

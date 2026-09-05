@@ -1,14 +1,15 @@
-import { Library as LibraryIcon, Search } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { Check, Library as LibraryIcon, Search } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
-import { EmptyState, Skeleton } from '../components';
+import { EmptyState, Skeleton, Toast } from '../components';
+import { ImageGallery } from './library/Gallery';
 import { loadLibrary, type Artifact } from '../adapters/library';
 import { relativeTime } from '../adapters/home';
 import { useSpotlight } from '../shell/useSpotlight';
 import './projects.css';
 import './home.css';
 import './library.css';
-import { t } from '../i18n';
+import { t, tn } from '../i18n';
 
 const TYPES = [
   { id: 'todo', label: 'All' },
@@ -32,6 +33,13 @@ export function LibraryScreen() {
 
   const type = params.get('type') ?? 'todo';
   const query = params.get('q') ?? '';
+  const [notice, setNotice] = useState<string | null>(null);
+  const noticeTimer = useRef<number | null>(null);
+  const say = useCallback((msg: string) => {
+    setNotice(msg);
+    if (noticeTimer.current) window.clearTimeout(noticeTimer.current);
+    noticeTimer.current = window.setTimeout(() => setNotice(null), 2600);
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -68,13 +76,8 @@ export function LibraryScreen() {
       <EmptyState
         icon={LibraryIcon}
         title={t('Could not read the library')}
-        body={t('Neither the gallery nor the documents responded. The previous interface does not depend on this screen.')}
-        primaryAction={{
-          label: t('Open the previous interface'),
-          onClick: () => {
-            window.location.href = '/?shell=legacy';
-          },
-        }}
+        body={t('Neither the gallery nor the documents responded.')}
+        primaryAction={{ label: t('Retry'), onClick: () => window.location.reload() }}
       />
     );
   }
@@ -85,9 +88,7 @@ export function LibraryScreen() {
         <div>
           <h1 className="fs-screen__title">{t('Library')}</h1>
           <p className="fs-prose" style={{ marginBlockStart: 'var(--fs-space-2)' }}>
-            {artifacts
-              ? `${artifacts.length} ${artifacts.length === 1 ? 'artefacto' : 'artefactos'}, sin importar qué subsistema los creó.`
-              : t('Images and documents, whichever subsystem created them.')}
+            {artifacts ? `${tn(artifacts.length, '{n} artefact', '{n} artefacts')}. ${t('Images and documents, whichever subsystem created them.')}` : t('Images and documents, whichever subsystem created them.')}
           </p>
         </div>
         <label className="fs-search">
@@ -119,7 +120,9 @@ export function LibraryScreen() {
         ))}
       </div>
 
-      {!artifacts && (
+      {type === 'imagen' && <ImageGallery query={query} say={say} />}
+
+      {type !== 'imagen' && !artifacts && (
         <div className="fs-grid">
           {[0, 1, 2, 3, 4, 5].map((index) => (
             <Skeleton key={index} label={t('Loading the library')} height="200px" radius="panel" />
@@ -127,7 +130,7 @@ export function LibraryScreen() {
         </div>
       )}
 
-      {artifacts && visible.length === 0 && (
+      {type !== 'imagen' && artifacts && visible.length === 0 && (
         <EmptyState
           icon={LibraryIcon}
           title={
@@ -141,7 +144,7 @@ export function LibraryScreen() {
         />
       )}
 
-      {artifacts && visible.length > 0 && (
+      {type !== 'imagen' && artifacts && visible.length > 0 && (
         <div className="fs-grid">
           {visible.map((artifact) => (
             <article
@@ -175,7 +178,9 @@ export function LibraryScreen() {
                     {artifact.title}
                   </Link>
                 ) : (
-                  <span className="fs-card__title">{artifact.title}</span>
+                  <Link className="fs-card__title fs-link" to={`/library?type=imagen&img=${encodeURIComponent(artifact.id.replace(/^img-/, ''))}`} title={t('Open the image')}>
+                    {artifact.title}
+                  </Link>
                 )}
                 <span className="fs-card__meta">
                   {[artifact.meta, artifact.session, relativeTime(artifact.createdAt)]
@@ -188,10 +193,16 @@ export function LibraryScreen() {
         </div>
       )}
 
-      {degraded.length > 0 && (
+      {type !== 'imagen' && degraded.length > 0 && (
         <p className="fs-notice" data-tone="warning">
-          No he podido leer {degraded.join(', ')}. Lo que se ve es real; eso falta.
+          {t('Could not read {what}. What you see is real; that part is missing.', { what: degraded.join(', ') })}
         </p>
+      )}
+
+      {notice && (
+        <Toast>
+          <Check size={12} aria-hidden="true" /> {notice}
+        </Toast>
       )}
     </div>
   );

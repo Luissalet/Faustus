@@ -542,3 +542,16 @@ su área y baja el baseline. Ningún módulo Studio nuevo la aumenta.
 90. **`[~]` Los checkpoints de la actividad del agente no se restauran desde
     el proyecto**; se enseña el sha y el enlace abre la conversación, donde
     el harness sí ofrece restaurar.
+
+## Después de la migración (decidido con Luis el 05-09, madrugada)
+
+91. **`[→]` `inspiration/AUDITORIA_BACKEND_Y_FEATURES_FAUSTUS.md`** (25 bugs,
+    13 cambios estructurales, 36 features) se acomete **después** del merge
+    de Studio, en ramas propias: primero SEC-1 y los parches pequeños del
+    sprint 0B; luego STATE-1, AUTH-1, ART-1/RUN-1… Studio absorbe los
+    cambios de contrato en `adapters/*` (Actividad ya normaliza estados en
+    el frontend, así que RunService la simplifica).
+92. **`[→]` `inspiration/PLAN_VOZ_JARVIS_FAUSTUS.md`** (VoiceSessionService,
+    push-to-talk, barge-in, VAD, wake word) también después del merge, sobre
+    el compositor y el arnés de Studio, con su pasada de diseño: V-000 →
+    V-002 → V-004 → V-003 → V-005.

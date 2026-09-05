@@ -42,6 +42,8 @@
 .fs-card__preview {
   display: block;
   inline-size: 100%;
+  /* The width/height attributes stop layout shift; the box is ours. */
+  block-size: auto;
   aspect-ratio: 4 / 3;
   object-fit: cover;
   background: var(--fs-surface-2);
@@ -92,4 +94,418 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--fs-text-3);
+}
+
+/* ── Lote Z: the images ── */
+
+.fs-gal {
+  display: grid;
+  gap: var(--fs-space-3);
+  position: relative;
+}
+
+.fs-gal[data-dragging]::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border: 2px dashed var(--fs-brand);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-ember-faint);
+  pointer-events: none;
+}
+
+.fs-gal__toolbar,
+.fs-gal__bulk,
+.fs-gal__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fs-space-2);
+}
+
+.fs-gal__spacer {
+  flex: 1;
+}
+
+.fs-gal__chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-1);
+}
+
+.fs-gal__n {
+  font-variant-numeric: tabular-nums;
+  color: var(--fs-text-3);
+}
+
+.fs-chip[data-on] .fs-gal__n {
+  color: inherit;
+}
+
+.fs-gal__chip-new {
+  border-style: dashed;
+}
+
+.fs-gal__tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.fs-gal__tag {
+  padding: 2px 10px;
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-pill);
+  background: transparent;
+  color: var(--fs-text-2);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition:
+    color var(--fs-duration-fast) var(--fs-ease),
+    border-color var(--fs-duration-fast) var(--fs-ease);
+}
+
+.fs-gal__tag:hover {
+  color: var(--fs-text-1);
+  border-color: var(--fs-border-strong);
+}
+
+.fs-gal__tag[data-on] {
+  background: var(--fs-ember);
+  border-color: color-mix(in srgb, var(--fs-brand) 60%, var(--fs-border));
+  color: var(--fs-text-1);
+}
+
+.fs-gal__tag:focus-visible {
+  outline: 2px solid var(--fs-focus);
+  outline-offset: 1px;
+}
+
+.fs-gal__album-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fs-space-2);
+}
+
+.fs-gal__album-head h3 {
+  font-size: var(--fs-title-size);
+  font-weight: var(--fs-title-weight);
+  letter-spacing: var(--fs-title-tracking);
+}
+
+.fs-gal__muted {
+  color: var(--fs-text-3);
+  font-size: var(--fs-label-size);
+}
+
+.fs-gal__stats {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.fs-gal__bulk {
+  padding: var(--fs-space-2) var(--fs-space-3);
+  border: 1px solid color-mix(in srgb, var(--fs-brand) 40%, var(--fs-border));
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-ember-faint);
+}
+
+.fs-gal__progress {
+  color: var(--fs-text-2);
+  font-size: var(--fs-label-size);
+}
+
+.fs-gal__cell {
+  position: relative;
+}
+
+.fs-gal__cell[data-selected] .fs-gal__card {
+  border-color: var(--fs-brand);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--fs-brand) 40%, transparent);
+}
+
+.fs-gal__check {
+  position: absolute;
+  inset-block-start: var(--fs-space-2);
+  inset-inline-start: var(--fs-space-2);
+  z-index: 1;
+  inline-size: 18px;
+  block-size: 18px;
+  accent-color: var(--fs-brand);
+}
+
+.fs-gal__card {
+  inline-size: 100%;
+  position: relative;
+}
+
+.fs-gal__card:focus-visible {
+  outline: 2px solid var(--fs-focus);
+  outline-offset: 2px;
+}
+
+.fs-gal__fav {
+  position: absolute;
+  inset-block-start: var(--fs-space-2);
+  inset-inline-end: var(--fs-space-2);
+  display: inline-grid;
+  place-items: center;
+  inline-size: 24px;
+  block-size: 24px;
+  border-radius: var(--fs-radius-pill);
+  background: color-mix(in srgb, var(--fs-canvas) 70%, transparent);
+  color: var(--fs-brand);
+}
+
+.fs-gal__more {
+  display: flex;
+  justify-content: center;
+}
+
+.fs-gal__field {
+  display: grid;
+  gap: var(--fs-space-1);
+  margin-block-end: var(--fs-space-3);
+  color: var(--fs-text-2);
+  font-size: var(--fs-label-size);
+}
+
+.fs-gal__field .fs-field {
+  inline-size: 100%;
+}
+
+/* ── The viewer: picture first, inspector beside it ── */
+
+.fs-viewer {
+  position: fixed;
+  inset: var(--fs-space-4);
+  z-index: 60;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-1);
+  box-shadow: var(--fs-shadow-overlay);
+  overflow: hidden;
+  animation: fs-fade-in var(--fs-duration-normal) var(--fs-ease-out) both;
+}
+
+.fs-viewer__sr {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.fs-viewer__stage {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--fs-space-2);
+  padding: var(--fs-space-3);
+  background: var(--fs-canvas);
+  min-inline-size: 0;
+}
+
+.fs-viewer__img {
+  justify-self: center;
+  max-inline-size: 100%;
+  max-block-size: calc(100vh - var(--fs-space-4) * 2 - var(--fs-space-3) * 2);
+  inline-size: auto;
+  block-size: auto;
+  object-fit: contain;
+  border-radius: var(--fs-radius-control);
+}
+
+.fs-viewer__count {
+  position: absolute;
+  inset-block-end: var(--fs-space-3);
+  inset-inline-start: 50%;
+  translate: -50% 0;
+  padding: 2px 10px;
+  border-radius: var(--fs-radius-pill);
+  background: color-mix(in srgb, var(--fs-canvas) 80%, transparent);
+  color: var(--fs-text-3);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.fs-viewer__side {
+  display: grid;
+  align-content: start;
+  gap: var(--fs-space-4);
+  padding: var(--fs-space-4);
+  border-inline-start: 1px solid var(--fs-border);
+  overflow: auto;
+  min-inline-size: 0;
+}
+
+.fs-viewer__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fs-space-2);
+}
+
+.fs-viewer__name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-inline-size: 0;
+  border: 0;
+  background: none;
+  color: var(--fs-text-2);
+  font: inherit;
+  cursor: pointer;
+}
+
+.fs-viewer__name code {
+  font-family: var(--fs-font-code);
+  font-size: 0.78rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fs-viewer__name:hover {
+  color: var(--fs-text-1);
+}
+
+.fs-viewer__name:focus-visible {
+  outline: 2px solid var(--fs-focus);
+  outline-offset: 2px;
+  border-radius: var(--fs-radius-control);
+}
+
+.fs-viewer__rename {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-1);
+}
+
+.fs-viewer__rename .fs-field {
+  flex: 1;
+  min-inline-size: 140px;
+}
+
+.fs-viewer__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-1);
+}
+
+.fs-viewer__block {
+  display: grid;
+  gap: var(--fs-space-2);
+}
+
+.fs-viewer__block h3 {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--fs-text-3);
+}
+
+.fs-viewer__block p {
+  font-size: var(--fs-label-size);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.fs-viewer__muted {
+  color: var(--fs-text-3);
+  font-size: 0.78rem;
+}
+
+.fs-viewer__tags {
+  display: flex;
+  gap: var(--fs-space-1);
+}
+
+.fs-viewer__tags .fs-field {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.fs-viewer__ai {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fs-space-2);
+}
+
+.fs-viewer__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.fs-viewer__chip {
+  padding: 1px 8px;
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-pill);
+  color: var(--fs-text-2);
+  font-size: 0.72rem;
+}
+
+.fs-viewer__facts {
+  display: grid;
+  gap: var(--fs-space-2);
+  padding-block-start: var(--fs-space-3);
+  border-block-start: 1px solid var(--fs-border);
+}
+
+.fs-viewer__facts > div {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr);
+  gap: var(--fs-space-2);
+  font-size: 0.78rem;
+}
+
+.fs-viewer__facts dt {
+  color: var(--fs-text-3);
+}
+
+.fs-viewer__facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 899px) {
+  .fs-viewer {
+    inset: 0;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+    border-radius: 0;
+  }
+
+  .fs-viewer__side {
+    border-inline-start: 0;
+    border-block-start: 1px solid var(--fs-border);
+    max-block-size: 45vh;
+  }
+
+  .fs-viewer__img {
+    max-block-size: 50vh;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fs-viewer {
+    animation: none;
+  }
+
+  .fs-gal__tag {
+    transition: none;
+  }
 }

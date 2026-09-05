@@ -1,4 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
+import type { ButtonHTMLAttributes, Ref } from 'react';
 import { slug } from './testid';
 
 export interface IconButtonProps {
@@ -11,6 +12,7 @@ export interface IconButtonProps {
   disabled?: boolean;
   testId?: string;
   onClick?: () => void;
+  ref?: Ref<HTMLButtonElement>;
 }
 
 export function IconButton({
@@ -22,12 +24,16 @@ export function IconButton({
   disabled = false,
   testId,
   onClick,
-}: IconButtonProps) {
+  ref,
+  ...rest
+}: IconButtonProps & Omit<ButtonHTMLAttributes<HTMLButtonElement>, keyof IconButtonProps>) {
   const isDot = badge === true;
   const showBadge = badge === true || (typeof badge === 'number' && badge > 0);
 
   return (
     <button
+      {...rest}
+      ref={ref}
       type="button"
       className="fs-icon-btn"
       data-variant={variant}

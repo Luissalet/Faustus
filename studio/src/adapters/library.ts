@@ -60,7 +60,7 @@ export async function loadLibrary(signal?: AbortSignal): Promise<{
       return { items: [] };
     }),
     getJson<unknown>('/api/documents/library', signal).catch(() => {
-      degraded.push('documentos');
+      degraded.push(t('documents'));
       return { documents: [] };
     }),
   ]);
@@ -89,7 +89,7 @@ export async function loadLibrary(signal?: AbortSignal): Promise<{
       createdAt: item.updated_at ?? item.created_at,
       meta: [
         item.language,
-        item.version_count ? `${item.version_count} versiones` : null,
+        item.version_count ? t('{n} versions', { n: item.version_count }) : null,
       ]
         .filter(Boolean)
         .join(' · '),

@@ -196,3 +196,21 @@ en Studio sí.
 - Lo que no puede pasar: que una función desaparezca por el camino. Si una
   pantalla nueva no la tiene y no hay isla, la fila sigue en «Anterior» y
   `?shell=legacy` sigue sirviéndola.
+
+### 10.1 Enmienda (05-09, madrugada): se reutiliza la lógica, nunca la interfaz
+
+Luis, al oír «módulos con su CSS»: «ni de coña, todo unificado de React con
+pasada por los diseñadores; pensaba que hablabas a nivel de lógica».
+Decisión, corregida:
+
+- **Nada de la anterior sobrevive como interfaz**: ni su DOM, ni su CSS, ni
+  `ui.js`/`modalManager.js`. Todo se rehace en React con los tokens de
+  Studio y la secuencia de diseño del §8, también el editor de imágenes y el
+  Cookbook.
+- **Sí se reutiliza la lógica pura** (funciones sin DOM ni estilos): los
+  cálculos del editor (`static/js/editor/{mask-utils,flood-fill,histogram,
+  canvas-coords,checkerboard,composite-helpers,snap}.js`…), el ajuste de
+  hardware del Cookbook, parsers y formateadores. Se mueven a
+  `studio/src/lib/` como módulos TypeScript (o `.js` con tipos), con sus
+  tests si los tenían, y la pantalla nueva los importa.
+- Las «islas» del §10 quedan descartadas: no entra ninguna.

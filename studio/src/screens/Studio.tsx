@@ -25,6 +25,7 @@ import {
   rememberRule,
   setRagActive,
   setWorkspace as persistWorkspace,
+  uploadFiles,
   type Attachment,
   type GenOverrides,
 } from '../adapters/composer';
@@ -379,6 +380,28 @@ export function StudioScreen() {
     // routes is read once at load on purpose: the picker must not jump later.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
+
+  /* The gallery sends a picture to a conversation: ?image=<url>&name=. */
+  useEffect(() => {
+    const imageParam = params.get('image');
+    if (!imageParam) return;
+    const name = params.get('name') || 'image.png';
+    const next = new URLSearchParams(params);
+    next.delete('image');
+    next.delete('name');
+    setParams(next, { replace: true });
+    void (async () => {
+      try {
+        const blob = await (await fetch(imageParam, { credentials: 'same-origin' })).blob();
+        const uploaded = await uploadFiles([new File([blob], name, { type: blob.type || 'image/png' })], sessionId);
+        setAttachments((list) => [...list, ...uploaded]);
+        say(t('Image attached'));
+      } catch (err) {
+        say(err instanceof Error ? err.message : String(err), 'danger');
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params]);
 
   /* A project's agent activity links to the exact answer: ?m=<message id>. */
   useEffect(() => {
