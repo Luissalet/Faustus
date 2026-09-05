@@ -106,6 +106,18 @@ output.txt.txt
 !assets/branding/**/*.tiff
 !assets/branding/**/*.pdf
 
+# ...and the interface screenshots the README embeds. `*.png` above is a
+# blanket rule for uploaded and generated media, and a screenshot committed on
+# purpose looks exactly like one dropped into a folder by accident - so it has
+# to be said here, or the README ships with image links that 404 on GitHub
+# while every file sits happily on the machine that wrote it. That is not a
+# hypothetical: it happened on 05-09-2026, and tests/test_readme_media_is_
+# committed.py exists because of it.
+!assets/screens/**/*.png
+!assets/screens/**/*.jpg
+!assets/screens/**/*.gif
+!assets/screens/**/*.webp
+
 # Reports and temp files
 reports/
 tasks/
