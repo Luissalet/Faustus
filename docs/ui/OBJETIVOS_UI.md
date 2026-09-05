@@ -1,4 +1,4 @@
-﻿# Objetivos de UI — backlog vivo
+# Objetivos de UI — backlog vivo
 
 Rama: `feat/studio-ui`. Estado a 04-09-2026.
 Decisiones que mandan: `DECISIONES_UI.md` (stack React, §1). Detalle de
@@ -119,8 +119,9 @@ proporcionales, auditoría de la guía Vercel pasada o excepción documentada,
 
 - [ ] **UI-060** Migrar settings y herramientas restantes. Hecho: grupo
       «Herramientas» en la barra y la paleta (lote J); Notas como pantalla
-      (`/notes`, lote J; parcial: dibujo, foto, selección múltiple).
-      Faltan: Calendario, Correo, Memoria, Cookbook, Deep Research, Compare,
+      (`/notes`, lote J; parcial: dibujo, foto, selección múltiple); Memoria
+      como pantalla (`/memory`, lote K; los ajustes de Skills van con Skills).
+      Faltan: Calendario, Correo, Cookbook, Deep Research, Compare,
       Tournament, Workers, Expertos, Procedencia, Historial importado,
       runners y definiciones de agentes, Skills, Ajustes, Tema, Fondos.
 - [ ] **UI-061** Borrar los puentes muertos, el DOM legacy de cada pantalla ya

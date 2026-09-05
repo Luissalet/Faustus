@@ -11,60 +11,6 @@
   gap: var(--fs-space-2);
 }
 
-/* ── Shared small controls (own copies: studio.css is another chunk) ── */
-
-.fs-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  block-size: var(--fs-control-sm);
-  padding: 0 var(--fs-space-3);
-  border: 1px solid var(--fs-border);
-  border-radius: var(--fs-radius-pill);
-  background: transparent;
-  color: var(--fs-text-2);
-  font: inherit;
-  font-size: var(--fs-label-size);
-  font-weight: var(--fs-label-weight);
-  cursor: pointer;
-  white-space: nowrap;
-  transition:
-    background-color var(--fs-duration-fast) var(--fs-ease),
-    border-color var(--fs-duration-fast) var(--fs-ease),
-    color var(--fs-duration-fast) var(--fs-ease),
-    translate var(--fs-duration-normal) var(--fs-ease-spring);
-}
-
-.fs-chip:hover {
-  color: var(--fs-text-1);
-  border-color: var(--fs-border-strong);
-  translate: 0 -1px;
-}
-
-.fs-chip[data-on] {
-  background: var(--fs-ember);
-  border-color: color-mix(in srgb, var(--fs-brand) 60%, var(--fs-border));
-  color: var(--fs-text-1);
-  box-shadow: 0 0 14px var(--fs-ember-faint);
-}
-
-.fs-field {
-  min-inline-size: 0;
-  block-size: var(--fs-control-sm);
-  padding: 0 var(--fs-space-3);
-  border: 1px solid var(--fs-border);
-  border-radius: var(--fs-radius-control);
-  background: var(--fs-surface-1);
-  color: var(--fs-text-1);
-  font: inherit;
-  font-size: var(--fs-label-size);
-}
-
-.fs-field:focus-visible {
-  outline: 2px solid var(--fs-brand);
-  outline-offset: 1px;
-}
-
 /* ── Quick add ── */
 
 .fs-notes__quick {

@@ -24,6 +24,7 @@ const LibraryScreen = lazy(() => import('../screens/Library').then((m) => ({ def
 const ProjectScreen = lazy(() => import('../screens/Project').then((m) => ({ default: m.ProjectScreen })));
 const ProjectsScreen = lazy(() => import('../screens/Projects').then((m) => ({ default: m.ProjectsScreen })));
 const NotesScreen = lazy(() => import('../screens/Notes').then((m) => ({ default: m.NotesScreen })));
+const MemoryScreen = lazy(() => import('../screens/Memory').then((m) => ({ default: m.MemoryScreen })));
 /* cmdk rides in with the first Ctrl+K, not with the page. */
 const CommandPalette = lazy(() => import('./CommandPalette').then((m) => ({ default: m.CommandPalette })));
 
@@ -201,6 +202,7 @@ function RouteBody() {
         <Route path="/activity" element={<ActivityScreen />} />
         <Route path="/automations" element={<AutomationsScreen />} />
         <Route path="/notes" element={<NotesScreen />} />
+        <Route path="/memory" element={<MemoryScreen />} />
         <Route path="*" element={<NotMigrated />} />
       </Routes>
       </Suspense>

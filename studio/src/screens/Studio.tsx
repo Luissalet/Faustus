@@ -1057,9 +1057,7 @@ export function StudioScreen() {
     },
     open_gallery: () => navigate('/library?type=imagen'),
     open_library: () => navigate('/library'),
-    open_memory: () => {
-      window.location.href = '/memory?shell=legacy';
-    },
+    open_memory: () => navigate('/memory'),
     open_notes: () => navigate('/notes'),
     open_tasks: () => navigate('/automations'),
     open_theme: () => {

@@ -289,3 +289,24 @@ su área y baja el baseline. Ningún módulo Studio nuevo la aumenta.
     `screens/studio.css`. Lo mismo para `.fs-studio__chip` y `.fs-select`:
     Notas lleva copias (`.fs-chip`, `.fs-field`); si una tercera pantalla
     las necesita, subirlas a `components.css`.
+
+## Añadido tras el lote K (05-09-2026, Memoria)
+
+49. **`[~]` Los ajustes de Skills vivían en el modal de Brain** (skills
+    activas, auto-skills, auto-aprobar, confianza mínima, máximo inyectado:
+    `/api/prefs/skills_enabled`, `auto_skills`, `auto_approve_skills`,
+    `skill_min_confidence`, `skill_max_injected`). Van con la pantalla de
+    Skills (`skills.js`, 2 000 líneas), no con Memoria. Hasta entonces, en
+    la anterior.
+50. **`[~]` `/api/memory/add` solo acepta JSON** (con multipart responde
+    422: el parámetro Pydantic opcional se evalúa antes del `await
+    request.form()`). El adaptador manda JSON; si alguien añade un formulario
+    clásico que lo llame, que lo sepa.
+51. **`[~]` `session_id` de recuerdos antiguos lleva el nombre de la
+    conversación**, no el id (`memory_extractor` de otra época). La pantalla
+    lo enseña como origen y no enlaza. Una migración de datos podría
+    resolverlo por nombre; no urge.
+52. **`[~]` `/api/memory/import` y `/extract` tardan más de 45 s con
+    `qwen3.5:9b`** y el middleware los cortaba con 504 (también a la
+    anterior). Exentos en `_TIMEOUT_EXEMPT_PREFIXES`. Queda pendiente darles
+    un timeout propio como el de `/audit` (120 s de inactividad).
