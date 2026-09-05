@@ -313,6 +313,48 @@ class ComfyUIBackend:
                 "reason": "the engine has no record of this job; it may have been "
                           "restarted, which clears its history"}
 
+    def find_by_client_id(self, client_id: str, *,
+                          max_items: int = 200) -> Dict[str, Any]:
+        """Where the job this client id submitted is now, if it is anywhere.
+
+        The recovery path for a render whose prompt id was never written down:
+        the engine accepted the prompt and the process died before the second
+        commit, so the only link left is the id we sent with it. ComfyUI keeps
+        that in `extra_data`, which travels at index 3 of the positional
+        record both /queue and /history use.
+
+        The queue is asked first because it is small and because a job still
+        waiting is the case worth catching quickly -- it can still be
+        cancelled before it costs anything.
+        """
+        if not client_id:
+            return {"found": False, "prompt_id": "", "where": ""}
+        queue = self._call("/queue")
+        for where, items in (("running", queue.get("queue_running") or []),
+                             ("queued", queue.get("queue_pending") or [])):
+            for item in items:
+                if _client_id_of(item) == client_id:
+                    return {"found": True, "prompt_id": _queue_id(item), "where": where}
+
+        for prompt_id, entry in self.history_listing(max_items=max_items).items():
+            if _client_id_of(entry) == client_id:
+                return {"found": True, "prompt_id": str(prompt_id),
+                        "where": "history"}
+        return {"found": False, "prompt_id": "", "where": ""}
+
+    def history_listing(self, *, max_items: int = 200) -> Dict[str, Any]:
+        """Everything the engine still remembers, keyed by prompt id.
+
+        Its own method because it is the expensive half of
+        `find_by_client_id`: `/history` without an id is the entire log, so it
+        is asked for second and bounded. Anything that is not an object is
+        treated as an empty log rather than raised on -- a reconciliation that
+        finds nothing is a correct answer, whereas one that crashes leaves the
+        run unsettled forever.
+        """
+        listing = self._call("/history", params={"max_items": max_items})
+        return listing if isinstance(listing, Mapping) else {}
+
     def cancel(self, prompt_id: str) -> Dict[str, Any]:
         """Stop a job whether it is running or still waiting.
 
@@ -395,6 +437,23 @@ class ComfyUIBackend:
         with open(target, "wb") as fh:
             fh.write(payload)
         return target
+
+
+def _client_id_of(item: Any) -> str:
+    """The client id ComfyUI recorded for a job, from a queue item or a
+    history entry.
+
+    Both are the same positional record -- `[number, prompt_id, prompt,
+    extra_data, outputs_to_execute]` -- with the history version wrapped in a
+    dict under `prompt`. `extra_data` is where the engine puts the `client_id`
+    from the POST body, and it is the only field that ties a job to the run
+    that asked for it once the id has been lost.
+    """
+    if isinstance(item, Mapping):
+        item = item.get("prompt")
+    if isinstance(item, (list, tuple)) and len(item) > 3 and isinstance(item[3], Mapping):
+        return str(item[3].get("client_id") or "")
+    return ""
 
 
 def _queue_id(item: Any) -> str:

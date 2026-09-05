@@ -3,7 +3,9 @@
 import asyncio
 import json
 import logging
+import os
 import re
+import socket
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -22,6 +24,86 @@ logger = logging.getLogger(__name__)
 def _utcnow() -> datetime:
     """Return naive UTC for task DB fields without using deprecated APIs."""
     return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+# ── Durable dispatch claims ────────────────────────────────────────────────
+# `_executing` is a set in one interpreter. It is a fine guard for two
+# coroutines of this scheduler and no guard at all against a second worker, a
+# second server window, or a restart that lands on a row whose next_run is
+# still in the past -- all of which can select the same overdue task. The
+# duplicate is not a duplicated log line: it is a second email, a second
+# publication, a second twenty-minute render. So the claim lives in the
+# database, and the set survives only as a fast local short-circuit on top.
+
+#: How long a claim stands with nobody touching it. Long enough that a slow
+#: LLM task is not stolen out from under itself, short enough that a killed
+#: worker's tasks come back the same afternoon. The heartbeat is what actually
+#: keeps a long run's lease alive, so this is really the ceiling on how stale a
+#: claim held by a process that no longer exists can get.
+LEASE_SECONDS = 900
+
+#: How often a running task pushes its own lease forward.
+LEASE_HEARTBEAT_SECONDS = 60
+
+#: The three honest answers to "what if this occurrence runs twice?".
+#:
+#: at_most_once      -- repeating it is worse than skipping it, so a lease that
+#:                      expired under a dead worker is abandoned, not re-taken.
+#: at_least_once     -- repeating it costs a row somebody can delete, so a
+#:                      recovered lease is simply claimed again.
+#: effectively_once  -- the destination itself refuses a key it has seen, so a
+#:                      repeat is absorbed at the far end.
+AT_MOST_ONCE = "at_most_once"
+AT_LEAST_ONCE = "at_least_once"
+EFFECTIVELY_ONCE = "effectively_once"
+DELIVERY_SEMANTICS = (AT_MOST_ONCE, AT_LEAST_ONCE, EFFECTIVELY_ONCE)
+
+#: Output targets that never leave Faustus. Repeating one of these costs a
+#: duplicate row in the user's own database, which is why they are the only
+#: targets allowed to be at_least_once.
+IN_HOUSE_TARGETS = frozenset({"", "session", "notification", "activity"})
+
+#: Destinations that honour the occurrence key we hand them -- i.e. where the
+#: far end genuinely refuses a key it has already seen. Deliberately empty: no
+#: delivery path in Faustus does this yet, and effectively_once promised
+#: without the destination's cooperation is just exactly-once folklore with a
+#: constant in front of it. Name a sink here only when its adapter really
+#: deduplicates, and `delivery_semantics` will start promising it.
+IDEMPOTENT_SINKS: frozenset = frozenset()
+
+#: This process, as a lease holder. Host and pid say which machine and which
+#: interpreter; the random tail stops a recycled pid from inheriting the
+#: claims of the process that had it before.
+WORKER_ID = f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:8]}"
+
+
+def occurrence_key(task_id: str, due_at: datetime | None) -> str:
+    """The stable name of one *occurrence* of a task.
+
+    Derived from the task and the moment it was due -- never from the clock at
+    dispatch time and never from the attempt number. That is the entire point:
+    a retry after a recovered lease has to carry the SAME string as the attempt
+    that died, or a destination that deduplicates has nothing to match against.
+    """
+    stamp = due_at.replace(microsecond=0).isoformat() if due_at else "unscheduled"
+    return f"task:{task_id}:{stamp}"
+
+
+def delivery_semantics(task) -> str:
+    """What this task's occurrence may honestly be promised.
+
+    Read off the destination rather than off the task's importance: what
+    decides whether a repeat is survivable is who receives it. Anything that
+    leaves Faustus is at_most_once unless its adapter deduplicates on the key
+    we send, because the alternative is a scheduler quietly promising
+    exactly-once to an SMTP server that has never heard of an idempotency key.
+    """
+    target = str(getattr(task, "output_target", "") or "").strip().lower()
+    if target in IDEMPOTENT_SINKS:
+        return EFFECTIVELY_ONCE
+    if target in IN_HOUSE_TARGETS:
+        return AT_LEAST_ONCE
+    return AT_MOST_ONCE
 
 
 # Shell/file tools a scheduled task's agent should be offered by default,
@@ -351,6 +433,278 @@ class TaskScheduler:
         self._run_semaphore = asyncio.Semaphore(1)
         self._concurrency_cap = 1
         self._task_handles = {}
+        # Set once, the first time a claim finds no lease columns, so a
+        # degraded deployment says so exactly once instead of every tick.
+        self._lease_warned = False
+
+    # ── the claim, and what holds it ──────────────────────────────────────
+
+    def _lease_capable(self) -> bool:
+        """Whether the ScheduledTask mapping in front of us carries the lease
+        columns.
+
+        An install whose init_db migration has not run yet -- and the cut-down
+        models a couple of tests bind in place of the real one -- would raise
+        on every claim. Falling back leaves such a scheduler with exactly the
+        guarantee it had before this change and nothing worse, and says so
+        once so the weaker guarantee is not a silent one.
+        """
+        from core.database import ScheduledTask
+        ok = all(hasattr(ScheduledTask, column) for column in
+                 ("lease_owner", "lease_expires_at", "lease_heartbeat_at",
+                  "lease_attempt", "lease_key"))
+        if not ok and not getattr(self, "_lease_warned", False):
+            self._lease_warned = True
+            logger.warning(
+                "scheduled_tasks has no lease columns; falling back to the "
+                "in-process dispatch guard, which does not protect against a "
+                "second worker, a second window or a restart")
+        return ok
+
+    def _claim_due_task(self, task_id: str, due_at, now: datetime) -> bool:
+        """Take the dispatch lease on one due task, in a single statement.
+
+        The WHERE clause is the whole mechanism: the row is claimed only while
+        it is still active, still due, and either unleased or holding a lease
+        that has run out. Two schedulers pointed at the same database cannot
+        both come away with a rowcount of 1, so the loser skips the task
+        instead of sending the same email a second time.
+
+        `lease_key` is COALESCEd rather than overwritten so that an attempt
+        picking up a lease recovered from a dead worker inherits that
+        occurrence's key; `lease_attempt` counts the attempts at it. A clean
+        release clears both, which is what makes the next occurrence a new one
+        rather than a continuation of this one.
+
+        Its own session on purpose: the caller's read transaction holds a
+        shared lock on the same SQLite file, and a write issued underneath it
+        comes back as `database is locked` rather than as a clean lost race.
+        """
+        if not self._lease_capable():
+            return True
+        from sqlalchemy import case, func, or_
+        from sqlalchemy.exc import OperationalError
+        from core.database import ScheduledTask, SessionLocal
+
+        key = occurrence_key(task_id, due_at)
+        db = SessionLocal()
+        try:
+            claimed = (
+                db.query(ScheduledTask)
+                .filter(
+                    ScheduledTask.id == task_id,
+                    ScheduledTask.status == "active",
+                    ScheduledTask.next_run <= now,
+                    or_(ScheduledTask.lease_owner.is_(None),
+                        ScheduledTask.lease_expires_at.is_(None),
+                        ScheduledTask.lease_expires_at <= now),
+                )
+                .update(
+                    {
+                        "lease_owner": WORKER_ID,
+                        "lease_expires_at": now + timedelta(seconds=LEASE_SECONDS),
+                        "lease_heartbeat_at": now,
+                        "lease_key": func.coalesce(ScheduledTask.lease_key, key),
+                        "lease_attempt": func.coalesce(ScheduledTask.lease_attempt, 0) + 1,
+                    },
+                    synchronize_session=False,
+                )
+            )
+            db.commit()
+            return bool(claimed)
+        except OperationalError as e:
+            # Somebody else is mid-write on the same row. Treating that as a
+            # lost race costs at most one tick of delay; treating it as an
+            # error would stall the whole sweep behind one busy row.
+            db.rollback()
+            logger.debug("lease claim for %s lost to a concurrent writer: %s", task_id, e)
+            return False
+        except Exception:
+            db.rollback()
+            raise
+        finally:
+            db.close()
+
+    def _release_lease(self, task_id: str) -> bool:
+        """Hand the claim back once the occurrence has been attempted.
+
+        Conditional on still owning it: a lease this process let expire and
+        somebody else recovered belongs to them now, and clearing it blindly
+        would put the task in front of a third worker while the second is
+        inside it. Clearing `lease_key` here is what ends the occurrence --
+        the next one computes a fresh key and starts again at attempt 1.
+        """
+        if not self._lease_capable():
+            return False
+        from core.database import ScheduledTask, SessionLocal
+        db = SessionLocal()
+        try:
+            released = (
+                db.query(ScheduledTask)
+                .filter(ScheduledTask.id == task_id,
+                        ScheduledTask.lease_owner == WORKER_ID)
+                .update({"lease_owner": None, "lease_expires_at": None,
+                         "lease_heartbeat_at": None, "lease_key": None,
+                         "lease_attempt": 0},
+                        synchronize_session=False)
+            )
+            db.commit()
+            return bool(released)
+        except Exception:
+            db.rollback()
+            logger.debug("lease release for %s failed", task_id, exc_info=True)
+            return False
+        finally:
+            db.close()
+
+    def _heartbeat_lease(self, task_id: str) -> bool:
+        """Push our lease forward. Returns False once it is no longer ours.
+
+        A task that legitimately runs for an hour must not look abandoned at
+        minute sixteen; and a process that lost its claim while wedged must
+        find that out from the row rather than keep believing it holds one.
+        """
+        if not self._lease_capable():
+            return False
+        from core.database import ScheduledTask, SessionLocal
+        now = _utcnow()
+        db = SessionLocal()
+        try:
+            kept = (
+                db.query(ScheduledTask)
+                .filter(ScheduledTask.id == task_id,
+                        ScheduledTask.lease_owner == WORKER_ID)
+                .update({"lease_heartbeat_at": now,
+                         "lease_expires_at": now + timedelta(seconds=LEASE_SECONDS)},
+                        synchronize_session=False)
+            )
+            db.commit()
+            return bool(kept)
+        except Exception:
+            db.rollback()
+            logger.debug("lease heartbeat for %s failed", task_id, exc_info=True)
+            return False
+        finally:
+            db.close()
+
+    async def _heartbeat_loop(self, task_id: str):
+        """Keep one task's lease alive for as long as this coroutine lives."""
+        while True:
+            await asyncio.sleep(LEASE_HEARTBEAT_SECONDS)
+            if not self._heartbeat_lease(task_id):
+                return
+
+    def current_occurrence(self, task_id: str) -> Dict[str, Any]:
+        """What an adapter with an external effect would need to deduplicate:
+        the occurrence's stable key, which attempt this is, and what the
+        scheduler is willing to promise about repeats.
+
+        This is the seam, not the plumbing. Nothing downstream consumes it yet
+        -- the delivery adapters live in other modules -- and saying so is
+        better than a key that is passed around and honoured nowhere.
+        """
+        from core.database import ScheduledTask, SessionLocal
+        db = SessionLocal()
+        try:
+            row = db.query(ScheduledTask).filter(ScheduledTask.id == task_id).first()
+            if row is None:
+                return {}
+            key = getattr(row, "lease_key", None) or occurrence_key(task_id, row.next_run)
+            return {"task_id": task_id, "idempotency_key": key,
+                    "attempt": int(getattr(row, "lease_attempt", 0) or 0),
+                    "semantics": delivery_semantics(row),
+                    "lease_owner": getattr(row, "lease_owner", None),
+                    "lease_expires_at": getattr(row, "lease_expires_at", None)}
+        finally:
+            db.close()
+
+    def _recover_expired_leases(self) -> list:
+        """Deal with claims held by processes that are no longer there.
+
+        Run at startup, when the population of dead lease holders is at its
+        largest, and on every tick, because a heartbeat can die without the
+        server doing so. What happens next is decided by the destination
+        rather than by hope: an at_most_once occurrence is abandoned and the
+        task moved on to its next scheduled moment, because sending the email
+        a second time is the exact failure this mechanism exists to prevent;
+        anything else has its lease cleared while KEEPING the occurrence key,
+        so the ordinary claim picks it up again as attempt two of the same
+        piece of work.
+        """
+        if not self._lease_capable():
+            return []
+        from core.database import ScheduledTask, SessionLocal, TaskRun
+        now = _utcnow()
+        recovered = []
+        db = SessionLocal()
+        try:
+            stale = db.query(ScheduledTask).filter(
+                ScheduledTask.status == "active",
+                ScheduledTask.lease_owner.isnot(None),
+                ScheduledTask.lease_expires_at.isnot(None),
+                ScheduledTask.lease_expires_at <= now,
+            ).all()
+            for row in stale:
+                semantics = delivery_semantics(row)
+                key = row.lease_key or occurrence_key(row.id, row.next_run)
+                attempt = int(row.lease_attempt or 0)
+                row.lease_owner = None
+                row.lease_expires_at = None
+                row.lease_heartbeat_at = None
+                if semantics == AT_MOST_ONCE:
+                    # The occurrence is dropped, not retried, and the drop is
+                    # written down: a person looking at Activity has to be
+                    # able to see that this run never happened rather than
+                    # find a silent gap between two successes.
+                    row.lease_key = None
+                    row.lease_attempt = 0
+                    row.next_run = self._next_moment_after(db, row, now)
+                    if row.next_run is None and (row.schedule or "") == "once":
+                        row.status = "completed"
+                    elif row.next_run is None:
+                        row.next_run = now + timedelta(minutes=15)
+                    try:
+                        db.add(TaskRun(
+                            id=str(uuid.uuid4()), task_id=row.id, started_at=now,
+                            finished_at=now, status="aborted",
+                            error=(f"occurrence {key} was claimed by a worker that "
+                                   f"stopped answering; {semantics} means it is "
+                                   f"abandoned rather than repeated"),
+                        ))
+                    except Exception:
+                        logger.debug("could not record abandoned occurrence %s", key,
+                                     exc_info=True)
+                    action = "abandoned"
+                else:
+                    action = "released"
+                recovered.append({"task_id": row.id, "semantics": semantics,
+                                  "action": action, "idempotency_key": key,
+                                  "attempt": attempt})
+            if recovered:
+                db.commit()
+                logger.warning("Recovered %d expired scheduler lease(s): %s",
+                               len(recovered),
+                               ", ".join(f"{r['task_id']}={r['action']}" for r in recovered))
+            return recovered
+        except Exception:
+            db.rollback()
+            logger.debug("lease recovery sweep failed", exc_info=True)
+            return []
+        finally:
+            db.close()
+
+    def _next_moment_after(self, db, task, after: datetime):
+        """The task's next scheduled moment, or None when it has no more."""
+        try:
+            return compute_next_run(
+                task.schedule, task.scheduled_time, task.scheduled_day,
+                task.scheduled_date, after=after,
+                cron_expression=task.cron_expression,
+                tz_name=_resolve_task_timezone(db, task),
+            )
+        except Exception:
+            logger.debug("could not compute the next moment for %s", task.id, exc_info=True)
+            return None
 
     def _set_run_progress(self, run_id: str, message: str):
         """Persist short live progress text for Activity while a run is active."""
@@ -468,6 +822,14 @@ class TaskScheduler:
                 db.close()
         except Exception as e:
             logger.warning(f"Could not clear stale task_runs on startup: {e}")
+
+        # Claims held by the process that just died. Reaped BEFORE the
+        # next_run sweep below, which would otherwise move the due moment and
+        # with it the occurrence key that a recovered attempt has to reuse.
+        try:
+            self._recover_expired_leases()
+        except Exception as e:
+            logger.warning(f"Could not recover expired task leases on startup: {e}")
 
         # Advance next_run for active tasks whose next_run is already in the
         # past. Without this, a restart hits _check_due_tasks() with an empty
@@ -698,6 +1060,10 @@ class TaskScheduler:
                 foreground_active = has_foreground_activity()
             except Exception:
                 foreground_active = False
+            # Reap claims held by workers that stopped answering before
+            # looking at what is due: without this a task whose holder was
+            # killed stays unclaimable until its lease runs out on its own.
+            self._recover_expired_leases()
             async with self._executing_lock:
                 # Snapshot under the lock so we don't race with mid-iteration adds.
                 executing_snapshot = set(self._executing)
@@ -707,17 +1073,31 @@ class TaskScheduler:
                     ScheduledTask.next_run <= now,
                     ScheduledTask.id.notin_(executing_snapshot) if executing_snapshot else True,
                 ).all()
-                to_dispatch = []
-                for task in due:
-                    if task.id in self._executing:
-                        continue
-                    if foreground_active:
+                # Read the candidates out of the ORM objects and end this read
+                # transaction before claiming anything. The claim is a write
+                # from a second connection, and a SQLite reader still holding
+                # this one's shared lock turns it into `database is locked`
+                # instead of a clean loss of the race.
+                candidates = [(t.id, t.next_run) for t in due]
+                if foreground_active:
+                    for task in due:
                         task.next_run = now + timedelta(minutes=15)
+                    if due:
+                        db.commit()
+                    candidates = []
+                else:
+                    db.rollback()
+                to_dispatch = []
+                for task_id, due_at in candidates:
+                    if task_id in self._executing:
                         continue
-                    self._executing.add(task.id)
-                    to_dispatch.append(task.id)
-                if foreground_active and due:
-                    db.commit()
+                    # The database decides, not the set. `_executing` only ever
+                    # guarded this interpreter, and the run that happens twice
+                    # is the one a second worker picked up.
+                    if not self._claim_due_task(task_id, due_at, now):
+                        continue
+                    self._executing.add(task_id)
+                    to_dispatch.append(task_id)
             for task_id in to_dispatch:
                 asyncio.create_task(self._execute_task(task_id))
         finally:
@@ -749,6 +1129,12 @@ class TaskScheduler:
         finally:
             _q_db.close()
 
+        # Keep the claim alive for as long as the work actually takes.
+        # Without this a task that legitimately runs longer than LEASE_SECONDS
+        # would look abandoned to the recovery sweep and be handed to a second
+        # worker while the first is still inside it.
+        heartbeat = asyncio.create_task(self._heartbeat_loop(task_id))
+
         try:
             if bypass_model_slot or not self._task_needs_model_slot(task_id):
                 await self._execute_task_locked(
@@ -773,6 +1159,12 @@ class TaskScheduler:
             self._defer_immediately_due_task(task_id, delay=timedelta(minutes=15))
             raise
         finally:
+            heartbeat.cancel()
+            # The occurrence is over -- cleanly or not, it was attempted by a
+            # process still here to say so. Dropping the key together with the
+            # lease is what makes the NEXT occurrence a new one instead of a
+            # continuation of this attempt.
+            self._release_lease(task_id)
             handle = self._task_handles.get(task_id)
             if handle is current:
                 self._task_handles.pop(task_id, None)

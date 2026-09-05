@@ -555,8 +555,26 @@ class NodeRunRow(TimestampMixin, Base):
     result_json = Column(Text, nullable=True)
     schema_version = Column(Integer, nullable=False, default=1)
 
+    #: Who is holding this claim and until when (ISO-8601 UTC, the same shape
+    #: as started_at). `running` on its own is a status nobody can ever clear:
+    #: a process killed after claiming leaves a row that says it is working
+    #: forever, and the key on that row then refuses every retry. A lease that
+    #: expires turns that permanent lie into a recoverable one.
+    lease_owner = Column(String, nullable=True, index=True)
+    lease_expires_at = Column(String, nullable=True)
+    lease_heartbeat_at = Column(String, nullable=True)
+
+    #: What is known about the node's side effect, which is NOT what is known
+    #: about the attempt. A node that reaches outside and whose worker died
+    #: mid-call is `failed` with an effect nobody observed -- retrying it might
+    #: send the message twice and refusing to might mean it never went. That
+    #: is `unknown`, and it needs a person or a reconciliation pass, not a
+    #: retry policy.
+    effect_state = Column(String, nullable=False, default="none", index=True)
+
     __table_args__ = (
         Index("ix_node_runs_run_node", "workflow_run_id", "node_id"),
+        Index("ix_node_runs_lease", "status", "lease_expires_at"),
     )
 
 
@@ -583,6 +601,14 @@ class MediaRunRow(TimestampMixin, Base):
     engine      = Column(String, nullable=False, default="comfyui")
     engine_url  = Column(String, nullable=True)
     engine_job_id = Column(String, nullable=True, index=True)
+
+    #: What we told the engine to call us, derived from this run's id. ComfyUI
+    #: echoes it back in `extra_data` on both /queue and /history, which makes
+    #: it the only thread that survives a crash between "the server accepted
+    #: the prompt" and "we wrote its id down". With the old constant
+    #: `faustus` there was nothing to tell one render from another, so a job
+    #: burning GPU with no row pointing at it could never be found again.
+    client_id   = Column(String, nullable=True, index=True)
 
     status      = Column(String, nullable=False, default="pending", index=True)
     reason      = Column(Text, nullable=True, default="")
@@ -998,12 +1024,29 @@ class ScheduledTask(TimestampMixin, Base):
     email_results  = Column(Boolean, default=True)        # email results to character.email_to
     notifications_enabled = Column(Boolean, default=True) # per-task on/off for completion notifications
 
+    # A dispatch claim that outlives the process holding it. The scheduler's
+    # in-memory guard only ever protected one interpreter, so a second worker,
+    # a second server window, or a restart landing on a row whose next_run is
+    # still in the past could all select the same overdue task and run it
+    # twice -- and the task that runs twice is the one that sends the email.
+    # The claim is one conditional UPDATE against these columns; the lease
+    # expires so a killed worker's work is recoverable rather than stuck; and
+    # lease_key is the occurrence's stable idempotency key, retained across a
+    # recovered lease so every attempt at the same occurrence carries the same
+    # string for a destination to deduplicate on.
+    lease_owner    = Column(String, nullable=True)
+    lease_expires_at = Column(DateTime, nullable=True)
+    lease_heartbeat_at = Column(DateTime, nullable=True)
+    lease_attempt  = Column(Integer, default=0)
+    lease_key      = Column(String, nullable=True)
+
     session = relationship("Session", backref=backref("scheduled_tasks", cascade="save-update, merge"))
     then_task = relationship("ScheduledTask", remote_side=[id], foreign_keys=[then_task_id])
 
     __table_args__ = (
         Index('ix_scheduled_tasks_due', 'status', 'next_run'),
         Index('ix_scheduled_tasks_event', 'trigger_type', 'trigger_event', 'status'),
+        Index('ix_scheduled_tasks_lease', 'status', 'lease_expires_at'),
     )
 
 
@@ -2535,6 +2578,9 @@ def init_db():
     _migrate_add_calendar_account_id()
     _migrate_add_caldav_sync_columns()
     _migrate_add_calendar_recurrence_exdates()
+    _migrate_add_task_lease_columns()
+    _migrate_add_node_run_lease_columns()
+    _migrate_add_media_run_client_id()
     _migrate_chat_messages_fts()
     _migrate_encrypt_email_passwords()
     _migrate_encrypt_signatures()
@@ -2931,6 +2977,120 @@ def _migrate_add_calendar_metadata():
         conn.commit()
     except Exception as e:
         logging.getLogger(__name__).warning(f"calendar_events migration failed: {e}")
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def _migrate_add_media_run_client_id():
+    """Add the per-run ComfyUI correlation id to media_runs.
+
+    Additive and idempotent. Rows from before this stay NULL, which the
+    reconciler reads as "this render cannot be correlated" rather than
+    guessing -- a wrong guess here adopts somebody else's job.
+    """
+    import sqlite3
+    db_path = DATABASE_URL.replace("sqlite:///", "")
+    if not os.path.exists(db_path):
+        return
+    conn = None
+    try:
+        conn = sqlite3.connect(db_path)
+        columns = [row[1] for row in
+                   conn.execute("PRAGMA table_info(media_runs)").fetchall()]
+        if not columns:
+            return
+        if "client_id" not in columns:
+            conn.execute("ALTER TABLE media_runs ADD COLUMN client_id TEXT")
+        conn.execute("CREATE INDEX IF NOT EXISTS ix_media_runs_client_id "
+                     "ON media_runs (client_id)")
+        conn.commit()
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"media_runs client_id migration failed: {e}")
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def _migrate_add_node_run_lease_columns():
+    """Add the node lease and the effect state to workflow_node_runs.
+
+    Additive and idempotent. `effect_state` is backfilled to 'none' rather
+    than left NULL so the reconciliation query ("which nodes have an effect
+    nobody observed?") is a plain equality on every row, old ones included.
+    """
+    import sqlite3
+    db_path = DATABASE_URL.replace("sqlite:///", "")
+    if not os.path.exists(db_path):
+        return
+    conn = None
+    try:
+        conn = sqlite3.connect(db_path)
+        columns = [row[1] for row in
+                   conn.execute("PRAGMA table_info(workflow_node_runs)").fetchall()]
+        if not columns:
+            return
+        if "lease_owner" not in columns:
+            conn.execute("ALTER TABLE workflow_node_runs ADD COLUMN lease_owner TEXT")
+        if "lease_expires_at" not in columns:
+            conn.execute("ALTER TABLE workflow_node_runs ADD COLUMN lease_expires_at TEXT")
+        if "lease_heartbeat_at" not in columns:
+            conn.execute("ALTER TABLE workflow_node_runs ADD COLUMN lease_heartbeat_at TEXT")
+        if "effect_state" not in columns:
+            conn.execute("ALTER TABLE workflow_node_runs ADD COLUMN effect_state TEXT "
+                         "NOT NULL DEFAULT 'none'")
+        conn.execute("UPDATE workflow_node_runs SET effect_state = 'none' "
+                     "WHERE effect_state IS NULL")
+        conn.execute("CREATE INDEX IF NOT EXISTS ix_node_runs_lease "
+                     "ON workflow_node_runs (status, lease_expires_at)")
+        conn.commit()
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"workflow_node_runs lease migration failed: {e}")
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def _migrate_add_task_lease_columns():
+    """Add the scheduler's durable dispatch lease to scheduled_tasks.
+
+    Additive and idempotent: an install that already ran this keeps its rows,
+    and one that has not gets five NULL columns, which the claim reads as "no
+    lease" -- so the first tick after an upgrade claims normally instead of
+    finding every task locked by a worker that never existed.
+    """
+    import sqlite3
+    db_path = DATABASE_URL.replace("sqlite:///", "")
+    if not os.path.exists(db_path):
+        return
+    conn = None
+    try:
+        conn = sqlite3.connect(db_path)
+        columns = [row[1] for row in
+                   conn.execute("PRAGMA table_info(scheduled_tasks)").fetchall()]
+        if not columns:
+            return
+        if "lease_owner" not in columns:
+            conn.execute("ALTER TABLE scheduled_tasks ADD COLUMN lease_owner TEXT")
+        if "lease_expires_at" not in columns:
+            conn.execute("ALTER TABLE scheduled_tasks ADD COLUMN lease_expires_at DATETIME")
+        if "lease_heartbeat_at" not in columns:
+            conn.execute("ALTER TABLE scheduled_tasks ADD COLUMN lease_heartbeat_at DATETIME")
+        if "lease_attempt" not in columns:
+            conn.execute("ALTER TABLE scheduled_tasks ADD COLUMN lease_attempt INTEGER DEFAULT 0")
+        if "lease_key" not in columns:
+            conn.execute("ALTER TABLE scheduled_tasks ADD COLUMN lease_key TEXT")
+        conn.execute("CREATE INDEX IF NOT EXISTS ix_scheduled_tasks_lease "
+                     "ON scheduled_tasks (status, lease_expires_at)")
+        conn.commit()
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"scheduled_tasks lease migration failed: {e}")
     finally:
         try:
             conn.close()
