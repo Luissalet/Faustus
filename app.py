@@ -190,6 +190,7 @@ _TIMEOUT_EXEMPT_PREFIXES = (
     "/api/memory/audit",    # retains own 120s LLM inactivity timeout
     "/api/memory/import",   # reads the file, then one LLM pass over it - a local 9B model needs more than 45s
     "/api/memory/extract",  # same: one LLM pass over the whole conversation
+    "/api/calendar/quick-parse",  # one LLM call on the utility model; a local 9B needs more than 45s
     "/api/workspace/pick",  # waits on the user in a native OS dialog; own 600s timeout
 )
 

@@ -58,7 +58,7 @@ export interface Tool {
 
 export const TOOLS: Tool[] = [
   { path: '/notes', label: 'Notas', icon: StickyNote, ready: true },
-  { path: '/calendar', label: 'Calendario', icon: CalendarDays, ready: false },
+  { path: '/calendar', label: 'Calendario', icon: CalendarDays, ready: true },
   { path: '/email', label: 'Correo', icon: Mail, ready: false },
   { path: '/memory', label: 'Memoria', icon: Brain, ready: true },
   { path: '/cookbook', label: 'Cookbook', icon: ChefHat, ready: false },
@@ -84,4 +84,5 @@ export const SERVER_ROUTES = [
   '/activity',
   '/notes',
   '/memory',
+  '/calendar',
 ];

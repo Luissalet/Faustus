@@ -1043,9 +1043,7 @@ export function StudioScreen() {
       window.location.href = '/?shell=legacy#settings';
     },
     focus_input: () => textareaRef.current?.focus(),
-    open_calendar: () => {
-      window.location.href = '/calendar?shell=legacy';
-    },
+    open_calendar: () => navigate('/calendar'),
     open_compare: () => {
       window.location.href = '/?shell=legacy';
     },

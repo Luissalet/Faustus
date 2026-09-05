@@ -310,3 +310,23 @@ su área y baja el baseline. Ningún módulo Studio nuevo la aumenta.
     `qwen3.5:9b`** y el middleware los cortaba con 504 (también a la
     anterior). Exentos en `_TIMEOUT_EXEMPT_PREFIXES`. Queda pendiente darles
     un timeout propio como el de `/audit` (120 s de inactividad).
+
+## Añadido tras el lote L (05-09-2026, Calendario)
+
+53. **`[~]` Las llamadas al modelo de un solo golpe superan el timeout de
+    45 s en local.** Ya son cuatro exenciones (`memory/audit`, `import`,
+    `extract`, `calendar/quick-parse`). Mejor que seguir sumando prefijos:
+    un timeout propio por ruta (como el de 120 s de `/audit`) o un
+    `REQUEST_LLM_TIMEOUT` distinto para las rutas que llaman al modelo.
+    Mientras, cada ruta nueva que llame al modelo hay que añadirla a mano.
+54. **`[~]` Calendario: lo que sigue en la anterior.** Cuentas CalDAV
+    (formulario, prueba de conexión, borrar cuenta: `/config/accounts`,
+    `/test`), semana con horas y arrastre para mover o crear con duración,
+    zoom de la semana, búsqueda de eventos, «recordar en Notas» desde el
+    evento, deshacer al borrar, fondo de imagen, insignia del carril. El
+    cambio de calendario de un evento existente no lo permite el servidor
+    (`EventUpdate` no lleva `calendar_href`); la anterior tampoco.
+55. **`[~]` `quick-parse` con `qwen3.5:9b` tarda más de un minuto** (el
+    modelo de utilidad es el mismo 9B). El botón muestra el giro y el
+    formulario de respaldo salta si falla, pero la espera es larga; un
+    modelo de utilidad pequeño en Ajustes lo arregla sin tocar código.
