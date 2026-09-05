@@ -1123,6 +1123,11 @@ async def serve_agents(request: Request):
     # interface opens its Workers modal on this path.
     return await serve_index(request)
 
+@app.get("/skills")
+async def serve_skills(request: Request):
+    # Studio's Skills (the previous interface kept them as a tab inside Brain).
+    return await serve_index(request)
+
 @app.get("/backgrounds")
 async def serve_backgrounds(request: Request):
     """Sandbox page for prototyping background effects. No auth required."""

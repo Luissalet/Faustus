@@ -33,6 +33,7 @@ const CalendarScreen = lazy(() => import('../screens/Calendar').then((m) => ({ d
 const EmailScreen = lazy(() => import('../screens/Email').then((m) => ({ default: m.EmailScreen })));
 const SettingsScreen = lazy(() => import('../screens/Settings').then((m) => ({ default: m.SettingsScreen })));
 const AgentsScreen = lazy(() => import('../screens/Agents').then((m) => ({ default: m.AgentsScreen })));
+const SkillsScreen = lazy(() => import('../screens/Skills').then((m) => ({ default: m.SkillsScreen })));
 /* cmdk rides in with the first Ctrl+K, not with the page. */
 const CommandPalette = lazy(() => import('./CommandPalette').then((m) => ({ default: m.CommandPalette })));
 
@@ -219,6 +220,7 @@ function RouteBody() {
         <Route path="/email" element={<EmailScreen />} />
         <Route path="/settings" element={<SettingsScreen />} />
         <Route path="/agents" element={<AgentsScreen />} />
+        <Route path="/skills" element={<SkillsScreen />} />
         <Route path="*" element={<NotMigrated />} />
       </Routes>
       </Suspense>

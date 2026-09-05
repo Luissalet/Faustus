@@ -10,4 +10,7 @@ export const en: Record<string, string> = {
   '{n} pinned#': '{n} pinned',
   'Archive#folder': 'Archive',
   '{n} rejected#': '{n} rejected',
+  '{n} published#': '{n} published',
+  '{n} selected#': '{n} selected',
+  'Published {n}#': 'Published {n}',
 };

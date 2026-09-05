@@ -130,9 +130,13 @@ proporcionales, auditoría de la guía Vercel pasada o excepción documentada,
       definiciones y Expertos con su panel de revisión);
       idioma (inglés/español), apariencia (sistema/claro/oscuro) y barra
       lateral redimensionable (lote P).
+      Pestañas legacy de Ajustes (cuenta, usuarios, herramientas, sistema:
+      lote R; integraciones: S; modelos locales: T); Apariencia con el
+      editor de tema y los efectos (lote U; Fondos era un sandbox sin ruta);
+      Skills como pantalla (`/skills`, lote V).
       Faltan: Cookbook, Deep Research, Compare,
-      Tournament, Procedencia, Historial importado, Skills, Tema (editor),
-      Fondos. Vitales (uso de GPU) en Studio: lote Q.
+      Tournament, Procedencia, Historial importado. Vitales (uso de GPU) en
+      Studio: lote Q.
 - [ ] **UI-061** Borrar los puentes muertos, el DOM legacy de cada pantalla ya
       migrada y el propio flag. Empezar a dividir `style.css`, a solas y sin
       mezclarlo con features.

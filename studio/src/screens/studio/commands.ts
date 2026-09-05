@@ -60,6 +60,7 @@ export const COMMANDS: SlashCommand[] = [
   { name: 'brain', usage: '/brain', help: 'Go to the Memory.', route: '/memory' },
   { name: 'workers', usage: '/workers', help: 'Go to Agents: the Workers board.', route: '/agents' },
   { name: 'experts', usage: '/experts', help: 'Go to Agents: the Experts.', route: '/agents?t=experts' },
+  { name: 'skills', usage: '/skills', help: 'Go to the Skills.', route: '/skills' },
   { name: 'research', usage: '/research topic', help: 'Deep research (previous interface).', route: '/?shell=legacy', legacy: true },
   { name: 'compare', usage: '/compare', help: 'Compare models (previous interface).', route: '/?shell=legacy', legacy: true },
   { name: 'mcp', usage: '/mcp', help: 'MCP servers (previous interface).', route: '/?shell=legacy', legacy: true },

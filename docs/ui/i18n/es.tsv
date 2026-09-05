@@ -2030,3 +2030,142 @@ Text	Texto
 Panel	Panel
 Border	Borde
 Accent	Acento
+A GitHub link to a skill folder, or a skills.sh URL.	Un enlace de GitHub a la carpeta de una skill, o una URL de skills.sh.
+A procedure the agent can follow the next time the same problem shows up. It starts as a draft: test it, then publish.	Un procedimiento que el agente puede seguir la próxima vez que aparezca el mismo problema. Empieza como borrador: pruébala y luego publícala.
+Add as a draft	Añadir como borrador
+Allow once	Permitir una vez
+Allow this exact action once?	¿Permitir esta acción exacta una vez?
+Any confidence	Cualquier confianza
+Approval	Aprobación
+Approved — unpublish	Aprobada — despublicar
+Audit	Auditar
+Audit all	Auditar todas
+Audit cancelled — {done}/{total}	Auditoría cancelada — {done}/{total}
+Audit complete — {n} skills	Auditoría completa — {n} skills
+Audit publishes the ones that pass	La auditoría publica las que pasan
+Audit {n} skill?	¿Auditar {n} skill?
+Audit {n} skills?	¿Auditar {n} skills?
+Auditing {done}/{total}	Auditando {done}/{total}
+Back to draft	Volver a borrador
+Confidence	Confianza
+Confidence up to	Confianza hasta
+Confidence ≤ {n}%	Confianza ≤ {n}%
+Delete non-passing	Borrar no aptas
+Delete {n} skill?	¿Borrar {n} skill?
+Delete {n} skills?	¿Borrar {n} skills?
+Deleted {n} skill	Borrada {n} skill
+Deleted {n} skills	Borradas {n} skills
+Download	Descargar
+Draft	Borrador
+Draft skills from my workflows on its own	Redactar skills a partir de mis flujos por su cuenta
+Duplicate group #{n}: {names}. Worth keeping: {keep}.	Grupo de duplicadas #{n}: {names}. Merece quedarse: {keep}.
+Duplicates, generic or irrelevant ones, failed audits and anything below the threshold	Duplicadas, genéricas o irrelevantes, auditorías fallidas y todo lo que esté por debajo del umbral
+Duplicates, generic or irrelevant ones, failed audits and anything below {n}%. This cannot be undone.	Duplicadas, genéricas o irrelevantes, auditorías fallidas y todo lo que esté por debajo del {n}%. No se puede deshacer.
+Each one is tested on a task of its own; the ones that fail are rewritten by the teacher model and tested again. What still fails gets flagged. It runs on the server and takes a while.	Cada una se prueba con una tarea propia; las que fallan las reescribe el modelo profesor y se prueban de nuevo. Lo que sigue fallando queda marcado. Corre en el servidor y tarda un rato.
+Edit SKILL.md	Editar SKILL.md
+Effects	Efectos
+Evaluating the run…	Evaluando la ejecución…
+Fingerprint	Huella
+How	Cómo
+How many relevant published skills join each agent request. 0 turns injection off.	Cuántas skills publicadas relevantes acompañan a cada petición del agente. 0 desactiva la inyección.
+Import failed	La importación falló
+Imported {name} ({n} file)	Importada {name} ({n} archivo)
+Imported {name} ({n} files)	Importada {name} ({n} archivos)
+Issues	Problemas
+Last audit	Última auditoría
+Learned from a conversation	Aprendida de una conversación
+Learning	Aprendizaje
+Loading skills	Cargando las skills
+Minimum confidence	Confianza mínima
+Needs attention	Necesitan atención
+New skill	Nueva skill
+No skills yet	Aún no hay skills
+Nothing selected to audit	No hay nada seleccionado que auditar
+Nothing visible to audit	No hay nada visible que auditar
+Off: audit results stay as drafts until you approve them.	Apagado: los resultados de la auditoría se quedan en borrador hasta que los apruebes.
+Or import one	O importa una
+Origin	Origen
+Overlaps with another skill	Se solapa con otra skill
+Overview	Resumen
+Passed an automated test	Pasó una prueba automática
+Pick a skill to read it, edit its SKILL.md or run a test. The confidence is the assistant’s own; a check next to it means it passed an audit.	Elige una skill para leerla, editar su SKILL.md o lanzar una prueba. La confianza es la del propio asistente; una marca al lado significa que pasó una auditoría.
+Pitfalls	Trampas
+Possibly not worth keeping	Puede que no merezca la pena conservarla
+Procedure	Procedimiento
+Procedures the assistant learned. Published ones join its requests when they fit.	Procedimientos que el asistente ha aprendido. Las publicadas acompañan a sus peticiones cuando encajan.
+Publish	Publicar
+Publish the selected drafts	Publicar los borradores seleccionados
+Publish: it joins the index the agent reads	Publicar: entra en el índice que lee el agente
+Published	Publicada
+Published {n}	Publicada {n}
+Published {n}#	Publicadas {n}
+Retry	Reintentar
+Run a test	Lanzar una prueba
+Running — you can leave; it keeps going.	En marcha — puedes irte; sigue por su cuenta.
+Runs the skill on a task of its own, with the agent, and grades the result. Actions that touch the world stop and ask you first.	Ejecuta la skill con una tarea propia, con el agente, y califica el resultado. Las acciones que tocan el mundo se detienen y te preguntan antes.
+SKILL.md saved	SKILL.md guardado
+Search skills…	Buscar skills…
+Show all	Ver todas
+Skill	Skill
+Skill URL	URL de la skill
+Skill added as a draft	Skill añadida como borrador
+Skills	Skills
+Skills could not be loaded	No se han podido cargar las skills
+Skills off	Skills apagadas
+Skills on	Skills activas
+Skills per request	Skills por petición
+Skip the ones already audited	Saltar las ya auditadas
+Start the audit	Empezar la auditoría
+Status	Estado
+Tags	Etiquetas
+Test every visible skill, fix the weak ones with the teacher, flag what still fails	Probar todas las skills visibles, arreglar las flojas con el profesor y marcar las que sigan fallando
+Test, fix with the teacher if it fails, retry	Probar, arreglar con el profesor si falla, reintentar
+The approval failed	La aprobación falló
+The assistant drafts one when it solves something worth repeating — or write one yourself.	El asistente redacta una cuando resuelve algo que merece repetirse — o escribe una tú.
+The audit could not start	La auditoría no ha podido empezar
+The last audit did not pass	La última auditoría no pasó
+The library can grow; nothing is retired without review.	La biblioteca puede crecer; nada se retira sin revisión.
+Too generic to be worth a saved skill	Demasiado genérica para merecer una skill guardada
+Try another filter or search.	Prueba otro filtro u otra búsqueda.
+Unpublish	Despublicar
+Uses	Usos
+Verdict	Veredicto
+When to use	Cuándo usarla
+Workspace	Espacio de trabajo
+Written by hand	Escrita a mano
+Written by the teacher	Escrita por el profesor
+below {n}%	por debajo del {n}%
+comma-separated, e.g. python, build, vllm	separadas por comas, p. ej. python, build, vllm
+duplicate	duplicada
+duplicate #{n}	duplicada #{n}
+generic	genérica
+last {when}	última {when}
+needs work	necesita trabajo
+not audited	sin auditar
+possibly irrelevant	posiblemente irrelevante
+rewritten by the teacher so it would pass	reescrita por el profesor para que pasara
+round {n}	ronda {n}
+run failed	la ejecución falló
+short name, e.g. build-vllm-wheel	nombre corto, p. ej. build-vllm-wheel
+teacher	profesor
+the steps, commands or rules to follow — one per line	los pasos, comandos o reglas a seguir — uno por línea
+what problem does it solve?	¿qué problema resuelve?
+{n} log line	{n} línea de registro
+{n} log lines	{n} líneas de registro
+{n} need attention	{n} necesitan atención
+{n} needs attention	{n} necesita atención
+{n} published	{n} publicada
+{n} published#	{n} publicadas
+{n} selected	{n} seleccionada
+{n} selected#	{n} seleccionadas
+{n} skill	{n} skill
+{n} skills	{n} skills
+Pass	Pasa
+Needs work	Necesita trabajo
+Fail	Falla
+Inconclusive	No concluyente
+Unclear	Poco claro
+This skill has no SKILL.md yet — it predates the files. Its fields are in the overview; write the file to give it a source you can edit and test.	Esta skill aún no tiene SKILL.md — es anterior a los archivos. Sus campos están en el resumen; escribe el archivo para darle una fuente que puedas editar y probar.
+Write SKILL.md from its fields	Escribir SKILL.md a partir de sus campos
+All skills	Todas las skills
+Skills live on their own screen	Las skills tienen su propia pantalla

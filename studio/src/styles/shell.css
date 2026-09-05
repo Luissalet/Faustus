@@ -409,7 +409,12 @@ html[data-studio-shell='on'] body > *:not(#studio-root):not(#fs-overlay-root) {
     padding: var(--fs-space-6) var(--fs-space-5) var(--fs-space-6);
   }
 @media (max-width: 767px) {
-  .fs-shell {
+  /* Both selectors: below 1280px the shell carries data-nav='rail', whose
+     72px column rule (0,2,0) outranked this one (0,1,0) and left the main
+     area 72px wide on phones. */
+  .fs-shell,
+  .fs-shell[data-nav='rail'],
+  .fs-shell[data-nav='wide'] {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr) auto;
   }

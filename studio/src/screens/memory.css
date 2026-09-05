@@ -10,6 +10,19 @@
   gap: var(--fs-space-2);
 }
 
+.fs-memory__skills-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fs-text-3);
+  font-size: var(--fs-label-size);
+  text-decoration: none;
+}
+
+.fs-memory__skills-link:hover {
+  color: var(--fs-brand);
+}
+
 .fs-memory__add {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;

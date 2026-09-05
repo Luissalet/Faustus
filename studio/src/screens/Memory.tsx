@@ -14,6 +14,7 @@ import {
   Trash2,
   Wand2,
   X,
+  Zap,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router';
@@ -678,6 +679,10 @@ export function MemoryScreen() {
             <input type="checkbox" checked={autoExtract === true} disabled={autoExtract === null} onChange={(e) => void savePref('auto_memory', e.target.checked)} />
             <span>{t('Extract from conversations on its own')}</span>
           </label>
+          {/* The previous Brain kept the skills as a tab here; they have their own screen now. */}
+          <Link to="/skills" className="fs-memory__skills-link">
+            <Zap size={13} aria-hidden="true" /> {t('Skills live on their own screen')}
+          </Link>
         </div>
       </header>
 

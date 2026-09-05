@@ -10,6 +10,7 @@ import {
   Mail,
   Sparkles,
   StickyNote,
+  Zap,
   Workflow,
   type LucideIcon,
 } from 'lucide-react';
@@ -63,6 +64,7 @@ export const TOOLS: Tool[] = [
   { path: '/email', label: 'Mail', icon: Mail, ready: true },
   { path: '/memory', label: 'Memory', icon: Brain, ready: true },
   { path: '/agents', label: 'Agents', icon: Bot, ready: true },
+  { path: '/skills', label: 'Skills', icon: Zap, ready: true },
   { path: '/cookbook', label: 'Cookbook', icon: ChefHat, ready: false },
 ];
 
@@ -90,4 +92,5 @@ export const SERVER_ROUTES = [
   '/email',
   '/settings',
   '/agents',
+  '/skills',
 ];

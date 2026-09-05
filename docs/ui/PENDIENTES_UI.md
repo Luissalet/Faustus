@@ -496,3 +496,24 @@ su área y baja el baseline. Ningún módulo Studio nuevo la aumenta.
     `applyColors`) no tienen destino en Studio; el puente toma los cinco
     colores base y deriva el resto. Si un tema guardado trae `advanced`,
     se conserva en el JSON y se ignora.
+
+## Añadido tras el lote V (05-09-2026, Skills)
+
+82. **`[~]` La prueba de una skill corre con el modelo por defecto del
+    servidor.** La anterior mandaba el modelo y el endpoint de la sesión
+    abierta (`getCurrentModel()`); Studio no tiene sesión en `/skills`, así
+    que `startTest` manda vacío y el servidor elige. Cuando la pantalla
+    tenga un selector de modelo, pasarlo.
+83. **`[~]` La agrupación de duplicadas es por tokens en inglés** (misma
+    regla que `skills.js`): dos skills iguales en inglés y castellano
+    (`date-formatting-module-creation` / `fecha-formato-m-dulo-y-test`) no
+    se agrupan. Es la regla anterior; mejorarla es otra historia.
+84. **`[!]` En el 7001 con `AUTH_ENABLED=false` las skills con `owner`
+    responden 404 al leer o guardar su SKILL.md** (no hay usuario en la
+    petición y el gestor compara dueños). `start7001.ps1` va ahora con
+    `AUTH_ENABLED=true` + `LOCALHOST_BYPASS=true`, que entra como el primer
+    admin. No es un fallo de Studio: la anterior hacía lo mismo.
+85. **`[!]` Regresión del shell en móvil, arreglada:** por debajo de 768px
+    `.fs-shell[data-nav='rail']` (lote P) pisaba la regla de una columna y
+    dejaba el contenido en 72px de ancho. Ahora la media query nombra
+    también `[data-nav='rail'|'wide']`. Vale para todas las pantallas.
