@@ -117,7 +117,12 @@ async def test_stop_served_model_uses_validated_remote_target(monkeypatch):
     assert result["exit_code"] == 0
     assert len(posts) == 1
     command = posts[0][1]["command"]
-    assert "ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no" in command
+    # B-025: the stop path must authenticate the node it kills the serve on.
+    from src import ssh_trust
+
+    assert "-o StrictHostKeyChecking=yes" in command
+    assert "StrictHostKeyChecking=no" not in command
+    assert f"UserKnownHostsFile={ssh_trust.known_hosts_path()}" in command
     assert "-p 2222 user@gpu-box" in command
     assert "tmux kill-session -t serve-abc123" in command
 

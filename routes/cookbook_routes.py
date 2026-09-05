@@ -32,6 +32,7 @@ from core.platform_compat import (
     which_tool,
 )
 from routes.shell_routes import TMUX_LOG_DIR
+from src import ssh_trust
 from src.host_docker_access import (
     HOST_DOCKER_ACCESS_HINT,
     HOST_DOCKER_SOCKET_PATH,
@@ -249,21 +250,13 @@ async def _remote_binary_available(
     windows: bool = False,
 ) -> bool:
     port = ssh_port or ""
-    port_args = ["-p", port] if port and port != "22" else []
     if windows:
         check = f'powershell -NoProfile -Command "if (Get-Command {binary} -ErrorAction SilentlyContinue) {{ exit 0 }} else {{ exit 127 }}"'
     else:
         check = f'PATH="$HOME/.local/bin:$HOME/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"; command -v {shlex.quote(binary)} >/dev/null 2>&1'
     try:
         proc = await asyncio.create_subprocess_exec(
-            "ssh",
-            "-o",
-            "ConnectTimeout=6",
-            "-o",
-            "StrictHostKeyChecking=no",
-            *port_args,
-            remote,
-            check,
+            *ssh_trust.ssh_argv(remote, port, check, connect_timeout=6),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -968,14 +961,18 @@ def setup_cookbook_routes() -> APIRouter:
         host = validate_remote_host(req.host)
         ssh_port = validate_ssh_port(req.ssh_port)
         try:
-            code, stdout, stderr = await run_ssh_command_async(
-                host,
-                ssh_port,
-                "echo ok",
-                timeout=8,
-                connect_timeout=5,
-                strict_host_key_checking=False,
+            # Built here rather than through run_ssh_command_async because the
+            # trust flags live in ssh_trust now, and this is the attended action
+            # an operator runs right after pairing -- it has to prove the SAME
+            # argv the background paths will use, or "test-ssh says OK" means
+            # nothing about whether a download will connect.
+            proc = await asyncio.create_subprocess_exec(
+                *ssh_trust.ssh_argv(host, ssh_port, "echo ok", connect_timeout=5),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
             )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=8)
+            code = proc.returncode
         except asyncio.TimeoutError:
             return {"stdout": "", "stderr": "SSH test timed out", "exit_code": 124}
         except Exception as e:
@@ -985,6 +982,89 @@ def setup_cookbook_routes() -> APIRouter:
             "stderr": stderr.decode("utf-8", errors="replace"),
             "exit_code": code,
         }
+
+    class CookbookSshPairRequest(BaseModel):
+        host: str
+        ssh_port: str | None = None
+        fingerprint: str | None = None
+
+    @router.post("/api/cookbook/ssh/fingerprint")
+    async def cookbook_ssh_fingerprint(request: Request, req: CookbookSshPairRequest):
+        """Show the host keys a node offers, without trusting any of them.
+
+        Read-only half of pairing (B-025). Nothing is stored until a human
+        confirms one of these fingerprints against the node's own console: the
+        handshake is split in two precisely so the value being compared reaches
+        the operator through a channel other than the one under test.
+        """
+        require_admin(request)
+        host = validate_remote_host(req.host)
+        ssh_port = validate_ssh_port(req.ssh_port)
+        if not host:
+            raise HTTPException(400, "host is required")
+        try:
+            offered = await asyncio.to_thread(ssh_trust.scan_host_keys, host, ssh_port)
+        except ssh_trust.SshTrustError as e:
+            raise HTTPException(502, str(e))
+        # Reuse the scan instead of letting pairing_state fetch its own: two
+        # scans could disagree, and then the fingerprint shown to the human
+        # would not be the one the verdict was computed from.
+        state = ssh_trust.pairing_state(host, ssh_port, offered=offered)
+        return {
+            "host": state["host"],
+            "state": state["state"],
+            "paired": state["stored"],
+            "offered": [
+                {"type": entry["type"], "fingerprint": entry["fingerprint"]}
+                for entry in offered
+            ],
+        }
+
+    @router.post("/api/cookbook/ssh/pair")
+    async def cookbook_ssh_pair(request: Request, req: CookbookSshPairRequest):
+        """Record a node's host key once a human has confirmed its fingerprint.
+
+        A node whose key CHANGED is refused with 409 rather than repaired. That
+        refusal is the feature: silently rewriting the stored key is how a
+        swapped identity gets waved through, so re-approval has to be a separate
+        deliberate act (unpair, then pair again).
+        """
+        require_admin(request)
+        host = validate_remote_host(req.host)
+        ssh_port = validate_ssh_port(req.ssh_port)
+        if not host:
+            raise HTTPException(400, "host is required")
+        fingerprint = (req.fingerprint or "").strip()
+        if not fingerprint:
+            raise HTTPException(400, "fingerprint is required")
+        try:
+            return await asyncio.to_thread(
+                lambda: ssh_trust.pair_host(host, ssh_port, fingerprint=fingerprint)
+            )
+        except ssh_trust.HostKeyChanged as e:
+            raise HTTPException(409, str(e))
+        except (ssh_trust.HostKeyMismatch, ValueError) as e:
+            raise HTTPException(400, str(e))
+        except ssh_trust.SshTrustError as e:
+            raise HTTPException(502, str(e))
+
+    @router.post("/api/cookbook/ssh/unpair")
+    async def cookbook_ssh_unpair(request: Request, req: CookbookSshPairRequest):
+        """Revoke every stored key for a target so it can be paired afresh.
+
+        The deliberate exit from the 409 above. Kept separate from pair so that
+        accepting a changed key always costs an explicit second decision.
+        """
+        require_admin(request)
+        host = validate_remote_host(req.host)
+        ssh_port = validate_ssh_port(req.ssh_port)
+        if not host:
+            raise HTTPException(400, "host is required")
+        try:
+            removed = ssh_trust.forget_host(host, ssh_port)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        return {"host": ssh_trust.host_pattern(host, ssh_port), "removed": removed}
 
     def _needs_binary(cmd: str, binary: str) -> bool:
         return bool(re.search(rf"(^|[\s;&|()]){re.escape(binary)}($|[\s;&|()])", cmd or ""))
@@ -1218,8 +1298,13 @@ def setup_cookbook_routes() -> APIRouter:
 
             # scp the .ps1 script, then launch it as a detached process with log + pid files
             _port = req.ssh_port
-            _Pf = f"-P {_port} " if _port and _port != "22" else ""
             _pf = f"-p {_port} " if _port and _port != "22" else ""
+            # The PowerShell payload below is double-quoted twice over, so
+            # re-flowing this line through an argv builder would rewrite quoting
+            # the remote shell depends on. Take the trust flags as a ready-made
+            # fragment instead: the line still gets them from the one module
+            # that decides what they are.
+            _trust = ssh_trust.option_flags()
             # Start-Process creates a fully detached process that survives SSH disconnect
             launch_ps = (
                 "$sd = \\\"$env:TEMP\\odysseus-sessions\\\"; "
@@ -1229,8 +1314,8 @@ def setup_cookbook_routes() -> APIRouter:
                 f"-NoNewWindow -PassThru | ForEach-Object {{ $_.Id | Out-File \\\"$sd\\{session_id}.pid\\\" }}"
             )
             setup_cmd = (
-                f"scp -O {_Pf}-q '{runner_path}' {remote}:{remote_runner} && "
-                f'ssh {_pf}{remote} "powershell -Command \\"{launch_ps}\\""'
+                f"{ssh_trust.scp_command(runner_path, remote, remote_runner, ssh_port=_port)} && "
+                f'ssh {_trust} {_pf}{remote} "powershell -Command \\"{launch_ps}\\""'
             )
 
         elif remote:
@@ -1326,11 +1411,9 @@ def setup_cookbook_routes() -> APIRouter:
 
             # scp the runner script, then create tmux session on the remote
             _port = req.ssh_port
-            _pf = f"-P {_port} " if _port and _port != "22" else ""
-            _spf = f"-p {_port} " if _port and _port != "22" else ""
             setup_cmd = (
-                f"scp -O {_pf}-q '{runner_path}' {remote}:{remote_runner} && "
-                f"ssh {_spf}{remote} {shlex.quote(_remote_tmux_launch_command(session_id, remote_runner))}"
+                f"{ssh_trust.scp_command(runner_path, remote, remote_runner, ssh_port=_port)} && "
+                f"{ssh_trust.ssh_command(remote, _remote_tmux_launch_command(session_id, remote_runner), ssh_port=_port)}"
             )
         else:
             # Local: run hf download in the background (tmux on POSIX, a detached
@@ -1603,13 +1686,11 @@ def setup_cookbook_routes() -> APIRouter:
         if remote:
             # Probe over SSH. Bash's /dev/tcp gives a portable "is anything
             # listening" check without requiring ss/netstat/nmap.
-            ssh_base = ["ssh", "-o", "ConnectTimeout=4", "-o", "StrictHostKeyChecking=no"]
             if ssh_port and str(ssh_port) != "22":
                 try:
                     ssh_port = validate_ssh_port(ssh_port)
                 except HTTPException:
                     return None
-                ssh_base.extend(["-p", str(ssh_port)])
             try:
                 host_arg = validate_remote_host(remote)
             except HTTPException:
@@ -1625,7 +1706,7 @@ def setup_cookbook_routes() -> APIRouter:
             try:
                 import subprocess
                 r = subprocess.run(
-                    ssh_base + [host_arg, script],
+                    ssh_trust.ssh_argv(host_arg, ssh_port, script, connect_timeout=4),
                     capture_output=True, text=True, timeout=8,
                 )
                 if r.returncode == 0:
@@ -1681,10 +1762,11 @@ def setup_cookbook_routes() -> APIRouter:
         if local_win:
             return
         if remote:
-            ssh_args = ["ssh"]
-            if ssh_port and ssh_port != "22":
-                ssh_args.extend(["-p", str(ssh_port)])
-            capture_cmd = ssh_args + [remote, _remote_tmux_command("capture-pane", "-t", session_id, "-p", "-S", "-2000")]
+            capture_cmd = ssh_trust.ssh_argv(
+                remote,
+                ssh_port,
+                _remote_tmux_command("capture-pane", "-t", session_id, "-p", "-S", "-2000"),
+            )
         else:
             capture_cmd = ["tmux", "capture-pane", "-t", session_id, "-p", "-S", "-2000"]
 
@@ -2119,8 +2201,10 @@ def setup_cookbook_routes() -> APIRouter:
             runner_path.write_text("\r\n".join(ps_lines) + "\r\n", encoding="utf-8")
 
             _port = req.ssh_port
-            _Pf = f"-P {_port} " if _port and _port != "22" else ""
             _pf = f"-p {_port} " if _port and _port != "22" else ""
+            # Same reasoning as the download path: the PowerShell payload keeps
+            # its own quoting, the trust flags come from ssh_trust.
+            _trust = ssh_trust.option_flags()
             launch_ps = (
                 "$sd = \\\"$env:TEMP\\odysseus-sessions\\\"; "
                 f"Start-Process powershell -ArgumentList '-ExecutionPolicy','Bypass','-File','$HOME\\{remote_runner}' "
@@ -2129,8 +2213,8 @@ def setup_cookbook_routes() -> APIRouter:
                 f"-NoNewWindow -PassThru | ForEach-Object {{ $_.Id | Out-File \\\"$sd\\{session_id}.pid\\\" }}"
             )
             setup_cmd = (
-                f"scp -O {_Pf}-q '{runner_path}' {remote}:{remote_runner} && "
-                f'ssh {_pf}{remote} "powershell -Command \\"{launch_ps}\\""'
+                f"{ssh_trust.scp_command(runner_path, remote, remote_runner, ssh_port=_port)} && "
+                f'ssh {_trust} {_pf}{remote} "powershell -Command \\"{launch_ps}\\""'
             )
         else:
             # ── Linux/Termux: bash + tmux (existing flow) ──
@@ -2740,13 +2824,13 @@ def setup_cookbook_routes() -> APIRouter:
                 # If command references scripts/, scp those too
                 scp_extras = ""
                 _port = req.ssh_port
-                _Pf = f"-P {_port} " if _port and _port != "22" else ""
-                _pf = f"-p {_port} " if _port and _port != "22" else ""
                 if "scripts/diffusion_server.py" in req.cmd:
                     from core.constants import BASE_DIR
                     diff_script = Path(BASE_DIR) / "scripts" / "diffusion_server.py"
                     if diff_script.exists():
-                        scp_extras = f"scp -O {_Pf}-q '{diff_script}' {remote}:.diffusion_server.py && "
+                        scp_extras = ssh_trust.scp_command(
+                            diff_script, remote, ".diffusion_server.py", ssh_port=_port
+                        ) + " && "
                         runner_path.write_text(
                             runner_path.read_text(encoding="utf-8").replace(
                                 "scripts/diffusion_server.py", ".diffusion_server.py"
@@ -2755,8 +2839,8 @@ def setup_cookbook_routes() -> APIRouter:
                         )
                 setup_cmd = (
                     f"{scp_extras}"
-                    f"scp -O {_Pf}-q '{runner_path}' {remote}:{remote_runner} && "
-                    f"ssh {_pf}{remote} {shlex.quote(_remote_tmux_launch_command(session_id, remote_runner))}"
+                    f"{ssh_trust.scp_command(runner_path, remote, remote_runner, ssh_port=_port)} && "
+                    f"{ssh_trust.ssh_command(remote, _remote_tmux_launch_command(session_id, remote_runner), ssh_port=_port)}"
                 )
             else:
                 setup_cmd = f"tmux set-option -g history-limit 100000 2>/dev/null; tmux new-session -d -s {session_id} {shlex.quote(str(runner_path))}"
@@ -2928,8 +3012,9 @@ def setup_cookbook_routes() -> APIRouter:
     async def _run_nvidia_smi(query: str, host: str | None, ssh_port: str | None, timeout: int = 8):
         """Run nvidia-smi locally or over SSH. Returns (stdout, error_or_None)."""
         if host:
-            pf = f"-p {ssh_port} " if ssh_port and ssh_port != "22" else ""
-            cmd = f"ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no {pf}{host} '{query}'"
+            cmd = ssh_trust.ssh_command(
+                host, query, ssh_port=ssh_port, connect_timeout=5
+            )
             proc = await asyncio.create_subprocess_shell(
                 cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
             )
@@ -2951,7 +3036,6 @@ def setup_cookbook_routes() -> APIRouter:
     async def _run_gpu_shell(cmd_text: str, host: str | None, ssh_port: str | None, timeout: int = 8):
         """Run a small GPU probe shell command locally or over SSH."""
         if host:
-            pf = f"-p {ssh_port} " if ssh_port and ssh_port != "22" else ""
             quoted_cmd = shlex.quote(cmd_text)
             remote_cmd = (
                 f"if command -v sh >/dev/null 2>&1; then sh -lc {quoted_cmd}; "
@@ -2959,7 +3043,9 @@ def setup_cookbook_routes() -> APIRouter:
                 f"elif command -v zsh >/dev/null 2>&1; then zsh -lc {quoted_cmd}; "
                 "else echo 'No POSIX shell found for GPU probe' >&2; exit 127; fi"
             )
-            cmd = f"ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no {pf}{host} {shlex.quote(remote_cmd)}"
+            cmd = ssh_trust.ssh_command(
+                host, remote_cmd, ssh_port=ssh_port, connect_timeout=5
+            )
             proc = await asyncio.create_subprocess_shell(
                 cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
             )
@@ -3332,8 +3418,9 @@ def setup_cookbook_routes() -> APIRouter:
         kill_cmd = f"kill -{sig} {req.pid}"
         try:
             if host:
-                pf = f"-p {req.ssh_port} " if req.ssh_port and req.ssh_port != "22" else ""
-                cmd = f"ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no {pf}{host} '{kill_cmd}'"
+                cmd = ssh_trust.ssh_command(
+                    host, kill_cmd, ssh_port=req.ssh_port, connect_timeout=5
+                )
                 proc = await asyncio.create_subprocess_shell(
                     cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
                 )
@@ -3707,18 +3794,17 @@ def setup_cookbook_routes() -> APIRouter:
             except HTTPException:
                 continue
             sport = str(srv.get("port") or "").strip()
-            ssh_base = ["ssh", "-o", "ConnectTimeout=4", "-o", "StrictHostKeyChecking=no"]
             if sport and sport != "22":
                 try:
                     sport = validate_ssh_port(sport)
                 except HTTPException:
                     continue
-                if sport != "22":
-                    ssh_base.extend(["-p", sport])
 
             try:
                 ls = subprocess.run(
-                    ssh_base + [host, _remote_tmux_command("ls")],
+                    ssh_trust.ssh_argv(
+                        host, sport, _remote_tmux_command("ls"), connect_timeout=4
+                    ),
                     timeout=6, capture_output=True, text=True,
                 )
             except Exception:
@@ -4278,11 +4364,12 @@ def setup_cookbook_routes() -> APIRouter:
             cmd = ["python3", "-c", HF_CACHE_COMPLETE_PROBE, repo_id, cache_root or ""]
             try:
                 if remote_host:
-                    ssh_base = ["ssh"]
-                    if ssh_port and ssh_port != "22":
-                        ssh_base.extend(["-p", str(ssh_port)])
                     shell_cmd = " ".join(shlex.quote(x) for x in cmd)
-                    proc = subprocess.run(ssh_base + [remote_host, shell_cmd], timeout=12, capture_output=True)
+                    proc = subprocess.run(
+                        ssh_trust.ssh_argv(remote_host, ssh_port, shell_cmd),
+                        timeout=12,
+                        capture_output=True,
+                    )
                 else:
                     proc = subprocess.run(cmd, timeout=12, capture_output=True)
                 return proc.returncode == 0
@@ -4301,11 +4388,12 @@ def setup_cookbook_routes() -> APIRouter:
             cmd = ["python3", "-c", HF_CACHE_INCOMPLETE_PROBE, repo_id, cache_root or ""]
             try:
                 if remote_host:
-                    ssh_base = ["ssh"]
-                    if ssh_port and ssh_port != "22":
-                        ssh_base.extend(["-p", str(ssh_port)])
                     shell_cmd = " ".join(shlex.quote(x) for x in cmd)
-                    proc = subprocess.run(ssh_base + [remote_host, shell_cmd], timeout=12, capture_output=True)
+                    proc = subprocess.run(
+                        ssh_trust.ssh_argv(remote_host, ssh_port, shell_cmd),
+                        timeout=12,
+                        capture_output=True,
+                    )
                 else:
                     proc = subprocess.run(cmd, timeout=12, capture_output=True)
                 return proc.returncode == 0
@@ -4385,33 +4473,27 @@ def setup_cookbook_routes() -> APIRouter:
             if task_platform == "windows" and remote:
                 # Windows: check PID file + Get-Process, read log tail
                 sd = "$env:TEMP\\odysseus-sessions"
-                ssh_base = ["ssh"]
-                if _tport and _tport != "22":
-                    ssh_base.extend(["-p", str(_tport)])
+                ssh_base = ssh_trust.ssh_argv(remote, _tport)
                 check_cmd = ssh_base + [
-                    remote,
                     "powershell",
                     "-Command",
                     f"$pid = Get-Content \"{sd}\\{session_id}.pid\" -ErrorAction SilentlyContinue; "
                     "if ($pid) {{ Get-Process -Id $pid -ErrorAction SilentlyContinue | Out-Null; if ($?) {{ exit 0 }} else {{ exit 1 }} }} else {{ exit 1 }}"
                 ]
                 capture_cmd = ssh_base + [
-                    remote,
                     "powershell",
                     "-Command",
                     f"Get-Content \"{sd}\\{session_id}.log\" -Tail 10 -ErrorAction SilentlyContinue",
                 ]
             elif remote:
-                ssh_base = ["ssh"]
-                if _tport and _tport != "22":
-                    ssh_base.extend(["-p", str(_tport)])
-                check_cmd = ssh_base + [remote, _remote_tmux_command("has-session", "-t", session_id)]
+                ssh_base = ssh_trust.ssh_argv(remote, _tport)
+                check_cmd = ssh_base + [_remote_tmux_command("has-session", "-t", session_id)]
                 # Capture 500 lines (was 50) so a Python traceback survives
                 # the post-crash neofetch banner + bash prompt that otherwise
                 # fills the visible tail. Without this, output_tail ends up
                 # as just "Locale: C / Ubuntu_Odysseus ❯" and the agent
                 # can't diagnose the actual error.
-                capture_cmd = ssh_base + [remote, _remote_tmux_command("capture-pane", "-t", session_id, "-p", "-S", "-500")]
+                capture_cmd = ssh_base + [_remote_tmux_command("capture-pane", "-t", session_id, "-p", "-S", "-500")]
             elif IS_WINDOWS:
                 # LOCAL Windows task: launched as a detached process (no tmux).
                 # Liveness comes from the <session>.pid file, output from the

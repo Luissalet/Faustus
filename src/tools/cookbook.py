@@ -18,6 +18,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import HTTPException
 from routes._validators import validate_remote_host, validate_ssh_port
 
+from src import ssh_trust
 from src.tools._common import _parse_tool_args
 
 logger = logging.getLogger(__name__)
@@ -939,10 +940,11 @@ async def _cookbook_kill_session(session_id: str, *, remote_host: str = "",
             remote, sport = _validate_cookbook_ssh_target(remote, sport)
         except HTTPException as e:
             return {"error": str(getattr(e, "detail", e)), "exit_code": 1}
-        _pf = f"-p {shlex.quote(str(sport))} " if sport and str(sport) != "22" else ""
-        cmd = (
-            f"ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "
-            f"{_pf}{shlex.quote(remote)} 'tmux kill-session -t {shlex.quote(session_id)}'"
+        cmd = ssh_trust.ssh_command(
+            remote,
+            f"tmux kill-session -t {shlex.quote(session_id)}",
+            ssh_port=sport,
+            connect_timeout=5,
         )
         target_label = f"{session_id} on {remote}"
     else:
@@ -1073,10 +1075,8 @@ async def do_tail_serve_output(content: str, owner: Optional[str] = None) -> Dic
         f"else {pane_inner}; fi"
     )
     if remote:
-        _pf = f"-p {shlex.quote(str(sport))} " if sport and str(sport) != "22" else ""
-        cmd = (
-            f"ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "
-            f"{_pf}{shlex.quote(remote)} {shlex.quote(inner)}"
+        cmd = ssh_trust.ssh_command(
+            remote, inner, ssh_port=sport, connect_timeout=5
         )
         host_label = remote
     else:
@@ -1269,7 +1269,11 @@ async def do_adopt_served_model(content: str, owner: Optional[str] = None) -> Di
 
     headers = _internal_headers()
     if host:
-        check = f"ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no {shlex.quote(host)} 'tmux has-session -t {shlex.quote(sess)} 2>&1'"
+        check = ssh_trust.ssh_command(
+            host,
+            f"tmux has-session -t {shlex.quote(sess)} 2>&1",
+            connect_timeout=5,
+        )
     else:
         check = f"tmux has-session -t {shlex.quote(sess)} 2>&1"
     try:
@@ -1285,7 +1289,11 @@ async def do_adopt_served_model(content: str, owner: Optional[str] = None) -> Di
 
     # Best-effort health check — does port respond to /v1/models?
     if host:
-        health_cmd = f"ssh -o ConnectTimeout=5 {shlex.quote(host)} 'curl -s -m 3 http://localhost:{int(port)}/v1/models'"
+        health_cmd = ssh_trust.ssh_command(
+            host,
+            f"curl -s -m 3 http://localhost:{int(port)}/v1/models",
+            connect_timeout=5,
+        )
     else:
         health_cmd = f"curl -s -m 3 http://localhost:{int(port)}/v1/models"
     server_up = False

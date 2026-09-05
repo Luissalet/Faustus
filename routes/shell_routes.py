@@ -22,6 +22,7 @@ from src.host_docker_access import (
     running_in_container as _running_in_container,
 )
 from src.optional_deps import prepare_optional_dependency_import
+from src import ssh_trust
 
 # POSIX-only: `pty`/`fcntl` transitively import `termios`, which does NOT exist
 # on Windows, so importing them unconditionally crashed app startup there
@@ -80,17 +81,21 @@ _SAFE_VENV_RE = re.compile(r"^[A-Za-z0-9_./~-]+$")
 
 
 def _ssh_base_argv(host: str, ssh_port: str | None) -> list[str]:
-    """Build an ssh argv prefix for remote probes without local-shell parsing."""
+    """Build an ssh argv prefix for remote probes without local-shell parsing.
+
+    The host-trust flags come from src.ssh_trust rather than being spelled here,
+    so this probe path cannot drift from the cookbook and serve-lifecycle paths.
+    B-025 was exactly that drift: three copies of an almost-identical argv, each
+    quietly deciding on its own that the node's identity did not matter.
+    """
     if not host or not str(host).strip() or str(host).lstrip().startswith("-"):
         raise ValueError("invalid ssh host")
-    argv = ["ssh", "-o", "ConnectTimeout=6", "-o", "StrictHostKeyChecking=no"]
+    port = None
     if ssh_port and str(ssh_port).strip() not in ("", "22"):
         port = str(ssh_port).strip()
         if not _SSH_PORT_RE.match(port) or not (1 <= int(port) <= 65535):
             raise ValueError("invalid ssh port")
-        argv += ["-p", port]
-    argv.append(str(host).strip())
-    return argv
+    return ssh_trust.ssh_argv(str(host).strip(), port, connect_timeout=6)
 
 
 def _venv_activate_prefix(venv: str | None) -> str:

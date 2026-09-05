@@ -461,12 +461,18 @@ class TestPackageProbeStatus:
 
 class TestSshBaseArgv:
     def test_basic_host_no_port(self):
+        # B-025: the trust flags now come from src.ssh_trust. Pin their shape,
+        # not the store location, which follows ODYSSEUS_DATA_DIR.
+        from src import ssh_trust
+
         assert _ssh_base_argv("user@example.com", None) == [
             "ssh",
             "-o",
             "ConnectTimeout=6",
             "-o",
-            "StrictHostKeyChecking=no",
+            "StrictHostKeyChecking=yes",
+            "-o",
+            f"UserKnownHostsFile={ssh_trust.known_hosts_path()}",
             "user@example.com",
         ]
 
