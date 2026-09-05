@@ -507,7 +507,9 @@ def test_a_gated_row_carries_a_narrower_note_than_an_ungated_one():
 
 def test_an_ungated_invocation_is_byte_identical_to_what_it_always_was():
     claude = reg.get("claude", help_source="")
-    assert reg.build_argv(claude, "do it", model="m") == ["claude", "-p", "do it", "--model", "m"]
+    # No gate clause, and no prompt either: SEC-1 (B-022) put the task on
+    # stdin, so what is left is the invocation and nothing that names the work.
+    assert reg.build_argv(claude, "do it", model="m") == ["claude", "-p", "--model", "m"]
 
 
 def test_the_gated_invocation_streams_and_never_skips_permissions():

@@ -69,6 +69,7 @@ caller runs it in a thread.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -137,13 +138,54 @@ def redact_env(env: Optional[Dict[str, str]]) -> Dict[str, str]:
     return out
 
 
-def _shown(argv: List[str], env: Optional[Dict[str, str]]) -> str:
-    """The command as it ran, safe to print: `NAME=value … prog args`."""
+def task_looks_sensitive(task: Any) -> bool:
+    """Does this prompt carry something that must not be published in argv?
+
+    The same rule the log redaction uses (`core.log_safety`): if redacting the
+    text changes it, the text contains a value shaped like a credential. Not a
+    classifier and not trying to be one — a cheap, explainable test whose
+    false positives cost one flag on the call and whose false negatives are no
+    worse than what argv did before.
+    """
+    text = str(task or "")
+    if not text:
+        return False
+    try:
+        from core.log_safety import redact_secrets
+    except ImportError:  # pragma: no cover - core always imports in the app
+        return False
+    return redact_secrets(text) != text
+
+
+def task_descriptor(task: str) -> str:
+    """How a task is referred to in `argv_shown`: a digest and a length.
+
+    SEC-1 (B-022). The prompt belongs to the run's own record, which is where
+    it can be read deliberately. It does not belong in the command field, which
+    is printed in the board, stored with the result and quoted in errors — and
+    which, for a runner that has to use argv, is already the least private part
+    of the run. The digest is enough to tell two runs apart and to check that
+    the text on file is the text that ran.
+    """
+    raw = str(task or "")
+    digest = hashlib.sha256(raw.encode("utf-8", "replace")).hexdigest()[:12]
+    return f"<task:sha256={digest} chars={len(raw)}>"
+
+
+def _shown(argv: List[str], env: Optional[Dict[str, str]], task: str = "") -> str:
+    """The command as it ran, safe to print: `NAME=value … prog args`.
+
+    The task text never appears: whether it went in on stdin or in argv, what
+    is printed here is its descriptor.
+    """
     parts: List[str] = []
     for name, value in sorted(redact_env(env).items()):
         parts.append(f"{name}={shlex.quote(value)}")
+    marker = task_descriptor(task) if task else ""
     for token in argv:
         text = str(token)
+        if marker and str(task) and str(task) in text:
+            text = text.replace(str(task), marker)
         if len(text) > _TOKEN_CHARS:
             text = text[: _TOKEN_CHARS - 1] + "…"
         parts.append(shlex.quote(text))
@@ -426,7 +468,8 @@ def run_task(runner_key: Any, task: str, *, workspace: Optional[str] = None,
              attended: bool = False,
              locks: Any = None,
              worker_key: Optional[str] = None,
-             resume: Optional[str] = None) -> Dict[str, Any]:
+             resume: Optional[str] = None,
+             allow_argv_task: bool = False) -> Dict[str, Any]:
     """Run ONE task with one external agent and report what happened.
 
     ``runner_key`` is a key or alias from src/agent_runners.py — or a
@@ -467,6 +510,13 @@ def run_task(runner_key: Any, task: str, *, workspace: Optional[str] = None,
     for a runner whose row asks for that stream (today: the gated ones), and a
     result without one leaves the caller on its fresh-worker path.
 
+    ``allow_argv_task`` is the human override for SEC-1 (B-022): a runner
+    whose row cannot take the prompt on stdin passes it as a command-line
+    argument, where the operating system shows it to every process listing on
+    the machine. That is accepted for ordinary work and refused when the task
+    itself looks like it carries a credential, unless a person says otherwise
+    by setting this.
+
     A gated result carries ``unguarded: False`` and a ``gate`` block; an
     ungated one is exactly what it always was.
 
@@ -492,6 +542,15 @@ def run_task(runner_key: Any, task: str, *, workspace: Optional[str] = None,
     if not runner.argv:
         return _fail(key, f"{runner.label} is {reg.NOT_RUNNABLE_NOTE}: Faustus has no row saying how to "
                           f"run one task with it (src/agent_runners.py)")
+    if not runner.stdin_task and task_looks_sensitive(task) and not allow_argv_task:
+        # SEC-1 (B-022). Refuse rather than warn: an argv prompt is readable by
+        # every process on the machine, it lands in diagnostics and OS crash
+        # reports, and by the time anyone reads the warning the secret has
+        # already been published.
+        return _fail(key, f"{runner.label} passes the task as a command-line argument (its row has no "
+                          f"verified stdin form), and this task looks like it carries a credential — "
+                          f"argv is visible to every process on this machine. Remove the secret, use a "
+                          f"runner that reads stdin, or re-run with allow_argv_task=True to accept it.")
 
     cwd: Optional[str] = None
     if runner.cwd_is_workspace:
@@ -531,7 +590,7 @@ def run_task(runner_key: Any, task: str, *, workspace: Optional[str] = None,
             return _fail(key, f"{runner.label}: the table produced an empty command for this task")
         table_env = reg.table_env(runner, model=model, cwd=cwd, endpoint=endpoint)
         gate_env = gate.env() if gate is not None else {}
-        shown = _shown(argv, dict(table_env, **gate_env))
+        shown = _shown(argv, dict(table_env, **gate_env), task=str(task or ""))
 
         full_env = dict(reg.build_env(runner, base=env, model=model, cwd=cwd, endpoint=endpoint))
         full_env.update(gate_env)

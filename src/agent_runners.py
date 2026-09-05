@@ -126,6 +126,15 @@ class Runner:
     install: str = ""                       # how it is installed, for the UI
     argv: Tuple[str, ...] = ()              # {task} {model} {cwd} {endpoint}
     stdin_task: bool = False                # pass the task on stdin instead of argv
+    #: Why this row may set ``stdin_task`` — the binary and version whose own
+    #: documentation says so (SEC-1 / B-022). A prompt passed as an argument
+    #: is visible in the process list, in diagnostics and in OS crash reports,
+    #: and it routinely contains private paths, code and pasted secrets. So
+    #: stdin is preferred wherever the CLI supports it — but "supports it" is
+    #: a claim about someone else's program, and this table does not guess:
+    #: an empty string here means the row must use argv, and a test enforces
+    #: that ``stdin_task`` is never True without a verification written down.
+    task_transport_verified: str = ""
     env: Dict[str, str] = field(default_factory=dict)
     #: Variables from the operator's own environment this agent may read
     #: (SEC-1 / B-008). Everything else is withheld: an external CLI has no
@@ -181,7 +190,21 @@ _BUILTIN: Tuple[Runner, ...] = (
         # `--resume {session}` is dropped WITH its flag when no session is
         # given (see `_fill`), so a first run produces the same command it
         # produced before resume existed — pinned in tests/test_agent_runners.py.
-        argv=("claude", "-p", "{task}", "--model", "{model}", "--resume", "{session}"),
+        # SEC-1 (B-022): the task goes in on stdin, not in argv. `claude -p`
+        # is documented as the pipe form ("Print response and exit (useful for
+        # pipes)") and `--input-format` defaults to plain text on stdin.
+        argv=("claude", "-p", "--model", "{model}", "--resume", "{session}"),
+        stdin_task=True,
+        # Verified against the binary, not inferred from the help text: run with
+        # neither a prompt argument nor stdin and claude 2.1.104 answers
+        # `Error: Input must be provided either through stdin or as a prompt
+        # argument when using --print` (exit 1) — its own words for "stdin is
+        # an input channel". Piping the prompt in then produces the same
+        # success envelope as passing it in argv.
+        task_transport_verified="claude 2.1.104, run on this machine: with no prompt in argv "
+                                "and no stdin it exits 1 with `Input must be provided either "
+                                "through stdin or as a prompt argument when using --print`; "
+                                "piped, it returns the same result envelope as the argv form",
         env={"ANTHROPIC_BASE_URL": "{endpoint}"},
         env_allow=("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL",
                    "ANTHROPIC_MODEL", "CLAUDE_CONFIG_DIR"),
@@ -507,6 +530,10 @@ def to_row(runner: Runner, *, which: Any = None, versions: bool = False) -> Dict
         "launch_command": " ".join(launch_argv(runner.key, runner=runner)),
         "argv": list(runner.argv),
         "stdin_task": bool(runner.stdin_task),
+        # So the catalogue can say WHY a row is allowed to keep the prompt out
+        # of argv, instead of the reader having to trust the boolean.
+        "task_transport": "stdin" if runner.stdin_task else "argv",
+        "task_transport_verified": runner.task_transport_verified,
         "env": dict(runner.env),
         "cwd_is_workspace": bool(runner.cwd_is_workspace),
         "detect": list(runner.detect),

@@ -357,6 +357,17 @@ DEFAULT_SETTINGS = {
     # untouched, because a server that silently loses the variable it was
     # reading is a break the user cannot debug.
     "agent_mcp_min_env": True,
+    # What an EXTERNAL agent CLI inherits (src/agent_runners.py, SEC-1/B-008).
+    # It used to be the whole process environment: every provider key, cloud
+    # credential and repository token the operator had exported went to a
+    # third-party binary. Now it gets the structural variables plus what its
+    # own row declares it reads. `agent_env_allow` is the explicit grant — a
+    # comma-separated list of variable names every runner may additionally
+    # read ("GITHUB_TOKEN, MY_VENDOR_KEY"). `agent_env_inherit_all` is the
+    # escape hatch: the old behaviour, one setting, logged on every run that
+    # uses it. Faustus's own internal token is withheld either way.
+    "agent_env_allow": "",
+    "agent_env_inherit_all": False,
     # Detached runs: on-disk replay log (survives restarts) and the task
     # queue — local endpoints share one lane, N runs at a time (1 = one GPU,
     # one generation); 0 = unlimited. API endpoints queue only when their
