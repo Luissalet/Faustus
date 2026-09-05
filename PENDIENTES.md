@@ -403,3 +403,30 @@ Lo que **no** cierra, dicho aquí para que se pueda encontrar:
 - `[!]` `tests/test_agent_gate.py::test_the_hook_script_is_not_left_behind` falla en Windows
   **desde antes de esta rama** (comprobado con el árbol guardado en stash): el directorio
   `faustus-gate-*` del hook queda en el temporal. No es de SEC-1, pero está sin dueño.
+
+## AUTH-1: lo cerrado, y lo que el mismo informe deja abierto
+
+El lote AUTH-1 (rama `feat/sec-1`, 05-09-2026) cierra B-011, la parte de C-010 que toca a los
+tokens `ody_`, y B-004; el registro está en `FAUSTUS.md` §43. Lo que **no** cierra:
+
+- `[+]` **La matriz sólo gobierna a los tokens de API.** `core/authz.py` declara la superficie
+  de los principales `api_token`; las sesiones de cookie siguen autorizándose ruta a ruta con
+  `require_admin` y compañía. C-010 pide la matriz para **todos** los tipos de principal
+  (`user`, `api_token`, `internal`, `mcp`), con `owner_rule` aplicado de verdad y no sólo
+  declarado. `Rule.owner_rule` y `effect_class` ya viajan en cada regla precisamente para eso:
+  están escritos, todavía no se consultan.
+- `[+]` **`/api/codex/*` sigue siendo un agujero declarado.** La regla exige *todos* los
+  scopes conocidos, que es la manera honesta de decir «esto no está segmentado». Segmentarla
+  requiere decidir qué hace cada ruta de codex, y eso es trabajo de RUN-1.
+- `[?]` **El presupuesto del clasificador no es configurable.** `gate_check` llama a
+  `classify_tool` con los 50 ms por defecto. En la máquina de pruebas un comando adversario de
+  4.095 reglas evaluadas ni se acerca al límite, así que no hay prisa; si alguna vez sube
+  `budget_exceeded` en `/api/command-guard/log`, el ajuste es un setting, no un rediseño.
+- `[?]` **Una degradación se cuenta en memoria del proceso.** Los contadores viven en el
+  proceso y se pierden al reiniciar. Es suficiente para ver un clasificador rompiéndose ahora
+  mismo; no sirve para una serie temporal. Si hace falta histórico, los recibos
+  `guard_degraded` ya están en el log encadenado y son la fuente buena.
+- `[~]` **La tarjeta de un comando sin clasificar no se distingue en la interfaz.** El backend
+  la sella y la marca (`tier: UNKNOWN`, `rule: guard.degraded:*`); Studio la enseña como
+  cualquier otra tarjeta de comando destructivo. Debería decir que no se sabe qué hace, que no
+  es lo mismo que saber que es peligroso (va en `docs/ui/PENDIENTES_UI.md`).

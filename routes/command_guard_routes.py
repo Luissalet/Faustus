@@ -76,6 +76,7 @@ def setup_command_guard_routes() -> APIRouter:
                 "status": "success",
                 "receipts": command_guard.tail_receipts(limit),
                 "chain": command_guard.verify_chain(),
+                "metrics": command_guard.guard_metrics(),
             }
         if robot.wants(request):
             return await robot.reply(request, lambda: lean.guard_log(payload()))

@@ -2308,5 +2308,91 @@ $FAUSTUS_BACKUP_PASSPHRASE` sin ella, `"first": "data/.app_key"` con ella.
   así que perdía en silencio cualquier campo añadido después. Lo que perdía era `env_allow`,
   justo en los runners que Ollama conoce. Ahora usa `replace`.
 
+## 43. AUTH-1: quién puede hacer qué, declarado (05-09-2026, noche)
+
+Segundo lote del frente 1. Dos preguntas que la aplicación respondía por omisión y ahora
+responde por declaración: **qué rutas alcanza un token de API** (B-011, la parte de C-010 que
+toca a los tokens) y **qué pasa cuando el guardián de comandos se rompe** (B-004). Las dos
+tenían la misma forma de fallo: en la duda, permitir.
+
+### 43.1 La superficie de un token era «toda la API» (B-011)
+
+`AuthMiddleware` validaba el token `ody_`, resolvía sus scopes… y seguía adelante. Los scopes
+se consultaban después, ruta a ruta, en las rutas que se acordaban de consultarlos. Un token
+emitido para `chat` listaba servidores MCP, leía skills y lanzaba un backup.
+
+`core/authz.py` declara ahora la matriz completa, y lo no declarado se deniega:
+
+| Métodos | Ruta | Scopes | Efecto |
+|---|---|---|---|
+| POST/PUT/PATCH/DELETE | `/api/v1/chat` | `chat` | externo |
+| GET/HEAD | `/api/models` | `chat` | lectura |
+| cualquiera | `/api/codex/*` | todos | variable |
+| cualquiera | `/api/dispatch*` | `agents:dispatch` | externo |
+| GET/HEAD | `/api/changesets/from-dispatch/*` | `agents:dispatch` | lectura |
+
+Cada regla lleva métodos, ruta, scopes, `owner_rule` y `effect_class`, y el match por prefijo
+es **por segmentos**: `/api/dispatch` no captura `/api/dispatcher-x`. La comprobación ocurre
+antes de `call_next`, así que una ruta nueva nace denegada para tokens hasta que alguien la
+declare — que es exactamente el sentido de la regla.
+
+Comprobado en vivo en el 7001 con un token real de scope `chat` y `X-Forwarded-For` para
+forzar la vía de token en lugar de `LOCALHOST_BYPASS`: `/api/skills`, `/api/mcp/servers` y
+`POST /api/backup/snapshot` devuelven **403** *"this route is not part of the API-token
+surface"*; `/api/models` devuelve **200** con la lista real; `POST /api/dispatch` devuelve
+**403** *"missing required scope: agents:dispatch"*.
+
+### 43.2 El guardián que se rompía a favor del comando (B-004)
+
+`command_guard.classify()` no lanza nunca — buena decisión — pero convertía cualquier rotura
+interna, y cualquier presupuesto agotado, en `SAFE`. En `enforce`. Un bug en el clasificador
+era una autorización: `rm -rf /` pasaba si el que juzga se caía justo antes de juzgarlo. Y la
+suite lo exigía por escrito (`test_budget_exceeded_fails_open`,
+`test_guard_failure_fails_open_not_broken_turn`), que es la peor manera de tener un fallo:
+documentado como si fuera un diseño.
+
+La distinción que faltaba es que **la ausencia de veredicto no es un veredicto**. El
+clasificador ahora informa de que no ha terminado (`degraded="budget"` | `"error"`) y la
+política vive donde debe, en `gate_check`:
+
+- `off` — no clasifica.
+- `observe` — permite, y deja un recibo `guard_degraded` con tier `UNKNOWN`. El hueco queda
+  escrito; el modo sigue significando lo que dice.
+- `enforce` — deniega hacia la tarjeta de aprobación sellada, la misma que produce un
+  veredicto `DANGEROUS`.
+
+Denegar no puede significar bloquearse: la lista blanca y el bypass de un solo uso siguen
+liberando un comando sin clasificar, y la denegación es una decisión pendiente que el usuario
+aprueba comando a comando. Un clasificador roto cuesta ceremonia, no disponibilidad. La misma
+regla se aplica un piso más arriba, en `_command_guard_denial` de `tool_capabilities.py`: si
+el guardián entero revienta, en `enforce` eso es una tarjeta, no un permiso — y la tarjeta se
+sella (`command_guard_requires_approval`) y va precedida de checkpoint
+(`command_guard_wants_checkpoint`), porque de un comando sin clasificar no se sabe qué hace.
+
+Cada degradación se cuenta (`classify_errors`, `budget_exceeded`, `gate_errors`,
+`degraded_observed`, `degraded_blocked`, `degraded_released`) y los contadores salen por
+`GET /api/command-guard/log`, junto a los recibos y la verificación de la cadena. Un número
+que sube ahí es el clasificador pidiendo atención, no un usuario haciendo cosas raras.
+
+Probado en vivo contra el 7001 y su directorio de datos real, rompiendo el clasificador a
+propósito: `off` no clasifica, `observe` permite y escribe el recibo, `enforce` deniega con
+*"Unclassified command: the classifier failed…"*. Los dos recibos aparecen por la API con
+`action=guard_degraded`, `tier=UNKNOWN`, `rule=guard.degraded`, y la cadena de hashes sigue
+verificando (31 registros, `ok: true`).
+
+### 43.3 Lo que este lote enseñó
+
+- **Un test puede fijar un fallo.** Los dos tests que había no estaban equivocados sobre lo
+  que el código hacía; estaban equivocados sobre lo que debía hacer, y por eso el fallo
+  sobrevivió a toda la suite en verde. Los nuevos separan explícitamente `observe` de
+  `enforce`, que es la distinción que faltaba.
+- **«Fail-open» describe una mecánica, no una política.** Mezclarlas fue el error: el
+  clasificador puede seguir sin lanzar nunca (mecánica) mientras el que decide deniega
+  (política). Separar las dos cosas costó un campo, `degraded`.
+- **Deny-by-default sólo funciona si hay una lista.** La matriz de AUTH-1 no es más segura por
+  ser estricta, sino por ser *visible*: `api_surface()` está fijada en un test, así que
+  ampliar la superficie de los tokens es un diff que alguien tiene que firmar.
+
+
 ## Cómo mantener este documento
 Cada bloque de trabajo añade una sección (fecha, qué, por qué, ficheros, cómo se verificó, cifras) y actualiza las cifras de cabecera (`git log --oneline c9dd68d8..HEAD | wc -l`, `git diff --stat c9dd68d8..HEAD`). Los commits del fork llevan mensajes largos que explican el porqué: `git log c9dd68d8..HEAD` es la fuente detallada.

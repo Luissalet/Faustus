@@ -234,8 +234,8 @@ reparte los lotes). El orden lo fija el propio informe, y SEC-1 va antes que nad
 | Lote | Qué entrega | Estado |
 |---|---|---|
 | **SEC-1** | Logs OAuth, herencia de secretos, prompts en argv, credenciales reutilizables y backup inseguro | ✅ 05-09-2026 — `FAUSTUS.md` §42, rama `feat/sec-1`, 5 commits, 90 tests nuevos. Lo que no cubre está en `PENDIENTES.md` |
-| **AUTH-1** | Matriz declarativa de autorización y scopes fail-closed | ⏳ el siguiente. Necesita la identidad y los grants de SEC-1 |
-| NET-1 | Broker de salida con perfiles de confianza | ⏳ puede avanzar junto a AUTH-1 |
+| **AUTH-1** | Matriz declarativa de autorización y scopes fail-closed | ✅ 05-09-2026 — `FAUSTUS.md` §43, rama `feat/sec-1`, 2 commits, 42 tests nuevos. B-011 + C-010 (tokens) y B-004 |
+| NET-1 | Broker de salida con perfiles de confianza | ⏳ el siguiente por prioridad del informe |
 | SSH-1 | Pairing, `known_hosts` privado, transporte remoto de grants | ⏳ comparte contrato con NET-1 |
 | STATE-1 | Settings con revisión y escritura transaccional | ⏳ migración pequeña y aislada, se puede colar pronto |
 | ART-1 | Blob / ArtifactOccurrence / DerivedArtifact | ⏳ diseñar **antes** que RUN-1 |

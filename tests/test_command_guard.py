@@ -24,11 +24,17 @@ def guard_env(tmp_path, monkeypatch):
     monkeypatch.delenv(command_guard.ONE_SHOT_ENV, raising=False)
     command_guard._last_hash_cache.clear()
     command_guard._one_shot_consumed.clear()
+    command_guard.reset_metrics()
     tc._reset_command_guard_cache()
     yield tmp_path
     command_guard._last_hash_cache.clear()
     command_guard._one_shot_consumed.clear()
+    command_guard.reset_metrics()
     tc._reset_command_guard_cache()
+
+
+def _boom(*args, **kwargs):
+    raise RuntimeError("the guard broke")
 
 
 def _set_mode(monkeypatch, mode, packs="all"):
@@ -154,24 +160,34 @@ def test_packs_can_be_narrowed():
     assert command_guard.packs_from_setting("all") == command_guard.ALL_PACKS
 
 
-def test_budget_exceeded_fails_open(monkeypatch):
+def test_budget_exceeded_marks_the_classification_degraded(monkeypatch):
+    """The classifier reports what it knows; it does not invent a verdict.
+
+    B-004: an exhausted budget is flagged ``degraded="budget"`` and the POLICY
+    for that lives in gate_check, which denies in enforce.
+    """
+    command_guard.reset_metrics()
     ticks = iter([0.0, 10.0, 20.0, 30.0, 40.0])
     monkeypatch.setattr(command_guard, "_now", lambda: next(ticks, 99.0))
     decision = command_guard.classify("rm -rf build/", budget_ms=50.0)
     assert decision.fail_open is True
+    assert decision.degraded == "budget"
     assert decision.tier == "SAFE"  # nothing matched before the clock ran out
     assert any("budget exceeded" in step for step in decision.trace)
+    assert command_guard.guard_metrics()["budget_exceeded"] >= 1
+    command_guard.reset_metrics()
 
 
-def test_classify_never_raises(monkeypatch):
-    def boom(*args, **kwargs):
-        raise RuntimeError("internal classifier bug")
-
-    monkeypatch.setattr(command_guard, "_classify_impl", boom)
+def test_classify_never_raises_but_says_so(monkeypatch):
+    command_guard.reset_metrics()
+    monkeypatch.setattr(command_guard, "_classify_impl", _boom)
     decision = command_guard.classify("rm -rf /")
     assert decision.tier == "SAFE"
     assert decision.fail_open is True
+    assert decision.degraded == "error"
     assert any("internal error" in step for step in decision.trace)
+    assert command_guard.guard_metrics()["classify_errors"] >= 1
+    command_guard.reset_metrics()
 
 
 def test_explain_reports_trace_and_counters():
@@ -357,15 +373,99 @@ def test_double_check_is_memoized_one_receipt(guard_env, monkeypatch):
     assert len(command_guard.tail_receipts()) == 1
 
 
-def test_guard_failure_fails_open_not_broken_turn(guard_env, monkeypatch):
+def test_guard_failure_is_a_pending_decision_not_a_broken_turn(guard_env, monkeypatch):
+    """B-004: enforce denies into the approval card, observe still allows.
+
+    Either way nothing propagates out of the guard — the turn survives, and
+    the user can approve the exact command.
+    """
     _set_mode(monkeypatch, "enforce")
+    monkeypatch.setattr(command_guard, "gate_check", _boom)
+    ctx = ToolRunSecurityContext(approval_gate_bypassed=True)
+    denied = ctx.decision_for("bash", "rm -rf /")
+    assert denied.allowed is False
+    assert "Unclassified command" in denied.reason
+    assert "Approve this exact command" in denied.reason
 
-    def boom(*args, **kwargs):
-        raise RuntimeError("guard internals broke")
+    _set_mode(monkeypatch, "observe")
+    tc._reset_command_guard_cache()
+    assert ctx.decision_for("bash", "rm -rf /").allowed is True
 
-    monkeypatch.setattr(command_guard, "gate_check", boom)
+
+def test_enforce_denies_an_unclassifiable_command(guard_env, monkeypatch):
+    """The absence of a verdict is not a verdict of SAFE."""
+    _set_mode(monkeypatch, "enforce")
+    monkeypatch.setattr(command_guard, "_classify_impl", _boom)
+    ctx = ToolRunSecurityContext(approval_gate_bypassed=True)
+    decision = ctx.decision_for("bash", "rm -rf /")
+    assert decision.allowed is False
+    assert "Unclassified command" in decision.reason
+    receipts = command_guard.tail_receipts()
+    assert receipts[-1]["action"] == "guard_degraded"
+    assert receipts[-1]["tier"] == "UNKNOWN"
+    assert command_guard.guard_metrics()["degraded_blocked"] == 1
+
+
+def test_observe_allows_an_unclassifiable_command_and_logs_unknown(guard_env, monkeypatch):
+    _set_mode(monkeypatch, "observe")
+    monkeypatch.setattr(command_guard, "_classify_impl", _boom)
     ctx = ToolRunSecurityContext(approval_gate_bypassed=True)
     assert ctx.decision_for("bash", "rm -rf /").allowed is True
+    receipts = command_guard.tail_receipts()
+    assert receipts[-1]["action"] == "guard_degraded"
+    assert receipts[-1]["tier"] == "UNKNOWN"
+    metrics = command_guard.guard_metrics()
+    assert metrics["degraded_observed"] == 1 and metrics["degraded_blocked"] == 0
+
+
+def test_off_mode_does_not_classify_even_a_broken_command(guard_env, monkeypatch):
+    _set_mode(monkeypatch, "off")
+    monkeypatch.setattr(command_guard, "_classify_impl", _boom)
+    ctx = ToolRunSecurityContext(approval_gate_bypassed=True)
+    assert ctx.decision_for("bash", "rm -rf /").allowed is True
+    assert command_guard.tail_receipts() == []
+
+
+def test_allowlist_still_releases_an_unclassifiable_command(guard_env, monkeypatch):
+    """Availability: a broken classifier costs ceremony, not the command."""
+    _set_mode(monkeypatch, "enforce")
+    command_guard.add_allowlist_entry("rm -rf build/", kind="exact")
+    monkeypatch.setattr(command_guard, "_classify_impl", _boom)
+    ctx = ToolRunSecurityContext(approval_gate_bypassed=True)
+    assert ctx.decision_for("bash", "rm -rf build/").allowed is True
+    receipts = command_guard.tail_receipts()
+    assert receipts[-1]["action"] == "allowlisted"
+    assert receipts[-1]["tier"] == "UNKNOWN"
+    assert command_guard.guard_metrics()["degraded_released"] == 1
+
+
+@pytest.mark.parametrize("breakage", ["classifier", "gate", "budget"])
+def test_rm_rf_root_is_never_permitted_by_a_guard_failure(guard_env, monkeypatch, breakage):
+    """B-004 acceptance: no failure mode of the guard permits `rm -rf /`."""
+    _set_mode(monkeypatch, "enforce")
+    if breakage == "classifier":
+        monkeypatch.setattr(command_guard, "_classify_impl", _boom)
+    elif breakage == "gate":
+        monkeypatch.setattr(command_guard, "gate_check", _boom)
+    else:
+        ticks = iter([0.0, 10.0, 20.0, 30.0])
+        monkeypatch.setattr(command_guard, "_now", lambda: next(ticks, 99.0))
+    ctx = ToolRunSecurityContext(approval_gate_bypassed=True)
+    decision = ctx.decision_for("bash", "rm -rf /")
+    assert decision.allowed is False
+    assert decision.reason
+
+
+def test_a_degraded_command_is_sealed_and_checkpointed(guard_env, monkeypatch):
+    """The card the denial produces must be claimable, and preceded by a
+    checkpoint — we do not know what the command does."""
+    _set_mode(monkeypatch, "enforce")
+    monkeypatch.setattr(command_guard, "_classify_impl", _boom)
+    assert tc.command_guard_requires_approval("bash", "rm -rf /") is True
+    assert tc.command_guard_wants_checkpoint("bash", "rm -rf /") is True
+    assert tc.command_guard_metadata("bash", "rm -rf /") == {
+        "tier": "UNKNOWN", "rule": "guard.degraded:error",
+    }
 
 
 def test_unknown_mode_setting_falls_back_to_enforce(guard_env, monkeypatch):

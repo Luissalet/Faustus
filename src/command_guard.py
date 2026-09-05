@@ -12,8 +12,16 @@ Design (dcg):
   3. regex packs (fs / git / db / containers / system), highest tier wins;
   4. inline/heredoc scanning — ``bash -c "..."``, ``python -c '...'``,
      heredoc bodies and python string literals are classified too;
-  5. fail-open latency budget — if the wall clock runs out, return the highest
-     tier found SO FAR with ``fail_open=True``. classify() NEVER raises.
+  5. latency budget — if the wall clock runs out, return the highest tier
+     found SO FAR, flagged ``fail_open=True`` / ``degraded="budget"``.
+     classify() NEVER raises: an internal bug degrades the same way.
+
+A DEGRADED classification is not a verdict of SAFE, it is the absence of a
+verdict (B-004). The POLICY for it lives in ``gate_check``: ``off`` does not
+classify at all, ``observe`` allows and logs an ``unknown`` receipt, and
+``enforce`` denies into the sealed approval card. The allowlist and the
+one-shot bypass still release the command, so a broken classifier costs
+ceremony, never availability.
 
 Three release valves (dcg), in escalating ceremony:
   - allowlist entries in DATA_DIR/command_guard.json (exact or prefix, TTL),
@@ -66,6 +74,35 @@ _GENESIS_HASH = "0" * 64
 _COMMAND_HEAD_CHARS = 160
 _MAX_INLINE_DEPTH = 2
 
+# Degradation metrics (B-004). Every counter here costs somebody an approval
+# card, so a number that climbs is the classifier asking for attention.
+_METRICS_LOCK = threading.Lock()
+_METRICS: dict[str, int] = {
+    "classify_errors": 0,      # the classifier raised
+    "budget_exceeded": 0,      # the classifier ran out of wall clock
+    "gate_errors": 0,          # gate_check itself raised
+    "degraded_observed": 0,    # observe: allowed, logged as unknown
+    "degraded_blocked": 0,     # enforce: denied into the approval card
+    "degraded_released": 0,    # allowlist / one-shot let it through anyway
+}
+
+
+def _bump(name: str, amount: int = 1) -> None:
+    with _METRICS_LOCK:
+        _METRICS[name] = _METRICS.get(name, 0) + amount
+
+
+def guard_metrics() -> dict:
+    """Snapshot of the degradation counters. Cheap, monotonic, per-process."""
+    with _METRICS_LOCK:
+        return dict(_METRICS)
+
+
+def reset_metrics() -> None:
+    with _METRICS_LOCK:
+        for key in _METRICS:
+            _METRICS[key] = 0
+
 
 @dataclass
 class GuardDecision:
@@ -76,7 +113,10 @@ class GuardDecision:
     pack: str = ""
     matched: str = ""
     trace: list[str] = field(default_factory=list)
+    # ``fail_open`` means the classification is INCOMPLETE, not that the
+    # caller may proceed; ``degraded`` says why ("budget" | "error" | "").
     fail_open: bool = False
+    degraded: str = ""
 
     @property
     def rule_id(self) -> str:
@@ -408,13 +448,16 @@ def _classify_impl(
                   origin="top", depth=0, python_source=python_source)
 
     fail_open = budget.exceeded
+    degraded = "budget" if fail_open else ""
     if fail_open:
+        _bump("budget_exceeded")
         trace.append(
             f"budget exceeded after {stats['rules_tested']} rules — "
-            "fail-open with the highest tier found so far"
+            "classification incomplete, highest tier found so far"
         )
     if not matches:
-        return GuardDecision("SAFE", trace=trace, fail_open=fail_open), stats
+        return GuardDecision("SAFE", trace=trace, fail_open=fail_open,
+                             degraded=degraded), stats
     winner = max(matches, key=lambda m: _TIER_RANK[m["tier"]])
     decision = GuardDecision(
         tier=winner["tier"],
@@ -423,6 +466,7 @@ def _classify_impl(
         matched=winner["matched"],
         trace=trace,
         fail_open=fail_open,
+        degraded=degraded,
     )
     return decision, stats
 
@@ -434,17 +478,23 @@ def classify(
     budget_ms: float = 50.0,
     python_source: bool = False,
 ) -> GuardDecision:
-    """Classify one command. Deterministic, pure, no I/O — and NEVER raises:
-    an internal bug fails open to SAFE with the error in the trace."""
+    """Classify one command. Deterministic, pure, no I/O — and NEVER raises.
+
+    An internal bug returns a DEGRADED decision (``fail_open=True``,
+    ``degraded="error"``), which is the absence of a verdict, not a verdict of
+    SAFE. What to do about it is ``gate_check``'s decision, not this one's.
+    """
     try:
         decision, _stats = _classify_impl(command, packs, budget_ms, python_source)
         return decision
     except Exception as exc:  # noqa: BLE001 - the hot path must survive us
-        logger.warning("command_guard.classify failed open: %r", exc)
+        _bump("classify_errors")
+        logger.warning("command_guard.classify degraded: %r", exc)
         return GuardDecision(
             "SAFE",
-            trace=[f"internal error, fail-open: {exc!r}"],
+            trace=[f"internal error, classification degraded: {exc!r}"],
             fail_open=True,
+            degraded="error",
         )
 
 
@@ -474,8 +524,9 @@ def explain(command: str, packs: Optional[Iterable[str]] = None) -> dict:
     except Exception as exc:  # noqa: BLE001
         return {
             "command_head": str(command or "")[:_COMMAND_HEAD_CHARS],
-            "tier": "SAFE", "rule": "", "pack": "", "matched": "",
-            "fail_open": True, "trace": [f"internal error: {exc!r}"],
+            "tier": "SAFE", "rule": "", "pack": "", "rule_id": "", "matched": "",
+            "fail_open": True, "degraded": "error",
+            "trace": [f"internal error: {exc!r}"],
             "rules_tested": 0, "whitelist_tested": 0,
         }
     return {
@@ -486,6 +537,7 @@ def explain(command: str, packs: Optional[Iterable[str]] = None) -> dict:
         "rule_id": decision.rule_id,
         "matched": decision.matched,
         "fail_open": decision.fail_open,
+        "degraded": decision.degraded,
         "trace": decision.trace,
         "rules_tested": stats["rules_tested"],
         "whitelist_tested": stats["whitelist_tested"],
@@ -834,6 +886,24 @@ def verify_chain(path: Optional[str] = None) -> dict:
 # The gate evaluation the enforcement layer (src/tool_capabilities.py) calls
 # ---------------------------------------------------------------------------
 
+def _degraded_reason_text(degraded: str) -> str:
+    if degraded == "budget":
+        return "the classification budget ran out"
+    if degraded == "error":
+        return "the classifier failed"
+    return "the guard could not finish"
+
+
+def _degraded_denial(tool_name: Any, reason: str) -> str:
+    return (
+        f"Unclassified command: {reason}, so the guard cannot vouch for this "
+        f"'{tool_name}' call. In enforce mode an unclassified command is "
+        "treated as destructive rather than as safe. Approve this exact "
+        "command to run it, or allowlist the pattern under "
+        "/api/command-guard/allowlist."
+    )
+
+
 def gate_check(
     tool_name: Any,
     content: Any,
@@ -844,83 +914,154 @@ def gate_check(
 ) -> dict:
     """One complete guard evaluation for one shell call. Never raises.
 
-    Returns {tier, rule, pack, rule_id, matched, fail_open, allowlisted,
-    one_shot, denial}: ``denial`` is None to allow, or the reason string the
-    approval card should carry.
+    Returns {tier, rule, pack, rule_id, matched, fail_open, degraded, unknown,
+    allowlisted, one_shot, denial}: ``denial`` is None to allow, or the reason
+    string the approval card should carry.
+
+    Failure policy (B-004). A degraded classification — budget exhausted, or
+    the classifier raised — is the ABSENCE of a verdict, never a verdict of
+    SAFE:
+      off      does not classify at all;
+      observe  allows, and logs a ``guard_degraded`` receipt with tier
+               UNKNOWN so the gap is visible afterwards;
+      enforce  denies into the sealed approval card, so `rm -rf /` can never
+               be permitted by a bug in the thing that judges it.
+    Availability survives: the allowlist and the one-shot bypass still release
+    a degraded command, and the denial is a pending decision the user can
+    approve — not a broken turn.
     """
-    safe = {
-        "tier": "SAFE", "rule": "", "pack": "", "rule_id": "", "matched": "",
-        "fail_open": False, "allowlisted": False, "one_shot": False,
-        "denial": None,
-    }
     try:
         mode = str(mode or DEFAULT_GUARD_MODE).strip().lower()
-        if mode == "off":
-            return safe
+    except Exception:  # noqa: BLE001 - a weird mode object is not a free pass
+        mode = DEFAULT_GUARD_MODE
+    if mode not in GUARD_MODES:
+        mode = DEFAULT_GUARD_MODE
+
+    base = {
+        "tier": "SAFE", "rule": "", "pack": "", "rule_id": "", "matched": "",
+        "fail_open": False, "degraded": "", "unknown": False,
+        "allowlisted": False, "one_shot": False, "denial": None,
+    }
+    if mode == "off":
+        return base
+
+    try:
         command = content if isinstance(content, str) else ("" if content is None else str(content))
         decision = classify_tool(tool_name, command, packs=packs)
-        result = {
+        result = dict(base)
+        result.update({
             "tier": decision.tier,
             "rule": decision.rule,
             "pack": decision.pack,
             "rule_id": decision.rule_id,
             "matched": decision.matched,
             "fail_open": decision.fail_open,
-            "allowlisted": False,
-            "one_shot": False,
-            "denial": None,
-        }
+            "degraded": decision.degraded,
+        })
+        degraded = bool(decision.degraded)
+        result["unknown"] = degraded
+
+        # The release valves cover everything we would otherwise stop: a real
+        # DANGEROUS/CRITICAL match, and — while enforcing — a classification
+        # we could not finish.
+        released = ""
         note = ""
-        if tier_at_least(result["tier"], "DANGEROUS"):
+        if tier_at_least(result["tier"], "DANGEROUS") or (degraded and mode == "enforce"):
             entry = None
             try:
                 entry = is_allowlisted(command)
             except Exception:  # noqa: BLE001 - store trouble never blocks
                 entry = None
             if entry is not None:
+                released = "allowlist"
                 result["allowlisted"] = True
-                result["tier"] = "CAUTION"
                 note = (
-                    f"allowlisted ({entry.get('kind')}: {entry.get('pattern','')[:80]}) "
-                    "— tier downgraded to CAUTION"
+                    f"allowlisted ({entry.get('kind')}: {entry.get('pattern','')[:80]})"
                 )
-                decision.trace.append(note)
             elif consume_one_shot(command):
+                released = "one_shot"
                 result["one_shot"] = True
-                result["tier"] = "CAUTION"
-                note = f"one-shot {ONE_SHOT_ENV} bypass consumed — tier downgraded to CAUTION"
+                note = f"one-shot {ONE_SHOT_ENV} bypass consumed"
+            if released:
+                if tier_at_least(result["tier"], "DANGEROUS"):
+                    result["tier"] = "CAUTION"
+                    note += " — tier downgraded to CAUTION"
+                if degraded:
+                    _bump("degraded_released")
+                    note += f" — {_degraded_reason_text(decision.degraded)}"
                 decision.trace.append(note)
-        if result["tier"] == "SAFE":
-            return result  # SAFE is not logged (volume)
+
+        # An unfinished classification has no tier to report; UNKNOWN is what
+        # the receipt says so the log never claims we judged the command.
+        receipt_tier = result["tier"]
+        if receipt_tier == "SAFE" and degraded:
+            receipt_tier = "UNKNOWN"
+        receipt_rule = result["rule_id"] or ("guard.degraded" if degraded else "")
+
+        # 1. a real destructive match, enforcing, nothing released it.
+        if mode == "enforce" and tier_at_least(result["tier"], "DANGEROUS"):
+            append_receipt(
+                session=session, tool=tool_name, command=command,
+                tier=receipt_tier, rule=receipt_rule, action="blocked",
+            )
+            result["denial"] = (
+                f"Destructive command (tier {result['tier']}, rule {result['rule_id']}): "
+                f"{result['matched']!r} matched in this '{tool_name}' command. "
+                "Destructive commands are confirmed separately "
+                "(agent_command_guard_mode=enforce); approve this exact command to "
+                "run it, or allowlist the pattern under /api/command-guard/allowlist."
+            )
+            return result
+
+        # 2. we could not finish classifying, and nothing released it.
+        if degraded and not released:
+            reason = _degraded_reason_text(decision.degraded)
+            append_receipt(
+                session=session, tool=tool_name, command=command,
+                tier=receipt_tier, rule=receipt_rule,
+                action="guard_degraded", note=reason,
+            )
+            if mode == "observe":
+                _bump("degraded_observed")
+                return result
+            _bump("degraded_blocked")
+            result["denial"] = _degraded_denial(tool_name, reason)
+            return result
+
+        # 3. SAFE and complete: not logged (volume). A released degraded
+        # command falls through instead — an unclassified command that ran is
+        # exactly the thing the log should remember.
+        if result["tier"] == "SAFE" and not degraded:
+            return result
+
+        # 4. observing: record what we saw and stand back.
         if mode == "observe":
             append_receipt(
                 session=session, tool=tool_name, command=command,
-                tier=result["tier"], rule=result["rule_id"],
-                action="observed", note=note,
+                tier=receipt_tier, rule=receipt_rule, action="observed", note=note,
             )
             return result
-        # enforce
-        if result["tier"] == "CAUTION":
-            append_receipt(
-                session=session, tool=tool_name, command=command,
-                tier=result["tier"], rule=result["rule_id"],
-                action=("allowlisted" if (result["allowlisted"] or result["one_shot"]) else "allowed"),
-                note=note,
-            )
-            return result
+
+        # 5. enforcing, CAUTION (or a match a release valve downgraded).
         append_receipt(
             session=session, tool=tool_name, command=command,
-            tier=result["tier"], rule=result["rule_id"], action="blocked",
-        )
-        result["denial"] = (
-            f"Destructive command (tier {result['tier']}, rule {result['rule_id']}): "
-            f"{result['matched']!r} matched in this '{tool_name}' command. "
-            "Destructive commands are confirmed separately "
-            "(agent_command_guard_mode=enforce); approve this exact command to "
-            "run it, or allowlist the pattern under /api/command-guard/allowlist."
+            tier=receipt_tier, rule=receipt_rule,
+            action=("allowlisted" if released else "allowed"), note=note,
         )
         return result
-    except Exception as exc:  # noqa: BLE001 - fail open, never break the turn
-        logger.warning("command_guard.gate_check failed open: %r", exc)
-        safe["fail_open"] = True
-        return safe
+    except Exception as exc:  # noqa: BLE001 - the guard never breaks the turn
+        _bump("gate_errors")
+        logger.warning("command_guard.gate_check degraded: %r", exc)
+        failed = dict(base)
+        failed.update({"fail_open": True, "degraded": "error", "unknown": True})
+        if mode != "enforce":
+            _bump("degraded_observed")
+            return failed
+        _bump("degraded_blocked")
+        append_receipt(
+            session=session, tool=tool_name, command=content,
+            tier="UNKNOWN", rule="guard.degraded", action="guard_degraded",
+            note=repr(exc)[:200],
+        )
+        failed["denial"] = _degraded_denial(tool_name, "the guard itself failed")
+        return failed
