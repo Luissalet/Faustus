@@ -45,7 +45,8 @@ Four rules this file keeps:
   ``ollama launch`` command and returns it; running it is a separate,
   explicit act by the user (routes/agent_runner_routes.py).
 
-Pure and stdlib-only. Every entry point is total: an Ollama that is not
+Pure and stdlib-only (``src.native_env``, its one internal import, is too).
+Every entry point is total: an Ollama that is not
 installed, a help text in a shape this parser has never seen, a junk key —
 none of them raise, they degrade to the built-in table alone.
 """
@@ -58,8 +59,10 @@ import re
 import shutil
 import subprocess
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Dict, List, Optional, Tuple
+
+from src.native_env import PROFILE_AGENT, profile_environment
 
 logger = logging.getLogger(__name__)
 
@@ -124,6 +127,13 @@ class Runner:
     argv: Tuple[str, ...] = ()              # {task} {model} {cwd} {endpoint}
     stdin_task: bool = False                # pass the task on stdin instead of argv
     env: Dict[str, str] = field(default_factory=dict)
+    #: Variables from the operator's own environment this agent may read
+    #: (SEC-1 / B-008). Everything else is withheld: an external CLI has no
+    #: business receiving another vendor's API key, a cloud credential or a
+    #: repository token merely because Faustus happened to hold one. Only
+    #: names verified against the agent's own documentation are written here —
+    #: the same rule as `gate`: what has not been verified is not claimed.
+    env_allow: Tuple[str, ...] = ()
     cwd_is_workspace: bool = True
     detect: Tuple[str, ...] = ()            # executables to look for on PATH
     #: How much of this agent's own tool use Faustus can actually gate
@@ -173,6 +183,8 @@ _BUILTIN: Tuple[Runner, ...] = (
         # produced before resume existed — pinned in tests/test_agent_runners.py.
         argv=("claude", "-p", "{task}", "--model", "{model}", "--resume", "{session}"),
         env={"ANTHROPIC_BASE_URL": "{endpoint}"},
+        env_allow=("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL",
+                   "ANTHROPIC_MODEL", "CLAUDE_CONFIG_DIR"),
         detect=("claude",),
         gate="hook",
         # `--settings` takes inline JSON, so the hook is installed for THIS run
@@ -219,6 +231,7 @@ _BUILTIN: Tuple[Runner, ...] = (
         install="ollama launch codex",
         argv=("codex", "exec", "{task}", "--model", "{model}"),
         env={"OPENAI_BASE_URL": "{endpoint}"},
+        env_allow=("OPENAI_API_KEY", "OPENAI_BASE_URL", "CODEX_HOME"),
         detect=("codex",),
         # `none`, not `config`. Codex documents a sandbox mode and an approval
         # policy, which is the shape a `config` gate would take — but this
@@ -418,11 +431,12 @@ def _merged(help_map: Dict[str, Dict[str, Any]]) -> List[Runner]:
         live = help_map.get(r.key)
         if live:
             aliases = tuple(dict.fromkeys(tuple(r.aliases) + tuple(live.get("aliases") or ())))
-            rows.append(Runner(key=r.key, label=str(live.get("label") or r.label), aliases=aliases,
-                               kind=r.kind, licence=r.licence, install=r.install, argv=r.argv,
-                               stdin_task=r.stdin_task, env=dict(r.env),
-                               cwd_is_workspace=r.cwd_is_workspace, detect=r.detect,
-                               gate=r.gate, gate_argv=r.gate_argv, notes=r.notes))
+            # `replace`, not a field-by-field rebuild: the rebuild silently
+            # dropped every field added to Runner after it was written, and
+            # what it dropped here was `env_allow` — a row's secrets grant,
+            # gone for exactly the runners Ollama knows about.
+            rows.append(replace(r, label=str(live.get("label") or r.label), aliases=aliases,
+                                env=dict(r.env)))
         else:
             rows.append(r)
     for key, live in help_map.items():
@@ -678,33 +692,96 @@ def hook_settings(runner: Runner, *, command: str) -> str:
     }, separators=(",", ":"))
 
 
+def operator_env_allow() -> Tuple[str, ...]:
+    """Extra variable names the operator grants to EVERY external agent.
+
+    The visible, auditable version of "my agent needs this key": a list in
+    Settings, not a silent copy of the whole environment.
+    """
+    try:
+        from src.settings import get_setting
+        raw = get_setting("agent_env_allow", "") or ""
+    except Exception:  # noqa: BLE001 - settings backend unavailable
+        return ()
+    return tuple(n.strip() for n in str(raw).replace(";", ",").split(",") if n.strip())
+
+
+def env_inherit_all() -> bool:
+    """Whether external agents get the operator's whole environment.
+
+    The escape hatch B-008 allows: off by default, visible in Settings, and
+    logged on every run that uses it. Faustus's own internal token is withheld
+    even here — that part is not a setting.
+    """
+    try:
+        from src.settings import get_setting
+        return bool(get_setting("agent_env_inherit_all", False))
+    except Exception:  # noqa: BLE001 - settings backend unavailable
+        return False
+
+
 def build_env(runner: Runner, *, base: Optional[Dict[str, str]] = None, model: Optional[str] = None,
-              cwd: Optional[str] = None, endpoint: Optional[str] = None) -> Dict[str, str]:
-    """The environment for one run: ``base`` (the process environment by
-    default) plus the table's entries with placeholders filled. An entry whose
-    value would be empty is LEFT UNSET — a runner is never pointed at an
-    endpoint that was not given."""
-    env = dict(os.environ if base is None else base)
+              cwd: Optional[str] = None, endpoint: Optional[str] = None,
+              inherit_all: Optional[bool] = None) -> Dict[str, str]:
+    """The environment for one run: the `agent` profile of ``base`` (the
+    process environment by default) plus the table's entries with placeholders
+    filled. An entry whose value would be empty is LEFT UNSET — a runner is
+    never pointed at an endpoint that was not given.
+
+    SEC-1 (B-008): this used to be ``dict(os.environ)``, which handed a
+    third-party CLI every provider key, cloud credential and repository token
+    the operator had exported. Now it gets the structural variables, whatever
+    its own row declares in ``env_allow``, whatever the operator granted in
+    Settings, and nothing else.
+
+    One nuance about ``base``: entries in it that DIFFER from this process's
+    environment were put there by the caller for this run, so they pass
+    through. Inherited entries that merely came along for the ride do not.
+    That is the difference between "the caller named this variable" and "the
+    caller handed us a copy of os.environ", and only the first is a grant.
+    """
     values = {"task": "", "model": str(model or ""), "cwd": str(cwd or ""),
               "endpoint": str(endpoint or "")}
+    named: Dict[str, str] = {}
+    if base is not None:
+        for key, value in base.items():
+            if key is None:
+                continue
+            if os.environ.get(str(key)) != value:
+                named[str(key)] = "" if value is None else str(value)
+    table: Dict[str, str] = {}
     for name, raw in (runner.env or {}).items():
         text, empty = _fill(str(raw), values)
         if empty or not text:
             continue
-        env[str(name)] = text
-    return env
+        table[str(name)] = text
+    wide = env_inherit_all() if inherit_all is None else bool(inherit_all)
+    if wide:
+        logger.warning(
+            "agent_runners: %s runs with the full operator environment "
+            "(agent_env_inherit_all is on)", runner.key,
+        )
+    return profile_environment(
+        PROFILE_AGENT,
+        base=base,
+        extra={**named, **table},
+        allow=tuple(runner.env_allow) + operator_env_allow(),
+        inherit_all=wide,
+    )
 
 
 def table_env(runner: Runner, *, model: Optional[str] = None, cwd: Optional[str] = None,
               endpoint: Optional[str] = None) -> Dict[str, str]:
     """Only the entries this table adds (what ``argv_shown`` reports), not the
     whole inherited environment."""
-    return build_env(runner, base={}, model=model, cwd=cwd, endpoint=endpoint)
+    return build_env(runner, base={}, model=model, cwd=cwd, endpoint=endpoint,
+                     inherit_all=False)
 
 
 __all__ = [
     "CONFIG_GATE_NOTE", "DEFAULT_TIMEOUT_S", "GATED_NOTE", "GATES", "GUARD_NOTE", "KINDS",
     "LICENCES", "NOT_RUNNABLE_NOTE", "Runner", "build_argv", "build_env", "catalogue",
     "enabled", "gate_note", "get", "help_text", "hook_settings", "launch_argv", "parse_help",
+    "env_inherit_all", "operator_env_allow",
     "reset_cache", "runners", "summary", "table_env", "timeout_s", "to_row", "version_of",
 ]

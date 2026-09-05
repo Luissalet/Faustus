@@ -15,6 +15,12 @@ from contextlib import contextmanager
 from typing import Any, Dict, List, Optional, Set, TextIO, Tuple
 from src.database import McpServer, SessionLocal
 
+from src.native_env import (
+    PROFILE_MCP,
+    STRUCTURAL_NAMES,
+    profile_environment,
+    scrub_private,
+)
 from src.runtime_paths import get_app_root
 from src.tool_capabilities import (
     BROWSER_CODE_EXECUTION_TOOLS,
@@ -306,28 +312,23 @@ def read_stderr_tail(server_id: str, lines: int = MCP_STDERR_TAIL_LINES) -> str:
 # child needs before CreateProcess will do anything at all. Every name here is
 # structural (where things live, what locale to speak); none of them is a
 # credential.
-_MINIMAL_ENV_KEYS: Tuple[str, ...] = (
-    # POSIX
-    "HOME", "LOGNAME", "PATH", "SHELL", "TERM", "USER", "TMPDIR",
-    # Windows: without these nothing spawns
-    "APPDATA", "COMSPEC", "HOMEDRIVE", "HOMEPATH", "LOCALAPPDATA", "PATHEXT",
-    "PROCESSOR_ARCHITECTURE", "SYSTEMDRIVE", "SYSTEMROOT", "TEMP", "TMP",
-    "USERNAME", "USERPROFILE", "WINDIR",
-    # Locale: a child that cannot decode its own output is a support ticket
-    "LANG", "LC_ALL", "LC_CTYPE",
-)
+# SEC-1 (B-008): the list now lives in src/native_env.py, next to the other
+# profiles, so "what may a foreign child see" is answered in one place. It is
+# also slightly wider than the list it replaces — CA bundles and proxy
+# variables — because an MCP server behind a corporate proxy could not reach
+# anything, and that failure looked like a broken server rather than a missing
+# variable.
+_MINIMAL_ENV_KEYS: Tuple[str, ...] = STRUCTURAL_NAMES
 
 
 def minimal_env(declared: Optional[Dict[str, str]] = None) -> Dict[str, str]:
     """The structural variables plus this server's OWN declared env, nothing else."""
-    out: Dict[str, str] = {}
-    for key in _MINIMAL_ENV_KEYS:
-        value = os.environ.get(key)
-        if value is None:
-            continue
-        if value.startswith("()"):
-            continue          # an exported shell function; the SDK skips these too
-        out[key] = value
+    out = {
+        key: value
+        for key, value in profile_environment(PROFILE_MCP).items()
+        # An exported shell function; the SDK skips these too.
+        if not str(value).startswith("()")
+    }
     for key, value in (declared or {}).items():
         if key is None:
             continue
@@ -372,7 +373,12 @@ def build_server_env(declared: Optional[Dict[str, str]], inherit_env: bool) -> O
     """
     declared = {str(k): ("" if v is None else str(v)) for k, v in (declared or {}).items()}
     if inherit_env:
-        return {**os.environ, **declared} if declared else None
+        # SEC-1 (B-008): inheritance stays for every server configured before
+        # the minimal mode existed — nothing already working may change — but
+        # Faustus's own internal token is not part of the deal. It is a key to
+        # this application's privileged routes, not an environment variable a
+        # third-party server has any use for.
+        return scrub_private({**os.environ, **declared}) if declared else None
     return minimal_env(declared)
 
 

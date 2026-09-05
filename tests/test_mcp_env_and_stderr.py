@@ -80,18 +80,33 @@ def test_minimal_env_skips_exported_shell_functions(secrets, monkeypatch):
     assert "TERM" not in mm.build_server_env({}, inherit_env=False)
 
 
-def test_inherited_env_is_byte_identical_to_the_old_expression(secrets):
+def test_inherited_env_is_the_old_expression_minus_our_own_token(secrets):
+    """SEC-1 (B-008) narrowed this by exactly one thing, on purpose.
+
+    The migration promise stands — a server configured before the minimal mode
+    existed still sees the operator's environment — but Faustus's internal
+    loopback token is not part of it. That token authenticates the in-process
+    tool loopback: a third-party server holding it can call privileged routes
+    as Faustus itself, and no MCP server has any use for it.
+    """
+    from src.native_env import scrub_private
+
     declared = {"MY_SERVER_TOKEN": "abc"}
-    assert mm.build_server_env(declared, inherit_env=True) == {**os.environ, **declared}
+    assert mm.build_server_env(declared, inherit_env=True) == scrub_private(
+        {**os.environ, **declared})
+    assert "ODYSSEUS_INTERNAL_TOKEN" not in mm.build_server_env(declared, inherit_env=True)
     # And the no-declared-env case still hands the SDK None, so it builds its
     # own default — exactly what `if env else None` did before.
     assert mm.build_server_env({}, inherit_env=True) is None
     assert mm.build_server_env(None, inherit_env=True) is None
 
 
-def test_inherited_env_reaches_every_secret(secrets):
+def test_inherited_env_reaches_every_secret_except_our_own(secrets):
     env = mm.build_server_env({"X": "1"}, inherit_env=True)
     for key, value in SECRET_KEYS.items():
+        if key == "ODYSSEUS_INTERNAL_TOKEN":
+            assert key not in env
+            continue
         assert env[key] == value
 
 
@@ -227,11 +242,17 @@ def test_the_subprocess_env_is_minimal_when_inherit_env_is_false(secrets, logs, 
     assert mgr.get_server_status("srv1")["inherit_env"] is False
 
 
-def test_the_subprocess_env_is_everything_when_inherit_env_is_true(secrets, logs, monkeypatch):
+def test_the_subprocess_env_is_everything_but_our_token_when_inherit_env_is_true(
+        secrets, logs, monkeypatch):
     ok, captured, mgr = _run_connect(monkeypatch, inherit_env=True,
                                      declared={"MY_SERVER_TOKEN": "abc"})
     assert ok is True
     for key, value in SECRET_KEYS.items():
+        # SEC-1 (B-008): inheritance keeps every variable the operator had —
+        # except Faustus's own loopback token, which is a key to this app.
+        if key == "ODYSSEUS_INTERNAL_TOKEN":
+            assert key not in captured["env"]
+            continue
         assert captured["env"][key] == value
     assert mgr.get_server_status("srv1")["inherit_env"] is True
 
