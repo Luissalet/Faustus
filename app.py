@@ -75,6 +75,7 @@ from core.middleware import (
     with_asgi_root_path,
 )
 from core.auth import AuthManager, normalize_known_username
+from core.authz import api_token_allowed
 from core.exceptions import (
     SessionNotFoundError, InvalidFileUploadError,
     LLMServiceError, WebSearchError,
@@ -470,6 +471,20 @@ if AUTH_ENABLED:
                             matched_scopes = scopes or []
                             break
                     if matched_id:
+                        # AUTH-1 (B-011): deny by default. The middleware used
+                        # to stamp the scopes and let the request through,
+                        # leaving the check to whichever endpoint remembered —
+                        # four of them did. `core/authz.py` says which routes a
+                        # token may reach at all; the endpoint still decides the
+                        # finer question of WHICH scope.
+                        _allowed, _why = api_token_allowed(
+                            request.method, path, matched_scopes)
+                        if not _allowed:
+                            logger.info(
+                                "API token %s refused for %s %s: %s",
+                                matched_id, request.method, path, _why,
+                            )
+                            return JSONResponse(status_code=403, content={"error": _why})
                         # Update last_used_at off the hot path. Doing it
                         # inline used to keep the request open across an
                         # extra commit; do it fire-and-forget instead.
