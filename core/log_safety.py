@@ -54,6 +54,7 @@ SECRET_KEY_NAMES = (
     "api-key",
     "password",
     "passwd",
+    "passphrase",
     "private_key",
     "secret_key",
     "totp_secret",

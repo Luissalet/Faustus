@@ -13,6 +13,15 @@ app can keep running during the snapshot.
     odysseus-backup restore PATH [--yes]           # overwrite current data/ from a tarball
     odysseus-backup verify PATH                    # tarball integrity check (no extract)
 
+An encrypted snapshot (`.tar.gz.enc`, the `full` profile — see SEC-1/B-010 in
+src/backup_service.py) needs its passphrase to be read at all:
+
+    odysseus-backup restore PATH --yes --passphrase-env FAUSTUS_BACKUP_PASSPHRASE
+
+A restore also DELETES the restored `data/sessions.json`: putting a snapshot
+back would otherwise revive sessions that were revoked since it was taken.
+Everyone logs in again, which is the safe direction.
+
 Restore is destructive: it overwrites `data/` in place. Always pass
 `--yes` so a typo can't nuke your live state.
 """
@@ -165,15 +174,20 @@ def cmd_verify(args):
     path = Path(args.path)
     if not path.exists():
         fail(f"no file at {path}")
+    _tmp_dirs: list = []
+    path = _plaintext_archive(args, path, _tmp_dirs)
     try:
         with tarfile.open(path, "r:gz") as tar:
             members = tar.getmembers()
             _validate_restore_members(members)
     except (tarfile.TarError, OSError) as e:
         fail(f"tarball is corrupt: {e}")
+    finally:
+        for tmp_dir in _tmp_dirs:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
     emit({
         "ok": True,
-        "path": str(path),
+        "path": str(args.path),
         "members": len(members),
         "first": members[0].name if members else None,
         "last": members[-1].name if members else None,
@@ -209,6 +223,32 @@ def _extract_restore_members(tar, members, root: Path) -> None:
             shutil.copyfileobj(src, dst)
 
 
+def _plaintext_archive(args, path: Path, stack: list) -> Path:
+    """The tarball to read: `path`, or a decrypted temporary copy of it.
+
+    The temporary file is created with owner-only permissions and deleted by
+    the caller — a decrypted backup lying around would undo the encryption it
+    was decrypted from.
+    """
+    sys.path.insert(0, str(_REPO_ROOT))
+    from src.backup_crypto import BackupCryptoError, decrypt_file, is_encrypted
+
+    if not is_encrypted(path):
+        return path
+    env_name = getattr(args, "passphrase_env", None) or "FAUSTUS_BACKUP_PASSPHRASE"
+    passphrase = os.environ.get(env_name) or ""
+    if not passphrase:
+        fail(f"this snapshot is encrypted; put its passphrase in ${env_name}")
+    tmp_dir = tempfile.mkdtemp(prefix="faustus-restore-")
+    stack.append(tmp_dir)
+    target = Path(tmp_dir) / "snapshot.tar.gz"
+    try:
+        decrypt_file(path, target, passphrase)
+    except BackupCryptoError as e:
+        fail(str(e))
+    return target
+
+
 def cmd_restore(args):
     """Overwrite `data/` from a tarball. Destructive; requires --yes."""
     path = Path(args.path)
@@ -216,6 +256,8 @@ def cmd_restore(args):
         fail(f"no file at {path}")
     if not args.yes:
         fail("restore is destructive — pass --yes to confirm overwriting data/")
+    _tmp_dirs: list = []
+    path = _plaintext_archive(args, path, _tmp_dirs)
     # Sanity check: tarball entries must all be safe, regular files/dirs under
     # `data/`. Avoid extractall() so symlink/hardlink entries can't redirect a
     # later write outside the repo.
@@ -231,9 +273,23 @@ def cmd_restore(args):
             _extract_restore_members(tar, members, _REPO_ROOT)
         except Exception as e:
             fail(f"extract failed: {e}")
+    # SEC-1 (B-010): a snapshot carries the sessions that were live when it
+    # was taken. Putting them back would revive sessions revoked since — and
+    # the person restoring is usually restoring *because* something went
+    # wrong. Dropping the file logs everyone out, which is the safe direction.
+    sessions = _DATA_DIR / "sessions.json"
+    invalidated = sessions.exists()
+    if invalidated:
+        try:
+            sessions.unlink()
+        except OSError as e:
+            fail(f"restored, but could not invalidate sessions.json: {e}")
+    for tmp_dir in _tmp_dirs:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
     emit({
         "ok": True,
-        "restored_from": str(path),
+        "restored_from": str(args.path),
+        "sessions_invalidated": invalidated,
         "previous_data_stashed_at": str(stash) if stash else None,
     }, args)
 
@@ -257,12 +313,16 @@ def _build_parser():
 
     pv = sub.add_parser("verify", parents=[common])
     pv.add_argument("path")
+    pv.add_argument("--passphrase-env", default="FAUSTUS_BACKUP_PASSPHRASE",
+                    help="environment variable holding the passphrase of an encrypted snapshot")
     pv.set_defaults(func=cmd_verify)
 
     pr = sub.add_parser("restore", parents=[common])
     pr.add_argument("path")
     pr.add_argument("--yes", action="store_true",
                     help="confirm overwriting current data/")
+    pr.add_argument("--passphrase-env", default="FAUSTUS_BACKUP_PASSPHRASE",
+                    help="environment variable holding the passphrase of an encrypted snapshot")
     pr.set_defaults(func=cmd_restore)
 
     return p

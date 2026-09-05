@@ -248,11 +248,18 @@ def setup_backup_routes(memory_manager, preset_manager, skills_manager) -> APIRo
             keep = int(body.get("keep") or get_setting("backup_keep", 7) or 7)
         except (TypeError, ValueError):
             keep = 7
+        # SEC-1 (B-010): `content` by default — the profile that carries no
+        # credentials. `full` is accepted, and is refused downstream unless a
+        # passphrase comes with it, because a full snapshot in the clear is
+        # the bug this replaced.
+        profile = str(body.get("profile") or backup_service.PROFILE_CONTENT)
         result = await asyncio.to_thread(
             backup_service.snapshot,
             include_research=bool(body.get("include_research")),
             include_attachments=bool(body.get("include_attachments")),
             keep=keep,
+            profile=profile,
+            passphrase=body.get("passphrase") or None,
         )
         return result
 
@@ -267,7 +274,10 @@ def setup_backup_routes(memory_manager, preset_manager, skills_manager) -> APIRo
         target = backup_service.resolve_in_backup_dir(str(body.get("name") or ""))
         if target is None:
             raise HTTPException(404, "No such snapshot")
-        report = await asyncio.to_thread(backup_service.verify_archive, target)
+        report = await asyncio.to_thread(
+            backup_service.verify_archive, target,
+            passphrase=(body.get("passphrase") or None),
+        )
         report["restore_command"] = backup_service.restore_command(target.name)
         return report
 
