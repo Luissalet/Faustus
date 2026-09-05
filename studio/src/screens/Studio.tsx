@@ -361,13 +361,22 @@ export function StudioScreen() {
     setParams(next, { replace: true });
   }, [params, setParams]);
 
-  /* Inicio's quick starts arrive with the sentence begun: ?draft=… */
+  /* Inicio's quick starts arrive with the sentence begun: ?draft=…
+     Notas adds &mode=agent&send=1&note=<id>: run it now, in agent mode, and
+     link the conversation back to the note ("Resolver con el agente"). */
+  const autoSendRef = useRef<{ text: string; noteId: string | null; mode: 'agent' | 'chat' | null } | null>(null);
   useEffect(() => {
     const draftParam = params.get('draft');
     if (draftParam === null) return;
     setDraft(draftParam);
+    const mode = params.get('mode');
+    if (mode === 'agent' || mode === 'chat') setKnobsState((k) => ({ ...k, mode }));
+    if (params.get('send') === '1') autoSendRef.current = { text: draftParam, noteId: params.get('note'), mode: mode === 'agent' || mode === 'chat' ? mode : null };
     const next = new URLSearchParams(params);
     next.delete('draft');
+    next.delete('mode');
+    next.delete('send');
+    next.delete('note');
     setParams(next, { replace: true });
     requestAnimationFrame(() => {
       const el = textareaRef.current;
@@ -871,6 +880,26 @@ export function StudioScreen() {
     [attachments, busy, runCommand, ensureSession, run],
   );
 
+  /* Notas → "Resolver con el agente": sends as soon as a route is known and
+     links the new conversation back to the note (`agent_session_id`). */
+  useEffect(() => {
+    const pending = autoSendRef.current;
+    if (!pending || busy || !route) return;
+    if (pending.mode && knobs.mode !== pending.mode) return;
+    autoSendRef.current = null;
+    void (async () => {
+      setDraft('');
+      const sid = await ensureSession(pending.text.split('\n').find((l) => l.trim() && !l.startsWith('Ayúdame')) ?? pending.text);
+      if (!sid) return;
+      if (pending.noteId) {
+        void import('../adapters/notes')
+          .then((m) => m.updateNote(pending.noteId as string, { agentSessionId: sid }))
+          .catch(() => undefined);
+      }
+      void run(sid, pending.text, { attachments: [] });
+    })();
+  }, [busy, route, ensureSession, run, knobs.mode]);
+
   const stop = useCallback(() => {
     controllerRef.current?.abort();
     controllerRef.current = null;
@@ -1031,9 +1060,7 @@ export function StudioScreen() {
     open_memory: () => {
       window.location.href = '/memory?shell=legacy';
     },
-    open_notes: () => {
-      window.location.href = '/notes?shell=legacy';
-    },
+    open_notes: () => navigate('/notes'),
     open_tasks: () => navigate('/automations'),
     open_theme: () => {
       window.location.href = '/?shell=legacy';

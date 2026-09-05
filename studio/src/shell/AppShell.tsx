@@ -6,7 +6,7 @@ import { HomeScreen } from '../screens/Home';
 import { NotMigrated } from '../screens/NotMigrated';
 
 import { BrandMark } from './BrandMark';
-import { DESTINATIONS } from './routes';
+import { DESTINATIONS, TOOLS, toolHref } from './routes';
 import { setStudioEnabled } from './flag';
 import { ensureOverlayRoot, removeOverlayRoot } from './overlayRoot';
 import { useShell } from './store';
@@ -23,6 +23,7 @@ const AutomationsScreen = lazy(() => import('../screens/Automations').then((m) =
 const LibraryScreen = lazy(() => import('../screens/Library').then((m) => ({ default: m.LibraryScreen })));
 const ProjectScreen = lazy(() => import('../screens/Project').then((m) => ({ default: m.ProjectScreen })));
 const ProjectsScreen = lazy(() => import('../screens/Projects').then((m) => ({ default: m.ProjectsScreen })));
+const NotesScreen = lazy(() => import('../screens/Notes').then((m) => ({ default: m.NotesScreen })));
 /* cmdk rides in with the first Ctrl+K, not with the page. */
 const CommandPalette = lazy(() => import('./CommandPalette').then((m) => ({ default: m.CommandPalette })));
 
@@ -127,6 +128,23 @@ function Rail() {
         </NavLink>
       ))}
 
+      <div className="fs-nav__tools" aria-label="Herramientas">
+        <p className="fs-nav__tools-head">Herramientas</p>
+        {TOOLS.map((tool) =>
+          tool.ready ? (
+            <NavLink key={tool.path} to={tool.path} className="fs-nav__tool" data-testid={`tool-${tool.label.toLowerCase()}`}>
+              <tool.icon size={13} aria-hidden="true" />
+              <span>{tool.label}</span>
+            </NavLink>
+          ) : (
+            <a key={tool.path} href={toolHref(tool)} className="fs-nav__tool" data-legacy title="Se abre en la interfaz anterior" data-testid={`tool-${tool.label.toLowerCase()}`}>
+              <tool.icon size={13} aria-hidden="true" />
+              <span>{tool.label}</span>
+            </a>
+          ),
+        )}
+      </div>
+
       <div className="fs-nav__spacer" />
 
       <div className="fs-nav__foot">
@@ -182,6 +200,7 @@ function RouteBody() {
         <Route path="/library" element={<LibraryScreen />} />
         <Route path="/activity" element={<ActivityScreen />} />
         <Route path="/automations" element={<AutomationsScreen />} />
+        <Route path="/notes" element={<NotesScreen />} />
         <Route path="*" element={<NotMigrated />} />
       </Routes>
       </Suspense>

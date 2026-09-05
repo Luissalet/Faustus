@@ -151,3 +151,9 @@
   color: var(--fs-danger);
   background: color-mix(in srgb, var(--fs-danger) 12%, transparent);
 }
+
+.fs-palette__note {
+  margin-inline-start: auto;
+  font-size: 11px;
+  color: var(--fs-text-3);
+}

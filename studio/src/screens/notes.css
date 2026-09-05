@@ -1,0 +1,548 @@
+/* Notas: the previous floating window as a screen. */
+
+.fs-notes {
+  position: relative;
+  padding-block-end: var(--fs-space-7);
+}
+
+.fs-notes__tools {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+}
+
+/* ── Shared small controls (own copies: studio.css is another chunk) ── */
+
+.fs-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  block-size: var(--fs-control-sm);
+  padding: 0 var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-pill);
+  background: transparent;
+  color: var(--fs-text-2);
+  font: inherit;
+  font-size: var(--fs-label-size);
+  font-weight: var(--fs-label-weight);
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background-color var(--fs-duration-fast) var(--fs-ease),
+    border-color var(--fs-duration-fast) var(--fs-ease),
+    color var(--fs-duration-fast) var(--fs-ease),
+    translate var(--fs-duration-normal) var(--fs-ease-spring);
+}
+
+.fs-chip:hover {
+  color: var(--fs-text-1);
+  border-color: var(--fs-border-strong);
+  translate: 0 -1px;
+}
+
+.fs-chip[data-on] {
+  background: var(--fs-ember);
+  border-color: color-mix(in srgb, var(--fs-brand) 60%, var(--fs-border));
+  color: var(--fs-text-1);
+  box-shadow: 0 0 14px var(--fs-ember-faint);
+}
+
+.fs-field {
+  min-inline-size: 0;
+  block-size: var(--fs-control-sm);
+  padding: 0 var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-1);
+  color: var(--fs-text-1);
+  font: inherit;
+  font-size: var(--fs-label-size);
+}
+
+.fs-field:focus-visible {
+  outline: 2px solid var(--fs-brand);
+  outline-offset: 1px;
+}
+
+/* ── Quick add ── */
+
+.fs-notes__quick {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--fs-space-3);
+  padding: var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-glass);
+  box-shadow: var(--fs-panel-shadow);
+  backdrop-filter: blur(10px);
+}
+
+.fs-notes__quick-type {
+  display: flex;
+  gap: var(--fs-space-1);
+}
+
+.fs-notes__quick-input {
+  min-block-size: var(--fs-control-sm);
+  max-block-size: 8lh;
+  padding: 6px var(--fs-space-2);
+  border: 0;
+  background: transparent;
+  color: var(--fs-text-1);
+  font: inherit;
+  resize: vertical;
+  field-sizing: content;
+}
+
+.fs-notes__quick-input:focus-visible {
+  outline: none;
+}
+
+.fs-notes__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-2);
+}
+
+/* ── Cards ── */
+
+.fs-notes__grid {
+  display: grid;
+  gap: var(--fs-space-3);
+  /* The screen's entrance animation leaves every child in its own stacking
+     context; the grid sits above what follows it so an open card menu
+     that hangs below the grid still receives the click. */
+  position: relative;
+  z-index: 1;
+}
+
+.fs-notes__grid[data-view='grid'] {
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  align-items: start;
+}
+
+.fs-note {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fs-space-2);
+  padding: var(--fs-space-3) var(--fs-space-4);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-1);
+  background-size: cover;
+  background-position: center;
+  box-shadow: var(--fs-panel-shadow);
+  transition:
+    translate var(--fs-duration-normal) var(--fs-ease-spring),
+    box-shadow var(--fs-duration-normal) var(--fs-ease);
+}
+
+.fs-note:hover {
+  translate: 0 -2px;
+  box-shadow: var(--fs-lift-shadow);
+}
+
+.fs-note[draggable='true'] {
+  cursor: grab;
+}
+
+/* The card whose menu is open paints above the cards that follow it. */
+.fs-note:has(.fs-qmenu__list) {
+  position: relative;
+  z-index: 5;
+}
+
+.fs-note[data-pinned] {
+  border-color: color-mix(in srgb, var(--fs-warning) 55%, var(--fs-border));
+}
+
+.fs-note[data-overdue] {
+  border-color: color-mix(in srgb, var(--fs-danger) 55%, var(--fs-border));
+}
+
+.fs-note[data-done] {
+  opacity: 0.72;
+}
+
+/* Colour: the same six names the previous interface stores. */
+.fs-note--red { background-color: color-mix(in srgb, #e06c75 16%, var(--fs-surface-1)); }
+.fs-note--orange { background-color: color-mix(in srgb, #d19a66 18%, var(--fs-surface-1)); }
+.fs-note--yellow { background-color: color-mix(in srgb, #e5c07b 20%, var(--fs-surface-1)); }
+.fs-note--green { background-color: color-mix(in srgb, #98c379 16%, var(--fs-surface-1)); }
+.fs-note--blue { background-color: color-mix(in srgb, #61afef 16%, var(--fs-surface-1)); }
+.fs-note--purple { background-color: color-mix(in srgb, #c678dd 16%, var(--fs-surface-1)); }
+
+.fs-note__head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--fs-space-1);
+}
+
+.fs-note__grip {
+  color: var(--fs-text-3);
+  opacity: 0;
+  transition: opacity var(--fs-duration-fast) var(--fs-ease);
+}
+
+.fs-note:hover .fs-note__grip {
+  opacity: 1;
+}
+
+.fs-note__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-inline-size: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fs-text-1);
+  font: inherit;
+  font-weight: 600;
+  text-align: start;
+  cursor: text;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fs-note__untitled {
+  color: var(--fs-text-3);
+  font-weight: 400;
+}
+
+.fs-note__pin {
+  color: var(--fs-warning);
+  flex: none;
+}
+
+.fs-note__image {
+  max-block-size: 220px;
+  inline-size: 100%;
+  object-fit: cover;
+  border-radius: var(--fs-radius-control);
+}
+
+.fs-note__body {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fs-text-2);
+  font: inherit;
+  text-align: start;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  cursor: text;
+  display: -webkit-box;
+  -webkit-line-clamp: 12;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.fs-note__link {
+  color: var(--fs-brand);
+}
+
+.fs-note__items {
+  display: grid;
+  gap: 4px;
+}
+
+.fs-note__goal {
+  color: var(--fs-text-2);
+  margin-block-end: var(--fs-space-1);
+}
+
+.fs-note__item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--fs-space-2);
+  color: var(--fs-text-1);
+  cursor: pointer;
+}
+
+.fs-note__item input {
+  margin: 3px 0 0;
+  accent-color: var(--fs-brand);
+}
+
+.fs-note__item[data-done] span:first-of-type {
+  color: var(--fs-text-3);
+  text-decoration: line-through;
+}
+
+.fs-note__item[data-next] span:first-of-type {
+  font-weight: 600;
+}
+
+.fs-note__agent-status {
+  font-size: 11px;
+  color: var(--fs-info);
+}
+
+.fs-note__progress {
+  block-size: 3px;
+  margin-block-start: var(--fs-space-1);
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-highlight);
+  overflow: hidden;
+}
+
+.fs-note__progress span {
+  display: block;
+  block-size: 100%;
+  background: var(--fs-success);
+  transition: inline-size var(--fs-duration-normal) var(--fs-ease-out);
+}
+
+.fs-note__foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-1);
+}
+
+.fs-note__tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-glass);
+  color: var(--fs-text-2);
+  font: inherit;
+  font-size: 11px;
+}
+
+.fs-note__tag--due[data-today] {
+  color: var(--fs-warning);
+  border-color: color-mix(in srgb, var(--fs-warning) 50%, var(--fs-border));
+}
+
+.fs-note__tag--due[data-overdue] {
+  color: var(--fs-danger);
+  border-color: color-mix(in srgb, var(--fs-danger) 50%, var(--fs-border));
+}
+
+.fs-note__tag--agent {
+  cursor: pointer;
+  color: var(--fs-info);
+}
+
+/* ── Editor ── */
+
+.fs-note-editor {
+  display: grid;
+  gap: var(--fs-space-3);
+  margin: calc(-1 * var(--fs-space-2));
+  padding: var(--fs-space-2);
+  border-radius: var(--fs-radius-control);
+}
+
+.fs-note-editor__type,
+.fs-note-editor__quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-1);
+}
+
+.fs-note-editor__title {
+  border: 0;
+  border-block-end: 1px solid var(--fs-border);
+  background: transparent;
+  color: var(--fs-text-1);
+  font: inherit;
+  font-size: 1.1rem;
+  font-weight: 600;
+  padding: 4px 0;
+}
+
+.fs-note-editor__title:focus-visible,
+.fs-note-editor__content:focus-visible {
+  outline: none;
+  border-color: var(--fs-brand);
+}
+
+.fs-note-editor__content {
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-1);
+  color: var(--fs-text-1);
+  font: inherit;
+  padding: var(--fs-space-2);
+  resize: vertical;
+}
+
+.fs-note-editor__items {
+  display: grid;
+  gap: 4px;
+}
+
+.fs-note-editor__item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 4px;
+}
+
+.fs-note-editor__item input[type='checkbox'] {
+  accent-color: var(--fs-brand);
+}
+
+.fs-note-editor__item input[type='text'] {
+  min-inline-size: 0;
+  border: 0;
+  border-block-end: 1px solid transparent;
+  background: transparent;
+  color: var(--fs-text-1);
+  font: inherit;
+  padding: 4px 2px;
+}
+
+.fs-note-editor__item input[type='text']:focus-visible {
+  outline: none;
+  border-block-end-color: var(--fs-brand);
+}
+
+.fs-note-editor__item[data-done] input[type='text'] {
+  color: var(--fs-text-3);
+  text-decoration: line-through;
+}
+
+.fs-note-editor__add {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  justify-self: start;
+  padding: 4px 6px;
+  border: 0;
+  background: none;
+  color: var(--fs-text-2);
+  font: inherit;
+  font-size: var(--fs-label-size);
+  cursor: pointer;
+}
+
+.fs-note-editor__add:hover {
+  color: var(--fs-text-1);
+}
+
+.fs-note-editor__row {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  align-items: center;
+  gap: var(--fs-space-2);
+}
+
+.fs-note-editor__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--fs-text-3);
+  font-size: var(--fs-label-size);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.fs-note-editor__colors {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.fs-note-editor__dot {
+  inline-size: 20px;
+  block-size: 20px;
+  border: 2px solid var(--fs-border);
+  border-radius: 50%;
+  background: var(--fs-surface-2);
+  cursor: pointer;
+  padding: 0;
+  transition: transform var(--fs-duration-fast) var(--fs-ease-spring);
+}
+
+.fs-note-editor__dot.fs-note--red { background-color: #e06c75; }
+.fs-note-editor__dot.fs-note--orange { background-color: #d19a66; }
+.fs-note-editor__dot.fs-note--yellow { background-color: #e5c07b; }
+.fs-note-editor__dot.fs-note--green { background-color: #98c379; }
+.fs-note-editor__dot.fs-note--blue { background-color: #61afef; }
+.fs-note-editor__dot.fs-note--purple { background-color: #c678dd; }
+
+.fs-note-editor__dot[data-on] {
+  border-color: var(--fs-text-1);
+  transform: scale(1.15);
+}
+
+.fs-note-editor__hint,
+.fs-note-editor__error {
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-3);
+}
+
+.fs-note-editor__error {
+  color: var(--fs-danger);
+}
+
+.fs-note-editor__when {
+  display: grid;
+  gap: var(--fs-space-2);
+}
+
+.fs-note-editor__foot {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  inline-size: 100%;
+}
+
+.fs-note-editor__spacer {
+  flex: 1;
+}
+
+/* ── Toast and hint ── */
+
+.fs-notes__toast {
+  position: fixed;
+  inset-block-end: var(--fs-space-5);
+  inset-inline-start: 50%;
+  translate: -50% 0;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-3);
+  padding: var(--fs-space-2) var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-surface-2);
+  color: var(--fs-text-1);
+  box-shadow: var(--fs-shadow-overlay);
+  animation: fs-rise var(--fs-duration-enter) var(--fs-ease-out) both;
+}
+
+.fs-notes__hint {
+  pointer-events: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--fs-text-3);
+  font-size: 11px;
+}
+
+@media (max-width: 767px) {
+  .fs-notes__quick {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .fs-note-editor__row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .fs-notes__hint {
+    display: none;
+  }
+}

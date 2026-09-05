@@ -53,7 +53,7 @@ export const COMMANDS: SlashCommand[] = [
   { name: 'gallery', usage: '/gallery', help: 'Ir a las imágenes.', route: '/library?type=imagen' },
   { name: 'tasks', usage: '/tasks', help: 'Ir a Automatizaciones.', route: '/automations' },
   { name: 'activity', usage: '/activity', help: 'Ir a Actividad.', route: '/activity' },
-  { name: 'notes', usage: '/notes', help: 'Notas (interfaz anterior).', route: '/notes', legacy: true },
+  { name: 'notes', usage: '/notes', help: 'Ir a Notas.', route: '/notes' },
   { name: 'calendar', usage: '/calendar', help: 'Calendario (interfaz anterior).', route: '/calendar', legacy: true },
   { name: 'email', usage: '/email', help: 'Correo (interfaz anterior).', route: '/email', legacy: true },
   { name: 'brain', usage: '/brain', help: 'Memoria (interfaz anterior).', route: '/memory', legacy: true },

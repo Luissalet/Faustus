@@ -23,7 +23,7 @@ las toca ninguna pantalla.
 | Tareas programadas | `/tasks`, `tasks.js` | `/automations` | **Parcial** — crear, editar, pausar, ejecutar ahora: anterior |
 | Actividad (runs de tareas, media, aprobaciones) | repartido en `/tasks`, `/gallery`, pill de aprobaciones | `/activity` | **Parcial** — aprobar desde la lista y abrir el detalle del run: anterior |
 | Inicio | pantalla `welcome` | `/` | **Migrado** (y más: continuaciones, aprobaciones, quick starts) |
-| Notas | `/notes` | — | **Anterior** |
+| Notas | `/notes` | `/notes` (grupo «Herramientas» de la barra, paleta, `/notes`, Ctrl+Alt+atajo `open_notes`): añadir rápido (nota o lista), tarjetas nota / lista / objetivo con color, etiquetas, fijar, recordatorio con hora y repetición, archivar con deshacer, borrar con confirmación, orden manual (arrastrar o subir/bajar), lista o cuadrícula, filtros «Hoy» / objetivos / etiqueta, copiar, «Resolver con el agente» (abre Studio en agente y enlaza la conversación a la nota), archivadas con recuperar, `/notes?n=<id>` | **Parcial** — dibujar en lienzo, foto adjunta y fondo de imagen propio, selección múltiple, edición táctil a pantalla completa: anterior. Los recordatorios los dispara la anterior mientras siga cargada debajo (Studio tiene su bucle, apagado si detecta `#notes-pane`) |
 | Calendario | `/calendar` | — | **Anterior** |
 | Correo | `/email` | — | **Anterior** |
 | Brain / memoria (`memory-modal`, `/memory`) | sí | — | **Anterior** |

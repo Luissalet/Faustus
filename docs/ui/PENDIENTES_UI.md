@@ -262,3 +262,30 @@ su área y baja el baseline. Ningún módulo Studio nuevo la aumenta.
     columnas (`minmax(0,1fr) auto`) pensada para enlace + botón; con la
     casilla delante hacía falta `data-selecting` para invertir las columnas.
     Cualquier otro elemento que se anteponga al enlace necesita lo mismo.
+
+## Añadido tras el lote J (05-09-2026, Notas y «Herramientas»)
+
+45. **`[~]` Dos bucles de recordatorios posibles.** Studio solo dispara los
+    suyos si no encuentra `#notes-pane` (el `notes.js` de la anterior
+    cargado debajo). El día que la anterior se retire, el bucle de Studio
+    pasa a ser el único y hay que probarlo con una nota con hora
+    (`fire-reminder`, `Notification`, avance de la repetición).
+46. **`[~]` Notas: lo que sigue en la anterior.** Dibujar (lienzo → PNG por
+    `/api/upload`), foto adjunta, fondo de imagen propio, selección múltiple
+    con acciones en lote, edición táctil a pantalla completa, arrastre con
+    pulsación larga en móvil, insignia de vencidas en el carril. Son islas
+    o una segunda pasada; ninguna cambia el modelo de datos.
+47. **`[!]` Contextos de apilamiento por la animación de entrada.** Todo
+    hijo directo de `.fs-screen` se anima con `fs-rise … both`; un
+    desplegable que sobresale de su tarjeta cae debajo de los hermanos que
+    vienen después. Regla: el contenedor de tarjetas con menús lleva
+    `position: relative; z-index: 1`, y la tarjeta abierta
+    `:has(.fs-qmenu__list) { z-index: 5 }`. Vale para cualquier pantalla
+    nueva con menús por fila.
+48. **`[~]` Estilos compartidos entre chunks.** `.fs-qmenu` estaba en
+    `studio.css` (chunk de Studio) y Notas lo usaba sin cargarlo. Ahora vive
+    en `styles/components.css`. Cualquier componente de `components/` que
+    use una pantalla fuera de Studio necesita su CSS en `styles/`, no en
+    `screens/studio.css`. Lo mismo para `.fs-studio__chip` y `.fs-select`:
+    Notas lleva copias (`.fs-chip`, `.fs-field`); si una tercera pantalla
+    las necesita, subirlas a `components.css`.

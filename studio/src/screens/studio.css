@@ -2098,40 +2098,6 @@ details.fs-studio__step > summary:hover .fs-trace__label {
   gap: 2px;
 }
 
-.fs-qmenu {
-  position: relative;
-  display: inline-flex;
-}
-
-.fs-qmenu__list {
-  position: absolute;
-  inset-block-start: calc(100% + 6px);
-  z-index: 20;
-  min-inline-size: 220px;
-}
-
-.fs-qmenu__list[data-align='end'] {
-  inset-inline-end: 0;
-}
-
-.fs-qmenu__list[data-align='start'] {
-  inset-inline-start: 0;
-}
-
-.fs-qmenu__list .fs-menu__item {
-  inline-size: 100%;
-  border: 0;
-  background: transparent;
-  font: inherit;
-  text-align: start;
-  cursor: pointer;
-  min-block-size: auto;
-}
-
-.fs-qmenu__list .fs-menu__item[data-active] {
-  background: color-mix(in srgb, var(--fs-brand) 12%, transparent);
-}
-
 .fs-studio__bulk {
   display: flex;
   flex-wrap: wrap;

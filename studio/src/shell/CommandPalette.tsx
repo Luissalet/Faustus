@@ -1,7 +1,7 @@
 import { Command } from 'cmdk';
 import { useNavigate } from 'react-router';
 import { overlayRoot } from './overlayRoot';
-import { DESTINATIONS } from './routes';
+import { DESTINATIONS, TOOLS, toolHref } from './routes';
 import { useShell } from './store';
 import './palette.css';
 
@@ -48,6 +48,27 @@ export function CommandPalette() {
             >
               <destination.icon size={15} aria-hidden="true" />
               {destination.label}
+            </Command.Item>
+          ))}
+        </Command.Group>
+
+        <Command.Group heading="Herramientas" className="fs-palette__group">
+          {TOOLS.map((tool) => (
+            <Command.Item
+              key={tool.path}
+              value={`${tool.label} herramienta`}
+              onSelect={() => {
+                if (tool.ready) go(tool.path);
+                else {
+                  setOpen(false);
+                  window.location.href = toolHref(tool);
+                }
+              }}
+              className="fs-palette__item"
+            >
+              <tool.icon size={15} aria-hidden="true" />
+              {tool.label}
+              {!tool.ready && <span className="fs-palette__note">interfaz anterior</span>}
             </Command.Item>
           ))}
         </Command.Group>

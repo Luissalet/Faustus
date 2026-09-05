@@ -1,9 +1,14 @@
 import {
   Activity,
+  Brain,
+  CalendarDays,
+  ChefHat,
   FolderKanban,
   Home,
   Library,
+  Mail,
   Sparkles,
+  StickyNote,
   Workflow,
   type LucideIcon,
 } from 'lucide-react';
@@ -38,6 +43,33 @@ export const DESTINATIONS: Destination[] = [
 ];
 
 /**
+ * The tools (UI-020 §"everything technical lives inside a destination"):
+ * not on the rail's line, but one click away in the sidebar's second group
+ * and in the palette. A migrated tool is a Studio route; the rest open the
+ * previous interface at their deep link (`/notes?shell=legacy` opens that
+ * window) until PARIDAD_FUNCIONAL marks them Migrado.
+ */
+export interface Tool {
+  path: string;
+  label: string;
+  icon: LucideIcon;
+  ready: boolean;
+}
+
+export const TOOLS: Tool[] = [
+  { path: '/notes', label: 'Notas', icon: StickyNote, ready: true },
+  { path: '/calendar', label: 'Calendario', icon: CalendarDays, ready: false },
+  { path: '/email', label: 'Correo', icon: Mail, ready: false },
+  { path: '/memory', label: 'Memoria', icon: Brain, ready: false },
+  { path: '/cookbook', label: 'Cookbook', icon: ChefHat, ready: false },
+];
+
+/** Where a tool opens today: its Studio route, or the previous interface. */
+export function toolHref(tool: Tool): string {
+  return tool.ready ? tool.path : `${tool.path}?shell=legacy`;
+}
+
+/**
  * Kept in step with the whitelist in app.py. A route that the server does
  * not serve is a 404 on reload, which is exactly the bug deep links exist
  * to avoid.
@@ -50,4 +82,5 @@ export const SERVER_ROUTES = [
   '/library',
   '/automations',
   '/activity',
+  '/notes',
 ];

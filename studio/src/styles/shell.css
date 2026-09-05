@@ -448,3 +448,86 @@ html[data-studio-shell='on'] body > *:not(#studio-root):not(#fs-overlay-root) {
     overscroll-behavior: contain;
   }
 }
+
+/* ── Tools: the second group under the rail. Not nodes on the line — the
+   line is the six intentions — but one click away, and on a phone they
+   fold into the palette. ── */
+
+.fs-nav__tools {
+  display: grid;
+  gap: 2px;
+  margin-block-start: var(--fs-space-4);
+  padding-block-start: var(--fs-space-3);
+  border-block-start: 1px solid var(--fs-border);
+}
+
+.fs-nav__tools-head {
+  padding: 0 var(--fs-space-2) var(--fs-space-1);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fs-text-3);
+}
+
+.fs-nav__tool {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-3);
+  padding: 5px var(--fs-space-2) 5px calc(var(--fs-space-2) + 6px);
+  border-radius: var(--fs-radius-control);
+  color: var(--fs-text-2);
+  font-size: var(--fs-label-size);
+  font-weight: var(--fs-label-weight);
+  text-decoration: none;
+  transition:
+    color var(--fs-duration-fast) var(--fs-ease),
+    background-color var(--fs-duration-fast) var(--fs-ease),
+    translate var(--fs-duration-normal) var(--fs-ease-out);
+}
+
+.fs-nav__tool:hover {
+  color: var(--fs-text-1);
+  background: var(--fs-highlight);
+  translate: 3px 0;
+}
+
+.fs-nav__tool[aria-current='page'] {
+  color: var(--fs-brand);
+  background: var(--fs-ember-faint);
+}
+
+.fs-nav__tool[data-legacy] span::after {
+  content: ' ↗';
+  color: var(--fs-text-3);
+}
+
+@media (max-width: 1279px) {
+  .fs-nav__tools-head,
+  .fs-nav__tool span {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .fs-nav__tool {
+    justify-content: center;
+    padding-inline: 0;
+  }
+
+  .fs-nav__tool:hover {
+    translate: 0 0;
+  }
+}
+
+@media (max-width: 767px) {
+  .fs-nav__tools {
+    display: none;
+  }
+}
