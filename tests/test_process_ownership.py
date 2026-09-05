@@ -50,13 +50,26 @@ def _no_spawn_records():
 
 
 def _record_kills(monkeypatch, windows):
-    """Capture what `_kill_tree` would have signalled, without signalling it."""
+    """Capture what `_kill_tree` would have signalled, without signalling it.
+
+    psutil is switched off so these exercise the no-psutil fallback, which is
+    the only path that still reaches `taskkill /T` / `killpg` with a pid alone.
+    With psutil present the tree is walked and validated instead — that path has
+    its own tests in test_process_tree_ownership.py, and it cannot be driven by
+    the invented pids used here because it asks the OS about every one of them.
+    """
     calls = {"taskkill": [], "killpg": []}
+    monkeypatch.setattr(po, "_psutil", lambda: None)
     monkeypatch.setattr(st, "IS_WINDOWS", windows)
     monkeypatch.setattr(po, "IS_WINDOWS", windows)
     monkeypatch.setattr(st.subprocess, "run", lambda argv, **kw: calls["taskkill"].append(argv))
-    monkeypatch.setattr(st.os, "getpgid", lambda pid: 900000 + (pid or 0))
-    monkeypatch.setattr(st.os, "killpg", lambda pgid, sig: calls["killpg"].append((pgid, sig)))
+    # raising=False because these two are POSIX-only names: without it the
+    # whole file errored out on the Windows host it is meant to cover, so the
+    # POSIX branch was never exercised there and the Windows branch never ran
+    # at all.
+    monkeypatch.setattr(st.os, "getpgid", lambda pid: 900000 + (pid or 0), raising=False)
+    monkeypatch.setattr(st.os, "killpg", lambda pgid, sig: calls["killpg"].append((pgid, sig)),
+                        raising=False)
     return calls
 
 
@@ -64,7 +77,7 @@ def test_a_live_process_we_started_is_killed_with_its_tree(monkeypatch):
     calls = _record_kills(monkeypatch, windows=False)
     proc = LiveProc()
     assert st._kill_tree(proc) is None
-    assert calls["killpg"] == [(900000 + 4242, st.signal.SIGKILL)]
+    assert calls["killpg"] == [(900000 + 4242, po._KILL_SIGNAL)]
     assert proc.killed
 
 

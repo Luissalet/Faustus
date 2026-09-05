@@ -1,8 +1,9 @@
 """Tests for bg_jobs.kill and the manage_bg_jobs agent tool.
 
 Process-free: the store/dir are redirected to tmp, _pid_alive is forced True so
-seeded "running" jobs stay running through refresh(), and _kill is stubbed so no
-real signal is sent. Jobs are scoped to a chat (session_id), which is the main
+seeded "running" jobs stay running through refresh(), and _kill_job is stubbed
+so no real signal is sent (and no ownership check is attempted against a pid
+that was never spawned). Jobs are scoped to a chat (session_id), which is the main
 invariant under test.
 """
 import asyncio
@@ -11,7 +12,7 @@ import time
 
 import pytest
 
-from src import bg_jobs
+from src import bg_jobs, process_ownership
 from src.agent_tools.bg_job_tools import ManageBgJobsTool
 
 
@@ -23,7 +24,12 @@ def store(tmp_path, monkeypatch):
     monkeypatch.setattr(bg_jobs, "_JOBS_DIR", jobs_dir)
     monkeypatch.setattr(bg_jobs, "_pid_alive", lambda pid: True)
     killed: list = []
-    monkeypatch.setattr(bg_jobs, "_kill", lambda pid: killed.append(pid))
+
+    def _fake_kill(rec):
+        killed.append(rec.get("pid"))
+        return process_ownership.TreeKill("", "", (rec.get("pid"),))
+
+    monkeypatch.setattr(bg_jobs, "_kill_job", _fake_kill)
     return {"dir": jobs_dir, "killed": killed}
 
 

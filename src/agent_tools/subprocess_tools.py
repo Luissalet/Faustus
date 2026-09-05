@@ -89,8 +89,17 @@ def _kill_tree(proc) -> Optional[str]:
     a cleanup path that must keep going. There is no override argument on
     purpose: the caller upstream is a model.
 
-    Synchronous (taskkill takes well under a second); `_kill_tree_async` is the
-    variant for the event loop."""
+    The descendants are a second question with a second answer, and
+    `process_ownership.terminate_tree` is where it lives: `taskkill /T` and a
+    recursive psutil walk both follow *recorded* parent pids, and Windows never
+    clears the parent pid of an orphan, so a stranger whose long-dead parent's
+    pid was later recycled into ours is indistinguishable from our own child
+    until their creation times are compared. `unverified_tree_ok` says only that
+    the ROOT needs no further proof — we are holding its unreaped process
+    object, so that pid was never back in the pool — not that the tree does.
+
+    Synchronous (the teardown takes well under a second); `_kill_tree_async` is
+    the variant for the event loop."""
     verdict = process_ownership.check(proc)
     if not verdict.owned:
         refusal = process_ownership.refusal_message(verdict)
@@ -102,22 +111,22 @@ def _kill_tree(proc) -> Optional[str]:
             logger.warning(refusal)
         return refusal
     pid = verdict.pid
-    try:
-        if IS_WINDOWS and pid:
-            subprocess.run(
-                ["taskkill", "/T", "/F", "/PID", str(pid)],
-                capture_output=True, timeout=15,
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    if pid:
+        try:
+            outcome = process_ownership.terminate_tree(
+                pid,
+                spawned_at=process_ownership.spawn_creation_time(pid),
+                pgid=process_ownership.process_group_id(pid),
+                unverified_tree_ok=True,
             )
-        elif pid:
-            try:
-                pgid = os.getpgid(pid)
-                if pgid != os.getpgid(0):        # never our own group
-                    os.killpg(pgid, signal.SIGKILL)
-            except Exception:
-                pass
-    except Exception as e:
-        logger.debug("kill tree %s failed: %s", pid, e)
+            if outcome.rejected:
+                logger.warning(
+                    "Left %d process(es) alive while killing pid %s: they are "
+                    "recorded under it but predate it, so they are not its "
+                    "descendants", len(outcome.rejected), pid,
+                )
+        except Exception as e:
+            logger.debug("kill tree %s failed: %s", pid, e)
     try:
         proc.kill()
     except Exception:
