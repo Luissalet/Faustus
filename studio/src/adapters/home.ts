@@ -24,6 +24,7 @@ export interface PendingApproval {
   approval_id?: string;
   action?: string;
   tool?: string;
+  plan?: { action?: string; detail?: string };
   session_id?: string;
   requested_at?: string;
 }

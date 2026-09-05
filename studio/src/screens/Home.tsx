@@ -116,22 +116,22 @@ export function HomeScreen() {
         <Block title={t('Needs your decision')} index={1}>
           <div className="fs-list fs-list--rail">
             {data.approvals.map((approval, index) => (
-              <a
+              <Link
                 key={approval.approval_id ?? approval.id ?? index}
                 className="fs-row"
-                href="/?shell=legacy"
+                to={`/activity?status=accion&run=approval-${encodeURIComponent(approval.approval_id ?? approval.id ?? '')}`}
                 data-testid="home-approval"
               >
                 <span className="fs-row__main">
                   <span className="fs-row__name">
-                    {approval.action ?? approval.tool ?? t('Action awaiting approval')}
+                    {(approval.plan?.action ?? approval.action ?? approval.tool ?? t('Action awaiting approval')).replace(/_/g, ' ')}
                   </span>
                   <span className="fs-row__meta">
                     {relativeTime(approval.requested_at) || t('waiting')}
                   </span>
                 </span>
                 <StatusBadge status="waiting" />
-              </a>
+              </Link>
             ))}
           </div>
         </Block>

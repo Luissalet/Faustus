@@ -120,3 +120,293 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+
+/* ── Lote X: a pane beside the list, rows you can open ── */
+
+.fs-act__lede {
+  margin-block-start: var(--fs-space-2);
+}
+
+.fs-act__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fs-space-2);
+}
+
+.fs-act__search {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  min-inline-size: 200px;
+  block-size: var(--fs-control-sm);
+  padding: 0 var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-surface-1);
+  color: var(--fs-text-3);
+}
+
+.fs-act__search input {
+  flex: 1;
+  min-inline-size: 0;
+  border: 0;
+  background: transparent;
+  color: var(--fs-text-1);
+  font: inherit;
+  font-size: var(--fs-label-size);
+}
+
+.fs-act__search input:focus-visible {
+  outline: none; /* guard-ok: the wrapper takes the ring (focus-within) */
+}
+
+.fs-act__search:focus-within {
+  border-color: var(--fs-focus);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--fs-focus) 35%, transparent);
+}
+
+.fs-act__chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-1);
+}
+
+.fs-act__chip-n {
+  font-variant-numeric: tabular-nums;
+  color: var(--fs-text-3);
+}
+
+.fs-chip[data-on] .fs-act__chip-n {
+  color: inherit;
+}
+
+.fs-act__layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) minmax(0, 1fr);
+  gap: var(--fs-space-4);
+  align-items: start;
+  min-block-size: 50vh;
+}
+
+.fs-act__list {
+  display: grid;
+  gap: var(--fs-space-3);
+  min-inline-size: 0;
+}
+
+.fs-act__pane {
+  min-inline-size: 0;
+  position: sticky;
+  inset-block-start: var(--fs-space-4);
+}
+
+/* The row is a button now: same look, plus the current one. */
+.fs-act__row {
+  inline-size: 100%;
+  border: 1px solid transparent;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.fs-act__row[aria-current] {
+  background: var(--fs-ember-faint);
+  border-color: color-mix(in srgb, var(--fs-brand) 45%, var(--fs-border));
+}
+
+.fs-act__row:focus-visible {
+  outline: 2px solid var(--fs-focus);
+  outline-offset: -2px;
+}
+
+.fs-act__repeats {
+  margin-inline-start: var(--fs-space-2);
+  color: var(--fs-text-3);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.fs-act__detail,
+.fs-act__blank {
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-1);
+  box-shadow: var(--fs-panel-shadow);
+}
+
+.fs-act__detail {
+  display: grid;
+  gap: var(--fs-space-4);
+  padding: var(--fs-space-5);
+}
+
+.fs-act__blank {
+  display: grid;
+  justify-items: center;
+  gap: var(--fs-space-3);
+  padding: var(--fs-space-7) var(--fs-space-5);
+  color: var(--fs-text-3);
+  text-align: center;
+}
+
+.fs-act__blank .fs-prose {
+  max-inline-size: 44ch;
+}
+
+.fs-act__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--fs-space-4);
+  flex-wrap: wrap;
+}
+
+.fs-act__title {
+  display: grid;
+  gap: var(--fs-space-1);
+  min-inline-size: 0;
+}
+
+.fs-act__title h2 {
+  font-size: var(--fs-title-size);
+  font-weight: var(--fs-title-weight);
+  letter-spacing: var(--fs-title-tracking);
+  overflow-wrap: anywhere;
+}
+
+.fs-act__when {
+  color: var(--fs-text-3);
+  font-size: var(--fs-label-size);
+}
+
+.fs-act__ask {
+  padding: var(--fs-space-3) var(--fs-space-4);
+  border: 1px solid color-mix(in srgb, var(--fs-warning) 50%, var(--fs-border));
+  border-radius: var(--fs-radius-panel);
+  background: color-mix(in srgb, var(--fs-warning) 8%, transparent);
+  font-size: var(--fs-label-size);
+  line-height: 1.45;
+}
+
+.fs-act__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fs-space-2);
+}
+
+.fs-act__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fs-text-2);
+  font-size: var(--fs-label-size);
+  text-decoration: none;
+}
+
+.fs-act__link:hover {
+  color: var(--fs-brand);
+}
+
+.fs-act__facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--fs-space-3) var(--fs-space-4);
+  padding-block: var(--fs-space-3);
+  border-block: 1px solid var(--fs-border);
+}
+
+.fs-act__fact {
+  display: grid;
+  gap: 2px;
+  min-inline-size: 0;
+}
+
+.fs-act__fact dt {
+  color: var(--fs-text-3);
+  font-size: 0.75rem;
+}
+
+.fs-act__fact dd {
+  margin: 0;
+  font-size: var(--fs-label-size);
+  overflow-wrap: anywhere;
+}
+
+.fs-act__field {
+  display: grid;
+  gap: var(--fs-space-1);
+  color: var(--fs-text-2);
+  font-size: var(--fs-label-size);
+}
+
+.fs-act__field .fs-field {
+  inline-size: 100%;
+}
+
+.fs-act__error {
+  padding: var(--fs-space-3) var(--fs-space-4);
+  border-radius: var(--fs-radius-control);
+  background: color-mix(in srgb, var(--fs-danger) 12%, transparent);
+  color: var(--fs-danger);
+  font-size: var(--fs-label-size);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.fs-act__result {
+  max-block-size: 60vh;
+  overflow: auto;
+  padding: var(--fs-space-3) var(--fs-space-4);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-2);
+  line-height: var(--fs-body-line);
+}
+
+.fs-act__pre {
+  max-block-size: 40vh;
+  overflow: auto;
+  padding: var(--fs-space-3) var(--fs-space-4);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-canvas);
+  font-family: var(--fs-font-code);
+  font-size: 0.78rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.fs-act__hint {
+  color: var(--fs-text-3);
+  font-size: var(--fs-label-size);
+}
+
+.fs-act__back {
+  display: none;
+}
+
+@media (max-width: 899px) {
+  .fs-act__back {
+    display: block;
+  }
+
+  .fs-act__layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .fs-act__layout[data-detail] .fs-act__list {
+    display: none;
+  }
+
+  .fs-act__pane {
+    position: static;
+  }
+
+  .fs-act__detail {
+    padding: var(--fs-space-4);
+  }
+}

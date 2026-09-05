@@ -2339,3 +2339,43 @@ Every {n} hours	Cada {n} horas
 Weekdays at {time}	Entre semana a las {time}
 no delivery	sin entrega
 Nowhere — it just runs	A ningún sitio — solo se ejecuta
+(no output)	(sin salida)
+A note for the record (optional)	Una nota para el registro (opcional)
+All activity	Toda la actividad
+Approvals	Aprobaciones
+Approved	Aprobada
+Backend	Backend
+Cancel the render	Cancelar el render
+Cost	Coste
+Could not read {what}. The rest of the list is real.	No se ha podido leer {what}. El resto de la lista es real.
+Delivered	Entregado
+Denied	Denegada
+Detail	Detalle
+Expires	Caduca
+Filter the activity…	Filtrar la actividad…
+Here is the latest run of my scheduled task "{name}". Let's review it.	Aquí está la última ejecución de mi tarea programada «{name}». Vamos a revisarla.
+It produced no output.	No produjo salida.
+Kind	Tipo
+None of the subsystems responded.	Ningún subsistema ha respondido.
+Nothing to open	Nada que abrir
+Open in a chat	Abrir en una conversación
+Open the report	Abrir el informe
+Permissions	Permisos
+Pick a row to read what it produced, approve or deny what is waiting, or run it again.	Elige una fila para leer lo que produjo, aprobar o denegar lo que espera, o volver a ejecutarla.
+Produces	Produce
+Queued — waiting for a free slot…	En cola — esperando un hueco…
+Recipients	Destinatarios
+Render	Render
+Renders	Renders
+Run again	Ejecutar de nuevo
+Running…	En marcha…
+Secrets it would use	Secretos que usaría
+The agent wants to do this and is waiting for you. Nothing happens until you decide.	El agente quiere hacer esto y te espera. No pasa nada hasta que decidas.
+The automation	La automatización
+The decision was not recorded	La decisión no se ha registrado
+The images	Las imágenes
+Tokens	Tokens
+Uses left	Usos restantes
+renders	renders
+{n} identical row	{n} fila idéntica
+{n} identical rows	{n} filas idénticas
