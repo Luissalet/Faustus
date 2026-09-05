@@ -22,6 +22,16 @@ Four decisions worth stating, because each has a tempting wrong version:
 * **Nothing here decides policy.** It records `backend`, `run_id` and whatever
   provenance the caller can prove, and leaves every field it cannot know as
   NULL for `Artifact.provenance_gaps()` to report.
+
+B-017 (lot ART-1) priced the first decision. The logical id is
+`art_{sha256[:24]}`, so `persist()` reads a second run's identical bytes as a
+row that already exists and drops that run with it: its owner, label,
+provenance, approval and retention are gone, and `Collected.deduplicated`
+counts files not written, not occurrences lost. The store that separates the
+identity of the bytes from the identity of the artifact is
+`src/artifact_identity.py`. Nothing here calls it yet — the cutover needs the
+copy migration set out in `docs/design/ART-1-artifacts.md` — so this module is
+still the production write path and still has that defect.
 """
 
 from __future__ import annotations

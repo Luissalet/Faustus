@@ -454,6 +454,150 @@ class ArtifactRow(TimestampMixin, Base):
     )
 
 
+class BlobRow(TimestampMixin, Base):
+    """Immutable bytes, addressed by hash, owned by nobody (B-017).
+
+    `artifacts` conflates these two things: its primary key is derived from the
+    content, so a second run producing identical bytes is indistinguishable
+    from the first and gets dropped as already stored. Here the content hash is
+    the identity of the BYTES and nothing else — no owner, no run, no
+    provenance columns, because bytes belong to nobody.
+
+    The primary key being `blob_<sha256>` is what makes creation atomic: two
+    writers of the same content race on a unique key instead of on an
+    `os.path.exists()` check, and the loser reads the winner's row.
+
+    `refcount` is a fast index over the occurrences that point here, not the
+    authority on them. `src.artifact_identity.collect_garbage()` counts the
+    occurrences and reports the difference, because a refcount that drifted low
+    is exactly how a collector deletes bytes somebody still references.
+
+    Additive like `artifacts` was: a new table that edits none, so the reverse
+    is `rollback_artifact_identity_tables()` and nothing else moves.
+    """
+    __tablename__ = "artifact_blobs"
+
+    id          = Column(String, primary_key=True, index=True)   # blob_<sha256>
+    sha256      = Column(String(64), nullable=False, unique=True, index=True)
+    byte_size   = Column(Integer, nullable=False)
+    media_type  = Column(String, nullable=True)
+    #: The bare name inside ARTIFACT_STORE_DIR. Already `<sha256>.<ext>` today,
+    #: which is why the split moves no files.
+    filename    = Column(String, nullable=False)
+    refcount    = Column(Integer, nullable=False, default=0)
+    created_at_iso = Column(String, nullable=False)
+    schema_version = Column(Integer, nullable=False, default=1)
+
+
+class ArtifactOccurrenceRow(TimestampMixin, Base):
+    """One logical output, owned — the row `artifacts` loses on a hash collision.
+
+    Its id names an event (`occ_<random>`), never its content, so two runs that
+    write the same bytes produce two rows with two owners, two provenances and
+    two retentions instead of one row and a silent discard.
+
+    `legacy_artifact_id` is the alias B-017 asks for: the old `art_<hash[:24]>`
+    id, stored and uniquely indexed rather than recomputed, because that id
+    truncated the hash and cannot be inverted back into one. Unique, so the
+    copy from `artifacts` is idempotent the same way `legacy_gallery_id` makes
+    the gallery backfill idempotent.
+
+    Provenance columns are duplicated from `artifacts` on purpose rather than
+    shared through a join: they describe the occurrence, and the whole defect is
+    that the old schema attached them to the content.
+    """
+    __tablename__ = "artifact_occurrences"
+
+    id          = Column(String, primary_key=True, index=True)
+    #: A reference, not an identity. Two occurrences of one blob are two artifacts.
+    blob_sha256 = Column(String(64), nullable=False, index=True)
+    kind        = Column(String, nullable=False, index=True)   # contracts.ARTIFACT_KINDS
+    label       = Column(Text, nullable=True, default="")      # the name the run chose
+    partial     = Column(Boolean, nullable=False, default=False)
+
+    owner       = Column(String, nullable=True, index=True)
+    project_id  = Column(String, nullable=True, index=True)
+    run_id      = Column(String, nullable=True, index=True)
+    session_id  = Column(String, nullable=True, index=True)
+    skill_id    = Column(String, nullable=True, index=True)
+    skill_version = Column(String, nullable=True)
+    approval_id = Column(String, nullable=True, index=True)
+
+    # Provenance — nullable, and NULL means "unknown", never "none".
+    model         = Column(String, nullable=True)
+    model_license = Column(String, nullable=True)
+    backend       = Column(String, nullable=True)
+    recipe        = Column(String, nullable=True)
+    recipe_version = Column(String, nullable=True)
+    recipe_fingerprint = Column(String(64), nullable=True)
+    inputs_digest = Column(String(64), nullable=True)
+    seed          = Column(Integer, nullable=True)
+    engine        = Column(String, nullable=True)
+    engine_job_id = Column(String, nullable=True, index=True)
+    #: JSON list of occurrence ids, kept as text for the same reason the
+    #: workflow definition is: a list this table never filters on does not earn
+    #: a second table.
+    source_artifact_ids = Column(Text, nullable=True)
+    provenance_note = Column(Text, nullable=True, default="")
+
+    #: Retention is per occurrence, never per blob. An ephemeral attachment and
+    #: a kept artifact can share bytes, and evaluating the policy on the blob
+    #: would let one of them decide the other's lifetime.
+    retention_policy = Column(String, nullable=False, default="keep")
+    retention_days   = Column(Integer, nullable=True)
+    retention_reason = Column(Text, nullable=True, default="")
+
+    #: variation_of / derived_from / supersedes / part_of, as JSON (F-012).
+    relations_json = Column(Text, nullable=True)
+
+    legacy_artifact_id = Column(String, nullable=True, unique=True, index=True)
+    created_at_iso = Column(String, nullable=False)
+    schema_version = Column(Integer, nullable=False, default=1)
+
+    __table_args__ = (
+        Index("ix_occurrences_owner_created", "owner", "created_at_iso"),
+        #: The pair every read path uses: which of this blob's occurrences may
+        #: this caller see. Physical dedupe must not grant logical access, and
+        #: this index is what makes asking cheap enough to always ask.
+        Index("ix_occurrences_blob_owner", "blob_sha256", "owner"),
+        Index("ix_occurrences_run_kind", "run_id", "kind"),
+    )
+
+
+class DerivedArtifactRow(TimestampMixin, Base):
+    """A regenerable rendering of a blob: preview, thumbnail, proxy, waveform,
+    subtitle, transcode, embedding.
+
+    It hangs off the BLOB, not off the occurrence: a thumbnail of some bytes is
+    a function of those bytes, and hanging it off the occurrence would store two
+    byte-identical thumbnails for two owners of one original. Access control
+    does not leak through it because a derivative is only reached via an
+    occurrence the caller may already see.
+
+    The id is derived from (source, kind, recipe, recipe version), so a
+    regeneration updates one row instead of appending one per pass.
+    """
+    __tablename__ = "artifact_derivatives"
+
+    id          = Column(String, primary_key=True, index=True)
+    source_sha256 = Column(String(64), nullable=False, index=True)
+    derived_kind = Column(String, nullable=False, index=True)
+    filename    = Column(String, nullable=False)
+    sha256      = Column(String(64), nullable=True, index=True)
+    byte_size   = Column(Integer, nullable=True)
+    media_type  = Column(String, nullable=True)
+    #: What made it, so it can be made again — and so a derivative produced by
+    #: an older recipe is recognisable as stale instead of merely present.
+    recipe      = Column(String, nullable=True)
+    recipe_version = Column(String, nullable=True)
+    created_at_iso = Column(String, nullable=False)
+    schema_version = Column(Integer, nullable=False, default=1)
+
+    __table_args__ = (
+        Index("ix_derivatives_source_kind", "source_sha256", "derived_kind"),
+    )
+
+
 class ApprovalRow(TimestampMixin, Base):
     """A card that was shown to a person, and what they said.
 
@@ -2489,6 +2633,75 @@ def rollback_artifacts_table():
     logging.getLogger(__name__).info("artifacts table dropped; schema is back to pre-migration")
 
 
+def _migrate_create_artifact_identity_tables():
+    """Create the blob/occurrence/derivative tables (B-017, lot ART-1).
+
+    Strictly additive: three new tables, no column added to `artifacts`, no row
+    of any existing table read or rewritten. That is the whole point of running
+    it as its own step — the design note in `docs/design/ART-1-artifacts.md`
+    splits ART-1 into schema, copy, and the two cutovers, and only the schema
+    half is safe to ship without a migration plan for the data.
+
+    `create_all()` in init_db() already builds tables it finds missing, so this
+    exists for the database that predates them and for the indexes: it is the
+    one place the creation and its reverse are written down together.
+
+    Idempotent: `checkfirst=True` creates nothing that is already there, and
+    every index is `IF NOT EXISTS`. Running it on a database that has the
+    tables is a no-op, not an error.
+    """
+    log = logging.getLogger(__name__)
+    try:
+        tables = [BlobRow.__table__, ArtifactOccurrenceRow.__table__,
+                  DerivedArtifactRow.__table__]
+        before = set(inspect(engine).get_table_names())
+        Base.metadata.create_all(bind=engine, tables=tables, checkfirst=True)
+        created = sorted({t.name for t in tables} - before)
+        with engine.connect() as conn:
+            # Named separately from the model's Index() declarations so that a
+            # database created before this migration existed still gets them;
+            # create_all() only builds indexes for tables it just created.
+            for name, ddl in (
+                ("ix_occurrences_owner_created",
+                 "ON artifact_occurrences (owner, created_at_iso)"),
+                ("ix_occurrences_blob_owner",
+                 "ON artifact_occurrences (blob_sha256, owner)"),
+                ("ix_occurrences_run_kind",
+                 "ON artifact_occurrences (run_id, kind)"),
+                ("ix_derivatives_source_kind",
+                 "ON artifact_derivatives (source_sha256, derived_kind)"),
+            ):
+                conn.execute(text(f"CREATE INDEX IF NOT EXISTS {name} {ddl}"))
+            conn.commit()
+        if created:
+            log.info("artifact identity tables created: %s", ", ".join(created))
+    except Exception as e:
+        # Same posture as _migrate_create_artifacts_table: a store that is not
+        # wired into any write path yet must never stop the app from booting.
+        log.warning(f"artifact identity migration: {e}")
+
+
+def rollback_artifact_identity_tables():
+    """The reverse.  Never called automatically — it exists so that "additive
+    and reversible" is a function a test can run rather than a claim in a
+    commit message.
+
+    Dropping these three loses no data that `artifacts` does not still hold,
+    because nothing has been copied out of it yet: while the copy phase is
+    deferred, `artifacts` remains the only census of what exists.
+    """
+    with engine.connect() as conn:
+        for table in ("artifact_derivatives", "artifact_occurrences", "artifact_blobs"):
+            conn.execute(text(f"DROP TABLE IF EXISTS {table}"))
+        try:
+            conn.commit()
+        except Exception:
+            pass
+    logging.getLogger(__name__).info(
+        "artifact identity tables dropped; artifacts is untouched and still authoritative")
+
+
+
 # WARNING: Foreign-key enforcement is enabled globally for all SQLite connections.
 # Any future migrations or schema changes that temporarily violate foreign-key
 # constraints will fail. To perform such operations, foreign_keys must be
@@ -2587,6 +2800,7 @@ def init_db():
     _migrate_encrypt_endpoint_keys()
     _migrate_backfill_task_folders()
     _migrate_create_artifacts_table()
+    _migrate_create_artifact_identity_tables()
 
 
 def _migrate_backfill_task_folders():
