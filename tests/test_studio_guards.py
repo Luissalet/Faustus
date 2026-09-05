@@ -18,7 +18,8 @@ from pathlib import Path
 
 import pytest
 
-STUDIO = Path(__file__).resolve().parents[1] / "studio" / "src"
+_REPO = Path(__file__).resolve().parents[1]
+STUDIO = _REPO / "studio" / "src"
 
 # tokens.css is where literal values are ALLOWED to live - it is the file
 # that defines them. user-theme.css is the second: every literal there
@@ -107,6 +108,32 @@ def test_reduced_motion_is_handled() -> None:
             assert "prefers-reduced-motion" in text, (
                 f"{_rel(path)} animates but never handles prefers-reduced-motion"
             )
+
+
+def test_the_esm_root_does_not_swallow_the_repo_s_commonjs_scripts() -> None:
+    """Vite made the repository root an ESM package. Node reads the module type
+    from the *nearest* package.json, so `"type": "module"` at the root silently
+    reclassified every plain `.js` in the tree — including the two CommonJS
+    checkers GitHub Actions loads with `require()`, which then failed at load
+    with "checkPrDescription is not a function" on every pull request. The
+    scoped package.json under .github/scripts/ is what keeps them CommonJS.
+    """
+    import json
+
+    root = json.loads((_REPO / "package.json").read_text(encoding="utf-8"))
+    if root.get("type") != "module":
+        return  # the trap is gone; nothing to guard
+
+    scripts = _REPO / ".github" / "scripts"
+    plain_js = sorted(scripts.glob("*.js"))
+    if not plain_js:
+        return
+    marker = scripts / "package.json"
+    assert marker.exists(), (
+        f"{[p.name for p in plain_js]} are CommonJS but the repo root is ESM; "
+        f"{marker.relative_to(_REPO)} must scope them back"
+    )
+    assert json.loads(marker.read_text(encoding="utf-8")).get("type") == "commonjs"
 
 
 def test_no_substring_guessing_about_why_a_request_failed() -> None:

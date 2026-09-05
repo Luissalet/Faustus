@@ -462,30 +462,40 @@ five seconds of looking.
 
 ## Numbers
 
-As of 2026-09-04, against the fork point (`c9dd68d8`):
+As of 2026-09-05, against the fork point (`c9dd68d8`):
 
 | Measure | Value |
 |:--|:--|
-| Commits on top of upstream | 405 |
-| Lines changed | +167,100 / −1,600 across 741 files |
+| Commits on top of upstream | 459 |
+| Lines changed | +240,400 / −204,600 across 1,327 files |
 | New modules in `src/`, `routes/`, `services/` | 160 |
-| Faustus Studio (`studio/src/`) | 200 modules · 63k lines TS · 21k lines CSS |
-| New test files | 231 |
-| Tests collected | 10,472 (`pytest --collect-only -q tests`) |
-| Full run on the reference machine | 10,345 passed · 47 failed · 6 errors · 74 skipped · 15m34s |
+| Faustus Studio (`studio/src/`) | 200 modules · 63k lines TS · 21k lines CSS · 121 chunks · 2.7 MB |
+| Interface it replaced | `static/app.js` + `static/js/` + `static/style.css` ≈ 9 MB, now deleted |
+| Test files | 938 |
 | End-to-end flows (Playwright) | 12 |
 
 Reference machine: RTX 4070 Ti 12 GB + RTX 5060 Ti 16 GB (eGPU), 128 GB RAM, Windows 11,
 Ollama 0.33.x, running `qwen3-coder:30b`, `qwen3.5:9b`, `qwen3.8:27b` and `qwen3-coder-next`.
 
-**About those 53 reds.** They are not regressions, and the way that was established is worth stating,
-because the first attempt was wrong. A clean `git worktree` at the previous commit reported 27
-failures against the working directory's 44 — which reads as "today broke 17 tests". It didn't: a
-worktree has no local `data/` directory, and this repo has a family of tests that depend on one. Run
-properly — same directory, same `data/`, same file list, only the commit changing — the previous
-commit fails the **same 44**. So the comparison also measured something the docs had been asserting
-without a number: **17 of the 44 come from this machine's `data/`, not from Windows**. The
-per-failure detail is in [`FAUSTUS.md` §24.4 and §40.7](FAUSTUS.md).
+**About the reds.** A full run on this machine ends with a few dozen failures, and they are not
+regressions — but "not regressions" is a claim, so here is how it is checked, because the obvious way
+is wrong. A clean `git worktree` at the previous commit once reported 27 failures against the working
+directory's 44, which reads as "today broke 17 tests". It didn't: a worktree has no local `data/`
+directory, and this repo has a family of tests that need one. Run properly — same directory, same
+`data/`, same file list, only the commit changing — the previous commit failed the **same 44**, and
+the exercise measured something the docs had been asserting without a number: **17 of the 44 came
+from this machine's `data/`, not from Windows**.
+
+That method is the reason the interface rebuild could be merged with a straight face. Every file that
+was red after it was re-run at `master` in the same working directory: **zero new failures, and two
+that master fails and the rebuild does not.** It also caught the one regression that mattered. Vite
+made the repository root an ESM package, and Node reads a file's module type from the nearest
+`package.json` — so `"type": "module"` at the root quietly reclassified every plain `.js` in the
+tree, including the two CommonJS checkers GitHub Actions loads with `require()`. They had been
+failing on every pull request with *"checkPrDescription is not a function"*, and nothing said so out
+loud. A four-line `package.json` under `.github/scripts/` scopes them back, and a guard now fails
+if the root is ESM and that file is missing. Per-failure detail is in
+[`FAUSTUS.md` §24.4 and §40.7](FAUSTUS.md).
 
 ## Relationship to Odysseus
 

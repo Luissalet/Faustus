@@ -1,0 +1,6 @@
+{
+  "//": "The repository root became an ESM package when Vite arrived (root package.json, \"type\": \"module\"), which silently turned every plain .js in the repo into ESM — including these two CommonJS checkers, which actions/github-script loads with require(). Node resolves module type from the NEAREST package.json, so this file scopes .github/scripts/ back to CommonJS. Without it the PR and issue description checks fail at load with \"checkPrDescription is not a function\", in CI, on every pull request.",
+  "name": "odysseus-github-scripts",
+  "private": true,
+  "type": "commonjs"
+}

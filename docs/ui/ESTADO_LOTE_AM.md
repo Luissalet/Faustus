@@ -218,3 +218,25 @@ y a `static/js/storage.js` (ahora al carril de `AppShell.tsx` y a las claves
 de `composer.ts` / `appearance.ts`), y `test_docs_no_orphan_images` exigía
 que bajo `docs/` no hubiera Markdown: `docs/ui/` queda declarado como lo que
 es —el registro de ingeniería de este trabajo, no una página del sitio.
+
+## La comprobación que sí vale, y el fallo que destapó
+
+«No hay regresiones» es una afirmación, así que se comprueba como manda el
+README: **misma carpeta, mismo `data/`, misma lista de ficheros, cambiando
+sólo el commit**. Los 22 ficheros que quedaban en rojo tras la limpieza se
+pasaron en `master` y en la rama:
+
+- master: 39 rojos · rama: 37 rojos
+- **nuevos en la rama: ninguno**
+- dos que master falla y la rama no (`test_agent_harness_loop`)
+
+Por el camino salió una regresión de verdad, que no era de interfaz y llevaba
+desde el lote A: **Vite hizo del raíz un paquete ESM** (`"type": "module"` en
+`package.json`), y node decide el tipo de módulo por el `package.json` **más
+cercano**. Eso reclasificó en silencio todo `.js` del repositorio, incluidos
+los dos comprobadores CommonJS que GitHub Actions carga con `require()`:
+`.github/scripts/check-pr-description.js` y `check-issue-description.js`.
+Llevaban fallando en cada pull request con «checkPrDescription is not a
+function» y nadie lo decía. Arreglo: un `package.json` de cuatro líneas en
+`.github/scripts/` con `"type": "commonjs"`, más una guarda que falla si el
+raíz es ESM y ese fichero no está. Los 26 tests de los dos comprobadores pasan.
