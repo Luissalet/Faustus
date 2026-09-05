@@ -71,7 +71,7 @@ export const TOOLS: Tool[] = [
   { path: '/research', label: 'Research', icon: Telescope, ready: true },
   { path: '/compare', label: 'Compare', icon: Columns3, ready: true },
   { path: '/group', label: 'Group chat', icon: Users, ready: true },
-  { path: '/cookbook', label: 'Cookbook', icon: ChefHat, ready: false },
+  { path: '/cookbook', label: 'Cookbook', icon: ChefHat, ready: true },
 ];
 
 /** Where a tool opens today: its Studio route, or the previous interface. */
@@ -104,4 +104,5 @@ export const SERVER_ROUTES = [
   '/research',
   '/compare',
   '/group',
+  '/cookbook',
 ];

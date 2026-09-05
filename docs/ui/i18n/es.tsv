@@ -3696,3 +3696,314 @@ a file inside an expert corpus	un archivo dentro del corpus de un experto
 a node in the provenance graph	un nodo del grafo de procedencia
 Blind answer	Respuesta a ciegas
 Hybrid {n}	Híbrido {n}
+(no output yet)	(aún sin salida)
+/mnt/models	/mnt/models
+A local folder instead of the repo id	Una carpeta local en vez del id del repo
+Add a model folder	Añadir una carpeta de modelos
+Add an SSH server	Añadir un servidor SSH
+Add folder	Añadir carpeta
+Add server	Añadir servidor
+Already downloading	Ya se está descargando
+Also put it on the Cookbook calendar	Ponerlo también en el calendario Cookbook
+Any	Cualquiera
+Any engine	Cualquier motor
+Ascending	Ascendente
+Attention backend	Backend de atención
+Attention slicing	Attention slicing
+Authorise the app’s SSH key on this server	Autorizar la clave SSH de la app en este servidor
+Auto tool choice	Elección automática de herramientas
+Back to the generated command	Volver al comando generado
+Base model	Modelo base
+Batch	Batch
+Best fit	Mejor ajuste
+Biggest first	Más grandes primero
+Biggest pool	Grupo más grande
+Block size	Tamaño de bloque
+CPU	CPU
+CPU offload	Descarga a CPU
+CPU only	Solo CPU
+CUDA_VISIBLE_DEVICES / HIP_VISIBLE_DEVICES for every launch; empty = all	CUDA_VISIBLE_DEVICES / HIP_VISIBLE_DEVICES en cada lanzamiento; vacío = todas
+Cached llama.cpp build cleared; the next launch recompiles.	Compilación de llama.cpp borrada; el próximo lanzamiento recompila.
+Checked on {where}	Comprobado en {where}
+Checking packages	Comprobando paquetes
+Command completed.	Comando terminado.
+Command failed.	El comando falló.
+Copy id	Copiar id
+Copy public key	Copiar clave pública
+Days	Días
+Decode CUDA graph	CUDA graph de decodificación
+Delete failed	No se pudo borrar
+Delete from disk	Borrar del disco
+Delete {file}	Borrar {file}
+Delete {file}?	¿Borrar {file}?
+Delete {name} from disk?	¿Borrar {name} del disco?
+Descending	Descendente
+Detected for this model	Detectado para este modelo
+Detecting the hardware	Detectando el hardware
+Device map	Mapa de dispositivos
+Disable custom all-reduce	Desactivar all-reduce propio
+Download GGUF	Descargar GGUF
+Download a model first; everything under the HF cache, your model folders and Ollama shows up here.	Descarga un modelo primero; todo lo que hay en la caché de HF, tus carpetas de modelos y Ollama aparece aquí.
+Download here	Descargar aquí
+Downloading {name}…	Descargando {name}…
+Draft tokens	Tokens de borrador
+Edit and relaunch	Editar y relanzar
+End	Fin
+Enforce eager	Forzar eager
+Engine	Motor
+Env (KEY=VAL …)	Entorno (CLAVE=VALOR …)
+Environment path	Ruta del entorno
+Expert parallel	Paralelismo de expertos
+Extra arguments	Argumentos extra
+File deleted	Archivo borrado
+Filter the library	Filtrar la biblioteca
+First GGUF found	Primer GGUF encontrado
+Flash attention	Flash attention
+Frees {size} on {where}. Downloading it again takes as long as it did the first time.	Libera {size} en {where}. Volver a descargarlo tarda lo mismo que la primera vez.
+GGUF file	Archivo GGUF
+GGUF quant	Cuantización GGUF
+GPU	GPU
+GPU layers	Capas en GPU
+GPU memory	Memoria de GPU
+GPU pool	Grupo de GPU
+GPU selection cleared	Selección de GPU borrada
+GPUs	GPU
+GPUs to use	GPU a usar
+Generate key	Generar clave
+Get	Traer
+Go to Download	Ir a Descargar
+Guidance scale	Escala de guía
+Hardware profiles	Perfiles de hardware
+Harmonise GPU	GPU para armonizar
+Hugging Face did not answer.	Hugging Face no respondió.
+Hugging Face on {where}{dir}	Hugging Face en {where}{dir}
+Hugging Face token	Token de Hugging Face
+Imagined machine	Máquina imaginada
+Inference	Inferencia
+Install	Instalar
+Install failed	La instalación falló
+Install tmux and the build basics over SSH; detects the platform	Instala tmux y lo básico para compilar por SSH; detecta la plataforma
+Install {list}	Instalar {list}
+Installing	Instalando
+It launches at the start time on those days and stops when the window ends. The launch settings saved for this model are used.	Se lanza a la hora de inicio esos días y se para cuando acaba la ventana. Se usan los ajustes de lanzamiento guardados para este modelo.
+KV cache dtype	dtype de la caché KV
+KV cache type	Tipo de caché KV
+Key generated	Clave generada
+Kill	Matar
+Kill (force)	Matar (a la fuerza)
+Kill {name}?	¿Matar {name}?
+Killed	Matado
+Language model only	Solo el modelo de lenguaje
+Launch a model from Models or start a download; every session shows up here with its output.	Lanza un modelo desde Modelos o empieza una descarga; cada sesión aparece aquí con su salida.
+Listing the repo	Listando el repo
+LoRA	LoRA
+LoRA modules	Módulos LoRA
+LoRA paths	Rutas LoRA
+LoRA scale	Escala LoRA
+LoRA scales	Escalas LoRA
+LoRA style	Estilo LoRA
+Local	Local
+Loosen a filter: the search, the engine or "only what fits".	Afloja un filtro: la búsqueda, el motor o «solo lo que cabe».
+Main GPU	GPU principal
+Max sequences	Secuencias máx.
+Max tokens	Tokens máx.
+Memory fraction	Fracción de memoria
+Micro-batch	Micro-batch
+Missing	Falta
+MoE env vars	Variables de entorno MoE
+MoE layers on CPU	Capas MoE en CPU
+Model actions	Acciones del modelo
+Model card	Ficha del modelo
+Model deleted	Modelo borrado
+Model folders	Carpetas de modelos
+Model path override	Ruta del modelo (manual)
+Needs	Necesita
+Negative prompt	Prompt negativo
+New on Hugging Face	Nuevo en Hugging Face
+New server	Servidor nuevo
+Newest	Más nuevos
+No CUDA graph	Sin CUDA graph
+No GGUF files listed for this repo; the whole repo is downloaded.	Este repo no lista archivos GGUF; se descarga entero.
+No GGUF source is configured for {name}. Pick a row with a GGUF source, or paste the GGUF repo in Download.	{name} no tiene fuente GGUF configurada. Elige una fila con fuente GGUF o pega el repo GGUF en Descargar.
+No GPU detected	Sin GPU detectada
+No key yet; the app needs one to reach servers without a password.	Aún no hay clave; la app la necesita para llegar a los servidores sin contraseña.
+No mmap	Sin mmap
+No parser known for this family	No se conoce parser para esta familia
+No warmup	Sin calentamiento
+Nothing cached here yet	Aún no hay nada en caché aquí
+Nothing is downloaded now; it happens at the next llama.cpp launch.	Ahora no se descarga nada; ocurre en el próximo lanzamiento de llama.cpp.
+Nothing running	Nada en marcha
+Nothing to show	Nada que mostrar
+Ollama library	Biblioteca de Ollama
+Ollama tag on {where}	Etiqueta de Ollama en {where}
+Only that file goes; the rest of the repo stays cached.	Solo se va ese archivo; el resto del repo sigue en caché.
+Only what fits	Solo lo que cabe
+Open in Studio	Abrir en Studio
+Open on Hugging Face	Abrir en Hugging Face
+Parallel slots	Ranuras en paralelo
+Parameters	Parámetros
+Params	Parám.
+Partial	Parcial
+Pick at least one day	Elige al menos un día
+Pin GPUs by default	Fijar GPU por defecto
+Platform	Plataforma
+Prefix caching	Caché de prefijos
+Preset saved	Preset guardado
+Presets	Presets
+Profiles for this machine	Perfiles para esta máquina
+Pull with Ollama	Traer con Ollama
+Python environment	Entorno de Python
+Quant	Cuant.
+Queued {name}	{name} en cola
+Queued {name} — waiting for the current download	{name} en cola: esperando a la descarga actual
+RAM (GB)	RAM (GB)
+Rank against an imagined machine	Ordenar contra una máquina imaginada
+Ranking the catalogue	Ordenando el catálogo
+Reachable from the network	Accesible desde la red
+Reading hardware profiles	Leyendo perfiles de hardware
+Reading the session…	Leyendo la sesión…
+Reasoning parser	Parser de razonamiento
+Rebuild	Recompilar
+Rebuild failed	La recompilación falló
+Rebuild llama.cpp	Recompilar llama.cpp
+Rebuild llama.cpp on {where}?	¿Recompilar llama.cpp en {where}?
+Recheck	Volver a comprobar
+Recipe for	Receta para
+Recipe variant	Variante de la receta
+Reinstall	Reinstalar
+Relaunch	Relanzar
+Relaunched	Relanzado
+Remove folder	Quitar carpeta
+Remove server	Quitar servidor
+Remove {name}?	¿Quitar {name}?
+Repo, tag or URL	Repo, etiqueta o URL
+Rescan	Volver a escanear
+Rescan hardware	Volver a escanear el hardware
+Restart	Reiniciar
+Restarted	Reiniciado
+Run on {where}	Ejecutar en {where}
+Run this once in a terminal that can already reach the server:	Ejecuta esto una vez en una terminal que ya llegue al servidor:
+Running {name} setup on {where}…	Ejecutando la instalación de {name} en {where}…
+SSH host	Host SSH
+SSH key	Clave SSH
+SSH port	Puerto SSH
+Save as preset	Guardar como preset
+Save preset	Guardar preset
+Save schedule	Guardar horario
+Save token	Guardar token
+Saved automatically from a launch that worked	Guardado automáticamente de un lanzamiento que funcionó
+Scanning the cache	Escaneando la caché
+Scheduled: Serve {name} — see Automations	Programado: Servir {name} (ver Automatizaciones)
+Schedule…	Programar…
+Search cached models	Buscar modelos en caché
+Sent with downloads and serves; needed for gated repos	Se envía con descargas y lanzamientos; necesario para repos restringidos
+Serve	Servir
+Serve {name} on a schedule	Servir {name} con horario
+Served model name	Nombre del modelo servido
+Server	Servidor
+Server added	Servidor añadido
+Server removed	Servidor quitado
+Serving {name}…	Sirviendo {name}…
+Session actions	Acciones de la sesión
+Sessions already running there keep running; the app just stops listing the server.	Las sesiones que ya corren allí siguen corriendo; la app solo deja de listar el servidor.
+Set ({masked}) — type a new one to replace it	Puesto ({masked}): escribe otro para sustituirlo
+Set up	Preparar
+Smallest first	Más pequeños primero
+Speculative MTP	MTP especulativo
+Speculative decoding	Decodificación especulativa
+Speculative method	Método especulativo
+Speculative tokens	Tokens especulativos
+Split mode	Modo de reparto
+Start and end must be HH:MM	Inicio y fin deben ser HH:MM
+Started {name}	{name} en marcha
+Steps	Pasos
+Stop and remove	Parar y quitar
+Swap space (GB)	Espacio de swap (GB)
+System Python	Python del sistema
+System packages installed	Paquetes del sistema instalados
+Target context	Contexto objetivo
+Tensor parallel	Paralelismo de tensores
+Tensor split	Reparto de tensores
+Test SSH	Probar SSH
+The catalogue came back empty for this hardware; rescan or try the imagined machine.	El catálogo volvió vacío para este hardware; vuelve a escanear o prueba la máquina imaginada.
+The launch settings of this session, ready to apply to the same model again.	Los ajustes de lanzamiento de esta sesión, listos para aplicarlos al mismo modelo.
+The library did not answer.	La biblioteca no respondió.
+The process tree is killed without a chance to save anything.	El árbol de procesos se mata sin dar tiempo a guardar nada.
+The session is stopped first, then the card goes.	Primero se para la sesión; después se va la tarjeta.
+This clears the cached llama-server build. The next launch recompiles or installs a matching prebuilt — and picks up CUDA/HIP if a toolchain is now present.	Esto borra la compilación de llama-server en caché. El próximo lanzamiento recompila o instala un binario a juego, y coge CUDA/HIP si ahora hay toolchain.
+This machine	Esta máquina
+Token cleared	Token borrado
+Token saved	Token guardado
+Trust remote code	Confiar en el código remoto
+Try another kind or a shorter search.	Prueba otro tipo o una búsqueda más corta.
+Unfavourite	Quitar de favoritos
+Unified memory	Memoria unificada
+Update	Actualizar
+Update source and rebuild	Actualizar fuente y recompilar
+Updating	Actualizando
+Use case	Uso
+Use the first remote as default target	Usar el primer remoto como destino por defecto
+VAE slicing	VAE slicing
+VRAM each (GB)	VRAM por GPU (GB)
+Vision (mmproj)	Visión (mmproj)
+What fits this machine, what is already here, and the engines that serve it.	Qué cabe en esta máquina, qué hay ya aquí y los motores que lo sirven.
+What if: on	Y si…: activo
+What if…	Y si…
+connected	conectado
+detect on set up	detectar al preparar
+detected	detectado
+downloading	descargando
+dtype	dtype
+endpoint	endpoint
+gpu-box	gpu-box
+incomplete	incompleto
+max context	contexto máx.
+model max	máx. del modelo
+no HF token set (gated repos need one, in Servers)	sin token de HF (los repos restringidos lo necesitan; en Servidores)
+no venv set (Servers)	sin venv (Servidores)
+offload	descarga
+quality {q} · speed {s} · fit {f} · context {c}	calidad {q} · velocidad {s} · ajuste {f} · contexto {c}
+serving	sirviendo
+set up	preparado
+text generation, by downloads	generación de texto, por descargas
+the checked one receives downloads	la marcada recibe las descargas
+{name} installed	{name} instalado
+{name} is already {state}	{name} ya está {state}
+{n} core	{n} núcleo
+{n} cores	{n} núcleos
+{n} download	{n} descarga
+{n} downloads	{n} descargas
+{n} live	{n} en marcha
+{n} live#	{n} en marcha
+{n} of {total} installed	{n} de {total} instalado
+{n} of {total} installed#	{n} de {total} instalados
+{n} session	{n} sesión
+{n} session live.	{n} sesión en marcha.
+{n} sessions	{n} sesiones
+{n} sessions live.	{n} sesiones en marcha.
+{verb} {name} on {where}…	{verb} {name} en {where}…
+Dependencies	Dependencias
+Servers	Servidores
+The catalogue ranked against this hardware	El catálogo ordenado contra este hardware
+What is cached here, ready to launch	Lo que hay en caché aquí, listo para lanzar
+Pull a repo, a GGUF or an Ollama tag	Traer un repo, un GGUF o una etiqueta de Ollama
+Every session, its output and what went wrong	Cada sesión, su salida y qué falló
+What each engine needs on this server	Qué necesita cada motor en este servidor
+This machine and the SSH boxes	Esta máquina y las cajas SSH
+Perfect	Perfecto
+Good	Bueno
+Marginal	Justo
+Tight	Apretado
+No fit	No cabe
+Ready	Listo
+Crashed	Se cayó
+LLM	LLM
+GGUF	GGUF
+Mon	Lun
+Tue	Mar
+Wed	Mié
+Thu	Jue
+Fri	Vie
+Sat	Sáb
+Sun	Dom
+Unified	Unificada

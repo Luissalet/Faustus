@@ -1143,9 +1143,7 @@ export function StudioScreen() {
     focus_input: () => textareaRef.current?.focus(),
     open_calendar: () => navigate('/calendar'),
     open_compare: () => navigate('/compare'),
-    open_cookbook: () => {
-      window.location.href = '/?shell=legacy';
-    },
+    open_cookbook: () => navigate('/cookbook'),
     open_research: () => navigate('/research'),
     open_gallery: () => navigate('/library?type=imagen'),
     open_library: () => navigate('/library'),

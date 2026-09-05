@@ -678,3 +678,25 @@ su área y baja el baseline. Ningún módulo Studio nuevo la aumenta.
     URL y con escritura muy rápida (automatizada) pierde teclas; a mano no
     se nota. Un `useDeferredValue` en `Library.tsx` lo quitaría.
 
+## Lote AG (Cookbook)
+
+120. **`[→]`** Sin verificar en el 7001 (Windows local, sin remotos): servidores
+    SSH (probar, preparar, clave), lanzamientos vLLM/SGLang/MLX/Diffusers,
+    reintentos con flag desde el diagnóstico, cola de descargas, adopción de
+    sesiones externas, programar (el diálogo se abre; no se guardó ninguna
+    tarea). Verificado: ajuste, caché, descarga Ollama y GGUF, lanzamiento
+    llama.cpp con diagnóstico del servidor, dependencias, formulario de
+    servidores.
+121. **`[ ]`** En Windows local, servir una etiqueta de Ollama ya descargada
+    ejecuta `ollama show <tag>` (la anterior mandaba `docker exec` al sidecar,
+    que aquí no existe): la sesión termina y queda «fallida» aunque el modelo
+    esté disponible por el endpoint 11434. Lo honesto sería que el servidor
+    registrara el endpoint sin lanzar nada.
+122. **`[ ]`** La descarga GGUF desde Ajuste usa el patrón `*<cuant>*` de la
+    fila (como la anterior): con `BF16` en bartowski no coincide ningún
+    archivo y la descarga acaba «hecha» con 0 MB; el diagnóstico del servidor
+    («No matching files») solo se ve al desplegar la tarjeta.
+123. **`[ ]`** El tamaño de un repo GGUF recién descargado aparece «0 MB» hasta
+    el siguiente escaneo completo; `gguf_files` llega vacío y el formulario no
+    ofrece el selector de archivo.
+

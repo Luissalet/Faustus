@@ -868,7 +868,7 @@ function Workbench({ imageId, draftId, fresh }: { imageId: string | null; draftI
           <IconButton icon={X} label={t('Close')} size="sm" onClick={() => setSheet(null)} />
         </div>
         <div className="fs-ed__pane" data-pane="tool">
-          <ToolPane ed={ed} models={models} run={run} rembgInstalled={rembgInstalled} onOpenCookbook={() => { window.location.href = '/?shell=legacy'; }} />
+          <ToolPane ed={ed} models={models} run={run} rembgInstalled={rembgInstalled} onOpenCookbook={(what) => navigate(`/cookbook?t=deps&pkg=${encodeURIComponent(what)}`)} />
         </div>
         <div className="fs-ed__pane" data-pane="layers">
           <LayersPane ed={ed} version={version} onAdjust={(layerId, type, adjId) => setAdjust({ layerId, type, adjId })} />

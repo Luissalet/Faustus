@@ -34,6 +34,7 @@ const MemoryScreen = lazy(() => import('../screens/Memory').then((m) => ({ defau
 const CalendarScreen = lazy(() => import('../screens/Calendar').then((m) => ({ default: m.CalendarScreen })));
 const EmailScreen = lazy(() => import('../screens/email/Email').then((m) => ({ default: m.EmailScreen })));
 const ResearchScreen = lazy(() => import('../screens/research/Research').then((m) => ({ default: m.ResearchScreen })));
+const CookbookScreen = lazy(() => import('../screens/cookbook/Cookbook').then((m) => ({ default: m.CookbookScreen })));
 const CompareScreen = lazy(() => import('../screens/compare/Compare').then((m) => ({ default: m.CompareScreen })));
 const GroupScreen = lazy(() => import('../screens/group/Group').then((m) => ({ default: m.GroupScreen })));
 const SettingsScreen = lazy(() => import('../screens/Settings').then((m) => ({ default: m.SettingsScreen })));
@@ -191,7 +192,7 @@ function Rail() {
 function RouteStage() {
   const { pathname, search } = useLocation();
   const editing = (pathname.startsWith('/library/edit') && /[?&](img|draft|new)=/.test(search)) || /^\/documents\/[^/]+/.test(pathname);
-  const screen = pathname.startsWith('/studio') ? 'studio' : editing ? 'editor' : pathname.startsWith('/email') || pathname.startsWith('/compare') || (pathname.startsWith('/memory') && /[?&]t=provenance/.test(search)) || (pathname.startsWith('/agents') && /[?&]t=tournament/.test(search)) ? 'wide' : undefined;
+  const screen = pathname.startsWith('/studio') ? 'studio' : editing ? 'editor' : pathname.startsWith('/email') || pathname.startsWith('/compare') || (pathname.startsWith('/memory') && /[?&]t=provenance/.test(search)) || (pathname.startsWith('/agents') && /[?&]t=tournament/.test(search)) || pathname.startsWith('/cookbook') ? 'wide' : undefined;
   return (
     <main className="fs-main" id="fs-main" tabIndex={-1} data-screen={screen}>
       <div className="fs-main__inner">
@@ -229,6 +230,7 @@ function RouteBody() {
         <Route path="/research" element={<ResearchScreen />} />
         <Route path="/compare" element={<CompareScreen />} />
         <Route path="/group" element={<GroupScreen />} />
+        <Route path="/cookbook" element={<CookbookScreen />} />
         <Route path="/settings" element={<SettingsScreen />} />
         <Route path="/agents" element={<AgentsScreen />} />
         <Route path="/skills" element={<SkillsScreen />} />

@@ -155,7 +155,8 @@ proporcionales, auditoría de la guía Vercel pasada o excepción documentada,
       Tournament en Agentes (`/agents?t=tournament`, lote AF), Procedencia en
       Memoria (`/memory?t=provenance`, disposición determinista en `lib/graph.ts`)
       e Historial importado en Biblioteca (`/library?type=historial`).
-      Falta: Cookbook. Vitales (uso de GPU) en Studio: lote Q.
+      Cookbook como pantalla (`/cookbook`, lote AG: ajuste, modelos, descargar,
+      en marcha, dependencias, servidores). Vitales (uso de GPU) en Studio: lote Q.
 - [ ] **UI-061** Borrar los puentes muertos, el DOM legacy de cada pantalla ya
       migrada y el propio flag. Empezar a dividir `style.css`, a solas y sin
       mezclarlo con features.

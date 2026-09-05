@@ -64,6 +64,7 @@ export const COMMANDS: SlashCommand[] = [
   { name: 'research', usage: '/research [question]', help: 'Deep Research: several rounds of search and reading, then a report with sources.', route: '/research' },
   { name: 'group', usage: '/group', help: 'Group chat: several models (with personas) in one conversation.', route: '/group' },
   { name: 'compare', usage: '/compare', help: 'Compare: the same prompt to several models side by side, blind, with a vote.', route: '/compare' },
+  { name: 'cookbook', usage: '/cookbook', help: 'Cookbook: what fits this machine, download and launch local models.', route: '/cookbook' },
   { name: 'mcp', usage: '/mcp', help: 'MCP servers (Settings → Integrations).', route: '/settings?s=integrations' },
   { name: 'setup', usage: '/setup', help: 'Go to Settings.', route: '/settings' },
   { name: 'usage', usage: '/usage [on|off]', help: 'Shows or hides the live usage (GPU, VRAM, model, RAM) in the header.' },
