@@ -26,15 +26,19 @@ import {
   setRagActive,
   setWorkspace as persistWorkspace,
   uploadFiles,
+  vetWorkspace,
   type Attachment,
   type GenOverrides,
 } from '../adapters/composer';
 import {
+  archiveSession,
+  autoSortSessions,
   compactSession,
   deleteMessages,
   deleteSession,
   editMessage,
   exportUrl,
+  exportZipUrl,
   forkSession,
   listVersions,
   renameSession,
@@ -45,13 +49,21 @@ import {
   EXPORT_FORMATS,
 } from '../adapters/sessions';
 import { relativeTime } from '../adapters/home';
-import { getKeybinds, matchesCombo } from '../adapters/settings';
+import { getKeybinds, KEYBIND_LABELS, matchesCombo } from '../adapters/settings';
 import { listCheckpoints } from '../adapters/workspace';
+import { addMemory, deleteMemory, listMemories } from '../adapters/memory';
+import { createNote } from '../adapters/notes';
+import { useShell } from '../shell/store';
+import { getTheme as getMode, setTheme as setMode, type ThemeChoice } from '../shell/theme';
 import { BrandMark } from '../shell/BrandMark';
 import { useSpotlight } from '../shell/useSpotlight';
 import { ModelPicker } from './ModelPicker';
 import { PresetPicker } from './PresetPicker';
-import { COMMANDS, delegationLabel, genFromArgs, parseCommand, parseDelegation } from './studio/commands';
+import { delegationLabel, genFromArgs, helpMarkdown, parseCommand, parseDelegation, resolveCommand } from './studio/commands';
+import * as cmd from '../adapters/commands';
+import { egg as makeEgg, type Egg as EggData, type EggKind } from '../lib/fun';
+import { Egg } from './studio/Egg';
+import { Rich } from './rich';
 import { knownGroupParents, stripGroupPrefix } from '../adapters/group';
 import { Composer, type Knobs } from './studio/Composer';
 import { apply, blankTurn, cleanUserText, restoreFromMetadata, type Turn } from './studio/model';
@@ -142,9 +154,26 @@ const SUGGESTIONS = [
   'Review the last commit and tell me what could break',
 ];
 
+/** When this screen was opened: `/uptime` counts from here. */
+const OPENED_AT = Date.now();
+
+/** The names `/toggle` and `/toggle` on its own put in the table. */
+const SWITCH_LABEL: Record<string, string> = {
+  web: 'Web search',
+  bash: 'Terminal',
+  plan: 'Proposal mode',
+  rag: 'Your documents',
+  research: 'Deep Research',
+  incognito: 'Nobody mode',
+};
+
 interface Notice {
   text: string;
   tone: 'info' | 'warning' | 'danger';
+  /** A command's answer: Markdown, drawn by the transcript's reader. */
+  rich?: boolean;
+  /** A hidden command's answer, drawn by `studio/Egg.tsx`. */
+  egg?: EggData;
 }
 
 /**
@@ -204,6 +233,12 @@ export function StudioScreen() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const pinnedRef = useRef(true);
+  /* Two handlers a slash command needs that are declared further down: the
+     ref keeps the dependency out of runCommand's closure. */
+  const laterRef = useRef<{ openSession: (id: string | null) => void; toggleSidebar: () => void }>({
+    openSession: () => undefined,
+    toggleSidebar: () => undefined,
+  });
   const freshRef = useRef<string | null>(null);
   const spotlight = useSpotlight();
 
@@ -213,6 +248,23 @@ export function StudioScreen() {
   const say = useCallback((text: string, tone: Notice['tone'] = 'info') => {
     setNotice({ text, tone });
   }, []);
+
+  /** A command's answer, as Markdown. */
+  const report = useCallback((markdown: string, tone: Notice['tone'] = 'info') => {
+    setNotice({ text: markdown, tone, rich: true });
+  }, []);
+
+  /** Runs an adapter call and reports whichever of the two it produces. */
+  const reportFrom = useCallback(
+    async (work: () => Promise<string>) => {
+      try {
+        report(await work());
+      } catch (error) {
+        say((error as Error).message, 'danger');
+      }
+    },
+    [report, say],
+  );
 
   const setKnobs = useCallback(
     (update: (k: Knobs) => Knobs) => {
@@ -625,21 +677,25 @@ export function StudioScreen() {
 
   /* ── Slash commands ── */
   const runCommand = useCallback(
-    async (name: string, args: string): Promise<boolean> => {
-      const command = COMMANDS.find((c) => c.name === name);
-      if (!command) {
-        say(t('I do not know /{name}. Type /help to see the commands.', { name }), 'warning');
+    async (typed: string, rest: string): Promise<boolean> => {
+      const resolved = resolveCommand(typed, rest);
+      if (!resolved) {
+        say(t('I do not know /{name}. Type /help to see the commands.', { name: typed }), 'warning');
         return true;
       }
+      const { command, args } = resolved;
+      const name = command.name;
+      // Every `/setup <provider>` lands on the same handler; the sub only
+      // exists so the suggestions can offer the providers by name.
+      const path = name === 'setup' ? 'setup' : resolved.path;
       if (command.route) {
-        if (command.legacy) window.location.href = command.route.includes('?') ? command.route : `${command.route}?shell=legacy`;
-        else if (name === 'research' && args.trim()) navigate(`/research?q=${encodeURIComponent(args.trim())}`);
+        if (name === 'research' && args) navigate(`/research?q=${encodeURIComponent(args)}`);
         else navigate(command.route);
         return true;
       }
-      switch (name) {
+      switch (path) {
         case 'help':
-          say(COMMANDS.map((c) => `${t(c.usage)} — ${t(c.help)}`).join('\n'));
+          report(helpMarkdown(args));
           return true;
         case 'models':
           setModelSignal((n) => n + 1);
@@ -679,6 +735,7 @@ export function StudioScreen() {
           }
           return true;
         }
+        case 'chats.truncate':
         case 'truncate': {
           const keep = Number.parseInt(args, 10);
           if (!sessionId || !keep || keep < 1) {
@@ -699,11 +756,18 @@ export function StudioScreen() {
           if (!sessionId) return true;
           try {
             const versions = await listVersions(sessionId);
-            say(
+            report(
               versions.length
-                ? versions
-                    .map((v) => `${v.id}  ·  ${relativeTime(v.createdAt) || v.createdAt}  ·  ${v.reason || t('edit')}  ·  ${tn(v.removed, '{n} message', '{n} messages')}\n   /restore ${v.id}`)
-                    .join('\n')
+                ? [
+                    `| ${t('Version')} | ${t('When')} | ${t('Why')} | ${t('Messages')} |`,
+                    '| --- | --- | --- | ---: |',
+                    ...versions.map(
+                      (v) =>
+                        `| \`/restore ${v.id}\` | ${relativeTime(v.createdAt) || String(v.createdAt)} | ${v.reason || t('edit')} | ${v.removed} |`,
+                    ),
+                    '',
+                    versions[0]?.preview ? `> ${versions[0].preview.replace(/\s+/g, ' ').slice(0, 200)}` : '',
+                  ].join('\n')
                 : t('No versions yet: one is saved every time an edit or a regenerate removes messages.'),
             );
           } catch (error) {
@@ -744,6 +808,7 @@ export function StudioScreen() {
           }
           return true;
         }
+        case 'chats.export':
         case 'export': {
           if (!sessionId) return true;
           const fmt = (args.trim().toLowerCase() || 'md') as ExportFormat;
@@ -754,6 +819,7 @@ export function StudioScreen() {
           window.open(exportUrl(sessionId, fmt), '_blank', 'noopener');
           return true;
         }
+        case 'chats.rename':
         case 'rename': {
           if (!sessionId || !args) {
             say(t('Usage: /rename new name'), 'warning');
@@ -848,25 +914,522 @@ export function StudioScreen() {
           }
           return true;
         }
+        case 'chats.fork':
         case 'fork':
           extrasRef.current.fork();
           return true;
         case 'tts':
           extrasRef.current.tts();
           return true;
-        case 'stats': {
+        case 'stats':
+        case 'chats.info': {
           const list = turns ?? [];
-          const out = list.filter((t) => t.role === 'assistant' && t.metrics);
-          const tokens = out.reduce((n, t) => n + (t.metrics?.outputTokens ?? 0), 0);
-          const seconds = out.reduce((n, t) => n + (t.metrics?.responseTime ?? 0), 0);
-          say(`${tn(list.length, '{n} message', '{n} messages')} · ${t('{n} tokens generated', { n: tokens })} · ${t('{s} s of model', { s: seconds.toFixed(1) })} · ${current?.model ?? route?.model ?? t('no model')}`);
+          const out = list.filter((turn) => turn.role === 'assistant' && turn.metrics);
+          const tokens = out.reduce((n, turn) => n + (turn.metrics?.outputTokens ?? 0), 0);
+          const seconds = out.reduce((n, turn) => n + (turn.metrics?.responseTime ?? 0), 0);
+          const here = [
+            `### ${current?.name ?? t('This conversation')}`,
+            '',
+            `${tn(list.length, '{n} message', '{n} messages')} · ${t('{n} tokens generated', { n: tokens })} · ${t('{s} s of model', { s: seconds.toFixed(1) })} · \`${current?.model ?? route?.model ?? t('no model')}\``,
+          ].join('\n');
+          void cmd
+            .dbStats()
+            .then((db) => report(db ? `${here}\n\n${db}` : here))
+            .catch(() => report(here));
           return true;
         }
+
+        /* ── Conversations ── */
+        case 'chats.new':
+          laterRef.current.openSession(null);
+          if (args) setDraft(args);
+          return true;
+        case 'chats.delete': {
+          if (!sessionId) return true;
+          try {
+            await deleteSession(sessionId);
+            refreshSessions();
+            navigate('/studio');
+            say(t('Conversation deleted.'));
+          } catch (error) {
+            say(`${t('Could not delete')}: ${(error as Error).message}`, 'danger');
+          }
+          return true;
+        }
+        case 'chats.archive': {
+          if (!sessionId) return true;
+          try {
+            await archiveSession(sessionId);
+            refreshSessions();
+            navigate('/studio');
+            say(t('Archived. The Library keeps it under "Archive".'));
+          } catch (error) {
+            say(`${t('Could not archive')}: ${(error as Error).message}`, 'danger');
+          }
+          return true;
+        }
+        case 'chats.favorite':
+        case 'chats.unfavorite': {
+          if (!sessionId) return true;
+          const on = path === 'chats.favorite';
+          try {
+            await setSessionImportant(sessionId, on);
+            refreshSessions();
+            say(on ? t('Marked as a favourite.') : t('No longer a favourite.'));
+          } catch (error) {
+            say(`${t('Could not change it')}: ${(error as Error).message}`, 'danger');
+          }
+          return true;
+        }
+        case 'chats.switch': {
+          const needle = args.toLowerCase();
+          if (!needle) {
+            say(t('Usage: /chats switch name (or part of it).'), 'warning');
+            return true;
+          }
+          const hit = (sessions ?? []).find((session) => session.id === args) ?? (sessions ?? []).find((session) => (session.name ?? '').toLowerCase().includes(needle));
+          if (!hit) {
+            say(t('No conversation matches "{q}".', { q: args }), 'warning');
+            return true;
+          }
+          laterRef.current.openSession(hit.id);
+          return true;
+        }
+        case 'chats.sort': {
+          say(t('Sorting the conversations into folders…'));
+          try {
+            const result = await autoSortSessions(false);
+            refreshSessions();
+            say(t('{n} conversations filed into {f} folders.', { n: String(result.updated), f: String(result.folders.length) }));
+          } catch (error) {
+            say(`${t('Could not sort them')}: ${(error as Error).message}`, 'danger');
+          }
+          return true;
+        }
+        case 'chats.clear':
+          setTurns([]);
+          say(t('Cleared here. The conversation is still on the server: reload to see it again.'));
+          return true;
+        case 'chats.export-all': {
+          const parts = args.split(/\s+/).filter(Boolean);
+          const format = (parts.find((word) => (EXPORT_FORMATS as readonly string[]).includes(word.toLowerCase())) ?? 'md') as ExportFormat;
+          const folder = parts.filter((word) => word.toLowerCase() !== format).join(' ');
+          window.open(exportZipUrl(format, folder ? { folder } : {}), '_blank', 'noopener');
+          return true;
+        }
+
+        /* ── Switches ── */
+        case 'toggle.web':
+        case 'toggle.bash':
+        case 'toggle.plan':
+        case 'toggle.rag':
+        case 'toggle.research': {
+          const key = path.slice('toggle.'.length) as 'web' | 'bash' | 'plan' | 'rag' | 'research';
+          const wanted = /^(on|off)$/i.test(args) ? args.toLowerCase() === 'on' : !knobs[key];
+          setKnobs((k) => ({ ...k, [key]: wanted }));
+          say(wanted ? t('{what}: on', { what: t(SWITCH_LABEL[key]) }) : t('{what}: off', { what: t(SWITCH_LABEL[key]) }));
+          return true;
+        }
+        case 'toggle.doc':
+          if (panel.open && panel.tab === 'doc') panelDispatch({ type: 'close' });
+          else panelDispatch({ type: 'open', tab: 'doc' });
+          return true;
+        case 'toggle.sidebar':
+          laterRef.current.toggleSidebar();
+          return true;
+        case 'toggle._show': {
+          const rows = (['web', 'bash', 'plan', 'rag', 'research', 'incognito'] as const).map((key) =>
+            `| ${t(SWITCH_LABEL[key])} | ${knobs[key] ? t('on') : t('off')} |`,
+          );
+          report([
+            `| ${t('Switch')} | ${t('State')} |`,
+            '| --- | --- |',
+            ...rows,
+            `| ${t('Mode')} | ${knobs.mode === 'agent' ? t('Agent') : t('Chat')} |`,
+            `| ${t('Working folder')} | ${workspace ? `\`${workspace}\`` : t('none')} |`,
+          ].join('\n'));
+          return true;
+        }
+
+        /* ── The working folder ── */
+        case 'workspace': {
+          const word = args.split(/\s+/)[0]?.toLowerCase() ?? '';
+          const tail = args.slice(word.length).trim();
+          if (!args || word === 'show' || word === 'status' || word === 'info') {
+            report(workspace ? t('Working folder: `{ws}`', { ws: workspace }) : t('No working folder. `/workspace pick`, or `/workspace <path>`.'));
+            return true;
+          }
+          if (word === 'clear' || word === 'off' || word === 'none' || word === 'unset') {
+            setWorkspace('');
+            say(t('Working folder cleared.'));
+            return true;
+          }
+          if (word === 'pick' || word === 'browse' || word === 'open') {
+            void pickWorkspace();
+            return true;
+          }
+          const wanted = word === 'set' || word === 'cd' || word === 'use' ? tail : args;
+          if (!wanted) {
+            say(t('Usage: /workspace <path> · pick · clear'), 'warning');
+            return true;
+          }
+          try {
+            const vetted = await vetWorkspace(wanted);
+            if (!vetted) {
+              report(t('The server will not bind `{path}` as a working folder. If Faustus runs in Docker, use the path inside the container.', { path: wanted }), 'warning');
+              return true;
+            }
+            setWorkspace(vetted);
+            say(t('Working folder: {ws}', { ws: vetted }));
+          } catch (error) {
+            say((error as Error).message, 'danger');
+          }
+          return true;
+        }
+        case 'sh': {
+          if (!args) {
+            say(t('Usage: /sh command'), 'warning');
+            return true;
+          }
+          report(t('Running `{cmd}`…', { cmd: args }));
+          await reportFrom(() => cmd.shellExec(args));
+          return true;
+        }
+
+        /* ── Reports ── */
+        case 'backup': {
+          const word = args.split(/\s+/)[0]?.toLowerCase() ?? '';
+          if (word === 'now') {
+            say(t('Taking a snapshot of the data folder…'));
+            await reportFrom(() => cmd.backupNow());
+          } else if (word === 'verify') {
+            await reportFrom(() => cmd.backupVerify(Number.parseInt(args.split(/\s+/)[1] ?? '1', 10) || 1));
+          } else {
+            await reportFrom(() => cmd.backupList());
+          }
+          return true;
+        }
+        case 'scorecard': {
+          const words = args.toLowerCase().split(/\s+/).filter(Boolean);
+          if (words[0] === 'clear' || words[0] === 'reset') {
+            await reportFrom(() => cmd.scorecardClear());
+            return true;
+          }
+          const here = words.some((word) => word === 'here' || word === 'project' || word === 'workspace');
+          if (here && !workspace) {
+            say(t('Pick a working folder first to see the scorecard for this project.'), 'warning');
+            return true;
+          }
+          const days = Number.parseFloat(words.find((word) => Number.isFinite(Number.parseFloat(word))) ?? '30') || 30;
+          await reportFrom(() => cmd.scorecard(days, here ? workspace : undefined));
+          return true;
+        }
+        case 'researchfit': {
+          const words = args.toLowerCase().split(/\s+/).filter(Boolean);
+          if (words[0] === 'apply') await reportFrom(() => cmd.researchFitApply(words.includes('fixes')));
+          else await reportFrom(() => cmd.researchFit());
+          return true;
+        }
+        case 'agentsmd': {
+          if (!workspace) {
+            say(t('An AGENTS.md belongs to a folder: pick a working folder first.'), 'warning');
+            return true;
+          }
+          await reportFrom(() => cmd.agentsMd(workspace, args.toLowerCase().includes('write')));
+          return true;
+        }
+        case 'project': {
+          const list = projects ?? [];
+          // The project of this conversation is the one whose folder is bound.
+          const here = workspace ? list.find((p) => p.workspace === workspace) : undefined;
+          const lines = here
+            ? [`### [${here.name}](/projects/${here.id})`, '', t('Folder: `{ws}`', { ws: workspace }), '', here.instructions ? t('It has standing instructions.') : t('No standing instructions yet: `/agentsmd` drafts them.'), '']
+            : [`### ${t('No project bound')}`, '', workspace ? t('The folder `{ws}` does not belong to a project.', { ws: workspace }) : t('No working folder either.'), ''];
+          lines.push(
+            list.length
+              ? [`#### ${tn(list.length, '{n} project', '{n} projects')}`, '', ...list.map((p) => `- [${p.name}](/projects/${p.id})${p.workspace ? ` — \`${p.workspace}\`` : ''}`)].join('\n')
+              : t('No projects yet. [Projects](/projects) is where they start.'),
+          );
+          report(lines.join('\n'));
+          return true;
+        }
+        case 'ping':
+          say(t('Asking the endpoints…'));
+          await reportFrom(() => cmd.ping());
+          return true;
+        case 'probe': {
+          let endpointId: string | undefined;
+          if (args) {
+            const found = await cmd.endpointIdByName(args);
+            if (!found) {
+              report(t('No endpoint matches "{q}". /ping lists them.', { q: args }), 'warning');
+              return true;
+            }
+            endpointId = found;
+          }
+          report(cmd.probeMarkdown([], false));
+          try {
+            const rows = await cmd.probe(endpointId, (partial) => report(cmd.probeMarkdown(partial, false)));
+            report(cmd.probeMarkdown(rows, true));
+          } catch (error) {
+            say(`${t('Could not probe')}: ${(error as Error).message}`, 'danger');
+          }
+          return true;
+        }
+        case 'find': {
+          if (!args) {
+            say(t('Usage: /find text'), 'warning');
+            return true;
+          }
+          await reportFrom(() => cmd.findInChats(args));
+          return true;
+        }
+        case 'search': {
+          if (!args) {
+            setKnobs((k) => ({ ...k, web: !k.web }));
+            say(t('Web search: {state}', { state: knobs.web ? t('off') : t('on') }));
+            return true;
+          }
+          setKnobs((k) => ({ ...k, web: true }));
+          const sid = await ensureSession(args);
+          if (sid) void run(sid, args);
+          return true;
+        }
+
+        /* ── Memory, skills, indexed folders ── */
+        case 'memory.list': {
+          await reportFrom(async () => {
+            const list = await listMemories();
+            if (!list.length) return t('No memories yet. `/memory add text` saves one.');
+            return [
+              `| ${t('Id')} | ${t('Memory')} | ${t('Category')} |`,
+              '| --- | --- | --- |',
+              ...list.slice(0, 40).map((m) => `| \`${m.id}\` | ${m.text.replace(/\s+/g, ' ').slice(0, 120)} | ${m.category || '—'} |`),
+              '',
+              t('`/memory delete id` removes one; [Memory](/memory) is the screen.'),
+            ].join('\n');
+          });
+          return true;
+        }
+        case 'memory.add': {
+          if (!args) {
+            say(t('Usage: /memory add what to remember'), 'warning');
+            return true;
+          }
+          try {
+            await addMemory(args, 'general', sessionId);
+            say(t('Saved in the memory.'));
+          } catch (error) {
+            say(`${t('Could not save it')}: ${(error as Error).message}`, 'danger');
+          }
+          return true;
+        }
+        case 'memory.delete': {
+          if (!args) {
+            report(t('Usage: /memory delete id (the ids come from /memory list).'), 'warning');
+            return true;
+          }
+          try {
+            await deleteMemory(args);
+            say(t('Deleted.'));
+          } catch (error) {
+            say(`${t('Could not delete it')}: ${(error as Error).message}`, 'danger');
+          }
+          return true;
+        }
+        case 'memory.search': {
+          if (!args) {
+            say(t('Usage: /memory search text'), 'warning');
+            return true;
+          }
+          await reportFrom(async () => {
+            const needle = args.toLowerCase();
+            const hits = (await listMemories()).filter((m) => m.text.toLowerCase().includes(needle));
+            if (!hits.length) return t('Nothing in the memory matches "{q}".', { q: args });
+            return [`| ${t('Id')} | ${t('Memory')} |`, '| --- | --- |', ...hits.slice(0, 40).map((m) => `| \`${m.id}\` | ${m.text.replace(/\s+/g, ' ').slice(0, 160)} |`)].join('\n');
+          });
+          return true;
+        }
+        case 'note': {
+          if (!args) {
+            say(t('Usage: /note what you want to remember'), 'warning');
+            return true;
+          }
+          try {
+            await createNote({ content: args });
+            report(t('Saved in [Notes](/notes).'));
+          } catch (error) {
+            say(`${t('Could not save the note')}: ${(error as Error).message}`, 'danger');
+          }
+          return true;
+        }
+        case 'todo': {
+          if (!args) {
+            say(t('Usage: /todo what has to be done'), 'warning');
+            return true;
+          }
+          try {
+            await createNote({ noteType: 'checklist', title: args.slice(0, 60), items: [{ text: args, done: false }] });
+            report(t('Added to [Notes](/notes).'));
+          } catch (error) {
+            say(`${t('Could not add it')}: ${(error as Error).message}`, 'danger');
+          }
+          return true;
+        }
+        case 'event': {
+          if (!args) {
+            navigate('/calendar');
+            return true;
+          }
+          try {
+            const { createEvent, quickParse } = await import('../adapters/calendar');
+            const parsed = await quickParse(args);
+            if (!parsed?.dtstart) {
+              say(t('I did not understand that as an event. The Calendar has a form.'), 'warning');
+              navigate('/calendar');
+              return true;
+            }
+            await createEvent({
+              summary: parsed.summary || args,
+              dtstart: parsed.allDay ? parsed.dtstart.slice(0, 10) : parsed.dtstart,
+              dtend: parsed.allDay ? null : parsed.dtend || null,
+              allDay: parsed.allDay,
+              location: parsed.location,
+              description: parsed.description,
+            });
+            say(`${t('Created')}: ${parsed.summary || args}${parsed.confidence < 0.6 ? t(' (check it)') : ''}`);
+          } catch (error) {
+            say(`${(error as Error).message}. ${t('The Calendar has a form.')}`, 'warning');
+          }
+          return true;
+        }
+        case 'skills':
+          await reportFrom(() => cmd.skillsMarkdown(args));
+          return true;
+        case 'reload-skills':
+          await reportFrom(() => cmd.reloadSkills());
+          return true;
+        case 'rag.list':
+          await reportFrom(() => cmd.ragList());
+          return true;
+        case 'rag.add': {
+          if (!args) {
+            say(t('Usage: /rag add /path/to/folder'), 'warning');
+            return true;
+          }
+          report(t('Indexing `{dir}`…', { dir: args }));
+          await reportFrom(() => cmd.ragAdd(args));
+          return true;
+        }
+        case 'rag.remove': {
+          if (!args) {
+            say(t('Usage: /rag remove /path/to/folder'), 'warning');
+            return true;
+          }
+          await reportFrom(() => cmd.ragRemove(args));
+          return true;
+        }
+
+        /* ── Look and feel ── */
+        case 'model': {
+          if (!args) {
+            say(route ? t('Model: {name} ({where})', { name: route.model, where: route.endpointName ?? route.kind ?? '' }) : t('No model yet.'));
+            return true;
+          }
+          const needle = args.toLowerCase();
+          const hit = routes.find((r) => r.model.toLowerCase() === needle) ?? routes.find((r) => r.model.toLowerCase().includes(needle));
+          if (!hit) {
+            report(t('No model matches "{q}". /models opens the list.', { q: args }), 'warning');
+            return true;
+          }
+          setRouteId(hit.id);
+          say(t('Model: {name}', { name: hit.model }));
+          return true;
+        }
+        case 'theme': {
+          const wanted = args.toLowerCase().trim();
+          if (!wanted) {
+            navigate('/settings?s=appearance');
+            return true;
+          }
+          if (wanted === 'dark' || wanted === 'light' || wanted === 'system') {
+            setMode(wanted as ThemeChoice);
+            say(t('Appearance: {mode}', { mode: t(wanted === 'dark' ? 'dark' : wanted === 'light' ? 'light' : 'system') }));
+            return true;
+          }
+          navigate(`/settings?s=appearance&theme=${encodeURIComponent(args.trim())}`);
+          return true;
+        }
+        case 'shortcuts': {
+          const binds = await getKeybinds();
+          report(
+            [
+              `| ${t('Shortcut')} | ${t('What it does')} |`,
+              '| --- | --- |',
+              ...Object.entries(binds)
+                .filter(([, combo]) => combo)
+                .map(([action, combo]) => `| \`${combo}\` | ${t(KEYBIND_LABELS[action] ?? action)} |`),
+              '',
+              t('[Settings](/settings?s=shortcuts) is where they change.'),
+            ].join('\n'),
+          );
+          return true;
+        }
+        case 'setup': {
+          const provider = (resolved.sub?.name ?? args.split(/\s+/)[0] ?? '').toLowerCase();
+          navigate('/settings?s=models');
+          // A credential does not travel in a command: Settings is where the
+          // endpoint is added, and the key goes in its own field.
+          if (provider) report(t('Add **{provider}** here, in "Endpoints". If you typed the key, do not paste it into a command: it stays in the conversation.', { provider }), 'warning');
+          return true;
+        }
+
+        /* ── The hidden ones ── */
+        case 'flip':
+        case 'roll':
+        case '8ball':
+        case 'fortune':
+        case 'odyssey':
+        case 'ascii':
+        case 'matrix':
+        case 'cowsay':
+        case 'wisdom':
+        case 'uptime':
+        case 'color':
+          setNotice({ text: '', tone: 'info', egg: makeEgg(path as EggKind, args, OPENED_AT) });
+          return true;
+
         default:
           return false;
       }
     },
-    [say, navigate, gen, workspace, sessionId, turnsFromHistory, refreshSessions, turns, current, route, busy, ensureSession, run, setKnobs],
+    [
+      say,
+      report,
+      reportFrom,
+      navigate,
+      gen,
+      workspace,
+      setWorkspace,
+      pickWorkspace,
+      sessionId,
+      sessions,
+      turnsFromHistory,
+      refreshSessions,
+      turns,
+      current,
+      route,
+      routes,
+      setRouteId,
+      projects,
+      busy,
+      ensureSession,
+      run,
+      knobs,
+      setKnobs,
+      panel.open,
+      panel.tab,
+    ],
   );
 
   /** A worker's task delegated again (its "Repetir…" button). */
@@ -1096,6 +1659,8 @@ export function StudioScreen() {
       return !v;
     });
   };
+  laterRef.current = { openSession, toggleSidebar };
+
   shortcutsRef.current = {
     search: () => {
       if (narrow()) setDrawerOpen(true);
@@ -1310,8 +1875,16 @@ export function StudioScreen() {
         </div>
 
         {notice && (
-          <div className="fs-notice fs-studio__notice" data-tone={notice.tone} role="status" data-testid="studio-notice">
-            <pre className="fs-studio__notice-text">{notice.text}</pre>
+          <div className="fs-notice fs-studio__notice" data-tone={notice.tone} data-wide={notice.rich || notice.egg ? '' : undefined} role="status" data-testid="studio-notice">
+            {notice.egg ? (
+              <Egg data={notice.egg} />
+            ) : notice.rich ? (
+              <div className="fs-studio__report">
+                <Rich text={notice.text} />
+              </div>
+            ) : (
+              <pre className="fs-studio__notice-text">{notice.text}</pre>
+            )}
             <IconButton icon={X} label={t('Dismiss notice')} size="sm" onClick={() => setNotice(null)} />
           </div>
         )}

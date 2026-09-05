@@ -158,7 +158,11 @@ proporcionales, auditoría de la guía Vercel pasada o excepción documentada,
       Cookbook como pantalla (`/cookbook`, lote AG: ajuste, modelos, descargar,
       en marcha, dependencias, servidores); Markdown completo en el transcript y
       en la vista previa del editor, y fichas de mención pulsables (lote AH:
-      `lib/markdown.ts` y `lib/mentions.ts`, ambas puras y con test propio).
+      `lib/markdown.ts` y `lib/mentions.ts`, ambas puras y con test propio);
+      los comandos `/` completos (lote AI: registro como datos en
+      `screens/studio/commands.ts` con alias, alias planos y subcomandos, informes
+      en Markdown desde `adapters/commands.ts`, y los ocultos en `lib/fun.ts` +
+      `studio/Egg.tsx`; falta solo el motor de tours).
       Vitales (uso de GPU) en Studio: lote Q.
 - [ ] **UI-061** Borrar los puentes muertos, el DOM legacy de cada pantalla ya
       migrada y el propio flag. Empezar a dividir `style.css`, a solas y sin

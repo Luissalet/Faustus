@@ -715,3 +715,23 @@ su área y baja el baseline. Ningún módulo Studio nuevo la aumenta.
 126. **`[ ]`** Una tabla más ancha que la columna del turno hace scroll dentro
     de su marco (con foco de teclado); no hay indicador visual de que hay más
     a la derecha más allá del propio corte.
+
+## Lote AI (comandos `/`)
+
+127. **`[ ]`** `/demo` y los once `tour-*` no existen todavía: la anterior
+    los dibuja con halos y tooltips colocados con `getBoundingClientRect`
+    (`slashCommands.js` + `tourAutoplay.js`, que los dispara la primera vez
+    que abres cada modal). Es la única fila de PARIDAD §3 que queda; va con
+    su propio motor en el lote AJ.
+128. **`[ ]`** `/probe` vuelve a dibujar la tabla entera con cada fila que
+    llega del NDJSON: con muchos modelos es un re-render por fila.
+129. **`[ ]`** El aviso de una respuesta de comando es de una sola ranura:
+    lanzar dos comandos seguidos hace que el segundo pise al primero (y si
+    el primero es lento, su respuesta llega después y pisa al segundo).
+130. **`[ ]`** `/chats sort` llama a `autoSortSessions(false)`, que además de
+    ordenar borra las conversaciones vacías o de usar y tirar. Es lo que
+    hacía la anterior, pero el comando no lo dice antes de hacerlo.
+131. **`[ ]`** `/setup <proveedor> <clave>` ya no guarda la clave: lleva a
+    Ajustes y avisa. Es a propósito (una credencial no viaja en un comando,
+    y el texto del comando se queda en la conversación), pero es un paso más
+    que en la anterior.

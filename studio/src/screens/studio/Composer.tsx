@@ -43,7 +43,7 @@ import {
   type GenOverrides,
   type WorkspaceFile,
 } from '../../adapters/composer';
-import { matchCommands, type SlashCommand } from './commands';
+import { matchCommands, type Suggestion } from './commands';
 
 export type Mode = 'chat' | 'agent';
 
@@ -153,7 +153,7 @@ export function Composer({
 
   /* ── Suggestions: `@` files or `/` commands ── */
   const [mention, setMention] = useState<{ query: string; items: WorkspaceFile[] } | null>(null);
-  const [commands, setCommands] = useState<SlashCommand[] | null>(null);
+  const [commands, setCommands] = useState<Suggestion[] | null>(null);
   const [active, setActive] = useState(0);
   const mentionAbort = useRef<AbortController | null>(null);
 
@@ -177,7 +177,8 @@ export function Composer({
         return;
       }
       setMention(null);
-      if (/^\/[a-z-]*$/i.test(value)) {
+      // A slash line, possibly with a subcommand word: `/chats ex`.
+      if (/^\/[a-z0-9?_-]*(?:\s+[a-z0-9?_-]*)?$/i.test(value)) {
         setCommands(matchCommands(value));
         setActive(0);
         return;
@@ -209,8 +210,8 @@ export function Composer({
     });
   };
 
-  const pickCommand = (command: SlashCommand) => {
-    setDraft(`/${command.name} `);
+  const pickCommand = (command: Suggestion) => {
+    setDraft(`/${command.insert.trimEnd()} `);
     setCommands(null);
     requestAnimationFrame(() => textareaRef.current?.focus());
   };
@@ -346,7 +347,7 @@ export function Composer({
         <ul className="fs-studio__suggest" role="listbox" aria-label={t('Commands')} data-testid="studio-commands">
           {commands.map((command, i) => (
             <li
-              key={command.name}
+              key={command.insert}
               role="option"
               aria-selected={i === active}
               className="fs-studio__suggest-item"
@@ -358,6 +359,7 @@ export function Composer({
               <span className="fs-studio__suggest-main">
                 <code>{t(command.usage)}</code>
               </span>
+              <span className="fs-studio__suggest-cat">{t(command.category)}</span>
               <span className="fs-studio__suggest-help">{t(command.help)}</span>
             </li>
           ))}

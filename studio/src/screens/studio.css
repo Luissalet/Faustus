@@ -2616,3 +2616,267 @@ aside.fs-panel {
     transition: none;
   }
 }
+
+/* ── A command's answer ── */
+
+/* A report is a document, not a line: it gets the room and the scroll a
+   table needs, and the reader draws it (lib/markdown.ts). */
+.fs-studio__notice[data-wide] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--fs-space-2);
+}
+
+.fs-studio__report {
+  min-inline-size: 0;
+  max-block-size: min(52vh, 520px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.fs-studio__report .fs-rich {
+  max-inline-size: none;
+  font-size: var(--fs-label-size);
+}
+
+.fs-studio__report .fs-rich__table {
+  font-size: 1em;
+}
+
+.fs-studio__suggest-cat {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: var(--fs-radius-pill);
+  background: color-mix(in srgb, var(--fs-surface-3) 70%, transparent);
+  color: var(--fs-text-3);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* ── The hidden commands ── */
+
+.fs-egg {
+  flex: 1;
+  min-inline-size: 0;
+  display: grid;
+  justify-items: center;
+  gap: var(--fs-space-2);
+  padding: var(--fs-space-2) 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.fs-egg__aside {
+  margin: 0;
+  color: var(--fs-text-3);
+  font-size: var(--fs-label-size);
+  text-align: center;
+  max-inline-size: 42ch;
+}
+
+.fs-egg__coin {
+  display: grid;
+  place-items: center;
+  inline-size: 64px;
+  block-size: 64px;
+  border: 3px solid var(--fs-border-strong);
+  border-radius: 50%;
+  background: var(--fs-surface-2);
+  color: var(--fs-text-1);
+  font-size: 26px;
+  font-weight: 700;
+  animation: fs-egg-spin var(--fs-duration-slow) var(--fs-ease-out);
+}
+
+@keyframes fs-egg-spin {
+  0% {
+    rotate: y 0deg;
+    scale: 0.5;
+    opacity: 0;
+  }
+  50% {
+    rotate: y 540deg;
+    scale: 1.2;
+  }
+  100% {
+    rotate: y 720deg;
+    scale: 1;
+  }
+}
+
+.fs-egg__dice {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--fs-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fs-egg__dice li {
+  display: grid;
+  place-items: center;
+  min-inline-size: 42px;
+  block-size: 42px;
+  padding: 0 6px;
+  border: 2px solid var(--fs-border-strong);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-2);
+  color: var(--fs-brand);
+  font-size: 18px;
+  font-weight: 700;
+  animation: fs-egg-spin var(--fs-duration-slow) var(--fs-ease-out) both;
+}
+
+.fs-egg__ball {
+  display: grid;
+  place-items: center;
+  inline-size: 78px;
+  block-size: 78px;
+  border: 3px solid var(--fs-border-strong);
+  border-radius: 50%;
+  background: var(--fs-canvas);
+  animation: fs-egg-spin var(--fs-duration-slow) var(--fs-ease-out);
+}
+
+.fs-egg__ball span {
+  display: grid;
+  place-items: center;
+  inline-size: 34px;
+  block-size: 34px;
+  border-radius: 50%;
+  background: var(--fs-surface-3);
+  color: var(--fs-text-1);
+  font-size: 17px;
+  font-weight: 900;
+}
+
+.fs-egg__answer {
+  margin: 0;
+  font-weight: 600;
+  text-align: center;
+  color: var(--fs-text-2);
+  animation: fs-rise var(--fs-duration-enter) var(--fs-ease-out) both;
+}
+
+.fs-egg__answer[data-tone='yes'] {
+  color: var(--fs-brand);
+}
+
+.fs-egg__answer[data-tone='no'] {
+  color: var(--fs-text-3);
+}
+
+.fs-egg--card {
+  justify-items: center;
+  max-inline-size: 44ch;
+  margin-inline: auto;
+  padding: var(--fs-space-3) var(--fs-space-4);
+  border: 1px dashed var(--fs-border-strong);
+  border-radius: var(--fs-radius-panel);
+}
+
+.fs-egg__kicker {
+  margin: 0;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--fs-text-3);
+}
+
+.fs-egg__quote {
+  margin: 0;
+  font-style: italic;
+  line-height: 1.55;
+  text-align: center;
+  text-wrap: balance;
+}
+
+.fs-egg--quote {
+  justify-items: start;
+  max-inline-size: 52ch;
+  margin: 0 auto;
+  padding-inline-start: var(--fs-space-4);
+  border-inline-start: 3px solid var(--fs-brand);
+}
+
+.fs-egg--quote .fs-egg__quote {
+  text-align: start;
+}
+
+.fs-egg--art {
+  margin: 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  color: var(--fs-brand);
+  font-family: var(--fs-font-code);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.fs-egg[data-egg='cowsay'] {
+  color: var(--fs-text-2);
+}
+
+.fs-egg__rain {
+  max-inline-size: 100%;
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-canvas);
+}
+
+.fs-egg__big {
+  margin: 0;
+  font-size: 1.5em;
+  font-weight: 700;
+}
+
+.fs-egg__meter {
+  inline-size: 130px;
+  block-size: 4px;
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-surface-3);
+  overflow: hidden;
+}
+
+.fs-egg__meter > span {
+  display: block;
+  block-size: 100%;
+  border-radius: inherit;
+  background: var(--fs-brand);
+}
+
+.fs-egg__swatch {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-3);
+  color: var(--fs-text-2);
+}
+
+.fs-egg__chip {
+  inline-size: 48px;
+  block-size: 48px;
+  border: 1px solid var(--fs-border-strong);
+  border-radius: var(--fs-radius-control);
+  cursor: pointer;
+  min-block-size: auto;
+  transition: scale var(--fs-duration-fast) var(--fs-ease-spring);
+}
+
+.fs-egg__chip:active {
+  scale: 0.92;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fs-egg__coin,
+  .fs-egg__dice li,
+  .fs-egg__ball,
+  .fs-egg__answer {
+    animation: none;
+  }
+
+  .fs-egg__chip {
+    transition: none;
+  }
+}

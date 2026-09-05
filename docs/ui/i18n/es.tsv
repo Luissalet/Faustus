@@ -4012,3 +4012,236 @@ Footnotes	Notas al pie
 Back to the text	Volver al texto
 edited	editado
 Open {path}	Abrir {path}
+**AGENTS.md written** to `{path}`. It goes into every agent turn in this folder from now on; edit it freely.	**AGENTS.md escrito** en `{path}`. A partir de ahora entra en cada turno del agente en esta carpeta; edítalo a tu gusto.
+**Model scorecard** — {turns} agent turns{scope} over the last {days} days. Verified = the harness confirmed the claims; asks = the model asked instead of guessing; tests and review = the project tests and the independent diff review, when they ran.	**Marcador de modelos** — {turns} turnos de agente{scope} en los últimos {days} días. Verificado = el arnés confirmó lo que decía; preguntas = el modelo preguntó en vez de adivinar; tests y revisión = los tests del proyecto y la revisión independiente del diff, cuando se ejecutaron.
+**Would NOT restore** — {n} entries.	**NO restauraría** — {n} entradas.
+**Would restore** — {n} entries.	**Restauraría** — {n} entradas.
+**{n} snapshots** · newest {when} · {size} in `{dir}`	**{n} copias** · la última {when} · {size} en `{dir}`
+**{ok} of {n} models answered.**	**Respondieron {ok} de {n} modelos.**
+, search provider included	, con el buscador incluido
+Added to [Notes](/notes).	Añadido a [Notas](/notes).
+Also	También
+An AGENTS.md belongs to a folder: pick a working folder first.	Un AGENTS.md es de una carpeta: elige primero la carpeta de trabajo.
+Answers	Responde
+Appearance: {mode}	Apariencia: {mode}
+Applied the "{tier}" profile — {n} settings updated{fixes}.	Aplicado el perfil «{tier}» — {n} ajustes cambiados{fixes}.
+Archived. The Library keeps it under "Archive".	Archivada. La Biblioteca la guarda en «Archivo».
+Asking each model for one token…	Pidiendo un token a cada modelo…
+Asking each model for one token… ({n} so far)	Pidiendo un token a cada modelo… ({n} hasta ahora)
+Cleared here. The conversation is still on the server: reload to see it again.	Limpiado aquí. La conversación sigue en el servidor: recarga para volver a verla.
+Copy {hex}	Copiar {hex}
+Could not add it	No se ha podido añadir
+Could not archive	No se ha podido archivar
+Could not change it	No se ha podido cambiar
+Could not delete	No se ha podido borrar
+Could not delete it	No se ha podido borrar
+Could not probe	No se ha podido sondear
+Could not save it	No se ha podido guardar
+Could not save the note	No se ha podido guardar la nota
+Could not sort them	No se han podido ordenar
+Count	Cuántos
+Database	Base de datos
+Draft AGENTS.md for `{ws}`. `/agentsmd write` saves it.	Borrador de AGENTS.md para `{ws}`. `/agentsmd write` lo guarda.
+Folder: `{ws}`	Carpeta: `{ws}`
+Fortune cookie	Galleta de la suerte
+GPU not detected	GPU sin detectar
+I did not understand that as an event. The Calendar has a form.	No lo he entendido como un evento. El Calendario tiene un formulario.
+Id	Id
+In the database	En la base de datos
+Indexed `{dir}` ({n} files).	Indexada `{dir}` ({n} ficheros).
+Indexing `{dir}`…	Indexando `{dir}`…
+It has standing instructions.	Tiene instrucciones permanentes.
+Latency	Latencia
+Marked as a favourite.	Marcada como favorita.
+Model: {name}	Modelo: {name}
+Model: {name} ({where})	Modelo: {name} ({where})
+No agent turns in that window yet.	Todavía no hay turnos de agente en ese periodo.
+No conversation matches "{q}".	Ninguna conversación coincide con «{q}».
+No endpoint matches "{q}". /ping lists them.	Ningún endpoint coincide con «{q}». /ping los lista.
+No longer a favourite.	Ya no es favorita.
+No memories yet. `/memory add text` saves one.	Todavía no hay recuerdos. `/memory add texto` guarda uno.
+No model answered.	No ha respondido ningún modelo.
+No model endpoints configured. `/setup local URL` adds one.	No hay endpoints de modelos. `/setup local URL` añade uno.
+No model matches "{q}". /models opens the list.	Ningún modelo coincide con «{q}». /models abre la lista.
+No model yet.	Todavía no hay modelo.
+No project bound	Sin proyecto vinculado
+No projects yet. [Projects](/projects) is where they start.	Todavía no hay proyectos. Se empiezan en [Proyectos](/projects).
+No skills match "{q}".	Ninguna skill coincide con «{q}».
+No skills yet. [Skills](/skills) is where they live.	Todavía no hay skills. Viven en [Skills](/skills).
+No snapshots yet. They land in `{dir}`. `/backup now` takes one.	Todavía no hay copias. Van a `{dir}`. `/backup now` hace una.
+No standing instructions yet: `/agentsmd` drafts them.	Todavía no hay instrucciones permanentes: `/agentsmd` las redacta.
+No such snapshot. `/backup` lists them.	No existe esa copia. `/backup` las lista.
+No working folder either.	Tampoco hay carpeta de trabajo.
+No working folder. /workspace pick, or /workspace <path>.	Sin carpeta de trabajo. /workspace pick, o /workspace <ruta>.
+Nothing in the memory matches "{q}".	Nada en la memoria coincide con «{q}».
+Nothing indexed yet. `/rag add /path` indexes a folder.	Todavía no hay nada indexado. `/rag add /ruta` indexa una carpeta.
+Nothing matches "{q}".	Nada coincide con «{q}».
+Nothing to change: the settings already match.	Nada que cambiar: los ajustes ya coinciden.
+Now	Ahora
+Paste the key in the field that just opened: a credential does not travel in a command.	Pega la clave en el campo que se acaba de abrir: una credencial no viaja en un comando.
+Pick a working folder first to see the scorecard for this project.	Elige primero una carpeta de trabajo para ver el marcador de este proyecto.
+Profile "{tier}"	Perfil «{tier}»
+Pruned {n} old ones.	Se han podado {n} antiguas.
+Reloaded: {n} skill.	Recargadas: {n} skill.
+Reloaded: {n} skills.	Recargadas: {n} skills.
+Running `{cmd}`…	Ejecutando `{cmd}`…
+Saved in [Notes](/notes).	Guardado en [Notas](/notes).
+Saved in the memory.	Guardado en la memoria.
+Scorecard cleared.	Marcador borrado.
+Setting	Ajuste
+Settings already match this profile.	Los ajustes ya coinciden con este perfil.
+Shortcut	Atajo
+Snapshot	Copia
+Snapshot `{name}` — {files} files, {size}, {seconds}s. Verified: {n} databases pass integrity_check.	Copia `{name}` — {files} ficheros, {size}, {seconds}s. Verificada: {n} bases de datos pasan integrity_check.
+Snapshot written, but it does **not** verify: {why}	La copia se ha escrito, pero **no** verifica: {why}
+Sorting the conversations into folders…	Ordenando las conversaciones en carpetas…
+Subcommand	Subcomando
+Switch	Interruptor
+Taking a snapshot of the data folder…	Haciendo una copia de la carpeta de datos…
+The Calendar has a form.	El Calendario tiene un formulario.
+The folder `{ws}` does not belong to a project.	La carpeta `{ws}` no es de ningún proyecto.
+The server will not bind `{path}` as a working folder. If Faustus runs in Docker, use the path inside the container.	El servidor no acepta `{path}` como carpeta de trabajo. Si Faustus corre en Docker, usa la ruta de dentro del contenedor.
+This conversation	Esta conversación
+This folder already has an instructions file (`{existing}`). Here is a fresh draft for reference; nothing was written.	Esta carpeta ya tiene fichero de instrucciones (`{existing}`). Aquí va un borrador nuevo como referencia; no se ha escrito nada.
+Usage: /chats switch name (or part of it).	Uso: /chats switch nombre (o parte de él).
+Usage: /find text	Uso: /find texto
+Usage: /memory add what to remember	Uso: /memory add lo que hay que recordar
+Usage: /memory delete id (the ids come from /memory list).	Uso: /memory delete id (los ids salen de /memory list).
+Usage: /memory search text	Uso: /memory search texto
+Usage: /note what you want to remember	Uso: /note lo que quieres recordar
+Usage: /rag add /path/to/folder	Uso: /rag add /ruta/a/la/carpeta
+Usage: /rag remove /path/to/folder	Uso: /rag remove /ruta/a/la/carpeta
+Usage: /sh command	Uso: /sh comando
+Usage: /todo what has to be done	Uso: /todo lo que hay que hacer
+Usage: /workspace <path> · pick · clear	Uso: /workspace <ruta> · pick · clear
+Web search: {state}	Búsqueda web: {state}
+What would make a run come back empty	Qué haría que una investigación volviera vacía
+Working folder cleared.	Carpeta de trabajo quitada.
+Working folder: {ws}	Carpeta de trabajo: {ws}
+Would be	Sería
+[Settings](/settings?s=shortcuts) is where they change.	Se cambian en [Ajustes](/settings?s=shortcuts).
+`/backup now` takes one · `/backup verify N` checks that snapshot N would really restore. Restoring is manual and destructive: stop Faustus, then `python scripts/odysseus-backup restore <file> --yes`.	`/backup now` hace una · `/backup verify N` comprueba que la copia N restauraría de verdad. Restaurar es manual y destructivo: para Faustus y luego `python scripts/odysseus-backup restore <fichero> --yes`.
+`/help name` explains one command, its aliases and its subcommands.	`/help nombre` explica un comando, sus alias y sus subcomandos.
+`/memory delete id` removes one; [Memory](/memory) is the screen.	`/memory delete id` borra uno; la pantalla es [Memoria](/memory).
+`/researchfit apply` writes them.	`/researchfit apply` los escribe.
+`/scorecard 7` · `/scorecard here` · `/scorecard clear`.	`/scorecard 7` · `/scorecard here` · `/scorecard clear`.
+`/skills query` searches them; [Skills](/skills) is the screen.	`/skills consulta` las busca; la pantalla es [Skills](/skills).
+`{dir}` is no longer indexed.	`{dir}` ya no está indexada.
+down	caído
+none	ninguna
+this session has been open	lleva abierta esta sesión
+unknown reason	motivo desconocido
+up	en pie
+{n} command	{n} comando
+{n} commands	{n} comandos
+{n} conversations filed into {f} folders.	{n} conversaciones ordenadas en {f} carpetas.
+{n} days ago	hace {n} días
+{n} folder	{n} carpeta
+{n} folders	{n} carpetas
+{n} h ago	hace {n} h
+{n} match	{n} coincidencia
+{n} matches	{n} coincidencias
+{n} min ago	hace {n} min
+{n} project	{n} proyecto
+{n} projects	{n} proyectos
+{what}: off	{what}: apagado
+{what}: on	{what}: encendido
+…and {n} more.	…y {n} más.
+Every command, by group. With a name, just that one.	Todos los comandos, por grupos. Con un nombre, solo ese.
+Acts on the conversation: create, rename, fork, archive, export, switch.	Actúa sobre la conversación: crear, renombrar, bifurcar, archivar, exportar, cambiar.
+Starts a new conversation.	Empieza una conversación nueva.
+Deletes this conversation.	Borra esta conversación.
+Archives this conversation.	Archiva esta conversación.
+Renames this conversation.	Renombra esta conversación.
+Marks it as a favourite.	La marca como favorita.
+Removes the favourite mark.	Le quita la marca de favorita.
+Forks it: a copy with everything said so far.	La bifurca: una copia con todo lo dicho hasta ahora.
+Keeps the first N messages and deletes the rest.	Conserva los N primeros mensajes y borra el resto.
+Goes to another conversation by name or id.	Va a otra conversación por nombre o id.
+Sorts the conversations into folders with the model.	Ordena las conversaciones en carpetas con el modelo.
+Tokens, timings and model of this conversation.	Tokens, tiempos y modelo de esta conversación.
+Clears the screen; the conversation stays on the server.	Limpia la pantalla; la conversación sigue en el servidor.
+Downloads a whole folder as a .zip.	Descarga una carpeta entera en .zip.
+Tokens and timings of this conversation, and what the database holds.	Tokens y tiempos de esta conversación, y lo que guarda la base de datos.
+Searches every conversation.	Busca en todas las conversaciones.
+Asks with web search on, whatever the chip says.	Pregunta con la búsqueda web encendida, diga lo que diga el chip.
+The folder the agent works in.	La carpeta en la que trabaja el agente.
+Drafts an AGENTS.md for the working folder; "write" saves it.	Redacta un AGENTS.md para la carpeta de trabajo; «write» lo guarda.
+Verified snapshots of the whole data folder: list, take one, or check one would restore.	Copias verificadas de toda la carpeta de datos: listarlas, hacer una, o comprobar que una restauraría.
+Per-model reliability of your agent turns: verified rate, questions, tests, time.	Fiabilidad por modelo de tus turnos de agente: verificados, preguntas, tests, tiempo.
+Deep Research settings matched to this machine, and what would make a run come back empty.	Ajustes de Deep Research a la medida de esta máquina, y qué haría que una investigación volviera vacía.
+The project of this conversation: folder, instructions and memory.	El proyecto de esta conversación: carpeta, instrucciones y memoria.
+Flips one of the composer switches.	Cambia uno de los interruptores del compositor.
+Web search on or off.	Búsqueda web encendida o apagada.
+Terminal on or off.	Terminal encendida o apagada.
+Deep Research on or off.	Deep Research encendido o apagado.
+The document panel on or off.	El panel de documento abierto o cerrado.
+Proposal mode on or off.	Modo propuesta encendido o apagado.
+Your indexed documents on or off.	Tus documentos indexados encendidos o apagados.
+Cycles the sidebar: full, rail, hidden.	Alterna la barra lateral: completa, carril, oculta.
+Shows every switch as it stands.	Muestra cómo está cada interruptor.
+Runs a shell command in the working folder and shows the output.	Ejecuta un comando de shell en la carpeta de trabajo y enseña la salida.
+The model of this chat; with a name, switches to it.	El modelo de este chat; con un nombre, cambia a él.
+Temperature of this chat (0-2). No value removes it.	Temperatura de este chat (0-2). Sin valor, se quita.
+top_p (0-1).	top_p (0-1).
+Generation settings: top_k, num_ctx, temperature… No arguments clears them.	Ajustes de generación: top_k, num_ctx, temperature… Sin argumentos, se borran.
+Shows or hides the live usage (GPU, VRAM, model, RAM) in the header.	Enseña u oculta el uso en vivo (GPU, VRAM, modelo, RAM) en la cabecera.
+Checks that the model endpoints answer.	Comprueba que los endpoints de modelos responden.
+Asks each model for one token to see which really answer.	Pide un token a cada modelo para ver cuáles responden de verdad.
+The memories the assistant keeps about you.	Los recuerdos que el asistente guarda sobre ti.
+Lists the memories.	Lista los recuerdos.
+Saves a memory.	Guarda un recuerdo.
+Deletes a memory by id.	Borra un recuerdo por id.
+Searches the memories.	Busca en los recuerdos.
+Saves a quick note in Notes.	Guarda una nota rápida en Notas.
+The skills; with a query, the ones that match.	Las skills; con una consulta, las que coinciden.
+Re-reads the skills folder.	Vuelve a leer la carpeta de skills.
+The folders indexed for your documents.	Las carpetas indexadas para tus documentos.
+Lists the indexed folders.	Lista las carpetas indexadas.
+Indexes a folder.	Indexa una carpeta.
+Stops indexing a folder.	Deja de indexar una carpeta.
+Go to Agents: the Tournament.	Ir a Agentes: el Torneo.
+Go to Memory: where each thing came from.	Ir a Memoria: de dónde vino cada cosa.
+Deep Research: several rounds of search and reading, then a report with sources.	Deep Research: varias rondas de búsqueda y lectura, y un informe con fuentes.
+Group chat: several models (with personas) in one conversation.	Chat en grupo: varios modelos (con personaje) en una conversación.
+Compare: the same prompt to several models side by side, blind, with a vote.	Compare: el mismo prompt a varios modelos en paralelo, a ciegas, con votación.
+Cookbook: what fits this machine, download and launch local models.	Cookbook: qué cabe en esta máquina, descargar y lanzar modelos locales.
+Adds a task to Notes.	Añade una tarea a Notas.
+Creates a calendar event in your words.	Crea un evento del calendario en tus palabras.
+MCP servers (Settings, Integrations).	Servidores MCP (Ajustes, Integraciones).
+Appearance: the mode, or a saved theme by name.	Apariencia: el modo, o un tema guardado por su nombre.
+The keyboard shortcuts.	Los atajos de teclado.
+Adds a local server or an API key.	Añade un servidor local o una clave de API.
+A local server (vLLM, LM Studio, llama.cpp, Ollama).	Un servidor local (vLLM, LM Studio, llama.cpp, Ollama).
+OpenAI.	OpenAI.
+Anthropic.	Anthropic.
+DeepSeek.	DeepSeek.
+OpenRouter.	OpenRouter.
+Groq.	Groq.
+Google Gemini.	Google Gemini.
+xAI (Grok).	xAI (Grok).
+Ollama Cloud.	Ollama Cloud.
+GitHub Copilot.	GitHub Copilot.
+ChatGPT subscription.	Suscripción de ChatGPT.
+Opens the endpoint manager.	Abre el gestor de endpoints.
+Flips a coin.	Lanza una moneda.
+Rolls dice.	Tira los dados.
+Asks the eight ball.	Le pregunta a la bola ocho.
+A fortune cookie.	Una galleta de la suerte.
+A line from the Odyssey.	Un verso de la Odisea.
+Writes it big.	Lo escribe en grande.
+Rain.	Lluvia.
+A cow says it.	Lo dice una vaca.
+Someone else already said it better.	Ya lo dijo mejor otro.
+How long this session has been open.	Cuánto lleva abierta esta sesión.
+A colour swatch you can copy.	Una muestra de color que puedes copiar.
+Fun	Diversión
+Proposal mode	Modo propuesta
+Your documents	Tus documentos
+Nobody mode	Modo nadie
+the model	el modelo
+Working folder: `{ws}`	Carpeta de trabajo: `{ws}`
+No working folder. `/workspace pick`, or `/workspace <path>`.	Sin carpeta de trabajo. `/workspace pick`, o `/workspace <ruta>`.
+Add **{provider}** here, in "Endpoints". If you typed the key, do not paste it into a command: it stays in the conversation.	Añade **{provider}** aquí, en «Endpoints». Si escribiste la clave, no la pegues en un comando: se queda en la conversación.
+Version	Versión
+Why	Por qué

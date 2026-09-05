@@ -113,9 +113,12 @@ export async function editMessage(id: string, msgId: string, content: string): P
 
 export interface ChatVersion {
   id: string;
-  createdAt: string;
+  /** Epoch seconds, as the server sends it: `relativeTime` takes a number. */
+  createdAt: number | string;
   reason: string;
+  /** How many messages this version holds that the chat no longer has. */
   removed: number;
+  preview: string;
 }
 
 export async function listVersions(id: string): Promise<ChatVersion[]> {
@@ -125,12 +128,18 @@ export async function listVersions(id: string): Promise<ChatVersion[]> {
   );
   const raw = (await response.json()) as { versions?: unknown };
   const list = Array.isArray(raw.versions) ? raw.versions : Array.isArray(raw) ? raw : [];
-  return (list as Record<string, unknown>[]).map((v) => ({
-    id: String(v.id ?? v.version_id ?? ''),
-    createdAt: String(v.created_at ?? v.saved_at ?? ''),
-    reason: String(v.reason ?? ''),
-    removed: typeof v.removed === 'number' ? v.removed : Number(v.message_count ?? 0),
-  }));
+  return (list as Record<string, unknown>[]).map((v) => {
+    const when = v.created_at ?? v.saved_at ?? '';
+    return {
+      id: String(v.id ?? v.version_id ?? ''),
+      createdAt: typeof when === 'number' ? when : String(when),
+      reason: String(v.reason ?? ''),
+      // `count` is what the version keeps; the old `removed`/`message_count`
+      // spellings stay in case another route answers.
+      removed: Number(v.removed ?? v.count ?? v.message_count ?? 0) || 0,
+      preview: String(v.preview ?? ''),
+    };
+  });
 }
 
 export async function restoreVersion(id: string, versionId: string): Promise<void> {
