@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { ApiError } from './api';
 
 /**
@@ -176,7 +177,7 @@ export async function listArchivedSessions(search = '', offset = 0, limit = 40):
   const list = Array.isArray(raw) ? raw : Array.isArray((raw as { sessions?: unknown }).sessions) ? ((raw as { sessions: unknown[] }).sessions) : [];
   const sessions = (list as Record<string, unknown>[]).map((s) => ({
     id: String(s.id ?? ''),
-    name: String(s.name ?? 'Sin título'),
+    name: String(s.name ?? t('Untitled')),
     model: String(s.model ?? ''),
     messageCount: typeof s.message_count === 'number' ? s.message_count : 0,
     lastMessageAt: typeof s.last_message_at === 'string' ? s.last_message_at : null,

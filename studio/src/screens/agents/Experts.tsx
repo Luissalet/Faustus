@@ -27,6 +27,7 @@ import {
   type ReviewDelta,
   type ReviewResult,
 } from '../../adapters/workers';
+import { t, tn } from '../../i18n';
 
 /**
  * Expertos (experts.js): a specialist with its own corpus — your books,
@@ -61,35 +62,35 @@ function Gallery({ rows, enabled, loading, error, onOpen, onNew, onDelete, onRev
   return (
     <div className="fs-exp__gallery">
       <div className="fs-agents__intro">
-        <p className="fs-prose">Un especialista con su propio corpus: tus libros, indexados por página, y correcciones que citan la página de la que salen.</p>
+        <p className="fs-prose">{t('A specialist with its own corpus: your books, indexed by page, and corrections that cite the page they came from.')}</p>
         {!enabled && (
           <p className="fs-agents__note">
-            Los expertos están apagados en Ajustes (<code>agent_experts</code>): no se inyecta nada en un turno. Todo lo de aquí se sigue editando igual.
+            {t('Experts are switched off in Settings')} (<code>agent_experts</code>): {t('nothing is injected into a turn. Everything here still edits fine.')}
           </p>
         )}
       </div>
       <div className="fs-agents__toolbar">
         <label className="fs-agents__search">
           <Search size={13} aria-hidden="true" />
-          <input type="search" placeholder="Buscar expertos…" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Buscar expertos" />
+          <input type="search" placeholder={t('Search experts…')} value={query} onChange={(e) => setQuery(e.target.value)} aria-label={t('Search experts')} />
         </label>
-        <select className="fs-field" value={sort} onChange={(e) => setSort(e.target.value as Sort)} aria-label="Ordenar expertos">
-          <option value="name">Nombre</option>
-          <option value="corpus">Tamaño del corpus</option>
-          <option value="accepted">Aceptadas</option>
+        <select className="fs-field" value={sort} onChange={(e) => setSort(e.target.value as Sort)} aria-label={t('Sort experts')}>
+          <option value="name">{t('Name')}</option>
+          <option value="corpus">{t('Corpus size')}</option>
+          <option value="accepted">{t('Accepted')}</option>
         </select>
         <span className="fs-agents__spacer" />
-        <Button variant="ghost" size="sm" icon={ClipboardCheck} label="Panel de revisión" onClick={onReview} />
-        <Button variant="primary" size="sm" icon={Plus} label="Nuevo experto" onClick={onNew} testId="exp-new" />
+        <Button variant="ghost" size="sm" icon={ClipboardCheck} label={t('Review panel')} onClick={onReview} />
+        <Button variant="primary" size="sm" icon={Plus} label={t('New expert')} onClick={onNew} testId="exp-new" />
       </div>
       {error && <div className="fs-wk__error">{error}</div>}
       {loading ? (
-        <Skeleton label="Cargando los expertos" height="120px" count={3} radius="panel" />
+        <Skeleton label={t('Loading the experts')} height="120px" count={3} radius="panel" />
       ) : visible.length === 0 ? (
         rows.length ? (
-          <p className="fs-agents__empty">Ningún experto coincide con esa búsqueda.</p>
+          <p className="fs-agents__empty">{t('No expert matches that search.')}</p>
         ) : (
-          <EmptyState title="Todavía no hay expertos" body="Crea uno y luego deja caer sus libros en el corpus." primaryAction={{ label: 'Nuevo experto', icon: Plus, onClick: onNew }} />
+          <EmptyState title={t('No experts yet')} body={t('Create one, then drop its books into the corpus.')} primaryAction={{ label: t('New expert'), icon: Plus, onClick: onNew }} />
         )
       ) : (
         <div className="fs-exp__grid">
@@ -98,24 +99,24 @@ function Gallery({ rows, enabled, loading, error, onOpen, onNew, onDelete, onRev
               <button type="button" className="fs-exp__card" data-off={!r.enabled || undefined} onClick={() => onOpen(r.slug)}>
                 <span className="fs-exp__card-head">
                   <strong>{r.name}</strong>
-                  {!r.enabled && <span className="fs-exp__off">apagado</span>}
+                  {!r.enabled && <span className="fs-exp__off">{t('off')}</span>}
                 </span>
-                <span className="fs-exp__card-desc">{r.description || 'Sin descripción aún — di qué sabe este experto.'}</span>
+                <span className="fs-exp__card-desc">{r.description || t('No description yet — say what this expert knows.')}</span>
                 <span className="fs-exp__card-meta">
-                  <span title="Modelo con el que revisa">{r.model || 'auto'}</span>
-                  <span title="Ficheros del corpus">
-                    {r.corpus_files} fichero{r.corpus_files === 1 ? '' : 's'}
+                  <span title={t('Model this expert reviews with')}>{r.model || 'auto'}</span>
+                  <span title={t('Corpus files')}>
+                    {tn(r.corpus_files, '{n} file', '{n} files')}
                   </span>
-                  <span title="Fragmentos indexados">
-                    {r.chunks} fragmento{r.chunks === 1 ? '' : 's'}
+                  <span title={t('Indexed chunks')}>
+                    {tn(r.chunks, '{n} chunk', '{n} chunks')}
                   </span>
                 </span>
                 <span className="fs-exp__card-counters">
-                  <span className="fs-exp__ok" title="Correcciones aceptadas">✓ {r.accepted}</span>
-                  <span className="fs-exp__no" title="Correcciones rechazadas">✕ {r.rejected}</span>
+                  <span className="fs-exp__ok" title={t('Corrections accepted')}>✓ {r.accepted}</span>
+                  <span className="fs-exp__no" title={t('Corrections rejected')}>✕ {r.rejected}</span>
                 </span>
               </button>
-              <IconButton icon={Trash2} label={`Borrar ${r.name}`} size="sm" onClick={() => onDelete(r)} />
+              <IconButton icon={Trash2} label={t('Delete {name}', { name: r.name })} size="sm" onClick={() => onDelete(r)} />
             </div>
           ))}
         </div>
@@ -149,7 +150,7 @@ function Detail({ slug, onBack, onChanged, flash }: { slug: string; onBack: () =
         }
         setError(null);
       } catch (e) {
-        setError(`No he podido abrir ${slug}: ${e instanceof Error ? e.message : String(e)}`);
+        setError(`${t('Could not open {name}', { name: slug })}: ${e instanceof Error ? e.message : String(e)}`);
       }
     },
     [slug],
@@ -161,12 +162,12 @@ function Detail({ slug, onBack, onChanged, flash }: { slug: string; onBack: () =
 
   const save = async () => {
     if (!form.name.trim()) {
-      setError('Un experto necesita un nombre.');
+      setError(t('An expert needs a name.'));
       return;
     }
     setBusy('save');
     try {
-      const t = Number(form.temperature);
+      const temp = Number(form.temperature);
       const p = Number(form.top_p);
       await updateExpert(slug, {
         name: form.name.trim(),
@@ -175,14 +176,14 @@ function Detail({ slug, onBack, onChanged, flash }: { slug: string; onBack: () =
         enabled: form.enabled,
         instructions: form.instructions,
         rubric: rubricLines(form.rubric),
-        ...(Number.isFinite(t) ? { temperature: t } : {}),
+        ...(Number.isFinite(temp) ? { temperature: temp } : {}),
         ...(Number.isFinite(p) ? { top_p: p } : {}),
       });
-      flash('Experto guardado');
+      flash(t('Expert saved'));
       await load(false);
       onChanged();
     } catch (e) {
-      setError(`No he podido guardar: ${e instanceof Error ? e.message : String(e)}`);
+      setError(`${t('Could not save')}: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setBusy(null);
     }
@@ -193,12 +194,12 @@ function Detail({ slug, onBack, onChanged, flash }: { slug: string; onBack: () =
     setBusy('upload');
     try {
       const res = await uploadCorpus(slug, files);
-      const bad = res.rejected.length ? ` · ${res.rejected.length} rechazado${res.rejected.length === 1 ? '' : 's'}: ${res.rejected.map((r) => `${r.name} (${r.reason})`).join(', ')}` : '';
-      flash(`${res.uploaded.length} fichero${res.uploaded.length === 1 ? '' : 's'} añadido${res.uploaded.length === 1 ? '' : 's'}${bad}`);
+      const bad = res.rejected.length ? ` · ${tn(res.rejected.length, '{n} rejected', '{n} rejected#')}: ${res.rejected.map((r) => `${r.name} (${r.reason})`).join(', ')}` : '';
+      flash(`${tn(res.uploaded.length, '{n} file added', '{n} files added')}${bad}`);
       await load(true);
       onChanged();
     } catch (e) {
-      setError(`No he podido subir: ${e instanceof Error ? e.message : String(e)}`);
+      setError(`${t('Could not upload')}: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setBusy(null);
       if (fileRef.current) fileRef.current.value = '';
@@ -209,11 +210,11 @@ function Detail({ slug, onBack, onChanged, flash }: { slug: string; onBack: () =
     setConfirmFile(null);
     try {
       await deleteCorpusFile(slug, name);
-      flash(`${name} borrado del corpus`);
+      flash(t('{name} deleted from the corpus', { name }));
       await load(true);
       onChanged();
     } catch (e) {
-      setError(`No he podido borrar ${name}: ${e instanceof Error ? e.message : String(e)}`);
+      setError(`${t('Could not delete {name}', { name })}: ${e instanceof Error ? e.message : String(e)}`);
     }
   };
 
@@ -224,7 +225,7 @@ function Detail({ slug, onBack, onChanged, flash }: { slug: string; onBack: () =
       await load(true);
       onChanged();
     } catch (e) {
-      setError(`No he podido reindexar: ${e instanceof Error ? e.message : String(e)}`);
+      setError(`${t('Could not reindex')}: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setBusy(null);
     }
@@ -236,7 +237,7 @@ function Detail({ slug, onBack, onChanged, flash }: { slug: string; onBack: () =
       setSearch(await searchCorpus(slug, query.trim()));
       setError(null);
     } catch (e) {
-      setError(`La búsqueda falló: ${e instanceof Error ? e.message : String(e)}`);
+      setError(`${t('The search failed')}: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setBusy(null);
     }
@@ -248,7 +249,7 @@ function Detail({ slug, onBack, onChanged, flash }: { slug: string; onBack: () =
       setBlock(await previewBlock(slug, query.trim()));
       setError(null);
     } catch (e) {
-      setError(`No he podido montar el bloque: ${e instanceof Error ? e.message : String(e)}`);
+      setError(`${t('Could not build the block')}: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setBusy(null);
     }
@@ -257,8 +258,8 @@ function Detail({ slug, onBack, onChanged, flash }: { slug: string; onBack: () =
   if (!detail) {
     return (
       <div className="fs-exp__detail">
-        <Button variant="ghost" size="sm" icon={ArrowLeft} label="Expertos" onClick={onBack} />
-        {error ? <div className="fs-wk__error">{error}</div> : <Skeleton label="Cargando el experto" height="200px" radius="panel" />}
+        <Button variant="ghost" size="sm" icon={ArrowLeft} label={t('Experts')} onClick={onBack} />
+        {error ? <div className="fs-wk__error">{error}</div> : <Skeleton label={t('Loading the expert')} height="200px" radius="panel" />}
       </div>
     );
   }
@@ -268,11 +269,11 @@ function Detail({ slug, onBack, onChanged, flash }: { slug: string; onBack: () =
   return (
     <div className="fs-exp__detail" data-testid="expert-detail">
       <div className="fs-exp__detail-head">
-        <Button variant="ghost" size="sm" icon={ArrowLeft} label="Expertos" onClick={onBack} />
+        <Button variant="ghost" size="sm" icon={ArrowLeft} label={t('Experts')} onClick={onBack} />
         <h2 className="fs-exp__detail-title">{detail.expert.name}</h2>
         <code className="fs-def__slug">{detail.expert.slug}</code>
         <span className="fs-agents__counts">
-          ✓ {detail.usage.accepted} aceptadas · ✕ {detail.usage.rejected} rechazadas · {detail.usage.invocations} uso{detail.usage.invocations === 1 ? '' : 's'}
+          ✓ {detail.usage.accepted} {t('accepted')} · ✕ {detail.usage.rejected} {t('rejected')} · {tn(detail.usage.invocations, '{n} run', '{n} runs')}
         </span>
       </div>
       {error && <div className="fs-wk__error">{error}</div>}
@@ -284,19 +285,19 @@ function Detail({ slug, onBack, onChanged, flash }: { slug: string; onBack: () =
         }}
       >
         <label className="fs-exp__field">
-          <span>Nombre</span>
+          <span>{t('Name')}</span>
           <input type="text" className="fs-field" maxLength={120} required {...field('name')} />
         </label>
         <label className="fs-exp__field">
-          <span>Descripción</span>
-          <input type="text" className="fs-field" maxLength={300} placeholder="Qué sabe este experto" {...field('description')} />
+          <span>{t('Description')}</span>
+          <input type="text" className="fs-field" maxLength={300} placeholder={t('What this expert knows')} {...field('description')} />
         </label>
         <label className="fs-exp__field">
-          <span>Modelo</span>
+          <span>{t('Model')}</span>
           <input type="text" className="fs-field" placeholder="auto" spellCheck={false} {...field('model')} />
         </label>
         <label className="fs-exp__field fs-exp__field--narrow">
-          <span>Temperatura</span>
+          <span>{t('Temperature')}</span>
           <input type="number" className="fs-field" min={0} max={2} step={0.05} {...field('temperature')} />
         </label>
         <label className="fs-exp__field fs-exp__field--narrow">
@@ -305,18 +306,18 @@ function Detail({ slug, onBack, onChanged, flash }: { slug: string; onBack: () =
         </label>
         <label className="fs-switch">
           <input type="checkbox" checked={form.enabled} onChange={(e) => setForm((f) => ({ ...f, enabled: e.target.checked }))} />
-          <span>Activado</span>
+          <span>{t('Enabled')}</span>
         </label>
         <label className="fs-exp__field fs-exp__field--wide">
-          <span>Instrucciones — las órdenes con las que revisa</span>
-          <textarea className="fs-field" rows={5} placeholder="Cómo lee un pasaje este especialista." {...field('instructions')} />
+          <span>{t('Instructions — the standing orders it reviews by')}</span>
+          <textarea className="fs-field" rows={5} placeholder={t('How this specialist reads a passage.')} {...field('instructions')} />
         </label>
         <label className="fs-exp__field fs-exp__field--wide">
-          <span>Rúbrica — un punto por línea</span>
-          <textarea className="fs-field" rows={5} placeholder="Una regla por línea. Sin rúbrica, un corrector local divaga." {...field('rubric')} />
+          <span>{t('Rubric — one item per line')}</span>
+          <textarea className="fs-field" rows={5} placeholder={t('One rule per line. Without a rubric a local corrector rambles.')} {...field('rubric')} />
         </label>
         <div className="fs-exp__form-actions">
-          <Button type="submit" variant="primary" size="sm" label="Guardar experto" loading={busy === 'save'} testId="exp-save" />
+          <Button type="submit" variant="primary" size="sm" label={t('Save expert')} loading={busy === 'save'} testId="exp-save" />
         </div>
       </form>
 
@@ -324,41 +325,41 @@ function Detail({ slug, onBack, onChanged, flash }: { slug: string; onBack: () =
         <h3>
           Corpus{' '}
           <span className="fs-agents__counts">
-            {files.length} fichero{files.length === 1 ? '' : 's'} · {detail.chunks} fragmento{detail.chunks === 1 ? '' : 's'} · {bytes(total)}
+            {tn(files.length, '{n} file', '{n} files')} · {tn(detail.chunks, '{n} chunk', '{n} chunks')} · {bytes(total)}
           </span>
         </h3>
         <ul className="fs-exp__files">
-          {files.length === 0 && <li className="fs-agents__empty">Sin ficheros aún — añade los libros con los que corrige este experto.</li>}
+          {files.length === 0 && <li className="fs-agents__empty">{t('No files yet — add the books this expert corrects by.')}</li>}
           {files.map((f) => (
             <li key={f.name} className="fs-exp__file">
               <a href={corpusUrl(slug, f.name)} target="_blank" rel="noopener">
                 {f.name}
               </a>
               <span className="fs-exp__file-meta">
-                {bytes(f.bytes)} · {f.pages == null ? 'páginas desconocidas' : `${f.pages} página${f.pages === 1 ? '' : 's'}`} · {f.chunks} fragmento{f.chunks === 1 ? '' : 's'}
+                {bytes(f.bytes)} · {f.pages == null ? t('pages unknown') : tn(f.pages, '{n} page', '{n} pages')} · {tn(f.chunks, '{n} chunk', '{n} chunks')}
               </span>
-              <IconButton icon={X} label={`Borrar ${f.name} del corpus`} size="sm" onClick={() => setConfirmFile(f.name)} />
+              <IconButton icon={X} label={t('Delete {name} from the corpus', { name: f.name })} size="sm" onClick={() => setConfirmFile(f.name)} />
             </li>
           ))}
         </ul>
         <div className="fs-exp__corpus-actions">
           <input ref={fileRef} type="file" multiple hidden onChange={(e) => void upload(e.target.files)} data-testid="exp-upload" />
-          <Button size="sm" variant="secondary" icon={FileUp} label="Añadir al corpus" loading={busy === 'upload'} onClick={() => fileRef.current?.click()} />
-          <Button size="sm" variant="ghost" icon={RefreshCw} label="Reindexar" loading={busy === 'reindex'} onClick={() => void doReindex()} />
+          <Button size="sm" variant="secondary" icon={FileUp} label={t('Add to corpus')} loading={busy === 'upload'} onClick={() => fileRef.current?.click()} />
+          <Button size="sm" variant="ghost" icon={RefreshCw} label={t('Reindex')} loading={busy === 'reindex'} onClick={() => void doReindex()} />
           {reindex && (
             <span className="fs-exp__reindex">
-              <b>{reindex.indexed}</b> indexados · <b>{reindex.skipped}</b> saltados · <b>{reindex.removed}</b> quitados · <b>{reindex.chunks}</b> fragmentos · <b>{reindex.seconds.toFixed(2)}s</b>
+              <b>{reindex.indexed}</b> {t('indexed')} · <b>{reindex.skipped}</b> {t('skipped')} · <b>{reindex.removed}</b> {t('removed')} · <b>{reindex.chunks}</b> {t('chunks')} · <b>{reindex.seconds.toFixed(2)}s</b>
             </span>
           )}
         </div>
         <p className="fs-agents__note">
-          Indexado {detail.indexed_at || 'nunca'}
+          {t('Indexed')} {detail.indexed_at || t('never')}
           {detail.collection ? ` · ${detail.collection}` : ''}
         </p>
       </section>
 
       <section className="fs-exp__section">
-        <h3>Buscar en el corpus</h3>
+        <h3>{t('Search the corpus')}</h3>
         <form
           className="fs-exp__search-form"
           onSubmit={(e) => {
@@ -366,24 +367,24 @@ function Detail({ slug, onBack, onChanged, flash }: { slug: string; onBack: () =
             void doSearch();
           }}
         >
-          <input type="search" className="fs-field" value={query} placeholder="Una frase de los libros" aria-label="Buscar en este corpus" onChange={(e) => setQuery(e.target.value)} />
-          <Button type="submit" size="sm" variant="secondary" icon={Search} label="Buscar" loading={busy === 'search'} />
-          <Button size="sm" variant="ghost" label="Ver lo que ve el modelo" loading={busy === 'block'} onClick={() => void doBlock()} />
+          <input type="search" className="fs-field" value={query} placeholder={t('A phrase from the books')} aria-label={t('Search this corpus')} onChange={(e) => setQuery(e.target.value)} />
+          <Button type="submit" size="sm" variant="secondary" icon={Search} label={t('Search')} loading={busy === 'search'} />
+          <Button size="sm" variant="ghost" label={t('Show what the model sees')} loading={busy === 'block'} onClick={() => void doBlock()} />
         </form>
         {search && (
           <div className="fs-exp__search-out">
             {search.hits.length === 0 ? (
-              <p className="fs-agents__empty">Nada en este corpus coincide con {search.query ? `«${search.query}»` : 'eso'}.</p>
+              <p className="fs-agents__empty">{t('Nothing in this corpus matches {what}.', { what: search.query ? `«${search.query}»` : t('that') })}</p>
             ) : (
               <>
-                {search.degraded && <p className="fs-agents__note">Solo léxico — este experto aún no tiene colección de embeddings. Los resultados son reales; el orden, más simple.</p>}
+                {search.degraded && <p className="fs-agents__note">{t('Lexical only — this expert has no embedding collection yet. The hits are real, the ranking is just simpler.')}</p>}
                 <ul className="fs-exp__hits">
                   {search.hits.map((h) => (
                     <li key={h.chunk_id || `${h.source}-${h.start_line}`} className="fs-exp__hit">
                       <a href={corpusUrl(slug, h.source)} target="_blank" rel="noopener">
-                        {h.source || 'fuente desconocida'}, {pageLabel(h)}
+                        {h.source || t('unknown source')}, {pageLabel(h)}
                       </a>
-                      <span className="fs-exp__score" title={`Puntuación (${search.tier})`}>
+                      <span className="fs-exp__score" title={`${t('Score')} (${search.tier})`}>
                         {h.score.toFixed(3)}
                       </span>
                       <p>{h.text.slice(0, 400)}</p>
@@ -397,12 +398,12 @@ function Detail({ slug, onBack, onChanged, flash }: { slug: string; onBack: () =
         {block && (
           <div className="fs-exp__block-out">
             {!block.text ? (
-              <p className="fs-agents__empty">El bloque queda vacío para esa consulta — el modelo no recibiría nada de este corpus.</p>
+              <p className="fs-agents__empty">{t('The block is empty for that query — the model would be given nothing from this corpus.')}</p>
             ) : (
               <>
                 <p className="fs-agents__note">
-                  {block.chars} de {block.budget} caracteres · {block.chunk_ids.length} fragmento{block.chunk_ids.length === 1 ? '' : 's'}
-                  {block.degraded ? ' · solo léxico' : ''}
+                  {t('{a} of {b} characters', { a: block.chars, b: block.budget })} · {tn(block.chunk_ids.length, '{n} chunk', '{n} chunks')}
+                  {block.degraded ? t(' · lexical only') : ''}
                 </p>
                 <pre className="fs-context">{block.text}</pre>
               </>
@@ -412,7 +413,7 @@ function Detail({ slug, onBack, onChanged, flash }: { slug: string; onBack: () =
       </section>
 
       {confirmFile && (
-        <Dialog open onOpenChange={(o) => !o && setConfirmFile(null)} title="Borrar del corpus" description={`¿Quitar «${confirmFile}» del corpus? Sus fragmentos salen del índice.`} footer={<><Button variant="ghost" label="Cancelar" onClick={() => setConfirmFile(null)} /><Button variant="danger-solid" label="Borrar" onClick={() => void removeFile(confirmFile)} /></>} />
+        <Dialog open onOpenChange={(o) => !o && setConfirmFile(null)} title={t('Delete from the corpus')} description={t('Remove "{name}" from the corpus? Its chunks leave the index.', { name: confirmFile })} footer={<><Button variant="ghost" label={t('Cancel')} onClick={() => setConfirmFile(null)} /><Button variant="danger-solid" label={t('Delete')} onClick={() => void removeFile(confirmFile)} /></>} />
       )}
     </div>
   );
@@ -434,7 +435,7 @@ function MarkedText({ text, deltas, decisions }: { text: string; deltas: ReviewD
     const piece = text.slice(start, end);
     out.push(
       <mark key={d.id} className="fs-exr__mark" data-severity={d.severity} data-state={decisions[d.id] ?? 'pending'} title={`${d.id}: ${d.rule || d.op}`}>
-        {piece || <span className="fs-exr__caret" aria-hidden="true">⟨insertar⟩</span>}
+        {piece || <span className="fs-exr__caret" aria-hidden="true">{t('⟨insert⟩')}</span>}
       </mark>,
     );
     cursor = end;
@@ -490,39 +491,39 @@ function Review({ flash, onBack, onChanged }: { flash: (m: string) => void; onBa
       setText(reviewFrom(parsed).text);
       setError(null);
     } catch (e) {
-      setError(`Eso no es un resultado de revisión: ${e instanceof Error ? e.message : String(e)}`);
+      setError(`${t('That is not a review result')}: ${e instanceof Error ? e.message : String(e)}`);
     }
   };
 
   const copyResult = async () => {
     try {
       await navigator.clipboard.writeText(applied);
-      flash('Resultado copiado');
+      flash(t('Result copied'));
     } catch {
-      setError('El navegador rechazó el portapapeles — selecciona el resultado y cópialo a mano.');
+      setError(t('The browser refused the clipboard — select the result and copy it by hand.'));
     }
   };
 
   const report = async () => {
     if (!data.expert.slug) {
-      setError('Este resultado no nombra un experto, así que no hay a quién informar del desenlace.');
+      setError(t('This result does not name an expert, so there is nothing to report the outcome to.'));
       return;
     }
     try {
       await sendFeedback(data.expert.slug, counts.accepted, counts.rejected);
       setSent(true);
       setError(null);
-      flash(`Informado: ${counts.accepted} aceptadas, ${counts.rejected} rechazadas`);
+      flash(t('Reported {a} accepted, {b} rejected', { a: counts.accepted, b: counts.rejected }));
       onChanged();
     } catch (e) {
-      setError(`No he podido informar del desenlace: ${e instanceof Error ? e.message : String(e)}`);
+      setError(`${t('Could not report the outcome')}: ${e instanceof Error ? e.message : String(e)}`);
     }
   };
 
   const head = (
     <div className="fs-exp__detail-head">
-      <Button variant="ghost" size="sm" icon={ArrowLeft} label="Expertos" onClick={onBack} />
-      <h2 className="fs-exp__detail-title">{data.expert.name || 'Revisión'}</h2>
+      <Button variant="ghost" size="sm" icon={ArrowLeft} label={t('Experts')} onClick={onBack} />
+      <h2 className="fs-exp__detail-title">{data.expert.name || t('Review')}</h2>
       {data.expert.model && <code className="fs-def__slug">{data.expert.model}</code>}
     </div>
   );
@@ -533,7 +534,7 @@ function Review({ flash, onBack, onChanged }: { flash: (m: string) => void; onBa
         {head}
         {error && <div className="fs-wk__error">{error}</div>}
         <p className="fs-agents__empty">
-          No hay ninguna revisión cargada. Pide a un experto que revise un pasaje (la herramienta <code>expert_review</code>), o pega un resultado aquí.
+          {t('No review loaded. Ask an expert to review a passage (the')} <code>expert_review</code> {t('tool), or paste a result here.')}
         </p>
         <form
           className="fs-exr__paste"
@@ -542,8 +543,8 @@ function Review({ flash, onBack, onChanged }: { flash: (m: string) => void; onBa
             acceptJson();
           }}
         >
-          <textarea className="fs-field" rows={6} value={pasteJson} placeholder='{"expert": {...}, "deltas": [...], "text": "el pasaje"}' spellCheck={false} onChange={(e) => setPasteJson(e.target.value)} data-testid="exr-json" />
-          <Button type="submit" size="sm" variant="secondary" label="Mostrar esta revisión" />
+          <textarea className="fs-field" rows={6} value={pasteJson} placeholder={t('{"expert": {...}, "deltas": [...], "text": "the passage"}')} spellCheck={false} onChange={(e) => setPasteJson(e.target.value)} data-testid="exr-json" />
+          <Button type="submit" size="sm" variant="secondary" label={t('Render this review')} />
         </form>
       </div>
     );
@@ -553,7 +554,7 @@ function Review({ flash, onBack, onChanged }: { flash: (m: string) => void; onBa
       <div className="fs-exr" data-testid="expert-review">
         {head}
         <p className="fs-agents__note">
-          {data.deltas.length} correcci{data.deltas.length === 1 ? 'ón' : 'ones'} — pero el resultado no trae el texto contra el que se hicieron. Pega el pasaje revisado para ver los tramos.
+          {tn(data.deltas.length, '{n} correction', '{n} corrections')} — {t('but the result does not carry the text they were made against. Paste the reviewed passage to see the spans.')}
         </p>
         <form
           className="fs-exr__paste"
@@ -562,8 +563,8 @@ function Review({ flash, onBack, onChanged }: { flash: (m: string) => void; onBa
             setText(pasteText);
           }}
         >
-          <textarea className="fs-field" rows={8} value={pasteText} placeholder="El pasaje que se revisó" spellCheck={false} onChange={(e) => setPasteText(e.target.value)} />
-          <Button type="submit" size="sm" variant="secondary" label="Usar este texto" />
+          <textarea className="fs-field" rows={8} value={pasteText} placeholder={t('The passage that was reviewed')} spellCheck={false} onChange={(e) => setPasteText(e.target.value)} />
+          <Button type="submit" size="sm" variant="secondary" label={t('Use this text')} />
         </form>
       </div>
     );
@@ -574,22 +575,22 @@ function Review({ flash, onBack, onChanged }: { flash: (m: string) => void; onBa
       {error && <div className="fs-wk__error">{error}</div>}
       <p className="fs-exr__counts">
         <span>
-          <b>{data.deltas.length}</b> correcci{data.deltas.length === 1 ? 'ón' : 'ones'}
+          <b>{data.deltas.length}</b> {data.deltas.length === 1 ? t('correction') : t('corrections')}
         </span>
         <span className="fs-exr__count-corpus">
-          <b>{data.anchored_count}</b> ancladas al corpus
+          <b>{data.anchored_count}</b> {t('anchored to the corpus')}
         </span>
         <span className="fs-exr__count-opinion">
-          <b>{data.opinion_count}</b> opinión del modelo
+          <b>{data.opinion_count}</b> {t("the model's own opinion")}
         </span>
         <span>
-          <b>{data.rejected.length}</b> rechazadas por el parser
+          <b>{data.rejected.length}</b> {t('refused by the parser')}
         </span>
         <span>
-          <b>{counts.accepted}</b> aceptadas · <b>{counts.rejected}</b> rechazadas
+          <b>{counts.accepted}</b> {t('accepted')} · <b>{counts.rejected}</b> {t('rejected')}
         </span>
       </p>
-      {data.degraded && <p className="fs-agents__note">El corpus respondió degradado en al menos una escena — solo léxico, o una escena cuya llamada al modelo falló. Lee las etiquetas de abajo con eso en cuenta.</p>}
+      {data.degraded && <p className="fs-agents__note">{t('The corpus answered degraded for at least one scene — lexical only, or a scene whose model call failed. Read the labels below accordingly.')}</p>}
       <MarkedText text={text} deltas={data.deltas} decisions={decisions} />
       <div className="fs-exr__cards">
         {data.deltas.map((d) => {
@@ -601,10 +602,10 @@ function Review({ flash, onBack, onChanged }: { flash: (m: string) => void; onBa
                   {d.severity}
                 </span>
                 <span className="fs-exr__op">{d.op}</span>
-                <span className="fs-exr__rule">{d.rule || 'sin regla de rúbrica'}</span>
-                {d.label ? <span className="fs-exr__label" data-label={d.label === 'corpus' ? 'corpus' : 'opinion'}>{d.label}</span> : <span className="fs-exr__label" data-label="none">sin etiqueta en el resultado</span>}
+                <span className="fs-exr__rule">{d.rule || t('no rubric rule named')}</span>
+                {d.label ? <span className="fs-exr__label" data-label={d.label === 'corpus' ? 'corpus' : 'opinion'}>{d.label}</span> : <span className="fs-exr__label" data-label="none">{t('no label in the result')}</span>}
               </header>
-              <p className="fs-exr__rationale">{d.rationale || 'Sin justificación.'}</p>
+              <p className="fs-exr__rationale">{d.rationale || t('No rationale given.')}</p>
               <div className="fs-exr__diff">
                 {d.op !== 'ADD' && <del>{d.quote}</del>}
                 {d.op !== 'KILL' && <ins>{d.replacement}</ins>}
@@ -621,20 +622,20 @@ function Review({ flash, onBack, onChanged }: { flash: (m: string) => void; onBa
                       ) : (
                         refOf(c)
                       )}
-                      {!c.known && <span className="fs-exr__cite-unknown" title="Este marcador no está en el bloque que se le dio al modelo">marcador desconocido</span>}
+                      {!c.known && <span className="fs-exr__cite-unknown" title={t('This marker is not in the block the model was given')}>{t('unknown marker')}</span>}
                     </span>
                   ))}
                 </div>
               ) : (
                 <div className="fs-exr__cites" data-none>
-                  Sin cita — no se nombró nada del corpus.
+                  {t('No citation — nothing in the corpus was named.')}
                 </div>
               )}
-              {(d.relocated || d.notes.length > 0) && <p className="fs-exr__notes">{[...(d.relocated ? ['tramo reubicado a la cita'] : []), ...d.notes].join(' · ')}</p>}
+              {(d.relocated || d.notes.length > 0) && <p className="fs-exr__notes">{[...(d.relocated ? [t('span relocated to the quote')] : []), ...d.notes].join(' · ')}</p>}
               <footer className="fs-exr__card-actions">
-                <Button size="sm" variant={state === 'accepted' ? 'primary' : 'secondary'} label="Aceptar" onClick={() => decide(d.id, 'accepted')} />
-                <Button size="sm" variant={state === 'rejected' ? 'danger' : 'secondary'} label="Rechazar" onClick={() => decide(d.id, 'rejected')} />
-                <span className="fs-exr__conf" title="Confianza de la capa de anclaje que pasó">
+                <Button size="sm" variant={state === 'accepted' ? 'primary' : 'secondary'} label={t('Accept')} onClick={() => decide(d.id, 'accepted')} />
+                <Button size="sm" variant={state === 'rejected' ? 'danger' : 'secondary'} label={t('Reject')} onClick={() => decide(d.id, 'rejected')} />
+                <span className="fs-exr__conf" title={t('Confidence from the anchoring layer that passed')}>
                   {d.confidence.toFixed(2)}
                 </span>
               </footer>
@@ -645,12 +646,12 @@ function Review({ flash, onBack, onChanged }: { flash: (m: string) => void; onBa
       {data.rejected.length > 0 && (
         <details className="fs-exr__dropped">
           <summary>
-            {data.rejected.length} correcci{data.rejected.length === 1 ? 'ón' : 'ones'} que el parser rechazó
+            {tn(data.rejected.length, '{n} correction the parser refused', '{n} corrections the parser refused')}
           </summary>
           <ul>
             {data.rejected.map((r, i) => (
               <li key={i}>
-                <code>{r.id || '?'}</code> <span>{r.reason || 'sin motivo'}</span>
+                <code>{r.id || '?'}</code> <span>{r.reason || t('no reason given')}</span>
                 {r.quote && <span className="fs-exr__dropped-quote">«{r.quote}»</span>}
               </li>
             ))}
@@ -658,9 +659,9 @@ function Review({ flash, onBack, onChanged }: { flash: (m: string) => void; onBa
         </details>
       )}
       <div className="fs-exr__result-head">
-        <h3>Resultado</h3>
-        <Button size="sm" variant="ghost" label="Copiar resultado" onClick={() => void copyResult()} />
-        <Button size="sm" variant="secondary" label={sent ? 'Desenlace enviado' : 'Enviar desenlace'} disabled={!data.expert.slug || sent} onClick={() => void report()} />
+        <h3>{t('Result')}</h3>
+        <Button size="sm" variant="ghost" label={t('Copy result')} onClick={() => void copyResult()} />
+        <Button size="sm" variant="secondary" label={sent ? t('Feedback sent') : t('Send feedback')} disabled={!data.expert.slug || sent} onClick={() => void report()} />
       </div>
       <pre className="fs-context">{applied}</pre>
     </div>
@@ -693,7 +694,7 @@ export function Experts() {
       setEnabled(data.enabled);
       setError(null);
     } catch (e) {
-      setError(`No he podido cargar los expertos: ${e instanceof Error ? e.message : String(e)}`);
+      setError(`${t('Could not load the experts')}: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setLoading(false);
     }
@@ -714,7 +715,7 @@ export function Experts() {
       await load();
       if (created.slug) setView({ kind: 'detail', slug: created.slug });
     } catch (e) {
-      setError(`No he podido crear el experto: ${e instanceof Error ? e.message : String(e)}`);
+      setError(`${t('Could not create the expert')}: ${e instanceof Error ? e.message : String(e)}`);
       setCreating(false);
     } finally {
       setBusy(false);
@@ -727,10 +728,10 @@ export function Experts() {
     setToDelete(null);
     try {
       await deleteExpert(row.slug);
-      flash('Experto borrado');
+      flash(t('Expert deleted'));
       await load();
     } catch (e) {
-      setError(`No he podido borrar ${row.slug}: ${e instanceof Error ? e.message : String(e)}`);
+      setError(`${t('Could not delete {name}', { name: row.slug })}: ${e instanceof Error ? e.message : String(e)}`);
     }
   };
 
@@ -744,12 +745,12 @@ export function Experts() {
         <Dialog
           open
           onOpenChange={(o) => !o && setCreating(false)}
-          title="Nuevo experto"
-          description="¿Cómo se llama este experto?"
+          title={t('New expert')}
+          description={t('What should this expert be called?')}
           footer={
             <>
-              <Button variant="ghost" label="Cancelar" onClick={() => setCreating(false)} />
-              <Button variant="primary" label="Crear" loading={busy} disabled={!newName.trim()} onClick={() => void create()} testId="exp-create" />
+              <Button variant="ghost" label={t('Cancel')} onClick={() => setCreating(false)} />
+              <Button variant="primary" label={t('Create')} loading={busy} disabled={!newName.trim()} onClick={() => void create()} testId="exp-create" />
             </>
           }
         >
@@ -758,7 +759,7 @@ export function Experts() {
             className="fs-field"
             autoFocus
             value={newName}
-            placeholder="p. ej. Brenner sobre oficio"
+            placeholder={t('e.g. Brenner on craft')}
             onChange={(e) => setNewName(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
@@ -774,12 +775,12 @@ export function Experts() {
         <Dialog
           open
           onOpenChange={(o) => !o && setToDelete(null)}
-          title="Borrar experto"
-          description={`¿Borrar «${toDelete.name}»? Sus ficheros del corpus y su índice se van con él.`}
+          title={t('Delete expert')}
+          description={t('Delete "{name}"? Its corpus files and index go with it.', { name: toDelete.name })}
           footer={
             <>
-              <Button variant="ghost" label="Cancelar" onClick={() => setToDelete(null)} />
-              <Button variant="danger-solid" label="Borrar" onClick={() => void remove()} />
+              <Button variant="ghost" label={t('Cancel')} onClick={() => setToDelete(null)} />
+              <Button variant="danger-solid" label={t('Delete')} onClick={() => void remove()} />
             </>
           }
         />

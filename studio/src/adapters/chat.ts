@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { ApiError, asArray, getJson } from './api';
 
 /**
@@ -220,7 +221,7 @@ export async function listSessions(signal?: AbortSignal): Promise<ChatSession[]>
   return raw
     .map((s) => ({
       id: s.id,
-      name: s.name?.trim() || 'Sin título',
+      name: s.name?.trim() || t('Untitled'),
       model: s.model ?? '',
       endpointUrl: s.endpoint_url ?? '',
       mode: (s.mode === 'agent' || s.mode === 'chat' ? s.mode : null) as ChatSession['mode'],
@@ -488,7 +489,7 @@ function decode(raw: Record<string, unknown>, sseEvent: string | null): ChatEven
     // The server says `text`; older paths say `error` or `message`.
     return {
       type: 'error',
-      message: str(raw.text ?? raw.error ?? raw.message ?? raw.detail, 'Error del servidor'),
+      message: str(raw.text ?? raw.error ?? raw.message ?? raw.detail, t('Server error')),
     };
   }
   if (typeof raw.delta === 'string') {
@@ -591,7 +592,7 @@ function decode(raw: Record<string, unknown>, sseEvent: string | null): ChatEven
     case 'chat_terminal':
       return { type: 'terminal', failed: false };
     case 'error':
-      return { type: 'error', message: str(raw.text ?? raw.error ?? raw.message, 'Error del servidor') };
+      return { type: 'error', message: str(raw.text ?? raw.error ?? raw.message, t('Server error')) };
     case 'progress_update':
       return {
         type: 'progress',
@@ -677,7 +678,7 @@ export async function* sendTurn(options: SendOptions): AsyncGenerator<ChatEvent>
     } catch {
       detail = '';
     }
-    yield { type: 'error', message: detail || `El servidor ha respondido ${response.status}` };
+    yield { type: 'error', message: detail || t('The server responded {status}', { status: response.status }) };
     yield { type: 'done' };
     return;
   }

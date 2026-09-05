@@ -94,7 +94,7 @@ const meta = {
 };
 const r = m.restoreFromMetadata(m.blankTurn('assistant', 'texto'), meta);
 assert(r.steps.length === 3, 'three steps restored');
-assert(r.steps[0].state === 'cancelled' && r.steps[0].meta === 'permiso respondido', 'resolved approval step is not waiting');
+assert(r.steps[0].state === 'cancelled' && r.steps[0].meta === 'permission answered', 'resolved approval step is not waiting');
 assert(r.steps[1].diff && r.steps[1].diff.added === 1 && r.steps[1].diff.newFile, 'diff restored');
 assert(r.workers.length === 2 && r.workers[0].status === 'done' && r.workers[1].status === 'stopped', 'workers restored from persisted records');
 assert(r.summary && r.summary.mutations.length === 2 && r.summary.checkpoint === 'abc', 'harness summary restored');

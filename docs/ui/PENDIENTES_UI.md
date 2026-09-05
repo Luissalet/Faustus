@@ -408,3 +408,37 @@ su área y baja el baseline. Ningún módulo Studio nuevo la aumenta.
     dynamically imported module» y el shell cae a la anterior. En
     desarrollo: recargar. Para producción, un `catch` que recargue la
     página una vez (con marca en `sessionStorage`) sería lo honesto.
+
+## Añadido tras el lote P (05-09-2026, idioma, apariencia y barra)
+
+68. **`[!]` El shell se montaba dos veces.** `index.html` carga la entrada
+    como `studio.js?v=<hash>`; el chunk de la app importa el ayudante de
+    precarga de Vite desde `../studio.js` (sin query), el navegador lo toma
+    por otro módulo y `main.tsx` corre dos veces: dos `createRoot` sobre el
+    mismo contenedor, el segundo vacía el primero y el primero sigue
+    renderizando en nodos sueltos. Cualquier borrado de nodos desde esa
+    raíz («removeChild: not a child») tiraba el árbol entero y el shell
+    caía a la anterior — el cambio de idioma lo hacía a la primera, y
+    explica el «idioma que se reseteaba solo». Arreglo: `app.tsx` monta
+    una sola vez (`mounted`). La entrada sigue corriendo dos veces; es
+    inofensivo. Lo honesto a largo plazo: quitar el `?v=` y servir
+    `studio.js` con `no-cache`, o un nombre con hash resuelto por el
+    servidor.
+69. **`[~]` Convenciones del diccionario.** La clave es el inglés literal.
+    Cuando dos usos ingleses iguales piden español distinto, la clave lleva
+    sufijo `#` (`All#f`, `Archive#folder`, `{n} active#`) y `en.ts` guarda
+    su forma inglesa. Nunca llamar `t` a otra cosa (un `const t =
+    setTimeout` o un `.map((t) =>` tapan la función y el compilador no
+    avisa hasta que algo deja de traducirse). Las cadenas con `\n` van
+    partidas: el salto fuera de `t()`. `Gallery.tsx` (galería de
+    componentes para revisar) queda en español a propósito.
+70. **`[~]` La anterior sigue en inglés.** `ui_language` solo mueve
+    Studio; `style.css`/`app.js` no tienen diccionario y no lo tendrán:
+    se retiran pantalla a pantalla.
+71. **`[~]` Un parpadeo de tema antes de que cargue el shell.** El
+    `data-theme` lo pone `theme.ts` al evaluar el chunk de la app; entre el
+    HTML y ese momento manda `prefers-color-scheme`. Un `<script>` de tres
+    líneas en `index.html` que lea `faustus_studio_theme` lo quitaría.
+72. **`[~]` Títulos de pestaña del navegador.** Los pone el servidor
+    («Memory — Faustus») en inglés; Studio no los toca aún. Cuando lo
+    haga, `document.title` desde cada pantalla con `t()`.

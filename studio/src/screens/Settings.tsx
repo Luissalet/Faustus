@@ -3,6 +3,7 @@ import {
   Check,
   ExternalLink,
   Keyboard,
+  Languages,
   Mic,
   Plug,
   Plus,
@@ -38,6 +39,8 @@ import {
 } from '../adapters/settings';
 import './projects.css';
 import './settings.css';
+import { LANGS, setLang, t, tn, useLang } from '../i18n';
+import { setTheme, useTheme, type ThemeChoice } from '../shell/theme';
 
 /**
  * Ajustes (the previous interface's settings modal, `/settings`).
@@ -52,28 +55,29 @@ import './settings.css';
  * there at their tab.
  */
 
-type SectionKey = 'models' | 'defaults' | 'voice' | 'search' | 'reminders' | 'agent' | 'shortcuts' | 'system' | 'legacy';
+type SectionKey = 'general' | 'models' | 'defaults' | 'voice' | 'search' | 'reminders' | 'agent' | 'shortcuts' | 'system' | 'legacy';
 
 const SECTIONS: { key: SectionKey; label: string; icon: typeof Bot }[] = [
-  { key: 'models', label: 'Modelos', icon: Server },
-  { key: 'defaults', label: 'IA por defecto', icon: Sparkles },
-  { key: 'voice', label: 'Voz', icon: Mic },
-  { key: 'search', label: 'Búsqueda', icon: Search },
-  { key: 'reminders', label: 'Recordatorios', icon: Check },
-  { key: 'agent', label: 'Agente', icon: Bot },
-  { key: 'shortcuts', label: 'Atajos', icon: Keyboard },
-  { key: 'system', label: 'Sistema', icon: Settings2 },
-  { key: 'legacy', label: 'En la interfaz anterior', icon: Plug },
+  { key: 'general', label: 'General', icon: Languages },
+  { key: 'models', label: 'Models', icon: Server },
+  { key: 'defaults', label: 'Default AI', icon: Sparkles },
+  { key: 'voice', label: 'Voice', icon: Mic },
+  { key: 'search', label: 'Search', icon: Search },
+  { key: 'reminders', label: 'Reminders', icon: Check },
+  { key: 'agent', label: 'Agent', icon: Bot },
+  { key: 'shortcuts', label: 'Shortcuts', icon: Keyboard },
+  { key: 'system', label: 'System', icon: Settings2 },
+  { key: 'legacy', label: 'In the previous interface', icon: Plug },
 ];
 
 const LEGACY_TABS: { tab: string; label: string; help: string }[] = [
-  { tab: 'local-models', label: 'Modelos locales', help: 'Descargar y servir modelos en esta máquina (Ollama, llama.cpp).' },
-  { tab: 'integrations', label: 'Integraciones', help: 'Claves y cuentas de servicios externos que usan el correo, los recordatorios y las herramientas.' },
-  { tab: 'email', label: 'Cuentas de correo', help: 'IMAP/SMTP, Google, estilo de escritura y urgencia.' },
-  { tab: 'tools', label: 'Herramientas y MCP', help: 'Servidores MCP, OAuth y sus herramientas.' },
-  { tab: 'account', label: 'Cuenta', help: 'Contraseña, verificación en dos pasos, tokens de API, bóveda.' },
-  { tab: 'users', label: 'Usuarios', help: 'Cuentas de la instalación y sus permisos.' },
-  { tab: 'appearance', label: 'Apariencia y tema', help: 'El editor de colores de la interfaz anterior; Studio usa sus tokens y respeta los temas guardados.' },
+  { tab: 'local-models', label: 'Local models', help: 'Download and serve models on this machine (Ollama, llama.cpp).' },
+  { tab: 'integrations', label: 'Integrations', help: 'Keys and accounts of external services used by mail, reminders and the tools.' },
+  { tab: 'email', label: 'Mail accounts', help: 'IMAP/SMTP, Google, writing style and urgency.' },
+  { tab: 'tools', label: 'Tools and MCP', help: 'MCP servers, OAuth and their tools.' },
+  { tab: 'account', label: 'Account', help: 'Password, two-factor, API tokens, vault.' },
+  { tab: 'users', label: 'Users', help: 'The accounts of this installation and their permissions.' },
+  { tab: 'appearance', label: 'Appearance and theme', help: 'The previous interface\'s colour editor; Studio uses its tokens and honours the saved themes.' },
 ];
 
 function legacyHref(tab: string): string {
@@ -161,8 +165,8 @@ function fromList(s: string): string[] {
 function SaveBar({ dirty, saving, onSave, note }: { dirty: boolean; saving: boolean; onSave: () => void; note?: string }) {
   return (
     <div className="fs-set__save" data-dirty={dirty || undefined}>
-      <span className="fs-set__save-note">{dirty ? 'Hay cambios sin guardar.' : note ?? 'Sin cambios.'}</span>
-      <Button variant="primary" size="sm" label="Guardar" disabled={!dirty} loading={saving} onClick={onSave} testId="settings-save" />
+      <span className="fs-set__save-note">{dirty ? t('There are unsaved changes.') : note ?? t('No changes.')}</span>
+      <Button variant="primary" size="sm" label={t('Save')} disabled={!dirty} loading={saving} onClick={onSave} testId="settings-save" />
     </div>
   );
 }
@@ -181,9 +185,9 @@ function ModelsSection({ endpoints, onChanged, say }: { endpoints: ModelEndpoint
     setTested(null);
     try {
       const r = await testEndpoint(form.baseUrl.trim(), form.apiKey);
-      setTested(r.ok ? `Responde: ${r.models.length} modelo${r.models.length === 1 ? '' : 's'}${r.models.length ? ` (${r.models.slice(0, 4).join(', ')}${r.models.length > 4 ? '…' : ''})` : ''}.` : `No responde${r.error ? `: ${r.error}` : '.'}`);
+      setTested(r.ok ? `${t('Responds')}: ${tn(r.models.length, '{n} model', '{n} models')}${r.models.length ? ` (${r.models.slice(0, 4).join(', ')}${r.models.length > 4 ? '…' : ''})` : ''}.` : `${t('Not responding')}${r.error ? `: ${r.error}` : '.'}`);
     } catch (err) {
-      setTested(`No responde: ${(err as Error).message}`);
+      setTested(`${t('Not responding')}: ${(err as Error).message}`);
     } finally {
       setTesting(false);
     }
@@ -191,7 +195,7 @@ function ModelsSection({ endpoints, onChanged, say }: { endpoints: ModelEndpoint
 
   const add = async () => {
     if (!form.baseUrl.trim()) {
-      say('Falta la URL.');
+      say(t('The URL is missing.'));
       return;
     }
     setBusy('add');
@@ -200,10 +204,10 @@ function ModelsSection({ endpoints, onChanged, say }: { endpoints: ModelEndpoint
       setAdding(false);
       setForm({ name: '', baseUrl: '', apiKey: '', modelType: 'llm', kind: 'auto' });
       setTested(null);
-      say('Endpoint añadido.');
+      say(t('Endpoint added.'));
       onChanged();
     } catch (err) {
-      say((err as Error).message || 'No he podido añadir el endpoint.');
+      say((err as Error).message || t('Could not add the endpoint.'));
     } finally {
       setBusy(null);
     }
@@ -214,42 +218,42 @@ function ModelsSection({ endpoints, onChanged, say }: { endpoints: ModelEndpoint
       <header className="fs-set__section-head">
         <div>
           <h2 id="fs-set-models" className="fs-set__title">Modelos</h2>
-          <p className="fs-prose">Cada endpoint es un servidor compatible con la API de OpenAI (Ollama, llama.cpp, vLLM, OpenAI, Anthropic vía proxy…). Sus modelos aparecen en el selector de Studio.</p>
+          <p className="fs-prose">{t('Each endpoint is a server compatible with the OpenAI API (Ollama, llama.cpp, vLLM, OpenAI, Anthropic through a proxy…). Its models appear in the Studio picker.')}</p>
         </div>
-        <Button variant="primary" size="sm" icon={Plus} label="Añadir endpoint" onClick={() => setAdding((v) => !v)} />
+        <Button variant="primary" size="sm" icon={Plus} label={t('Add endpoint')} onClick={() => setAdding((v) => !v)} />
       </header>
 
       {adding && (
         <div className="fs-set__card">
-          <Field label="Nombre" htmlFor="ep-name">
-            <Text id="ep-name" value={form.name} onChange={(v) => setForm((f) => ({ ...f, name: v }))} placeholder="Opcional; si no, el host" />
+          <Field label={t('Name')} htmlFor="ep-name">
+            <Text id="ep-name" value={form.name} onChange={(v) => setForm((f) => ({ ...f, name: v }))} placeholder={t('Optional; otherwise the host')} />
           </Field>
-          <Field label="URL base" htmlFor="ep-url" help="Con /v1 al final para servidores compatibles con OpenAI: http://127.0.0.1:11434/v1">
+          <Field label={t('Base URL')} htmlFor="ep-url" help={t('With /v1 at the end for OpenAI-compatible servers: http://127.0.0.1:11434/v1')}>
             <Text id="ep-url" value={form.baseUrl} onChange={(v) => setForm((f) => ({ ...f, baseUrl: v }))} placeholder="http://…/v1" />
           </Field>
-          <Field label="Clave de API" htmlFor="ep-key" help="Vacía para servidores locales.">
+          <Field label={t('API key')} htmlFor="ep-key" help={t('Empty for local servers.')}>
             <Text id="ep-key" value={form.apiKey} onChange={(v) => setForm((f) => ({ ...f, apiKey: v }))} secret />
           </Field>
           <div className="fs-set__grid2">
-            <Field label="Tipo" htmlFor="ep-type">
-              <Select id="ep-type" value={form.modelType} onChange={(v) => setForm((f) => ({ ...f, modelType: v }))} options={[{ value: 'llm', label: 'Texto (LLM)' }, { value: 'image', label: 'Imágenes' }, { value: 'embedding', label: 'Embeddings' }]} />
+            <Field label={t('Type')} htmlFor="ep-type">
+              <Select id="ep-type" value={form.modelType} onChange={(v) => setForm((f) => ({ ...f, modelType: v }))} options={[{ value: 'llm', label: t('Text (LLM)') }, { value: 'image', label: t('Images') }, { value: 'embedding', label: 'Embeddings' }]} />
             </Field>
-            <Field label="Clase" htmlFor="ep-kind">
-              <Select id="ep-kind" value={form.kind} onChange={(v) => setForm((f) => ({ ...f, kind: v }))} options={[{ value: 'auto', label: 'Detectar' }, { value: 'local', label: 'Local' }, { value: 'remote', label: 'Remoto (API)' }]} />
+            <Field label={t('Class')} htmlFor="ep-kind">
+              <Select id="ep-kind" value={form.kind} onChange={(v) => setForm((f) => ({ ...f, kind: v }))} options={[{ value: 'auto', label: t('Detect') }, { value: 'local', label: 'Local' }, { value: 'remote', label: t('Remote (API)') }]} />
             </Field>
           </div>
           {tested && <p className="fs-set__help">{tested}</p>}
           <div className="fs-set__row-actions">
-            <Button variant="ghost" size="sm" label="Probar" loading={testing} disabled={!form.baseUrl.trim()} onClick={() => void test()} />
+            <Button variant="ghost" size="sm" label={t('Test')} loading={testing} disabled={!form.baseUrl.trim()} onClick={() => void test()} />
             <span className="fs-set__spacer" />
-            <Button variant="ghost" size="sm" label="Cancelar" onClick={() => setAdding(false)} />
-            <Button variant="primary" size="sm" label="Añadir" loading={busy === 'add'} onClick={() => void add()} />
+            <Button variant="ghost" size="sm" label={t('Cancel')} onClick={() => setAdding(false)} />
+            <Button variant="primary" size="sm" label={t('Add')} loading={busy === 'add'} onClick={() => void add()} />
           </div>
         </div>
       )}
 
-      {!endpoints && <Skeleton label="Cargando endpoints" count={2} height="64px" />}
-      {endpoints && endpoints.length === 0 && <p className="fs-set__help">Todavía no hay ninguno.</p>}
+      {!endpoints && <Skeleton label={t('Loading endpoints')} count={2} height="64px" />}
+      {endpoints && endpoints.length === 0 && <p className="fs-set__help">{t('None yet.')}</p>}
       {endpoints && endpoints.length > 0 && (
         <div className="fs-set__list">
           {endpoints.map((ep) => (
@@ -259,9 +263,9 @@ function ModelsSection({ endpoints, onChanged, say }: { endpoints: ModelEndpoint
                 <span className="fs-set__ep-name">{ep.name || ep.baseUrl}</span>
                 <span className="fs-set__ep-url">{ep.baseUrl}</span>
                 <span className="fs-set__ep-meta">
-                  {ep.online ? 'en línea' : ep.status || 'sin conexión'} · {ep.models.length} modelo{ep.models.length === 1 ? '' : 's'} · {ep.category || ep.kind}
-                  {ep.hasKey ? ' · con clave' : ''}
-                  {ep.supportsTools === false ? ' · sin herramientas' : ''}
+                  {ep.online ? t('online') : ep.status || t('offline')} · {tn(ep.models.length, '{n} model', '{n} models')} · {ep.category || ep.kind}
+                  {ep.hasKey ? t(' · with key') : ''}
+                  {ep.supportsTools === false ? t(' · no tools') : ''}
                 </span>
                 {ep.pingError && <span className="fs-set__ep-error">{ep.pingError}</span>}
                 {ep.models.length > 0 && <span className="fs-set__ep-models">{ep.models.slice(0, 8).join(' · ')}{ep.models.length > 8 ? ` · +${ep.models.length - 8}` : ''}</span>}
@@ -269,7 +273,7 @@ function ModelsSection({ endpoints, onChanged, say }: { endpoints: ModelEndpoint
               <div className="fs-set__ep-actions">
                 <IconButton
                   icon={RefreshCw}
-                  label="Releer los modelos"
+                  label={t('Reload the models')}
                   size="sm"
                   disabled={busy === ep.id}
                   onClick={() => {
@@ -279,7 +283,7 @@ function ModelsSection({ endpoints, onChanged, say }: { endpoints: ModelEndpoint
                         say(`${m.length} modelo${m.length === 1 ? '' : 's'}.`);
                         onChanged();
                       })
-                      .catch(() => say('No he podido releer los modelos.'))
+                      .catch(() => say(t('Could not reload the models.')))
                       .finally(() => setBusy(null));
                   }}
                 />
@@ -290,24 +294,24 @@ function ModelsSection({ endpoints, onChanged, say }: { endpoints: ModelEndpoint
                     setBusy(ep.id);
                     void toggleEndpoint(ep.id)
                       .then(onChanged)
-                      .catch(() => say('No he podido cambiarlo.'))
+                      .catch(() => say(t('Could not change it.')))
                       .finally(() => setBusy(null));
                   }}
                 />
                 <IconButton
                   icon={Trash2}
-                  label="Quitar el endpoint"
+                  label={t('Remove the endpoint')}
                   size="sm"
                   disabled={busy === ep.id}
                   onClick={() => {
-                    if (!window.confirm(`¿Quitar «${ep.name || ep.baseUrl}»? Las conversaciones que lo usen quedarán sin modelo.`)) return;
+                    if (!window.confirm(t('Remove "{name}"? Conversations using it will be left without a model.', { name: ep.name || ep.baseUrl }))) return;
                     setBusy(ep.id);
                     void deleteEndpoint(ep.id)
                       .then(() => {
-                        say('Endpoint quitado.');
+                        say(t('Endpoint removed.'));
                         onChanged();
                       })
-                      .catch((err: Error) => say(err.message || 'No he podido quitarlo.'))
+                      .catch((err: Error) => say(err.message || t('Could not remove it.')))
                       .finally(() => setBusy(null));
                   }}
                 />
@@ -342,8 +346,8 @@ function ModelPair({ idPrefix, label, help, endpoints, draft, set, epKey, modelK
   return (
     <Field label={label} help={help}>
       <div className="fs-set__pair">
-        <Select id={`${idPrefix}-ep`} value={epId} onChange={(v) => set(epKey, v)} allowEmpty={allowEmpty ?? 'Cualquier endpoint'} options={endpoints.map((e) => ({ value: e.id, label: e.name || e.baseUrl }))} />
-        <Select id={`${idPrefix}-model`} value={str(draft[modelKey])} onChange={(v) => set(modelKey, v)} allowEmpty="Sin modelo" options={[...new Set(models)].map((m) => ({ value: m, label: m }))} />
+        <Select id={`${idPrefix}-ep`} value={epId} onChange={(v) => set(epKey, v)} allowEmpty={allowEmpty ?? t('Any endpoint')} options={endpoints.map((e) => ({ value: e.id, label: e.name || e.baseUrl }))} />
+        <Select id={`${idPrefix}-model`} value={str(draft[modelKey])} onChange={(v) => set(modelKey, v)} allowEmpty={t('No model')} options={[...new Set(models)].map((m) => ({ value: m, label: m }))} />
       </div>
     </Field>
   );
@@ -356,74 +360,74 @@ function DefaultsSection({ settings, endpoints, onSave, say }: { settings: Setti
     setSaving(true);
     try {
       await onSave(changed);
-      say('Guardado.');
+      say(t('Saved.'));
     } catch (err) {
-      say((err as Error).message || 'No he podido guardar.');
+      say((err as Error).message || t('Could not save.'));
     } finally {
       setSaving(false);
     }
   };
-  if (!settings) return <Skeleton label="Cargando" count={4} height="56px" />;
+  if (!settings) return <Skeleton label={t('Loading')} count={4} height="56px" />;
   return (
     <section className="fs-set__section" aria-labelledby="fs-set-defaults">
       <header className="fs-set__section-head">
         <div>
-          <h2 id="fs-set-defaults" className="fs-set__title">IA por defecto</h2>
-          <p className="fs-prose">Qué modelo usa cada cosa cuando no eliges uno a mano.</p>
+          <h2 id="fs-set-defaults" className="fs-set__title">{t('Default AI')}</h2>
+          <p className="fs-prose">{t('Which model each thing uses when you do not pick one by hand.')}</p>
         </div>
       </header>
-      <ModelPair idPrefix="def" label="Chat" help="El de las conversaciones nuevas." endpoints={endpoints} draft={draft} set={set} epKey="default_endpoint_id" modelKey="default_model" />
-      <ModelPair idPrefix="task" label="Tareas de fondo" help="Automatizaciones, resúmenes, ordenar la memoria. Vacío: el del chat." endpoints={endpoints} draft={draft} set={set} epKey="task_endpoint_id" modelKey="task_model" allowEmpty="El del chat" />
-      <ModelPair idPrefix="util" label="Utilidad (rápido)" help="Títulos, calendario en tus palabras, clasificaciones. Conviene uno pequeño." endpoints={endpoints} draft={draft} set={set} epKey="utility_endpoint_id" modelKey="utility_model" allowEmpty="El de tareas" />
-      <Field label="Alternativas de utilidad" htmlFor="util-fb" help="Modelos que se prueban en orden si el de utilidad falla; separados por comas.">
+      <ModelPair idPrefix="def" label="Chat" help={t('The one for new conversations.')} endpoints={endpoints} draft={draft} set={set} epKey="default_endpoint_id" modelKey="default_model" />
+      <ModelPair idPrefix="task" label={t('Background tasks')} help={t('Automations, summaries, tidying the memory. Empty: the chat\'s.')} endpoints={endpoints} draft={draft} set={set} epKey="task_endpoint_id" modelKey="task_model" allowEmpty={t('The chat\'s')} />
+      <ModelPair idPrefix="util" label={t('Utility (fast)')} help={t('Titles, calendar in your words, classifications. A small one is best.')} endpoints={endpoints} draft={draft} set={set} epKey="utility_endpoint_id" modelKey="utility_model" allowEmpty={t('The tasks\'')} />
+      <Field label={t('Utility fallbacks')} htmlFor="util-fb" help={t('Models tried in order if the utility one fails; comma-separated.')}>
         <Text id="util-fb" value={list(draft.utility_model_fallbacks)} onChange={(v) => set('utility_model_fallbacks', fromList(v))} />
       </Field>
-      <Field label="Visión" help="Para leer imágenes adjuntas y capturas.">
+      <Field label={t('Vision')} help={t('To read attached images and screenshots.')}>
         <div className="fs-set__inline">
-          <Toggle id="vision-on" checked={bool(draft.vision_enabled)} onChange={(v) => set('vision_enabled', v)} label="Activa" />
-          <Select id="vision-model" value={str(draft.vision_model)} onChange={(v) => set('vision_model', v)} allowEmpty="Sin modelo" options={[...new Set(endpoints.flatMap((e) => e.models))].map((m) => ({ value: m, label: m }))} />
+          <Toggle id="vision-on" checked={bool(draft.vision_enabled)} onChange={(v) => set('vision_enabled', v)} label={t('On')} />
+          <Select id="vision-model" value={str(draft.vision_model)} onChange={(v) => set('vision_model', v)} allowEmpty={t('No model')} options={[...new Set(endpoints.flatMap((e) => e.models))].map((m) => ({ value: m, label: m }))} />
         </div>
       </Field>
-      <Field label="Alternativas de visión" htmlFor="vision-fb">
+      <Field label={t('Vision fallbacks')} htmlFor="vision-fb">
         <Text id="vision-fb" value={list(draft.vision_model_fallbacks)} onChange={(v) => set('vision_model_fallbacks', fromList(v))} />
       </Field>
-      <ModelPair idPrefix="dispatch" label="Workers (dispatch)" endpoints={endpoints} draft={draft} set={set} epKey="dispatch_endpoint_id" modelKey="dispatch_model" allowEmpty="El del chat" />
-      <ModelPair idPrefix="research" label="Deep Research" endpoints={endpoints} draft={draft} set={set} epKey="research_endpoint_id" modelKey="research_model" allowEmpty="El del chat" />
+      <ModelPair idPrefix="dispatch" label="Workers (dispatch)" endpoints={endpoints} draft={draft} set={set} epKey="dispatch_endpoint_id" modelKey="dispatch_model" allowEmpty={t('The chat\'s')} />
+      <ModelPair idPrefix="research" label="Deep Research" endpoints={endpoints} draft={draft} set={set} epKey="research_endpoint_id" modelKey="research_model" allowEmpty={t('The chat\'s')} />
       <div className="fs-set__grid2">
-        <Field label="Buscador de Deep Research" htmlFor="research-search">
-          <Select id="research-search" value={str(draft.research_search_provider)} onChange={(v) => set('research_search_provider', v)} allowEmpty="El de la búsqueda web" options={[{ value: 'firecrawl', label: 'Firecrawl' }, { value: 'searxng', label: 'SearXNG' }, { value: 'duckduckgo', label: 'DuckDuckGo' }, { value: 'tavily', label: 'Tavily' }, { value: 'brave', label: 'Brave' }, { value: 'google', label: 'Google' }, { value: 'serper', label: 'Serper' }]} />
+        <Field label={t('Deep Research search engine')} htmlFor="research-search">
+          <Select id="research-search" value={str(draft.research_search_provider)} onChange={(v) => set('research_search_provider', v)} allowEmpty={t('The web search\'s')} options={[{ value: 'firecrawl', label: 'Firecrawl' }, { value: 'searxng', label: 'SearXNG' }, { value: 'duckduckgo', label: 'DuckDuckGo' }, { value: 'tavily', label: 'Tavily' }, { value: 'brave', label: 'Brave' }, { value: 'google', label: 'Google' }, { value: 'serper', label: 'Serper' }]} />
         </Field>
-        <Field label="Máx. tokens por informe" htmlFor="research-tokens">
+        <Field label={t('Max. tokens per report')} htmlFor="research-tokens">
           <Text id="research-tokens" type="number" value={str(draft.research_max_tokens)} onChange={(v) => set('research_max_tokens', Number(v) || 0)} />
         </Field>
       </div>
-      <Field label="Imágenes" help="Generación de imágenes desde el chat.">
+      <Field label={t('Images')} help={t('Image generation from the chat.')}>
         <div className="fs-set__inline">
-          <Toggle id="img-on" checked={bool(draft.image_gen_enabled)} onChange={(v) => set('image_gen_enabled', v)} label="Activa" />
-          <Text id="img-model" value={str(draft.image_model)} onChange={(v) => set('image_model', v)} placeholder="modelo de imágenes" />
-          <Select id="img-quality" value={str(draft.image_quality, 'medium')} onChange={(v) => set('image_quality', v)} options={[{ value: 'low', label: 'Baja (rápida)' }, { value: 'medium', label: 'Media' }, { value: 'high', label: 'Alta' }]} />
+          <Toggle id="img-on" checked={bool(draft.image_gen_enabled)} onChange={(v) => set('image_gen_enabled', v)} label={t('On')} />
+          <Text id="img-model" value={str(draft.image_model)} onChange={(v) => set('image_model', v)} placeholder={t('image model')} />
+          <Select id="img-quality" value={str(draft.image_quality, 'medium')} onChange={(v) => set('image_quality', v)} options={[{ value: 'low', label: t('Low (fast)') }, { value: 'medium', label: t('Medium') }, { value: 'high', label: t('High') }]} />
         </div>
       </Field>
-      <Field label="Profesor (teacher)" help="Un modelo grande que revisa y enseña al pequeño cuando hace falta.">
+      <Field label={t('Teacher')} help={t('A big model that reviews and teaches the small one when needed.')}>
         <div className="fs-set__inline">
-          <Toggle id="teacher-on" checked={bool(draft.teacher_enabled)} onChange={(v) => set('teacher_enabled', v)} label="Activo" />
-          <Text id="teacher-model" value={str(draft.teacher_model)} onChange={(v) => set('teacher_model', v)} placeholder="modelo" />
-          <Toggle id="teacher-t2" checked={bool(draft.teacher_tier2_enabled)} onChange={(v) => set('teacher_tier2_enabled', v)} label="Segundo nivel" />
+          <Toggle id="teacher-on" checked={bool(draft.teacher_enabled)} onChange={(v) => set('teacher_enabled', v)} label={t('On')} />
+          <Text id="teacher-model" value={str(draft.teacher_model)} onChange={(v) => set('teacher_model', v)} placeholder={t('model')} />
+          <Toggle id="teacher-t2" checked={bool(draft.teacher_tier2_enabled)} onChange={(v) => set('teacher_tier2_enabled', v)} label={t('Second tier')} />
         </div>
       </Field>
       <div className="fs-set__grid2">
-        <Field label="Salida estructurada en modelos locales" htmlFor="lso">
+        <Field label={t('Structured output on local models')} htmlFor="lso">
           <Toggle id="lso" checked={bool(draft.local_structured_output)} onChange={(v) => set('local_structured_output', v)} />
         </Field>
-        <Field label="Estilo de los documentos" htmlFor="docstyle" help="Instrucción breve que reciben las herramientas de escritura.">
+        <Field label={t('Document style')} htmlFor="docstyle" help={t('A short instruction the writing tools receive.')}>
           <Text id="docstyle" value={str(draft.document_writing_style)} onChange={(v) => set('document_writing_style', v)} />
         </Field>
       </div>
-      <Field label="Versiones del chat" help="Cuántas versiones guardar al editar o regenerar y durante cuánto tiempo.">
+      <Field label={t('Chat versions')} help={t('How many versions to keep when editing or regenerating, and for how long.')}>
         <div className="fs-set__inline">
-          <Toggle id="cv-on" checked={bool(draft.chat_versions)} onChange={(v) => set('chat_versions', v)} label="Guardar versiones" />
-          <Text id="cv-keep" type="number" value={str(draft.chat_versions_keep)} onChange={(v) => set('chat_versions_keep', Number(v) || 0)} placeholder="cuántas" />
-          <Text id="cv-hours" type="number" value={str(draft.chat_versions_keep_hours)} onChange={(v) => set('chat_versions_keep_hours', Number(v) || 0)} placeholder="horas" />
+          <Toggle id="cv-on" checked={bool(draft.chat_versions)} onChange={(v) => set('chat_versions', v)} label={t('Keep versions')} />
+          <Text id="cv-keep" type="number" value={str(draft.chat_versions_keep)} onChange={(v) => set('chat_versions_keep', Number(v) || 0)} placeholder={t('how many')} />
+          <Text id="cv-hours" type="number" value={str(draft.chat_versions_keep_hours)} onChange={(v) => set('chat_versions_keep_hours', Number(v) || 0)} placeholder={t('hours')} />
         </div>
       </Field>
       <SaveBar dirty={dirty} saving={saving} onSave={() => void save()} />
@@ -439,9 +443,9 @@ function useSaver(onSave: (patch: Settings) => Promise<void>, say: (t: string) =
     setSaving(true);
     try {
       await onSave(changed);
-      say('Guardado.');
+      say(t('Saved.'));
     } catch (err) {
-      say((err as Error).message || 'No he podido guardar.');
+      say((err as Error).message || t('Could not save.'));
     } finally {
       setSaving(false);
     }
@@ -454,44 +458,44 @@ const VOICE_KEYS = ['tts_enabled', 'tts_provider', 'tts_model', 'tts_voice', 'tt
 function VoiceSection({ settings, endpoints, onSave, say }: { settings: Settings | null; endpoints: ModelEndpoint[]; onSave: (patch: Settings) => Promise<void>; say: (t: string) => void }) {
   const { draft, set, changed, dirty } = useDraft(settings, VOICE_KEYS);
   const { saving, save } = useSaver(onSave, say);
-  if (!settings) return <Skeleton label="Cargando" count={3} height="56px" />;
+  if (!settings) return <Skeleton label={t('Loading')} count={3} height="56px" />;
   const apiOpts = endpoints.filter((e) => e.category !== 'local').map((e) => ({ value: `endpoint:${e.id}`, label: `${e.name || e.baseUrl} (API)` }));
   return (
     <section className="fs-set__section" aria-labelledby="fs-set-voice">
       <header className="fs-set__section-head">
         <div>
           <h2 id="fs-set-voice" className="fs-set__title">Voz</h2>
-          <p className="fs-prose">Leer en voz alta (TTS) y dictar (STT). «Navegador» usa lo que trae tu navegador; «Local» un modelo en esta máquina; un endpoint, su API.</p>
+          <p className="fs-prose">{t('Read aloud (TTS) and dictate (STT). "Browser" uses what your browser ships; "Local" a model on this machine; an endpoint, its API.')}</p>
         </div>
       </header>
-      <Field label="Leer en voz alta">
+      <Field label={t('Read aloud')}>
         <div className="fs-set__inline">
-          <Toggle id="tts-on" checked={bool(draft.tts_enabled)} onChange={(v) => set('tts_enabled', v)} label="Activo" />
-          <Select id="tts-prov" value={str(draft.tts_provider, 'disabled')} onChange={(v) => set('tts_provider', v)} options={[{ value: 'disabled', label: 'Desactivado' }, { value: 'browser', label: 'Navegador' }, { value: 'local', label: 'Local (Kokoro)' }, ...apiOpts]} />
+          <Toggle id="tts-on" checked={bool(draft.tts_enabled)} onChange={(v) => set('tts_enabled', v)} label={t('On')} />
+          <Select id="tts-prov" value={str(draft.tts_provider, 'disabled')} onChange={(v) => set('tts_provider', v)} options={[{ value: 'disabled', label: t('Off') }, { value: 'browser', label: t('Browser') }, { value: 'local', label: 'Local (Kokoro)' }, ...apiOpts]} />
         </div>
       </Field>
       <div className="fs-set__grid2">
-        <Field label="Modelo de voz" htmlFor="tts-model">
+        <Field label={t('Voice model')} htmlFor="tts-model">
           <Text id="tts-model" value={str(draft.tts_model)} onChange={(v) => set('tts_model', v)} placeholder="tts-1" />
         </Field>
-        <Field label="Voz" htmlFor="tts-voice" help="Local: af_heart y compañía; API: alloy, nova…; navegador: la del sistema si se deja vacío.">
+        <Field label='Voice' htmlFor="tts-voice" help={t('Local: af_heart and friends; API: alloy, nova…; browser: the system\'s if left empty.')}>
           <Text id="tts-voice" value={str(draft.tts_voice)} onChange={(v) => set('tts_voice', v)} />
         </Field>
       </div>
-      <Field label="Velocidad" htmlFor="tts-speed">
+      <Field label={t('Speed')} htmlFor="tts-speed">
         <Select id="tts-speed" value={str(draft.tts_speed, '1')} onChange={(v) => set('tts_speed', v)} options={['0.5', '0.75', '1', '1.25', '1.5', '2'].map((s) => ({ value: s, label: `${s}×` }))} />
       </Field>
-      <Field label="Dictado">
+      <Field label={t('Dictation')}>
         <div className="fs-set__inline">
-          <Toggle id="stt-on" checked={bool(draft.stt_enabled)} onChange={(v) => set('stt_enabled', v)} label="Activo" />
-          <Select id="stt-prov" value={str(draft.stt_provider, 'disabled')} onChange={(v) => set('stt_provider', v)} options={[{ value: 'disabled', label: 'Desactivado' }, { value: 'browser', label: 'Navegador' }, { value: 'local', label: 'Local (Whisper)' }, ...apiOpts]} />
+          <Toggle id="stt-on" checked={bool(draft.stt_enabled)} onChange={(v) => set('stt_enabled', v)} label={t('On')} />
+          <Select id="stt-prov" value={str(draft.stt_provider, 'disabled')} onChange={(v) => set('stt_provider', v)} options={[{ value: 'disabled', label: t('Off') }, { value: 'browser', label: t('Browser') }, { value: 'local', label: 'Local (Whisper)' }, ...apiOpts]} />
         </div>
       </Field>
       <div className="fs-set__grid2">
-        <Field label="Modelo de dictado" htmlFor="stt-model" help="Local: tiny, base, small, medium, large; API: whisper-1.">
+        <Field label={t('Dictation model')} htmlFor="stt-model" help={t(t('Local: tiny, base, small, medium, large; API: whisper-1.'))}>
           <Text id="stt-model" value={str(draft.stt_model, 'base')} onChange={(v) => set('stt_model', v)} />
         </Field>
-        <Field label="Idioma" htmlFor="stt-lang" help="Código de dos letras (es, en); vacío detecta.">
+        <Field label={t('Language')} htmlFor="stt-lang" help={t('Two-letter code (es, en); empty detects.')}>
           <Text id="stt-lang" value={str(draft.stt_language)} onChange={(v) => set('stt_language', v)} placeholder="es" />
         </Field>
       </div>
@@ -502,82 +506,82 @@ function VoiceSection({ settings, endpoints, onSave, say }: { settings: Settings
 
 const SEARCH_KEYS = ['search_provider', 'search_url', 'search_result_count', 'search_safesearch', 'search_fallback_chain', 'brave_api_key', 'serper_api_key', 'tavily_api_key', 'google_pse_key', 'google_pse_cx', 'firecrawl_url', 'firecrawl_api_key'];
 const PROVIDERS: Opt[] = [
-  { value: 'firecrawl', label: 'Firecrawl (propio)' },
-  { value: 'searxng', label: 'SearXNG (propio)' },
-  { value: 'duckduckgo', label: 'DuckDuckGo (sin clave)' },
+  { value: 'firecrawl', label: 'Firecrawl (self-hosted)' },
+  { value: 'searxng', label: 'SearXNG (self-hosted)' },
+  { value: 'duckduckgo', label: 'DuckDuckGo (no key)' },
   { value: 'brave', label: 'Brave Search' },
   { value: 'google_pse', label: 'Google PSE' },
   { value: 'tavily', label: 'Tavily' },
   { value: 'serper', label: 'Serper.dev' },
-  { value: 'disabled', label: 'Desactivada' },
+  { value: 'disabled', label: 'Disabled' },
 ];
 
 function SearchSection({ settings, onSave, say }: { settings: Settings | null; onSave: (patch: Settings) => Promise<void>; say: (t: string) => void }) {
   const { draft, set, changed, dirty } = useDraft(settings, SEARCH_KEYS);
   const { saving, save } = useSaver(onSave, say);
-  if (!settings) return <Skeleton label="Cargando" count={3} height="56px" />;
+  if (!settings) return <Skeleton label={t('Loading')} count={3} height="56px" />;
   const prov = str(draft.search_provider, 'searxng');
   return (
     <section className="fs-set__section" aria-labelledby="fs-set-search">
       <header className="fs-set__section-head">
         <div>
-          <h2 id="fs-set-search" className="fs-set__title">Búsqueda web</h2>
-          <p className="fs-prose">El buscador que usa el chip «Web» y las herramientas del agente. Las claves se guardan en el servidor y solo se ven aquí como puntos.</p>
+          <h2 id="fs-set-search" className="fs-set__title">{t('Web search')}</h2>
+          <p className="fs-prose">{t('The search engine behind the "Web" chip and the agent tools. Keys are stored on the server and only show here as dots.')}</p>
         </div>
       </header>
       <div className="fs-set__grid2">
-        <Field label="Proveedor" htmlFor="sp">
-          <Select id="sp" value={prov} onChange={(v) => set('search_provider', v)} options={PROVIDERS} />
+        <Field label={t('Provider')} htmlFor="sp">
+          <Select id="sp" value={prov} onChange={(v) => set('search_provider', v)} options={PROVIDERS.map((p) => ({ ...p, label: t(p.label) }))} />
         </Field>
-        <Field label="Resultados por búsqueda" htmlFor="src">
+        <Field label={t('Results per search')} htmlFor="src">
           <Text id="src" type="number" value={str(draft.search_result_count, '5')} onChange={(v) => set('search_result_count', Number(v) || 5)} />
         </Field>
       </div>
       {prov === 'searxng' && (
-        <Field label="URL de SearXNG" htmlFor="surl">
+        <Field label={t('SearXNG URL')} htmlFor="surl">
           <Text id="surl" value={str(draft.search_url)} onChange={(v) => set('search_url', v)} placeholder="http://localhost:8080" />
         </Field>
       )}
       {prov === 'firecrawl' && (
         <div className="fs-set__grid2">
-          <Field label="URL de Firecrawl" htmlFor="fcurl">
+          <Field label={t('Firecrawl URL')} htmlFor="fcurl">
             <Text id="fcurl" value={str(draft.firecrawl_url)} onChange={(v) => set('firecrawl_url', v)} placeholder="http://localhost:3002" />
           </Field>
-          <Field label="Clave de Firecrawl" htmlFor="fckey">
+          <Field label={t('Firecrawl key')} htmlFor="fckey">
             <Text id="fckey" value={str(draft.firecrawl_api_key)} onChange={(v) => set('firecrawl_api_key', v)} secret />
           </Field>
         </div>
       )}
       {prov === 'brave' && (
-        <Field label="Clave de Brave" htmlFor="brave">
+        <Field label={t('Brave key')} htmlFor="brave">
           <Text id="brave" value={str(draft.brave_api_key)} onChange={(v) => set('brave_api_key', v)} secret />
         </Field>
       )}
       {prov === 'serper' && (
-        <Field label="Clave de Serper" htmlFor="serper">
+        <Field label={t('Serper key')} htmlFor="serper">
           <Text id="serper" value={str(draft.serper_api_key)} onChange={(v) => set('serper_api_key', v)} secret />
         </Field>
       )}
       {prov === 'tavily' && (
-        <Field label="Clave de Tavily" htmlFor="tavily">
+        <Field label={t('Tavily key')} htmlFor="tavily">
           <Text id="tavily" value={str(draft.tavily_api_key)} onChange={(v) => set('tavily_api_key', v)} secret />
         </Field>
       )}
       {prov === 'google_pse' && (
         <div className="fs-set__grid2">
-          <Field label="Clave de Google PSE" htmlFor="gkey">
+          <Field label={t('Google PSE key')} htmlFor="gkey">
             <Text id="gkey" value={str(draft.google_pse_key)} onChange={(v) => set('google_pse_key', v)} secret />
           </Field>
-          <Field label="ID del motor (cx)" htmlFor="gcx">
+          <Field label={t('Engine ID (cx)')} htmlFor="gcx">
             <Text id="gcx" value={str(draft.google_pse_cx)} onChange={(v) => set('google_pse_cx', v)} />
           </Field>
         </div>
       )}
       <div className="fs-set__grid2">
         <Field label="SafeSearch" htmlFor="ss">
-          <Select id="ss" value={str(draft.search_safesearch, 'strict')} onChange={(v) => set('search_safesearch', v)} options={[{ value: 'strict', label: 'Estricto' }, { value: 'moderate', label: 'Moderado' }, { value: 'off', label: 'Apagado' }]} />
+          <Select id="ss" value={str(draft.search_safesearch, 'strict')} onChange={(v) => set('search_safesearch', v)} options={[{ value: 'strict', label: t('Strict') }, { value: 'moderate', label: t('Moderate') }, { value: 'off', label: t('Off') }]} />
         </Field>
-        <Field label="Cadena de respaldo" htmlFor="fb" help="Proveedores que se prueban si el principal falla, separados por comas (duckduckgo, brave…).">
+        <Field label={t('Fallback chain')} htmlFor="fb" help={t('Providers tried if the main one fails, comma-separated (duckduckgo, brave…).')}>
           <Text id="fb" value={list(draft.search_fallback_chain)} onChange={(v) => set('search_fallback_chain', fromList(v))} />
         </Field>
       </div>
@@ -591,43 +595,43 @@ const REMINDER_KEYS = ['reminder_channel', 'reminder_email_to', 'reminder_ntfy_t
 function RemindersSection({ settings, onSave, say }: { settings: Settings | null; onSave: (patch: Settings) => Promise<void>; say: (t: string) => void }) {
   const { draft, set, changed, dirty } = useDraft(settings, REMINDER_KEYS);
   const { saving, save } = useSaver(onSave, say);
-  if (!settings) return <Skeleton label="Cargando" count={3} height="56px" />;
+  if (!settings) return <Skeleton label={t('Loading')} count={3} height="56px" />;
   const ch = str(draft.reminder_channel, 'browser');
   return (
     <section className="fs-set__section" aria-labelledby="fs-set-rem">
       <header className="fs-set__section-head">
         <div>
           <h2 id="fs-set-rem" className="fs-set__title">Recordatorios</h2>
-          <p className="fs-prose">Por dónde llegan los avisos de las notas y del calendario cuando toca.</p>
+          <p className="fs-prose">{t('Where the notes and calendar alerts arrive when they are due.')}</p>
         </div>
       </header>
-      <Field label="Canal" htmlFor="rch">
-        <Select id="rch" value={ch} onChange={(v) => set('reminder_channel', v)} options={[{ value: 'browser', label: 'Aviso del navegador' }, { value: 'email', label: 'Correo' }, { value: 'ntfy', label: 'ntfy' }, { value: 'webhook', label: 'Webhook' }]} />
+      <Field label={t('Channel')} htmlFor="rch">
+        <Select id="rch" value={ch} onChange={(v) => set('reminder_channel', v)} options={[{ value: 'browser', label: t('Browser notification') }, { value: 'email', label: t('Mail') }, { value: 'ntfy', label: 'ntfy' }, { value: 'webhook', label: 'Webhook' }]} />
       </Field>
       {ch === 'email' && (
-        <Field label="Enviar a" htmlFor="rto" help="Necesita una cuenta SMTP en «Cuentas de correo».">
-          <Text id="rto" value={str(draft.reminder_email_to)} onChange={(v) => set('reminder_email_to', v)} placeholder="tu@correo" />
+        <Field label={t('Send to')} htmlFor="rto" help={t('Needs an SMTP account under "Mail accounts".')}>
+          <Text id="rto" value={str(draft.reminder_email_to)} onChange={(v) => set('reminder_email_to', v)} placeholder={t('you@mail')} />
         </Field>
       )}
       {ch === 'ntfy' && (
-        <Field label="Tema de ntfy" htmlFor="rntfy">
+        <Field label={t('ntfy topic')} htmlFor="rntfy">
           <Text id="rntfy" value={str(draft.reminder_ntfy_topic)} onChange={(v) => set('reminder_ntfy_topic', v)} />
         </Field>
       )}
       {ch === 'webhook' && (
         <div className="fs-set__grid2">
-          <Field label="Integración (id)" htmlFor="rwh" help="Se elige entre las integraciones de tipo webhook (interfaz anterior).">
+          <Field label={t('Integration (id)')} htmlFor="rwh" help={t('Picked among the webhook integrations (previous interface).')}>
             <Text id="rwh" value={str(draft.reminder_webhook_integration_id)} onChange={(v) => set('reminder_webhook_integration_id', v)} />
           </Field>
-          <Field label="Plantilla del cuerpo" htmlFor="rwt">
+          <Field label={t('Body template')} htmlFor="rwt">
             <Text id="rwt" value={str(draft.reminder_webhook_payload_template)} onChange={(v) => set('reminder_webhook_payload_template', v)} />
           </Field>
         </div>
       )}
-      <Field label="Síntesis con IA" help="El modelo redacta el aviso a partir de la nota, con la voz que le digas.">
+      <Field label={t('AI synthesis')} help={t('The model writes the alert from the note, in the voice you give it.')}>
         <div className="fs-set__inline">
-          <Toggle id="rsyn" checked={bool(draft.reminder_llm_synthesis)} onChange={(v) => set('reminder_llm_synthesis', v)} label="Activa" />
-          <Text id="rpersona" value={str(draft.reminder_llm_persona)} onChange={(v) => set('reminder_llm_persona', v)} placeholder="p. ej. «un mayordomo seco y amable»" />
+          <Toggle id="rsyn" checked={bool(draft.reminder_llm_synthesis)} onChange={(v) => set('reminder_llm_synthesis', v)} label={t('On')} />
+          <Text id="rpersona" value={str(draft.reminder_llm_persona)} onChange={(v) => set('reminder_llm_persona', v)} placeholder={t('e.g. "a dry, kind butler"')} />
         </div>
       </Field>
       <SaveBar dirty={dirty} saving={saving} onSave={() => void save(changed)} />
@@ -637,43 +641,71 @@ function RemindersSection({ settings, onSave, say }: { settings: Settings | null
 
 const SYSTEM_KEYS = ['app_public_url', 'share_defaults_with_users', 'tool_path_extra_roots', 'urgent_email_prompt', 'gpu_placement_prefer', 'model_load_options', 'skill_max_injected', 'skill_autosave_min_confidence'];
 
+/* -- General: the interface language -- */
+
+function GeneralSection() {
+  const lang = useLang();
+  const theme = useTheme();
+  const THEMES: { value: ThemeChoice; label: string }[] = [
+    { value: 'system', label: t('Follow the system') },
+    { value: 'light', label: t('Light') },
+    { value: 'dark', label: t('Dark') },
+  ];
+  return (
+    <section className="fs-set__section" aria-labelledby="fs-set-general">
+      <header className="fs-set__section-head">
+        <div>
+          <h2 id="fs-set-general" className="fs-set__title">{t('General')}</h2>
+          <p className="fs-prose">{t('Language and appearance of this interface. They apply at once and follow you to other browsers.')}</p>
+        </div>
+      </header>
+      <Field label={t('Interface language')} htmlFor="ui-lang" help={t('The previous interface stays in English; the models answer in whatever language you write.')}>
+        <Select id="ui-lang" value={lang} onChange={(v) => setLang(v as typeof lang)} options={LANGS} />
+      </Field>
+      <Field label={t('Appearance')} htmlFor="ui-theme" help={t('Light or dark for Studio. The previous interface keeps its own theme editor.')}>
+        <Select id="ui-theme" value={theme} onChange={(v) => setTheme(v as ThemeChoice)} options={THEMES} />
+      </Field>
+    </section>
+  );
+}
+
 function SystemSection({ settings, onSave, say }: { settings: Settings | null; onSave: (patch: Settings) => Promise<void>; say: (t: string) => void }) {
   const { draft, set, changed, dirty } = useDraft(settings, SYSTEM_KEYS);
   const { saving, save } = useSaver(onSave, say);
-  if (!settings) return <Skeleton label="Cargando" count={3} height="56px" />;
+  if (!settings) return <Skeleton label={t('Loading')} count={3} height="56px" />;
   return (
     <section className="fs-set__section" aria-labelledby="fs-set-sys">
       <header className="fs-set__section-head">
         <div>
           <h2 id="fs-set-sys" className="fs-set__title">Sistema</h2>
-          <p className="fs-prose">Valores de la instalación. Lo que no está aquí (usuarios, tokens, bóveda, 2FA) sigue en la interfaz anterior.</p>
+          <p className="fs-prose">{t('Installation values. What is not here (users, tokens, vault, 2FA) is still in the previous interface.')}</p>
         </div>
       </header>
-      <Field label="URL pública" htmlFor="pub" help="Para los enlaces de los avisos por correo o webhook: https://chat.ejemplo.com">
+      <Field label={t('Public URL')} htmlFor="pub" help={t('For the links in mail or webhook alerts: https://chat.example.com')}>
         <Text id="pub" value={str(draft.app_public_url)} onChange={(v) => set('app_public_url', v)} />
       </Field>
-      <Field label="Compartir los valores por defecto con los demás usuarios" htmlFor="share">
+      <Field label={t('Share the defaults with the other users')} htmlFor="share">
         <Toggle id="share" checked={bool(draft.share_defaults_with_users)} onChange={(v) => set('share_defaults_with_users', v)} />
       </Field>
-      <Field label="Rutas extra permitidas a las herramientas" htmlFor="roots" help="Carpetas fuera del workspace que el agente puede leer; una por línea o separadas por comas.">
+      <Field label={t('Extra paths allowed to the tools')} htmlFor="roots" help={t('Folders outside the workspace the agent may read; one per line or comma-separated.')}>
         <Text id="roots" value={list(draft.tool_path_extra_roots)} onChange={(v) => set('tool_path_extra_roots', fromList(v))} />
       </Field>
-      <Field label="Prompt de urgencia del correo" htmlFor="urg" help="Cómo decide el modelo que un correo es urgente.">
+      <Field label={t('Mail urgency prompt')} htmlFor="urg" help={t('How the model decides a mail is urgent.')}>
         <Text id="urg" value={str(draft.urgent_email_prompt)} onChange={(v) => set('urgent_email_prompt', v)} />
       </Field>
       <div className="fs-set__grid2">
-        <Field label="Preferencia de GPU" htmlFor="gpu" help="Pista para colocar modelos cuando hay varias.">
+        <Field label={t('GPU preference')} htmlFor="gpu" help={t('A hint for placing models when there are several.')}>
           <Text id="gpu" value={str(draft.gpu_placement_prefer)} onChange={(v) => set('gpu_placement_prefer', v)} />
         </Field>
-        <Field label="Opciones de carga del modelo" htmlFor="mlo" help="Se pasan tal cual al servidor local (contexto, capas en GPU…).">
+        <Field label={t('Model load options')} htmlFor="mlo" help={t('Passed as-is to the local server (context, GPU layers…).')}>
           <Text id="mlo" value={typeof draft.model_load_options === 'object' && draft.model_load_options ? JSON.stringify(draft.model_load_options) : str(draft.model_load_options)} onChange={(v) => set('model_load_options', v)} />
         </Field>
       </div>
       <div className="fs-set__grid2">
-        <Field label="Skills inyectadas como máximo" htmlFor="skmax">
+        <Field label={t('Skills injected at most')} htmlFor="skmax">
           <Text id="skmax" type="number" value={str(draft.skill_max_injected)} onChange={(v) => set('skill_max_injected', Number(v) || 0)} />
         </Field>
-        <Field label="Confianza mínima para guardar una skill sola" htmlFor="skconf">
+        <Field label={t('Minimum confidence to save a skill on its own')} htmlFor="skconf">
           <Text id="skconf" type="number" value={str(draft.skill_autosave_min_confidence)} onChange={(v) => set('skill_autosave_min_confidence', Number(v) || 0)} />
         </Field>
       </div>
@@ -727,7 +759,7 @@ function AgentSection({ settings, onSave, say }: { settings: Settings | null; on
       .then(setSchema)
       .catch((err: unknown) => {
         if ((err as { name?: string })?.name === 'AbortError') return;
-        setFailed((err as { status?: number })?.status === 403 ? 'Solo el administrador puede ver y cambiar el agente.' : 'No he podido leer el esquema del agente.');
+        setFailed((err as { status?: number })?.status === 403 ? t('Only the administrator can see and change the agent.') : t('Could not read the agent\'s schema.'));
       });
     return () => c.abort();
   }, []);
@@ -750,7 +782,7 @@ function AgentSection({ settings, onSave, say }: { settings: Settings | null; on
   const matches = (f: SchemaField) => !q || q.split(/\s+/).every((t) => `${f.key} ${f.label} ${f.help}`.toLowerCase().includes(t));
 
   if (failed) return <p className="fs-set__help">{failed}</p>;
-  if (!schema || !settings) return <Skeleton label="Cargando el agente" count={6} height="48px" />;
+  if (!schema || !settings) return <Skeleton label={t('Loading the agent')} count={6} height="48px" />;
   const total = schema.groups.reduce((n, g) => n + g.fields.length, 0);
 
   return (
@@ -758,13 +790,13 @@ function AgentSection({ settings, onSave, say }: { settings: Settings | null; on
       <header className="fs-set__section-head">
         <div>
           <h2 id="fs-set-agent" className="fs-set__title">
-            Agente <span className="fs-set__count">{total}</span>
+            {t('Agent')} <span className="fs-set__count">{total}</span>
           </h2>
-          <p className="fs-prose">Todas las opciones del agente, el navegador y el escritorio, descritas por el servidor. La clave en gris es la que usan `/settings` y las herramientas.</p>
+          <p className="fs-prose">{t('Every option of the agent, the browser and the desktop, described by the server. The grey key is the one `/settings` and the tools use.')}</p>
         </div>
         <label className="fs-set__search">
           <Search size={13} aria-hidden="true" />
-          <input type="search" placeholder="Filtrar opciones…" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Filtrar" />
+          <input type="search" placeholder={t('Filter options…')} value={query} onChange={(e) => setQuery(e.target.value)} aria-label={t('Filter')} />
         </label>
       </header>
       {schema.groups.map((g) => {
@@ -838,7 +870,7 @@ function ShortcutsSection({ settings, onSave, say }: { settings: Settings | null
     return () => window.removeEventListener('keydown', onKey, true);
   }, [recording]);
 
-  if (!settings) return <Skeleton label="Cargando" count={4} height="40px" />;
+  if (!settings) return <Skeleton label={t('Loading')} count={4} height="40px" />;
   const saved = settings.keybinds && typeof settings.keybinds === 'object' ? (settings.keybinds as Record<string, unknown>) : {};
   const dirty = Object.keys(binds).some((k) => (binds[k] || '') !== String(saved[k] ?? DEFAULT_KEYBINDS[k] ?? ''));
   const dupes = new Map<string, number>();
@@ -848,19 +880,19 @@ function ShortcutsSection({ settings, onSave, say }: { settings: Settings | null
     <section className="fs-set__section" aria-labelledby="fs-set-keys">
       <header className="fs-set__section-head">
         <div>
-          <h2 id="fs-set-keys" className="fs-set__title">Atajos de teclado</h2>
-          <p className="fs-prose">Pulsa «Cambiar» y luego la combinación. Retroceso la deja sin atajo; Escape cancela. Valen en Studio y en la interfaz anterior.</p>
+          <h2 id="fs-set-keys" className="fs-set__title">{t('Keyboard shortcuts')}</h2>
+          <p className="fs-prose">{t('Press "Change" and then the combination. Backspace clears it; Escape cancels. They work in Studio and in the previous interface.')}</p>
         </div>
-        <Button variant="ghost" size="sm" label="Valores por defecto" onClick={() => setBinds({ ...DEFAULT_KEYBINDS })} />
+        <Button variant="ghost" size="sm" label={t('Defaults')} onClick={() => setBinds({ ...DEFAULT_KEYBINDS })} />
       </header>
       <div className="fs-set__keys">
         {Object.keys(DEFAULT_KEYBINDS).map((k) => (
           <div key={k} className="fs-set__key-row" data-dupe={(binds[k] && (dupes.get(binds[k]) ?? 0) > 1) || undefined}>
-            <span className="fs-set__key-label">{KEYBIND_LABELS[k] ?? k}</span>
+            <span className="fs-set__key-label">{KEYBIND_LABELS[k] ? t(KEYBIND_LABELS[k]) : k}</span>
             <kbd className="fs-set__kbd" data-recording={recording === k || undefined}>
-              {recording === k ? 'pulsa una combinación…' : binds[k] ? binds[k].split('+').map((p) => (p === 'ctrl' ? 'Ctrl' : p === 'alt' ? 'Alt' : p === 'shift' ? 'Mayús' : p.length === 1 ? p.toUpperCase() : p)).join(' + ') : '—'}
+              {recording === k ? t('press a combination…') : binds[k] ? binds[k].split('+').map((p) => (p === 'ctrl' ? 'Ctrl' : p === 'alt' ? 'Alt' : p === 'shift' ? t('Shift') : p.length === 1 ? p.toUpperCase() : p)).join(' + ') : '—'}
             </kbd>
-            <Button variant="ghost" size="sm" label={recording === k ? 'Cancelar' : 'Cambiar'} onClick={() => setRecording(recording === k ? null : k)} />
+            <Button variant="ghost" size="sm" label={recording === k ? t('Cancel') : t('Change')} onClick={() => setRecording(recording === k ? null : k)} />
           </div>
         ))}
       </div>
@@ -876,17 +908,17 @@ function LegacySection() {
     <section className="fs-set__section" aria-labelledby="fs-set-legacy">
       <header className="fs-set__section-head">
         <div>
-          <h2 id="fs-set-legacy" className="fs-set__title">En la interfaz anterior</h2>
-          <p className="fs-prose">Estas secciones todavía se editan allí. Cada enlace abre la pestaña justa y vuelves con «Studio».</p>
+          <h2 id="fs-set-legacy" className="fs-set__title">{t('In the previous interface')}</h2>
+          <p className="fs-prose">{t('These sections are still edited there. Each link opens the right tab and you come back with "Studio".')}</p>
         </div>
       </header>
       <div className="fs-set__legacy">
-        {LEGACY_TABS.map((t) => (
-          <a key={t.tab} className="fs-set__legacy-card" href={legacyHref(t.tab)}>
+        {LEGACY_TABS.map((tab) => (
+          <a key={tab.tab} className="fs-set__legacy-card" href={legacyHref(tab.tab)}>
             <span className="fs-set__legacy-title">
-              {t.label} <ExternalLink size={12} aria-hidden="true" />
+              {t(tab.label)} <ExternalLink size={12} aria-hidden="true" />
             </span>
-            <span className="fs-set__help">{t.help}</span>
+            <span className="fs-set__help">{t(tab.help)}</span>
           </a>
         ))}
       </div>
@@ -900,7 +932,7 @@ export function SettingsScreen() {
   const [params, setParams] = useSearchParams();
   const [section, setSection] = useState<SectionKey>(() => {
     const s = params.get('s') as SectionKey | null;
-    return s && SECTIONS.some((x) => x.key === s) ? s : 'models';
+    return s && SECTIONS.some((x) => x.key === s) ? s : 'general';
   });
   const [settings, setSettings] = useState<Settings | null>(null);
   const [endpoints, setEndpoints] = useState<ModelEndpoint[] | null>(null);
@@ -927,7 +959,7 @@ export function SettingsScreen() {
     loadSettings(c.signal)
       .then(setSettings)
       .catch((err: unknown) => {
-        if ((err as { name?: string })?.name !== 'AbortError') setFailed('No he podido leer los ajustes.');
+        if ((err as { name?: string })?.name !== 'AbortError') setFailed(t('Could not read the settings.'));
       });
     return () => c.abort();
   }, []);
@@ -953,9 +985,9 @@ export function SettingsScreen() {
       <EmptyState
         icon={Settings2}
         title={failed}
-        body="La interfaz anterior no depende de esta pantalla."
+        body={t('The previous interface does not depend on this screen.')}
         primaryAction={{
-          label: 'Abrir los ajustes de la interfaz anterior',
+          label: t('Open the previous interface\'s settings'),
           onClick: () => {
             window.location.href = legacyHref('services');
           },
@@ -968,22 +1000,23 @@ export function SettingsScreen() {
     <div className="fs-screen fs-set" data-testid="settings">
       <header className="fs-screen__head">
         <div>
-          <h1 className="fs-screen__title">Ajustes</h1>
+          <h1 className="fs-screen__title">{t('Settings')}</h1>
           <p className="fs-prose" style={{ marginBlockStart: 'var(--fs-space-2)' }}>
-            Modelos, valores por defecto, voz, búsqueda, recordatorios, el agente entero y los atajos. Se guarda por sección, solo lo que cambia.
+            {t('Models, defaults, voice, search, reminders, the whole agent and the shortcuts. Saved per section, only what changes.')}
           </p>
         </div>
       </header>
       <div className="fs-set__layout">
-        <nav className="fs-set__nav" aria-label="Secciones">
+        <nav className="fs-set__nav" aria-label={t('Sections')}>
           {SECTIONS.map((s) => (
             <button key={s.key} type="button" className="fs-set__nav-item" data-on={section === s.key || undefined} onClick={() => setSection(s.key)}>
               <s.icon size={14} aria-hidden="true" />
-              {s.label}
+              {t(s.label)}
             </button>
           ))}
         </nav>
         <div className="fs-set__body">
+          {section === 'general' && <GeneralSection />}
           {section === 'models' && <ModelsSection endpoints={endpoints} onChanged={loadEps} say={say} />}
           {section === 'defaults' && <DefaultsSection settings={settings} endpoints={endpoints ?? []} onSave={onSave} say={say} />}
           {section === 'voice' && <VoiceSection settings={settings} endpoints={endpoints ?? []} onSave={onSave} say={say} />}

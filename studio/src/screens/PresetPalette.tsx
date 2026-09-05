@@ -5,6 +5,7 @@ import { Button } from '../components';
 import { deleteTemplate, listPresets, saveTemplate, type Preset } from '../adapters/presets';
 import { overlayRoot } from '../shell/overlayRoot';
 import '../shell/palette.css';
+import { t } from '../i18n';
 
 /**
  * Presets and personas behind the composer chip: the built-in ones
@@ -48,7 +49,7 @@ export default function PresetPalette({
       onPick(saved);
       onOpenChange(false);
     } catch (e) {
-      onNotice(`No he podido guardar el preset: ${(e as Error).message}`, 'danger');
+      onNotice(`${t('Could not save the preset')}: ${(e as Error).message}`, 'danger');
     } finally {
       setBusy(false);
     }
@@ -58,7 +59,7 @@ export default function PresetPalette({
   const own = (presets ?? []).filter((p) => p.own);
 
   return (
-    <Command.Dialog open={open} onOpenChange={onOpenChange} label="Elegir preset" className="fs-palette" container={overlayRoot()} data-testid="studio-presets">
+    <Command.Dialog open={open} onOpenChange={onOpenChange} label={t('Choose preset')} className="fs-palette" container={overlayRoot()} data-testid="studio-presets">
       {creating ? (
         <form
           className="fs-palette__form"
@@ -67,18 +68,18 @@ export default function PresetPalette({
             void create();
           }}
         >
-          <input className="fs-palette__input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Nombre del preset" aria-label="Nombre" autoFocus />
-          <textarea className="fs-palette__textarea" value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="Prompt de sistema: quién es, cómo responde, qué evita…" aria-label="Prompt de sistema" rows={6} />
+          <input className="fs-palette__input" value={name} onChange={(e) => setName(e.target.value)} placeholder={t('Preset name')} aria-label={t('Name')} autoFocus />
+          <textarea className="fs-palette__textarea" value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder={t('System prompt: who it is, how it answers, what it avoids…')} aria-label={t('System prompt')} rows={6} />
           <div className="fs-palette__row">
-            <Button size="sm" variant="primary" type="submit" label="Guardar" loading={busy} disabled={!name.trim()} />
-            <Button size="sm" label="Cancelar" onClick={() => setCreating(false)} />
+            <Button size="sm" variant="primary" type="submit" label={t('Save')} loading={busy} disabled={!name.trim()} />
+            <Button size="sm" label={t('Cancel')} onClick={() => setCreating(false)} />
           </div>
         </form>
       ) : (
         <>
-          <Command.Input placeholder="Buscar preset o personaje…" className="fs-palette__input" />
+          <Command.Input placeholder={t('Search preset or persona…')} className="fs-palette__input" />
           <Command.List className="fs-palette__list">
-            <Command.Empty className="fs-palette__empty">{presets === null ? 'Cargando…' : 'Ningún preset coincide.'}</Command.Empty>
+            <Command.Empty className="fs-palette__empty">{presets === null ? t('Loading…') : t('No preset matches.')}</Command.Empty>
             <Command.Item
               value="sin preset ninguno quitar"
               onSelect={() => {
@@ -95,7 +96,7 @@ export default function PresetPalette({
               Nuevo preset o personaje…
             </Command.Item>
             {own.length > 0 && (
-              <Command.Group heading="Tuyos" className="fs-palette__group">
+              <Command.Group heading={t('Yours')} className="fs-palette__group">
                 {own.map((p) => (
                   <Command.Item
                     key={p.id}
@@ -112,7 +113,7 @@ export default function PresetPalette({
                     <button
                       type="button"
                       className="fs-palette__mini"
-                      aria-label={`Borrar ${p.name}`}
+                      aria-label={t('Delete {name}', { name: p.name })}
                       onClick={(e) => {
                         e.stopPropagation();
                         deleteTemplate(p.id)
@@ -120,7 +121,7 @@ export default function PresetPalette({
                             if (p.id === current) onPick(null);
                             void reload();
                           })
-                          .catch(() => onNotice('No he podido borrar el preset.', 'danger'));
+                          .catch(() => onNotice(t('Could not delete the preset.'), 'danger'));
                       }}
                     >
                       <Trash2 size={13} aria-hidden="true" />
@@ -130,7 +131,7 @@ export default function PresetPalette({
               </Command.Group>
             )}
             {builtin.length > 0 && (
-              <Command.Group heading="Incluidos" className="fs-palette__group">
+              <Command.Group heading={t('Included')} className="fs-palette__group">
                 {builtin.map((p) => (
                   <Command.Item
                     key={p.id}

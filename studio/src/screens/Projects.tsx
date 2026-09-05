@@ -6,6 +6,7 @@ import { listProjects, type Project } from '../adapters/projects';
 import { relativeTime } from '../adapters/home';
 import './projects.css';
 import './home.css';
+import { t } from '../i18n';
 
 /**
  * Proyectos (UI-040).
@@ -41,10 +42,10 @@ export function ProjectsScreen() {
     return (
       <EmptyState
         icon={FolderKanban}
-        title="No he podido leer tus proyectos"
-        body="La API no responde. La interfaz anterior no depende de esta pantalla y sigue funcionando."
+        title={t('Could not read your projects')}
+        body={t('The API is not responding. The previous interface does not depend on this screen and keeps working.')}
         primaryAction={{
-          label: 'Abrir la interfaz anterior',
+          label: t('Open the previous interface'),
           onClick: () => {
             window.location.href = '/?shell=legacy';
           },
@@ -56,14 +57,14 @@ export function ProjectsScreen() {
   return (
     <div className="fs-screen" data-testid="projects">
       <header className="fs-screen__head">
-        <h1 className="fs-screen__title">Proyectos</h1>
+        <h1 className="fs-screen__title">{t('Projects')}</h1>
         <label className="fs-search">
           <Search size={15} aria-hidden="true" />
           <input
             type="search"
             value={query}
-            placeholder="Filtrar por nombre o carpeta"
-            aria-label="Filtrar proyectos"
+            placeholder={t('Filter by name or folder')}
+            aria-label={t('Filter projects')}
             data-testid="projects-filter"
             onChange={(event) => {
               const next = new URLSearchParams(params);
@@ -77,22 +78,22 @@ export function ProjectsScreen() {
         </label>
       </header>
 
-      {!projects && <Skeleton label="Cargando proyectos" count={4} height="44px" />}
+      {!projects && <Skeleton label={t('Loading projects')} count={4} height="44px" />}
 
       {projects && visible.length === 0 && (
         <EmptyState
           icon={FolderKanban}
-          title={query ? 'Ningún proyecto coincide' : 'Todavía no hay proyectos'}
+          title={query ? t('No project matches') : t('No projects yet')}
           body={
             query
-              ? 'Prueba con otra parte del nombre o de la ruta de la carpeta.'
-              : 'Un proyecto agrupa carpeta, instrucciones, memoria y conversaciones. Crear el primero sigue siendo cosa de la interfaz anterior por ahora.'
+              ? t('Try another part of the name or of the folder path.')
+              : t('A project groups a folder, instructions, memory and conversations. Creating the first one is still done in the previous interface for now.')
           }
           primaryAction={
             query
               ? undefined
               : {
-                  label: 'Crear en la interfaz anterior',
+                  label: t('Create in the previous interface'),
                   onClick: () => {
                     window.location.href = '/?shell=legacy';
                   },

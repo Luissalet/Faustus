@@ -1,5 +1,6 @@
 import type { RunStatus } from '../components';
 import { asArray, getJson } from './api';
+import { t } from '../i18n';
 
 /**
  * One shape for every kind of work (UI-050).
@@ -12,7 +13,7 @@ import { asArray, getJson } from './api';
  */
 export interface ActivityRun {
   id: string;
-  kind: 'tarea' | 'render' | 'aprobación';
+  kind: 'task' | 'render' | 'approval';
   title: string;
   detail?: string;
   status: RunStatus;
@@ -84,7 +85,7 @@ export async function loadActivity(signal?: AbortSignal): Promise<{
 
   const [tasks, media, approvals] = await Promise.all([
     getJson<unknown>('/api/tasks/runs/recent', signal).catch(() => {
-      degraded.push('runs de tareas');
+      degraded.push(t('task runs'));
       return { runs: [] };
     }),
     getJson<unknown>('/api/media/runs', signal).catch(() => {
@@ -100,8 +101,8 @@ export async function loadActivity(signal?: AbortSignal): Promise<{
   const runs: ActivityRun[] = [
     ...asArray<PendingApproval>(approvals, 'pending').map((item, index) => ({
       id: item.approval_id ?? item.id ?? `approval-${index}`,
-      kind: 'aprobación' as const,
-      title: item.action ?? item.tool ?? 'Acción pendiente de aprobación',
+      kind: 'approval' as const,
+      title: item.action ?? item.tool ?? t('Action awaiting approval'),
       status: 'waiting' as RunStatus,
       startedAt: item.requested_at ?? null,
     })),
@@ -109,7 +110,7 @@ export async function loadActivity(signal?: AbortSignal): Promise<{
       const { status, label } = normaliseStatus(item.status);
       return {
         id: item.id,
-        kind: 'tarea' as const,
+        kind: 'task' as const,
         title: item.task_name || item.action || 'Tarea',
         detail: item.error || item.result || undefined,
         status,

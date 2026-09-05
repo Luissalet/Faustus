@@ -35,12 +35,12 @@ export interface Destination {
 }
 
 export const DESTINATIONS: Destination[] = [
-  { path: '/', label: 'Inicio', icon: Home, ready: true },
+  { path: '/', label: 'Home', icon: Home, ready: true },
   { path: '/studio', label: 'Studio', icon: Sparkles, ready: true },
-  { path: '/projects', label: 'Proyectos', icon: FolderKanban, ready: true },
-  { path: '/library', label: 'Biblioteca', icon: Library, ready: true },
-  { path: '/automations', label: 'Automatizaciones', icon: Workflow, ready: true },
-  { path: '/activity', label: 'Actividad', icon: Activity, ready: true },
+  { path: '/projects', label: 'Projects', icon: FolderKanban, ready: true },
+  { path: '/library', label: 'Library', icon: Library, ready: true },
+  { path: '/automations', label: 'Automations', icon: Workflow, ready: true },
+  { path: '/activity', label: 'Activity', icon: Activity, ready: true },
 ];
 
 /**
@@ -58,11 +58,11 @@ export interface Tool {
 }
 
 export const TOOLS: Tool[] = [
-  { path: '/notes', label: 'Notas', icon: StickyNote, ready: true },
-  { path: '/calendar', label: 'Calendario', icon: CalendarDays, ready: true },
-  { path: '/email', label: 'Correo', icon: Mail, ready: true },
-  { path: '/memory', label: 'Memoria', icon: Brain, ready: true },
-  { path: '/agents', label: 'Agentes', icon: Bot, ready: true },
+  { path: '/notes', label: 'Notes', icon: StickyNote, ready: true },
+  { path: '/calendar', label: 'Calendar', icon: CalendarDays, ready: true },
+  { path: '/email', label: 'Mail', icon: Mail, ready: true },
+  { path: '/memory', label: 'Memory', icon: Brain, ready: true },
+  { path: '/agents', label: 'Agents', icon: Bot, ready: true },
   { path: '/cookbook', label: 'Cookbook', icon: ChefHat, ready: false },
 ];
 

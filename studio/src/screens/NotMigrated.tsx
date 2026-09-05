@@ -1,6 +1,7 @@
 import { Construction } from 'lucide-react';
 import { EmptyState } from '../components';
 import type { Destination } from '../shell/routes';
+import { t } from '../i18n';
 
 /**
  * The honest placeholder.
@@ -11,15 +12,15 @@ import type { Destination } from '../shell/routes';
  * not furniture.
  */
 export function NotMigrated({ destination }: { destination?: Destination }) {
-  const name = destination?.label ?? 'Esta pantalla';
+  const name = destination ? t(destination.label) : t('This screen');
 
   return (
     <EmptyState
       icon={Construction}
-      title={`${name} todavía vive en la interfaz anterior`}
-      body="El shell nuevo ya tiene navegación, rutas y teclado. Esta pantalla se migra en su propio ticket, y hasta entonces sigue funcionando exactamente igual que siempre en la interfaz de siempre."
+      title={t('{name} still lives in the previous interface', { name })}
+      body={t('The new shell already has navigation, routes and keyboard. This screen is migrated in its own ticket, and until then it keeps working exactly as always in the previous interface.')}
       primaryAction={{
-        label: 'Abrir la interfaz anterior',
+        label: t('Open the previous interface'),
         onClick: () => {
           window.location.href = '/?shell=legacy';
         },

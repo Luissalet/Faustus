@@ -5,6 +5,7 @@ import type { AskUser, DelegationTask } from '../../adapters/chat';
 import { attachmentUrl, isImage } from '../../adapters/composer';
 import { Rich } from '../rich';
 import { formatMetrics, type Step, type Turn } from './model';
+import { t } from '../../i18n';
 
 /** Loaded on the first click: the speech adapter is not part of the eager bundle. */
 const speak = (text: string) => import('../../adapters/speech').then((m) => m.speak(text));
@@ -45,7 +46,7 @@ function SpeakButton({ text }: { text: string }) {
   return (
     <IconButton
       icon={stop ? VolumeX : Volume2}
-      label={stop ? 'Parar la lectura' : error ? 'Sin voz disponible' : 'Leer en voz alta'}
+      label={stop ? t('Stop reading') : error ? t('No voice available') : t('Read aloud')}
       size="sm"
       onClick={() => {
         if (stop) {
@@ -180,7 +181,7 @@ function ToolRail({ steps, live, onOpenFile, onOpenDoc }: { steps: Step[]; live:
             ) : null}
             {step.diff ? <DiffLines text={step.diff.text} /> : step.command && step.command !== step.label && <pre className="fs-studio__cmd">{step.command}</pre>}
             {step.output && <pre className="fs-studio__out">{step.output.slice(0, 6000)}</pre>}
-            {step.screenshot && <img className="fs-studio__shot" src={step.screenshot} alt="Captura de la herramienta" loading="lazy" />}
+            {step.screenshot && <img className="fs-studio__shot" src={step.screenshot} alt={t('Tool screenshot')} loading="lazy" />}
           </details>
         ) : (
           <div key={step.id} className="fs-trace__step" data-state={step.state}>
@@ -208,19 +209,19 @@ function AskCard({
   if (ask.kind === 'tool_approval') {
     return (
       <div className="fs-studio__ask" data-testid="studio-approval">
-        <p className="fs-studio__ask-title">Necesita tu permiso</p>
+        <p className="fs-studio__ask-title">{t('Needs your permission')}</p>
         {ask.question && <p className="fs-prose">{ask.question}</p>}
         <div className="fs-studio__ask-actions">
-          <Button variant="primary" icon={Check} label="Aprobar" disabled={busy} onClick={() => onApproval('approve')} />
-          <Button label="Aprobar toda la tarea" disabled={busy} onClick={() => onApproval('approve_task')} />
-          <Button variant="danger" icon={X} label="Denegar" disabled={busy} onClick={() => onApproval('deny')} />
+          <Button variant="primary" icon={Check} label={t('Approve')} disabled={busy} onClick={() => onApproval('approve')} />
+          <Button label={t('Approve the whole task')} disabled={busy} onClick={() => onApproval('approve_task')} />
+          <Button variant="danger" icon={X} label={t('Deny')} disabled={busy} onClick={() => onApproval('deny')} />
         </div>
       </div>
     );
   }
   return (
     <div className="fs-studio__ask" data-testid="studio-question">
-      <p className="fs-studio__ask-title">Te pregunta</p>
+      <p className="fs-studio__ask-title">{t('Asks you')}</p>
       <p className="fs-prose">{ask.question}</p>
       {ask.options.length > 0 && (
         <div className="fs-studio__ask-actions">
@@ -242,12 +243,12 @@ async function copyText(text: string): Promise<boolean> {
   }
 }
 
-function CopyButton({ text, label = 'Copiar' }: { text: string; label?: string }) {
+function CopyButton({ text, label = t('Copy') }: { text: string; label?: string }) {
   const [done, setDone] = useState(false);
   return (
     <IconButton
       icon={done ? Check : Copy}
-      label={done ? 'Copiado' : label}
+      label={done ? t('Copied') : label}
       size="sm"
       onClick={() => {
         void copyText(text).then((ok) => {
@@ -276,7 +277,7 @@ function Editor({
         className="fs-studio__input fs-studio__edit-input"
         value={text}
         rows={3}
-        aria-label="Editar mensaje"
+        aria-label={t('Edit message')}
         onChange={(event) => setText(event.target.value)}
         onKeyDown={(event) => {
           if (event.key === 'Escape') onCancel();
@@ -285,9 +286,9 @@ function Editor({
         autoFocus
       />
       <div className="fs-studio__ask-actions">
-        <Button variant="primary" icon={RefreshCw} label="Guardar y regenerar" size="sm" disabled={!text.trim()} onClick={() => onSave(text, true)} />
-        <Button label="Solo guardar" size="sm" disabled={!text.trim()} onClick={() => onSave(text, false)} />
-        <Button variant="ghost" label="Cancelar" size="sm" onClick={onCancel} />
+        <Button variant="primary" icon={RefreshCw} label={t('Save and regenerate')} size="sm" disabled={!text.trim()} onClick={() => onSave(text, true)} />
+        <Button label={t('Just save')} size="sm" disabled={!text.trim()} onClick={() => onSave(text, false)} />
+        <Button variant="ghost" label={t('Cancel')} size="sm" onClick={onCancel} />
       </div>
     </div>
   );
@@ -323,7 +324,7 @@ function UserTurn({
           <>
             <div className="fs-turn__bubble">
               {turn.attachments.length > 0 && (
-                <ul className="fs-studio__attachments fs-studio__attachments--sent" aria-label="Adjuntos">
+                <ul className="fs-studio__attachments fs-studio__attachments--sent" aria-label={t('Attachments')}>
                   {turn.attachments.map((a) => (
                     <li key={a.id} className="fs-studio__attachment">
                       {isImage(a.mime) ? (
@@ -346,9 +347,9 @@ function UserTurn({
               <CopyButton text={turn.text} />
               {turn.dbId && !busy && (
                 <>
-                  <IconButton icon={Pencil} label="Editar" size="sm" onClick={() => setEditing(true)} />
-                  <IconButton icon={RefreshCw} label="Regenerar desde aquí" size="sm" onClick={() => onRegenerate(turn)} />
-                  <IconButton icon={Trash2} label="Borrar mensaje" size="sm" onClick={() => onDelete(turn)} />
+                  <IconButton icon={Pencil} label={t('Edit')} size="sm" onClick={() => setEditing(true)} />
+                  <IconButton icon={RefreshCw} label={t('Regenerate from here')} size="sm" onClick={() => onRegenerate(turn)} />
+                  <IconButton icon={Trash2} label={t('Delete message')} size="sm" onClick={() => onDelete(turn)} />
                 </>
               )}
             </div>
@@ -421,7 +422,7 @@ function AssistantTurn({
         {turn.text && <Rich text={turn.text} />}
         {turn.streaming && turn.text && <span className="fs-studio__cursor" aria-hidden="true" />}
         {turn.images.map((url) => (
-          <img key={url} className="fs-studio__image" src={url} alt="Imagen generada" loading="lazy" />
+          <img key={url} className="fs-studio__image" src={url} alt={t('Generated image')} loading="lazy" />
         ))}
         {turn.sources.length > 0 && (
           <p className="fs-studio__sources">
@@ -457,13 +458,13 @@ function AssistantTurn({
               </span>
             )}
             <span className="fs-turn__actions" data-testid="turn-actions">
-              {turn.text && <CopyButton text={turn.text} label="Copiar respuesta" />}
+              {turn.text && <CopyButton text={turn.text} label={t('Copy reply')} />}
               {turn.text && <SpeakButton text={turn.text} />}
               {turn.dbId && !busy && (
                 <>
-                  <IconButton icon={RefreshCw} label="Regenerar" size="sm" onClick={onRegenerate} />
-                  {onFork && <IconButton icon={GitFork} label="Bifurcar desde aquí" size="sm" onClick={onFork} testId="turn-fork" />}
-                  <IconButton icon={Trash2} label="Borrar mensaje" size="sm" onClick={onDelete} />
+                  <IconButton icon={RefreshCw} label={t('Regenerate')} size="sm" onClick={onRegenerate} />
+                  {onFork && <IconButton icon={GitFork} label={t('Fork from here')} size="sm" onClick={onFork} testId="turn-fork" />}
+                  <IconButton icon={Trash2} label={t('Delete message')} size="sm" onClick={onDelete} />
                 </>
               )}
             </span>

@@ -4,6 +4,7 @@ import { overlayRoot } from './overlayRoot';
 import { DESTINATIONS, TOOLS, toolHref } from './routes';
 import { useShell } from './store';
 import './palette.css';
+import { t } from '../i18n';
 
 /**
  * Command palette (UI-022).
@@ -29,34 +30,34 @@ export function CommandPalette() {
     <Command.Dialog
       open={open}
       onOpenChange={setOpen}
-      label="Buscar y navegar"
+      label={t('Search and navigate')}
       className="fs-palette"
       container={overlayRoot()}
       data-testid="command-palette"
     >
-      <Command.Input placeholder="Ir a, buscar o ejecutar…" className="fs-palette__input" />
+      <Command.Input placeholder={t('Go to, search or run…')} className="fs-palette__input" />
       <Command.List className="fs-palette__list">
-        <Command.Empty className="fs-palette__empty">Nada coincide.</Command.Empty>
+        <Command.Empty className="fs-palette__empty">{t('Nothing matches.')}</Command.Empty>
 
-        <Command.Group heading="Ir a" className="fs-palette__group">
+        <Command.Group heading={t('Go to')} className="fs-palette__group">
           {DESTINATIONS.map((destination) => (
             <Command.Item
               key={destination.path}
-              value={destination.label}
+              value={t(destination.label)}
               onSelect={() => go(destination.path)}
               className="fs-palette__item"
             >
               <destination.icon size={15} aria-hidden="true" />
-              {destination.label}
+              {t(destination.label)}
             </Command.Item>
           ))}
         </Command.Group>
 
-        <Command.Group heading="Herramientas" className="fs-palette__group">
+        <Command.Group heading={t('Tools')} className="fs-palette__group">
           {TOOLS.map((tool) => (
             <Command.Item
               key={tool.path}
-              value={`${tool.label} herramienta`}
+              value={`${t(tool.label)} ${t('tool')}`}
               onSelect={() => {
                 if (tool.ready) go(tool.path);
                 else {
@@ -67,29 +68,29 @@ export function CommandPalette() {
               className="fs-palette__item"
             >
               <tool.icon size={15} aria-hidden="true" />
-              {tool.label}
-              {!tool.ready && <span className="fs-palette__note">interfaz anterior</span>}
+              {t(tool.label)}
+              {!tool.ready && <span className="fs-palette__note">{t('previous interface')}</span>}
             </Command.Item>
           ))}
         </Command.Group>
 
-        <Command.Group heading="Acciones" className="fs-palette__group">
+        <Command.Group heading={t('Actions')} className="fs-palette__group">
           <Command.Item
-            value="Nueva conversación"
+            value={t('New conversation')}
             onSelect={() => go('/studio')}
             className="fs-palette__item"
           >
-            Nueva conversación
+            {t('New conversation')}
           </Command.Item>
           <Command.Item
-            value="Buscar conversaciones"
+            value={t('Search conversations')}
             onSelect={() => go('/studio?buscar=1')}
             className="fs-palette__item"
           >
-            Buscar conversaciones
+            {t('Search conversations')}
           </Command.Item>
-          <Command.Item value="Ajustes configuración" onSelect={() => go('/settings')} className="fs-palette__item">
-            Ajustes
+          <Command.Item value={`${t('Settings')} ${t('configuration')}`} onSelect={() => go('/settings')} className="fs-palette__item">
+            {t('Settings')}
           </Command.Item>
         </Command.Group>
       </Command.List>

@@ -1,3 +1,6 @@
+import { syncLangFromServer, t, useLang } from '../i18n';
+import { clearThemeAttribute, syncThemeFromServer } from './theme';
+import { useNavSize } from './navSize';
 import { LogOut, Settings2 } from 'lucide-react';
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { BrowserRouter, NavLink, Route, Routes, useLocation } from 'react-router';
@@ -97,7 +100,7 @@ function Rail() {
   }, [pathname]);
 
   return (
-    <nav className="fs-nav" aria-label="Navegación principal" ref={navRef}>
+    <nav className="fs-nav" aria-label={t('Main navigation')} ref={navRef}>
       <div className="fs-nav__brand">
         <BrandMark />
         <span>Faustus</span>
@@ -129,22 +132,22 @@ function Rail() {
           <span className="fs-nav__node">
             <destination.icon size={14} aria-hidden="true" />
           </span>
-          <span className="fs-nav__label">{destination.label}</span>
+          <span className="fs-nav__label">{t(destination.label)}</span>
         </NavLink>
       ))}
 
-      <div className="fs-nav__tools" aria-label="Herramientas">
-        <p className="fs-nav__tools-head">Herramientas</p>
+      <div className="fs-nav__tools" aria-label={t('Tools')}>
+        <p className="fs-nav__tools-head">{t('Tools')}</p>
         {TOOLS.map((tool) =>
           tool.ready ? (
             <NavLink key={tool.path} to={tool.path} className="fs-nav__tool" data-testid={`tool-${tool.label.toLowerCase()}`}>
               <tool.icon size={13} aria-hidden="true" />
-              <span>{tool.label}</span>
+              <span>{t(tool.label)}</span>
             </NavLink>
           ) : (
-            <a key={tool.path} href={toolHref(tool)} className="fs-nav__tool" data-legacy title="Se abre en la interfaz anterior" data-testid={`tool-${tool.label.toLowerCase()}`}>
+            <a key={tool.path} href={toolHref(tool)} className="fs-nav__tool" data-legacy title={t('Opens in the previous interface')} data-testid={`tool-${tool.label.toLowerCase()}`}>
               <tool.icon size={13} aria-hidden="true" />
-              <span>{tool.label}</span>
+              <span>{t(tool.label)}</span>
             </a>
           ),
         )}
@@ -155,14 +158,14 @@ function Rail() {
       <div className="fs-nav__foot">
         <NavLink to="/settings" className="fs-nav__tool fs-nav__settings" data-testid="nav-settings">
           <Settings2 size={13} aria-hidden="true" />
-          <span>Ajustes</span>
+          <span>{t('Settings')}</span>
         </NavLink>
-        <p className="fs-nav__hint">Ctrl+K para buscar y navegar</p>
+        <p className="fs-nav__hint">{t('Ctrl+K to search and navigate')}</p>
         <Button
           variant="ghost"
           size="sm"
           icon={LogOut}
-          label="Interfaz anterior"
+          label={t('Previous interface')}
           onClick={() => {
             setStudioEnabled(false);
             window.location.href = '/?shell=legacy';
@@ -193,7 +196,7 @@ function RouteStage() {
 function RouteBody() {
   return (
     <div className="fs-route">
-      <Suspense fallback={<Skeleton label="Cargando la pantalla" count={4} height="56px" />}>
+      <Suspense fallback={<Skeleton label={t('Loading the screen')} count={4} height="56px" />}>
       <Routes>
         <Route path="/" element={<HomeScreen />} />
         {DESTINATIONS.filter((destination) => !destination.ready).map((destination) => (
@@ -239,6 +242,16 @@ export function AppShell() {
     else window.setTimeout(() => void loadStudio(), 300);
   }, []);
 
+  // Re-key the whole tree when the language changes: static labels are read
+  // at render, so a fresh mount is the honest way to refresh every one.
+  const lang = useLang();
+  const nav = useNavSize();
+  useEffect(() => {
+    void syncLangFromServer();
+    void syncThemeFromServer();
+    return () => clearThemeAttribute();
+  }, []);
+
   useEffect(() => {
     document.documentElement.setAttribute('data-studio-shell', 'on');
     ensureOverlayRoot();
@@ -261,9 +274,9 @@ export function AppShell() {
 
   return (
     <BrowserRouter>
-      <div className="fs-app fs-shell" data-testid="studio-shell">
+      <div className="fs-app fs-shell" data-testid="studio-shell" key={lang} data-nav={nav.mode} data-resizing={nav.resizing || undefined} style={nav.style}>
         <a className="fs-skip-link" href="#fs-main">
-          Saltar al contenido
+          {t('Skip to content')}
         </a>
         <div className="fs-aurora" aria-hidden="true">
           <span />
@@ -271,6 +284,18 @@ export function AppShell() {
           <span />
         </div>
         <Rail />
+        {/* Outside the nav on purpose: the nav clips its overflow, and the
+            handle straddles its edge. */}
+        <div
+          className="fs-nav__resize"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label={t('Sidebar width')}
+          aria-valuenow={nav.mode === 'rail' ? 0 : 1}
+          title={t('Drag to resize; squeeze to collapse; double-click to reset')}
+          tabIndex={0}
+          {...nav.handle}
+        />
         <RouteStage />
         {paletteLoaded && (
           <Suspense fallback={null}>

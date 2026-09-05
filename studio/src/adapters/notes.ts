@@ -1,4 +1,5 @@
 import { ApiError, getJson } from './api';
+import { t, locale } from '../i18n';
 
 /**
  * Notas: the same `/api/notes` the previous interface's notes.js talks to.
@@ -182,9 +183,9 @@ export function formatDue(value: string | null): string {
   const sameDay = d.toDateString() === now.toDateString();
   const tomorrow = new Date(now);
   tomorrow.setDate(now.getDate() + 1);
-  const day = sameDay ? 'hoy' : d.toDateString() === tomorrow.toDateString() ? 'mañana' : d.toLocaleDateString('es', { day: 'numeric', month: 'short' });
+  const day = sameDay ? t('today') : d.toDateString() === tomorrow.toDateString() ? t('tomorrow') : d.toLocaleDateString(locale(), { day: 'numeric', month: 'short' });
   if (!hasTime(value)) return day;
-  return `${day} ${d.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })}`;
+  return `${day} ${d.toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' })}`;
 }
 
 export function isOverdue(value: string | null): boolean {
@@ -204,17 +205,18 @@ export function toLocalInput(d: Date): string {
 }
 
 export const REPEATS: { value: string; label: string }[] = [
-  { value: 'none', label: 'No se repite' },
-  { value: 'daily', label: 'Cada día' },
-  { value: 'weekly', label: 'Cada semana' },
-  { value: 'monthly', label: 'Cada mes' },
-  { value: 'yearly', label: 'Cada año' },
+  { value: 'none', label: 'No repeat' },
+  { value: 'daily', label: 'Every day' },
+  { value: 'weekly', label: 'Every week' },
+  { value: 'monthly', label: 'Every month' },
+  { value: 'yearly', label: 'Every year' },
 ];
 
 export function repeatLabel(repeat: string): string {
   if (!repeat || repeat === 'none') return '';
   const head = repeat.split(':')[0];
-  return REPEATS.find((r) => r.value === head)?.label ?? repeat;
+  const found = REPEATS.find((r) => r.value === head);
+  return found ? t(found.label) : repeat;
 }
 
 /**

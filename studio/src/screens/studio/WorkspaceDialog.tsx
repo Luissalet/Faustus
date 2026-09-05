@@ -2,6 +2,7 @@ import { ArrowUp, Check, Folder, FolderOpen } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button, Dialog, Skeleton } from '../../components';
 import { browseWorkspace, pickNative, vetWorkspace, type BrowseResult } from '../../adapters/composer';
+import { t } from '../../i18n';
 
 /**
  * Folder picker, fallback edition. The chip tries the OS's own dialog first
@@ -35,7 +36,7 @@ export default function WorkspaceDialog({
         setListing(result);
         setTyped(result.path);
       })
-      .catch((e: Error) => setError(e.message.includes('403') ? 'Elegir carpeta es solo para administradores.' : e.message));
+      .catch((e: Error) => setError(e.message.includes('403') ? t('Choosing a folder is for administrators only.') : e.message));
   };
 
   useEffect(() => {
@@ -49,7 +50,7 @@ export default function WorkspaceDialog({
     try {
       const vetted = await vetWorkspace(path);
       if (!vetted) {
-        setError('Esa ruta no vale como carpeta de trabajo (no existe, es un fichero, o es una raíz protegida).');
+        setError(t('That path will not do as a working folder (it does not exist, is a file, or is a protected root).'));
         return;
       }
       onPick(vetted);
@@ -72,7 +73,7 @@ export default function WorkspaceDialog({
         onClose();
       } else if (res.status === 'unavailable') {
         setError(
-          'El explorador del sistema no está disponible desde aquí (el navegador tiene que estar en la misma máquina que Faustus). Elige la carpeta en esta lista.',
+          t('The system file browser is not available from here (the browser has to be on the same machine as Faustus). Pick the folder from this list.'),
         );
       } else if (res.detail) {
         setError(res.detail);
@@ -90,16 +91,16 @@ export default function WorkspaceDialog({
       onOpenChange={(next) => {
         if (!next) onClose();
       }}
-      title="Carpeta de trabajo"
-      description="Las herramientas de ficheros y la terminal del agente quedan confinadas a esta carpeta."
+      title={t('Working folder')}
+      description={t('The agent\'s file tools and terminal are confined to this folder.')}
       testId="workspace-dialog"
       footer={
         <>
-          <Button label="Cancelar" onClick={onClose} />
+          <Button label={t('Cancel')} onClick={onClose} />
           <Button
             variant="primary"
             icon={Check}
-            label="Usar esta carpeta"
+            label={t('Use this folder')}
             loading={busy}
             disabled={!listing || !listing.selectable}
             onClick={() => listing && void choose(listing.path)}
@@ -120,14 +121,14 @@ export default function WorkspaceDialog({
           <input
             value={typed}
             onChange={(event) => setTyped(event.target.value)}
-            aria-label="Ruta de la carpeta"
-            placeholder="D:\proyectos\mi-app"
+            aria-label={t('Folder path')}
+            placeholder="D:\projects\my-app"
             data-testid="workspace-path"
           />
         </label>
-        <Button label="Ir" type="submit" size="sm" />
+        <Button label={t('Go')} type="submit" size="sm" />
         <Button
-          label="Explorador del sistema…"
+          label={t('System file browser…')}
           icon={FolderOpen}
           size="sm"
           loading={nativeBusy}
@@ -141,13 +142,13 @@ export default function WorkspaceDialog({
           {error}
         </p>
       )}
-      {!listing && !error && <Skeleton label="Leyendo carpetas" count={5} height="32px" />}
+      {!listing && !error && <Skeleton label={t('Reading folders')} count={5} height="32px" />}
       {listing && (
         <div className="fs-ws__list" role="list">
           {listing.parent && (
             <button type="button" className="fs-ws__row" role="listitem" onClick={() => go(listing.parent as string)}>
               <ArrowUp size={14} aria-hidden="true" />
-              <span>Subir un nivel</span>
+              <span>{t('Up one level')}</span>
             </button>
           )}
           {listing.dirs.map((dir) => (
@@ -164,8 +165,8 @@ export default function WorkspaceDialog({
               <span>{dir.name}</span>
             </button>
           ))}
-          {listing.dirs.length === 0 && <p className="fs-studio__hint">Esta carpeta no tiene subcarpetas.</p>}
-          {listing.truncated && <p className="fs-studio__hint">Lista recortada: hay más carpetas de las que enseño.</p>}
+          {listing.dirs.length === 0 && <p className="fs-studio__hint">{t('This folder has no subfolders.')}</p>}
+          {listing.truncated && <p className="fs-studio__hint">{t('List truncated: there are more folders than shown.')}</p>}
           {!listing.selectable && (
             <p className="fs-notice" data-tone="warning">
               Esta carpeta se puede recorrer pero no elegir; entra en una subcarpeta.

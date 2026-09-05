@@ -11,6 +11,7 @@ import { relativeTime } from '../adapters/home';
 import './projects.css';
 import './home.css';
 import './activity.css';
+import { t, tn } from '../i18n';
 
 /**
  * Automatizaciones (UI-052).
@@ -34,10 +35,10 @@ export function AutomationsScreen() {
     return (
       <EmptyState
         icon={Workflow}
-        title="No he podido leer tus automatizaciones"
-        body="El endpoint de tareas no responde. La interfaz anterior no depende de esta pantalla."
+        title={t('Could not read your automations')}
+        body={t('The tasks endpoint is not responding. The previous interface does not depend on this screen.')}
         primaryAction={{
-          label: 'Abrir la interfaz anterior',
+          label: t('Open the previous interface'),
           onClick: () => {
             window.location.href = '/?shell=legacy';
           },
@@ -52,24 +53,24 @@ export function AutomationsScreen() {
     <div className="fs-screen" data-testid="automations">
       <header className="fs-screen__head">
         <div>
-          <h1 className="fs-screen__title">Automatizaciones</h1>
+          <h1 className="fs-screen__title">{t('Automations')}</h1>
           <p className="fs-prose" style={{ marginBlockStart: 'var(--fs-space-2)' }}>
             {tasks
-              ? `${active} activa${active === 1 ? '' : 's'} de ${tasks.length}. Cada una dice cuándo salta y qué hace.`
-              : 'Cada una dice cuándo salta y qué hace.'}
+              ? `${tn(active, '{n} active', '{n} active#')} ${t('of {total}. Each one says when it fires and what it does.', { total: tasks.length })}`
+              : t('Each one says when it fires and what it does.')}
           </p>
         </div>
       </header>
 
-      {!tasks && <Skeleton label="Cargando automatizaciones" count={5} height="52px" />}
+      {!tasks && <Skeleton label={t('Loading automations')} count={5} height="52px" />}
 
       {tasks && tasks.length === 0 && (
         <EmptyState
           icon={Workflow}
-          title="Todavía no hay automatizaciones"
-          body="Una automatización es una receta: cuándo salta, qué hace y a dónde entrega. Crear la primera sigue siendo cosa de la interfaz anterior por ahora."
+          title={t('No automations yet')}
+          body={t('An automation is a recipe: when it fires, what it does and where it delivers. Creating the first one is still done in the previous interface for now.')}
           primaryAction={{
-            label: 'Abrir la interfaz anterior',
+            label: t('Open the previous interface'),
             onClick: () => {
               window.location.href = '/?shell=legacy';
             },
@@ -93,8 +94,8 @@ export function AutomationsScreen() {
                 </span>
                 <span className="fs-row__meta">
                   {[
-                    task.last_run ? `última ${relativeTime(task.last_run)}` : 'nunca ha corrido',
-                    task.run_count ? `${task.run_count} ejecuciones` : null,
+                    task.last_run ? `${t('last')} ${relativeTime(task.last_run)}` : t('has never run'),
+                    task.run_count ? tn(task.run_count, '{n} run', '{n} runs') : null,
                     task.output_target && task.output_target !== 'none'
                       ? `entrega: ${task.output_target}`
                       : null,
@@ -108,12 +109,12 @@ export function AutomationsScreen() {
                     paused, and announcing a run that is not going to happen
                     is worse than saying nothing. */}
                 {task.status === 'active' && task.next_run
-                  ? `próxima ${relativeTime(task.next_run)}`
+                  ? `${t('next')} ${relativeTime(task.next_run)}`
                   : ''}
               </span>
               <StatusBadge
                 status={task.status === 'active' ? 'succeeded' : 'paused'}
-                label={task.status === 'active' ? 'Activa' : 'En pausa'}
+                label={task.status === 'active' ? t('Active') : t('Paused')}
               />
             </article>
           ))}

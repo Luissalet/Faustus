@@ -1,4 +1,5 @@
 import type { GenOverrides } from '../../adapters/composer';
+import { t, tn } from '../../i18n';
 
 /**
  * Slash commands.
@@ -20,50 +21,50 @@ export interface SlashCommand {
 }
 
 export const COMMANDS: SlashCommand[] = [
-  { name: 'help', usage: '/help', help: 'Lista los comandos.' },
-  { name: 'models', usage: '/models', help: 'Elegir modelo.' },
-  { name: 'compact', usage: '/compact', help: 'Resume los mensajes antiguos en uno.' },
-  { name: 'truncate', usage: '/truncate N', help: 'Conserva los N primeros mensajes y borra el resto (queda una versión).' },
-  { name: 'versions', usage: '/versions', help: 'Versiones anteriores de este chat (lo que borró una edición o un regenerar).' },
-  { name: 'restore', usage: '/restore ID', help: 'Restaura una versión de /versions.' },
-  { name: 'checkpoints', usage: '/checkpoints', help: 'Puntos de control de la carpeta de trabajo (uno por turno con cambios).' },
-  { name: 'temp', usage: '/temp 0.4', help: 'Temperatura de este chat (0–2). Sin valor, la quita.' },
-  { name: 'maxtokens', usage: '/maxtokens 2048', help: 'Máximo de tokens de respuesta.' },
+  { name: 'help', usage: '/help', help: 'Lists the commands.' },
+  { name: 'models', usage: '/models', help: 'Pick a model.' },
+  { name: 'compact', usage: '/compact', help: 'Summarises the old messages into one.' },
+  { name: 'truncate', usage: '/truncate N', help: 'Keeps the first N messages and deletes the rest (a version remains).' },
+  { name: 'versions', usage: '/versions', help: 'Previous versions of this chat (what an edit or a regenerate removed).' },
+  { name: 'restore', usage: '/restore ID', help: 'Restores a version from /versions.' },
+  { name: 'checkpoints', usage: '/checkpoints', help: 'Checkpoints of the working folder (one per turn with changes).' },
+  { name: 'temp', usage: '/temp 0.4', help: 'Temperature of this chat (0–2). No value removes it.' },
+  { name: 'maxtokens', usage: '/maxtokens 2048', help: 'Maximum reply tokens.' },
   { name: 'topp', usage: '/topp 0.9', help: 'top_p (0–1).' },
-  { name: 'think', usage: '/think on|off', help: 'Razonamiento del modelo, si lo soporta.' },
-  { name: 'gen', usage: '/gen clave=valor …', help: 'Ajustes de generación: top_k, num_ctx, temperature…' },
-  { name: 'remember', usage: '/remember regla', help: 'Guarda una regla permanente en las instrucciones del proyecto (igual que #).' },
-  { name: 'export', usage: '/export md|pdf|docx|html|txt|json', help: 'Descarga esta conversación.' },
-  { name: 'rename', usage: '/rename nombre', help: 'Renombra la conversación.' },
-  { name: 'stats', usage: '/stats', help: 'Tokens y tiempos de esta conversación.' },
+  { name: 'think', usage: '/think on|off', help: 'The model\'s reasoning, if it supports it.' },
+  { name: 'gen', usage: '/gen key=value …', help: 'Generation settings: top_k, num_ctx, temperature…' },
+  { name: 'remember', usage: '/remember rule', help: 'Saves a standing rule in the project instructions (same as #).' },
+  { name: 'export', usage: '/export md|pdf|docx|html|txt|json', help: 'Downloads this conversation.' },
+  { name: 'rename', usage: '/rename name', help: 'Renames the conversation.' },
+  { name: 'stats', usage: '/stats', help: 'Tokens and timings of this conversation.' },
   {
     name: 'agents',
-    usage: '/agents tarea uno | tarea dos [--review] [--serial]',
-    help: 'Delega cada parte a un sub-agente (hasta 4). [f1, f2] antes de una tarea le da esos ficheros en exclusiva; {modelo} elige su modelo.',
+    usage: '/agents task one | task two [--review] [--serial]',
+    help: 'Delegates each part to a sub-agent (up to 4). [f1, f2] before a task gives it those files exclusively; {model} picks its model.',
   },
-  { name: 'doc', usage: '/doc [título]', help: 'Abre el panel de documento (con título, crea uno nuevo).' },
-  { name: 'browser', usage: '/browser', help: 'Abre el panel con lo que ve el agente en el navegador.' },
-  { name: 'open', usage: '/open ruta', help: 'Abre un fichero de la carpeta de trabajo en el panel lateral.' },
-  { name: 'incognito', usage: '/incognito [on|off]', help: 'Modo Nobody: no se guarda nada y la memoria queda cerrada.' },
-  { name: 'preset', usage: '/preset [nombre|off]', help: 'Preset o personaje (prompt de sistema). Sin nombre abre la lista.' },
-  { name: 'fork', usage: '/fork', help: 'Bifurca la conversación: una copia con todo lo dicho hasta ahora.' },
-  { name: 'tts', usage: '/tts', help: 'Lee en voz alta la última respuesta.' },
-  { name: 'projects', usage: '/projects', help: 'Ir a Proyectos.', route: '/projects' },
-  { name: 'library', usage: '/library', help: 'Ir a la Biblioteca.', route: '/library' },
-  { name: 'gallery', usage: '/gallery', help: 'Ir a las imágenes.', route: '/library?type=imagen' },
-  { name: 'tasks', usage: '/tasks', help: 'Ir a Automatizaciones.', route: '/automations' },
-  { name: 'activity', usage: '/activity', help: 'Ir a Actividad.', route: '/activity' },
-  { name: 'notes', usage: '/notes', help: 'Ir a Notas.', route: '/notes' },
-  { name: 'calendar', usage: '/calendar', help: 'Ir al Calendario.', route: '/calendar' },
-  { name: 'email', usage: '/email', help: 'Ir al Correo.', route: '/email' },
-  { name: 'brain', usage: '/brain', help: 'Ir a la Memoria.', route: '/memory' },
-  { name: 'workers', usage: '/workers', help: 'Ir a Agentes: el tablero de Workers.', route: '/agents' },
-  { name: 'experts', usage: '/experts', help: 'Ir a Agentes: los Expertos.', route: '/agents?t=experts' },
-  { name: 'research', usage: '/research tema', help: 'Deep research (interfaz anterior).', route: '/?shell=legacy', legacy: true },
-  { name: 'compare', usage: '/compare', help: 'Comparar modelos (interfaz anterior).', route: '/?shell=legacy', legacy: true },
-  { name: 'mcp', usage: '/mcp', help: 'Servidores MCP (interfaz anterior).', route: '/?shell=legacy', legacy: true },
-  { name: 'setup', usage: '/setup', help: 'Ir a Ajustes.', route: '/settings' },
-  { name: 'usage', usage: '/usage', help: 'Uso de GPU (interfaz anterior).', route: '/?shell=legacy', legacy: true },
+  { name: 'doc', usage: '/doc [title]', help: 'Opens the document panel (with a title, creates a new one).' },
+  { name: 'browser', usage: '/browser', help: 'Opens the panel with what the agent sees in the browser.' },
+  { name: 'open', usage: '/open path', help: 'Opens a file from the working folder in the side panel.' },
+  { name: 'incognito', usage: '/incognito [on|off]', help: 'Nobody mode: nothing is saved and the memory stays closed.' },
+  { name: 'preset', usage: '/preset [name|off]', help: 'Preset or persona (system prompt). Without a name it opens the list.' },
+  { name: 'fork', usage: '/fork', help: 'Forks the conversation: a copy with everything said so far.' },
+  { name: 'tts', usage: '/tts', help: 'Reads the last reply aloud.' },
+  { name: 'projects', usage: '/projects', help: 'Go to Projects.', route: '/projects' },
+  { name: 'library', usage: '/library', help: 'Go to the Library.', route: '/library' },
+  { name: 'gallery', usage: '/gallery', help: 'Go to the images.', route: '/library?type=imagen' },
+  { name: 'tasks', usage: '/tasks', help: 'Go to Automations.', route: '/automations' },
+  { name: 'activity', usage: '/activity', help: 'Go to Activity.', route: '/activity' },
+  { name: 'notes', usage: '/notes', help: 'Go to Notes.', route: '/notes' },
+  { name: 'calendar', usage: '/calendar', help: 'Go to the Calendar.', route: '/calendar' },
+  { name: 'email', usage: '/email', help: 'Go to Mail.', route: '/email' },
+  { name: 'brain', usage: '/brain', help: 'Go to the Memory.', route: '/memory' },
+  { name: 'workers', usage: '/workers', help: 'Go to Agents: the Workers board.', route: '/agents' },
+  { name: 'experts', usage: '/experts', help: 'Go to Agents: the Experts.', route: '/agents?t=experts' },
+  { name: 'research', usage: '/research topic', help: 'Deep research (previous interface).', route: '/?shell=legacy', legacy: true },
+  { name: 'compare', usage: '/compare', help: 'Compare models (previous interface).', route: '/?shell=legacy', legacy: true },
+  { name: 'mcp', usage: '/mcp', help: 'MCP servers (previous interface).', route: '/?shell=legacy', legacy: true },
+  { name: 'setup', usage: '/setup', help: 'Go to Settings.', route: '/settings' },
+  { name: 'usage', usage: '/usage', help: 'GPU usage (previous interface).', route: '/?shell=legacy', legacy: true },
 ];
 
 export function matchCommands(prefix: string): SlashCommand[] {
@@ -152,9 +153,9 @@ export function parseDelegation(args: string): { tasks: { name: string; instruct
     .map((p) => p.trim())
     .filter(Boolean);
   if (!parts.length) {
-    return 'Uso: /agents tarea uno | tarea dos | tarea tres — cada parte es un sub-agente. [fichero1, fichero2] delante le da esos ficheros en exclusiva; {modelo} elige su modelo; --review añade un revisor; --serial los ejecuta uno tras otro.';
+    return t('Usage: /agents task one | task two | task three — each part is a sub-agent. [file1, file2] in front gives it those files exclusively; {model} picks its model; --review adds a reviewer; --serial runs them one after another.');
   }
-  if (parts.length > 4) return 'Como mucho 4 sub-agentes por llamada. Junta tareas o repite /agents después.';
+  if (parts.length > 4) return t('At most 4 sub-agents per call. Merge tasks or repeat /agents afterwards.');
   const tasks = parts.map((p) => {
     const model = /^\s*\{([^}]+)\}/.exec(p)?.[1]?.trim();
     const files = /^\s*(?:\{[^}]+\}\s*)?\[([^\]]+)\]/.exec(p)?.[1]
@@ -169,6 +170,6 @@ export function parseDelegation(args: string): { tasks: { name: string; instruct
 
 /** The readable label the chat bubble shows for a delegation. */
 export function delegationLabel(d: { tasks: { name: string; files?: string[]; model?: string }[]; reviewer: boolean; parallel: boolean }): string {
-  const label = d.tasks.map((t) => `${t.model ? `{${t.model}} ` : ''}${t.files?.length ? `[${t.files.join(', ')}] ` : ''}${t.name}`).join(' | ');
-  return `🤖 ${d.tasks.length} sub-agente${d.tasks.length === 1 ? '' : 's'}${d.reviewer ? ' + revisor' : ''}${d.parallel ? '' : ' (en serie)'}: ${label}`;
+  const label = d.tasks.map((task) => `${task.model ? `{${task.model}} ` : ''}${task.files?.length ? `[${task.files.join(', ')}] ` : ''}${task.name}`).join(' | ');
+  return `🤖 ${tn(d.tasks.length, '{n} sub-agent', '{n} sub-agents')}${d.reviewer ? t(' + reviewer') : ''}${d.parallel ? '' : t(' (in series)')}: ${label}`;
 }

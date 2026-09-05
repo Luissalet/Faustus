@@ -10,13 +10,13 @@ export const MEMORY_CATEGORIES = ['fact', 'identity', 'preference', 'contact', '
 export type MemoryCategory = (typeof MEMORY_CATEGORIES)[number];
 
 export const CATEGORY_LABEL: Record<string, string> = {
-  fact: 'Hecho',
-  identity: 'Identidad',
-  preference: 'Preferencia',
-  contact: 'Contacto',
-  project: 'Proyecto',
-  goal: 'Objetivo',
-  task: 'Tarea',
+  fact: 'Fact',
+  identity: 'Identity',
+  preference: 'Preference',
+  contact: 'Contact',
+  project: 'Project',
+  goal: 'Goal',
+  task: 'Task',
 };
 
 export interface Memory {

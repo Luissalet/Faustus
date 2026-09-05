@@ -45,6 +45,7 @@ import {
 } from '../adapters/email';
 import './projects.css';
 import './email.css';
+import { t, locale } from '../i18n';
 
 /**
  * Correo (the previous interface's mail window, `/email`).
@@ -60,7 +61,7 @@ import './email.css';
 const PAGE = 40;
 
 function fmtAddr(name: string, address: string): string {
-  return name && name !== address ? name : address || '(desconocido)';
+  return name && name !== address ? name : address || t('(unknown)');
 }
 
 function fmtWhen(date: string): string {
@@ -68,9 +69,9 @@ function fmtWhen(date: string): string {
   const d = new Date(date);
   if (Number.isNaN(d.getTime())) return date;
   const today = new Date();
-  if (d.toDateString() === today.toDateString()) return d.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
-  if (d.getFullYear() === today.getFullYear()) return d.toLocaleDateString('es', { day: 'numeric', month: 'short' });
-  return d.toLocaleDateString('es', { day: 'numeric', month: 'short', year: 'numeric' });
+  if (d.toDateString() === today.toDateString()) return d.toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' });
+  if (d.getFullYear() === today.getFullYear()) return d.toLocaleDateString(locale(), { day: 'numeric', month: 'short' });
+  return d.toLocaleDateString(locale(), { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
 function bytes(n: number): string {
@@ -104,7 +105,7 @@ function ComposeDialog({ initial, accounts, accountId, onClose, onDone, say }: {
 
   const send = async () => {
     if (!s.to.trim()) {
-      say('Falta el destinatario.');
+      say(t('The recipient is missing.'));
       return;
     }
     setBusy('send');
@@ -112,7 +113,7 @@ function ComposeDialog({ initial, accounts, accountId, onClose, onDone, say }: {
       await sendEmail(outgoing());
       onDone('sent');
     } catch (err) {
-      say((err as Error).message || 'No se ha podido enviar.');
+      say((err as Error).message || t('Could not send.'));
     } finally {
       setBusy(null);
     }
@@ -124,7 +125,7 @@ function ComposeDialog({ initial, accounts, accountId, onClose, onDone, say }: {
       await saveDraft(outgoing());
       onDone('draft');
     } catch (err) {
-      say((err as Error).message || 'No se ha podido guardar el borrador.');
+      say((err as Error).message || t('Could not save the draft.'));
     } finally {
       setBusy(null);
     }
@@ -136,14 +137,14 @@ function ComposeDialog({ initial, accounts, accountId, onClose, onDone, say }: {
       onOpenChange={(o) => {
         if (!o) onClose();
       }}
-      title={s.inReplyTo ? 'Responder' : s.subject.startsWith('Fwd:') ? 'Reenviar' : 'Nuevo correo'}
+      title={s.inReplyTo ? t('Reply') : s.subject.startsWith('Fwd:') ? t('Forward') : t('New mail')}
       testId="compose"
       footer={
         <div className="fs-mail-compose__foot">
-          <Button variant="ghost" size="sm" label="Guardar borrador" loading={busy === 'draft'} onClick={() => void draft()} />
+          <Button variant="ghost" size="sm" label={t('Save draft')} loading={busy === 'draft'} onClick={() => void draft()} />
           <span className="fs-mail__spacer" />
-          <Button variant="ghost" size="sm" label="Descartar" onClick={onClose} />
-          <Button variant="primary" size="sm" label="Enviar" loading={busy === 'send'} onClick={() => void send()} testId="compose-send" />
+          <Button variant="ghost" size="sm" label={t('Discard')} onClick={onClose} />
+          <Button variant="primary" size="sm" label={t('Send')} loading={busy === 'send'} onClick={() => void send()} testId="compose-send" />
         </div>
       }
     >
@@ -162,7 +163,7 @@ function ComposeDialog({ initial, accounts, accountId, onClose, onDone, say }: {
         )}
         <label className="fs-mail-compose__row">
           <span>Para</span>
-          <input type="text" className="fs-field" value={s.to} onChange={(e) => set({ to: e.target.value })} placeholder="nombre@dominio, otro@dominio" autoFocus={!s.to} />
+          <input type="text" className="fs-field" value={s.to} onChange={(e) => set({ to: e.target.value })} placeholder={t('name@domain, other@domain')} autoFocus={!s.to} />
           {!showCc && (
             <button type="button" className="fs-mail__link" onClick={() => setShowCc(true)}>
               CC / CCO
@@ -185,7 +186,7 @@ function ComposeDialog({ initial, accounts, accountId, onClose, onDone, say }: {
           <span>Asunto</span>
           <input type="text" className="fs-field" value={s.subject} onChange={(e) => set({ subject: e.target.value })} />
         </label>
-        <textarea className="fs-mail-compose__body" rows={12} value={s.body} onChange={(e) => set({ body: e.target.value })} autoFocus={Boolean(s.to)} placeholder="Escribe aquí. Markdown vale." />
+        <textarea className="fs-mail-compose__body" rows={12} value={s.body} onChange={(e) => set({ body: e.target.value })} autoFocus={Boolean(s.to)} placeholder={t('Write here. Markdown works.')} />
       </div>
     </Dialog>
   );
@@ -219,7 +220,7 @@ function Message({ mail, folders, accountId, onBack, onChanged, onCompose, say }
       onChanged(after);
       say(okText);
     } catch (err) {
-      say((err as Error).message || 'La operación ha fallado.');
+      say((err as Error).message || t('The operation failed.'));
     } finally {
       setBusy(null);
     }
@@ -245,7 +246,7 @@ function Message({ mail, folders, accountId, onBack, onChanged, onCompose, say }
     cc: '',
     bcc: '',
     subject: /^fwd?:/i.test(mail.subject) ? mail.subject : `Fwd: ${mail.subject}`,
-    body: `\n\n---------- Mensaje reenviado ----------\nDe: ${fmtAddr(mail.fromName, mail.fromAddress)} <${mail.fromAddress}>\nFecha: ${mail.date ? new Date(mail.date).toLocaleString('es') : ''}\nAsunto: ${mail.subject}\nPara: ${mail.to}\n\n${mail.body}`,
+    body: `\n\n---------- ${t('Forwarded message')} ----------\n${t('From')}: ${fmtAddr(mail.fromName, mail.fromAddress)} <${mail.fromAddress}>\n${t('Date')}: ${mail.date ? new Date(mail.date).toLocaleString(locale()) : ''}\n${t('Subject')}: ${mail.subject}\n${t('To')}: ${mail.to}\n\n${mail.body}`,
   });
 
   const moveTargets = folders.filter((f) => f !== mail.folder);
@@ -253,21 +254,21 @@ function Message({ mail, folders, accountId, onBack, onChanged, onCompose, say }
   return (
     <article className="fs-mail__msg" data-testid="mail-message">
       <header className="fs-mail__msg-bar">
-        <IconButton icon={ArrowLeft} label="Volver a la lista" size="sm" onClick={onBack} />
+        <IconButton icon={ArrowLeft} label={t('Back to the list')} size="sm" onClick={onBack} />
         <div className="fs-mail__msg-actions">
-          <Button variant="secondary" size="sm" icon={Reply} label="Responder" onClick={() => onCompose(replyState(false))} />
-          <IconButton icon={ReplyAll} label="Responder a todos" size="sm" onClick={() => onCompose(replyState(true))} />
-          <IconButton icon={Forward} label="Reenviar" size="sm" onClick={() => onCompose(forwardState())} />
+          <Button variant="secondary" size="sm" icon={Reply} label={t('Reply')} onClick={() => onCompose(replyState(false))} />
+          <IconButton icon={ReplyAll} label={t('Reply all')} size="sm" onClick={() => onCompose(replyState(true))} />
+          <IconButton icon={Forward} label={t('Forward')} size="sm" onClick={() => onCompose(forwardState())} />
           <span className="fs-mail__sep" />
-          <IconButton icon={Archive} label="Archivar" size="sm" disabled={busy !== null} onClick={() => void act('archive', () => archiveEmail(mail.uid, mail.folder, accountId), 'gone', 'Archivado.')} />
-          <IconButton icon={Trash2} label="Borrar" size="sm" disabled={busy !== null} onClick={() => void act('delete', () => deleteEmail(mail.uid, mail.folder, accountId), 'gone', 'Borrado.')} />
-          <IconButton icon={mail.isFlagged ? StarOff : Star} label={mail.isFlagged ? 'Quitar la estrella' : 'Marcar con estrella'} size="sm" disabled={busy !== null} onClick={() => void act('flag', () => flagEmail(mail.uid, !mail.isFlagged, mail.folder, accountId), { isFlagged: !mail.isFlagged }, mail.isFlagged ? 'Sin estrella.' : 'Con estrella.')} />
-          <IconButton icon={Mail} label="Marcar como no leído" size="sm" disabled={busy !== null} onClick={() => void act('unread', () => markUnread(mail.uid, mail.folder, accountId), { isRead: false }, 'Marcado como no leído.')} />
+          <IconButton icon={Archive} label={t('Archive')} size="sm" disabled={busy !== null} onClick={() => void act('archive', () => archiveEmail(mail.uid, mail.folder, accountId), 'gone', t('Archived.'))} />
+          <IconButton icon={Trash2} label={t('Delete')} size="sm" disabled={busy !== null} onClick={() => void act('delete', () => deleteEmail(mail.uid, mail.folder, accountId), 'gone', t('Deleted.'))} />
+          <IconButton icon={mail.isFlagged ? StarOff : Star} label={mail.isFlagged ? t('Remove the star') : t('Star')} size="sm" disabled={busy !== null} onClick={() => void act('flag', () => flagEmail(mail.uid, !mail.isFlagged, mail.folder, accountId), { isFlagged: !mail.isFlagged }, mail.isFlagged ? t('Unstarred.') : t('Starred.'))} />
+          <IconButton icon={Mail} label={t('Mark as unread')} size="sm" disabled={busy !== null} onClick={() => void act('unread', () => markUnread(mail.uid, mail.folder, accountId), { isRead: false }, t('Marked as unread.'))} />
           {moveTargets.length > 0 && (
             <QuickMenu
-              label="Mover a…"
+              label={t('Move to…')}
               icon={Inbox}
-              items={moveTargets.map((f) => ({ label: folderLabel(f), onSelect: () => void act('move', () => moveEmail(mail.uid, f, mail.folder, accountId), 'gone', `Movido a ${folderLabel(f)}.`) }))}
+              items={moveTargets.map((f) => ({ label: folderLabel(f), onSelect: () => void act('move', () => moveEmail(mail.uid, f, mail.folder, accountId), 'gone', t('Moved to {folder}.', { folder: folderLabel(f) })) }))}
             />
           )}
         </div>
@@ -277,7 +278,7 @@ function Message({ mail, folders, accountId, onBack, onChanged, onCompose, say }
         <span className="fs-mail__from">
           <b>{fmtAddr(mail.fromName, mail.fromAddress)}</b> {mail.fromAddress && mail.fromName && <span className="fs-mail__addr">&lt;{mail.fromAddress}&gt;</span>}
         </span>
-        <span className="fs-mail__when">{mail.date ? new Date(mail.date).toLocaleString('es') : ''}</span>
+        <span className="fs-mail__when">{mail.date ? new Date(mail.date).toLocaleString(locale()) : ''}</span>
         {mail.to && <span className="fs-mail__to">para {mail.to}</span>}
         {mail.cc && <span className="fs-mail__to">cc {mail.cc}</span>}
       </div>
@@ -290,7 +291,7 @@ function Message({ mail, folders, accountId, onBack, onChanged, onCompose, say }
           ))}
         </div>
       )}
-      <iframe ref={frameRef} className="fs-mail__frame" title="Cuerpo del correo" sandbox="allow-popups allow-popups-to-escape-sandbox" srcDoc={html} style={{ blockSize: frameH }} onLoad={onFrameLoad} />
+      <iframe ref={frameRef} className="fs-mail__frame" title={t('Mail body')} sandbox="allow-popups allow-popups-to-escape-sandbox" srcDoc={html} style={{ blockSize: frameH }} onLoad={onFrameLoad} />
     </article>
   );
 }
@@ -358,7 +359,7 @@ export function EmailScreen() {
         setListError(r.error);
       })
       .catch((err: unknown) => {
-        if ((err as { name?: string })?.name !== 'AbortError') setListError((err as Error).message || 'No he podido leer el correo.');
+        if ((err as { name?: string })?.name !== 'AbortError') setListError((err as Error).message || t('Could not read the mail.'));
       })
       .finally(() => setRefreshing(false));
     return () => c.abort();
@@ -391,7 +392,7 @@ export function EmailScreen() {
       setCurrent(full);
       setEmails((cur) => (cur ? cur.map((x) => (x.uid === m.uid ? { ...x, isRead: true } : x)) : cur));
     } catch (err) {
-      say((err as Error).message || 'No he podido abrir el correo.');
+      say((err as Error).message || t('Could not open the mail.'));
     } finally {
       setLoadingMail(null);
     }
@@ -417,10 +418,10 @@ export function EmailScreen() {
     return (
       <EmptyState
         icon={Mail}
-        title="No he podido leer las cuentas de correo"
-        body="El endpoint de correo no responde. La interfaz anterior no depende de esta pantalla."
+        title={t('Could not read the mail accounts')}
+        body={t('The mail endpoint is not responding. The previous interface does not depend on this screen.')}
         primaryAction={{
-          label: 'Abrir la interfaz anterior',
+          label: t('Open the previous interface'),
           onClick: () => {
             window.location.href = '/email?shell=legacy';
           },
@@ -433,10 +434,10 @@ export function EmailScreen() {
     return (
       <EmptyState
         icon={Mail}
-        title="Sin cuentas de correo"
-        body="Las cuentas (IMAP/SMTP o Google) se configuran por ahora en los ajustes de la interfaz anterior."
+        title={t('No mail accounts')}
+        body={t('Accounts (IMAP/SMTP or Google) are set up for now in the previous interface\'s settings.')}
         primaryAction={{
-          label: 'Configurar en la interfaz anterior',
+          label: t('Set up in the previous interface'),
           onClick: () => {
             window.location.href = '/email?shell=legacy';
           },
@@ -449,15 +450,15 @@ export function EmailScreen() {
     <div className="fs-screen fs-mail" data-testid="email" data-reading={current ? true : undefined}>
       <header className="fs-screen__head fs-mail__head">
         <div>
-          <h1 className="fs-screen__title">Correo</h1>
+          <h1 className="fs-screen__title">{t('Mail')}</h1>
           <p className="fs-prose" style={{ marginBlockStart: 'var(--fs-space-2)' }}>
-            {emails ? `${total} en ${folderLabel(folder)}${unread ? ` · ${unread} sin leer en esta página` : ''}.` : 'Leer, contestar y ordenar.'}
+            {emails ? `${total} en ${folderLabel(folder)}${unread ? ` · ${unread} sin leer en esta página` : ''}.` : t('Read, reply and sort.')}
           </p>
         </div>
         <div className="fs-mail__tools">
           <IconButton
             icon={RefreshCw}
-            label="Actualizar"
+            label={t('Refresh')}
             size="sm"
             disabled={refreshing}
             onClick={() => {
@@ -467,20 +468,20 @@ export function EmailScreen() {
           />
           <IconButton
             icon={Settings2}
-            label="Cuentas y reglas (interfaz anterior)"
+            label={t('Accounts and rules (previous interface)')}
             size="sm"
             onClick={() => {
               window.location.href = '/email?shell=legacy';
             }}
           />
-          <Button variant="primary" size="sm" icon={PenLine} label="Redactar" onClick={() => setCompose({ to: '', cc: '', bcc: '', subject: '', body: '' })} testId="mail-compose" />
+          <Button variant="primary" size="sm" icon={PenLine} label={t('Compose')} onClick={() => setCompose({ to: '', cc: '', bcc: '', subject: '', body: '' })} testId="mail-compose" />
         </div>
       </header>
 
       <div className="fs-mail__layout">
-        <aside className="fs-mail__side" aria-label="Cuentas y carpetas">
+        <aside className="fs-mail__side" aria-label={t('Accounts and folders')}>
           {accounts && accounts.length > 1 && (
-            <select className="fs-field fs-mail__account" value={accountId ?? ''} onChange={(e) => { setAccountId(e.target.value || null); setOffset(0); setCurrent(null); }} aria-label="Cuenta">
+            <select className="fs-field fs-mail__account" value={accountId ?? ''} onChange={(e) => { setAccountId(e.target.value || null); setOffset(0); setCurrent(null); }} aria-label={t('Account')}>
               {accounts.map((a) => (
                 <option key={a.id} value={a.id}>
                   {a.name}
@@ -507,25 +508,25 @@ export function EmailScreen() {
               </button>
             ))}
           </nav>
-          <div className="fs-mail__filters" role="group" aria-label="Filtro">
+          <div className="fs-mail__filters" role="group" aria-label={t('Filter')}>
             {(['all', 'unread', 'unanswered', 'favorites'] as ListFilter[]).map((f) => (
               <button key={f} type="button" className="fs-chip" data-on={filter === f || undefined} onClick={() => { setFilter(f); setOffset(0); }}>
-                {f === 'all' ? 'Todos' : f === 'unread' ? 'Sin leer' : f === 'unanswered' ? 'Sin contestar' : 'Con estrella'}
+                {f === 'all' ? t('All') : f === 'unread' ? t('Unread') : f === 'unanswered' ? t('Unanswered') : t('Starred')}
               </button>
             ))}
           </div>
         </aside>
 
-        <section className="fs-mail__list" aria-label="Mensajes">
+        <section className="fs-mail__list" aria-label={t('Messages')}>
           <label className="fs-mail__search">
             <Search size={13} aria-hidden="true" />
-            <input type="search" placeholder={`Buscar en ${folderLabel(folder)}…`} value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Buscar" />
-            {query && <IconButton icon={X} label="Limpiar" size="sm" onClick={() => setQuery('')} />}
+            <input type="search" placeholder={t('Search in {folder}…', { folder: folderLabel(folder) })} value={query} onChange={(e) => setQuery(e.target.value)} aria-label={t('Search')} />
+            {query && <IconButton icon={X} label={t('Clear')} size="sm" onClick={() => setQuery('')} />}
           </label>
           {listError && <p className="fs-mail__error">{listError}</p>}
-          {!list && !listError && <Skeleton label="Cargando mensajes" count={6} height="56px" />}
-          {searching && <p className="fs-mail__hint">Buscando…</p>}
-          {list && list.length === 0 && !listError && <p className="fs-mail__hint">{results ? 'Nada coincide.' : 'Vacío.'}</p>}
+          {!list && !listError && <Skeleton label={t('Loading messages')} count={6} height="56px" />}
+          {searching && <p className="fs-mail__hint">{t('Searching…')}</p>}
+          {list && list.length === 0 && !listError && <p className="fs-mail__hint">{results ? t('Nothing matches.') : t('Empty.')}</p>}
           {list && list.length > 0 && (
             <div className="fs-mail__rows">
               {list.map((m) => (
@@ -542,8 +543,8 @@ export function EmailScreen() {
                   <span className="fs-mail__row-from">{fmtAddr(m.fromName, m.fromAddress)}</span>
                   <span className="fs-mail__row-when">{fmtWhen(m.date)}</span>
                   <span className="fs-mail__row-subject">
-                    {m.isFlagged && <Star size={11} className="fs-mail__star" aria-label="Con estrella" />}
-                    {m.hasAttachments && <Paperclip size={11} aria-label="Con adjuntos" />}
+                    {m.isFlagged && <Star size={11} className="fs-mail__star" aria-label={t('Starred')} />}
+                    {m.hasAttachments && <Paperclip size={11} aria-label={t('With attachments')} />}
                     {m.subject}
                   </span>
                   {m.snippet && <span className="fs-mail__row-snippet">{m.snippet}</span>}
@@ -553,20 +554,20 @@ export function EmailScreen() {
           )}
           {!results && emails && total > PAGE && (
             <div className="fs-mail__pager">
-              <Button variant="ghost" size="sm" label="Anteriores" disabled={offset === 0} onClick={() => setOffset((o) => Math.max(0, o - PAGE))} />
+              <Button variant="ghost" size="sm" label={t('Previous')} disabled={offset === 0} onClick={() => setOffset((o) => Math.max(0, o - PAGE))} />
               <span>
                 {offset + 1}–{Math.min(offset + PAGE, total)} de {total}
               </span>
-              <Button variant="ghost" size="sm" label="Siguientes" disabled={offset + PAGE >= total} onClick={() => setOffset((o) => o + PAGE)} />
+              <Button variant="ghost" size="sm" label={t('Next')} disabled={offset + PAGE >= total} onClick={() => setOffset((o) => o + PAGE)} />
             </div>
           )}
         </section>
 
-        <section className="fs-mail__read" aria-label="Mensaje">
+        <section className="fs-mail__read" aria-label={t('Message')}>
           {!current && (
             <div className="fs-mail__placeholder">
               <MailOpen size={28} aria-hidden="true" />
-              <p>Elige un mensaje.</p>
+              <p>{t('Pick a message.')}</p>
             </div>
           )}
           {current && (
@@ -591,7 +592,7 @@ export function EmailScreen() {
           onClose={() => setCompose(null)}
           onDone={(what) => {
             setCompose(null);
-            say(what === 'sent' ? 'Enviado.' : 'Borrador guardado.');
+            say(what === 'sent' ? t('Sent.') : t('Draft saved.'));
             if (what === 'sent' && compose.sourceUid && current?.uid === compose.sourceUid) changed({ isAnswered: true });
           }}
           say={say}

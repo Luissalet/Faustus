@@ -1,4 +1,5 @@
 import { ApiError, getJson } from './api';
+import { t, locale } from '../i18n';
 
 /**
  * Calendario: `/api/calendar`, the same routes calendar.js uses. Events
@@ -250,29 +251,40 @@ export function eventDays(ev: CalEvent): string[] {
 }
 
 export function fmtTime(value: string): string {
-  return parseStamp(value).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
+  return parseStamp(value).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' });
 }
 
 export function fmtDay(value: string): string {
-  return parseStamp(value).toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' });
+  return parseStamp(value).toLocaleDateString(locale(), { weekday: 'long', day: 'numeric', month: 'long' });
 }
 
-export const MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
-export const WEEKDAYS = ['lun', 'mar', 'mié', 'jue', 'vie', 'sáb', 'dom'];
+/** Month names in the interface language (a function: the language can change). */
+export function months(): string[] {
+  const fmt = new Intl.DateTimeFormat(locale(), { month: 'long' });
+  return Array.from({ length: 12 }, (_, m) => fmt.format(new Date(2024, m, 1)));
+}
+
+/** Monday-first short weekday names in the interface language. */
+export function weekdays(): string[] {
+  const fmt = new Intl.DateTimeFormat(locale(), { weekday: 'short' });
+  // 2024-01-01 is a Monday.
+  return Array.from({ length: 7 }, (_, d) => fmt.format(new Date(2024, 0, 1 + d)).replace(/\.$/, ''));
+}
 
 export const RRULES: { value: string; label: string }[] = [
-  { value: '', label: 'No se repite' },
-  { value: 'FREQ=DAILY', label: 'Cada día' },
-  { value: 'FREQ=WEEKLY', label: 'Cada semana' },
-  { value: 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR', label: 'Días laborables' },
-  { value: 'FREQ=MONTHLY', label: 'Cada mes' },
-  { value: 'FREQ=YEARLY', label: 'Cada año' },
+  { value: '', label: 'No repeat' },
+  { value: 'FREQ=DAILY', label: 'Every day' },
+  { value: 'FREQ=WEEKLY', label: 'Every week' },
+  { value: 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR', label: 'Weekdays' },
+  { value: 'FREQ=MONTHLY', label: 'Every month' },
+  { value: 'FREQ=YEARLY', label: 'Every year' },
 ];
 
 export function rruleLabel(rrule: string): string {
   if (!rrule) return '';
   const head = rrule.replace(/^RRULE:/, '');
-  return RRULES.find((r) => r.value === head)?.label ?? head;
+  const found = RRULES.find((r) => r.value === head);
+  return found ? t(found.label) : head;
 }
 
 /** Readable text colour for a hex background. */

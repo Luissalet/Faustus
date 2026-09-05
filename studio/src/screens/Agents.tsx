@@ -5,6 +5,7 @@ import { Runners } from './agents/Runners';
 import { Workers } from './agents/Workers';
 import './projects.css';
 import './agents.css';
+import { t } from '../i18n';
 
 /**
  * Agentes: the four panels the previous interface kept as separate modals
@@ -20,10 +21,10 @@ import './agents.css';
 type Tab = 'workers' | 'runners' | 'defs' | 'experts';
 
 const TABS: { key: Tab; label: string; hint: string }[] = [
-  { key: 'workers', label: 'Workers', hint: 'Los modelos locales hacen el trabajo mecánico; tú lees qué cambió' },
-  { key: 'runners', label: 'Runners', hint: 'Claude Code, OpenCode, Qwen Code o cualquier otro agente de terminal como worker' },
-  { key: 'defs', label: 'Definiciones', hint: 'Qué puede usar, tocar y no hacer cada agente; su slug va en una tarea' },
-  { key: 'experts', label: 'Expertos', hint: 'Un especialista con su corpus, y correcciones que citan la página' },
+  { key: 'workers', label: 'Workers', hint: 'The local models do the mechanical work; you read what changed' },
+  { key: 'runners', label: 'Runners', hint: 'Claude Code, OpenCode, Qwen Code or any other terminal agent as a worker' },
+  { key: 'defs', label: 'Definitions', hint: 'What each agent may use, touch and not do; its slug goes on a task' },
+  { key: 'experts', label: 'Experts', hint: 'A specialist with its corpus, and corrections that cite the page' },
 ];
 
 export function AgentsScreen() {
@@ -44,16 +45,16 @@ export function AgentsScreen() {
     <div className="fs-screen fs-agents" data-testid="agents">
       <header className="fs-screen__head">
         <div>
-          <h1 className="fs-screen__title">Agentes</h1>
+          <h1 className="fs-screen__title">{t('Agents')}</h1>
           <p className="fs-prose" style={{ marginBlockStart: 'var(--fs-space-2)' }}>
-            Quién hace el trabajo mecánico, bajo qué reglas y con qué conocimiento.
+            {t('Who does the mechanical work, under what rules and with what knowledge.')}
           </p>
         </div>
       </header>
-      <div className="fs-tabs" role="tablist" aria-label="Agentes">
-        {TABS.map((t) => (
-          <button key={t.key} type="button" role="tab" className="fs-tab" aria-selected={tab === t.key} title={t.hint} onClick={() => go(t.key)} data-testid={`agents-tab-${t.key}`}>
-            {t.label}
+      <div className="fs-tabs" role="tablist" aria-label={t('Agents')}>
+        {TABS.map((entry) => (
+          <button key={entry.key} type="button" role="tab" className="fs-tab" aria-selected={tab === entry.key} title={t(entry.hint)} onClick={() => go(entry.key)} data-testid={`agents-tab-${entry.key}`}>
+            {t(entry.label)}
           </button>
         ))}
       </div>

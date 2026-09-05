@@ -8,6 +8,7 @@ import {
   XCircle,
   type LucideIcon,
 } from 'lucide-react';
+import { t } from '../i18n';
 
 /** The seven run states, normalised in the frontend (UI-050). */
 export type RunStatus =
@@ -20,13 +21,13 @@ export type RunStatus =
   | 'cancelled';
 
 const PRESET: Record<RunStatus, { icon: LucideIcon; label: string }> = {
-  queued: { icon: Clock, label: 'En cola' },
-  running: { icon: Loader2, label: 'Ejecutando' },
-  waiting: { icon: AlertCircle, label: 'Esperando aprobación' },
-  paused: { icon: Pause, label: 'En pausa' },
-  succeeded: { icon: CheckCircle, label: 'Completado' },
-  failed: { icon: XCircle, label: 'Fallido' },
-  cancelled: { icon: MinusCircle, label: 'Cancelado' },
+  queued: { icon: Clock, label: 'Queued' },
+  running: { icon: Loader2, label: 'Running' },
+  waiting: { icon: AlertCircle, label: 'Awaiting approval' },
+  paused: { icon: Pause, label: 'Paused' },
+  succeeded: { icon: CheckCircle, label: 'Completed' },
+  failed: { icon: XCircle, label: 'Failed' },
+  cancelled: { icon: MinusCircle, label: 'Cancelled' },
 };
 
 export interface StatusBadgeProps {
@@ -40,7 +41,7 @@ export interface StatusBadgeProps {
  * red dot and a green dot are the same dot to a good part of the users.
  */
 export function StatusBadge({ status, label, size = 'sm' }: StatusBadgeProps) {
-  const preset = PRESET[status];
+  const preset = { icon: PRESET[status].icon, label: t(PRESET[status].label) };
   const Icon = preset.icon;
 
   return (

@@ -12,6 +12,7 @@ import {
   setSessionFolder,
   setSessionImportant,
 } from '../../adapters/sessions';
+import { t } from '../../i18n';
 
 /**
  * The actions the old sidebar's row menu had — rename, favourite, archive,
@@ -70,33 +71,33 @@ export default function SessionDialog({
           className="fs-ws__path"
           onSubmit={(event) => {
             event.preventDefault();
-            if (name.trim() && name.trim() !== target.name) void act('Renombrar', () => renameSession(target.id, name.trim()));
+            if (name.trim() && name.trim() !== target.name) void act(t('Rename'), () => renameSession(target.id, name.trim()));
           }}
         >
           <label className="fs-search" style={{ flex: 1, minInlineSize: 0 }}>
-            <input value={name} onChange={(event) => setName(event.target.value)} aria-label="Nombre de la conversación" data-testid="session-rename" />
+            <input value={name} onChange={(event) => setName(event.target.value)} aria-label={t('Conversation name')} data-testid="session-rename" />
           </label>
-          <Button label="Renombrar" type="submit" size="sm" disabled={busy || !name.trim() || name.trim() === target.name} />
+          <Button label={t('Rename')} type="submit" size="sm" disabled={busy || !name.trim() || name.trim() === target.name} />
         </form>
 
         <div className="fs-studio__ask-actions">
           <Button
             icon={Star}
-            label={target.isImportant ? 'Quitar de favoritas' : 'Favorita'}
+            label={target.isImportant ? t('Remove from favourites') : t('Favourite')}
             size="sm"
             disabled={busy}
-            onClick={() => void act('Favorita', () => setSessionImportant(target.id, !target.isImportant))}
+            onClick={() => void act(t('Favourite'), () => setSessionImportant(target.id, !target.isImportant))}
           />
-          <Button icon={Archive} label="Archivar" size="sm" disabled={busy} onClick={() => void act('Archivar', () => archiveSession(target.id))} />
+          <Button icon={Archive} label={t('Archive')} size="sm" disabled={busy} onClick={() => void act(t('Archive'), () => archiveSession(target.id))} />
           <Button
             icon={Copy}
-            label="Duplicar"
+            label={t('Duplicate')}
             size="sm"
             disabled={busy}
             onClick={() =>
-              void act('Duplicar', async () => {
+              void act(t('Duplicate'), async () => {
                 const copy = await forkSession(target.id, target.messageCount || 10000);
-                onNotice(`Duplicada como «${copy.name}».`);
+                onNotice(t('Duplicated as "{name}".', { name: copy.name }));
                 onOpen(copy.id);
               })
             }
@@ -104,7 +105,7 @@ export default function SessionDialog({
         </div>
 
         <p className="fs-panel__label" style={{ margin: 0 }}>
-          Carpeta
+          {t('Folder')}
         </p>
         <form
           className="fs-ws__path"
@@ -112,13 +113,13 @@ export default function SessionDialog({
           onSubmit={(event) => {
             event.preventDefault();
             const next = (newFolder.trim() || folder).trim();
-            if (next !== (target.folder ?? '')) void act('Carpeta', () => setSessionFolder(target.id, next));
+            if (next !== (target.folder ?? '')) void act(t('Folder'), () => setSessionFolder(target.id, next));
           }}
         >
           <label className="fs-search" style={{ flex: 1, minInlineSize: 0 }}>
             <FolderOpen size={14} aria-hidden="true" />
-            <select value={folder} onChange={(e) => setFolder(e.target.value)} aria-label="Carpeta" className="fs-select">
-              <option value="">Sin carpeta</option>
+            <select value={folder} onChange={(e) => setFolder(e.target.value)} aria-label={t('Folder')} className="fs-select">
+              <option value="">{t('No folder')}</option>
               {folders.map((f) => (
                 <option key={f} value={f}>
                   {f}
@@ -127,9 +128,9 @@ export default function SessionDialog({
             </select>
           </label>
           <label className="fs-search" style={{ flex: 1, minInlineSize: 0 }}>
-            <input value={newFolder} onChange={(e) => setNewFolder(e.target.value)} placeholder="o una nueva…" aria-label="Carpeta nueva" />
+            <input value={newFolder} onChange={(e) => setNewFolder(e.target.value)} placeholder={t('or a new one…')} aria-label={t('New folder')} />
           </label>
-          <Button label="Mover" type="submit" size="sm" disabled={busy || (newFolder.trim() || folder) === (target.folder ?? '')} />
+          <Button label={t('Move')} type="submit" size="sm" disabled={busy || (newFolder.trim() || folder) === (target.folder ?? '')} />
         </form>
 
         <p className="fs-panel__label" style={{ margin: 0 }}>
@@ -146,26 +147,26 @@ export default function SessionDialog({
 
         {!confirmDelete ? (
           <div className="fs-studio__ask-actions">
-            <Button variant="danger" icon={Trash2} label="Borrar conversación" size="sm" disabled={busy} onClick={() => setConfirmDelete(true)} />
+            <Button variant="danger" icon={Trash2} label={t('Delete conversation')} size="sm" disabled={busy} onClick={() => setConfirmDelete(true)} />
           </div>
         ) : (
           <div className="fs-studio__ask" data-testid="session-delete-confirm">
-            <p className="fs-prose">Se borra con todos sus mensajes. No se puede deshacer.</p>
+            <p className="fs-prose">{t('It is deleted with all its messages. This cannot be undone.')}</p>
             <div className="fs-studio__ask-actions">
               <Button
                 variant="danger-solid"
                 icon={Trash2}
-                label="Sí, borrar"
+                label={t('Yes, delete')}
                 size="sm"
                 loading={busy}
                 onClick={() =>
-                  void act('Borrar', async () => {
+                  void act(t('Delete'), async () => {
                     await deleteSession(target.id);
                     if (target.id === currentId) onOpen(null);
                   })
                 }
               />
-              <Button label="No" size="sm" onClick={() => setConfirmDelete(false)} />
+              <Button label={t(t('No'))} size="sm" onClick={() => setConfirmDelete(false)} />
             </div>
           </div>
         )}

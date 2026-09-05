@@ -2,6 +2,7 @@ import { Copy, Download, RefreshCw, Search, Wrench } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, IconButton, Skeleton, Toast } from '../../components';
 import { launchRunner, listRunners, workerStatus, type Runner, type RunnerCatalogue } from '../../adapters/workers';
+import { t } from '../../i18n';
 
 /**
  * Agent runners (agentRunners.js): the CLI agents this machine can run AS A
@@ -13,12 +14,12 @@ import { launchRunner, listRunners, workerStatus, type Runner, type RunnerCatalo
  */
 
 const LICENCE_HINT: Record<Runner['licence'], string> = {
-  open: 'Licencia abierta: puedes correrlo sin comprar una cuenta.',
-  subscription: 'Necesita una cuenta de pago con su proveedor.',
-  unknown: 'Faustus no ha establecido la licencia de este. Lo dice en vez de adivinar.',
+  open: 'Open licence: you can run it without buying an account.',
+  subscription: 'Needs a paid account with its vendor.',
+  unknown: 'Faustus has not established a licence for this one. It says so rather than guess.',
 };
 
-const LICENCE_WORD: Record<Runner['licence'], string> = { open: 'abierta', subscription: 'suscripción', unknown: 'desconocida' };
+const LICENCE_WORD: Record<Runner['licence'], string> = { open: 'open', subscription: 'subscription', unknown: 'unknown' };
 
 function sortRunners(rows: Runner[]): Runner[] {
   return rows.slice().sort((a, b) => {
@@ -68,9 +69,9 @@ export function Runners({ onUseRunner }: { onUseRunner: (key: string) => void })
   const copy = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);
-      flash('Comando copiado');
+      flash(t('Command copied'));
     } catch {
-      flash('No he podido copiar — selecciona el comando y cópialo a mano.');
+      flash(t('Could not copy — select the command and copy it by hand.'));
     }
   };
 
@@ -84,7 +85,7 @@ export function Runners({ onUseRunner }: { onUseRunner: (key: string) => void })
     try {
       await launchRunner(key, (line) => setLog((l) => `${l}${line}\n`), controller.signal);
     } catch (e) {
-      if (!(e instanceof DOMException && e.name === 'AbortError')) flash(`El lanzamiento falló: ${e instanceof Error ? e.message : String(e)}`);
+      if (!(e instanceof DOMException && e.name === 'AbortError')) flash(`${t('The launch failed')}: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setLaunching(null);
       await load(true);
@@ -95,16 +96,16 @@ export function Runners({ onUseRunner }: { onUseRunner: (key: string) => void })
   return (
     <div className="fs-run" data-testid="runners">
       <div className="fs-agents__intro">
-        <p className="fs-prose">Cualquiera de estos puede ser uno de los workers de Faustus: el punto de control antes, la comparación después, la verificación de Faustus y la prueba honesta — alrededor de un agente que Faustus no escribió.</p>
+        <p className="fs-prose">{t('Any of these can be one of Faustus\'s workers: the checkpoint before, the diff after, Faustus\'s own verification and the honest proof — around an agent Faustus did not write.')}</p>
         <p className="fs-agents__guard">
-          <strong>Lo que esto no puede prometer:</strong> {data?.guard_note || 'un agente externo corre su propia shell; Faustus no ve los comandos que ejecuta.'} Cada trabajo que usa uno lo dice en su veredicto y lleva <code>external_agent_unguarded</code> en su prueba.
+          <strong>{t('What this cannot promise:')}</strong> {data?.guard_note || t('an external agent runs its own shell; Faustus does not see the commands it runs.')} {t('Every job that uses one says so in its verdict and carries')} <code>external_agent_unguarded</code> {t('in its proof.')}
         </p>
         {data && (
           <p className="fs-agents__note" data-on={data.enabled || undefined}>
             {data.enabled ? (
-              <>Los agent runners externos están <strong>activados</strong>: una tarea despachada puede nombrar un <code>runner</code>, y ese agente hace el trabajo.</>
+              <>{t('External agent runners are')} <strong>{t('on')}</strong>: {t('a dispatched task may name a')} <code>runner</code>, {t('and that agent does the work.')}</>
             ) : (
-              <>Los agent runners externos están <strong>desactivados</strong> (<code>agent_external_runners</code>, Ajustes → Agente). Viene apagado porque ejecuta binarios de terceros en esta máquina. Una tarea despachada que nombre un <code>runner</code> se rechaza con ese motivo hasta que lo actives.</>
+              <>{t('External agent runners are')} <strong>{t('off')}</strong> (<code>agent_external_runners</code>, {t('Settings → Agent')}). {t('It ships off because it runs third-party binaries on this machine. A dispatched task naming a')} <code>runner</code> {t('is refused with that reason until you turn it on.')}</>
             )}
           </p>
         )}
@@ -112,36 +113,36 @@ export function Runners({ onUseRunner }: { onUseRunner: (key: string) => void })
       <div className="fs-agents__toolbar">
         <label className="fs-agents__search">
           <Search size={13} aria-hidden="true" />
-          <input type="search" placeholder="Buscar agentes…" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Buscar agent runners" />
+          <input type="search" placeholder={t('Search agents…')} value={query} onChange={(e) => setQuery(e.target.value)} aria-label={t('Search agent runners')} />
         </label>
         {data && (
           <span className="fs-agents__counts">
-            {all.length} conocidos · {data.installed_count} instalados · {data.runnable_count} usables como worker ahora mismo
+            {t('{a} known · {b} installed · {c} usable as a worker right now', { a: all.length, b: data.installed_count, c: data.runnable_count })}
           </span>
         )}
         <span className="fs-agents__spacer" />
-        <Button variant="ghost" size="sm" icon={RefreshCw} label="Actualizar" onClick={() => void load(true)} />
+        <Button variant="ghost" size="sm" icon={RefreshCw} label={t('Refresh')} onClick={() => void load(true)} />
       </div>
-      {error && <div className="fs-wk__error">No he podido leer los agent runners: {error}</div>}
+      {error && <div className="fs-wk__error">{t('Could not read the agent runners')}: {error}</div>}
       {data === null ? (
-        <Skeleton label="Cargando los agent runners" height="40px" count={4} />
+        <Skeleton label={t('Loading the agent runners')} height="40px" count={4} />
       ) : (
         <div className="fs-run__table-wrap">
           <table className="fs-run__table">
             <thead>
               <tr>
-                <th>Agente</th>
-                <th>Licencia</th>
-                <th>En esta máquina</th>
-                <th>Como worker</th>
-                <th>Instalar / lanzar</th>
+                <th>{t('Agent')}</th>
+                <th>{t('Licence')}</th>
+                <th>{t('On this machine')}</th>
+                <th>{t('As a worker')}</th>
+                <th>{t('Install / launch')}</th>
               </tr>
             </thead>
             <tbody>
               {visible.length === 0 && (
                 <tr>
                   <td className="fs-run__empty" colSpan={5}>
-                    {all.length ? 'Ningún agente coincide con esa búsqueda.' : 'No hay agent runners: esta máquina no tiene un Ollama que conozca ninguno, y la tabla integrada no se pudo leer.'}
+                    {all.length ? t('No agent matches that search.') : t('No agent runners: this machine has no Ollama that knows any, and the built-in table could not be read.')}
                   </td>
                 </tr>
               )}
@@ -151,33 +152,33 @@ export function Runners({ onUseRunner }: { onUseRunner: (key: string) => void })
                   <tr key={r.key} className="fs-run__row" data-installed={r.installed || undefined} data-testid="runner-row">
                     <td className="fs-run__name-cell">
                       <span className="fs-run__name">{r.label}</span> <code className="fs-run__key">{r.key}</code>
-                      {r.aliases.length > 0 && <span className="fs-run__aliases" title="También conocido como">{r.aliases.join(', ')}</span>}
+                      {r.aliases.length > 0 && <span className="fs-run__aliases" title={t('Also known as')}>{r.aliases.join(', ')}</span>}
                       {r.notes && <span className="fs-run__notes">{r.notes}</span>}
                     </td>
                     <td>
-                      <span className="fs-run__licence" data-licence={r.licence} title={LICENCE_HINT[r.licence]}>
-                        {LICENCE_WORD[r.licence]}
+                      <span className="fs-run__licence" data-licence={r.licence} title={t(LICENCE_HINT[r.licence])}>
+                        {t(LICENCE_WORD[r.licence])}
                       </span>
                     </td>
                     <td>
-                      <span className="fs-run__installed" data-yes={r.installed || undefined}>{r.installed ? 'instalado' : 'no instalado'}</span>
+                      <span className="fs-run__installed" data-yes={r.installed || undefined}>{r.installed ? t('installed') : t('not installed')}</span>
                       {r.version && <span className="fs-run__version">{r.version}</span>}
                       {r.gate && r.gate !== 'none' && (
                         <span className="fs-run__gate" title={r.gate_note}>
-                          guardia: {r.gate}
+                          {t('guard')}: {r.gate}
                         </span>
                       )}
                     </td>
                     <td>
                       <span className="fs-run__worker" data-yes={w.can || undefined}>{w.label}</span>
                       <span className="fs-run__worker-detail">{w.detail}</span>
-                      {w.can && <Button size="sm" variant="ghost" icon={Wrench} label="Usar en un trabajo" onClick={() => onUseRunner(r.key)} />}
+                      {w.can && <Button size="sm" variant="ghost" icon={Wrench} label={t('Use in a job')} onClick={() => onUseRunner(r.key)} />}
                     </td>
                     <td className="fs-run__launch-cell">
                       <code className="fs-run__command">{r.launch_command}</code>
                       <span className="fs-run__launch-actions">
-                        <IconButton icon={Copy} label={`Copiar el comando de ${r.label}`} size="sm" onClick={() => void copy(r.launch_command)} />
-                        <Button size="sm" variant="secondary" icon={Download} label="Lanzar" loading={launching === r.key} disabled={launching !== null && launching !== r.key} onClick={() => void launch(r.key)} title={`Ejecuta «${r.launch_command}» en esta máquina y muestra su salida`} />
+                        <IconButton icon={Copy} label={t('Copy the launch command for {name}', { name: r.label })} size="sm" onClick={() => void copy(r.launch_command)} />
+                        <Button size="sm" variant="secondary" icon={Download} label={t('Launch')} loading={launching === r.key} disabled={launching !== null && launching !== r.key} onClick={() => void launch(r.key)} title={t('Runs "{cmd}" on this machine and shows its output', { cmd: r.launch_command })} />
                       </span>
                     </td>
                   </tr>

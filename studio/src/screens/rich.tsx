@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { Check, Copy } from 'lucide-react';
 import { Fragment, useState, type ReactNode } from 'react';
 
@@ -108,8 +109,8 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
       <button
         type="button"
         className="fs-rich__copy"
-        aria-label={copied ? 'Copiado' : 'Copiar código'}
-        title={copied ? 'Copiado' : 'Copiar código'}
+        aria-label={copied ? t('Copied') : t('Copy code')}
+        title={copied ? t('Copied') : t('Copy code')}
         onClick={() => {
           navigator.clipboard
             .writeText(code)

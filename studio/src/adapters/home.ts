@@ -1,4 +1,5 @@
 import { asArray, getJson } from './api';
+import { t, tn } from '../i18n';
 
 export interface ProjectSummary {
   id: string;
@@ -45,15 +46,15 @@ export async function loadHome(signal?: AbortSignal): Promise<HomeData> {
 
   const [projects, sessions, approvals] = await Promise.all([
     getJson<unknown>('/api/projects', signal).catch(() => {
-      degraded.push('proyectos');
+      degraded.push(t('projects'));
       return [];
     }),
     getJson<unknown>('/api/sessions', signal).catch(() => {
-      degraded.push('conversaciones');
+      degraded.push(t('conversations'));
       return [];
     }),
     getJson<unknown>('/api/approvals/pending', signal).catch(() => {
-      degraded.push('aprobaciones');
+      degraded.push(t('approvals'));
       return { pending: [] };
     }),
   ]);
@@ -105,14 +106,14 @@ export function relativeTime(value?: string | number | null): string {
   const deltaMinutes = Math.round((Date.now() - ms) / 60000);
   const past = deltaMinutes >= 0;
   const minutes = Math.abs(deltaMinutes);
-  const say = (amount: string) => (past ? `hace ${amount}` : `en ${amount}`);
+  const say = (amount: string) => (past ? t('{amount} ago', { amount }) : t('in {amount}', { amount }));
 
-  if (minutes < 1) return 'ahora';
+  if (minutes < 1) return t('now');
   if (minutes < 60) return say(`${minutes} min`);
   const hours = Math.round(minutes / 60);
   if (hours < 24) return say(`${hours} h`);
   const days = Math.round(hours / 24);
   if (days < 30) return say(`${days} d`);
   const months = Math.round(days / 30);
-  return say(`${months} meses`);
+  return say(tn(months, '{n} month', '{n} months'));
 }

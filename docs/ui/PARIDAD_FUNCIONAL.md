@@ -60,6 +60,9 @@ las toca ninguna pantalla.
 | Fork de conversación | «Bifurcar desde aquí» en cada mensaje (`/api/session/{id}/fork` con `keep_count`), «Duplicar» en el diálogo, y `/fork` | **Migrado** |
 | Modo Nobody / incógnito | chip «Incógnito» y `/incognito` (Ctrl+Alt+I): la sesión se llama «Incógnito», no aparece en la lista y se borra al salir del modo o al recargar; se envía `incognito=true`. Clave propia (`faustus_studio_incognito`), no la de la anterior | **Migrado** |
 | Colapsar barra lateral | cajón en ≤1023 px; en pantallas anchas la columna se oculta con el chip «Conversaciones» o Ctrl+B y se recuerda | **Migrado** |
+| Barra de navegación: ancho y plegado | borde arrastrable (cursor de doble flecha; 168–400 px; al comprimir por debajo de 120 px se pliega a carril de iconos; arrastrar de vuelta o doble clic la reabre; teclado ←/→/Inicio/Fin en el separador); se recuerda (`faustus_studio_nav`); en <1280 px se pliega sola salvo elección explícita. La anterior no tenía ancho ajustable | **Migrado** (nuevo respecto a la anterior) |
+| Idioma de la interfaz | Ajustes → General: inglés (por defecto) o español; aplica al momento y se guarda en `ui_language` (sigue al usuario a otro navegador) además de `localStorage`. Fechas, horas, meses y días con el `locale` del idioma. La anterior es solo inglés; los modelos contestan en el idioma en que se les escribe | **Migrado** (nuevo respecto a la anterior) |
+| Apariencia: sistema / claro / oscuro | Ajustes → General: la elección pone `data-theme` en `<html>` (tokens.css lo resuelve antes que `prefers-color-scheme`); «Seguir al sistema» quita el atributo; se guarda en `ui_theme` y `localStorage`. El editor de colores de la anterior sigue en la fila «Tema» | **Migrado** |
 
 ## 3. Compositor y turno
 

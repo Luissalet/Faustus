@@ -1,4 +1,5 @@
 import { asArray, getJson } from './api';
+import { t } from '../i18n';
 
 /**
  * One view model over two subsystems (UI-041).
@@ -55,7 +56,7 @@ export async function loadLibrary(signal?: AbortSignal): Promise<{
 
   const [gallery, documents] = await Promise.all([
     getJson<unknown>('/api/gallery/library', signal).catch(() => {
-      degraded.push('imágenes');
+      degraded.push(t('images'));
       return { items: [] };
     }),
     getJson<unknown>('/api/documents/library', signal).catch(() => {
@@ -82,7 +83,7 @@ export async function loadLibrary(signal?: AbortSignal): Promise<{
     ...asArray<DocumentItem>(documents, 'documents').map((item) => ({
       id: `doc-${item.id}`,
       kind: 'documento' as const,
-      title: item.title?.trim() || 'Documento sin título',
+      title: item.title?.trim() || t('Untitled document'),
       subtitle: item.preview?.trim().slice(0, 160) || undefined,
       session: item.session_name,
       createdAt: item.updated_at ?? item.created_at,

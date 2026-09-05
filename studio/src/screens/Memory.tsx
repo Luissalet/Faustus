@@ -49,6 +49,7 @@ import {
 } from '../adapters/memory';
 import './projects.css';
 import './memory.css';
+import { t, tn } from '../i18n';
 
 /**
  * Memoria (the previous interface's Brain modal, `/memory`).
@@ -63,10 +64,10 @@ import './memory.css';
 
 type Sort = 'newest' | 'oldest' | 'alpha' | 'uses';
 const SORTS: { value: Sort; label: string }[] = [
-  { value: 'newest', label: 'Más recientes' },
-  { value: 'oldest', label: 'Más antiguas' },
-  { value: 'alpha', label: 'Alfabético' },
-  { value: 'uses', label: 'Más usadas' },
+  { value: 'newest', label: 'Newest first' },
+  { value: 'oldest', label: 'Oldest first' },
+  { value: 'alpha', label: 'Alphabetical' },
+  { value: 'uses', label: 'Most used' },
 ];
 
 function download(blob: Blob, name: string) {
@@ -131,30 +132,30 @@ function MemoryRow({ memory, selecting, selected, onToggle, onPin, onDelete, onS
               }}
             />
             <div className="fs-mem__edit-row">
-              <select className="fs-field" value={category} onChange={(e) => setCategory(e.target.value)} aria-label="Categoría">
+              <select className="fs-field" value={category} onChange={(e) => setCategory(e.target.value)} aria-label={t('Category')}>
                 {MEMORY_CATEGORIES.map((c) => (
                   <option key={c} value={c}>
-                    {CATEGORY_LABEL[c]}
+                    {t(CATEGORY_LABEL[c])}
                   </option>
                 ))}
               </select>
               <span className="fs-mem__spacer" />
-              <Button variant="ghost" size="sm" label="Cancelar" onClick={() => setEditing(false)} />
-              <Button variant="primary" size="sm" label="Guardar" loading={saving} onClick={() => void commit()} />
+              <Button variant="ghost" size="sm" label={t('Cancel')} onClick={() => setEditing(false)} />
+              <Button variant="primary" size="sm" label={t('Save')} loading={saving} onClick={() => void commit()} />
             </div>
           </div>
         ) : (
-          <button type="button" className="fs-mem__text" onClick={() => !selecting && setEditing(true)} title="Editar">
+          <button type="button" className="fs-mem__text" onClick={() => !selecting && setEditing(true)} title={t('Edit')}>
             {memory.text}
           </button>
         )}
         <div className="fs-mem__meta">
           <span className="fs-mem__cat" data-cat={memory.category}>
-            {CATEGORY_LABEL[memory.category] ?? memory.category}
+            {CATEGORY_LABEL[memory.category] ? t(CATEGORY_LABEL[memory.category]) : memory.category}
           </span>
-          <span>{memory.source === 'user' ? 'tuya' : memory.source === 'auto' ? 'extraída' : memory.source}</span>
+          <span>{memory.source === 'user' ? t('yours') : memory.source === 'auto' ? t('extracted') : memory.source}</span>
           {memory.timestamp > 0 && <span>{relativeTime(new Date(memory.timestamp * 1000).toISOString())}</span>}
-          {memory.uses > 0 && <span>{memory.uses} uso{memory.uses === 1 ? '' : 's'}</span>}
+          {memory.uses > 0 && <span>{tn(memory.uses, '{n} use', '{n} uses')}</span>}
           {memory.sessionId &&
             (/^[0-9a-f-]{32,36}$/i.test(memory.sessionId) ? (
               <Link to={`/studio?s=${encodeURIComponent(memory.sessionId)}`} className="fs-mem__session">
@@ -170,8 +171,8 @@ function MemoryRow({ memory, selecting, selected, onToggle, onPin, onDelete, onS
       </div>
       {!selecting && (
         <div className="fs-mem__actions">
-          <IconButton icon={memory.pinned ? PinOff : Pin} label={memory.pinned ? 'Desfijar (deja de ir siempre en el contexto)' : 'Fijar (va siempre en el contexto)'} size="sm" onClick={onPin} />
-          <IconButton icon={Trash2} label="Borrar" size="sm" onClick={onDelete} />
+          <IconButton icon={memory.pinned ? PinOff : Pin} label={memory.pinned ? t('Unpin (stops going in the context every time)') : t('Pin (goes in the context every time)')} size="sm" onClick={onPin} />
+          <IconButton icon={Trash2} label={t('Delete')} size="sm" onClick={onDelete} />
         </div>
       )}
     </article>
@@ -197,16 +198,16 @@ function SuggestionsDialog({ title, items, onClose, onSave }: { title: string; i
         if (!o) onClose();
       }}
       title={title}
-      description={items.length ? `${items.length} sugerencia${items.length === 1 ? '' : 's'}. Desmarca lo que no quieras guardar.` : 'No ha salido nada que valga la pena guardar.'}
+      description={items.length ? `${items.length} sugerencia${items.length === 1 ? '' : 's'}. Desmarca lo que no quieras guardar.` : t('Nothing came out worth saving.')}
       testId="memory-suggestions"
       footer={
         <>
-          <Button variant="ghost" size="sm" label="Cerrar" onClick={onClose} />
+          <Button variant="ghost" size="sm" label={t('Close')} onClick={onClose} />
           {items.length > 0 && (
             <Button
               variant="primary"
               size="sm"
-              label={`Guardar ${chosen.size}`}
+              label={t('Save {n}', { n: chosen.size })}
               disabled={chosen.size === 0}
               loading={saving}
               onClick={async () => {
@@ -228,7 +229,7 @@ function SuggestionsDialog({ title, items, onClose, onSave }: { title: string; i
             <input type="checkbox" checked={chosen.has(i)} onChange={() => toggle(i)} />
             <span>{s.text}</span>
             <span className="fs-mem__cat" data-cat={s.category}>
-              {CATEGORY_LABEL[s.category] ?? s.category}
+              {CATEGORY_LABEL[s.category] ? t(CATEGORY_LABEL[s.category]) : s.category}
             </span>
           </label>
         ))}
@@ -254,7 +255,7 @@ function RuleRow({ rule, onFeedback, onDelete }: { rule: LearnedRule; onFeedback
         </span>
         <span className="fs-rule__chip">{rule.maturity}</span>
         {rule.trustClass && <span className="fs-rule__trust">{rule.trustClass}</span>}
-        <span className="fs-rule__score" title="Puntuación efectiva: confianza × frescura + útiles − 4 × dañinas">
+        <span className="fs-rule__score" title={t('Effective score: confidence × freshness + helpful − 4 × harmful')}>
           <span className="fs-rule__bar" aria-hidden="true">
             <span style={{ inlineSize: `${pct}%` }} />
           </span>
@@ -262,9 +263,9 @@ function RuleRow({ rule, onFeedback, onDelete }: { rule: LearnedRule; onFeedback
         </span>
         {harm > 0 && <span className="fs-rule__harm">{harm} % dañina</span>}
         <span className="fs-rule__actions">
-          <IconButton icon={ThumbsUp} label="Esta regla ayudó" size="sm" onClick={() => onFeedback('helpful')} />
-          <IconButton icon={ThumbsDown} label="Esta regla hizo daño" size="sm" onClick={() => onFeedback('harmful')} />
-          <IconButton icon={X} label="Borrar la regla" size="sm" onClick={onDelete} />
+          <IconButton icon={ThumbsUp} label={t('This rule helped')} size="sm" onClick={() => onFeedback('helpful')} />
+          <IconButton icon={ThumbsDown} label={t('This rule did harm')} size="sm" onClick={() => onFeedback('harmful')} />
+          <IconButton icon={X} label={t('Delete the rule')} size="sm" onClick={onDelete} />
         </span>
       </div>
     </article>
@@ -292,7 +293,7 @@ function LearnedRules({ say }: { say: (text: string) => void }) {
       .catch((err: unknown) => {
         if ((err as { name?: string })?.name === 'AbortError') return;
         setRules([]);
-        setFailed((err as { status?: number })?.status === 403 ? 'Solo el administrador ve las reglas aprendidas.' : 'No he podido leer las reglas aprendidas.');
+        setFailed((err as { status?: number })?.status === 403 ? t('Only the administrator sees the learned rules.') : t('Could not read the learned rules.'));
       });
   }, []);
 
@@ -313,16 +314,16 @@ function LearnedRules({ say }: { say: (text: string) => void }) {
   const replace = (r: LearnedRule) => setRules((cur) => (cur ? cur.map((x) => (x.id === r.id ? r : x)) : cur));
 
   const add = async () => {
-    const t = text.trim();
-    if (!t) return;
+    const value = text.trim();
+    if (!value) return;
     setBusy('add');
     try {
-      const r = await addRule(t, level);
+      const r = await addRule(value, level);
       setRules((cur) => [r, ...(cur ?? [])]);
       setText('');
       load();
     } catch (err) {
-      say((err as Error).message || 'No he podido añadir la regla.');
+      say((err as Error).message || t('Could not add the rule.'));
     } finally {
       setBusy(null);
     }
@@ -337,11 +338,11 @@ function LearnedRules({ say }: { say: (text: string) => void }) {
       <header className="fs-rules__head">
         <div>
           <h2 id="fs-rules-title" className="fs-rules__title">
-            Reglas aprendidas <span className="fs-rules__count">{all.length}</span>
+            {t('Learned rules')} <span className="fs-rules__count">{all.length}</span>
           </h2>
           <p className="fs-prose">
-            Reglas puntuadas por resultado que el agente aprende y olvida solo: si una hace daño varias veces, se invierte en un antipatrón.
-            {stats?.semanticLane ? ' Con carril semántico.' : ''}
+            {t('Outcome-scored rules the agent learns and forgets on its own: if one does harm several times, it is inverted into an antipattern.')}
+            {stats?.semanticLane ? t(' With a semantic lane.') : ''}
           </p>
         </div>
         <div className="fs-rules__tools">
@@ -349,7 +350,7 @@ function LearnedRules({ say }: { say: (text: string) => void }) {
             variant="secondary"
             size="sm"
             icon={Wand2}
-            label="Ejecutar el curador"
+            label={t('Run the curator')}
             loading={busy === 'curate'}
             onClick={async () => {
               setBusy('curate');
@@ -357,7 +358,7 @@ function LearnedRules({ say }: { say: (text: string) => void }) {
                 setReport(await curateRules());
                 load();
               } catch {
-                say('El curador ha fallado.');
+                say(t('The curator failed.'));
               } finally {
                 setBusy(null);
               }
@@ -366,14 +367,14 @@ function LearnedRules({ say }: { say: (text: string) => void }) {
           <Button
             variant="ghost"
             size="sm"
-            label="Ver el paquete"
+            label={t('See the pack')}
             loading={busy === 'pack'}
             onClick={async () => {
               setBusy('pack');
               try {
                 setPack(await previewPack());
               } catch {
-                say('No he podido montar el paquete.');
+                say(t('Could not build the pack.'));
               } finally {
                 setBusy(null);
               }
@@ -384,11 +385,11 @@ function LearnedRules({ say }: { say: (text: string) => void }) {
 
       {report && (
         <p className="fs-rules__report" role="status">
-          Curador: <b>{report.deduped}</b> duplicadas · <b>{report.inverted}</b> invertidas · <b>{report.promoted}</b> promovidas · <b>{report.demoted}</b> degradadas · <b>{report.pruned}</b> podadas · <b>{report.totalActive}</b> activas
+          {t('Curator')}: <b>{report.deduped}</b> {t('duplicates')} · <b>{report.inverted}</b> {t('inverted')} · <b>{report.promoted}</b> {t('promoted')} · <b>{report.demoted}</b> {t('demoted')} · <b>{report.pruned}</b> {t('pruned')} · <b>{report.totalActive}</b> {t('active')}
         </p>
       )}
 
-      <div className="fs-rules__filters" role="group" aria-label="Filtrar reglas">
+      <div className="fs-rules__filters" role="group" aria-label={t('Filter rules')}>
         <button type="button" className="fs-chip" data-on={filter === 'all' || undefined} onClick={() => setFilter('all')}>
           Todas · {all.length}
         </button>
@@ -401,8 +402,8 @@ function LearnedRules({ say }: { say: (text: string) => void }) {
       </div>
 
       {failed && <p className="fs-rules__error">{failed}</p>}
-      {!rules && !failed && <Skeleton label="Cargando reglas" count={3} height="48px" />}
-      {rules && !failed && sorted.length === 0 && <p className="fs-rules__empty">{all.length ? 'Nada con ese filtro.' : 'Todavía no hay reglas: añade una abajo o deja que el agente aprenda de los resultados.'}</p>}
+      {!rules && !failed && <Skeleton label={t('Loading rules')} count={3} height="48px" />}
+      {rules && !failed && sorted.length === 0 && <p className="fs-rules__empty">{all.length ? t('Nothing with that filter.') : t('No rules yet: add one below or let the agent learn from outcomes.')}</p>}
       {sorted.length > 0 && (
         <div className="fs-rules__list">
           {sorted.map((r) => (
@@ -413,14 +414,14 @@ function LearnedRules({ say }: { say: (text: string) => void }) {
                 void ruleFeedback(r.id, kind)
                   .then((u) => {
                     replace(u);
-                    say(kind === 'helpful' ? 'Marcada como útil.' : 'Marcada como dañina.');
+                    say(kind === 'helpful' ? t('Marked as helpful.') : t('Marked as harmful.'));
                   })
-                  .catch(() => say('No he podido guardar la valoración.'))
+                  .catch(() => say(t('Could not save the rating.')))
               }
               onDelete={() =>
                 void deleteRule(r.id)
                   .then(() => setRules((cur) => (cur ? cur.filter((x) => x.id !== r.id) : cur)))
-                  .catch(() => say('No he podido borrar la regla.'))
+                  .catch(() => say(t('Could not delete the rule.')))
               }
             />
           ))}
@@ -434,15 +435,15 @@ function LearnedRules({ say }: { say: (text: string) => void }) {
           void add();
         }}
       >
-        <input type="text" className="fs-field" placeholder="Una regla nueva, escrita por ti (confianza máxima)…" value={text} onChange={(e) => setText(e.target.value)} />
-        <select className="fs-field" value={level} onChange={(e) => setLevel(e.target.value)} aria-label="Nivel">
+        <input type="text" className="fs-field" placeholder={t('A new rule, written by you (maximum confidence)…')} value={text} onChange={(e) => setText(e.target.value)} />
+        <select className="fs-field" value={level} onChange={(e) => setLevel(e.target.value)} aria-label={t('Level')}>
           {RULE_LEVELS.map((l) => (
             <option key={l} value={l}>
               {l}
             </option>
           ))}
         </select>
-        <Button type="submit" variant="secondary" size="sm" icon={Plus} label="Añadir" disabled={!text.trim()} loading={busy === 'add'} />
+        <Button type="submit" variant="secondary" size="sm" icon={Plus} label={t('Add')} disabled={!text.trim()} loading={busy === 'add'} />
       </form>
 
       {pack && (
@@ -451,11 +452,11 @@ function LearnedRules({ say }: { say: (text: string) => void }) {
           onOpenChange={(o) => {
             if (!o) setPack(null);
           }}
-          title="Lo que ve el modelo"
-          description={`${pack.chars} de ${pack.budget} caracteres${pack.degraded ? ' · degradado' : ''}`}
-          footer={<Button variant="ghost" size="sm" label="Cerrar" onClick={() => setPack(null)} />}
+          title={t('What the model sees')}
+          description={`${t('{a} of {b} characters', { a: pack.chars, b: pack.budget })}${pack.degraded ? t(' · degraded') : ''}`}
+          footer={<Button variant="ghost" size="sm" label={t('Close')} onClick={() => setPack(null)} />}
         >
-          <pre className="fs-rules__pack">{pack.text || '(vacío)'}</pre>
+          <pre className="fs-rules__pack">{pack.text || t('(empty)')}</pre>
         </Dialog>
       )}
     </section>
@@ -530,16 +531,16 @@ export function MemoryScreen() {
 
   /* ── Actions ── */
   const add = async () => {
-    const t = newText.trim();
-    if (!t) return;
+    const value = newText.trim();
+    if (!value) return;
     setBusy('add');
     try {
-      const fresh = await addMemory(t, newCategory);
-      say(fresh ? 'Guardada.' : 'Ya la tenía.');
+      const fresh = await addMemory(value, newCategory);
+      say(fresh ? t('Saved.') : t('Already had it.'));
       setNewText('');
       await load();
     } catch (err) {
-      say((err as Error).message || 'No he podido guardar.');
+      say((err as Error).message || t('Could not save.'));
     } finally {
       setBusy(null);
     }
@@ -550,9 +551,9 @@ export function MemoryScreen() {
     else setAutoExtract(value);
     try {
       await setPref(key, value);
-      say(key === 'memory_enabled' ? (value ? 'Memoria activada.' : 'Memoria desactivada.') : value ? 'Extracción automática activada.' : 'Extracción automática desactivada.');
+      say(key === 'memory_enabled' ? (value ? t('Memory on.') : t('Memory off.')) : value ? t('Automatic extraction on.') : t('Automatic extraction off.'));
     } catch {
-      say('No he podido guardar la preferencia.');
+      say(t('Could not save the preference.'));
       if (key === 'memory_enabled') setEnabled(!value);
       else setAutoExtract(!value);
     }
@@ -562,10 +563,10 @@ export function MemoryScreen() {
     setBusy('tidy');
     try {
       const r = await auditMemories();
-      say(r.removed > 0 ? `Ordenada: ${r.before} → ${r.after} (${r.removed} fuera).` : 'Ya estaba limpia.');
+      say(r.removed > 0 ? `Ordenada: ${r.before} → ${r.after} (${r.removed} fuera).` : t('It was already tidy.'));
       await load();
     } catch (err) {
-      say((err as Error).message || 'No he podido ordenar la memoria.');
+      say((err as Error).message || t('Could not tidy the memory.'));
     } finally {
       setBusy(null);
     }
@@ -588,9 +589,9 @@ export function MemoryScreen() {
     try {
       const items = await extractFromSession(extractSession);
       setExtractOpen(false);
-      setSuggestions({ title: 'Sugerencias de la conversación', items: items.map((text) => ({ text, category: 'fact' })) });
+      setSuggestions({ title: t('Suggestions from the conversation'), items: items.map((text) => ({ text, category: 'fact' })) });
     } catch (err) {
-      say((err as Error).message || 'No he podido extraer nada.');
+      say((err as Error).message || t('Could not extract anything.'));
     } finally {
       setBusy(null);
     }
@@ -601,9 +602,9 @@ export function MemoryScreen() {
     try {
       const r = await importFromFile(file);
       if (r.message && r.suggestions.length === 0) say(r.message);
-      setSuggestions({ title: `Sugerencias de ${file.name}`, items: r.suggestions });
+      setSuggestions({ title: t('Suggestions from {name}', { name: file.name }), items: r.suggestions });
     } catch (err) {
-      say((err as Error).message || 'No he podido leer el fichero.');
+      say((err as Error).message || t('Could not read the file.'));
     } finally {
       setBusy(null);
       if (fileRef.current) fileRef.current.value = '';
@@ -646,10 +647,10 @@ export function MemoryScreen() {
     return (
       <EmptyState
         icon={Brain}
-        title="No he podido leer la memoria"
-        body="El endpoint de memoria no responde. La interfaz anterior no depende de esta pantalla."
+        title={t('Could not read the memory')}
+        body={t('The memory endpoint is not responding. The previous interface does not depend on this screen.')}
         primaryAction={{
-          label: 'Abrir la interfaz anterior',
+          label: t('Open the previous interface'),
           onClick: () => {
             window.location.href = '/memory?shell=legacy';
           },
@@ -662,20 +663,20 @@ export function MemoryScreen() {
     <div className="fs-screen fs-memory" data-testid="memory">
       <header className="fs-screen__head">
         <div>
-          <h1 className="fs-screen__title">Memoria</h1>
+          <h1 className="fs-screen__title">{t('Memory')}</h1>
           <p className="fs-prose" style={{ marginBlockStart: 'var(--fs-space-2)' }}>
-            {memories ? `${memories.length} recuerdo${memories.length === 1 ? '' : 's'}${pinnedCount ? ` · ${pinnedCount} fijado${pinnedCount === 1 ? '' : 's'}` : ''}. ` : ''}
-            Lo que el asistente sabe de ti y usa cuando viene al caso; lo fijado va siempre.
+            {memories ? `${tn(memories.length, '{n} memory', '{n} memories')}${pinnedCount ? ` · ${tn(pinnedCount, '{n} pinned', '{n} pinned#')}` : ''}. ` : ''}
+            {t('What the assistant knows about you and uses when it fits; pinned ones always go.')}
           </p>
         </div>
         <div className="fs-memory__switches">
           <label className="fs-switch">
             <input type="checkbox" checked={enabled === true} disabled={enabled === null} onChange={(e) => void savePref('memory_enabled', e.target.checked)} />
-            <span>Memoria activa</span>
+            <span>{t('Memory on')}</span>
           </label>
           <label className="fs-switch">
             <input type="checkbox" checked={autoExtract === true} disabled={autoExtract === null} onChange={(e) => void savePref('auto_memory', e.target.checked)} />
-            <span>Extraer sola de las conversaciones</span>
+            <span>{t('Extract from conversations on its own')}</span>
           </label>
         </div>
       </header>
@@ -690,7 +691,7 @@ export function MemoryScreen() {
         <textarea
           className="fs-memory__add-input"
           rows={1}
-          placeholder="Algo que quieras que recuerde… (Intro guarda)"
+          placeholder={t('Something you want it to remember… (Enter saves)')}
           value={newText}
           onChange={(e) => setNewText(e.target.value)}
           onKeyDown={(e) => {
@@ -701,32 +702,32 @@ export function MemoryScreen() {
           }}
           data-testid="memory-new"
         />
-        <select className="fs-field" value={newCategory} onChange={(e) => setNewCategory(e.target.value)} aria-label="Categoría">
+        <select className="fs-field" value={newCategory} onChange={(e) => setNewCategory(e.target.value)} aria-label={t('Category')}>
           {MEMORY_CATEGORIES.map((c) => (
             <option key={c} value={c}>
-              {CATEGORY_LABEL[c]}
+              {t(CATEGORY_LABEL[c])}
             </option>
           ))}
         </select>
-        <Button type="submit" variant="primary" size="sm" icon={Plus} label="Guardar" disabled={!newText.trim()} loading={busy === 'add'} testId="memory-add" />
+        <Button type="submit" variant="primary" size="sm" icon={Plus} label={t('Save')} disabled={!newText.trim()} loading={busy === 'add'} testId="memory-add" />
       </form>
 
       <div className="fs-memory__toolbar">
         <label className="fs-memory__search">
           <Search size={13} aria-hidden="true" />
-          <input type="search" placeholder="Buscar en la memoria…" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Buscar" />
+          <input type="search" placeholder={t('Search the memory…')} value={query} onChange={(e) => setQuery(e.target.value)} aria-label={t('Search')} />
         </label>
-        <select className="fs-field" value={sort} onChange={(e) => setSort(e.target.value as Sort)} aria-label="Ordenar">
+        <select className="fs-field" value={sort} onChange={(e) => setSort(e.target.value as Sort)} aria-label={t('Sort')}>
           {SORTS.map((s) => (
             <option key={s.value} value={s.value}>
-              {s.label}
+              {t(s.label)}
             </option>
           ))}
         </select>
         <span className="fs-memory__spacer" />
-        <Button variant="ghost" size="sm" icon={Sparkles} label="Ordenar con el modelo" loading={busy === 'tidy'} onClick={() => void tidy()} />
-        <Button variant="ghost" size="sm" icon={Wand2} label="De una conversación" onClick={() => void openExtract()} />
-        <Button variant="ghost" size="sm" icon={FileUp} label="De un fichero" loading={busy === 'import'} onClick={() => fileRef.current?.click()} />
+        <Button variant="ghost" size="sm" icon={Sparkles} label={t('Tidy with the model')} loading={busy === 'tidy'} onClick={() => void tidy()} />
+        <Button variant="ghost" size="sm" icon={Wand2} label={t('From a conversation')} onClick={() => void openExtract()} />
+        <Button variant="ghost" size="sm" icon={FileUp} label={t('From a file')} loading={busy === 'import'} onClick={() => fileRef.current?.click()} />
         <input
           ref={fileRef}
           type="file"
@@ -737,12 +738,12 @@ export function MemoryScreen() {
             if (f) void importFile(f);
           }}
         />
-        <Button variant="ghost" size="sm" icon={Download} label="Exportar" disabled={!memories?.length} onClick={() => memories && download(exportMemories(memories), `memoria-${new Date().toISOString().slice(0, 10)}.json`)} />
+        <Button variant="ghost" size="sm" icon={Download} label={t('Export')} disabled={!memories?.length} onClick={() => memories && download(exportMemories(memories), `memory-${new Date().toISOString().slice(0, 10)}.json`)} />
         <Button
           variant="ghost"
           size="sm"
           icon={selecting ? X : CheckSquare}
-          label={selecting ? 'Salir de la selección' : 'Seleccionar varias'}
+          label={selecting ? t('Leave selection') : t('Select several')}
           onClick={() => {
             setSelecting((v) => !v);
             setSelected(new Set());
@@ -751,20 +752,20 @@ export function MemoryScreen() {
       </div>
 
       {categories.length > 1 && (
-        <div className="fs-memory__cats" role="group" aria-label="Categoría">
+        <div className="fs-memory__cats" role="group" aria-label={t('Category')}>
           <button type="button" className="fs-chip" data-on={category === 'all' || undefined} onClick={() => setCategory('all')}>
             Todas · {memories?.length ?? 0}
           </button>
           {categories.map(([c, n]) => (
             <button key={c} type="button" className="fs-chip" data-on={category === c || undefined} onClick={() => setCategory(category === c ? 'all' : c)}>
-              {CATEGORY_LABEL[c] ?? c} · {n}
+              {CATEGORY_LABEL[c] ? t(CATEGORY_LABEL[c]) : c} · {n}
             </button>
           ))}
         </div>
       )}
 
       {selecting && (
-        <div className="fs-memory__bulk" role="toolbar" aria-label="Selección">
+        <div className="fs-memory__bulk" role="toolbar" aria-label={t('Selection')}>
           <span>
             {selected.size} seleccionada{selected.size === 1 ? '' : 's'}
           </span>
@@ -772,14 +773,14 @@ export function MemoryScreen() {
             {selected.size === visible.length ? 'ninguna' : 'todas'}
           </button>
           <span className="fs-memory__spacer" />
-          <Button variant="danger" size="sm" icon={Trash2} label="Borrar" disabled={selected.size === 0} onClick={() => setConfirmBulk(true)} />
+          <Button variant="danger" size="sm" icon={Trash2} label={t('Delete')} disabled={selected.size === 0} onClick={() => setConfirmBulk(true)} />
         </div>
       )}
 
-      {!memories && <Skeleton label="Cargando la memoria" count={5} height="56px" />}
+      {!memories && <Skeleton label={t('Loading the memory')} count={5} height="56px" />}
 
       {memories && visible.length === 0 && (
-        <EmptyState icon={Brain} title={memories.length ? 'Nada coincide' : 'La memoria está vacía'} body={memories.length ? 'Prueba otra búsqueda u otra categoría.' : 'Escribe arriba lo que quieras que recuerde, o sácalo de una conversación o de un fichero.'} />
+        <EmptyState icon={Brain} title={memories.length ? t('Nothing matches') : t('The memory is empty')} body={memories.length ? t('Try another search or another category.') : t('Write above what you want it to remember, or pull it from a conversation or a file.')} />
       )}
 
       {visible.length > 0 && (
@@ -801,22 +802,22 @@ export function MemoryScreen() {
               onPin={() =>
                 void pinMemory(m.id, !m.pinned)
                   .then(() => setMemories((cur) => (cur ? cur.map((x) => (x.id === m.id ? { ...x, pinned: !m.pinned } : x)) : cur)))
-                  .catch(() => say('No he podido fijar.'))
+                  .catch(() => say(t('Could not pin.')))
               }
               onDelete={() =>
                 void deleteMemory(m.id)
                   .then(() => {
                     setMemories((cur) => (cur ? cur.filter((x) => x.id !== m.id) : cur));
-                    say('Borrada.');
+                    say(t('Deleted.'));
                   })
-                  .catch(() => say('No he podido borrar.'))
+                  .catch(() => say(t('Could not delete.')))
               }
               onSave={async (text, cat) => {
                 try {
                   await updateMemory(m.id, text, cat);
                   setMemories((cur) => (cur ? cur.map((x) => (x.id === m.id ? { ...x, text, category: cat, timestamp: Math.floor(Date.now() / 1000) } : x)) : cur));
                 } catch {
-                  say('No he podido guardar el cambio.');
+                  say(t('Could not save the change.'));
                   throw new Error('save');
                 }
               }}
@@ -835,18 +836,18 @@ export function MemoryScreen() {
           onOpenChange={(o) => {
             if (!o) setExtractOpen(false);
           }}
-          title="Sacar recuerdos de una conversación"
-          description="El modelo lee la conversación y propone lo que valdría la pena guardar."
+          title={t('Pull memories from a conversation')}
+          description={t('The model reads the conversation and proposes what would be worth saving.')}
           footer={
             <>
-              <Button variant="ghost" size="sm" label="Cancelar" onClick={() => setExtractOpen(false)} />
-              <Button variant="primary" size="sm" label="Extraer" disabled={!extractSession} loading={busy === 'extract'} onClick={() => void extract()} />
+              <Button variant="ghost" size="sm" label={t('Cancel')} onClick={() => setExtractOpen(false)} />
+              <Button variant="primary" size="sm" label={t('Extract')} disabled={!extractSession} loading={busy === 'extract'} onClick={() => void extract()} />
             </>
           }
         >
-          {!sessions && <Skeleton label="Cargando conversaciones" count={3} height="32px" />}
+          {!sessions && <Skeleton label={t('Loading conversations')} count={3} height="32px" />}
           {sessions && (
-            <select className="fs-field fs-memory__session-select" value={extractSession} onChange={(e) => setExtractSession(e.target.value)} aria-label="Conversación" size={8}>
+            <select className="fs-field fs-memory__session-select" value={extractSession} onChange={(e) => setExtractSession(e.target.value)} aria-label={t('Conversation')} size={8}>
               {sessions.slice(0, 60).map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name} · {s.messageCount} mensajes
@@ -863,15 +864,15 @@ export function MemoryScreen() {
           onOpenChange={(o) => {
             if (!o) setConfirmBulk(false);
           }}
-          title={`¿Borrar ${selected.size} recuerdo${selected.size === 1 ? '' : 's'}?`}
+          title={tn(selected.size, 'Delete {n} memory?', 'Delete {n} memories?')}
           footer={
             <>
-              <Button variant="ghost" size="sm" label="Cancelar" onClick={() => setConfirmBulk(false)} />
-              <Button variant="danger-solid" size="sm" label="Borrar" onClick={() => void bulkDelete()} />
+              <Button variant="ghost" size="sm" label={t('Cancel')} onClick={() => setConfirmBulk(false)} />
+              <Button variant="danger-solid" size="sm" label={t('Delete')} onClick={() => void bulkDelete()} />
             </>
           }
         >
-          <p className="fs-prose">No se puede deshacer.</p>
+          <p className="fs-prose">{t('This cannot be undone.')}</p>
         </Dialog>
       )}
 

@@ -127,10 +127,12 @@ proporcionales, auditoría de la guía Vercel pasada o excepción documentada,
       búsqueda, recordatorios, agente completo, atajos, sistema; integraciones,
       cuentas, MCP, cuenta, usuarios y tema: anterior por pestaña);
       Agentes como pantalla (`/agents`, lote O: Workers, runners,
-      definiciones y Expertos con su panel de revisión).
+      definiciones y Expertos con su panel de revisión);
+      idioma (inglés/español), apariencia (sistema/claro/oscuro) y barra
+      lateral redimensionable (lote P).
       Faltan: Cookbook, Deep Research, Compare,
-      Tournament, Workers, Expertos, Procedencia, Historial importado,
-      runners y definiciones de agentes, Skills, Tema, Fondos.
+      Tournament, Procedencia, Historial importado, Skills, Tema (editor),
+      Fondos, indicador de recursos (GPU/RAM).
 - [ ] **UI-061** Borrar los puentes muertos, el DOM legacy de cada pantalla ya
       migrada y el propio flag. Empezar a dividir `style.css`, a solas y sin
       mezclarlo con features.

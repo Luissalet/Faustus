@@ -2,6 +2,7 @@ import { Copy, RefreshCw, Search, Wrench } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button, IconButton, Skeleton, Toast } from '../../components';
 import { delegateStatus, listDefs, MODE_HINT, SOURCE_HINT, type AgentDef, type DefCatalogue } from '../../adapters/workers';
+import { t, tn } from '../../i18n';
 
 /**
  * Agent definitions (agentDefs.js): what each agent on this machine may and
@@ -10,8 +11,8 @@ import { delegateStatus, listDefs, MODE_HINT, SOURCE_HINT, type AgentDef, type D
  * did; the sentence a path rule cannot promise is printed above the list.
  */
 
-const MODE_WORD: Record<AgentDef['mode'], string> = { coordinator: 'coordinador', worker: 'worker', reviewer: 'revisor' };
-const SOURCE_WORD: Record<AgentDef['source'], string> = { builtin: 'integrado', user: 'tuyo', repo: 'de la carpeta' };
+const MODE_WORD: Record<AgentDef['mode'], string> = { coordinator: 'coordinator', worker: 'worker', reviewer: 'reviewer' };
+const SOURCE_WORD: Record<AgentDef['source'], string> = { builtin: 'built-in', user: 'yours', repo: 'the folder\'s' };
 
 function sortDefs(rows: AgentDef[]): AgentDef[] {
   const order = { repo: 0, user: 1, builtin: 2 };
@@ -53,9 +54,9 @@ export function Defs({ onUseAgent }: { onUseAgent: (slug: string) => void }) {
   const copy = async (slug: string) => {
     try {
       await navigator.clipboard.writeText(`"agent": "${slug}"`);
-      flash('Slug copiado');
+      flash(t('Slug copied'));
     } catch {
-      flash('No he podido copiar — selecciona el slug y cópialo a mano.');
+      flash(t('Could not copy — select the slug and copy it by hand.'));
     }
   };
 
@@ -63,29 +64,29 @@ export function Defs({ onUseAgent }: { onUseAgent: (slug: string) => void }) {
   return (
     <div className="fs-def" data-testid="defs">
       <div className="fs-agents__intro">
-        <p className="fs-prose">Un agente es un fichero: qué puede usar, qué puede tocar, dónde corre. Pon su slug en una tarea despachada y el worker arranca bajo él.</p>
+        <p className="fs-prose">{t('An agent is a file: what it may use, what it may touch, where it runs. Put its slug on a dispatched task and the worker starts under it.')}</p>
         <p className="fs-agents__guard">
-          <strong>Lo que una regla de ruta no puede prometer:</strong> {data?.shell_note || 'una regla de ruta gobierna las herramientas de fichero, no la shell de otro programa.'}
+          <strong>{t('What a path rule cannot promise:')}</strong> {data?.shell_note || t('a path rule governs the file tools, not another program\'s shell.')}
         </p>
       </div>
       <div className="fs-agents__toolbar">
         <label className="fs-agents__search">
           <Search size={13} aria-hidden="true" />
-          <input type="search" placeholder="Buscar definiciones…" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Buscar definiciones de agente" />
+          <input type="search" placeholder={t('Search definitions…')} value={query} onChange={(e) => setQuery(e.target.value)} aria-label={t('Search agent definitions')} />
         </label>
         {data && (
           <span className="fs-agents__counts">
-            {all.length} definici{all.length === 1 ? 'ón' : 'ones'} · techo de delegación {data.max_depth} (<code>{data.depth_setting}</code>)
+            {tn(all.length, '{n} definition', '{n} definitions')} · {t('delegation depth ceiling')} {data.max_depth} (<code>{data.depth_setting}</code>)
           </span>
         )}
         <span className="fs-agents__spacer" />
-        <Button variant="ghost" size="sm" icon={RefreshCw} label="Actualizar" onClick={() => void load()} />
+        <Button variant="ghost" size="sm" icon={RefreshCw} label={t('Refresh')} onClick={() => void load()} />
       </div>
-      {error && <div className="fs-wk__error">No he podido leer las definiciones: {error}</div>}
+      {error && <div className="fs-wk__error">{t('Could not read the definitions')}: {error}</div>}
       {data && data.errors.length > 0 && (
         <div className="fs-def__errors">
           <p>
-            {data.errors.length} fichero{data.errors.length === 1 ? '' : 's'} de definición no cargó{data.errors.length === 1 ? '' : 'aron'}. No están en vigor:
+            {tn(data.errors.length, '{n} definition file did not load. It is not in force:', '{n} definition files did not load. They are not in force:')}
           </p>
           <ul>
             {data.errors.map((e, i) => (
@@ -97,24 +98,24 @@ export function Defs({ onUseAgent }: { onUseAgent: (slug: string) => void }) {
         </div>
       )}
       {data === null ? (
-        <Skeleton label="Cargando las definiciones" height="160px" count={3} radius="panel" />
+        <Skeleton label={t('Loading the definitions')} height="160px" count={3} radius="panel" />
       ) : visible.length === 0 ? (
-        <p className="fs-agents__empty">{all.length ? 'Ninguna definición coincide con esa búsqueda.' : 'No hay definiciones de agente: ni las integradas se pudieron leer.'}</p>
+        <p className="fs-agents__empty">{all.length ? t('No definition matches that search.') : t('No agent definitions: not even the built-ins could be read.')}</p>
       ) : (
         <div className="fs-def__grid">
           {visible.map((d) => {
             const del = delegateStatus(d, data.max_depth);
-            const where = [d.model && `modelo ${d.model}`, d.endpoint_id && `endpoint ${d.endpoint_id}`, d.runner && `runner ${d.runner}`].filter(Boolean).join(' · ');
+            const where = [d.model && `${t('model')} ${d.model}`, d.endpoint_id && `endpoint ${d.endpoint_id}`, d.runner && `runner ${d.runner}`].filter(Boolean).join(' · ');
             return (
               <article key={d.slug} className="fs-def__card" data-testid="def-card">
                 <header className="fs-def__head">
                   <span className="fs-def__name">{d.name}</span>
                   <code className="fs-def__slug">{d.slug}</code>
-                  <span className="fs-def__tag" data-mode={d.mode} title={MODE_HINT[d.mode]}>
-                    {MODE_WORD[d.mode]}
+                  <span className="fs-def__tag" data-mode={d.mode} title={t(MODE_HINT[d.mode])}>
+                    {t(MODE_WORD[d.mode])}
                   </span>
-                  <span className="fs-def__tag" data-source={d.source} title={SOURCE_HINT[d.source]}>
-                    {SOURCE_WORD[d.source]}
+                  <span className="fs-def__tag" data-source={d.source} title={t(SOURCE_HINT[d.source])}>
+                    {t(SOURCE_WORD[d.source])}
                   </span>
                 </header>
                 {d.description && <p className="fs-def__desc">{d.description}</p>}
@@ -122,7 +123,7 @@ export function Defs({ onUseAgent }: { onUseAgent: (slug: string) => void }) {
                 <ul className="fs-def__rules">
                   {d.rules.map((r, i) => (
                     <li key={i} className="fs-def__rule" data-effect={r.effect}>
-                      <span className="fs-def__effect">{r.effect === 'deny' ? 'no' : 'sí'}</span>
+                      <span className="fs-def__effect">{r.effect === 'deny' ? t('no') : t('yes')}</span>
                       <span className="fs-def__what">{r.what}</span>
                       <span className="fs-def__detail">{r.detail}</span>
                     </li>
@@ -137,9 +138,9 @@ export function Defs({ onUseAgent }: { onUseAgent: (slug: string) => void }) {
                   </p>
                 ))}
                 <div className="fs-def__actions">
-                  <Button size="sm" variant="secondary" icon={Wrench} label="Usar en un trabajo" onClick={() => onUseAgent(d.slug)} />
+                  <Button size="sm" variant="secondary" icon={Wrench} label={t('Use in a job')} onClick={() => onUseAgent(d.slug)} />
                   <code className="fs-def__usage">"agent": "{d.slug}"</code>
-                  <IconButton icon={Copy} label={`Copiar el slug de ${d.name}`} size="sm" onClick={() => void copy(d.slug)} />
+                  <IconButton icon={Copy} label={t('Copy the slug of {name}', { name: d.name })} size="sm" onClick={() => void copy(d.slug)} />
                 </div>
               </article>
             );

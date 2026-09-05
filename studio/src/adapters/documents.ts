@@ -1,4 +1,5 @@
 import { ApiError, asArray, getJson } from './api';
+import { t } from '../i18n';
 
 /**
  * Living documents (routes/document): the agent creates and edits them, the
@@ -30,7 +31,7 @@ function docFrom(raw: Record<string, unknown>): Doc {
   return {
     id: String(raw.id ?? ''),
     sessionId: typeof raw.session_id === 'string' ? raw.session_id : null,
-    title: String(raw.title ?? 'Sin título'),
+    title: String(raw.title ?? t('Untitled')),
     language: String(raw.language ?? ''),
     content: String(raw.current_content ?? raw.content ?? ''),
     versionCount: typeof raw.version_count === 'number' ? raw.version_count : 1,

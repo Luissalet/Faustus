@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { Command } from 'cmdk';
 import { Check, Cpu, RefreshCw } from 'lucide-react';
 import { overlayRoot } from '../shell/overlayRoot';
@@ -31,14 +32,14 @@ export default function ModelPalette({
     byEndpoint.set(route.endpointName, list);
   }
   return (
-    <Command.Dialog open={open} onOpenChange={onOpenChange} label="Elegir modelo" className="fs-palette" container={overlayRoot()} data-testid="studio-models">
-      <Command.Input placeholder="Buscar modelo…" className="fs-palette__input" />
+    <Command.Dialog open={open} onOpenChange={onOpenChange} label={t('Choose model')} className="fs-palette" container={overlayRoot()} data-testid="studio-models">
+      <Command.Input placeholder={t('Search model…')} className="fs-palette__input" />
       <Command.List className="fs-palette__list">
-        <Command.Empty className="fs-palette__empty">{routes.length ? 'Ningún modelo coincide.' : 'Ningún endpoint responde.'}</Command.Empty>
+        <Command.Empty className="fs-palette__empty">{routes.length ? t('No model matches.') : t('No endpoint responds.')}</Command.Empty>
         {onRefresh && (
           <Command.Item value="refrescar modelos endpoints" onSelect={onRefresh} className="fs-palette__item" data-testid="model-refresh" disabled={refreshing}>
             <RefreshCw size={15} aria-hidden="true" />
-            {refreshing ? 'Preguntando a los endpoints…' : 'Refrescar la lista de modelos'}
+            {refreshing ? t('Asking the endpoints…') : t('Refresh the model list')}
           </Command.Item>
         )}
         {[...byEndpoint.entries()].map(([endpoint, list]) => (

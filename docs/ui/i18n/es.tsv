@@ -1,0 +1,1413 @@
+ (check it)	 (revísalo)
+ (in series)	 (en serie)
+ (one per task)	 (uno por tarea)
+ + reviewer	 + revisor
+ With a semantic lane.	 Con carril semántico.
+ · degraded	 · degradado
+ · lexical only	 · solo léxico
+ · no tools	 · sin herramientas
+ · truncated	 · recortado
+ · with key	 · con clave
+#home #work	#casa #trabajo
+#rule	#regla
+(empty)	(vacío)
+(failed before the job too)	(ya fallaba antes del trabajo)
+(no changes against the base)	(sin cambios respecto a la base)
+(no subject)	(sin asunto)
+(reported, not killed)	(se informa, no se mata)
+(the folder is not a repository and there is no checkpoint for this turn)	(la carpeta no es un repositorio y no hay punto de control para este turno)
+(unknown)	(desconocido)
+(untitled)	(sin título)
+, list truncated	, lista truncada
+, {n} failed	, {n} fallidos
+/agents task one | task two [--review] [--serial]	/agents tarea uno | tarea dos [--review] [--serial]
+/command	/comando
+/doc [title]	/doc [título]
+/gen key=value …	/gen clave=valor …
+/open path	/open ruta
+/preset [name|off]	/preset [nombre|off]
+/remember rule	/remember regla
+/rename name	/rename nombre
+/research topic	/research tema
+@file	@fichero
+A big model that reviews and teaches the small one when needed.	Un modelo grande que revisa y enseña al pequeño cuando hace falta.
+A blank line or a list marker starts a new task = one worker (max 4). The workers are confined to the folder; Faustus checkpoints it before, diffs it after, runs the verification itself and marks the job	Una línea en blanco o una marca de lista empieza otra tarea = otro worker (máximo 4). Los workers se quedan dentro de la carpeta; Faustus la fija antes, la compara después, corre la verificación él mismo y marca el trabajo
+A hint for placing models when there are several.	Pista para colocar modelos cuando hay varias.
+A new rule, written by you (maximum confidence)…	Una regla nueva, escrita por ti (confianza máxima)…
+A phrase from the books	Una frase de los libros
+A picker is already open.	Ya hay un selector abierto.
+A project groups a folder, instructions, memory and conversations. Creating the first one is still done in the previous interface for now.	Un proyecto agrupa carpeta, instrucciones, memoria y conversaciones. Crear el primero sigue siendo cosa de la interfaz anterior por ahora.
+A short instruction the writing tools receive.	Instrucción breve que reciben las herramientas de escritura.
+A specialist with its corpus, and corrections that cite the page	Un especialista con su corpus, y correcciones que citan la página
+A specialist with its own corpus: your books, indexed by page, and corrections that cite the page they came from.	Un especialista con su propio corpus: tus libros, indexados por página, y correcciones que citan la página de la que salen.
+A window that stays open has no one-task, one-exit invocation.	Una ventana que se queda abierta no tiene invocación de una tarea, una salida.
+AI synthesis	Síntesis con IA
+API key	Clave de API
+Accept	Aceptar
+Accepted	Aceptadas
+Account	Cuenta
+Accounts (IMAP/SMTP or Google) are set up for now in the previous interface's settings.	Las cuentas (IMAP/SMTP o Google) se configuran por ahora en los ajustes de la interfaz anterior.
+Accounts and folders	Cuentas y carpetas
+Accounts and rules (previous interface)	Cuentas y reglas (interfaz anterior)
+Action awaiting approval	Acción pendiente de aprobación
+Actions	Acciones
+Actions for {name}	Acciones de {name}
+Active	Activa
+Activity	Actividad
+Add	Añadir
+Add a reviewer worker after the others	Añade un worker revisor después de los demás
+Add an event in your own words…	Añade un evento en tus palabras…
+Add endpoint	Añadir endpoint
+Add item	Añadir elemento
+Add something above in your own words or with N.	Añade algo arriba en tus palabras o con N.
+Add step	Añadir paso
+Add to corpus	Añadir al corpus
+Agenda	Agenda
+Agent	Agente
+Agent's suggestion applied	Sugerencia del agente aplicada
+Agent's suggestions applied	Sugerencias del agente aplicadas
+Agents	Agentes
+All	Todos
+All day	Todo el día
+All#f	Todas
+Allow browser notifications	Permitir avisos del navegador
+Alphabetical	Alfabético
+Already had it.	Ya la tenía.
+Also known as	También conocido como
+An agent is a file: what it may use, what it may touch, where it runs. Put its slug on a dispatched task and the worker starts under it.	Un agente es un fichero: qué puede usar, qué puede tocar, dónde corre. Pon su slug en una tarea despachada y el worker arranca bajo él.
+An automation is a recipe: when it fires, what it does and where it delivers. Creating the first one is still done in the previous interface for now.	Una automatización es una receta: cuándo salta, qué hace y a dónde entrega. Crear la primera sigue siendo cosa de la interfaz anterior por ahora.
+An expert needs a name.	Un experto necesita un nombre.
+Answer above, or type to go on…	Responde arriba, o escribe para seguir…
+Any endpoint	Cualquier endpoint
+Any of these can be one of Faustus's workers: the checkpoint before, the diff after, Faustus's own verification and the honest proof — around an agent Faustus did not write.	Cualquiera de estos puede ser uno de los workers de Faustus: el punto de control antes, la comparación después, la verificación de Faustus y la prueba honesta — alrededor de un agente que Faustus no escribió.
+Appearance	Apariencia
+Appearance and theme	Apariencia y tema
+Apply	Aplicar
+Apply all	Aplicar todas
+Approve	Aprobar
+Approve the whole task	Aprobar toda la tarea
+Archive	Archivar
+Archive#folder	Archivo
+Archived conversations	Conversaciones archivadas
+Archived notes	Notas archivadas
+Archived.	Archivado.
+Archived…	Archivadas…
+As a worker	Como worker
+Ask	Preguntar
+Asking the endpoints…	Preguntando a los endpoints…
+Asks to, and the depth ceiling is 0: no worker may start another.	Pide delegar, pero el techo de profundidad es 0: ningún worker puede arrancar otro.
+Asks you	Te pregunta
+At most 4 sub-agents per call. Merge tasks or repeat /agents afterwards.	Como mucho 4 sub-agentes por llamada. Junta tareas o repite /agents después.
+Attach files	Adjuntar archivos
+Attachments	Adjuntos
+Automatic extraction off.	Extracción automática desactivada.
+Automatic extraction on.	Extracción automática activada.
+Automations	Automatizaciones
+Automations, summaries, tidying the memory. Empty: the chat's.	Automatizaciones, resúmenes, ordenar la memoria. Vacío: el del chat.
+Awaiting approval	Esperando aprobación
+Back to before this turn	Volver a antes de este turno
+Back to before this turn: {r} restored, {d} deleted{f}.	Vuelto a antes de este turno: {r} restaurados, {d} borrados{f}.
+Back to the conversations	Volver a las conversaciones
+Back to the list	Volver a la lista
+Back to the notes	Volver a las notas
+Background tasks	Tareas de fondo
+Base URL	URL base
+Before the fix round:	Antes de la ronda de arreglo:
+Before the fix rounds:	Antes de las rondas de arreglo:
+Board	Tablero
+Body template	Plantilla del cuerpo
+Brave key	Clave de Brave
+Brief	Brief
+Browser	Navegador
+Browser notification	Aviso del navegador
+Browser screen	Pantalla del navegador
+Browsing	Navegando
+By folder	Por carpeta
+Calendar	Calendario
+Calendars	Calendarios
+Cancel	Cancelar
+Cancel / stop	Cancelar / parar
+Cancelled	Cancelado
+Carried by this folder. It loaded because you approved this folder's instruction files.	Lo trae esta carpeta. Cargó porque aprobaste sus ficheros de instrucciones.
+Category	Categoría
+Change	Cambiar
+Changed files	Ficheros cambiados
+Changed on disk	Cambiado en disco
+Changes against what was claimed	Cambios frente a lo afirmado
+Channel	Canal
+Chat	Chat
+Chat versions	Versiones del chat
+Checkpoint saved	Punto de control guardado
+Checkpoints go with the working folder: pick one first.	Los puntos de control van con la carpeta de trabajo: elige una primero.
+Checkpoints of the working folder (one per turn with changes).	Puntos de control de la carpeta de trabajo (uno por turno con cambios).
+Choose folder	Elegir carpeta
+Choose model	Elegir modelo
+Choose preset	Elegir preset
+Choosing a folder is for administrators only.	Elegir carpeta es solo para administradores.
+Claimed by a worker but not changed	Reclamado por un worker pero sin cambiar
+Class	Clase
+Claude Code, OpenCode, Qwen Code or any other terminal agent as a worker	Claude Code, OpenCode, Qwen Code o cualquier otro agente de terminal como worker
+Clean up empty ones (no AI)	Limpiar vacías (sin IA)
+Clear	Limpiar
+Click a file in a turn's card to see it here.	Pulsa un fichero en la tarjeta de un turno para verlo aquí.
+Close	Cerrar
+Close the conversation list	Cerrar la lista de conversaciones
+Close the panel	Cerrar el panel
+Close the side panel	Cerrar el panel lateral
+Code	Programar
+Code 	Programa 
+Colour	Color
+Command copied	Comando copiado
+Commands	Comandos
+Commit message	Mensaje del commit
+Commit to git…	Confirmar en git…
+Committed ({sha}).	Commit hecho ({sha}).
+Compare models (previous interface).	Comparar modelos (interfaz anterior).
+Completed	Completado
+Compose	Redactar
+Confidence from the anchoring layer that passed	Confianza de la capa de anclaje que pasó
+Contact	Contacto
+Context	Contexto
+Continue	Continuar
+Continues on its own	Continúa solo
+Conversation	Conversación
+Conversation deleted.	Conversación borrada.
+Conversation name	Nombre de la conversación
+Conversation recovered.	Conversación recuperada.
+Conversations	Conversaciones
+Cookbook	Cookbook
+Copied	Copiado
+Copied.	Copiada.
+Copy	Copiar
+Copy code	Copiar código
+Copy reply	Copiar respuesta
+Copy result	Copiar resultado
+Copy the content	Copiar el contenido
+Copy the launch command for {name}	Copiar el comando de {name}
+Copy the path	Copiar la ruta
+Copy the slug of {name}	Copiar el slug de {name}
+Copy the text	Copiar el texto
+Corpus files	Ficheros del corpus
+Corpus size	Tamaño del corpus
+Corrections accepted	Correcciones aceptadas
+Corrections rejected	Correcciones rechazadas
+Could not add the endpoint.	No he podido añadir el endpoint.
+Could not add the rule.	No he podido añadir la regla.
+Could not archive the note.	No he podido archivar la nota.
+Could not archive.	No he podido archivar.
+Could not build the block	No he podido montar el bloque
+Could not build the pack.	No he podido montar el paquete.
+Could not cancel	No he podido cancelar
+Could not change it.	No he podido cambiarlo.
+Could not change the favourite.	No he podido cambiar la favorita.
+Could not compact	No he podido compactar
+Could not copy — select the command and copy it by hand.	No he podido copiar — selecciona el comando y cópialo a mano.
+Could not copy — select the slug and copy it by hand.	No he podido copiar — selecciona el slug y cópialo a mano.
+Could not create the calendar.	No he podido crear el calendario.
+Could not create the conversation. Is the model server configured?	No he podido crear la conversación. ¿Está el servidor de modelos configurado?
+Could not create the document	No he podido crear el documento
+Could not create the expert	No he podido crear el experto
+Could not create the note.	No he podido crear la nota.
+Could not delete it.	No he podido borrarla.
+Could not delete the calendar.	No he podido borrar el calendario.
+Could not delete the event.	No he podido borrar el evento.
+Could not delete the message	No he podido borrar el mensaje
+Could not delete the note.	No he podido borrar la nota.
+Could not delete the preset.	No he podido borrar el preset.
+Could not delete the rule.	No he podido borrar la regla.
+Could not delete {name}	No he podido borrar {name}
+Could not delete.	No he podido borrar.
+Could not extract anything.	No he podido extraer nada.
+Could not find that project	No he encontrado ese proyecto
+Could not fork	No he podido bifurcar
+Could not import the file.	No he podido importar el fichero.
+Could not interpret it	No he podido interpretarlo
+Could not load the document.	No he podido cargar el documento.
+Could not load the experts	No he podido cargar los expertos
+Could not open the mail.	No he podido abrir el correo.
+Could not open this conversation.	No he podido abrir esta conversación.
+Could not open {name}	No he podido abrir {name}
+Could not pin the note.	No he podido fijar la nota.
+Could not pin.	No he podido fijar.
+Could not prepare the commit	No he podido preparar el commit
+Could not prepare the regeneration	No he podido preparar la regeneración
+Could not read anything from the server	No he podido leer nada del servidor
+Could not read the activity	No he podido leer la actividad
+Could not read the agent runners	No he podido leer los agent runners
+Could not read the agent's schema.	No he podido leer el esquema del agente.
+Could not read the archived ones.	No he podido leer las archivadas.
+Could not read the calendar	No he podido leer el calendario
+Could not read the checkpoints	No he podido leer los puntos de control
+Could not read the definitions	No he podido leer las definiciones
+Could not read the diff	No he podido leer el diff
+Could not read the file.	No he podido leer el fichero.
+Could not read the learned rules.	No he podido leer las reglas aprendidas.
+Could not read the library	No he podido leer la biblioteca
+Could not read the mail accounts	No he podido leer las cuentas de correo
+Could not read the mail.	No he podido leer el correo.
+Could not read the memory	No he podido leer la memoria
+Could not read the presets	No he podido leer los presets
+Could not read the settings.	No he podido leer los ajustes.
+Could not read the versions	No he podido leer las versiones
+Could not read the versions.	No he podido leer las versiones.
+Could not read your automations	No he podido leer tus automatizaciones
+Could not read your notes	No he podido leer tus notas
+Could not read your projects	No he podido leer tus proyectos
+Could not recover it.	No he podido recuperarla.
+Could not refresh the models.	No he podido refrescar los modelos.
+Could not reindex	No he podido reindexar
+Could not reload the models.	No he podido releer los modelos.
+Could not remove it.	No he podido quitarlo.
+Could not rename	No he podido renombrar
+Could not report the outcome	No he podido informar del desenlace
+Could not restore	No he podido restaurar
+Could not restore.	No he podido restaurar.
+Could not revert {path}	No he podido revertir {path}
+Could not save	No he podido guardar
+Could not save the calendar.	No he podido guardar el calendario.
+Could not save the change.	No he podido guardar el cambio.
+Could not save the draft.	No se ha podido guardar el borrador.
+Could not save the edit	No he podido guardar la edición
+Could not save the event.	No he podido guardar el evento.
+Could not save the note.	No he podido guardar la nota.
+Could not save the order.	No he podido guardar el orden.
+Could not save the preference.	No he podido guardar la preferencia.
+Could not save the preset	No he podido guardar el preset
+Could not save the rating.	No he podido guardar la valoración.
+Could not save the rule	No he podido guardar la regla
+Could not save.	No he podido guardar.
+Could not send the message.	No he podido enviar el mensaje.
+Could not send.	No se ha podido enviar.
+Could not start	No he podido arrancar
+Could not stop the worker.	No he podido parar el worker.
+Could not sync.	No he podido sincronizar.
+Could not tick the item.	No he podido marcar el elemento.
+Could not tidy	No he podido ordenar
+Could not tidy the memory.	No he podido ordenar la memoria.
+Could not truncate	No he podido truncar
+Could not undo.	No he podido deshacer.
+Could not upload	No he podido subir
+Could not upload the file	No he podido subir el archivo
+Create	Crear
+Create an image	Crear imagen
+Create document	Crear documento
+Create in the previous interface	Crear en la interfaz anterior
+Create one, then drop its books into the corpus.	Crea uno y luego deja caer sus libros en el corpus.
+Created	Creado
+Creation date	Fecha de creación
+Ctrl+K to search and navigate	Ctrl+K para buscar y navegar
+Curator	Curador
+Custom background (chosen in the previous interface)	Fondo propio (elegido en la interfaz anterior)
+D:\\projects\\app	D:\\proyectos\\app
+D:\\projects\\my-app	D:\\proyectos\\mi-app
+Dark	Oscuro
+Date	Fecha
+Date and time	Fecha y hora
+Deep Research search engine	Buscador de Deep Research
+Deep research (previous interface).	Deep research (interfaz anterior).
+Default AI	IA por defecto
+Defaults	Valores por defecto
+Definitions	Definiciones
+Delegate	Delegar
+Delegates each part to a sub-agent (up to 4). [f1, f2] before a task gives it those files exclusively; {model} picks its model.	Delega cada parte a un sub-agente (hasta 4). [f1, f2] antes de una tarea le da esos ficheros en exclusiva; {modelo} elige su modelo.
+Delegating	Delegando
+Delete	Borrar
+Delete "{name}" with all its events?	¿Borrar «{name}» con todos sus eventos?
+Delete "{name}"? Its corpus files and index go with it.	¿Borrar «{name}»? Sus ficheros del corpus y su índice se van con él.
+Delete conversation	Borrar conversación
+Delete expert	Borrar experto
+Delete from the corpus	Borrar del corpus
+Delete message	Borrar mensaje
+Delete the calendar and its events	Borrar el calendario y sus eventos
+Delete the conversation (twice)	Borrar la conversación (dos veces)
+Delete the note?	¿Borrar la nota?
+Delete the rule	Borrar la regla
+Delete {name}	Borrar {name}
+Delete {name} from the corpus	Borrar {name} del corpus
+Delete {n}	Borrar {n}
+Delete {n} memories?	¿Borrar {n} recuerdos?
+Delete {n} memory?	¿Borrar {n} recuerdo?
+Deleted.	Borrado.
+Deny	Denegar
+Describe a task above and press Run: the workers do it on the local models, Faustus checks what changed and runs the tests, and you read the verdict.	Describe una tarea arriba y pulsa Lanzar: los workers la hacen con los modelos locales, Faustus comprueba qué cambió y corre las pruebas, y tú lees el veredicto.
+Description	Descripción
+Desktop	Escritorio
+Detect	Detectar
+Dictate	Dictar
+Dictation	Dictado
+Dictation model	Modelo de dictado
+Disabled	Desactivada
+Discard	Descartar
+Dismiss notice	Cerrar aviso
+Docs	Docs
+Document	Documento
+Document archived.	Documento archivado.
+Document content	Contenido del documento
+Document style	Estilo de los documentos
+Document title	Título del documento
+Document with no content yet.	Documento sin contenido todavía.
+Documents	Documentos
+Does one task. Cannot start another worker.	Hace una tarea. No puede arrancar otro worker.
+Done	Hecho
+Download and serve models on this machine (Ollama, llama.cpp).	Descargar y servir modelos en esta máquina (Ollama, llama.cpp).
+Downloads this conversation.	Descarga esta conversación.
+Draft saved.	Borrador guardado.
+Drafts	Borradores
+Drag to resize; squeeze to collapse; double-click to reset	Arrastra para cambiar el ancho; aprieta para plegarla; doble clic para restablecer
+Drawing	Dibujo
+DuckDuckGo (no key)	DuckDuckGo (sin clave)
+Duplicate	Duplicar
+Duplicated as "{name}".	Duplicada como «{name}».
+Each endpoint is a server compatible with the OpenAI API (Ollama, llama.cpp, vLLM, OpenAI, Anthropic through a proxy…). Its models appear in the Studio picker.	Cada endpoint es un servidor compatible con la API de OpenAI (Ollama, llama.cpp, vLLM, OpenAI, Anthropic vía proxy…). Sus modelos aparecen en el selector de Studio.
+Each one says when it fires and what it does.	Cada una dice cuándo salta y qué hace.
+Each one's name and colour; export or import .ics. CalDAV accounts are set up in the previous interface's settings.	Nombre y color de cada uno; exportar o importar .ics. Las cuentas CalDAV se configuran en los ajustes de la interfaz anterior.
+Edit	Editar
+Edit document	Editar documento
+Edit message	Editar mensaje
+Edit the event	Editar el evento
+Edit the note	Editar la nota
+Editing files	Editando ficheros
+Effective score: confidence × freshness + helpful − 4 × harmful	Puntuación efectiva: confianza × frescura + útiles − 4 × dañinas
+Empty for local servers.	Vacía para servidores locales.
+Empty round	Ronda vacía
+Empty.	Vacío.
+Enabled	Activado
+Endpoint added.	Endpoint añadido.
+Endpoint removed.	Endpoint quitado.
+Engine ID (cx)	ID del motor (cx)
+Event	Evento
+Event colour	Color del evento
+Every day	Cada día
+Every job that uses one says so in its verdict and carries	Cada trabajo que usa uno lo dice en su veredicto y lleva
+Every month	Cada mes
+Every option of the agent, the browser and the desktop, described by the server. The grey key is the one `/settings` and the tools use.	Todas las opciones del agente, el navegador y el escritorio, descritas por el servidor. La clave en gris es la que usan `/settings` y las herramientas.
+Every week	Cada semana
+Every year	Cada año
+Expert deleted	Experto borrado
+Expert saved	Experto guardado
+Experts	Expertos
+Experts are switched off in Settings	Los expertos están apagados en Ajustes
+Explain this repository to me as if I had just joined the team	Explícame este repositorio como si acabara de llegar al equipo
+Export	Exportar
+Export .ics	Exportar .ics
+Export the selected ones as a zip (markdown)	Exportar las seleccionadas en un zip (markdown)
+External agent runners are	Los agent runners externos están
+Extra paths allowed to the tools	Rutas extra permitidas a las herramientas
+Extract	Extraer
+Extract from conversations on its own	Extraer sola de las conversaciones
+Fact	Hecho
+Failed	Fallidos
+Fallback chain	Cadena de respaldo
+Faustus has not established a licence for this one. It says so rather than guess.	Faustus no ha establecido la licencia de este. Lo dice en vez de adivinar.
+Favourite	Favorita
+Feedback sent	Desenlace enviado
+File	Fichero
+File silently substituted	Fichero sustituido en silencio
+Filter	Filtro
+Filter activity	Filtrar actividad
+Filter by name or folder	Filtrar por nombre o carpeta
+Filter by type	Filtrar por tipo
+Filter options…	Filtrar opciones…
+Filter projects	Filtrar proyectos
+Filter rules	Filtrar reglas
+Find files	Buscar ficheros
+Firecrawl (self-hosted)	Firecrawl (propio)
+Firecrawl URL	URL de Firecrawl
+Firecrawl key	Clave de Firecrawl
+Fix rounds	Rondas de arreglo
+Folder	Carpeta
+Folder path	Ruta de la carpeta
+Folders outside the workspace the agent may read; one per line or comma-separated.	Carpetas fuera del workspace que el agente puede leer; una por línea o separadas por comas.
+Follow the system	Como el sistema
+For the links in mail or webhook alerts: https://chat.example.com	Para los enlaces de los avisos por correo o webhook: https://chat.ejemplo.com
+Fork from here	Bifurcar desde aquí
+Forked as "{name}".	Bifurcada como «{name}».
+Forks the conversation: a copy with everything said so far.	Bifurca la conversación: una copia con todo lo dicho hasta ahora.
+Forward	Reenviar
+Forwarded message	Mensaje reenviado
+From	De
+From a conversation	De una conversación
+From a file	De un fichero
+GPU preference	Preferencia de GPU
+GPU usage (previous interface).	Uso de GPU (interfaz anterior).
+GUI, never a worker	GUI, nunca worker
+General	General
+Generate an image of 	Genera una imagen de 
+Generate image	Generar imagen
+Generated image	Imagen generada
+Generation settings applied to this chat.	Ajustes de generación aplicados a este chat.
+Generation settings of this chat (/temp, /maxtokens, /topp, /think, /gen)	Ajustes de generación de este chat (/temp, /maxtokens, /topp, /think, /gen)
+Generation settings removed.	Ajustes de generación retirados.
+Generation settings: top_k, num_ctx, temperature…	Ajustes de generación: top_k, num_ctx, temperature…
+Give it a title.	Ponle un título.
+Go	Ir
+Go to	Ir a
+Go to Activity.	Ir a Actividad.
+Go to Agents: the Experts.	Ir a Agentes: los Expertos.
+Go to Agents: the Workers board.	Ir a Agentes: el tablero de Workers.
+Go to Automations.	Ir a Automatizaciones.
+Go to Mail.	Ir al Correo.
+Go to Notes.	Ir a Notas.
+Go to Projects.	Ir a Proyectos.
+Go to Settings.	Ir a Ajustes.
+Go to the Calendar.	Ir al Calendario.
+Go to the Library.	Ir a la Biblioteca.
+Go to the Memory.	Ir a la Memoria.
+Go to the composer	Ir al compositor
+Go to the images.	Ir a las imágenes.
+Go to, search or run…	Ir a, buscar o ejecutar…
+Goal	Objetivo
+Goals	Objetivos
+Google PSE key	Clave de Google PSE
+Harness checks	Comprobaciones del arnés
+Help me finish this:	Ayúdame a terminar esto:
+Hide diff	Ocultar diff
+High	Alta
+History compacted.	Historial compactado.
+Home	Inicio
+How many versions to keep when editing or regenerating, and for how long.	Cuántas versiones guardar al editar o regenerar y durante cuánto tiempo.
+How the model decides a mail is urgent.	Cómo decide el modelo que un correo es urgente.
+How this specialist reads a passage.	Cómo lee un pasaje este especialista.
+I did not hear anything.	No he oído nada.
+I did not understand it: open the form.	No lo he entendido: abre el formulario.
+I do not know /{name}. Type /help to see the commands.	No conozco /{name}. Escribe /help para ver los comandos.
+IMAP/SMTP, Google, writing style and urgency.	IMAP/SMTP, Google, estilo de escritura y urgencia.
+Identity	Identidad
+Image generation from the chat.	Generación de imágenes desde el chat.
+Images	Imágenes
+Images and documents, whichever subsystem created them.	Imágenes y documentos, sin importar qué subsistema los creó.
+Import .ics	Importar .ics
+Import into	Importar en
+Import into: the file's	Importar en: el del fichero
+In progress	En curso
+In the previous interface	En la interfaz anterior
+Inbox	Bandeja de entrada
+Included	Incluidos
+Incognito	Incógnito
+Incognito mode	Modo incógnito
+Independent tasks run at the same time (one worker each); off = one after another (a later task may edit what an earlier one wrote)	Las tareas independientes corren a la vez (un worker cada una); apagado = una tras otra (una tarea posterior puede editar lo que escribió una anterior)
+Indexed	Indexado
+Indexed chunks	Fragmentos indexados
+Install / launch	Instalar / lanzar
+Install it first: {cmd}	Instálalo primero: {cmd}
+Installation values. What is not here (users, tokens, vault, 2FA) is still in the previous interface.	Valores de la instalación. Lo que no está aquí (usuarios, tokens, bóveda, 2FA) sigue en la interfaz anterior.
+Instructions — the standing orders it reviews by	Instrucciones — las órdenes con las que revisa
+Integration (id)	Integración (id)
+Integrations	Integraciones
+Interface language	Idioma de la interfaz
+It does one task and reports back.	Hace una tarea y responde.
+It has no title.	No tiene título.
+It is a binary file.	Es un fichero binario.
+It is deleted for good. If you only want it out of the way, archive it.	Se borra del todo. Si solo quieres quitarla de en medio, archívala.
+It is deleted with all its messages. This cannot be undone.	Se borra con todos sus mensajes. No se puede deshacer.
+It ships off because it runs third-party binaries on this machine. A dispatched task naming a	Viene apagado porque ejecuta binarios de terceros en esta máquina. Una tarea despachada que nombre un
+It was already tidy.	Ya estaba limpia.
+Item	Elemento
+Its own workers are the last generation (depth ceiling {n}).	Sus workers son la última generación (techo {n}).
+Jot something down and press Enter…	Apunta algo y pulsa Intro…
+Jottings, lists and reminders.	Apuntes, listas y recordatorios.
+Just save	Solo guardar
+Just this one	Solo esta vez
+Keep versions	Guardar versiones
+Keeps the first N messages and deletes the rest (a version remains).	Conserva los N primeros mensajes y borra el resto (queda una versión).
+Kept the first {n} messages. /versions recovers the deleted ones.	Conservados los {n} primeros mensajes. /versions recupera los borrados.
+Key of an external agent runner (Runners tab): that agent does the work instead of the built-in worker	Clave de un agent runner externo (pestaña Runners): ese agente hace el trabajo en vez del worker integrado
+Keyboard shortcuts	Atajos de teclado
+Keys and accounts of external services used by mail, reminders and the tools.	Claves y cuentas de servicios externos que usan el correo, los recordatorios y las herramientas.
+Language	Idioma
+Language and appearance of this interface. They apply at once and follow you to other browsers.	Idioma y apariencia de esta interfaz. Se aplican al momento y te siguen a otros navegadores.
+Last activity	Última actividad
+Later	Más tarde
+Launch	Lanzar
+Learned rules	Reglas aprendidas
+Leave selection	Salir de la selección
+Level	Nivel
+Lexical only — this expert has no embedding collection yet. The hits are real, the ranking is just simpler.	Solo léxico — este experto aún no tiene colección de embeddings. Los resultados son reales; el orden, más simple.
+Library	Biblioteca
+Licence	Licencia
+Light	Claro
+Light or dark for Studio. The previous interface keeps its own theme editor.	Claro u oscuro para Studio. La interfaz anterior conserva su propio editor de temas.
+List	Lista
+List truncated: there are more folders than shown.	Lista recortada: hay más carpetas de las que enseño.
+Lists the commands.	Lista los comandos.
+Loading	Cargando
+Loading archived	Cargando archivadas
+Loading automations	Cargando automatizaciones
+Loading conversations	Cargando conversaciones
+Loading endpoints	Cargando endpoints
+Loading messages	Cargando mensajes
+Loading notes	Cargando notas
+Loading projects	Cargando proyectos
+Loading recent work	Cargando trabajos recientes
+Loading rules	Cargando reglas
+Loading the activity	Cargando la actividad
+Loading the agent	Cargando el agente
+Loading the agent runners	Cargando los agent runners
+Loading the calendar	Cargando el calendario
+Loading the conversation	Cargando la conversación
+Loading the definitions	Cargando las definiciones
+Loading the detail	Cargando el detalle
+Loading the document	Cargando el documento
+Loading the expert	Cargando el experto
+Loading the experts	Cargando los expertos
+Loading the jobs	Cargando los trabajos
+Loading the library	Cargando la biblioteca
+Loading the memory	Cargando la memoria
+Loading the project	Cargando el proyecto
+Loading the screen	Cargando la pantalla
+Loading your home	Cargando tu inicio
+Loading…	Cargando…
+Local models	Modelos locales
+Local: af_heart and friends; API: alloy, nova…; browser: the system's if left empty.	Local: af_heart y compañía; API: alloy, nova…; navegador: la del sistema si se deja vacío.
+Local: tiny, base, small, medium, large; API: whisper-1.	Local: tiny, base, small, medium, large; API: whisper-1.
+Looping	En bucle
+Low (fast)	Baja (rápida)
+MCP servers (previous interface).	Servidores MCP (interfaz anterior).
+MCP servers, OAuth and their tools.	Servidores MCP, OAuth y sus herramientas.
+Mail	Correo
+Mail accounts	Cuentas de correo
+Mail body	Cuerpo del correo
+Mail urgency prompt	Prompt de urgencia del correo
+Main navigation	Navegación principal
+Manual only	Solo a mano
+Mark as favourite	Marcar favorita
+Mark as unread	Marcar como no leído
+Marked as favourite.	Marcada como favorita.
+Marked as harmful.	Marcada como dañina.
+Marked as helpful.	Marcada como útil.
+Marked as unread.	Marcado como no leído.
+Max. tokens per report	Máx. tokens por informe
+Maximum reply tokens.	Máximo de tokens de respuesta.
+May split its work between further workers, up to the depth ceiling.	Puede repartir su trabajo entre más workers, hasta el techo de profundidad.
+Medium	Media
+Memory	Memoria
+Memory off.	Memoria desactivada.
+Memory on	Memoria activa
+Memory on.	Memoria activada.
+Message	Mensaje
+Message for the worker	Mensaje para el worker
+Message for this worker (it reads it before its next round)	Mensaje para este worker (lo lee antes de su siguiente ronda)
+Message sent to the worker; it reads it before its next round.	Mensaje enviado al worker; lo lee antes de su siguiente ronda.
+Messages	Mensajes
+Minimum confidence to save a skill on its own	Confianza mínima para guardar una skill sola
+Mode	Modo
+Model	Modelo
+Model for this worker (empty = the chat's)	Modelo para este worker (vacío = el del chat)
+Model load options	Opciones de carga del modelo
+Model this expert reviews with	Modelo con el que revisa
+Models	Modelos
+Models tried in order if the utility one fails; comma-separated.	Modelos que se prueban en orden si el de utilidad falla; separados por comas.
+Models, defaults, voice, search, reminders, the whole agent and the shortcuts. Saved per section, only what changes.	Modelos, valores por defecto, voz, búsqueda, recordatorios, el agente entero y los atajos. Se guarda por sección, solo lo que cambia.
+Moderate	Moderado
+Month	Mes
+Most used	Más usadas
+Move	Mover
+Move down	Bajar
+Move to…	Mover a…
+Move up	Subir
+Moved to {folder}.	Movido a {folder}.
+Name	Nombre
+Needs a paid account with its vendor.	Necesita una cuenta de pago con su proveedor.
+Needs action	Requiere acción
+Needs an SMTP account under "Mail accounts".	Necesita una cuenta SMTP en «Cuentas de correo».
+Needs your decision	Requiere tu decisión
+Needs your permission	Necesita tu permiso
+Neither the gallery nor the documents responded. The previous interface does not depend on this screen.	Ni la galería ni los documentos han respondido. La interfaz anterior no depende de esta pantalla.
+New	Nuevo
+New calendar	Nuevo calendario
+New conversation	Nueva conversación
+New event	Nuevo evento
+New event on {day}	Nuevo evento el {day}
+New expert	Nuevo experto
+New folder	Carpeta nueva
+New mail	Nuevo correo
+New note	Nueva nota
+New work	Nuevo trabajo
+Newest first	Más recientes
+Next	Siguientes
+Next 60 days	Próximos 60 días
+Next week	Semana que viene
+No	No
+No agent definitions: not even the built-ins could be read.	No hay definiciones de agente: ni las integradas se pudieron leer.
+No agent matches that search.	Ningún agente coincide con esa búsqueda.
+No agent runners: this machine has no Ollama that knows any, and the built-in table could not be read.	No hay agent runners: esta máquina no tiene un Ollama que conozca ninguno, y la tabla integrada no se pudo leer.
+No archived conversations with that name.	No hay conversaciones archivadas con ese nombre.
+No archived conversations.	No hay conversaciones archivadas.
+No automations yet	Todavía no hay automatizaciones
+No changes.	Sin cambios.
+No checkpoints in this folder yet.	No hay puntos de control en esta carpeta todavía.
+No citation — nothing in the corpus was named.	Sin cita — no se nombró nada del corpus.
+No context block	Sin bloque de contexto
+No conversation has that name.	Ninguna conversación se llama así.
+No conversations yet. You start the first one below.	Todavía no hay conversaciones. La primera la empiezas abajo.
+No definition matches that search.	Ninguna definición coincide con esa búsqueda.
+No description yet — say what this expert knows.	Sin descripción aún — di qué sabe este experto.
+No endpoint responds.	Ningún endpoint responde.
+No expert matches that search.	Ningún experto coincide con esa búsqueda.
+No experts yet	Todavía no hay expertos
+No files yet — add the books this expert corrects by.	Sin ficheros aún — añade los libros con los que corrige este experto.
+No folder	Sin carpeta
+No folder: the agent cannot read or edit files	Sin carpeta: el agente no puede leer ni editar ficheros
+No jobs yet	Todavía no hay trabajos
+No mail accounts	Sin cuentas de correo
+No memory yet	Sin memoria todavía
+No microphone available, or permission was not given.	No hay micrófono disponible o no has dado permiso.
+No model	Sin modelo
+No model matches.	Ningún modelo coincide.
+No models	Sin modelos
+No notes yet	Todavía no hay notas
+No objectives defined	Sin objetivos definidos
+No preset matches.	Ningún preset coincide.
+No preset.	Sin preset.
+No project matches	Ningún proyecto coincide
+No projects yet	Todavía no hay proyectos
+No rationale given.	Sin justificación.
+No repeat	No se repite
+No review loaded. Ask an expert to review a passage (the	No hay ninguna revisión cargada. Pide a un experto que revise un pasaje (la herramienta
+No rules yet: add one below or let the agent learn from outcomes.	Todavía no hay reglas: añade una abajo o deja que el agente aprenda de los resultados.
+No versions yet: one is saved every time an edit or a regenerate removes messages.	Todavía no hay versiones: se guarda una cada vez que una edición o un regenerar quita mensajes.
+No voice available	Sin voz disponible
+No voice available.	Sin voz disponible.
+No voice available: the server does not synthesise and neither does the browser.	No hay voz disponible: el servidor no sintetiza y el navegador tampoco.
+Nobody mode: nothing from this conversation is saved and the memory stays closed	Modo Nobody: no se guarda nada de esta conversación y la memoria queda cerrada
+Nobody mode: nothing is saved and the memory stays closed.	Modo Nobody: no se guarda nada y la memoria queda cerrada.
+None of the subsystems responded. The previous interface does not depend on this screen.	Ninguno de los subsistemas ha respondido. La interfaz anterior no depende de esta pantalla.
+None yet.	Todavía no hay ninguno.
+Not responding	No responde
+Not verified	Sin verificar
+Note	Nota
+Note actions	Acciones de la nota
+Note archived.	Nota archivada.
+Note deleted.	Nota borrada.
+Note recovered.	Nota recuperada.
+Note type	Tipo de nota
+Notes	Notas
+Nothing archived	Nada archivado
+Nothing blocked waiting for you. Pick up where you left off or start something.	Nada bloqueado esperándote. Continúa donde lo dejaste o empieza algo.
+Nothing came out worth saving.	No ha salido nada que valga la pena guardar.
+Nothing has run yet	Nada ha corrido todavía
+Nothing in the next 60 days	Nada en los próximos 60 días
+Nothing in this corpus matches {what}.	Nada en este corpus coincide con {what}.
+Nothing in this state	Nada en este estado
+Nothing matches	Nada coincide
+Nothing matches the filter	Nada coincide con el filtro
+Nothing matches.	Nada coincide.
+Nothing that day.	Nada ese día.
+Nothing to continue yet	Todavía no hay nada que continuar
+Nothing to fork yet.	No hay nada que bifurcar todavía.
+Nothing to tidy.	Nada que ordenar.
+Nothing with that filter	Nada con ese filtro
+Nothing with that filter.	Nada con ese filtro.
+Objectives	Objetivos
+Objectives are what this project is trying to achieve, and they let Faustus know when a piece of work counts as done.	Los objetivos son lo que este proyecto intenta conseguir, y sirven para que Faustus sepa cuándo un trabajo cuenta como terminado.
+Off	Apagado
+Oldest first	Más antiguas
+Ollama knows this agent; Faustus has no row saying how to run one task with it yet.	Ollama conoce este agente; Faustus aún no tiene una fila que diga cómo correr una tarea con él.
+On	Activo
+On this machine	En esta máquina
+On {when}, 	El {when}, 
+One item per line; Enter creates the list…	Un elemento por línea; Intro para crear la lista…
+One rule per line. Without a rubric a local corrector rambles.	Una regla por línea. Sin rúbrica, un corrector local divaga.
+Only the administrator can see and change the agent.	Solo el administrador puede ver y cambiar el agente.
+Only the administrator sees the learned rules.	Solo el administrador ve las reglas aprendidas.
+Open Compare	Abrir Compare
+Open Deep Research	Abrir Deep Research
+Open URL	Abrir URL
+Open in the Studio editor	Abrir en el editor de Studio
+Open in the previous interface	Abrir en la interfaz anterior
+Open its chat	Abrir su chat
+Open licence: you can run it without buying an account.	Licencia abierta: puedes correrlo sin comprar una cuenta.
+Open the Automations	Abrir las Automatizaciones
+Open the Cookbook	Abrir el Cookbook
+Open the Library	Abrir la Biblioteca
+Open the Memory	Abrir la Memoria
+Open the Notes	Abrir las Notas
+Open the Workers chat: the control board, steer / stop, the transcripts	Abrir el chat de Workers: el tablero, dirigir / parar, las transcripciones
+Open the calendar	Abrir el calendario
+Open the images	Abrir las imágenes
+Open the previous interface	Abrir la interfaz anterior
+Open the previous interface's settings	Abrir los ajustes de la interfaz anterior
+Open the theme	Abrir el tema
+Opening a file needs a working folder.	Para abrir un fichero hace falta una carpeta de trabajo.
+Opens a file from the working folder in the side panel.	Abre un fichero de la carpeta de trabajo en el panel lateral.
+Opens in the previous interface	Se abre en la interfaz anterior
+Opens the document panel (with a title, creates a new one).	Abre el panel de documento (con título, crea uno nuevo).
+Opens the panel with what the agent sees in the browser.	Abre el panel con lo que ve el agente en el navegador.
+Optional; otherwise the host	Opcional; si no, el host
+Outcome-scored rules the agent learns and forgets on its own: if one does harm several times, it is inverted into an antipattern.	Reglas puntuadas por resultado que el agente aprende y olvida solo: si una hace daño varias veces, se invierte en un antipatrón.
+Passed as-is to the local server (context, GPU layers…).	Se pasan tal cual al servidor local (contexto, capas en GPU…).
+Password, two-factor, API tokens, vault.	Contraseña, verificación en dos pasos, tokens de API, bóveda.
+Patch	Parche
+Path copied.	Ruta copiada.
+Paused	En pausa
+Pick a message.	Elige un mensaje.
+Pick a model.	Elegir modelo.
+Picked among the webhook integrations (previous interface).	Se elige entre las integraciones de tipo webhook (interfaz anterior).
+Pin	Fijar
+Pin (goes in the context every time)	Fijar (va siempre en el contexto)
+Pinned	Fijada
+Plan	Plan
+Preference	Preferencia
+Preset	Preset
+Preset name	Nombre del preset
+Preset or persona (system prompt)	Preset o personaje (prompt de sistema)
+Preset or persona (system prompt). Without a name it opens the list.	Preset o personaje (prompt de sistema). Sin nombre abre la lista.
+Press "Change" and then the combination. Backspace clears it; Escape cancels. They work in Studio and in the previous interface.	Pulsa «Cambiar» y luego la combinación. Retroceso la deja sin atajo; Escape cancela. Valen en Studio y en la interfaz anterior.
+Press the shortcut again within 4 s to delete this conversation.	Pulsa el atajo otra vez en 4 s para borrar esta conversación.
+Preview	Vista previa
+Previous	Anteriores
+Previous interface	Interfaz anterior
+Previous versions of this chat (what an edit or a regenerate removed).	Versiones anteriores de este chat (lo que borró una edición o un regenerar).
+Project	Proyecto
+Project memory	Memoria del proyecto
+Project sections	Secciones del proyecto
+Projects	Proyectos
+Proof	Prueba
+Provider	Proveedor
+Providers tried if the main one fails, comma-separated (duckduckgo, brave…).	Proveedores que se prueban si el principal falla, separados por comas (duckduckgo, brave…).
+Public URL	URL pública
+Pull memories from a conversation	Sacar recuerdos de una conversación
+Put "runner": "{key}" on a dispatched task.	Pon "runner": "{key}" en una tarea despachada.
+Python	Python
+Queued	En cola
+Read	Leer
+Read aloud	Leer en voz alta
+Read aloud (TTS) and dictate (STT). "Browser" uses what your browser ships; "Local" a model on this machine; an endpoint, its API.	Leer en voz alta (TTS) y dictar (STT). «Navegador» usa lo que trae tu navegador; «Local» un modelo en esta máquina; un endpoint, su API.
+Read the last reply	Leer la última respuesta
+Read, reply and sort.	Leer, contestar y ordenar.
+Reading files	Leyendo ficheros
+Reading folders	Leyendo carpetas
+Reading the file	Leyendo el fichero
+Reading…	Leyendo…
+Reads the last reply aloud.	Lee en voz alta la última respuesta.
+Reasoning cut off	Razonamiento cortado
+Recover	Recuperar
+Recover {name}	Recuperar {name}
+Refresh	Actualizar
+Refresh the model list	Refrescar la lista de modelos
+Regenerate	Regenerar
+Regenerate from here	Regenerar desde aquí
+Reindex	Reindexar
+Reject	Rechazar
+Reload the models	Releer los modelos
+Reminder	Recordatorio
+Reminders	Recordatorios
+Remote (API)	Remoto (API)
+Remove	Quitar
+Remove "{name}" from the corpus? Its chunks leave the index.	¿Quitar «{name}» del corpus? Sus fragmentos salen del índice.
+Remove "{name}"? Conversations using it will be left without a model.	¿Quitar «{name}»? Las conversaciones que lo usen quedarán sin modelo.
+Remove from favourites	Quitar de favoritas
+Remove the endpoint	Quitar el endpoint
+Remove the folder	Quitar la carpeta
+Remove the generation settings	Quitar los ajustes de generación
+Remove the preset	Quitar el preset
+Remove the star	Quitar la estrella
+Remove {name}	Quitar {name}
+Removed from favourites.	Quitada de favoritas.
+Rename	Renombrar
+Renames the conversation.	Renombra la conversación.
+Render this review	Mostrar esta revisión
+Repeat	Repetir
+Repeats	Se repite
+Repeat…	Repetir…
+Reply	Responder
+Reply all	Responder a todos
+Reply rejected	Respuesta rechazada
+Reported {a} accepted, {b} rejected	Informado: {a} aceptadas, {b} rechazadas
+Research	Investigar
+Research on the web 	Investiga en la web 
+Resolve with the agent	Resolver con el agente
+Responds	Responde
+Restore	Restaurar
+Restored v{a} as v{b}.	Restaurada la v{a} como v{b}.
+Restores a version from /versions.	Restaura una versión de /versions.
+Result	Resultado
+Result copied	Resultado copiado
+Results per search	Resultados por búsqueda
+Revert this file	Revertir este fichero
+Review	Revisión
+Review panel	Panel de revisión
+Review the last commit and tell me what could break	Revisa el último commit y dime qué puede romperse
+Reviewer	Revisor
+Reviewing the diff	Revisando el diff
+Rubric — one item per line	Rúbrica — un punto por línea
+Rule saved in {where}.	Regla guardada en {where}.
+Run	Lanzar
+Run by Faustus in the folder after the workers — their own claims are never the proof. Empty = the project's test runner is detected (pytest, npm test, cargo, go, make test)	Lo corre Faustus en la carpeta después de los workers — sus propias afirmaciones nunca son la prueba. Vacío = se detecta el runner de tests del proyecto (pytest, npm test, cargo, go, make test)
+Run the curator	Ejecutar el curador
+Runners	Runners
+Running	Ejecutando
+Running a command	Ejecutando un comando
+Running tests	Ejecutando tests
+Runs "{cmd}" on this machine and shows its output	Ejecuta «{cmd}» en esta máquina y muestra su salida
+Save	Guardar
+Save and regenerate	Guardar y regenerar
+Save draft	Guardar borrador
+Save expert	Guardar experto
+Save {n}	Guardar {n}
+Saved	Guardado
+Saved (v{n}).	Guardado (v{n}).
+Saved.	Guardado.
+Saves a standing rule in the project instructions (same as #).	Guarda una regla permanente en las instrucciones del proyecto (igual que #).
+Saving a rule needs a working folder.	Para guardar una regla hace falta una carpeta de trabajo.
+Say which folder the workers may touch	Di qué carpeta pueden tocar los workers
+Score	Puntuación
+SearXNG (self-hosted)	SearXNG (propio)
+SearXNG URL	URL de SearXNG
+Search	Buscar
+Search agent definitions	Buscar definiciones de agente
+Search agent runners	Buscar agent runners
+Search agents…	Buscar agentes…
+Search and navigate	Buscar y navegar
+Search archived	Buscar archivadas
+Search archived…	Buscar archivadas…
+Search by text, session or model	Buscar por texto, sesión o modelo
+Search conversations	Buscar conversaciones
+Search definitions…	Buscar definiciones…
+Search experts	Buscar expertos
+Search experts…	Buscar expertos…
+Search in files	Buscar en ficheros
+Search in {folder}…	Buscar en {folder}…
+Search model…	Buscar modelo…
+Search preset or persona…	Buscar preset o personaje…
+Search the corpus	Buscar en el corpus
+Search the library	Buscar en la biblioteca
+Search the memory…	Buscar en la memoria…
+Search the web	Buscar en la web
+Search the web for what changed this week on the topic I give you	Busca en la web qué ha cambiado esta semana en el tema que te diga
+Search this corpus	Buscar en este corpus
+Search your indexed documents (RAG)	Buscar en tus documentos indexados (RAG)
+Searching…	Buscando…
+Search…	Buscar…
+Second tier	Segundo nivel
+Sections	Secciones
+See all projects	Ver todos los proyectos
+See the agent's chat	Ver el chat del agente
+See the archived ones	Ver las archivadas
+See the pack	Ver el paquete
+Select several	Seleccionar varias
+Select {name}	Seleccionar {name}
+Selected day	Día seleccionado
+Selection	Selección
+Send	Enviar
+Send feedback	Enviar desenlace
+Send to	Enviar a
+Sent	Enviados
+Sent.	Enviado.
+Serper key	Clave de Serper
+Server error	Error del servidor
+Set up in the previous interface	Configurar en la interfaz anterior
+Settings	Ajustes
+Settings → Agent	Ajustes → Agente
+Share the defaults with the other users	Compartir los valores por defecto con los demás usuarios
+Shift	Mayús
+Shipped with Faustus. Put a file with the same slug under DATA_DIR/agents to replace it.	Viene con Faustus. Un fichero con el mismo slug en DATA_DIR/agents lo sustituye.
+Shortcuts	Atajos
+Show diff	Ver diff
+Show or hide the conversations (Ctrl+B)	Mostrar u ocultar las conversaciones (Ctrl+B)
+Show or hide the sidebar	Mostrar u ocultar la barra
+Show what the model sees	Ver lo que ve el modelo
+Side panel	Panel lateral
+Side panel: browser, document, file	Panel lateral: navegador, documento, fichero
+Sidebar width	Ancho de la barra lateral
+Skills injected at most	Skills inyectadas como máximo
+Skip	Saltar
+Skip to content	Saltar al contenido
+Slug copied	Slug copiado
+Slug of an agent definition (Definitions tab): the worker starts under its rules	Slug de una definición de agente (pestaña Definiciones): el worker arranca bajo sus reglas
+Something you want it to remember… (Enter saves)	Algo que quieras que recuerde… (Intro guarda)
+Sort	Ordenar
+Sort and organise	Ordenar y organizar
+Sort experts	Ordenar expertos
+Sort into folders with AI	Ordenar en carpetas con IA
+Spam	Spam
+Speed	Velocidad
+Stalled	Parado
+Star	Marcar con estrella
+Starred	Con estrella
+Starred.	Con estrella.
+Start in Studio	Empezar en Studio
+Start something	Empezar algo
+Starting…	Arrancando…
+Static analysis	Análisis estático
+Steer…	Dirigir…
+Step	Paso
+Stop	Parar
+Stop dictating	Parar el dictado
+Stop reading	Parar la lectura
+Stopping…	Parando…
+Strict	Estricto
+Structured output on local models	Salida estructurada en modelos locales
+Studio	Studio
+Subject	Asunto
+Suggestions from the conversation	Sugerencias de la conversación
+Suggestions from {name}	Sugerencias de {name}
+Summarises the old messages into one.	Resume los mensajes antiguos en uno.
+Sync with CalDAV	Sincronizar con CalDAV
+Synced with warnings	Sincronizado con avisos
+Synced: {a} pulled, {b} pushed.	Sincronizado: {a} traídos, {b} enviados.
+Syntax error after editing	Error de sintaxis tras editar
+System	Sistema
+System file browser…	Explorador del sistema…
+System prompt	Prompt de sistema
+System prompt: who it is, how it answers, what it avoids…	Prompt de sistema: quién es, cómo responde, qué evita…
+Task	Tarea
+Tasks	Tareas
+Tasks, renders and approvals, in the same language for all.	Tareas, renders y aprobaciones, con el mismo lenguaje para todos.
+Tavily key	Clave de Tavily
+Teacher	Profesor (teacher)
+Tell me what you want done…  @file · #rule · /command	Dime qué quieres que haga…  @fichero · #regla · /comando
+Temperature	Temperatura
+Temperature of this chat (0–2). No value removes it.	Temperatura de este chat (0–2). Sin valor, la quita.
+Terminal	Terminal
+Test	Probar
+Tests failed	Tests fallidos
+Text (LLM)	Texto (LLM)
+That is not a review result	Eso no es un resultado de revisión
+That path will not do as a working folder (it does not exist, is a file, or is a protected root).	Esa ruta no vale como carpeta de trabajo (no existe, es un fichero, o es una raíz protegida).
+That rule was already in the project instructions.	Esa regla ya estaba en las instrucciones del proyecto.
+That worker is no longer running.	Ese worker ya no está en marcha.
+The API is not responding. The previous interface does not depend on this screen and keeps working.	La API no responde. La interfaz anterior no depende de esta pantalla y sigue funcionando.
+The URL is missing.	Falta la URL.
+The accounts of this installation and their permissions.	Cuentas de la instalación y sus permisos.
+The agent is using the browser right now	El agente está usando el navegador ahora mismo
+The agent's file tools and terminal are confined to this folder.	Las herramientas de ficheros y la terminal del agente quedan confinadas a esta carpeta.
+The block is empty for that query — the model would be given nothing from this corpus.	El bloque queda vacío para esa consulta — el modelo no recibiría nada de este corpus.
+The browser refused the clipboard — select the result and copy it by hand.	El navegador rechazó el portapapeles — selecciona el resultado y cópialo a mano.
+The browser will not allow copying.	El navegador no deja copiar.
+The calendar endpoint is not responding. The previous interface does not depend on this screen.	El endpoint de calendario no responde. La interfaz anterior no depende de esta pantalla.
+The chat's	El del chat
+The chosen model	El modelo elegido
+The commit failed	El commit ha fallado
+The corpus answered degraded for at least one scene — lexical only, or a scene whose model call failed. Read the labels below accordingly.	El corpus respondió degradado en al menos una escena — solo léxico, o una escena cuya llamada al modelo falló. Lee las etiquetas de abajo con eso en cuenta.
+The curator failed.	El curador ha fallado.
+The folder is not a git repository: nowhere to commit.	La carpeta no es un repositorio git: no hay dónde confirmar.
+The identifier in the URL matches no project, or the API is not responding.	El identificador de la URL no corresponde a ningún proyecto, o la API no responde.
+The language of this interface. It applies at once and follows you to other browsers.	El idioma de esta interfaz. Se aplica al momento y te sigue a otros navegadores.
+The launch failed	El lanzamiento falló
+The library is empty	La biblioteca está vacía
+The local models do the mechanical work; you read what changed	Los modelos locales hacen el trabajo mecánico; tú lees qué cambió
+The mail endpoint is not responding. The previous interface does not depend on this screen.	El endpoint de correo no responde. La interfaz anterior no depende de esta pantalla.
+The memory endpoint is not responding. The previous interface does not depend on this screen.	El endpoint de memoria no responde. La interfaz anterior no depende de esta pantalla.
+The memory is empty	La memoria está vacía
+The model has failed.	El modelo ha fallado.
+The model reads the conversation and proposes what would be worth saving.	El modelo lee la conversación y propone lo que valdría la pena guardar.
+The model writes the alert from the note, in the voice you give it.	El modelo redacta el aviso a partir de la nota, con la voz que le digas.
+The model's reasoning, if it supports it.	Razonamiento del modelo, si lo soporta.
+The new interface is alive but cannot reach the API. The previous interface keeps working and does not depend on this.	La interfaz nueva está viva pero no alcanza la API. La interfaz anterior sigue funcionando y no depende de esto.
+The new shell already has navigation, routes and keyboard. This screen is migrated in its own ticket, and until then it keeps working exactly as always in the previous interface.	El shell nuevo ya tiene navegación, rutas y teclado. Esta pantalla se migra en su propio ticket, y hasta entonces sigue funcionando exactamente igual que siempre en la interfaz de siempre.
+The note is empty: nothing to resolve.	La nota está vacía: no hay nada que resolver.
+The notes endpoint is not responding. The previous interface does not depend on this screen.	El endpoint de notas no responde. La interfaz anterior no depende de esta pantalla.
+The one for new conversations.	El de las conversaciones nuevas.
+The only mode allowed to fill the reviewer slot, which runs after everyone with the file locks off.	El único modo que puede ocupar el puesto de revisor, que corre al final con los bloqueos de fichero quitados.
+The operation failed.	La operación ha fallado.
+The passage that was reviewed	El pasaje que se revisó
+The previous interface does not depend on this screen.	La interfaz anterior no depende de esta pantalla.
+The previous interface stays in English; the models answer in whatever language you write.	La interfaz anterior sigue en inglés; los modelos responden en el idioma en que escribas.
+The previous interface's colour editor; Studio uses its tokens and honours the saved themes.	El editor de colores de la interfaz anterior; Studio usa sus tokens y respeta los temas guardados.
+The project memory is text files in its folder. Faustus reads them when it works here, and you can edit them like any other file.	La memoria del proyecto son ficheros de texto en su carpeta. Faustus los lee cuando trabaja aquí, y tú puedes editarlos como cualquier otro fichero.
+The recipient is missing.	Falta el destinatario.
+The review found problems	La revisión encontró problemas
+The search engine behind the "Web" chip and the agent tools. Keys are stored on the server and only show here as dots.	El buscador que usa el chip «Web» y las herramientas del agente. Las claves se guardan en el servidor y solo se ven aquí como puntos.
+The search failed	La búsqueda falló
+The server responded {status}	El servidor ha respondido {status}
+The source note is read-only: do not edit or replace it.	La nota de origen es de solo lectura: no la edites ni la sustituyas.
+The system file browser is not available from here (the browser has to be on the same machine as Faustus). Pick the folder from this list.	El explorador del sistema no está disponible desde aquí (el navegador tiene que estar en la misma máquina que Faustus). Elige la carpeta en esta lista.
+The tasks endpoint is not responding. The previous interface does not depend on this screen.	El endpoint de tareas no responde. La interfaz anterior no depende de esta pantalla.
+The tasks'	El de tareas
+The text it wants to change is no longer in the document; skipping it.	El texto que quiere cambiar ya no está en el documento; la salto.
+The web search's	El de la búsqueda web
+The whole series	Toda la serie
+There are more repetitions than the server expands; narrow the range.	Hay más repeticiones de las que el servidor expande; acota el rango.
+There are unsaved changes.	Hay cambios sin guardar.
+There is no preset called "{name}". The ones there are: {list}	No hay ningún preset que se llame «{name}». Los que hay: {list}
+There is no reply to read.	No hay ninguna respuesta que leer.
+There was not enough to compact.	No había bastante que compactar.
+There was nothing to tidy.	No había nada que ordenar.
+These sections are still edited there. Each link opens the right tab and you come back with "Studio".	Estas secciones todavía se editan allí. Cada enlace abre la pestaña justa y vuelves con «Studio».
+Thinking	Pensando
+This block is what Faustus prepends to every conversation of this project. It was available in the API and no screen showed it: knowing what it knows before asking for anything is half of trusting it.	Este bloque es el que Faustus antepone a cada conversación de este proyecto. Estaba disponible en la API y no lo enseñaba ninguna pantalla: saber qué sabe antes de pedirle nada es la mitad de confiar en él.
+This browser has no speech recognition and the server is in browser mode.	Este navegador no reconoce voz y el servidor está en modo navegador.
+This cannot be undone.	No se puede deshacer.
+This folder has no subfolders.	Esta carpeta no tiene subcarpetas.
+This marker is not in the block the model was given	Este marcador no está en el bloque que se le dio al modelo
+This project prepends nothing yet. As soon as it has a folder, instructions or memory, it will appear here exactly as the model reads it.	Este proyecto no antepone nada todavía. En cuanto tenga carpeta, instrucciones o memoria, aparecerá aquí exactamente como lo lee el modelo.
+This result does not name an expert, so there is nothing to report the outcome to.	Este resultado no nombra un experto, así que no hay a quién informar del desenlace.
+This rule did harm	Esta regla hizo daño
+This rule helped	Esta regla ayudó
+This screen	Esta pantalla
+Tidy with the model	Ordenar con el modelo
+Tidying…	Ordenando…
+Title	Título
+Titles, calendar in your words, classifications. A small one is best.	Títulos, calendario en tus palabras, clasificaciones. Conviene uno pequeño.
+To	Para
+To go back to one, use "Back to before this turn" in the turn summary.	Para volver a uno, usa «Volver a antes de este turno» en el resumen del turno.
+To read attached images and screenshots.	Para leer imágenes adjuntas y capturas.
+Today	Hoy
+Tokens and timings of this conversation.	Tokens y tiempos de esta conversación.
+Tomorrow	Mañana
+Tool screenshot	Captura de la herramienta
+Tools	Herramientas
+Tools and MCP	Herramientas y MCP
+Transcribing…	Transcribiendo…
+Trash	Papelera
+Try another filter: the one you chose has nothing right now.	Prueba con otro filtro: el que has elegido no tiene nada ahora mismo.
+Try another part of the name or of the folder path.	Prueba con otra parte del nombre o de la ruta de la carpeta.
+Try another search or another category.	Prueba otra búsqueda u otra categoría.
+Try another text, or another kind of artefact.	Prueba con otro texto, u otro tipo de artefacto.
+Turn summary	Resumen del turno
+Two-letter code (es, en); empty detects.	Código de dos letras (es, en); vacío detecta.
+Type	Tipo
+Type below. In agent mode it uses tools and shows you every step in the rail; in chat mode it only talks.	Escribe abajo. En modo agente usa herramientas y te enseña cada paso en el carril; en modo chat solo conversa.
+Unanswered	Sin contestar
+Undo	Deshacer
+Unknown tool	Herramienta desconocida
+Unpin	Desfijar
+Unpin (stops going in the context every time)	Desfijar (deja de ir siempre en el contexto)
+Unread	Sin leer
+Unstarred.	Sin estrella.
+Untitled	Sin título
+Untitled document	Documento sin título
+Untitled objective	Objetivo sin título
+Unverified	Sin verificar
+Unverified claims	Afirmaciones sin verificar
+Up one level	Subir un nivel
+Update document	Actualizar documento
+Uploading…	Subiendo…
+Usage: /agents task one | task two | task three — each part is a sub-agent. [file1, file2] in front gives it those files exclusively; {model} picks its model; --review adds a reviewer; --serial runs them one after another.	Uso: /agents tarea uno | tarea dos | tarea tres — cada parte es un sub-agente. [fichero1, fichero2] delante le da esos ficheros en exclusiva; {modelo} elige su modelo; --review añade un revisor; --serial los ejecuta uno tras otro.
+Usage: /open path/to/file (relative to the working folder).	Uso: /open ruta/al/fichero (relativa a la carpeta de trabajo).
+Usage: /rename new name	Uso: /rename nombre nuevo
+Usage: /restore ID (the IDs come from /versions).	Uso: /restore ID (los ID salen con /versions).
+Usage: /truncate N — keeps the first N messages and deletes the rest.	Uso: /truncate N — conserva los N primeros mensajes y borra el resto.
+Use in a job	Usar en un trabajo
+Use this folder	Usar esta carpeta
+Use this text	Usar este texto
+Users	Usuarios
+Using the desktop	Usando el escritorio
+Using the memory	Usando la memoria
+Using {tool}	Usando {tool}
+Utility (fast)	Utilidad (rápido)
+Utility fallbacks	Alternativas de utilidad
+Verification	Verificación
+Verified	Verificado
+Verify with	Verificar con
+Version restored.	Versión restaurada.
+Versions	Versiones
+View	Vista
+View as grid	Ver en cuadrícula
+View as list	Ver en lista
+Visible calendars	Calendarios visibles
+Vision	Visión
+Vision fallbacks	Alternativas de visión
+Voice	Voz
+Voice model	Modelo de voz
+Wait for the current turn to finish before delegating.	Espera a que termine el turno actual antes de delegar.
+Wait for the delegation to finish before repeating a worker.	Espera a que termine la delegación antes de repetir un worker.
+Waiting for you	Esperándote
+Was not running	No estaba en marcha
+Web	Web
+Web search	Búsqueda web
+Week	Semana
+Weekdays	Días laborables
+What a path rule cannot promise:	Lo que una regla de ruta no puede prometer:
+What are we	¿Qué
+What do you want to	¿Qué quieres
+What each agent may use, touch and not do; its slug goes on a task	Qué puede usar, tocar y no hacer cada agente; su slug va en una tarea
+What should the workers do? Say what "done" means, e.g. "In cart.py add apply_discount(total, pct) with validation and a test in tests/test_cart.py; pytest -q must pass". Separate several tasks with a blank line or a list (- / 1.) — one worker each.	¿Qué tienen que hacer los workers? Di qué significa «hecho», p. ej. «En cart.py añade apply_discount(total, pct) con validación y un test en tests/test_cart.py; pytest -q tiene que pasar». Separa varias tareas con una línea en blanco o una lista (- / 1.) — un worker por tarea.
+What should this expert be called?	¿Cómo se llama este experto?
+What the agent sees when it uses the browser or the desktop appears here.	Aquí aparece lo que ve el agente cuando usa el navegador o el escritorio.
+What the assistant knows about you and uses when it fits; pinned ones always go.	Lo que el asistente sabe de ti y usa cuando viene al caso; lo fijado va siempre.
+What the model receives, literally	Lo que recibe el modelo, literalmente
+What the model sees	Lo que ve el modelo
+What this cannot promise:	Lo que esto no puede prometer:
+What this expert knows	Qué sabe este experto
+What you archive from a note appears here and can be recovered.	Lo que archives desde una nota aparece aquí y se puede recuperar.
+What you want to achieve (the steps go below)	Qué quieres conseguir (los pasos van abajo)
+When a task, a render or an agent does something, it will appear here with its state and how long it took.	Cuando una tarea, un render o un agente hagan algo, aparecerá aquí con su estado y lo que tardó.
+When the agent creates or edits a document, it appears here to read and edit.	Cuando el agente cree o edite un documento, aparece aquí para leerlo y editarlo.
+When the verification fails: at most how many times one fixer worker gets the failure output before Faustus gives up. Faustus stops earlier by itself when the rounds stop changing anything.	Cuando la verificación falla: como mucho cuántas veces un worker arreglador recibe la salida del fallo antes de que Faustus se rinda. Faustus para antes por sí solo cuando las rondas dejan de cambiar nada.
+When you generate an image or write a document they will appear here, with the session that produced them and their recipe.	Cuando generes una imagen o escribas un documento aparecerán aquí, con la sesión que los produjo y su receta.
+When you start a piece of work it will appear here, with its project and what was left pending.	Cuando empieces un trabajo aparecerá aquí, con su proyecto y lo que quedó pendiente.
+When {event} happens{times}	Cuando ocurre {event}{times}
+Where the notes and calendar alerts arrive when they are due.	Por dónde llegan los avisos de las notas y del calendario cuando toca.
+Which model each thing uses when you do not pick one by hand.	Qué modelo usa cada cosa cuando no eliges uno a mano.
+Who does the mechanical work, under what rules and with what knowledge.	Quién hace el trabajo mecánico, bajo qué reglas y con qué conocimiento.
+With /v1 at the end for OpenAI-compatible servers: http://127.0.0.1:11434/v1	Con /v1 al final para servidores compatibles con OpenAI: http://127.0.0.1:11434/v1
+With attachments	Con adjuntos
+Workers	Workers
+Working folder	Carpeta de trabajo
+Workspace files	Ficheros del workspace
+Write	Escribir
+Write 	Escribe 
+Write a message…  /command	Escribe un mensaje…  /comando
+Write a script that sorts my downloads by type	Escribe un script que ordene mis descargas por tipo
+Write above and press Enter. A list is created with one item per line.	Escribe arriba y pulsa Intro. Una lista se crea con un elemento por línea.
+Write above what you want it to remember, or pull it from a conversation or a file.	Escribe arriba lo que quieras que recuerde, o sácalo de una conversación o de un fichero.
+Write here. Markdown works.	Escribe aquí. Markdown vale.
+Write the note…	Escribe la nota…
+Writes refused by the file locks	Escrituras rechazadas por los bloqueos de fichero
+Year	Año
+Yes, delete	Sí, borrar
+Yours	Tuyos
+Yours, under DATA_DIR/agents.	Tuyo, en DATA_DIR/agents.
+a dispatched task may name a	una tarea despachada puede nombrar un
+a path rule governs the file tools, not another program's shell.	una regla de ruta gobierna las herramientas de fichero, no la shell de otro programa.
+accepted	aceptadas
+acted	actuó
+action	acción
+active	activas
+added	añadidos
+agent	agente
+all day	todo el día
+an external agent runs its own shell; Faustus does not see the commands it runs.	un agente externo corre su propia shell; Faustus no ve los comandos que ejecuta.
+anchored to the corpus	ancladas al corpus
+and that agent does the work.	y ese agente hace el trabajo.
+approval	aprobación
+approvals	aprobaciones
+asked you	te preguntó
+at most {time} more	como mucho {time} más
+auto-detect the test runner	detectar el runner de tests
+built-in	integrado
+but the result does not carry the text they were made against. Paste the reviewed passage to see the spans.	pero el resultado no trae el texto contra el que se hicieron. Pega el pasaje revisado para ver los tramos.
+can be a worker	puede ser worker
+cancelled	cancelado
+cancelling	cancelando
+cannot delegate	no delega
+chat with the control board. Ctrl+Enter runs.	con el tablero. Ctrl+Intro lanza.
+chunks	fragmentos
+claims	reclama
+claims changes it did not make	afirma cambios que no hizo
+code	código
+confidence	confianza
+configuration	configuración
+configured worker model	modelo de worker configurado
+context	contexto
+conversations	conversaciones
+coordinator	coordinador
+correction	corrección
+corrections	correcciones
+definition (optional)	definición (opcional)
+delegation depth ceiling	techo de delegación
+deleted	borrados
+demoted	degradadas
+does the rest.	hace el resto.
+doing	hacemos
+done	hecho
+duplicates	duplicadas
+e.g. "a dry, kind butler"	p. ej. «un mayordomo seco y amable»
+e.g. Brenner on craft	p. ej. Brenner sobre oficio
+edit	edición
+extracted	extraída
+failed	falló
+finish	terminar
+finished	terminó
+finished (exit {code})	terminado (salida {code})
+finished unverified	terminó sin verificar
+guard	guardia
+has never run	nunca ha corrido
+hours	horas
+how many	cuántas
+idle {n} s	sin actividad {n} s
+image model	modelo de imágenes
+images	imágenes
+in its proof.	en su prueba.
+in parallel	en paralelo
+in {amount}	en {amount}
+inconclusive	no concluyente
+indexed	indexados
+installed	instalado
+interrupted	interrumpido
+inverted	invertidas
+is refused with that reason until you turn it on.	se rechaza con ese motivo hasta que lo actives.
+it is now installed	ahora está instalado
+it is still not installed	sigue sin instalar
+last	última
+local	local
+loop	bucle
+may delegate	puede delegar
+mentions a file in the workspace,	menciona un fichero del workspace,
+model	modelo
+modified	modificados
+more	más
+name@domain, other@domain	nombre@dominio, otro@dominio
+names files it did not touch	nombra ficheros que no tocó
+names files that do not exist	nombra ficheros que no existen
+never	nunca
+next	próxima
+no	no
+no colour	sin color
+no evidence	sin evidencia
+no file changes	sin cambios en ficheros
+no folder	sin carpeta
+no invocation recorded	sin invocación registrada
+no label in the result	sin etiqueta en el resultado
+no model	sin modelo
+no reason given	sin motivo
+no reasoning	sin razonar
+no rubric rule named	sin regla de rúbrica
+no signal	sin señal
+no signal {n} s	sin señal {n} s
+no test runner found here — give a command	no hay runner de tests aquí — da un comando
+not installed	no instalado
+nothing	nada
+nothing is injected into a turn. Everything here still edits fine.	no se inyecta nada en un turno. Todo lo de aquí se sigue editando igual.
+nothing is left unaccounted for	no queda nada sin justificar
+nothing ran that could show it — not a failure, not a success	no corrió nada que pudiera demostrarlo: ni un fallo ni un éxito
+now	ahora
+ntfy topic	Tema de ntfy
+nudge	empujón
+of {total}. Each one says when it fires and what it does.	de {total}. Cada una dice cuándo salta y qué hace.
+off	apagado
+offline	sin conexión
+on	activados
+online	en línea
+open	abierta
+open the form.	abre el formulario.
+or a new one…	o una nueva…
+output	salida
+page unknown	página desconocida
+page {n}	página {n}
+pages unknown	páginas desconocidas
+partial	parcial
+passed	pasó
+permission answered	permiso respondido
+permission requested	permiso pedido
+press a combination…	pulsa una combinación…
+previous interface	interfaz anterior
+projects	proyectos
+promoted	promovidas
+pruned	podadas
+queued	en cola
+ran out of budget	agotó el presupuesto
+ran out of rounds	agotó las rondas
+reasons	razona
+recognition failed	reconocimiento fallido
+refused by the parser	rechazadas por el parser
+rejected	rechazadas
+removed	quitados
+render	render
+reviewer	revisor
+round	ronda
+running	en marcha
+saves a standing instruction,	guarda una instrucción permanente,
+skipped	saltados
+something is unaccounted for	algo queda sin justificar
+span relocated to the quote	tramo reubicado a la cita
+stalled	atascado
+starting…	arrancando…
+stopped	parado
+subscription	suscripción
+supervisor	supervisor
+task	tarea
+task runs	runs de tareas
+that	eso
+the disk or the tests say otherwise	el disco o las pruebas dicen lo contrario
+the folder's	de la carpeta
+the model's own opinion	opinión del modelo
+the project instructions	las instrucciones del proyecto
+the tests passed and every claimed file really changed	las pruebas pasaron y cada fichero reclamado cambió de verdad
+time	tiempo
+today	hoy
+today?	hoy?
+tomorrow	mañana
+tool	herramienta
+tool), or paste a result here.	), o pega un resultado aquí.
+top_p (0–1).	top_p (0–1).
+unknown	desconocido
+unknown marker	marcador desconocido
+unknown source	fuente desconocida
+unverified	sin verificar
+used no tools	no usó herramientas
+verification failed	verificación fallida
+verified	verificado
+verify	verificar
+verifying	verificando
+waiting	esperando
+waiting for a slot on the GPU	esperando un hueco en la GPU
+week	semana
+when anything did not finish. The job gets its own	cuando algo no terminó. El trabajo tiene su propio chat
+why the confidence is not 1	por qué la confianza no es 1
+worker	worker
+yes	sí
+you	tú
+you@mail	tu@correo
+yours	tuyo
+{"expert": {...}, "deltas": [...], "text": "the passage"}	{"expert": {...}, "deltas": [...], "text": "el pasaje"}
+{amount} ago	hace {amount}
+{a} known · {b} installed · {c} usable as a worker right now	{a} conocidos · {b} instalados · {c} usables como worker ahora mismo
+{a} of {b} characters	{a} de {b} caracteres
+{model} did not answer; {other} answered instead.	{model} no ha respondido; ha contestado {other}.
+{name} deleted from the corpus	{name} borrado del corpus
+{name} still lives in the previous interface	{name} todavía vive en la interfaz anterior
+{n} active	{n} activa
+{n} active#	{n} activas
+{n} archived.	{n} archivada.
+{n} archived.#	{n} archivadas.
+{n} attempts	{n} intentos
+{n} change	{n} cambio
+{n} changes	{n} cambios
+{n} chunk	{n} fragmento
+{n} chunks	{n} fragmentos
+{n} correction	{n} corrección
+{n} correction the parser refused	{n} corrección que el parser rechazó
+{n} corrections	{n} correcciones
+{n} corrections the parser refused	{n} correcciones que el parser rechazó
+{n} definition	{n} definición
+{n} definition file did not load. It is not in force:	{n} fichero de definición no cargó. No está en vigor:
+{n} definition files did not load. They are not in force:	{n} ficheros de definición no cargaron. No están en vigor:
+{n} definitions	{n} definiciones
+{n} empty deleted	{n} vacías borradas
+{n} error	{n} error
+{n} errors	{n} errores
+{n} failed	{n} fallidos
+{n} file	{n} fichero
+{n} file added	{n} fichero añadido
+{n} file changed	{n} fichero cambiado
+{n} filed into {f} folders	{n} archivadas en {f} carpetas
+{n} files	{n} ficheros
+{n} files added	{n} ficheros añadidos
+{n} files changed	{n} ficheros cambiados
+{n} for today	{n} para hoy
+{n} line	{n} línea
+{n} lines	{n} líneas
+{n} memories	{n} recuerdos
+{n} memory	{n} recuerdo
+{n} message	{n} mensaje
+{n} messages	{n} mensajes
+{n} model	{n} modelo
+{n} models	{n} modelos
+{n} month	{n} mes
+{n} months	{n} meses
+{n} note	{n} nota
+{n} notes	{n} notas
+{n} page	{n} página
+{n} pages	{n} páginas
+{n} pinned	{n} fijado
+{n} pinned#	{n} fijados
+{n} rejected	{n} rechazado
+{n} rejected#	{n} rechazados
+{n} round	{n} ronda
+{n} rounds	{n} rondas
+{n} run	{n} ejecución
+{n} runs	{n} ejecuciones
+{n} sub-agent	{n} sub-agente
+{n} sub-agents	{n} sub-agentes
+{n} task	{n} tarea
+{n} task(s) were not run (max 4 per job) — run them again.	{n} tarea(s) no corrieron (máximo 4 por trabajo) — lánzalas de nuevo.
+{n} tasks	{n} tareas
+{n} thing is waiting for your decision.	{n} cosa espera una decisión tuya.
+{n} things are waiting for your decision.	{n} cosas esperan una decisión tuya.
+{n} throwaway deleted	{n} de usar y tirar borradas
+{n} tokens generated	{n} tokens generados
+{n} tool	{n} herramienta
+{n} tools	{n} herramientas
+{n} use	{n} uso
+{n} uses	{n} usos
+{n} worker	{n} worker
+{n} worker started	{n} worker en marcha
+{n} workers	{n} workers
+{n} workers started	{n} workers en marcha
+{schedule} at {time}	{schedule} a las {time}
+{s} s of model	{s} s de modelo
+{who} wrote:	{who} escribió:
+⟨insert⟩	⟨insertar⟩

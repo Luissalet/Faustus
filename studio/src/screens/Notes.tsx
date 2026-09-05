@@ -52,6 +52,7 @@ import {
 } from '../adapters/notes';
 import './projects.css';
 import './notes.css';
+import { t, tn } from '../i18n';
 
 /**
  * Notas.
@@ -107,7 +108,7 @@ function agentPrompt(note: Note): string {
   if (note.content.trim()) parts.push(note.content.trim());
   (note.items ?? []).filter((it) => !it.done && it.text.trim()).forEach((it) => parts.push(`- ${it.text.trim()}`));
   const body = parts.join('\n');
-  return body ? `Ayúdame a terminar esto:\n\n${body}\n\nLa nota de origen es de solo lectura: no la edites ni la sustituyas.` : '';
+  return body ? `${t('Help me finish this:')}\n\n${body}\n\n${t('The source note is read-only: do not edit or replace it.')}` : '';
 }
 
 function serialize(note: Note): string {
@@ -118,7 +119,7 @@ function serialize(note: Note): string {
   return lines.join('\n');
 }
 
-const TYPE_LABEL: Record<string, string> = { note: 'Nota', todo: 'Lista', checklist: 'Lista', goal: 'Objetivo', draw: 'Dibujo' };
+const TYPE_LABEL: Record<string, string> = { note: 'Note', todo: 'List', checklist: 'List', goal: 'Goal', draw: 'Drawing' };
 
 /* ── Editor ─────────────────────────────────────────────────────────────── */
 
@@ -204,7 +205,7 @@ function NoteEditor({ note, initial, onClose, onSaved, onArchive, onDelete }: { 
       const saved = note ? await updateNote(note.id, draft) : await createNote(draft);
       onSaved(saved);
     } catch {
-      setError('No he podido guardar la nota.');
+      setError(t('Could not save the note.'));
     } finally {
       setSaving(false);
     }
@@ -216,50 +217,50 @@ function NoteEditor({ note, initial, onClose, onSaved, onArchive, onDelete }: { 
       onOpenChange={(o) => {
         if (!o) onClose();
       }}
-      title={note ? 'Editar la nota' : 'Nueva nota'}
+      title={note ? t('Edit the note') : t('New note')}
       testId="note-editor"
       footer={
         <div className="fs-note-editor__foot">
-          {note && onArchive && <Button variant="ghost" size="sm" icon={Archive} label={note.archived ? 'Recuperar' : 'Archivar'} onClick={onArchive} />}
-          {note && onDelete && <Button variant="danger" size="sm" icon={Trash2} label="Borrar" onClick={onDelete} />}
+          {note && onArchive && <Button variant="ghost" size="sm" icon={Archive} label={note.archived ? t('Recover') : t('Archive')} onClick={onArchive} />}
+          {note && onDelete && <Button variant="danger" size="sm" icon={Trash2} label={t('Delete')} onClick={onDelete} />}
           <span className="fs-note-editor__spacer" />
-          <Button variant="ghost" size="sm" label="Cancelar" onClick={onClose} />
-          <Button variant="primary" size="sm" label={note ? 'Guardar' : 'Crear'} loading={saving} onClick={() => void save()} testId="note-save" />
+          <Button variant="ghost" size="sm" label={t('Cancel')} onClick={onClose} />
+          <Button variant="primary" size="sm" label={note ? t('Save') : t('Create')} loading={saving} onClick={() => void save()} testId="note-save" />
         </div>
       }
     >
       <div className={`fs-note-editor${state.color && !state.color.startsWith('bg:') ? ` fs-note--${state.color}` : ''}`}>
-        <div className="fs-note-editor__type" role="group" aria-label="Tipo de nota">
-          {(['note', 'todo', 'goal'] as NoteType[]).map((t) => (
-            <button key={t} type="button" className="fs-chip" data-on={state.noteType === t || undefined} onClick={() => set({ noteType: t })}>
-              {t === 'note' ? <StickyNote size={13} aria-hidden="true" /> : <ListChecks size={13} aria-hidden="true" />}
-              {TYPE_LABEL[t]}
+        <div className="fs-note-editor__type" role="group" aria-label={t('Note type')}>
+          {(['note', 'todo', 'goal'] as NoteType[]).map((kind) => (
+            <button key={kind} type="button" className="fs-chip" data-on={state.noteType === kind || undefined} onClick={() => set({ noteType: kind })}>
+              {kind === 'note' ? <StickyNote size={13} aria-hidden="true" /> : <ListChecks size={13} aria-hidden="true" />}
+              {t(TYPE_LABEL[kind])}
             </button>
           ))}
         </div>
         <input
           type="text"
           className="fs-note-editor__title"
-          placeholder="Título"
+          placeholder={t('Title')}
           value={state.title}
           onChange={(e) => set({ title: e.target.value })}
           autoFocus={!note}
         />
         {!listMode && (
-          <textarea className="fs-note-editor__content" placeholder="Escribe la nota…" rows={5} value={state.content} onChange={(e) => set({ content: e.target.value })} />
+          <textarea className="fs-note-editor__content" placeholder={t('Write the note…')} rows={5} value={state.content} onChange={(e) => set({ content: e.target.value })} />
         )}
         {listMode && (
           <div className="fs-note-editor__items">
             {state.noteType === 'goal' && (
-              <textarea className="fs-note-editor__content" placeholder="Qué quieres conseguir (los pasos van abajo)" rows={2} value={state.content} onChange={(e) => set({ content: e.target.value })} />
+              <textarea className="fs-note-editor__content" placeholder={t('What you want to achieve (the steps go below)')} rows={2} value={state.content} onChange={(e) => set({ content: e.target.value })} />
             )}
             {state.items.map((it, i) => (
               <div key={it.id ?? i} className="fs-note-editor__item" data-done={it.done || undefined}>
-                <input type="checkbox" checked={it.done} onChange={(e) => setItem(i, { done: e.target.checked })} aria-label="Hecho" />
+                <input type="checkbox" checked={it.done} onChange={(e) => setItem(i, { done: e.target.checked })} aria-label={t('Done')} />
                 <input
                   type="text"
                   value={it.text}
-                  placeholder={state.noteType === 'goal' ? 'Paso' : 'Elemento'}
+                  placeholder={state.noteType === 'goal' ? t('Step') : t('Item')}
                   onChange={(e) => setItem(i, { text: e.target.value })}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
@@ -271,39 +272,39 @@ function NoteEditor({ note, initial, onClose, onSaved, onArchive, onDelete }: { 
                     }
                   }}
                 />
-                <IconButton icon={ChevronUp} label="Subir" size="sm" disabled={i === 0} onClick={() => moveItem(i, -1)} />
-                <IconButton icon={ChevronDown} label="Bajar" size="sm" disabled={i === state.items.length - 1} onClick={() => moveItem(i, 1)} />
-                <IconButton icon={X} label="Quitar" size="sm" onClick={() => removeItem(i)} />
+                <IconButton icon={ChevronUp} label={t('Move up')} size="sm" disabled={i === 0} onClick={() => moveItem(i, -1)} />
+                <IconButton icon={ChevronDown} label={t('Move down')} size="sm" disabled={i === state.items.length - 1} onClick={() => moveItem(i, 1)} />
+                <IconButton icon={X} label={t('Remove')} size="sm" onClick={() => removeItem(i)} />
               </div>
             ))}
             <button type="button" className="fs-note-editor__add" onClick={() => addItem()}>
-              <Plus size={13} aria-hidden="true" /> {state.noteType === 'goal' ? 'Añadir paso' : 'Añadir elemento'}
+              <Plus size={13} aria-hidden="true" /> {state.noteType === 'goal' ? t('Add step') : t('Add item')}
             </button>
           </div>
         )}
 
         <div className="fs-note-editor__row">
-          <span className="fs-note-editor__label">Color</span>
-          <div className="fs-note-editor__colors" role="radiogroup" aria-label="Color">
+          <span className="fs-note-editor__label">{t('Colour')}</span>
+          <div className="fs-note-editor__colors" role="radiogroup" aria-label={t('Colour')}>
             {NOTE_COLORS.map((c) => (
               <button
                 key={c || 'none'}
                 type="button"
                 role="radio"
                 aria-checked={state.color === c}
-                aria-label={c || 'sin color'}
+                aria-label={c || t('no colour')}
                 className={`fs-note-editor__dot${c ? ` fs-note--${c}` : ''}`}
                 data-on={state.color === c || undefined}
                 onClick={() => set({ color: c })}
               />
             ))}
-            {state.color.startsWith('bg:') && <span className="fs-note-editor__hint">Fondo propio (elegido en la interfaz anterior)</span>}
+            {state.color.startsWith('bg:') && <span className="fs-note-editor__hint">{t('Custom background (chosen in the previous interface)')}</span>}
           </div>
         </div>
 
         <div className="fs-note-editor__row">
           <span className="fs-note-editor__label">Etiquetas</span>
-          <input type="text" className="fs-field" placeholder="#casa #trabajo" value={state.label} onChange={(e) => set({ label: e.target.value })} />
+          <input type="text" className="fs-field" placeholder={t('#home #work')} value={state.label} onChange={(e) => set({ label: e.target.value })} />
         </div>
 
         <div className="fs-note-editor__row">
@@ -311,22 +312,22 @@ function NoteEditor({ note, initial, onClose, onSaved, onArchive, onDelete }: { 
             <Bell size={12} aria-hidden="true" /> Recordar
           </span>
           <div className="fs-note-editor__when">
-            <input type="datetime-local" className="fs-field" value={state.dueDate} onChange={(e) => set({ dueDate: e.target.value })} aria-label="Fecha y hora" />
+            <input type="datetime-local" className="fs-field" value={state.dueDate} onChange={(e) => set({ dueDate: e.target.value })} aria-label={t('Date and time')} />
             <div className="fs-note-editor__quick">
-              <button type="button" className="fs-chip" onClick={() => set({ dueDate: quickDate('later') })}>Más tarde</button>
-              <button type="button" className="fs-chip" onClick={() => set({ dueDate: quickDate('tomorrow') })}>Mañana</button>
-              <button type="button" className="fs-chip" onClick={() => set({ dueDate: quickDate('week') })}>Semana que viene</button>
+              <button type="button" className="fs-chip" onClick={() => set({ dueDate: quickDate('later') })}>{t('Later')}</button>
+              <button type="button" className="fs-chip" onClick={() => set({ dueDate: quickDate('tomorrow') })}>{t('Tomorrow')}</button>
+              <button type="button" className="fs-chip" onClick={() => set({ dueDate: quickDate('week') })}>{t('Next week')}</button>
               {state.dueDate && (
                 <button type="button" className="fs-chip" onClick={() => set({ dueDate: '', repeat: 'none' })}>
-                  <X size={12} aria-hidden="true" /> Quitar
+                  <X size={12} aria-hidden="true" /> {t('Remove')}
                 </button>
               )}
             </div>
             {state.dueDate && (
-              <select className="fs-field" value={state.repeat.split(':')[0]} onChange={(e) => set({ repeat: e.target.value })} aria-label="Repetir">
+              <select className="fs-field" value={state.repeat.split(':')[0]} onChange={(e) => set({ repeat: e.target.value })} aria-label={t('Repeat')}>
                 {REPEATS.map((r) => (
                   <option key={r.value} value={r.value}>
-                    {r.label}
+                    {t(r.label)}
                   </option>
                 ))}
               </select>
@@ -388,23 +389,23 @@ function NoteCard({ note, index, count, archivedView, onEdit, onToggleItem, onPi
         <span className="fs-note__grip" aria-hidden="true">
           <GripVertical size={13} />
         </span>
-        <button type="button" className="fs-note__title" onClick={onEdit} title="Editar">
-          {note.pinned && <Pin size={11} aria-label="Fijada" className="fs-note__pin" />}
-          {note.title || <span className="fs-note__untitled">{list ? 'Lista' : 'Nota'}</span>}
+        <button type="button" className="fs-note__title" onClick={onEdit} title={t('Edit')}>
+          {note.pinned && <Pin size={11} aria-label={t('Pinned')} className="fs-note__pin" />}
+          {note.title || <span className="fs-note__untitled">{list ? t('List') : t('Note')}</span>}
         </button>
         <QuickMenu
-          label="Acciones de la nota"
+          label={t('Note actions')}
           icon={MoreHorizontal}
           items={[
-            { label: 'Editar', onSelect: onEdit },
-            { label: note.pinned ? 'Desfijar' : 'Fijar', icon: note.pinned ? PinOff : Pin, onSelect: onPin },
-            { label: 'Copiar el texto', icon: Copy, onSelect: onCopy },
-            { label: 'Resolver con el agente', icon: Bot, onSelect: onAgent },
-            ...(note.agentSessionId ? [{ label: 'Ver el chat del agente', icon: Bot, onSelect: onOpenAgentChat }] : []),
-            { label: 'Subir', icon: ChevronUp, onSelect: () => onMove(-1), disabled: index === 0 },
-            { label: 'Bajar', icon: ChevronDown, onSelect: () => onMove(1), disabled: index >= count - 1 },
-            { label: note.archived ? 'Recuperar' : 'Archivar', icon: note.archived ? ArchiveRestore : Archive, onSelect: onArchive },
-            { label: 'Borrar', icon: Trash2, onSelect: onDelete, variant: 'danger' },
+            { label: t('Edit'), onSelect: onEdit },
+            { label: note.pinned ? t('Unpin') : t('Pin'), icon: note.pinned ? PinOff : Pin, onSelect: onPin },
+            { label: t('Copy the text'), icon: Copy, onSelect: onCopy },
+            { label: t('Resolve with the agent'), icon: Bot, onSelect: onAgent },
+            ...(note.agentSessionId ? [{ label: t('See the agent\'s chat'), icon: Bot, onSelect: onOpenAgentChat }] : []),
+            { label: t('Move up'), icon: ChevronUp, onSelect: () => onMove(-1), disabled: index === 0 },
+            { label: t('Move down'), icon: ChevronDown, onSelect: () => onMove(1), disabled: index >= count - 1 },
+            { label: note.archived ? t('Recover') : t('Archive'), icon: note.archived ? ArchiveRestore : Archive, onSelect: onArchive },
+            { label: t('Delete'), icon: Trash2, onSelect: onDelete, variant: 'danger' },
           ]}
         />
       </header>
@@ -561,7 +562,7 @@ export function NotesScreen() {
       const created = await createNote(draft);
       setNotes((cur) => (cur ? [created, ...cur] : [created]));
     } catch {
-      say('No he podido crear la nota.');
+      say(t('Could not create the note.'));
       setQuick(text);
     }
   };
@@ -574,7 +575,7 @@ export function NotesScreen() {
       replace({ ...note, items });
     } catch {
       replace(note);
-      say('No he podido marcar el elemento.');
+      say(t('Could not tick the item.'));
     }
   };
 
@@ -587,7 +588,7 @@ export function NotesScreen() {
         return next.sort((a, b) => Number(b.pinned) - Number(a.pinned));
       });
     } catch {
-      say('No he podido fijar la nota.');
+      say(t('Could not pin the note.'));
     }
   };
 
@@ -597,11 +598,11 @@ export function NotesScreen() {
       const archived = await toggleArchive(note.id);
       setNotes((cur) => (cur ? cur.filter((n) => n.id !== note.id) : cur));
       window.clearTimeout(undoTimer.current);
-      setUndo({ note: { ...note, archived }, index, label: archived ? 'Nota archivada.' : 'Nota recuperada.' });
+      setUndo({ note: { ...note, archived }, index, label: archived ? t('Note archived.') : t('Note recovered.') });
       undoTimer.current = window.setTimeout(() => setUndo(null), 7000);
       setEditing(null);
     } catch {
-      say('No he podido archivar la nota.');
+      say(t('Could not archive the note.'));
     }
   };
 
@@ -618,7 +619,7 @@ export function NotesScreen() {
         return next;
       });
     } catch {
-      say('No he podido deshacer.');
+      say(t('Could not undo.'));
     }
   };
 
@@ -628,25 +629,25 @@ export function NotesScreen() {
       setNotes((cur) => (cur ? cur.filter((n) => n.id !== note.id) : cur));
       setEditing(null);
       setConfirmDelete(null);
-      say('Nota borrada.');
+      say(t('Note deleted.'));
     } catch {
-      say('No he podido borrar la nota.');
+      say(t('Could not delete the note.'));
     }
   };
 
   const onCopy = async (note: Note) => {
     try {
       await navigator.clipboard.writeText(serialize(note));
-      say('Copiada.');
+      say(t('Copied.'));
     } catch {
-      say('El navegador no deja copiar.');
+      say(t('The browser will not allow copying.'));
     }
   };
 
   const onAgent = (note: Note) => {
     const prompt = agentPrompt(note);
     if (!prompt) {
-      say('La nota está vacía: no hay nada que resolver.');
+      say(t('The note is empty: nothing to resolve.'));
       return;
     }
     const q = new URLSearchParams({ draft: prompt, mode: 'agent', send: '1', note: note.id });
@@ -655,7 +656,7 @@ export function NotesScreen() {
 
   const commitOrder = (list: Note[]) => {
     setNotes(list);
-    void reorderNotes(list.map((n) => n.id)).catch(() => say('No he podido guardar el orden.'));
+    void reorderNotes(list.map((n) => n.id)).catch(() => say(t('Could not save the order.')));
   };
 
   const onMove = (note: Note, dir: -1 | 1) => {
@@ -708,12 +709,12 @@ export function NotesScreen() {
           .then((r) => {
             const text = r.synthesis || body;
             if ('Notification' in window && Notification.permission === 'granted') {
-              new Notification(note.title || 'Recordatorio', { body: text, tag: note.id });
+              new Notification(note.title || t('Reminder'), { body: text, tag: note.id });
             } else {
-              say(`Recordatorio: ${note.title || text}`);
+              say(`${t('Reminder')}: ${note.title || text}`);
             }
           })
-          .catch(() => say(`Recordatorio: ${note.title || body}`));
+          .catch(() => say(`${t('Reminder')}: ${note.title || body}`));
         if (note.repeat !== 'none') {
           const next = advance(note.dueDate, note.repeat);
           if (next) void updateNote(note.id, { dueDate: next }).then(replace).catch(() => undefined);
@@ -734,10 +735,10 @@ export function NotesScreen() {
     return (
       <EmptyState
         icon={StickyNote}
-        title="No he podido leer tus notas"
-        body="El endpoint de notas no responde. La interfaz anterior no depende de esta pantalla."
+        title={t('Could not read your notes')}
+        body={t('The notes endpoint is not responding. The previous interface does not depend on this screen.')}
         primaryAction={{
-          label: 'Abrir la interfaz anterior',
+          label: t('Open the previous interface'),
           onClick: () => {
             window.location.href = '/notes?shell=legacy';
           },
@@ -750,22 +751,22 @@ export function NotesScreen() {
     <div className="fs-screen fs-notes" data-testid="notes" data-view={view}>
       <header className="fs-screen__head fs-notes__head">
         <div>
-          <h1 className="fs-screen__title">{archivedView ? 'Notas archivadas' : 'Notas'}</h1>
+          <h1 className="fs-screen__title">{archivedView ? t('Archived notes') : t('Notes')}</h1>
           <p className="fs-prose" style={{ marginBlockStart: 'var(--fs-space-2)' }}>
             {notes
               ? archivedView
-                ? `${notes.length} archivada${notes.length === 1 ? '' : 's'}.`
-                : `${notes.length} nota${notes.length === 1 ? '' : 's'}${dueCount ? ` · ${dueCount} para hoy` : ''}.`
-              : 'Apuntes, listas y recordatorios.'}
+                ? tn(notes.length, '{n} archived.', '{n} archived.#')
+                : `${tn(notes.length, '{n} note', '{n} notes')}${dueCount ? ` · ${t('{n} for today', { n: dueCount })}` : ''}.`
+              : t('Jottings, lists and reminders.')}
           </p>
         </div>
         <div className="fs-notes__tools">
-          <IconButton icon={view === 'list' ? LayoutGrid : List} label={view === 'list' ? 'Ver en cuadrícula' : 'Ver en lista'} size="sm" onClick={() => setView(view === 'list' ? 'grid' : 'list')} />
-          <IconButton icon={archivedView ? StickyNote : Archive} label={archivedView ? 'Volver a las notas' : 'Ver las archivadas'} size="sm" onClick={() => setArchivedView((v) => !v)} />
+          <IconButton icon={view === 'list' ? LayoutGrid : List} label={view === 'list' ? t('View as grid') : t('View as list')} size="sm" onClick={() => setView(view === 'list' ? 'grid' : 'list')} />
+          <IconButton icon={archivedView ? StickyNote : Archive} label={archivedView ? t('Back to the notes') : t('See the archived ones')} size="sm" onClick={() => setArchivedView((v) => !v)} />
           {'Notification' in window && Notification.permission === 'default' && (
-            <IconButton icon={Bell} label="Permitir avisos del navegador" size="sm" onClick={askNotifications} />
+            <IconButton icon={Bell} label={t('Allow browser notifications')} size="sm" onClick={askNotifications} />
           )}
-          {!archivedView && <Button variant="primary" size="sm" icon={Plus} label="Nueva" onClick={() => setEditing({ note: null, initial: editorFrom(null) })} testId="note-new" />}
+          {!archivedView && <Button variant="primary" size="sm" icon={Plus} label={t('New')} onClick={() => setEditing({ note: null, initial: editorFrom(null) })} testId="note-new" />}
         </div>
       </header>
 
@@ -777,18 +778,18 @@ export function NotesScreen() {
             void quickAdd();
           }}
         >
-          <div className="fs-notes__quick-type" role="group" aria-label="Tipo">
+          <div className="fs-notes__quick-type" role="group" aria-label={t('Type')}>
             <button type="button" className="fs-chip" data-on={quickType === 'note' || undefined} onClick={() => setQuickType('note')}>
-              <StickyNote size={13} aria-hidden="true" /> Nota
+              <StickyNote size={13} aria-hidden="true" /> {t('Note')}
             </button>
             <button type="button" className="fs-chip" data-on={quickType === 'todo' || undefined} onClick={() => setQuickType('todo')}>
-              <ListChecks size={13} aria-hidden="true" /> Lista
+              <ListChecks size={13} aria-hidden="true" /> {t('List')}
             </button>
           </div>
           <textarea
             className="fs-notes__quick-input"
             rows={1}
-            placeholder={quickType === 'note' ? 'Apunta algo y pulsa Intro…' : 'Un elemento por línea; Intro para crear la lista…'}
+            placeholder={quickType === 'note' ? t('Jot something down and press Enter…') : t('One item per line; Enter creates the list…')}
             value={quick}
             onChange={(e) => setQuick(e.target.value)}
             onKeyDown={(e) => {
@@ -806,18 +807,18 @@ export function NotesScreen() {
       )}
 
       {notes && !archivedView && (allLabels.length > 0 || notes.some((n) => n.noteType === 'goal') || dueCount > 0) && (
-        <div className="fs-notes__filters" role="group" aria-label="Filtrar">
+        <div className="fs-notes__filters" role="group" aria-label={t('Filter')}>
           <button type="button" className="fs-chip" data-on={filter === 'all' && !label ? true : undefined} onClick={() => { setFilter('all'); setLabel(null); }}>
-            Todas
+            {t('All#f')}
           </button>
           {dueCount > 0 && (
             <button type="button" className="fs-chip" data-on={filter === 'today' || undefined} onClick={() => setFilter(filter === 'today' ? 'all' : 'today')}>
-              <Bell size={12} aria-hidden="true" /> Hoy · {dueCount}
+              <Bell size={12} aria-hidden="true" /> {t('Today')} · {dueCount}
             </button>
           )}
           {notes.some((n) => n.noteType === 'goal') && (
             <button type="button" className="fs-chip" data-on={filter === 'goals' || undefined} onClick={() => setFilter(filter === 'goals' ? 'all' : 'goals')}>
-              Objetivos
+              {t('Goals')}
             </button>
           )}
           {allLabels.map((l) => (
@@ -828,13 +829,13 @@ export function NotesScreen() {
         </div>
       )}
 
-      {!notes && <Skeleton label="Cargando notas" count={4} height="88px" />}
+      {!notes && <Skeleton label={t('Loading notes')} count={4} height="88px" />}
 
       {notes && visible.length === 0 && (
         <EmptyState
           icon={StickyNote}
-          title={archivedView ? 'Nada archivado' : notes.length ? 'Nada con ese filtro' : 'Todavía no hay notas'}
-          body={archivedView ? 'Lo que archives desde una nota aparece aquí y se puede recuperar.' : 'Escribe arriba y pulsa Intro. Una lista se crea con un elemento por línea.'}
+          title={archivedView ? t('Nothing archived') : notes.length ? t('Nothing with that filter') : t('No notes yet')}
+          body={archivedView ? t('What you archive from a note appears here and can be recovered.') : t('Write above and press Enter. A list is created with one item per line.')}
         />
       )}
 
@@ -895,16 +896,16 @@ export function NotesScreen() {
           onOpenChange={(o) => {
             if (!o) setConfirmDelete(null);
           }}
-          title="¿Borrar la nota?"
-          description={confirmDelete.title || 'No tiene título.'}
+          title={t('Delete the note?')}
+          description={confirmDelete.title || t('It has no title.')}
           footer={
             <>
-              <Button variant="ghost" size="sm" label="Cancelar" onClick={() => setConfirmDelete(null)} />
-              <Button variant="danger-solid" size="sm" label="Borrar" onClick={() => void onDelete(confirmDelete)} testId="note-delete-confirm" />
+              <Button variant="ghost" size="sm" label={t('Cancel')} onClick={() => setConfirmDelete(null)} />
+              <Button variant="danger-solid" size="sm" label={t('Delete')} onClick={() => void onDelete(confirmDelete)} testId="note-delete-confirm" />
             </>
           }
         >
-          <p className="fs-prose">Se borra del todo. Si solo quieres quitarla de en medio, archívala.</p>
+          <p className="fs-prose">{t('It is deleted for good. If you only want it out of the way, archive it.')}</p>
         </Dialog>
       )}
 
@@ -913,10 +914,10 @@ export function NotesScreen() {
           <span>{undo ? undo.label : notice}</span>
           {undo && (
             <button type="button" className="fs-btn" data-size="sm" data-variant="secondary" onClick={() => void runUndo()}>
-              Deshacer
+              {t('Undo')}
             </button>
           )}
-          <IconButton icon={X} label="Cerrar" size="sm" onClick={() => { setUndo(null); setNotice(null); }} />
+          <IconButton icon={X} label={t('Close')} size="sm" onClick={() => { setUndo(null); setNotice(null); }} />
         </Toast>
       )}
       {!archivedView && (

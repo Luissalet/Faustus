@@ -17,6 +17,7 @@ import {
   type DispatchRequest,
   type Verification,
 } from '../../adapters/workers';
+import { locale, t, tn } from '../../i18n';
 
 /**
  * Workers: the dispatch board (workers.js). Describe the tasks, name the
@@ -36,53 +37,53 @@ function fmtDur(s: number): string {
 function when(ts: number): string {
   if (!ts) return '';
   try {
-    return new Date(ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return new Date(ts * 1000).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' });
   } catch {
     return '';
   }
 }
 
 const STATUS_WORD: Record<string, string> = {
-  queued: 'en cola',
-  running: 'en marcha',
-  verifying: 'verificando',
-  done: 'hecho',
-  partial: 'parcial',
+  queued: 'queued',
+  running: 'running',
+  verifying: 'verifying',
+  done: 'done',
+  partial: 'partial',
   error: 'error',
-  cancelling: 'cancelando',
-  cancelled: 'cancelado',
-  interrupted: 'interrumpido',
+  cancelling: 'cancelling',
+  cancelled: 'cancelled',
+  interrupted: 'interrupted',
 };
 
 function VerificationBlock({ v }: { v: Verification }) {
-  if (!v.ran) return <div className="fs-wk__verify" data-state="none">Sin verificar — {v.summary}</div>;
+  if (!v.ran) return <div className="fs-wk__verify" data-state="none">{t('Not verified')} — {v.summary}</div>;
   const state = v.ok ? 'passed' : v.inconclusive ? 'inconclusive' : 'failed';
-  const word = v.ok ? 'pasó' : v.inconclusive ? 'no concluyente' : 'falló';
+  const word = v.ok ? t('passed') : v.inconclusive ? t('inconclusive') : t('failed');
   const pre = new Set(v.pre_existing);
   return (
     <div className="fs-wk__verify" data-state={state}>
-      <b>Verificación: {word}</b> — {v.summary}
+      <b>{t('Verification')}: {word}</b> — {v.summary}
       {v.command && <code className="fs-wk__code">{v.command}</code>}
-      {v.attempts > 1 && <span className="fs-wk__muted"> · {v.attempts} intentos</span>}
+      {v.attempts > 1 && <span className="fs-wk__muted"> · {t('{n} attempts', { n: v.attempts })}</span>}
       {v.failures.length > 0 && (
         <ul className="fs-wk__fails">
           {v.failures.map((f, i) => (
             <li key={i}>
               {f}
-              {pre.has(f) && <span className="fs-wk__muted"> (ya fallaba antes del trabajo)</span>}
+              {pre.has(f) && <span className="fs-wk__muted"> {t('(failed before the job too)')}</span>}
             </li>
           ))}
         </ul>
       )}
       {!v.ok && v.output_tail && (
         <details className="fs-wk__tail">
-          <summary>salida</summary>
+          <summary>{t('output')}</summary>
           <pre>{v.output_tail.slice(-1500)}</pre>
         </details>
       )}
       {v.previous.length > 0 && (
         <div className="fs-wk__muted">
-          Antes de la{v.previous.length > 1 ? 's rondas' : ' ronda'} de arreglo: {v.previous.map((p) => `${p.summary}${p.failures.length ? ' — ' + p.failures.slice(0, 3).join('; ') : ''}`).join(' · ')}
+          {tn(v.previous.length, 'Before the fix round:', 'Before the fix rounds:')} {v.previous.map((p) => `${p.summary}${p.failures.length ? ' — ' + p.failures.slice(0, 3).join('; ') : ''}`).join(' · ')}
         </div>
       )}
     </div>
@@ -96,7 +97,7 @@ function JobRow({ job, expanded, onToggle, onCancel, onBoard }: { job: DispatchJ
   const vm = job.verdict.match(/(\d+) files? changed on disk/);
   const changedCount = res ? res.files_changed.length : vm ? parseInt(vm[1], 10) : 0;
   const vok = v && v.ran ? v.ok : /verification passed/.test(job.verdict);
-  const vword = v && v.ran ? (v.ok ? 'verificado' : v.inconclusive ? 'sin verificar' : 'verificación fallida') : /verification passed/.test(job.verdict) ? 'verificado' : /verification FAILED/.test(job.verdict) ? 'verificación fallida' : '';
+  const vword = v && v.ran ? (v.ok ? t('verified') : v.inconclusive ? t('unverified') : t('verification failed')) : /verification passed/.test(job.verdict) ? t('verified') : /verification FAILED/.test(job.verdict) ? t('verification failed') : '';
   const progressNames = Object.keys(job.progress);
   const Chevron = expanded ? ChevronDown : ChevronRight;
   return (
@@ -104,24 +105,24 @@ function JobRow({ job, expanded, onToggle, onCancel, onBoard }: { job: DispatchJ
       <div className="fs-wk__head">
         <button type="button" className="fs-wk__toggle" onClick={onToggle} aria-expanded={expanded} data-testid="wk-toggle">
           <Chevron size={14} aria-hidden="true" className="fs-wk__chev" />
-          <span className="fs-wk__status" data-status={job.status}>{STATUS_WORD[job.status] ?? job.status}</span>
+          <span className="fs-wk__status" data-status={job.status}>{STATUS_WORD[job.status] ? t(STATUS_WORD[job.status]) : job.status}</span>
           <span className="fs-wk__title" title={job.verdict || job.title}>{job.title || 'Workers'}</span>
         </button>
         <span className="fs-wk__meta">
           {when(job.created)}
           {job.duration_s != null && ` · ${fmtDur(job.duration_s)}`}
-          {changedCount > 0 && ` · ${changedCount} fichero${changedCount > 1 ? 's' : ''}`}
+          {changedCount > 0 && ` · ${tn(changedCount, '{n} file', '{n} files')}`}
           {vword && (
             <>
               {' · '}
               <span className="fs-wk__vword" data-ok={vok ? 'yes' : 'no'}>{vword}</span>
             </>
           )}
-          {res?.totals.errors ? ` · ${res.totals.errors} error${res.totals.errors > 1 ? 'es' : ''}` : ''}
+          {res?.totals.errors ? ` · ${tn(res.totals.errors, '{n} error', '{n} errors')}` : ''}
         </span>
         <span className="fs-wk__actions">
-          {job.session_id && <Button size="sm" variant="ghost" icon={MessageSquare} label="Tablero" onClick={onBoard} title="Abrir el chat de Workers: el tablero, dirigir / parar, las transcripciones" />}
-          {live && <Button size="sm" variant="danger" icon={X} label="Cancelar" onClick={onCancel} />}
+          {job.session_id && <Button size="sm" variant="ghost" icon={MessageSquare} label={t('Board')} onClick={onBoard} title={t('Open the Workers chat: the control board, steer / stop, the transcripts')} />}
+          {live && <Button size="sm" variant="danger" icon={X} label={t('Cancel')} onClick={onCancel} />}
         </span>
       </div>
       {expanded && (
@@ -133,28 +134,28 @@ function JobRow({ job, expanded, onToggle, onCancel, onBoard }: { job: DispatchJ
               {job.phase && (
                 <div className="fs-wk__muted">
                   {job.phase}
-                  {job.ceiling_s ? ` · como mucho ${fmtDur(job.ceiling_s)} más` : ''}
+                  {job.ceiling_s ? ` · ${t('at most {time} more', { time: fmtDur(job.ceiling_s) })}` : ''}
                 </div>
               )}
               <div className="fs-wk__progress">
-                {progressNames.length === 0 && <span className="fs-wk__muted">arrancando…</span>}
+                {progressNames.length === 0 && <span className="fs-wk__muted">{t('starting…')}</span>}
                 {progressNames.map((n) => {
                   const p = job.progress[n] ?? {};
                   return (
                     <div key={n} className="fs-wk__line">
                       <span className="fs-wk__wname">{n}</span> {p.last_event ?? '…'}
-                      {p.round != null && ` · ronda ${p.round}`}
+                      {p.round != null && ` · ${t('round')} ${p.round}`}
                       {(p.last_tool || p.tool) && ` · ${p.last_tool || p.tool}`}
                       {p.elapsed_s != null && ` · ${Math.round(p.elapsed_s)} s`}
                       {p.stalled && (
                         <>
                           {' · '}
-                          <b>atascado</b>
+                          <b>{t('stalled')}</b>
                           {p.stall_reason ? ` (${p.stall_reason})` : ''}
                         </>
                       )}
                       {p.state && (
-                        <span className="fs-wk__state" data-state={p.state} title={`${p.state.replace(/_/g, ' ')}${p.why ? ' — ' + p.why : ''} (se informa, no se mata)`}>
+                        <span className="fs-wk__state" data-state={p.state} title={`${p.state.replace(/_/g, ' ')}${p.why ? ' — ' + p.why : ''} ${t('(reported, not killed)')}`}>
                           {p.state.replace(/_/g, ' ')}
                         </span>
                       )}
@@ -168,31 +169,31 @@ function JobRow({ job, expanded, onToggle, onCancel, onBoard }: { job: DispatchJ
             <>
               {res.changes && (
                 <div className="fs-wk__changes">
-                  <b>Cambiado en disco</b> <span className="fs-wk__muted">({res.changes.source}{res.changes.truncated ? ', lista truncada' : ''})</span>:{' '}
-                  {(['added', 'modified', 'deleted'] as const).filter((k) => res.changes![k].length).length === 0 && 'nada'}
+                  <b>{t('Changed on disk')}</b> <span className="fs-wk__muted">({res.changes.source}{res.changes.truncated ? t(', list truncated') : ''})</span>:{' '}
+                  {(['added', 'modified', 'deleted'] as const).filter((k) => res.changes![k].length).length === 0 && t('nothing')}
                   {(['added', 'modified', 'deleted'] as const)
                     .filter((k) => res.changes![k].length)
                     .map((k) => (
                       <span key={k} className="fs-wk__chg" data-kind={k}>
-                        {k === 'added' ? 'añadidos' : k === 'modified' ? 'modificados' : 'borrados'}: {res.changes![k].map((f) => <code key={f}>{f}</code>)}
+                        {k === 'added' ? t('added') : k === 'modified' ? t('modified') : t('deleted')}: {res.changes![k].map((f) => <code key={f}>{f}</code>)}
                       </span>
                     ))}
                   {res.claimed_only.length > 0 && (
                     <div className="fs-wk__claimed">
-                      Reclamado por un worker pero sin cambiar: {res.claimed_only.map((f) => <code key={f}>{f}</code>)}
+                      {t('Claimed by a worker but not changed')}: {res.claimed_only.map((f) => <code key={f}>{f}</code>)}
                     </div>
                   )}
                 </div>
               )}
               {v && <VerificationBlock v={v} />}
               {res.proof && res.proof.verdict && (
-                <div className="fs-wk__proof" data-tone={PROOF_TONE[res.proof.verdict] ?? 'warn'} title={res.proof.uncertainty.length ? `por qué la confianza no es 1 — ${res.proof.uncertainty.map((u) => `${u.kind}: ${u.detail}`).join(' · ')}` : 'no queda nada sin justificar'}>
-                  <b>Prueba: {res.proof.verdict}</b> <span className="fs-wk__muted">confianza {String(res.proof.confidence)}</span>
-                  {PROOF_WORD[res.proof.verdict] && <span className="fs-wk__muted"> — {PROOF_WORD[res.proof.verdict]}</span>}
+                <div className="fs-wk__proof" data-tone={PROOF_TONE[res.proof.verdict] ?? 'warn'} title={res.proof.uncertainty.length ? `${t('why the confidence is not 1')} — ${res.proof.uncertainty.map((u) => `${u.kind}: ${u.detail}`).join(' · ')}` : t('nothing is left unaccounted for')}>
+                  <b>{t('Proof')}: {res.proof.verdict}</b> <span className="fs-wk__muted">{t('confidence')} {String(res.proof.confidence)}</span>
+                  {PROOF_WORD[res.proof.verdict] && <span className="fs-wk__muted"> — {t(PROOF_WORD[res.proof.verdict])}</span>}
                   {res.proof.uncertainty[0] && (
                     <div className="fs-wk__proof-why">
                       {res.proof.uncertainty[0].kind}: {res.proof.uncertainty[0].detail}
-                      {res.proof.uncertainty.length > 1 && <span className="fs-wk__muted"> (+{res.proof.uncertainty.length - 1} más)</span>}
+                      {res.proof.uncertainty.length > 1 && <span className="fs-wk__muted"> (+{res.proof.uncertainty.length - 1} {t('more')})</span>}
                     </div>
                   )}
                 </div>
@@ -208,26 +209,26 @@ function JobRow({ job, expanded, onToggle, onCancel, onBoard }: { job: DispatchJ
                   {w.role !== 'worker' && <span className="fs-wk__muted"> ({w.role})</span>}
                 </span>
                 <span className="fs-wk__muted">
-                  {w.rounds} rondas · {w.tool_calls} herramientas{w.failed_calls ? ` (${w.failed_calls} fallidas)` : ''} · {w.input_tokens}/{w.output_tokens} tok{w.stop_reason && w.stop_reason !== 'complete' ? ` · ${w.stop_reason}` : ''}
+                  {tn(w.rounds, '{n} round', '{n} rounds')} · {tn(w.tool_calls, '{n} tool', '{n} tools')}{w.failed_calls ? ` (${t('{n} failed', { n: w.failed_calls })})` : ''} · {w.input_tokens}/{w.output_tokens} tok{w.stop_reason && w.stop_reason !== 'complete' ? ` · ${w.stop_reason}` : ''}
                 </span>
               </div>
               {w.error && <div className="fs-wk__error">{w.error}</div>}
-              {w.files_changed.length > 0 && <div className="fs-wk__files">reclama: {w.files_changed.map((f) => <code key={f}>{f}</code>)}</div>}
+              {w.files_changed.length > 0 && <div className="fs-wk__files">{t('claims')}: {w.files_changed.map((f) => <code key={f}>{f}</code>)}</div>}
               {w.summary && <div className="fs-wk__summary">{w.summary}</div>}
             </div>
           ))}
-          {res && res.lock_conflicts.length > 0 && <div className="fs-wk__muted">Escrituras rechazadas por los bloqueos de fichero: {res.lock_conflicts.join('; ')}</div>}
-          {res && res.dropped_tasks > 0 && <div className="fs-wk__error">{res.dropped_tasks} tarea(s) no corrieron (máximo 4 por trabajo) — lánzalas de nuevo.</div>}
+          {res && res.lock_conflicts.length > 0 && <div className="fs-wk__muted">{t('Writes refused by the file locks')}: {res.lock_conflicts.join('; ')}</div>}
+          {res && res.dropped_tasks > 0 && <div className="fs-wk__error">{t('{n} task(s) were not run (max 4 per job) — run them again.', { n: res.dropped_tasks })}</div>}
           <details className="fs-wk__tasks">
             <summary>
-              {job.tasks.length} tarea{job.tasks.length === 1 ? '' : 's'} · {job.workspace || 'sin carpeta'} · {job.model}
-              {job.verify && job.verify !== 'auto' ? ` · verificar: ${job.verify}` : ''}
+              {tn(job.tasks.length, '{n} task', '{n} tasks')} · {job.workspace || t('no folder')} · {job.model}
+              {job.verify && job.verify !== 'auto' ? ` · ${t('verify')}: ${job.verify}` : ''}
             </summary>
-            {job.tasks.map((t, i) => (
+            {job.tasks.map((task, i) => (
               <div key={i} className="fs-wk__task-row">
-                <b>{i + 1}.</b> {t.instruction}
-                {t.files.length > 0 && <span className="fs-wk__muted"> [{t.files.join(', ')}]</span>}
-                {t.runner && <span className="fs-wk__muted"> · runner {t.runner}</span>}
+                <b>{i + 1}.</b> {task.instruction}
+                {task.files.length > 0 && <span className="fs-wk__muted"> [{task.files.join(', ')}]</span>}
+                {task.runner && <span className="fs-wk__muted"> · runner {task.runner}</span>}
               </div>
             ))}
           </details>
@@ -267,8 +268,8 @@ export function Workers({ agent: agentParam, runner: runnerParam }: WorkersProps
   const [fixRounds, setFixRounds] = useState(1);
   const [agent, setAgent] = useState(agentParam ?? '');
   const [runner, setRunner] = useState(runnerParam ?? '');
-  const [modelHint, setModelHint] = useState('modelo de worker configurado');
-  const [verifierHint, setVerifierHint] = useState('detectar el runner de tests');
+  const [modelHint, setModelHint] = useState(t('configured worker model'));
+  const [verifierHint, setVerifierHint] = useState(t('auto-detect the test runner'));
 
   useEffect(() => {
     if (agentParam) setAgent(agentParam);
@@ -340,19 +341,19 @@ export function Workers({ agent: agentParam, runner: runnerParam }: WorkersProps
   useEffect(() => {
     const ws = workspace.trim();
     if (!ws) {
-      setVerifierHint('detectar el runner de tests');
+      setVerifierHint(t('auto-detect the test runner'));
       return;
     }
-    const t = window.setTimeout(() => {
+    const timer = window.setTimeout(() => {
       dispatchConfig(ws)
         .then((cfg) => {
           const v = cfg.verifier;
           if (!v || !alive.current) return;
-          setVerifierHint(v.error ? v.error : v.label ? `auto: ${v.label}` : 'no hay runner de tests aquí — da un comando');
+          setVerifierHint(v.error ? v.error : v.label ? `auto: ${v.label}` : t('no test runner found here — give a command'));
         })
         .catch(() => {});
     }, 500);
-    return () => window.clearTimeout(t);
+    return () => window.clearTimeout(timer);
   }, [workspace]);
 
   /* Streams for the live jobs; a poll while anything live is not streamed. */
@@ -399,7 +400,7 @@ export function Workers({ agent: agentParam, runner: runnerParam }: WorkersProps
     if (!tasks.length) return;
     const ws = workspace.trim();
     if (!ws) {
-      flash('Di qué carpeta pueden tocar los workers');
+      flash(t('Say which folder the workers may touch'));
       return;
     }
     const body: DispatchRequest = { tasks, workspace: ws, parallel, reviewer, fix_rounds: Math.max(0, Math.min(4, fixRounds || 0)) };
@@ -417,10 +418,10 @@ export function Workers({ agent: agentParam, runner: runnerParam }: WorkersProps
       } catch {
         /* private mode */
       }
-      flash(`${tasks.length} worker${tasks.length > 1 ? 's' : ''} en marcha`);
+      flash(tn(tasks.length, '{n} worker started', '{n} workers started'));
       await refresh();
     } catch (e) {
-      flash(`No he podido arrancar: ${e instanceof Error ? e.message : String(e)}`);
+      flash(`${t('Could not start')}: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setBusy(false);
     }
@@ -441,7 +442,7 @@ export function Workers({ agent: agentParam, runner: runnerParam }: WorkersProps
       await cancelJob(id);
       await refresh();
     } catch (e) {
-      flash(`No he podido cancelar: ${e instanceof Error ? e.message : String(e)}`);
+      flash(`${t('Could not cancel')}: ${e instanceof Error ? e.message : String(e)}`);
     }
   };
 
@@ -466,62 +467,62 @@ export function Workers({ agent: agentParam, runner: runnerParam }: WorkersProps
               void run();
             }
           }}
-          placeholder="¿Qué tienen que hacer los workers? Di qué significa «hecho», p. ej. «En cart.py añade apply_discount(total, pct) con validación y un test en tests/test_cart.py; pytest -q tiene que pasar». Separa varias tareas con una línea en blanco o una lista (- / 1.) — un worker por tarea."
+          placeholder={t('What should the workers do? Say what "done" means, e.g. "In cart.py add apply_discount(total, pct) with validation and a test in tests/test_cart.py; pytest -q must pass". Separate several tasks with a blank line or a list (- / 1.) — one worker each.')}
           data-testid="wk-task"
         />
         <div className="fs-wk__row">
           <label className="fs-wk__field">
-            <span>Carpeta</span>
-            <input type="text" className="fs-field" value={workspace} placeholder="D:\proyectos\app" required disabled={busy} onChange={(e) => setWorkspace(e.target.value)} data-testid="wk-workspace" />
+            <span>{t('Folder')}</span>
+            <input type="text" className="fs-field" value={workspace} placeholder="D:\projects\app" required disabled={busy} onChange={(e) => setWorkspace(e.target.value)} data-testid="wk-workspace" />
           </label>
-          <label className="fs-switch" title="Las tareas independientes corren a la vez (un worker cada una); apagado = una tras otra (una tarea posterior puede editar lo que escribió una anterior)">
+          <label className="fs-switch" title={t('Independent tasks run at the same time (one worker each); off = one after another (a later task may edit what an earlier one wrote)')}>
             <input type="checkbox" checked={parallel} onChange={(e) => setParallel(e.target.checked)} />
-            <span>en paralelo</span>
+            <span>{t('in parallel')}</span>
           </label>
-          <label className="fs-switch" title="Añade un worker revisor después de los demás">
+          <label className="fs-switch" title={t('Add a reviewer worker after the others')}>
             <input type="checkbox" checked={reviewer} onChange={(e) => setReviewer(e.target.checked)} />
-            <span>revisor</span>
+            <span>{t('reviewer')}</span>
           </label>
           <label className="fs-wk__field fs-wk__field--sm">
-            <span>Modelo</span>
+            <span>{t('Model')}</span>
             <input type="text" className="fs-field" value={model} placeholder={modelHint} onChange={(e) => setModel(e.target.value)} />
           </label>
-          <Button type="submit" variant="primary" icon={Play} label={busy ? 'Arrancando…' : 'Lanzar'} loading={busy} disabled={!tasks.length} testId="wk-run" />
+          <Button type="submit" variant="primary" icon={Play} label={busy ? t('Starting…') : t('Run')} loading={busy} disabled={!tasks.length} testId="wk-run" />
         </div>
         <div className="fs-wk__row">
-          <label className="fs-wk__field" title="Lo corre Faustus en la carpeta después de los workers — sus propias afirmaciones nunca son la prueba. Vacío = se detecta el runner de tests del proyecto (pytest, npm test, cargo, go, make test)">
-            <span>Verificar con</span>
+          <label className="fs-wk__field" title={t('Run by Faustus in the folder after the workers — their own claims are never the proof. Empty = the project\'s test runner is detected (pytest, npm test, cargo, go, make test)')}>
+            <span>{t('Verify with')}</span>
             <input type="text" className="fs-field" value={verify} placeholder={verifierHint} onChange={(e) => setVerify(e.target.value)} />
           </label>
-          <label className="fs-wk__field fs-wk__field--xs" title="Cuando la verificación falla: como mucho cuántas veces un worker arreglador recibe la salida del fallo antes de que Faustus se rinda. Faustus para antes por sí solo cuando las rondas dejan de cambiar nada.">
-            <span>Rondas de arreglo</span>
+          <label className="fs-wk__field fs-wk__field--xs" title={t('When the verification fails: at most how many times one fixer worker gets the failure output before Faustus gives up. Faustus stops earlier by itself when the rounds stop changing anything.')}>
+            <span>{t('Fix rounds')}</span>
             <input type="number" className="fs-field" min={0} max={4} value={fixRounds} onChange={(e) => setFixRounds(parseInt(e.target.value, 10) || 0)} />
           </label>
-          <label className="fs-wk__field fs-wk__field--sm" title="Slug de una definición de agente (pestaña Definiciones): el worker arranca bajo sus reglas">
-            <span>Agente</span>
-            <input type="text" className="fs-field" value={agent} placeholder="definición (opcional)" onChange={(e) => setAgent(e.target.value)} data-testid="wk-agent" />
+          <label className="fs-wk__field fs-wk__field--sm" title={t('Slug of an agent definition (Definitions tab): the worker starts under its rules')}>
+            <span>{t('Agent')}</span>
+            <input type="text" className="fs-field" value={agent} placeholder={t('definition (optional)')} onChange={(e) => setAgent(e.target.value)} data-testid="wk-agent" />
           </label>
-          <label className="fs-wk__field fs-wk__field--sm" title="Clave de un agent runner externo (pestaña Runners): ese agente hace el trabajo en vez del worker integrado">
+          <label className="fs-wk__field fs-wk__field--sm" title={t('Key of an external agent runner (Runners tab): that agent does the work instead of the built-in worker')}>
             <span>Runner</span>
-            <input type="text" className="fs-field" value={runner} placeholder="integrado" onChange={(e) => setRunner(e.target.value)} data-testid="wk-runner" />
+            <input type="text" className="fs-field" value={runner} placeholder={t('built-in')} onChange={(e) => setRunner(e.target.value)} data-testid="wk-runner" />
           </label>
           <span className="fs-wk__muted fs-wk__count">
-            {Math.max(1, tasks.length)} worker{tasks.length === 1 || tasks.length === 0 ? '' : 's'}
-            {tasks.length > 1 ? ' (uno por tarea)' : ''}
+            {tn(Math.max(1, tasks.length), '{n} worker', '{n} workers')}
+            {tasks.length > 1 ? t(' (one per task)') : ''}
           </span>
         </div>
         <p className="fs-wk__hint">
-          Una línea en blanco o una marca de lista empieza otra tarea = otro worker (máximo 4). Los workers se quedan dentro de la carpeta; Faustus la fija antes, la compara después, corre la verificación él mismo y marca el trabajo <em>parcial</em> cuando algo no terminó. El trabajo tiene su propio chat <em>Workers</em> con el tablero. Ctrl+Intro lanza.
+          {t('A blank line or a list marker starts a new task = one worker (max 4). The workers are confined to the folder; Faustus checkpoints it before, diffs it after, runs the verification itself and marks the job')} <em>{t('partial')}</em> {t('when anything did not finish. The job gets its own')} <em>Workers</em> {t('chat with the control board. Ctrl+Enter runs.')}
         </p>
       </form>
 
       {error && <div className="fs-wk__error">No he podido leer los trabajos: {error}</div>}
       {jobs === null ? (
         <div className="fs-wk__list">
-          <Skeleton label="Cargando los trabajos" height="44px" count={2} radius="panel" />
+          <Skeleton label={t('Loading the jobs')} height="44px" count={2} radius="panel" />
         </div>
       ) : jobs.length === 0 ? (
-        <EmptyState title="Todavía no hay trabajos" body="Describe una tarea arriba y pulsa Lanzar: los workers la hacen con los modelos locales, Faustus comprueba qué cambió y corre las pruebas, y tú lees el veredicto." />
+        <EmptyState title={t('No jobs yet')} body={t('Describe a task above and press Run: the workers do it on the local models, Faustus checks what changed and runs the tests, and you read the verdict.')} />
       ) : (
         <div className="fs-wk__list">
           {jobs.map((j) => (

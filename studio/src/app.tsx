@@ -27,7 +27,24 @@ function mountPoint(): HTMLElement {
   return created;
 }
 
+/*
+ * Mount exactly once, whatever the entry does.
+ *
+ * index.html loads the entry as `studio.js?v=<hash>`; this chunk imports
+ * Vite's preload helper from `../studio.js` (no query), so the browser
+ * evaluates main.tsx a second time and its `.then(mount)` fires twice.
+ * Two roots on one container: the second commit clears the container, the
+ * first root keeps rendering into detached nodes, and the next time it
+ * removes one — re-keying the tree on a language change did it — React
+ * throws "removeChild: not a child" and unmounts the whole shell. The guard
+ * lives here, in the one module that exists once, not in main.tsx, which
+ * is the module that exists twice.
+ */
+let mounted = false;
+
 export function mount(gallery: boolean): void {
+  if (mounted) return;
+  mounted = true;
   createRoot(mountPoint()).render(
     <StrictMode>
       {gallery ? (

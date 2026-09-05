@@ -15,12 +15,13 @@ import {
 import { relativeTime } from '../adapters/home';
 import './projects.css';
 import './home.css';
+import { t } from '../i18n';
 
 const TABS = [
   { id: 'brief', label: 'Brief', icon: FileText },
-  { id: 'contexto', label: 'Contexto', icon: Eye },
-  { id: 'memoria', label: 'Memoria', icon: Brain },
-  { id: 'objetivos', label: 'Objetivos', icon: Target },
+  { id: 'contexto', label: 'Context', icon: Eye },
+  { id: 'memoria', label: 'Memory', icon: Brain },
+  { id: 'objetivos', label: 'Objectives', icon: Target },
 ] as const;
 
 type TabId = (typeof TABS)[number]['id'];
@@ -68,9 +69,9 @@ export function ProjectScreen() {
   if (failed) {
     return (
       <EmptyState
-        title="No he encontrado ese proyecto"
-        body="El identificador de la URL no corresponde a ningún proyecto, o la API no responde."
-        primaryAction={{ label: 'Ver todos los proyectos', onClick: () => { window.location.href = '/projects'; } }}
+        title={t('Could not find that project')}
+        body={t('The identifier in the URL matches no project, or the API is not responding.')}
+        primaryAction={{ label: t('See all projects'), onClick: () => { window.location.href = '/projects'; } }}
       />
     );
   }
@@ -78,8 +79,8 @@ export function ProjectScreen() {
   if (!data) {
     return (
       <div className="fs-screen">
-        <Skeleton label="Cargando el proyecto" width="40%" height="32px" />
-        <Skeleton label="Cargando el detalle" count={5} height="20px" />
+        <Skeleton label={t('Loading the project')} width="40%" height="32px" />
+        <Skeleton label={t('Loading the detail')} count={5} height="20px" />
       </div>
     );
   }
@@ -90,7 +91,7 @@ export function ProjectScreen() {
     <div className="fs-screen" data-testid="project">
       <div>
         <Link to="/projects" className="fs-tab" style={{ paddingInline: 0 }}>
-          <ArrowLeft size={14} aria-hidden="true" /> Proyectos
+          <ArrowLeft size={14} aria-hidden="true" /> {t('Projects')}
         </Link>
       </div>
 
@@ -101,14 +102,14 @@ export function ProjectScreen() {
         </div>
         <Button
           variant="primary"
-          label="Nuevo trabajo"
+          label={t('New work')}
           onClick={() => {
             window.location.href = '/?shell=legacy';
           }}
         />
       </header>
 
-      <div className="fs-tabs" role="tablist" aria-label="Secciones del proyecto">
+      <div className="fs-tabs" role="tablist" aria-label={t('Project sections')}>
         {TABS.map((entry) => (
           <button
             key={entry.id}
@@ -123,7 +124,7 @@ export function ProjectScreen() {
               setParams(next);
             }}
           >
-            {entry.label}
+            {t(entry.label)}
           </button>
         ))}
       </div>
@@ -148,11 +149,9 @@ export function ProjectScreen() {
 
       {tab === 'contexto' && (
         <div>
-          <p className="fs-panel__label">Lo que recibe el modelo, literalmente</p>
+          <p className="fs-panel__label">{t('What the model receives, literally')}</p>
           <p className="fs-prose" style={{ marginBlockEnd: 'var(--fs-space-3)' }}>
-            Este bloque es el que Faustus antepone a cada conversación de este
-            proyecto. Estaba disponible en la API y no lo enseñaba ninguna pantalla:
-            saber qué sabe antes de pedirle nada es la mitad de confiar en él.
+            {t('This block is what Faustus prepends to every conversation of this project. It was available in the API and no screen showed it: knowing what it knows before asking for anything is half of trusting it.')}
           </p>
           {context ? (
             <pre className="fs-context" data-testid="project-context">
@@ -161,8 +160,8 @@ export function ProjectScreen() {
           ) : (
             <EmptyState
               icon={Eye}
-              title="Sin bloque de contexto"
-              body="Este proyecto no antepone nada todavía. En cuanto tenga carpeta, instrucciones o memoria, aparecerá aquí exactamente como lo lee el modelo."
+              title={t('No context block')}
+              body={t('This project prepends nothing yet. As soon as it has a folder, instructions or memory, it will appear here exactly as the model reads it.')}
             />
           )}
         </div>
@@ -171,7 +170,7 @@ export function ProjectScreen() {
       {tab === 'memoria' && (
         <div className="fs-panel">
           <p className="fs-panel__label">
-            {memory ? memory.dir : 'Memoria del proyecto'}
+            {memory ? memory.dir : t('Project memory')}
           </p>
           {memory && memory.files.length > 0 ? (
             <div className="fs-files">
@@ -186,8 +185,8 @@ export function ProjectScreen() {
           ) : (
             <EmptyState
               icon={Brain}
-              title="Sin memoria todavía"
-              body="La memoria del proyecto son ficheros de texto en su carpeta. Faustus los lee cuando trabaja aquí, y tú puedes editarlos como cualquier otro fichero."
+              title={t('No memory yet')}
+              body={t('The project memory is text files in its folder. Faustus reads them when it works here, and you can edit them like any other file.')}
             />
           )}
         </div>
@@ -201,7 +200,7 @@ export function ProjectScreen() {
               {objectives.map((objective, index) => (
                 <div className="fs-file" key={objective.id ?? index}>
                   <span className="fs-file__name" style={{ fontFamily: 'var(--fs-font-ui)' }}>
-                    {objective.title ?? objective.name ?? 'Objetivo sin título'}
+                    {objective.title ?? objective.name ?? t('Untitled objective')}
                   </span>
                   {objective.status && (
                     <span className="fs-file__meta">{objective.status}</span>
@@ -212,8 +211,8 @@ export function ProjectScreen() {
           ) : (
             <EmptyState
               icon={Target}
-              title="Sin objetivos definidos"
-              body="Los objetivos son lo que este proyecto intenta conseguir, y sirven para que Faustus sepa cuándo un trabajo cuenta como terminado."
+              title={t('No objectives defined')}
+              body={t('Objectives are what this project is trying to achieve, and they let Faustus know when a piece of work counts as done.')}
             />
           )}
         </div>

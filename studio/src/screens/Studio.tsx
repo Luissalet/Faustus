@@ -58,6 +58,7 @@ import { Transcript, type Decision } from './studio/Transcript';
 import './projects.css';
 import './home.css';
 import './studio.css';
+import { t, tn } from '../i18n';
 
 /* Rare, and the eager bundle has a budget: the folder picker and the side
    panel (browser frames, document editor, file viewer) arrive when opened. */
@@ -130,10 +131,10 @@ function writeJson(key: string, value: unknown) {
 }
 
 const SUGGESTIONS = [
-  'Explícame este repositorio como si acabara de llegar al equipo',
-  'Busca en la web qué ha cambiado esta semana en el tema que te diga',
-  'Escribe un script que ordene mis descargas por tipo',
-  'Revisa el último commit y dime qué puede romperse',
+  'Explain this repository to me as if I had just joined the team',
+  'Search the web for what changed this week on the topic I give you',
+  'Write a script that sorts my downloads by type',
+  'Review the last commit and tell me what could break',
 ];
 
 interface Notice {
@@ -334,7 +335,7 @@ export function StudioScreen() {
         }
       })
       .catch(() => {
-        if (!controller.signal.aborted) setLoadError('No he podido abrir esta conversación.');
+        if (!controller.signal.aborted) setLoadError(t('Could not open this conversation.'));
       });
     return () => controller.abort();
     // routes is read once at load on purpose: the picker must not jump later.
@@ -524,14 +525,14 @@ export function StudioScreen() {
         // remembered so it can be deleted when the mode ends.
         const sid = await createSession(knobs.incognito ? 'Incognito' : name.slice(0, 60), route);
         if (knobs.incognito) rememberIncognito(sid);
-        setTitle(knobs.incognito ? 'Incógnito' : name.slice(0, 60));
+        setTitle(knobs.incognito ? t('Incognito') : name.slice(0, 60));
         freshRef.current = sid;
         const next = new URLSearchParams(params);
         next.set('s', sid);
         setParams(next, { replace: true });
         return sid;
       } catch {
-        say('No he podido crear la conversación. ¿Está el servidor de modelos configurado?', 'danger');
+        say(t('Could not create the conversation. Is the model server configured?'), 'danger');
         return null;
       }
     },
@@ -543,7 +544,7 @@ export function StudioScreen() {
     async (name: string, args: string): Promise<boolean> => {
       const command = COMMANDS.find((c) => c.name === name);
       if (!command) {
-        say(`No conozco /${name}. Escribe /help para ver los comandos.`, 'warning');
+        say(t('I do not know /{name}. Type /help to see the commands.', { name }), 'warning');
         return true;
       }
       if (command.route) {
@@ -553,7 +554,7 @@ export function StudioScreen() {
       }
       switch (name) {
         case 'help':
-          say(COMMANDS.map((c) => `${c.usage} — ${c.help}`).join('\n'));
+          say(COMMANDS.map((c) => `${t(c.usage)} — ${t(c.help)}`).join('\n'));
           return true;
         case 'models':
           setModelSignal((n) => n + 1);
@@ -565,19 +566,19 @@ export function StudioScreen() {
         case 'gen': {
           const next = genFromArgs(name, args, gen);
           setGen(next);
-          say(Object.keys(next).length ? 'Ajustes de generación aplicados a este chat.' : 'Ajustes de generación retirados.');
+          say(Object.keys(next).length ? t('Generation settings applied to this chat.') : t('Generation settings removed.'));
           return true;
         }
         case 'remember': {
           if (!workspace) {
-            say('Para guardar una regla hace falta una carpeta de trabajo.', 'warning');
+            say(t('Saving a rule needs a working folder.'), 'warning');
             return true;
           }
           try {
             const result = await rememberRule(workspace, args);
-            say(result.duplicate ? 'Esa regla ya estaba en las instrucciones del proyecto.' : `Regla guardada en ${result.path ?? 'las instrucciones del proyecto'}.`);
+            say(result.duplicate ? t('That rule was already in the project instructions.') : t('Rule saved in {where}.', { where: result.path ?? t('the project instructions') }));
           } catch (error) {
-            say(`No he podido guardar la regla: ${(error as Error).message}`, 'danger');
+            say(`${t('Could not save the rule')}: ${(error as Error).message}`, 'danger');
           }
           return true;
         }
@@ -585,27 +586,27 @@ export function StudioScreen() {
           if (!sessionId) return true;
           try {
             const result = await compactSession(sessionId);
-            say(result.compacted ? 'Historial compactado.' : result.detail ?? 'No había bastante que compactar.');
+            say(result.compacted ? t('History compacted.') : result.detail ?? t('There was not enough to compact.'));
             const refreshed = await turnsFromHistory(sessionId);
             setTurns(refreshed.turns);
           } catch (error) {
-            say(`No he podido compactar: ${(error as Error).message}`, 'danger');
+            say(`${t('Could not compact')}: ${(error as Error).message}`, 'danger');
           }
           return true;
         }
         case 'truncate': {
           const keep = Number.parseInt(args, 10);
           if (!sessionId || !keep || keep < 1) {
-            say('Uso: /truncate N — conserva los N primeros mensajes y borra el resto.', 'warning');
+            say(t('Usage: /truncate N — keeps the first N messages and deletes the rest.'), 'warning');
             return true;
           }
           try {
             await truncateSession(sessionId, keep, 'truncate');
             const refreshed = await turnsFromHistory(sessionId);
             setTurns(refreshed.turns);
-            say(`Conservados los ${keep} primeros mensajes. /versions recupera los borrados.`);
+            say(t('Kept the first {n} messages. /versions recovers the deleted ones.', { n: keep }));
           } catch (error) {
-            say(`No he podido truncar: ${(error as Error).message}`, 'danger');
+            say(`${t('Could not truncate')}: ${(error as Error).message}`, 'danger');
           }
           return true;
         }
@@ -616,33 +617,33 @@ export function StudioScreen() {
             say(
               versions.length
                 ? versions
-                    .map((v) => `${v.id}  ·  ${relativeTime(v.createdAt) || v.createdAt}  ·  ${v.reason || 'edición'}  ·  ${v.removed} mensajes\n   /restore ${v.id}`)
+                    .map((v) => `${v.id}  ·  ${relativeTime(v.createdAt) || v.createdAt}  ·  ${v.reason || t('edit')}  ·  ${tn(v.removed, '{n} message', '{n} messages')}\n   /restore ${v.id}`)
                     .join('\n')
-                : 'Todavía no hay versiones: se guarda una cada vez que una edición o un regenerar quita mensajes.',
+                : t('No versions yet: one is saved every time an edit or a regenerate removes messages.'),
             );
           } catch (error) {
-            say(`No he podido leer las versiones: ${(error as Error).message}`, 'danger');
+            say(`${t('Could not read the versions')}: ${(error as Error).message}`, 'danger');
           }
           return true;
         }
         case 'restore': {
           if (!sessionId || !args) {
-            say('Uso: /restore ID (los ID salen con /versions).', 'warning');
+            say(t('Usage: /restore ID (the IDs come from /versions).'), 'warning');
             return true;
           }
           try {
             await restoreVersion(sessionId, args.trim());
             const refreshed = await turnsFromHistory(sessionId);
             setTurns(refreshed.turns);
-            say('Versión restaurada.');
+            say(t('Version restored.'));
           } catch (error) {
-            say(`No he podido restaurar: ${(error as Error).message}`, 'danger');
+            say(`${t('Could not restore')}: ${(error as Error).message}`, 'danger');
           }
           return true;
         }
         case 'checkpoints': {
           if (!workspace) {
-            say('Los puntos de control van con la carpeta de trabajo: elige una primero.', 'warning');
+            say(t('Checkpoints go with the working folder: pick one first.'), 'warning');
             return true;
           }
           try {
@@ -650,11 +651,11 @@ export function StudioScreen() {
             say(
               list.length
                 ? list.map((c) => `${c.sha.slice(0, 10)}  ·  ${c.createdAt ? relativeTime(c.createdAt) || c.createdAt : ''}  ·  ${c.reason ?? ''}`).join('\n') +
-                    '\n\nPara volver a uno, usa «Volver a antes de este turno» en el resumen del turno.'
-                : 'No hay puntos de control en esta carpeta todavía.',
+                    '\n\n' + t('To go back to one, use "Back to before this turn" in the turn summary.')
+                : t('No checkpoints in this folder yet.'),
             );
           } catch (error) {
-            say(`No he podido leer los puntos de control: ${(error as Error).message}`, 'danger');
+            say(`${t('Could not read the checkpoints')}: ${(error as Error).message}`, 'danger');
           }
           return true;
         }
@@ -670,7 +671,7 @@ export function StudioScreen() {
         }
         case 'rename': {
           if (!sessionId || !args) {
-            say('Uso: /rename nombre nuevo', 'warning');
+            say(t('Usage: /rename new name'), 'warning');
             return true;
           }
           try {
@@ -678,7 +679,7 @@ export function StudioScreen() {
             setTitle(args);
             refreshSessions();
           } catch (error) {
-            say(`No he podido renombrar: ${(error as Error).message}`, 'danger');
+            say(`${t('Could not rename')}: ${(error as Error).message}`, 'danger');
           }
           return true;
         }
@@ -689,7 +690,7 @@ export function StudioScreen() {
             return true;
           }
           if (busy) {
-            say('Espera a que termine el turno actual antes de delegar.', 'warning');
+            say(t('Wait for the current turn to finish before delegating.'), 'warning');
             return true;
           }
           const label = delegationLabel(parsed);
@@ -703,7 +704,7 @@ export function StudioScreen() {
               const doc = await createDoc({ title: args, sessionId });
               panelDispatch({ type: 'doc', doc: { streaming: false, id: doc.id, title: doc.title, language: doc.language, content: doc.content, version: doc.versionCount, suggestions: [] } });
             } catch (error) {
-              say(`No he podido crear el documento: ${(error as Error).message}`, 'danger');
+              say(`${t('Could not create the document')}: ${(error as Error).message}`, 'danger');
             }
           } else {
             panelDispatch({ type: 'open', tab: 'doc' });
@@ -715,11 +716,11 @@ export function StudioScreen() {
           return true;
         case 'open': {
           if (!workspace) {
-            say('Para abrir un fichero hace falta una carpeta de trabajo.', 'warning');
+            say(t('Opening a file needs a working folder.'), 'warning');
             return true;
           }
           if (!args) {
-            say('Uso: /open ruta/al/fichero (relativa a la carpeta de trabajo).', 'warning');
+            say(t('Usage: /open path/to/file (relative to the working folder).'), 'warning');
             return true;
           }
           panelDispatch({ type: 'file', workspace, path: args });
@@ -737,20 +738,20 @@ export function StudioScreen() {
           }
           if (/^(off|no|none|ninguno)$/i.test(args)) {
             setPreset(null);
-            say('Sin preset.');
+            say(t('No preset.'));
             return true;
           }
           try {
             const { listPresets } = await import('../adapters/presets');
             const all = await listPresets();
             const hit = all.find((p) => p.name.toLowerCase() === args.toLowerCase() || p.id.toLowerCase() === args.toLowerCase()) ?? all.find((p) => p.name.toLowerCase().includes(args.toLowerCase()));
-            if (!hit) say(`No hay ningún preset que se llame «${args}». Los que hay: ${all.map((p) => p.name).join(', ')}`, 'warning');
+            if (!hit) say(t('There is no preset called "{name}". The ones there are: {list}', { name: args, list: all.map((p) => p.name).join(', ') }), 'warning');
             else {
               setPreset({ id: hit.id, name: hit.name });
               say(`Preset: ${hit.name}.`);
             }
           } catch (error) {
-            say(`No he podido leer los presets: ${(error as Error).message}`, 'danger');
+            say(`${t('Could not read the presets')}: ${(error as Error).message}`, 'danger');
           }
           return true;
         }
@@ -765,7 +766,7 @@ export function StudioScreen() {
           const out = list.filter((t) => t.role === 'assistant' && t.metrics);
           const tokens = out.reduce((n, t) => n + (t.metrics?.outputTokens ?? 0), 0);
           const seconds = out.reduce((n, t) => n + (t.metrics?.responseTime ?? 0), 0);
-          say(`${list.length} mensajes · ${tokens} tokens generados · ${seconds.toFixed(1)} s de modelo · ${current?.model ?? route?.model ?? 'sin modelo'}`);
+          say(`${tn(list.length, '{n} message', '{n} messages')} · ${t('{n} tokens generated', { n: tokens })} · ${t('{s} s of model', { s: seconds.toFixed(1) })} · ${current?.model ?? route?.model ?? t('no model')}`);
           return true;
         }
         default:
@@ -779,7 +780,7 @@ export function StudioScreen() {
   const rerunWorker = useCallback(
     (task: DelegationTask) => {
       if (busy) {
-        say('Espera a que termine la delegación antes de repetir un worker.', 'warning');
+        say(t('Wait for the delegation to finish before repeating a worker.'), 'warning');
         return;
       }
       const delegation: Delegation = { tasks: [task], parallel: false, reviewer: false };
@@ -801,12 +802,12 @@ export function StudioScreen() {
       try {
         const copy = await forkSession(sessionId, keep);
         refreshSessions();
-        say(`Bifurcada como «${copy.name}».`);
+        say(t('Forked as "{name}".', { name: copy.name }));
         const next = new URLSearchParams(params);
         next.set('s', copy.id);
         setParams(next);
       } catch (error) {
-        say(`No he podido bifurcar: ${(error as Error).message}`, 'danger');
+        say(`${t('Could not fork')}: ${(error as Error).message}`, 'danger');
       }
     },
     [sessionId, turns, refreshSessions, say, params, setParams],
@@ -837,7 +838,7 @@ export function StudioScreen() {
         setRoutes(list);
         say(`${list.length} modelos en ${new Set(list.map((r) => r.endpointId)).size} endpoints.`);
       })
-      .catch(() => say('No he podido refrescar los modelos.', 'danger'))
+      .catch(() => say(t('Could not refresh the models.'), 'danger'))
       .finally(() => setRefreshingModels(false));
   }, [say]);
 
@@ -889,7 +890,7 @@ export function StudioScreen() {
     autoSendRef.current = null;
     void (async () => {
       setDraft('');
-      const sid = await ensureSession(pending.text.split('\n').find((l) => l.trim() && !l.startsWith('Ayúdame')) ?? pending.text);
+      const sid = await ensureSession(pending.text.split('\n').find((l) => l.trim() && !l.startsWith('Ayúdame') && !l.startsWith('Help me')) ?? pending.text);
       if (!sid) return;
       if (pending.noteId) {
         void import('../adapters/notes')
@@ -920,7 +921,7 @@ export function StudioScreen() {
       try {
         await truncateSession(sessionId, keep, text === undefined ? 'regenerate' : 'edit');
       } catch (error) {
-        say(`No he podido preparar la regeneración: ${(error as Error).message}`, 'danger');
+        say(`${t('Could not prepare the regeneration')}: ${(error as Error).message}`, 'danger');
         return;
       }
       setTurns(turns.slice(0, index));
@@ -941,7 +942,7 @@ export function StudioScreen() {
         await editMessage(sessionId, turn.dbId, text);
         setTurns((list) => list?.map((t) => (t.id === turn.id ? { ...t, text, edited: true } : t)) ?? list);
       } catch (error) {
-        say(`No he podido guardar la edición: ${(error as Error).message}`, 'danger');
+        say(`${t('Could not save the edit')}: ${(error as Error).message}`, 'danger');
       }
     },
     [sessionId, regenerateFrom, say],
@@ -954,7 +955,7 @@ export function StudioScreen() {
         await deleteMessages(sessionId, [turn.dbId]);
         setTurns((list) => list?.filter((t) => t.id !== turn.id) ?? list);
       } catch (error) {
-        say(`No he podido borrar el mensaje: ${(error as Error).message}`, 'danger');
+        say(`${t('Could not delete the message')}: ${(error as Error).message}`, 'danger');
       }
     },
     [sessionId, say],
@@ -973,12 +974,12 @@ export function StudioScreen() {
     fork: () => {
       const last = [...(turns ?? [])].reverse().find((t) => t.role === 'assistant' && t.dbId);
       if (last) void forkFrom(last);
-      else say('No hay nada que bifurcar todavía.', 'warning');
+      else say(t('Nothing to fork yet.'), 'warning');
     },
     tts: () => {
       const last = [...(turns ?? [])].reverse().find((t) => t.role === 'assistant' && t.text);
-      if (last) void speak(last.text).catch(() => say('Sin voz disponible.', 'warning'));
-      else say('No hay ninguna respuesta que leer.', 'warning');
+      if (last) void speak(last.text).catch(() => say(t('No voice available.'), 'warning'));
+      else say(t('There is no reply to read.'), 'warning');
     },
   };
 
@@ -1009,16 +1010,16 @@ export function StudioScreen() {
       setSessionImportant(sessionId, !current.isImportant)
         .then(() => {
           refreshSessions();
-          say(current.isImportant ? 'Quitada de favoritas.' : 'Marcada como favorita.');
+          say(current.isImportant ? t('Removed from favourites.') : t('Marked as favourite.'));
         })
-        .catch(() => say('No he podido cambiar la favorita.', 'danger'));
+        .catch(() => say(t('Could not change the favourite.'), 'danger'));
     },
     delete_session: () => {
       if (!sessionId) return;
       const now = Date.now();
       if (now - deleteArmedRef.current > 4000) {
         deleteArmedRef.current = now;
-        say('Pulsa el atajo otra vez en 4 s para borrar esta conversación.', 'warning');
+        say(t('Press the shortcut again within 4 s to delete this conversation.'), 'warning');
         return;
       }
       deleteArmedRef.current = 0;
@@ -1026,9 +1027,9 @@ export function StudioScreen() {
         .then(() => {
           refreshSessions();
           openSession(null);
-          say('Conversación borrada.');
+          say(t('Conversation deleted.'));
         })
-        .catch(() => say('No he podido borrarla.', 'danger'));
+        .catch(() => say(t('Could not delete it.'), 'danger'));
     },
     cancel: () => {
       if (busy) stop();
@@ -1036,7 +1037,7 @@ export function StudioScreen() {
     },
     tts: () => {
       const last = [...(turns ?? [])].reverse().find((t) => t.role === 'assistant' && t.text);
-      if (last) void speak(last.text).catch(() => say('Sin voz disponible.', 'warning'));
+      if (last) void speak(last.text).catch(() => say(t('No voice available.'), 'warning'));
     },
     incognito: () => setKnobs((k) => ({ ...k, incognito: !k.incognito })),
     settings: () => navigate('/settings'),
@@ -1107,28 +1108,28 @@ export function StudioScreen() {
         onChanged={refreshSessions}
         onNotice={say}
       />
-      {drawerOpen && <button type="button" className="fs-studio__scrim" aria-label="Cerrar la lista de conversaciones" onClick={() => setDrawerOpen(false)} />}
+      {drawerOpen && <button type="button" className="fs-studio__scrim" aria-label={t('Close the conversation list')} onClick={() => setDrawerOpen(false)} />}
 
       <section className="fs-studio__stage">
         <header className="fs-studio__head">
-          <button type="button" className="fs-studio__chip fs-studio__drawer-btn" aria-expanded={drawerOpen || !paneHidden} title="Mostrar u ocultar las conversaciones (Ctrl+B)" onClick={toggleSidebar} data-testid="studio-drawer">
+          <button type="button" className="fs-studio__chip fs-studio__drawer-btn" aria-expanded={drawerOpen || !paneHidden} title={t('Show or hide the conversations (Ctrl+B)')} onClick={toggleSidebar} data-testid="studio-drawer">
             <MessageSquare size={13} aria-hidden="true" />
-            <span>Conversaciones</span>
+            <span>{t('Conversations')}</span>
           </button>
           <h1 className="fs-studio__title" title={title || undefined}>
-            {sessionId ? current?.name || title || 'Conversación' : 'Nueva conversación'}
+            {sessionId ? current?.name || title || t('Conversation') : t('New conversation')}
           </h1>
           <div className="fs-studio__head-actions">
             <IconButton
               icon={PanelRight}
-              label={panel.open ? 'Cerrar el panel lateral' : 'Panel lateral: navegador, documento, fichero'}
+              label={panel.open ? t('Close the side panel') : t('Side panel: browser, document, file')}
               size="sm"
               onClick={() => panelDispatch(panel.open ? { type: 'close' } : { type: 'open' })}
             />
             {sessionId && (
               <IconButton
                 icon={ExternalLink}
-                label="Abrir en la interfaz anterior"
+                label={t('Open in the previous interface')}
                 size="sm"
                 onClick={() => {
                   window.location.href = `/?shell=legacy#${sessionId}`;
@@ -1141,7 +1142,7 @@ export function StudioScreen() {
         <div className="fs-studio__scroll" ref={scrollRef} onScroll={onScroll} data-testid="studio-transcript">
           {turns === null && !loadError && (
             <div className="fs-studio__loading">
-              <Skeleton label="Cargando la conversación" count={4} height="64px" />
+              <Skeleton label={t('Loading the conversation')} count={4} height="64px" />
             </div>
           )}
           {loadError && (
@@ -1157,16 +1158,16 @@ export function StudioScreen() {
               </span>
               <p className="fs-studio__kicker">Studio</p>
               <h2 className="fs-home__title fs-studio__hero-title">
-                ¿Qué <em>hacemos</em> hoy?
+                {t('What are we')} <em>{t('doing')}</em> {t('today?')}
               </h2>
               <p className="fs-prose">
-                Escribe abajo. En modo agente usa herramientas y te enseña cada paso en el carril; en modo chat solo conversa.
+                {t('Type below. In agent mode it uses tools and shows you every step in the rail; in chat mode it only talks.')}
                 <br />
-                <code>@fichero</code> menciona un fichero del workspace, <code>#regla</code> guarda una instrucción permanente,{' '}
-                <code>/comando</code> hace el resto.
+                <code>{t('@file')}</code> {t('mentions a file in the workspace,')} <code>{t('#rule')}</code> {t('saves a standing instruction,')}{' '}
+                <code>{t('/command')}</code> {t('does the rest.')}
               </p>
               <div className="fs-studio__suggestions">
-                {SUGGESTIONS.map((text, i) => (
+                {SUGGESTIONS.map((key) => t(key)).map((text, i) => (
                   <button
                     key={text}
                     type="button"
@@ -1208,7 +1209,7 @@ export function StudioScreen() {
         {notice && (
           <div className="fs-notice fs-studio__notice" data-tone={notice.tone} role="status" data-testid="studio-notice">
             <pre className="fs-studio__notice-text">{notice.text}</pre>
-            <IconButton icon={X} label="Cerrar aviso" size="sm" onClick={() => setNotice(null)} />
+            <IconButton icon={X} label={t('Dismiss notice')} size="sm" onClick={() => setNotice(null)} />
           </div>
         )}
 

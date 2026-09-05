@@ -1,4 +1,5 @@
 import type { BrowserFrame, ChatEvent, DocSuggestion } from '../../adapters/chat';
+import { t } from '../../i18n';
 
 /**
  * The side panel next to the transcript: what the agent sees (browser and
@@ -101,7 +102,7 @@ export function panelReducer(state: PanelState, action: PanelAction): PanelState
         const frame: BrowserFrame =
           ev.type === 'frame'
             ? ev.frame
-            : { src: ev.screenshot as string, url: '', title: /^desktop_/.test(ev.tool) ? 'Escritorio' : ev.tool, tool: ev.tool, source: /^desktop_/.test(ev.tool) ? 'desktop' : 'browser', at: Date.now() };
+            : { src: ev.screenshot as string, url: '', title: /^desktop_/.test(ev.tool) ? t('Desktop') : ev.tool, tool: ev.tool, source: /^desktop_/.test(ev.tool) ? 'desktop' : 'browser', at: Date.now() };
         const frames = [...state.frames, frame].slice(-MAX_FRAMES);
         const first = !state.live;
         return {
@@ -118,11 +119,11 @@ export function panelReducer(state: PanelState, action: PanelAction): PanelState
           ...state,
           open: true,
           tab: 'doc',
-          doc: { streaming: true, id: null, title: ev.title || 'Documento', language: ev.language, content: '', version: 1, suggestions: [] },
+          doc: { streaming: true, id: null, title: ev.title || t('Document'), language: ev.language, content: '', version: 1, suggestions: [] },
         };
       }
       if (ev.type === 'doc_delta') {
-        const doc = state.doc ?? { streaming: true, id: null, title: 'Documento', language: '', content: '', version: 1, suggestions: [] };
+        const doc = state.doc ?? { streaming: true, id: null, title: t('Document'), language: '', content: '', version: 1, suggestions: [] };
         return { ...state, doc: { ...doc, streaming: true, content: ev.content } };
       }
       if (ev.type === 'doc_update') {
@@ -133,7 +134,7 @@ export function panelReducer(state: PanelState, action: PanelAction): PanelState
           doc: {
             streaming: false,
             id: ev.doc.id,
-            title: ev.doc.title || state.doc?.title || 'Documento',
+            title: ev.doc.title || state.doc?.title || t('Document'),
             language: ev.doc.language || state.doc?.language || '',
             content: ev.doc.content,
             version: ev.doc.version,

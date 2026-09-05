@@ -2,6 +2,7 @@ import * as RadixDialog from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { IconButton } from './IconButton';
+import { t } from '../i18n';
 
 export interface DialogProps {
   open: boolean;
@@ -42,7 +43,7 @@ export function Dialog({
           >
             <RadixDialog.Title className="fs-dialog__title">{title}</RadixDialog.Title>
             <RadixDialog.Close asChild>
-              <IconButton icon={X} label="Cerrar" size="sm" />
+              <IconButton icon={X} label={t('Close')} size="sm" />
             </RadixDialog.Close>
           </div>
           {description && (

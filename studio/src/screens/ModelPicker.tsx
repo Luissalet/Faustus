@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { ChevronDown, Cpu } from 'lucide-react';
 import { lazy, Suspense, useEffect, useState } from 'react';
 import type { ModelRoute } from '../adapters/chat';
@@ -52,7 +53,7 @@ export function ModelPicker({
         data-testid="studio-model"
       >
         <Cpu size={13} aria-hidden="true" />
-        <span>{current ? current.model : routes.length ? 'Elegir modelo' : 'Sin modelos'}</span>
+        <span>{current ? current.model : routes.length ? t('Choose model') : t('No models')}</span>
         <ChevronDown size={12} aria-hidden="true" />
       </button>
       {loaded && (

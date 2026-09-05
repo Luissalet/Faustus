@@ -26,6 +26,13 @@ export default defineConfig({
         // needs, and a new build changes the chunk names, so nothing stale
         // can be reused either. No manualChunks: a forced vendor chunk
         // would drag the gallery-only Radix menus into every page load.
+        //
+        // One thing the entry cannot help owning is Vite's own preload
+        // helper (`__vitePreload`), which the app chunk imports from
+        // `../studio.js`, so main.tsx still runs twice. That is harmless
+        // now that app.tsx mounts once (see `mounted` there); it was not
+        // before — two roots on one container, the shell dying on the first
+        // language change.
         entryFileNames: 'studio.js',
         chunkFileNames: 'chunks/[name]-[hash].js',
         assetFileNames: 'assets/[name]-[hash][extname]',

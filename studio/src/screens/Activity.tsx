@@ -7,12 +7,13 @@ import { relativeTime } from '../adapters/home';
 import './projects.css';
 import './home.css';
 import './activity.css';
+import { t, tn } from '../i18n';
 
 const FILTERS: { id: string; label: string; match: (run: ActivityRun) => boolean }[] = [
-  { id: 'todo', label: 'Todo', match: () => true },
-  { id: 'accion', label: 'Requiere acción', match: (run) => run.status === 'waiting' },
-  { id: 'activo', label: 'En curso', match: (run) => run.status === 'running' },
-  { id: 'fallido', label: 'Fallidos', match: (run) => run.status === 'failed' },
+  { id: 'todo', label: 'All', match: () => true },
+  { id: 'accion', label: 'Needs action', match: (run) => run.status === 'waiting' },
+  { id: 'activo', label: 'In progress', match: (run) => run.status === 'running' },
+  { id: 'fallido', label: 'Failed', match: (run) => run.status === 'failed' },
 ];
 
 /**
@@ -52,10 +53,10 @@ export function ActivityScreen() {
     return (
       <EmptyState
         icon={ActivityIcon}
-        title="No he podido leer la actividad"
-        body="Ninguno de los subsistemas ha respondido. La interfaz anterior no depende de esta pantalla."
+        title={t('Could not read the activity')}
+        body={t('None of the subsystems responded. The previous interface does not depend on this screen.')}
         primaryAction={{
-          label: 'Abrir la interfaz anterior',
+          label: t('Open the previous interface'),
           onClick: () => {
             window.location.href = '/?shell=legacy';
           },
@@ -68,16 +69,16 @@ export function ActivityScreen() {
     <div className="fs-screen" data-testid="activity">
       <header className="fs-screen__head">
         <div>
-          <h1 className="fs-screen__title">Actividad</h1>
+          <h1 className="fs-screen__title">{t('Activity')}</h1>
           <p className="fs-prose" style={{ marginBlockStart: 'var(--fs-space-2)' }}>
             {waiting > 0
-              ? `${waiting} ${waiting === 1 ? 'cosa espera' : 'cosas esperan'} una decisión tuya.`
-              : 'Tareas, renders y aprobaciones, con el mismo lenguaje para todos.'}
+              ? tn(waiting, '{n} thing is waiting for your decision.', '{n} things are waiting for your decision.')
+              : t('Tasks, renders and approvals, in the same language for all.')}
           </p>
         </div>
       </header>
 
-      <div className="fs-tabs" role="tablist" aria-label="Filtrar actividad">
+      <div className="fs-tabs" role="tablist" aria-label={t('Filter activity')}>
         {FILTERS.map((entry) => (
           <button
             key={entry.id}
@@ -93,21 +94,21 @@ export function ActivityScreen() {
               setParams(next);
             }}
           >
-            {entry.label}
+            {t(entry.label)}
           </button>
         ))}
       </div>
 
-      {!runs && <Skeleton label="Cargando la actividad" count={6} height="52px" />}
+      {!runs && <Skeleton label={t('Loading the activity')} count={6} height="52px" />}
 
       {runs && visible.length === 0 && (
         <EmptyState
           icon={ActivityIcon}
-          title={filterId === 'todo' ? 'Nada ha corrido todavía' : 'Nada en este estado'}
+          title={filterId === 'todo' ? t('Nothing has run yet') : t('Nothing in this state')}
           body={
             filterId === 'todo'
-              ? 'Cuando una tarea, un render o un agente hagan algo, aparecerá aquí con su estado y lo que tardó.'
-              : 'Prueba con otro filtro: el que has elegido no tiene nada ahora mismo.'
+              ? t('When a task, a render or an agent does something, it will appear here with its state and how long it took.')
+              : t('Try another filter: the one you chose has nothing right now.')
           }
         />
       )}
@@ -122,7 +123,7 @@ export function ActivityScreen() {
               data-testid="activity-run"
             >
               <span className="fs-run__kind" data-kind={run.kind}>
-                {run.kind}
+                {t(run.kind)}
               </span>
               <span className="fs-run__main">
                 <span className="fs-row__name">{run.title}</span>

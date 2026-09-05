@@ -1,4 +1,5 @@
 import { ApiError, asArray, getJson } from './api';
+import { t } from '../i18n';
 
 /**
  * Agentes: the four panels the previous interface kept under the tools list
@@ -351,10 +352,10 @@ export function parseTasks(text: string): string[] {
 }
 
 export const PROOF_WORD: Record<string, string> = {
-  proved: 'las pruebas pasaron y cada fichero reclamado cambió de verdad',
-  partial: 'algo queda sin justificar',
-  unproved: 'no corrió nada que pudiera demostrarlo: ni un fallo ni un éxito',
-  contradicted: 'el disco o las pruebas dicen lo contrario',
+  proved: 'the tests passed and every claimed file really changed',
+  partial: 'something is unaccounted for',
+  unproved: 'nothing ran that could show it — not a failure, not a success',
+  contradicted: 'the disk or the tests say otherwise',
 };
 
 export const PROOF_TONE: Record<string, 'ok' | 'warn' | 'bad'> = { proved: 'ok', partial: 'warn', unproved: 'warn', contradicted: 'bad' };
@@ -428,10 +429,10 @@ export async function listRunners(refresh = false): Promise<RunnerCatalogue> {
 
 /** Why this agent can or cannot be a worker — the two facts kept apart. */
 export function workerStatus(r: Runner): { can: boolean; label: string; detail: string } {
-  if (r.kind === 'app') return { can: false, label: 'GUI, nunca worker', detail: 'Una ventana que se queda abierta no tiene invocación de una tarea, una salida.' };
-  if (!r.invocation_known) return { can: false, label: 'sin invocación registrada', detail: 'Ollama conoce este agente; Faustus aún no tiene una fila que diga cómo correr una tarea con él.' };
-  if (!r.installed) return { can: false, label: 'no instalado', detail: `Instálalo primero: ${r.install || r.launch_command}` };
-  return { can: true, label: 'puede ser worker', detail: `Pon "runner": "${r.key}" en una tarea despachada.` };
+  if (r.kind === 'app') return { can: false, label: t('GUI, never a worker'), detail: t('A window that stays open has no one-task, one-exit invocation.') };
+  if (!r.invocation_known) return { can: false, label: t('no invocation recorded'), detail: t('Ollama knows this agent; Faustus has no row saying how to run one task with it yet.') };
+  if (!r.installed) return { can: false, label: t('not installed'), detail: t('Install it first: {cmd}', { cmd: r.install || r.launch_command }) };
+  return { can: true, label: t('can be a worker'), detail: t('Put "runner": "{key}" on a dispatched task.', { key: r.key }) };
 }
 
 export interface LaunchEvent {
@@ -448,8 +449,8 @@ export function launchLogLine(ev: LaunchEvent): string {
   if (ev.event === 'output') return ev.line ?? '';
   if (ev.event === 'error') return `error: ${ev.message ?? ''}`;
   if (ev.event === 'end') {
-    const code = ev.exit_code == null ? 'desconocido' : String(ev.exit_code);
-    return `— terminado (salida ${code}); ${ev.installed ? 'ahora está instalado' : 'sigue sin instalar'}`;
+    const code = ev.exit_code == null ? t('unknown') : String(ev.exit_code);
+    return `— ${t('finished (exit {code})', { code })}; ${ev.installed ? t('it is now installed') : t('it is still not installed')}`;
   }
   return '';
 }
@@ -560,7 +561,7 @@ export async function listDefs(workspace = activeWorkspace()): Promise<DefCatalo
   const raw = await getJson<Record<string, unknown>>(`/api/agent-defs${workspace ? `?workspace=${encodeURIComponent(workspace)}` : ''}`);
   return {
     agents: asArray<Record<string, unknown>>(raw, 'agents').filter((a) => a && str(a.slug)).map(defFrom),
-    errors: asArray<Record<string, unknown>>(raw, 'errors').map((e) => ({ path: str(e.path), slug: str(e.slug), reason: str(e.reason, 'sin motivo') })),
+    errors: asArray<Record<string, unknown>>(raw, 'errors').map((e) => ({ path: str(e.path), slug: str(e.slug), reason: str(e.reason, t('no reason given')) })),
     max_depth: num(raw.max_depth, 1),
     depth_setting: str(raw.depth_setting, 'agent_subagent_depth'),
     shell_note: str(raw.shell_note),
@@ -568,21 +569,21 @@ export async function listDefs(workspace = activeWorkspace()): Promise<DefCatalo
 }
 
 export function delegateStatus(def: AgentDef, maxDepth: number): { can: boolean; label: string; detail: string } {
-  if (!def.may_delegate) return { can: false, label: 'no delega', detail: 'Hace una tarea y responde.' };
-  if (maxDepth < 1) return { can: false, label: 'no delega', detail: 'Pide delegar, pero el techo de profundidad es 0: ningún worker puede arrancar otro.' };
-  return { can: true, label: 'puede delegar', detail: `Sus workers son la última generación (techo ${maxDepth}).` };
+  if (!def.may_delegate) return { can: false, label: t('cannot delegate'), detail: t('It does one task and reports back.') };
+  if (maxDepth < 1) return { can: false, label: t('cannot delegate'), detail: t('Asks to, and the depth ceiling is 0: no worker may start another.') };
+  return { can: true, label: t('may delegate'), detail: t('Its own workers are the last generation (depth ceiling {n}).', { n: maxDepth }) };
 }
 
 export const MODE_HINT: Record<AgentDef['mode'], string> = {
-  coordinator: 'Puede repartir su trabajo entre más workers, hasta el techo de profundidad.',
-  reviewer: 'El único modo que puede ocupar el puesto de revisor, que corre al final con los bloqueos de fichero quitados.',
-  worker: 'Hace una tarea. No puede arrancar otro worker.',
+  coordinator: 'May split its work between further workers, up to the depth ceiling.',
+  reviewer: 'The only mode allowed to fill the reviewer slot, which runs after everyone with the file locks off.',
+  worker: 'Does one task. Cannot start another worker.',
 };
 
 export const SOURCE_HINT: Record<AgentDef['source'], string> = {
-  builtin: 'Viene con Faustus. Un fichero con el mismo slug en DATA_DIR/agents lo sustituye.',
-  repo: 'Lo trae esta carpeta. Cargó porque aprobaste sus ficheros de instrucciones.',
-  user: 'Tuyo, en DATA_DIR/agents.',
+  builtin: 'Shipped with Faustus. Put a file with the same slug under DATA_DIR/agents to replace it.',
+  repo: 'Carried by this folder. It loaded because you approved this folder\'s instruction files.',
+  user: 'Yours, under DATA_DIR/agents.',
 };
 
 /* ── Expertos ── */
@@ -824,7 +825,7 @@ export async function sendFeedback(slug: string, accepted: number, rejected: num
 export function pageLabel(row: { page?: number | null; page_label?: string }): string {
   const given = str(row.page_label).trim();
   if (given) return given;
-  return row.page == null ? 'página desconocida' : `página ${row.page}`;
+  return row.page == null ? t('page unknown') : t('page {n}', { n: row.page });
 }
 
 /* ── Expert review: typed span deltas over the ORIGINAL text ── */
@@ -943,5 +944,5 @@ export function applyAcceptedDeltas(original: string, deltas: ReviewDelta[], acc
 
 export function refOf(c: ReviewCitation): string {
   if (c.ref) return c.ref;
-  return `${c.source || 'fuente desconocida'}, ${pageLabel(c)}`;
+  return `${c.source || t('unknown source')}, ${pageLabel(c)}`;
 }

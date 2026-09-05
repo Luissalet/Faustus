@@ -5,6 +5,7 @@ import { Button, StatusBadge, type RunStatus } from '../../components';
 import { steerWorker, stopWorker } from '../../adapters/agents';
 import type { DelegationTask } from '../../adapters/chat';
 import { workerLive, type Worker } from './model';
+import { t, tn } from '../../i18n';
 
 /**
  * One card per sub-agent of a delegate_agents call: what it is doing right
@@ -43,40 +44,40 @@ export function formatDuration(seconds: number): string {
 }
 
 const ACTIVITY: [RegExp, string][] = [
-  [/^(read_file|ls|list_files|glob|grep|search_files|find_files|read_plan|project_context|repo_map|code_refs)$/, 'Leyendo ficheros'],
-  [/^(edit_file|write_file|apply_patch|replace_across_files|create_file|multi_edit)$/, 'Editando ficheros'],
-  [/^(bash|python|run_tests|shell|execute|subprocess)$/, 'Ejecutando un comando'],
-  [/^(web_search|web_fetch|fetch_url|mcp__builtin_browser__|browser_)/, 'Navegando'],
-  [/^desktop_/, 'Usando el escritorio'],
-  [/^delegate_agents$/, 'Delegando'],
-  [/^(ask_user|update_plan|todowrite|save_todos)$/, 'Esperándote'],
-  [/^(manage_skills|memory|remember|recall)/, 'Usando la memoria'],
+  [/^(read_file|ls|list_files|glob|grep|search_files|find_files|read_plan|project_context|repo_map|code_refs)$/, 'Reading files'],
+  [/^(edit_file|write_file|apply_patch|replace_across_files|create_file|multi_edit)$/, 'Editing files'],
+  [/^(bash|python|run_tests|shell|execute|subprocess)$/, 'Running a command'],
+  [/^(web_search|web_fetch|fetch_url|mcp__builtin_browser__|browser_)/, 'Browsing'],
+  [/^desktop_/, 'Using the desktop'],
+  [/^delegate_agents$/, 'Delegating'],
+  [/^(ask_user|update_plan|todowrite|save_todos)$/, 'Waiting for you'],
+  [/^(manage_skills|memory|remember|recall)/, 'Using the memory'],
 ];
 
 export function activity(w: Worker): string {
-  if (w.status === 'queued') return 'En cola';
+  if (w.status === 'queued') return t('Queued');
   if (!workerLive(w)) return '';
-  if (w.stalled) return /loop/i.test(w.stallReason) ? 'En bucle' : 'Parado';
+  if (w.stalled) return /loop/i.test(w.stallReason) ? t('Looping') : t('Stalled');
   if (w.toolInFlight && w.lastTool) {
-    for (const [re, label] of ACTIVITY) if (re.test(w.lastTool)) return label;
-    return `Usando ${w.lastTool}`;
+    for (const [re, label] of ACTIVITY) if (re.test(w.lastTool)) return t(label);
+    return t('Using {tool}', { tool: w.lastTool });
   }
-  return 'Pensando';
+  return t('Thinking');
 }
 
 function pill(w: Worker, now: number): { status: RunStatus; label: string } {
-  if (w.status === 'queued') return { status: 'queued', label: 'en cola' };
+  if (w.status === 'queued') return { status: 'queued', label: t('queued') };
   if (w.status === 'running') {
     if (w.stalled) {
-      if (/loop/i.test(w.stallReason)) return { status: 'waiting', label: 'bucle' };
-      if (w.idleS !== null) return { status: 'waiting', label: `sin actividad ${Math.round(w.idleS + Math.max(0, now - (w.stallAt ?? now)) / 1000)} s` };
-      return { status: 'waiting', label: w.stallReason || 'parado' };
+      if (/loop/i.test(w.stallReason)) return { status: 'waiting', label: t('loop') };
+      if (w.idleS !== null) return { status: 'waiting', label: t('idle {n} s', { n: Math.round(w.idleS + Math.max(0, now - (w.stallAt ?? now)) / 1000) }) };
+      return { status: 'waiting', label: w.stallReason || t('stalled') };
     }
-    if (w.sawTick && now - w.lastEventAt > NO_SIGNAL_MS) return { status: 'waiting', label: `sin señal ${Math.round((now - w.lastEventAt) / 1000)} s` };
-    return { status: 'running', label: 'en marcha' };
+    if (w.sawTick && now - w.lastEventAt > NO_SIGNAL_MS) return { status: 'waiting', label: t('no signal {n} s', { n: Math.round((now - w.lastEventAt) / 1000) }) };
+    return { status: 'running', label: t('running') };
   }
-  if (w.status === 'done') return { status: 'succeeded', label: 'hecho' };
-  if (w.status === 'stopped') return { status: 'cancelled', label: 'parado' };
+  if (w.status === 'done') return { status: 'succeeded', label: t('done') };
+  if (w.status === 'stopped') return { status: 'cancelled', label: t('stalled') };
   if (w.status === 'failed') return { status: 'failed', label: 'fallido' };
   return { status: 'paused', label: w.stopReason || 'parcial' };
 }
@@ -90,7 +91,7 @@ function WorkerCard({ w, live, now, onRerun, onNotice }: { w: Worker; live: bool
   const [stopState, setStopState] = useState<'idle' | 'stopping' | 'stopped' | 'gone'>('idle');
   const alive = workerLive(w);
   const reviewer = w.role === 'reviewer';
-  const name = reviewer ? `Revisor · ${w.name || 'reviewer'}` : `${(w.index ?? 0) + 1}. ${w.name || 'worker'}`;
+  const name = reviewer ? `${t('Reviewer')} · ${w.name || 'reviewer'}` : `${(w.index ?? 0) + 1}. ${w.name || 'worker'}`;
   const p = pill(w, now);
   const act = activity(w);
   const instruction = w.instruction || w.instructionFull;
@@ -112,7 +113,7 @@ function WorkerCard({ w, live, now, onRerun, onNotice }: { w: Worker; live: bool
       setStopState(stopped ? 'stopped' : 'gone');
     } catch {
       setStopState('idle');
-      onNotice('No he podido parar el worker.', 'danger');
+      onNotice(t('Could not stop the worker.'), 'danger');
     }
   };
 
@@ -124,9 +125,9 @@ function WorkerCard({ w, live, now, onRerun, onNotice }: { w: Worker; live: bool
       try {
         const ok = await steerWorker(w.sessionId, msg);
         // The server echoes the steer as a `steer` event, which paints the line.
-        onNotice(ok ? 'Mensaje enviado al worker; lo lee antes de su siguiente ronda.' : 'Ese worker ya no está en marcha.', ok ? 'info' : 'warning');
+        onNotice(ok ? t('Message sent to the worker; it reads it before its next round.') : t('That worker is no longer running.'), ok ? 'info' : 'warning');
       } catch {
-        onNotice('No he podido enviar el mensaje.', 'danger');
+        onNotice(t('Could not send the message.'), 'danger');
       } finally {
         setBusy(false);
         setForm(null);
@@ -144,15 +145,15 @@ function WorkerCard({ w, live, now, onRerun, onNotice }: { w: Worker; live: bool
       <header className="fs-sa__head">
         <strong className="fs-sa__name">{name}</strong>
         <span className="fs-sa__role" data-role={w.role}>{w.role}</span>
-        {w.model && <code className="fs-sa__model" title="modelo">{w.model}</code>}
+        {w.model && <code className="fs-sa__model" title={t('model')}>{w.model}</code>}
         <StatusBadge status={p.status} label={p.label} />
         {alive && act && <span className="fs-sa__activity">{act}</span>}
       </header>
       {instruction && <p className="fs-sa__instruction" title={w.instructionFull || w.instruction}>{instruction}</p>}
       <p className="fs-sa__stats">
-        <span title="tiempo">{formatDuration(elapsedSeconds(w, now))}</span>
+        <span title={t('time')}>{formatDuration(elapsedSeconds(w, now))}</span>
         {(w.round !== null || w.rounds !== null) && (
-          <span title="ronda">
+          <span title={t('round')}>
             r{alive ? w.round : w.rounds ?? w.round}
             {w.maxRounds ? `/${w.maxRounds}` : ''}
           </span>
@@ -162,8 +163,8 @@ function WorkerCard({ w, live, now, onRerun, onNotice }: { w: Worker; live: bool
           {w.failedCalls ? ` (${w.failedCalls} fallidas)` : ''}
         </span>
         {(w.inTok !== null || w.outTok !== null) && <span title="tokens">{fmtTok(w.inTok ?? 0)} in · {fmtTok(w.outTok ?? 0)} out</span>}
-        {!alive && w.mutations.length > 0 && <span>{w.mutations.length} {w.mutations.length === 1 ? 'fichero cambiado' : 'ficheros cambiados'}</span>}
-        {!alive && w.mutations.length === 0 && w.status !== 'queued' && <span className="fs-sa__muted">sin cambios en ficheros</span>}
+        {!alive && w.mutations.length > 0 && <span>{tn(w.mutations.length, '{n} file changed', '{n} files changed')}</span>}
+        {!alive && w.mutations.length === 0 && w.status !== 'queued' && <span className="fs-sa__muted">{t('no file changes')}</span>}
       </p>
       {last && <p className="fs-sa__last" title={last}>{last}</p>}
       {alive && w.tail && <pre className="fs-sa__tail">{w.tail}</pre>}
@@ -184,7 +185,7 @@ function WorkerCard({ w, live, now, onRerun, onNotice }: { w: Worker; live: bool
             <p key={`s${i}`}>→ dirigido{st.source && st.source !== 'user' ? ` (${st.source})` : ''}: {st.text}</p>
           ))}
           {w.supervisor.map((sv, i) => (
-            <p key={`v${i}`}>supervisor: {sv.action === 'nudge' ? 'empujón' : sv.action === 'stop' ? 'parado' : sv.action || 'actuó'}{sv.reason ? ` — ${sv.reason}` : ''}</p>
+            <p key={`v${i}`}>{t('supervisor')}: {sv.action === 'nudge' ? t('nudge') : sv.action === 'stop' ? t('stopped') : sv.action || t('acted')}{sv.reason ? ` — ${sv.reason}` : ''}</p>
           ))}
         </div>
       )}
@@ -195,23 +196,23 @@ function WorkerCard({ w, live, now, onRerun, onNotice }: { w: Worker; live: bool
               size="sm"
               variant="danger"
               icon={Square}
-              label={stopState === 'stopping' ? 'Parando…' : stopState === 'stopped' ? 'Parado' : stopState === 'gone' ? 'No estaba en marcha' : 'Parar'}
+              label={stopState === 'stopping' ? t('Stopping…') : stopState === 'stopped' ? t('Stalled') : stopState === 'gone' ? t('Was not running') : t('Stop')}
               disabled={stopState !== 'idle'}
               onClick={() => void stop()}
             />
-            <Button size="sm" icon={Pencil} label="Dirigir…" onClick={() => setForm(form === 'steer' ? null : 'steer')} />
+            <Button size="sm" icon={Pencil} label={t('Steer…')} onClick={() => setForm(form === 'steer' ? null : 'steer')} />
           </>
         )}
         {w.sessionId && (
           <Link className="fs-btn" data-size="sm" to={`/studio?s=${encodeURIComponent(w.sessionId)}`} title={w.sessionId}>
-            <ExternalLink size={13} aria-hidden="true" /> <span>Abrir su chat</span>
+            <ExternalLink size={13} aria-hidden="true" /> <span>{t('Open its chat')}</span>
           </Link>
         )}
         {!alive && w.status !== 'done' && !reviewer && (w.instructionFull || w.instruction) && (
           <Button
             size="sm"
             icon={RotateCcw}
-            label="Repetir…"
+            label={t('Repeat…')}
             disabled={live}
             onClick={() => {
               setText(w.model);
@@ -235,11 +236,11 @@ function WorkerCard({ w, live, now, onRerun, onNotice }: { w: Worker; live: bool
             onKeyDown={(e) => {
               if (e.key === 'Escape') setForm(null);
             }}
-            placeholder={form === 'steer' ? 'Mensaje para este worker (lo lee antes de su siguiente ronda)' : 'Modelo para este worker (vacío = el del chat)'}
-            aria-label={form === 'steer' ? 'Mensaje para el worker' : 'Modelo'}
+            placeholder={form === 'steer' ? t('Message for this worker (it reads it before its next round)') : t('Model for this worker (empty = the chat\'s)')}
+            aria-label={form === 'steer' ? t('Message for the worker') : t('Model')}
           />
-          <Button size="sm" variant="primary" type="submit" label={form === 'steer' ? 'Enviar' : 'Repetir'} loading={busy} />
-          <Button size="sm" label="Cancelar" onClick={() => setForm(null)} />
+          <Button size="sm" variant="primary" type="submit" label={form === 'steer' ? t('Send') : t('Repeat')} loading={busy} />
+          <Button size="sm" label={t('Cancel')} onClick={() => setForm(null)} />
         </form>
       )}
     </article>

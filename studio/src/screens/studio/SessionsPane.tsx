@@ -13,6 +13,7 @@ import {
   unarchiveSession,
   type ArchivedSession,
 } from '../../adapters/sessions';
+import { t } from '../../i18n';
 
 const SessionDialog = lazy(() => import('./SessionDialog'));
 
@@ -29,10 +30,10 @@ export function readSortMode(): SortMode {
 }
 
 const SORT_LABELS: Record<SortMode, string> = {
-  active: 'Última actividad',
-  created: 'Fecha de creación',
-  name: 'Nombre',
-  group: 'Por carpeta',
+  active: 'Last activity',
+  created: 'Creation date',
+  name: 'Name',
+  group: 'By folder',
 };
 
 export interface SessionsPaneProps {
@@ -60,7 +61,7 @@ function Row({ s, i, currentId, selecting, selected, onToggle, onOpen, onMenu }:
   return (
     <div className="fs-studio__session-row" role="listitem" data-selected={selected || undefined} data-selecting={selecting || undefined}>
       {selecting && (
-        <input type="checkbox" className="fs-studio__session-check" checked={selected} onChange={onToggle} aria-label={`Seleccionar ${s.name}`} />
+        <input type="checkbox" className="fs-studio__session-check" checked={selected} onChange={onToggle} aria-label={t('Select {name}', { name: s.name })} />
       )}
       <Link
         to={`/studio?s=${encodeURIComponent(s.id)}`}
@@ -75,16 +76,16 @@ function Row({ s, i, currentId, selecting, selected, onToggle, onOpen, onMenu }:
         }}
       >
         <span className="fs-studio__session-name">
-          {s.isImportant && <Star size={11} aria-label="Favorita" className="fs-studio__star" />}
+          {s.isImportant && <Star size={11} aria-label={t('Favourite')} className="fs-studio__star" />}
           {s.name}
         </span>
         <span className="fs-studio__session-meta">
-          {s.mode === 'agent' && <Bot size={11} aria-label="Agente" />}
-          {s.model ? s.model.split('/').pop() : 'sin modelo'}
+          {s.mode === 'agent' && <Bot size={11} aria-label={t('Agent')} />}
+          {s.model ? s.model.split('/').pop() : t('no model')}
           {s.lastMessageAt && ` · ${relativeTime(s.lastMessageAt)}`}
         </span>
       </Link>
-      {!selecting && <IconButton icon={MoreHorizontal} label={`Acciones de ${s.name}`} size="sm" onClick={onMenu} testId="session-menu" />}
+      {!selecting && <IconButton icon={MoreHorizontal} label={t('Actions for {name}', { name: s.name })} size="sm" onClick={onMenu} testId="session-menu" />}
     </div>
   );
 }
@@ -93,12 +94,12 @@ function ArchivedList({ onOpen, onChanged, onNotice, onBack }: { onOpen: (id: st
   const [items, setItems] = useState<ArchivedSession[] | null>(null);
   const [q, setQ] = useState('');
   useEffect(() => {
-    const t = window.setTimeout(() => {
+    const timer = window.setTimeout(() => {
       listArchivedSessions(q)
         .then((r) => setItems(r.sessions))
-        .catch(() => onNotice('No he podido leer las archivadas.', 'danger'));
+        .catch(() => onNotice(t('Could not read the archived ones.'), 'danger'));
     }, 150);
-    return () => window.clearTimeout(t);
+    return () => window.clearTimeout(timer);
   }, [q, onNotice]);
   return (
     <>
@@ -106,39 +107,39 @@ function ArchivedList({ onOpen, onChanged, onNotice, onBack }: { onOpen: (id: st
         <span className="fs-panel__label" style={{ margin: 0 }}>
           Archivadas
         </span>
-        <IconButton icon={X} label="Volver a las conversaciones" size="sm" onClick={onBack} />
+        <IconButton icon={X} label={t('Back to the conversations')} size="sm" onClick={onBack} />
       </div>
       <label className="fs-search fs-studio__search">
         <Search size={14} aria-hidden="true" />
-        <input type="search" value={q} placeholder="Buscar archivadas…" aria-label="Buscar archivadas" onChange={(e) => setQ(e.target.value)} />
+        <input type="search" value={q} placeholder={t('Search archived…')} aria-label={t('Search archived')} onChange={(e) => setQ(e.target.value)} />
       </label>
       <div className="fs-studio__list" role="list">
-        {!items && <Skeleton label="Cargando archivadas" count={5} height="44px" />}
+        {!items && <Skeleton label={t('Loading archived')} count={5} height="44px" />}
         {items?.map((s) => (
           <div key={s.id} className="fs-studio__session-row" role="listitem">
             <button type="button" className="fs-studio__session" onClick={() => onOpen(s.id)}>
               <span className="fs-studio__session-name">{s.name}</span>
               <span className="fs-studio__session-meta">
-                {s.model || 'sin modelo'} · {s.messageCount} mensajes{s.lastMessageAt ? ` · ${relativeTime(s.lastMessageAt)}` : ''}
+                {s.model || t('no model')} · {s.messageCount} mensajes{s.lastMessageAt ? ` · ${relativeTime(s.lastMessageAt)}` : ''}
               </span>
             </button>
             <IconButton
               icon={ArchiveRestore}
-              label={`Recuperar ${s.name}`}
+              label={t('Recover {name}', { name: s.name })}
               size="sm"
               onClick={() => {
                 unarchiveSession(s.id)
                   .then(() => {
                     setItems((list) => list?.filter((x) => x.id !== s.id) ?? null);
                     onChanged();
-                    onNotice('Conversación recuperada.');
+                    onNotice(t('Conversation recovered.'));
                   })
-                  .catch(() => onNotice('No he podido recuperarla.', 'danger'));
+                  .catch(() => onNotice(t('Could not recover it.'), 'danger'));
               }}
             />
           </div>
         ))}
-        {items && items.length === 0 && <p className="fs-studio__hint">No hay conversaciones archivadas{q ? ' con ese nombre' : ''}.</p>}
+        {items && items.length === 0 && <p className="fs-studio__hint">{q ? t('No archived conversations with that name.') : t('No archived conversations.')}</p>}
       </div>
     </>
   );
@@ -221,15 +222,15 @@ export function SessionsPane({ sessions, currentId, filter, setFilter, searchRef
     try {
       const r = await autoSortSessions(!withAi);
       const bits = [
-        r.deletedEmpty ? `${r.deletedEmpty} vacías borradas` : '',
-        r.deletedThrowaway ? `${r.deletedThrowaway} de usar y tirar borradas` : '',
-        r.updated ? `${r.updated} archivadas en ${r.folders.length} carpetas` : '',
+        r.deletedEmpty ? t('{n} empty deleted', { n: r.deletedEmpty }) : '',
+        r.deletedThrowaway ? t('{n} throwaway deleted', { n: r.deletedThrowaway }) : '',
+        r.updated ? t('{n} filed into {f} folders', { n: r.updated, f: r.folders.length }) : '',
       ].filter(Boolean);
-      onNotice(r.status === 'skipped' ? (r.reason ?? 'No había nada que ordenar.') : bits.length ? bits.join(' · ') : 'Nada que ordenar.');
+      onNotice(r.status === 'skipped' ? (r.reason ?? t('There was nothing to tidy.')) : bits.length ? bits.join(' · ') : t('Nothing to tidy.'));
       if (withAi && r.updated) setSort('group');
       onChanged();
     } catch (e) {
-      onNotice(`No he podido ordenar: ${(e as Error).message}`, 'danger');
+      onNotice(`${t('Could not tidy')}: ${(e as Error).message}`, 'danger');
     } finally {
       setTidying(false);
     }
@@ -237,7 +238,7 @@ export function SessionsPane({ sessions, currentId, filter, setFilter, searchRef
 
   if (archive) {
     return (
-      <aside className="fs-studio__sessions" aria-label="Conversaciones archivadas">
+      <aside className="fs-studio__sessions" aria-label={t('Archived conversations')}>
         <ArchivedList onOpen={(id) => onOpen(id)} onChanged={onChanged} onNotice={onNotice} onBack={() => setArchive(false)} />
       </aside>
     );
@@ -249,26 +250,26 @@ export function SessionsPane({ sessions, currentId, filter, setFilter, searchRef
     ));
 
   return (
-    <aside className="fs-studio__sessions" aria-label="Conversaciones">
+    <aside className="fs-studio__sessions" aria-label={t('Conversations')}>
       <div className="fs-studio__sessions-head">
         <span className="fs-panel__label" style={{ margin: 0 }}>
-          Conversaciones
+          {t('Conversations')}
         </span>
         <span className="fs-studio__sessions-tools">
           <QuickMenu
-            label="Ordenar y organizar"
+            label={t('Sort and organise')}
             icon={ArrowUpDown}
             testId="sessions-menu"
             items={[
-              ...(Object.keys(SORT_LABELS) as SortMode[]).map((m) => ({ label: `${m === sort ? '✓ ' : ''}${SORT_LABELS[m]}`, onSelect: () => setSort(m) })),
+              ...(Object.keys(SORT_LABELS) as SortMode[]).map((m) => ({ label: `${m === sort ? '✓ ' : ''}${t(SORT_LABELS[m])}`, onSelect: () => setSort(m) })),
               null,
-              { label: selecting ? 'Salir de la selección' : 'Seleccionar varias', icon: CheckSquare, onSelect: () => setSelecting((v) => !v) },
-              { label: 'Archivadas…', icon: Archive, onSelect: () => setArchive(true) },
-              { label: 'Ordenar en carpetas con IA', icon: Sparkles, onSelect: () => void tidy(true) },
-              { label: 'Limpiar vacías (sin IA)', icon: Trash2, onSelect: () => void tidy(false) },
+              { label: selecting ? t('Leave selection') : t('Select several'), icon: CheckSquare, onSelect: () => setSelecting((v) => !v) },
+              { label: t('Archived…'), icon: Archive, onSelect: () => setArchive(true) },
+              { label: t('Sort into folders with AI'), icon: Sparkles, onSelect: () => void tidy(true) },
+              { label: t('Clean up empty ones (no AI)'), icon: Trash2, onSelect: () => void tidy(false) },
             ]}
           />
-          <IconButton icon={Plus} label="Nueva conversación" size="sm" onClick={() => onOpen(null)} />
+          <IconButton icon={Plus} label={t('New conversation')} size="sm" onClick={() => onOpen(null)} />
         </span>
       </div>
       <label className="fs-search fs-studio__search">
@@ -277,8 +278,8 @@ export function SessionsPane({ sessions, currentId, filter, setFilter, searchRef
           ref={searchRef}
           type="search"
           value={filter}
-          placeholder="Buscar…"
-          aria-label="Buscar conversaciones"
+          placeholder={t('Search…')}
+          aria-label={t('Search conversations')}
           onChange={(event) => setFilter(event.target.value)}
           data-testid="studio-search"
         />
@@ -291,24 +292,24 @@ export function SessionsPane({ sessions, currentId, filter, setFilter, searchRef
             todas
           </button>
           <span className="fs-studio__bulk-actions">
-            <a className="fs-btn" data-size="sm" href={exportZipUrl('md', { ids: Array.from(selected) })} aria-disabled={selected.size === 0 || undefined} title="Exportar las seleccionadas en un zip (markdown)">
+            <a className="fs-btn" data-size="sm" href={exportZipUrl('md', { ids: Array.from(selected) })} aria-disabled={selected.size === 0 || undefined} title={t('Export the selected ones as a zip (markdown)')}>
               <Download size={13} aria-hidden="true" />
               <span>Zip</span>
             </a>
-            <Button size="sm" icon={Archive} label="Archivar" disabled={selected.size === 0} onClick={() => void bulk('archive')} />
+            <Button size="sm" icon={Archive} label={t('Archive')} disabled={selected.size === 0} onClick={() => void bulk('archive')} />
             {confirmBulk ? (
-              <Button size="sm" variant="danger-solid" icon={Trash2} label={`Borrar ${selected.size}`} onClick={() => void bulk('delete')} />
+              <Button size="sm" variant="danger-solid" icon={Trash2} label={t('Delete {n}', { n: selected.size })} onClick={() => void bulk('delete')} />
             ) : (
-              <Button size="sm" variant="danger" icon={Trash2} label="Borrar" disabled={selected.size === 0} onClick={() => setConfirmBulk(true)} />
+              <Button size="sm" variant="danger" icon={Trash2} label={t('Delete')} disabled={selected.size === 0} onClick={() => setConfirmBulk(true)} />
             )}
-            <IconButton icon={X} label="Salir de la selección" size="sm" onClick={() => setSelecting(false)} />
+            <IconButton icon={X} label={t('Leave selection')} size="sm" onClick={() => setSelecting(false)} />
           </span>
         </div>
       )}
-      {tidying && <p className="fs-studio__hint">Ordenando…</p>}
+      {tidying && <p className="fs-studio__hint">{t('Tidying…')}</p>}
 
       <div className="fs-studio__list" role="list">
-        {!sessions && <Skeleton label="Cargando conversaciones" count={6} height="44px" />}
+        {!sessions && <Skeleton label={t('Loading conversations')} count={6} height="44px" />}
         {groups
           ? groups.map((g) => {
               const open = openFolders[g.name] ?? true;
@@ -316,7 +317,7 @@ export function SessionsPane({ sessions, currentId, filter, setFilter, searchRef
                 <section key={g.name || '__none'} className="fs-studio__folder" data-open={open || undefined}>
                   <button type="button" className="fs-studio__folder-head" onClick={() => setOpenFolders((o) => ({ ...o, [g.name]: !open }))} aria-expanded={open}>
                     <FolderOpen size={13} aria-hidden="true" />
-                    <span>{g.name || 'Sin carpeta'}</span>
+                    <span>{g.name || t('No folder')}</span>
                     <span className="fs-studio__folder-count">{g.items.length}</span>
                   </button>
                   {open && renderRows(g.items)}
@@ -324,8 +325,8 @@ export function SessionsPane({ sessions, currentId, filter, setFilter, searchRef
               );
             })
           : renderRows(visible)}
-        {sessions && sessions.length === 0 && <p className="fs-studio__hint">Todavía no hay conversaciones. La primera la empiezas abajo.</p>}
-        {sessions && sessions.length > 0 && visible.length === 0 && <p className="fs-studio__hint">Ninguna conversación se llama así.</p>}
+        {sessions && sessions.length === 0 && <p className="fs-studio__hint">{t('No conversations yet. You start the first one below.')}</p>}
+        {sessions && sessions.length > 0 && visible.length === 0 && <p className="fs-studio__hint">{t('No conversation has that name.')}</p>}
       </div>
 
       {target && (

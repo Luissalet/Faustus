@@ -11,6 +11,7 @@ import {
 import { BrandMark } from '../shell/BrandMark';
 import { useSpotlight } from '../shell/useSpotlight';
 import './home.css';
+import { t, tn } from '../i18n';
 
 /**
  * Inicio (UI-030).
@@ -46,10 +47,10 @@ function Block({
 
 /* Each way in opens Studio with the sentence already started. */
 const QUICK_STARTS = [
-  { label: 'Crear imagen', icon: Image, draft: 'Genera una imagen de ' },
-  { label: 'Escribir', icon: FileText, draft: 'Escribe ' },
-  { label: 'Programar', icon: Code2, draft: 'Programa ' },
-  { label: 'Investigar', icon: Search, draft: 'Investiga en la web ' },
+  { label: 'Create an image', icon: Image, draft: 'Generate an image of ' },
+  { label: 'Write', icon: FileText, draft: 'Write ' },
+  { label: 'Code', icon: Code2, draft: 'Code ' },
+  { label: 'Research', icon: Search, draft: 'Research on the web ' },
 ];
 
 export function HomeScreen() {
@@ -70,10 +71,10 @@ export function HomeScreen() {
     return (
       <EmptyState
         icon={Inbox}
-        title="No he podido leer nada del servidor"
-        body="La interfaz nueva está viva pero no alcanza la API. La interfaz anterior sigue funcionando y no depende de esto."
+        title={t('Could not read anything from the server')}
+        body={t('The new interface is alive but cannot reach the API. The previous interface keeps working and does not depend on this.')}
         primaryAction={{
-          label: 'Abrir la interfaz anterior',
+          label: t('Open the previous interface'),
           onClick: () => {
             window.location.href = '/?shell=legacy';
           },
@@ -85,8 +86,8 @@ export function HomeScreen() {
   if (!data) {
     return (
       <div className="fs-home">
-        <Skeleton label="Cargando tu inicio" height="34px" width="60%" />
-        <Skeleton label="Cargando trabajos recientes" count={4} height="44px" />
+        <Skeleton label={t('Loading your home')} height="34px" width="60%" />
+        <Skeleton label={t('Loading recent work')} count={4} height="44px" />
       </div>
     );
   }
@@ -102,17 +103,17 @@ export function HomeScreen() {
           <BrandMark size={320} />
         </span>
         <h1 className="fs-home__title">
-          ¿Qué quieres <em>terminar</em>?
+          {t('What do you want to')} <em>{t('finish')}</em>?
         </h1>
         <p className="fs-home__sub">
           {data.approvals.length > 0
-            ? `${data.approvals.length} cosa${data.approvals.length === 1 ? '' : 's'} esperan una decisión tuya.`
-            : 'Nada bloqueado esperándote. Continúa donde lo dejaste o empieza algo.'}
+            ? tn(data.approvals.length, '{n} thing is waiting for your decision.', '{n} things are waiting for your decision.')
+            : t('Nothing blocked waiting for you. Pick up where you left off or start something.')}
         </p>
       </header>
 
       {data.approvals.length > 0 && (
-        <Block title="Requiere tu decisión" index={1}>
+        <Block title={t('Needs your decision')} index={1}>
           <div className="fs-list fs-list--rail">
             {data.approvals.map((approval, index) => (
               <a
@@ -123,10 +124,10 @@ export function HomeScreen() {
               >
                 <span className="fs-row__main">
                   <span className="fs-row__name">
-                    {approval.action ?? approval.tool ?? 'Acción pendiente de aprobación'}
+                    {approval.action ?? approval.tool ?? t('Action awaiting approval')}
                   </span>
                   <span className="fs-row__meta">
-                    {relativeTime(approval.requested_at) || 'esperando'}
+                    {relativeTime(approval.requested_at) || t('waiting')}
                   </span>
                 </span>
                 <StatusBadge status="waiting" />
@@ -137,7 +138,7 @@ export function HomeScreen() {
       )}
 
       {sessions.length > 0 && (
-        <Block title="Continuar" index={2}>
+        <Block title={t('Continue')} index={2}>
           <div className="fs-list fs-list--rail">
             {sessions.map((session) => (
               <Link
@@ -158,7 +159,7 @@ export function HomeScreen() {
                       .join(' · ')}
                   </span>
                 </span>
-                {session.mode === 'agent' && <StatusBadge status="succeeded" label="Agente" />}
+                {session.mode === 'agent' && <StatusBadge status="succeeded" label={t('Agent')} />}
                 <ChevronRight size={16} aria-hidden="true" className="fs-row__go" />
               </Link>
             ))}
@@ -167,7 +168,7 @@ export function HomeScreen() {
       )}
 
       {projects.length > 0 && (
-        <Block title="Proyectos" index={3}>
+        <Block title={t('Projects')} index={3}>
           <div className="fs-list fs-list--rail">
             {projects.map((project) => (
               <a
@@ -191,7 +192,7 @@ export function HomeScreen() {
         </Block>
       )}
 
-      <Block title="Empezar algo" index={4}>
+      <Block title={t('Start something')} index={4}>
         <div className="fs-quickstarts">
           {QUICK_STARTS.map((quick) => (
             <button
@@ -200,12 +201,12 @@ export function HomeScreen() {
               className="fs-tile fs-spot"
               onMouseMove={spotlight}
               data-testid={`quickstart-${quick.label.toLowerCase().replace(/\s+/g, '-')}`}
-              onClick={() => navigate(`/studio?draft=${encodeURIComponent(quick.draft)}`)}
+              onClick={() => navigate(`/studio?draft=${encodeURIComponent(t(quick.draft))}`)}
             >
               <span className="fs-tile__icon">
                 <quick.icon size={18} aria-hidden="true" />
               </span>
-              <span>{quick.label}</span>
+              <span>{t(quick.label)}</span>
             </button>
           ))}
         </div>
@@ -214,10 +215,10 @@ export function HomeScreen() {
       {!hasAnything && (
         <EmptyState
           icon={Inbox}
-          title="Todavía no hay nada que continuar"
-          body="Cuando empieces un trabajo aparecerá aquí, con su proyecto y lo que quedó pendiente."
+          title={t('Nothing to continue yet')}
+          body={t('When you start a piece of work it will appear here, with its project and what was left pending.')}
           primaryAction={{
-            label: 'Empezar en Studio',
+            label: t('Start in Studio'),
             onClick: () => navigate('/studio'),
           }}
         />

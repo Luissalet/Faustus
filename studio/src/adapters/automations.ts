@@ -1,4 +1,5 @@
 import { asArray, getJson } from './api';
+import { t } from '../i18n';
 
 export interface Automation {
   id: string;
@@ -37,16 +38,16 @@ export function listAutomations(signal?: AbortSignal): Promise<Automation[]> {
 export function describeTrigger(task: Automation): string {
   if (task.trigger_type === 'event' && task.trigger_event) {
     const times = task.trigger_count && task.trigger_count > 1 ? ` ×${task.trigger_count}` : '';
-    return `Cuando ocurre ${task.trigger_event}${times}`;
+    return t('When {event} happens{times}', { event: task.trigger_event, times });
   }
   if (task.cron_expression) return `cron ${task.cron_expression}`;
-  if (task.schedule && task.scheduled_time) return `${task.schedule} a las ${task.scheduled_time}`;
+  if (task.schedule && task.scheduled_time) return t('{schedule} at {time}', { schedule: task.schedule, time: task.scheduled_time });
   if (task.schedule) return String(task.schedule);
-  return 'Solo a mano';
+  return t('Manual only');
 }
 
 export function describeAction(task: Automation): string {
   if (task.action) return task.action.replace(/_/g, ' ');
   if (task.prompt) return task.prompt.slice(0, 90);
-  return task.task_type ?? 'acción';
+  return task.task_type ?? t('action');
 }

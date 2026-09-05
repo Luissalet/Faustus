@@ -5,6 +5,7 @@ import { archiveDoc, docPdfUrl, getDoc, listDocVersions, renameDoc, restoreDocVe
 import { readWorkspaceFile, type WorkspaceFileText } from '../../adapters/workspace';
 import { Rich } from '../rich';
 import { autoOpenEnabled, setAutoOpen, type DocState, type PanelAction, type PanelState, type PanelTab } from './panel';
+import { t, tn } from '../../i18n';
 
 /**
  * The panel beside the transcript. Three things live here, each on its own
@@ -20,9 +21,9 @@ export interface SidePanelProps {
 }
 
 const TABS: { id: PanelTab; label: string; icon: typeof Globe }[] = [
-  { id: 'browser', label: 'Navegador', icon: Globe },
-  { id: 'doc', label: 'Documento', icon: FileText },
-  { id: 'file', label: 'Fichero', icon: Monitor },
+  { id: 'browser', label: 'Browser', icon: Globe },
+  { id: 'doc', label: 'Document', icon: FileText },
+  { id: 'file', label: 'File', icon: Monitor },
 ];
 
 /* ── Browser ── */
@@ -34,9 +35,9 @@ function BrowserTab({ state, dispatch }: { state: PanelState; dispatch: SidePane
     <div className="fs-panel__body fs-panel__browser">
       <div className="fs-panel__meta">
         <span className="fs-panel__kicker">
-          {frame?.source === 'desktop' ? 'Escritorio' : 'Navegador'}
+          {frame?.source === 'desktop' ? 'Desktop' : 'Browser'}
           {state.live && (
-            <span className="fs-panel__live" title="El agente está usando el navegador ahora mismo">
+            <span className="fs-panel__live" title={t('The agent is using the browser right now')}>
               <span className="fs-studio__pulse" /> En vivo
             </span>
           )}
@@ -59,10 +60,10 @@ function BrowserTab({ state, dispatch }: { state: PanelState; dispatch: SidePane
             <strong>{frame.title}</strong>
             {frame.url && <span title={frame.url}>{frame.url}</span>}
           </p>
-          <img className="fs-panel__frame" src={frame.src} alt={frame.title || 'Pantalla del navegador'} />
+          <img className="fs-panel__frame" src={frame.src} alt={frame.title || t('Browser screen')} />
         </>
       ) : (
-        <p className="fs-studio__hint">Aquí aparece lo que ve el agente cuando usa el navegador o el escritorio.</p>
+        <p className="fs-studio__hint">{t('What the agent sees when it uses the browser or the desktop appears here.')}</p>
       )}
       {state.frames.length > 1 && (
         <div className="fs-panel__strip" role="list">
@@ -73,7 +74,7 @@ function BrowserTab({ state, dispatch }: { state: PanelState; dispatch: SidePane
               role="listitem"
               className="fs-panel__thumb"
               aria-current={i === state.active || undefined}
-              title={`${f.source === 'desktop' ? 'Escritorio · ' : ''}${f.title || f.url}`}
+              title={`${f.source === 'desktop' ? `${t('Desktop')} · ` : ''}${f.title || f.url}`}
               onClick={() => dispatch({ type: 'show', index: i })}
             >
               <img src={f.src} alt="" />
@@ -113,13 +114,13 @@ function DocTab({ doc, dispatch, onNotice }: { doc: DocState | null; dispatch: S
     setLoading(true);
     getDoc(id)
       .then((d) => dispatch({ type: 'doc', doc: { streaming: false, id: d.id, title: d.title, language: d.language, content: d.content, version: d.versionCount, suggestions: doc.suggestions } }))
-      .catch(() => onNotice('No he podido cargar el documento.', 'danger'))
+      .catch(() => onNotice(t('Could not load the document.'), 'danger'))
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc?.id, doc?.version]);
 
-  if (!doc) return <p className="fs-studio__hint fs-panel__body">Cuando el agente cree o edite un documento, aparece aquí para leerlo y editarlo.</p>;
-  if (loading) return <div className="fs-panel__body"><Skeleton label="Cargando el documento" count={6} height="20px" /></div>;
+  if (!doc) return <p className="fs-studio__hint fs-panel__body">{t('When the agent creates or edits a document, it appears here to read and edit.')}</p>;
+  if (loading) return <div className="fs-panel__body"><Skeleton label={t('Loading the document')} count={6} height="20px" /></div>;
 
   const save = async (content = text, summary?: string) => {
     if (!doc.id) return;
@@ -127,9 +128,9 @@ function DocTab({ doc, dispatch, onNotice }: { doc: DocState | null; dispatch: S
     try {
       const saved = await saveDoc(doc.id, content, summary);
       dispatch({ type: 'doc', doc: { ...doc, content: saved.content, version: saved.versionCount, title: saved.title, language: saved.language } });
-      onNotice(`Guardado (v${saved.versionCount}).`);
+      onNotice(t('Saved (v{n}).', { n: saved.versionCount }));
     } catch (e) {
-      onNotice(`No he podido guardar: ${(e as Error).message}`, 'danger');
+      onNotice(`${t('Could not save')}: ${(e as Error).message}`, 'danger');
     } finally {
       setSaving(false);
     }
@@ -142,7 +143,7 @@ function DocTab({ doc, dispatch, onNotice }: { doc: DocState | null; dispatch: S
       const saved = await renameDoc(doc.id, next);
       dispatch({ type: 'doc', doc: { ...doc, title: saved.title } });
     } catch (e) {
-      onNotice(`No he podido renombrar: ${(e as Error).message}`, 'danger');
+      onNotice(`${t('Could not rename')}: ${(e as Error).message}`, 'danger');
     }
   };
 
@@ -155,19 +156,19 @@ function DocTab({ doc, dispatch, onNotice }: { doc: DocState | null; dispatch: S
         next = next.replace(sg.find, sg.replace);
         applied.push(sg.id);
       } else if (!all) {
-        onNotice('El texto que quiere cambiar ya no está en el documento; la salto.', 'warning');
+        onNotice(t('The text it wants to change is no longer in the document; skipping it.'), 'warning');
         applied.push(sg.id);
       }
     }
     setText(next);
     dispatch({ type: 'suggestions', suggestions: doc.suggestions.filter((sg) => !applied.includes(sg.id)) });
-    if (next !== text) await save(next, all ? 'Sugerencias del agente aplicadas' : 'Sugerencia del agente aplicada');
+    if (next !== text) await save(next, all ? t('Agent\'s suggestions applied') : t('Agent\'s suggestion applied'));
   };
 
   return (
     <div className="fs-panel__body fs-panel__doc">
       <div className="fs-panel__doc-head">
-        <input className="fs-panel__title" value={title} onChange={(e) => setTitle(e.target.value)} onBlur={() => void rename()} aria-label="Título del documento" disabled={!doc.id} />
+        <input className="fs-panel__title" value={title} onChange={(e) => setTitle(e.target.value)} onBlur={() => void rename()} aria-label={t('Document title')} disabled={!doc.id} />
         {doc.language && <code className="fs-sa__model">{doc.language}</code>}
         {doc.streaming && <span className="fs-panel__live"><span className="fs-studio__pulse" /> Escribiendo</span>}
         {!doc.streaming && doc.id && <span className="fs-sa__muted">v{doc.version}</span>}
@@ -179,9 +180,9 @@ function DocTab({ doc, dispatch, onNotice }: { doc: DocState | null; dispatch: S
           {current.reason && <p>{current.reason}</p>}
           <pre className="fs-panel__diff"><span className="fs-diff-del">− {current.find}</span><span className="fs-diff-add">+ {current.replace}</span></pre>
           <div className="fs-panel__row">
-            <Button size="sm" variant="primary" icon={Check} label="Aplicar" onClick={() => void applySuggestion(false)} />
-            <Button size="sm" icon={SkipForward} label="Saltar" onClick={() => dispatch({ type: 'suggestions', suggestions: doc.suggestions.slice(1) })} />
-            {doc.suggestions.length > 1 && <Button size="sm" label="Aplicar todas" onClick={() => void applySuggestion(true)} />}
+            <Button size="sm" variant="primary" icon={Check} label={t('Apply')} onClick={() => void applySuggestion(false)} />
+            <Button size="sm" icon={SkipForward} label={t('Skip')} onClick={() => dispatch({ type: 'suggestions', suggestions: doc.suggestions.slice(1) })} />
+            {doc.suggestions.length > 1 && <Button size="sm" label={t('Apply all')} onClick={() => void applySuggestion(true)} />}
           </div>
         </div>
       )}
@@ -195,25 +196,25 @@ function DocTab({ doc, dispatch, onNotice }: { doc: DocState | null; dispatch: S
           onChange={(e) => setText(e.target.value)}
           readOnly={doc.streaming || !doc.id}
           spellCheck={false}
-          aria-label="Contenido del documento"
+          aria-label={t('Document content')}
           data-testid="doc-editor"
         />
       )}
 
       {!doc.streaming && (
         <div className="fs-panel__row fs-panel__doc-actions">
-          <Button size="sm" variant="primary" icon={Save} label={dirty ? 'Guardar' : 'Guardado'} disabled={!dirty || !doc.id} loading={saving} onClick={() => void save()} testId="doc-save" />
-          <Button size="sm" label={preview ? 'Editar' : 'Vista previa'} onClick={() => setPreview((v) => !v)} />
-          <IconButton icon={Copy} label="Copiar el contenido" size="sm" onClick={() => void navigator.clipboard?.writeText(text)} />
+          <Button size="sm" variant="primary" icon={Save} label={dirty ? t('Save') : t('Saved')} disabled={!dirty || !doc.id} loading={saving} onClick={() => void save()} testId="doc-save" />
+          <Button size="sm" label={preview ? t('Edit') : t('Preview')} onClick={() => setPreview((v) => !v)} />
+          <IconButton icon={Copy} label={t('Copy the content')} size="sm" onClick={() => void navigator.clipboard?.writeText(text)} />
           {doc.id && (
             <>
               <IconButton
                 icon={History}
-                label="Versiones"
+                label={t('Versions')}
                 size="sm"
                 onClick={() => {
                   if (versions) setVersions(null);
-                  else listDocVersions(doc.id as string).then(setVersions).catch(() => onNotice('No he podido leer las versiones.', 'danger'));
+                  else listDocVersions(doc.id as string).then(setVersions).catch(() => onNotice(t('Could not read the versions.'), 'danger'));
                 }}
               />
               <a className="fs-btn" data-size="sm" href={docPdfUrl(doc.id)} target="_blank" rel="noreferrer">
@@ -221,15 +222,15 @@ function DocTab({ doc, dispatch, onNotice }: { doc: DocState | null; dispatch: S
               </a>
               <IconButton
                 icon={Archive}
-                label="Archivar"
+                label={t('Archive')}
                 size="sm"
                 onClick={() => {
                   archiveDoc(doc.id as string)
                     .then(() => {
                       dispatch({ type: 'doc', doc: null });
-                      onNotice('Documento archivado.');
+                      onNotice(t('Document archived.'));
                     })
-                    .catch(() => onNotice('No he podido archivar.', 'danger'));
+                    .catch(() => onNotice(t('Could not archive.'), 'danger'));
                 }}
               />
             </>
@@ -242,20 +243,20 @@ function DocTab({ doc, dispatch, onNotice }: { doc: DocState | null; dispatch: S
           {versions.map((v) => (
             <li key={v.id}>
               <span>
-                v{v.number} · {v.source === 'user' ? 'tú' : 'agente'} · {v.summary || '—'}
+                v{v.number} · {v.source === 'user' ? t('you') : t('agent')} · {v.summary || '—'}
               </span>
               {v.number !== doc.version && (
                 <Button
                   size="sm"
-                  label="Restaurar"
+                  label={t('Restore')}
                   onClick={() => {
                     restoreDocVersion(doc.id as string, v.number)
                       .then((d) => {
                         dispatch({ type: 'doc', doc: { ...doc, content: d.content, version: d.versionCount } });
                         setVersions(null);
-                        onNotice(`Restaurada la v${v.number} como v${d.versionCount}.`);
+                        onNotice(t('Restored v{a} as v{b}.', { a: v.number, b: d.versionCount }));
                       })
-                      .catch(() => onNotice('No he podido restaurar.', 'danger'));
+                      .catch(() => onNotice(t('Could not restore.'), 'danger'));
                   }}
                 />
               )}
@@ -289,17 +290,17 @@ function FileTab({ file, onNotice }: { file: PanelState['file']; onNotice: SideP
     const parts = data.text.split('\n');
     return data.text.endsWith('\n') ? parts.slice(0, -1) : parts;
   }, [data]);
-  if (!file) return <p className="fs-studio__hint fs-panel__body">Pulsa un fichero en la tarjeta de un turno para verlo aquí.</p>;
+  if (!file) return <p className="fs-studio__hint fs-panel__body">{t('Click a file in a turn\'s card to see it here.')}</p>;
   return (
     <div className="fs-panel__body fs-panel__file">
       <p className="fs-panel__page">
         <strong title={data?.path ?? file.path}>{data?.rel ?? file.path}</strong>
-        {data && <span>{data.lines} {data.lines === 1 ? 'línea' : 'líneas'} · {data.size} B{data.truncated ? ' · recortado' : ''}</span>}
-        <IconButton icon={Copy} label="Copiar la ruta" size="sm" onClick={() => void navigator.clipboard?.writeText(data?.path ?? file.path).then(() => onNotice('Ruta copiada.'))} />
+        {data && <span>{tn(data.lines, '{n} line', '{n} lines')} · {data.size} B{data.truncated ? t(' · truncated') : ''}</span>}
+        <IconButton icon={Copy} label={t('Copy the path')} size="sm" onClick={() => void navigator.clipboard?.writeText(data?.path ?? file.path).then(() => onNotice(t('Path copied.')))} />
       </p>
       {error && <p className="fs-notice" data-tone="danger">{error}</p>}
-      {!data && !error && <Skeleton label="Leyendo el fichero" count={8} height="16px" />}
-      {data?.binary && <p className="fs-studio__hint">Es un fichero binario.</p>}
+      {!data && !error && <Skeleton label={t('Reading the file')} count={8} height="16px" />}
+      {data?.binary && <p className="fs-studio__hint">{t('It is a binary file.')}</p>}
       {data && !data.binary && (
         <pre className="fs-panel__code">
           {lines.map((line, i) => (
@@ -316,25 +317,25 @@ function FileTab({ file, onNotice }: { file: PanelState['file']; onNotice: SideP
 
 export default function SidePanel({ state, dispatch, onNotice }: SidePanelProps) {
   return (
-    <aside className="fs-panel" data-testid="studio-panel" aria-label="Panel lateral">
+    <aside className="fs-panel" data-testid="studio-panel" aria-label={t('Side panel')}>
       <header className="fs-panel__head">
         <div className="fs-panel__tabs" role="tablist">
-          {TABS.map((t) => (
+          {TABS.map((tab) => (
             <button
-              key={t.id}
+              key={tab.id}
               type="button"
               role="tab"
-              aria-selected={state.tab === t.id}
+              aria-selected={state.tab === tab.id}
               className="fs-panel__tab"
-              onClick={() => dispatch({ type: 'tab', tab: t.id })}
-              data-has={t.id === 'browser' ? state.frames.length > 0 || undefined : t.id === 'doc' ? Boolean(state.doc) || undefined : Boolean(state.file) || undefined}
+              onClick={() => dispatch({ type: 'tab', tab: tab.id })}
+              data-has={tab.id === 'browser' ? state.frames.length > 0 || undefined : tab.id === 'doc' ? Boolean(state.doc) || undefined : Boolean(state.file) || undefined}
             >
-              <t.icon size={13} aria-hidden="true" />
-              <span>{t.label}</span>
+              <tab.icon size={13} aria-hidden="true" />
+              <span>{t(tab.label)}</span>
             </button>
           ))}
         </div>
-        <IconButton icon={X} label="Cerrar el panel" size="sm" onClick={() => dispatch({ type: 'close' })} />
+        <IconButton icon={X} label={t('Close the panel')} size="sm" onClick={() => dispatch({ type: 'close' })} />
       </header>
       {state.tab === 'browser' && <BrowserTab state={state} dispatch={dispatch} />}
       {state.tab === 'doc' && <DocTab doc={state.doc} dispatch={dispatch} onNotice={onNotice} />}

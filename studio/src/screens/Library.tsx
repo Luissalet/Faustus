@@ -8,11 +8,12 @@ import { useSpotlight } from '../shell/useSpotlight';
 import './projects.css';
 import './home.css';
 import './library.css';
+import { t } from '../i18n';
 
 const TYPES = [
-  { id: 'todo', label: 'Todo' },
-  { id: 'imagen', label: 'Imágenes' },
-  { id: 'documento', label: 'Documentos' },
+  { id: 'todo', label: 'All' },
+  { id: 'imagen', label: 'Images' },
+  { id: 'documento', label: 'Documents' },
 ];
 
 /**
@@ -66,10 +67,10 @@ export function LibraryScreen() {
     return (
       <EmptyState
         icon={LibraryIcon}
-        title="No he podido leer la biblioteca"
-        body="Ni la galería ni los documentos han respondido. La interfaz anterior no depende de esta pantalla."
+        title={t('Could not read the library')}
+        body={t('Neither the gallery nor the documents responded. The previous interface does not depend on this screen.')}
         primaryAction={{
-          label: 'Abrir la interfaz anterior',
+          label: t('Open the previous interface'),
           onClick: () => {
             window.location.href = '/?shell=legacy';
           },
@@ -82,11 +83,11 @@ export function LibraryScreen() {
     <div className="fs-screen" data-testid="library">
       <header className="fs-screen__head">
         <div>
-          <h1 className="fs-screen__title">Biblioteca</h1>
+          <h1 className="fs-screen__title">{t('Library')}</h1>
           <p className="fs-prose" style={{ marginBlockStart: 'var(--fs-space-2)' }}>
             {artifacts
               ? `${artifacts.length} ${artifacts.length === 1 ? 'artefacto' : 'artefactos'}, sin importar qué subsistema los creó.`
-              : 'Imágenes y documentos, sin importar qué subsistema los creó.'}
+              : t('Images and documents, whichever subsystem created them.')}
           </p>
         </div>
         <label className="fs-search">
@@ -94,15 +95,15 @@ export function LibraryScreen() {
           <input
             type="search"
             value={query}
-            placeholder="Buscar por texto, sesión o modelo"
-            aria-label="Buscar en la biblioteca"
+            placeholder={t('Search by text, session or model')}
+            aria-label={t('Search the library')}
             data-testid="library-search"
             onChange={(event) => setParam('q', event.target.value, '')}
           />
         </label>
       </header>
 
-      <div className="fs-tabs" role="tablist" aria-label="Filtrar por tipo">
+      <div className="fs-tabs" role="tablist" aria-label={t('Filter by type')}>
         {TYPES.map((entry) => (
           <button
             key={entry.id}
@@ -113,7 +114,7 @@ export function LibraryScreen() {
             data-testid={`library-type-${entry.id}`}
             onClick={() => setParam('type', entry.id, 'todo')}
           >
-            {entry.label}
+            {t(entry.label)}
           </button>
         ))}
       </div>
@@ -121,7 +122,7 @@ export function LibraryScreen() {
       {!artifacts && (
         <div className="fs-grid">
           {[0, 1, 2, 3, 4, 5].map((index) => (
-            <Skeleton key={index} label="Cargando la biblioteca" height="200px" radius="panel" />
+            <Skeleton key={index} label={t('Loading the library')} height="200px" radius="panel" />
           ))}
         </div>
       )}
@@ -130,12 +131,12 @@ export function LibraryScreen() {
         <EmptyState
           icon={LibraryIcon}
           title={
-            query || type !== 'todo' ? 'Nada coincide con el filtro' : 'La biblioteca está vacía'
+            query || type !== 'todo' ? t('Nothing matches the filter') : t('The library is empty')
           }
           body={
             query || type !== 'todo'
-              ? 'Prueba con otro texto, u otro tipo de artefacto.'
-              : 'Cuando generes una imagen o escribas un documento aparecerán aquí, con la sesión que los produjo y su receta.'
+              ? t('Try another text, or another kind of artefact.')
+              : t('When you generate an image or write a document they will appear here, with the session that produced them and their recipe.')
           }
         />
       )}
@@ -164,13 +165,13 @@ export function LibraryScreen() {
                 />
               ) : (
                 <p className="fs-card__doc">
-                  {artifact.subtitle || 'Documento sin contenido todavía.'}
+                  {artifact.subtitle || t('Document with no content yet.')}
                 </p>
               )}
               <div className="fs-card__body">
                 <span className="fs-card__kind">{artifact.kind}</span>
                 {artifact.kind === 'documento' ? (
-                  <Link className="fs-card__title fs-link" to={`/studio?doc=${encodeURIComponent(artifact.id.replace(/^doc-/, ''))}`} title="Abrir en el editor de Studio">
+                  <Link className="fs-card__title fs-link" to={`/studio?doc=${encodeURIComponent(artifact.id.replace(/^doc-/, ''))}`} title={t('Open in the Studio editor')}>
                     {artifact.title}
                   </Link>
                 ) : (

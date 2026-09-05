@@ -1,4 +1,5 @@
 import { ApiError, getJson } from './api';
+import { t, locale } from '../i18n';
 
 /**
  * Correo: `/api/email`, the routes emailInbox.js / emailLibrary.js use.
@@ -70,7 +71,7 @@ function summaryFrom(raw: Record<string, unknown>): EmailSummary {
   return {
     uid: String(raw.uid ?? ''),
     messageId: typeof raw.message_id === 'string' ? raw.message_id : '',
-    subject: typeof raw.subject === 'string' && raw.subject ? raw.subject : '(sin asunto)',
+    subject: typeof raw.subject === 'string' && raw.subject ? raw.subject : t('(no subject)'),
     fromName: typeof raw.from_name === 'string' ? raw.from_name : '',
     fromAddress: typeof raw.from_address === 'string' ? raw.from_address : '',
     to: typeof raw.to === 'string' ? raw.to : '',
@@ -214,26 +215,27 @@ export async function sendEmail(o: Outgoing): Promise<void> {
 export async function saveDraft(o: Outgoing): Promise<void> {
   const r = await ok(await fetch('/api/email/draft', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: outgoingBody(o) }), 'email/draft');
   const data = (await r.json()) as { success?: boolean; error?: string };
-  if (data.success === false) throw new ApiError(data.error || 'No se ha podido guardar el borrador.', 400);
+  if (data.success === false) throw new ApiError(data.error || t('Could not save the draft.'), 400);
 }
 
 export const FOLDER_LABEL: Record<string, string> = {
-  INBOX: 'Bandeja de entrada',
-  Archive: 'Archivo',
-  Sent: 'Enviados',
-  Drafts: 'Borradores',
-  Trash: 'Papelera',
+  INBOX: 'Inbox',
+  Archive: 'Archive#folder',
+  Sent: 'Sent',
+  Drafts: 'Drafts',
+  Trash: 'Trash',
   Junk: 'Spam',
   Spam: 'Spam',
 };
 
 export function folderLabel(name: string): string {
-  return FOLDER_LABEL[name] ?? FOLDER_LABEL[name.split('/').pop() ?? ''] ?? name.replace(/^INBOX[./]/, '');
+  const known = FOLDER_LABEL[name] ?? FOLDER_LABEL[name.split('/').pop() ?? ''];
+  return known ? t(known) : name.replace(/^INBOX[./]/, '');
 }
 
 export function quoteFor(mail: EmailFull): string {
   const who = mail.fromName ? `${mail.fromName} <${mail.fromAddress}>` : mail.fromAddress;
-  const when = mail.date ? new Date(mail.date).toLocaleString('es') : '';
+  const when = mail.date ? new Date(mail.date).toLocaleString(locale()) : '';
   const lines = (mail.body || '').split('\n').map((l) => `> ${l}`);
-  return `\n\n${when ? `El ${when}, ` : ''}${who} escribió:\n${lines.join('\n')}`;
+  return `\n\n${when ? t('On {when}, ', { when }) : ''}${t('{who} wrote:', { who })}\n${lines.join('\n')}`;
 }

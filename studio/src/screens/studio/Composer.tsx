@@ -1,3 +1,4 @@
+import { t } from '../../i18n';
 import {
   ArrowUp,
   Bot,
@@ -134,9 +135,9 @@ export function Composer({
         .then((text) => {
           const current = textareaRef.current?.value ?? '';
           if (text) setDraft(current ? `${current.trimEnd()} ${text}` : text);
-          else onNotice('No he oído nada.', 'warning');
+          else onNotice(t('I did not hear anything.'), 'warning');
         })
-        .catch((e: Error) => onNotice(`Dictado: ${e.message}`, 'danger'))
+        .catch((e: Error) => onNotice(`${t('Dictation')}: ${e.message}`, 'danger'))
         .finally(() => {
           setDictation(null);
           setTranscribing(false);
@@ -220,7 +221,7 @@ export function Composer({
         const uploaded = await uploadFiles(files, sessionId);
         setAttachments((list) => [...list, ...uploaded.filter((u) => !list.some((a) => a.id === u.id))]);
       } catch (error) {
-        onNotice(`No he podido subir el archivo: ${(error as Error).message}`, 'danger');
+        onNotice(`${t('Could not upload the file')}: ${(error as Error).message}`, 'danger');
       } finally {
         setUploading(false);
       }
@@ -320,7 +321,7 @@ export function Composer({
       data-testid="studio-composer"
     >
       {mention && mention.items.length > 0 && (
-        <ul className="fs-studio__suggest" role="listbox" aria-label="Ficheros del workspace" data-testid="studio-mentions">
+        <ul className="fs-studio__suggest" role="listbox" aria-label={t('Workspace files')} data-testid="studio-mentions">
           {mention.items.map((item, i) => (
             <li
               key={item.path}
@@ -339,7 +340,7 @@ export function Composer({
         </ul>
       )}
       {commands && commands.length > 0 && (
-        <ul className="fs-studio__suggest" role="listbox" aria-label="Comandos" data-testid="studio-commands">
+        <ul className="fs-studio__suggest" role="listbox" aria-label={t('Commands')} data-testid="studio-commands">
           {commands.map((command, i) => (
             <li
               key={command.name}
@@ -352,16 +353,16 @@ export function Composer({
               }}
             >
               <span className="fs-studio__suggest-main">
-                <code>{command.usage}</code>
+                <code>{t(command.usage)}</code>
               </span>
-              <span className="fs-studio__suggest-help">{command.help}</span>
+              <span className="fs-studio__suggest-help">{t(command.help)}</span>
             </li>
           ))}
         </ul>
       )}
 
       {attachments.length > 0 && (
-        <ul className="fs-studio__attachments" aria-label="Adjuntos">
+        <ul className="fs-studio__attachments" aria-label={t('Attachments')}>
           {attachments.map((a) => (
             <li key={a.id} className="fs-studio__attachment" data-testid="studio-attachment">
               {isImage(a.mime) ? (
@@ -375,7 +376,7 @@ export function Composer({
               <button
                 type="button"
                 className="fs-studio__attachment-x"
-                aria-label={`Quitar ${a.name}`}
+                aria-label={t('Remove {name}', { name: a.name })}
                 onClick={() => setAttachments((list) => list.filter((x) => x.id !== a.id))}
               >
                 <X size={12} aria-hidden="true" />
@@ -392,12 +393,12 @@ export function Composer({
         value={draft}
         placeholder={
           pending
-            ? 'Responde arriba, o escribe para seguir…'
+            ? t('Answer above, or type to go on…')
             : knobs.mode === 'agent'
-              ? 'Dime qué quieres que haga…  @fichero · #regla · /comando'
-              : 'Escribe un mensaje…  /comando'
+              ? t('Tell me what you want done…  @file · #rule · /command')
+              : t('Write a message…  /command')
         }
-        aria-label="Mensaje"
+        aria-label={t('Message')}
         onChange={onChange}
         onKeyDown={onKey}
         onPaste={onPaste}
@@ -406,7 +407,7 @@ export function Composer({
       />
 
       <div className="fs-studio__bar">
-        <div className="fs-studio__seg" role="radiogroup" aria-label="Modo">
+        <div className="fs-studio__seg" role="radiogroup" aria-label={t('Mode')}>
           <span className="fs-studio__seg-thumb" data-mode={knobs.mode} aria-hidden="true" />
           <button
             type="button"
@@ -415,7 +416,7 @@ export function Composer({
             onClick={() => setKnobs((k) => ({ ...k, mode: 'chat' }))}
             data-testid="studio-mode-chat"
           >
-            <MessageSquare size={13} aria-hidden="true" /> Chat
+            <MessageSquare size={13} aria-hidden="true" /> {t('Chat')}
           </button>
           <button
             type="button"
@@ -424,7 +425,7 @@ export function Composer({
             onClick={() => setKnobs((k) => ({ ...k, mode: 'agent' }))}
             data-testid="studio-mode-agent"
           >
-            <Bot size={13} aria-hidden="true" /> Agente
+            <Bot size={13} aria-hidden="true" /> {t('Agent')}
           </button>
         </div>
 
@@ -442,7 +443,7 @@ export function Composer({
           />
           <IconButton
             icon={Paperclip}
-            label={uploading ? 'Subiendo…' : 'Adjuntar archivos'}
+            label={uploading ? t('Uploading…') : t('Attach files')}
             size="sm"
             disabled={uploading}
             onClick={() => fileInputRef.current?.click()}
@@ -451,7 +452,7 @@ export function Composer({
           <span className="fs-studio__mic" data-recording={dictation ? true : undefined}>
             <IconButton
               icon={dictation ? MicOff : Mic}
-              label={dictation ? 'Parar el dictado' : transcribing ? 'Transcribiendo…' : 'Dictar'}
+              label={dictation ? t('Stop dictating') : transcribing ? t('Transcribing…') : t('Dictate')}
               size="sm"
               disabled={transcribing}
               onClick={() => void toggleDictation()}
@@ -465,17 +466,17 @@ export function Composer({
             onClick={() => setKnobs((k) => ({ ...k, web: !k.web }))}
             data-testid="studio-knob-web"
           >
-            <Globe size={13} aria-hidden="true" /> Web
+            <Globe size={13} aria-hidden="true" /> {t('Web')}
           </button>
           <button
             type="button"
             className="fs-studio__chip"
             aria-pressed={knobs.rag}
-            title="Buscar en tus documentos indexados (RAG)"
+            title={t('Search your indexed documents (RAG)')}
             onClick={() => setKnobs((k) => ({ ...k, rag: !k.rag }))}
             data-testid="studio-knob-rag"
           >
-            <Database size={13} aria-hidden="true" /> Docs
+            <Database size={13} aria-hidden="true" /> {t('Docs')}
           </button>
           {knobs.mode === 'agent' && (
             <>
@@ -486,7 +487,7 @@ export function Composer({
                 onClick={() => setKnobs((k) => ({ ...k, bash: !k.bash }))}
                 data-testid="studio-knob-bash"
               >
-                <Terminal size={13} aria-hidden="true" /> Terminal
+                <Terminal size={13} aria-hidden="true" /> {t('Terminal')}
               </button>
               <button
                 type="button"
@@ -495,25 +496,25 @@ export function Composer({
                 onClick={() => setKnobs((k) => ({ ...k, plan: !k.plan }))}
                 data-testid="studio-knob-plan"
               >
-                <ListTodo size={13} aria-hidden="true" /> Plan
+                <ListTodo size={13} aria-hidden="true" /> {t('Plan')}
               </button>
               <span className="fs-studio__chipgroup">
                 <button
                   type="button"
                   className="fs-studio__chip fs-studio__chip--folder"
                   aria-pressed={Boolean(workspace)}
-                  title={workspace ? `Carpeta: ${workspace}` : 'Sin carpeta: el agente no puede leer ni editar ficheros'}
+                  title={workspace ? `${t('Folder')}: ${workspace}` : t('No folder: the agent cannot read or edit files')}
                   onClick={onPickWorkspace}
                   data-testid="studio-workspace"
                 >
                   <FolderOpen size={13} aria-hidden="true" />
-                  <span>{workspace ? basename(workspace) : 'Elegir carpeta'}</span>
+                  <span>{workspace ? basename(workspace) : t('Choose folder')}</span>
                 </button>
                 {workspace && (
                   <button
                     type="button"
                     className="fs-studio__chip-x"
-                    aria-label="Quitar la carpeta"
+                    aria-label={t('Remove the folder')}
                     onClick={onClearWorkspace}
                   >
                     <X size={11} aria-hidden="true" />
@@ -526,19 +527,19 @@ export function Composer({
             type="button"
             className="fs-studio__chip fs-studio__chip--incognito"
             aria-pressed={knobs.incognito}
-            title="Modo Nobody: no se guarda nada de esta conversación y la memoria queda cerrada"
+            title={t('Nobody mode: nothing from this conversation is saved and the memory stays closed')}
             onClick={() => setKnobs((k) => ({ ...k, incognito: !k.incognito }))}
             data-testid="studio-knob-incognito"
           >
-            <EyeOff size={13} aria-hidden="true" /> Incógnito
+            <EyeOff size={13} aria-hidden="true" /> {t('Incognito')}
           </button>
           {presetChip}
           {genLabel && (
             <span className="fs-studio__chipgroup">
-              <span className="fs-studio__chip" aria-pressed="true" title="Ajustes de generación de este chat (/temp, /maxtokens, /topp, /think, /gen)">
+              <span className="fs-studio__chip" aria-pressed="true" title={t('Generation settings of this chat (/temp, /maxtokens, /topp, /think, /gen)')}>
                 <SlidersHorizontal size={13} aria-hidden="true" /> {genLabel}
               </span>
-              <button type="button" className="fs-studio__chip-x" aria-label="Quitar los ajustes de generación" onClick={onClearGen}>
+              <button type="button" className="fs-studio__chip-x" aria-label={t('Remove the generation settings')} onClick={onClearGen}>
                 <X size={11} aria-hidden="true" />
               </button>
             </span>
@@ -548,9 +549,9 @@ export function Composer({
 
         <div className="fs-studio__send">
           {busy ? (
-            <IconButton icon={Square} label="Parar" onClick={onStop} testId="studio-stop" />
+            <IconButton icon={Square} label={t('Stop')} onClick={onStop} testId="studio-stop" />
           ) : (
-            <button type="submit" className="fs-studio__go" disabled={!canSend} aria-label="Enviar" data-testid="studio-send">
+            <button type="submit" className="fs-studio__go" disabled={!canSend} aria-label={t('Send')} data-testid="studio-send">
               <ArrowUp size={18} aria-hidden="true" />
             </button>
           )}

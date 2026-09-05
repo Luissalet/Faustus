@@ -1,6 +1,7 @@
 import { Sparkles, X } from 'lucide-react';
 import { lazy, Suspense, useEffect, useState } from 'react';
 import type { Preset } from '../adapters/presets';
+import { t } from '../i18n';
 
 const PresetPalette = lazy(() => import('./PresetPalette'));
 
@@ -33,7 +34,7 @@ export function PresetPicker({
         aria-pressed={Boolean(current)}
         aria-haspopup="dialog"
         aria-expanded={open}
-        title={current ? `Preset: ${current.name}` : 'Preset o personaje (prompt de sistema)'}
+        title={current ? `Preset: ${current.name}` : t('Preset or persona (system prompt)')}
         onClick={() => {
           setLoaded(true);
           setOpen(true);
@@ -41,10 +42,10 @@ export function PresetPicker({
         data-testid="studio-preset"
       >
         <Sparkles size={13} aria-hidden="true" />
-        <span>{current ? current.name : 'Preset'}</span>
+        <span>{current ? current.name : t('Preset')}</span>
       </button>
       {current && (
-        <button type="button" className="fs-studio__chip-x" aria-label="Quitar el preset" onClick={() => onPick(null)}>
+        <button type="button" className="fs-studio__chip-x" aria-label={t('Remove the preset')} onClick={() => onPick(null)}>
           <X size={11} aria-hidden="true" />
         </button>
       )}

@@ -13,6 +13,7 @@ import {
   type WebSource,
 } from '../../adapters/chat';
 import type { Attachment } from '../../adapters/composer';
+import { t } from '../../i18n';
 
 /**
  * The transcript's data model and the one reducer that applies a stream
@@ -180,7 +181,7 @@ export function applyWorker(prev: Worker, sa: SubagentPayload, now: number): Wor
   switch (sa.event) {
     case 'queued':
       w.status = 'queued';
-      w.note = sa.reason ? s(sa.reason) : 'esperando un hueco en la GPU';
+      w.note = sa.reason ? s(sa.reason) : t('waiting for a slot on the GPU');
       break;
     case 'started':
       w.status = 'running';
@@ -310,30 +311,30 @@ export function workerFromPersisted(sa: SubagentPayload, i: number): Worker {
 const TOOL_WORDS: Record<string, string> = {
   bash: 'Terminal',
   python: 'Python',
-  read_file: 'Leer',
-  write_file: 'Escribir',
-  edit_file: 'Editar',
-  apply_patch: 'Parche',
-  ls: 'Listar',
-  glob: 'Buscar ficheros',
-  grep: 'Buscar en ficheros',
-  web_search: 'Buscar en la web',
-  web_fetch: 'Abrir URL',
-  fetch_url: 'Abrir URL',
-  browser: 'Navegador',
-  create_document: 'Crear documento',
-  edit_document: 'Editar documento',
-  update_document: 'Actualizar documento',
-  generate_image: 'Generar imagen',
-  delegate_agents: 'Delegar',
-  ask_user: 'Preguntar',
+  read_file: 'Read',
+  write_file: 'Write',
+  edit_file: 'Edit',
+  apply_patch: 'Patch',
+  ls: 'List',
+  glob: 'Find files',
+  grep: 'Search in files',
+  web_search: 'Search the web',
+  web_fetch: 'Open URL',
+  fetch_url: 'Open URL',
+  browser: 'Browser',
+  create_document: 'Create document',
+  edit_document: 'Edit document',
+  update_document: 'Update document',
+  generate_image: 'Generate image',
+  delegate_agents: 'Delegate',
+  ask_user: 'Ask',
   update_plan: 'Plan',
-  todowrite: 'Tareas',
-  manage_memory: 'Memoria',
+  todowrite: 'Tasks',
+  manage_memory: 'Memory',
 };
 
 export function stepLabel(tool: string, command: string): string {
-  const word = TOOL_WORDS[tool] ?? tool.replace(/_/g, ' ');
+  const word = TOOL_WORDS[tool] ? t(TOOL_WORDS[tool]) : tool.replace(/_/g, ' ');
   const brief = command.trim().split('\n')[0].slice(0, 96);
   return brief ? `${word} · ${brief}` : word;
 }
@@ -344,7 +345,7 @@ export function formatMetrics(m: TurnMetrics): string {
   if (m.outputTokens !== undefined) parts.push(`${m.outputTokens} tok`);
   if (m.tokensPerSecond !== undefined) parts.push(`${m.tokensPerSecond.toFixed(1)} tok/s`);
   if (m.responseTime !== undefined) parts.push(`${m.responseTime.toFixed(1)} s`);
-  if (m.contextPercent !== undefined) parts.push(`contexto ${Math.round(m.contextPercent)}%`);
+  if (m.contextPercent !== undefined) parts.push(`${t('context')} ${Math.round(m.contextPercent)}%`);
   return parts.join(' · ');
 }
 
@@ -437,10 +438,10 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
     case 'fallback':
       return {
         ...turn,
-        note: `${event.selected || 'El modelo elegido'} no ha respondido; ha contestado ${event.answeredBy}.`,
+        note: t('{model} did not answer; {other} answered instead.', { model: event.selected || t('The chosen model'), other: event.answeredBy }),
       };
     case 'terminal':
-      return event.failed ? { ...turn, error: event.message ?? 'El modelo ha fallado.' } : turn;
+      return event.failed ? { ...turn, error: event.message ?? t('The model has failed.') } : turn;
     case 'error':
       return { ...turn, error: event.message };
     case 'progress':
@@ -477,7 +478,7 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
         ...turn,
         streaming: false,
         steps: turn.steps.map((step) => (step.state === 'running' ? { ...step, state: 'cancelled' } : step)),
-        workers: turn.workers.map((w) => (workerLive(w) ? { ...w, status: 'partial' as const, stopReason: w.stopReason || 'sin señal' } : w)),
+        workers: turn.workers.map((w) => (workerLive(w) ? { ...w, status: 'partial' as const, stopReason: w.stopReason || t('no signal') } : w)),
       };
   }
 }
@@ -504,7 +505,7 @@ export function restoreFromMetadata(turn: Turn, meta: Record<string, unknown>): 
       tool: ev.tool,
       label: stepLabel(ev.tool, ev.command),
       state: pending ? 'waiting' : parked ? 'cancelled' : ok ? 'succeeded' : 'failed',
-      meta: pending ? 'permiso pedido' : parked ? (ev.askResolved ? 'permiso respondido' : 'permiso pedido') : !ok ? `exit ${ev.exitCode}` : undefined,
+      meta: pending ? t('permission requested') : parked ? (ev.askResolved ? t('permission answered') : t('permission requested')) : !ok ? `exit ${ev.exitCode}` : undefined,
       command: ev.command,
       output: parked ? '' : ev.output,
       round: ev.round,

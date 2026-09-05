@@ -1,4 +1,5 @@
 import { ApiError, asArray, getJson } from './api';
+import { t } from '../i18n';
 
 /**
  * Everything the composer needs beyond the stream itself: uploads, the
@@ -139,7 +140,7 @@ export async function pickNative(kind: PickKind, initial = ''): Promise<NativePi
     return { status: 'unavailable', detail };
   }
   if (response.status === 409) {
-    return { status: 'cancelled', detail: detail || 'Ya hay un selector abierto.' };
+    return { status: 'cancelled', detail: detail || t('A picker is already open.') };
   }
   if (!response.ok) throw new ApiError(detail || `pick responded ${response.status}`, response.status);
   if (body.cancelled) return { status: 'cancelled' };
@@ -290,6 +291,6 @@ export function describeGen(gen: GenOverrides): string {
   if (gen.top_p !== undefined) parts.push(`top_p ${gen.top_p}`);
   if (gen.top_k !== undefined) parts.push(`top_k ${gen.top_k}`);
   if (gen.num_ctx !== undefined) parts.push(`ctx ${gen.num_ctx}`);
-  if (gen.think !== undefined) parts.push(gen.think ? 'razona' : 'sin razonar');
+  if (gen.think !== undefined) parts.push(gen.think ? t('reasons') : t('no reasoning'));
   return parts.join(' · ');
 }

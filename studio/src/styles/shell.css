@@ -20,7 +20,7 @@ html[data-studio-shell='on'] body > *:not(#studio-root):not(#fs-overlay-root) {
   inset: 0;
   z-index: 50;
   display: grid;
-  grid-template-columns: 236px minmax(0, 1fr);
+  grid-template-columns: var(--fs-nav-w, 236px) minmax(0, 1fr);
   background: var(--fs-paper);
   color: var(--fs-text-1);
   overflow: hidden;
@@ -357,19 +357,20 @@ html[data-studio-shell='on'] body > *:not(#studio-root):not(#fs-overlay-root) {
    bottom, where a thumb can reach it. The indicator still slides — it just
    slides sideways. */
 
-@media (max-width: 1279px) {
-  .fs-shell {
+/* The compact rail: JS sets data-nav='rail' below 1280px unless the person
+   dragged the sidebar to a width of their own (shell/navSize.ts). */
+.fs-shell[data-nav='rail'] {
     grid-template-columns: 72px minmax(0, 1fr);
   }
 
-  .fs-nav {
+.fs-shell[data-nav='rail'] .fs-nav {
     padding-inline: var(--fs-space-3);
   }
 
-  /* Visually hidden, NOT display:none — the spans are the only accessible
-     name the destinations have. */
-  .fs-nav__item span.fs-nav__label,
-  .fs-nav__foot .fs-btn span {
+/* Visually hidden, NOT display:none — the spans are the only accessible
+   name the destinations have. */
+.fs-shell[data-nav='rail'] .fs-nav__item span.fs-nav__label,
+.fs-shell[data-nav='rail'] .fs-nav__foot .fs-btn span {
     position: absolute;
     inline-size: 1px;
     block-size: 1px;
@@ -381,34 +382,32 @@ html[data-studio-shell='on'] body > *:not(#studio-root):not(#fs-overlay-root) {
     border: 0;
   }
 
-  .fs-nav__brand span,
-  .fs-nav__hint {
+.fs-shell[data-nav='rail'] .fs-nav__brand span,
+.fs-shell[data-nav='rail'] .fs-nav__hint {
     display: none;
   }
 
-  .fs-nav__brand {
+.fs-shell[data-nav='rail'] .fs-nav__brand {
     justify-content: center;
     padding-inline: 0;
   }
 
-  .fs-nav__item {
+.fs-shell[data-nav='rail'] .fs-nav__item {
     justify-content: center;
     padding-inline: 0;
   }
 
-  .fs-nav__item:hover {
+.fs-shell[data-nav='rail'] .fs-nav__item:hover {
     translate: 0 0;
   }
 
-  .fs-nav__foot .fs-btn {
+.fs-shell[data-nav='rail'] .fs-nav__foot .fs-btn {
     padding-inline: 0;
   }
 
-  .fs-main {
+.fs-shell[data-nav='rail'] .fs-main {
     padding: var(--fs-space-6) var(--fs-space-5) var(--fs-space-6);
   }
-}
-
 @media (max-width: 767px) {
   .fs-shell {
     grid-template-columns: minmax(0, 1fr);
@@ -502,9 +501,10 @@ html[data-studio-shell='on'] body > *:not(#studio-root):not(#fs-overlay-root) {
   color: var(--fs-text-3);
 }
 
-@media (max-width: 1279px) {
-  .fs-nav__tools-head,
-  .fs-nav__tool span {
+/* The compact rail: JS sets data-nav='rail' below 1280px unless the person
+   dragged the sidebar to a width of their own (shell/navSize.ts). */
+.fs-shell[data-nav='rail'] .fs-nav__tools-head,
+.fs-shell[data-nav='rail'] .fs-nav__tool span {
     position: absolute;
     inline-size: 1px;
     block-size: 1px;
@@ -516,16 +516,14 @@ html[data-studio-shell='on'] body > *:not(#studio-root):not(#fs-overlay-root) {
     border: 0;
   }
 
-  .fs-nav__tool {
+.fs-shell[data-nav='rail'] .fs-nav__tool {
     justify-content: center;
     padding-inline: 0;
   }
 
-  .fs-nav__tool:hover {
+.fs-shell[data-nav='rail'] .fs-nav__tool:hover {
     translate: 0 0;
   }
-}
-
 @media (max-width: 767px) {
   .fs-nav__tools {
     display: none;
@@ -543,8 +541,51 @@ html[data-studio-shell='on'] body > *:not(#studio-root):not(#fs-overlay-root) {
   background: var(--fs-ember-faint);
 }
 
-@media (max-width: 1279px) {
-  .fs-nav__settings {
+/* The compact rail: JS sets data-nav='rail' below 1280px unless the person
+   dragged the sidebar to a width of their own (shell/navSize.ts). */
+.fs-shell[data-nav='rail'] .fs-nav__settings {
     justify-content: center;
+  }
+/* -- The sidebar's edge: drag to resize, squeeze to collapse -- */
+
+.fs-nav__resize {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: calc(var(--fs-nav-w, 236px) - 4px);
+  inline-size: 8px;
+  cursor: col-resize;
+  z-index: 3;
+  touch-action: none;
+}
+
+.fs-nav__resize::after {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 3px;
+  inline-size: 2px;
+  background: var(--fs-brand);
+  opacity: 0;
+  transition: opacity var(--fs-duration-fast) var(--fs-ease);
+}
+
+.fs-nav__resize:hover::after,
+.fs-nav__resize:focus-visible::after,
+.fs-shell[data-resizing] .fs-nav__resize::after {
+  opacity: 0.7;
+}
+
+.fs-shell[data-resizing] {
+  cursor: col-resize;
+  user-select: none;
+}
+
+.fs-shell[data-resizing] .fs-main {
+  pointer-events: none;
+}
+
+@media (max-width: 767px) {
+  .fs-nav__resize {
+    display: none;
   }
 }
