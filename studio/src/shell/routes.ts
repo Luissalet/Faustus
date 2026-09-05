@@ -14,6 +14,7 @@ import {
   Workflow,
   type LucideIcon,
   Telescope,
+  Columns3,
 } from 'lucide-react';
 
 /**
@@ -67,6 +68,7 @@ export const TOOLS: Tool[] = [
   { path: '/agents', label: 'Agents', icon: Bot, ready: true },
   { path: '/skills', label: 'Skills', icon: Zap, ready: true },
   { path: '/research', label: 'Research', icon: Telescope, ready: true },
+  { path: '/compare', label: 'Compare', icon: Columns3, ready: true },
   { path: '/cookbook', label: 'Cookbook', icon: ChefHat, ready: false },
 ];
 
@@ -98,4 +100,5 @@ export const SERVER_ROUTES = [
   '/agents',
   '/skills',
   '/research',
+  '/compare',
 ];

@@ -1,0 +1,466 @@
+/* Compare: setup, prompt, panes side by side, a vote. */
+
+.fs-cmp {
+  display: grid;
+  gap: var(--fs-space-4);
+  padding-block-end: var(--fs-space-6);
+}
+
+.fs-cmp__lede {
+  margin-block-start: var(--fs-space-2);
+}
+
+/* ── Setup ── */
+
+.fs-cmp__setup {
+  display: grid;
+  gap: var(--fs-space-3);
+  padding: var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-1);
+}
+
+.fs-cmp__setup .fs-seg {
+  justify-self: start;
+}
+
+.fs-cmp__slots,
+.fs-cmp__options {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  flex-wrap: wrap;
+}
+
+.fs-cmp__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 2px 2px 8px;
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-surface-2);
+  font-size: var(--fs-label-size);
+}
+
+.fs-cmp__chip[data-probe='ok'] {
+  border-color: color-mix(in srgb, var(--fs-success) 60%, var(--fs-border));
+}
+
+.fs-cmp__chip[data-probe='fail'] {
+  border-color: var(--fs-danger);
+}
+
+.fs-cmp__chip > b {
+  display: inline-grid;
+  place-items: center;
+  inline-size: 18px;
+  block-size: 18px;
+  border-radius: 50%;
+  background: var(--fs-brand);
+  color: var(--fs-on-brand);
+  font-size: 10px;
+}
+
+.fs-cmp__chip-pick,
+.fs-cmp__chip-select {
+  max-inline-size: 240px;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: var(--fs-radius-control);
+  background: transparent;
+  color: var(--fs-text-1);
+  font: inherit;
+  font-size: var(--fs-label-size);
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fs-cmp__chip-pick:hover,
+.fs-cmp__chip-select:hover {
+  background: var(--fs-highlight);
+}
+
+.fs-cmp__timeout {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fs-space-1);
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-3);
+}
+
+.fs-cmp__timeout .fs-field {
+  block-size: var(--fs-control-sm);
+  padding-block: 0;
+}
+
+/* ── Prompt ── */
+
+.fs-cmp__prompt {
+  display: grid;
+  gap: var(--fs-space-2);
+  padding: var(--fs-space-3);
+  border: 1px solid color-mix(in srgb, var(--fs-brand) 30%, var(--fs-border));
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-1);
+}
+
+.fs-cmp__textarea {
+  inline-size: 100%;
+  padding: var(--fs-space-3);
+  border: 0;
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-2);
+  color: var(--fs-text-1);
+  font: inherit;
+  font-size: var(--fs-body-size);
+  line-height: var(--fs-body-line);
+  resize: vertical;
+}
+
+.fs-cmp__textarea:focus-visible {
+  outline: 2px solid var(--fs-focus);
+  outline-offset: 1px;
+}
+
+.fs-cmp__prompt-row {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  flex-wrap: wrap;
+}
+
+/* ── Panes ── */
+
+.fs-cmp__grid {
+  display: grid;
+  grid-template-columns: repeat(var(--fs-cmp-n, 2), minmax(0, 1fr));
+  gap: var(--fs-space-3);
+  align-items: start;
+}
+
+.fs-cmp__pane {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-inline-size: 0;
+  max-block-size: 70vh;
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-1);
+  overflow: hidden;
+}
+
+.fs-cmp__pane[data-streaming] {
+  border-color: color-mix(in srgb, var(--fs-brand) 45%, var(--fs-border));
+}
+
+.fs-cmp__pane[data-expanded] {
+  grid-column: 1 / -1;
+  max-block-size: none;
+}
+
+.fs-cmp__pane-head {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  min-inline-size: 0;
+  padding: var(--fs-space-2) var(--fs-space-3);
+  border-block-end: 1px solid var(--fs-border);
+  background: var(--fs-surface-2);
+}
+
+.fs-cmp__slot {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  inline-size: 20px;
+  block-size: 20px;
+  border-radius: 50%;
+  background: var(--fs-brand);
+  color: var(--fs-on-brand);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.fs-cmp__pane-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-inline-size: 0;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: var(--fs-radius-control);
+  background: none;
+  color: var(--fs-text-1);
+  font: inherit;
+  font-size: var(--fs-label-size);
+  font-weight: 600;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fs-cmp__pane-title:disabled {
+  cursor: default;
+}
+
+.fs-cmp__pane-title:not(:disabled):hover {
+  background: var(--fs-highlight);
+}
+
+.fs-cmp__badge,
+.fs-cmp__grade {
+  flex-shrink: 0;
+  padding: 1px 7px;
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-surface-3);
+  color: var(--fs-text-3);
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.fs-cmp__badge[data-first] {
+  background: color-mix(in srgb, var(--fs-success) 22%, transparent);
+  color: var(--fs-success);
+}
+
+.fs-cmp__grade[data-grade='pass'] {
+  background: color-mix(in srgb, var(--fs-success) 22%, transparent);
+  color: var(--fs-success);
+}
+
+.fs-cmp__grade[data-grade='fail'] {
+  background: color-mix(in srgb, var(--fs-danger) 20%, transparent);
+  color: var(--fs-danger);
+}
+
+.fs-cmp__pane-body {
+  display: grid;
+  align-content: start;
+  gap: var(--fs-space-3);
+  min-block-size: 120px;
+  padding: var(--fs-space-3);
+  overflow: auto;
+}
+
+.fs-cmp__msg {
+  display: grid;
+  gap: 4px;
+  min-inline-size: 0;
+}
+
+.fs-cmp__role {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fs-text-3);
+}
+
+.fs-cmp__user {
+  margin: 0;
+  max-inline-size: none;
+  padding: var(--fs-space-2) var(--fs-space-3);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-2);
+  font-size: var(--fs-label-size);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.fs-cmp__msg .fs-rich {
+  font-size: var(--fs-label-size);
+}
+
+.fs-cmp__thinking summary {
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--fs-text-3);
+}
+
+.fs-cmp__thinking pre {
+  max-block-size: 160px;
+  overflow: auto;
+  margin: 4px 0 0;
+  font-size: 11px;
+  white-space: pre-wrap;
+  color: var(--fs-text-3);
+}
+
+.fs-cmp__steps,
+.fs-cmp__metrics {
+  margin: 0;
+  font-size: 11px;
+  color: var(--fs-text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.fs-cmp__waiting {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  margin: 0;
+  color: var(--fs-text-3);
+  font-size: var(--fs-label-size);
+}
+
+.fs-cmp__preview {
+  inline-size: 100%;
+  min-block-size: 360px;
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-paper);
+}
+
+.fs-cmp__hits {
+  display: grid;
+  gap: var(--fs-space-2);
+}
+
+.fs-cmp__hit {
+  display: grid;
+  gap: 1px;
+  padding: var(--fs-space-2);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-2);
+  color: var(--fs-text-1);
+  font-size: var(--fs-label-size);
+  text-decoration: none;
+}
+
+.fs-cmp__hit:hover {
+  background: var(--fs-highlight);
+}
+
+.fs-cmp__hit small {
+  color: var(--fs-text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fs-cmp__hit span {
+  color: var(--fs-text-2);
+}
+
+.fs-cmp__synth {
+  display: grid;
+  gap: 4px;
+  padding-block-start: var(--fs-space-2);
+  border-block-start: 1px solid var(--fs-border);
+}
+
+.fs-cmp__pane-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-1);
+  padding: var(--fs-space-1) var(--fs-space-2);
+  border-block-start: 1px solid var(--fs-border);
+}
+
+.fs-cmp__pane-foot .fs-icon-btn[data-on] {
+  color: var(--fs-brand);
+}
+
+/* ── Vote ── */
+
+.fs-cmp__vote {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  flex-wrap: wrap;
+  padding: var(--fs-space-3);
+  border: 1px solid color-mix(in srgb, var(--fs-brand) 35%, var(--fs-border));
+  border-radius: var(--fs-radius-panel);
+  background: color-mix(in srgb, var(--fs-brand) 6%, var(--fs-surface-1));
+}
+
+.fs-cmp__vote-label {
+  font-size: var(--fs-label-size);
+  font-weight: 600;
+}
+
+.fs-cmp__verdict {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  margin: 0;
+  font-weight: 600;
+}
+
+/* ── Dialogs ── */
+
+.fs-cmp__pool {
+  display: grid;
+  gap: 2px;
+  max-block-size: 50vh;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.fs-cmp__pool li {
+  max-inline-size: none;
+}
+
+.fs-cmp__table {
+  inline-size: 100%;
+  margin-block-start: var(--fs-space-3);
+  border-collapse: collapse;
+  font-size: var(--fs-label-size);
+}
+
+.fs-cmp__table th,
+.fs-cmp__table td {
+  padding: 4px 8px;
+  border-block-end: 1px solid var(--fs-border);
+  text-align: start;
+}
+
+.fs-cmp__table th {
+  color: var(--fs-text-3);
+  font-weight: 600;
+}
+
+.fs-cmp__table td + td,
+.fs-cmp__table th + th {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 1279px) {
+  .fs-cmp__grid {
+    grid-template-columns: repeat(min(var(--fs-cmp-n, 2), 2), minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 767px) {
+  .fs-cmp__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .fs-cmp__pane {
+    max-block-size: none;
+  }
+}
+
+@media print {
+  .fs-cmp__setup,
+  .fs-cmp__prompt,
+  .fs-cmp__pane-foot,
+  .fs-cmp__vote button {
+    display: none;
+  }
+
+  .fs-cmp__pane {
+    max-block-size: none;
+    break-inside: avoid;
+  }
+}

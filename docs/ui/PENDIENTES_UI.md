@@ -619,3 +619,28 @@ su área y baja el baseline. Ningún módulo Studio nuevo la aumenta.
     escritos contra el contrato de `/read` pero el fixture no los devuelve:
     sin probar con correo real.
 
+## Lote AC (Deep Research)
+
+108. **`[→]`** La investigación de prueba (rondas 1, qwen 27b q8) tardó 300 s
+    (el `max_time` por defecto) y terminó con 0 fuentes: el modelo planifica
+    lento y la extracción no llegó. El stream cerró antes del evento final y
+    `/status` ya no la conocía; la pantalla pregunta por el informe guardado
+    antes de dar la investigación por fallida. Probar con el 9b o con más
+    tiempo desde la tarjeta «Ajuste».
+109. **`[ ]`** `/api/research/active` lo sondea cada pocos segundos el
+    `jobs.js` de la anterior, que sigue cargado aunque oculto. Desaparece
+    al borrar la anterior.
+
+## Lote AD (Compare)
+
+110. **`[ ]`** `/api/compare/record` no existe en el servidor (la anterior lo
+    llamaba y se tragaba el 404): los votos viven solo en `localStorage`. Si se
+    quiere un marcador entre navegadores hace falta una ruta.
+111. **`[→]`** Sin verificar con datos: modo Agente (aprobaciones dentro del
+    panel), modo Investigación (minutos por panel), uno detrás de otro,
+    prompts con respuesta esperada (nota Correcta / Fallada), imprimir.
+112. **`[ ]`** En un solo equipo con una GPU, «todos a la vez» hace que Ollama
+    descargue un modelo para cargar el otro (el 27b tardó 50 s frente a 11 s
+    del 9b): el chip «Uno detrás de otro» es el honesto en local; podría
+    sugerirse cuando todos los huecos son del mismo endpoint local.
+

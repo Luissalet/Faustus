@@ -350,7 +350,18 @@ export function ResearchScreen() {
       ).then(async (status) => {
         followers.current.delete(job.id);
         if (status === 'aborted') return;
-        if (status === 'done' || status === 'completed' || status === 'warning') {
+        let outcome = status;
+        if (outcome !== 'done' && outcome !== 'completed' && outcome !== 'warning' && outcome !== 'cancelled') {
+          // The stream can close before the final event, and the in-memory
+          // status disappears once the report is on disk: ask for the report.
+          try {
+            const saved = await researchResult(job.sessionId as string);
+            if (saved.result) outcome = 'done';
+          } catch {
+            /* really failed */
+          }
+        }
+        if (outcome === 'done' || outcome === 'completed' || outcome === 'warning') {
           try {
             const result = await researchResult(job.sessionId as string);
             patch(job.id, { status: 'done', finishedAt: Date.now(), result, sourceCount: result.sources.length });
@@ -358,7 +369,7 @@ export function ResearchScreen() {
           } catch (err) {
             patch(job.id, { status: 'error', finishedAt: Date.now(), error: (err as Error).message || t('The report could not be read.') });
           }
-        } else if (status === 'cancelled') patch(job.id, { status: 'cancelled', finishedAt: Date.now() });
+        } else if (outcome === 'cancelled') patch(job.id, { status: 'cancelled', finishedAt: Date.now() });
         else patch(job.id, { status: 'error', finishedAt: Date.now(), error: lastMessage || t('The research failed.') });
         loadResearchLibrary({ limit: 8 }).then((r) => setRecent(r.items)).catch(() => undefined);
       });

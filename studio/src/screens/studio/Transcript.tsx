@@ -196,7 +196,7 @@ function ToolRail({ steps, live, onOpenFile, onOpenDoc }: { steps: Step[]; live:
   );
 }
 
-function AskCard({
+export function AskCard({
   ask,
   busy,
   onApproval,

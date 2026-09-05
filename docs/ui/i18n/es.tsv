@@ -3380,3 +3380,88 @@ Product	Producto
 Comparison	Comparativa
 How-to	Guía
 Fact-check	Verificación
+A one-token request to each model, so a dead endpoint shows before the race	Una petición de un token a cada modelo, para que un endpoint muerto se vea antes de la carrera
+Add an endpoint in Settings → Models and the models appear here.	Añade un endpoint en Ajustes → Modelos y los modelos aparecerán aquí.
+All {n} answered.	Los {n} han respondido.
+Analysis	Análisis
+Analysis by {model}	Análisis de {model}
+Answer	Respuesta
+Blind	A ciegas
+Clear the votes	Borrar los votos
+Compare: analysis	Comparar: análisis
+Compare: {model}	Comparar: {model}
+Comparison copied as Markdown.	Comparativa copiada como Markdown.
+Continue in Studio	Seguir en Studio
+Copy as Markdown	Copiar como Markdown
+Copy the answer	Copiar la respuesta
+Correct	Correcta
+Download .md	Descargar .md
+Expand	Ampliar
+Expected: {answer}	Esperada: {answer}
+Finished {n}th	Terminó en el puesto {n}
+Follow up in every pane…	Continúa en todos los paneles…
+Forget the expected answer	Olvidar la respuesta esperada
+Keep the chats	Conservar los chats
+Losses	Derrotas
+Missed	Fallada
+Model pool	Fondo de modelos
+Model {slot}	Modelo {slot}
+Names revealed.	Nombres revelados.
+Names stay hidden until you vote	Los nombres se ocultan hasta que votes
+No models to compare	No hay modelos que comparar
+No results.	Sin resultados.
+No votes yet. Compare something and pick a winner.	Aún no hay votos. Compara algo y elige un ganador.
+One pane at a time, so a single GPU is not shared	Un panel cada vez, para no repartir una sola GPU
+Pick a model	Elegir un modelo
+Pick a model for this pane.	Elige un modelo para este panel.
+Preview the HTML	Vista previa del HTML
+Print	Imprimir
+Probe	Sondear
+Probing…	Sondeando…
+Provider for slot {slot}	Buscador del hueco {slot}
+Reasoning	Razonamiento
+Remove slot {slot}	Quitar el hueco {slot}
+Remove this pane	Quitar este panel
+Reveal without voting	Revelar sin votar
+Scoreboard	Marcador
+Send to all	Enviar a todos
+Set up the comparison	Preparar la comparativa
+Show the text	Ver el texto
+Shrink	Encoger
+Shuffle the models	Barajar los modelos
+Shuffled from {n} models.	Barajado entre {n} modelos.
+Stop all	Parar todos
+Stopped after {s} s (timeout).	Parado a los {s} s (tiempo agotado).
+Stopped.	Parado.
+Swap the model	Cambiar el modelo
+Test prompts	Prompts de prueba
+The answer the prompt expects; panes get graded against it	La respuesta que espera el prompt; los paneles se puntúan contra ella
+The model did not answer.	El modelo no ha respondido.
+The model that summarises each provider’s results	El modelo que resume los resultados de cada buscador
+The same prompt for every pane…	El mismo prompt para todos los paneles…
+The search failed.	La búsqueda ha fallado.
+Tie	Empate
+Tie recorded.	Empate anotado.
+Tie.	Empate.
+Ties	Empates
+Timeout	Tiempo máximo
+Unticked models stay out of Shuffle and the pickers.	Los modelos sin marcar quedan fuera de Barajar y de los selectores.
+Vote	Votar
+Votes cleared.	Votos borrados.
+Waiting for {slot}…	Esperando a {slot}…
+Which answer is better?	¿Qué respuesta es mejor?
+Win rate	Victorias %
+Wins	Victorias
+winner	ganador
+{name} wins.	Gana {name}.
+{n} chat kept in Studio.	{n} chat conservado en Studio.
+{n} chats kept in Studio.	{n} chats conservados en Studio.
+{n} of {m} did not answer the probe.	{n} de {m} no han respondido a la sonda.
+{n} tool call	{n} llamada a herramienta
+{n} tool calls	{n} llamadas a herramientas
+{n} vote in this browser.	{n} voto en este navegador.
+{n} votes in this browser.	{n} votos en este navegador.
+Plain answers: no tools, no memory, no documents. The fairest test of the model itself.	Respuestas a secas: sin herramientas, memoria ni documentos. La prueba más justa del modelo en sí.
+Tools on (terminal, web): who gets the job done, not who writes nicest.	Con herramientas (terminal, web): quién hace el trabajo, no quién escribe más bonito.
+The same query to several search providers, then a model summarises each result set.	La misma consulta a varios buscadores y un modelo resume cada conjunto de resultados.
+Each model runs Deep Research on the question before answering. Slow, thorough.	Cada modelo hace investigación profunda sobre la pregunta antes de responder. Lento y a fondo.

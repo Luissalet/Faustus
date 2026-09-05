@@ -1135,9 +1135,7 @@ export function StudioScreen() {
     settings: () => navigate('/settings'),
     focus_input: () => textareaRef.current?.focus(),
     open_calendar: () => navigate('/calendar'),
-    open_compare: () => {
-      window.location.href = '/?shell=legacy';
-    },
+    open_compare: () => navigate('/compare'),
     open_cookbook: () => {
       window.location.href = '/?shell=legacy';
     },

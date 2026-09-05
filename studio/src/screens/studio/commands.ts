@@ -62,7 +62,7 @@ export const COMMANDS: SlashCommand[] = [
   { name: 'experts', usage: '/experts', help: 'Go to Agents: the Experts.', route: '/agents?t=experts' },
   { name: 'skills', usage: '/skills', help: 'Go to the Skills.', route: '/skills' },
   { name: 'research', usage: '/research [question]', help: 'Deep Research: several rounds of search and reading, then a report with sources.', route: '/research' },
-  { name: 'compare', usage: '/compare', help: 'Compare models (previous interface).', route: '/?shell=legacy', legacy: true },
+  { name: 'compare', usage: '/compare', help: 'Compare: the same prompt to several models side by side, blind, with a vote.', route: '/compare' },
   { name: 'mcp', usage: '/mcp', help: 'MCP servers (Settings → Integrations).', route: '/settings?s=integrations' },
   { name: 'setup', usage: '/setup', help: 'Go to Settings.', route: '/settings' },
   { name: 'usage', usage: '/usage [on|off]', help: 'Shows or hides the live usage (GPU, VRAM, model, RAM) in the header.' },

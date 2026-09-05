@@ -348,6 +348,8 @@ export interface SendOptions {
   presetId?: string;
   /** The document open in the panel, so the model sees what you see. */
   activeDocId?: string;
+  /** Compare pane: no memory, no documents, only the tools the mode allows (`compare_mode`). */
+  compare?: boolean;
   signal?: AbortSignal;
 }
 
@@ -678,6 +680,11 @@ export async function* sendTurn(options: SendOptions): AsyncGenerator<ChatEvent>
   if (options.incognito) fd.append('incognito', 'true');
   if (options.presetId) fd.append('preset_id', options.presetId);
   if (options.activeDocId) fd.append('active_doc_id', options.activeDocId);
+  if (options.compare) {
+    fd.append('compare_mode', 'true');
+    fd.append('no_documents', 'true');
+    fd.append('no_memory', 'true');
+  }
 
   const response = await fetch('/api/chat_stream', {
     method: 'POST',
