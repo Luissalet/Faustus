@@ -49,56 +49,43 @@ def _patch_generation(monkeypatch, image_url):
     )
 
 
-async def test_generate_image_validates_provider_url_before_download(monkeypatch):
+async def test_generate_image_downloads_provider_url_through_the_broker(monkeypatch):
+    """The download must go through outbound_fetch.fetch, not a bare httpx.get.
+
+    A plain httpx.get re-resolves the hostname the guard just approved, which is
+    the DNS-rebinding window B-019 describes; the broker resolves once and pins.
+    """
     import httpx
-    import src.url_safety as url_safety
+    from src import outbound_fetch
 
     provider_url = "https://images.example.com/generated.png?sig=abc"
     events = []
     _patch_generation(monkeypatch, provider_url)
 
-    def _check_outbound_url(url, *, block_private=False):
-        events.append(("check", url, block_private))
-        return True, "ok"
+    def _fetch(url, **kwargs):
+        events.append(("fetch", url, kwargs["profile"], kwargs["allow_local"]))
+        raise httpx.ConnectError("no network in tests")
 
-    def _get(url, *, timeout):
-        events.append(("get", url, timeout))
-        return _DownloadResponse()
+    def _get(url, *args, **kwargs):
+        raise AssertionError("image download must not use an unpinned httpx.get")
 
-    monkeypatch.setattr(url_safety, "check_outbound_url", _check_outbound_url)
+    monkeypatch.setattr(outbound_fetch, "fetch", _fetch)
     monkeypatch.setattr(httpx, "get", _get)
 
     result = await ai_interaction.do_generate_image("draw a chair\ndall-e-3")
 
+    # Download failed, so the tool falls back to handing back the external URL.
     assert result["image_url"] == provider_url
     assert events == [
-        ("check", provider_url, False),
-        ("get", provider_url, 60),
+        ("fetch", provider_url, outbound_fetch.PROVIDER_RESULT, False),
     ]
 
 
 async def test_generate_image_rejects_unsafe_provider_url_without_download(monkeypatch):
-    import httpx
-    import src.url_safety as url_safety
-
     unsafe_url = "http://169.254.169.254/latest/meta-data"
-    events = []
     _patch_generation(monkeypatch, unsafe_url)
-
-    def _check_outbound_url(url, *, block_private=False):
-        events.append(("check", url, block_private))
-        return False, "link-local address blocked (SSRF metadata risk): 169.254.169.254"
-
-    def _get(url, *, timeout):
-        raise AssertionError("unsafe provider image URL must not be downloaded")
-
-    monkeypatch.setattr(url_safety, "check_outbound_url", _check_outbound_url)
-    monkeypatch.setattr(httpx, "get", _get)
 
     result = await ai_interaction.do_generate_image("draw a chair\ndall-e-3")
 
-    assert result["error"] == (
-        "Image API returned unsafe image URL: "
-        "link-local address blocked (SSRF metadata risk): 169.254.169.254"
-    )
-    assert events == [("check", unsafe_url, False)]
+    assert "unsafe image URL" in result["error"]
+    assert "link-local" in result["error"]

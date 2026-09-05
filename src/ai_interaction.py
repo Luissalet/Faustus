@@ -30,6 +30,70 @@ AI_CHAT_TIMEOUT = 120  # seconds for a single LLM call
 MAX_DEBATE_ROUNDS = 5
 MAX_PIPELINE_STEPS = 10
 
+
+# ---------------------------------------------------------------------------
+# Provider-returned image downloads (B-019)
+# ---------------------------------------------------------------------------
+
+# Image URLs arrive inside a provider response, so they are model-reachable data
+# and must never be the thing that decides how much of the network we may touch.
+# The trust profile comes from the endpoint the operator configured and that
+# this generation was actually routed to: a result served by that same host
+# inherits the operator's permission, anything else is judged public-only, and
+# IMAGE_BLOCK_PRIVATE_IPS=true drops even the host match for locked-down
+# deployments. Everything after that -- one resolution, a pinned connect,
+# re-validation of each redirect, and the byte/time/MIME ceilings -- belongs to
+# the outbound broker rather than to this module.
+IMAGE_DOWNLOAD_MAX_BYTES = 8_000_000
+IMAGE_DOWNLOAD_TIMEOUT = 60
+IMAGE_DOWNLOAD_MIME = ("image/", "application/octet-stream", "binary/octet-stream")
+
+
+def _provider_image_profile(result_url: str, endpoint_url: str) -> Tuple[str, bool]:
+    """Pick the outbound trust profile for a provider-supplied image URL."""
+    import os
+    from urllib.parse import urlparse
+
+    from src import outbound_fetch
+
+    if os.getenv("IMAGE_BLOCK_PRIVATE_IPS", "false").lower() == "true":
+        return outbound_fetch.PUBLIC_UNTRUSTED, False
+    try:
+        result_host = (urlparse(result_url or "").hostname or "").lower()
+        endpoint_host = (urlparse(endpoint_url or "").hostname or "").lower()
+    except Exception:
+        return outbound_fetch.PROVIDER_RESULT, False
+    if result_host and result_host == endpoint_host:
+        # Local diffusion servers hand back an absolute URL on their own host,
+        # and that host is the one the operator registered and is already
+        # sending the API key to. Trusting it this far follows configuration,
+        # not the response body: a URL pointing anywhere else gets nothing.
+        return outbound_fetch.profile_for_configured_endpoint(block_private=False)
+    return outbound_fetch.PROVIDER_RESULT, False
+
+
+def _download_provider_image(result_url: str, endpoint_url: str) -> bytes:
+    """Fetch a provider-returned image through the outbound broker.
+
+    Raises outbound_fetch.OutboundPolicyError when the destination is refused,
+    which callers report separately from a plain download failure: "the provider
+    handed us a metadata URL" and "the CDN timed out" are not the same event.
+    """
+    from src import outbound_fetch
+
+    profile, allow_local = _provider_image_profile(result_url, endpoint_url)
+    response = outbound_fetch.fetch(
+        result_url,
+        profile=profile,
+        allow_local=allow_local,
+        timeout=IMAGE_DOWNLOAD_TIMEOUT,
+        max_bytes=IMAGE_DOWNLOAD_MAX_BYTES,
+        allowed_mime=IMAGE_DOWNLOAD_MIME,
+    )
+    response.raise_for_status()
+    return response.content
+
+
 # ---------------------------------------------------------------------------
 # Global managers (set from app.py, same pattern as _mcp_manager)
 # _session_manager is kept as a local cache for performance (avoiding
@@ -950,7 +1014,7 @@ async def do_generate_image(content: str, session_id: Optional[str] = None, owne
     import httpx
     import os
     from pathlib import Path
-    from src.url_safety import check_outbound_url
+    from src.outbound_fetch import OutboundPolicyError
 
     lines = content.strip().split("\n")
     prompt = lines[0].strip() if lines else ""
@@ -1140,29 +1204,25 @@ async def do_generate_image(content: str, session_id: Optional[str] = None, owne
                 image_id = _save_to_gallery(filename)
 
             elif img.get("url"):
-                # Download external URL and save locally (DALL-E returns temp URLs)
+                # Download external URL and save locally (DALL-E returns temp URLs).
+                # `url` is the operator-configured endpoint this generation was
+                # routed to; it, not the returned URL, decides how far we may reach.
                 result_url = img["url"]
-                ok, reason = check_outbound_url(
-                    result_url,
-                    block_private=os.getenv("IMAGE_BLOCK_PRIVATE_IPS", "false").lower() == "true",
-                )
-                if not ok:
-                    return {"error": f"Image API returned unsafe image URL: {reason}"}
                 try:
-                    dl_resp = httpx.get(result_url, timeout=60)
-                    if dl_resp.status_code == 200:
-                        img_dir = Path(GENERATED_IMAGES_DIR)
-                        img_dir.mkdir(parents=True, exist_ok=True)
-                        filename = f"{uuid.uuid4().hex[:12]}.png"
-                        img_path = img_dir / filename
-                        img_path.write_bytes(dl_resp.content)
-                        image_url = f"/api/generated-image/{filename}"
-                        image_id = _save_to_gallery(filename)
-                    else:
-                        image_url = result_url  # fallback to external URL
+                    _img_bytes = _download_provider_image(result_url, url)
+                except OutboundPolicyError as _pol_e:
+                    return {"error": f"Image API returned unsafe image URL: {_pol_e}"}
                 except Exception as _dl_e:
-                    logger.warning(f"Failed to download DALL-E image: {_dl_e}")
+                    logger.warning(f"Failed to download generated image: {_dl_e}")
                     image_url = result_url  # fallback to external URL
+                else:
+                    img_dir = Path(GENERATED_IMAGES_DIR)
+                    img_dir.mkdir(parents=True, exist_ok=True)
+                    filename = f"{uuid.uuid4().hex[:12]}.png"
+                    img_path = img_dir / filename
+                    img_path.write_bytes(_img_bytes)
+                    image_url = f"/api/generated-image/{filename}"
+                    image_id = _save_to_gallery(filename)
             else:
                 return {"error": "Image API returned unexpected format (no b64_json or url)"}
 
@@ -1201,7 +1261,7 @@ async def do_edit_image(
     import mimetypes
     import os
     from pathlib import Path
-    from src.url_safety import check_outbound_url
+    from src.outbound_fetch import OutboundPolicyError
 
     prompt = (prompt or "").strip()
     if not prompt:
@@ -1424,16 +1484,13 @@ async def do_edit_image(
                 image_url, image_id = _save_image_bytes(base64.b64decode(img.get("b64_json")))
             elif img.get("url"):
                 result_url = img["url"]
-                ok, reason = check_outbound_url(
-                    result_url,
-                    block_private=os.getenv("IMAGE_BLOCK_PRIVATE_IPS", "false").lower() == "true",
-                )
-                if not ok:
-                    return {"error": f"Image edit API returned unsafe image URL: {reason}"}
-                dl_resp = httpx.get(result_url, timeout=60)
-                if dl_resp.status_code != 200:
-                    return {"error": f"Could not download edited image ({dl_resp.status_code})"}
-                image_url, image_id = _save_image_bytes(dl_resp.content)
+                try:
+                    _img_bytes = _download_provider_image(result_url, url)
+                except OutboundPolicyError as _pol_e:
+                    return {"error": f"Image edit API returned unsafe image URL: {_pol_e}"}
+                except Exception as _dl_e:
+                    return {"error": f"Could not download edited image ({_dl_e})"}
+                image_url, image_id = _save_image_bytes(_img_bytes)
             else:
                 return {"error": "Image edit API returned unexpected format (no b64_json or url)"}
 
