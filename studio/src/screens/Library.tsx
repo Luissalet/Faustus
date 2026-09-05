@@ -6,6 +6,7 @@ import { ImageGallery } from './library/Gallery';
 import { DocumentsLibrary } from './library/Documents';
 import { ChatsLibrary } from './library/Chats';
 import { ResearchLibrary } from './library/Research';
+import { HistoryLibrary } from './library/History';
 import { loadLibrary, type Artifact } from '../adapters/library';
 import { relativeTime } from '../adapters/home';
 import { useSpotlight } from '../shell/useSpotlight';
@@ -20,6 +21,7 @@ const TYPES = [
   { id: 'documento', label: 'Documents' },
   { id: 'chats', label: 'Chats' },
   { id: 'research', label: 'Research' },
+  { id: 'historial', label: 'Imported' },
   { id: 'archivo', label: 'Archive' },
 ];
 
@@ -138,6 +140,7 @@ export function LibraryScreen() {
       {type === 'documento' && <DocumentsLibrary query={query} say={say} />}
       {type === 'chats' && <ChatsLibrary query={query} say={say} />}
       {type === 'research' && <ResearchLibrary query={query} say={say} />}
+      {type === 'historial' && <HistoryLibrary query={query} say={say} />}
       {type === 'archivo' && (
         <>
           <div className="fs-gal__chips fs-lib__kinds" role="group" aria-label={t('What to show from the archive')}>

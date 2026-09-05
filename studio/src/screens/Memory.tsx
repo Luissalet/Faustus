@@ -17,7 +17,8 @@ import {
   Zap,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router';
+import { Link, useSearchParams } from 'react-router';
+import { Provenance } from './memory/Provenance';
 import { Button, Dialog, EmptyState, IconButton, Skeleton, Toast } from '../components';
 import { listSessions, type ChatSession } from '../adapters/chat';
 import { relativeTime } from '../adapters/home';
@@ -467,6 +468,8 @@ function LearnedRules({ say }: { say: (text: string) => void }) {
 /* ── Screen ── */
 
 export function MemoryScreen() {
+  const [params, setParams] = useSearchParams();
+  const tab: 'memories' | 'provenance' = params.get('t') === 'provenance' ? 'provenance' : 'memories';
   const [memories, setMemories] = useState<Memory[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [query, setQuery] = useState('');
@@ -666,10 +669,12 @@ export function MemoryScreen() {
         <div>
           <h1 className="fs-screen__title">{t('Memory')}</h1>
           <p className="fs-prose" style={{ marginBlockStart: 'var(--fs-space-2)' }}>
-            {memories ? `${tn(memories.length, '{n} memory', '{n} memories')}${pinnedCount ? ` · ${tn(pinnedCount, '{n} pinned', '{n} pinned#')}` : ''}. ` : ''}
-            {t('What the assistant knows about you and uses when it fits; pinned ones always go.')}
+            {tab === 'provenance'
+              ? t('Why the agent believes what it believes: every edge here was read from a stored record, none asserted by a model.')
+              : `${memories ? `${tn(memories.length, '{n} memory', '{n} memories')}${pinnedCount ? ` · ${tn(pinnedCount, '{n} pinned', '{n} pinned#')}` : ''}. ` : ''}${t('What the assistant knows about you and uses when it fits; pinned ones always go.')}`}
           </p>
         </div>
+        {tab === 'memories' && (
         <div className="fs-memory__switches">
           <label className="fs-switch">
             <input type="checkbox" checked={enabled === true} disabled={enabled === null} onChange={(e) => void savePref('memory_enabled', e.target.checked)} />
@@ -684,7 +689,21 @@ export function MemoryScreen() {
             <Zap size={13} aria-hidden="true" /> {t('Skills live on their own screen')}
           </Link>
         </div>
+        )}
       </header>
+
+      <div className="fs-tabs" role="tablist" aria-label={t('Memory')}>
+        <button type="button" role="tab" className="fs-tab" aria-selected={tab === 'memories'} onClick={() => setParams(new URLSearchParams(), { replace: true })} data-testid="memory-tab-memories">
+          {t('Memories')}
+        </button>
+        <button type="button" role="tab" className="fs-tab" aria-selected={tab === 'provenance'} onClick={() => setParams(new URLSearchParams({ t: 'provenance' }), { replace: true })} data-testid="memory-tab-provenance">
+          {t('Provenance')}
+        </button>
+      </div>
+
+      {tab === 'provenance' && <Provenance />}
+      {tab === 'memories' && (
+      <>
 
       <form
         className="fs-memory__add"
@@ -879,6 +898,9 @@ export function MemoryScreen() {
         >
           <p className="fs-prose">{t('This cannot be undone.')}</p>
         </Dialog>
+      )}
+
+      </>
       )}
 
       {notice && (

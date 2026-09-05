@@ -3,6 +3,7 @@ import { Defs } from './agents/Defs';
 import { Experts } from './agents/Experts';
 import { Runners } from './agents/Runners';
 import { Workers } from './agents/Workers';
+import { Tournament } from './agents/Tournament';
 import './projects.css';
 import './agents.css';
 import { t } from '../i18n';
@@ -13,24 +14,25 @@ import { t } from '../i18n';
  * Expertos — as one screen with tabs, because they are one subject: who
  * does the mechanical work, under what rules, and with what knowledge.
  *
- * `?t=workers|runners|defs|experts` picks the tab; `?agent=<slug>` and
+ * `?t=workers|runners|defs|experts|tournament` picks the tab; `?agent=<slug>` and
  * `?runner=<key>` prefill the Workers form (that is what "Usar en un
  * trabajo" on a definition or a runner does).
  */
 
-type Tab = 'workers' | 'runners' | 'defs' | 'experts';
+type Tab = 'workers' | 'runners' | 'defs' | 'experts' | 'tournament';
 
 const TABS: { key: Tab; label: string; hint: string }[] = [
   { key: 'workers', label: 'Workers', hint: 'The local models do the mechanical work; you read what changed' },
   { key: 'runners', label: 'Runners', hint: 'Claude Code, OpenCode, Qwen Code or any other terminal agent as a worker' },
   { key: 'defs', label: 'Definitions', hint: 'What each agent may use, touch and not do; its slug goes on a task' },
   { key: 'experts', label: 'Experts', hint: 'A specialist with its corpus, and corrections that cite the page' },
+  { key: 'tournament', label: 'Tournament', hint: 'The same task to several models, rounds of hybrids, a judged table' },
 ];
 
 export function AgentsScreen() {
   const [params, setParams] = useSearchParams();
   const raw = params.get('t');
-  const tab: Tab = raw === 'runners' || raw === 'defs' || raw === 'experts' ? raw : 'workers';
+  const tab: Tab = raw === 'runners' || raw === 'defs' || raw === 'experts' || raw === 'tournament' ? raw : 'workers';
   const agent = params.get('agent') ?? undefined;
   const runner = params.get('runner') ?? undefined;
 
@@ -63,6 +65,7 @@ export function AgentsScreen() {
         {tab === 'runners' && <Runners onUseRunner={(key) => go('workers', { runner: key })} />}
         {tab === 'defs' && <Defs onUseAgent={(slug) => go('workers', { agent: slug })} />}
         {tab === 'experts' && <Experts />}
+        {tab === 'tournament' && <Tournament />}
       </div>
     </div>
   );

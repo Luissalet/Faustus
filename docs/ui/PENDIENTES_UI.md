@@ -659,3 +659,22 @@ su área y baja el baseline. Ningún módulo Studio nuevo la aumenta.
     navegador el padre `[GRP]` se abre como chat normal y no se puede seguir
     la mesa. Guardarla en los metadatos de la sesión padre lo arreglaría.
 
+## Lote AF (Tournament, Procedencia, Historial importado)
+
+116. **`[ ]`** En un solo equipo con una GPU, el torneo lanza a todos los
+    participantes a la vez (así está en `src/tournament.py`): con 9b + 27b
+    la respuesta a ciegas del 9b tardó 137 s por el trasiego de VRAM. Un
+    modo «uno detrás de otro» sería cosa del servidor, no de la pantalla.
+117. **`[ ]`** El grafo de procedencia no re-dispone al filtrar por tipo
+    (cada filtro es un grafo distinto para el algoritmo, que es lo que hacía
+    la anterior): un grafo grande «salta» al pulsar un chip. Fijar las
+    posiciones del grafo completo y ocultar sería más estable.
+118. **`[→]`** Sin verificar en el 7001: subir un archivo de exportación
+    (multipart; el 7001 se probó con ruta), grafo con más de 60 nodos
+    (etiquetas solo en los más conectados) y con más de 200 (tope dicho),
+    pares casi duplicados (no hay ninguno en el 7001), torneo con un
+    participante fallido.
+119. **`[ ]`** El campo de búsqueda de Biblioteca guarda cada tecla en la
+    URL y con escritura muy rápida (automatizada) pierde teclas; a mano no
+    se nota. Un `useDeferredValue` en `Library.tsx` lo quitaría.
+

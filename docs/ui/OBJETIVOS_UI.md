@@ -152,9 +152,10 @@ proporcionales, auditoría de la guía Vercel pasada o excepción documentada,
       archivo) y editor de documentos a pantalla completa (`/documents/{id}`: barra
       Markdown, buscar, vistas, ejecutar, versiones con revisión, exportar, PDF con campos,
       anotaciones y firmas: lote AA).
-      Faltan: Cookbook, Deep Research, Compare,
-      Tournament, Procedencia, Historial importado. Vitales (uso de GPU) en
-      Studio: lote Q.
+      Tournament en Agentes (`/agents?t=tournament`, lote AF), Procedencia en
+      Memoria (`/memory?t=provenance`, disposición determinista en `lib/graph.ts`)
+      e Historial importado en Biblioteca (`/library?type=historial`).
+      Falta: Cookbook. Vitales (uso de GPU) en Studio: lote Q.
 - [ ] **UI-061** Borrar los puentes muertos, el DOM legacy de cada pantalla ya
       migrada y el propio flag. Empezar a dividir `style.css`, a solas y sin
       mezclarlo con features.
