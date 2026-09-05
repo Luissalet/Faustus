@@ -42,6 +42,7 @@ const AgentsScreen = lazy(() => import('../screens/Agents').then((m) => ({ defau
 const SkillsScreen = lazy(() => import('../screens/Skills').then((m) => ({ default: m.SkillsScreen })));
 /* cmdk rides in with the first Ctrl+K, not with the page. */
 const CommandPalette = lazy(() => import('./CommandPalette').then((m) => ({ default: m.CommandPalette })));
+const Tour = lazy(() => import('./Tour').then((m) => ({ default: m.Tour })));
 
 /**
  * The rail.
@@ -325,6 +326,9 @@ export function AppShell() {
             <CommandPalette />
           </Suspense>
         )}
+        <Suspense fallback={null}>
+          <Tour />
+        </Suspense>
       </div>
     </BrowserRouter>
   );

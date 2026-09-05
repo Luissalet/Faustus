@@ -53,7 +53,8 @@ import { getKeybinds, KEYBIND_LABELS, matchesCombo } from '../adapters/settings'
 import { listCheckpoints } from '../adapters/workspace';
 import { addMemory, deleteMemory, listMemories } from '../adapters/memory';
 import { createNote } from '../adapters/notes';
-import { useShell } from '../shell/store';
+import { startTour } from '../shell/store';
+import { TOURS, resetTours, seenTours } from '../lib/tours';
 import { getTheme as getMode, setTheme as setMode, type ThemeChoice } from '../shell/theme';
 import { BrandMark } from '../shell/BrandMark';
 import { useSpotlight } from '../shell/useSpotlight';
@@ -1381,6 +1382,40 @@ export function StudioScreen() {
           // A credential does not travel in a command: Settings is where the
           // endpoint is added, and the key goes in its own field.
           if (provider) report(t('Add **{provider}** here, in "Endpoints". If you typed the key, do not paste it into a command: it stays in the conversation.', { provider }), 'warning');
+          return true;
+        }
+
+        /* ── Tours ── */
+        case 'demo':
+        case 'tour-compare':
+        case 'tour-cookbook':
+        case 'tour-research':
+        case 'tour-library':
+        case 'tour-theme':
+        case 'tour-settings':
+        case 'tour-gallery':
+        case 'tour-brain':
+        case 'tour-task-1':
+        case 'tour-task-2':
+          setNotice(null);
+          startTour(path);
+          return true;
+        case 'tours': {
+          if (args.toLowerCase().startsWith('reset')) {
+            resetTours();
+            say(t('The tours will offer themselves again.'));
+            return true;
+          }
+          const seen = seenTours();
+          report(
+            [
+              `| ${t('Tour')} | ${t('Where')} | ${t('Steps')} |`,
+              '| --- | --- | ---: |',
+              ...TOURS.map((tour) => `| \`/${tour.id}\` | ${t(tour.title)} | ${tour.steps.length}${seen.includes(tour.id) ? ' ·' : ''} |`),
+              '',
+              t('A dot marks the ones you have already seen. `/tours reset` offers them again.'),
+            ].join('\n'),
+          );
           return true;
         }
 

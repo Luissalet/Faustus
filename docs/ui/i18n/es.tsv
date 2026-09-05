@@ -4245,3 +4245,63 @@ No working folder. `/workspace pick`, or `/workspace <path>`.	Sin carpeta de tra
 Add **{provider}** here, in "Endpoints". If you typed the key, do not paste it into a command: it stays in the conversation.	Añade **{provider}** aquí, en «Endpoints». Si escribiste la clave, no la pegues en un comando: se queda en la conversación.
 Version	Versión
 Why	Por qué
+A dot marks the ones you have already seen. `/tours reset` offers them again.	Un punto marca las que ya has visto. `/tours reset` vuelve a ofrecerlas.
+End the tour	Terminar el tour
+First time in {where}? There is a two-minute tour.	¿Primera vez en {where}? Hay un tour de dos minutos.
+Not now	Ahora no
+Take it	Hacerlo
+The tours will offer themselves again.	Los tours volverán a ofrecerse.
+Tour	Tour
+Where	Dónde
+The whole tour	El tour entero
+Gallery	Galería
+Making an automation	Crear una automatización
+Everything starts here. Type, and this is a chat; the switches below decide how much more than a chat it is.	Todo empieza aquí. Escribe y esto es un chat; los interruptores de abajo deciden cuánto más que un chat es.
+Chat only talks. Agent uses tools — reads files, runs commands, browses — and shows you every step it took.	Chat solo habla. Agente usa herramientas —lee ficheros, ejecuta comandos, navega— y te enseña cada paso que dio.
+The model of this conversation. Local or remote, one list.	El modelo de esta conversación. Local o remoto, una sola lista.
+Web search, the terminal, your indexed documents, proposal mode: each one on its own, per conversation.	Búsqueda web, terminal, tus documentos indexados, modo propuesta: cada uno por su cuenta, en cada conversación.
+The folder the agent works in. With one bound, @file mentions a file and every change gets a checkpoint.	La carpeta en la que trabaja el agente. Con una vinculada, @fichero menciona un fichero y cada cambio deja un checkpoint.
+What the machine is doing: GPU, VRAM, the model that is loaded. Click it for the detail.	Lo que está haciendo la máquina: GPU, VRAM, el modelo cargado. Haz clic para el detalle.
+A project ties a folder of chats to a folder on disk, its standing instructions and its own memory.	Un proyecto ata una carpeta de chats a una carpeta del disco, sus instrucciones permanentes y su propia memoria.
+The Library keeps what came out: documents, images, chats, research reports and the archive.	La Biblioteca guarda lo que salió: documentos, imágenes, chats, informes de investigación y el archivo.
+Agents: the workers board, the experts, and the tournament that makes several models compete on one prompt.	Agentes: el tablero de workers, los expertos, y el torneo que hace competir a varios modelos con un mismo prompt.
+What the assistant remembers about you, and the rules it has learned. Both editable, both deletable.	Lo que el asistente recuerda de ti, y las reglas que ha aprendido. Ambas se editan y se borran.
+The Cookbook says what fits this machine, downloads it and launches it with the right engine.	El Cookbook dice qué cabe en esta máquina, lo descarga y lo lanza con el motor adecuado.
+And Settings, where the endpoints, the appearance and the shortcuts live. That is the tour.	Y Ajustes, donde viven los endpoints, la apariencia y los atajos. Hasta aquí el tour.
+One prompt, several models, side by side. Write it here.	Un prompt, varios modelos, en paralelo. Escríbelo aquí.
+Each slot is a model. Add up to eight; they run in parallel unless you say otherwise.	Cada hueco es un modelo. Hasta ocho; van en paralelo salvo que digas lo contrario.
+Every answer gets its own pane, with its time and its tokens under it.	Cada respuesta tiene su panel, con su tiempo y sus tokens debajo.
+Blind mode hides the names until you have voted. That is the only honest way to compare.	El modo a ciegas esconde los nombres hasta que votas. Es la única forma honesta de comparar.
+What fits: your VRAM against every model, with the quantisation each one would need.	Qué cabe: tu VRAM contra cada modelo, con la cuantización que necesitaría cada uno.
+What you already have, and the form that launches it with the right engine and flags.	Lo que ya tienes, y el formulario que lo lanza con el motor y los flags adecuados.
+Pull a model from Ollama or Hugging Face, GGUF file by GGUF file if you want.	Trae un modelo de Ollama o de Hugging Face, fichero GGUF a fichero GGUF si quieres.
+What is up right now, its output, and a diagnosis when a launch fails.	Lo que está en marcha ahora, su salida, y un diagnóstico cuando un lanzamiento falla.
+What each engine needs installed, and the recipe to install it.	Lo que cada motor necesita instalado, y la receta para instalarlo.
+Other machines: add one over SSH and everything above works there too.	Otras máquinas: añade una por SSH y todo lo anterior funciona también allí.
+Ask a real question. Research does several rounds of searching and reading before it answers.	Haz una pregunta de verdad. Research da varias rondas de búsqueda y lectura antes de contestar.
+While it runs you see the round, what it is reading and what it has found.	Mientras corre ves la ronda, qué está leyendo y qué ha encontrado.
+Every report is kept, with its sources, and lands in the Library.	Cada informe se guarda, con sus fuentes, y acaba en la Biblioteca.
+Everything that came out of a conversation lives here, and this searches all of it.	Todo lo que salió de una conversación vive aquí, y esto lo busca entero.
+Documents: the ones the agent wrote and the ones you imported. Opening one is a full editor.	Documentos: los que escribió el agente y los que importaste. Abrir uno es un editor completo.
+The conversations, with their folders, and the export that takes a whole folder as a zip.	Las conversaciones, con sus carpetas, y la exportación que se lleva una carpeta entera en zip.
+And conversations imported from elsewhere: ChatGPT, Claude, another Faustus.	Y conversaciones importadas de otro sitio: ChatGPT, Claude, otro Faustus.
+A palette to start from. Any theme you saved in the previous interface is the same theme here.	Una paleta de la que partir. Cualquier tema que guardaras en la interfaz anterior es el mismo tema aquí.
+Then every colour on its own. The whole interface follows these tokens, so nothing is left behind.	Y luego cada color por separado. Toda la interfaz sigue estos tokens, así que no se queda nada atrás.
+Or let it build a palette from one colour, and pick the one you like.	O deja que construya una paleta a partir de un color, y elige la que te guste.
+Settings is one screen with sections down the side. Each has its own address.	Ajustes es una pantalla con secciones al lado. Cada una tiene su propia dirección.
+Models: the endpoints, local or remote, and everything they serve.	Modelos: los endpoints, locales o remotos, y todo lo que sirven.
+Integrations: MCP servers, mail, calendar, search providers.	Integraciones: servidores MCP, correo, calendario, buscadores.
+And the keyboard shortcuts, which are the same ones the previous interface used.	Y los atajos de teclado, que son los mismos que usaba la interfaz anterior.
+Every image the assistant made or you uploaded, newest first.	Cada imagen que hizo el asistente o que subiste tú, la más nueva primero.
+Click one to look at it properly: tags, album, favourite, and send it back to a conversation.	Haz clic en una para verla bien: etiquetas, álbum, favorita, y devolverla a una conversación.
+Albums are just a name. An image can be in one, or in none.	Un álbum es solo un nombre. Una imagen puede estar en uno, o en ninguno.
+What the assistant remembers about you. Add one by hand, or let it pull them out of a conversation.	Lo que el asistente recuerda de ti. Añade uno a mano, o deja que los saque de una conversación.
+Every memory is editable and deletable. Nothing is remembered that you cannot see.	Cada recuerdo se edita y se borra. No se recuerda nada que no puedas ver.
+And provenance: where each thing came from, as a graph you can walk.	Y la procedencia: de dónde vino cada cosa, como un grafo que puedes recorrer.
+An automation is something that runs on its own: on a clock, on a webhook, or when you press it.	Una automatización es algo que corre solo: por reloj, por webhook, o cuando la pulsas.
+Each one shows its last run and whether it worked. Pausing one stops the clock without losing it.	Cada una enseña su última ejecución y si fue bien. Pausarla para el reloj sin perderla.
+A new automation starts as a sentence: say what should happen and when.	Una automatización nueva empieza como una frase: di qué debe pasar y cuándo.
+The model turns it into a schedule and a prompt, and you get to correct both before it runs.	El modelo la convierte en un horario y un prompt, y puedes corregir los dos antes de que corra.
+Or give it a webhook, and something else decides when it runs.	O dale un webhook, y que decida otro cuándo corre.
+Each slot is a model — or a search provider, in Search mode. Add up to eight; they run in parallel unless you say otherwise.	Cada hueco es un modelo (o un buscador, en modo Search). Hasta ocho; van en paralelo salvo que digas lo contrario.
+Every answer gets its own pane, with its time and its tokens under it, and a vote at the end.	Cada respuesta tiene su panel, con su tiempo y sus tokens debajo, y una votación al final.

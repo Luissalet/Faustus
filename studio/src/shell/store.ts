@@ -33,9 +33,12 @@ interface ShellState {
   context: ShellContext;
   layout: ShellLayout;
   paletteOpen: boolean;
+  /** The guided tour that is running, by id (lib/tours.ts). */
+  tourId: string | null;
   setContext: (patch: Partial<ShellContext>) => void;
   setLayout: (patch: Partial<ShellLayout>) => void;
   setPaletteOpen: (open: boolean) => void;
+  setTour: (id: string | null) => void;
 }
 
 const LAYOUT_KEY = 'faustus_studio_layout';
@@ -74,6 +77,7 @@ export const useShell = create<ShellState>((set, get) => ({
   },
   layout: readLayout(),
   paletteOpen: false,
+  tourId: null,
   setContext: (patch) => set({ context: { ...get().context, ...patch } }),
   setLayout: (patch) => {
     const layout = { ...get().layout, ...patch };
@@ -81,4 +85,10 @@ export const useShell = create<ShellState>((set, get) => ({
     set({ layout });
   },
   setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
+  setTour: (tourId) => set({ tourId }),
 }));
+
+/** Start a tour from anywhere, including a slash command. */
+export function startTour(id: string): void {
+  useShell.getState().setTour(id);
+}

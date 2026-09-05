@@ -19,6 +19,7 @@ async function load(entry, name) {
 
 const c = await load(join('screens', 'studio', 'commands.ts'), 'commands.mjs');
 const fun = await load(join('lib', 'fun.ts'), 'fun.mjs');
+const tours = await load(join('lib', 'tours.ts'), 'tours.mjs');
 
 let failed = 0;
 const assert = (cond, msg) => {
@@ -137,6 +138,35 @@ const assert = (cond, msg) => {
   const ball = fun.egg('8ball', '¿sí?', Date.now());
   assert(ball.text && ['yes', 'maybe', 'no'].includes(ball.tone), 'the eight ball answers with a tone');
   assert(fun.egg('flip', '', Date.now()).text.length === 1, 'the coin has one face');
+}
+
+// ── Tours ──
+{
+  const ids = tours.TOURS.map((x) => x.id);
+  assert(new Set(ids).size === ids.length, 'no tour id is repeated');
+  assert(tours.TOURS.every((x) => x.steps.length > 0 && x.title), 'every tour has a title and at least one step');
+  assert(tours.TOURS.every((x) => x.steps.every((s) => s.target && s.text)), 'every step points at something and says something');
+  assert(tours.TOURS.every((x) => x.steps[0].route), 'every tour says where it starts');
+  assert(tours.TOURS.every((x) => x.route.startsWith('/')), 'every tour route is a path');
+  assert(ids.every((id) => c.resolveCommand(id, '') !== null), 'every tour has its own /command');
+  assert(tours.tourById('tour-brain')?.route === '/memory', 'a tour resolves by id');
+  assert(tours.tourById('nope') === null, 'an unknown tour is nothing');
+  assert(tours.tourForPath('/compare')?.id === 'tour-compare', 'a path finds its tour');
+  assert(tours.tourForPath('/library', '?type=imagen')?.id === 'tour-gallery', 'the gallery is a library path with a query');
+  assert(tours.tourForPath('/settings', '?s=appearance')?.id === 'tour-theme', 'the appearance editor has its own tour');
+  assert(tours.tourForPath('/studio') === null, 'the whole-product tour never offers itself');
+  assert(tours.tourForPath('/nowhere') === null, 'a path with no tour offers nothing');
+  // Placement: below when it fits, above when it does not, then beside.
+  const card = { width: 300, height: 140 };
+  const view = { width: 1440, height: 900 };
+  assert(tours.placeTooltip({ top: 100, left: 600, width: 200, height: 40 }, card, view).side === 'below', 'below when it fits');
+  assert(tours.placeTooltip({ top: 700, left: 600, width: 200, height: 40 }, card, view).side === 'above', 'above when below does not fit');
+  const squeezed = tours.placeTooltip({ top: 20, left: 20, width: 200, height: 600 }, card, { width: 1440, height: 700 });
+  assert(squeezed.side === 'right', `beside when neither fits (${squeezed.side})`);
+  const clamped = tours.placeTooltip({ top: 100, left: 0, width: 40, height: 40 }, card, view);
+  assert(clamped.left >= 10, 'never off the left edge');
+  const clampedRight = tours.placeTooltip({ top: 100, left: 1400, width: 40, height: 40 }, card, view);
+  assert(clampedRight.left + card.width <= view.width - 10 + 1, 'never off the right edge');
 }
 
 // ── Every command that Studio runs itself has a branch ──

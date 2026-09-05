@@ -1,10 +1,12 @@
-"""The slash-command registry (studio/src/screens/studio/commands.ts).
+"""The slash-command registry (studio/src/screens/studio/commands.ts) and
+the guided tours (studio/src/lib/tours.ts).
 
 Every name, alias, flat alias and subcommand of the previous interface has
 to keep resolving, the suggestions have to group by category, and `/help`
 has to survive the pipes inside its own usage lines.
-`studio/checks/commands.check.mjs` drives the registry — and the pure half
-of the hidden commands (studio/src/lib/fun.ts) — and prints ok/FAIL lines;
+`studio/checks/commands.check.mjs` drives the registry, the tours and their
+placement maths, and the pure half of the hidden commands
+(studio/src/lib/fun.ts), and prints ok/FAIL lines;
 this test runs it. Needs node and the repo's node_modules (esbuild bundles
 the TS).
 """

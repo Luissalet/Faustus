@@ -214,6 +214,20 @@ export const COMMANDS: SlashCommand[] = [
     ],
   },
 
+  /* ── Tours ── */
+  { name: 'demo', aliases: ['tour'], category: 'Tools', usage: '/demo', help: 'The whole guided tour, screen by screen.' },
+  { name: 'tour-compare', aliases: ['compare-tour'], category: 'Tools', hidden: true, usage: '/tour-compare', help: 'Tour: comparing models.' },
+  { name: 'tour-cookbook', aliases: ['cookbook-tour'], category: 'Tools', hidden: true, usage: '/tour-cookbook', help: 'Tour: hardware, downloads and serving.' },
+  { name: 'tour-research', aliases: ['research-tour'], category: 'Tools', hidden: true, usage: '/tour-research', help: 'Tour: Deep Research.' },
+  { name: 'tour-library', aliases: ['library-tour', 'tour-doc', 'tour-document', 'doc-tour', 'document-tour'], category: 'Tools', hidden: true, usage: '/tour-library', help: 'Tour: the Library and the document editor.' },
+  { name: 'tour-theme', aliases: ['theme-tour'], category: 'Tools', hidden: true, usage: '/tour-theme', help: 'Tour: the appearance editor.' },
+  { name: 'tour-settings', aliases: ['tour-setting', 'settings-tour'], category: 'Tools', hidden: true, usage: '/tour-settings', help: 'Tour: models, integrations, appearance.' },
+  { name: 'tour-gallery', aliases: ['gallery-tour'], category: 'Tools', hidden: true, usage: '/tour-gallery', help: 'Tour: photos, albums, the editor.' },
+  { name: 'tour-brain', aliases: ['brain-tour', 'tour-memory', 'memory-tour'], category: 'Tools', hidden: true, usage: '/tour-brain', help: 'Tour: memories, rules, provenance.' },
+  { name: 'tour-task-1', aliases: ['tour-task', 'tour-tasks', 'tour-tasks-1', 'tasks-tour', 'tasks-tour-1'], category: 'Tools', hidden: true, usage: '/tour-task-1', help: 'Tour: what an automation is.' },
+  { name: 'tour-task-2', aliases: ['tour-tasks-2', 'tasks-tour-2'], category: 'Tools', hidden: true, usage: '/tour-task-2', help: 'Tour: making an automation.' },
+  { name: 'tours', aliases: ['retour'], category: 'Tools', hidden: true, usage: '/tours [reset]', help: 'The tours there are; "reset" makes them offer themselves again.' },
+
   /* ── Fun (out of the list until you type them) ── */
   { name: 'flip', aliases: ['coin'], category: 'Fun', hidden: true, usage: '/flip', help: 'Flips a coin.' },
   { name: 'roll', aliases: ['dice'], category: 'Fun', hidden: true, usage: '/roll [NdN]', help: 'Rolls dice.' },

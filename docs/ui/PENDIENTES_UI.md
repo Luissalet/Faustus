@@ -718,11 +718,9 @@ su área y baja el baseline. Ningún módulo Studio nuevo la aumenta.
 
 ## Lote AI (comandos `/`)
 
-127. **`[ ]`** `/demo` y los once `tour-*` no existen todavía: la anterior
-    los dibuja con halos y tooltips colocados con `getBoundingClientRect`
-    (`slashCommands.js` + `tourAutoplay.js`, que los dispara la primera vez
-    que abres cada modal). Es la única fila de PARIDAD §3 que queda; va con
-    su propio motor en el lote AJ.
+127. **`[x]`** ~~`/demo` y los once `tour-*` no existen todavía.~~ Hechos en
+    el lote AJ: un motor (`shell/Tour.tsx`) y los pasos como datos
+    (`lib/tours.ts`).
 128. **`[ ]`** `/probe` vuelve a dibujar la tabla entera con cada fila que
     llega del NDJSON: con muchos modelos es un re-render por fila.
 129. **`[ ]`** El aviso de una respuesta de comando es de una sola ranura:
@@ -735,3 +733,14 @@ su área y baja el baseline. Ningún módulo Studio nuevo la aumenta.
     Ajustes y avisa. Es a propósito (una credencial no viaja en un comando,
     y el texto del comando se queda en la conversación), pero es un paso más
     que en la anterior.
+
+## Lote AJ (tours guiados)
+
+132. **`[ ]`** Un paso que señala algo que solo existe después de una acción
+    (el panel de resultados de Compare antes de comparar) se salta solo tras
+    2,6 s. Es lo correcto, pero el contador `n/total` sigue contándolo, así
+    que un tour hecho con la pantalla vacía salta números.
+133. **`[ ]`** El ofrecimiento («¿Primera vez en X?») sale una vez por
+    pantalla y por navegador y se guarda en `localStorage`
+    (`faustus_studio_tours`), no en el servidor: en otro navegador vuelve a
+    salir. Sin ajuste para reactivarlos que no sea `/tours reset`.

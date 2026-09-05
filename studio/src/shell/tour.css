@@ -1,0 +1,147 @@
+/* ── Guided tours ── */
+
+/* The halo and the card sit above everything, including the overlay root,
+   because a tour has to be able to point at what a dialog is covering. */
+.fs-tour__halo {
+  position: fixed;
+  z-index: 90;
+  border: 2px solid var(--fs-brand);
+  border-radius: var(--fs-radius-control);
+  box-shadow: 0 0 0 9999px color-mix(in srgb, var(--fs-canvas) 55%, transparent), 0 0 22px var(--fs-ember-strong);
+  pointer-events: none;
+  animation: fs-tour-in var(--fs-duration-normal) var(--fs-ease-out);
+  transition: top var(--fs-duration-normal) var(--fs-ease-out), left var(--fs-duration-normal) var(--fs-ease-out),
+    inline-size var(--fs-duration-normal) var(--fs-ease-out), block-size var(--fs-duration-normal) var(--fs-ease-out);
+}
+
+@keyframes fs-tour-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.fs-tour__card {
+  position: fixed;
+  z-index: 91;
+  inline-size: min(320px, calc(100vw - 2 * var(--fs-space-4)));
+  display: grid;
+  gap: var(--fs-space-3);
+  padding: var(--fs-space-3) var(--fs-space-4) var(--fs-space-3);
+  border: 1px solid var(--fs-border-strong);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-glass-strong);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  box-shadow: var(--fs-shadow-overlay);
+  animation: fs-rise var(--fs-duration-normal) var(--fs-ease-out) both;
+}
+
+.fs-tour__head {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+}
+
+.fs-tour__title {
+  flex: 1;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-label-size);
+  font-weight: var(--fs-label-weight);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fs-brand);
+}
+
+.fs-tour__count {
+  color: var(--fs-text-3);
+  font-size: var(--fs-label-size);
+  font-variant-numeric: tabular-nums;
+}
+
+.fs-tour__text {
+  margin: 0;
+  color: var(--fs-text-1);
+  line-height: var(--fs-body-line);
+  max-inline-size: none;
+}
+
+.fs-tour__foot {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+}
+
+.fs-tour__dots {
+  flex: 1;
+  display: flex;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fs-tour__dots li {
+  inline-size: 5px;
+  block-size: 5px;
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-border-strong);
+  transition: background-color var(--fs-duration-fast) var(--fs-ease);
+}
+
+.fs-tour__dots li[data-on] {
+  background: var(--fs-brand);
+}
+
+/* The offer: one line, low, easy to say no to. */
+.fs-tour__offer {
+  position: fixed;
+  z-index: 89;
+  inset-block-end: var(--fs-space-5);
+  inset-inline-end: var(--fs-space-5);
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-3);
+  max-inline-size: min(420px, calc(100vw - 2 * var(--fs-space-4)));
+  padding: var(--fs-space-2) var(--fs-space-2) var(--fs-space-2) var(--fs-space-4);
+  border: 1px solid var(--fs-border-strong);
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-glass-strong);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  box-shadow: var(--fs-lift-shadow);
+  animation: fs-rise var(--fs-duration-slow) var(--fs-ease-out) both;
+}
+
+.fs-tour__offer p {
+  margin: 0;
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-2);
+  max-inline-size: none;
+}
+
+@media (max-width: 767px) {
+  .fs-tour__offer {
+    inset-inline: var(--fs-space-3);
+    inset-block-end: var(--fs-space-3);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fs-tour__halo,
+  .fs-tour__card,
+  .fs-tour__offer {
+    animation: none;
+    transition: none;
+  }
+
+  .fs-tour__dots li {
+    transition: none;
+  }
+}
+
+.fs-tour__halo[data-big] {
+  box-shadow: 0 0 22px var(--fs-ember-strong);
+}
