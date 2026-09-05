@@ -1234,7 +1234,20 @@ function initializeEventListeners() {
     '/workers':  () => document.getElementById('tool-workers-btn')?.click(),
     '/library':  () => sessionModule && sessionModule.openLibrary && sessionModule.openLibrary(),
   };
-  const _opener = _routeOpen[urlPath];
+  // Studio's Ajustes links here for the tabs it has not taken over yet:
+  // `/?shell=legacy#settings/<tab>` (and `/settings#<tab>`) opens Settings
+  // on that tab. The hash form works on the root route too, so the Studio
+  // shell flag can travel in the query string untouched.
+  const _settingsTabFromHash = () => {
+    const m = /^#settings(?:\/([a-z-]+))?$/.exec(window.location.hash || '');
+    return m ? (m[1] || 'services') : null;
+  };
+  const _settingsTab = _settingsTabFromHash();
+  let _opener = _routeOpen[urlPath];
+  if (!_opener && (urlPath === '/settings' || _settingsTab)) {
+    const tab = _settingsTab || (window.location.hash || '').replace(/^#/, '') || 'services';
+    _opener = () => { try { settingsModule && settingsModule.open && settingsModule.open(tab); } catch (_) {} };
+  }
   // Defer the opener — at this point in init, the modules whose handlers we
   // trigger (#rail-new-session click handler, the email-section header click
   // handler in emailInbox, sessionModule) are still being wired up further

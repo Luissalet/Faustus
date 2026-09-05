@@ -352,3 +352,29 @@ su área y baja el baseline. Ningún módulo Studio nuevo la aumenta.
     `odysseus-dev-data`) activa el modo fixture del servidor. Antes de
     retirar el correo de la anterior hay que probar con una cuenta IMAP real
     (paginación, carpetas, mover, adjuntos, HTML de verdad).
+
+## Añadido tras el lote N (05-09-2026, Ajustes)
+
+59. **`[!]` `.fs-app details / summary { all: revert }` en `base.css` pisa
+    cualquier clase de un solo nivel** (especificidad 0,1,1 contra 0,1,0) y
+    `summary::before { content: none }` borra el chevrón. Regla: las
+    disclosures propias se escriben como `.fs-app .fs-x` y el `::before`
+    con `content … !important`.
+60. **`[~]` Ajustes: lo que sigue en la anterior.** Modelos locales
+    (descargar/servir), Integraciones (CRUD, presets, prueba), Cuentas de
+    correo (IMAP/SMTP, OAuth Google, estilo), Herramientas y MCP
+    (servidores, OAuth, reconectar), Cuenta (contraseña, 2FA, tokens de
+    API, bóveda, cerrar sesión), Usuarios, Apariencia (editor de tema,
+    fondos, opacidad). Cada uno es una pantalla o isla propia; las rutas
+    ya existen (`/api/auth/integrations`, `/api/email/accounts`,
+    `/api/mcp/servers`, `/api/tokens`, `/api/vault/*`, `/api/auth/2fa/*`).
+61. **`[~]` Selectores de modelo por endpoint.** IA por defecto lista los
+    modelos del endpoint elegido (o de todos si no hay); la anterior además
+    filtraba por tipo (excluye audio, embeddings, whisper…) y avisaba si el
+    modelo no soporta herramientas. Añadir ese filtro cuando `models` traiga
+    metadatos.
+62. **`[~]` `GET /api/auth/settings` devolvía la copia sin claves con
+    `AUTH_ENABLED=false`** y el POST 403: la anterior tampoco podía guardar
+    ajustes en el 7001. Arreglado con `owner_identity.auth_disabled()`. Los
+    tests de `tests/` que asumen 403 sin usuario deben correr con
+    `AUTH_ENABLED` activado (por defecto lo está).

@@ -86,4 +86,5 @@ export const SERVER_ROUTES = [
   '/memory',
   '/calendar',
   '/email',
+  '/settings',
 ];

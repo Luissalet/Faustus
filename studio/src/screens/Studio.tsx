@@ -1039,9 +1039,7 @@ export function StudioScreen() {
       if (last) void speak(last.text).catch(() => say('Sin voz disponible.', 'warning'));
     },
     incognito: () => setKnobs((k) => ({ ...k, incognito: !k.incognito })),
-    settings: () => {
-      window.location.href = '/?shell=legacy#settings';
-    },
+    settings: () => navigate('/settings'),
     focus_input: () => textareaRef.current?.focus(),
     open_calendar: () => navigate('/calendar'),
     open_compare: () => {

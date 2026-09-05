@@ -16,6 +16,7 @@ from core.auth import AuthManager, RESERVED_USERNAMES, SetAdminResult, TOKEN_TTL
 from src.constants import DEEP_RESEARCH_DIR, MEMORY_FILE, PASSWORD_MIN_LENGTH, SKILLS_DIR
 from src.rate_limiter import RateLimiter
 from src.settings_scrub import scrub_settings
+from src.owner_identity import auth_disabled as _auth_disabled
 from src.agent_settings_schema import coerce_setting_value
 from src.settings import (
     load_settings as _load_settings,
@@ -720,7 +721,10 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
         for keybinds + TTS prefs, so it stays callable without admin."""
         user = _get_current_user(request)
         settings = without_retired_settings(_load_settings())
-        if user and auth_manager.is_admin(user):
+        # AUTH_ENABLED=false is the documented single-user mode: there is no
+        # admin to be, so the one user gets the full set (same rule as
+        # core.middleware.require_admin and the memory-engine routes).
+        if (user and auth_manager.is_admin(user)) or _auth_disabled():
             return settings
         return scrub_settings(settings)
 
@@ -728,7 +732,7 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
     async def set_settings(request: Request):
         """Admin only: update app settings."""
         user = _get_current_user(request)
-        if not user or not auth_manager.is_admin(user):
+        if not _auth_disabled() and (not user or not auth_manager.is_admin(user)):
             raise HTTPException(403, "Admin only")
         body = await request.json()
         current = _load_settings()

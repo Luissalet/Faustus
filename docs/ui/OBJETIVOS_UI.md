@@ -122,10 +122,13 @@ proporcionales, auditoría de la guía Vercel pasada o excepción documentada,
       (`/notes`, lote J; parcial: dibujo, foto, selección múltiple); Memoria
       como pantalla (`/memory`, lote K; los ajustes de Skills van con Skills);
       Calendario como pantalla (`/calendar`, lote L; cuentas CalDAV: anterior);
-      Correo como pantalla (`/email`, lote M; cuentas, IA y programación: anterior).
+      Correo como pantalla (`/email`, lote M; cuentas, IA y programación: anterior);
+      Ajustes como pantalla (`/settings`, lote N: modelos, IA por defecto, voz,
+      búsqueda, recordatorios, agente completo, atajos, sistema; integraciones,
+      cuentas, MCP, cuenta, usuarios y tema: anterior por pestaña).
       Faltan: Cookbook, Deep Research, Compare,
       Tournament, Workers, Expertos, Procedencia, Historial importado,
-      runners y definiciones de agentes, Skills, Ajustes, Tema, Fondos.
+      runners y definiciones de agentes, Skills, Tema, Fondos.
 - [ ] **UI-061** Borrar los puentes muertos, el DOM legacy de cada pantalla ya
       migrada y el propio flag. Empezar a dividir `style.css`, a solas y sin
       mezclarlo con features.

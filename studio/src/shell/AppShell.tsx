@@ -1,4 +1,4 @@
-import { LogOut } from 'lucide-react';
+import { LogOut, Settings2 } from 'lucide-react';
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { BrowserRouter, NavLink, Route, Routes, useLocation } from 'react-router';
 import { Button, Skeleton } from '../components';
@@ -27,6 +27,7 @@ const NotesScreen = lazy(() => import('../screens/Notes').then((m) => ({ default
 const MemoryScreen = lazy(() => import('../screens/Memory').then((m) => ({ default: m.MemoryScreen })));
 const CalendarScreen = lazy(() => import('../screens/Calendar').then((m) => ({ default: m.CalendarScreen })));
 const EmailScreen = lazy(() => import('../screens/Email').then((m) => ({ default: m.EmailScreen })));
+const SettingsScreen = lazy(() => import('../screens/Settings').then((m) => ({ default: m.SettingsScreen })));
 /* cmdk rides in with the first Ctrl+K, not with the page. */
 const CommandPalette = lazy(() => import('./CommandPalette').then((m) => ({ default: m.CommandPalette })));
 
@@ -151,6 +152,10 @@ function Rail() {
       <div className="fs-nav__spacer" />
 
       <div className="fs-nav__foot">
+        <NavLink to="/settings" className="fs-nav__tool fs-nav__settings" data-testid="nav-settings">
+          <Settings2 size={13} aria-hidden="true" />
+          <span>Ajustes</span>
+        </NavLink>
         <p className="fs-nav__hint">Ctrl+K para buscar y navegar</p>
         <Button
           variant="ghost"
@@ -207,6 +212,7 @@ function RouteBody() {
         <Route path="/memory" element={<MemoryScreen />} />
         <Route path="/calendar" element={<CalendarScreen />} />
         <Route path="/email" element={<EmailScreen />} />
+        <Route path="/settings" element={<SettingsScreen />} />
         <Route path="*" element={<NotMigrated />} />
       </Routes>
       </Suspense>

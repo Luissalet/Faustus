@@ -60,7 +60,7 @@ export const COMMANDS: SlashCommand[] = [
   { name: 'research', usage: '/research tema', help: 'Deep research (interfaz anterior).', route: '/?shell=legacy', legacy: true },
   { name: 'compare', usage: '/compare', help: 'Comparar modelos (interfaz anterior).', route: '/?shell=legacy', legacy: true },
   { name: 'mcp', usage: '/mcp', help: 'Servidores MCP (interfaz anterior).', route: '/?shell=legacy', legacy: true },
-  { name: 'setup', usage: '/setup', help: 'Ajustes (interfaz anterior).', route: '/?shell=legacy', legacy: true },
+  { name: 'setup', usage: '/setup', help: 'Ir a Ajustes.', route: '/settings' },
   { name: 'usage', usage: '/usage', help: 'Uso de GPU (interfaz anterior).', route: '/?shell=legacy', legacy: true },
 ];
 

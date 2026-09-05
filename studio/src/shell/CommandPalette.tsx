@@ -88,6 +88,9 @@ export function CommandPalette() {
           >
             Buscar conversaciones
           </Command.Item>
+          <Command.Item value="Ajustes configuración" onSelect={() => go('/settings')} className="fs-palette__item">
+            Ajustes
+          </Command.Item>
         </Command.Group>
       </Command.List>
     </Command.Dialog>

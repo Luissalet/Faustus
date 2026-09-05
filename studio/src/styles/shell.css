@@ -531,3 +531,20 @@ html[data-studio-shell='on'] body > *:not(#studio-root):not(#fs-overlay-root) {
     display: none;
   }
 }
+
+/* Ajustes lives in the foot, above the way back to the previous interface. */
+
+.fs-nav__settings {
+  margin-block-end: var(--fs-space-1);
+}
+
+.fs-nav__settings[aria-current='page'] {
+  color: var(--fs-brand);
+  background: var(--fs-ember-faint);
+}
+
+@media (max-width: 1279px) {
+  .fs-nav__settings {
+    justify-content: center;
+  }
+}
