@@ -133,7 +133,8 @@ proporcionales, auditoría de la guía Vercel pasada o excepción documentada,
       Pestañas legacy de Ajustes (cuenta, usuarios, herramientas, sistema:
       lote R; integraciones: S; modelos locales: T); Apariencia con el
       editor de tema y los efectos (lote U; Fondos era un sandbox sin ruta);
-      Skills como pantalla (`/skills`, lote V).
+      Skills como pantalla (`/skills`, lote V); Automatizaciones completas
+      (crear desde frase o forma, editar, pausar, ejecutar, historial: lote W).
       Faltan: Cookbook, Deep Research, Compare,
       Tournament, Procedencia, Historial importado. Vitales (uso de GPU) en
       Studio: lote Q.

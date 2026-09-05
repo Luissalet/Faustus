@@ -2169,3 +2169,173 @@ This skill has no SKILL.md yet — it predates the files. Its fields are in the 
 Write SKILL.md from its fields	Escribir SKILL.md a partir de sus campos
 All skills	Todas las skills
 Skills live on their own screen	Las skills tienen su propia pantalla
+(no token yet)	(aún sin token)
+A built-in action	Una acción integrada
+A prompt	Un prompt
+A second run starts in parallel and both write their results.	Arranca una segunda ejecución en paralelo y las dos escriben su resultado.
+Action	Acción
+Active and paused	Activas y pausadas
+All active	Todas activas
+All automations	Todas las automatizaciones
+All paused	Todas pausadas
+An automation is a recipe: when it fires, what it does and where it delivers.	Una automatización es una receta: cuándo se dispara, qué hace y dónde entrega.
+Another automation, after this one succeeds.	Otra automatización, cuando esta termine bien.
+Blank sends it to you.	En blanco te lo envía a ti.
+Built-in	Integrada
+Built-in, edited	Integrada, editada
+Clear cache	Vaciar la caché
+Clear the cached {what}?	¿Vaciar la caché de {what}?
+Cleared	Vaciada
+Cleared {n} items	Vaciados {n} elementos
+Could not draft it	No se ha podido redactar
+Counter	Contador
+Cron	Cron
+Cron expression	Expresión cron
+Day of the month	Día del mes
+Day of the week	Día de la semana
+Day {n} of each month at {time}	El día {n} de cada mes a las {time}
+Default sending account	Cuenta de envío por defecto
+Delete {n} automation?	¿Borrar {n} automatización?
+Delete {n} automations?	¿Borrar {n} automatizaciones?
+Deleted {n} automation	Borrada {n} automatización
+Deleted {n} automations	Borradas {n} automatizaciones
+Describe the automation	Describe la automatización
+Draft it	Redactarla
+Drafted by the assistant — check it before creating.	Redactada por el asistente — revísala antes de crearla.
+Every N times	Cada N veces
+Every day at {time}	Cada día a las {time}
+Every {day} at {time}	Cada {day} a las {time}
+Frequency	Frecuencia
+History	Historial
+Issue a new URL	Emitir una URL nueva
+It is already running	Ya está en marcha
+Its runs go with it. This cannot be undone.	Sus ejecuciones se van con ella. No se puede deshacer.
+Last run	Última ejecución
+Left blank, the assistant names it from the prompt.	En blanco, el asistente le pone nombre a partir del prompt.
+Less	Menos
+Loading the runs	Cargando las ejecuciones
+Mail triage rules	Reglas de triaje del correo
+Model, chaining and notifications	Modelo, encadenado y avisos
+More	Más
+Name and schedule go back to what shipped; your edits are lost.	El nombre y el horario vuelven a los de fábrica; tus cambios se pierden.
+Never	Nunca
+New URL issued	URL nueva emitida
+New automation	Nueva automatización
+Next run	Próxima ejecución
+No runs yet.	Aún no hay ejecuciones.
+Nothing	Nada
+Nothing fires until you resume them.	No se dispara nada hasta que las reanudes.
+Notifications	Avisos
+Notify me when it finishes	Avisarme cuando termine
+On a schedule	Con un horario
+On a webhook	Con un webhook
+On an event	Con un evento
+Once	Una vez
+Once, {date}	Una vez, {date}
+Optional; it colours the voice of the result.	Opcional; da voz al resultado.
+Optional; overrides the session default.	Opcional; sustituye al de la sesión.
+Output	Salida
+Pause	Pausar
+Pause all	Pausar todas
+Pause all {n} active automations?	¿Pausar las {n} automatizaciones activas?
+Pause {n} active automation?	¿Pausar {n} automatización activa?
+Paused — none	Pausada — ninguna
+Persona	Persona
+Pick an action	Elige una acción
+Pick an automation to run it, pause it, edit the recipe or read what its runs produced.	Elige una automatización para ejecutarla, pausarla, editar la receta o leer lo que produjeron sus ejecuciones.
+Pick an event	Elige un evento
+Prompt	Prompt
+Research question	Pregunta de investigación
+Resume	Reanudar
+Resume all	Reanudar todas
+Resume all {n} paused automations?	¿Reanudar las {n} automatizaciones pausadas?
+Resume {n} paused automation?	¿Reanudar {n} automatización pausada?
+Revert	Revertir
+Revert to default	Volver a la de fábrica
+Revert to the built-in default?	¿Volver a la versión de fábrica?
+Reverted	Revertida
+Run another beside it	Lanzar otra al lado
+Run now	Ejecutar ahora
+Save changes	Guardar cambios
+Say it in a sentence and the assistant drafts the recipe, or start from a shape.	Dilo en una frase y el asistente redacta la receta, o parte de una forma.
+Search automations…	Buscar automatizaciones…
+Send from	Enviar desde
+Session default	El de la sesión
+Started	En marcha
+Started a second run beside the first	Segunda ejecución en marcha junto a la primera
+State	Estado
+Stopped	Detenida
+Stops the run in progress, if there is one	Detiene la ejecución en curso, si la hay
+The URL appears once it is saved.	La URL aparece al guardarla.
+The URL is on the automation, with a button to copy it or issue a new one.	La URL está en la automatización, con un botón para copiarla o emitir una nueva.
+The next run rebuilds it from scratch.	La próxima ejecución la reconstruye de cero.
+The old one stops working	La antigua deja de funcionar
+Then run	Después ejecutar
+Then runs	Después ejecuta
+They pick up their schedules again.	Retoman sus horarios.
+Time	Hora
+Trigger	Disparador
+Wait for it	Esperar
+Webhook URL	URL del webhook
+What counts as urgent: deadlines, people, subjects. This task tags the mail; pausing it stops the tagging.	Qué cuenta como urgente: plazos, personas, asuntos. Esta tarea etiqueta el correo; pausarla detiene el etiquetado.
+What it does	Qué hace
+What should it dig into?	¿En qué debe profundizar?
+What should it do each time?	¿Qué debe hacer cada vez?
+When it fires	Cuándo se dispara
+When it is triggered	Cuando se dispare
+When the webhook is called	Cuando llamen al webhook
+Where it delivers	Dónde entrega
+Write the cron expression	Escribe la expresión cron
+Write the prompt	Escribe el prompt
+Write the research question	Escribe la pregunta de investigación
+Your local time.	Tu hora local.
+as a notification	como aviso
+built-in · edited	integrada · editada
+by email to me	por correo a mí
+by email to {to}	por correo a {to}
+endpoint not listed	endpoint no listado
+every weekday at 8, summarise the AI news and mail it to me	cada día laborable a las 8, resume las noticias de IA y mándamelas por correo
+minute hour day month weekday — "0 */2 * * *" is every two hours	minuto hora día mes día-semana — "0 */2 * * *" es cada dos horas
+next {when}	próxima {when}
+to a chat session	a una conversación
+{n} of {every} events	{n} de {every} eventos
+{n} run in total	{n} ejecución en total
+{n} runs in total	{n} ejecuciones en total
+Monday	lunes
+Tuesday	martes
+Wednesday	miércoles
+Thursday	jueves
+Friday	viernes
+Saturday	sábado
+Sunday	domingo
+Default (no persona)	Por defecto (sin persona)
+Prompt on a schedule	Prompt con horario
+Run a prompt daily, weekly…	Ejecuta un prompt a diario, cada semana…
+Prompt on an event	Prompt con evento
+Every N sessions or messages	Cada N sesiones o mensajes
+Research on a schedule	Investigación con horario
+Deep research on a topic	Investigación profunda sobre un tema
+Research on an event	Investigación con evento
+Deep research after app events	Investigación profunda tras eventos de la app
+Action on a schedule	Acción con horario
+Tidy or clean up on a timer	Ordena o limpia con un temporizador
+Action on an event	Acción con evento
+Tidy or clean up every N sessions or messages	Ordena o limpia cada N sesiones o mensajes
+Webhook	Webhook
+Fired by an external HTTP call	La dispara una llamada HTTP externa
+email summaries	resúmenes de correo
+AI reply drafts	borradores de respuesta de la IA
+email translations	traducciones de correo
+email calendar cache	caché de eventos del correo
+sender signatures	firmas de remitentes
+email tags	etiquetas del correo
+Chats	Chats
+Assistant	Asistente
+Every minute	Cada minuto
+Every {n} minutes	Cada {n} minutos
+Every hour	Cada hora
+Every hour at :{m}	Cada hora a los :{m}
+Every {n} hours	Cada {n} horas
+Weekdays at {time}	Entre semana a las {time}
+no delivery	sin entrega
+Nowhere — it just runs	A ningún sitio — solo se ejecuta

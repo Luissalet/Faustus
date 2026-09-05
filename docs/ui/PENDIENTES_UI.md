@@ -517,3 +517,17 @@ su área y baja el baseline. Ningún módulo Studio nuevo la aumenta.
     `.fs-shell[data-nav='rail']` (lote P) pisaba la regla de una columna y
     dejaba el contenido en 72px de ancho. Ahora la media query nombra
     también `[data-nav='rail'|'wide']`. Vale para todas las pantallas.
+
+## Añadido tras el lote W (05-09-2026, Automatizaciones)
+
+86. **`[~]` La anterior sondeaba `/api/tasks/notifications` y lanzaba
+    `Notification` del navegador al terminar una tarea.** Studio relee la
+    lista cada 15 s (la fila dice «última hace un momento») pero no dispara
+    avisos de escritorio. Va con el trabajo de notificaciones del shell.
+87. **`[~]` Las expresiones cron se traducen solo en sus formas habituales**
+    (cada N minutos/horas, a horas fijas, un día de la semana, entre
+    semana); el resto se enseña tal cual, como antes.
+88. **`[~]` «Detener» siempre está a la vista** porque la ficha de la tarea
+    no dice si hay una ejecución en curso; el servidor contesta 404 «no
+    está corriendo» y Studio lo enseña. Cuando `/api/tasks` traiga
+    `is_running`, enseñarlo solo entonces.
