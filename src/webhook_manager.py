@@ -8,6 +8,7 @@ import json
 import logging
 import re
 import ssl
+import time
 from datetime import datetime, timezone
 from typing import Optional
 from urllib.parse import urlparse
@@ -321,6 +322,12 @@ def sanitize_error(error: str, max_len: int = 200) -> str:
 
 
 class WebhookManager:
+    # Class-level default so the gate reads open on an instance built without
+    # __init__ (tests construct one through __new__ to avoid the database), and
+    # so a manager can never end up with no gate at all — the failure mode there
+    # would be silently dropping every webhook.
+    _accepting = True
+
     def __init__(self, api_key_manager=None):
         # No shared client: each delivery builds a short-lived client whose
         # transport is pinned to the SSRF-approved IP (see _deliver /
@@ -333,10 +340,27 @@ class WebhookManager:
         # keeps weak references to tasks, so without this the GC can collect a
         # delivery task mid-flight and the webhook is silently never sent.
         self._bg_tasks: set = set()
+        # Shutdown gate (B-013). A delivery is not just an HTTP POST: it ends in
+        # a `Webhook` row UPDATE recording the status code or the error, so a
+        # delivery still in flight when the process tears down either writes
+        # through a session factory that is going away or, cancelled blind,
+        # leaves the row claiming the previous attempt's outcome forever. Hence
+        # accept / drain / close rather than the old close() that did nothing.
+        self._accepting = True
 
     def _spawn_tracked(self, coro):
         """Schedule a background task and hold a strong reference until it
-        finishes, so it can't be garbage-collected before delivery completes."""
+        finishes, so it can't be garbage-collected before delivery completes.
+
+        Returns None once shutdown has begun; the coroutine is closed rather
+        than abandoned so it cannot resurface as a late "never awaited" warning.
+        """
+        if not self._accepting:
+            close = getattr(coro, "close", None)
+            if callable(close):
+                close()
+            logger.info("Webhook delivery not started — manager is shutting down")
+            return None
         task = asyncio.ensure_future(coro)
         self._bg_tasks.add(task)
         task.add_done_callback(self._bg_tasks.discard)
@@ -344,6 +368,30 @@ class WebhookManager:
 
     def set_loop(self, loop: asyncio.AbstractEventLoop):
         self._loop = loop
+
+    def start(self) -> None:
+        """Re-open the manager for a (re)start. Idempotent, and required
+        because the manager is a module-level singleton: after a close() the
+        gate stays shut, so a second lifespan in the same process would drop
+        every webhook silently."""
+        self._accepting = True
+
+    def stop_accepting(self) -> None:
+        """Take no new deliveries. Idempotent; in-flight ones are left alone
+        for drain()."""
+        self._accepting = False
+
+    async def drain(self, deadline: float) -> int:
+        """Wait until `deadline` (a `time.monotonic()` stamp) for in-flight
+        deliveries to finish. Returns how many are still running."""
+        while True:
+            pending = {t for t in self._bg_tasks if not t.done()}
+            if not pending:
+                return 0
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return len(pending)
+            await asyncio.wait(pending, timeout=remaining)
 
     def _decrypt_secret(self, encrypted: Optional[str]) -> Optional[str]:
         """Decrypt a webhook signing secret from DB storage."""
@@ -359,7 +407,7 @@ class WebhookManager:
 
     def fire_and_forget(self, event: str, payload: dict):
         """Schedule webhook fire from any context (sync or async). Never blocks."""
-        if event not in ALLOWED_EVENTS:
+        if event not in ALLOWED_EVENTS or not self._accepting:
             return
         try:
             asyncio.get_running_loop()
@@ -371,7 +419,7 @@ class WebhookManager:
 
     async def fire(self, event: str, payload: dict):
         """Fire webhooks matching the given event."""
-        if event not in ALLOWED_EVENTS:
+        if event not in ALLOWED_EVENTS or not self._accepting:
             return
         db = SessionLocal()
         try:
@@ -448,8 +496,22 @@ class WebhookManager:
         finally:
             db.close()
 
-    async def close(self):
-        # Delivery clients are per-request and closed via their async context
-        # manager, so there is no long-lived client to tear down here. Kept for
-        # API compatibility with callers (e.g. app shutdown).
-        return None
+    async def close(self, drain_timeout: float = 5.0) -> int:
+        """Stop accepting, drain what is in flight, cancel the rest.
+
+        Delivery clients are per-request and closed by their own async context
+        manager, so there is no long-lived client to tear down — but the
+        fire-and-forget delivery TASKS are this manager's, and the previous
+        no-op close() left them to be killed by the loop shutting down, halfway
+        through a POST or its status-recording UPDATE. Returns the number of
+        deliveries that had to be cancelled, for the caller's interrupted log.
+        """
+        self.stop_accepting()
+        left = await self.drain(time.monotonic() + max(0.0, float(drain_timeout)))
+        stragglers = [t for t in self._bg_tasks if not t.done()]
+        for task in stragglers:
+            task.cancel()
+        if stragglers:
+            # Awaiting is what makes the cancel take effect before the loop goes.
+            await asyncio.gather(*stragglers, return_exceptions=True)
+        return left

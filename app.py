@@ -139,6 +139,27 @@ app = FastAPI(
     version="1.0.0",
 )
 
+# ========= BACKGROUND TASK OWNERSHIP =========
+# B-013. Everything this process starts in the background — the startup loops,
+# the background-job monitor, the per-request foreground-gate nudges — is
+# spawned through this one supervisor, so `_shutdown_event` has a single place
+# to ask what is still running and a single place to stop it. Created at import
+# time because the middlewares below spawn through it on the very first
+# request, which can precede nothing but startup itself.
+from src.task_supervisor import TaskSupervisor
+
+background_supervisor = TaskSupervisor("faustus")
+app.state.task_supervisor = background_supervisor
+
+# How long shutdown lets in-flight background work land before cancelling it.
+# Sized for an HTTP delivery or a commit already under way, not for a backup:
+# a backup is meant to be reported as interrupted rather than waited out, since
+# the alternative is holding the port open for minutes on every restart.
+try:
+    SHUTDOWN_DRAIN_TIMEOUT_S = float(os.getenv("ODYSSEUS_SHUTDOWN_DRAIN_SECONDS", "5") or 5)
+except (TypeError, ValueError):
+    SHUTDOWN_DRAIN_TIMEOUT_S = 5.0
+
 # ========= CORS =========
 CORS_ALLOW_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"]
 allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost,http://127.0.0.1").split(",")
@@ -229,7 +250,7 @@ class _InteractiveActivityMiddleware(_BaseHTTPMiddleware):
                 await task_scheduler.stop_background_tasks_for_foreground(reason=f"foreground request {request.method} {path}")
             except Exception:
                 logging.getLogger("app.foreground_gate").debug("foreground task stop failed", exc_info=True)
-        asyncio.create_task(_stop_background())
+        background_supervisor.spawn(_stop_background(), name="foreground-gate-stop")
         async with track_interactive_request(path, request.method):
             return await call_next(request)
 
@@ -710,7 +731,7 @@ async def activity_heartbeat():
                 exc_info=True,
             )
 
-    asyncio.create_task(_stop_background())
+    background_supervisor.spawn(_stop_background(), name="heartbeat-gate-stop")
     return {"ok": True}
 
 
@@ -1276,6 +1297,9 @@ async def _startup_event():
     from src.secret_files import harden_secret_files
     harden_secret_files()
     webhook_manager.set_loop(asyncio.get_running_loop())
+    # Re-open the gate a previous shutdown closed: the manager is a module-level
+    # singleton, so without this a second lifespan would drop every webhook.
+    webhook_manager.start()
     # Wipe any leftover incognito sessions from previous process — they're
     # ephemeral by design and must not survive a restart.
     try:
@@ -1316,24 +1340,26 @@ async def _startup_event():
             logger.warning("Crash recovery: %s", _crash.get("reason"))
     except Exception as e:
         logger.warning(f"Crash-recovery scan skipped: {e}")
-    # Strong refs to fire-and-forget startup tasks. Without this, Python may
-    # GC tasks created with `asyncio.create_task(...)` before they finish.
-    _startup_tasks: list[asyncio.Task] = getattr(app.state, "_startup_tasks", [])
-    app.state._startup_tasks = _startup_tasks
+    # Every long-lived task started below belongs to the supervisor: it holds
+    # the strong reference asyncio does not (a create_task'd loop can otherwise
+    # be collected mid-flight) AND it is what shutdown consults to cancel them.
+    # start() re-opens it, because a second lifespan in this process (tests,
+    # `uvicorn --reload`) inherits the closed supervisor the last one left.
+    _supervisor = background_supervisor.start()
     if upload_cleanup_func:
-        upload_cleanup_task = asyncio.create_task(upload_cleanup_func())
+        upload_cleanup_task = _supervisor.spawn(upload_cleanup_func(), name="upload-cleanup")
     # Always-on monitor that auto-continues the agent when a background bash
     # job (#!bg) finishes — re-invokes the turn with the job output.
     try:
         from src.bg_monitor import start_bg_monitor
-        _startup_tasks.append(start_bg_monitor())
+        _supervisor.adopt(start_bg_monitor(), name="bg-monitor")
     except Exception as _e:
         logger.warning("Failed to start background-job monitor: %s", _e)
     # Verified snapshots of data/ on a schedule (FAUSTUS). The machine that
     # never gets backed up is always the one with everything on it.
     try:
         from src.backup_service import run_auto_backups
-        _startup_tasks.append(asyncio.create_task(run_auto_backups()))
+        _supervisor.spawn(run_auto_backups(), name="auto-backups")
     except Exception as _e:
         logger.warning("Failed to start automatic backups: %s", _e)
     # MCP servers can be slow or blocked by local tooling. Connect them after
@@ -1351,7 +1377,7 @@ async def _startup_event():
         except BaseException as e:
             logger.warning(f"MCP startup failed (non-critical): {type(e).__name__}: {e}")
 
-    _startup_tasks.append(asyncio.create_task(_startup_mcp_connections()))
+    _supervisor.spawn(_startup_mcp_connections(), name="mcp-connect")
 
     # Tool index warmup is ON by default: without it the first agent turn pays
     # the index build (and, with the per-request selection timeout, usually
@@ -1371,7 +1397,7 @@ async def _startup_event():
 
     from src.tool_index import tool_index_warmup_enabled as _tool_index_warmup_enabled
     if _tool_index_warmup_enabled():
-        _startup_tasks.append(asyncio.create_task(_warmup_tool_index()))
+        _supervisor.spawn(_warmup_tool_index(), name="tool-index-warmup")
     else:
         logger.info("Tool index warmup disabled (ODYSSEUS_TOOL_INDEX_WARMUP=0)")
 
@@ -1397,7 +1423,7 @@ async def _startup_event():
 
     _startup_warmups_enabled = str(os.getenv("ODYSSEUS_STARTUP_WARMUPS", "")).lower() in {"1", "true", "yes", "on"}
     if _startup_warmups_enabled:
-        _startup_tasks.append(asyncio.create_task(_warmup_endpoints()))
+        _supervisor.spawn(_warmup_endpoints(), name="endpoint-warmup")
     else:
         logger.info("Endpoint warmup pings disabled (set ODYSSEUS_STARTUP_WARMUPS=1 to enable)")
 
@@ -1415,7 +1441,7 @@ async def _startup_event():
                     logger.warning(f"Keepalive loop error: {e}")
                     await asyncio.sleep(300)  # Back off on error
 
-        _startup_tasks.append(asyncio.create_task(_keepalive_loop()))
+        _supervisor.spawn(_keepalive_loop(), name="model-keepalive")
 
     async def _ensure_default_tasks():
         # Create/reconcile default automation tasks + personal assistant for every user.
@@ -1510,7 +1536,7 @@ async def _startup_event():
                 logger.debug(f"Null-owner sweep skipped: {e}")
                 await asyncio.sleep(3600)
 
-    _startup_tasks.append(asyncio.create_task(_null_owner_sweep_loop()))
+    _supervisor.spawn(_null_owner_sweep_loop(), name="null-owner-sweep")
 
     # Nightly skill audit — at ~02:00 local, test + judge a batch of the
     # least-recently-checked skills, auto-fixing/escalating weak ones (never
@@ -1540,7 +1566,7 @@ async def _startup_event():
             except Exception as e:
                 logger.warning(f"Nightly skill audit failed: {e}")
 
-    _startup_tasks.append(asyncio.create_task(_skill_audit_nightly_loop()))
+    _supervisor.spawn(_skill_audit_nightly_loop(), name="skill-audit-nightly")
 
     # Cookbook serve lifecycle — kills scheduler-launched serves whose
     # window-end has passed. Paired with the cookbook_serve builtin
@@ -1549,33 +1575,85 @@ async def _startup_event():
     # cookbook_serve entry in BUILTIN_ACTIONS + src/cookbook_serve_lifecycle.py
     # removes the feature.
     from src.cookbook_serve_lifecycle import cookbook_serve_lifecycle_loop
-    _startup_tasks.append(asyncio.create_task(cookbook_serve_lifecycle_loop()))
+    _supervisor.spawn(cookbook_serve_lifecycle_loop(), name="cookbook-serve-lifecycle")
 
+    # A snapshot for diagnostics only. The supervisor owns these; nothing may
+    # rely on this list to keep a task alive or to find it at shutdown.
+    app.state._startup_tasks = _supervisor.live()
     logger.info("Application startup complete")
 
 async def _shutdown_event():
+    """Tear down in the only order that is safe (B-013).
+
+    Stop admitting work, stop the schedulers that admit more of it, drain what
+    is already in flight, cancel the rest — and only then close the clients and
+    the persistence those tasks were using. The last clause is the one the old
+    sequence got wrong: it disconnected MCP while `_startup_mcp_connections`
+    was still running, so a slow `connect_all_enabled()` reconnected every
+    server moments after `disconnect_all()` had closed them, and the process
+    exited holding sockets it believed it had released.
+    """
     logger.info("Application shutting down...")
-    if upload_cleanup_task:
-        upload_cleanup_task.cancel()
-        try:
-            await upload_cleanup_task
-        except asyncio.CancelledError:
-            pass
-    # Stop task scheduler (no-op if it never started under the gate)
+    try:
+        from src import bg_monitor as _bg_monitor
+    except Exception as e:  # pragma: no cover - the monitor is optional
+        logger.debug(f"Background-job monitor unavailable at shutdown: {e}")
+        _bg_monitor = None
+    # 1. Admit no new work. Ordering matters more than the individual calls:
+    #    everything below can await, and each await is a chance for a task that
+    #    is still accepting to start something new behind us.
+    background_supervisor.stop_accepting()
+    if _bg_monitor is not None:
+        _bg_monitor.stop_accepting()
+    try:
+        webhook_manager.stop_accepting()
+    except Exception as e:
+        logger.debug(f"Webhook manager stop_accepting skipped: {e}")
+
+    # 2. Stop the schedulers, which are the things that would otherwise keep
+    #    handing out new work while we drain.
     try:
         await task_scheduler.stop()
     except Exception:
         pass
-    # Close webhook manager
+
+    # 3. Drain bounded effects, then cancel whatever outlives the deadline.
+    deadline = time.monotonic() + SHUTDOWN_DRAIN_TIMEOUT_S
+    if _bg_monitor is not None:
+        try:
+            await _bg_monitor.drain(deadline)
+        except Exception as e:
+            logger.warning(f"Background-job monitor drain error: {e}")
+    interrupted = []
     try:
-        await webhook_manager.close()
+        interrupted = await background_supervisor.close(
+            drain_timeout=max(0.0, deadline - time.monotonic())
+        )
+    except Exception as e:
+        logger.warning(f"Background task shutdown error: {e}")
+    if interrupted:
+        # Named, not counted: the next boot's recovery paths reason about which
+        # work was cut off (src/agent_runs.py, src/crash_recovery.py), and a
+        # bare count cannot tell a cancelled backup from a cancelled warmup.
+        logger.warning("Interrupted %d background task(s) at shutdown: %s",
+                       len(interrupted), ", ".join(interrupted))
+    if _bg_monitor is not None:
+        try:
+            await _bg_monitor.close()
+        except Exception as e:
+            logger.warning(f"Background-job monitor close error: {e}")
+
+    # 4. Close clients and persistence — safe only now that nothing owned by
+    #    this process is still running to reopen them.
+    try:
+        await webhook_manager.close(drain_timeout=1.0)
     except Exception as e:
         logger.warning(f"Webhook manager shutdown error: {e}")
-    # Disconnect all MCP servers
     try:
         await mcp_manager.disconnect_all()
     except Exception as e:
         logger.warning(f"MCP shutdown error: {e}")
+    app.state._startup_tasks = []
     logger.info("Application shutdown complete")
 
 

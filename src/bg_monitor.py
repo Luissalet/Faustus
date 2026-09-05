@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 
 from src import bg_jobs
 from src.prompt_security import untrusted_context_message
@@ -24,6 +25,25 @@ POLL_INTERVAL_S = 5
 # The follow-up agent run is allowed a few rounds to actually continue the task
 # (e.g. after `pip install` finishes, run the transcription).
 _FOLLOWUP_MAX_ROUNDS = 12
+
+# Shutdown contract (B-013). A tick re-invokes the agent, which appends to a
+# session and calls save_sessions(); one that starts after the process has begun
+# shutting down writes through a SessionManager whose dependencies are already
+# being closed. So stopping is a gate, checked at the top of the tick AND
+# between individual follow-ups, rather than a bare cancel: cancelling inside
+# `_run_followup` would abort an agent run at an arbitrary point, and since a
+# job is marked followed_up only after the run completes, an aborted one is
+# simply retried on the next boot -- which is the right outcome, but only if
+# nothing was half-written first. Hence the three verbs: `stop_accepting` (no
+# new follow-ups), `drain` (wait, bounded, for the one in flight), `close`
+# (cancel what is left). `_stop` doubles as the poll sleep's wakeup so shutdown
+# does not wait out a whole POLL_INTERVAL_S. It is created per run, never at
+# import: an asyncio.Event binds itself to the loop that first waits on it, and
+# the second lifespan in a process (tests, `uvicorn --reload`) runs on a new
+# one, where a module-level Event raises "bound to a different event loop" from
+# inside the poll sleep and kills the monitor on the spot.
+_accepting = True
+_stop = None
 
 
 def _background_result_message(rec):
@@ -161,10 +181,15 @@ async def _run_followup(rec: dict) -> bool:
     return True
 
 
-async def _loop():
-    while True:
+async def _loop(stop):
+    while not stop.is_set():
         try:
             for rec in bg_jobs.pending_followups():
+                if not _accepting:
+                    # Shutdown began mid-tick. The remaining jobs keep
+                    # followed_up=False, so the next boot picks them up rather
+                    # than losing them: that flag is the whole retry contract.
+                    break
                 try:
                     if await _run_followup(rec):
                         bg_jobs.mark_followed_up(rec["id"])
@@ -173,14 +198,64 @@ async def _loop():
                     logger.warning("bg-followup failed for %s (will retry): %s", rec.get("id"), e)
         except Exception as e:
             logger.warning("bg-monitor tick error: %s", e)
-        await asyncio.sleep(POLL_INTERVAL_S)
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=POLL_INTERVAL_S)
+        except asyncio.TimeoutError:
+            continue
+    logger.info("Background-job monitor stopped")
 
 
 def start_bg_monitor():
     """Idempotent — start the always-on background-job monitor."""
-    global _monitor_task
+    global _monitor_task, _accepting, _stop
+    # Re-arm before the liveness check: a second lifespan in one process (tests,
+    # `uvicorn --reload`) inherits the module-level flags a previous shutdown
+    # left set, and a monitor that starts already-stopped is a silent no-op.
+    _accepting = True
     if _monitor_task and not _monitor_task.done():
+        if _stop is not None:
+            _stop.clear()
         return _monitor_task
-    _monitor_task = asyncio.create_task(_loop())
+    _stop = asyncio.Event()
+    _monitor_task = asyncio.create_task(_loop(_stop))
     logger.info("Background-job monitor started (poll %ds)", POLL_INTERVAL_S)
     return _monitor_task
+
+
+def stop_accepting() -> None:
+    """Start no further follow-ups, and wake the poll sleep. Idempotent."""
+    global _accepting
+    _accepting = False
+    if _stop is not None:
+        _stop.set()
+
+
+async def drain(deadline: float) -> bool:
+    """Wait until `deadline` (a `time.monotonic()` stamp) for the loop to finish
+    the follow-up it is inside and exit. True when it did."""
+    task = _monitor_task
+    if task is None or task.done():
+        return True
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        return False
+    done, _pending = await asyncio.wait([task], timeout=remaining)
+    return bool(done)
+
+
+async def close() -> None:
+    """Cancel the loop and await the cancellation. Idempotent, and safe to call
+    without ever having started the monitor."""
+    global _monitor_task
+    stop_accepting()
+    task, _monitor_task = _monitor_task, None
+    if task is None:
+        return
+    if not task.done():
+        task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+    except Exception as e:
+        logger.debug("bg-monitor shutdown error: %s", e)
