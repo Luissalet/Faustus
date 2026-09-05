@@ -13,6 +13,9 @@ import httpx
 
 from core.database import McpServer, SessionLocal
 from core.middleware import require_admin
+from core.atomic_io import atomic_write_json
+from core.log_safety import redact_secrets
+from core.platform_compat import restrict_dir_to_owner
 from src.constants import DATA_DIR, MCP_OAUTH_DIR
 from src.mcp_manager import (
     McpManager,
@@ -227,8 +230,15 @@ def setup_mcp_routes(mcp_manager: McpManager):
                 pass
         _apply_mcp_oauth_env(parsed_env, parsed_oauth_config)
 
-        # Write OAuth credentials file if provided (for Google MCP servers)
-        logger.info(f"MCP add_server: oauth_file={oauth_file!r}")
+        # Write OAuth credentials file if provided (for Google MCP servers).
+        # SEC-1 (B-009): `oauth_file` is a JSON blob that carries the Google
+        # `client_secret`. It used to be logged with `!r`, which wrote the
+        # secret verbatim into data/logs/app.log on every server registration.
+        # Only the fact that credentials were supplied is loggable.
+        logger.info(
+            "MCP add_server: name=%s transport=%s oauth_credentials=%s",
+            name, transport, "provided" if oauth_file else "absent",
+        )
         if oauth_file:
             try:
                 oauth_data = json.loads(oauth_file)
@@ -241,7 +251,9 @@ def setup_mcp_routes(mcp_manager: McpManager):
                         Path(oauth_dir) / str(oauth_filename),
                         "filename",
                     )
-                    os.makedirs(os.path.dirname(filepath), exist_ok=True)
+                    parent = os.path.dirname(filepath)
+                    os.makedirs(parent, exist_ok=True)
+                    restrict_dir_to_owner(parent)
                     creds = {
                         "installed": {
                             "client_id": client_id,
@@ -251,9 +263,12 @@ def setup_mcp_routes(mcp_manager: McpManager):
                             "token_uri": "https://accounts.google.com/o/oauth2/token",
                         }
                     }
-                    with open(filepath, "w", encoding="utf-8") as f:
-                        json.dump(creds, f, indent=2)
-                    logger.info(f"Wrote OAuth credentials to {filepath}")
+                    # Owner-only and atomic: this file *is* the client
+                    # secret. The legacy Google package reads it from disk, so
+                    # it cannot live in the encrypted store like the generic
+                    # OAuth flow does — permissions are the whole defence.
+                    atomic_write_json(filepath, creds, indent=2, private=True)
+                    logger.info("Wrote OAuth credentials to %s", filepath)
                     parsed_env.pop("GOOGLE_CLIENT_ID", None)
                     parsed_env.pop("GOOGLE_CLIENT_SECRET", None)
             except (json.JSONDecodeError, OSError) as e:
@@ -679,18 +694,21 @@ def setup_mcp_routes(mcp_manager: McpManager):
                 )
 
             if resp.status_code != 200:
-                err = resp.text
-                logger.error(f"OAuth token exchange failed: {err}")
+                # The error body echoes back request parameters, `client_secret`
+                # among them when the request itself was malformed.
+                err = redact_secrets(resp.text)[:500]
+                logger.error("OAuth token exchange failed (%s): %s", resp.status_code, err)
                 return HTMLResponse(_oauth_result_page("Authorization Failed", f"Google returned an error: {err}"), status_code=400)
 
             tokens = resp.json()
             logger.info(f"OAuth tokens received for server {server_id}")
 
             # Save tokens to the file the MCP package expects
-            os.makedirs(os.path.dirname(token_file), exist_ok=True)
-            with open(token_file, "w", encoding="utf-8") as f:
-                json.dump(tokens, f, indent=2)
-            logger.info(f"Saved OAuth tokens to {token_file}")
+            token_parent = os.path.dirname(token_file)
+            os.makedirs(token_parent, exist_ok=True)
+            restrict_dir_to_owner(token_parent)
+            atomic_write_json(token_file, tokens, indent=2, private=True)
+            logger.info("Saved OAuth tokens to %s", token_file)
 
             # Attempt to connect the MCP server now
             args = json.loads(srv.args) if srv.args else []

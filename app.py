@@ -121,6 +121,13 @@ except Exception as e:
 
 logger = logging.getLogger(__name__)
 
+# SEC-1 (B-009): every handler above redacts secret-looking values before the
+# record reaches the console or `data/logs/app.log`. Called again on startup,
+# once uvicorn has installed its own handlers.
+from core.log_safety import install_secret_redaction
+
+install_secret_redaction()
+
 # ========= APP =========
 # Lifespan is defined below (after all helpers it references are in scope)
 # and passed to FastAPI so we can use the modern context-manager lifecycle
@@ -1246,6 +1253,13 @@ app.router.lifespan_context = _lifespan
 async def _startup_event():
     global upload_cleanup_task
     logger.info("Application starting up...")
+    # uvicorn installs its handlers after this module is imported, so the
+    # redaction has to be re-applied to reach `uvicorn.access` and friends.
+    install_secret_redaction()
+    # SEC-1: files written before this release still carry the umask/inherited
+    # ACL they were created with. Fix the permissions, not the contents.
+    from src.secret_files import harden_secret_files
+    harden_secret_files()
     webhook_manager.set_loop(asyncio.get_running_loop())
     # Wipe any leftover incognito sessions from previous process — they're
     # ephemeral by design and must not survive a restart.

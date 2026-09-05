@@ -54,6 +54,68 @@ def safe_chmod(path, mode: int) -> bool:
         return False
 
 
+_WINDOWS_USER_SID: Optional[str] = None
+_WINDOWS_SID_UNAVAILABLE = False
+
+
+def _current_user_sid() -> Optional[str]:
+    """SID of the account running Faustus, cached. ``None`` if it can't be read.
+
+    `whoami` ships with every supported Windows; parsing its CSV output avoids
+    a pywin32 dependency, which this module deliberately does without.
+    """
+    global _WINDOWS_USER_SID, _WINDOWS_SID_UNAVAILABLE
+    if _WINDOWS_USER_SID or _WINDOWS_SID_UNAVAILABLE:
+        return _WINDOWS_USER_SID
+    try:
+        proc = subprocess.run(
+            ["whoami", "/user", "/fo", "csv", "/nh"],
+            capture_output=True, text=True, timeout=10,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        last = [ln for ln in proc.stdout.splitlines() if ln.strip()][-1]
+        sid = last.split(",")[-1].strip().strip('"')
+        if sid.startswith("S-1-"):
+            _WINDOWS_USER_SID = sid
+            return sid
+    except (OSError, subprocess.SubprocessError, IndexError, ValueError):
+        pass
+    _WINDOWS_SID_UNAVAILABLE = True
+    return None
+
+
+def restrict_to_owner(path) -> bool:
+    """Make ``path`` readable only by the account that runs Faustus.
+
+    POSIX: ``0600``. Windows: an explicit, non-inherited DACL granting full
+    control to the current user only — `safe_chmod` is a no-op there, and the
+    "files under the user profile are already private" assumption breaks the
+    moment the data directory lives on a shared volume (``D:\\LocalAI``, a NAS,
+    a second admin account). Returns True when the restriction was applied.
+    """
+    if not IS_WINDOWS:
+        return safe_chmod(path, 0o600)
+    sid = _current_user_sid()
+    if not sid:
+        return False
+    try:
+        proc = subprocess.run(
+            ["icacls", str(path), "/inheritance:r", "/grant:r", f"*{sid}:(F)"],
+            capture_output=True, text=True, timeout=20,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        return proc.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def restrict_dir_to_owner(path) -> bool:
+    """Same as :func:`restrict_to_owner` for a directory (``0700`` on POSIX)."""
+    if not IS_WINDOWS:
+        return safe_chmod(path, 0o700)
+    return restrict_to_owner(path)
+
+
 # ── Process detach / liveness / teardown ────────────────────────────────────
 def detached_popen_kwargs() -> dict:
     """Keyword args for :class:`subprocess.Popen` that fully detach a child so
