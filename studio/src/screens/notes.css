@@ -44,7 +44,12 @@
 }
 
 .fs-notes__quick-input:focus-visible {
-  outline: none;
+  outline: none; /* guard-ok: the wrapper takes the ring (focus-within) */
+}
+
+.fs-notes__quick:focus-within {
+  border-color: var(--fs-focus);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--fs-focus) 35%, transparent);
 }
 
 .fs-notes__filters {
@@ -114,12 +119,12 @@
 }
 
 /* Colour: the same six names the previous interface stores. */
-.fs-note--red { background-color: color-mix(in srgb, #e06c75 16%, var(--fs-surface-1)); }
-.fs-note--orange { background-color: color-mix(in srgb, #d19a66 18%, var(--fs-surface-1)); }
-.fs-note--yellow { background-color: color-mix(in srgb, #e5c07b 20%, var(--fs-surface-1)); }
-.fs-note--green { background-color: color-mix(in srgb, #98c379 16%, var(--fs-surface-1)); }
-.fs-note--blue { background-color: color-mix(in srgb, #61afef 16%, var(--fs-surface-1)); }
-.fs-note--purple { background-color: color-mix(in srgb, #c678dd 16%, var(--fs-surface-1)); }
+.fs-note--red { background-color: color-mix(in srgb, #e06c75 16%, var(--fs-surface-1)); } /* guard-ok: note colour, stored with the note */
+.fs-note--orange { background-color: color-mix(in srgb, #d19a66 18%, var(--fs-surface-1)); } /* guard-ok: note colour, stored with the note */
+.fs-note--yellow { background-color: color-mix(in srgb, #e5c07b 20%, var(--fs-surface-1)); } /* guard-ok: note colour, stored with the note */
+.fs-note--green { background-color: color-mix(in srgb, #98c379 16%, var(--fs-surface-1)); } /* guard-ok: note colour, stored with the note */
+.fs-note--blue { background-color: color-mix(in srgb, #61afef 16%, var(--fs-surface-1)); } /* guard-ok: note colour, stored with the note */
+.fs-note--purple { background-color: color-mix(in srgb, #c678dd 16%, var(--fs-surface-1)); } /* guard-ok: note colour, stored with the note */
 
 .fs-note__head {
   display: grid;
@@ -310,7 +315,7 @@
 
 .fs-note-editor__title:focus-visible,
 .fs-note-editor__content:focus-visible {
-  outline: none;
+  outline: none; /* guard-ok: the border colour below is the ring */
   border-color: var(--fs-brand);
 }
 
@@ -351,7 +356,7 @@
 }
 
 .fs-note-editor__item input[type='text']:focus-visible {
-  outline: none;
+  outline: none; /* guard-ok: the border colour below is the ring */
   border-block-end-color: var(--fs-brand);
 }
 
@@ -412,12 +417,12 @@
   transition: transform var(--fs-duration-fast) var(--fs-ease-spring);
 }
 
-.fs-note-editor__dot.fs-note--red { background-color: #e06c75; }
-.fs-note-editor__dot.fs-note--orange { background-color: #d19a66; }
-.fs-note-editor__dot.fs-note--yellow { background-color: #e5c07b; }
-.fs-note-editor__dot.fs-note--green { background-color: #98c379; }
-.fs-note-editor__dot.fs-note--blue { background-color: #61afef; }
-.fs-note-editor__dot.fs-note--purple { background-color: #c678dd; }
+.fs-note-editor__dot.fs-note--red { background-color: #e06c75; } /* guard-ok: note colour, stored with the note */
+.fs-note-editor__dot.fs-note--orange { background-color: #d19a66; } /* guard-ok: note colour, stored with the note */
+.fs-note-editor__dot.fs-note--yellow { background-color: #e5c07b; } /* guard-ok: note colour, stored with the note */
+.fs-note-editor__dot.fs-note--green { background-color: #98c379; } /* guard-ok: note colour, stored with the note */
+.fs-note-editor__dot.fs-note--blue { background-color: #61afef; } /* guard-ok: note colour, stored with the note */
+.fs-note-editor__dot.fs-note--purple { background-color: #c678dd; } /* guard-ok: note colour, stored with the note */
 
 .fs-note-editor__dot[data-on] {
   border-color: var(--fs-text-1);

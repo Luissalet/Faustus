@@ -1232,6 +1232,7 @@ function initializeEventListeners() {
     '/gallery':  () => document.getElementById('tool-gallery-btn')?.click(),
     '/tasks':    () => document.getElementById('tool-tasks-btn')?.click(),
     '/workers':  () => document.getElementById('tool-workers-btn')?.click(),
+    '/agents':   () => document.getElementById('tool-workers-btn')?.click(),
     '/library':  () => sessionModule && sessionModule.openLibrary && sessionModule.openLibrary(),
   };
   // Studio's Ajustes links here for the tabs it has not taken over yet:

@@ -125,7 +125,9 @@ proporcionales, auditoría de la guía Vercel pasada o excepción documentada,
       Correo como pantalla (`/email`, lote M; cuentas, IA y programación: anterior);
       Ajustes como pantalla (`/settings`, lote N: modelos, IA por defecto, voz,
       búsqueda, recordatorios, agente completo, atajos, sistema; integraciones,
-      cuentas, MCP, cuenta, usuarios y tema: anterior por pestaña).
+      cuentas, MCP, cuenta, usuarios y tema: anterior por pestaña);
+      Agentes como pantalla (`/agents`, lote O: Workers, runners,
+      definiciones y Expertos con su panel de revisión).
       Faltan: Cookbook, Deep Research, Compare,
       Tournament, Workers, Expertos, Procedencia, Historial importado,
       runners y definiciones de agentes, Skills, Tema, Fondos.

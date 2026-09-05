@@ -17,7 +17,7 @@ import pytest
 
 
 _REPO = Path(__file__).resolve().parent.parent
-_LEAF_HELPER = _REPO / "tests" / "helpers" / "test_settings_shell.js"
+_LEAF_HELPER = _REPO / "tests" / "helpers" / "test_settings_shell.cjs"
 _COORDINATOR_HELPER = (
     _REPO / "tests" / "helpers" / "test_settings_shell_coordinator.mjs"
 )

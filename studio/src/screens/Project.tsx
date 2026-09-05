@@ -44,7 +44,10 @@ export function ProjectScreen() {
   const [data, setData] = useState<Loaded | null>(null);
   const [failed, setFailed] = useState(false);
 
-  const tab = (params.get('tab') as TabId) || 'brief';
+  // An unknown value (a stale link, a typo) falls back to the brief instead
+  // of a page with four unselected tabs and nothing under them.
+  const rawTab = params.get('tab');
+  const tab: TabId = TABS.some((t) => t.id === rawTab) ? (rawTab as TabId) : 'brief';
 
   useEffect(() => {
     const controller = new AbortController();

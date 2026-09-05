@@ -1,5 +1,6 @@
 import {
   Activity,
+  Bot,
   Brain,
   CalendarDays,
   ChefHat,
@@ -61,6 +62,7 @@ export const TOOLS: Tool[] = [
   { path: '/calendar', label: 'Calendario', icon: CalendarDays, ready: true },
   { path: '/email', label: 'Correo', icon: Mail, ready: true },
   { path: '/memory', label: 'Memoria', icon: Brain, ready: true },
+  { path: '/agents', label: 'Agentes', icon: Bot, ready: true },
   { path: '/cookbook', label: 'Cookbook', icon: ChefHat, ready: false },
 ];
 
@@ -87,4 +89,5 @@ export const SERVER_ROUTES = [
   '/calendar',
   '/email',
   '/settings',
+  '/agents',
 ];

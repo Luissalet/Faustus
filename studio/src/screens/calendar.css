@@ -41,7 +41,12 @@
 }
 
 .fs-cal__quick-input:focus-visible {
-  outline: none;
+  outline: none; /* guard-ok: the wrapper takes the ring (focus-within) */
+}
+
+.fs-cal__quick:focus-within {
+  border-color: var(--fs-focus);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--fs-focus) 35%, transparent);
 }
 
 .fs-cal__bar {
@@ -153,7 +158,7 @@
   block-size: 22px;
   border-radius: 50%;
   background: var(--fs-brand);
-  color: #fff;
+  color: var(--fs-on-brand);
   font-weight: 700;
 }
 
@@ -435,13 +440,13 @@
 
 .fs-cal__yday[data-today] {
   background: var(--fs-brand);
-  color: #fff;
+  color: var(--fs-on-brand);
   font-weight: 700;
 }
 
 .fs-cal__yday[data-busy='1'] { background: color-mix(in srgb, var(--fs-brand) 18%, transparent); }
 .fs-cal__yday[data-busy='2'] { background: color-mix(in srgb, var(--fs-brand) 34%, transparent); }
-.fs-cal__yday[data-busy='3'] { background: color-mix(in srgb, var(--fs-brand) 55%, transparent); color: #fff; }
+.fs-cal__yday[data-busy='3'] { background: color-mix(in srgb, var(--fs-brand) 55%, transparent); color: var(--fs-on-brand); }
 
 /* ── Form ── */
 
@@ -462,7 +467,7 @@
 }
 
 .fs-cal-form__title:focus-visible {
-  outline: none;
+  outline: none; /* guard-ok: the border colour below is the ring */
   border-color: var(--fs-brand);
 }
 
@@ -539,18 +544,6 @@
   border-block-start: 1px solid var(--fs-border);
 }
 
-.fs-switch {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--fs-space-2);
-  color: var(--fs-text-2);
-  font-size: var(--fs-label-size);
-  cursor: pointer;
-}
-
-.fs-switch input {
-  accent-color: var(--fs-brand);
-}
 
 
 @media (max-width: 1023px) {

@@ -183,7 +183,7 @@
   inline-size: 16px;
   block-size: 16px;
   border-radius: 50%;
-  background: #fff;
+  background: #fff; /* guard-ok: the knob is white on both track colours by design */
   transition: translate var(--fs-duration-fast) var(--fs-ease-spring);
 }
 
@@ -339,7 +339,12 @@
 }
 
 .fs-set__search input:focus-visible {
-  outline: none;
+  outline: none; /* guard-ok: the wrapper takes the ring (focus-within) */
+}
+
+.fs-set__search:focus-within {
+  border-color: var(--fs-focus);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--fs-focus) 35%, transparent);
 }
 
 .fs-app .fs-set__group {

@@ -1464,7 +1464,7 @@ details.fs-studio__step > summary:hover .fs-trace__label {
   grid-template-columns: 264px minmax(0, 1fr) minmax(320px, 30vw);
 }
 
-.fs-panel {
+aside.fs-panel {
   display: flex;
   flex-direction: column;
   min-block-size: 0;
@@ -1669,7 +1669,7 @@ details.fs-studio__step > summary:hover .fs-trace__label {
 .fs-panel__title:focus {
   border-color: var(--fs-border);
   background: var(--fs-surface-1);
-  outline: none;
+  outline: none; /* guard-ok: the border colour below is the ring */
 }
 
 .fs-panel__editor {
@@ -1690,7 +1690,7 @@ details.fs-studio__step > summary:hover .fs-trace__label {
 
 .fs-panel__editor:focus,
 .fs-panel__editor:focus-visible {
-  outline: none;
+  outline: none; /* guard-ok: the box-shadow below is the ring */
   border-color: var(--fs-brand);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--fs-brand) 22%, transparent);
 }
@@ -2068,7 +2068,7 @@ details.fs-studio__step > summary:hover .fs-trace__label {
     grid-template-columns: 264px minmax(0, 1fr);
   }
 
-  .fs-panel {
+  aside.fs-panel {
     position: absolute;
     inset: 0 0 0 auto;
     z-index: 3;
@@ -2084,7 +2084,7 @@ details.fs-studio__step > summary:hover .fs-trace__label {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .fs-panel {
+  aside.fs-panel {
     animation: none;
   }
 }

@@ -16,6 +16,8 @@ export interface ButtonProps {
   disabled?: boolean;
   type?: 'button' | 'submit';
   testId?: string;
+  /** A native tooltip, for the buttons whose label is shorter than the promise. */
+  title?: string;
   onClick?: () => void;
 }
 
@@ -34,6 +36,7 @@ export function Button({
   disabled = false,
   type = 'button',
   testId,
+  title,
   onClick,
 }: ButtonProps) {
   const iconSize = size === 'lg' ? 18 : 16;
@@ -52,6 +55,7 @@ export function Button({
       data-testid={testId ?? `btn-${slug(label)}`}
       disabled={disabled || loading}
       aria-busy={loading || undefined}
+      title={title}
       onClick={onClick}
     >
       {iconPosition === 'left' && glyph}

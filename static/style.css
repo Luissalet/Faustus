@@ -1884,14 +1884,17 @@ body.bg-pattern-sparkles {
       border-radius: 4px;
       transition: background 0.08s, border-color 0.08s, color 0.08s, opacity 0.08s;
     }
-    input:hover, textarea:hover, button:hover, select:hover {
+    /* `:where(:not(.fs-app *))` keeps these off Faustus Studio's tree at the
+       SAME specificity (zero added): Studio controls draw their own hover and
+       the legacy --panel / --code-bg leaked through as a white flash. */
+    input:where(:not(.fs-app *)):hover, textarea:where(:not(.fs-app *)):hover, button:where(:not(.fs-app *)):hover, select:where(:not(.fs-app *)):hover {
       border-color: var(--fg);
       background-color: var(--panel);
     }
-    :root.light input,
-    :root.light textarea,
-    :root.light button,
-    :root.light select {
+    :root.light input:where(:not(.fs-app *)),
+    :root.light textarea:where(:not(.fs-app *)),
+    :root.light button:where(:not(.fs-app *)),
+    :root.light select:where(:not(.fs-app *)) {
       background:#eaeaea;
       color-scheme: light;
     }
@@ -7020,7 +7023,7 @@ body.bg-pattern-sparkles {
     }
 /* SYNTAX HIGHLIGHTING — uses theme vars from style.css, no hardcoded overrides */
 .hljs { color: var(--hl-fg, #9cdef2); background: none !important; }
-pre { background: var(--code-bg, var(--hl-bg, #282c34)) !important; }
+pre:where(:not(.fs-app *)) { background: var(--code-bg, var(--hl-bg, #282c34)) !important; }
 
     /* ---------- Search overlay (Ctrl+K command palette) ---------- */
     .search-overlay {

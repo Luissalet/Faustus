@@ -113,7 +113,7 @@
 }
 
 .fs-palette__textarea:focus-visible {
-  outline: none;
+  outline: none; /* guard-ok: the box-shadow below is the ring */
   border-color: var(--fs-brand);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--fs-brand) 22%, transparent);
 }

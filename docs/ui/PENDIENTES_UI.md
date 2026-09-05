@@ -378,3 +378,33 @@ su área y baja el baseline. Ningún módulo Studio nuevo la aumenta.
     ajustes en el 7001. Arreglado con `owner_identity.auth_disabled()`. Los
     tests de `tests/` que asumen 403 sin usuario deben correr con
     `AUTH_ENABLED` activado (por defecto lo está).
+
+## Añadido tras el lote O (05-09-2026, Agentes)
+
+63. **`[!]` La hoja antigua se colaba en Studio por reglas de elemento.**
+    `input:hover, textarea:hover, button:hover, select:hover { background:
+    var(--panel); border-color: var(--fg) }` (0,1,1) pisaba `.fs-tab`,
+    `.fs-chip` y cualquier control con clase de un nivel, y `pre {
+    background: var(--code-bg) !important }` pintaba el bloque de contexto
+    del proyecto con el color de código del tema viejo (blanco en oscuro).
+    Acotadas en `static/style.css` con `:where(:not(.fs-app *))` — misma
+    especificidad, la anterior no cambia — también `:root.light input…`.
+    Regla: cualquier selector de elemento nuevo en `style.css` lleva ese
+    `:where` o va bajo una clase.
+64. **`[~]` Workers: lo que no cubre la pantalla.** El chat de Workers (el
+    tablero con dirigir/parar) se abre en Studio con el `SubagentBoard`;
+    `?robot=1` / `format=toon` son para el modelo, no para la pantalla. El
+    campo *runner* se rechaza en el servidor si `agent_external_runners`
+    está apagado (mensaje del servidor en el toast).
+65. **`[~]` Expertos: `@expert:<slug>` en el compositor.** La anterior lo
+    ofrecía en el popup de menciones; Studio lo acepta escrito a mano
+    (fila Menciones). Cuando se hagan las fichas de mención, incluir los
+    expertos activos (`listExperts`).
+66. **`[~]` Agentes: sin atajo de teclado.** La anterior tampoco tenía
+    (`/workers` era ruta, no atajo). Si se añade, va en `DEFAULT_KEYBINDS`
+    y en `Studio.tsx` como `open_agents`.
+67. **`[~]` Recompilar con la pantalla abierta rompe los chunks perezosos.**
+    Un `import()` de un chunk cuyo hash ya no existe lanza «Failed to fetch
+    dynamically imported module» y el shell cae a la anterior. En
+    desarrollo: recargar. Para producción, un `catch` que recargue la
+    página una vez (con marca en `sessionStorage`) sería lo honesto.

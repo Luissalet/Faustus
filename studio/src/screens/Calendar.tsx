@@ -49,6 +49,9 @@ import {
 import './projects.css';
 import './calendar.css';
 
+/** The server's default calendar colour: stored per calendar, not a UI token. */
+const DEFAULT_COLOR = '#5b8abf'; // guard-ok: data, not chrome
+
 /**
  * Calendario (the previous interface's calendar modal, `/calendar`).
  *
@@ -280,7 +283,7 @@ function EventDialog({ event, day, calendars, title, onClose, onSaved, onDeleted
         <div className="fs-cal-form__row">
           <span className="fs-cal-form__label">Color</span>
           <div className="fs-cal-form__color">
-            <input type="color" value={f.color || calendars.find((c) => c.id === f.calendarId)?.color || '#5b8abf'} onChange={(e) => set({ color: e.target.value })} aria-label="Color del evento" />
+            <input type="color" value={f.color || calendars.find((c) => c.id === f.calendarId)?.color || DEFAULT_COLOR} onChange={(e) => set({ color: e.target.value })} aria-label="Color del evento" />
             {f.color && (
               <button type="button" className="fs-chip" onClick={() => set({ color: '' })}>
                 <X size={12} aria-hidden="true" /> El del calendario
@@ -360,7 +363,7 @@ function CalendarsDialog({ calendars, onClose, onChanged, say }: { calendars: Ca
             loading={busy === 'new'}
             onClick={() => {
               setBusy('new');
-              void createCalendar('Nuevo calendario', '#5b8abf')
+              void createCalendar('Nuevo calendario', DEFAULT_COLOR)
                 .then(onChanged)
                 .catch(() => say('No he podido crear el calendario.'))
                 .finally(() => setBusy(null));
@@ -405,7 +408,7 @@ function CalendarsDialog({ calendars, onClose, onChanged, say }: { calendars: Ca
 /* ── Event chip (month / week / year) ── */
 
 function EventChip({ ev, onOpen, compact }: { ev: CalEvent; onOpen: () => void; compact?: boolean }) {
-  const bg = ev.color || '#5b8abf';
+  const bg = ev.color || DEFAULT_COLOR;
   return (
     <button type="button" className="fs-cal-ev" style={{ background: bg, color: fgFor(bg) }} onClick={onOpen} title={ev.summary} data-testid="cal-event">
       {!ev.allDay && !compact && <span className="fs-cal-ev__time">{fmtTime(ev.dtstart)}</span>}
@@ -723,7 +726,7 @@ export function CalendarScreen() {
             {dayEvents.length === 0 && <p className="fs-cal__empty">Nada ese día.</p>}
             {dayEvents.map((ev) => (
               <button key={ev.uid} type="button" className="fs-cal__day-ev" onClick={() => setDialog({ event: ev, day: null })}>
-                <span className="fs-cal__dot" style={{ background: ev.color || '#5b8abf' }} aria-hidden="true" />
+                <span className="fs-cal__dot" style={{ background: ev.color || DEFAULT_COLOR }} aria-hidden="true" />
                 <span className="fs-cal__day-when">{ev.allDay ? 'todo el día' : `${fmtTime(ev.dtstart)}–${fmtTime(ev.dtend)}`}</span>
                 <span className="fs-cal__day-title">{ev.summary || '(sin título)'}</span>
                 {ev.location && (
@@ -773,7 +776,7 @@ export function CalendarScreen() {
                 <h3 className="fs-cal__aday-head">{fmtDay(key)}</h3>
                 {(byDay.get(key) ?? []).map((ev) => (
                   <button key={ev.uid} type="button" className="fs-cal__day-ev" onClick={() => setDialog({ event: ev, day: null })}>
-                    <span className="fs-cal__dot" style={{ background: ev.color || '#5b8abf' }} aria-hidden="true" />
+                    <span className="fs-cal__dot" style={{ background: ev.color || DEFAULT_COLOR }} aria-hidden="true" />
                     <span className="fs-cal__day-when">{ev.allDay ? 'todo el día' : `${fmtTime(ev.dtstart)}–${fmtTime(ev.dtend)}`}</span>
                     <span className="fs-cal__day-title">{ev.summary || '(sin título)'}</span>
                     {ev.location && (

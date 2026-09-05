@@ -57,6 +57,8 @@ export const COMMANDS: SlashCommand[] = [
   { name: 'calendar', usage: '/calendar', help: 'Ir al Calendario.', route: '/calendar' },
   { name: 'email', usage: '/email', help: 'Ir al Correo.', route: '/email' },
   { name: 'brain', usage: '/brain', help: 'Ir a la Memoria.', route: '/memory' },
+  { name: 'workers', usage: '/workers', help: 'Ir a Agentes: el tablero de Workers.', route: '/agents' },
+  { name: 'experts', usage: '/experts', help: 'Ir a Agentes: los Expertos.', route: '/agents?t=experts' },
   { name: 'research', usage: '/research tema', help: 'Deep research (interfaz anterior).', route: '/?shell=legacy', legacy: true },
   { name: 'compare', usage: '/compare', help: 'Comparar modelos (interfaz anterior).', route: '/?shell=legacy', legacy: true },
   { name: 'mcp', usage: '/mcp', help: 'Servidores MCP (interfaz anterior).', route: '/?shell=legacy', legacy: true },

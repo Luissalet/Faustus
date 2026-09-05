@@ -199,7 +199,7 @@ function Message({ mail, folders, accountId, onBack, onChanged, onCompose, say }
   const [frameH, setFrameH] = useState(320);
 
   const html = useMemo(() => {
-    const base = '<base target="_blank"><style>body{margin:0;padding:12px 14px;font:14px/1.5 system-ui,sans-serif;color:#1b1b1f;background:#fff;overflow-wrap:anywhere}img{max-width:100%;height:auto}pre{white-space:pre-wrap}blockquote{border-left:3px solid #ccc;margin:8px 0;padding-left:10px;color:#555}</style>';
+  const base = '<base target="_blank"><style>body{margin:0;padding:12px 14px;font:14px/1.5 system-ui,sans-serif;color:#1b1b1f;background:#fff;overflow-wrap:anywhere}img{max-width:100%;height:auto}pre{white-space:pre-wrap}blockquote{border-left:3px solid #ccc;margin:8px 0;padding-left:10px;color:#555}</style>'; // guard-ok: colours inside the sandboxed mail document, not the UI
     return mail.bodyHtml ? mail.bodyHtml.replace(/<head[^>]*>/i, (m) => `${m}${base}`).replace(/^(?![\s\S]*<head)/i, base) : `<!doctype html><html><head>${base}</head><body><pre>${mail.body.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</pre></body></html>`;
   }, [mail]);
 

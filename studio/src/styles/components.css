@@ -694,6 +694,22 @@
   box-shadow: 0 0 14px var(--fs-ember-faint);
 }
 
+/* A labelled checkbox: the switch-shaped preference every screen has. */
+.fs-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  color: var(--fs-text-2);
+  font-size: var(--fs-label-size);
+  cursor: pointer;
+}
+
+.fs-switch input {
+  accent-color: var(--fs-brand);
+  inline-size: 16px;
+  block-size: 16px;
+}
+
 .fs-field {
   min-inline-size: 0;
   block-size: var(--fs-control-sm);

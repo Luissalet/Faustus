@@ -106,7 +106,12 @@
 }
 
 .fs-mail__search input:focus-visible {
-  outline: none;
+  outline: none; /* guard-ok: the wrapper takes the ring (focus-within) */
+}
+
+.fs-mail__search:focus-within {
+  border-color: var(--fs-focus);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--fs-focus) 35%, transparent);
 }
 
 .fs-mail__error {
@@ -315,7 +320,7 @@
   inline-size: 100%;
   border: 1px solid var(--fs-border);
   border-radius: var(--fs-radius-control);
-  background: #fff;
+  background: #fff; /* guard-ok: mail HTML assumes a white page; not a UI surface */
 }
 
 /* ── Compose ── */
