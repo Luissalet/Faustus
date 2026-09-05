@@ -109,6 +109,8 @@ export interface Turn {
   attachments: Attachment[];
   ask?: AskUser;
   note?: string;
+  /** Group chat transcript: who said this (metadata.group_model). */
+  speaker?: string;
   /** Deep Research running before the answer: the phase it is in. */
   research?: { phase: string; round: number; totalSources: number; message: string; startedAt: number; avgDuration: number; done: boolean };
   error?: string;
@@ -495,7 +497,8 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
  */
 export function restoreFromMetadata(turn: Turn, meta: Record<string, unknown>): Turn {
   const events = toolEventsFrom(meta);
-  if (!events.length && !meta.harness && !meta.web_sources && !meta.research_sources) return turn;
+  const speaker = typeof meta.group_model === 'string' && meta.group_model ? meta.group_model : undefined;
+  if (!events.length && !meta.harness && !meta.web_sources && !meta.research_sources) return speaker ? { ...turn, speaker } : turn;
   const steps: Step[] = [];
   const workers: Worker[] = [];
   let ask: AskUser | undefined;
@@ -530,6 +533,7 @@ export function restoreFromMetadata(turn: Turn, meta: Record<string, unknown>): 
     : turn.sources;
   return {
     ...turn,
+    speaker,
     steps: steps.length ? steps : turn.steps,
     workers: workers.length ? workers : turn.workers,
     rounds,

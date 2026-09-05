@@ -3465,3 +3465,55 @@ Plain answers: no tools, no memory, no documents. The fairest test of the model 
 Tools on (terminal, web): who gets the job done, not who writes nicest.	Con herramientas (terminal, web): quién hace el trabajo, no quién escribe más bonito.
 The same query to several search providers, then a model summarises each result set.	La misma consulta a varios buscadores y un modelo resume cada conjunto de resultados.
 Each model runs Deep Research on the question before answering. Slow, thorough.	Cada modelo hace investigación profunda sobre la pregunta antes de responder. Lento y a fondo.
+A group needs at least two participants.	Un grupo necesita al menos dos participantes.
+Add a participant	Añadir un participante
+Add an endpoint in Settings → Models first.	Añade antes un endpoint en Ajustes → Modelos.
+As itself	Como él mismo
+Close this group (keep the transcript)	Cerrar este grupo (conservar la transcripción)
+Could not expand the prompt	No se ha podido expandir el prompt
+Could not save the group.	No se ha podido guardar el grupo.
+Could not save the persona	No se ha podido guardar el personaje
+Could not start the group.	No se ha podido empezar el grupo.
+Custom persona	Personaje propio
+Custom persona (prefix, suffix, sampling)…	Personaje propio (prefijo, sufijo, muestreo)…
+Delete group {name}	Borrar el grupo {name}
+Each participant answers after the previous one and sees what was said.	Cada participante responde tras el anterior y ve lo que se ha dicho.
+Everyone answers at the same time; they see each other’s replies from the next message on.	Todos responden a la vez; ven las respuestas de los demás a partir del siguiente mensaje.
+Expand with AI	Expandir con IA
+Group	Grupo
+Group chat	Chat en grupo
+Group closed. Its transcript stays in Studio.	Grupo cerrado. Su transcripción sigue en Studio.
+Group name	Nombre del grupo
+Group «{name}» deleted.	Grupo «{name}» borrado.
+Group «{name}» saved.	Grupo «{name}» guardado.
+Loading models	Cargando modelos
+Max tokens {n}	Máx. tokens {n}
+Max tokens: no limit	Máx. tokens: sin límite
+New group	Nuevo grupo
+New preset or persona…	Nuevo preset o personaje…
+No answer.	Sin respuesta.
+No preset	Sin preset
+None of that group’s models is available now.	Ninguno de los modelos de ese grupo está disponible ahora.
+Participants	Participantes
+Persona for {model}	Personaje para {model}
+Persona name	Nombre del personaje
+Prefix	Prefijo
+Save as a group	Guardar como grupo
+Save as a group…	Guardar como grupo…
+Saved groups	Grupos guardados
+Say something to the table.	Di algo a la mesa.
+Set the table	Preparar la mesa
+Several models in one conversation, each as itself or wearing a persona. They answer you and each other.	Varios modelos en una conversación, cada uno como él mismo o con un personaje. Te responden a ti y entre ellos.
+Suffix	Sufijo
+System prompt: who it is, how it answers, what it avoids… or rough notes, then Expand.	Prompt de sistema: quién es, cómo responde, qué evita… o unas notas y luego Expandir.
+Taking turns	Por turnos
+Talk to the group…	Habla con el grupo…
+Text added after every message (optional)	Texto añadido después de cada mensaje (opcional)
+Text added before every message (optional)	Texto añadido antes de cada mensaje (opcional)
+The custom persona is one ad-hoc character: it is not saved as a template, and it can add text before and after every message you send.	El personaje propio es un personaje improvisado: no se guarda como plantilla y puede añadir texto antes y después de cada mensaje que envíes.
+Transcript in Studio	Transcripción en Studio
+Turns	Turnos
+Turns your notes into a full system prompt	Convierte tus notas en un prompt de sistema completo
+{n} of {m} participants found; the rest are not available.	{n} de {m} participantes encontrados; el resto no está disponible.
+{n} participant	{n} participante
+{n} participants	{n} participantes

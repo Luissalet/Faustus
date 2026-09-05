@@ -39,7 +39,7 @@ export function dateBucket(date: string): string {
 export function Avatar({ name, email, size = 'md' }: { name: string; email: string; size?: 'sm' | 'md' | 'lg' }) {
   const label = displayName(name, email);
   return (
-    <span className="fs-mail__avatar" data-hue={hueIndex(email || name)} data-size={size} aria-hidden="true">
+    <span className="fs-avatar" data-hue={hueIndex(email || name)} data-size={size} aria-hidden="true">
       {initials(label)}
     </span>
   );

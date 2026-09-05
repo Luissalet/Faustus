@@ -146,6 +146,8 @@ proporcionales, auditoría de la guía Vercel pasada o excepción documentada,
       en el compositor;
       Compare como pantalla (`/compare`, lote AD: cuatro modos, hasta 8 paneles,
       a ciegas, votación y marcador);
+      Chat en grupo como pantalla (`/group`, lote AE) y personajes completos
+      en la paleta de presets (expandir con IA, muestreo, personaje propio);
       Biblioteca completa (documentos con importar/ordenar/exportar, chats, investigación,
       archivo) y editor de documentos a pantalla completa (`/documents/{id}`: barra
       Markdown, buscar, vistas, ejecutar, versiones con revisión, exportar, PDF con campos,

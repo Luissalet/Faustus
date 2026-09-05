@@ -1148,6 +1148,11 @@ async def serve_compare(request: Request):
     """Studio Compare (lot AD)."""
     return await serve_index(request)
 
+@app.get("/group")
+async def serve_group(request: Request):
+    """Studio group chat (lot AE)."""
+    return await serve_index(request)
+
 @app.get("/backgrounds")
 async def serve_backgrounds(request: Request):
     """Sandbox page for prototyping background effects. No auth required."""

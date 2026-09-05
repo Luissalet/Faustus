@@ -15,6 +15,7 @@ import {
   type LucideIcon,
   Telescope,
   Columns3,
+  Users,
 } from 'lucide-react';
 
 /**
@@ -69,6 +70,7 @@ export const TOOLS: Tool[] = [
   { path: '/skills', label: 'Skills', icon: Zap, ready: true },
   { path: '/research', label: 'Research', icon: Telescope, ready: true },
   { path: '/compare', label: 'Compare', icon: Columns3, ready: true },
+  { path: '/group', label: 'Group chat', icon: Users, ready: true },
   { path: '/cookbook', label: 'Cookbook', icon: ChefHat, ready: false },
 ];
 
@@ -101,4 +103,5 @@ export const SERVER_ROUTES = [
   '/skills',
   '/research',
   '/compare',
+  '/group',
 ];

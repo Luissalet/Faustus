@@ -644,3 +644,18 @@ su área y baja el baseline. Ningún módulo Studio nuevo la aumenta.
     del 9b): el chip «Uno detrás de otro» es el honesto en local; podría
     sugerirse cuando todos los huecos son del mismo endpoint local.
 
+## Lote AE (chat en grupo y personajes)
+
+113. **`[ ]`** El chat en grupo manda cada turno como chat normal (igual que
+    la anterior): la memoria y las reglas del usuario entran en cada
+    participante (el 9b saludó a «Luis» sin que nadie lo nombrara). Si se
+    quiere una mesa «limpia» habría que mandar `no_memory` como Compare.
+114. **`[→]`** Sin verificar: «Todos a la vez», grupos guardados (guardar,
+    cargar, borrar), personajes en la mesa (no hay plantillas en el 7001),
+    «Expandir con IA» (tarda con el 27b), prefijo/sufijo del personaje propio
+    en un turno real.
+115. **`[ ]`** La forma del grupo (participantes y sesiones) vive en
+    `localStorage` (`fs-group-states`), como en la anterior: desde otro
+    navegador el padre `[GRP]` se abre como chat normal y no se puede seguir
+    la mesa. Guardarla en los metadatos de la sesión padre lo arreglaría.
+

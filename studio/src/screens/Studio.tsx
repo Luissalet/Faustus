@@ -52,6 +52,7 @@ import { useSpotlight } from '../shell/useSpotlight';
 import { ModelPicker } from './ModelPicker';
 import { PresetPicker } from './PresetPicker';
 import { COMMANDS, delegationLabel, genFromArgs, parseCommand, parseDelegation } from './studio/commands';
+import { knownGroupParents, stripGroupPrefix } from '../adapters/group';
 import { Composer, type Knobs } from './studio/Composer';
 import { apply, blankTurn, cleanUserText, restoreFromMetadata, type Turn } from './studio/model';
 import { initialPanel, panelReducer } from './studio/panel';
@@ -1054,6 +1055,12 @@ export function StudioScreen() {
   );
 
   const openSession = (id: string | null) => {
+    // A group chat's parent lives in Group chat, where the table is; the
+    // transcript is still readable here from the sessions list's menu.
+    if (id && knownGroupParents().has(id)) {
+      navigate(`/group?s=${encodeURIComponent(id)}`);
+      return;
+    }
     const next = new URLSearchParams(params);
     if (id) next.set('s', id);
     else next.delete('s');
@@ -1208,7 +1215,7 @@ export function StudioScreen() {
             <span>{t('Conversations')}</span>
           </button>
           <h1 className="fs-studio__title" title={title || undefined}>
-            {sessionId ? current?.name || title || t('Conversation') : t('New conversation')}
+            {sessionId ? stripGroupPrefix(current?.name || title || t('Conversation')) : t('New conversation')}
           </h1>
           {project && (
             <Link to={`/projects/${encodeURIComponent(project.id)}`} className="fs-studio__chip fs-studio__project" title={t('Open the project {name}', { name: project.name })} data-testid="studio-project">

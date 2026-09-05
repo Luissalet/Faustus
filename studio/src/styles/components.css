@@ -795,6 +795,7 @@
 .fs-seg button {
   flex: 1;
   padding: var(--fs-space-1) var(--fs-space-3);
+  white-space: nowrap;
   border: 0;
   border-radius: calc(var(--fs-radius-control) - 2px);
   background: none;
@@ -809,4 +810,58 @@
   background: var(--fs-surface-3);
   color: var(--fs-text-1);
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.5); /* guard-ok: the lift under a pressed segment, not a surface */
+}
+
+/* ── Avatars: initials on one of seven palette hues, stable per name (mail senders, group participants) ── */
+
+.fs-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  inline-size: 32px;
+  block-size: 32px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--fs-avatar-hue) 22%, var(--fs-surface-2));
+  color: color-mix(in srgb, var(--fs-avatar-hue) 80%, var(--fs-text-1));
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  --fs-avatar-hue: var(--fs-brand);
+}
+
+.fs-avatar[data-size='sm'] {
+  inline-size: 22px;
+  block-size: 22px;
+  font-size: 9px;
+}
+
+.fs-avatar[data-size='lg'] {
+  inline-size: 40px;
+  block-size: 40px;
+  font-size: 13px;
+}
+
+.fs-avatar[data-hue='1'] {
+  --fs-avatar-hue: var(--fs-info);
+}
+
+.fs-avatar[data-hue='2'] {
+  --fs-avatar-hue: var(--fs-success);
+}
+
+.fs-avatar[data-hue='3'] {
+  --fs-avatar-hue: var(--fs-warning);
+}
+
+.fs-avatar[data-hue='4'] {
+  --fs-avatar-hue: var(--fs-aurora-a);
+}
+
+.fs-avatar[data-hue='5'] {
+  --fs-avatar-hue: var(--fs-aurora-b);
+}
+
+.fs-avatar[data-hue='6'] {
+  --fs-avatar-hue: var(--fs-aurora-c);
 }

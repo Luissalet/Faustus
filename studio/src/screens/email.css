@@ -76,60 +76,6 @@
   inline-size: 100%;
 }
 
-/* ── Avatars: seven hues from the palette, so a sender keeps a colour ── */
-
-.fs-mail__avatar {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  inline-size: 32px;
-  block-size: 32px;
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--fs-mail-hue) 22%, var(--fs-surface-2));
-  color: color-mix(in srgb, var(--fs-mail-hue) 80%, var(--fs-text-1));
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  --fs-mail-hue: var(--fs-brand);
-}
-
-.fs-mail__avatar[data-size='sm'] {
-  inline-size: 22px;
-  block-size: 22px;
-  font-size: 9px;
-}
-
-.fs-mail__avatar[data-size='lg'] {
-  inline-size: 40px;
-  block-size: 40px;
-  font-size: 13px;
-}
-
-.fs-mail__avatar[data-hue='1'] {
-  --fs-mail-hue: var(--fs-info);
-}
-
-.fs-mail__avatar[data-hue='2'] {
-  --fs-mail-hue: var(--fs-success);
-}
-
-.fs-mail__avatar[data-hue='3'] {
-  --fs-mail-hue: var(--fs-warning);
-}
-
-.fs-mail__avatar[data-hue='4'] {
-  --fs-mail-hue: var(--fs-aurora-a);
-}
-
-.fs-mail__avatar[data-hue='5'] {
-  --fs-mail-hue: var(--fs-aurora-b);
-}
-
-.fs-mail__avatar[data-hue='6'] {
-  --fs-mail-hue: var(--fs-aurora-c);
-}
-
 /* ── Rail ── */
 
 .fs-mail__side {

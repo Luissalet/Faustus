@@ -157,3 +157,17 @@
   font-size: 11px;
   color: var(--fs-text-3);
 }
+
+/* Sampling knobs inside the preset form: one label, one slider. */
+.fs-palette__knob {
+  display: grid;
+  gap: 2px;
+  min-inline-size: 140px;
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-2);
+}
+
+.fs-palette__knob input[type='range'] {
+  inline-size: 100%;
+  accent-color: var(--fs-brand);
+}

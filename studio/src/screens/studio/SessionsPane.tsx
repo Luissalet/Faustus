@@ -1,9 +1,10 @@
-import { Archive, ArchiveRestore, ArrowUpDown, Bot, CheckSquare, Download, FolderOpen, MoreHorizontal, Plus, Search, Sparkles, Star, Trash2, X } from 'lucide-react';
+import { Archive, ArchiveRestore, ArrowUpDown, Bot, CheckSquare, Download, FolderOpen, MoreHorizontal, Plus, Search, Sparkles, Star, Trash2, Users, X } from 'lucide-react';
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import { Button, IconButton, QuickMenu, Skeleton } from '../../components';
 import type { ChatSession } from '../../adapters/chat';
 import { relativeTime } from '../../adapters/home';
+import { isGroupSessionName, stripGroupPrefix } from '../../adapters/group';
 import {
   archiveSession,
   autoSortSessions,
@@ -77,7 +78,8 @@ function Row({ s, i, currentId, selecting, selected, onToggle, onOpen, onMenu }:
       >
         <span className="fs-studio__session-name">
           {s.isImportant && <Star size={11} aria-label={t('Favourite')} className="fs-studio__star" />}
-          {s.name}
+          {isGroupSessionName(s.name) && <Users size={11} aria-label={t('Group chat')} />}
+          {isGroupSessionName(s.name) ? stripGroupPrefix(s.name) : s.name}
         </span>
         <span className="fs-studio__session-meta">
           {s.mode === 'agent' && <Bot size={11} aria-label={t('Agent')} />}

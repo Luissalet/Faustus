@@ -1,0 +1,204 @@
+/* Group chat: the table, then the conversation. */
+
+.fs-grp {
+  display: grid;
+  gap: var(--fs-space-4);
+  padding-block-end: var(--fs-space-6);
+}
+
+.fs-grp__lede {
+  margin-block-start: var(--fs-space-2);
+}
+
+.fs-grp__setup {
+  display: grid;
+  gap: var(--fs-space-3);
+  padding: var(--fs-space-4);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-1);
+}
+
+.fs-grp__label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fs-text-3);
+}
+
+.fs-grp__presets {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  flex-wrap: wrap;
+}
+
+.fs-grp__preset {
+  display: inline-flex;
+  align-items: center;
+}
+
+.fs-grp__rows {
+  display: grid;
+  gap: var(--fs-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fs-grp__row {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  max-inline-size: none;
+  padding: var(--fs-space-2);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-2);
+}
+
+.fs-grp__pick {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  min-inline-size: 0;
+  padding: 4px var(--fs-space-2);
+  border: 0;
+  border-radius: var(--fs-radius-control);
+  background: none;
+  color: var(--fs-text-1);
+  font: inherit;
+  font-size: var(--fs-label-size);
+  text-align: start;
+  cursor: pointer;
+}
+
+.fs-grp__pick:hover {
+  background: var(--fs-highlight);
+}
+
+.fs-grp__pick small {
+  color: var(--fs-text-3);
+}
+
+.fs-grp__persona {
+  inline-size: 200px;
+  block-size: var(--fs-control-sm);
+  padding-block: 0;
+}
+
+/* ── Chat ── */
+
+.fs-grp__table {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  flex-wrap: wrap;
+}
+
+.fs-grp__seat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px 2px 3px;
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-surface-2);
+  font-size: var(--fs-label-size);
+}
+
+.fs-grp__chat {
+  display: grid;
+  gap: var(--fs-space-3);
+  min-block-size: 40vh;
+  max-block-size: 62vh;
+  padding: var(--fs-space-4);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-1);
+  overflow: auto;
+}
+
+.fs-grp__empty {
+  align-self: center;
+  text-align: center;
+}
+
+.fs-grp__msg {
+  display: grid;
+  gap: 4px;
+  max-inline-size: min(100%, 76ch);
+  padding: var(--fs-space-2) var(--fs-space-3);
+  border-radius: var(--fs-radius-panel);
+  border: 1px solid var(--fs-border);
+  background: var(--fs-surface-2);
+  border-inline-start: 3px solid color-mix(in srgb, var(--fs-grp-hue, var(--fs-brand)) 70%, var(--fs-border));
+}
+
+.fs-grp__msg[data-role='user'] {
+  justify-self: end;
+  border-inline-start-width: 1px;
+  border-color: color-mix(in srgb, var(--fs-brand) 35%, var(--fs-border));
+  background: color-mix(in srgb, var(--fs-brand) 9%, var(--fs-surface-2));
+}
+
+.fs-grp__msg[data-hue='1'] { --fs-grp-hue: var(--fs-info); }
+.fs-grp__msg[data-hue='2'] { --fs-grp-hue: var(--fs-success); }
+.fs-grp__msg[data-hue='3'] { --fs-grp-hue: var(--fs-warning); }
+.fs-grp__msg[data-hue='4'] { --fs-grp-hue: var(--fs-aurora-a); }
+.fs-grp__msg[data-hue='5'] { --fs-grp-hue: var(--fs-aurora-b); }
+.fs-grp__msg[data-hue='6'] { --fs-grp-hue: var(--fs-aurora-c); }
+
+.fs-grp__msg-head {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  font-size: var(--fs-label-size);
+}
+
+.fs-grp__msg-head small {
+  color: var(--fs-text-3);
+}
+
+.fs-grp__user {
+  margin: 0;
+  max-inline-size: none;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.fs-grp__composer {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--fs-space-2);
+}
+
+.fs-grp__textarea {
+  flex: 1;
+  padding: var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-1);
+  color: var(--fs-text-1);
+  font: inherit;
+  font-size: var(--fs-body-size);
+  line-height: var(--fs-body-line);
+  resize: vertical;
+}
+
+.fs-grp__textarea:focus-visible {
+  outline: 2px solid var(--fs-focus);
+  outline-offset: 1px;
+}
+
+@media (max-width: 767px) {
+  .fs-grp__row {
+    flex-wrap: wrap;
+  }
+
+  .fs-grp__persona {
+    inline-size: 100%;
+  }
+}

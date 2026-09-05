@@ -391,6 +391,7 @@ function AssistantTurn({
     <article className="fs-turn fs-turn--assistant" data-db-id={turn.dbId} data-streaming={turn.streaming || undefined} data-testid="turn-assistant">
       <span className="fs-turn__node" aria-hidden="true" />
       <div className="fs-turn__body">
+        {turn.speaker && <p className="fs-turn__speaker">{turn.speaker}</p>}
         {turn.thinking && getDisplay().thinking && (
           <details className="fs-studio__thinking">
             <summary>Razonamiento {turn.streaming && !turn.text ? <span className="fs-studio__pulse" /> : null}</summary>
