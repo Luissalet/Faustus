@@ -135,7 +135,8 @@ proporcionales, auditoría de la guía Vercel pasada o excepción documentada,
       editor de tema y los efectos (lote U; Fondos era un sandbox sin ruta);
       Skills como pantalla (`/skills`, lote V); Automatizaciones completas
       (crear desde frase o forma, editar, pausar, ejecutar, historial: lote W);
-      Actividad con ficha del run y decisiones (lote X).
+      Actividad con ficha del run y decisiones (lote X); Proyectos completos
+      (crear, ajustes, mandos del agente, chats, objetivos, memoria, actividad: lote Y).
       Faltan: Cookbook, Deep Research, Compare,
       Tournament, Procedencia, Historial importado. Vitales (uso de GPU) en
       Studio: lote Q.

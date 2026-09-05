@@ -2379,3 +2379,115 @@ Uses left	Usos restantes
 renders	renders
 {n} identical row	{n} fila idéntica
 {n} identical rows	{n} filas idénticas
+A project groups a folder, instructions, memory and conversations. The agent follows its manners inside that folder.	Un proyecto agrupa una carpeta, instrucciones, memoria y conversaciones. El agente sigue sus normas dentro de esa carpeta.
+Add a primary folder or another file or folder to start working.	Añade una carpeta principal u otro archivo o carpeta para empezar a trabajar.
+Add an objective…	Añadir un objetivo…
+Add guidance that should apply to every chat in this project.	Añade las pautas que deban aplicarse a todas las conversaciones de este proyecto.
+Added	Añadido
+Archived	Archivados
+Archived projects would be listed here.	Los proyectos archivados saldrían aquí.
+Browse…	Examinar…
+Chat deleted	Conversación borrada
+Conversation group	Grupo de conversaciones
+Could not draft	No se ha podido redactar
+Create project	Crear proyecto
+Create the memory files	Crear los archivos de memoria
+Created from the name.	Se crea a partir del nombre.
+Created {when}	Creado {when}
+Delete project	Borrar proyecto
+Delete this chat?	¿Borrar esta conversación?
+Delete “{name}”?	¿Borrar «{name}»?
+Deleting the project keeps its chats and its folder; only the grouping, the instructions and the objectives go.	Borrar el proyecto conserva sus conversaciones y su carpeta; solo se van la agrupación, las instrucciones y los objetivos.
+Drafting…	Redactando…
+Drop the objective	Descartar el objetivo
+Drop {id}	Descartar {id}
+Every chat in this project as one .zip	Todas las conversaciones del proyecto en un .zip
+Every turn that changed files in this project, with the chat and the exact answer it came from.	Cada turno que cambió archivos en este proyecto, con la conversación y la respuesta exacta de la que salió.
+Export chats	Exportar conversaciones
+Fixed once created: it is what files the chats.	Fijo una vez creado: es lo que agrupa las conversaciones.
+From what the runtime detects: language, test runner, layout	A partir de lo que detecta el entorno: lenguaje, tests, estructura
+Hide notes	Ocultar notas
+How should Faustus work in this project?	¿Cómo debe trabajar Faustus en este proyecto?
+Instructions	Instrucciones
+Loading the context	Cargando el contexto
+Loading the conversations	Cargando las conversaciones
+Loading the objectives	Cargando los objetivos
+Model for the new chat	Modelo para la nueva conversación
+My project	Mi proyecto
+New chat	Nueva conversación
+New project	Nuevo proyecto
+No agent turn has changed files in this project yet.	Ningún turno del agente ha cambiado archivos en este proyecto todavía.
+No chats yet. Start one from the brief and it will stay grouped here.	Aún no hay conversaciones. Empieza una desde el resumen y quedará agrupada aquí.
+No model available	No hay ningún modelo disponible
+No objectives yet.	Aún no hay objetivos.
+No system dialog here; type the path.	Aquí no hay diálogo del sistema; escribe la ruta.
+Notes for {id}…	Notas para {id}…
+Objective activity	Actividad de los objetivos
+Open the chat	Abrir la conversación
+Optional. The agent reads and changes files here.	Opcional. El agente lee y cambia archivos aquí.
+Optional; empty detects pytest, npm test, cargo, go or make.	Opcional; vacío detecta pytest, npm test, cargo, go o make.
+Optional; “same” is this chat’s model, or a model on the same endpoint.	Opcional; «same» es el modelo de la conversación, o un modelo del mismo endpoint.
+Path of the folder or file to add	Ruta de la carpeta o archivo a añadir
+Priority of the new objective	Prioridad del nuevo objetivo
+Priority of {id}	Prioridad de {id}
+Project archived	Proyecto archivado
+Project restored	Proyecto restaurado
+Project saved	Proyecto guardado
+Project “{name}” created	Proyecto «{name}» creado
+Restorable: checkpoint {sha}	Restaurable: checkpoint {sha}
+Reviewer model	Modelo revisor
+Save notes	Guardar notas
+Sent with every message in this project — about {n} tokens.	Se envía con cada mensaje de este proyecto — unos {n} tokens.
+Set a working folder first; the memory lives inside it.	Primero fija una carpeta de trabajo; la memoria vive dentro.
+Set the working folder first.	Fija primero la carpeta de trabajo.
+Show dropped	Ver descartados
+Show dropped ({n})	Ver descartados ({n})
+Show notes	Ver notas
+Start a chat in {name}	Empezar una conversación en {name}
+Start chat	Empezar
+Status of {id}	Estado de {id}
+Test command	Comando de tests
+The API is not responding.	La API no responde.
+The agent can read and change every file or folder listed here.	El agente puede leer y cambiar todo archivo o carpeta de esta lista.
+The agent here	El agente aquí
+The agent in this folder	El agente en esta carpeta
+The chats stay, ungrouped. The folder on disk is not touched.	Las conversaciones se quedan, sin agrupar. La carpeta del disco no se toca.
+The project needs a name	El proyecto necesita un nombre
+This project is archived. Its existing chats still keep their context.	Este proyecto está archivado. Sus conversaciones conservan el contexto.
+Unpinned	Desfijado
+What do you want to do here? (optional)	¿Qué quieres hacer aquí? (opcional)
+What this project is trying to achieve; the agent uses them to know when a piece of work counts as done.	Lo que este proyecto intenta conseguir; el agente los usa para saber cuándo un trabajo cuenta como hecho.
+Work roots	Raíces de trabajo
+Write an AGENTS.md from the folder	Escribir un AGENTS.md desde la carpeta
+blocked by (OBJ-1, OBJ-2)	bloqueado por (OBJ-1, OBJ-2)
+blocked by {ids}	bloqueado por {ids}
+primary	principal
+review ⚠	revisión ⚠
+review ✓	revisión ✓
+tests ?	tests ?
+tests ✓	tests ✓
+tests ✗	tests ✗
+updated {when}	actualizado {when}
+{name} saved	{name} guardado
+{n} conversation in {folder}	{n} conversación en {folder}
+{n} conversations in {folder}	{n} conversaciones en {folder}
+Trusted folder	Carpeta de confianza
+File writes inside the folder skip the approval gate (shell and deletions still ask).	Escribir archivos dentro de la carpeta no pide aprobación (la shell y los borrados sí).
+Trusted sub-agents	Sub-agentes de confianza
+Delegating to sub-agents does not ask either.	Delegar en sub-agentes tampoco pregunta.
+Review mode	Modo revisión
+Edits stay pending until you accept them file by file.	Las ediciones quedan pendientes hasta que las aceptes archivo a archivo.
+Checkpoints	Checkpoints
+A snapshot before the first change of every turn, so you can restore without git.	Una instantánea antes del primer cambio de cada turno, para restaurar sin git.
+Run tests	Ejecutar tests
+The project's tests run after every turn that changes files.	Los tests del proyecto corren tras cada turno que cambia archivos.
+in progress	en curso
+blocked	bloqueado
+dropped	descartado
+AGENTS.md written (test command detected) — edit it in the folder.	AGENTS.md escrito (comando de tests detectado) — edítalo en la carpeta.
+AGENTS.md written (no test runner detected) — edit it in the folder.	AGENTS.md escrito (sin tests detectados) — edítalo en la carpeta.
+Nothing written.	No se ha escrito nada.
+Choose a model in Studio before starting a project conversation.	Elige un modelo en Studio antes de empezar una conversación del proyecto.
+Agent activity	Actividad del agente
+The folder already has {file}; nothing written.	La carpeta ya tiene {file}; no se ha escrito nada.
+Open the project {name}	Abrir el proyecto {name}

@@ -310,7 +310,7 @@ function UserTurn({
 }) {
   const [editing, setEditing] = useState(false);
   return (
-    <article className="fs-turn fs-turn--user" data-testid="turn-user">
+    <article className="fs-turn fs-turn--user" data-db-id={turn.dbId} data-testid="turn-user">
       <div className="fs-turn__user-wrap">
         {editing ? (
           <Editor
@@ -388,7 +388,7 @@ function AssistantTurn({
 }) {
   const waiting = turn.streaming && !turn.text && turn.steps.length === 0;
   return (
-    <article className="fs-turn fs-turn--assistant" data-streaming={turn.streaming || undefined} data-testid="turn-assistant">
+    <article className="fs-turn fs-turn--assistant" data-db-id={turn.dbId} data-streaming={turn.streaming || undefined} data-testid="turn-assistant">
       <span className="fs-turn__node" aria-hidden="true" />
       <div className="fs-turn__body">
         {turn.thinking && getDisplay().thinking && (

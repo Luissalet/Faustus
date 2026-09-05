@@ -1,6 +1,6 @@
-import { ExternalLink, MessageSquare, PanelRight, X } from 'lucide-react';
+import { ExternalLink, FolderKanban, MessageSquare, PanelRight, X } from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router';
+import { Link, useNavigate, useSearchParams } from 'react-router';
 import { IconButton, Skeleton } from '../components';
 import {
   createSession,
@@ -15,6 +15,7 @@ import {
   type DelegationTask,
   type ModelRoute,
 } from '../adapters/chat';
+import { listProjects, type Project } from '../adapters/projects';
 import { createDoc } from '../adapters/documents';
 import {
   attachmentsFromMetadata,
@@ -228,6 +229,40 @@ export function StudioScreen() {
     setWorkspaceState(path);
   }, []);
 
+  /* The project this conversation belongs to (by folder), as projects.js
+     resolved it on every session switch: its working folder becomes the
+     workspace, and a chip in the header says where you are. A folder chosen
+     by hand survives; only the one a project applied gets cleared. */
+  const [projects, setProjects] = useState<Project[]>([]);
+  useEffect(() => {
+    listProjects().then(setProjects).catch(() => setProjects([]));
+  }, [sessionId]);
+  const project = useMemo(() => (current?.folder ? projects.find((p) => p.folder === current.folder) ?? null : null), [projects, current]);
+  useEffect(() => {
+    const AUTO = 'odysseus-project-workspace';
+    let applied = '';
+    try {
+      applied = localStorage.getItem(AUTO) ?? '';
+    } catch {
+      /* private mode */
+    }
+    if (project?.workspace) {
+      if (getWorkspace() !== project.workspace) setWorkspace(project.workspace);
+      try {
+        localStorage.setItem(AUTO, project.workspace);
+      } catch {
+        /* private mode */
+      }
+      return;
+    }
+    if (applied && getWorkspace() === applied) setWorkspace('');
+    try {
+      localStorage.removeItem(AUTO);
+    } catch {
+      /* private mode */
+    }
+  }, [project, setWorkspace]);
+
   /* The folder chip opens the OS's own dialog (Explorer on Windows) when the
    * browser runs on the server's machine; the in-page browser is only the
    * fallback for remote browsers or hosts without a display. */
@@ -344,6 +379,22 @@ export function StudioScreen() {
     // routes is read once at load on purpose: the picker must not jump later.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
+
+  /* A project's agent activity links to the exact answer: ?m=<message id>. */
+  useEffect(() => {
+    const m = params.get('m');
+    if (!m || !turns || turns.length === 0) return;
+    const next = new URLSearchParams(params);
+    next.delete('m');
+    setParams(next, { replace: true });
+    requestAnimationFrame(() => {
+      const el = document.querySelector<HTMLElement>(`.fs-turn[data-db-id="${CSS.escape(m)}"]`);
+      if (!el) return;
+      el.scrollIntoView({ block: 'center' });
+      el.setAttribute('data-flash', '');
+      window.setTimeout(() => el.removeAttribute('data-flash'), 2400);
+    });
+  }, [params, setParams, turns]);
 
   /* The palette's "Buscar conversaciones" lands on the filter. */
   useEffect(() => {
@@ -1133,6 +1184,12 @@ export function StudioScreen() {
           <h1 className="fs-studio__title" title={title || undefined}>
             {sessionId ? current?.name || title || t('Conversation') : t('New conversation')}
           </h1>
+          {project && (
+            <Link to={`/projects/${encodeURIComponent(project.id)}`} className="fs-studio__chip fs-studio__project" title={t('Open the project {name}', { name: project.name })} data-testid="studio-project">
+              <FolderKanban size={13} aria-hidden="true" />
+              <span>{project.name}</span>
+            </Link>
+          )}
           <Vitals busy={busy} />
           <div className="fs-studio__head-actions">
             <IconButton

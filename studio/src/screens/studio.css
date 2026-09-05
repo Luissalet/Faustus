@@ -2302,3 +2302,38 @@ aside.fs-panel {
   outline: 2px solid var(--fs-focus);
   filter: none;
 }
+
+/* The answer a project's activity linked to: lit for a moment, then normal. */
+.fs-turn[data-flash] {
+  animation: fs-turn-flash var(--fs-duration-enter) var(--fs-ease-out) 3 alternate;
+}
+
+@keyframes fs-turn-flash {
+  from {
+    background: transparent;
+  }
+  to {
+    background: var(--fs-ember-faint);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fs-turn[data-flash] {
+    animation: none;
+    background: var(--fs-ember-faint);
+  }
+}
+
+/* The project chip: where this conversation lives. */
+.fs-studio__project {
+  text-decoration: none;
+  color: var(--fs-brand);
+  border-color: color-mix(in srgb, var(--fs-brand) 45%, var(--fs-border));
+  max-inline-size: 200px;
+}
+
+.fs-studio__project span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

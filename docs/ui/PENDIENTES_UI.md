@@ -531,3 +531,14 @@ su área y baja el baseline. Ningún módulo Studio nuevo la aumenta.
     no dice si hay una ejecución en curso; el servidor contesta 404 «no
     está corriendo» y Studio lo enseña. Cuando `/api/tasks` traiga
     `is_running`, enseñarlo solo entonces.
+
+## Añadido tras el lote Y (05-09-2026, Proyectos)
+
+89. **`[!]` `DELETE /api/projects/{id}/session/{sid}` rompe con
+    `'Session' object has no attribute 'folder'`** (routes/project_routes.py
+    ~192, usa el gestor de sesiones en memoria en vez de la fila). Studio
+    borra la conversación por `/api/session/{id}` como hacía la anterior.
+    Arreglar la ruta o quitarla.
+90. **`[~]` Los checkpoints de la actividad del agente no se restauran desde
+    el proyecto**; se enseña el sha y el enlace abre la conversación, donde
+    el harness sí ofrece restaurar.
