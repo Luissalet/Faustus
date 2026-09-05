@@ -704,3 +704,23 @@ html[data-studio-shell='on'] body > *:not(#studio-root):not(#fs-overlay-root) {
     padding: 0;
   }
 }
+
+/* What is on today, without opening anything. */
+.fs-nav__badge {
+  margin-inline-start: auto;
+  min-inline-size: 17px;
+  padding: 0 5px;
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-ember);
+  color: var(--fs-brand);
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 16px;
+  text-align: center;
+}
+
+.fs-nav__tool[aria-current='page'] .fs-nav__badge {
+  background: var(--fs-brand);
+  color: var(--fs-on-brand);
+}

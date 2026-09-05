@@ -167,7 +167,16 @@ proporcionales, auditoría de la guía Vercel pasada o excepción documentada,
       once `tour-*` y `/tours`, con el autoplay convertido en un ofrecimiento);
       Notas completas (lote AK: nota de dibujo con `lib/paint.ts` +
       `screens/notes/Draw.tsx`, foto adjunta, fondo de imagen propio,
-      selección múltiple y editor a pantalla completa en móvil).
+      selección múltiple y editor a pantalla completa en móvil);
+      y el lote AL, que cierra las dos últimas filas Parcial: la semana del
+      Calendario como horario de verdad (`lib/agenda.ts` puro con su test +
+      `screens/calendar/Week.tsx`: arrastrar para mover, alargar y crear,
+      solapes en columnas, zoom, buscar, deshacer, recordar en Notas e
+      imagen de fondo), insignias en el carril (`shell/badges.ts`), el
+      informe de la limpieza de la memoria (qué se quitó, qué se reescribió
+      y qué se fundió) y el desplegable de contexto en cada turno
+      (`context_ledger`: reparto por secciones, aviso de recorte y consejos),
+      además de la pregunta previa al borrar un mensaje.
       Vitales (uso de GPU) en Studio: lote Q.
 - [ ] **UI-061** Borrar los puentes muertos, el DOM legacy de cada pantalla ya
       migrada y el propio flag. Empezar a dividir `style.css`, a solas y sin

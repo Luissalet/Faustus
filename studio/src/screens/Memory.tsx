@@ -471,6 +471,8 @@ export function MemoryScreen() {
   const [params, setParams] = useSearchParams();
   const tab: 'memories' | 'provenance' = params.get('t') === 'provenance' ? 'provenance' : 'memories';
   const [memories, setMemories] = useState<Memory[] | null>(null);
+  /** What the last tidy actually did, so it can be read and not just felt. */
+  const [tidyReport, setTidyReport] = useState<{ before: number; after: number; gone: string[]; changed: { from: string; to: string }[]; arrived: string[] } | null>(null);
   const [failed, setFailed] = useState(false);
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState<string>('all');
@@ -563,12 +565,35 @@ export function MemoryScreen() {
     }
   };
 
+  /**
+   * Tidying is destructive: the model decides what to merge and what to
+   * drop. The previous interface animated the difference so you could see
+   * what went; here the difference is a report you can read, which is the
+   * same idea and survives being scrolled past.
+   */
   const tidy = async () => {
     setBusy('tidy');
+    const before = new Map((memories ?? []).map((m) => [m.id, m.text]));
     try {
       const r = await auditMemories();
-      say(r.removed > 0 ? `Ordenada: ${r.before} → ${r.after} (${r.removed} fuera).` : t('It was already tidy.'));
-      await load();
+      const after = await listMemories();
+      setMemories(after);
+      const kept = new Map(after.map((m) => [m.id, m.text]));
+      const gone: string[] = [];
+      const changed: { from: string; to: string }[] = [];
+      for (const [id, text] of before) {
+        const now = kept.get(id);
+        if (now === undefined) gone.push(text);
+        else if (now !== text) changed.push({ from: text, to: now });
+      }
+      // A memory the model rewrote under a new id looks like one gone and
+      // one arrived; the arrivals are what is left over after the matches.
+      const arrived = after.filter((m) => !before.has(m.id)).map((m) => m.text);
+      if (!r.removed && !gone.length && !changed.length && !arrived.length) {
+        say(t('It was already tidy.'));
+      } else {
+        setTidyReport({ before: r.before, after: r.after, gone, changed, arrived });
+      }
     } catch (err) {
       say((err as Error).message || t('Could not tidy the memory.'));
     } finally {
@@ -901,6 +926,60 @@ export function MemoryScreen() {
       )}
 
       </>
+      )}
+
+      {tidyReport && (
+        <Dialog
+          open
+          onOpenChange={(o) => {
+            if (!o) setTidyReport(null);
+          }}
+          title={t('What the tidy did')}
+          description={t('{before} memories before, {after} after.', { before: tidyReport.before, after: tidyReport.after })}
+          testId="memory-tidy-report"
+          footer={<Button variant="primary" size="sm" label={t('Right')} onClick={() => setTidyReport(null)} />}
+        >
+          <div className="fs-tidy">
+            {tidyReport.gone.length > 0 && (
+              <section>
+                <h3 className="fs-tidy__head">{tn(tidyReport.gone.length, '{n} removed', '{n} removed#')}</h3>
+                <ul className="fs-tidy__list">
+                  {tidyReport.gone.map((text, i) => (
+                    <li key={i} data-gone>
+                      <del>{text}</del>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+            {tidyReport.changed.length > 0 && (
+              <section>
+                <h3 className="fs-tidy__head">{tn(tidyReport.changed.length, '{n} rewritten', '{n} rewritten#')}</h3>
+                <ul className="fs-tidy__list">
+                  {tidyReport.changed.map((pair, i) => (
+                    <li key={i}>
+                      <del>{pair.from}</del>
+                      <span>{pair.to}</span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+            {tidyReport.arrived.length > 0 && (
+              <section>
+                <h3 className="fs-tidy__head">{tn(tidyReport.arrived.length, '{n} merged into a new one', '{n} merged into new ones')}</h3>
+                <ul className="fs-tidy__list">
+                  {tidyReport.arrived.map((text, i) => (
+                    <li key={i} data-new>
+                      {text}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+            {!tidyReport.gone.length && !tidyReport.changed.length && !tidyReport.arrived.length && <p className="fs-prose">{t('Nothing changed here; the count came from the server.')}</p>}
+          </div>
+        </Dialog>
       )}
 
       {notice && (

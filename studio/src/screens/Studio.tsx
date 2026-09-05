@@ -1,7 +1,7 @@
 import { ExternalLink, FolderKanban, MessageSquare, PanelRight, X } from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
-import { IconButton, Skeleton } from '../components';
+import { Button, Dialog, IconButton, Skeleton } from '../components';
 import {
   createSession,
   listModels,
@@ -1639,12 +1639,24 @@ export function StudioScreen() {
     [sessionId, regenerateFrom, say],
   );
 
-  const onDelete = useCallback(
+  /**
+   * Deleting a message is final: the server drops the row and, unlike
+   * truncating, keeps no version to restore. So it asks first and then says
+   * plainly that it is gone — the previous interface deleted on the first
+   * click with nothing but a toast afterwards.
+   */
+  const [confirmDelete, setConfirmDelete] = useState<Turn | null>(null);
+
+  const onDelete = useCallback((turn: Turn) => setConfirmDelete(turn), []);
+
+  const deleteNow = useCallback(
     async (turn: Turn) => {
+      setConfirmDelete(null);
       if (!sessionId || !turn.dbId) return;
       try {
         await deleteMessages(sessionId, [turn.dbId]);
         setTurns((list) => list?.filter((t) => t.id !== turn.id) ?? list);
+        say(t('Message deleted.'));
       } catch (error) {
         say(`${t('Could not delete the message')}: ${(error as Error).message}`, 'danger');
       }
@@ -1959,6 +1971,26 @@ export function StudioScreen() {
         <Suspense fallback={null}>
           <WorkspaceDialog open initial={workspace} onClose={() => setWsOpen(false)} onPick={setWorkspace} />
         </Suspense>
+      )}
+
+      {confirmDelete && (
+        <Dialog
+          open
+          onOpenChange={(o) => {
+            if (!o) setConfirmDelete(null);
+          }}
+          title={t('Delete this message?')}
+          description={t('It does not go anywhere you can get it back from: the conversation loses it for good.')}
+          testId="confirm-delete-message"
+          footer={
+            <>
+              <Button variant="ghost" size="sm" label={t('Cancel')} onClick={() => setConfirmDelete(null)} />
+              <Button variant="danger-solid" size="sm" label={t('Delete')} onClick={() => void deleteNow(confirmDelete)} />
+            </>
+          }
+        >
+          <p className="fs-prose">{confirmDelete.text.slice(0, 240) || t('(no text)')}</p>
+        </Dialog>
       )}
     </div>
   );

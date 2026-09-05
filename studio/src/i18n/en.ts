@@ -13,4 +13,6 @@ export const en: Record<string, string> = {
   '{n} published#': '{n} published',
   '{n} selected#': '{n} selected',
   'Published {n}#': 'Published {n}',
+  '{n} removed#': '{n} removed',
+  '{n} rewritten#': '{n} rewritten',
 };

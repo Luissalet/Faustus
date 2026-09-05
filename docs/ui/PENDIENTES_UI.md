@@ -757,3 +757,32 @@ su área y baja el baseline. Ningún módulo Studio nuevo la aumenta.
 138. **`[ ]`** Al adjuntar una foto a una nota de dibujo que ya tenía trazos,
     la foto se pinta debajo y el lienzo se rehace: los trazos anteriores se
     pierden. Conviene adjuntar la foto primero.
+
+## Lote AL (Calendario semana, insignias, informe de limpieza, ledger)
+
+139. **`[ ]`** **Backend.** Borrar un mensaje suelto
+    (`POST /api/session/{id}/delete-messages`) no guarda versión: al
+    contrario que truncar, no hay nada que restaurar. Studio pregunta antes
+    y avisa después, pero un «deshacer» de verdad necesita que la ruta llame
+    a `chat_versions.save` con lo que quita. Para la auditoría de backend.
+140. **`[ ]`** El desplegable de contexto es del turno en vivo: llega por el
+    evento `context_ledger` del stream y no se guarda con el mensaje, así
+    que al recargar la conversación desaparece (el porcentaje del pie sí
+    queda). Guardarlo pide una columna o un `metadata` en el mensaje.
+141. **`[ ]`** El servidor solo emite el ledger la primera ronda y luego
+    cuando hay novedad de verdad (`should_emit`: +25 % de tokens o ≥75 % de
+    la ventana), así que en un turno largo el desplegable enseña el reparto
+    de la ronda en que se emitió, no el de la última.
+142. **`[ ]`** El horario de la semana no tiene aún «arrastrar el borde
+    superior» para cambiar la hora de inicio: se alarga por abajo y se mueve
+    entero. La anterior tampoco lo tenía.
+143. **`[ ]`** Un evento que cruza la medianoche se dibuja como dos trozos
+    (uno en cada día), cada uno con su propio arrastre: mover uno mueve el
+    evento entero, que es lo esperable, pero el otro trozo no se ve moverse
+    hasta que se suelta.
+144. **`[ ]`** Las insignias del carril (Notas, Calendario) se leen al abrir
+    y cada dos minutos con la pestaña visible; una nota creada desde otra
+    pestaña tarda hasta ese refresco en contarse.
+145. **`[ ]`** El zoom de la semana (S/M/L) se guarda en `localStorage`
+    (`faustus_studio_cal_zoom`), no en el servidor: en otro navegador vuelve
+    a empezar en M.

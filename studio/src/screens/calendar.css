@@ -578,3 +578,312 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* ── The week, with hours ── */
+
+.fs-wk {
+  --fs-wk-gutter: 52px;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  min-block-size: 0;
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: color-mix(in srgb, var(--fs-surface-1) 55%, transparent);
+  overflow: hidden;
+}
+
+.fs-wk__head,
+.fs-wk__allday {
+  display: grid;
+  grid-template-columns: var(--fs-wk-gutter) repeat(7, minmax(0, 1fr));
+  border-block-end: 1px solid var(--fs-border);
+}
+
+.fs-wk__gutter {
+  padding: var(--fs-space-2);
+  border-inline-end: 1px solid var(--fs-border);
+  color: var(--fs-text-3);
+  font-size: 10px;
+  text-align: end;
+}
+
+.fs-wk__dayhead {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 6px;
+  padding: var(--fs-space-2);
+  border-inline-start: 1px solid var(--fs-border);
+  font-size: var(--fs-label-size);
+}
+
+.fs-wk__dayname {
+  color: var(--fs-text-3);
+  text-transform: capitalize;
+}
+
+.fs-wk__daynum {
+  font-weight: var(--fs-title-weight);
+  font-variant-numeric: tabular-nums;
+}
+
+.fs-wk__dayhead[data-today] {
+  background: var(--fs-ember-faint);
+  box-shadow: inset 0 -2px 0 var(--fs-brand);
+}
+
+.fs-wk__dayhead[data-today] .fs-wk__daynum {
+  color: var(--fs-brand);
+}
+
+.fs-wk__alldaycell {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  min-block-size: 26px;
+  padding: 3px;
+  border-inline-start: 1px solid var(--fs-border);
+}
+
+.fs-wk__allev {
+  min-block-size: auto;
+  padding: 1px 5px;
+  font-size: 11px;
+}
+
+.fs-wk__body {
+  display: grid;
+  grid-template-columns: var(--fs-wk-gutter) minmax(0, 1fr);
+  min-block-size: 0;
+  max-block-size: min(62vh, 720px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.fs-wk__hours {
+  display: grid;
+  grid-auto-rows: var(--fs-hour);
+  border-inline-end: 1px solid var(--fs-border);
+}
+
+.fs-wk__hour {
+  padding-inline-end: 6px;
+  translate: 0 -0.6em;
+  color: var(--fs-text-3);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+}
+
+.fs-wk__grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  block-size: calc(var(--fs-hour) * 24);
+}
+
+.fs-wk__col {
+  position: relative;
+  border-inline-start: 1px solid var(--fs-border);
+  /* One line per hour, and a fainter one at the half hour. */
+  background-image: repeating-linear-gradient(
+    to bottom,
+    var(--fs-border) 0,
+    var(--fs-border) 1px,
+    transparent 1px,
+    transparent var(--fs-hour)
+  );
+  touch-action: none;
+}
+
+.fs-wk__col[data-today] {
+  background-color: color-mix(in srgb, var(--fs-brand) 5%, transparent);
+}
+
+.fs-wk[data-dragging] .fs-wk__col {
+  cursor: grabbing;
+}
+
+.fs-wk__now {
+  position: absolute;
+  inset-inline: 0;
+  z-index: 2;
+  block-size: 2px;
+  background: var(--fs-brand);
+  box-shadow: 0 0 8px var(--fs-ember-strong);
+  pointer-events: none;
+}
+
+.fs-wk__ev {
+  position: absolute;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  padding: 2px 5px;
+  min-block-size: auto;
+  overflow: hidden;
+  text-align: start;
+  cursor: grab;
+}
+
+.fs-wk__ev[data-live] {
+  z-index: 3;
+  cursor: grabbing;
+  box-shadow: var(--fs-lift-shadow);
+  opacity: 0.92;
+}
+
+.fs-wk__ev .fs-cal-ev__time {
+  font-size: 10px;
+  opacity: 0.8;
+  font-variant-numeric: tabular-nums;
+}
+
+.fs-wk__ev .fs-cal-ev__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-inline-size: 100%;
+}
+
+.fs-wk__handle {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: 0;
+  block-size: 7px;
+  cursor: ns-resize;
+}
+
+.fs-wk__ghost {
+  position: absolute;
+  inset-inline: 2px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  border: 1px dashed var(--fs-brand);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-ember);
+  color: var(--fs-text-1);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+/* ── Search ── */
+
+.fs-cal__search {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  padding: var(--fs-space-2) var(--fs-space-3);
+  border: 1px solid var(--fs-border-strong);
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-surface-1);
+  color: var(--fs-text-3);
+}
+
+.fs-cal__search-input {
+  flex: 1;
+  min-inline-size: 0;
+  border: 0;
+  background: transparent;
+  color: var(--fs-text-1);
+  font: inherit;
+}
+
+.fs-cal__search-input:focus-visible {
+  outline: none; /* guard-ok: the pill itself takes the focus ring */
+}
+
+.fs-cal__search:focus-within {
+  border-color: var(--fs-brand);
+  box-shadow: 0 0 0 3px var(--fs-ember-faint);
+}
+
+.fs-cal__search-count {
+  color: var(--fs-text-3);
+  font-size: var(--fs-label-size);
+  white-space: nowrap;
+}
+
+.fs-cal__hits {
+  display: grid;
+  gap: 2px;
+  max-block-size: 40vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.fs-cal__hit {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  padding: var(--fs-space-2) var(--fs-space-3);
+  border: 0;
+  border-radius: var(--fs-radius-control);
+  background: transparent;
+  color: var(--fs-text-1);
+  font: inherit;
+  font-size: var(--fs-label-size);
+  text-align: start;
+  cursor: pointer;
+  min-block-size: auto;
+}
+
+.fs-cal__hit:hover {
+  background: var(--fs-ember-faint);
+}
+
+.fs-cal__hit-when {
+  flex: none;
+  color: var(--fs-text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.fs-cal__hit-title {
+  flex: 1;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fs-cal__hit-loc {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--fs-text-3);
+}
+
+.fs-cal__zoom {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-inline-start: var(--fs-space-2);
+  padding-inline-start: var(--fs-space-2);
+  border-inline-start: 1px solid var(--fs-border);
+  color: var(--fs-text-3);
+}
+
+.fs-cal__zoom .fs-chip {
+  padding-inline: var(--fs-space-2);
+}
+
+.fs-cal-form__thumb {
+  inline-size: 34px;
+  block-size: 24px;
+  object-fit: cover;
+  border: 1px solid var(--fs-border);
+  border-radius: 4px;
+}
+
+@media (max-width: 767px) {
+  .fs-wk {
+    --fs-wk-gutter: 38px;
+  }
+
+  .fs-wk__dayname {
+    display: none;
+  }
+}

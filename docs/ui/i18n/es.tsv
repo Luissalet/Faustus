@@ -4338,3 +4338,41 @@ Large	Grande
 Labels	Etiquetas
 Remind me	Recordar
 {done} of {total}	{done} de {total}
+"{what}" deleted.	«{what}» borrado.
+Close the search	Cerrar la búsqueda
+Ends	Termina
+Event restored.	Evento restaurado.
+Hour height	Alto de la hora
+Nothing matches "{q}" in what is loaded.	Nada coincide con «{q}» en lo que hay cargado.
+Remind me in Notes	Recordármelo en Notas
+Reminder saved in Notes.	Recordatorio guardado en Notas.
+Search events	Buscar eventos
+Search titles, places, notes…	Buscar títulos, lugares, notas…
+Starts	Empieza
+The calendar's	El del calendario
+Write below in your own words ("lunch with Marta on Friday at 2") or press N. Arrows move, T is today, and in the week you can drag.	Escribe abajo en tus palabras («comida con Marta el viernes a las 2») o pulsa N. Flechas para moverte, T para hoy, y en la semana puedes arrastrar.
+Nothing changed here; the count came from the server.	Aquí no cambió nada; la cuenta viene del servidor.
+Right	Vale
+What the tidy did	Lo que ha hecho la limpieza
+{before} memories before, {after} after.	{before} recuerdos antes, {after} después.
+{n} merged into a new one	{n} fundido en uno nuevo
+{n} merged into new ones	{n} fundidos en nuevos
+{n} removed	{n} eliminado
+{n} removed#	{n} eliminados
+{n} rewritten	{n} reescrito
+{n} rewritten#	{n} reescritos
+Tool prose trimmed to fit the window: {before} → {after} tokens (descriptions capped at {limit} characters, no tool removed).	Texto de las herramientas recortado para caber en la ventana: {before} → {after} tokens (descripciones limitadas a {limit} caracteres, sin quitar ninguna herramienta).
+{used} of {window} · {pct}% of the window	{used} de {window} · {pct}% de la ventana
+{used} tokens	{used} tokens
+Conversation history	Historial de la conversación
+Documents & files	Documentos y ficheros
+Other retrieved context	Otro contexto recuperado
+Project instructions	Instrucciones del proyecto
+Tool results	Resultados de herramientas
+Tool schemas	Esquemas de herramientas
+Web & research	Web e investigación
+Your message	Tu mensaje
+(no text)	(sin texto)
+Delete this message?	¿Borrar este mensaje?
+It does not go anywhere you can get it back from: the conversation loses it for good.	No va a ningún sitio del que puedas recuperarlo: la conversación lo pierde para siempre.
+Message deleted.	Mensaje borrado.

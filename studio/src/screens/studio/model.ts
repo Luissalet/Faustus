@@ -4,6 +4,7 @@ import {
   toolEventsFrom,
   type AskUser,
   type ChatEvent,
+  type ContextLedger,
   type HarnessCheck,
   type HarnessSummary,
   type StepDiff,
@@ -121,6 +122,8 @@ export interface Turn {
   todos?: Todo[];
   plan?: string;
   contextPercent?: number;
+  /** Where the context went, when the server says (`context_ledger`). */
+  ledger?: ContextLedger;
   /** Sub-agents of this turn's delegate_agents calls, in arrival order. */
   workers: Worker[];
   streaming: boolean;
@@ -459,7 +462,7 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
     case 'summary':
       return { ...turn, summary: event.summary };
     case 'context':
-      return event.percent === undefined ? turn : { ...turn, contextPercent: event.percent };
+      return { ...turn, contextPercent: event.percent ?? turn.contextPercent, ledger: event.ledger ?? turn.ledger };
     case 'subagent': {
       const sa = event.payload;
       const id = s(sa.id ?? sa.session_id);

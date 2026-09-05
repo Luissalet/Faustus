@@ -465,3 +465,61 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* ── What the tidy did ── */
+
+.fs-tidy {
+  display: grid;
+  gap: var(--fs-space-4);
+  max-block-size: 52vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.fs-tidy__head {
+  margin: 0 0 var(--fs-space-2);
+  font-size: var(--fs-label-size);
+  font-weight: var(--fs-label-weight);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fs-text-3);
+}
+
+.fs-tidy__list {
+  display: grid;
+  gap: var(--fs-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-label-size);
+}
+
+.fs-tidy__list li {
+  display: grid;
+  gap: 2px;
+  max-inline-size: none;
+  padding: var(--fs-space-2) var(--fs-space-3);
+  border-inline-start: 2px solid var(--fs-border);
+  border-radius: 0 var(--fs-radius-control) var(--fs-radius-control) 0;
+  background: color-mix(in srgb, var(--fs-surface-2) 55%, transparent);
+  animation: fs-rise var(--fs-duration-enter) var(--fs-ease-out) both;
+}
+
+.fs-tidy__list li[data-gone] {
+  border-inline-start-color: var(--fs-danger);
+}
+
+.fs-tidy__list li[data-new] {
+  border-inline-start-color: var(--fs-success);
+}
+
+.fs-tidy__list del {
+  color: var(--fs-text-3);
+  text-decoration-color: color-mix(in srgb, var(--fs-danger) 70%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fs-tidy__list li {
+    animation: none;
+  }
+}

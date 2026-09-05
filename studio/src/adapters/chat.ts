@@ -27,6 +27,16 @@ export interface ChatSession {
   totalTokens: number;
 }
 
+export interface ContextLedger {
+  total: number;
+  window: number;
+  percent: number;
+  sections: { label: string; tokens: number; percent: number }[];
+  advice: { text: string; level: 'info' | 'warn' }[];
+  /** Set when the server trimmed tool descriptions to make the window fit. */
+  slim?: { before: number; after: number; limit: number };
+}
+
 export interface ModelRoute {
   /** Unique across endpoints: `${endpointId}::${model}`. */
   id: string;
@@ -177,7 +187,7 @@ export type ChatEvent =
   | { type: 'plan'; plan: string }
   | { type: 'check'; check: HarnessCheck }
   | { type: 'summary'; summary: HarnessSummary }
-  | { type: 'context'; percent?: number; tokens?: number; window?: number }
+  | { type: 'context'; percent?: number; tokens?: number; window?: number; ledger?: ContextLedger }
   | { type: 'done' };
 
 function str(value: unknown, fallback = ''): string {
@@ -635,13 +645,39 @@ function decode(raw: Record<string, unknown>, sseEvent: string | null): ChatEven
       };
     case 'harness_summary':
       return { type: 'summary', summary: summaryFrom(data) };
-    case 'context_ledger':
+    case 'context_ledger': {
+      // The percentage is the headline; the sections are why. "The model
+      // ignored my instructions" is usually 9k of tool schemas and skills
+      // spent before the question ever arrived.
+      const sections = asArray<Record<string, unknown>>(data.sections).map((s) => ({
+        label: str(s.label),
+        tokens: num(s.tokens) ?? 0,
+        percent: num(s.pct ?? s.percent) ?? 0,
+      }));
+      const advice = asArray<Record<string, unknown>>(data.advice).map((a) => ({
+        text: str(a.text),
+        level: (str(a.level) || 'info') as 'info' | 'warn',
+      }));
+      const slimRaw = (data.tool_slim ?? {}) as Record<string, unknown>;
       return {
         type: 'context',
         percent: num(data.percent ?? data.context_percent ?? data.used_percent),
         tokens: num(data.total ?? data.tokens ?? data.used_tokens),
         window: num(data.window ?? data.context_length),
+        ledger: sections.length
+          ? {
+              total: num(data.total) ?? 0,
+              window: num(data.window ?? data.context_length) ?? 0,
+              percent: num(data.percent ?? data.context_pct ?? data.context_percent) ?? 0,
+              sections,
+              advice,
+              slim: slimRaw.slimmed
+                ? { before: num(slimRaw.before) ?? 0, after: num(slimRaw.after) ?? 0, limit: num(slimRaw.limit) ?? 0 }
+                : undefined,
+            }
+          : undefined,
       };
+    }
     default:
       return null;
   }

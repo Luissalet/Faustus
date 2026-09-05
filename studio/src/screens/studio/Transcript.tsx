@@ -1,12 +1,12 @@
 import { Check, ChevronDown, Copy, FileText, GitFork, Pencil, Quote, RefreshCw, Telescope, Trash2, Volume2, VolumeX, X } from 'lucide-react';
 import { Fragment, lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { Button, IconButton } from '../../components';
-import type { AskUser, DelegationTask } from '../../adapters/chat';
+import type { AskUser, ContextLedger, DelegationTask } from '../../adapters/chat';
 import { attachmentUrl, isImage } from '../../adapters/composer';
 import { Rich } from '../rich';
 import { splitMentions } from '../../lib/mentions';
 import { formatMetrics, type Step, type Turn } from './model';
-import { t } from '../../i18n';
+import { t, tn } from '../../i18n';
 import { getDisplay } from '../../shell/display';
 
 /** Loaded on the first click: the speech adapter is not part of the eager bundle. */
@@ -326,6 +326,92 @@ function Said({ text, onOpenFile }: { text: string; onOpenFile?: (path: string) 
   );
 }
 
+/**
+ * The server names the sections in English (src/context_ledger.py). They are a
+ * closed list, so they can be translated here rather than shipping the locale
+ * to the backend; anything new falls through as it came.
+ */
+function sectionLabel(label: string): string {
+  switch (label) {
+    case 'System prompt':
+      return t('System prompt');
+    case 'Tool schemas':
+      return t('Tool schemas');
+    case 'Project instructions':
+      return t('Project instructions');
+    case 'Skills':
+      return t('Skills');
+    case 'Memories':
+      return t('Memories');
+    case 'Documents & files':
+      return t('Documents & files');
+    case 'Web & research':
+      return t('Web & research');
+    case 'Attachments':
+      return t('Attachments');
+    case 'Other retrieved context':
+      return t('Other retrieved context');
+    case 'Tool results':
+      return t('Tool results');
+    case 'Conversation history':
+      return t('Conversation history');
+    case 'Your message':
+      return t('Your message');
+    default:
+      return label;
+  }
+}
+
+/**
+ * Where the context went.
+ *
+ * "The local model ignored my instructions" is usually not a model
+ * problem: it is nine thousand tokens of tool schemas, skills and
+ * documents spent before the question. The server counts them
+ * (`context_ledger`); this puts the number on screen at the round it
+ * happens, folded away unless something is actually wrong.
+ */
+function Ledger({ ledger }: { ledger: ContextLedger }) {
+  const tok = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(Math.round(n)));
+  const warn = ledger.advice.some((a) => a.level === 'warn');
+  return (
+    <details className="fs-ctx" data-warn={warn || undefined} open={warn} data-testid="turn-ledger">
+      <summary>
+        <span className="fs-ctx__title">{t('Context')}</span>
+        <span className="fs-ctx__head">
+          {ledger.window ? t('{used} of {window} · {pct}% of the window', { used: tok(ledger.total), window: tok(ledger.window), pct: Math.round(ledger.percent) }) : t('{used} tokens', { used: tok(ledger.total) })}
+        </span>
+      </summary>
+      <ul className="fs-ctx__rows">
+        {ledger.sections.map((section) => (
+          <li key={section.label}>
+            <span className="fs-ctx__label" title={sectionLabel(section.label)}>{sectionLabel(section.label)}</span>
+            <span className="fs-ctx__bar" aria-hidden="true">
+              <span style={{ inlineSize: `${Math.min(100, section.percent)}%` }} />
+            </span>
+            <span className="fs-ctx__tok">{tok(section.tokens)}</span>
+            <span className="fs-ctx__pct">{Math.round(section.percent)}%</span>
+          </li>
+        ))}
+      </ul>
+      {ledger.slim && (
+        <p className="fs-ctx__note">
+          {t('Tool prose trimmed to fit the window: {before} → {after} tokens (descriptions capped at {limit} characters, no tool removed).', {
+            before: tok(ledger.slim.before),
+            after: tok(ledger.slim.after),
+            limit: ledger.slim.limit,
+          })}
+        </p>
+      )}
+      {ledger.advice.map((a, i) => (
+        <p key={i} className="fs-ctx__note" data-level={a.level}>
+          {a.text}
+        </p>
+      ))}
+    </details>
+  );
+}
+
 function UserTurn({
   turn,
   busy,
@@ -485,12 +571,13 @@ function AssistantTurn({
             {turn.error}
           </p>
         )}
+        {turn.ledger && <Ledger ledger={turn.ledger} />}
         {!turn.streaming && (
           <div className="fs-turn__foot">
             {turn.metrics && (
               <span className="fs-turn__metrics">
                 {formatMetrics(turn.metrics)}
-                {turn.rounds > 1 ? ` · ${turn.rounds} rondas` : ''}
+                {turn.rounds > 1 ? ` · ${tn(turn.rounds, '{n} round', '{n} rounds')}` : ''}
               </span>
             )}
             <span className="fs-turn__actions" data-testid="turn-actions">

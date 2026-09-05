@@ -2880,3 +2880,103 @@ aside.fs-panel {
     transition: none;
   }
 }
+
+/* ── Where the context went ── */
+
+.fs-ctx {
+  padding: var(--fs-space-2) var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: color-mix(in srgb, var(--fs-surface-1) 55%, transparent);
+  font-size: var(--fs-label-size);
+}
+
+.fs-ctx[data-warn] {
+  border-color: color-mix(in srgb, var(--fs-warning) 55%, var(--fs-border));
+}
+
+.fs-ctx > summary {
+  display: flex;
+  align-items: baseline;
+  gap: var(--fs-space-2);
+  cursor: pointer;
+  list-style: none;
+  color: var(--fs-text-2);
+}
+
+.fs-ctx > summary::-webkit-details-marker {
+  display: none;
+}
+
+.fs-ctx__title {
+  font-weight: var(--fs-label-weight);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fs-text-3);
+}
+
+.fs-ctx[data-warn] .fs-ctx__title {
+  color: var(--fs-warning);
+}
+
+.fs-ctx__head {
+  font-variant-numeric: tabular-nums;
+}
+
+.fs-ctx__rows {
+  display: grid;
+  gap: 3px;
+  margin: var(--fs-space-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fs-ctx__rows li {
+  display: grid;
+  grid-template-columns: minmax(0, 13em) minmax(40px, 1fr) 3.4em 2.8em;
+  align-items: center;
+  gap: var(--fs-space-2);
+  max-inline-size: none;
+  color: var(--fs-text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.fs-ctx__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fs-ctx__bar {
+  block-size: 5px;
+  border-radius: var(--fs-radius-pill);
+  background: color-mix(in srgb, var(--fs-text-3) 22%, transparent);
+  overflow: hidden;
+}
+
+.fs-ctx__bar > span {
+  display: block;
+  block-size: 100%;
+  border-radius: inherit;
+  background: var(--fs-brand);
+}
+
+.fs-ctx__tok,
+.fs-ctx__pct {
+  text-align: end;
+}
+
+.fs-ctx__pct {
+  color: var(--fs-text-3);
+}
+
+.fs-ctx__note {
+  margin: var(--fs-space-2) 0 0;
+  max-inline-size: none;
+  color: var(--fs-text-3);
+  line-height: 1.45;
+}
+
+.fs-ctx__note[data-level='warn'] {
+  color: var(--fs-warning);
+}

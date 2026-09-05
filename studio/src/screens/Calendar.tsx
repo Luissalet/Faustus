@@ -7,11 +7,16 @@ import {
   MapPin,
   Plus,
   RefreshCw,
+  Image as ImageIcon,
   Repeat,
+  Search,
   Settings2,
   Sparkles,
+  StickyNote,
   Trash2,
+  Undo2,
   X,
+  ZoomIn,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
@@ -46,12 +51,18 @@ import {
   type Calendar,
   type EventDraft,
 } from '../adapters/calendar';
+import { createNote, uploadNoteImage } from '../adapters/notes';
+import { asBackground, backgroundOf } from '../lib/paint';
+import { HOUR_HEIGHTS, clockOf, matches, type Span, type Zoom } from '../lib/agenda';
+import { Week, tile } from './calendar/Week';
 import './projects.css';
 import './calendar.css';
-import { t } from '../i18n';
+import { t, tn } from '../i18n';
 
 /** The server's default calendar colour: stored per calendar, not a UI token. */
 const DEFAULT_COLOR = '#5b8abf'; // guard-ok: data, not chrome
+
+const ZOOM_KEY = 'faustus_studio_cal_zoom';
 
 /**
  * Calendario (the previous interface's calendar modal, `/calendar`).
@@ -132,7 +143,7 @@ interface FormState {
   color: string;
 }
 
-function formFrom(ev: CalEvent | null, day: string | null, calendars: Calendar[], title = ''): FormState {
+function formFrom(ev: CalEvent | null, day: string | null, calendars: Calendar[], title = '', span?: Span): FormState {
   if (ev) {
     const s = parseStamp(ev.dtstart);
     const e = parseStamp(ev.dtend);
@@ -148,10 +159,11 @@ function formFrom(ev: CalEvent | null, day: string | null, calendars: Calendar[]
       color: ev.color && ev.color !== calendars.find((c) => c.id === ev.calendarId)?.color ? ev.color : '',
     };
   }
-  const base = day ? new Date(`${day}T09:00:00`) : new Date();
+  // A drag on the week's grid arrives as the hours it was drawn over.
+  const base = day ? new Date(`${day}T${span ? clockOf(span.from) : '09:00'}:00`) : new Date();
   if (!day) base.setMinutes(0, 0, 0), base.setHours(base.getHours() + 1);
-  const end = new Date(base);
-  end.setHours(end.getHours() + 1);
+  const end = day && span ? new Date(`${day}T${clockOf(span.to)}:00`) : new Date(base);
+  if (!(day && span)) end.setHours(end.getHours() + 1);
   return { summary: title, allDay: false, start: toLocalInput(base), end: toLocalInput(end), location: '', description: '', calendarId: calendars[0]?.id ?? '', rrule: '', color: '' };
 }
 
@@ -169,12 +181,27 @@ function draftFrom(f: FormState): EventDraft {
   };
 }
 
-function EventDialog({ event, day, calendars, title, onClose, onSaved, onDeleted, say }: { event: CalEvent | null; day: string | null; calendars: Calendar[]; title?: string; onClose: () => void; onSaved: () => void; onDeleted: () => void; say: (t: string) => void }) {
-  const [f, setF] = useState<FormState>(() => formFrom(event, day, calendars, title));
+function EventDialog({ event, day, span, calendars, title, onClose, onSaved, onDeleted, onRemind, say }: { event: CalEvent | null; day: string | null; span?: Span; calendars: Calendar[]; title?: string; onClose: () => void; onSaved: () => void; onDeleted: (ev: CalEvent) => void; onRemind: (ev: CalEvent) => void; say: (t: string) => void }) {
+  const [f, setF] = useState<FormState>(() => formFrom(event, day, calendars, title, span));
   const [saving, setSaving] = useState(false);
   const [askScope, setAskScope] = useState(false);
   const set = (p: Partial<FormState>) => setF((s) => ({ ...s, ...p }));
   const recurringOccurrence = Boolean(event && event.rrule && event.uid.includes('::'));
+  const pictureRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const picture = backgroundOf(f.color);
+
+  const pickPicture = async (file: File | undefined) => {
+    if (!file) return;
+    setUploading(true);
+    try {
+      set({ color: asBackground(await uploadNoteImage(file, file.name)) });
+    } catch {
+      say(t('The picture could not be uploaded.'));
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const toggleAllDay = (allDay: boolean) => {
     if (allDay) set({ allDay, start: f.start.slice(0, 10), end: f.end.slice(0, 10) });
@@ -208,7 +235,7 @@ function EventDialog({ event, day, calendars, title, onClose, onSaved, onDeleted
     setSaving(true);
     try {
       await deleteEvent(event.uid, scope);
-      onDeleted();
+      onDeleted(event);
     } catch (err) {
       say((err as Error).message || t('Could not delete the event.'));
     } finally {
@@ -226,7 +253,12 @@ function EventDialog({ event, day, calendars, title, onClose, onSaved, onDeleted
       testId="event-dialog"
       footer={
         <div className="fs-cal-form__foot">
-          {event && !askScope && <Button variant="danger" size="sm" icon={Trash2} label={t('Delete')} onClick={() => (recurringOccurrence ? setAskScope(true) : void remove('series'))} />}
+          {event && !askScope && (
+            <>
+              <Button variant="ghost" size="sm" icon={StickyNote} label={t('Remind me in Notes')} onClick={() => onRemind(event)} testId="cal-remind" />
+              <Button variant="danger" size="sm" icon={Trash2} label={t('Delete')} onClick={() => (recurringOccurrence ? setAskScope(true) : void remove('series'))} />
+            </>
+          )}
           {event && askScope && (
             <>
               <Button variant="danger" size="sm" label={t('Just this one')} onClick={() => void remove('occurrence')} />
@@ -245,16 +277,16 @@ function EventDialog({ event, day, calendars, title, onClose, onSaved, onDeleted
           <input type="checkbox" checked={f.allDay} onChange={(e) => toggleAllDay(e.target.checked)} /> <span>{t('All day')}</span>
         </label>
         <div className="fs-cal-form__row">
-          <span className="fs-cal-form__label">Empieza</span>
+          <span className="fs-cal-form__label">{t('Starts')}</span>
           <input type={f.allDay ? 'date' : 'datetime-local'} className="fs-field" value={f.start} onChange={(e) => set({ start: e.target.value })} />
         </div>
         <div className="fs-cal-form__row">
-          <span className="fs-cal-form__label">Termina</span>
+          <span className="fs-cal-form__label">{t('Ends')}</span>
           <input type={f.allDay ? 'date' : 'datetime-local'} className="fs-field" value={f.end} onChange={(e) => set({ end: e.target.value })} />
         </div>
         <div className="fs-cal-form__row">
           <span className="fs-cal-form__label">
-            <Repeat size={12} aria-hidden="true" /> Repetir
+            <Repeat size={12} aria-hidden="true" /> {t('Repeat')}
           </span>
           <select className="fs-field" value={RRULES.some((r) => r.value === f.rrule) ? f.rrule : 'custom'} onChange={(e) => set({ rrule: e.target.value === 'custom' ? f.rrule : e.target.value })}>
             {RRULES.map((r) => (
@@ -267,12 +299,12 @@ function EventDialog({ event, day, calendars, title, onClose, onSaved, onDeleted
         </div>
         <div className="fs-cal-form__row">
           <span className="fs-cal-form__label">
-            <MapPin size={12} aria-hidden="true" /> Lugar
+            <MapPin size={12} aria-hidden="true" /> {t('Place')}
           </span>
           <input type="text" className="fs-field" value={f.location} onChange={(e) => set({ location: e.target.value })} />
         </div>
         <div className="fs-cal-form__row">
-          <span className="fs-cal-form__label">Calendario</span>
+          <span className="fs-cal-form__label">{t('Calendar')}</span>
           <select className="fs-field" value={f.calendarId} onChange={(e) => set({ calendarId: e.target.value })} disabled={Boolean(event)}>
             {calendars.map((c) => (
               <option key={c.id} value={c.id}>
@@ -284,10 +316,15 @@ function EventDialog({ event, day, calendars, title, onClose, onSaved, onDeleted
         <div className="fs-cal-form__row">
           <span className="fs-cal-form__label">{t('Colour')}</span>
           <div className="fs-cal-form__color">
-            <input type="color" value={f.color || calendars.find((c) => c.id === f.calendarId)?.color || DEFAULT_COLOR} onChange={(e) => set({ color: e.target.value })} aria-label={t('Event colour')} />
+            <input type="color" value={picture ? DEFAULT_COLOR : f.color || calendars.find((c) => c.id === f.calendarId)?.color || DEFAULT_COLOR} onChange={(e) => set({ color: e.target.value })} aria-label={t('Event colour')} disabled={Boolean(picture)} />
+            {/* An event can carry a picture instead of a colour, in the same
+                field and with the same `bg:` sentinel a note uses. */}
+            <input ref={pictureRef} type="file" accept="image/*" hidden data-testid="cal-picture-input" onChange={(e) => void pickPicture(e.target.files?.[0])} />
+            <Button variant="ghost" size="sm" icon={ImageIcon} label={picture ? t('Change the picture') : t('A picture')} loading={uploading} onClick={() => pictureRef.current?.click()} testId="cal-picture" />
+            {picture && <img className="fs-cal-form__thumb" src={picture} alt="" />}
             {f.color && (
               <button type="button" className="fs-chip" onClick={() => set({ color: '' })}>
-                <X size={12} aria-hidden="true" /> El del calendario
+                <X size={12} aria-hidden="true" /> {t("The calendar's")}
               </button>
             )}
           </div>
@@ -409,9 +446,8 @@ function CalendarsDialog({ calendars, onClose, onChanged, say }: { calendars: Ca
 /* ── Event chip (month / week / year) ── */
 
 function EventChip({ ev, onOpen, compact }: { ev: CalEvent; onOpen: () => void; compact?: boolean }) {
-  const bg = ev.color || DEFAULT_COLOR;
   return (
-    <button type="button" className="fs-cal-ev" style={{ background: bg, color: fgFor(bg) }} onClick={onOpen} title={ev.summary} data-testid="cal-event">
+    <button type="button" className="fs-cal-ev" style={tile(ev.color || DEFAULT_COLOR)} onClick={onOpen} title={ev.summary} data-testid="cal-event">
       {!ev.allDay && !compact && <span className="fs-cal-ev__time">{fmtTime(ev.dtstart)}</span>}
       <span className="fs-cal-ev__title">{ev.summary || t('(untitled)')}</span>
       {ev.rrule && <Repeat size={10} aria-label={t('Repeats')} />}
@@ -434,7 +470,7 @@ export function CalendarScreen() {
   const [failed, setFailed] = useState(false);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [selectedDay, setSelectedDay] = useState<string>(() => ds(new Date()));
-  const [dialog, setDialog] = useState<{ event: CalEvent | null; day: string | null } | null>(null);
+  const [dialog, setDialog] = useState<{ event: CalEvent | null; day: string | null; span?: Span } | null>(null);
   const [calsOpen, setCalsOpen] = useState(false);
   const [prefill, setPrefill] = useState('');
   const [quick, setQuick] = useState('');
@@ -442,6 +478,19 @@ export function CalendarScreen() {
   const [syncing, setSyncing] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
+  const [query, setQuery] = useState('');
+  const [searching, setSearching] = useState(false);
+  const [zoom, setZoom] = useState<Zoom>(() => {
+    try {
+      const saved = localStorage.getItem(ZOOM_KEY);
+      return saved === 's' || saved === 'l' ? saved : 'm';
+    } catch {
+      return 'm';
+    }
+  });
+  /** The last deleted event, kept long enough to put it back. */
+  const [undo, setUndo] = useState<{ draft: EventDraft; label: string } | null>(null);
+  const undoTimer = useRef<number | undefined>(undefined);
   const today = ds(new Date());
 
   const say = useCallback((t: string) => {
@@ -522,6 +571,7 @@ export function CalendarScreen() {
     const map = new Map<string, CalEvent[]>();
     for (const ev of events ?? []) {
       if (hidden.has(ev.calendarId)) continue;
+      if (query && !matches(ev, query)) continue;
       for (const day of eventDays(ev)) {
         const list = map.get(day) ?? [];
         list.push(ev);
@@ -530,12 +580,96 @@ export function CalendarScreen() {
     }
     for (const list of map.values()) list.sort((a, b) => Number(b.allDay) - Number(a.allDay) || a.dtstart.localeCompare(b.dtstart));
     return map;
-  }, [events, hidden]);
+  }, [events, hidden, query]);
+
+  /** Everything that matches, wherever it is in the loaded range. */
+  const found = useMemo(() => {
+    if (!query.trim()) return [];
+    return (events ?? [])
+      .filter((ev) => !hidden.has(ev.calendarId) && matches(ev, query))
+      .sort((a, b) => a.dtstart.localeCompare(b.dtstart))
+      .slice(0, 60);
+  }, [events, hidden, query]);
 
   const goToday = () => {
     setCursor(new Date());
     setSelectedDay(today);
   };
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(ZOOM_KEY, zoom);
+    } catch {
+      /* a remembered zoom is not worth an exception */
+    }
+  }, [zoom]);
+
+  /** Put back what was just deleted. The draft is kept, not the uid. */
+  const putBack = async () => {
+    const pending = undo;
+    if (!pending) return;
+    setUndo(null);
+    window.clearTimeout(undoTimer.current);
+    try {
+      await createEvent(pending.draft);
+      setReload((n) => n + 1);
+      say(t('Event restored.'));
+    } catch (error) {
+      say((error as Error).message);
+    }
+  };
+
+  const offerUndo = useCallback((ev: CalEvent) => {
+    window.clearTimeout(undoTimer.current);
+    setUndo({
+      draft: {
+        summary: ev.summary,
+        dtstart: ev.dtstart,
+        dtend: ev.dtend,
+        allDay: ev.allDay,
+        description: ev.description,
+        location: ev.location,
+        calendarId: ev.calendarId,
+        rrule: ev.rrule || null,
+        color: ev.color || null,
+      },
+      label: ev.summary || t('(untitled)'),
+    });
+    undoTimer.current = window.setTimeout(() => setUndo(null), 9000);
+  }, []);
+
+  /** A dragged event: same length unless it was the bottom edge that moved. */
+  const moveEvent = useCallback(
+    async (ev: CalEvent, day: string, span: Span) => {
+      const at = (minutes: number) => `${day}T${clockOf(minutes)}:00`;
+      try {
+        await updateEvent(ev.uid, { dtstart: at(span.from), dtend: at(span.to), allDay: false });
+        setReload((n) => n + 1);
+      } catch (error) {
+        say((error as Error).message);
+      }
+    },
+    [say],
+  );
+
+  /** A reminder in Notes for an event, so it can nag you outside the calendar. */
+  const remindInNotes = useCallback(
+    async (ev: CalEvent) => {
+      try {
+        await createNote({
+          noteType: 'note',
+          title: ev.summary || t('(untitled)'),
+          content: [ev.location, ev.description].filter(Boolean).join('\n'),
+          dueDate: ev.allDay ? `${ev.dtstart}T09:00` : toLocalInput(parseStamp(ev.dtstart)),
+          label: 'reminder',
+        });
+        say(t('Reminder saved in Notes.'));
+      } catch (error) {
+        say((error as Error).message);
+      }
+    },
+    [say],
+  );
 
   /* Keyboard: arrows move, T today, N new, M/W/A/Y views. */
   useEffect(() => {
@@ -643,12 +777,13 @@ export function CalendarScreen() {
     <div className="fs-screen fs-cal" data-testid="calendar" data-view={view}>
       <header className="fs-screen__head fs-cal__head">
         <div>
-          <h1 className="fs-screen__title">Calendario</h1>
+          <h1 className="fs-screen__title">{t('Calendar')}</h1>
           <p className="fs-prose" style={{ marginBlockStart: 'var(--fs-space-2)' }}>
-            Escribe abajo en tus palabras («comida con Marta el viernes a las 2») o pulsa N. Flechas para moverte, T para hoy.
+            {t('Write below in your own words ("lunch with Marta on Friday at 2") or press N. Arrows move, T is today, and in the week you can drag.')}
           </p>
         </div>
         <div className="fs-cal__tools">
+          <IconButton icon={Search} label={t('Search events')} size="sm" data-on={searching || undefined} onClick={() => { setSearching((v) => !v); if (searching) setQuery(''); }} testId="cal-search-toggle" />
           {hasCaldav && <IconButton icon={RefreshCw} label={t('Sync with CalDAV')} size="sm" onClick={() => void sync()} disabled={syncing} />}
           <IconButton icon={Settings2} label={t('Calendars')} size="sm" onClick={() => setCalsOpen(true)} />
           <Button variant="primary" size="sm" icon={Plus} label={t('New')} onClick={() => setDialog({ event: null, day: selectedDay })} testId="cal-new" />
@@ -667,11 +802,52 @@ export function CalendarScreen() {
         <Button type="submit" variant="secondary" size="sm" label={t('Add')} disabled={!quick.trim()} loading={parsing} />
       </form>
 
+      {searching && (
+        <div className="fs-cal__search">
+          <Search size={14} aria-hidden="true" />
+          <input
+            type="search"
+            className="fs-cal__search-input"
+            placeholder={t('Search titles, places, notes…')}
+            value={query}
+            autoFocus
+            onChange={(e) => setQuery(e.target.value)}
+            data-testid="cal-search"
+          />
+          {query && <span className="fs-cal__search-count">{tn(found.length, '{n} event', '{n} events')}</span>}
+          <IconButton icon={X} label={t('Close the search')} size="sm" onClick={() => { setSearching(false); setQuery(''); }} />
+        </div>
+      )}
+
+      {searching && query.trim() !== '' && (
+        <div className="fs-cal__hits" data-testid="cal-hits">
+          {found.length === 0 && <p className="fs-muted">{t('Nothing matches "{q}" in what is loaded.', { q: query })}</p>}
+          {found.map((ev) => (
+            <button
+              key={ev.uid}
+              type="button"
+              className="fs-cal__hit"
+              onClick={() => {
+                const when = parseStamp(ev.dtstart);
+                setCursor(when);
+                setSelectedDay(ds(when));
+                setDialog({ event: ev, day: null });
+              }}
+            >
+              <span className="fs-cal__dot" style={{ background: ev.color && !ev.color.startsWith('bg:') ? ev.color : DEFAULT_COLOR }} aria-hidden="true" />
+              <span className="fs-cal__hit-when">{fmtDay(ds(parseStamp(ev.dtstart)))}{ev.allDay ? '' : ` · ${fmtTime(ev.dtstart)}`}</span>
+              <span className="fs-cal__hit-title">{ev.summary || t('(untitled)')}</span>
+              {ev.location && <span className="fs-cal__hit-loc"><MapPin size={10} aria-hidden="true" /> {ev.location}</span>}
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="fs-cal__bar">
         <div className="fs-cal__nav">
           <IconButton icon={ChevronLeft} label={t('Previous')} size="sm" onClick={() => setCursor((d) => step(view, d, -1))} />
           <button type="button" className="fs-chip" onClick={goToday}>
-            Hoy
+            {t('Today')}
           </button>
           <IconButton icon={ChevronRight} label={t('Next')} size="sm" onClick={() => setCursor((d) => step(view, d, 1))} />
           <h2 className="fs-cal__title">{title}</h2>
@@ -682,6 +858,16 @@ export function CalendarScreen() {
               {v === 'month' ? t('Month') : v === 'week' ? t('Week') : v === 'agenda' ? t('Agenda') : t('Year')}
             </button>
           ))}
+          {view === 'week' && (
+            <div className="fs-cal__zoom" role="group" aria-label={t('Hour height')}>
+              <ZoomIn size={13} aria-hidden="true" />
+              {(Object.keys(HOUR_HEIGHTS) as Zoom[]).map((z) => (
+                <button key={z} type="button" className="fs-chip" data-on={zoom === z || undefined} onClick={() => setZoom(z)} aria-label={t(z === 's' ? 'Small' : z === 'm' ? 'Medium' : 'Large')}>
+                  {z.toUpperCase()}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -771,28 +957,20 @@ export function CalendarScreen() {
       )}
 
       {events && calendars && view === 'week' && (
-        <div className="fs-cal__week">
-          {Array.from({ length: 7 }, (_, i) => addDays(startOfWeek(cursor), i)).map((d, i) => {
-            const key = ds(d);
-            const list = byDay.get(key) ?? [];
-            return (
-              <section key={key} className="fs-cal__wday" data-today={key === today || undefined}>
-                <header className="fs-cal__wday-head" onDoubleClick={() => setDialog({ event: null, day: key })}>
-                  <span className="fs-cal__wday-name">{weekdays()[i]}</span>
-                  <span className="fs-cal__wday-num">{d.getDate()}</span>
-                </header>
-                <div className="fs-cal__wday-list">
-                  {list.map((ev) => (
-                    <EventChip key={ev.uid} ev={ev} onOpen={() => setDialog({ event: ev, day: null })} />
-                  ))}
-                  <button type="button" className="fs-cal__wday-add" onClick={() => setDialog({ event: null, day: key })} aria-label={t('New event on {day}', { day: key })}>
-                    <Plus size={12} aria-hidden="true" />
-                  </button>
-                </div>
-              </section>
-            );
-          })}
-        </div>
+        <Week
+          start={startOfWeek(cursor)}
+          byDay={byDay}
+          today={today}
+          zoom={zoom}
+          weekdays={weekdays()}
+          defaultColor={DEFAULT_COLOR}
+          onOpen={(ev) => setDialog({ event: ev, day: null })}
+          onCreate={(day, span) => {
+            setPrefill('');
+            setDialog({ event: null, day, span });
+          }}
+          onMove={(ev, day, span) => void moveEvent(ev, day, span)}
+        />
       )}
 
       {events && calendars && view === 'agenda' && (
@@ -872,6 +1050,7 @@ export function CalendarScreen() {
         <EventDialog
           event={dialog.event}
           day={dialog.day}
+          span={dialog.span}
           calendars={calendars}
           title={prefill}
           onClose={() => {
@@ -885,20 +1064,26 @@ export function CalendarScreen() {
             say(t('Saved.'));
             refresh();
           }}
-          onDeleted={() => {
+          onDeleted={(ev) => {
             setDialog(null);
-            say(t('Deleted.'));
+            offerUndo(ev);
             refresh();
           }}
+          onRemind={(ev) => void remindInNotes(ev)}
           say={say}
         />
       )}
 
       {calsOpen && calendars && <CalendarsDialog calendars={calendars} onClose={() => setCalsOpen(false)} onChanged={refresh} say={say} />}
 
-      {notice && (
-        <Toast>{notice}</Toast>
+      {undo && (
+        <Toast>
+          <span>{t('"{what}" deleted.', { what: undo.label })}</span>
+          <Button variant="ghost" size="sm" icon={Undo2} label={t('Undo')} onClick={() => void putBack()} testId="cal-undo" />
+        </Toast>
       )}
+
+      {notice && !undo && <Toast>{notice}</Toast>}
     </div>
   );
 }

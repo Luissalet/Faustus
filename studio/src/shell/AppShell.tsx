@@ -11,6 +11,7 @@ import { NotMigrated } from '../screens/NotMigrated';
 
 import { BrandMark } from './BrandMark';
 import { DESTINATIONS, TOOLS, toolHref } from './routes';
+import { useBadges } from './badges';
 import { setStudioEnabled } from './flag';
 import { ensureOverlayRoot, removeOverlayRoot } from './overlayRoot';
 import { useShell } from './store';
@@ -53,7 +54,15 @@ const Tour = lazy(() => import('./Tour').then((m) => ({ default: m.Tour })));
  * the node in every layout: the full sidebar, the collapsed rail, and the
  * horizontal bottom bar on a phone.
  */
+/** Which tool a badge belongs to. Only two have one; the rest get none. */
+function countFor(path: string, badges: { calendar: number; notes: number }): number {
+  if (path.startsWith('/calendar')) return badges.calendar;
+  if (path.startsWith('/notes')) return badges.notes;
+  return 0;
+}
+
 function Rail() {
+  const badges = useBadges();
   const { pathname } = useLocation();
   const navRef = useRef<HTMLElement>(null);
   const [indicator, setIndicator] = useState<{ x: number; y: number } | null>(null);
@@ -152,6 +161,11 @@ function Rail() {
             <NavLink key={tool.path} to={tool.path} className="fs-nav__tool" data-testid={`tool-${tool.label.toLowerCase()}`}>
               <tool.icon size={13} aria-hidden="true" />
               <span>{t(tool.label)}</span>
+              {countFor(tool.path, badges) > 0 && (
+                <span className="fs-nav__badge" title={t('{n} for today', { n: countFor(tool.path, badges) })}>
+                  {countFor(tool.path, badges)}
+                </span>
+              )}
             </NavLink>
           ) : (
             <a key={tool.path} href={toolHref(tool)} className="fs-nav__tool" data-legacy title={t('Opens in the previous interface')} data-testid={`tool-${tool.label.toLowerCase()}`}>
