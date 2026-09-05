@@ -358,10 +358,48 @@ al romperlo:
 ## Sitios de fuga del venv aún sin tocar
 Cada uno es una línea (`env=native_host_environment()`), listados por valor:
 
-- `[+]` `src/agent_runners.py::build_env` → cubre `external_worker.py:247`.
+- `[x]` `src/agent_runners.py::build_env` — **hecho en SEC-1c**: ya no copia
+  `os.environ`, sino el perfil `agent`. Y el `which()` de `external_worker` busca primero en
+  el PATH del hijo y luego en el nuestro, que es lo que este punto pedía: una CLI instalada
+  en nuestro venv se sigue encontrando, y el hijo sigue sin recibir nuestro PATH.
+  Lo que decía el ticket original:
   **No es una línea segura tal cual**: `external_worker` resuelve el ejecutable
   con `shutil.which(argv[0], path=full_env["PATH"])`, así que si el usuario
   instaló su CLI en nuestro venv, limpiar el PATH lo deja "no instalado". Hace
   falta `which()` contra el PATH original y lanzar con el entorno limpio.
 - `[+]` `routes/agent_runner_routes.py:76`, `routes/codex_routes.py:532` — se
   arreglan solos con el anterior.
+
+---
+
+## SEC-1: lo cerrado, y lo que el mismo informe deja abierto
+
+El lote SEC-1 (rama `feat/sec-1`, 05-09-2026) cierra B-009, B-020, B-008, B-022 y B-010 de
+`inspiration/AUDITORIA_BACKEND_Y_FEATURES_FAUSTUS.md`; el registro está en `FAUSTUS.md` §42.
+Lo que **no** cierra, dicho aquí para que se pueda encontrar:
+
+- `[+]` **Perfiles de entorno para los otros hijos.** SEC-1c cableó los perfiles allowlist en
+  los dos consumidores que el informe señala primero —runners externos y servidores MCP—.
+  Siguen en `native_host_environment()` (que ahora sí quita el token interno, pero entrega
+  todo lo demás): `src/project_tests.py`, `src/git_invariants.py`,
+  `src/workspace_checkpoints.py`, `src/bg_jobs.py`, `src/builtin_actions.py`,
+  `services/shell/service.py` y `src/agent_tools/subprocess_tools.py`. Los perfiles `build` y
+  `git` existen para ellos. El de shell es el delicado: es la herramienta del usuario, y
+  recortarle el entorno rompe usos legítimos; necesita decisión, no sólo código.
+- `[+]` **Asistente de migración de servidores MCP antiguos.** El informe pide una migración
+  que enseñe **nombres de variables, nunca valores**, para que un servidor con
+  `inherit_env: true` pueda pasar a mínimo sabiendo qué pierde. Hoy la herencia se mantiene
+  entera (menos el token interno) y la única salida es el interruptor por servidor.
+- `[+]` **La interfaz no sabe de perfiles de backup.** `POST /api/backup/snapshot` acepta
+  `profile` y `passphrase`; Studio no los envía, así que desde la interfaz siempre sale un
+  backup `content`. Falta el selector y el campo de contraseña (va en `docs/ui/PENDIENTES_UI.md`).
+- `[?]` **Contraseña del backup completo, sólo por entorno.** `FAUSTUS_BACKUP_PASSPHRASE` es
+  deliberado: un `settings.json` vive dentro del directorio que el backup protege. Pero eso
+  significa que el backup automático **no** es completo salvo que alguien exporte la variable
+  en el arranque. Sin ella toma `content`, que es la degradación honesta.
+- `[~]` **`vault.json` y `BW_SESSION`.** El perfil `content` ya lo excluye entero, así que la
+  sesión de Bitwarden no viaja en un backup en claro. Lo que el informe pide además —no
+  persistir `BW_SESSION`, o cifrarlo con caducidad— sigue pendiente en `routes/vault`.
+- `[!]` `tests/test_agent_gate.py::test_the_hook_script_is_not_left_behind` falla en Windows
+  **desde antes de esta rama** (comprobado con el árbol guardado en stash): el directorio
+  `faustus-gate-*` del hook queda en el temporal. No es de SEC-1, pero está sin dueño.

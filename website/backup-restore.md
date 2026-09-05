@@ -13,18 +13,55 @@ Snapshots are safe to take while the app is running: SQLite databases are copied
 through SQLite's own `.backup` API rather than a raw file copy, so an in-flight
 write can't corrupt the snapshot.
 
-> **A snapshot contains your secrets.** The tarball includes the Fernet
-> encryption key (`data/.app_key`), the vault, sessions, and any stored
-> provider/API tokens — so treat it like a password. Store backups somewhere
-> private, never commit them to Git, and prefer an encrypted destination when
-> copying them offsite.
+## Two profiles, and the safe one is the default
+
+A snapshot taken from the app (`POST /api/backup/snapshot`, and the nightly
+automatic one) comes in one of two profiles:
+
+* **`content`** — the default. Chats, projects, gallery, memories, settings.
+  It deliberately leaves out `data/.app_key`, `auth.json`, `sessions.json`,
+  `vault.json`, `integrations.json` and `data/mcp_oauth/`, so the file carries
+  no credential and is safe to sync to a NAS or a cloud folder. Restoring it
+  gives you a working install that asks you to log in again and to re-enter
+  integration secrets.
+* **`full`** — everything, including the encryption key and everything it
+  protects. Because of that it is **always encrypted**, with a passphrase you
+  supply; without one the snapshot is refused rather than written in the clear.
+  The file is named `….tar.gz.enc`.
+
+```bash
+# a full, encrypted snapshot from the app or the nightly job
+export FAUSTUS_BACKUP_PASSPHRASE='a long passphrase you keep elsewhere'
+
+# reading one back
+./scripts/odysseus-backup verify  backups/faustus-backup-....tar.gz.enc
+./scripts/odysseus-backup restore backups/faustus-backup-....tar.gz.enc --yes
+```
+
+The passphrase is read from `FAUSTUS_BACKUP_PASSPHRASE` (or `--passphrase-env
+OTHER_VAR`). It is never stored in `settings.json` on purpose: that file lives
+inside the very directory the backup is protecting.
+
+Each snapshot is written with a `.manifest.json` beside it — profile, file
+count, exclusions, sizes and the archive's SHA-256, authenticated with an HMAC
+of your app key. `verify` checks the archive against it.
+
+> **A `full` snapshot is your whole identity in one file.** It is encrypted, but
+> the passphrase is the only thing standing between that file and your account:
+> keep it somewhere other than the machine being backed up.
+
+> **Restoring logs everyone out.** The restore deletes the `sessions.json` it
+> just put back, because a snapshot would otherwise revive sessions that were
+> revoked since it was taken.
 
 ## Quick start
 
 Run the tool from the repository root:
 
 ```bash
-# Create a snapshot → backups/odysseus-backup-<YYYYMMDD-HHMMSS>.tar.gz
+# Create a snapshot → backups/faustus-backup-<YYYYMMDD-HHMMSS>-<id>.tar.gz
+# (the CLI's own `snapshot` takes everything, like it always did — the
+#  profiles above are what the app and the nightly job use)
 ./scripts/odysseus-backup snapshot
 
 # List existing snapshots (most recent first)

@@ -223,6 +223,31 @@ Segundo hito: **«de issue a parche revisado»**, la misma plataforma en coding.
 
 ---
 
+
+---
+
+## Auditoría de backend: los lotes de seguridad (05-09-2026)
+
+Frente propio, con su documento: `inspiration/AUDITORIA_BACKEND_Y_FEATURES_FAUSTUS.md` (§8.1
+reparte los lotes). El orden lo fija el propio informe, y SEC-1 va antes que nada.
+
+| Lote | Qué entrega | Estado |
+|---|---|---|
+| **SEC-1** | Logs OAuth, herencia de secretos, prompts en argv, credenciales reutilizables y backup inseguro | ✅ 05-09-2026 — `FAUSTUS.md` §42, rama `feat/sec-1`, 5 commits, 90 tests nuevos. Lo que no cubre está en `PENDIENTES.md` |
+| **AUTH-1** | Matriz declarativa de autorización y scopes fail-closed | ⏳ el siguiente. Necesita la identidad y los grants de SEC-1 |
+| NET-1 | Broker de salida con perfiles de confianza | ⏳ puede avanzar junto a AUTH-1 |
+| SSH-1 | Pairing, `known_hosts` privado, transporte remoto de grants | ⏳ comparte contrato con NET-1 |
+| STATE-1 | Settings con revisión y escritura transaccional | ⏳ migración pequeña y aislada, se puede colar pronto |
+| ART-1 | Blob / ArtifactOccurrence / DerivedArtifact | ⏳ diseñar **antes** que RUN-1 |
+| UPLOAD-1 / MAIL-1 | Índice transaccional de adjuntos; staging por propietario con TTL | ⏳ |
+| RUN-1 | Leases, outbox, estados y reconciliación | ⏳ depende de los contratos de ART-1 |
+| LIFE-1 | Lifespan y supervisor único de tareas | ⏳ |
+| CAP-1 / EVAL-1 / MEDIA-1 | Registro de activos, laboratorio, derivados | ⏳ |
+
+Regla que se hereda del informe y que SEC-1 ya siguió: **cada lote desplegable y reversible por
+separado**, un solo dueño del schema por lote, y nada se declara hecho sin un test que planta un
+centinela y demuestra dónde no aparece.
+
 ## Descartado a propósito (y por qué)
 
 - Marketplace público de plugins **antes** de tener firma, permisos y revocación.

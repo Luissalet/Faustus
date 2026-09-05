@@ -617,7 +617,12 @@ def _spawn(runner: Any, key: str, task: str, *, argv: List[str], shown: str,
     exe = None
     try:
         import shutil
-        exe = shutil.which(argv[0], path=full_env.get("PATH"))
+        # Look on the child's PATH first, then on ours. SEC-1 (B-008) strips
+        # our virtualenv out of the child's PATH — which is the point — but a
+        # CLI the user pip-installed INTO that virtualenv would then read as
+        # "not installed". Faustus can still find it and hand the child the
+        # absolute path; what the child does not get is our PATH.
+        exe = shutil.which(argv[0], path=full_env.get("PATH")) or shutil.which(argv[0])
     except Exception:  # noqa: BLE001
         exe = None
     if not exe:

@@ -2184,5 +2184,129 @@ con `"type": "commonjs"`, y una guarda que falla si la raíz es ESM y ese ficher
 Fusionado a `master` en `82e7954` (fast-forward) y rama cerrada. La interfaz anterior no existe: no
 hay flag, no hay «volver a la anterior», no queda una línea de su DOM ni de su CSS.
 
+## 42. SEC-1: lo que la aplicación entrega sin querer (05-09-2026, tarde/noche)
+
+La auditoría de backend del 05-09
+(`inspiration/AUDITORIA_BACKEND_Y_FEATURES_FAUSTUS.md`) abre con cinco fallos P0/P1 que no
+son bugs de funcionalidad: son cosas que Faustus **entrega** —a un log, a un fichero, a un
+proceso hijo, a un backup— sin que nadie se lo pida. El lote SEC-1 los cierra. Cinco commits
+en `feat/sec-1`, cada uno desplegable y reversible por separado.
+
+### 42.1 El secreto en el log (B-009)
+
+`POST /api/mcp/servers` registraba `oauth_file` con `!r`. Ese campo lleva el `client_secret`
+de Google entero, así que cada alta de servidor lo escribía en claro en
+`data/logs/app.log` —un fichero rotatorio que nadie vuelve a leer y que va en cualquier
+paquete de diagnóstico—.
+
+Quitar esa línea no arregla el problema, sólo esa línea. La disciplina ruta a ruta no
+sostiene la regla: basta una f-string en cualquier sitio. Así que la redacción vive ahora en
+los **handlers** de logging (`core/log_safety.py`): un filtro que reescribe el mensaje del
+record y un formatter que además tapa el traceback —donde el mensaje de la excepción suele
+traer justo el valor que se intentaba ocultar—. Se instala al importar `app.py` y otra vez
+en el arranque, porque uvicorn instala los suyos después.
+
+La lista de claves es deliberadamente estrecha: un `token` genérico se comería
+`token_count=812` y dejaría los logs inservibles.
+
+### 42.2 Los permisos, en Windows también (B-009, B-010, B-020)
+
+`safe_chmod` no hace nada en Windows, y la premisa que lo justificaba —"el perfil de usuario
+ya es privado"— se rompe en cuanto los datos viven en `D:\` o en un NAS. `atomic_write_json`
+acepta ahora `private=True`: crea el temporal con `0600` **desde el primer byte** (no un
+chmod posterior, que deja una ventana donde manda el umask) y en Windows le pone una ACL
+explícita de sólo propietario con `icacls` y el SID propio, sin pywin32. Los permisos viajan
+con el rename; comprobado en Windows: el fichero final queda con una sola ACE y sin herencia.
+
+`src/secret_files.py` aplica la misma pasada al arrancar sobre lo que ya estaba en disco.
+En la instancia del 7001, con datos reales: **4 restringidos, 0 fallos, 81 ms**.
+
+### 42.3 Lo que auth guardaba era una credencial (B-020)
+
+`sessions.json` usaba el **bearer token como clave del diccionario**: copiar el fichero era
+heredar las sesiones vivas sin romper ningún hash. `auth.json` guardaba la semilla TOTP y los
+ocho códigos de recuperación en claro, y los comparaba igual de en claro.
+
+Ahora: sesiones por digest SHA-256 (sin sal ni KDF a propósito — son tokens aleatorios de 256
+bits, no contraseñas), fichero versionado, semilla TOTP cifrada con la clave de la app, y
+códigos de recuperación hasheados, comparados con `compare_digest` y consumidos releyendo
+dentro del lock, para que dos logins con el mismo código no pasen los dos.
+
+Las sesiones del formato anterior **se invalidan**: convertirlas dejaría válidos justo los
+tokens que ya estaban expuestos. Visto en vivo al arrancar el 7001: *"sessions.json was in
+the pre-SEC-1 plaintext format: 3 session(s) invalidated, users must log in again"*.
+
+### 42.4 Los hijos heredaban todo (B-008)
+
+`native_host_environment()` respondía a "¿qué añadió nuestro virtualenv?", no a "¿qué
+necesita este hijo?". Una CLI de terceros recibía todas las claves de proveedor,
+credenciales de nube y tokens de repositorio del operador, más el token interno de Faustus
+—que es una llave a las rutas privilegiadas de esta aplicación—.
+
+`src/native_env.py` gana perfiles de **allowlist**: `system` (lo estructural: dónde están los
+binarios, dónde escribir temporales, qué locale, qué CA), `build` (cachés de toolchain),
+`git` (sus mandos; `SSH_AUTH_SOCK` vive aquí y sólo aquí), `agent` y `mcp` (nada nuestro: lo
+que necesitan llega nombrado uno a uno). El token interno no sale por ninguna vía: ni por
+perfil, ni por `inherit_all`, ni aunque el llamante lo pida por nombre.
+
+Cableados en este lote los dos consumidores que la auditoría señala: los runners externos
+(con `env_allow` declarado por fila, `agent_env_allow` para la concesión del operador y
+`agent_env_inherit_all` como puerta trasera visible y registrada) y los servidores MCP (la
+herencia de los antiguos se mantiene íntegra, menos el token interno).
+
+### 42.5 El prompt en la línea de comandos (B-022)
+
+`{task}` como argumento significa que toda la máquina puede leerlo. La fila de Claude Code
+pasa la tarea por **stdin**, verificado contra el binario y no deducido del `--help`: lanzado
+sin prompt en argv y sin stdin, claude 2.1.104 sale con código 1 y responde *"Input must be
+provided either through stdin or as a prompt argument when using --print"*. Esa frase queda
+escrita en la fila, junto con la versión, en el campo `task_transport_verified` — y un test
+recorre la tabla para que ninguna fila pueda afirmar stdin sin apuntar dónde se comprobó.
+
+`argv_shown` sustituye la tarea por `<task:sha256=… chars=N>`, y una tarea que parece llevar
+una credencial se **rechaza** en un runner que sólo sabe usar argv, con override humano
+explícito (`allow_argv_task`).
+
+### 42.6 El backup era el paquete completo (B-010)
+
+Un tar.gz sin cifrar con `.app_key` **y** lo que esa clave protege, `auth.json`,
+`sessions.json`, el vault y las credenciales OAuth de MCP. Justo el fichero que se copia a un
+NAS.
+
+Dos perfiles, y el seguro es el que sale por defecto: `content` (sin credenciales, en claro,
+porque ya no hay nada que proteger) y `full` (todo, **cifrado siempre**, con contraseña que
+nunca se escribe en el archivo ni en `data/`; sin ella el backup se rechaza). El formato
+(`src/backup_crypto.py`) va en bloques de 1 MiB con AES-256-GCM y clave PBKDF2-SHA256 de 600k
+iteraciones; cada bloque lleva nonce propio y se autentica con su contador y con si es el
+último, que es lo que convierte un fichero truncado en un error en vez de en una restauración
+más corta y aparentemente válida.
+
+Además: escritura atómica con `.part` + `fsync` + rename y sufijo aleatorio en el nombre,
+lease `O_EXCL` entre el backup manual y el automático (antes podían podar el fichero que el
+otro estaba verificando), manifiesto al lado autenticado con HMAC de la clave de la app, y
+**invalidación de sesiones al restaurar** — devolver un snapshot resucitaría sesiones
+revocadas desde entonces.
+
+Probado de punta a punta contra la instancia del 7001 con datos reales: contenido 290
+ficheros / 83 MB en 6,9 s con las cuatro credenciales fuera; completo 294 ficheros cifrados
+en 7,9 s, verificado con contraseña (294 miembros, manifiesto autenticado) y rechazado con la
+equivocada. El CLI, igual: `error: this snapshot is encrypted; put its passphrase in
+$FAUSTUS_BACKUP_PASSPHRASE` sin ella, `"first": "data/.app_key"` con ella.
+
+### 42.7 Lo que este lote enseñó
+
+- **El centinela es el test.** Cada uno de los cinco frentes se prueba plantando un valor que
+  sólo puede venir de la credencial y buscándolo donde podría aparecer: records, línea
+  formateada, traceback, entorno del hijo, argv, bytes del archivo. "El código parece
+  cuidadoso" no es una prueba.
+- **Un fallo aparece cuando se mira de verdad.** `setup_mcp_routes` añade las rutas a un
+  router de módulo: llamarlo dos veces deja dos copias, y quedarse con la primera ejecuta
+  contra el manager de otro test — el `connect_server` real intenta lanzar `npx` y el test se
+  cuelga para siempre. Es el B-006 de la auditoría, confirmado en vivo mientras se escribían
+  los tests de SEC-1a.
+- **Y un campo nuevo se pierde solo.** `_merged()` reconstruía cada `Runner` campo a campo,
+  así que perdía en silencio cualquier campo añadido después. Lo que perdía era `env_allow`,
+  justo en los runners que Ollama conoce. Ahora usa `replace`.
+
 ## Cómo mantener este documento
 Cada bloque de trabajo añade una sección (fecha, qué, por qué, ficheros, cómo se verificó, cifras) y actualiza las cifras de cabecera (`git log --oneline c9dd68d8..HEAD | wc -l`, `git diff --stat c9dd68d8..HEAD`). Los commits del fork llevan mensajes largos que explican el porqué: `git log c9dd68d8..HEAD` es la fuente detallada.
