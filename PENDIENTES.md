@@ -472,3 +472,116 @@ en el punto de uso. Lo que **no** cierra:
 - `[~]` **Los 13 tests del diagnóstico original no se han reproducido.** Necesitaban
   `data/skills/ai-integration-setup`, que ya no está en `data/skills`. Si el skill reaparece,
   vale la pena volver a correrlos antes de dar el asunto por muerto.
+
+## Frente 1 cerrado: lo que los últimos ocho lotes dejan abierto
+
+Los 25 bugs de `inspiration/AUDITORIA_BACKEND_Y_FEATURES_FAUSTUS.md` están cerrados
+(`FAUSTUS.md` §42-§51). Esto es lo que **no** cubren, dicho con nombre y motivo.
+
+### STATE-1 (B-012)
+
+- `[+]` **`save_settings` sigue siendo una escritura ciega.** Unas dos docenas de sitios hacen
+  leer-modificar-guardar con él. Ahora toman el lock y suben la revisión, así que no se
+  entrelazan, pero no pasan `expected_revision`: gana el último. Migrarlos a `update_settings`
+  es trabajo mecánico y hay que hacerlo ruta a ruta.
+- `[+]` **La misma política de UTC falta en `chat_export.py`.** B-005 se arregló en
+  `report_export.py`, que es donde lo señala el informe; `chat_export.py:692` sigue usando
+  `datetime.now()` sin zona y su nombre de fichero sale de ahí.
+- `[~]` **Dos mecanismos de lock en el mismo árbol.** STATE-1 usa `core/file_lock.py` (O_EXCL
+  con rotura por antigüedad) y UPLOAD-1 usa locks consultivos del sistema operativo, que se
+  sueltan solos al morir el proceso. Los segundos son mejores; habría que quedarse con ellos.
+
+### NET-1 (B-019)
+
+- `[!]` **Uno de los dos casos visibles del informe sigue abierto.**
+  `routes/webhook/webhook_routes.py` valida la `base_url` en la ruta, pero la petición la emite
+  `llm_call_async` en `src/llm_core.py`, que B-019 no lista. La ventana de rebinding sigue ahí
+  y necesita un lote que sea dueño de `llm_core`.
+- `[+]` **`src/url_security.py` es un tercer clasificador de direcciones privadas.** Parte de
+  la fragmentación que B-019 describe; fuera de las rutas que nombra.
+
+### SSH-1 (B-025)
+
+- `[!]` **Rompe conexiones existentes y no hay interfaz para arreglarlo.** Con el `known_hosts`
+  privado vacío, todo host remoto deja de conectar hasta emparejarlo. Los endpoints están
+  (`/api/cookbook/ssh/fingerprint`, `/pair`, `/unpair`); Studio no.
+- `[+]` **Quedan sitios con el flag antiguo:** `routes/hwfit_routes.py` y
+  `services/hwfit/hardware.py` pasan `strict_host_key_checking=False`, y
+  `core/platform_compat._ssh_exec_argv` y `routes/cookbook_helpers.run_ssh_command_async`
+  siguen aceptando ese valor. No están entre las rutas de B-025.
+- `[?]` **Nada se probó contra un SSH real.** `ssh-keyscan` está doblado en todos los tests, así
+  que la forma real de su salida y el comportamiento de `UserKnownHostsFile` con una ruta de
+  Windows están sin verificar contra un `ssh.exe` de verdad.
+
+### MAIL-1 (B-023) y UPLOAD-1 (B-021)
+
+- `[!]` **Agujero residual en `document_routes.py`.** `prepare-signed-reply` sigue dejando
+  ficheros `<uuid>_<nombre>` planos en la raíz del staging, y hay un puente que los resuelve con
+  la semántica antigua. Un token filtrado de ahí sigue siendo adjuntable por cualquier usuario
+  autenticado. El arreglo es una llamada a `register_compose_upload`; el fichero no está entre
+  los que B-023 nombra, y hay un test que fija el puente para que quitarlo sea deliberado.
+- `[+]` **El poller programado no pasa dueño.** `email_pollers.py` tiene `row_owner` a mano y
+  llama sin él. Una línea.
+- `[+]` **La limpieza de adjuntos es oportunista**, colgada de la ruta de staging, no de un
+  scheduler.
+- `[+]` **B-021 sólo tomó el camino corto.** La migración a SQLite, escribir metadatos antes de
+  publicar y el barrido de reconciliación siguen pendientes: son ART-1.
+
+### LIFE-1 (B-013, B-001)
+
+- `[+]` **Sin Job Objects en Windows.** Se persiste el pgid en POSIX; en Windows la propiedad se
+  demuestra por hora de creación. Un Job Object habría que crearlo al lanzar, en
+  `core/platform_compat`, fuera de las rutas de B-001.
+- `[+]` **`core/platform_compat.kill_process_tree` se queda como estaba**, así que
+  `routes/cookbook_routes.py` sigue llamando a `taskkill /T` sobre un pid pelado. Mismo fallo,
+  fichero no listado.
+- `[?]` **La rama POSIX está simulada.** Todos sus tests corren en Windows con `IS_WINDOWS`
+  monkeypatcheado y `os.getpgid`/`os.killpg` inyectados. Nada se ha ejecutado en POSIX real.
+- `[!]` **psutil pasa a ser necesario** para desmontar árboles, y no hay pin en `requirements`.
+  Sin él, `bg_jobs` se niega a señalar —que es la regla del informe— donde antes mataba sin
+  preguntar.
+
+### RUN-1 (B-014, B-015, B-016)
+
+- `[+]` **La clave de idempotencia no llega a los adaptadores.** Se acuña, se persiste y se
+  expone, pero no se enhebra hasta webhooks, correo ni `builtin_actions`; B-014 no los nombra.
+  `IDEMPOTENT_SINKS` está vacío a propósito: sin un destino que lo soporte, `effectively_once`
+  no se promete.
+- `[+]` **Nada llama a `heartbeat_node` ni a `recover_expired_node_leases` en bucle**, ni hay
+  enganche de `reconcile()` de media en el arranque —eso es `app.py`—.
+- `[?]` **Las tres migraciones no se han ejecutado contra una base de datos preexistente real.**
+  Los tests obtienen las columnas de `create_all`.
+- `[?]` **La forma posicional de las entradas de ComfyUI** (`client_id` dentro de `extra_data`,
+  índice 3) viene del conocimiento del formato, no de la instancia de esta máquina. Si es
+  errónea, la reconciliación no encuentra nada y los runs se quedan en `submit_unknown`: falla
+  del lado seguro, pero conviene comprobarlo.
+
+### ART-1 (B-017)
+
+- `[!]` **La migración entera está pendiente, y ese es el plan.** Fases 2 a 5 de la nota:
+  copiar `artifacts` a ocurrencias, hashear las filas de galería, y los dos cortes. Nada llama
+  todavía al almacén nuevo desde `collect()`/`persist()`; `artifacts` sigue siendo la verdad.
+- `[+]` **La recolección de basura no borra bytes por defecto**, y aunque se le pida se niega a
+  tocar lo que la tabla vieja todavía nombre. Dos censos cubren los mismos ficheros hasta la
+  fase 5 y sólo uno sabe del otro.
+- `[?]` **Las dos carreras con hilos usan SQLite sobre fichero.** Pasaron siempre aquí, pero es
+  el sitio donde esperaría inestabilidad en una máquina cargada.
+
+### CB-1 (B-024)
+
+- `[+]` **Sin Secret Broker.** El informe lista cuatro alternativas equivalentes; se implementó
+  la del fichero de un solo uso. Un broker no existe en el repositorio.
+- `[?]` **Tres tests se saltan en Windows** porque comprueban modos POSIX ejecutando el snippet
+  generado. El comportamiento se verificó a mano en un shell Linux.
+- `[?]` **Nada se ha ejecutado contra un scp o un PowerShell remotos reales:** la rama de
+  Windows remoto está verificada sólo como texto generado.
+
+### De la propia auditoría, más allá de los bugs
+
+- `[ ]` Los cambios estructurales C-001 a C-008 (RunService único, sandbox por defecto,
+  supervisor durable de trabajos, app factory, dividir los módulos gigantes, migraciones
+  formales, dependencias reproducibles, errores tipados) están **sin empezar**. LIFE-1 hizo la
+  parte de C-004 que tocaba al ciclo de vida; el resto no.
+- `[ ]` **B-008 sigue parcial.** SEC-1c cableó los perfiles de entorno en runners externos y
+  servidores MCP; los otros siete consumidores de `native_host_environment()` siguen recibiendo
+  el entorno completo menos el token interno.

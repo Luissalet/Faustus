@@ -2546,5 +2546,235 @@ declara 593 rutas, 593 únicas — que es además la comprobación de que las fa
 registran nada dos veces.
 
 
+## 46. STATE-1: los ajustes, en serio (05/06-09-2026)
+
+`load_settings()` devolvía el diccionario del caché. No una copia: el objeto. Cualquier
+consumidor que lo modificara cambiaba lo que veían todos los demás lectores, sin nada escrito
+en disco que lo explicara. Es el tipo de fallo que no produce un error nunca y produce
+comportamientos imposibles de reproducir siempre.
+
+Ahora devuelve una copia que el llamante posee, y la copia alcanza a los contenedores
+anidados —entregar la lista interna del caché por referencia tiene exactamente el mismo
+problema que entregar el diccionario—. `get_setting` sigue pasando por `load_settings` a
+propósito: es el punto de lectura que media docena de tests monkeypatchean, y un lector que
+lo esquivara respondería desde los ajustes reales mientras todo lo demás responde desde el
+doble. Para que eso no cueste, la copia clona sólo contenedores: 21 µs frente a los 56 de un
+`deepcopy` completo, sobre un documento de 163 claves que se lee en cada chat.
+
+El segundo fallo era peor. Leer-modificar-guardar no tenía ni revisión ni lock. La escritura
+atómica evita un JSON truncado; no evita nada de esto:
+
+```text
+A lee {..., default_model: X}      B lee {..., default_model: X}
+A escribe {..., default_model: Y}
+                                   B escribe {..., default_endpoint_id: Z}
+                                   → el cambio de A ya no existe
+```
+
+`update_settings(patch, expected_revision)` es la vía transaccional: el ciclo completo bajo un
+lock entre procesos (`core/file_lock.py`, nuevo, sobre `O_EXCL`, con rotura por antigüedad
+para que un proceso muerto no deje los ajustes bloqueados hasta que un humano borre un
+fichero), y la revisión comprobada **contra disco, dentro del lock**. Un escritor con una copia
+vieja recibe `SettingsConflict`; antes ganaba sin enterarse.
+
+La demostración, en la misma ejecución, con dos procesos de verdad:
+
+```text
+read-modify-write, no lock (the bug):        kept ['default_endpoint_id']  -> AN UPDATE WAS LOST
+update_settings with a revision (the fix):   kept ['default_model', 'default_endpoint_id']  -> BOTH SURVIVED
+```
+
+Y tres escritores que ni siquiera pasaban por el módulo: `email_helpers` y `contacts_routes`
+escribían `settings.json` con su propio `atomic_write_json`, e `integrations.py` con un
+`open(...,"w")` pelado que además dejaba el fichero vacío si el proceso moría a mitad. Los
+tres van ahora por `save_settings`, que se reimplementó sobre la misma maquinaria: sigue
+siendo una escritura ciega —gana el último— pero ya no puede entrelazarse con nadie.
+
+## 47. La tanda en paralelo: NET-1, SSH-1, MAIL-1 y UPLOAD-1 (06-09-2026, madrugada)
+
+Cuatro lotes a la vez, cada uno en sus propios ficheros, con la documentación y los commits
+centralizados para que no se pisaran. Vale la pena decirlo porque cambia lo que es razonable
+intentar en una sesión: cuatro frentes que en serie son una noche entera salieron en veinte
+minutos de reloj.
+
+### 47.1 La URL que se comprueba y la URL que se abre (B-019)
+
+`check_outbound_url` resolvía el nombre y decidía. Después `httpx.get` volvía a resolverlo por
+su cuenta. Entre las dos hay una ventana en la que el DNS puede cambiar de respuesta, y la
+petición acaba exactamente en la dirección que el guard acababa de rechazar. Además la
+decisión estaba repartida en **tres** clasificadores de direcciones privadas que no coincidían
+entre sí, y los límites de tamaño se aplicaban después de descargar.
+
+`src/outbound_fetch.py` declara ahora cuatro perfiles de confianza con sus límites tratados
+como techos —un llamante puede bajarlos, nunca subirlos—, `classify_destination()` resuelve
+una vez y devuelve las direcciones fijadas más la zona, y `fetch()` sigue las redirecciones a
+mano reclasificando cada salto y rechazando el cambio de zona en los dos sentidos. El juicio
+sobre privadas y link-local delega en `url_safety._classify` en vez de reescribirlo: un
+clasificador, no tres.
+
+El transporte pasó a ser streaming, que es lo que permite que los límites vayan **delante** de
+los bytes: un `Content-Length` por encima del tope se rechaza sin leer el cuerpo, un cuerpo que
+crece más de lo declarado se corta a mitad, el gzip se infla acotado por bytes y por ratio, y
+`br`/`zstd` se rechazan por no ser acotables.
+
+Detalle que merece quedar escrito: la confianza de una descarga de imagen sale del **endpoint
+que el operador configuró**, no de la URL que devolvió el proveedor. Un resultado en el mismo
+host hereda el permiso del operador; cualquier otro es público y punto. Así se sigue pudiendo
+usar un servidor de difusión en la LAN sin que sea una URL ajena la que conceda ese alcance.
+
+### 47.2 La identidad del host (B-025)
+
+Casi todo el SSH se construía con `StrictHostKeyChecking=no`. Eso prioriza que la primera
+conexión funcione y significa que Faustus nunca convierte la clave del host en una relación de
+confianza: acepta cualquier identidad al otro lado, también cuando por ese mismo canal viajan
+scripts, modelos privados y el `HF_TOKEN`.
+
+`src/ssh_trust.py` es ahora el único sitio donde se deletrean esos flags, dueño de un
+`known_hosts` privado. Pairing explícito: se pide el fingerprint, se enseña, y `pair_host`
+escribe **sólo** la clave que un humano confirmó. Ante una clave cambiada no se repara borrando
+la anterior —que es lo que hace todo el mundo y es exactamente el ataque—: lanza
+`HostKeyChanged`, el fichero queda byte a byte igual, y el único camino de vuelta es un
+`unpair` explícito.
+
+**Esto rompe comportamiento a propósito**: con el almacén vacío, todo host remoto deja de
+conectar hasta emparejarlo. Es lo que pide el informe y es la postura correcta, pero conviene
+saberlo antes de preguntarse por qué el nodo de GPU dejó de responder. Studio todavía no tiene
+interfaz para emparejar; están los tres endpoints.
+
+### 47.3 Adjuntos con dueño (B-023) e índice de subidas entre procesos (B-021)
+
+Los ficheros subidos mientras se redacta un correo se guardaban con un token que llevaba el
+nombre original dentro, sin dueño y sin caducidad: quien tuviera el token podía adjuntarlo a su
+propio correo o borrarlo. Ahora hay un índice con dueño, sha256, caducidad y *lease*, los bytes
+viven bajo un directorio derivado del hash del dueño, y el `DELETE` devuelve 404 igual para un
+id ajeno que para uno inexistente —si distinguiera, sería un oráculo de existencia—.
+
+`uploads.json` se leía y se reescribía bajo un `threading.Lock`, que serializa los hilos de un
+proceso y no dice nada de un segundo. Con dos workers, dos ciclos se solapan y el segundo
+escribe encima de la fila que el primero acababa de insertar. El lock pasa a ser también un
+lock consultivo del sistema operativo sobre un fichero, y al entrar se descarta el caché para
+que la lectura salga de disco. La prueba son dos procesos de verdad haciendo 40 ciclos cada
+uno: las 80 filas están al final. Sin el arreglo, el worker muere con *"reserve_upload refused
+a row it just wrote"*.
+
+## 48. LIFE-1: quién es el dueño de lo que corre (06-09-2026, madrugada)
+
+### 48.1 El apagado no apagaba (B-013)
+
+El arranque guardaba en `app.state._startup_tasks` las referencias de backups, conexión MCP,
+warmups, keepalive, barridos, auditorías y Cookbook. El cierre paraba unos cuantos servicios
+concretos y **no cancelaba ni esperaba esa lista**. Consecuencia real, no teórica: el cierre
+desconectaba MCP y una tarea de conexión todavía viva lo volvía a conectar.
+
+`src/task_supervisor.py` es el dueño, y `_shutdown_event` sigue ahora la secuencia del informe:
+dejar de admitir trabajo → parar schedulers → drenar → cancelar y esperar → y sólo entonces
+cerrar clientes y persistencia. Un `spawn` posterior a `stop_accepting` cierra la corutina en
+vez de dejar un *"never awaited"*.
+
+Hallazgo de propina: un `asyncio.Event` a nivel de módulo se ata al primer loop que lo espera,
+así que el monitor moría con *"bound to a different event loop"* en el segundo lifespan —es
+decir, en cada recarga de uvicorn—. El evento se crea ahora por ejecución.
+
+### 48.2 Matar por número (B-001)
+
+`bg_jobs.refresh()` comparaba la hora del registro y, si había expirado, mataba `rec["pid"]`
+sin comprobar que ese pid siguiera siendo el proceso que Faustus lanzó. Un pid reciclado *está*
+vivo, así que un `_pid_alive` no habría ayudado. Y en Windows `taskkill /T` lo agrava: recorre
+el árbol por identificadores de padre que el sistema nunca limpia, así que un huérfano cuyo
+padre real murió hace tiempo y cuyo pid de padre registrado se recicló en nuestro `bash.exe`
+está, para taskkill, dentro de nuestro árbol.
+
+`terminate_tree` rechaza por hora de creación distinta, rechaza cuando no se registró nada, y
+si acepta recorre el árbol **una generación cada vez**, descartando a cualquier "hijo" cuya
+hora de creación es anterior a la de su padre y sin expandirlo. Deliberadamente no
+`children(recursive=True)`: eso arrastraría el subárbol real de un huérfano mal atribuido.
+`launch()` persiste `pid_created_at` y `pgid` en el mismo JSON, para que un intérprete nuevo
+después de un reinicio siga pudiendo demostrar propiedad.
+
+Y una distinción que faltaba en la superficie: `kill()` sólo dice `killed` si de verdad señaló
+algo. "Lo paré" y "me rendí" son hechos distintos para un follow-up.
+
+## 49. RUN-1: leases, outbox y reconciliación (06-09-2026, madrugada)
+
+Los tres bugs son la misma familia: un trabajo cuyo estado vive sólo en la memoria del proceso
+que lo lanzó, así que un segundo proceso lo duplica o un reinicio lo deja colgado.
+
+- **B-014.** La deduplicación del scheduler era un diccionario en memoria. Dos schedulers sobre
+  la misma base disparaban la misma tarea dos veces. Ahora se reclama con un UPDATE condicional
+  —activa Y vencida Y sin lease vivo— y sólo se despacha lo que la base concedió. La prueba son
+  dos schedulers soltados a la vez por un `threading.Barrier`; contra el código anterior:
+  *"both schedulers ran the same due task"*.
+- **B-015.** Un nodo de workflow podía quedarse en `running` para siempre. Ahora escribe un
+  lease, y la recuperación decide por tipo de nodo: sin efectos, se suelta y vuelve a `pending`;
+  con efectos, queda `failed` con `effect_state='unknown'` y la clave retenida, para que ningún
+  reintento pueda reclamarlo, y entra en la cola de reconciliación humana. La diferencia
+  importa: reintentar una entrega que quizá salió es peor que no reintentarla.
+- **B-016.** ComfyUI recibía el mismo `client_id` constante para todos los runs, así que un
+  render aceptado justo antes de una caída era irrecuperable: Faustus lo daba por fallido
+  mientras el motor seguía renderizando. Ahora el id lleva el run dentro, la fila de outbox se
+  escribe **antes** de enviar, y sólo un rechazo que el motor haya dicho de verdad pasa a
+  `failed`; lo demás queda `submit_unknown` y `reconcile()` adopta el trabajo por su id.
+
+## 50. ART-1: la nota antes que la migración (06-09-2026, madrugada)
+
+`collect()` acuña `art_{sha256[:24]}` y `persist()` lo usa como clave de idempotencia, así que
+el segundo productor de los mismos bytes se descarta entero: propietario, run, etiqueta,
+procedencia, aprobación y retención. Dos usuarios que generan la misma imagen dejan una sola
+fila, con un solo dueño. El contador `deduplicated` cuenta ficheros no escritos, no ocurrencias
+perdidas —que es justo el dato que ocultaba el problema—.
+
+Este lote es deliberadamente la mitad aditiva, y la otra mitad es una nota:
+`docs/design/ART-1-artifacts.md`. Tres tablas nuevas, ninguna columna añadida a `artifacts`,
+ninguna fila reescrita, y un `src/artifact_identity.py` que hace lo que el store viejo no hace:
+`INSERT` y capturar `IntegrityError` en vez de comprobar-y-escribir, refcount dentro de la
+transacción, y una recolección de basura que por defecto no borra bytes y que, aunque se le
+pida, se niega a tocar cualquier fichero que la tabla vieja todavía nombre.
+
+Hay un test verde a propósito —`test_the_old_store_still_loses_the_second_occurrence`— que
+registra lo que `persist()` sigue haciendo hasta el corte. Un test que documenta un fallo vivo
+es mejor que un comentario: cuando el corte llegue, ese test se pondrá rojo y habrá que
+borrarlo a mano.
+
+## 51. CB-1: el token dentro del script (06-09-2026, madrugada)
+
+Cookbook escribía el `HF_TOKEN` dentro de los scripts que deja en disco: `export HF_TOKEN='...'`
+en tres sitios y `$env:HF_TOKEN = '...'` en dos. Esos ficheros son persistentes, se quedan en
+staging después del lanzamiento y en un nodo remoto viajan enteros por scp. Un token de
+escritura de HF dentro de un `.sh` con permisos 0755 no es un secreto, es un fichero.
+
+Ahora es una concesión de un solo uso: 0600 desde el primer byte, consumida y destruida por el
+runner (`trap ... EXIT HUP INT TERM`, comprobación de modo que **se niega** si no es 600,
+source, `rm`), entregada al remoto POSIX por stdin de un ssh y nunca por argv ni por scp, y en
+el Windows local sin fichero ninguno: sólo el entorno del hijo. Un `SIGKILL` no ejecuta el
+trap, así que hay un barrido que quema en el siguiente lanzamiento cualquier concesión de más
+de quince minutos.
+
+El test acuña un centinela `uuid4` por ejecución y fotografía el directorio de staging
+*durante* el lanzamiento, que es el único momento en que los ficheros existen. Y mira los logs
+sobre los records **crudos**, antes de la redacción de los handlers, para que no puedan pasar
+por el motivo equivocado.
+
+## 52. Lo que estas doce horas enseñaron
+
+- **La auditoría de backend está cerrada: los 25 bugs.** Trece lotes, veintitrés commits, cada
+  uno desplegable y reversible por separado. Lo que queda abierto está en `PENDIENTES.md`, con
+  nombre y motivo, no como deuda difusa.
+- **Cuatro de los veinticinco eran un `except` demasiado ancho.** B-002 y B-003 son el mismo
+  error dos veces: capturar todo y llamarlo dato malo del usuario. La regla que queda escrita
+  en el código: el error del usuario y el error nuestro no comparten `except`.
+- **Un test verde puede estar describiendo el fallo.** B-004 estaba fijado por dos tests que
+  exigían el fail-open; los cuatro de B-005 fallaban en Madrid y pasaban en CI; siete módulos
+  esquivaban B-006 cada uno a su manera. La suite entera puede estar de acuerdo y equivocada.
+- **"Comprobar y luego hacer" es una carrera, siempre.** B-019 (resolver y luego conectar),
+  B-017 (`exists()` y luego `move()`), B-012 (leer y luego escribir), B-021, B-014, B-015. Seis
+  bugs distintos con la misma forma. Cuando aparezca un séptimo, esta es la lista que hay que
+  releer.
+- **Y paralelizar el trabajo funciona si se reparten los ficheros, no las tareas.** Siete lotes
+  salieron de agentes trabajando a la vez sobre el mismo árbol; lo que lo hizo posible no fue
+  la coordinación, fue que ninguno podía tocar el fichero de otro. Las dos colisiones que hubo
+  —`routes/email_helpers.py` y `core/database.py`, cada uno con parches de dos lotes— hubo que
+  separarlas a mano antes de commitear.
+
+
 ## Cómo mantener este documento
 Cada bloque de trabajo añade una sección (fecha, qué, por qué, ficheros, cómo se verificó, cifras) y actualiza las cifras de cabecera (`git log --oneline c9dd68d8..HEAD | wc -l`, `git diff --stat c9dd68d8..HEAD`). Los commits del fork llevan mensajes largos que explican el porqué: `git log c9dd68d8..HEAD` es la fuente detallada.

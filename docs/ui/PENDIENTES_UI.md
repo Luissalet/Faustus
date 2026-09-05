@@ -831,3 +831,13 @@ su área y baja el baseline. Ningún módulo Studio nuevo la aumenta.
     `degraded_observed`, `degraded_blocked`, `degraded_released`). Studio no
     lo enseña en ninguna parte; un contador que sube ahí es el clasificador
     pidiendo atención.
+156. **`[!]` SSH-1.** El backend exige ahora emparejar un host antes de
+    conectarse a él (`StrictHostKeyChecking=yes` contra un `known_hosts`
+    privado), y Studio no tiene interfaz para hacerlo. Los endpoints existen:
+    `POST /api/cookbook/ssh/fingerprint` enseña lo que ofrece el nodo,
+    `/ssh/pair` guarda el fingerprint que el humano confirme, `/ssh/unpair`
+    revoca. Hasta que haya pantalla, un nodo nuevo o un nodo cuya clave cambió
+    simplemente deja de conectar y el error no dice qué hacer.
+157. **`[ ]` MAIL-1.** Los adjuntos en composición tienen ahora caducidad. Un
+    borrador viejo puede perder sus adjuntos sin que la interfaz lo diga; el
+    índice conoce `expires_at` y no se enseña en ninguna parte.

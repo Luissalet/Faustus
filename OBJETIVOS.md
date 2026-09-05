@@ -237,14 +237,15 @@ reparte los lotes). El orden lo fija el propio informe, y SEC-1 va antes que nad
 | **B-007** | Disponibilidad de herramientas evaluada en el punto de uso | ✅ 05-09-2026 — `FAUSTUS.md` §45, 18 tests nuevos |
 | **SEC-1** | Logs OAuth, herencia de secretos, prompts en argv, credenciales reutilizables y backup inseguro | ✅ 05-09-2026 — `FAUSTUS.md` §42, rama `feat/sec-1`, 5 commits, 90 tests nuevos. Lo que no cubre está en `PENDIENTES.md` |
 | **AUTH-1** | Matriz declarativa de autorización y scopes fail-closed | ✅ 05-09-2026 — `FAUSTUS.md` §43, rama `feat/sec-1`, 2 commits, 42 tests nuevos. B-011 + C-010 (tokens) y B-004 |
-| NET-1 | Broker de salida con perfiles de confianza | ⏳ el siguiente por prioridad del informe |
-| SSH-1 | Pairing, `known_hosts` privado, transporte remoto de grants | ⏳ comparte contrato con NET-1 |
-| STATE-1 | Settings con revisión y escritura transaccional | ⏳ migración pequeña y aislada, se puede colar pronto |
-| ART-1 | Blob / ArtifactOccurrence / DerivedArtifact | ⏳ diseñar **antes** que RUN-1 |
-| UPLOAD-1 / MAIL-1 | Índice transaccional de adjuntos; staging por propietario con TTL | ⏳ |
-| RUN-1 | Leases, outbox, estados y reconciliación | ⏳ depende de los contratos de ART-1 |
-| LIFE-1 | Lifespan y supervisor único de tareas | ⏳ |
-| CAP-1 / EVAL-1 / MEDIA-1 | Registro de activos, laboratorio, derivados | ⏳ |
+| **STATE-1** | Settings con revisión y escritura transaccional | ✅ 06-09-2026 — §46, B-012 |
+| **NET-1** | Broker de salida con perfiles de confianza | ✅ 06-09-2026 — §47.1, B-019 |
+| **SSH-1** | Pairing, `known_hosts` privado, argv centralizado | ✅ 06-09-2026 — §47.2, B-025. **Rompe conexiones existentes hasta emparejar** |
+| **MAIL-1 / UPLOAD-1** | Adjuntos con dueño y TTL; índice de subidas entre procesos | ✅ 06-09-2026 — §47.3, B-023 y B-021 |
+| **LIFE-1** | Supervisor de tareas y propiedad de procesos | ✅ 06-09-2026 — §48, B-013 y B-001 |
+| **RUN-1** | Leases, outbox, estados y reconciliación | ✅ 06-09-2026 — §49, B-014, B-015 y B-016 |
+| **ART-1** | Blob / ArtifactOccurrence / DerivedArtifact | ✅ 06-09-2026 — §50, B-017. Nota de diseño + mitad aditiva; la migración es posterior |
+| **CB-1** | El HF_TOKEN fuera de los scripts | ✅ 06-09-2026 — §51, B-024 |
+| CAP-1 / EVAL-1 / MEDIA-1 | Registro de activos, laboratorio, derivados | ⏳ features, no bugs de la auditoría |
 
 Regla que se hereda del informe y que SEC-1 ya siguió: **cada lote desplegable y reversible por
 separado**, un solo dueño del schema por lote, y nada se declara hecho sin un test que planta un
