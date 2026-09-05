@@ -42,6 +42,7 @@ import {
   type EmailSummary,
   type ListFilter,
   type Outgoing,
+  takeComposeHandoffRaw,
 } from '../adapters/email';
 import './projects.css';
 import './email.css';
@@ -81,6 +82,12 @@ function bytes(n: number): string {
 }
 
 /* ── Compose ── */
+
+function takeComposeHandoff(): ComposeState | null {
+  const d = takeComposeHandoffRaw();
+  if (!d) return null;
+  return { to: d.to ?? '', cc: d.cc ?? '', bcc: d.bcc ?? '', subject: d.subject ?? '', body: d.body ?? '', inReplyTo: d.inReplyTo, references: d.references };
+}
 
 interface ComposeState {
   to: string;
@@ -314,7 +321,7 @@ export function EmailScreen() {
   const [results, setResults] = useState<EmailSummary[] | null>(null);
   const [current, setCurrent] = useState<EmailFull | null>(null);
   const [loadingMail, setLoadingMail] = useState<string | null>(null);
-  const [compose, setCompose] = useState<ComposeState | null>(null);
+  const [compose, setCompose] = useState<ComposeState | null>(() => takeComposeHandoff());
   const [notice, setNotice] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
   const [refreshing, setRefreshing] = useState(false);

@@ -26,6 +26,7 @@ const ActivityScreen = lazy(() => import('../screens/Activity').then((m) => ({ d
 const AutomationsScreen = lazy(() => import('../screens/Automations').then((m) => ({ default: m.AutomationsScreen })));
 const LibraryScreen = lazy(() => import('../screens/Library').then((m) => ({ default: m.LibraryScreen })));
 const EditorScreen = lazy(() => import('../screens/library/editor/Editor').then((m) => ({ default: m.EditorScreen })));
+const DocumentScreen = lazy(() => import('../screens/documents/Editor').then((m) => ({ default: m.DocumentScreen })));
 const ProjectScreen = lazy(() => import('../screens/Project').then((m) => ({ default: m.ProjectScreen })));
 const ProjectsScreen = lazy(() => import('../screens/Projects').then((m) => ({ default: m.ProjectsScreen })));
 const NotesScreen = lazy(() => import('../screens/Notes').then((m) => ({ default: m.NotesScreen })));
@@ -186,7 +187,7 @@ function Rail() {
  */
 function RouteStage() {
   const { pathname, search } = useLocation();
-  const editing = pathname.startsWith('/library/edit') && /[?&](img|draft|new)=/.test(search);
+  const editing = (pathname.startsWith('/library/edit') && /[?&](img|draft|new)=/.test(search)) || /^\/documents\/[^/]+/.test(pathname);
   const screen = pathname.startsWith('/studio') ? 'studio' : editing ? 'editor' : undefined;
   return (
     <main className="fs-main" id="fs-main" tabIndex={-1} data-screen={screen}>
@@ -215,6 +216,7 @@ function RouteBody() {
         <Route path="/projects/:projectId" element={<ProjectScreen />} />
         <Route path="/library" element={<LibraryScreen />} />
         <Route path="/library/edit" element={<EditorScreen />} />
+        <Route path="/documents/:id" element={<DocumentScreen />} />
         <Route path="/activity" element={<ActivityScreen />} />
         <Route path="/automations" element={<AutomationsScreen />} />
         <Route path="/notes" element={<NotesScreen />} />

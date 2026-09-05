@@ -139,7 +139,11 @@ proporcionales, auditoría de la guía Vercel pasada o excepción documentada,
       (crear, ajustes, mandos del agente, chats, objetivos, memoria, actividad: lote Y);
       Galería (álbumes, etiquetas, favoritas, subir, visor, a chat: lote Z);
       editor de imagen completo en React (`/library/edit`, lote Z2: capas, máscaras,
-      ajustes, selección, inpaint, quitar fondo, filtros, borradores, «Pide»).
+      ajustes, selección, inpaint, quitar fondo, filtros, borradores, «Pide»);
+      Biblioteca completa (documentos con importar/ordenar/exportar, chats, investigación,
+      archivo) y editor de documentos a pantalla completa (`/documents/{id}`: barra
+      Markdown, buscar, vistas, ejecutar, versiones con revisión, exportar, PDF con campos,
+      anotaciones y firmas: lote AA).
       Faltan: Cookbook, Deep Research, Compare,
       Tournament, Procedencia, Historial importado. Vitales (uso de GPU) en
       Studio: lote Q.

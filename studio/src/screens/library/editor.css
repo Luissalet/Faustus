@@ -2,24 +2,6 @@
    the middle, the active tool and the layers on the right. Everything is
    flat and quiet so the picture is the only thing with colour. */
 
-/* Both selectors: below 1280px the shell carries data-nav='rail', whose
-   padded main rule (0,2,1) would outrank a plain (0,1,1) one. */
-.fs-main[data-screen='editor'],
-.fs-shell[data-nav='rail'] .fs-main[data-screen='editor'] {
-  padding: 0;
-  overflow: hidden;
-  display: grid;
-}
-
-.fs-main[data-screen='editor'] .fs-main__inner,
-.fs-main[data-screen='editor'] .fs-route {
-  max-inline-size: none;
-  inline-size: 100%;
-  margin: 0;
-  min-block-size: 0;
-  block-size: 100%;
-}
-
 .fs-ed {
   --fs-ed-selection: var(--fs-info);
   --fs-ed-mask: var(--fs-danger);
@@ -962,11 +944,6 @@
     padding-inline-end: var(--fs-space-2);
     border-block-end: 0;
     border-inline-end: 1px solid var(--fs-border);
-  }
-
-  .fs-main[data-screen='editor'],
-  .fs-shell[data-nav='rail'] .fs-main[data-screen='editor'] {
-    padding: 0;
   }
 
   .fs-ed__inspector {

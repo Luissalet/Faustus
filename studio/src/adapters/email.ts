@@ -239,3 +239,35 @@ export function quoteFor(mail: EmailFull): string {
   const lines = (mail.body || '').split('\n').map((l) => `> ${l}`);
   return `\n\n${when ? t('On {when}, ', { when }) : ''}${t('{who} wrote:', { who })}\n${lines.join('\n')}`;
 }
+
+/** Other screens (the document editor) leave a draft under this key and open `/email?compose=handoff`. */
+export const COMPOSE_HANDOFF_KEY = 'fs-compose-handoff';
+
+export interface ComposeHandoff {
+  to?: string;
+  cc?: string;
+  bcc?: string;
+  subject?: string;
+  body?: string;
+  inReplyTo?: string;
+  references?: string;
+  /** A file already staged on the server (a signed PDF), by upload token. */
+  attachmentToken?: string;
+  attachmentName?: string;
+}
+
+export function leaveComposeHandoff(draft: ComposeHandoff): void {
+  sessionStorage.setItem(COMPOSE_HANDOFF_KEY, JSON.stringify(draft));
+}
+
+export function takeComposeHandoffRaw(): ComposeHandoff | null {
+  try {
+    if (!/[?&]compose=handoff/.test(window.location.search)) return null;
+    const raw = sessionStorage.getItem(COMPOSE_HANDOFF_KEY);
+    if (!raw) return null;
+    sessionStorage.removeItem(COMPOSE_HANDOFF_KEY);
+    return JSON.parse(raw) as ComposeHandoff;
+  } catch {
+    return null;
+  }
+}

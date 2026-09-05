@@ -1,5 +1,6 @@
 import { Archive, Check, Copy, FileText, Globe, History, Monitor, Save, SkipForward, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router';
 import { Button, IconButton, Skeleton } from '../../components';
 import { archiveDoc, docPdfUrl, getDoc, listDocVersions, renameDoc, restoreDocVersion, saveDoc, type DocVersion } from '../../adapters/documents';
 import { readWorkspaceFile, type WorkspaceFileText } from '../../adapters/workspace';
@@ -220,6 +221,9 @@ function DocTab({ doc, dispatch, onNotice }: { doc: DocState | null; dispatch: S
               <a className="fs-btn" data-size="sm" href={docPdfUrl(doc.id)} target="_blank" rel="noreferrer">
                 <span>PDF</span>
               </a>
+              <Link className="fs-btn" data-size="sm" to={`/documents/${encodeURIComponent(doc.id)}`} title={t('Toolbar, find, versions with review, export, PDF pages and signatures')}>
+                <span>{t('Full editor')}</span>
+              </Link>
               <IconButton
                 icon={Archive}
                 label={t('Archive')}

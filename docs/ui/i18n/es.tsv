@@ -2903,3 +2903,202 @@ Portrait 1024 × 1536	Vertical 1024 × 1536
 HD 1920 × 1080	HD 1920 × 1080
 Story 1080 × 1920	Historia 1080 × 1920
 Print A4 300 dpi	Impresión A4 300 ppp
+(no output) — exit code {n}	(sin salida) — código de salida {n}
+A to Z	De la A a la Z
+All decided	Todo decidido
+Already tidy	Ya está ordenado
+Annotation text	Texto de la anotación
+Archive "{name}"?	¿Archivar «{name}»?
+Archived chats wait here until you restore or delete them.	Los chats archivados esperan aquí hasta que los restaures o los borres.
+Archived documents wait here until you restore or delete them.	Los documentos archivados esperan aquí hasta que los restaures o los borres.
+Archived reports wait here until you restore or delete them.	Los informes archivados esperan aquí hasta que los restaures o los borres.
+Back	Volver
+Bold (Ctrl+B)	Negrita (Ctrl+B)
+Both	Ambos
+Bulleted list	Lista con viñetas
+Changes applied to the editor; save to keep them.	Cambios aplicados al editor; guarda para conservarlos.
+Chat actions	Acciones del chat
+Chat copied	Chat copiado
+Choose the signature	Elegir la firma
+Clean failed ({n})	Limpiar fallidos ({n})
+Click a page to place it	Pulsa una página para colocarlo
+Close the output	Cerrar la salida
+Code block	Bloque de código
+Compare	Comparar
+Copy the conversation	Copiar la conversación
+Could not load the DOCX library	No se pudo cargar la biblioteca DOCX
+Could not load {what}	No se pudo cargar {what}
+Could not open the document	No se pudo abrir el documento
+Could not read the document: {error}	No se pudo leer el documento: {error}
+Creating…	Creando…
+Current	Actual
+Delete "{name}"?	¿Borrar «{name}»?
+Delete empty and throwaway chats and file the rest into folders with a model	Borra los chats vacíos y de usar y tirar, y archiva el resto en carpetas con un modelo
+Delete signature	Borrar firma
+Delete this document?	¿Borrar este documento?
+Delete this report?	¿Borrar este informe?
+Delete {n} chats?	¿Borrar {n} chats?
+Delete {n} documents?	¿Borrar {n} documentos?
+Delete {n} reports?	¿Borrar {n} informes?
+Describe what to write and a vision model finds the blanks	Describe qué escribir y un modelo de visión encuentra los huecos
+Discuss in a new chat	Comentar en un chat nuevo
+Document actions	Acciones del documento
+Download as a file	Descargar como archivo
+Download filled PDF	Descargar el PDF relleno
+Draw a new one	Dibujar una nueva
+Draw something first.	Dibuja algo primero.
+Duplicated	Duplicado
+Empty chat	Chat vacío
+Empty document	Documento vacío
+Empty table	Tabla vacía
+Execution timed out (10 s)	La ejecución agotó el tiempo (10 s)
+Export as {format}	Exportar como {format}
+Exported {n} document	{n} documento exportado
+Exported {n} document (zip)	{n} documento exportado (zip)
+Exported {n} documents	{n} documentos exportados
+Exported {n} documents (zip)	{n} documentos exportados (zip)
+Fill	Rellenar
+Fill with AI	Rellenar con IA
+Filled PDF	PDF relleno
+Filling…	Rellenando…
+Filter by language	Filtrar por lenguaje
+Find and replace (Ctrl+F)	Buscar y sustituir (Ctrl+F)
+Fix empty titles, drop broken documents, and let a model flag the accidental ones	Arregla los títulos vacíos, quita los documentos rotos y deja que un modelo señale los accidentales
+Folders	Carpetas
+Form and annotations	Formulario y anotaciones
+Formatting	Formato
+Full editor	Editor completo
+HTML page	Página HTML
+HTML preview	Vista previa HTML
+Heading 1	Título 1
+Heading 2	Título 2
+Heading 3	Título 3
+Horizontal rule	Línea horizontal
+Import files, or ask the assistant to write one: documents it creates in a chat land here too.	Importa archivos o pide al asistente que escriba uno: los documentos que crea en un chat también acaban aquí.
+Importing {done} of {total}…	Importando {done} de {total}…
+Inline code	Código en línea
+Instruction	Instrucción
+It leaves the documents list and waits in the archive, where you can restore it.	Sale de la lista de documentos y espera en el archivo, donde puedes restaurarlo.
+Italic (Ctrl+I)	Cursiva (Ctrl+I)
+Keep all	Conservar todo
+Keep mine	Conservar el mío
+Link	Enlace
+Loading chats	Cargando chats
+Loading documents	Cargando documentos
+Loading reports	Cargando informes
+Loading signatures	Cargando firmas
+Messages, documents and images made in it stay in the library; the conversation itself is gone for good.	Los mensajes, documentos e imágenes creados en él siguen en la biblioteca; la conversación en sí desaparece para siempre.
+Most messages	Más mensajes
+Most sources	Más fuentes
+Most versions	Más versiones
+Name (optional): full, initials…	Nombre (opcional): completa, iniciales…
+No archived chats	Sin chats archivados
+No archived documents	Sin documentos archivados
+No archived reports	Sin informes archivados
+No chats	Sin chats
+No documents yet	Aún no hay documentos
+No matches	Sin coincidencias
+No research yet	Aún no hay investigaciones
+No saved signatures yet — draw one below.	Aún no hay firmas guardadas: dibuja una abajo.
+No summary	Sin resumen
+Nothing to tidy	Nada que ordenar
+Numbered list	Lista numerada
+Open in its chat	Abrir en su chat
+Open in the editor	Abrir en el editor
+Open the report in a new tab	Abrir el informe en una pestaña nueva
+Output (with errors)	Salida (con errores)
+PDF	PDF
+PDF tools	Herramientas PDF
+PDF, Word, spreadsheets, code and text files; or drop them on the list	PDF, Word, hojas de cálculo, código y texto; o suéltalos sobre la lista
+Page {n}	Página {n}
+Page {n}: click to place	Página {n}: pulsa para colocar
+Pages	Páginas
+Pick a saved one, or draw a new one. Signatures stay on this server.	Elige una guardada o dibuja una nueva. Las firmas se quedan en este servidor.
+Place	Colocar
+Python and bash run on the server; JavaScript runs in a sandbox here; HTML opens the preview	Python y bash se ejecutan en el servidor; JavaScript en un sandbox aquí; HTML abre la vista previa
+Quote	Cita
+Remove annotation	Quitar anotación
+Remove the signature	Quitar la firma
+Rendering the pages	Renderizando las páginas
+Replace	Sustituir
+Replace all	Sustituir todo
+Replace with	Sustituir por
+Report	Informe
+Report actions	Acciones del informe
+Restored	Restaurado
+Restored v{a} as v{b}	v{a} restaurada como v{b}
+Run a Deep Research from Studio; the finished reports collect here with their sources.	Lanza una Deep Research desde Studio; los informes terminados se reúnen aquí con sus fuentes.
+Save and use	Guardar y usar
+Saved as v{n}	Guardado como v{n}
+Say what to write — "my name is Ana López, today's date, tick the first box" — and a vision model places the text where the blanks are. You can move or delete anything afterwards.	Di qué escribir —«me llamo Ana López, la fecha de hoy, marca la primera casilla»— y un modelo de visión coloca el texto donde están los huecos. Después puedes mover o borrar lo que quieras.
+Send as email	Enviar por correo
+Sign and reply	Firmar y responder
+Sign here	Firmar aquí
+Signature	Firma
+Signature name	Nombre de la firma
+Signature pad	Área de firma
+Start one in Studio; every chat shows up here with its model and folder.	Empieza uno en Studio; todos los chats aparecen aquí con su modelo y su carpeta.
+Stop placing	Dejar de colocar
+Strikethrough	Tachado
+Table	Tabla
+Take	Tomar
+Take all	Tomar todo
+Task list	Lista de tareas
+That file is not an image.	Ese archivo no es una imagen.
+The document and every version of it are removed. This cannot be undone.	Se elimina el documento y todas sus versiones. No se puede deshacer.
+The model found nothing to fill.	El modelo no encontró nada que rellenar.
+The report and its sources are removed. Chats that discussed it keep their copy.	Se eliminan el informe y sus fuentes. Los chats que lo comentaron conservan su copia.
+The report could not be deleted	No se pudo borrar el informe
+The zip could not be built	No se pudo crear el zip
+Then click the page where it goes	Luego pulsa en la página donde va
+These texts are too long to compare line by line.	Estos textos son demasiado largos para compararlos línea a línea.
+Tick	Marca
+Tidy	Ordenar
+Tidy: {deleted} removed, {fixed} titles fixed. {message}	Orden: {deleted} eliminados, {fixed} títulos arreglados. {message}
+Tidy: {sorted} filed into {folders} folders, {removed} removed	Orden: {sorted} archivados en {folders} carpetas, {removed} eliminados
+Toolbar, find, versions with review, export, PDF pages and signatures	Barra de formato, buscar, versiones con revisión, exportar, páginas PDF y firmas
+Undo stroke	Deshacer trazo
+Undo the last change on the pages	Deshacer el último cambio en las páginas
+Unsaved changes	Cambios sin guardar
+Untitled research	Investigación sin título
+Upload PNG	Subir PNG
+Use this signature	Usar esta firma
+What should go in the form	Qué debe ir en el formulario
+What to show from the archive	Qué mostrar del archivo
+Word (.docx)	Word (.docx)
+You	Tú
+from {n} chat	de {n} chat
+from {n} chats	de {n} chats
+text	texto
+{n} annotation	{n} anotación
+{n} annotations	{n} anotaciones
+{n} change to decide	{n} cambio por decidir
+{n} changes to decide	{n} cambios por decidir
+{n} chat	{n} chat
+{n} chat deleted	{n} chat borrado
+{n} chats	{n} chats
+{n} chats deleted	{n} chats borrados
+{n} document	{n} documento
+{n} document deleted	{n} documento borrado
+{n} document imported	{n} documento importado
+{n} documents	{n} documentos
+{n} documents deleted	{n} documentos borrados
+{n} documents imported	{n} documentos importados
+{n} failed report removed	{n} informe fallido eliminado
+{n} failed reports removed	{n} informes fallidos eliminados
+{n} field filled	{n} campo relleno
+{n} fields filled	{n} campos rellenos
+{n} form field	{n} campo de formulario
+{n} form fields	{n} campos de formulario
+{n} imported; failed: {list}	{n} importados; fallaron: {list}
+{n} msg	{n} msj
+{n} msgs	{n} msjs
+{n} of {total} documents	{n} de {total} documentos
+{n} replaced	{n} sustituidos
+{n} report	{n} informe
+{n} report deleted	{n} informe borrado
+{n} reports	{n} informes
+{n} reports deleted	{n} informes borrados
+{n} source	{n} fuente
+{n} sources	{n} fuentes
+{old} → {new}	{old} → {new}

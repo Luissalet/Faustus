@@ -3,6 +3,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { EmptyState, Skeleton, Toast } from '../components';
 import { ImageGallery } from './library/Gallery';
+import { DocumentsLibrary } from './library/Documents';
+import { ChatsLibrary } from './library/Chats';
+import { ResearchLibrary } from './library/Research';
 import { loadLibrary, type Artifact } from '../adapters/library';
 import { relativeTime } from '../adapters/home';
 import { useSpotlight } from '../shell/useSpotlight';
@@ -15,6 +18,15 @@ const TYPES = [
   { id: 'todo', label: 'All' },
   { id: 'imagen', label: 'Images' },
   { id: 'documento', label: 'Documents' },
+  { id: 'chats', label: 'Chats' },
+  { id: 'research', label: 'Research' },
+  { id: 'archivo', label: 'Archive' },
+];
+
+const ARCHIVE_KINDS = [
+  { id: 'documento', label: 'Documents' },
+  { id: 'chats', label: 'Chats' },
+  { id: 'research', label: 'Research' },
 ];
 
 /**
@@ -33,6 +45,8 @@ export function LibraryScreen() {
 
   const type = params.get('type') ?? 'todo';
   const query = params.get('q') ?? '';
+  const archiveKind = params.get('kind') ?? 'documento';
+  const federated = type === 'todo';
   const [notice, setNotice] = useState<string | null>(null);
   const noticeTimer = useRef<number | null>(null);
   const say = useCallback((msg: string) => {
@@ -121,8 +135,25 @@ export function LibraryScreen() {
       </div>
 
       {type === 'imagen' && <ImageGallery query={query} say={say} />}
+      {type === 'documento' && <DocumentsLibrary query={query} say={say} />}
+      {type === 'chats' && <ChatsLibrary query={query} say={say} />}
+      {type === 'research' && <ResearchLibrary query={query} say={say} />}
+      {type === 'archivo' && (
+        <>
+          <div className="fs-gal__chips fs-lib__kinds" role="group" aria-label={t('What to show from the archive')}>
+            {ARCHIVE_KINDS.map((k) => (
+              <button key={k.id} type="button" className="fs-chip" data-on={archiveKind === k.id || undefined} onClick={() => setParam('kind', k.id, 'documento')}>
+                {t(k.label)}
+              </button>
+            ))}
+          </div>
+          {archiveKind === 'documento' && <DocumentsLibrary query={query} say={say} archived />}
+          {archiveKind === 'chats' && <ChatsLibrary query={query} say={say} archived />}
+          {archiveKind === 'research' && <ResearchLibrary query={query} say={say} archived />}
+        </>
+      )}
 
-      {type !== 'imagen' && !artifacts && (
+      {federated && !artifacts && (
         <div className="fs-grid">
           {[0, 1, 2, 3, 4, 5].map((index) => (
             <Skeleton key={index} label={t('Loading the library')} height="200px" radius="panel" />
@@ -130,7 +161,7 @@ export function LibraryScreen() {
         </div>
       )}
 
-      {type !== 'imagen' && artifacts && visible.length === 0 && (
+      {federated && artifacts && visible.length === 0 && (
         <EmptyState
           icon={LibraryIcon}
           title={
@@ -144,7 +175,7 @@ export function LibraryScreen() {
         />
       )}
 
-      {type !== 'imagen' && artifacts && visible.length > 0 && (
+      {federated && artifacts && visible.length > 0 && (
         <div className="fs-grid">
           {visible.map((artifact) => (
             <article
@@ -174,7 +205,7 @@ export function LibraryScreen() {
               <div className="fs-card__body">
                 <span className="fs-card__kind">{artifact.kind}</span>
                 {artifact.kind === 'documento' ? (
-                  <Link className="fs-card__title fs-link" to={`/studio?doc=${encodeURIComponent(artifact.id.replace(/^doc-/, ''))}`} title={t('Open in the Studio editor')}>
+                  <Link className="fs-card__title fs-link" to={`/documents/${encodeURIComponent(artifact.id.replace(/^doc-/, ''))}`} title={t('Open in the editor')}>
                     {artifact.title}
                   </Link>
                 ) : (
@@ -193,7 +224,7 @@ export function LibraryScreen() {
         </div>
       )}
 
-      {type !== 'imagen' && degraded.length > 0 && (
+      {federated && degraded.length > 0 && (
         <p className="fs-notice" data-tone="warning">
           {t('Could not read {what}. What you see is real; that part is missing.', { what: degraded.join(', ') })}
         </p>

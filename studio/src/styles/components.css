@@ -748,3 +748,44 @@
   box-shadow: var(--fs-shadow-overlay);
   animation: fs-rise var(--fs-duration-enter) var(--fs-ease-out) both;
 }
+
+/* ── Small layout helpers shared by the workbench screens ── */
+
+.fs-spacer {
+  flex: 1;
+}
+
+.fs-inline {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  flex-wrap: wrap;
+}
+
+/* A segmented control: one choice among a few, rendered as radios. */
+.fs-seg {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-1);
+}
+
+.fs-seg button {
+  flex: 1;
+  padding: var(--fs-space-1) var(--fs-space-3);
+  border: 0;
+  border-radius: calc(var(--fs-radius-control) - 2px);
+  background: none;
+  color: var(--fs-text-2);
+  font: inherit;
+  font-size: var(--fs-label-size);
+  cursor: pointer;
+  transition: background-color var(--fs-duration-fast) var(--fs-ease), color var(--fs-duration-fast) var(--fs-ease);
+}
+
+.fs-seg button[aria-checked='true'] {
+  background: var(--fs-surface-3);
+  color: var(--fs-text-1);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.5); /* guard-ok: the lift under a pressed segment, not a surface */
+}

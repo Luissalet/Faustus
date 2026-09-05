@@ -672,3 +672,30 @@ html[data-studio-shell='on'] body > *:not(#studio-root):not(#fs-overlay-root) {
     display: none;
   }
 }
+
+/* ── Full-bleed screens (the image editor, the document editor) ──
+   They own their scrolling and hand over the whole height. Both selectors:
+   below 1280px the shell carries data-nav='rail', whose padded main rule
+   (0,2,1) would outrank a plain (0,1,1) one. */
+.fs-main[data-screen='editor'],
+.fs-shell[data-nav='rail'] .fs-main[data-screen='editor'] {
+  padding: 0;
+  overflow: hidden;
+  display: grid;
+}
+
+.fs-main[data-screen='editor'] .fs-main__inner,
+.fs-main[data-screen='editor'] .fs-route {
+  max-inline-size: none;
+  inline-size: 100%;
+  margin: 0;
+  min-block-size: 0;
+  block-size: 100%;
+}
+
+@media (max-width: 767px) {
+  .fs-main[data-screen='editor'],
+  .fs-shell[data-nav='rail'] .fs-main[data-screen='editor'] {
+    padding: 0;
+  }
+}

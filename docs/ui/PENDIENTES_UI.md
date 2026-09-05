@@ -577,3 +577,22 @@ su área y baja el baseline. Ningún módulo Studio nuevo la aumenta.
     (reading 'bg')` en cada carga con Studio activo (el DOM del editor de tema
     de la anterior no existe). Desaparece al borrar la anterior.
 
+## Lote AA (biblioteca y editor de documentos)
+
+98. **`[→]`** PyMuPDF no estaba en el venv del 7001 (`render-pages` devolvía 503
+    «PDF viewer requires PyMuPDF»); se instaló con `pip install PyMuPDF` para
+    probar las páginas. Es opcional y AGPL (`requirements-optional.txt`): decidir
+    si el instalador lo ofrece.
+99. **`[→]`** La biblioteca de Investigación no se ha podido probar con datos (no
+    hay informes en el 7001); el contrato (`/api/research/library|detail|
+    spinoff|export|archive`) está tomado de la anterior. Se prueba en el lote de
+    Deep Research.
+100. **`[→]`** «Firmar y responder» deja el adjunto (token de `prepare-signed-
+    reply`) en la entrega a Redactar, pero Redactar aún no muestra adjuntos: llega
+    con el lote de Correo (adjuntar, programar, IA).
+101. **`[ ]`** La vista previa Markdown del editor usa el lector reducido
+    (`rich.tsx`): los títulos se ven en negrita sin jerarquía. Se arregla con el
+    lote de Markdown completo.
+102. **`[ ]`** La lista de chats de la biblioteca es cliente (`/api/sessions` ya
+    trae todo): con miles de chats convendría paginar en el servidor.
+

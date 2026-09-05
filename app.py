@@ -1133,6 +1133,11 @@ async def serve_library_editor(request: Request):
     """Studio image editor (lot Z2): `?img=<id>`, `?draft=<id>` or `?new=WxH`."""
     return await serve_index(request)
 
+@app.get("/documents/{doc_id}")
+async def serve_document_editor(doc_id: str, request: Request):
+    """Studio document editor (lot AB)."""
+    return await serve_index(request)
+
 @app.get("/backgrounds")
 async def serve_backgrounds(request: Request):
     """Sandbox page for prototyping background effects. No auth required."""

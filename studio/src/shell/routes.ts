@@ -85,6 +85,7 @@ export const SERVER_ROUTES = [
   '/projects/{project_id}',
   '/library',
   '/library/edit',
+  '/documents/{doc_id}',
   '/automations',
   '/activity',
   '/notes',
