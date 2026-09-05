@@ -47,6 +47,7 @@ import { AccountSection } from './settings/Account';
 import { UsersSection } from './settings/Users';
 import { ToolsSection } from './settings/Tools';
 import { SystemExtras } from './settings/SystemExtras';
+import { IntegrationsSection } from './settings/Integrations';
 import { authStatus } from '../adapters/account';
 import { LANGS, setLang, t, tn, useLang } from '../i18n';
 import { setTheme, useTheme, type ThemeChoice } from '../shell/theme';
@@ -64,7 +65,7 @@ import { setTheme, useTheme, type ThemeChoice } from '../shell/theme';
  * there at their tab.
  */
 
-type SectionKey = 'general' | 'models' | 'defaults' | 'voice' | 'search' | 'reminders' | 'agent' | 'tools' | 'shortcuts' | 'account' | 'users' | 'system' | 'legacy';
+type SectionKey = 'general' | 'models' | 'defaults' | 'voice' | 'search' | 'reminders' | 'integrations' | 'agent' | 'tools' | 'shortcuts' | 'account' | 'users' | 'system' | 'legacy';
 
 const SECTIONS: { key: SectionKey; label: string; icon: typeof Bot; admin?: boolean }[] = [
   { key: 'general', label: 'General', icon: Languages },
@@ -73,6 +74,7 @@ const SECTIONS: { key: SectionKey; label: string; icon: typeof Bot; admin?: bool
   { key: 'voice', label: 'Voice', icon: Mic },
   { key: 'search', label: 'Search', icon: Search },
   { key: 'reminders', label: 'Reminders', icon: Check },
+  { key: 'integrations', label: 'Integrations', icon: Plug },
   { key: 'agent', label: 'Agent', icon: Bot },
   { key: 'tools', label: 'Tools', icon: Wrench, admin: true },
   { key: 'shortcuts', label: 'Shortcuts', icon: Keyboard },
@@ -84,7 +86,6 @@ const SECTIONS: { key: SectionKey; label: string; icon: typeof Bot; admin?: bool
 
 const LEGACY_TABS: { tab: string; label: string; help: string }[] = [
   { tab: 'local-models', label: 'Local models', help: 'Download and serve models on this machine (Ollama, llama.cpp).' },
-  { tab: 'integrations', label: 'Integrations', help: 'Keys and accounts of external services: mail, CalDAV, contacts, MCP servers, agents, the vault.' },
   { tab: 'appearance', label: 'Appearance and theme', help: 'The previous interface\'s colour editor; Studio uses its tokens and honours the saved themes.' },
 ];
 
@@ -949,6 +950,7 @@ export function SettingsScreen() {
           {section === 'search' && <SearchSection settings={settings} onSave={onSave} say={say} />}
           {section === 'reminders' && <RemindersSection settings={settings} onSave={onSave} say={say} />}
           {section === 'agent' && <AgentSection settings={settings} onSave={onSave} say={say} />}
+          {section === 'integrations' && <IntegrationsSection say={say} />}
           {section === 'tools' && <ToolsSection say={say} />}
           {section === 'shortcuts' && <ShortcutsSection settings={settings} onSave={onSave} say={say} />}
           {section === 'account' && <AccountSection say={say} />}

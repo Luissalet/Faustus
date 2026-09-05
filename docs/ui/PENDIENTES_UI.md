@@ -466,3 +466,14 @@ su área y baja el baseline. Ningún módulo Studio nuevo la aumenta.
     `authenticated: false`; las pantallas de admin piden sesión
     (`POST /api/auth/login {username, password}` desde la consola para
     probar). Studio muestra «Solo administradores» en vez de un error.
+
+## Añadido tras el lote S (05-09-2026, Integraciones)
+
+77. **`[~]` Tokens de agente por prefijo de nombre.** Como la anterior, un
+    token es «de Claude» si su nombre empieza por `claude agent`, «de Codex»
+    si por `codex agent` o si tiene alcances `todos:`/`email:`/`documents:`
+    sin prefijo (compatibilidad). Renombrar un token a mano lo saca de la
+    lista; lo honesto sería una columna `kind` en el servidor.
+78. **`[~]` Recompilar mientras Ajustes está abierto** vuelve a tirar el
+    shell (chunk con hash nuevo). Ya en 67; sigue sin el `catch` que
+    recargue una vez.

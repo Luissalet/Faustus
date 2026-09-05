@@ -1662,3 +1662,189 @@ Delete everything	Borrarlo todo
 All the categories above, in one go.	Todas las categorías de arriba, de una vez.
 Keys and accounts of external services: mail, CalDAV, contacts, MCP servers, agents, the vault.	Claves y cuentas de servicios externos: correo, CalDAV, contactos, servidores MCP, agentes, la bóveda.
 Installation values; for administrators, the log, the backup and the wipes.	Valores de la instalación; para administradores, el registro, la copia de seguridad y los borrados.
+"chat" is always on. Turn on only what {word} needs.	«chat» siempre está activo. Activa solo lo que {word} necesite.
+(no name)	(sin nombre)
+993 for IMAPS, 143 for plain or STARTTLS.	993 para IMAPS, 143 para plano o STARTTLS.
+A known provider fills in the IMAP and SMTP hosts; Custom lets you type your own.	Un proveedor conocido rellena los servidores IMAP y SMTP; Personalizado te deja escribir los tuyos.
+A name is required.	Hace falta un nombre.
+A token for {word} to call this Faustus from outside: notes, documents, mail, calendar, memory, cookbook and workers, each behind its own scope.	Un token para que {word} llame a este Faustus desde fuera: notas, documentos, correo, calendario, memoria, cookbook y workers, cada uno tras su propio permiso.
+API integration	Integración API
+Add the contact	Añadir el contacto
+Add the server	Añadir el servidor
+Address	Dirección
+Address (optional)	Dirección (opcional)
+Address book	Libreta de direcciones
+Already logged in — use Unlock	Ya has iniciado sesión — usa Desbloquear
+Args (JSON list)	Args (lista JSON)
+Args must be a JSON list and Env a JSON object.	Args tiene que ser una lista JSON y Env un objeto JSON.
+As it appears in From:.	Como aparece en el De:.
+At least a name or an email address.	Al menos un nombre o una dirección.
+Auth	Autenticación
+Authorise	Autorizar
+Authorise in the tab that opened. If the redirect fails (remote access), paste the resulting URL here:	Autoriza en la pestaña que se ha abierto. Si la redirección falla (acceso remoto), pega aquí la URL resultante:
+Authorised.	Autorizado.
+Bearer sends "Authorization: Bearer KEY"; Header sends the key under a header you name; Basic is user:pass; None for open APIs.	Bearer envía «Authorization: Bearer CLAVE»; Cabecera envía la clave bajo una cabecera que tú nombras; Basic es usuario:contraseña; Ninguna para APIs abiertas.
+Blank makes the account read-only.	En blanco, la cuenta es solo de lectura.
+CalDAV account	Cuenta CalDAV
+CalDAV account saved.	Cuenta CalDAV guardada.
+Calendar (CalDAV)	Calendario (CalDAV)
+CardDAV saved.	CardDAV guardado.
+CardDAV sync	Sincronización CardDAV
+Command	Comando
+Connect with Google	Conectar con Google
+Connected ({n} tools)	Conectado ({n} herramientas)
+Connected through Google OAuth.	Conectado con OAuth de Google.
+Connected: {n} calendars	Conectado: {n} calendarios
+Connection failed.	La conexión ha fallado.
+Contacts	Contactos
+Contacts (CardDAV)	Contactos (CardDAV)
+Copy the set-up	Copiar la instalación
+Copy this token; it will not be shown again.	Copia este token; no se volverá a mostrar.
+Could not copy.	No se ha podido copiar.
+Could not read the vault status.	No se ha podido leer el estado de la bóveda.
+Create the token	Crear el token
+Custom (no preset)	Personalizado (sin plantilla)
+Custom…	Personalizado…
+Default account	Cuenta por defecto
+Delete this contact?	¿Borrar este contacto?
+Disable	Desactivar
+Disconnected	Desconectado
+Display name	Nombre visible
+Email	Correo
+Emails	Correos
+Enable	Activar
+Env (JSON object)	Env (objeto JSON)
+Error	Error
+Every external connection in one place: API keys, mail accounts, CalDAV, contacts, MCP servers, the agent tokens and the vault.	Todas las conexiones externas en un sitio: claves de API, cuentas de correo, CalDAV, contactos, servidores MCP, los tokens de los agentes y la bóveda.
+For Gmail, iCloud and Yahoo: an app password, not the account one.	Para Gmail, iCloud y Yahoo: una contraseña de aplicación, no la de la cuenta.
+Header	Cabecera
+Import	Importar
+Imported {a}/{b}	Importados {a}/{b}
+Integration saved.	Integración guardada.
+Label	Etiqueta
+Leave blank to keep the saved key.	Déjalo en blanco para conservar la clave guardada.
+Leave blank to keep the saved one.	Déjalo en blanco para conservar la guardada.
+Lock	Bloquear
+Locked	Bloqueada
+Log in	Iniciar sesión
+Logged in	Sesión iniciada
+Logged out	Sesión cerrada
+Mail account	Cuenta de correo
+Mail account saved.	Cuenta de correo guardada.
+Master password	Contraseña maestra
+Miniflux: X-Auth-Token; most others: Authorization.	Miniflux: X-Auth-Token; casi todos los demás: Authorization.
+Needs authorisation	Necesita autorización
+New API integration	Nueva integración API
+New CalDAV account	Nueva cuenta CalDAV
+New MCP server	Nuevo servidor MCP
+New mail account	Nueva cuenta de correo
+No contact data found.	No se han encontrado datos de contactos.
+No contacts.	No hay contactos.
+Not connected: the account is saved first, then Google asks for consent.	Sin conectar: primero se guarda la cuenta y luego Google pide permiso.
+Nothing connected yet. Add one above.	Todavía no hay nada conectado. Añade uno arriba.
+On for port 143/587; off for 993.	Activado para el puerto 143/587; apagado para el 993.
+Only for Log in / Unlock; it is never stored.	Solo para Iniciar sesión / Desbloquear; nunca se guarda.
+Open	Abrir
+Optional label (Work, Personal). Blank uses the address.	Etiqueta opcional (Trabajo, Personal). En blanco usa la dirección.
+Phone	Teléfono
+Phone (optional)	Teléfono (opcional)
+Phones	Teléfonos
+Port	Puerto
+Preparing the authorisation…	Preparando la autorización…
+Reconnect	Reconectar
+Reconnect with Google	Reconectar con Google
+Remove "{name}"?	¿Quitar «{name}»?
+Removed.	Quitado.
+Renamed.	Renombrado.
+Revoke	Revocar
+Revoke this {word} agent token? Whatever uses it loses access.	¿Revocar este token del agente {word}? Lo que lo use perderá el acceso.
+Same as IMAP	Igual que IMAP
+Save config	Guardar la configuración
+Save first.	Guarda primero.
+Save the sync	Guardar la sincronización
+Scopes	Permisos
+Search contacts	Buscar contactos
+Search contacts (name, email, phone, address)	Buscar contactos (nombre, correo, teléfono, dirección)
+Security	Seguridad
+Server URL	URL del servidor
+Set-up	Instalación
+Set-up: downloads the plugin bundle and registers it.	Instalación: descarga el paquete del plugin y lo registra.
+Submit	Enviar
+The URL is required.	Hace falta la URL.
+The base URL is required.	Hace falta la URL base.
+The command is required.	Hace falta el comando.
+The secret the service issued you.	El secreto que te dio el servicio.
+The server URL is required.	Hace falta la URL del servidor.
+Token	Token
+Token created. Copy it now; it is not shown again.	Token creado. Cópialo ahora; no se vuelve a mostrar.
+Token name	Nombre del token
+Token revoked.	Token revocado.
+Transport	Transporte
+Unlock	Desbloquear
+Unnamed	Sin nombre
+Use the IMAP username and password for SMTP too.	Usar el usuario y la contraseña de IMAP también para SMTP.
+Used whenever no account is chosen.	Se usa cuando no se elige ninguna cuenta.
+Usually the full address.	Normalmente la dirección completa.
+Vault (Bitwarden / Vaultwarden)	Bóveda (Bitwarden / Vaultwarden)
+Vault (Bitwarden)	Bóveda (Bitwarden)
+Vault logged out.	Sesión de la bóveda cerrada.
+Vault unlocked	Bóveda desbloqueada
+What to add	Qué añadir
+bw CLI NOT installed (install nodejs-bitwarden-cli)	bw CLI NO instalado (instala nodejs-bitwarden-cli)
+bw CLI installed	bw CLI instalado
+default	por defecto
+disconnected	desconectado
+e.g. Work, Personal	p. ej. Trabajo, Personal
+enabled	activadas
+error	error
+inherits the environment	hereda el entorno
+last unlock {when}	último desbloqueo {when}
+last used {when}	usado por última vez {when}
+locked	bloqueada
+minimal environment	entorno mínimo
+needs authorisation	necesita autorización
+never used	nunca usado
+ntfy: the base URL is the server; the topic goes in the reminders settings.	ntfy: la URL base es el servidor; el tema va en los ajustes de recordatorios.
+unlocked	desbloqueada
+{a}/{b} tools	{a}/{b} herramientas
+{n} contact	{n} contacto
+{n} contacts	{n} contactos
+{what} copied.	{what} copiado.
+API	API
+CalDAV	CalDAV
+CardDAV	CardDAV
+MCP	MCP
+Codex	Codex
+Claude	Claude
+Vault	Bóveda
+Bearer (most common)	Bearer (lo más común)
+Basic	Basic
+Codex agent	Agente Codex
+Claude agent	Agente Claude
+Notes write	Notas (escribir)
+Read notes and checklists	Leer notas y listas
+Create, update, delete and toggle to-dos	Crear, cambiar, borrar y marcar tareas
+Read documents when a document API is enabled	Leer documentos cuando haya una API de documentos activa
+Documents write	Documentos (escribir)
+Create and update draft documents	Crear y cambiar borradores de documentos
+Read mail when a mail API is enabled	Leer el correo cuando haya una API de correo activa
+Mail drafts	Borradores de correo
+Create reply drafts without sending	Crear borradores de respuesta sin enviar
+Mail send	Enviar correo
+Send mail directly	Enviar correo directamente
+Read calendar events	Leer los eventos del calendario
+Calendar write	Calendario (escribir)
+Create and update calendar events	Crear y cambiar eventos del calendario
+Read the memory	Leer la memoria
+Memory write	Memoria (escribir)
+Write to the memory	Escribir en la memoria
+List cookbook tasks and tail their output	Listar las tareas del cookbook y seguir su salida
+Cookbook launch	Cookbook (lanzar)
+Launch and stop cookbook serve tasks: runs SSH commands on your servers, bounded by the same allowlist the UI uses	Lanzar y parar tareas de servir del cookbook: ejecuta órdenes SSH en tus servidores, dentro de la misma lista blanca que usa la interfaz
+Dispatch workers	Lanzar workers
+Start local worker jobs from outside the app (POST /api/dispatch, the faustus-workers MCP server) and read their results	Lanzar trabajos de workers locales desde fuera de la app (POST /api/dispatch, el servidor MCP faustus-workers) y leer sus resultados
+Gmail needs an App Password (Google account → Security → 2-Step Verification → App passwords), not your normal password.	Gmail necesita una contraseña de aplicación (cuenta de Google → Seguridad → Verificación en dos pasos → Contraseñas de aplicación), no la normal.
+iCloud needs an app-specific password from appleid.apple.com.	iCloud necesita una contraseña específica de aplicación de appleid.apple.com.
+Microsoft disables password login for IMAP/SMTP in most accounts and Faustus does not do Microsoft OAuth yet, so this preset only works where basic auth is still on.	Microsoft desactiva el acceso con contraseña por IMAP/SMTP en casi todas las cuentas y Faustus aún no hace OAuth de Microsoft, así que esta plantilla solo sirve donde la autenticación básica siga activa.
+Fastmail needs an app password (Settings → Privacy & Security → App passwords).	Fastmail necesita una contraseña de aplicación (Ajustes → Privacidad y seguridad → Contraseñas de aplicación).
+Yahoo needs an app password (Account security → Generate app password).	Yahoo necesita una contraseña de aplicación (Seguridad de la cuenta → Generar contraseña de aplicación).
