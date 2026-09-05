@@ -1004,8 +1004,12 @@ def _load_settings():
 
 
 def _save_settings(settings):
-    from core.atomic_io import atomic_write_json
-    atomic_write_json(str(SETTINGS_FILE), settings, indent=2)
+    # B-012: through the store, so this write takes the same cross-process
+    # lock and bumps the same revision as every other one. Writing the file
+    # here directly was atomic but not serialised: two writers each read the
+    # whole document and each wrote it back, and the second erased the first.
+    from src.settings import save_settings
+    save_settings(settings, path=str(SETTINGS_FILE))
 
 
 def _get_email_config(account_id: str | None = None, owner: str = "") -> dict:

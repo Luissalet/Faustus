@@ -801,10 +801,12 @@ def migrate_from_settings() -> None:
         "api_key": miniflux_key,
     })
 
-    # Clear migrated keys
+    # Clear migrated keys. B-012: through the store — this was a plain
+    # truncating write, so a crash mid-migration left settings.json empty and
+    # a concurrent writer lost its change either way.
     settings.pop("miniflux_url", None)
     settings.pop("miniflux_api_key", None)
-    with open(settings_path, "w", encoding="utf-8") as f:
-        json.dump(settings, f, indent=2)
+    from src.settings import save_settings
+    save_settings(settings)
 
     log.info("Migrated Miniflux integration from settings.json")
