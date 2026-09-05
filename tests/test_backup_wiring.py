@@ -16,7 +16,12 @@ ADAPTER = (ROOT / "studio" / "src" / "adapters" / "commands.ts").read_text(encod
 
 def test_startup_launches_the_scheduled_snapshots():
     assert "from src.backup_service import run_auto_backups" in APP
-    assert "asyncio.create_task(run_auto_backups())" in APP
+    # LIFE-1 (B-013): background tasks are spawned through the supervisor that
+    # owns them, so shutdown can cancel and await this loop instead of leaving
+    # it writing while its dependencies close. A bare asyncio.create_task here
+    # would be the bug that lot removed.
+    assert '_supervisor.spawn(run_auto_backups(), name="auto-backups")' in APP
+    assert "asyncio.create_task(run_auto_backups())" not in APP
 
 
 def test_a_failed_backup_loop_cannot_stop_the_app_from_starting():

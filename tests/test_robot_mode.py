@@ -411,6 +411,12 @@ GUARD_LOG = {
          "rule": "", "action": "allowed", "command_head": "pytest -q"},
     ],
     "chain": {"ok": True, "entries": 2, "broken_at": None},
+    # B-004: the guard's degradation counters ride along with the receipts.
+    # They are scalars about the guard itself, not rows, so the robot
+    # projection — which exists to turn receipts into columns — drops them.
+    "metrics": {"classify_errors": 0, "budget_exceeded": 0, "gate_errors": 0,
+                "degraded_observed": 0, "degraded_blocked": 0,
+                "degraded_released": 0},
 }
 # Robot mode: the same rows with an always-present `note` and eight characters
 # of the chain hash in place of the three 64-character digests per receipt.
@@ -440,6 +446,7 @@ def guard_client(monkeypatch):
     monkeypatch.setattr(cgr, "require_admin", lambda request: "admin")
     monkeypatch.setattr(command_guard, "tail_receipts", lambda limit: GUARD_LOG["receipts"])
     monkeypatch.setattr(command_guard, "verify_chain", lambda: GUARD_LOG["chain"])
+    monkeypatch.setattr(command_guard, "guard_metrics", lambda: dict(GUARD_LOG["metrics"]))
     monkeypatch.setattr(command_guard, "explain", lambda command, packs=None: {
         "tier": EXPLAIN["tier"], "rule_id": EXPLAIN["rule_id"], "matched": EXPLAIN["matched"],
         "command_head": EXPLAIN["command_head"], "trace": EXPLAIN["trace"],
