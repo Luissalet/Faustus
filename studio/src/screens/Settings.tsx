@@ -5,9 +5,8 @@ import {
   UserRound,
   Users,
   Wrench,
-  ExternalLink,
   Keyboard,
-  Languages,
+  Palette,
   Mic,
   Plug,
   Plus,
@@ -50,9 +49,9 @@ import { ToolsSection } from './settings/Tools';
 import { SystemExtras } from './settings/SystemExtras';
 import { IntegrationsSection } from './settings/Integrations';
 import { LocalModelsSection } from './settings/LocalModels';
+import { AppearanceSection } from './settings/Appearance';
 import { authStatus } from '../adapters/account';
-import { LANGS, setLang, t, tn, useLang } from '../i18n';
-import { setTheme, useTheme, type ThemeChoice } from '../shell/theme';
+import { t, tn } from '../i18n';
 
 /**
  * Ajustes (the previous interface's settings modal, `/settings`).
@@ -67,10 +66,10 @@ import { setTheme, useTheme, type ThemeChoice } from '../shell/theme';
  * there at their tab.
  */
 
-type SectionKey = 'general' | 'models' | 'local' | 'defaults' | 'voice' | 'search' | 'reminders' | 'integrations' | 'agent' | 'tools' | 'shortcuts' | 'account' | 'users' | 'system' | 'legacy';
+type SectionKey = 'general' | 'models' | 'local' | 'defaults' | 'voice' | 'search' | 'reminders' | 'integrations' | 'agent' | 'tools' | 'shortcuts' | 'account' | 'users' | 'system';
 
 const SECTIONS: { key: SectionKey; label: string; icon: typeof Bot; admin?: boolean }[] = [
-  { key: 'general', label: 'General', icon: Languages },
+  { key: 'general', label: 'Appearance', icon: Palette },
   { key: 'models', label: 'Models', icon: Server },
   { key: 'local', label: 'Local models', icon: HardDrive },
   { key: 'defaults', label: 'Default AI', icon: Sparkles },
@@ -84,16 +83,10 @@ const SECTIONS: { key: SectionKey; label: string; icon: typeof Bot; admin?: bool
   { key: 'account', label: 'Account', icon: UserRound },
   { key: 'users', label: 'Users', icon: Users, admin: true },
   { key: 'system', label: 'System', icon: Settings2 },
-  { key: 'legacy', label: 'In the previous interface', icon: Plug },
 ];
 
-const LEGACY_TABS: { tab: string; label: string; help: string }[] = [
-  { tab: 'appearance', label: 'Appearance and theme', help: 'The previous interface\'s colour editor; Studio uses its tokens and honours the saved themes.' },
-];
 
-function legacyHref(tab: string): string {
-  return `/?shell=legacy#settings/${tab}`;
-}
+
 
 /* ── Models: endpoints ── */
 
@@ -567,32 +560,6 @@ const SYSTEM_KEYS = ['app_public_url', 'share_defaults_with_users', 'tool_path_e
 
 /* -- General: the interface language -- */
 
-function GeneralSection() {
-  const lang = useLang();
-  const theme = useTheme();
-  const THEMES: { value: ThemeChoice; label: string }[] = [
-    { value: 'system', label: t('Follow the system') },
-    { value: 'light', label: t('Light') },
-    { value: 'dark', label: t('Dark') },
-  ];
-  return (
-    <section className="fs-set__section" aria-labelledby="fs-set-general">
-      <header className="fs-set__section-head">
-        <div>
-          <h2 id="fs-set-general" className="fs-set__title">{t('General')}</h2>
-          <p className="fs-prose">{t('Language and appearance of this interface. They apply at once and follow you to other browsers.')}</p>
-        </div>
-      </header>
-      <Field label={t('Interface language')} htmlFor="ui-lang" help={t('The previous interface stays in English; the models answer in whatever language you write.')}>
-        <Select id="ui-lang" value={lang} onChange={(v) => setLang(v as typeof lang)} options={LANGS} />
-      </Field>
-      <Field label={t('Appearance')} htmlFor="ui-theme" help={t('Light or dark for Studio. The previous interface keeps its own theme editor.')}>
-        <Select id="ui-theme" value={theme} onChange={(v) => setTheme(v as ThemeChoice)} options={THEMES} />
-      </Field>
-    </section>
-  );
-}
-
 function SystemSection({ settings, onSave, say, admin }: { settings: Settings | null; onSave: (patch: Settings) => Promise<void>; say: (t: string) => void; admin: boolean }) {
   const { draft, set, changed, dirty } = useDraft(settings, SYSTEM_KEYS);
   const { saving, save } = useSaver(onSave, say);
@@ -826,30 +793,6 @@ function ShortcutsSection({ settings, onSave, say }: { settings: Settings | null
   );
 }
 
-/* ── Legacy links ── */
-
-function LegacySection() {
-  return (
-    <section className="fs-set__section" aria-labelledby="fs-set-legacy">
-      <header className="fs-set__section-head">
-        <div>
-          <h2 id="fs-set-legacy" className="fs-set__title">{t('In the previous interface')}</h2>
-          <p className="fs-prose">{t('These sections are still edited there. Each link opens the right tab and you come back with "Studio".')}</p>
-        </div>
-      </header>
-      <div className="fs-set__legacy">
-        {LEGACY_TABS.map((tab) => (
-          <a key={tab.tab} className="fs-set__legacy-card" href={legacyHref(tab.tab)}>
-            <span className="fs-set__legacy-title">
-              {t(tab.label)} <ExternalLink size={12} aria-hidden="true" />
-            </span>
-            <span className="fs-set__help">{t(tab.help)}</span>
-          </a>
-        ))}
-      </div>
-    </section>
-  );
-}
 
 /* ── Screen ── */
 
@@ -914,12 +857,10 @@ export function SettingsScreen() {
       <EmptyState
         icon={Settings2}
         title={failed}
-        body={t('The previous interface does not depend on this screen.')}
+        body={t('The server did not answer /api/auth/settings.')}
         primaryAction={{
-          label: t('Open the previous interface\'s settings'),
-          onClick: () => {
-            window.location.href = legacyHref('services');
-          },
+          label: t('Try again'),
+          onClick: () => window.location.reload(),
         }}
       />
     );
@@ -945,7 +886,7 @@ export function SettingsScreen() {
           ))}
         </nav>
         <div className="fs-set__body">
-          {section === 'general' && <GeneralSection />}
+          {section === 'general' && <AppearanceSection say={say} />}
           {section === 'models' && <ModelsSection endpoints={endpoints} onChanged={loadEps} say={say} />}
           {section === 'local' && <LocalModelsSection admin={admin} say={say} />}
           {section === 'defaults' && <DefaultsSection settings={settings} endpoints={endpoints ?? []} onSave={onSave} say={say} />}
@@ -959,7 +900,6 @@ export function SettingsScreen() {
           {section === 'account' && <AccountSection say={say} />}
           {section === 'users' && <UsersSection say={say} />}
           {section === 'system' && <SystemSection settings={settings} onSave={onSave} say={say} admin={admin} />}
-          {section === 'legacy' && <LegacySection />}
         </div>
       </div>
       {notice && <Toast>{notice}</Toast>}

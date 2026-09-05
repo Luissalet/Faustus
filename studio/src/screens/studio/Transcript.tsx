@@ -6,6 +6,7 @@ import { attachmentUrl, isImage } from '../../adapters/composer';
 import { Rich } from '../rich';
 import { formatMetrics, type Step, type Turn } from './model';
 import { t } from '../../i18n';
+import { getDisplay } from '../../shell/display';
 
 /** Loaded on the first click: the speech adapter is not part of the eager bundle. */
 const speak = (text: string) => import('../../adapters/speech').then((m) => m.speak(text));
@@ -390,7 +391,7 @@ function AssistantTurn({
     <article className="fs-turn fs-turn--assistant" data-streaming={turn.streaming || undefined} data-testid="turn-assistant">
       <span className="fs-turn__node" aria-hidden="true" />
       <div className="fs-turn__body">
-        {turn.thinking && (
+        {turn.thinking && getDisplay().thinking && (
           <details className="fs-studio__thinking">
             <summary>Razonamiento {turn.streaming && !turn.text ? <span className="fs-studio__pulse" /> : null}</summary>
             <p className="fs-prose">{turn.thinking}</p>

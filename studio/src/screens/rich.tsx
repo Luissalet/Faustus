@@ -1,6 +1,7 @@
 import { t } from '../i18n';
 import { Check, Copy } from 'lucide-react';
 import { Fragment, useState, type ReactNode } from 'react';
+import { findSensitive, getDisplay, stripEmojis, useDisplay } from '../shell/display';
 
 /**
  * A deliberately small reader for what models actually write: fenced
@@ -20,7 +21,7 @@ function inline(text: string, keyPrefix: string): ReactNode[] {
   let index = 0;
   for (const match of text.matchAll(INLINE)) {
     const start = match.index ?? 0;
-    if (start > last) out.push(text.slice(last, start));
+    if (start > last) out.push(...plain(text.slice(last, start), `${keyPrefix}-p${index}`));
     const token = match[0];
     const key = `${keyPrefix}-${index++}`;
     if (token.startsWith('`')) {
@@ -37,8 +38,25 @@ function inline(text: string, keyPrefix: string): ReactNode[] {
     }
     last = start + token.length;
   }
-  if (last < text.length) out.push(text.slice(last));
+  if (last < text.length) out.push(...plain(text.slice(last), `${keyPrefix}-pend`));
   return out;
+}
+
+/** A run of plain text; with the blur on, its secrets become reveal-on-click buttons. */
+function plain(text: string, key: string): ReactNode[] {
+  if (!getDisplay().blur) return [text];
+  return findSensitive(text).map((run, i) =>
+    run.sensitive ? <Censored key={`${key}-${i}`} text={run.text} /> : run.text,
+  );
+}
+
+function Censored({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <button type="button" className="fs-censor" data-open={open || undefined} title={open ? t('Hide again') : t('Blurred: click to reveal')} onClick={() => setOpen((o) => !o)}>
+      {text}
+    </button>
+  );
 }
 
 function prose(block: string, keyPrefix: string): ReactNode[] {
@@ -127,7 +145,9 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
   );
 }
 
-export function Rich({ text }: { text: string }) {
+export function Rich({ text: raw }: { text: string }) {
+  const display = useDisplay();
+  const text = display.emojis ? raw : stripEmojis(raw);
   const parts = text.split(/```/);
   return (
     <div className="fs-rich">

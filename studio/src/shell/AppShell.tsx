@@ -1,5 +1,6 @@
 import { syncLangFromServer, t, useLang } from '../i18n';
 import { clearThemeAttribute, syncThemeFromServer } from './theme';
+import { applyTheme, getTheme, syncAppearanceFromServer, useAppearance } from './appearance';
 import { useNavSize } from './navSize';
 import { LogOut, Settings2 } from 'lucide-react';
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
@@ -246,11 +247,18 @@ export function AppShell() {
   // at render, so a fresh mount is the honest way to refresh every one.
   const lang = useLang();
   const nav = useNavSize();
+  const { theme } = useAppearance();
   useEffect(() => {
     void syncLangFromServer();
     void syncThemeFromServer();
+    void syncAppearanceFromServer();
     return () => clearThemeAttribute();
   }, []);
+  // The root and the overlay root carry the palette source; the effect
+  // canvas lives inside the root. Both are recreated when the tree re-keys.
+  useEffect(() => {
+    applyTheme(getTheme());
+  }, [lang, theme]);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-studio-shell', 'on');
@@ -274,7 +282,7 @@ export function AppShell() {
 
   return (
     <BrowserRouter>
-      <div className="fs-app fs-shell" data-testid="studio-shell" key={lang} data-nav={nav.mode} data-resizing={nav.resizing || undefined} style={nav.style}>
+      <div className="fs-app fs-shell" data-testid="studio-shell" key={lang} data-nav={nav.mode} data-theme-source={theme.name !== 'studio' && theme.colors ? 'faustus' : undefined} data-resizing={nav.resizing || undefined} style={nav.style}>
         <a className="fs-skip-link" href="#fs-main">
           {t('Skip to content')}
         </a>

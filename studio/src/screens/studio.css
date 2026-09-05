@@ -2272,3 +2272,33 @@ aside.fs-panel {
     display: inline-flex;
   }
 }
+
+/* Full width (Appearance → Display) */
+:root[data-fullwidth] .fs-studio__loading,
+:root[data-fullwidth] .fs-studio__turns,
+:root[data-fullwidth] .fs-studio__hero {
+  max-inline-size: none;
+}
+
+/* Blurred secrets (Appearance → Display → Sensitive blur) */
+.fs-censor {
+  display: inline;
+  padding: 0 2px;
+  border: 0;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--fs-warning) 14%, transparent);
+  color: inherit;
+  font: inherit;
+  filter: blur(5px);
+  cursor: pointer;
+  transition: filter var(--fs-duration-fast) var(--fs-ease);
+}
+
+.fs-censor[data-open] {
+  filter: none;
+}
+
+.fs-censor:focus-visible {
+  outline: 2px solid var(--fs-focus);
+  filter: none;
+}

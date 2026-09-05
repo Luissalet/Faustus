@@ -484,3 +484,15 @@ su área y baja el baseline. Ningún módulo Studio nuevo la aumenta.
     Un `querySelector` global desde la consola (o un test) puede pillar el
     formulario de la anterior en vez del de Studio. Se va cuando se retire
     el legacy; hasta entonces, acotar a `.fs-set__body` / `.fs-main`.
+
+## Añadido tras el lote U (05-09-2026, Apariencia)
+
+80. **`[~]` El difuminado de secretos actúa sobre el texto llano del lector**
+    (`rich.tsx`), no dentro de los bloques de código ni del código en
+    línea, donde la anterior también difuminaba. Extenderlo a `CodeBlock`
+    cuando haga falta.
+81. **`[~]` Los temas de la anterior eran para su disposición.** Colores de
+    burbujas, del botón de enviar, del hamburguesa (`advanced` de
+    `applyColors`) no tienen destino en Studio; el puente toma los cinco
+    colores base y deriva el resto. Si un tema guardado trae `advanced`,
+    se conserva en el JSON y se ignora.

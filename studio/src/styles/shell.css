@@ -589,3 +589,81 @@ html[data-studio-shell='on'] body > *:not(#studio-root):not(#fs-overlay-root) {
     display: none;
   }
 }
+
+/* ── Background effects (Appearance) ─────────────────────────────────
+   The canvas sits between the paper and every surface; the two static
+   patterns are pure CSS on the shell, as they were on the old body. */
+
+.fs-bg-canvas {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  z-index: 0;
+  pointer-events: none;
+  opacity: var(--bg-effect-intensity, 1);
+}
+
+.fs-shell[data-effect='dots'] {
+  background-image: radial-gradient(color-mix(in srgb, var(--bg-effect-color, var(--fs-text-2)) calc(9% * var(--bg-effect-intensity, 1)), transparent) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+.fs-shell[data-effect='synapse'] {
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--bg-effect-color, var(--fs-text-2)) calc(6% * var(--bg-effect-intensity, 1)), transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--bg-effect-color, var(--fs-text-2)) calc(6% * var(--bg-effect-intensity, 1)), transparent) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+.fs-shell[data-effect] > .fs-nav,
+.fs-shell[data-effect] > .fs-main {
+  position: relative;
+  z-index: 1;
+}
+
+/* Density and text size (Appearance) */
+:root[data-density='compact'] {
+  --fs-space-2: 6px;
+  --fs-space-3: 9px;
+  --fs-space-4: 12px;
+  --fs-space-5: 18px;
+  --fs-space-6: 24px;
+  --fs-space-7: 36px;
+  --fs-control-sm: 26px;
+  --fs-control-md: 32px;
+  --fs-body-line: 1.4;
+}
+
+:root[data-density='spacious'] {
+  --fs-space-2: 10px;
+  --fs-space-3: 15px;
+  --fs-space-4: 20px;
+  --fs-space-5: 30px;
+  --fs-space-6: 40px;
+  --fs-space-7: 60px;
+  --fs-control-sm: 32px;
+  --fs-control-md: 40px;
+  --fs-body-line: 1.6;
+}
+
+:root[data-text-size='125'] {
+  font-size: 125%;
+}
+
+/* Frosted: the surfaces let the paper through. */
+:root[data-frosted] .fs-nav,
+:root[data-frosted] .fs-studio__head,
+:root[data-frosted] .fs-panel,
+:root[data-frosted] .fs-set__card,
+:root[data-frosted] .fs-popover,
+:root[data-frosted] .fs-dialog {
+  background: color-mix(in srgb, var(--fs-surface-1) 62%, transparent);
+  backdrop-filter: blur(14px) saturate(1.2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fs-bg-canvas {
+    display: none;
+  }
+}

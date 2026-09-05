@@ -89,6 +89,11 @@ export function useTheme(): ThemeChoice {
   );
 }
 
+/** Put the saved choice back on <html> (after a palette forced its own light or dark). */
+export function reapplyThemeChoice(): void {
+  apply(current);
+}
+
 /** Clean up when the shell unmounts, so the previous interface is not left with our attribute. */
 export function clearThemeAttribute(): void {
   try {

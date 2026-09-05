@@ -52,3 +52,29 @@
     --fs-on-danger: contrast-color(var(--fs-danger));
   }
 }
+
+/*
+ * The eye-candy tokens are derived on :root from the palette, and a custom
+ * property resolves where it is declared: without restating them here they
+ * would keep Studio's colours under a user theme. Same recipes, the bridged
+ * inputs.
+ */
+.fs-app[data-theme-source='faustus'] {
+  --fs-brand-hover: color-mix(in srgb, var(--fs-brand) 84%, var(--fs-text-1));
+  --fs-aurora-a: color-mix(in srgb, var(--fs-brand) 30%, transparent);
+  --fs-aurora-b: color-mix(in srgb, var(--fs-info) 26%, transparent);
+  --fs-aurora-c: color-mix(in srgb, var(--fs-warning) 16%, transparent);
+  --fs-glass: color-mix(in srgb, var(--fs-surface-1) 62%, transparent);
+  --fs-glass-strong: color-mix(in srgb, var(--fs-surface-2) 78%, transparent);
+  --fs-highlight: color-mix(in srgb, var(--fs-text-1) 8%, transparent);
+  --fs-spotlight: color-mix(in srgb, var(--fs-brand) 24%, transparent);
+  --fs-title-gradient: linear-gradient(100deg, var(--fs-brand) 0%, var(--fs-brand-hover) 35%, var(--fs-warning) 70%, var(--fs-brand) 100%);
+  --fs-paper: var(--fs-canvas);
+  --fs-dots: color-mix(in srgb, var(--fs-text-1) 6%, transparent);
+  --fs-panel-shadow: 0 1px 0 var(--fs-highlight) inset;
+  --fs-lift-shadow: 0 12px 34px color-mix(in srgb, var(--fs-canvas) 60%, transparent);
+  --fs-accent-gradient: linear-gradient(120deg, var(--fs-brand), var(--fs-brand-hover) 55%, var(--fs-warning));
+  --fs-ember: color-mix(in srgb, var(--fs-brand) 22%, transparent);
+  --fs-ember-strong: color-mix(in srgb, var(--fs-brand) 44%, transparent);
+  --fs-ember-faint: color-mix(in srgb, var(--fs-brand) 10%, transparent);
+}

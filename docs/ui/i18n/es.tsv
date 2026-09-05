@@ -1950,3 +1950,83 @@ Accepts images	Acepta imágenes
 Native tool calling	Llamada a herramientas nativa
 Reasoning / thinking mode	Modo de razonamiento
 Embedding model (no chat)	Modelo de embeddings (sin chat)
+A palette below has its own light or dark; this applies when you go back to Studio's palette.	Una paleta de abajo trae su propio claro u oscuro; esto se aplica cuando vuelves a la paleta de Studio.
+Accent colour	Color de acento
+Analogous	Análoga
+Applies to Studio's own palette.	Se aplica a la paleta propia de Studio.
+Background	Fondo
+Blank follows the text colour.	En blanco sigue el color del texto.
+Blur secrets	Difuminar secretos
+Blurred: click to reveal	Difuminado: clic para ver
+Colours	Colores
+Comfortable	Cómoda
+Compact	Compacta
+Complementary	Complementaria
+Copy JSON	Copiar JSON
+Default	Por defecto
+Delete the theme "{name}"?	¿Borrar el tema «{name}»?
+Density	Densidad
+Download JSON	Descargar JSON
+Drop .woff2, .ttf or .otf files into static/fonts/custom/ and reload: they appear in the font list.	Deja ficheros .woff2, .ttf u .otf en static/fonts/custom/ y recarga: aparecen en la lista de fuentes.
+Effect	Efecto
+Effect colour	Color del efecto
+Emojis in replies	Emojis en las respuestas
+Every change applies at once and turns the palette into "custom" until you save it.	Cada cambio se aplica al momento y convierte la paleta en «custom» hasta que la guardes.
+Font	Fuente
+Frosted glass	Cristal esmerilado
+Full-width transcript	Transcripción a todo el ancho
+Generate	Generar
+Harmony	Armonía
+Harmony: a whole palette from one accent.	Armonía: una paleta entera a partir de un acento.
+Hide again	Volver a ocultar
+Intensity	Intensidad
+Language, light or dark, the palette, type, the background and what the transcript shows. A theme saved in the previous interface is the same theme here.	Idioma, claro u oscuro, la paleta, la tipografía, el fondo y lo que enseña la transcripción. Un tema guardado en la interfaz anterior es el mismo tema aquí.
+Larger	Más grande
+Light or dark	Claro u oscuro
+Mails, keys, tokens and private addresses in replies are blurred until you click them.	Correos, claves, tokens y direcciones privadas en las respuestas se difuminan hasta que haces clic.
+Monochromatic	Monocromática
+Monospace	Monoespaciada
+Off strips them from what the model writes.	Apagado los quita de lo que escribe el modelo.
+Palette	Paleta
+Paste the theme JSON here…	Pega aquí el JSON del tema…
+Pick a preset or touch a colour to start from Studio's palette.	Elige una plantilla o toca un color para partir de la paleta de Studio.
+Reset	Restablecer
+Save and share	Guardar y compartir
+Saved as "{name}".	Guardado como «{name}».
+Serif	Serif
+Spacious	Espaciosa
+Studio (Inter)	Studio (Inter)
+System sans-serif	Sans-serif del sistema
+Text size	Tamaño del texto
+That is not a theme JSON.	Eso no es un JSON de tema.
+The greeting and the suggestions on an empty conversation.	El saludo y las sugerencias en una conversación vacía.
+The model's reasoning, folded under each reply.	El razonamiento del modelo, plegado bajo cada respuesta.
+The server did not answer /api/auth/settings.	El servidor no ha contestado a /api/auth/settings.
+The transcript	La transcripción
+Theme JSON	JSON del tema
+Theme JSON copied.	JSON del tema copiado.
+Theme applied.	Tema aplicado.
+Theme name	Nombre del tema
+Theme name…	Nombre del tema…
+Thinking blocks	Bloques de razonamiento
+Translucent surfaces with the paper showing through.	Superficies translúcidas con el fondo asomando.
+Triadic	Triádica
+Try again	Volver a intentarlo
+Type and layout	Tipografía y disposición
+Up to {n} themes; delete one first.	Hasta {n} temas; borra uno antes.
+Use the whole window instead of a reading column.	Usar toda la ventana en vez de una columna de lectura.
+Welcome screen	Pantalla de bienvenida
+Your themes	Tus temas
+Solid	Liso
+Dots	Puntos
+Synapse	Sinapsis
+Rain	Lluvia
+Constellations	Constelaciones
+Perlin flow	Flujo Perlin
+Petals	Pétalos
+Sparkles	Destellos
+Embers	Brasas
+Text	Texto
+Panel	Panel
+Border	Borde
+Accent	Acento

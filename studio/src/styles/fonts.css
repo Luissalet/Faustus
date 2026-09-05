@@ -50,3 +50,21 @@
   font-display: swap;
   src: url('/static/fonts/FiraCode-SemiBold.woff2') format('woff2');
 }
+
+/* The dyslexia-friendly option of Appearance (SIL OFL 1.1), the same files
+   the previous interface shipped. */
+@font-face {
+  font-family: 'OpenDyslexic';
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  src: url('/static/fonts/OpenDyslexic-Regular.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'OpenDyslexic';
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+  src: url('/static/fonts/OpenDyslexic-Bold.woff2') format('woff2');
+}

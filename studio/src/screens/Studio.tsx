@@ -60,6 +60,7 @@ import './projects.css';
 import './home.css';
 import './studio.css';
 import { t, tn } from '../i18n';
+import { useDisplay } from '../shell/display';
 
 /* Rare, and the eager bundle has a budget: the folder picker and the side
    panel (browser frames, document editor, file viewer) arrive when opened. */
@@ -179,6 +180,7 @@ export function StudioScreen() {
   const [draft, setDraft] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [busy, setBusy] = useState(false);
+  const display = useDisplay();
   const [loadError, setLoadError] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -1164,7 +1166,7 @@ export function StudioScreen() {
             </p>
           )}
 
-          {isEmpty && (
+          {isEmpty && display.welcome && (
             <div className="fs-studio__hero fs-spot" onMouseMove={spotlight}>
               <span className="fs-watermark" aria-hidden="true">
                 <BrandMark size={320} />
