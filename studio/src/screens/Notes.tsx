@@ -12,6 +12,8 @@ import {
   List,
   ListChecks,
   MoreHorizontal,
+  Image as ImageIcon,
+  Pen,
   Pin,
   PinOff,
   Plus,
@@ -45,11 +47,16 @@ import {
   togglePin,
   toLocalInput,
   updateNote,
+  uploadCanvas,
+  uploadNoteImage,
   type Note,
   type NoteDraft,
   type NoteItem,
   type NoteType,
 } from '../adapters/notes';
+import { Draw } from './notes/Draw';
+import { BulkBar, SelectToggle, useSelection } from './library/parts';
+import { asBackground, backgroundOf, safeImage } from '../lib/paint';
 import './projects.css';
 import './notes.css';
 import { t, tn } from '../i18n';
@@ -132,6 +139,8 @@ interface EditorState {
   label: string;
   dueDate: string;
   repeat: string;
+  /** A photo on the note, or the picture a drawn note IS. */
+  imageUrl: string;
 }
 
 function editorFrom(note: Note | null, type: NoteType = 'note', text = ''): EditorState {
@@ -144,6 +153,7 @@ function editorFrom(note: Note | null, type: NoteType = 'note', text = ''): Edit
     label: note?.label ?? '',
     dueDate: note?.dueDate ?? '',
     repeat: note?.repeat ?? 'none',
+    imageUrl: note?.imageUrl ?? '',
   };
 }
 
@@ -166,8 +176,30 @@ function NoteEditor({ note, initial, onClose, onSaved, onArchive, onDelete }: { 
   const [state, setState] = useState<EditorState>(initial);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const listMode = state.noteType !== 'note' && state.noteType !== 'draw';
+  const [busy, setBusy] = useState<'photo' | 'background' | null>(null);
+  const drawing = state.noteType === 'draw';
+  const listMode = state.noteType !== 'note' && !drawing;
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const photoRef = useRef<HTMLInputElement>(null);
+  const bgRef = useRef<HTMLInputElement>(null);
   const set = (patch: Partial<EditorState>) => setState((s) => ({ ...s, ...patch }));
+  const background = backgroundOf(state.color);
+
+  /** A photo, a drawing's backdrop and a card's wallpaper all upload the same. */
+  const pickImage = async (file: File | undefined, what: 'photo' | 'background') => {
+    if (!file) return;
+    setBusy(what);
+    setError(null);
+    try {
+      const url = await uploadNoteImage(file, file.name);
+      if (what === 'photo') set({ imageUrl: url });
+      else set({ color: asBackground(url) });
+    } catch {
+      setError(t('The picture could not be uploaded.'));
+    } finally {
+      setBusy(null);
+    }
+  };
 
   const setItem = (i: number, patch: Partial<NoteItem>) => set({ items: state.items.map((it, j) => (j === i ? { ...it, ...patch } : it)) });
   const removeItem = (i: number) => set({ items: state.items.filter((_, j) => j !== i) });
@@ -200,12 +232,16 @@ function NoteEditor({ note, initial, onClose, onSaved, onArchive, onDelete }: { 
       label: state.label.trim(),
       dueDate: state.dueDate || null,
       repeat: state.dueDate ? state.repeat : 'none',
+      imageUrl: state.imageUrl || null,
     };
     try {
+      // A drawing has to become a stored PNG before the note is saved: the
+      // canvas cannot be rebuilt later from anything else.
+      if (drawing && canvasRef.current) draft.imageUrl = await uploadCanvas(canvasRef.current);
       const saved = note ? await updateNote(note.id, draft) : await createNote(draft);
       onSaved(saved);
     } catch {
-      setError(t('Could not save the note.'));
+      setError(drawing ? t('The drawing could not be saved.') : t('Could not save the note.'));
     } finally {
       setSaving(false);
     }
@@ -231,12 +267,15 @@ function NoteEditor({ note, initial, onClose, onSaved, onArchive, onDelete }: { 
     >
       <div className={`fs-note-editor${state.color && !state.color.startsWith('bg:') ? ` fs-note--${state.color}` : ''}`}>
         <div className="fs-note-editor__type" role="group" aria-label={t('Note type')}>
-          {(['note', 'todo', 'goal'] as NoteType[]).map((kind) => (
+          {(['note', 'todo', 'goal', 'draw'] as NoteType[]).map((kind) => (
             <button key={kind} type="button" className="fs-chip" data-on={state.noteType === kind || undefined} onClick={() => set({ noteType: kind })}>
-              {kind === 'note' ? <StickyNote size={13} aria-hidden="true" /> : <ListChecks size={13} aria-hidden="true" />}
+              {kind === 'note' ? <StickyNote size={13} aria-hidden="true" /> : kind === 'draw' ? <Pen size={13} aria-hidden="true" /> : <ListChecks size={13} aria-hidden="true" />}
               {t(TYPE_LABEL[kind])}
             </button>
           ))}
+          <span className="fs-spacer" />
+          <input ref={photoRef} type="file" accept="image/*" hidden onChange={(e) => void pickImage(e.target.files?.[0], 'photo')} data-testid="note-photo-input" />
+          <Button variant="ghost" size="sm" icon={ImageIcon} label={drawing ? t('Draw over a photo') : t('Photo')} loading={busy === 'photo'} onClick={() => photoRef.current?.click()} testId="note-photo" />
         </div>
         <input
           type="text"
@@ -246,7 +285,14 @@ function NoteEditor({ note, initial, onClose, onSaved, onArchive, onDelete }: { 
           onChange={(e) => set({ title: e.target.value })}
           autoFocus={!note}
         />
-        {!listMode && (
+        {drawing && <Draw photo={state.imageUrl || null} canvasRef={canvasRef} />}
+        {!drawing && safeImage(state.imageUrl) && (
+          <div className="fs-note-editor__photo">
+            <img src={safeImage(state.imageUrl) ?? ''} alt={t('Photo on the note')} />
+            <IconButton icon={X} label={t('Remove the photo')} size="sm" onClick={() => set({ imageUrl: '' })} />
+          </div>
+        )}
+        {!listMode && !drawing && (
           <textarea className="fs-note-editor__content" placeholder={t('Write the note…')} rows={5} value={state.content} onChange={(e) => set({ content: e.target.value })} />
         )}
         {listMode && (
@@ -298,18 +344,25 @@ function NoteEditor({ note, initial, onClose, onSaved, onArchive, onDelete }: { 
                 onClick={() => set({ color: c })}
               />
             ))}
-            {state.color.startsWith('bg:') && <span className="fs-note-editor__hint">{t('Custom background (chosen in the previous interface)')}</span>}
+            <input ref={bgRef} type="file" accept="image/*" hidden onChange={(e) => void pickImage(e.target.files?.[0], 'background')} data-testid="note-bg-input" />
+            <Button variant="ghost" size="sm" icon={ImageIcon} label={background ? t('Change the picture') : t('A picture')} loading={busy === 'background'} onClick={() => bgRef.current?.click()} testId="note-bg" />
+            {background && (
+              <span className="fs-note-editor__bg">
+                <img src={safeImage(background) ?? ''} alt="" />
+                <IconButton icon={X} label={t('Remove the picture')} size="sm" onClick={() => set({ color: '' })} />
+              </span>
+            )}
           </div>
         </div>
 
         <div className="fs-note-editor__row">
-          <span className="fs-note-editor__label">Etiquetas</span>
+          <span className="fs-note-editor__label">{t('Labels')}</span>
           <input type="text" className="fs-field" placeholder={t('#home #work')} value={state.label} onChange={(e) => set({ label: e.target.value })} />
         </div>
 
         <div className="fs-note-editor__row">
           <span className="fs-note-editor__label">
-            <Bell size={12} aria-hidden="true" /> Recordar
+            <Bell size={12} aria-hidden="true" /> {t('Remind me')}
           </span>
           <div className="fs-note-editor__when">
             <input type="datetime-local" className="fs-field" value={state.dueDate} onChange={(e) => set({ dueDate: e.target.value })} aria-label={t('Date and time')} />
@@ -347,6 +400,9 @@ interface CardProps {
   index: number;
   count: number;
   archivedView: boolean;
+  selecting: boolean;
+  picked: boolean;
+  onPick: () => void;
   onEdit: () => void;
   onToggleItem: (index: number) => void;
   onPin: () => void;
@@ -365,7 +421,7 @@ interface CardProps {
   };
 }
 
-function NoteCard({ note, index, count, archivedView, onEdit, onToggleItem, onPin, onArchive, onDelete, onAgent, onCopy, onMove, onOpenAgentChat, dragProps }: CardProps) {
+function NoteCard({ note, index, count, archivedView, selecting, picked, onPick, onEdit, onToggleItem, onPin, onArchive, onDelete, onAgent, onCopy, onMove, onOpenAgentChat, dragProps }: CardProps) {
   const list = isChecklist(note);
   const { done, total } = progress(note);
   const overdue = isOverdue(note.dueDate) && !archivedView;
@@ -382,14 +438,19 @@ function NoteCard({ note, index, count, archivedView, onEdit, onToggleItem, onPi
       data-pinned={note.pinned || undefined}
       data-overdue={overdue || undefined}
       data-done={list && total > 0 && done === total ? true : undefined}
+      data-selected={picked || undefined}
       data-testid="note-card"
-      {...dragProps}
+      {...(selecting ? {} : dragProps)}
     >
       <header className="fs-note__head">
-        <span className="fs-note__grip" aria-hidden="true">
-          <GripVertical size={13} />
-        </span>
-        <button type="button" className="fs-note__title" onClick={onEdit} title={t('Edit')}>
+        {selecting ? (
+          <input type="checkbox" className="fs-note__check" checked={picked} onChange={onPick} aria-label={note.title || t('Note')} data-testid="note-check" />
+        ) : (
+          <span className="fs-note__grip" aria-hidden="true">
+            <GripVertical size={13} />
+          </span>
+        )}
+        <button type="button" className="fs-note__title" onClick={selecting ? onPick : onEdit} title={selecting ? t('Select') : t('Edit')}>
           {note.pinned && <Pin size={11} aria-label={t('Pinned')} className="fs-note__pin" />}
           {note.title || <span className="fs-note__untitled">{list ? t('List') : t('Note')}</span>}
         </button>
@@ -429,7 +490,7 @@ function NoteCard({ note, index, count, archivedView, onEdit, onToggleItem, onPi
             </label>
           ))}
           {total > 0 && (
-            <div className="fs-note__progress" aria-label={`${done} de ${total}`}>
+            <div className="fs-note__progress" aria-label={t('{done} of {total}', { done, total })}>
               <span style={{ inlineSize: `${Math.round((done / total) * 100)}%` }} />
             </div>
           )}
@@ -548,6 +609,35 @@ export function NotesScreen() {
   }, [notes, filter, label]);
 
   const dueCount = useMemo(() => (notes ?? []).filter((n) => !n.archived && n.dueDate && (isToday(n.dueDate) || isOverdue(n.dueDate))).length, [notes]);
+
+  /* ── Several at once ── */
+  const pick = useSelection<Note>();
+  const [bulking, setBulking] = useState(false);
+  const [confirmBulk, setConfirmBulk] = useState(false);
+
+  /** One action over every ticked note, then out of selection mode. */
+  const bulk = async (what: 'archive' | 'delete' | 'pin', colour?: string) => {
+    const chosen = (notes ?? []).filter((n) => pick.selected.has(n.id));
+    if (!chosen.length) return;
+    setBulking(true);
+    let failed = 0;
+    for (const note of chosen) {
+      try {
+        if (what === 'archive') await toggleArchive(note.id);
+        else if (what === 'delete') await deleteNote(note.id);
+        else if (colour !== undefined) await updateNote(note.id, { color: colour });
+        else await togglePin(note.id);
+      } catch {
+        failed += 1;
+      }
+    }
+    setBulking(false);
+    pick.leave();
+    setNotes(await listNotes(archivedView).catch(() => notes ?? []));
+    if (failed) say(tn(failed, 'One note did not change.', '{n} notes did not change.'));
+    else if (what === 'delete') say(tn(chosen.length, '{n} note deleted.', '{n} notes deleted.'));
+    else if (what === 'archive') say(tn(chosen.length, '{n} note archived.', '{n} notes archived.'));
+  };
 
   /* ── Actions ── */
   const quickAdd = async () => {
@@ -766,6 +856,7 @@ export function NotesScreen() {
           {'Notification' in window && Notification.permission === 'default' && (
             <IconButton icon={Bell} label={t('Allow browser notifications')} size="sm" onClick={askNotifications} />
           )}
+          {notes && notes.length > 1 && <SelectToggle selecting={pick.selecting} onToggle={() => (pick.selecting ? pick.leave() : pick.enter())} testId="note-select" />}
           {!archivedView && <Button variant="primary" size="sm" icon={Plus} label={t('New')} onClick={() => setEditing({ note: null, initial: editorFrom(null) })} testId="note-new" />}
         </div>
       </header>
@@ -801,7 +892,7 @@ export function NotesScreen() {
             data-testid="note-quick"
           />
           <button type="submit" className="fs-btn" data-size="sm" data-variant="secondary" disabled={!quick.trim()}>
-            <Plus size={13} aria-hidden="true" /> Añadir
+            <Plus size={13} aria-hidden="true" /> {t('Add')}
           </button>
         </form>
       )}
@@ -829,6 +920,25 @@ export function NotesScreen() {
         </div>
       )}
 
+      {pick.selecting && notes && (
+        <BulkBar items={visible} selected={pick.selected} onAll={(on) => pick.all(visible, on)} label={t('Selected notes')}>
+          <div className="fs-notes__bulk-colors" role="group" aria-label={t('Colour')}>
+            {NOTE_COLORS.map((c) => (
+              <button
+                key={c || 'none'}
+                type="button"
+                className={`fs-note-editor__dot${c ? ` fs-note--${c}` : ''}`}
+                aria-label={c || t('no colour')}
+                disabled={!pick.selected.size || bulking}
+                onClick={() => void bulk('pin', c)}
+              />
+            ))}
+          </div>
+          <Button variant="ghost" size="sm" icon={Archive} label={archivedView ? t('Recover') : t('Archive')} disabled={!pick.selected.size || bulking} onClick={() => void bulk('archive')} />
+          <Button variant="danger" size="sm" icon={Trash2} label={t('Delete')} disabled={!pick.selected.size || bulking} onClick={() => setConfirmBulk(true)} testId="note-bulk-delete" />
+        </BulkBar>
+      )}
+
       {!notes && <Skeleton label={t('Loading notes')} count={4} height="88px" />}
 
       {notes && visible.length === 0 && (
@@ -848,6 +958,9 @@ export function NotesScreen() {
               index={i}
               count={visible.length}
               archivedView={archivedView}
+              selecting={pick.selecting}
+              picked={pick.selected.has(note.id)}
+              onPick={() => pick.toggle(note.id)}
               onEdit={() => setEditing({ note, initial: editorFrom(note) })}
               onToggleItem={(idx) => void onToggleItem(note, idx)}
               onPin={() => void onPin(note)}
@@ -858,7 +971,7 @@ export function NotesScreen() {
               onMove={(dir) => onMove(note, dir)}
               onOpenAgentChat={() => note.agentSessionId && navigate(`/studio?s=${encodeURIComponent(note.agentSessionId)}`)}
               dragProps={{
-                draggable: filter === 'all' && !label && !archivedView,
+                draggable: filter === 'all' && !label && !archivedView && !pick.selecting,
                 onDragStart: () => {
                   dragFrom.current = i;
                 },
@@ -888,6 +1001,34 @@ export function NotesScreen() {
           onArchive={editing.note ? () => void onArchive(editing.note as Note) : undefined}
           onDelete={editing.note ? () => setConfirmDelete(editing.note) : undefined}
         />
+      )}
+
+      {confirmBulk && (
+        <Dialog
+          open
+          onOpenChange={(o) => {
+            if (!o) setConfirmBulk(false);
+          }}
+          title={tn(pick.selected.size, 'Delete {n} note?', 'Delete {n} notes?')}
+          description={t('They do not go to the archive: they are gone.')}
+          footer={
+            <>
+              <Button variant="ghost" size="sm" label={t('Cancel')} onClick={() => setConfirmBulk(false)} />
+              <Button
+                variant="danger-solid"
+                size="sm"
+                label={t('Delete')}
+                loading={bulking}
+                onClick={() => {
+                  setConfirmBulk(false);
+                  void bulk('delete');
+                }}
+              />
+            </>
+          }
+        >
+          <p className="fs-prose">{t('Archiving keeps them and lets you get them back.')}</p>
+        </Dialog>
       )}
 
       {confirmDelete && (

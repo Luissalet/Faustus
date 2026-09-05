@@ -744,3 +744,16 @@ su área y baja el baseline. Ningún módulo Studio nuevo la aumenta.
     pantalla y por navegador y se guarda en `localStorage`
     (`faustus_studio_tours`), no en el servidor: en otro navegador vuelve a
     salir. Sin ajuste para reactivarlos que no sea `/tours reset`.
+
+## Lote AK (Notas: dibujo, fotos, varias a la vez)
+
+135. **`[ ]`** El texto del lienzo se escribe y ya es píxeles: no se puede
+    mover ni corregir después (deshacer lo quita). Igual que en la anterior.
+136. **`[ ]`** La goma pinta blanco, así que sobre una foto «borra» a blanco
+    en vez de destapar la foto. Igual que en la anterior.
+137. **`[ ]`** Las acciones en bloque van nota a nota contra la API (no hay
+    endpoint de lote para notas): con muchas seleccionadas se nota, y si una
+    falla el resto sigue y se avisa de cuántas no cambiaron.
+138. **`[ ]`** Al adjuntar una foto a una nota de dibujo que ya tenía trazos,
+    la foto se pinta debajo y el lienzo se rehace: los trazos anteriores se
+    pierden. Conviene adjuntar la foto primero.

@@ -480,3 +480,257 @@
     display: none;
   }
 }
+
+/* ── A note you draw ── */
+
+.fs-draw {
+  display: grid;
+  gap: var(--fs-space-2);
+}
+
+.fs-draw__wrap {
+  position: relative;
+  inline-size: 100%;
+}
+
+.fs-draw__canvas {
+  display: block;
+  inline-size: 100%;
+  block-size: auto;
+  aspect-ratio: 600 / 320;
+  border: 1px solid var(--fs-border-strong);
+  border-radius: var(--fs-radius-control);
+  /* The canvas paints its own white paper; this only covers the first frame. */
+  background: var(--fs-surface-1);
+  cursor: crosshair;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.fs-draw__canvas[data-tool='text'] {
+  cursor: text;
+}
+
+/* Where the letters will land, at the size they will land in. */
+.fs-draw__type {
+  position: absolute;
+  z-index: 1;
+  min-inline-size: 6ch;
+  max-inline-size: 60%;
+  padding: 0 2px;
+  border: 0;
+  border-block-end: 2px solid var(--fs-brand);
+  background: color-mix(in srgb, var(--fs-canvas) 12%, transparent);
+  color: var(--fs-text-1);
+  font: inherit;
+  line-height: 1.1;
+}
+
+.fs-draw__type:focus-visible {
+  outline: 2px solid var(--fs-focus);
+  outline-offset: 1px;
+}
+
+.fs-draw__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fs-space-2);
+  padding: var(--fs-space-2);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  background: color-mix(in srgb, var(--fs-surface-2) 55%, transparent);
+}
+
+.fs-draw__tools {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.fs-draw__inks {
+  display: inline-flex;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fs-draw__ink {
+  inline-size: 18px;
+  block-size: 18px;
+  padding: 0;
+  border: 1px solid var(--fs-border-strong);
+  border-radius: var(--fs-radius-pill);
+  cursor: pointer;
+  min-block-size: auto;
+  transition: scale var(--fs-duration-fast) var(--fs-ease-spring), box-shadow var(--fs-duration-fast) var(--fs-ease);
+}
+
+.fs-draw__ink:hover {
+  scale: 1.15;
+}
+
+.fs-draw__ink[data-on] {
+  box-shadow: 0 0 0 2px var(--fs-canvas), 0 0 0 4px var(--fs-brand);
+}
+
+.fs-draw__sizes {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.fs-draw__size {
+  display: grid;
+  place-items: center;
+  inline-size: 26px;
+  block-size: 26px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--fs-radius-control);
+  background: transparent;
+  cursor: pointer;
+  min-block-size: auto;
+}
+
+.fs-draw__size[data-on] {
+  border-color: var(--fs-brand);
+  background: var(--fs-ember-faint);
+}
+
+.fs-draw__size > span {
+  display: block;
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-text-2);
+}
+
+/* ── A photo on a note ── */
+
+.fs-note-editor__photo {
+  position: relative;
+  /* Shrink to the picture so the remove button sits on its corner and not
+     on the corner of the dialog. */
+  inline-size: fit-content;
+  max-inline-size: 100%;
+  margin-inline: auto;
+}
+
+.fs-note-editor__photo img {
+  max-inline-size: 100%;
+  max-block-size: 200px;
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+}
+
+.fs-note-editor__photo .fs-icon-btn {
+  position: absolute;
+  inset-block-start: 4px;
+  inset-inline-end: 4px;
+  background: var(--fs-glass-strong);
+}
+
+.fs-note-editor__bg {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.fs-note-editor__bg img {
+  inline-size: 34px;
+  block-size: 24px;
+  object-fit: cover;
+  border: 1px solid var(--fs-border);
+  border-radius: 4px;
+}
+
+/* ── Several at once ── */
+
+.fs-note__check {
+  flex: none;
+  accent-color: var(--fs-brand);
+  inline-size: 15px;
+  block-size: 15px;
+  margin: 2px 0 0;
+}
+
+.fs-note[data-selected] {
+  border-color: var(--fs-brand);
+  box-shadow: inset 0 0 0 1px var(--fs-brand), var(--fs-panel-shadow);
+}
+
+.fs-notes__bulk-colors {
+  display: inline-flex;
+  gap: 4px;
+}
+
+/* On a phone the note editor is the screen: a drawing needs the room, and
+   a thumb needs the target. */
+@media (max-width: 767px) {
+  .fs-dialog[data-testid='note-editor'] {
+    inline-size: 100vw;
+    max-inline-size: 100vw;
+    block-size: 100dvh;
+    max-block-size: 100dvh;
+    inset: 0;
+    translate: none;
+    border-radius: 0;
+  }
+
+  .fs-draw__bar .fs-icon-btn,
+  .fs-draw__size {
+    inline-size: 34px;
+    block-size: 34px;
+  }
+
+  .fs-draw__ink {
+    inline-size: 24px;
+    block-size: 24px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fs-draw__ink {
+    transition: none;
+  }
+
+  .fs-draw__ink:hover {
+    scale: none;
+  }
+}
+
+.fs-draw__end {
+  display: inline-flex;
+  gap: 2px;
+  margin-inline-start: auto;
+}
+
+/* The inks sit on a strip of paper, so the dark ones read as ink. */
+.fs-draw__inks {
+  padding: 3px 5px;
+  border-radius: var(--fs-radius-pill);
+  background: color-mix(in srgb, var(--fs-text-3) 24%, transparent);
+}
+
+/* The bulk bar is the Library's (screens/library/parts.tsx), and so is its
+   look; Notes does not load library.css, so its layout is repeated here
+   rather than importing a whole screen's stylesheet for four rules. */
+.fs-notes .fs-gal__bulk {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fs-space-2);
+  margin-block-end: var(--fs-space-3);
+  padding: var(--fs-space-2) var(--fs-space-3);
+  border: 1px solid color-mix(in srgb, var(--fs-brand) 40%, var(--fs-border));
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-ember-faint);
+}
+
+.fs-notes .fs-gal__spacer {
+  flex: 1;
+}
+
+.fs-notes .fs-gal__muted {
+  color: var(--fs-text-3);
+  font-size: var(--fs-label-size);
+}

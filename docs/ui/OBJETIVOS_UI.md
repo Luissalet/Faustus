@@ -164,7 +164,10 @@ proporcionales, auditoría de la guía Vercel pasada o excepción documentada,
       en Markdown desde `adapters/commands.ts`, y los ocultos en `lib/fun.ts` +
       `studio/Egg.tsx`); y los tours guiados (lote AJ: un motor en
       `shell/Tour.tsx` con los pasos como datos en `lib/tours.ts`, `/demo`, los
-      once `tour-*` y `/tours`, con el autoplay convertido en un ofrecimiento).
+      once `tour-*` y `/tours`, con el autoplay convertido en un ofrecimiento);
+      Notas completas (lote AK: nota de dibujo con `lib/paint.ts` +
+      `screens/notes/Draw.tsx`, foto adjunta, fondo de imagen propio,
+      selección múltiple y editor a pantalla completa en móvil).
       Vitales (uso de GPU) en Studio: lote Q.
 - [ ] **UI-061** Borrar los puentes muertos, el DOM legacy de cada pantalla ya
       migrada y el propio flag. Empezar a dividir `style.css`, a solas y sin

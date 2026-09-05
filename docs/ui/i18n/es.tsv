@@ -4305,3 +4305,36 @@ The model turns it into a schedule and a prompt, and you get to correct both bef
 Or give it a webhook, and something else decides when it runs.	O dale un webhook, y que decida otro cuándo corre.
 Each slot is a model — or a search provider, in Search mode. Add up to eight; they run in parallel unless you say otherwise.	Cada hueco es un modelo (o un buscador, en modo Search). Hasta ocho; van en paralelo salvo que digas lo contrario.
 Every answer gets its own pane, with its time and its tokens under it, and a vote at the end.	Cada respuesta tiene su panel, con su tiempo y sus tokens debajo, y una votación al final.
+A picture	Una imagen
+Archiving keeps them and lets you get them back.	Archivarlas las conserva y te deja recuperarlas.
+Change the picture	Cambiar la imagen
+Clear the drawing	Limpiar el dibujo
+Delete {n} note?	¿Borrar {n} nota?
+Delete {n} notes?	¿Borrar {n} notas?
+Draw over a photo	Dibujar sobre una foto
+Drawing surface	Superficie de dibujo
+Ink	Tinta
+One note did not change.	Una nota no ha cambiado.
+Photo	Foto
+Photo on the note	Foto de la nota
+Remove the photo	Quitar la foto
+Remove the picture	Quitar la imagen
+Selected notes	Notas seleccionadas
+Text to write	Texto a escribir
+The drawing could not be saved.	No se ha podido guardar el dibujo.
+The picture could not be uploaded.	No se ha podido subir la imagen.
+They do not go to the archive: they are gone.	No van al archivo: desaparecen.
+Tool	Herramienta
+{n} note archived.	{n} nota archivada.
+{n} note deleted.	{n} nota borrada.
+{n} notes archived.	{n} notas archivadas.
+{n} notes deleted.	{n} notas borradas.
+{n} notes did not change.	{n} notas no han cambiado.
+Pen	Lápiz
+Line	Línea
+Circle	Círculo
+Small	Pequeño
+Large	Grande
+Labels	Etiquetas
+Remind me	Recordar
+{done} of {total}	{done} de {total}

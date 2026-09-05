@@ -279,3 +279,25 @@ export function labelsOf(note: Pick<Note, 'label'>): string[] {
     .map((l) => l.replace(/^#/, '').trim())
     .filter(Boolean);
 }
+
+/* ── Pictures ── */
+
+/**
+ * A photo on a note, a drawing, or a note's own background all end up as
+ * the same thing: a file in `/api/upload`, referenced by its URL. The
+ * previous interface did exactly this; keeping it means a note drawn there
+ * still shows here.
+ */
+export async function uploadNoteImage(file: Blob, name = 'note.png'): Promise<string> {
+  const { uploadFiles } = await import('./composer');
+  const [uploaded] = await uploadFiles([file instanceof File ? file : new File([file], name, { type: file.type || 'image/png' })]);
+  if (!uploaded) throw new ApiError('upload returned no file', 500);
+  return `/api/upload/${encodeURIComponent(uploaded.id)}`;
+}
+
+/** The canvas of a drawn note, as a stored PNG. */
+export async function uploadCanvas(canvas: HTMLCanvasElement): Promise<string> {
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+  if (!blob) throw new ApiError('the drawing could not be read', 500);
+  return uploadNoteImage(blob, 'drawing.png');
+}
