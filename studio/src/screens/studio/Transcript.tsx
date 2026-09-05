@@ -1,4 +1,4 @@
-import { Check, ChevronDown, Copy, FileText, GitFork, Pencil, Quote, RefreshCw, Trash2, Volume2, VolumeX, X } from 'lucide-react';
+import { Check, ChevronDown, Copy, FileText, GitFork, Pencil, Quote, RefreshCw, Telescope, Trash2, Volume2, VolumeX, X } from 'lucide-react';
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { Button, IconButton } from '../../components';
 import type { AskUser, DelegationTask } from '../../adapters/chat';
@@ -415,7 +415,8 @@ function AssistantTurn({
             <SubagentBoard workers={turn.workers} live={turn.streaming} onRerun={onRerun ?? (() => undefined)} onNotice={onNotice} />
           </Suspense>
         )}
-        {waiting && !turn.thinking && (
+        {turn.research && !turn.research.done && turn.streaming && <ResearchLine research={turn.research} />}
+        {waiting && !turn.thinking && !turn.research && (
           <p className="fs-studio__waiting" aria-live="polite">
             <span className="fs-studio__pulse" /> Pensando
           </p>
@@ -473,6 +474,33 @@ function AssistantTurn({
         )}
       </div>
     </article>
+  );
+}
+
+/** Deep Research before the answer: the phase, the round and a clock. */
+function ResearchLine({ research }: { research: NonNullable<Turn['research']> }) {
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const timer = window.setInterval(() => tick((n) => n + 1), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const secs = Math.max(0, Math.floor((Date.now() - research.startedAt) / 1000));
+  const clock = `${String(Math.floor(secs / 60)).padStart(2, '0')}:${String(secs % 60).padStart(2, '0')}`;
+  const avg = research.avgDuration ? ` / ~${String(Math.floor(research.avgDuration / 60)).padStart(2, '0')}:${String(Math.round(research.avgDuration % 60)).padStart(2, '0')}` : '';
+  const phase: Record<string, string> = {
+    probing: t('probing the model'),
+    planning: t('planning'),
+    searching: t('searching'),
+    reading: t('reading {n} sources', { n: research.totalSources }),
+    analyzing: t('analysing'),
+    writing: t('writing the report'),
+  };
+  return (
+    <p className="fs-studio__waiting fs-studio__research" aria-live="polite">
+      <Telescope size={13} aria-hidden="true" />
+      {t('Deep Research')}
+      {research.round ? ` · ${t('round {n}', { n: research.round })}` : ''} · {research.message || phase[research.phase] || research.phase} · <span className="fs-studio__clock">{clock}{avg}</span>
+    </p>
   );
 }
 

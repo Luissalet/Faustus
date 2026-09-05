@@ -168,6 +168,7 @@ export type ChatEvent =
   | { type: 'ask_user'; ask: AskUser }
   | { type: 'metrics'; metrics: TurnMetrics }
   | { type: 'sources'; sources: WebSource[] }
+  | { type: 'research'; phase: string; round: number; totalSources: number; message: string; startedAt: number; avgDuration: number }
   | { type: 'image'; url: string }
   | { type: 'fallback'; answeredBy: string; selected: string }
   | { type: 'terminal'; failed: boolean; message?: string }
@@ -328,6 +329,8 @@ export interface SendOptions {
   allowBash?: boolean;
   allowWebSearch?: boolean;
   useRag?: boolean;
+  /** Deep Research before answering: several rounds of search and reading (`use_research`). */
+  useResearch?: boolean;
   workspace?: string;
   route?: ModelRoute | null;
   /** Upload ids from /api/upload. */
@@ -572,11 +575,22 @@ function decode(raw: Record<string, unknown>, sseEvent: string | null): ChatEven
     case 'metrics':
       return { type: 'metrics', metrics: metricsFrom(data) };
     case 'web_sources':
+    case 'research_sources':
       return {
         type: 'sources',
         sources: asArray<Record<string, unknown>>(raw.data)
           .map((s) => ({ title: str(s.title) || str(s.url), url: str(s.url) }))
           .filter((s) => s.url),
+      };
+    case 'research_progress':
+      return {
+        type: 'research',
+        phase: str(data.phase),
+        round: num(data.round) ?? 0,
+        totalSources: num(data.total_sources) ?? 0,
+        message: str(data.message),
+        startedAt: num(data.started_at) ?? 0,
+        avgDuration: num(data.avg_duration) ?? 0,
       };
     case 'generated_image':
       return raw.url ? { type: 'image', url: str(raw.url) } : null;
@@ -645,6 +659,7 @@ export async function* sendTurn(options: SendOptions): AsyncGenerator<ChatEvent>
   if (options.allowBash) fd.append('allow_bash', 'true');
   if (options.allowWebSearch) fd.append('allow_web_search', 'true');
   if (options.useRag) fd.append('use_rag', 'true');
+  if (options.useResearch) fd.append('use_research', 'true');
   if (options.workspace) fd.append('workspace', options.workspace);
   if (options.route) {
     fd.append('selected_model', options.route.model);

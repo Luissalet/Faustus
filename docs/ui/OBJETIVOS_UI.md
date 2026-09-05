@@ -142,6 +142,8 @@ proporcionales, auditoría de la guía Vercel pasada o excepción documentada,
       ajustes, selección, inpaint, quitar fondo, filtros, borradores, «Pide»);
       Correo completo (`/email`, lote AB: triaje, etiquetas, urgencia, IA,
       redactar con adjuntos y programación, bandeja de salida, bajas, ajustes);
+      Deep Research como pantalla (`/research`, lote AC) y chip «Investigación»
+      en el compositor;
       Biblioteca completa (documentos con importar/ordenar/exportar, chats, investigación,
       archivo) y editor de documentos a pantalla completa (`/documents/{id}`: barra
       Markdown, buscar, vistas, ejecutar, versiones con revisión, exportar, PDF con campos,

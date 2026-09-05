@@ -7,6 +7,7 @@ import {
   FileText,
   FolderOpen,
   Globe,
+  Telescope,
   ListTodo,
   MessageSquare,
   Mic,
@@ -54,6 +55,8 @@ export interface Knobs {
   rag: boolean;
   /** Nobody mode: the conversation is not saved and memory stays closed. */
   incognito: boolean;
+  /** Deep Research before the next answer; switches itself off after the turn. */
+  research: boolean;
 }
 
 export interface ComposerProps {
@@ -467,6 +470,16 @@ export function Composer({
             data-testid="studio-knob-web"
           >
             <Globe size={13} aria-hidden="true" /> {t('Web')}
+          </button>
+          <button
+            type="button"
+            className="fs-studio__chip"
+            aria-pressed={knobs.research}
+            title={t('Deep Research for the next message: several rounds of search and reading, then the answer with sources')}
+            onClick={() => setKnobs((k) => ({ ...k, research: !k.research }))}
+            data-testid="studio-knob-research"
+          >
+            <Telescope size={13} aria-hidden="true" /> {t('Research')}
           </button>
           <button
             type="button"

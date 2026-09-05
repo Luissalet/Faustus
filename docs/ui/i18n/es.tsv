@@ -3306,3 +3306,77 @@ Newsletter	Boletín
 Not done	Sin hacer
 Pending · 30 days	Pendientes · 30 días
 Older than 30 days	Más de 30 días
+A chat that starts with this report as context	Un chat que empieza con este informe como contexto
+All at once	Todos a la vez
+All reports	Todos los informes
+Already applied.	Ya aplicado.
+Analysing {n} findings	Analizando {n} hallazgos
+Apply and fix the search	Aplicar y arreglar la búsqueda
+Ask something worth several searches. Faustus plans, reads, reflects and writes a report with its sources.	Pregunta algo que merezca varias búsquedas. Faustus planifica, lee, reflexiona y escribe un informe con sus fuentes.
+Auto lets the model pick the shape of the report.	Auto deja que el modelo elija la forma del informe.
+Check	Comprobar
+Check again	Comprobar de nuevo
+Checking the hardware	Comprobando el hardware
+Clear from the list	Quitar de la lista
+Copy the report	Copiar el informe
+Could not apply the profile.	No se ha podido aplicar el perfil.
+Could not read the recommendation.	No se ha podido leer la recomendación.
+Could not start.	No se ha podido empezar.
+Deep Research	Investigación profunda
+Deep Research for the next message: several rounds of search and reading, then the answer with sources	Investigación profunda para el próximo mensaje: varias rondas de búsqueda y lectura y después la respuesta con fuentes
+Discuss	Comentar
+Dismiss	Descartar
+Edit and retry	Editar y reintentar
+Edit the question	Editar la pregunta
+Endpoint	Endpoint
+Faustus can pick rounds, timeouts and concurrency for the GPU it finds, and fix a search provider that would leave it with nothing to read.	Faustus puede elegir rondas, tiempos de espera y concurrencia para la GPU que encuentre, y arreglar un buscador que lo dejaría sin nada que leer.
+Finished	Terminadas
+Fit for this machine	Ajuste a esta máquina
+Format	Formato
+Hide the report	Ocultar el informe
+Keep it	Conservarlo
+Loading recent reports	Cargando los informes recientes
+New research	Nueva investigación
+Nothing researched yet	Todavía no hay investigaciones
+One after another	Una detrás de otra
+Planning the research…	Planificando la investigación…
+Probing the model…	Sondeando el modelo…
+Profile «{tier}»	Perfil «{tier}»
+Profile «{tier}» applied: {n} setting changed.	Perfil «{tier}» aplicado: {n} ajuste cambiado.
+Profile «{tier}» applied: {n} settings changed.	Perfil «{tier}» aplicado: {n} ajustes cambiados.
+Queue	A la cola
+Reading {n} sources	Leyendo {n} fuentes
+Report copied.	Informe copiado.
+Research finished	Investigación terminada
+Round {n} of {m}: 	Ronda {n} de {m}: 
+Round {n}: 	Ronda {n}: 
+Rounds	Rondas
+Rounds {r} · {f}	Rondas {r} · {f}
+Rounds {r} · {f} · {p} · {m}	Rondas {r} · {f} · {p} · {m}
+Search → read → reflect cycles. Auto lets the agent stop when it has enough (up to 20).	Ciclos de buscar → leer → reflexionar. Auto deja que el agente pare cuando tiene bastante (hasta 20).
+Searching ({n} queries)	Buscando ({n} consultas)
+Show the report	Ver el informe
+Start	Empezar
+Start all	Empezar todas
+The report and its sources are removed from the library. This cannot be undone.	El informe y sus fuentes se quitan de la biblioteca. No se puede deshacer.
+The report could not be read.	No se ha podido leer el informe.
+The research failed.	La investigación ha fallado.
+Visual report	Informe visual
+Write a question above and press Start. Reports land in the Library too.	Escribe una pregunta arriba y pulsa Empezar. Los informes van también a la Biblioteca.
+Writing the report — {n} sources	Escribiendo el informe — {n} fuentes
+analysing	analizando
+default model	modelo por defecto
+default search	búsqueda por defecto
+not set up	sin configurar
+nothing could be read: check the search provider	no se ha podido leer nada: revisa el buscador
+planning	planificando
+probing the model	sondeando el modelo
+reading {n} sources	leyendo {n} fuentes
+searching	buscando
+writing the report	escribiendo el informe
+{n} queued	{n} en cola
+{n} running	{n} en marcha
+Product	Producto
+Comparison	Comparativa
+How-to	Guía
+Fact-check	Verificación

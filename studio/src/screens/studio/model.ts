@@ -109,6 +109,8 @@ export interface Turn {
   attachments: Attachment[];
   ask?: AskUser;
   note?: string;
+  /** Deep Research running before the answer: the phase it is in. */
+  research?: { phase: string; round: number; totalSources: number; message: string; startedAt: number; avgDuration: number; done: boolean };
   error?: string;
   edited?: boolean;
   /** The reliability harness: what it checked, and what really happened. */
@@ -432,7 +434,9 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
     case 'metrics':
       return { ...turn, metrics: { ...turn.metrics, ...event.metrics } };
     case 'sources':
-      return { ...turn, sources: event.sources };
+      return { ...turn, sources: event.sources, research: turn.research ? { ...turn.research, done: true } : turn.research };
+    case 'research':
+      return { ...turn, research: { phase: event.phase, round: event.round, totalSources: event.totalSources, message: event.message, startedAt: event.startedAt ? event.startedAt * 1000 : turn.research?.startedAt || Date.now(), avgDuration: event.avgDuration || turn.research?.avgDuration || 0, done: false } };
     case 'image':
       return { ...turn, images: [...turn.images, event.url] };
     case 'fallback':
@@ -491,7 +495,7 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
  */
 export function restoreFromMetadata(turn: Turn, meta: Record<string, unknown>): Turn {
   const events = toolEventsFrom(meta);
-  if (!events.length && !meta.harness && !meta.web_sources) return turn;
+  if (!events.length && !meta.harness && !meta.web_sources && !meta.research_sources) return turn;
   const steps: Step[] = [];
   const workers: Worker[] = [];
   let ask: AskUser | undefined;
@@ -518,8 +522,9 @@ export function restoreFromMetadata(turn: Turn, meta: Record<string, unknown>): 
     if (ev.ask && !ev.askResolved) ask = ev.ask;
   }
   const harness = meta.harness && typeof meta.harness === 'object' ? (meta.harness as Record<string, unknown>) : null;
-  const sources = Array.isArray(meta.web_sources)
-    ? (meta.web_sources as Record<string, unknown>[])
+  const rawSources = Array.isArray(meta.web_sources) ? meta.web_sources : Array.isArray(meta.research_sources) ? meta.research_sources : null;
+  const sources = rawSources
+    ? (rawSources as Record<string, unknown>[])
         .map((x) => ({ title: s(x.title) || s(x.url), url: s(x.url) }))
         .filter((x) => x.url)
     : turn.sources;

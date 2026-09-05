@@ -400,6 +400,15 @@
   font-size: var(--fs-label-size);
 }
 
+.fs-studio__research {
+  color: var(--fs-brand);
+}
+
+.fs-studio__clock {
+  font-variant-numeric: tabular-nums;
+  color: var(--fs-text-3);
+}
+
 .fs-studio__pulse {
   display: inline-block;
   inline-size: 8px;

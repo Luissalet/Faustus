@@ -1135,7 +1135,12 @@ async def serve_library_editor(request: Request):
 
 @app.get("/documents/{doc_id}")
 async def serve_document_editor(doc_id: str, request: Request):
-    """Studio document editor (lot AB)."""
+    """Studio document editor (lot AA)."""
+    return await serve_index(request)
+
+@app.get("/research")
+async def serve_research(request: Request):
+    """Studio Deep Research (lot AC)."""
     return await serve_index(request)
 
 @app.get("/backgrounds")

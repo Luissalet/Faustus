@@ -13,6 +13,7 @@ import {
   Zap,
   Workflow,
   type LucideIcon,
+  Telescope,
 } from 'lucide-react';
 
 /**
@@ -65,6 +66,7 @@ export const TOOLS: Tool[] = [
   { path: '/memory', label: 'Memory', icon: Brain, ready: true },
   { path: '/agents', label: 'Agents', icon: Bot, ready: true },
   { path: '/skills', label: 'Skills', icon: Zap, ready: true },
+  { path: '/research', label: 'Research', icon: Telescope, ready: true },
   { path: '/cookbook', label: 'Cookbook', icon: ChefHat, ready: false },
 ];
 
@@ -95,4 +97,5 @@ export const SERVER_ROUTES = [
   '/settings',
   '/agents',
   '/skills',
+  '/research',
 ];

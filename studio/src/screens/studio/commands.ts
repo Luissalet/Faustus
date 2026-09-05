@@ -61,9 +61,9 @@ export const COMMANDS: SlashCommand[] = [
   { name: 'workers', usage: '/workers', help: 'Go to Agents: the Workers board.', route: '/agents' },
   { name: 'experts', usage: '/experts', help: 'Go to Agents: the Experts.', route: '/agents?t=experts' },
   { name: 'skills', usage: '/skills', help: 'Go to the Skills.', route: '/skills' },
-  { name: 'research', usage: '/research topic', help: 'Deep research (previous interface).', route: '/?shell=legacy', legacy: true },
+  { name: 'research', usage: '/research [question]', help: 'Deep Research: several rounds of search and reading, then a report with sources.', route: '/research' },
   { name: 'compare', usage: '/compare', help: 'Compare models (previous interface).', route: '/?shell=legacy', legacy: true },
-  { name: 'mcp', usage: '/mcp', help: 'MCP servers (previous interface).', route: '/?shell=legacy', legacy: true },
+  { name: 'mcp', usage: '/mcp', help: 'MCP servers (Settings → Integrations).', route: '/settings?s=integrations' },
   { name: 'setup', usage: '/setup', help: 'Go to Settings.', route: '/settings' },
   { name: 'usage', usage: '/usage [on|off]', help: 'Shows or hides the live usage (GPU, VRAM, model, RAM) in the header.' },
 ];

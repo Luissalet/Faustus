@@ -33,6 +33,7 @@ const NotesScreen = lazy(() => import('../screens/Notes').then((m) => ({ default
 const MemoryScreen = lazy(() => import('../screens/Memory').then((m) => ({ default: m.MemoryScreen })));
 const CalendarScreen = lazy(() => import('../screens/Calendar').then((m) => ({ default: m.CalendarScreen })));
 const EmailScreen = lazy(() => import('../screens/email/Email').then((m) => ({ default: m.EmailScreen })));
+const ResearchScreen = lazy(() => import('../screens/research/Research').then((m) => ({ default: m.ResearchScreen })));
 const SettingsScreen = lazy(() => import('../screens/Settings').then((m) => ({ default: m.SettingsScreen })));
 const AgentsScreen = lazy(() => import('../screens/Agents').then((m) => ({ default: m.AgentsScreen })));
 const SkillsScreen = lazy(() => import('../screens/Skills').then((m) => ({ default: m.SkillsScreen })));
@@ -223,6 +224,7 @@ function RouteBody() {
         <Route path="/memory" element={<MemoryScreen />} />
         <Route path="/calendar" element={<CalendarScreen />} />
         <Route path="/email" element={<EmailScreen />} />
+        <Route path="/research" element={<ResearchScreen />} />
         <Route path="/settings" element={<SettingsScreen />} />
         <Route path="/agents" element={<AgentsScreen />} />
         <Route path="/skills" element={<SkillsScreen />} />

@@ -163,8 +163,10 @@ export function StudioScreen() {
   const [routes, setRoutes] = useState<ModelRoute[]>([]);
   const [routeId, setRouteId] = useState<string | null>(() => readJson<{ id: string | null }>(ROUTE_KEY, { id: null }).id);
   const [knobs, setKnobsState] = useState<Knobs>(() => ({
-    ...readJson<Knobs>(KNOBS_KEY, { mode: 'agent', web: false, bash: true, plan: false, rag: false, incognito: false }),
+    ...readJson<Knobs>(KNOBS_KEY, { mode: 'agent', web: false, bash: true, plan: false, rag: false, incognito: false, research: false }),
     rag: getRagActive(),
+    // Research is one turn's worth of work, never a standing mode.
+    research: false,
     // Nobody mode never survives a reload: a fresh page is a normal page.
     incognito: false,
   }));
@@ -554,13 +556,17 @@ export function StudioScreen() {
         user.attachments = options.attachments ?? [];
         setTurns((list) => [...(list ?? []), user, blankTurn('assistant')]);
       }
+      const research = knobs.research && !options.approval && !options.delegation;
+      // Like the previous interface: the toggle is spent by the turn it starts.
+      if (research) setKnobsState((k) => ({ ...k, research: false }));
       try {
         for await (const event of sendTurn({
           sessionId: sid,
           message,
+          useResearch: research,
           // A delegation only makes sense with tools: it forces agent mode.
           mode: options.delegation ? 'agent' : knobs.mode,
-          planMode: knobs.mode === 'agent' && knobs.plan,
+          planMode: knobs.mode === 'agent' && knobs.plan && !research,
           allowBash: (knobs.mode === 'agent' || Boolean(options.delegation)) && knobs.bash,
           allowWebSearch: knobs.web,
           useRag: knobs.rag,
@@ -626,6 +632,7 @@ export function StudioScreen() {
       }
       if (command.route) {
         if (command.legacy) window.location.href = command.route.includes('?') ? command.route : `${command.route}?shell=legacy`;
+        else if (name === 'research' && args.trim()) navigate(`/research?q=${encodeURIComponent(args.trim())}`);
         else navigate(command.route);
         return true;
       }
@@ -1134,9 +1141,7 @@ export function StudioScreen() {
     open_cookbook: () => {
       window.location.href = '/?shell=legacy';
     },
-    open_research: () => {
-      window.location.href = '/?shell=legacy';
-    },
+    open_research: () => navigate('/research'),
     open_gallery: () => navigate('/library?type=imagen'),
     open_library: () => navigate('/library'),
     open_memory: () => navigate('/memory'),
