@@ -55,6 +55,7 @@ import { apply, blankTurn, cleanUserText, restoreFromMetadata, type Turn } from 
 import { initialPanel, panelReducer } from './studio/panel';
 import { SessionsPane } from './studio/SessionsPane';
 import { Transcript, type Decision } from './studio/Transcript';
+import { Vitals } from './studio/Vitals';
 import './projects.css';
 import './home.css';
 import './studio.css';
@@ -726,6 +727,14 @@ export function StudioScreen() {
           panelDispatch({ type: 'file', workspace, path: args });
           return true;
         }
+        case 'usage': {
+          const v = args.toLowerCase();
+          const { isUsageVisible, setUsageVisible } = await import('../adapters/usage');
+          const next = v === 'on' ? true : v === 'off' ? false : !isUsageVisible();
+          setUsageVisible(next);
+          say(next ? t('Usage is back in the header.') : t('Usage hidden. /usage on brings it back.'));
+          return true;
+        }
         case 'incognito': {
           const v = args.toLowerCase();
           setKnobs((k) => ({ ...k, incognito: v === 'on' ? true : v === 'off' ? false : !k.incognito }));
@@ -1075,6 +1084,9 @@ export function StudioScreen() {
         // Plain Escape inside the composer is its own affair (stop / close
         // the pickers); the global one only runs outside text fields.
         if (action === 'cancel' && typing) return;
+        // With a dialog, menu or popover open, Escape belongs to it (Radix
+        // listens on the document, below this capture listener).
+        if (action === 'cancel' && document.querySelector('#fs-overlay-root [data-state="open"], #fs-overlay-root [role="dialog"]')) return;
         // Ctrl+K is the shell palette's; leave it alone.
         if (action === 'search' && combo === 'ctrl+k') return;
         // The previous shell's keyboard-shortcuts.js still listens on the
@@ -1119,6 +1131,7 @@ export function StudioScreen() {
           <h1 className="fs-studio__title" title={title || undefined}>
             {sessionId ? current?.name || title || t('Conversation') : t('New conversation')}
           </h1>
+          <Vitals busy={busy} />
           <div className="fs-studio__head-actions">
             <IconButton
               icon={PanelRight}

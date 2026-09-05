@@ -1411,3 +1411,65 @@ yours	tuyo
 {s} s of model	{s} s de modelo
 {who} wrote:	{who} escribió:
 ⟨insert⟩	⟨insertar⟩
+A CUDA process always parks a few hundred MB here — that is not a spill.	Un proceso CUDA siempre aparca aquí unos cientos de MB — eso no es un desbordamiento.
+Cannot reach Ollama.	No se llega a Ollama.
+Everything	Todo
+GPUs ({n})	GPUs ({n})
+Health	Salud
+Hide from the header (/usage on brings it back)	Ocultar de la cabecera (/usage on lo devuelve)
+Host	Equipo
+Keep-alive	Keep-alive
+Kill this runner and free its VRAM (it is re-checked as orphaned first)	Matar este runner y liberar su VRAM (antes se comprueba de nuevo que está huérfano)
+Live usage	Uso en vivo
+Live usage (click for the detail)	Uso en vivo (clic para el detalle)
+Live usage: GPU, VRAM, loaded model, RAM	Uso en vivo: GPU, VRAM, modelo cargado, RAM
+No model loaded (ollama ps is empty).	Ningún modelo cargado (ollama ps está vacío).
+No usage data: the server did not answer /api/system/usage.	Sin datos de uso: el servidor no ha contestado a /api/system/usage.
+Nothing has been measured yet: this zero is an absence, not a bad reading.	Todavía no se ha medido nada: este cero es una ausencia, no una mala lectura.
+Ollama offline	Ollama apagado
+Or shrink the context in the model settings so the model fits.	O reduce el contexto en los ajustes del modelo para que quepa.
+Orphaned runner	Runner huérfano
+Orphaned runners	Runners huérfanos
+PCIe spill	Desborda a PCIe
+Placement	Ubicación
+Power	Potencia
+RAM	RAM
+Refresh now	Actualizar ahora
+Release	Liberar
+Runner	Runner
+Shared GPU memory	Memoria de GPU compartida
+Size	Tamaño
+Temp	Temp.
+The card ran out of room and the CUDA driver put part of the model in system memory instead of failing, so it is being read at ~25 GB/s instead of ~500. Nothing else shows this: VRAM, GPU% and ollama ps all still look healthy.	A la tarjeta se le acabó el sitio y el driver CUDA puso parte del modelo en la memoria del sistema en vez de fallar, así que se lee a ~25 GB/s en lugar de ~500. Nada más lo enseña: VRAM, GPU% y ollama ps siguen pareciendo sanos.
+Usage hidden. /usage on brings it back.	Uso oculto. /usage on lo devuelve.
+Usage is back in the header.	El uso vuelve a estar en la cabecera.
+Util	Uso
+VRAM	VRAM
+Weights are paging over PCIe.	Los pesos están paginando por PCIe.
+avg	media
+every {n}s	cada {n} s
+every {n}s while streaming	cada {n} s mientras responde
+max	máx.
+no Ollama server owns them	ningún servidor de Ollama los reclama
+no data source yet	todavía sin fuente de datos
+no model on this card	ningún modelo en esta tarjeta
+nvidia-smi unavailable	nvidia-smi no disponible
+runner	runner
+split	repartido
+split with {list}	repartido con {list}
+system RAM, over PCIe	RAM del sistema, por PCIe
+the pool, then each card	el conjunto y luego cada tarjeta
+unloading	descargando
+unreachable	no responde
+updated {time}	actualizado {time}
+usage: n/a	uso: n/d
+{a} GB ({b} GB in VRAM)	{a} GB ({b} GB en VRAM)
+{a} of {b} signals reporting	{a} de {b} señales informan
+{mb} MB · {p}% of its GPU memory	{mb} MB · {p}% de su memoria de GPU
+{n} h left	quedan {n} h
+{n} min left	quedan {n} min
+{n} thread	{n} hilo
+{n} threads	{n} hilos
+{n} tokens	{n} tokens
+{n}s left	quedan {n} s
+{size} that every other gauge counts as "other". Ollama restarted without its runners; releasing them is safe — the next request loads the model again.	{size} que el resto de medidores cuentan como «otros». Ollama se reinició sin sus runners; liberarlos es seguro — la siguiente petición vuelve a cargar el modelo.

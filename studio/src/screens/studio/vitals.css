@@ -1,0 +1,380 @@
+/* ══ Vitals — the machine, in the Studio header ═══════════════════════
+   One quiet instrument: a trace, tanks, a temperature, a name. It sits
+   between the title and the header actions, reads as one control, and
+   only raises its voice for a PCIe spill or a card at its limit. */
+
+.fs-vitals {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  block-size: var(--fs-control-sm);
+  padding: 0 var(--fs-space-3) 0 var(--fs-space-2);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-pill);
+  background: color-mix(in srgb, var(--fs-surface-2) 55%, transparent);
+  color: var(--fs-text-2);
+  font: inherit;
+  font-size: var(--fs-label-size);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    border-color var(--fs-duration-fast) var(--fs-ease),
+    background-color var(--fs-duration-fast) var(--fs-ease),
+    color var(--fs-duration-fast) var(--fs-ease);
+}
+
+.fs-vitals:hover,
+.fs-vitals[data-state='open'] {
+  border-color: var(--fs-border-strong);
+  background: var(--fs-surface-2);
+  color: var(--fs-text-1);
+}
+
+.fs-vitals:focus-visible {
+  outline: 2px solid var(--fs-focus);
+  outline-offset: 2px;
+}
+
+.fs-vitals[data-empty] {
+  color: var(--fs-text-3);
+}
+
+/* The trace: brand by default; the busiest card's level recolours it. */
+.fs-vitals__trace {
+  flex: none;
+  color: var(--fs-brand);
+  overflow: visible;
+}
+
+.fs-vitals[data-level='warm'] .fs-vitals__trace {
+  color: var(--fs-warning);
+}
+
+.fs-vitals[data-level='hot'] .fs-vitals__trace {
+  color: var(--fs-danger);
+}
+
+.fs-vitals__pct {
+  min-inline-size: 2.6em;
+  font-weight: var(--fs-label-weight);
+  color: var(--fs-text-1);
+}
+
+/* The tanks: one per card, as wide as the card is big, so two cards of
+   12 and 16 GB read as two vessels rather than one bar. */
+.fs-vitals__tanks {
+  display: inline-flex;
+  gap: 3px;
+  inline-size: 44px;
+  block-size: 8px;
+}
+
+.fs-vitals__tank {
+  flex: 1 1 0;
+  position: relative;
+  overflow: hidden;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--fs-text-3) 28%, transparent);
+}
+
+.fs-vitals__tank > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--fs-text-2);
+  border-radius: inherit;
+  transition: inline-size var(--fs-duration-slow) var(--fs-ease);
+}
+
+.fs-vitals__tank[data-level='warm'] > span {
+  background: var(--fs-warning);
+}
+
+.fs-vitals__tank[data-level='hot'] > span {
+  background: var(--fs-danger);
+}
+
+.fs-vitals__vram {
+  color: var(--fs-text-1);
+}
+
+.fs-vitals__of {
+  color: var(--fs-text-3);
+  font-weight: 400;
+}
+
+.fs-vitals__temp {
+  color: var(--fs-text-3);
+}
+
+.fs-vitals__temp[data-level='warm'] {
+  color: var(--fs-warning);
+}
+
+.fs-vitals__temp[data-level='hot'] {
+  color: var(--fs-danger);
+}
+
+.fs-vitals__model {
+  max-inline-size: 11em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-inline-start: var(--fs-space-2);
+  border-inline-start: 1px solid var(--fs-border);
+  color: var(--fs-text-2);
+}
+
+.fs-vitals__model[data-off] {
+  color: var(--fs-warning);
+}
+
+/* The one thing that shouts. */
+.fs-vitals__spill {
+  padding: 2px 7px;
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-warning);
+  color: var(--fs-on-brand);
+  font-weight: 600;
+  font-size: 0.72rem;
+  letter-spacing: 0.01em;
+}
+
+.fs-vitals[data-spill] {
+  border-color: color-mix(in srgb, var(--fs-warning) 60%, var(--fs-border));
+}
+
+@media (max-width: 1100px) {
+  .fs-vitals__vram,
+  .fs-vitals__temp,
+  .fs-vitals__model {
+    display: none;
+  }
+}
+
+@media (max-width: 720px) {
+  .fs-vitals__tanks {
+    display: none;
+  }
+}
+
+/* ── the panel ─────────────────────────────────────────────────────── */
+
+.fs-popover.fs-vt {
+  inline-size: min(420px, calc(100vw - 2 * var(--fs-space-4)));
+  max-inline-size: none;
+  max-block-size: min(78vh, 720px);
+  overflow: auto;
+  padding: var(--fs-space-3) var(--fs-space-4) var(--fs-space-4);
+  font-variant-numeric: tabular-nums;
+}
+
+.fs-vt__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-block-end: var(--fs-space-2);
+}
+
+.fs-vt__title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  font-weight: var(--fs-title-weight);
+  color: var(--fs-text-1);
+}
+
+.fs-vt__actions {
+  display: inline-flex;
+  gap: var(--fs-space-1);
+}
+
+.fs-vt__dot {
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 50%;
+  background: var(--fs-success);
+}
+
+.fs-vt__dot[data-level='warm'] {
+  background: var(--fs-warning);
+}
+
+.fs-vt__dot[data-level='hot'] {
+  background: var(--fs-danger);
+}
+
+.fs-vt__dot[data-busy] {
+  animation: fs-vt-breathe 1.6s ease-in-out infinite;
+}
+
+@keyframes fs-vt-breathe {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.fs-vt__section {
+  padding-block: var(--fs-space-3);
+  border-block-start: 1px solid var(--fs-border);
+}
+
+.fs-vt__h {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--fs-space-3);
+  margin: 0 0 var(--fs-space-2);
+  font-size: var(--fs-label-size);
+  font-weight: var(--fs-label-weight);
+  color: var(--fs-text-1);
+}
+
+.fs-vt__aside {
+  margin-inline-start: auto;
+  font-weight: 400;
+  color: var(--fs-text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fs-vt__row {
+  display: grid;
+  grid-template-columns: 6.5em minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--fs-space-3);
+  padding-block: 3px;
+  font-size: var(--fs-label-size);
+}
+
+.fs-vt__row[data-wide] {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.fs-vt__label {
+  color: var(--fs-text-3);
+}
+
+.fs-vt__val {
+  color: var(--fs-text-2);
+  text-align: end;
+  white-space: nowrap;
+}
+
+.fs-vt__val[data-muted] {
+  color: var(--fs-text-3);
+}
+
+.fs-vt__meter {
+  position: relative;
+  block-size: 6px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--fs-text-3) 22%, transparent);
+  overflow: hidden;
+}
+
+.fs-vt__meter > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--fs-brand) 70%, var(--fs-text-3));
+  transition: inline-size var(--fs-duration-slow) var(--fs-ease);
+}
+
+.fs-vt__meter[data-level='warm'] > span {
+  background: var(--fs-warning);
+}
+
+.fs-vt__meter[data-level='hot'] > span {
+  background: var(--fs-danger);
+}
+
+.fs-vt__card {
+  margin-block-start: var(--fs-space-2);
+  padding-inline-start: var(--fs-space-3);
+  border-inline-start: 2px solid var(--fs-border);
+}
+
+.fs-vt__card-h {
+  display: flex;
+  align-items: baseline;
+  gap: var(--fs-space-2);
+  margin: 0 0 2px;
+  font-size: var(--fs-label-size);
+  font-weight: var(--fs-label-weight);
+  color: var(--fs-text-2);
+}
+
+.fs-vt__idx {
+  margin-inline-end: var(--fs-space-1);
+  color: var(--fs-brand);
+}
+
+.fs-vt__models {
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-2);
+}
+
+.fs-vt__indent {
+  padding-inline-start: 0;
+}
+
+.fs-vt__muted {
+  margin: var(--fs-space-1) 0 0;
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-3);
+  line-height: 1.45;
+}
+
+.fs-vt__warn {
+  margin-block-start: var(--fs-space-2);
+  padding: var(--fs-space-2) var(--fs-space-3);
+  border-radius: var(--fs-radius-control);
+  border: 1px solid color-mix(in srgb, var(--fs-warning) 45%, transparent);
+  background: color-mix(in srgb, var(--fs-warning) 10%, transparent);
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-2);
+  line-height: 1.45;
+}
+
+.fs-vt__warn p {
+  margin: 0;
+}
+
+.fs-vt__steps {
+  margin: var(--fs-space-2) 0;
+  padding-inline-start: 1.2em;
+}
+
+.fs-vt__orphan {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fs-space-2);
+  padding-block: 2px;
+}
+
+.fs-vt__err {
+  color: var(--fs-danger);
+}
+
+.fs-vt__foot {
+  margin: var(--fs-space-3) 0 0;
+  font-size: 0.75rem;
+  color: var(--fs-text-3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fs-vt__dot[data-busy] {
+    animation: none;
+  }
+
+  .fs-vitals__tank > span,
+  .fs-vt__meter > span {
+    transition: none;
+  }
+}

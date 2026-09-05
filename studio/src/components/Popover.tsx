@@ -7,6 +7,8 @@ export interface PopoverProps {
   align?: 'start' | 'center' | 'end';
   side?: 'top' | 'right' | 'bottom' | 'left';
   testId?: string;
+  /** Extra class on the content, for a surface that needs its own width. */
+  className?: string;
 }
 
 /**
@@ -21,13 +23,14 @@ export function Popover({
   align = 'start',
   side = 'bottom',
   testId = 'popover',
+  className,
 }: PopoverProps) {
   return (
     <RadixPopover.Root>
       <RadixPopover.Trigger asChild>{trigger}</RadixPopover.Trigger>
       <RadixPopover.Portal container={document.getElementById('fs-overlay-root') ?? undefined}>
         <RadixPopover.Content
-          className="fs-popover"
+          className={className ? `fs-popover ${className}` : 'fs-popover'}
           align={align}
           side={side}
           sideOffset={6}

@@ -64,7 +64,7 @@ export const COMMANDS: SlashCommand[] = [
   { name: 'compare', usage: '/compare', help: 'Compare models (previous interface).', route: '/?shell=legacy', legacy: true },
   { name: 'mcp', usage: '/mcp', help: 'MCP servers (previous interface).', route: '/?shell=legacy', legacy: true },
   { name: 'setup', usage: '/setup', help: 'Go to Settings.', route: '/settings' },
-  { name: 'usage', usage: '/usage', help: 'GPU usage (previous interface).', route: '/?shell=legacy', legacy: true },
+  { name: 'usage', usage: '/usage [on|off]', help: 'Shows or hides the live usage (GPU, VRAM, model, RAM) in the header.' },
 ];
 
 export function matchCommands(prefix: string): SlashCommand[] {

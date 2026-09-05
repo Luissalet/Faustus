@@ -442,3 +442,15 @@ su área y baja el baseline. Ningún módulo Studio nuevo la aumenta.
 72. **`[~]` Títulos de pestaña del navegador.** Los pone el servidor
     («Memory — Faustus») en inglés; Studio no los toca aún. Cuando lo
     haga, `document.title` desde cada pantalla con `t()`.
+
+## Añadido tras el lote Q (05-09-2026, vitales)
+
+73. **`[!]` Escape no llegaba a los diálogos de Studio.** El listener de
+    atajos de `Studio.tsx` (captura en `window`) paraba la propagación de
+    `cancel` (Escape) fuera de los campos de texto, así que Radix (que
+    escucha en `document`) nunca cerraba un popover, menú o diálogo con
+    Escape. Ahora, con algo abierto en `#fs-overlay-root`, Escape es suyo.
+74. **`[~]` Vitales: `modelControls.noteUsage`.** La anterior pasaba cada
+    muestra al selector de modelo para «Ajustar a la VRAM». El selector de
+    Studio no tiene ese mando todavía; cuando lo tenga, `useUsage()` ya
+    expone la última muestra.

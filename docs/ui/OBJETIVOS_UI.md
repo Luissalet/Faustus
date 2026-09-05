@@ -132,7 +132,7 @@ proporcionales, auditoría de la guía Vercel pasada o excepción documentada,
       lateral redimensionable (lote P).
       Faltan: Cookbook, Deep Research, Compare,
       Tournament, Procedencia, Historial importado, Skills, Tema (editor),
-      Fondos, indicador de recursos (GPU/RAM).
+      Fondos. Vitales (uso de GPU) en Studio: lote Q.
 - [ ] **UI-061** Borrar los puentes muertos, el DOM legacy de cada pantalla ya
       migrada y el propio flag. Empezar a dividir `style.css`, a solas y sin
       mezclarlo con features.
