@@ -12,6 +12,8 @@ import {
   loadLocalModels,
   loadModel,
   pinWarning,
+  vramFit,
+  type VramFit,
   pullEvents,
   releaseOrphanRunner,
   saveModelOptions,
@@ -479,8 +481,30 @@ function OptionsForm({ model, cards, onCancel, onSave }: { model: InstalledModel
   const [main, setMain] = useState(o.main_gpu == null ? '' : String(o.main_gpu));
   const [keep, setKeep] = useState(o.keep_alive == null ? '' : String(o.keep_alive));
   const [busy, setBusy] = useState(false);
+  // The advisor: it measures rather than guesses, and fills the two fields
+  // that decide whether the model runs on the card or crawls on the CPU.
+  const [fitting, setFitting] = useState(false);
+  const [plan, setPlan] = useState<VramFit | null>(null);
+  const [fitErr, setFitErr] = useState<string | null>(null);
   const showMain = cards.length >= 2 || main !== '';
   const warn = pinWarning(main === '' ? null : Number(main), model.size, cards);
+
+  const suggest = async () => {
+    setFitting(true);
+    setFitErr(null);
+    try {
+      const p = await vramFit(model.name, ctx.trim() ? Number(ctx.trim()) : undefined);
+      setPlan(p);
+      if (p.num_ctx) setCtx(String(p.num_ctx));
+      // null means "let Ollama decide", which is the right answer when it
+      // all fits: writing a number there would pin it for no reason.
+      setGpu(p.num_gpu == null ? '' : String(p.num_gpu));
+    } catch (err) {
+      setFitErr((err as Error).message);
+    } finally {
+      setFitting(false);
+    }
+  };
   return (
     <form
       className="fs-lm__options"
@@ -517,7 +541,25 @@ function OptionsForm({ model, cards, onCancel, onSave }: { model: InstalledModel
         <input className="fs-field" placeholder="5m" value={keep} onChange={(e) => setKeep(e.target.value)} />
       </label>
       {warn && <p className="fs-set__help" data-tone="bad">{warn}</p>}
+      {plan && (
+        <div className="fs-lm__plan" data-fits={plan.fits || undefined} data-testid="vram-plan">
+          <p className="fs-set__help">
+            {plan.fits
+              ? t('It fits on {gpu}.', { gpu: plan.gpuName || t('the card') })
+              : t('It does not fit whole on {gpu}. This is the best split:', { gpu: plan.gpuName || t('the card') })}
+          </p>
+          {plan.steps.length > 0 && (
+            <ul className="fs-lm__steps">
+              {plan.steps.map((step, i) => (
+                <li key={i}>{step}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+      {fitErr && <p className="fs-set__help" data-tone="bad">{fitErr}</p>}
       <div className="fs-set__row-end">
+        <Button size="sm" variant="ghost" label={t('Fit to VRAM')} loading={fitting} onClick={() => void suggest()} title={t('Measures this model against the free VRAM and fills num_ctx and num_gpu.')} />
         <span className="fs-set__err" style={{ color: 'var(--fs-text-3)' }}>{t('Applied to every request for this model on this endpoint, under anything the chat sets explicitly.')}</span>
         <Button size="sm" variant="ghost" label={t('Cancel')} onClick={onCancel} />
         <Button size="sm" variant="primary" label={t('Save')} loading={busy} type="submit" />

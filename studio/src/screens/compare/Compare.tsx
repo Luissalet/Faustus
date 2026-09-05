@@ -59,6 +59,7 @@ import { AskCard, type Decision } from '../studio/Transcript';
 import ModelPalette from '../ModelPalette';
 import { Rich } from '../rich';
 import { t, tn } from '../../i18n';
+import { safeExternal } from '../../lib/markdown';
 import '../compare.css';
 
 /**
@@ -181,7 +182,9 @@ function PaneView({
             {pane.hits.length === 0 && pane.streaming && <p className="fs-cmp__waiting"><span className="fs-studio__pulse" /> {t('Searching…')}</p>}
             {pane.hits.length === 0 && !pane.streaming && !pane.error && <p className="fs-muted">{t('No results.')}</p>}
             {pane.hits.map((h) => (
-              <a key={h.url} className="fs-cmp__hit" href={h.url} target="_blank" rel="noopener noreferrer">
+              // A search hit is somebody else's URL: only http(s) becomes a
+              // link, the rest stays as text you can read but not click.
+              <a key={h.url} className="fs-cmp__hit" href={safeExternal(h.url) ?? undefined} target="_blank" rel="noopener noreferrer" data-dead={safeExternal(h.url) ? undefined : true}>
                 <b>{h.title}</b>
                 <small>{h.url}</small>
                 {h.snippet && <span>{h.snippet}</span>}

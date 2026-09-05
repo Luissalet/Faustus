@@ -363,6 +363,19 @@ export function matchCommands(prefix: string, limit = 9): Suggestion[] {
     out.push({ insert, usage, help, category });
   };
   const words = needle.split(/\s+/);
+  // `/<parent>` typed exactly: show what it can do, rather than one row
+  // repeating the word already typed. `/setup` is the case that matters —
+  // the answer the person wants is the list of providers.
+  if (words.length === 1 && needle) {
+    const exact = byName.get(needle);
+    if (exact?.subs) {
+      for (const sub of exact.subs) {
+        if (sub.name.startsWith('_')) continue;
+        push(`${exact.name} ${sub.name}`, sub.usage, sub.help, exact.category);
+      }
+      if (out.length >= limit) return out;
+    }
+  }
   // `/<parent> <partial sub>`
   if (words.length > 1) {
     const command = byName.get(words[0]);

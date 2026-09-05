@@ -396,19 +396,19 @@ def test_run_for_files_returns_the_documented_shape(ws):
 # ---------------------------------------------------------------------------
 
 def test_analysis_entries_merge_into_the_syntax_check_list_without_duplicating():
-    """static/js/agentHarnessUI.js lists one chip per entry and src/scorecard.py
+    """The turn's check list shows one chip per entry and src/scorecard.py
     counts the not-ok ones: an analysis entry must UPDATE the syntax entry for
     the same file, not append a second one."""
     from src import static_checks as sc
     syntax = [{"path": "src/api.py", "ok": True, "error": None},
-              {"path": "static/app.js", "ok": True, "error": None}]
+              {"path": "web/app.js", "ok": True, "error": None}]
     merged = sc.merge_static_checks(syntax, [
         {"path": "src/api.py", "tool": "ruff", "ok": False,
          "errors": [{"line": 8, "code": "F821", "msg": "Undefined name `Depends`"}],
          "error": "ruff: F821 Undefined name `Depends` (line 8)"},
         {"path": "main.go", "tool": "go vet", "ok": True, "errors": [], "error": None},
     ])
-    assert [e["path"] for e in merged] == ["src/api.py", "static/app.js", "main.go"]
+    assert [e["path"] for e in merged] == ["src/api.py", "web/app.js", "main.go"]
     api = merged[0]
     assert api["ok"] is False and api["tool"] == "ruff" and "F821" in api["error"]
     assert merged[1]["ok"] is True and "tool" not in merged[1]

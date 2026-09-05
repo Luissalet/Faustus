@@ -1,5 +1,6 @@
-"""The transcript's Markdown reader (studio/src/lib/markdown.ts) and the
-mention splitter (studio/src/lib/mentions.ts).
+"""The transcript's Markdown reader (studio/src/lib/markdown.ts), the mention
+splitter (studio/src/lib/mentions.ts) and the emoji shortcode table
+(studio/src/lib/emoji.ts).
 
 Both are pure: text in, a tree out. `studio/checks/markdown.check.mjs`
 drives them — headings, lists, tables, quotes, code, footnotes, escapes,

@@ -4,7 +4,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 ROUTES = (ROOT / "routes" / "research" / "research_routes.py").read_text(encoding="utf-8")
-SLASH = (ROOT / "static" / "js" / "slashCommands.js").read_text(encoding="utf-8")
+COMMANDS = (ROOT / "studio" / "src" / "screens" / "studio" / "commands.ts").read_text(encoding="utf-8")
+ADAPTER = (ROOT / "studio" / "src" / "adapters" / "commands.ts").read_text(encoding="utf-8")
 
 
 def test_endpoints_exist_and_are_admin_only():
@@ -21,12 +22,14 @@ def test_the_search_probe_never_invents_a_blocker():
 
 
 def test_slash_command_registered_without_stealing_slash_research():
-    assert "handler: _cmdResearchFit" in SLASH
-    assert "researchfit:" in SLASH
-    idx = SLASH.index("handler: _cmdResearchFit")
-    assert "'research'" not in SLASH[max(0, idx - 400):idx]
+    """`/research` opens the Deep Research screen; `/researchfit` checks the
+    machine. One must not claim the other's name."""
+    assert "name: 'researchfit'" in COMMANDS
+    idx = COMMANDS.index("name: 'researchfit'")
+    block = COMMANDS[idx:idx + 400]
+    assert "aliases: ['research'" not in block and "'research'," not in block
 
 
 def test_fixes_are_opt_in():
     """Switching someone's search provider is not a side effect of a preset."""
-    assert "include_fixes" in ROUTES and "include_fixes" in SLASH
+    assert "include_fixes" in ROUTES and "include_fixes" in ADAPTER

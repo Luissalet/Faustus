@@ -378,3 +378,33 @@
     transition: none;
   }
 }
+
+/* ── Services ─────────────────────────────────────────────────────────
+ * The hint that comes with a degraded service carries a command to run;
+ * it is shown as one, so it can be read and copied without hunting.
+ */
+.fs-vt__cmd {
+  display: inline-block;
+  margin-inline-start: var(--fs-space-2);
+  padding: 1px var(--fs-space-2);
+  border-radius: var(--fs-radius-control);
+  border: 1px solid var(--fs-border);
+  background: var(--fs-surface-2);
+  font-family: var(--fs-font-mono);
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-2);
+  user-select: all;
+}
+
+.fs-vt__act {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  flex-wrap: wrap;
+  margin: var(--fs-space-2) 0 0;
+  max-inline-size: none;
+}
+
+.fs-vt__act .fs-vt__muted {
+  margin: 0;
+}

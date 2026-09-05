@@ -1,0 +1,80 @@
+/**
+ * Faustus Studio — the user's own palette.
+ *
+ * Appearance (studio/src/shell/appearance.ts) writes a chosen theme as
+ * inline custom properties on <html>: --bg, --fg, --panel, --border and
+ * --red. Those variables are therefore ALWAYS present once a theme is
+ * applied, which is why this mapping is opt-in rather than automatic: if
+ * Studio inherited them unconditionally, its own palette could never be
+ * seen.
+ *
+ * Two modes:
+ *
+ *   <div class="fs-app">                              → Studio's own palette
+ *   <div class="fs-app" data-theme-source="faustus">  → the user's theme
+ *
+ * The second is what keeps the sixteen presets and every custom theme
+ * working, including the ones people made in the interface Studio replaced:
+ * same key (`odysseus-theme`), same five colours. Every mapping falls back
+ * to the Studio token, so a half-defined theme degrades instead of breaking.
+ */
+
+.fs-app[data-theme-source='faustus'] {
+  --fs-canvas: var(--bg, #0c0d0f);
+  --fs-surface-1: var(--panel, #121418);
+  --fs-text-1: var(--fg, #f2f1ed);
+  --fs-border: var(--border, #2b3038);
+  --fs-brand: var(--red, #e06c75);
+
+  /*
+   * The legacy theme has no second and third surface, no muted text and no
+   * "colour on brand". They are derived so the ladder survives:
+   * colour-mix keeps the user's hue and only moves lightness.
+   */
+  --fs-surface-2: color-mix(in srgb, var(--panel, #121418) 88%, var(--fg, #f2f1ed));
+  --fs-surface-3: color-mix(in srgb, var(--panel, #121418) 78%, var(--fg, #f2f1ed));
+  --fs-border-strong: color-mix(in srgb, var(--border, #2b3038) 70%, var(--fg, #f2f1ed));
+  --fs-text-2: color-mix(in srgb, var(--fg, #f2f1ed) 78%, var(--bg, #0c0d0f));
+  --fs-text-3: color-mix(in srgb, var(--fg, #f2f1ed) 58%, var(--bg, #0c0d0f));
+
+  /*
+   * A user theme can pick any --red, so neither ink nor white is safe by
+   * construction. `contrast-color()` picks the readable one where the
+   * browser supports it; the fallback is the canvas, which is the correct
+   * choice for the light corals the palette actually ships.
+   */
+  --fs-on-brand: var(--bg, #0c0d0f);
+}
+
+@supports (color: contrast-color(red)) {
+  .fs-app[data-theme-source='faustus'] {
+    --fs-on-brand: contrast-color(var(--red, #e06c75));
+    --fs-on-danger: contrast-color(var(--fs-danger));
+  }
+}
+
+/*
+ * The eye-candy tokens are derived on :root from the palette, and a custom
+ * property resolves where it is declared: without restating them here they
+ * would keep Studio's colours under a user theme. Same recipes, the bridged
+ * inputs.
+ */
+.fs-app[data-theme-source='faustus'] {
+  --fs-brand-hover: color-mix(in srgb, var(--fs-brand) 84%, var(--fs-text-1));
+  --fs-aurora-a: color-mix(in srgb, var(--fs-brand) 30%, transparent);
+  --fs-aurora-b: color-mix(in srgb, var(--fs-info) 26%, transparent);
+  --fs-aurora-c: color-mix(in srgb, var(--fs-warning) 16%, transparent);
+  --fs-glass: color-mix(in srgb, var(--fs-surface-1) 62%, transparent);
+  --fs-glass-strong: color-mix(in srgb, var(--fs-surface-2) 78%, transparent);
+  --fs-highlight: color-mix(in srgb, var(--fs-text-1) 8%, transparent);
+  --fs-spotlight: color-mix(in srgb, var(--fs-brand) 24%, transparent);
+  --fs-title-gradient: linear-gradient(100deg, var(--fs-brand) 0%, var(--fs-brand-hover) 35%, var(--fs-warning) 70%, var(--fs-brand) 100%);
+  --fs-paper: var(--fs-canvas);
+  --fs-dots: color-mix(in srgb, var(--fs-text-1) 6%, transparent);
+  --fs-panel-shadow: 0 1px 0 var(--fs-highlight) inset;
+  --fs-lift-shadow: 0 12px 34px color-mix(in srgb, var(--fs-canvas) 60%, transparent);
+  --fs-accent-gradient: linear-gradient(120deg, var(--fs-brand), var(--fs-brand-hover) 55%, var(--fs-warning));
+  --fs-ember: color-mix(in srgb, var(--fs-brand) 22%, transparent);
+  --fs-ember-strong: color-mix(in srgb, var(--fs-brand) 44%, transparent);
+  --fs-ember-faint: color-mix(in srgb, var(--fs-brand) 10%, transparent);
+}

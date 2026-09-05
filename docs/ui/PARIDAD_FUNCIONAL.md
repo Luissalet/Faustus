@@ -1,16 +1,24 @@
 # Paridad funcional — el libro que impide perder funciones
 
 Regla (Luis, 04-09-2026): **redistribuir y cambiar, sí; tener menos funciones,
-nunca.** Nada de la interfaz anterior se retira hasta que su fila de abajo
-diga «Migrado» y esté verificado en el 7001. Mientras tanto, cada función
-sigue accesible desde «Interfaz anterior» (`?shell=legacy`), que se conserva
-**idéntica** durante todo el piloto.
+nunca.**
 
-Cómo leerlo: **Migrado** = existe en Studio con lo mismo o más; **Parcial** =
-existe pero le falta algo concreto (dicho al lado); **Anterior** = solo en la
-interfaz anterior, alcanzable desde Studio con un clic. Las herramientas del
-agente (85 en `src/tool_schemas.py`) no aparecen: viven en el servidor y no
-las toca ninguna pantalla.
+**Estado (05-09-2026, lote AM): la interfaz anterior está borrada.** Todas
+las filas dicen Migrado; ninguna dice Parcial ni Anterior. Este documento
+deja de ser una lista de pendientes y pasa a ser lo que impide perderlas: si
+una función desaparece de Studio, su fila se queda aquí acusando.
+
+Al borrar la anterior aparecieron **seis funciones que nunca se habían
+migrado** —salud de servicios, catálogo de servidores MCP, limpieza de
+fences en vivo, entrar con una suscripción, el veredicto de VRAM en el
+selector de modelos y «ajustar a la VRAM»—. Se portaron antes de borrar, no
+después: ver `ESTADO_LOTE_AM.md`. La lección es la fila de abajo: una ruta
+del servidor sin nadie que la llame es una función perdida que ninguna
+prueba veía.
+
+Cómo leerlo: **Migrado** = existe en Studio con lo mismo o más. Las
+herramientas del agente (85 en `src/tool_schemas.py`) no aparecen: viven en
+el servidor y no las toca ninguna pantalla.
 
 ## 1. Destinos y páginas
 
@@ -119,10 +127,9 @@ las toca ninguna pantalla.
 | Escape cancelar | sí (parar el stream) | **Migrado** |
 | Ctrl+Alt+N nuevo chat, Ctrl+B barra, Ctrl+Alt+F favorito, Ctrl+Alt+D borrar (dos veces), Alt+Shift+T TTS, Ctrl+Alt+I incógnito, Ctrl+, ajustes, Ctrl+/ foco, Ctrl+Alt+C calendario, y los reconfigurables | sí, leyendo los keybinds guardados (`/api/auth/settings`) con los mismos valores por defecto; ajustes, calendario, notas y memoria abren la pantalla anterior; galería, biblioteca y tareas sus rutas de Studio. Se capturan antes de que los vea la anterior para que no actúe dos veces | **Migrado** |
 
-## 6. Orden de cierre de la deuda
+## 6. Orden de cierre de la deuda — cerrado
 
-Lo que más se usa a diario va primero. Cada bloque cierra sus filas y solo
-entonces se retira la parte legacy correspondiente (DECISIONES_UI.md §4):
+Se cerró en este orden, y el punto 6 fue el último:
 
 1. Compositor: adjuntos, `@` menciones, `#`/`/remember`, comandos `/`,
    workspace elegible, RAG, presets.
@@ -133,7 +140,22 @@ entonces se retira la parte legacy correspondiente (DECISIONES_UI.md §4):
 4. Sub-agentes, navegador en vivo, documentos del editor.
 5. Ajustes completos, tema, atajos reconfigurables.
 6. Notas, calendario, correo, brain, cookbook, research, compare, tournament,
-   workers, expertos, procedencia, importación, runners, skills, fondos.
+   workers, expertos, procedencia, importación, runners, skills.
 
-Hasta el punto 6 la barra de navegación de Studio no puede quitar «Interfaz
-anterior», y `?shell=legacy` no puede dejar de servir la aplicación completa.
+Con el punto 6 cerrado se borró la interfaz anterior (lote AM). «Fondos» no
+llegó a migrarse porque no había nada que migrar: era una página de pruebas
+sin ruta ni entrada, y su ruta en `app.py` servía un fichero que ya no
+existía.
+
+## 7. La lección, para que no vuelva a pasar
+
+Seis funciones sobrevivieron a todo el plan sin que nadie las echara de
+menos, porque **la ruta del servidor seguía existiendo**: `/api/diagnostics/services`,
+`/api/models/fit`, `/api/system/vram-fit`, `/api/copilot/device/*`,
+`/api/chatgpt-subscription/device/*` y el catálogo de MCP. Las pruebas del
+backend pasaban —la ruta responde— y las de la interfaz no las miraban.
+
+Un endpoint sin llamador no es una función a medias: es una función perdida,
+y se ve exactamente igual que una que nunca existió. Antes de dar por
+cerrada una pantalla, la pregunta es «¿qué rutas de este área no llama
+nadie?», no «¿pasan las pruebas?».

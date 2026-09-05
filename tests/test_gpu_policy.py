@@ -139,33 +139,49 @@ def test_set_preferred_index_validates_and_persists(tmp_path, monkeypatch):
 
 
 
-def test_the_js_offers_the_policy_only_with_two_cards_and_warns_on_a_bad_pin():
+def test_the_pin_warning_fires_only_when_the_model_will_not_fit_that_card():
+    """Pinned to a card it does not fit, Ollama does not split: the rest runs
+    on the CPU and the model crawls, with nothing on screen saying why.
+
+    `pinWarning` lives in the interface (studio/src/adapters/localModels.ts).
+    Bundled and called here, so this pins the rule the screen applies rather
+    than a sentence in its source.
+    """
     import subprocess
     from pathlib import Path
     repo = Path(__file__).resolve().parents[1]
-    src = (repo / "static/js/localModels.js").read_text(encoding="utf-8")
-    assert "lm-placement" in src and "/placement" in src and "placementSelectHtml(vram, policy)" in src
-    node = subprocess.run(["node", "--input-type=module"], input=(
-        src.replace("import uiModule from './ui.js';", "const uiModule = {};")
-           .replace("import { invalidateSettings } from './appConfig.js';", "const invalidateSettings = () => {};")
-           .replace("export function", "function").replace("export default localModelsModule;", "")
-           .replace("export const", "const")
-        + """
-const gpus = [{index: 0, name: 'NVIDIA GeForce RTX 4070 Ti', total_bytes: 12282 * 1048576},
-              {index: 1, name: 'NVIDIA GeForce RTX 5060 Ti', total_bytes: 16311 * 1048576}];
-const vram2 = {count: 2, gpus};
+    if not (repo / "node_modules" / "esbuild" / "lib" / "main.js").exists():
+        pytest.skip("node_modules/esbuild needed to bundle the TS")
+    script = """
+import { pathToFileURL } from 'node:url';
+import { join } from 'node:path';
+const root = process.argv[2];
+const { build } = await import(pathToFileURL(join(root, 'node_modules', 'esbuild', 'lib', 'main.js')).href);
+const r = await build({
+  entryPoints: [join(root, 'studio', 'src', 'adapters', 'localModels.ts')],
+  bundle: true, format: 'esm', platform: 'node', write: false, logLevel: 'silent',
+});
+const m = await import('data:text/javascript;base64,' + Buffer.from(r.outputFiles[0].text).toString('base64'));
+const gpus = [
+  { index: 0, name: 'NVIDIA GeForce RTX 4070 Ti', total_bytes: 12282 * 1048576 },
+  { index: 1, name: 'NVIDIA GeForce RTX 5060 Ti', total_bytes: 16311 * 1048576 },
+];
 console.log(JSON.stringify({
-  auto: placementSelectHtml(vram2, {prefer: -1}),
-  one: placementSelectHtml(vram2, {prefer: 1}),
-  single: placementSelectHtml({count: 1, gpus: [gpus[0]]}, {prefer: 1}),
-  warnBig: pinWarningHtml(1, 17 * 1073741824, gpus),
-  warnSmall: pinWarningHtml(1, 6.6 * 1073741824, gpus),
-  warnAuto: pinWarningHtml(null, 17 * 1073741824, gpus),
+  big: m.pinWarning(1, 17 * 1073741824, gpus),
+  small: m.pinWarning(1, 6.6 * 1073741824, gpus),
+  auto: m.pinWarning(null, 17 * 1073741824, gpus),
+  unknownCard: m.pinWarning(7, 17 * 1073741824, gpus),
+  short: m.shortGpuName('NVIDIA GeForce RTX 5060 Ti'),
 }));
-"""), capture_output=True, text=True, encoding="utf-8", timeout=60)
+"""
+    node = subprocess.run(
+        ["node", "--input-type=module", "-", str(repo)],
+        input=script, capture_output=True, text=True, encoding="utf-8", timeout=120,
+    )
     assert node.returncode == 0, node.stderr
     out = json.loads(node.stdout.strip().splitlines()[-1])
-    assert 'value="-1" selected' in out["auto"] and 'Fill GPU 1 first — RTX 5060 Ti (16 GB)' in out["auto"]
-    assert 'value="1" selected' in out["one"] and out["single"] == ""
-    assert "will not fit RTX 5060 Ti" in out["warnBig"] and "runs on the CPU" in out["warnBig"]
-    assert out["warnSmall"] == "" and out["warnAuto"] == ""
+    assert "will not fit RTX 5060 Ti" in out["big"] and "runs on the CPU" in out["big"]
+    assert out["small"] == "", "a model that fits gets no warning"
+    assert out["auto"] == "", "Auto is not a pin, so there is nothing to warn about"
+    assert out["unknownCard"] == "", "a card that is not there cannot be reasoned about"
+    assert out["short"] == "RTX 5060 Ti"

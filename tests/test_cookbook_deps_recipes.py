@@ -6,17 +6,17 @@ github.com/ggml-org/llama.cpp. The old GHCR namespace
 docker variant in the Dependencies panel returned
 "failed to resolve reference … not found" when copied verbatim (#4457).
 The other llama.cpp reference in routes/cookbook_routes.py already uses
-ggml-org; this guards the JS recipe so the two stay aligned.
+ggml-org; this guards the interface's recipe so the two stay aligned.
 """
 from pathlib import Path
 
-RECIPES_JS = (
-    Path(__file__).resolve().parent.parent / "static" / "js" / "cookbook-deps-recipes.js"
+RECIPES = (
+    Path(__file__).resolve().parent.parent / "studio" / "src" / "lib" / "cookbook" / "recipes.ts"
 )
 
 
 def test_llama_cpp_docker_recipe_uses_ggml_org_namespace():
-    source = RECIPES_JS.read_text(encoding="utf-8")
+    source = RECIPES.read_text(encoding="utf-8")
 
     assert "ghcr.io/ggml-org/llama.cpp:server-cuda" in source, (
         "Expected the llama.cpp docker recipe to pull from the ggml-org namespace."

@@ -786,3 +786,36 @@ su área y baja el baseline. Ningún módulo Studio nuevo la aumenta.
 145. **`[ ]`** El zoom de la semana (S/M/L) se guarda en `localStorage`
     (`faustus_studio_cal_zoom`), no en el servidor: en otro navegador vuelve
     a empezar en M.
+
+## Lote AM (se va la interfaz anterior)
+
+146. **`[ ]`** Los comentarios de unos treinta ficheros de `src/` y `routes/`
+    citan rutas de `static/js/` que ya no existen («igual que
+    `static/js/emailLibrary.js`», «lo que hace `static/js/cookbook.js`»). No
+    rompen nada, pero mandan a leer un fichero que no está. Barrido de prosa,
+    a solas y sin mezclarlo con nada.
+147. **`[ ]`** El favicon ya no cambia por ruta. La anterior daba a cada
+    pantalla su forma, así que un marcador de `/notes` tenía icono de notas.
+    Son unas quince líneas en `AppShell`, pero necesita las formas.
+148. **`[ ]`** El veredicto de VRAM del selector viene de `/api/models/fit`,
+    que cachea 60 s en el servidor y una vez por página aquí. Cargar o
+    descargar un modelo desde Ajustes no lo refresca: hay que recargar. Un
+    evento del store de uso lo arreglaría.
+149. **`[ ]`** El «igual que» del selector solo mira los digests que trae
+    `/api/models/fit`, es decir modelos de Ollama. Dos etiquetas del mismo
+    modelo en un endpoint que no sea Ollama no se marcan.
+150. **`[ ]`** El device flow sondea a un ritmo fijo. El servidor honra el
+    `slow_down` del proveedor, así que es correcto, pero la cuenta atrás de
+    caducidad no se enseña: solo «esperando».
+151. **`[ ]`** El catálogo de MCP es una lista en el cliente
+    (`lib/mcpPresets.ts`). Cuando un paquete de npm cambie de nombre habrá
+    que editarla y desplegar. Vivir en el servidor sería mejor, pero es un
+    endpoint nuevo.
+152. **`[ ]`** El precacheo del service worker son el shell y la entrada; los
+    chunks se recogen al abrirse cada pantalla. Una pantalla que no se ha
+    abierto nunca no está disponible sin conexión (la anterior precacheaba
+    los paneles a mano; con nombres con hash eso ya no se puede escribir).
+153. **`[ ]`** **Backend.** `routes/mcp/mcp_routes.py` construye el fichero de
+    credenciales de Gmail a partir del id y el secreto. Es el único preset
+    con ese trato: si mañana hay otro proveedor OAuth, la forma de
+    `oauth_file` habrá que generalizarla en el servidor, no en el catálogo.

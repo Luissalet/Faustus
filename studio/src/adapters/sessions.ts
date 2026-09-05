@@ -82,6 +82,53 @@ export function exportUrl(id: string, fmt: ExportFormat): string {
   return `/api/session/${sid(id)}/export?fmt=${fmt}`;
 }
 
+/**
+ * Download an export, and say so when the server refuses.
+ *
+ * `window.open` on the export URL cannot see the response, so a 400 (a format
+ * the server does not know, a batch too big) or a 503 (the PDF dependency is
+ * not installed) arrived as a blank tab or a page of raw JSON — which reads
+ * as "the button is broken". Fetching it means the server's own sentence can
+ * be shown, and the file still saves under its real name.
+ *
+ * Throws with the server's message; the caller decides how to say it.
+ */
+export async function downloadExport(id: string, fmt: ExportFormat, name?: string): Promise<void> {
+  await download(exportUrl(id, fmt), `${(name || 'chat').replace(/[\\/:*?"<>|]+/g, '-').slice(0, 80)}.${fmt}`);
+}
+
+/** Fetch it, read the refusal if there is one, save it if there is not. */
+async function download(url: string, fallbackName: string): Promise<void> {
+  const response = await fetch(url, { credentials: 'same-origin' });
+  if (!response.ok) {
+    let detail = '';
+    try {
+      const body = (await response.json()) as { detail?: unknown; error?: unknown };
+      detail = String(body.detail ?? body.error ?? '');
+    } catch {
+      /* not JSON: the status is all there is */
+    }
+    throw new ApiError(detail || `export responded ${response.status}`, response.status);
+  }
+  // The server names the file when it can; otherwise the caller's fallback.
+  const disposition = response.headers.get('content-disposition') ?? '';
+  const named = /filename\*?=(?:UTF-8''|")?([^";]+)/i.exec(disposition);
+  const filename = named ? decodeURIComponent(named[1].replace(/"$/, '')) : fallbackName;
+  const blob = await response.blob();
+  const href = URL.createObjectURL(blob);
+  try {
+    const a = document.createElement('a');
+    a.href = href;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  } finally {
+    // Revoking immediately can cancel the download in some browsers.
+    setTimeout(() => URL.revokeObjectURL(href), 60_000);
+  }
+}
+
 export async function compactSession(id: string): Promise<{ compacted?: boolean; detail?: string }> {
   const result = (await postJson(`/api/session/${sid(id)}/compact`, {}, 'compact')) as
     | Record<string, unknown>
@@ -228,4 +275,14 @@ export function exportZipUrl(fmt: ExportFormat, opts: { ids?: string[]; folder?:
   if (opts.ids?.length) q.set('ids', opts.ids.join(','));
   if (opts.folder) q.set('folder', opts.folder);
   return `/api/sessions/export?${q}`;
+}
+
+/**
+ * A whole folder, or a set of chats, as a zip.
+ *
+ * Same reason as `downloadExport`: "too many chats in one batch" and "that
+ * folder is empty" are answers the server gives and a tab cannot show.
+ */
+export async function downloadExportZip(fmt: ExportFormat, opts: { ids?: string[]; folder?: string }): Promise<void> {
+  await download(exportZipUrl(fmt, opts), `${(opts.folder || 'chats').replace(/[\\/:*?"<>|]+/g, '-').slice(0, 80)}.zip`);
 }

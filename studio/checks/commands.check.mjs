@@ -97,6 +97,20 @@ const assert = (cond, msg) => {
   assert(insert('/temp').includes('temp'), 'a name prefix');
   assert(c.matchCommands('/help')[0].category === 'Chat', 'a suggestion carries its category');
   assert(c.matchCommands('/', 3).length === 3, 'the limit is respected');
+
+  // A parent typed exactly answers with what it can do. `/setup` on its own
+  // is a question — "which providers?" — and one row repeating the word is
+  // not an answer.
+  const setup = insert('/setup');
+  assert(setup.length > 1, `an exact parent expands its subcommands: ${setup.join(',')}`);
+  assert(setup.includes('setup local') && setup.includes('setup groq'), 'and the list is the providers');
+  const all = c.matchCommands('/setup', 50).map((x) => x.insert);
+  assert(all.includes('setup copilot') && all.includes('setup chatgpt-subscription'), 'including the ones you sign in to');
+  assert(setup.every((x) => x.startsWith('setup ')), 'every row is a real subcommand, not the bare parent');
+  const capped = c.matchCommands('/setup', 3).map((x) => x.insert);
+  assert(capped.length === 3, 'the expansion respects the limit');
+  // A command with no subcommands is unaffected.
+  assert(insert('/temp').includes('temp'), 'a parentless command still suggests itself');
 }
 
 // ── /help ──

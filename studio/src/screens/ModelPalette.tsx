@@ -3,6 +3,7 @@ import { Command } from 'cmdk';
 import { Check, Cpu, RefreshCw } from 'lucide-react';
 import { overlayRoot } from '../shell/overlayRoot';
 import type { ModelRoute } from '../adapters/chat';
+import { aliasesOf, FIT_WORD, useFitHints } from '../adapters/fit';
 import '../shell/palette.css';
 
 /** The searchable list behind the model chip. Lazy: cmdk is ~15 KB gzip
@@ -25,6 +26,9 @@ export default function ModelPalette({
   onRefresh?: () => void;
   refreshing?: boolean;
 }) {
+  // Will it fit on this card? Read once each time the picker opens; the
+  // server answers nothing at all when it cannot tell, and nothing is drawn.
+  const fit = useFitHints(open);
   const byEndpoint = new Map<string, ModelRoute[]>();
   for (const route of routes) {
     const list = byEndpoint.get(route.endpointName) ?? [];
@@ -56,7 +60,17 @@ export default function ModelPalette({
                 data-testid={`model-${route.model}`}
               >
                 {route.id === current?.id ? <Check size={15} aria-hidden="true" /> : <Cpu size={15} aria-hidden="true" />}
-                {route.model}
+                <span className="fs-palette__name">{route.model}</span>
+                {aliasesOf(route.model, fit).length > 0 && (
+                  <span className="fs-palette__alias" title={t('The same weights as {names}', { names: aliasesOf(route.model, fit).join(', ') })}>
+                    {t('same as {name}', { name: aliasesOf(route.model, fit)[0] })}
+                  </span>
+                )}
+                {fit.models[route.model]?.state && (
+                  <span className="fs-palette__fit" data-fit={fit.models[route.model]?.state} title={fit.models[route.model]?.note}>
+                    {t(FIT_WORD[fit.models[route.model]!.state!])}
+                  </span>
+                )}
               </Command.Item>
             ))}
           </Command.Group>

@@ -6,7 +6,7 @@ import {
   archiveSession,
   deleteSession,
   EXPORT_FORMATS,
-  exportUrl,
+  downloadExport,
   forkSession,
   renameSession,
   setSessionFolder,
@@ -134,14 +134,26 @@ export default function SessionDialog({
         </form>
 
         <p className="fs-panel__label" style={{ margin: 0 }}>
-          Exportar
+          {t('Export')}
         </p>
         <div className="fs-studio__ask-actions">
           {EXPORT_FORMATS.map((fmt) => (
-            <a key={fmt} className="fs-btn" data-variant="secondary" data-size="sm" href={exportUrl(target.id, fmt)} download data-testid={`export-${fmt}`}>
-              <Download size={14} aria-hidden="true" />
-              <span>{fmt.toUpperCase()}</span>
-            </a>
+            <Button
+              key={fmt}
+              variant="secondary"
+              size="sm"
+              icon={Download}
+              label={fmt.toUpperCase()}
+              disabled={busy}
+              testId={`export-${fmt}`}
+              onClick={() => {
+                // Not a plain link: a link cannot see a 400 or a 503, so a
+                // refused export used to be a blank tab.
+                void downloadExport(target.id, fmt, target.name).catch((e: Error) =>
+                  onNotice(`${t('Could not export')}: ${e.message}`, 'danger'),
+                );
+              }}
+            />
           ))}
         </div>
 

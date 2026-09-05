@@ -34,50 +34,40 @@ export interface Destination {
   path: string;
   label: string;
   icon: LucideIcon;
-  /** Migrated screens render themselves; the rest say so honestly. */
-  ready: boolean;
 }
 
 export const DESTINATIONS: Destination[] = [
-  { path: '/', label: 'Home', icon: Home, ready: true },
-  { path: '/studio', label: 'Studio', icon: Sparkles, ready: true },
-  { path: '/projects', label: 'Projects', icon: FolderKanban, ready: true },
-  { path: '/library', label: 'Library', icon: Library, ready: true },
-  { path: '/automations', label: 'Automations', icon: Workflow, ready: true },
-  { path: '/activity', label: 'Activity', icon: Activity, ready: true },
+  { path: '/', label: 'Home', icon: Home },
+  { path: '/studio', label: 'Studio', icon: Sparkles },
+  { path: '/projects', label: 'Projects', icon: FolderKanban },
+  { path: '/library', label: 'Library', icon: Library },
+  { path: '/automations', label: 'Automations', icon: Workflow },
+  { path: '/activity', label: 'Activity', icon: Activity },
 ];
 
 /**
  * The tools (UI-020 §"everything technical lives inside a destination"):
  * not on the rail's line, but one click away in the sidebar's second group
- * and in the palette. A migrated tool is a Studio route; the rest open the
- * previous interface at their deep link (`/notes?shell=legacy` opens that
- * window) until PARIDAD_FUNCIONAL marks them Migrado.
+ * and in the palette. Every one of them is a Studio route.
  */
 export interface Tool {
   path: string;
   label: string;
   icon: LucideIcon;
-  ready: boolean;
 }
 
 export const TOOLS: Tool[] = [
-  { path: '/notes', label: 'Notes', icon: StickyNote, ready: true },
-  { path: '/calendar', label: 'Calendar', icon: CalendarDays, ready: true },
-  { path: '/email', label: 'Mail', icon: Mail, ready: true },
-  { path: '/memory', label: 'Memory', icon: Brain, ready: true },
-  { path: '/agents', label: 'Agents', icon: Bot, ready: true },
-  { path: '/skills', label: 'Skills', icon: Zap, ready: true },
-  { path: '/research', label: 'Research', icon: Telescope, ready: true },
-  { path: '/compare', label: 'Compare', icon: Columns3, ready: true },
-  { path: '/group', label: 'Group chat', icon: Users, ready: true },
-  { path: '/cookbook', label: 'Cookbook', icon: ChefHat, ready: true },
+  { path: '/notes', label: 'Notes', icon: StickyNote },
+  { path: '/calendar', label: 'Calendar', icon: CalendarDays },
+  { path: '/email', label: 'Mail', icon: Mail },
+  { path: '/memory', label: 'Memory', icon: Brain },
+  { path: '/agents', label: 'Agents', icon: Bot },
+  { path: '/skills', label: 'Skills', icon: Zap },
+  { path: '/research', label: 'Research', icon: Telescope },
+  { path: '/compare', label: 'Compare', icon: Columns3 },
+  { path: '/group', label: 'Group chat', icon: Users },
+  { path: '/cookbook', label: 'Cookbook', icon: ChefHat },
 ];
-
-/** Where a tool opens today: its Studio route, or the previous interface. */
-export function toolHref(tool: Tool): string {
-  return tool.ready ? tool.path : `${tool.path}?shell=legacy`;
-}
 
 /**
  * Kept in step with the whitelist in app.py. A route that the server does
@@ -105,4 +95,9 @@ export const SERVER_ROUTES = [
   '/compare',
   '/group',
   '/cookbook',
+  // The paths the interface this one replaced owned. Still served, still in
+  // bookmarks; the router redirects each to the screen that took over.
+  '/gallery',
+  '/tasks',
+  '/brain',
 ];

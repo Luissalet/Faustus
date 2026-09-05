@@ -1,5 +1,7 @@
-// The transcript's Markdown parser (lib/markdown.ts) and the mention splitter
-// (lib/mentions.ts) — pure functions, no React, no browser. Bundled with
+// The transcript's Markdown parser (lib/markdown.ts), the mention splitter
+// (lib/mentions.ts), the executed-tool-fence stripper (lib/fences.ts) and the
+// emoji shortcode table (lib/emoji.ts) —
+// pure functions, no React, no browser. Bundled with
 // esbuild on the fly; run by tests/test_studio_markdown_js.py, or by hand:
 //   node studio/checks/markdown.check.mjs
 import { pathToFileURL, fileURLToPath } from 'node:url';
@@ -19,6 +21,8 @@ async function load(rel, name) {
 
 const md = await load('markdown.ts', 'markdown.mjs');
 const mentions = await load('mentions.ts', 'mentions.mjs');
+const fences = await load('fences.ts', 'fences.mjs');
+const emoji = await load('emoji.ts', 'emoji.mjs');
 
 let failed = 0;
 const assert = (c, msg) => {
@@ -118,6 +122,85 @@ const text = (nodes) => md.inlineText(nodes);
   assert(!mentions.hasMention('un correo a alguien@example.com'), 'an email address is not a mention');
   assert(mentions.mentionPath(undefined, 'a/b.py.') === 'a/b.py', 'trailing punctuation trimmed');
   assert(mentions.splitMentions('sin arrobas').length === 1, 'text with no mention comes back whole');
+}
+
+// ── Executed tool fences ──
+{
+  const re = fences.fenceRegex(['read_file', 'web_search', 'bash', 'python']);
+  const strip = (text) => fences.stripExecutedFences(text, re);
+
+  const call = 'Voy a mirarlo.\n\n```read_file\n{"path": "src/app.py"}\n```\n\nYa está.';
+  assert(!strip(call).includes('read_file'), 'an executed tool call goes');
+  assert(strip(call).includes('Voy a mirarlo.') && strip(call).includes('Ya está.'), 'and the words around it stay');
+
+  const inline = '```web_search {"query": "faustus"}\n```';
+  assert(strip(inline) === '', 'the arguments can be on the fence line');
+
+  const shell = '```bash\nls -la\n```';
+  assert(strip(shell) === shell, 'bash is a language, not a tool');
+  const py = '```python\nprint(1)\n```';
+  assert(strip(py) === py, 'and so is python');
+
+  const unknown = '```make_coffee\n{"sugar": 2}\n```';
+  assert(strip(unknown) === unknown, 'a tag that is not a tool is left alone');
+
+  const notJson = '```read_file {title="setup"}\n```';
+  assert(strip(notJson) === notJson, 'arguments on the fence line that are not JSON are markdown metadata, not a call');
+
+  const bare = '```read_file\n```';
+  assert(strip(bare) === '', 'the tag alone is enough: only a tool call is written that way');
+
+  const prefix = '```read_file_list\n{"a":1}\n```';
+  assert(strip(prefix) === prefix, 'a longer tag that merely starts with one is not that tool');
+
+  assert(fences.fenceRegex([]) === null, 'no tags means no regex, never a regex that matches everything');
+  assert(fences.fenceRegex(['bash', 'python']) === null, 'a list of only carve-outs is no list at all');
+  assert(fences.stripExecutedFences('hola', null) === 'hola', 'with no regex the text is untouched');
+
+  const twice = call + '\n' + call;
+  assert(!fences.stripExecutedFences(twice, re).includes('read_file'), 'the regex is reusable: lastIndex does not leak between calls');
+}
+
+// ── Emoji shortcodes (lib/emoji.ts) ──────────────────────────────────────────
+// Ported from the previous interface (issue #345): models write `:blush:` and
+// mean the character. The whole difficulty is knowing when a colon run is NOT
+// a shortcode.
+{
+  const r = emoji.replaceShortcodes;
+
+  assert(r('visit today? :blush:') === 'visit today? \u{1f60a}', 'the shortcode the issue reported converts');
+  assert(r('hobbies? **:microphone:**') === 'hobbies? **\u{1f3a4}**', 'markup around a shortcode does not block it');
+  assert(r(':fire:') === '\u{1f525}', 'a bare shortcode is the whole string');
+  assert(r(':tada:') === '\u{1f389}', 'tada');
+  assert(r(':thinking:') === '\u{1f914}', 'thinking');
+  assert(r(':+1:') === '\u{1f44d}' && r(':thumbsup:') === '\u{1f44d}', 'aliases land on the same glyph');
+  assert(r('nice :fire: work :100:') === 'nice \u{1f525} work \u{1f4af}', 'several in one line');
+
+  assert(r(':definitely_not_an_emoji:') === ':definitely_not_an_emoji:', 'an unknown name is left verbatim');
+  assert(r(':emoji:') === ':emoji:', 'the placeholder is not a shortcode');
+  assert(r('meet at 10:30:45 today') === 'meet at 10:30:45 today', 'a time is not a shortcode');
+  assert(r('ratio 16:9 vs 4:3') === 'ratio 16:9 vs 4:3', 'a ratio is not a shortcode');
+  assert(r('plain text') === 'plain text', 'no colons, nothing to do');
+
+  // A KNOWN name inside a longer token is literal text. `1:100:2` is the trap.
+  assert(r('1:100:2') === '1:100:2', 'a known name inside a number run stays a number run');
+  assert(r('scale 3:100:7 ok') === 'scale 3:100:7 ok', 'and inside a scale');
+  assert(r('host:fire:port') === 'host:fire:port', 'an authority-looking string is left alone');
+  assert(r('status:fire:') === 'status:fire:', 'glued to a word on the left');
+  assert(r(':fire:done') === ':fire:done', 'glued to a word on the right');
+  assert(r('we hit :100: today') === 'we hit \u{1f4af} today', 'delimited, it converts');
+  assert(r('see :fire:!') === 'see \u{1f525}!', 'punctuation counts as a boundary');
+  assert(r(':fire::tada:') === '\u{1f525}\u{1f389}', 'back to back');
+
+  assert(emoji.hasShortcode('a :fire: b') === true, 'the cheap pre-test says yes when there is one');
+  assert(emoji.hasShortcode('nothing here') === false, 'and no when there is not');
+
+  // Code is quoted: a snippet about shortcodes must survive being rendered.
+  const prose = emoji.replaceShortcodesInProse;
+  assert(prose('say :fire:') === 'say \u{1f525}', 'prose converts');
+  assert(prose('use `:fire:` here') === 'use `:fire:` here', 'an inline code span is left alone');
+  assert(prose('```yaml\nicon: :fire:\n```') === '```yaml\nicon: :fire:\n```', 'a fenced block is left alone');
+  assert(prose('a :tada:\n```\n:fire:\n```\nb :fire:') === 'a \u{1f389}\n```\n:fire:\n```\nb \u{1f525}', 'prose either side of a fence still converts');
 }
 
 console.log(failed ? `${failed} CHECK(S) FAILED` : 'ALL OK');

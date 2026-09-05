@@ -323,22 +323,3 @@ def test_explicit_false_disables_even_for_admin():
 
 # ── Frontend source-level guards ──────────────────────────────
 
-_CHAT_JS = Path(__file__).resolve().parent.parent / "static" / "js" / "chat.js"
-
-
-def test_frontend_always_sends_explicit_allow_bash():
-    """chat.js must always send allow_bash (both true and false), not only on toggle ON."""
-    source = _CHAT_JS.read_text(encoding="utf-8")
-    # Must not only append 'true' — must also handle the false case
-    assert "allow_bash', el('bash-toggle').checked ? 'true' : 'false'" in source or \
-           "allow_bash', 'false'" in source, (
-        "Frontend must send explicit allow_bash=false when toggle is off"
-    )
-
-
-def test_frontend_sends_explicit_allow_web_search_false_in_agent_mode():
-    """chat.js must send allow_web_search=false when web toggle is off in agent mode."""
-    source = _CHAT_JS.read_text(encoding="utf-8")
-    assert "fd.append('allow_web_search', el('web-toggle').checked ? 'true' : 'false')" in source, (
-        "Frontend must send explicit allow_web_search=false in agent mode when toggle is off"
-    )

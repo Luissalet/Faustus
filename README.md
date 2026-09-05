@@ -9,6 +9,7 @@
 
 <p align="center">
   <a href="#quick-start">Quick start</a> ·
+  <a href="#the-interface-faustus-studio">The interface</a> ·
   <a href="FAUSTUS.md">What this fork adds</a> ·
   <a href="website/setup.md">Setup guide</a> ·
   <a href="website/fable-workers.md">Workers API</a> ·
@@ -16,7 +17,7 @@
 </p>
 
 <p align="center">
-  <img src="assets/branding/faustus-agents.png" alt="Faustus running two sub-agents on a task, with per-worker cards showing rounds, tools, tokens and the files each one changed">
+  <img src="assets/screens/studio.png" alt="Faustus Studio: the navigation rail on the left, the conversation list, and a composer with chat and agent modes, tool chips and the model picker">
 </p>
 
 ---
@@ -36,6 +37,91 @@ collected itself, and when the evidence is missing, Faustus says so instead of a
 
 Everything the fork adds — with dates, files, measurements and the bugs found along the way — is
 recorded in **[`FAUSTUS.md`](FAUSTUS.md)** (in Spanish), which doubles as the fork's changelog.
+
+## The interface: Faustus Studio
+
+The app you see above is **Faustus Studio**, and it is not a restyle. The previous interface —
+196 KB of `app.js`, 120 more files and 7.2 MB of hand-written JavaScript under `static/js/`, a
+1.5 MB stylesheet and a 256 KB `index.html` that carried every modal in the app as markup — has
+been **deleted**, and replaced by a React + TypeScript application built with Vite: 200 modules,
+63k lines of TypeScript and 21k of CSS, shipped as 121 content-hashed chunks totalling 2.7 MB.
+`index.html` is now **84 lines**: metadata, the manifest, one module script, and an inline block
+that applies your theme *before the first paint* so a dark theme on a light OS does not flash white
+and then correct itself.
+
+<p align="center">
+  <img src="assets/screens/automations.png" alt="The Automations screen: a filtered list of automations, each saying in one line when it fires and what it does" width="900">
+</p>
+
+### The rule the rebuild was held to
+
+**Not one function fewer.** Every screen, control, shortcut, query parameter and empty state of the
+old interface is enumerated in [`docs/ui/PARIDAD_FUNCIONAL.md`](docs/ui/PARIDAD_FUNCIONAL.md) — 84
+rows, and nothing was allowed to retire until its row read *Migrado*. The work went out in 39
+numbered batches, each with its own state document under [`docs/ui/`](docs/ui/), each verified in a
+browser against a live instance with a real local model before it was committed.
+
+That rule paid for itself at the very end. Deleting the old interface uncovered **six features that
+had never been migrated at all** — service health (`/api/diagnostics/services`), the fifteen-server
+MCP preset catalogue, the model-fit hints in the model picker, fitting a model to the VRAM you
+actually have, and device sign-in for both subscription providers. Every one of them was a server
+route with no caller: the backend tests passed, because the
+route answered; no UI test looked, because there was no UI to look at. They were ported before
+anything was deleted, and the lesson is now §7 of the parity document — *an endpoint with no caller
+is not a half-finished feature, it is a lost one, and it looks exactly like one that never existed.*
+
+### What it is like to use
+
+- **One rail, six places**: Home, Studio, Projects, Library, Automations, Activity — with Notes,
+  Calendar, Mail, Memory, Agents, Skills, Research, Compare, Group chat and Cookbook underneath as
+  tools. What used to be a stack of modals fighting over one screen is now a set of addressable
+  URLs: `/memory?t=provenance` and `/agents?t=tournament` are links you can bookmark and share.
+- **`Ctrl+K` for everything.** Navigation, conversations, models, presets and commands in one
+  palette. Every screen is reachable from the keyboard alone.
+- **A composer that says what it will do**: chat mode talks, agent mode acts — and in agent mode
+  every step appears in a rail as it happens. `@file` mentions a file in the workspace, `#rule`
+  saves a standing instruction, `/command` does the rest.
+- **A context ledger per turn**: what was actually sent to the model this turn, by section, with
+  token counts and percentages. When a turn is close to the window, that is the screen that tells
+  you which part of it is the memory and which part is the file you attached.
+- **Sixteen factory themes and your own**, on the same `odysseus-theme` key the old interface used,
+  so a custom theme survived the rewrite. Density, text size and reduced-motion are settings, not
+  guesses.
+- **Spanish and English**, 4,425 translated strings, with a script that fails the build on a
+  missing one rather than a human noticing an English label in a Spanish screen.
+
+<p align="center">
+  <img src="assets/screens/agents.png" alt="The Agents screen with its Workers, Runners, Definitions, Experts and Tournament tabs, showing the dispatch form" width="900">
+</p>
+
+### The design system is enforced by tests, not by review
+
+Studio is built on design tokens and Radix primitives, and the rules are checked by
+`tests/test_studio_guards.py` on every run:
+
+- no colour literal outside `tokens.css` and `user-theme.css`;
+- no `<div>` or `<span>` carrying an `onClick` — if it is a control, it is a control;
+- no `outline: none` without an explicit, commented replacement;
+- no `transition: all`, no raw millisecond values, and no `animation:` without a
+  `prefers-reduced-motion` branch;
+- no inline `<svg>` in a component, so the icon set stays one set;
+- and every route the client knows about must exist in `app.py`, so a link cannot quietly 404.
+
+Pure logic — markdown rendering, the command parser, the calendar's timetable arithmetic, model
+fitting, export, key handling, untrusted-content sanitising — lives in plain `.ts` modules that are
+bundled and run headless by eleven `studio/checks/*.check.mjs` suites, wired into pytest. Writing
+them was worth it on the first day: one found **two real XSS holes** — `data:image/svg+xml` accepted
+by both the markdown image sanitiser and the paint canvas — and another found that export went
+through `window.open`, which cannot see a 503, so a failed export looked exactly like a successful
+one. All three are fixed, and each has the test that found it.
+
+### Offline, and the service worker
+
+The precache list used to be fifty-odd hand-written paths, which is a list that is wrong the day
+after you write it. It is now **two** entries — the shell and its entry point — and the hashed
+chunks are picked up the first time you open a screen, which is also the first moment they matter
+offline. Navigation serves the cached shell for *any* route, not just `/`, so reloading on
+`/calendar` opens instantly and works with no network.
 
 ## Why it exists
 
@@ -106,8 +192,8 @@ MCP client — and returns a **compact, verified result** instead of a transcrip
 
 Measured on the reference machine: a task that burned **118k tokens inside the worker** came back to
 the coordinator as **~1.5k tokens**. There's an [MCP server](mcp_servers/workers_server.py),
-a ready-made [skill](integrations/faustus-workers/), and a **Workers** page in the app for the same
-thing in plain language.
+a ready-made [skill](integrations/faustus-workers/), and the **Workers** tab of the *Agents* screen
+in the app for the same thing in plain language.
 
 And the worker doesn't have to be Faustus. A dispatch can name an **external agent runner** —
 OpenClaw, OpenCode, Hermes, Droid, Pi, Cline, Copilot CLI, Oh My Pi — and the job runs under it. The
@@ -117,7 +203,7 @@ installed, so a runner appears if you have it and disappears if you don't. Whate
 on trust.
 
 <p align="center">
-  <img src="assets/branding/faustus-workers.png" alt="The Workers page: a natural-language task box, folder, verification command, and a list of jobs marked done, partial or cancelled" width="900">
+  <img src="assets/screens/activity.png" alt="The Activity screen: tasks, renders and approvals in one timeline, each with its status, what it produced and how long it took" width="900">
 </p>
 
 ### Projects, objectives and a memory that learns
@@ -294,13 +380,20 @@ than returning an empty success.
 
 Chat with local and API models, tools, MCP, files, shell, skills and memory · **Cookbook**
 (hardware-aware model recommendations, downloads, serving) · **Deep Research** *(rebuilt above)* ·
-**Compare** (blind
-side-by-side) · **Documents** (writing-first editor with AI edits and suggestions) · **Email**
-(IMAP/SMTP with triage, tags, summaries, reminders, reply drafts) · **Notes, Tasks and Calendar**
-with CalDAV sync · gallery and image editor, themes, uploads, web search, presets, sessions, 2FA.
+**Compare** (blind side-by-side) · **Documents** (writing-first editor with AI edits and
+suggestions) · **Email** (IMAP/SMTP with triage, tags, summaries, reminders, reply drafts) ·
+**Notes, Tasks and Calendar** with CalDAV sync · gallery and image editor, themes, uploads, web
+search, presets, sessions, 2FA.
 
 Faustus adds to that list: **Workers**, **Experts**, **Tournament** (multi-model, blind round 0, with
-explicit merge), **Provenance**, **Imported history**, and **Brain → Rules**.
+explicit merge), **Provenance**, **Imported history**, and **Memory → Rules**.
+
+Studio rehouses all of it without losing any of it. Documents and the image gallery are two views of
+one **Library**; tasks and recurring jobs are **Automations**, and what they produced — together with
+renders and anything waiting for a human — is **Activity**; Workers, agent runners, agent
+definitions, Experts and Tournament are the five tabs of **Agents**; the provenance graph and the
+learned rules live inside **Memory**. The old bookmarks still work: `/gallery`, `/tasks` and
+`/brain` redirect to whichever screen took over the job.
 
 ## Quick start
 
@@ -319,9 +412,10 @@ Native installs, GPU notes, Windows/macOS instructions, HTTPS and configuration 
 [setup guide](website/setup.md).
 
 > **Internal identifiers still say `odysseus` on purpose.** Environment variables (`ODYSSEUS_*`),
-> `localStorage` keys, CSS ids, module names and the container name are unchanged, so upstream
-> changes keep merging cleanly and existing data directories keep working. Only the visible name,
-> the branding and the docs are Faustus.
+> `localStorage` keys, API paths, module names and the container name are unchanged, so upstream
+> changes keep merging cleanly and existing data directories keep working — your themes and settings
+> came through the interface rewrite untouched for the same reason. Only the visible name, the
+> branding and the docs are Faustus.
 
 ## Driving Faustus from Claude, Cowork or Claude Code
 
@@ -358,6 +452,14 @@ were invisible to the test suite and only appeared from actually using the thing
 Where a mechanism was borrowed from someone else's project, the reasoning and the measurement are
 written down, including when the borrowed formula turned out to be worse than the simple version.
 
+Studio was built the same way, with one addition: the parity document is written *before* the screen
+and the screen is not finished until every row of it is checked off. A batch is done when it has
+complete states, keyboard and focus handling, three viewports, dark/light/reduced-motion, tests in
+proportion, and a before-and-after screenshot taken in a real browser against the live instance. That
+last step is not ceremony: a truncated label, a section header cut off mid-word, a dropdown that
+needs a real coordinate click — none of them fail a test, and all of them are obvious in the first
+five seconds of looking.
+
 ## Numbers
 
 As of 2026-09-04, against the fork point (`c9dd68d8`):
@@ -366,7 +468,8 @@ As of 2026-09-04, against the fork point (`c9dd68d8`):
 |:--|:--|
 | Commits on top of upstream | 405 |
 | Lines changed | +167,100 / −1,600 across 741 files |
-| New modules in `src/`, `routes/`, `services/`, `static/js/` | 160 |
+| New modules in `src/`, `routes/`, `services/` | 160 |
+| Faustus Studio (`studio/src/`) | 200 modules · 63k lines TS · 21k lines CSS |
 | New test files | 231 |
 | Tests collected | 10,472 (`pytest --collect-only -q tests`) |
 | Full run on the reference machine | 10,345 passed · 47 failed · 6 errors · 74 skipped · 15m34s |

@@ -1,14 +1,13 @@
-"""The Faustus mark lives inline in four places and there is no build step to
+"""The Faustus mark lives inline in two places and there is no build step to
 keep them honest, so pin them here.
 
-The mark (arrowhead + knocked-out speech bubble + two wings) replaced the
-inherited "boat" glyph. It is duplicated because each site needs a different
-escaping: a URL-encoded data: URI in the <link>, a JS string concat in the boot
-script, a template literal in theme.js, and plain HTML on the welcome screen.
+The mark (arrowhead plus two wings) replaced the inherited "boat" glyph. It is
+duplicated because each site needs a different escaping: a URL-encoded data:
+URI in the page's `<link rel="icon">`, and JSX in the shell's `BrandMark`.
 
-Regression this guards: swapping the artwork with a regex ate the double quotes
-around the boot script's string literal, which is a syntax error that only shows
-up as a blank page at runtime — every python test still passed.
+The regression this guards: swapping the artwork with a regex ate the double
+quotes around a string literal, which is a syntax error that only shows up as
+a blank page at runtime — every python test still passed.
 """
 import re
 import shutil
@@ -21,10 +20,10 @@ import pytest
 
 _REPO = Path(__file__).resolve().parent.parent
 _INDEX = (_REPO / "static" / "index.html").read_text(encoding="utf-8")
-_THEME = (_REPO / "static" / "js" / "theme.js").read_text(encoding="utf-8")
+_MARK = (_REPO / "studio" / "src" / "shell" / "BrandMark.tsx").read_text(encoding="utf-8")
 _HAS_NODE = shutil.which("node") is not None
 
-# first vertices of the body path — apex, then the bottom-left corner
+# First vertices of the body path — the apex, then the bottom-left corner.
 _BODY_HEAD = "M16 0.738L4.674 25.559"
 
 
@@ -32,15 +31,25 @@ def _sites():
     m = re.search(r'<link rel="icon" type="image/svg\+xml" href="data:image/svg\+xml,([^"]+)"', _INDEX)
     yield "link rel=icon", unquote(m.group(1)) if m else None
 
-    m = re.search(r'encodeURIComponent\("(<svg.*?</svg>)"\);', _INDEX, re.S)
-    yield "boot script", m.group(1).replace('" + ac + "', "#e06c75") if m else None
-
-    # the else-branch of _updateFavicon; the first literal is the route-icon one
-    lits = re.findall(r"svg = `(<svg.*?</svg>)`", _THEME, re.S)
-    yield "_updateFavicon", lits[1].replace("${fg}", "#e06c75") if len(lits) > 1 else None
-
-    m = re.search(r'(<svg class="welcome-boat".*?</svg>)', _INDEX, re.S)
-    yield "welcome screen", m.group(1) if m else None
+    m = re.search(r"(<svg viewBox=\"0 0 32 32\".*?</svg>)", _MARK, re.S)
+    svg = m.group(1) if m else None
+    if svg:
+        # JSX: braces and quoted prose in attributes are not XML. Only the
+        # paths matter here, so rebuild the wrapper around them.
+        paths = re.findall(r"<path\b[^>]*/>|<path\b[^>]*>", svg)
+        body = re.search(r'd="(M16[^"]+)"', svg)
+        wings = re.findall(r'<path d="(M\d[^"]+)" />', svg)
+        if body and len(wings) == 2:
+            svg = (
+                '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">'
+                f'<path fill="#e06c75" d="{body.group(1)}"/>'
+                f'<path fill="#e06c75" d="{wings[0]}"/>'
+                f'<path fill="#e06c75" d="{wings[1]}"/>'
+                '</svg>'
+            )
+        else:
+            svg = None if not paths else svg
+    yield "BrandMark", svg
 
 
 @pytest.mark.parametrize("label,svg", list(_sites()))
@@ -55,20 +64,14 @@ def test_every_site_carries_the_same_well_formed_mark(label, svg):
 
 def test_the_old_boat_glyph_is_gone():
     assert "M16 4L16 22L6 22Z" not in _INDEX
-    assert "M16 4L16 22L6 22Z" not in _THEME
-
-
-def test_route_icon_registries_stay_in_sync():
-    """index.html ships a copy so a bookmarked route gets its icon before the
-    module loads; theme.js owns the copy used after a theme change."""
-    inline = _INDEX[_INDEX.find("var SHAPES"):_INDEX.find("var inner")]
-    module = _THEME[_THEME.find("_ROUTE_FAVICON_SHAPES"):_THEME.find("function _updateFavicon")]
-    assert set(re.findall(r"'(/[a-z]+)':", inline)) == set(re.findall(r"'(/[a-z]+)':", module))
+    assert "M16 4L16 22L6 22Z" not in _MARK
 
 
 @pytest.mark.skipif(not _HAS_NODE, reason="node binary not on PATH")
 @pytest.mark.parametrize("i", range(len(re.findall(r'<script nonce="\{\{CSP_NONCE\}\}">', _INDEX))))
 def test_inline_scripts_still_parse(tmp_path, i):
+    """The page's inline scripts run before anything else. A syntax error
+    there is a blank screen, and nothing else in the suite would catch it."""
     block = re.findall(r'<script nonce="\{\{CSP_NONCE\}\}">(.*?)</script>', _INDEX, re.S)[i]
     f = tmp_path / f"block_{i}.js"
     f.write_text(block, encoding="utf-8")
@@ -85,12 +88,9 @@ def test_the_brand_assets_exist():
         assert p.exists() and p.stat().st_size > 0, rel
 
 
-def test_notification_icons_resolve():
-    """notes.js / tasks.js / settings.js / reminders.js point Notification at
-    these paths; they were 404ing before the mark landed."""
-    referenced = set()
-    for js in (_REPO / "static" / "js").rglob("*.js"):
-        referenced |= set(re.findall(r"'/static/(favicon\.(?:ico|png))'", js.read_text(encoding="utf-8")))
-    assert referenced, "expected the notification icon references to still exist"
-    for name in referenced:
-        assert (_REPO / "static" / name).exists(), name
+def test_the_page_points_at_the_assets_it_ships():
+    """A manifest or an apple-touch-icon naming a file that is not there is a
+    404 on every load, and nobody sees it except the log."""
+    for rel in re.findall(r'href="(/static/[^"]+)"', _INDEX):
+        path = _REPO / rel.lstrip("/")
+        assert path.exists(), f"index.html links {rel}, which is not there"

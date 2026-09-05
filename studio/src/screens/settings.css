@@ -1482,3 +1482,66 @@
   inline-size: 100%;
   accent-color: var(--fs-brand);
 }
+
+/* The setup steps a ready-made MCP server carries: written as steps, shown
+   as steps. Pre-formatted because the line breaks are the instructions. */
+.fs-set__steps {
+  margin: var(--fs-space-2) 0 0;
+  padding: var(--fs-space-3);
+  max-inline-size: none;
+  border-radius: var(--fs-radius-control);
+  border: 1px solid var(--fs-border);
+  background: var(--fs-surface-2);
+  font-family: var(--fs-font-ui);
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-2);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* The device-flow code: it is typed somewhere else, often on another
+   device, so it is the biggest thing on the card and easy to read aloud. */
+.fs-devcode {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-3);
+  margin: var(--fs-space-3) 0;
+  max-inline-size: none;
+}
+
+.fs-devcode code {
+  padding: var(--fs-space-2) var(--fs-space-4);
+  border-radius: var(--fs-radius-control);
+  border: 1px solid var(--fs-border);
+  background: var(--fs-surface-2);
+  font-family: var(--fs-font-mono);
+  font-size: 1.5rem;
+  letter-spacing: 0.16em;
+  color: var(--fs-text-1);
+  user-select: all;
+}
+
+/* The VRAM plan under the model options: what the advisor measured, in the
+   server's own words. It is advice, so it is quiet unless it is bad news. */
+.fs-lm__plan {
+  margin-block-start: var(--fs-space-2);
+  padding: var(--fs-space-3);
+  border-radius: var(--fs-radius-control);
+  border: 1px solid color-mix(in srgb, var(--fs-warning) 40%, transparent);
+  background: color-mix(in srgb, var(--fs-warning) 8%, transparent);
+}
+
+.fs-lm__plan[data-fits] {
+  border-color: color-mix(in srgb, var(--fs-success) 40%, transparent);
+  background: color-mix(in srgb, var(--fs-success) 8%, transparent);
+}
+
+.fs-lm__steps {
+  margin: var(--fs-space-2) 0 0;
+  padding-inline-start: var(--fs-space-4);
+  max-inline-size: none;
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-2);
+  line-height: 1.5;
+}

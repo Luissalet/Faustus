@@ -306,10 +306,8 @@ def test_route_context_agent_frontend_and_cache_bust_wire_the_contract():
     route = (root / "routes/chat_routes.py").read_text(encoding="utf-8")
     helpers = (root / "routes/chat_helpers.py").read_text(encoding="utf-8")
     agent = (root / "src/agent_loop.py").read_text(encoding="utf-8")
-    frontend = (root / "static/js/chat.js").read_text(encoding="utf-8")
-    renderer = (root / "static/js/chatRenderer.js").read_text(encoding="utf-8")
-    app = (root / "static/app.js").read_text(encoding="utf-8")
-    index = (root / "static/index.html").read_text(encoding="utf-8")
+    transcript = (root / "studio/src/screens/studio/Transcript.tsx").read_text(encoding="utf-8")
+    chat_adapter = (root / "studio/src/adapters/chat.ts").read_text(encoding="utf-8")
     approvals = (root / "src/tool_approvals.py").read_text(encoding="utf-8")
     capabilities = (root / "src/tool_capabilities.py").read_text(encoding="utf-8")
     models = (root / "core/models.py").read_text(encoding="utf-8")
@@ -328,14 +326,17 @@ def test_route_context_agent_frontend_and_cache_bust_wire_the_contract():
     assert "selected_tools=approval_selected_tools" in agent
     assert "continuation_query=_retrieval_query or _last_user" in agent
     assert "approval_gate_bypassed=bool(" in agent
-    assert "['approve', 'approve_task', 'deny']" in frontend
-    assert "input.value = label" not in frontend
-    assert "const msg = approvalForSend ? '' : el('message').value;" in frontend
-    assert "const skipBubble = _hideUserBubble || !!approvalForSend;" in frontend
-    assert "fd.append('message', approvalForSend ? '' : _finalMsgWithInject);" in frontend
-    assert "json.type === 'tool_approval_resolved'" in frontend
-    assert "if (aq.resolved) return null;" in renderer
-    assert "ev.ask_user && !ev.ask_user.resolved" in renderer
+    # The three decisions the route accepts are the three the interface offers,
+    # and the answer travels as an approval id — never as a message typed into
+    # the composer on the user's behalf, which is what made "Approve" look
+    # like the user had said the word.
+    assert "'approve' | 'approve_task' | 'deny'" in transcript
+    assert "onApproval('approve_task')" in transcript
+    assert "tool_approval_id" in chat_adapter
+    assert "tool_approval_resolved" in chat_adapter
+    # An answered question stops being a question: the card must not come back
+    # after a reload or a resume.
+    assert "askResolved" in chat_adapter
     assert '"label": "Allow once"' not in approvals
     assert '"label": "Allow for this task"' in approvals
     assert '"label": "Allow for this chat session"' in approvals
@@ -343,9 +344,3 @@ def test_route_context_agent_frontend_and_cache_bust_wire_the_contract():
     assert "CHAT_SESSION_APPROVAL_CONTEXT_MARKER" in capabilities
     assert "CHAT_SESSION_APPROVAL_CONTEXT_MARKER" in models
 
-    version = "20260819approvalcontrol1"
-    assert f"chat.js?v={version}" in app
-    assert f"chat.js?v={version}" in index
-    assert f"chatRenderer.js?v={version}" in frontend
-    assert f"chatRenderer.js?v={version}" in app
-    assert f"chatRenderer.js?v={version}" in index

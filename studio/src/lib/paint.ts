@@ -84,11 +84,19 @@ export function asBackground(url: string): string {
   return `${BG_PREFIX}${url}`;
 }
 
-/** Only same-origin uploads and data URLs get to be a note's picture. */
+/**
+ * Only same-origin uploads and RASTER data URLs get to be a note's picture.
+ *
+ * `data:image/svg+xml` is not a picture for this purpose: an SVG can carry a
+ * `<script>` and an `onload`, and it runs with the page's origin. The list is
+ * the four raster types a camera or a canvas actually produces.
+ */
+const RASTER = /^data:image\/(?:png|jpe?g|gif|webp);/i;
+
 export function safeImage(url: string | null | undefined): string | null {
   const value = (url ?? '').trim();
   if (!value) return null;
-  if (value.startsWith('data:image/')) return value;
+  if (value.startsWith('data:')) return RASTER.test(value) ? value : null;
   if (value.startsWith('/')) return value;
   if (/^https?:\/\//i.test(value)) return value;
   return null;

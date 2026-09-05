@@ -10,7 +10,7 @@ import { reapplyThemeChoice } from './theme';
  * localStorage key (`odysseus-theme`) and server pref (`theme`) the old
  * editor used, so a theme picked there is the theme here and vice versa.
  * Colours land on <html> as `--bg --fg --panel --border --red`, exactly as
- * before, and Studio reads them through `legacy-bridge.css` when the root
+ * before, and Studio reads them through `user-theme.css` when the root
  * carries `data-theme-source="faustus"`. `name: 'studio'` (the default)
  * means Studio's own palette: no variables, no attribute.
  *

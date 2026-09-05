@@ -703,24 +703,42 @@ def test_mcp_request_retries_a_post_with_the_same_idempotency_key(monkeypatch):
         ws._request("GET", "/api/dispatch")
 
 
-# ── 6. the Workers page ─────────────────────────────────────────────────────
+# ── 6. splitting a brief into workers ───────────────────────────────────────
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node not installed")
 def test_parse_tasks_keeps_a_wrapped_paragraph_as_one_worker():
-    """F16 — one worker per LINE turned a soft-wrapped sentence into three
-    parallel workers with sentence fragments."""
-    src = (REPO / "static/js/workers.js").read_text(encoding="utf-8")
-    src = (src.replace("export function", "function").replace("export default workersModule;", "")
-           .replace("if (typeof window !== 'undefined') window.workersModule = workersModule;", ""))
-    script = src + """
+    """F16 - one worker per LINE turned a soft-wrapped sentence into three
+    parallel workers with sentence fragments.
+
+    `parseTasks` lives in the interface (studio/src/adapters/workers.ts); it
+    is bundled here rather than restated, so the rule this pins is the rule
+    the Workers page actually applies.
+    """
+    esbuild = REPO / "node_modules" / "esbuild" / "lib" / "main.js"
+    if not esbuild.exists():
+        pytest.skip("node_modules/esbuild needed to bundle the TS")
+    script = """
+import { pathToFileURL } from 'node:url';
+import { join } from 'node:path';
+const root = process.argv[2];
+const { build } = await import(pathToFileURL(join(root, 'node_modules', 'esbuild', 'lib', 'main.js')).href);
+const r = await build({
+  entryPoints: [join(root, 'studio', 'src', 'adapters', 'workers.ts')],
+  bundle: true, format: 'esm', platform: 'node', write: false, logLevel: 'silent',
+});
+const mod = await import('data:text/javascript;base64,' + Buffer.from(r.outputFiles[0].text).toString('base64'));
+const parseTasks = mod.parseTasks;
 console.log(JSON.stringify({
   wrapped: parseTasks('In cart.py add apply_discount(total, pct)\\nwith validation and a test in tests/test_cart.py;\\npytest -q must pass.'),
   blank: parseTasks('first task\\n\\nsecond task\\n\\n\\nthird task'),
-  list: parseTasks('1. first task\\n2. second task\\n- third\\n• fourth\\nstill fourth'),
+  list: parseTasks('1. first task\\n2. second task\\n- third\\n\u2022 fourth\\nstill fourth'),
   mixed: parseTasks('- a task that\\n  wraps onto the next line\\n- b'),
 }));
 """
-    proc = subprocess.run(["node", "--input-type=module"], input=script, capture_output=True, text=True, encoding="utf-8", timeout=60)
+    proc = subprocess.run(
+        ["node", "--input-type=module", "-", str(REPO)],
+        input=script, capture_output=True, text=True, encoding="utf-8", timeout=120,
+    )
     assert proc.returncode == 0, proc.stderr
     out = json.loads(proc.stdout.strip().splitlines()[-1])
     assert out["wrapped"] == ["In cart.py add apply_discount(total, pct) with validation and a test in tests/test_cart.py; pytest -q must pass."]

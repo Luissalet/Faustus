@@ -4,7 +4,7 @@
 @import './fonts.css';
 @import './tokens.css';
 @import './base.css';
-@import './legacy-bridge.css';
+@import './user-theme.css';
 @import './components.css';
 @import './shell.css';
 @import './candy.css';

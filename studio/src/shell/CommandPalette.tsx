@@ -1,7 +1,7 @@
 import { Command } from 'cmdk';
 import { useNavigate } from 'react-router';
 import { overlayRoot } from './overlayRoot';
-import { DESTINATIONS, TOOLS, toolHref } from './routes';
+import { DESTINATIONS, TOOLS } from './routes';
 import { useShell } from './store';
 import './palette.css';
 import { t } from '../i18n';
@@ -58,18 +58,11 @@ export function CommandPalette() {
             <Command.Item
               key={tool.path}
               value={`${t(tool.label)} ${t('tool')}`}
-              onSelect={() => {
-                if (tool.ready) go(tool.path);
-                else {
-                  setOpen(false);
-                  window.location.href = toolHref(tool);
-                }
-              }}
+              onSelect={() => go(tool.path)}
               className="fs-palette__item"
             >
               <tool.icon size={15} aria-hidden="true" />
               {t(tool.label)}
-              {!tool.ready && <span className="fs-palette__note">{t('previous interface')}</span>}
             </Command.Item>
           ))}
         </Command.Group>

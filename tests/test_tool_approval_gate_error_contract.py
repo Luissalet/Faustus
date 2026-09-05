@@ -3,7 +3,7 @@
 Two bugs, observed together in a live agent-mode run against a slow local
 Ollama model:
 
-FAULT A (the disguise) — chat.js decided *why* a request failed by looking for
+FAULT A (the disguise) — the previous interface decided *why* a request failed by looking for
 the substring ``tool`` (or ``auto``) in the error text, replaced whatever the
 server said with "This model doesn't support agent tools", and persisted a
 mode switch to localStorage. All three of the approval gate's 409 messages
@@ -54,21 +54,6 @@ from test_foreground_model_routing import _RouteRequest, _chat_stream_endpoint
 
 
 _REPO = Path(__file__).resolve().parent.parent
-_CHAT_JS = _REPO / "static" / "js" / "chat.js"
-
-
-def _chat_js() -> str:
-    return _CHAT_JS.read_text(encoding="utf-8")
-
-
-def _stream_error_body() -> str:
-    """The `if (!res.ok)` block of the chat_stream send path."""
-    src = _chat_js()
-    start = src.index("      if (!res.ok) {")
-    end = src.index("const streamRunId = res.headers.get(", start)
-    return src[start:end]
-
-
 def _seed_approval(monkeypatch, *, tool_name="apply_patch", content='{"patch":"x"}'):
     """Park a real pending approval on the module-level store."""
     return chat_routes.tool_approval_store.create(
@@ -305,85 +290,6 @@ def test_tool_error_detail_round_trips():
 # --------------------------------------------------------------------------
 
 
-def test_no_substring_heuristic_decides_why_a_request_failed():
-    body = _stream_error_body()
-
-    # The exact shape of the bug: guessing the cause from the error text.
-    assert "errText.includes('tool')" not in body
-    assert "errText.includes('auto')" not in body
-    assert ".includes('tool')" not in body
-    assert ".includes('auto')" not in body
-
-
-def test_generic_errors_reach_the_user_verbatim():
-    body = _stream_error_body()
-
-    # The server's own message is what gets rendered.
-    assert "typewriterInto(_errBodyEl, errText);" in body
-    # Nothing rewrites errText into a canned diagnosis before rendering: the
-    # only thing that may set it is the parsed server message.
-    render_idx = body.index("typewriterInto(_errBodyEl, errText);")
-    prefix = body[:render_idx]
-    assignments = re.findall(r"errText\s*=\s*([^;]+);", prefix)
-    assert [a.strip() for a in assignments] == [
-        "`Error ${res.status}`",
-        "parsedErr.message",
-    ]
-    assert "support agent tools" not in body
-
-
-def test_mode_switch_requires_the_explicit_server_code():
-    body = _stream_error_body()
-
-    assert f"errCode === '{MODEL_NO_TOOLS_CODE}'" in body
-    switch_idx = body.index(f"errCode === '{MODEL_NO_TOOLS_CODE}'")
-    # Every mode mutation lives behind that check.
-    assert "_applyModeSwitch(" in body
-    assert body.index("_applyModeSwitch(") > switch_idx
-    assert "Storage.setJSON(Storage.KEYS.TOGGLES" not in body[:switch_idx]
-    assert "_st.mode = 'chat'" not in body[:switch_idx]
-
-
-def test_mode_switch_is_visible_and_reversible():
-    src = _chat_js()
-
-    # One helper owns the toggle + storage write, so the undo path is the same
-    # code running backwards rather than a second, drifting implementation.
-    assert "function _applyModeSwitch(" in src
-    assert "_renderModeSwitchNotice(" in src
-    undo = src[src.index("function _renderModeSwitchNotice("):]
-    undo = undo[: undo.index("\n  function ", 1)]
-    assert "Undo" in undo
-    assert "_applyModeSwitch(previousMode" in undo
-
-
-def test_expired_approval_offers_a_rerun_affordance():
-    body = _stream_error_body()
-
-    assert f"errCode === '{TOOL_APPROVAL_EXPIRED_CODE}'" in body
-    assert "_renderApprovalExpiredNotice(" in body
-
-    src = _chat_js()
-    notice = src[src.index("function _renderApprovalExpiredNotice("):]
-    notice = notice[: notice.index("\n  function ", 1)]
-    assert "Rerun" in notice
-    # Rerunning replays the user's own turn through the non-destructive resend.
-    assert "resendUserMessage(" in notice
-
-
-def test_server_error_body_is_parsed_as_json_not_regex():
-    body = _stream_error_body()
-
-    assert "_parseServerError(" in body
-    src = _chat_js()
-    parser = src[src.index("function _parseServerError("):]
-    parser = parser[: parser.index("\n  function ", 1)]
-    assert "JSON.parse(" in parser
-    # `{"detail": {"code": ..., "message": ...}}` is the FastAPI shape.
-    assert "detail" in parser
-    assert "code" in parser
-
-
 # --------------------------------------------------------------------------
 # The two suspects that were NOT the cause. Pinned so the next reader does not
 # have to re-derive it, and so a refactor cannot quietly make them real.
@@ -458,13 +364,3 @@ def test_no_current_backend_path_claims_a_model_cannot_use_tools():
         endpoint_supports_tools=False, model="qwen3.8:27b-q8_0"
     ) is None
     assert MODEL_NO_TOOLS_CODE == "model_no_tools"
-
-
-def test_chat_js_has_no_substring_cause_guessing_left_anywhere():
-    src = _chat_js()
-    code = "\n".join(
-        line for line in src.splitlines() if not line.lstrip().startswith("//")
-    )
-    assert "includes('tool')" not in code
-    assert "includes('auto')" not in code
-    assert "may not support tools" not in code

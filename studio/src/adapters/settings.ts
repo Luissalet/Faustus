@@ -59,11 +59,29 @@ export async function getKeybinds(): Promise<Record<string, string>> {
 
 const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
 
-/** AltGr on Windows arrives as Ctrl+Alt: never let it fire a shortcut while
- *  someone types a character on a non-US layout. */
+/**
+ * AltGr arrives as Ctrl+Alt.
+ *
+ * On AZERTY, QWERTZ and most non-US layouts, AltGr is how you type
+ * @ # { } [ ] | \ and €. The browser reports it as ctrlKey AND altKey, so
+ * someone typing an ordinary character would silently fire a destructive
+ * Ctrl+Alt shortcut — new chat, delete chat, incognito.
+ *
+ * `getModifierState('AltGraph')` is the real signal and is true for AltGr and
+ * false for a genuine left Ctrl+Alt. It is not there in every browser, and on
+ * macOS the Option key sets it too (where AltGr does not exist), so the
+ * heuristic stays as the fallback: Ctrl+Alt plus a character that is not a
+ * plain letter or digit is somebody typing, not somebody using a shortcut.
+ */
 function isAltGr(e: KeyboardEvent): boolean {
   if (IS_MAC) return false;
-  return e.ctrlKey && e.altKey && !e.metaKey && e.key.length === 1 && !/^[a-z0-9]$/i.test(e.key);
+  if (!e.ctrlKey || !e.altKey || e.metaKey) return false;
+  try {
+    if (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph')) return true;
+  } catch {
+    /* not every event implements it */
+  }
+  return e.key.length === 1 && !/^[a-z0-9]$/i.test(e.key);
 }
 
 export function matchesCombo(e: KeyboardEvent, combo: string): boolean {

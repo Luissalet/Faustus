@@ -247,13 +247,6 @@ def test_non_admin_blocked():
         assert is_public_blocked_tool(name)
 
 
-def test_admin_ui_catalogue_has_desktop_category():
-    src = open(os.path.join(ROOT, "static", "js", "admin.js"), encoding="utf-8").read()
-    for name in DESKTOP_TOOLS:
-        assert re.search(rf"^\s*{name}:\s*\{{.*cat:\s*'Desktop'", src, re.MULTILINE), name
-    assert "'Desktop'" in src.split("const catOrder = ")[1].split("\n")[0]
-
-
 def test_optional_accelerators_listed():
     text = open(os.path.join(ROOT, "requirements-optional.txt"), encoding="utf-8").read()
     assert "mss" in text

@@ -250,7 +250,7 @@ export async function listMcpServers(): Promise<McpServer[]> {
   const d = await getJson<McpServer[] | { servers?: McpServer[] }>('/api/mcp/servers');
   return Array.isArray(d) ? d : (d.servers ?? []);
 }
-export async function addMcpServer(fields: { name: string; transport: string; command?: string; args?: string; env?: string; url?: string }): Promise<{ id?: string; needs_auth?: boolean; auth_url?: string; connected?: boolean; status?: string; tool_count?: number }> {
+export async function addMcpServer(fields: { name: string; transport: string; command?: string; args?: string; env?: string; url?: string; oauth_file?: string; oauth_config?: string }): Promise<{ id?: string; needs_auth?: boolean; auth_url?: string; connected?: boolean; status?: string; tool_count?: number }> {
   return json(`/api/mcp/servers`, { method: 'POST', body: form(fields) }, 'mcp');
 }
 export const deleteMcpServer = (id: string) => del(`/api/mcp/servers/${id}`, 'mcp');

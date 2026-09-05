@@ -10,7 +10,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 APP = (ROOT / "app.py").read_text(encoding="utf-8")
 ROUTES = (ROOT / "routes" / "backup_routes.py").read_text(encoding="utf-8")
-SLASH = (ROOT / "static" / "js" / "slashCommands.js").read_text(encoding="utf-8")
+COMMANDS = (ROOT / "studio" / "src" / "screens" / "studio" / "commands.ts").read_text(encoding="utf-8")
+ADAPTER = (ROOT / "studio" / "src" / "adapters" / "commands.ts").read_text(encoding="utf-8")
 
 
 def test_startup_launches_the_scheduled_snapshots():
@@ -42,14 +43,14 @@ def test_there_is_no_restore_endpoint():
 
 
 def test_slash_command_is_registered_and_calls_the_api():
-    assert "handler: _cmdBackup" in SLASH
-    assert "/api/backup/snapshots" in SLASH
-    assert "/api/backup/snapshot`" in SLASH
-    assert "/api/backup/verify" in SLASH
+    assert "name: 'backup'" in COMMANDS, "/backup is not in the command registry"
+    for route in ("/api/backup/snapshots", "/api/backup/snapshot", "/api/backup/verify"):
+        assert route in ADAPTER, f"{route} is never called"
 
 
 def test_slash_command_does_not_squat_an_existing_alias():
-    """`snapshots` already belongs to /checkpoints."""
-    idx = SLASH.index("handler: _cmdBackup")
-    block = SLASH[max(0, idx - 400):idx]
+    """`snapshots` already belongs to /checkpoints, and an alias that shadows
+    another command silently steals it."""
+    idx = COMMANDS.index("name: 'backup'")
+    block = COMMANDS[idx:idx + 400]
     assert "'snapshots'" not in block

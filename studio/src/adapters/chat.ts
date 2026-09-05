@@ -176,6 +176,7 @@ export type ChatEvent =
   | { type: 'doc_suggestions'; docId: string; suggestions: DocSuggestion[] }
   | { type: 'round'; round: number }
   | { type: 'ask_user'; ask: AskUser }
+  | { type: 'ask_resolved' }
   | { type: 'metrics'; metrics: TurnMetrics }
   | { type: 'sources'; sources: WebSource[] }
   | { type: 'research'; phase: string; round: number; totalSources: number; message: string; startedAt: number; avgDuration: number }
@@ -404,7 +405,7 @@ function frameFrom(raw: Record<string, unknown>): BrowserFrame | null {
   return {
     src,
     url: str(raw.url).slice(0, 2048),
-    title: (str(raw.title) || (source === 'desktop' ? 'Escritorio' : '')).slice(0, 300),
+    title: (str(raw.title) || (source === 'desktop' ? t('Desktop') : '')).slice(0, 300),
     tool,
     source,
     at: Date.now(),
@@ -573,6 +574,13 @@ function decode(raw: Record<string, unknown>, sseEvent: string | null): ChatEven
       };
     case 'agent_step':
       return { type: 'round', round: num(raw.round) ?? 1 };
+    // The server says the pending question has been answered — by this tab,
+    // by another one, or by a continuation it is replaying. Either way the
+    // card is stale and must go, or a second answer is sent for a decision
+    // that has already been taken.
+    case 'tool_approval_resolved':
+    case 'ask_user_resolved':
+      return { type: 'ask_resolved' };
     case 'ask_user':
       return {
         type: 'ask_user',

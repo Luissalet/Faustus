@@ -686,3 +686,13 @@
   background: var(--fs-success);
   vertical-align: middle;
 }
+
+/* A note beside the engine picker: why a choice is missing for this target. */
+.fs-ck__note {
+  flex-basis: 100%;
+  margin: 0;
+  max-inline-size: none;
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-3);
+  line-height: 1.45;
+}

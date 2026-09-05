@@ -98,9 +98,34 @@ export function safeHref(href: string): string {
   return value || '#';
 }
 
+/**
+ * A link to somewhere else on the web, from a source we did not write.
+ *
+ * Search results, a model's citation list, a page a tool fetched: the URL is
+ * data from outside, and `javascript:` in an `href` is a script that runs on
+ * click. React escapes the VALUE of an attribute, not its scheme, so the
+ * whitelist has to be here. `null` means "do not make this a link at all" —
+ * showing the title as plain text is the honest fallback.
+ */
+export function safeExternal(url: unknown): string | null {
+  const value = String(url ?? '').trim();
+  if (!value) return null;
+  // Control characters are how `java\0script:` gets past a naive check.
+  const clean = value.replace(/[\u0000-\u001f\u007f-\u009f]/g, '');
+  return /^https?:\/\//i.test(clean) ? clean : null;
+}
+
+/**
+ * A picture in the model's markdown.
+ *
+ * A data URL is allowed only for the raster types: `data:image/svg+xml` is
+ * markup, not a bitmap, and an SVG loaded through `<img>` still runs its own
+ * `onload` in some browsers — and is a script outright the moment anything
+ * inlines it.
+ */
 export function safeSrc(src: string): string {
   const value = src.trim();
-  if (/^data:image\//i.test(value)) return value;
+  if (/^data:/i.test(value)) return /^data:image\/(?:png|jpe?g|gif|webp);/i.test(value) ? value : '#';
   return safeHref(value);
 }
 

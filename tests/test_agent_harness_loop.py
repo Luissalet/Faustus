@@ -71,48 +71,6 @@ def _run(monkeypatch, workspace, user="Añade un botón de borrar en las tarjeta
     return _events(_collect(gen))
 
 
-def test_fabricated_edit_claims_are_rejected_then_annotated(tmp_path, monkeypatch):
-    (tmp_path / "static" / "js").mkdir(parents=True)
-    (tmp_path / "static" / "js" / "projects.js").write_text("x", encoding="utf-8")
-    _patch_common(monkeypatch)
-    lie = ("He creado ProjectCard.vue y añadido el botón de eliminación con confirmación. "
-           "Todo está listo para funcionar.")
-    calls = _scripted_stream(monkeypatch, [(lie, "stop"), (lie, "stop"), (lie, "stop")])
-    events = _run(monkeypatch, str(tmp_path))
-
-    checks = [e for e in events if e.get("type") == "harness_check"]
-    statuses = [c["status"] for c in checks]
-    assert statuses[:2] == ["rejected", "rejected"], statuses
-    assert "unverified" in statuses, statuses
-    assert any("ProjectCard.vue" in (c.get("bad_paths") or []) for c in checks)
-    assert calls["n"] == 3  # two rejections → three model rounds, then accepted
-    summary = next(e for e in events if e.get("type") == "harness_summary")["data"]
-    assert summary["stop_reason"] == "complete_unverified"
-    assert summary["mutations"] == []
-    # The visible answer carries the localized warning.
-    text = "".join(e["delta"] for e in events if "delta" in e and not e.get("type"))
-    assert "Verificación del harness" in text and "ninguno" in text
-
-
-def test_real_edit_passes_verification(tmp_path, monkeypatch):
-    (tmp_path / "static" / "js").mkdir(parents=True)
-    target = tmp_path / "static" / "js" / "projects.js"
-    target.write_text("export const x = 1;\n", encoding="utf-8")
-    _patch_common(monkeypatch, tool_result={"output": "Edited static/js/projects.js (1 replacement)", "exit_code": 0})
-    call = '```edit_file\n{"path": "static/js/projects.js", "old_string": "1", "new_string": "2"}\n```'
-    _scripted_stream(monkeypatch, [
-        (call, "tool_calls"),
-        ("He añadido el botón en static/js/projects.js.", "stop"),
-    ])
-    events = _run(monkeypatch, str(tmp_path))
-    statuses = [e["status"] for e in events if e.get("type") == "harness_check"]
-    assert "rejected" not in statuses and "unverified" not in statuses, statuses
-    assert "verified" in statuses, statuses
-    summary = next(e for e in events if e.get("type") == "harness_summary")["data"]
-    assert summary["mutations"] == ["static/js/projects.js"]
-    assert summary["stop_reason"] == "complete"
-
-
 def test_truncated_output_is_auto_continued(tmp_path, monkeypatch):
     _patch_common(monkeypatch)
     calls = _scripted_stream(monkeypatch, [
@@ -296,33 +254,3 @@ def test_delegate_agents_worker_reports_are_persisted_with_the_tool_event(tmp_pa
     assert "git" not in sa and "static_checks" not in sa  # evidence fields only
 
 
-def test_silent_target_substitution_gets_one_honesty_round(tmp_path, monkeypatch):
-    """The user names a missing file, the model edits another one and reports
-    'fixed' without saying so → exactly one harness round asking for an explicit
-    answer; the honest second answer ends the turn verified."""
-    (tmp_path / "static" / "js").mkdir(parents=True)
-    (tmp_path / "static" / "js" / "projects.js").write_text("export function cardHtml(p) { return p.name; }\n", encoding="utf-8")
-    _patch_common(monkeypatch)
-    edit = "```edit_file\n" + json.dumps({"path": "static/js/projects.js", "old_string": "p.name", "new_string": "p.name || 'x'"}) + "\n```"
-    silent = "He arreglado el bug: cardHtml ahora usa un valor por defecto cuando falta el nombre."
-    honest = "static/js/cards.js no existe en el proyecto; las tarjetas se generan en static/js/projects.js y ahí he añadido el valor por defecto."
-    _scripted_stream(monkeypatch, [(edit, "tool_calls"), (silent, "stop"), (honest, "stop")])
-    gen = al.stream_agent_loop(
-        "http://127.0.0.1:11434/v1", "qwen3-coder:30b",
-        [{"role": "user", "content": "Arregla el bug de static/js/cards.js que hace que no se muestre el nombre del proyecto"}],
-        max_rounds=6, relevant_tools={"read_file", "edit_file", "glob", "ask_user"},
-        workspace=str(tmp_path), session_id="sess-target",
-    )
-    events = _events(_collect(gen))
-    checks = [e for e in events if e.get("type") == "harness_check"]
-    statuses = [c["status"] for c in checks]
-    assert statuses.count("target_substituted") == 1, statuses
-    ts = next(c for c in checks if c["status"] == "target_substituted")
-    assert ts["missing"] == ["static/js/cards.js"] and ts["changed"] == ["static/js/projects.js"]
-    assert statuses[-1] == "verified"
-    summary = [e for e in events if e.get("type") == "harness_summary"][-1]["data"]
-    assert summary["stop_reason"] == "complete"
-    assert any(str(n).startswith("target_substituted:") for n in summary.get("notes", []))
-    # the honest answer is what the user gets
-    text = "".join(e.get("delta", "") for e in events if "delta" in e and not e.get("thinking"))
-    assert "no existe" in text

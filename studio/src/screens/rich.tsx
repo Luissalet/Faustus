@@ -3,6 +3,7 @@ import { Check, Copy, CornerDownLeft } from 'lucide-react';
 import { useId, useMemo, useState, type ReactNode } from 'react';
 import { findSensitive, getDisplay, stripEmojis, useDisplay } from '../shell/display';
 import { parseMarkdown, type Block, type Footnote, type Inline } from '../lib/markdown';
+import { replaceShortcodesInProse } from '../lib/emoji';
 
 /**
  * The transcript's reader. Parsing lives in lib/markdown.ts; this turns the
@@ -207,7 +208,11 @@ export function Rich({ text: raw }: { text: string }) {
   const display = useDisplay();
   // useId gives ':r3:'; a colon in a fragment id is legal but awkward to link.
   const uid = useId().replace(/:/g, 'x');
-  const text = display.emojis ? raw : stripEmojis(raw);
+  // `:blush:` is what the model writes; 😊 is what it meant. Convert first,
+  // then honour the toggle, so switching emojis off does not leave the
+  // shortcode behind as literal text.
+  const written = replaceShortcodesInProse(raw);
+  const text = display.emojis ? written : stripEmojis(written);
   const { blocks, footnotes } = useMemo(() => parseMarkdown(text), [text]);
   return (
     <div className="fs-rich">

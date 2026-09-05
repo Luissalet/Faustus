@@ -5,6 +5,7 @@ import { Button, Dialog, EmptyState, IconButton, Menu, Skeleton } from '../../co
 import { relativeTime } from '../../adapters/home';
 import { deleteResearch, discussResearch, exportFormats, exportUrl, loadResearchLibrary, reportUrl, researchDetail, setResearchArchived, type ResearchDetail, type ResearchItem, type ResearchSort } from '../../adapters/research';
 import { t, tn } from '../../i18n';
+import { safeExternal } from '../../lib/markdown';
 import { BulkBar, Highlight, SelectToggle, useSelection } from './parts';
 
 /**
@@ -166,7 +167,7 @@ export function ResearchLibrary({ query, say, archived = false }: { query: strin
                         {d.sources.length > 0 && (
                           <ol className="fs-lib__sources">
                             {d.sources.slice(0, 20).map((s, i) => (
-                              <li key={i}>{s.url && /^https?:/i.test(s.url) ? <a href={s.url} target="_blank" rel="noopener noreferrer">{s.title || s.url}</a> : s.title}</li>
+                              <li key={i}>{safeExternal(s.url) ? <a href={safeExternal(s.url) as string} target="_blank" rel="noopener noreferrer">{s.title || s.url}</a> : s.title}</li>
                             ))}
                           </ol>
                         )}

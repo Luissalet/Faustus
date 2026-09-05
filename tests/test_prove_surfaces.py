@@ -21,7 +21,6 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[1]
-SRC = (REPO / "static/js/workers.js").read_text(encoding="utf-8")
 _HAS_NODE = shutil.which("node") is not None
 
 # What src/prove.py really returns for a job whose workers finished, whose
@@ -125,69 +124,41 @@ JOB = {"id": "j1", "status": "done", "title": "Workers · fix total", "created":
                                    "summary": "no test runner detected"}}}
 
 
-@pytest.mark.skipif(not _HAS_NODE, reason="node not installed")
-def test_the_page_shows_a_proof_chip_beside_the_verification():
-    job = dict(JOB, result=dict(JOB["result"], proof=UNPROVED))
-    out = _run(f"""
-      console.log(JSON.stringify({{ open: jobHtml({json.dumps(job)}, true),
-        closed: jobHtml({json.dumps(job)}, false) }}));
-    """)
-    opened = out["open"]
-    assert "<b>Proof: unproved</b>" in opened and "confidence 0.35" in opened
-    assert "not a failure, not a success" in opened
-    # unproved is amber, never red: it is not a failure
-    assert 'class="wk-proof wk-proof-warn"' in opened
-    # the top doubt is on the face of the chip, every doubt is in its title
-    assert "no_verification_runner: nothing ran that could prove the work" in opened
-    assert "(+1 more)" in opened
-    assert "why the confidence is not 1 — no_verification_runner:" in opened
-    assert "mtime_only: the folder is not a repository" in opened
-    # it sits with the verification block, and a collapsed row has no chip
-    assert opened.index("Not verified") < opened.index("Proof: unproved")
-    assert "wk-proof" not in out["closed"]
+def test_the_screen_shows_a_proof_chip_beside_the_verification():
+    """The verdict WORD and the confidence answer "may I report this as done?",
+    the top named doubt travels beside them, and `unproved` never renders as a
+    failure — it means nothing ran that could show it either way.
+    """
+    src = (REPO / "studio" / "src" / "screens" / "agents" / "Workers.tsx").read_text(encoding="utf-8")
+    adapter = (REPO / "studio" / "src" / "adapters" / "workers.ts").read_text(encoding="utf-8")
+
+    assert "res.proof.verdict" in src, "the verdict word"
+    assert "res.proof.confidence" in src, "and the confidence, which is half the answer"
+    assert "res.proof.uncertainty[0]" in src, "the top doubt is on the face of the chip"
+    assert "why the confidence is not 1" in src, "and every doubt is in its title"
+
+    # unproved is amber, never red: it is not a failure.
+    assert "unproved: 'warn'" in adapter
+    assert "contradicted: 'bad'" in adapter
+    assert "proved: 'ok'" in adapter
+    # An unknown verdict must still render, and amber is the honest default.
+    assert "PROOF_TONE[res.proof.verdict] ?? 'warn'" in src
+    # A job with no proof renders as it always did.
+    assert "res.proof && res.proof.verdict &&" in src
+
+    # Every verdict says what it means, in words, not just a colour.
+    for verdict in ("proved", "partial", "unproved", "contradicted"):
+        assert f"{verdict}:" in adapter.split("PROOF_WORD", 1)[1][:600]
 
 
-@pytest.mark.skipif(not _HAS_NODE, reason="node not installed")
-def test_the_chip_is_coloured_by_the_verdict_and_escapes_what_it_is_given():
-    out = _run(f"""
-      console.log(JSON.stringify({{
-        proved: proofChip({json.dumps(PROVED)}),
-        contradicted: proofChip({json.dumps(CONTRADICTED)}),
-        partial: proofChip({{ verdict: 'partial', confidence: 0.65,
-                              uncertainty: [{{ kind: 'claims_unaccounted',
-                                               detail: 'w1 claims <b>x.py</b>' }}] }}),
-        odd: proofChip({{ verdict: 'something new', confidence: 0.5 }}),
-        none: proofChip(null), empty: proofChip({{}}) }}));
-    """)
-    assert 'class="wk-proof wk-proof-ok"' in out["proved"] and "confidence 1" in out["proved"]
-    assert "wk-proof-why" not in out["proved"], "nothing unaccounted for = no reason line"
-    assert 'class="wk-proof wk-proof-bad"' in out["contradicted"]
-    assert 'class="wk-proof wk-proof-warn"' in out["partial"]
-    # a worker's own words are data, never markup, wherever they land
-    assert "&lt;b&gt;x.py&lt;/b&gt;" in out["partial"] and "<b>x.py</b>" not in out["partial"]
-    # a verdict this page has never heard of is amber and still readable
-    assert 'class="wk-proof wk-proof-warn"' in out["odd"] and "something new" in out["odd"]
-    assert out["none"] == "" and out["empty"] == ""
-
-
-@pytest.mark.skipif(not _HAS_NODE, reason="node not installed")
-def test_a_job_without_a_proof_renders_exactly_as_it_did_before():
-    out = _run(f"console.log(JSON.stringify({{ open: jobHtml({json.dumps(JOB)}, true) }}));")
-    assert "wk-proof" not in out["open"] and "Proof:" not in out["open"]
-
-
-def test_the_chip_uses_only_theme_variables():
-    """No new colour is invented here: the chip reuses --ok / --warn / --red,
-    the same three the verification block already borrows, each with the same
-    hex fallback that block already writes."""
+def test_the_proof_chip_uses_only_theme_tokens():
+    """No new colour is invented for the chip: it carries a tone and the
+    stylesheet resolves it from the same tokens everything else uses."""
     import re
-    css = (REPO / "static/style.css").read_text(encoding="utf-8")
-    block = [line for line in css.splitlines() if line.startswith(".wk-proof")]
+    css = (REPO / "studio" / "src" / "screens" / "agents.css").read_text(encoding="utf-8")
+    block = [line for line in css.splitlines() if ".fs-wk__proof" in line or "fs-wk__proof-why" in line]
     assert block, "the proof chip has no styles"
-    variables = set()
-    for line in block:
-        variables.update(re.findall(r"var\((--[a-z-]+)", line))
-        # every colour literal in the rule is a var() fallback, never a raw one
-        assert "#" not in re.sub(r"var\(--[a-z-]+,\s*[^)]*\)", "", line), line
-    assert {"--ok", "--warn", "--red"} <= variables
-    assert variables <= {"--ok", "--warn", "--red", "--fg", "--mono"}
+    rules = css.split(".fs-wk__proof", 1)[1][:900]
+    assert "#" not in re.sub(r"var\(--[a-z0-9-]+(?:,\s*[^)]*)?\)", "", rules), (
+        "a raw colour literal in the proof chip; use a token"
+    )

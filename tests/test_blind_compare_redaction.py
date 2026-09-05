@@ -7,9 +7,9 @@ Two guards are pinned here:
    of any ``[CMP] …`` helper session in the session list, so the sidebar /
    ``/api/sessions`` can't be used to map a neutral pane label ("Model A")
    back to its real model.
-2. Frontend: every ``[CMP]`` session name built in ``static/js/compare/`` is
-   guarded by ``state._blindMode`` so blind sessions are named by slot rather
-   than by the real model.
+2. Naming: every ``[CMP]`` session name is built on the `blind` branch, so a
+   blind session is named by its slot ("Model A") rather than by the real
+   model.
 
 The backend import mirrors tests/test_session_ghost_delete.py: stub the heavy
 ORM modules so the real route module imports under conftest's MagicMock
@@ -17,6 +17,7 @@ sqlalchemy stub, then restore sys.modules so the stubs don't leak into sibling
 test modules.
 """
 
+import re
 import sys
 import importlib
 from pathlib import Path
@@ -71,22 +72,27 @@ def test_compare_prefix_constant_matches_frontend():
     assert SR.COMPARE_SESSION_PREFIX == "[CMP] "
 
 
-# ── frontend: every [CMP] session name is blind-guarded ────────────────────
+# ── every [CMP] session name is blind-guarded ──────────────────────────────
 
 def test_compare_session_names_are_blind_guarded():
-    """Every line in static/js/compare/ that builds a '[CMP]' session name
-    must branch on state._blindMode, so a blind comparison is never named
-    after its real model. Pins the #1285 fix against regressions."""
-    compare_dir = _REPO / "static" / "js" / "compare"
-    assert compare_dir.is_dir(), f"missing {compare_dir}"
-    offenders = []
-    for path in sorted(compare_dir.glob("*.js")):
-        for lineno, line in enumerate(
-            path.read_text(encoding="utf-8").splitlines(), 1
-        ):
-            if "'[CMP] '" in line and "_blindMode" not in line:
-                offenders.append(f"{path.name}:{lineno}: {line.strip()}")
+    """A blind comparison must never be named after its real model.
+
+    The name used to be built in the browser, in several places, and one of
+    them forgot the blind branch — so the sidebar spelled out which model was
+    which while the panels were still hiding it (#1285). It is built in one
+    place now, on the server; this pins that the branch is still there and
+    that no OTHER line in the compare routes builds one without it.
+    """
+    routes = _REPO / "routes" / "compare" / "compare_routes.py"
+    # Only lines that actually BUILD a name: the prefix inside a string
+    # literal. Prose that merely mentions [CMP] is not a name.
+    builds = re.compile(r"""['"][^'"]*\[CMP\] """)
+    offenders = [
+        f"{lineno}: {line.strip()}"
+        for lineno, line in enumerate(routes.read_text(encoding="utf-8").splitlines(), 1)
+        if builds.search(line) and "blind" not in line
+    ]
     assert not offenders, (
-        "Compare session names must be blind-guarded (issue #1285):\n"
-        + "\n".join(offenders)
+        "every line that builds a [CMP] session name must branch on `blind` "
+        "(issue #1285):\n" + "\n".join(offenders)
     )

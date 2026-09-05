@@ -4376,3 +4376,50 @@ Your message	Tu mensaje
 Delete this message?	¿Borrar este mensaje?
 It does not go anywhere you can get it back from: the conversation loses it for good.	No va a ningún sitio del que puedas recuperarlo: la conversación lo pierde para siempre.
 Message deleted.	Mensaje borrado.
+Go home	Ir al inicio
+The link may be old or mistyped. Ctrl+K searches and navigates everywhere.	Puede que el enlace sea viejo o esté mal escrito. Con Ctrl+K se busca y se navega a todo.
+There is nothing at this address	Aquí no hay nada
+Back: {names}.	De vuelta: {names}.
+Could not read the services: {why}	No se han podido leer los servicios: {why}
+Nothing came back; the detail above is the current answer.	No ha vuelto nada; el detalle de arriba es la respuesta de ahora.
+Services	Servicios
+all good	todo bien
+Vector store	Almacén vectorial
+Model endpoints	Endpoints de modelos
+Diffusers does not serve on a remote Windows machine yet, so only llama.cpp is offered for this target.	Diffusers todavía no sirve en una máquina Windows remota, así que para este destino solo se ofrece llama.cpp.
+Choose…	Elige…
+Fills in the server addresses; the address and the password are still yours to type.	Rellena las direcciones del servidor; el correo y la contraseña los pones tú.
+Fills the form with a configuration that works. Everything stays editable.	Rellena el formulario con una configuración que funciona. Todo se puede seguir editando.
+Nothing — I will fill it in	Nada: lo relleno yo
+Start from	Partir de
+Said it changed these, and the checkpoint did not see it: {files}	Dice que cambió esto y el punto de control no lo vio: {files}
+Changed these without saying so: {files}	Cambió esto sin decirlo: {files}
+Copy the code	Copiar el código
+Could not copy it; it is on screen.	No se ha podido copiar; está en pantalla.
+GitHub Enterprise (optional)	GitHub Enterprise (opcional)
+If the button does not work: {url}	Si el botón no funciona: {url}
+Not waiting any more.	Ya no se está esperando.
+Only for a GitHub Enterprise Server of your own; leave it empty for github.com.	Solo para un GitHub Enterprise Server propio; déjalo vacío para github.com.
+Open the page	Abrir la página
+Open the page and type this code:	Abre la página y escribe este código:
+Sign in with a subscription	Entrar con una suscripción
+Signed in to {provider}. The endpoint is ready.	Sesión iniciada en {provider}. El endpoint ya está.
+The code expired. Start again.	El código ha caducado. Vuelve a empezar.
+The sign-in was refused.	Se ha rechazado el inicio de sesión.
+Waiting for you to authorise it…	Esperando a que lo autorices…
+GitHub Copilot	GitHub Copilot
+ChatGPT subscription	Suscripción de ChatGPT
+Signs in with your GitHub account and uses your Copilot subscription. No API key.	Entra con tu cuenta de GitHub y usa tu suscripción de Copilot. Sin clave de API.
+Signs in with your OpenAI account and uses your ChatGPT plan. No API key.	Entra con tu cuenta de OpenAI y usa tu plan de ChatGPT. Sin clave de API.
+no room	no cabe
+The same weights as {names}	Los mismos pesos que {names}
+same as {name}	igual que {name}
+Fit to VRAM	Ajustar a la VRAM
+Measures this model against the free VRAM and fills num_ctx and num_gpu.	Mide este modelo contra la VRAM libre y rellena num_ctx y num_gpu.
+It fits on {gpu}.	Cabe en {gpu}.
+It does not fit whole on {gpu}. This is the best split:	No cabe entero en {gpu}. Este es el mejor reparto:
+the card	la tarjeta
+Could not export	No se ha podido exportar
+Formats: {list}.	Formatos: {list}.
+{n} conversation archived.	{n} conversación archivada.
+{n} conversations archived.	{n} conversaciones archivadas.

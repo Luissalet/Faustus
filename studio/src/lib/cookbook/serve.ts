@@ -209,8 +209,21 @@ export function detectBackend(model: ModelLike, ctx: ServeCtx): { backend: Backe
 }
 
 /** Which engines this target can run at all (the picker in the serve form). */
+/**
+ * Diffusers does not serve on a Windows box reached over SSH: the launcher
+ * script assumes a POSIX shell on the far side. On THIS machine, Windows
+ * included, it is fine. Offering it for a remote Windows target produces a
+ * command that cannot run, which is worse than not offering it.
+ */
+export function remoteWindowsDiffusers(ctx: ServeCtx): boolean {
+  return Boolean(ctx.remoteHost) && ctx.platform.toLowerCase() === 'windows';
+}
+
 export function backendChoices(ctx: ServeCtx, image = false): Backend[] {
-  if (image) return isMetal(ctx) ? ['mlx_image', 'diffusers'] : ['diffusers'];
+  if (image) {
+    if (remoteWindowsDiffusers(ctx)) return ['llamacpp'];
+    return isMetal(ctx) ? ['mlx_image', 'diffusers'] : ['diffusers'];
+  }
   if (isWindows(ctx)) return ['llamacpp', 'ollama'];
   if (isMetal(ctx)) return ['mlx', 'llamacpp', 'ollama'];
   return ['vllm', 'sglang', 'llamacpp', 'ollama'];

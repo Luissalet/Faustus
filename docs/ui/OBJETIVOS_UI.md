@@ -178,9 +178,20 @@ proporcionales, auditoría de la guía Vercel pasada o excepción documentada,
       (`context_ledger`: reparto por secciones, aviso de recorte y consejos),
       además de la pregunta previa al borrar un mensaje.
       Vitales (uso de GPU) en Studio: lote Q.
-- [ ] **UI-061** Borrar los puentes muertos, el DOM legacy de cada pantalla ya
-      migrada y el propio flag. Empezar a dividir `style.css`, a solas y sin
-      mezclarlo con features.
+- [x] **UI-061** Borrar los puentes muertos, el DOM legacy de cada pantalla ya
+      migrada y el propio flag. **Hecho (lote AM)**: fuera `static/app.js`,
+      `static/js/` (120 ficheros, 7,2 MB), `static/style.css` (1,5 MB), los
+      sandbox HTML, las librerías que solo usaba la anterior, `shell/flag.ts`
+      y todas las salidas «Interfaz anterior». `index.html` pasa de 256 KB a
+      84 líneas y el service worker de 50 rutas precacheadas a 2.
+      `legacy-bridge.css` no era legacy —es el soporte de temas propios de
+      Studio— y se renombra a `user-theme.css`.
+      Antes de borrar hubo que **portar seis funciones que nunca se habían
+      migrado** (salud de servicios, catálogo MCP, limpieza de fences en vivo,
+      device flow de Copilot/ChatGPT, veredicto de VRAM en el selector y
+      «ajustar a la VRAM»): todas eran rutas del servidor sin llamador, que
+      es una función perdida que no se distingue de una que nunca existió.
+      `style.css` no hace falta dividirlo: ya no existe.
 - [ ] **Skill propia `faustus-ui-studio`**: inputs `screen`, `user_job`,
       `project_type`, `existing_components`; outputs `design_brief`,
       `component_plan`, `implementation`, `visual_qa_report`.

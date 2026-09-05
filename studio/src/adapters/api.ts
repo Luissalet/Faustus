@@ -17,6 +17,30 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * What went wrong, in the server's own words.
+ *
+ * The previous interface guessed the cause from the error *text* — if it
+ * contained "tool" it announced "this model doesn't support agent tools" —
+ * which swallowed every message written specifically to explain a refusal.
+ * So: read FastAPI's `{"detail": …}` and show it. When there is nothing to
+ * read, say the status and the path and claim nothing else.
+ */
+async function reason(response: Response, path: string): Promise<string> {
+  try {
+    const body = (await response.clone().json()) as { detail?: unknown };
+    const detail = body?.detail;
+    if (typeof detail === 'string' && detail.trim()) return detail;
+    if (detail && typeof detail === 'object') {
+      const message = (detail as { message?: unknown }).message;
+      if (typeof message === 'string' && message.trim()) return message;
+    }
+  } catch {
+    /* not JSON, or already consumed: fall through to the status line */
+  }
+  return `${path} responded ${response.status}`;
+}
+
 export async function getJson<T>(path: string, signal?: AbortSignal): Promise<T> {
   const response = await fetch(path, {
     signal,
@@ -25,7 +49,7 @@ export async function getJson<T>(path: string, signal?: AbortSignal): Promise<T>
   });
 
   if (!response.ok) {
-    throw new ApiError(`${path} responded ${response.status}`, response.status);
+    throw new ApiError(await reason(response, path), response.status);
   }
 
   return (await response.json()) as T;

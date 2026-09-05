@@ -464,3 +464,10 @@
     break-inside: avoid;
   }
 }
+
+/* A hit whose URL is not http(s) keeps its place but does nothing. */
+.fs-cmp__hit[data-dead] {
+  opacity: 0.72;
+  cursor: default;
+  pointer-events: none;
+}

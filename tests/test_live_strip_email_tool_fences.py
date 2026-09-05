@@ -2,33 +2,31 @@
 
 The backend strips every fenced tool block (``src/tool_parsing.py`` builds its
 regex from the full ``TOOL_TAGS`` set), so a reloaded session renders cleanly.
-The live frontend path uses its own regex, ``EXEC_FENCE_RE`` in
-``static/js/chatRenderer.js``.
+The live path has its own regex, built in ``studio/src/lib/fences.ts``.
 
 Originally that regex came from a hand-maintained subset, so any executable tool
 not in it — and every *future* tool added to ``TOOL_TAGS`` — left its executed
 fence lingering as a raw code block in the live bubble until reload. The fix
-makes ``TOOL_TAGS`` the single source: ``chatRenderer.js`` no longer hard-codes a
-tool list at all. It fetches the backend's authoritative set once from
+makes ``TOOL_TAGS`` the single source: the interface hard-codes no tool list
+at all. It fetches the backend's authoritative set once from
 ``GET /api/tools`` (which serves ``sorted(TOOL_TAGS)``) and builds
 ``EXEC_FENCE_RE`` from it at load, minus ``bash``/``python`` (legitimate code
 examples a user may have asked the model to show). There is no second list to
 drift.
 
-``chatRenderer.js`` pulls browser globals and can't be imported under node, so
-the behavioral tests exercise an equivalent Python regex built straight from the
-backend ``TOOL_TAGS`` — the same source the live regex now derives from — and
-source-level guards assert the frontend keeps no hard-coded list.
+The behavioural tests exercise an equivalent Python regex built straight from
+the backend ``TOOL_TAGS`` — the same source the live regex derives from — and a
+source-level guard asserts the interface keeps no hard-coded list.
 """
 import json
 import re
 from pathlib import Path
 
-_SRC = Path("static/js/chatRenderer.js")
+_SRC = Path("studio/src/lib/fences.ts")
 _ROUTES_SRC = Path("routes/model_routes.py")
 
 # Deliberately NOT stripped: legitimate code-example languages, not tool
-# invocations. Must match the carve-out in chatRenderer.js.
+# invocations. Must match the carve-out in studio/src/lib/fences.ts.
 _NON_STRIPPED = {"bash", "python"}
 
 
@@ -120,34 +118,32 @@ def test_does_not_strip_invalid_inline_json_metadata():
         assert _strip_live_exec_fences(example) == example
 
 
-def test_frontend_keeps_no_hardcoded_tool_list():
-    """Root-cause guard for #3993: chatRenderer.js must NOT reintroduce a
-    hand-maintained tool list. A hard-coded mirror of TOOL_TAGS silently drifts
-    when a new tool is added — leaving its executed fence in the live bubble
-    until reload. The live regex must instead be built from the backend's
-    authoritative set fetched at runtime."""
+def test_the_interface_keeps_no_hardcoded_tool_list():
+    """Root-cause guard for #3993: the live stripper must NOT carry a
+    hand-maintained mirror of TOOL_TAGS. A copy drifts the day a tool is
+    added, and the symptom — one tool's fences linger while the rest are
+    fine — is almost impossible to trace back here. The tags come from
+    `GET /api/tools` at runtime; the only literals allowed are the
+    `bash`/`python` carve-out, which are languages, not tools.
+    """
     source = _SRC.read_text(encoding="utf-8")
-    assert "EXEC_TOOL_TAGS" not in source, (
-        "chatRenderer.js reintroduced a hard-coded EXEC_TOOL_TAGS list; the "
-        "live-strip tags must come from GET /api/tools so TOOL_TAGS stays the "
-        "single source (#3993)."
+    assert "/api/tools" in source, "the tag list must come from the endpoint"
+    assert "JSON.parse" in source, (
+        "content has to parse as JSON before a fence is removed, or a markdown "
+        "block labelled with a tool's name disappears"
     )
-    assert "/api/tools" in source, (
-        "chatRenderer.js must fetch the tool set from /api/tools to build "
-        "EXEC_FENCE_RE."
-    )
-    assert "JSON.parse(content)" in source, (
-        "chatRenderer.js must validate inline JSON before stripping same-line "
-        "tool fences so Markdown metadata stays visible."
-    )
-    # The bash/python carve-out must survive the move to the runtime list.
-    m = re.search(r"EXEC_FENCE_NON_TOOL\s*=\s*new Set\(\[(?P<body>.*?)\]\)", source, re.DOTALL)
-    assert m, "bash/python carve-out (EXEC_FENCE_NON_TOOL) not found in chatRenderer.js"
+    m = re.search(r"NOT_A_TOOL\s*=\s*new Set\(\[(?P<body>.*?)\]\)", source, re.DOTALL)
+    assert m, "the bash/python carve-out (NOT_A_TOOL) is not there"
     carve_out = set(re.findall(r"['\"]([a-z_]+)['\"]", m.group("body")))
     assert carve_out == _NON_STRIPPED, (
-        f"EXEC_FENCE_NON_TOOL must carve out exactly {sorted(_NON_STRIPPED)}, "
-        f"got {sorted(carve_out)}"
+        f"NOT_A_TOOL must carve out exactly {sorted(_NON_STRIPPED)}, got {sorted(carve_out)}"
     )
+    # Any other bare tool name in the CODE would be the mirror coming back.
+    # Comments are stripped first: they explain the feature and naturally name
+    # a tool or two as an example.
+    code = re.sub(r"/\*.*?\*/|//[^\n]*", "", source, flags=re.DOTALL)
+    for tag in ("read_file", "web_search", "list_email_accounts", "edit_file"):
+        assert tag not in code, f"{tag} is hard-coded; the list must come from the server"
 
 
 def test_api_tools_endpoint_serves_full_tool_tags():

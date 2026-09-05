@@ -6,6 +6,7 @@ import {
   Users,
   Wrench,
   Keyboard,
+  LogIn,
   Palette,
   Mic,
   Plug,
@@ -43,6 +44,7 @@ import {
 import './projects.css';
 import './settings.css';
 import { bool, Field, fromList, list, SaveBar, Select, str, Text, Toggle, useDraft, type Opt } from './settings/fields';
+import { DeviceSignIn } from './settings/DeviceSignIn';
 import { AccountSection } from './settings/Account';
 import { UsersSection } from './settings/Users';
 import { ToolsSection } from './settings/Tools';
@@ -92,6 +94,9 @@ const SECTIONS: { key: SectionKey; label: string; icon: typeof Bot; admin?: bool
 
 function ModelsSection({ endpoints, onChanged, say }: { endpoints: ModelEndpoint[] | null; onChanged: () => void; say: (t: string) => void }) {
   const [adding, setAdding] = useState(false);
+  // Copilot and a ChatGPT plan have no key to paste: they sign in the way a
+  // TV app does, and the server makes the endpoint at the end.
+  const [signingIn, setSigningIn] = useState(false);
   const [form, setForm] = useState({ name: '', baseUrl: '', apiKey: '', modelType: 'llm', kind: 'auto' });
   const [testing, setTesting] = useState(false);
   const [tested, setTested] = useState<string | null>(null);
@@ -137,8 +142,13 @@ function ModelsSection({ endpoints, onChanged, say }: { endpoints: ModelEndpoint
           <h2 id="fs-set-models" className="fs-set__title">Modelos</h2>
           <p className="fs-prose">{t('Each endpoint is a server compatible with the OpenAI API (Ollama, llama.cpp, vLLM, OpenAI, Anthropic through a proxy…). Its models appear in the Studio picker.')}</p>
         </div>
-        <Button variant="primary" size="sm" icon={Plus} label={t('Add endpoint')} onClick={() => setAdding((v) => !v)} />
+        <div className="fs-set__row-actions">
+          <Button variant="ghost" size="sm" icon={LogIn} label={t('Sign in with a subscription')} onClick={() => setSigningIn((v) => !v)} />
+          <Button variant="primary" size="sm" icon={Plus} label={t('Add endpoint')} onClick={() => setAdding((v) => !v)} />
+        </div>
       </header>
+
+      {signingIn && <DeviceSignIn onDone={onChanged} onClose={() => setSigningIn(false)} say={say} />}
 
       {adding && (
         <div className="fs-set__card">

@@ -5,6 +5,8 @@ import type { AskUser, ContextLedger, DelegationTask } from '../../adapters/chat
 import { attachmentUrl, isImage } from '../../adapters/composer';
 import { Rich } from '../rich';
 import { splitMentions } from '../../lib/mentions';
+import { safeExternal } from '../../lib/markdown';
+import { stripExecutedFences, toolFenceRegex } from '../../lib/fences';
 import { formatMetrics, type Step, type Turn } from './model';
 import { t, tn } from '../../i18n';
 import { getDisplay } from '../../shell/display';
@@ -412,6 +414,28 @@ function Ledger({ ledger }: { ledger: ContextLedger }) {
   );
 }
 
+/**
+ * The tool-fence regex, once per page.
+ *
+ * A hook rather than a module-level await: the tag list comes from the
+ * server (`GET /api/tools`), and nothing should be stripped until it has
+ * actually arrived — a fence shown for a moment is a blemish, a paragraph
+ * wrongly deleted is a lie.
+ */
+function useFenceRegex(): RegExp | null {
+  const [re, setRe] = useState<RegExp | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void toolFenceRegex().then((r) => {
+      if (alive) setRe(r);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  return re;
+}
+
 function UserTurn({
   turn,
   busy,
@@ -506,6 +530,9 @@ function AssistantTurn({
   onFork?: () => void;
 }) {
   const waiting = turn.streaming && !turn.text && turn.steps.length === 0;
+  // The tool call has already run and is in the rail; its fence is leftovers.
+  const fences = useFenceRegex();
+  const body = stripExecutedFences(turn.text, fences);
   return (
     <article className="fs-turn fs-turn--assistant" data-db-id={turn.dbId} data-streaming={turn.streaming || undefined} data-testid="turn-assistant">
       <span className="fs-turn__node" aria-hidden="true" />
@@ -541,18 +568,25 @@ function AssistantTurn({
             <span className="fs-studio__pulse" /> Pensando
           </p>
         )}
-        {turn.text && <Rich text={turn.text} />}
-        {turn.streaming && turn.text && <span className="fs-studio__cursor" aria-hidden="true" />}
+        {body && <Rich text={body} />}
+        {turn.streaming && body && <span className="fs-studio__cursor" aria-hidden="true" />}
         {turn.images.map((url) => (
           <img key={url} className="fs-studio__image" src={url} alt={t('Generated image')} loading="lazy" />
         ))}
         {turn.sources.length > 0 && (
           <p className="fs-studio__sources">
-            {turn.sources.slice(0, 6).map((s) => (
-              <a key={s.url} className="fs-link" href={s.url} target="_blank" rel="noreferrer">
-                {s.title.slice(0, 48)}
-              </a>
-            ))}
+            {turn.sources.slice(0, 6).map((s) => {
+              // A citation's URL came from outside; a `javascript:` one is a
+              // script, so it is shown as text rather than made clickable.
+              const href = safeExternal(s.url);
+              return href ? (
+                <a key={s.url} className="fs-link" href={href} target="_blank" rel="noreferrer">
+                  {s.title.slice(0, 48)}
+                </a>
+              ) : (
+                <span key={s.url} className="fs-studio__source-flat">{s.title.slice(0, 48)}</span>
+              );
+            })}
           </p>
         )}
         {turn.ask && <AskCard ask={turn.ask} busy={busy} onApproval={onApproval} onAnswer={onAnswer} />}

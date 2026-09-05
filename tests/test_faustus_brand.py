@@ -16,8 +16,11 @@ SCRIPT = ROOT / "scripts" / "faustus_rename.py"
 
 def test_visible_brand_is_faustus():
     index = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
-    assert "<title>Faustus Chat</title>" in index
-    assert 'placeholder="Message Faustus..."' in index
+    assert "<title>Faustus</title>" in index
+    # The shell is React now, so the visible name lives in the rail rather
+    # than in a placeholder attribute in the served HTML.
+    shell = (ROOT / "studio" / "src" / "shell" / "AppShell.tsx").read_text(encoding="utf-8")
+    assert "<span>Faustus</span>" in shell, "the rail must carry the fork's name"
     login = (ROOT / "static" / "login.html").read_text(encoding="utf-8")
     assert "<title>Faustus — Login</title>" in login
     manifest = json.loads((ROOT / "static" / "manifest.json").read_text(encoding="utf-8"))
@@ -36,8 +39,12 @@ def test_visible_brand_is_faustus():
 def test_internal_identifiers_are_untouched():
     mw = (ROOT / "core" / "middleware.py").read_text(encoding="utf-8")
     assert 'INTERNAL_TOOL_HEADER = "X-Odysseus-Internal-Token"' in mw
-    storage = (ROOT / "static" / "js" / "storage.js").read_text(encoding="utf-8")
-    assert "'odysseus-workspace'" in storage
+    # The storage keys are the reason the rename stops at the visible name:
+    # change them and every existing browser loses its workspace and theme.
+    composer = (ROOT / "studio" / "src" / "adapters" / "composer.ts").read_text(encoding="utf-8")
+    assert "'odysseus-workspace'" in composer
+    appearance = (ROOT / "studio" / "src" / "shell" / "appearance.ts").read_text(encoding="utf-8")
+    assert "'odysseus-theme'" in appearance
     consts = (ROOT / "src" / "constants.py").read_text(encoding="utf-8")
     assert "ODYSSEUS_DATA_DIR" in consts
 

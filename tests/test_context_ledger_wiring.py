@@ -11,7 +11,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 LOOP = (ROOT / "src" / "agent_loop.py").read_text(encoding="utf-8")
 ROUTES = (ROOT / "routes" / "chat_routes.py").read_text(encoding="utf-8")
-UI = (ROOT / "static" / "js" / "agentHarnessUI.js").read_text(encoding="utf-8")
+ADAPTER = (ROOT / "studio" / "src" / "adapters" / "chat.ts").read_text(encoding="utf-8")
+TRANSCRIPT = (ROOT / "studio" / "src" / "screens" / "studio" / "Transcript.tsx").read_text(encoding="utf-8")
 
 
 def test_loop_builds_and_emits_the_ledger():
@@ -38,9 +39,21 @@ def test_chat_route_forwards_the_event_type():
     assert '"context_ledger",' in ROUTES
 
 
-def test_ui_renders_it():
-    assert "case 'context_ledger': renderContextLedger(json); return true;" in UI
-    assert "export function renderContextLedger" in UI
+def test_the_interface_renders_it():
+    """The measurement is only worth taking if it reaches the screen.
+
+    The event carries the reason the answer was poor — nine thousand tokens
+    of tool schemas spent before the question — so the card shows the
+    sections, not just the percentage the footer already had.
+    """
+    assert "case 'context_ledger'" in ADAPTER, "the event is not mapped"
+    assert "sections" in ADAPTER and "advice" in ADAPTER, "the parts must survive the mapping"
+    assert 'data-testid="turn-ledger"' in TRANSCRIPT, "and reach the turn"
+    assert "ledger.sections.map" in TRANSCRIPT, "with one row per section"
+    assert "ledger.advice.map" in TRANSCRIPT, "and the server's advice under it"
+    # Folded away unless something is actually wrong: a card that always
+    # shouts is a card people stop reading.
+    assert "open={warn}" in TRANSCRIPT
 
 
 def test_ledger_failure_can_never_break_a_round():

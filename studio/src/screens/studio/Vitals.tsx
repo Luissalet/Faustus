@@ -25,6 +25,7 @@ import {
   type Gpu,
   type Usage,
 } from '../../adapters/usage';
+import { reconnectServices, SERVICE_LABEL, useServiceHealth, type ServiceState } from '../../adapters/services';
 import { locale, t, tn } from '../../i18n';
 import './vitals.css';
 
@@ -232,6 +233,7 @@ function Panel({ d, intervalMs, busy }: { d: Usage | null; intervalMs: number; b
       ) : (
         <>
           <HealthSection d={d} />
+          <ServicesSection />
           <GpuSection d={d} />
           <OrphansSection d={d} />
           <OllamaSection d={d} />
@@ -271,6 +273,79 @@ function HealthSection({ d }: { d: Usage }) {
         );
       })}
       {h.collected === false && <p className="fs-vt__muted">{t('Nothing has been measured yet: this zero is an absence, not a bad reading.')}</p>}
+    </Section>
+  );
+}
+
+const SERVICE_MARK: Record<ServiceState, string> = { ok: '●', degraded: '▲', down: '■', disabled: '·', unknown: '·' };
+
+/**
+ * The services around the model: is the vector store actually there, is web
+ * search answering, do the endpoints list any models.
+ *
+ * This is the readout for the failure that never announces itself — Docker
+ * closed, so RAG quietly fell back to keyword search and answers just got
+ * worse. Reconnect re-establishes the ChromaDB-backed stores and re-probes,
+ * which recovers that case without restarting Faustus.
+ */
+function ServicesSection() {
+  const { health, allowed, error } = useServiceHealth(true);
+  const [fixing, setFixing] = useState(false);
+  const [said, setSaid] = useState<string | null>(null);
+
+  // Not an admin: nothing to show, and nothing worth an error either.
+  if (!allowed) return null;
+  if (!health && !error) return null;
+
+  const bad = health ? health.services.filter((s) => s.status === 'degraded' || s.status === 'down') : [];
+
+  return (
+    <Section
+      title={t('Services')}
+      aside={health ? (bad.length ? tn(bad.length, '{n} needs attention', '{n} need attention') : t('all good')) : undefined}
+    >
+      {error && !health && <p className="fs-vt__muted">{t('Could not read the services: {why}', { why: error })}</p>}
+      {health?.services.map((s) => (
+        <Row
+          key={s.name}
+          wide
+          label={t(SERVICE_LABEL[s.name] ?? s.name)}
+          title={s.detail}
+          muted={s.status === 'disabled'}
+          value={`${SERVICE_MARK[s.status]} ${s.detail}`}
+        />
+      ))}
+      {bad.map(
+        (s) =>
+          s.hint && (
+            <p key={`${s.name}-hint`} className="fs-vt__muted fs-vt__indent">
+              {s.hint.text}
+              {s.hint.command && <code className="fs-vt__cmd">{s.hint.command}</code>}
+            </p>
+          ),
+      )}
+      {bad.length > 0 && (
+        <p className="fs-vt__act">
+          <Button
+            variant="ghost"
+            size="sm"
+            label={t('Reconnect')}
+            loading={fixing}
+            onClick={() => {
+              setFixing(true);
+              setSaid(null);
+              void reconnectServices()
+                .then((r) => {
+                  const back = r?.recovery?.reconnected ?? [];
+                  setSaid(back.length ? t('Back: {names}.', { names: back.join(', ') }) : t('Nothing came back; the detail above is the current answer.'));
+                })
+                .catch((err: Error) => setSaid(err.message))
+                .finally(() => setFixing(false));
+            }}
+          />
+          {said && <span className="fs-vt__muted">{said}</span>}
+        </p>
+      )}
     </Section>
   );
 }

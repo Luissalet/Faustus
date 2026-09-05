@@ -1053,10 +1053,8 @@ async def serve_notes(request: Request):
 async def serve_calendar(request: Request):
     return await serve_index(request)
 
-# Per-tool deep-link routes — all serve the same SPA, the JS auto-opens
-# the matching modal based on window.location.pathname. Each route also
-# gets a unique favicon + page title via inline script in index.html so
-# bookmarks render with tool-specific icons.
+# Per-tool deep-link routes — all serve the same shell; its client-side
+# router reads window.location.pathname and renders the matching screen.
 @app.get("/cookbook")
 async def serve_cookbook(request: Request):
     return await serve_index(request)
@@ -1069,6 +1067,9 @@ async def serve_email(request: Request):
 async def serve_memory(request: Request):
     return await serve_index(request)
 
+# `/gallery`, `/tasks` and `/brain` are the paths the interface this one
+# replaced used to own. They stay served — they are in bookmarks — and the
+# shell's router sends each to the screen that took the job over.
 @app.get("/gallery")
 async def serve_gallery(request: Request):
     return await serve_index(request)
@@ -1077,13 +1078,17 @@ async def serve_gallery(request: Request):
 async def serve_tasks(request: Request):
     return await serve_index(request)
 
+@app.get("/brain")
+async def serve_brain(request: Request):
+    return await serve_index(request)
+
 @app.get("/library")
 async def serve_library(request: Request):
     return await serve_index(request)
 
-# ── Faustus Studio deep links (UI-020) ───────────────────────────────────────
-# The Studio shell is a client-side router, so a reload or a pasted link on one
-# of its routes has to come back with the SPA instead of a 404.
+# ── Deep links ───────────────────────────────────────────────────────────────
+# The shell is a client-side router, so a reload or a pasted link on one of its
+# routes has to come back with the shell instead of a 404.
 #
 # These are declared ONE BY ONE on purpose. A catch-all — @app.get("/{path:path}")
 # — would also swallow every unmatched /api/... request and answer it with HTML,
@@ -1114,18 +1119,15 @@ async def serve_activity(request: Request):
 
 @app.get("/settings")
 async def serve_settings(request: Request):
-    # Studio's Ajustes; the previous interface opens its modal on this path too.
     return await serve_index(request)
 
 @app.get("/agents")
 async def serve_agents(request: Request):
-    # Studio's Agentes (Workers, runners, definitions, experts); the previous
-    # interface opens its Workers modal on this path.
+    """Workers, runners, definitions and experts."""
     return await serve_index(request)
 
 @app.get("/skills")
 async def serve_skills(request: Request):
-    # Studio's Skills (the previous interface kept them as a tab inside Brain).
     return await serve_index(request)
 
 @app.get("/library/edit")
@@ -1152,11 +1154,6 @@ async def serve_compare(request: Request):
 async def serve_group(request: Request):
     """Studio group chat (lot AE)."""
     return await serve_index(request)
-
-@app.get("/backgrounds")
-async def serve_backgrounds(request: Request):
-    """Sandbox page for prototyping background effects. No auth required."""
-    return serve_html_with_nonce(request, abs_join(BASE_DIR, "static/backgrounds.html"))
 
 @app.get("/login")
 async def serve_login(request: Request):

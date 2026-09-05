@@ -2,17 +2,16 @@ import { syncLangFromServer, t, useLang } from '../i18n';
 import { clearThemeAttribute, syncThemeFromServer } from './theme';
 import { applyTheme, getTheme, syncAppearanceFromServer, useAppearance } from './appearance';
 import { useNavSize } from './navSize';
-import { LogOut, Settings2 } from 'lucide-react';
+import { Settings2 } from 'lucide-react';
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { BrowserRouter, NavLink, Route, Routes, useLocation } from 'react-router';
-import { Button, Skeleton } from '../components';
+import { BrowserRouter, Navigate, NavLink, Route, Routes, useLocation } from 'react-router';
+import { Skeleton } from '../components';
 import { HomeScreen } from '../screens/Home';
-import { NotMigrated } from '../screens/NotMigrated';
+import { NotFound } from '../screens/NotFound';
 
 import { BrandMark } from './BrandMark';
-import { DESTINATIONS, TOOLS, toolHref } from './routes';
+import { DESTINATIONS, TOOLS } from './routes';
 import { useBadges } from './badges';
-import { setStudioEnabled } from './flag';
 import { ensureOverlayRoot, removeOverlayRoot } from './overlayRoot';
 import { useShell } from './store';
 
@@ -156,24 +155,17 @@ function Rail() {
 
       <div className="fs-nav__tools" aria-label={t('Tools')}>
         <p className="fs-nav__tools-head">{t('Tools')}</p>
-        {TOOLS.map((tool) =>
-          tool.ready ? (
-            <NavLink key={tool.path} to={tool.path} className="fs-nav__tool" data-testid={`tool-${tool.label.toLowerCase()}`}>
-              <tool.icon size={13} aria-hidden="true" />
-              <span>{t(tool.label)}</span>
-              {countFor(tool.path, badges) > 0 && (
-                <span className="fs-nav__badge" title={t('{n} for today', { n: countFor(tool.path, badges) })}>
-                  {countFor(tool.path, badges)}
-                </span>
-              )}
-            </NavLink>
-          ) : (
-            <a key={tool.path} href={toolHref(tool)} className="fs-nav__tool" data-legacy title={t('Opens in the previous interface')} data-testid={`tool-${tool.label.toLowerCase()}`}>
-              <tool.icon size={13} aria-hidden="true" />
-              <span>{t(tool.label)}</span>
-            </a>
-          ),
-        )}
+        {TOOLS.map((tool) => (
+          <NavLink key={tool.path} to={tool.path} className="fs-nav__tool" data-testid={`tool-${tool.label.toLowerCase()}`}>
+            <tool.icon size={13} aria-hidden="true" />
+            <span>{t(tool.label)}</span>
+            {countFor(tool.path, badges) > 0 && (
+              <span className="fs-nav__badge" title={t('{n} for today', { n: countFor(tool.path, badges) })}>
+                {countFor(tool.path, badges)}
+              </span>
+            )}
+          </NavLink>
+        ))}
       </div>
 
       <div className="fs-nav__spacer" />
@@ -184,16 +176,6 @@ function Rail() {
           <span>{t('Settings')}</span>
         </NavLink>
         <p className="fs-nav__hint">{t('Ctrl+K to search and navigate')}</p>
-        <Button
-          variant="ghost"
-          size="sm"
-          icon={LogOut}
-          label={t('Previous interface')}
-          onClick={() => {
-            setStudioEnabled(false);
-            window.location.href = '/?shell=legacy';
-          }}
-        />
       </div>
     </nav>
   );
@@ -223,13 +205,6 @@ function RouteBody() {
       <Suspense fallback={<Skeleton label={t('Loading the screen')} count={4} height="56px" />}>
       <Routes>
         <Route path="/" element={<HomeScreen />} />
-        {DESTINATIONS.filter((destination) => !destination.ready).map((destination) => (
-          <Route
-            key={destination.path}
-            path={destination.path}
-            element={<NotMigrated destination={destination} />}
-          />
-        ))}
         <Route path="/studio" element={<StudioScreen />} />
         <Route path="/projects" element={<ProjectsScreen />} />
         <Route path="/projects/:projectId" element={<ProjectScreen />} />
@@ -249,7 +224,15 @@ function RouteBody() {
         <Route path="/settings" element={<SettingsScreen />} />
         <Route path="/agents" element={<AgentsScreen />} />
         <Route path="/skills" element={<SkillsScreen />} />
-        <Route path="*" element={<NotMigrated />} />
+        {/*
+          Two paths the interface Studio replaced used to own, and that are
+          sitting in people's bookmarks and in the server's route whitelist.
+          They keep working, as the screen that took the job over.
+        */}
+        <Route path="/tasks" element={<Navigate to="/automations" replace />} />
+        <Route path="/gallery" element={<Navigate to="/library?type=imagen" replace />} />
+        <Route path="/brain" element={<Navigate to="/memory" replace />} />
+        <Route path="*" element={<NotFound />} />
       </Routes>
       </Suspense>
     </div>

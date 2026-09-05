@@ -572,93 +572,58 @@ def test_the_api_is_admin_only_and_registered():
     assert routes_src.count("Depends(require_admin)") == 2
 
 
-# ── the page ───────────────────────────────────────────────────────────────
+# ── the screen ─────────────────────────────────────────────────────────────
 
-SRC = (REPO / "static/js/agentDefs.js").read_text(encoding="utf-8")
-PURE_START = "// ── Agent definitions: pure helpers"
-PURE_END = "// ── Agent definitions: end pure helpers ──"
+def test_delegation_status_keeps_asks_to_and_may_apart():
+    """"May delegate" is two things: the definition asks to, AND the ceiling
+    allows it. Collapsing them showed a coordinator as able to delegate under
+    a ceiling of 0, where the first attempt fails.
 
-PAYLOAD = {
-    "shell_note": "a path rule governs the file tools.",
-    "max_depth": 1,
-    "depth_setting": "agent_subagent_depth",
-    "agents": [
-        {"slug": "reviewer", "name": "reviewer", "mode": "reviewer", "source": "builtin",
-         "description": "Reads <everything>, writes nothing.", "may_delegate": False, "caveats": [],
-         "rules": [{"effect": "deny", "what": "write", "detail": "write **"}]},
-        {"slug": "planner", "name": "planner", "mode": "coordinator", "source": "user",
-         "description": "", "may_delegate": True,
-         "caveats": ["the path rules do not reach inside bash"],
-         "rules": [{"effect": "allow", "what": "delegate", "detail": "may split its work"}]},
-    ],
-    "errors": [{"path": "/w/.faustus/agents/x.md", "slug": "x", "reason": "mode: `overlord` is not one of"}],
-}
-
-
-def _pure() -> str:
-    assert PURE_START in SRC and PURE_END in SRC, "pure-helper markers missing from agentDefs.js"
-    region = SRC.split(PURE_START, 1)[1].split(PURE_END, 1)[0]
-    return region.split("\n", 1)[1]
-
-
-def _run(script: str) -> dict:
-    proc = subprocess.run(["node", "--input-type=module"], input=_pure() + "\n" + script,
-                          capture_output=True, text=True, encoding="utf-8", timeout=60)
+    `delegateStatus` lives in the interface (studio/src/adapters/workers.ts).
+    """
+    if not _HAS_NODE:
+        pytest.skip("needs node")
+    if not (REPO / "node_modules" / "esbuild" / "lib" / "main.js").exists():
+        pytest.skip("node_modules/esbuild needed to bundle the TS")
+    script = """
+import { pathToFileURL } from 'node:url';
+import { join } from 'node:path';
+const root = process.argv[2];
+const { build } = await import(pathToFileURL(join(root, 'node_modules', 'esbuild', 'lib', 'main.js')).href);
+const r = await build({
+  entryPoints: [join(root, 'studio', 'src', 'adapters', 'workers.ts')],
+  bundle: true, format: 'esm', platform: 'node', write: false, logLevel: 'silent',
+});
+const m = await import('data:text/javascript;base64,' + Buffer.from(r.outputFiles[0].text).toString('base64'));
+const asks = m.delegateStatus({ slug: 'p', mode: 'coordinator', may_delegate: true }, 1);
+const capped = m.delegateStatus({ slug: 'p', mode: 'coordinator', may_delegate: true }, 0);
+const never = m.delegateStatus({ slug: 'w', mode: 'worker', may_delegate: false }, 1);
+console.log(JSON.stringify({
+  can: asks.can, cappedCan: capped.can, cappedWhy: capped.detail,
+  neverCan: never.can, neverWhy: never.detail,
+}));
+"""
+    proc = subprocess.run(
+        ["node", "--input-type=module", "-", str(REPO)],
+        input=script, capture_output=True, text=True, encoding="utf-8", timeout=120,
+    )
     assert proc.returncode == 0, proc.stderr
-    return json.loads(proc.stdout.strip().splitlines()[-1])
+    out = json.loads(proc.stdout.strip().splitlines()[-1])
+    assert out["can"] is True
+    assert out["cappedCan"] is False and "ceiling is 0" in out["cappedWhy"]
+    assert out["neverCan"] is False and out["neverWhy"]
 
 
-def test_page_module_parses_and_is_wired():
-    assert subprocess.run(["node", "--check", str(REPO / "static/js/agentDefs.js")],
-                          capture_output=True).returncode == 0
-    assert "onclick=" not in SRC and "alert(" not in SRC and "window.confirm(" not in SRC
-    assert "/api/agent-defs" in SRC
-    for entry in ("export async function openDefsPanel", "export function closeDefsPanel",
-                  "export async function loadDefs", "export function pickAgent"):
-        assert entry in SRC, entry
-    index = (REPO / "static/index.html").read_text(encoding="utf-8")
-    assert "agentDefs.js" in index and "tool-agent-defs-btn" in index
-
-
-@pytest.mark.skipif(not _HAS_NODE, reason="needs node")
-def test_the_page_prints_resolved_rules_and_escapes_them():
-    out = _run(f"""
-      const html = defsPageHtml({json.dumps(PAYLOAD)}, {{}});
-      console.log(JSON.stringify({{
-        deny: html.includes('write **'),
-        escaped: html.includes('&lt;everything&gt;') && !html.includes('<everything>'),
-        caveat: html.includes('do not reach inside bash'),
-        shell: html.includes('a path rule governs the file tools.'),
-        ceiling: html.includes('depth ceiling 1'),
-      }}));
-    """)
-    assert out == {"deny": True, "escaped": True, "caveat": True, "shell": True, "ceiling": True}
-
-
-@pytest.mark.skipif(not _HAS_NODE, reason="needs node")
-def test_the_page_shows_the_files_that_would_not_load():
-    out = _run(f"""
-      const html = defsPageHtml({json.dumps(PAYLOAD)}, {{}});
-      console.log(JSON.stringify({{
-        listed: html.includes('/w/.faustus/agents/x.md'),
-        reason: html.includes('overlord'),
-        said: html.includes('not in force'),
-      }}));
-    """)
-    assert out == {"listed": True, "reason": True, "said": True}
-
-
-@pytest.mark.skipif(not _HAS_NODE, reason="needs node")
-def test_the_page_keeps_asks_to_delegate_and_may_delegate_apart():
-    out = _run("""
-      const asks = delegateStatus({slug: 'p', mode: 'coordinator', may_delegate: true}, 1);
-      const capped = delegateStatus({slug: 'p', mode: 'coordinator', may_delegate: true}, 0);
-      const never = delegateStatus({slug: 'w', mode: 'worker', may_delegate: false}, 1);
-      console.log(JSON.stringify({can: asks.can, cappedCan: capped.can, cappedWhy: capped.detail,
-                                  neverCan: never.can}));
-    """)
-    assert out["can"] is True and out["cappedCan"] is False and out["neverCan"] is False
-    assert "ceiling is 0" in out["cappedWhy"]
+def test_the_screen_reads_the_catalogue_and_the_files_that_would_not_load():
+    """Both halves of what the endpoint returns have to reach the screen: the
+    agents, and the definitions that failed to parse — a file with a typo in
+    its mode is silently not in force, which is the confusing half.
+    """
+    src = (REPO / "studio" / "src" / "screens" / "agents" / "Defs.tsx").read_text(encoding="utf-8")
+    assert "listDefs" in src
+    assert "delegateStatus" in src
+    assert "errors" in src, "the files that would not load must be shown, not swallowed"
+    assert "MODE_HINT" in src and "SOURCE_HINT" in src
 
 
 # ── end to end, through the delegation tool ────────────────────────────────

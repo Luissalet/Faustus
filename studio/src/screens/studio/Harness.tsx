@@ -253,13 +253,13 @@ export function HarnessCard({
         </p>
       )}
       {summary.changeset && summary.changeset.unsupported.length > 0 && (
-        <p className="fs-notice" data-tone="warning">
-          Afirma haber cambiado y el punto de control no lo vio: {summary.changeset.unsupported.join(', ')}
+        <p className="fs-notice" data-tone="warning" data-testid="changeset-unsupported">
+          {t('Said it changed these, and the checkpoint did not see it: {files}', { files: summary.changeset.unsupported.join(', ') })}
         </p>
       )}
       {summary.changeset && summary.changeset.unclaimed.length > 0 && (
-        <p className="fs-notice" data-tone="warning">
-          Cambió sin decirlo: {summary.changeset.unclaimed.join(', ')}
+        <p className="fs-notice" data-tone="warning" data-testid="changeset-unclaimed">
+          {t('Changed these without saying so: {files}', { files: summary.changeset.unclaimed.join(', ') })}
         </p>
       )}
 

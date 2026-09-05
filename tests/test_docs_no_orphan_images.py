@@ -1,7 +1,8 @@
 """Repository asset ownership guards for issues #1335 and #6175.
 
 Public Markdown and landing-page media belong in website/, while shared
-README/packaging imagery belongs in assets/branding/. Images in either managed
+README/packaging imagery belongs in assets/branding/. docs/ui/ is carved out:
+it is the interface rebuild's engineering record, not part of the site. Images in either managed
 root must be referenced by tracked text, and every tracked website video must
 be referenced by the site's entry point.
 """
@@ -83,7 +84,16 @@ def test_pages_site_owns_its_entrypoint_and_media():
 
     assert REPO / "website/index.html" in website_files
     assert REPO / "docs/index.html" not in docs_files
-    assert not [p for p in docs_files if p.suffix.lower() in VIDEO_EXTS | {".md"}]
+    # docs/ui/ is the interface rebuild's working record — the parity table,
+    # the batch states, the design decisions. It is engineering material for
+    # whoever picks the work up, not a page of the published site, so it is
+    # the one subtree under docs/ that may hold Markdown.
+    stray = [
+        p for p in docs_files
+        if p.suffix.lower() in VIDEO_EXTS | {".md"}
+        and not p.relative_to(REPO).as_posix().startswith("docs/ui/")
+    ]
+    assert not stray, f"public Markdown belongs in website/, not docs/: {stray}"
 
     website_paths = {p.relative_to(REPO / "website").as_posix() for p in website_files}
     assert PUBLIC_GUIDES <= website_paths

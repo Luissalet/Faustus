@@ -2980,3 +2980,10 @@ aside.fs-panel {
 .fs-ctx__note[data-level='warn'] {
   color: var(--fs-warning);
 }
+
+/* A citation whose URL is not http(s): shown, but not clickable. */
+.fs-studio__source-flat {
+  color: var(--fs-text-3);
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--fs-text-3) 50%, transparent);
+}

@@ -1,14 +1,10 @@
 /**
  * Faustus Studio — entry point.
  *
- * Two mounts, both explicit:
- *
- *   ?gallery=1                     → the component gallery (UI-011 review)
- *   flag `faustus_studio_shell`    → the AppShell (UI-021)
- *
- * With neither, this file does nothing at all. That is deliberate: the
- * bundle can be loaded on the legacy page without touching it, and the
- * rollback is a reload with the flag off.
+ * `static/index.html` loads this and nothing else: the shell is the
+ * interface, not a pilot beside another one. `?gallery=1` still mounts the
+ * component gallery instead, which is the review surface for the design
+ * system (UI-011).
  *
  * This file stays tiny on purpose: it links the stylesheet and does one
  * dynamic import. Everything else lives in hashed chunks — see app.tsx for
@@ -22,16 +18,13 @@
  */
 
 import stylesUrl from './styles/index.css?url';
-import { isStudioEnabled } from './shell/flag';
 
 const wantsGallery = new URLSearchParams(window.location.search).has('gallery');
 
-if (wantsGallery || isStudioEnabled()) {
-  if (!document.querySelector(`link[href="${stylesUrl}"]`)) {
-    const link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = stylesUrl;
-    document.head.appendChild(link);
-  }
-  import('./app').then((app) => app.mount(wantsGallery));
+if (!document.querySelector(`link[href="${stylesUrl}"]`)) {
+  const link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.href = stylesUrl;
+  document.head.appendChild(link);
 }
+import('./app').then((app) => app.mount(wantsGallery));

@@ -28,6 +28,7 @@ import {
   type McpServer,
   type McpTool,
 } from '../../adapters/integrations';
+import { MCP_PRESETS, fieldsFor, oauthFilePayload, presetByName, withProvider } from '../../lib/mcpPresets';
 import { t, tn } from '../../i18n';
 import { Field, Select, Toggle } from './fields';
 import { FormFoot, useMsg } from './IntegrationForms';
@@ -230,8 +231,24 @@ function McpNew({ onClose, onChanged, say }: { onClose: () => void; onChanged: (
   const [busy, setBusy] = useState(false);
   const [authId, setAuthId] = useState<string | null>(null);
   const [callback, setCallback] = useState('');
+  // Which ready-made server this started from: it carries the setup steps
+  // and, for Gmail, where the OAuth keys file has to land.
+  const [presetName, setPresetName] = useState('');
+  const preset = presetByName(presetName);
   const m = useMsg();
   const isUrl = transport === 'sse' || transport === 'http';
+
+  const pickPreset = (chosen: string) => {
+    setPresetName(chosen);
+    const p = presetByName(chosen);
+    if (!p) return;
+    const f = fieldsFor(p);
+    setTransport('stdio');
+    setName(f.name);
+    setCmd(f.command);
+    setArgs(f.args);
+    setEnv(f.env);
+  };
 
   const save = async () => {
     m.clear();
@@ -248,7 +265,22 @@ function McpNew({ onClose, onChanged, say }: { onClose: () => void; onChanged: (
     }
     setBusy(true);
     try {
-      const d = await addMcpServer(isUrl ? { name: name.trim(), transport, url: url.trim() } : { name: name.trim(), transport, command: cmd.trim(), args: args.trim() || '[]', env: env.trim() || '{}' });
+      const oauthFile = preset ? oauthFilePayload(preset, env.trim() || '{}') : null;
+      const d = await addMcpServer(
+        isUrl
+          ? { name: name.trim(), transport, url: url.trim() }
+          : {
+              name: name.trim(),
+              transport,
+              command: cmd.trim(),
+              args: args.trim() || '[]',
+              env: env.trim() || '{}',
+              // The route writes the credentials file into a directory it
+              // controls, so the secret never becomes a file on this side.
+              ...(oauthFile ? { oauth_file: oauthFile } : {}),
+              ...(preset?.oauth ? { oauth_config: JSON.stringify(preset.oauth) } : {}),
+            },
+      );
       if (d.needs_auth && d.id) {
         setAuthId(d.id);
         m.good(t('Preparing the authorisation…'));
@@ -298,6 +330,28 @@ function McpNew({ onClose, onChanged, say }: { onClose: () => void; onChanged: (
   return (
     <>
       <h3 className="fs-set__card-title">{t('New MCP server')}</h3>
+      <Field label={t('Start from')} htmlFor="mcp-preset" help={t('Fills the form with a configuration that works. Everything stays editable.')}>
+        <Select
+          id="mcp-preset"
+          value={presetName}
+          options={[{ value: '', label: t('Nothing — I will fill it in') }, ...MCP_PRESETS.map((p) => ({ value: p.name, label: p.name }))]}
+          onChange={pickPreset}
+        />
+      </Field>
+      {preset?.providerDropdown && (
+        <Field label={t(preset.providerDropdown.label)} htmlFor="mcp-provider" help={t('Fills in the server addresses; the address and the password are still yours to type.')}>
+          <Select
+            id="mcp-provider"
+            value=""
+            options={[{ value: '', label: t('Choose…') }, ...preset.providerDropdown.options.map((o) => ({ value: o.name, label: o.name }))]}
+            onChange={(chosen) => {
+              const option = preset.providerDropdown?.options.find((o) => o.name === chosen);
+              if (option) setEnv(withProvider(env.trim() || '{}', option));
+            }}
+          />
+        </Field>
+      )}
+      {preset?.help && <pre className="fs-set__steps">{preset.help}</pre>}
       <div className="fs-set__grid2">
         <Field label={t('Name')} htmlFor="mcp-name">
           <input id="mcp-name" className="fs-field" value={name} onChange={(e) => setName(e.target.value)} />

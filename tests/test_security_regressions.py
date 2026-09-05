@@ -11,6 +11,7 @@
 These are pure-function tests — no FastAPI app boot, no DB.
 """
 
+import re
 import sys
 import types
 import json
@@ -138,15 +139,21 @@ def test_readme_warns_auth_enabled_for_network_access():
 
 
 def test_ollama_cookbook_runner_does_not_force_public_bind():
+    """Serving Ollama on this machine must bind to loopback, not the world.
+
+    `0.0.0.0` on a laptop on a café network is an open model server. It is
+    the right answer only for a remote host that has to be reachable, and
+    even then the command says so out loud.
+    """
     route = Path("routes/cookbook_routes.py").read_text(encoding="utf-8")
-    cookbook_js = Path("static/js/cookbook.js").read_text(encoding="utf-8")
+    serve_ts = Path("studio/src/lib/cookbook/serve.ts").read_text(encoding="utf-8")
     assert 'OLLAMA_HOST="0.0.0.0:${ODYSSEUS_OLLAMA_PORT}" ollama serve' not in route
     assert 'OLLAMA_HOST="${ODYSSEUS_OLLAMA_HOST}:${ODYSSEUS_OLLAMA_PORT}" ollama serve' in route
     assert '_ollama_default_host = "0.0.0.0" if remote else "127.0.0.1"' in route
     assert "WARNING: remote Ollama will bind" in route
-    assert "OLLAMA_HOST=0.0.0.0:${ollamaPort}" not in cookbook_js
-    assert "const bindHost = _envState.remoteHost ? '0.0.0.0' : '127.0.0.1';" in cookbook_js
-    assert "OLLAMA_HOST=${bindHost}:${ollamaPort}" in cookbook_js
+    # The command builder picks the bind from whether there IS a remote host.
+    assert "const bind = ctx.remoteHost ? '0.0.0.0' : '127.0.0.1';" in serve_ts
+    assert "OLLAMA_HOST=0.0.0.0:" not in serve_ts
 
 
 def _import_integrations(tmp_path, monkeypatch):
@@ -1007,13 +1014,24 @@ def test_diagnostics_routes_are_admin_gated():
 
 
 def test_email_thread_rendering_sanitizes_body_html():
-    """Both threaded render paths must run server-parsed body_html through the
-    allowlist sanitizer (the flat path already did)."""
-    src = Path(__file__).resolve().parents[1] / "static" / "js" / "emailLibrary.js"
+    """Every path that renders a message's HTML runs it through the allowlist.
+
+    A quoted thread is still someone else's HTML. One of the render paths
+    used to skip the sanitiser, so a reply could carry script that the flat
+    view had already stripped.
+    """
+    src = Path(__file__).resolve().parents[1] / "studio" / "src" / "screens" / "email" / "Reader.tsx"
     text = src.read_text(encoding="utf-8")
-    # every `t.body_html` reference is wrapped by _sanitizeHtml(...)
-    assert text.count("t.body_html") == text.count("_sanitizeHtml(t.body_html")
-    assert "t.body_html" in text  # guard against the file being refactored away
+    # Every `.bodyHtml` that is USED goes through sanitizeMailHtml(...). A bare
+    # existence check (`if (mail.bodyHtml) {`) reads it without rendering it.
+    guard = re.compile(r"^\s*(?:\}?\s*else\s+)?if\s*\([\w.]+\.bodyHtml\)\s*\{?\s*$")
+    assert ".bodyHtml" in text, "no body HTML here any more - has the reader moved?"
+    offenders = [
+        line.strip()
+        for line in text.splitlines()
+        if ".bodyHtml" in line and "sanitizeMailHtml" not in line and not guard.match(line)
+    ]
+    assert not offenders, "body HTML used without the sanitiser:\n" + "\n".join(offenders)
 
 
 def test_session_html_export_escapes_name():
@@ -1124,14 +1142,21 @@ def test_mcp_oauth_config_sanitizes_paths_and_env(tmp_path, monkeypatch):
 
 
 def test_gmail_mcp_preset_uses_contained_oauth_paths():
-    src = Path(__file__).resolve().parents[1] / "static" / "js" / "admin.js"
+    """The OAuth keys file must land where Faustus controls it.
+
+    The upstream package defaults to `~/.gmail-mcp`, which is outside the
+    data directory: another user or another container reads it, and a wipe
+    leaves it behind. The preset overrides both paths into `gmail/` under
+    the app's own OAuth directory.
+    """
+    src = Path(__file__).resolve().parents[1] / "studio" / "src" / "lib" / "mcpPresets.ts"
     text = src.read_text(encoding="utf-8")
-    preset = text.split('{ name: "Gmail"', 1)[1].split('{ name: "Email (IMAP/SMTP)"', 1)[0]
+    preset = text.split("name: 'Gmail'", 1)[1].split("name: 'Email (IMAP/SMTP)'", 1)[0]
 
     assert "~/.gmail-mcp" not in preset
-    assert 'oauthFile: { dir: "gmail"' in preset
-    assert 'keys_file: "gmail/gcp-oauth.keys.json"' in preset
-    assert 'token_file: "gmail/credentials.json"' in preset
+    assert "oauthFile: { dir: 'gmail', filename: 'gcp-oauth.keys.json' }" in preset
+    assert "keys_file: 'gmail/gcp-oauth.keys.json'" in preset
+    assert "token_file: 'gmail/credentials.json'" in preset
 
 
 

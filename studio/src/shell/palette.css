@@ -171,3 +171,49 @@
   inline-size: 100%;
   accent-color: var(--fs-brand);
 }
+
+/* ── The VRAM verdict beside a local model ────────────────────────────
+ * It takes the endpoint's place at the end of the row, so the model name
+ * keeps its width — the name is what you came to read. The word carries
+ * the meaning; the colour only agrees with it.
+ */
+.fs-palette__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fs-palette__fit {
+  margin-inline-start: auto;
+  padding: 1px var(--fs-space-2);
+  border-radius: var(--fs-radius-pill);
+  border: 1px solid var(--fs-border);
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-3);
+  white-space: nowrap;
+}
+
+.fs-palette__fit[data-fit='fits'] {
+  border-color: color-mix(in srgb, var(--fs-success) 45%, transparent);
+  color: var(--fs-success);
+}
+
+.fs-palette__fit[data-fit='tight'] {
+  border-color: color-mix(in srgb, var(--fs-warning) 45%, transparent);
+  color: var(--fs-warning);
+}
+
+.fs-palette__fit[data-fit='over'] {
+  border-color: color-mix(in srgb, var(--fs-danger) 45%, transparent);
+  color: var(--fs-danger);
+}
+
+/* Two tags, one model: said quietly, because it is a footnote, not a warning. */
+.fs-palette__alias {
+  padding: 1px var(--fs-space-2);
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-surface-2);
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-3);
+  white-space: nowrap;
+}

@@ -436,6 +436,10 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
       }
       return { ...turn, ask: event.ask, steps };
     }
+    case 'ask_resolved':
+      // The steps keep their "waiting" look until the replayed tool_start
+      // turns them back into "running": only the card goes.
+      return turn.ask ? { ...turn, ask: undefined } : turn;
     case 'metrics':
       return { ...turn, metrics: { ...turn.metrics, ...event.metrics } };
     case 'sources':

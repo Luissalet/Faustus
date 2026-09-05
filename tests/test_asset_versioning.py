@@ -6,6 +6,7 @@ kind of bug report — "your fix did nothing" — from a browser serving last
 week's stylesheet.
 """
 
+import re
 from pathlib import Path
 
 from src.app_helpers import asset_version, substitute_asset_versions
@@ -52,10 +53,16 @@ class TestSubstitution:
 
 
 class TestPage:
-    def test_index_uses_the_placeholder_for_the_stylesheet(self):
-        assert "style.css?v={{ASSET_V:style.css}}" in HTML
+    def test_index_versions_the_entry_it_loads(self):
+        """The shell loads one script. If its URL never changes, a new build
+        sits behind the browser cache and the bug report is "the fix did not
+        work" — which is the whole reason this placeholder exists."""
+        assert "studio/studio.js?v={{ASSET_V:studio/studio.js}}" in HTML
 
-    def test_js_modules_keep_literal_tokens(self):
-        """Their tokens also appear in `import ... from './x.js?v=…'`; templating
-        one side would load the same module twice under two URLs."""
-        assert "{{ASSET_V:js/" not in HTML
+    def test_no_placeholder_is_left_unresolved_in_the_page(self):
+        """Every placeholder in the page must name a file the substituter can
+        find, relative to the page. A typo degrades to a per-process token,
+        which is silent — so the names are checked here instead."""
+        root = Path(__file__).resolve().parents[1] / "static"
+        for name in re.findall(r"\{\{ASSET_V:([^}]+)\}\}", HTML):
+            assert (root / name).exists(), f"index.html versions {name}, which is not there"

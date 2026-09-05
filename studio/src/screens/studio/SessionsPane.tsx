@@ -9,12 +9,12 @@ import {
   archiveSession,
   autoSortSessions,
   bulkDeleteSessions,
-  exportZipUrl,
+  downloadExportZip,
   listArchivedSessions,
   unarchiveSession,
   type ArchivedSession,
 } from '../../adapters/sessions';
-import { t } from '../../i18n';
+import { t, tn } from '../../i18n';
 
 const SessionDialog = lazy(() => import('./SessionDialog'));
 
@@ -206,7 +206,7 @@ export function SessionsPane({ sessions, currentId, filter, setFilter, searchRef
     try {
       if (what === 'archive') {
         await Promise.all(ids.map((id) => archiveSession(id)));
-        onNotice(`${ids.length} conversaciones archivadas.`);
+        onNotice(tn(ids.length, '{n} conversation archived.', '{n} conversations archived.'));
       } else {
         const n = await bulkDeleteSessions(ids);
         onNotice(`${n} conversaciones borradas.`);
@@ -289,15 +289,25 @@ export function SessionsPane({ sessions, currentId, filter, setFilter, searchRef
 
       {selecting && (
         <div className="fs-studio__bulk" data-testid="session-bulk">
-          <span>{selected.size} seleccionadas</span>
+          <span>{tn(selected.size, '{n} selected', '{n} selected#')}</span>
           <button type="button" className="fs-link" onClick={() => setSelected(new Set(visible.map((s) => s.id)))}>
-            todas
+            {t('all')}
           </button>
           <span className="fs-studio__bulk-actions">
-            <a className="fs-btn" data-size="sm" href={exportZipUrl('md', { ids: Array.from(selected) })} aria-disabled={selected.size === 0 || undefined} title={t('Export the selected ones as a zip (markdown)')}>
-              <Download size={13} aria-hidden="true" />
-              <span>Zip</span>
-            </a>
+            <Button
+              size="sm"
+              icon={Download}
+              label="Zip"
+              disabled={selected.size === 0}
+              title={t('Export the selected ones as a zip (markdown)')}
+              onClick={() => {
+                // A link cannot see "too many at once": fetch it so the
+                // server's refusal is a message and not a blank tab.
+                void downloadExportZip('md', { ids: Array.from(selected) }).catch((e: Error) =>
+                  onNotice(`${t('Could not export')}: ${e.message}`, 'danger'),
+                );
+              }}
+            />
             <Button size="sm" icon={Archive} label={t('Archive')} disabled={selected.size === 0} onClick={() => void bulk('archive')} />
             {confirmBulk ? (
               <Button size="sm" variant="danger-solid" icon={Trash2} label={t('Delete {n}', { n: selected.size })} onClick={() => void bulk('delete')} />

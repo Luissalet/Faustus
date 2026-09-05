@@ -140,19 +140,22 @@ async def test_genuine_recent_volume_still_throttled():
 # save_upload() counts each file against upload_rate_limit, which was 5 while
 # the composer allows MAX_FILES=10. ──────────────────────────────────────────
 
-def _max_files_from_frontend() -> int:
-    src = (_REPO / "static/js/fileHandler.js").read_text(encoding="utf-8")
-    m = re.search(r"MAX_FILES\s*=\s*(\d+)", src)
-    assert m, "MAX_FILES not found in fileHandler.js"
-    return int(m.group(1))
+# The composer sends whatever the user picked, in one request. Ten files in
+# one attach is an ordinary thing to do; this is the number the limit has to
+# clear with room to spare, and the reason it is not 5.
+_ORDINARY_BATCH = 10
 
 
 def test_rate_limit_accommodates_a_full_batch():
-    # The per-minute file cap must comfortably exceed the frontend batch cap,
-    # or a single legitimate multi-file attach trips it (issue #1346).
+    # save_upload() counts EACH file against the per-minute cap, so a cap near
+    # the batch size rejects one legitimate multi-file attach mid-way through
+    # (issue #1346: "5 attachments work, 6 fail").
     h = UploadHandler.__new__(UploadHandler)
     UploadHandler.__init__(h, base_dir="/tmp", upload_dir="/tmp/_odysseus_test_uploads_cfg")
-    assert h.upload_rate_limit >= _max_files_from_frontend()
+    assert h.upload_rate_limit >= _ORDINARY_BATCH * 2, (
+        "the per-minute file cap must clear an ordinary batch with headroom, "
+        "or a single attach trips it"
+    )
 
 
 def test_six_file_batch_is_not_rate_limited(tmp_path):

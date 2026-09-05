@@ -2,7 +2,7 @@ import { CalendarClock, Play, Save, Sparkles } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Button, Skeleton } from '../../components';
 import { listGpus, serveCtx, serveProfiles, updateState, useCookbookState, type CachedModel, type Gpu, type Preset, type Server, type ServeProfile } from '../../adapters/cookbook';
-import { BACKEND_LABEL, backendChoices, buildServeCmd, DEFAULT_PORT, detectBackend, detectModelOptimizations, detectReasoningParser, detectToolParser, ggufFileExpr, ggufFindExpr, ggufQuant, nextFreePort, portOf, projectorGguf, runnableGguf, bytesLabel, type Backend, type ServeFields } from '../../lib/cookbook/serve';
+import { BACKEND_LABEL, backendChoices, remoteWindowsDiffusers, buildServeCmd, DEFAULT_PORT, detectBackend, detectModelOptimizations, detectReasoningParser, detectToolParser, ggufFileExpr, ggufFindExpr, ggufQuant, nextFreePort, portOf, projectorGguf, runnableGguf, bytesLabel, type Backend, type ServeFields } from '../../lib/cookbook/serve';
 import { t, tn } from '../../i18n';
 import { launchServe, targetFor } from './actions';
 import { CopyButton, Field, Switch } from './parts';
@@ -161,6 +161,9 @@ export function ServeForm({ model, server, hwBackend, initial, replaceTaskId, fo
             </button>
           ))}
         </div>
+        {image && remoteWindowsDiffusers(ctx) && (
+          <p className="fs-ck__note">{t('Diffusers does not serve on a remote Windows machine yet, so only llama.cpp is offered for this target.')}</p>
+        )}
         {presets.length > 0 && (
           <div className="fs-ck__presets" role="group" aria-label={t('Presets')}>
             {presets.map((p) => (

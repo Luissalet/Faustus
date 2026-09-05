@@ -27,10 +27,80 @@ from src import gpu_shared_memory as gsm
 from routes import model_routes as mr
 
 _REPO = Path(__file__).resolve().parent.parent
-_PICKER_JS = (_REPO / "static" / "js" / "modelPicker.js").read_text(encoding="utf-8")
-_ROUTES = (_REPO / "routes" / "model_routes.py").read_text(encoding="utf-8")
-_CSS = (_REPO / "static" / "style.css").read_text(encoding="utf-8")
+# ── the badge, in the interface ────────────────────────────────────────────
+#
+# The picker draws a verdict beside a local model: fits / tight / no room.
+# Everything below is about the two ways that goes wrong — inventing a verdict
+# the server did not give, and saying it in colour alone.
 
+_FIT_ADAPTER = (_REPO / "studio" / "src" / "adapters" / "fit.ts").read_text(encoding="utf-8")
+_PALETTE = (_REPO / "studio" / "src" / "screens" / "ModelPalette.tsx").read_text(encoding="utf-8")
+_PALETTE_CSS = (_REPO / "studio" / "src" / "shell" / "palette.css").read_text(encoding="utf-8")
+
+
+def test_the_badge_paints_nothing_without_data():
+    """`state` is absent whenever the server cannot tell. An invented verdict
+    is worse than none, because people act on it."""
+    assert "fit.models[route.model]?.state && (" in _PALETTE, (
+        "the badge must be conditional on a state actually being there"
+    )
+    assert "STATES.includes(state as FitState) ? (state as FitState) : undefined" in _FIT_ADAPTER, (
+        "an unknown state must become undefined, not pass through"
+    )
+
+
+def test_the_badge_only_colours_a_state_it_was_given():
+    states = set(re.findall(r"data-fit='([a-z ]+)'", _PALETTE_CSS))
+    assert states == {"fits", "tight", "over"}, f"unexpected states styled: {states}"
+
+
+def test_the_badge_says_the_state_in_words_not_only_in_colour():
+    """Colour alone is not a readout: it fails for a colour-blind reader and
+    it fails in a screenshot."""
+    assert "FIT_WORD" in _PALETTE and "FIT_WORD" in _FIT_ADAPTER
+    words = re.search(r"FIT_WORD[^=]*= \{(.*?)\}", _FIT_ADAPTER, re.DOTALL)
+    assert words, "no word table"
+    for state in ("fits", "tight", "over"):
+        assert f"{state}:" in words.group(1), state
+
+
+def test_the_title_carries_the_backends_sentence():
+    """The server explains itself in a sentence; the row keeps it on hover
+    rather than paraphrasing it."""
+    assert "title={fit.models[route.model]?.note}" in _PALETTE
+    assert "note:" in _FIT_ADAPTER
+
+
+def test_a_model_that_does_not_fit_is_still_selectable():
+    """The badge is advice, not a gate: a slow answer may be exactly what the
+    person wants."""
+    # The model rows are the ones inside the endpoint groups; the first
+    # Command.Item in the file is the "refresh" row, which legitimately
+    # disables itself while it is working.
+    rows = _PALETTE[_PALETTE.index("{list.map((route) =>"):_PALETTE.index("</Command.Group>")]
+    assert "disabled" not in rows, "the row must stay selectable whatever the verdict"
+    assert "onPick(route)" in rows
+
+
+def test_the_hints_are_not_refetched_on_every_keystroke():
+    """It changes when a model is loaded, not while someone types."""
+    assert "useFitHints(open)" in _PALETTE, "read on open, not on input"
+    assert "let cached: Promise<FitHints> | null = null;" in _FIT_ADAPTER
+
+
+def test_a_failed_fetch_keeps_the_previous_answer_rather_than_lying():
+    assert ".catch(() => EMPTY)" in _FIT_ADAPTER
+    assert "if (alive) setHints(h)" in _FIT_ADAPTER, (
+        "a late answer must not land on an unmounted picker"
+    )
+
+
+def test_the_two_halves_agree_on_the_payload_keys():
+    """The route's shape and the adapter's reader must not drift."""
+    for key in ("size_bytes", "state", "note"):
+        assert key in _FIT_ADAPTER, key
+        assert key in _ROUTES, key
+_ROUTES = (_REPO / "routes" / "model_routes.py").read_text(encoding="utf-8")
 GIB = 1024 ** 3
 MIB = 1024 ** 2
 
@@ -454,171 +524,36 @@ def _js_body(src: str, header: str) -> str:
     raise AssertionError(f"unbalanced braces after {header!r}")
 
 
-def test_every_picker_row_goes_through_the_badge():
-    row = _js_body(_PICKER_JS, "function _addRow(")
-    assert "_fitBadge(m)" in row
-    assert "row.appendChild(fitEl)" in row
+def test_the_row_keeps_the_name_at_full_width():
+    """The endpoint is the group heading, not a repeat on every row: in a
+    picker of forty local models, `127.0.0.1:11434` forty times is the least
+    informative thing on screen, and it was squeezing the names."""
+    assert 'Command.Group key={endpoint} heading={endpoint}' in _PALETTE
+    item = _PALETTE[_PALETTE.index("<Command.Item"):_PALETTE.index("</Command.Item>")]
+    assert "endpointName" not in item, "the endpoint must not be repeated per row"
+    assert 'className="fs-palette__name"' in _PALETTE
+    assert "text-overflow: ellipsis" in _PALETTE_CSS, "a long name truncates rather than wrapping"
 
 
-def test_the_badge_paints_nothing_without_data():
-    """No entry, or an entry with no size, must produce no element at all."""
-    badge = _js_body(_PICKER_JS, "function _fitBadge(")
-    guard = badge.index("return null;")
-    assert "if (!fit || !(fit.size_bytes > 0)) return null;" in badge
-    # Nothing is created before the guard has run.
-    assert "createElement" not in badge[:guard]
+def test_the_picker_marks_tags_that_are_the_same_model():
+    """`qwen3.8:latest` and `qwen3.8:27b-q8_0` can be one set of weights under
+    two names. Listed as two models, the menu asks a question with no answer.
+
+    Only a shared DIGEST counts. A name resemblance would flag q4_K_M and
+    q8_0 as the same, and they are genuinely different — which is the whole
+    reason to open the menu.
+    """
+    assert "export function aliasesOf" in _FIT_ADAPTER
+    body = _FIT_ADAPTER[_FIT_ADAPTER.index("export function aliasesOf"):]
+    assert "m.digest === digest" in body, "the match must be on the digest"
+    assert "name !== model" in body, "and a model is not its own alias"
+    assert "same as {name}" in _PALETTE, "the row has to say so"
 
 
-def test_the_badge_only_colours_a_state_it_was_given():
-    badge = _js_body(_PICKER_JS, "function _fitBadge(")
-    assert "const state = fit.state || '';" in badge
-    assert "if (state) span.classList.add(`mp-fit-${state}`);" in badge
-
-
-def test_the_badge_says_the_state_in_words_not_only_in_colour():
-    badge = _js_body(_PICKER_JS, "function _fitBadge(")
-    assert "_FIT_WORD[state]" in badge
-    words = _PICKER_JS[_PICKER_JS.index("const _FIT_WORD ="):]
-    words = words[:words.index("\n")]
-    assert "tight" in words and "over VRAM" in words
-
-
-def test_the_title_carries_the_backends_sentence():
-    badge = _js_body(_PICKER_JS, "function _fitBadge(")
-    assert "span.title = fit.note" in badge
-    # And the fallback, used when there is a size but no card, still says the
-    # number is only the file on disk.
-    assert "Approximate" in badge
-
-
-def test_rows_are_only_annotated_for_endpoints_the_backend_measured():
-    lookup = _js_body(_PICKER_JS, "function _fitFor(")
-    assert "ids.includes(m.endpointId)" in lookup
-    assert "return null" in lookup
-    # Exact tag match only: fuzzy matching is what hands one model another
-    # model's size (28 GB of q8_0 shown for the q4_K_M).
-    assert "table[m.mid] || table[`${m.mid}:latest`]" in lookup
-
-
-def test_a_model_that_does_not_fit_is_still_selectable():
-    """Advisory, never a gate: the row keeps its click handler and gains no
-    disabled state."""
-    row = _js_body(_PICKER_JS, "function _addRow(")
-    assert "row.addEventListener('click', () => _pick(m));" in row
-    fit_block = row[row.index("_fitBadge(m)"):]
-    assert "disabled" not in fit_block
-    assert "pointer-events" not in fit_block
-
-
-def test_the_hints_are_not_refetched_on_every_keystroke():
-    """`_populate` runs on every character typed into the picker search."""
-    populate = _js_body(_PICKER_JS, "function _populate(")
-    assert "fetch(" not in populate
-    assert "_refreshFitHints" not in populate
-    # The fetch lives on the open/refresh path instead — and only the explicit
-    # refresh button forces a recompute; an ordinary open rides the TTL cache.
-    refresh = _js_body(_PICKER_JS, "async function _refreshPickerModels(")
-    assert "_refreshFitHints({ force: refreshFit })" in refresh
-    assert "refreshFit: true" in _PICKER_JS[_PICKER_JS.index("refreshBtn.addEventListener("):]
-
-
-def test_the_hints_are_cached_client_side_too():
-    fn = _js_body(_PICKER_JS, "async function _refreshFitHints(")
-    assert "_FIT_TTL_MS" in fn
-    assert "if (!force && now - _fitFetchedAt < _FIT_TTL_MS) return;" in fn
-
-
-def test_a_failed_fetch_keeps_the_previous_answer_rather_than_lying():
-    fn = _js_body(_PICKER_JS, "async function _refreshFitHints(")
-    assert "if (!r.ok) return;" in fn
-    assert "catch" in fn
-
-
-def test_the_two_halves_agree_on_the_payload_keys():
-    """A perfect endpoint the picker misreads ships nothing. Pin the contract
-    from both sides rather than trusting two files to stay in step."""
-    for key in ("endpoint_ids", "size_bytes", "state", "note"):
-        assert f'"{key}"' in _ROUTES, key
-    assert "data.endpoint_ids" in _PICKER_JS
-    assert "data.models" in _PICKER_JS
-    assert "fit.size_bytes" in _PICKER_JS
-    assert "fit.state" in _PICKER_JS
-    assert "fit.note" in _PICKER_JS
-    # And the picker asks the route that actually exists.
-    assert "/api/models/fit" in _PICKER_JS
-
-
-def test_the_badge_is_styled_for_both_themes():
-    """theme.js writes --bg/--fg onto :root for every palette, light or dark,
-    so --warn/--red have to be blended toward --fg to stay legible in both."""
-    block = _CSS[_CSS.index(".model-picker-list .model-switch-item .mp-fit {"):]
-    block = block[:block.index("/* Keyboard navigation highlight")]
-    assert "color-mix(in srgb, var(--warn)" in block
-    assert "color-mix(in srgb, var(--red)" in block
-    assert "var(--fg))" in block
-    # Comments stripped: the rationale above the rules names the hex it is
-    # arguing against, and that is not a colour anything paints with.
-    declarations = re.sub(r"/\*.*?\*/", "", block, flags=re.S)
-    assert not re.search(r"#[0-9a-fA-F]{3,8}\b", declarations), declarations
-
-
-def test_there_are_at_most_three_states():
-    states = set(re.findall(r"mp-fit-([a-z]+)", _CSS))
-    assert states == {"fits", "tight", "over"}
-
-
-# ---------------------------------------------------------------------------
-# The badge must not cost the model its name.
-#
-# Found by opening the real picker after shipping the badge: the row is ~290px
-# and the name, the endpoint and the badge all share it, so three rows came
-# back as "qwen3.8:...", "qwen3.8:..." and "qwen3-c..." — you could not tell
-# the q4_K_M from the q8_0, which is the only reason to open the menu at all.
-# ---------------------------------------------------------------------------
-
-def _picker_source() -> str:
-    import pathlib
-    root = pathlib.Path(__file__).resolve().parents[1]
-    return (root / "static" / "js" / "modelPicker.js").read_text(encoding="utf-8")
-
-
-def test_the_endpoint_yields_its_place_to_the_fit_badge():
-    """A fit badge only exists for a loopback Ollama, where the endpoint text is
-    `127.0.0.1:11434` — the least informative thing in the row. The badge takes
-    its place so the model name keeps its width."""
-    src = _picker_source()
-    assert "epSpan.textContent = fitEl ? '' : _epDisplay;" in src
-    assert "if (!fitEl) row.appendChild(epSpan);" in src
-    # ...and the old unconditional append is gone, or the row grows again.
-    assert "\n      row.appendChild(epSpan);\n" not in src
-
-
-def test_a_truncated_name_still_reveals_the_full_model_id_on_hover():
-    src = _picker_source()
-    assert "nameSpan.title = m.mid || m.display || '';" in src
-
-
-def test_the_viewport_media_query_is_not_relied_on_for_this():
-    """The CSS `@media (max-width: 480px)` measures the viewport, not the popup,
-    so on a wide screen it never fires on a 290px menu. If someone ever deletes
-    the JS rule and leans on the media query again, this fails."""
-    src = _picker_source()
-    assert "fitEl ? '' : _epDisplay" in src, (
-        "the endpoint/badge trade-off must be decided in JS, not by a viewport "
-        "media query that cannot see the menu's width"
-    )
-
-
-# ---------------------------------------------------------------------------
-# Two tags, one model.
-#
-# Ollama lets one blob wear several names. On the reference machine
-# `claude-sonnet-4-5:latest` and `qwen3.8:27b-q4_K_M` share digest
-# 25b843619e94 — the second is a nickname for the first. The picker showed six
-# rows for five models, and once the size badge landed, two of them read the
-# same weight with no explanation.
-# ---------------------------------------------------------------------------
-
+def test_a_model_without_a_digest_is_never_called_an_alias():
+    """No digest means we cannot tell, and silence is the honest answer."""
+    body = _FIT_ADAPTER[_FIT_ADAPTER.index("export function aliasesOf"):]
+    assert "if (!digest) return [];" in body
 def test_the_fit_endpoint_carries_the_blob_digest():
     """Both output branches, not just the one with a card: a machine without
     nvidia-smi still deserves to know two names are one model."""
@@ -629,18 +564,3 @@ def test_the_fit_endpoint_carries_the_blob_digest():
     assert src.count("_with_digest(") >= 3  # helper + both branches
 
 
-def test_the_picker_groups_tags_by_digest_and_marks_the_aliases():
-    src = _picker_source()
-    assert "function _aliasGroups()" in src
-    assert "function _aliasesOf(" in src
-    # Only a shared digest counts — never a name resemblance, which would flag
-    # q4_K_M and q8_0 as the same model when they are genuinely different.
-    assert "fit && fit.digest" in src
-    assert "tags.length < 2" in src
-    assert "'mp-alias'" in src
-
-
-def test_a_model_without_a_digest_is_never_called_an_alias():
-    """No digest means we cannot tell — and silence is the honest answer."""
-    src = _picker_source()
-    assert "if (!d) return [];" in src

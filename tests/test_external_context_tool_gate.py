@@ -1291,73 +1291,40 @@ def test_approval_pause_does_not_trigger_teacher_takeover(monkeypatch):
     )
 
 
-def test_frontend_tool_approval_uses_opaque_id_and_fixed_decisions():
+def test_the_interface_answers_an_approval_by_id_and_fixed_decisions():
+    """An approval is answered with an opaque id and one of three words.
+
+    Never by typing the decision into the composer on the user's behalf —
+    that is what made "Approve" look, in the transcript and in the saved
+    history, like the user had written the word themselves, and it meant a
+    crafted message could pose as a decision.
+    """
     root = Path(__file__).parents[1]
-    chat = (root / "static/js/chat.js").read_text(encoding="utf-8")
-    renderer = (root / "static/js/chatRenderer.js").read_text(encoding="utf-8")
-    skills = (root / "static/js/skills.js").read_text(encoding="utf-8")
-    index = (root / "static/index.html").read_text(encoding="utf-8")
+    transcript = (root / "studio/src/screens/studio/Transcript.tsx").read_text(encoding="utf-8")
+    chat_adapter = (root / "studio/src/adapters/chat.ts").read_text(encoding="utf-8")
+    skills_adapter = (root / "studio/src/adapters/skills.ts").read_text(encoding="utf-8")
 
-    assert "fd.append('tool_approval_id'" in chat
-    assert "fd.append('tool_approval_decision'" in chat
-    assert "odysseus:tool-approval" in chat
-    assert "aq.kind === 'tool_approval'" in renderer
-    assert "aq.action.content" in renderer
-    assert "decision: String((opt && opt.value)" in renderer
-    assert "if (isStreaming || _sendInFlight)" in chat
-    assert "_submitToolApprovalWhenIdle" in chat
-    assert "input.dispatchEvent(new Event('input'" in chat
-    assert "_pendingToolApproval.draft = input.value" in chat
-    assert "const approvalForSend = _pendingToolApproval" in chat
-    assert "!approvalForSend && fileHandlerModule.getPendingCount()" in chat
-    assert "if (!approvalForSend) _pendingRegenAttachments = null" in chat
-    assert "!approvalForSend && el('research-toggle').checked" in chat
-    assert "approvalForSend ? (approvalForSend.draft || '') : ''" in chat
-    assert "if (approvalForSend && documentSaved === false)" in chat
-    assert "if (!approvalForSend) {\n          try {\n            _sendPerf.mark('doc_silent_save_begin')" in chat
-    assert "document_id: aq.action && aq.action.document_id" in renderer
-    assert "const firstRound = (toolsByRound[0] || []).length ? 0 : 1" in renderer
-    assert "const r = ev.round ?? 1" in renderer
-    assert "/test-approval`" in skills
-    assert "approval_id: approval.approval_id" in skills
-    assert "['approve', 'Allow once'" in skills
-    assert index.count("app.js?v=20260815toolapproval4") == 2
-    assert "app.js?v=20260808startupshell1" not in index
-    approval_module_sources = [
-        (root / path).read_text(encoding="utf-8")
-        for path in (
-            "static/app.js",
-            "static/index.html",
-            "static/js/chat.js",
-            "static/js/chatRenderer.js",
-            "static/js/chatStream.js",
-            "static/js/document.js",
-            "static/js/emailInbox.js",
-            "static/js/emailLibrary.js",
-            "static/js/settings.js",
-            "static/js/slashCommands.js",
-        )
-    ]
-    assert all(
-        "20260722emailfastindex1" not in source
-        for source in approval_module_sources
-    )
-    assert all(
-        "20260815approvalsave1" in source
-        for source in approval_module_sources
-    )
+    assert "'approve' | 'approve_task' | 'deny'" in transcript
+    assert "tool_approval_id" in chat_adapter
+    assert "tool_approval_decision" in chat_adapter
+    # The skills sandbox has its own approval, on the same shape.
+    assert "test-approval" in skills_adapter
+    assert "approval_id: approvalId" in skills_adapter
 
 
-def test_frontend_raw_fences_do_not_call_document_mutators():
-    source = (Path(__file__).parents[1] / "static/js/chat.js").read_text(encoding="utf-8")
-    start = source.index("// Raw model text is not authorization to mutate the editor.")
-    end = source.index("// Detect thinking-in-progress:", start)
+def test_raw_model_text_does_not_open_or_change_a_document():
+    """Raw model text is not authorisation to mutate the editor.
 
-    assert "streamDocOpen" not in source[start:end]
-    assert "streamDocDelta" not in source[start:end]
-    assert "json.type === 'doc_stream_open'" in source
-    assert "json.type === 'doc_stream_delta'" in source
-
+    The document panel reacts to the SERVER's document events — which are
+    only emitted for a tool call the agent actually authorised and ran —
+    never to a fenced block appearing in the stream. A model that writes
+    something document-shaped must not be able to overwrite the editor.
+    """
+    panel = (Path(__file__).parents[1] / "studio/src/screens/studio/panel.ts").read_text(encoding="utf-8")
+    for event in ("doc_open", "doc_delta", "doc_update", "doc_suggestions"):
+        assert f"ev.type === '{event}'" in panel, f"the panel no longer handles {event}"
+    # `delta` is the raw assistant text. It must reach no document branch.
+    assert "'delta'" not in panel, "the panel must not act on raw model text"
 
 def test_document_stream_events_are_derived_from_authorized_block():
     from src.agent_loop import _document_stream_events

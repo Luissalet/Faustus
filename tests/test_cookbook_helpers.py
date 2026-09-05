@@ -152,17 +152,6 @@ def test_local_windows_bash_env_prefix_handles_long_whitespace_input():
     assert _local_windows_bash_env_prefix(prefix) == prefix
 
 
-@pytest.mark.parametrize(
-    "relative_path",
-    ["static/js/cookbookRunning.js", "static/js/cookbookDownload.js"],
-)
-def test_primary_windows_venv_emitters_quote_activation_path(relative_path):
-    source = (Path(__file__).resolve().parents[1] / relative_path).read_text(encoding="utf-8")
-
-    assert "'& ' + _psQuote(" in source
-    assert "_psQuote = shared._psQuote;" in source
-
-
 def test_windows_venv_conversion_stays_scoped_to_local_git_bash_runners():
     source = (Path(__file__).resolve().parents[1] / "routes/cookbook_routes.py").read_text(encoding="utf-8")
     guarded_conversion = (
@@ -785,8 +774,17 @@ def test_llama_cpp_rebuild_cmd_clears_cached_build_paths():
 
 
 def test_local_windows_download_pid_tracks_inner_bash_and_stop_kills_tree():
-    routes_src = (Path(__file__).resolve().parents[1] / "routes" / "cookbook_routes.py").read_text(encoding="utf-8")
-    running_src = (Path(__file__).resolve().parents[1] / "static" / "js" / "cookbookRunning.js").read_text(encoding="utf-8")
+    """Stopping a download has to kill the tree, not the wrapper.
+
+    On Windows the runner is PowerShell starting Git Bash starting the real
+    process. Killing the recorded pid alone left the download running with
+    nothing on screen owning it. The route records a pid that is valid on
+    Win32 and lets Git Bash replace it with its own; the stop command walks
+    the children first (studio/src/lib/cookbook/tasks.ts).
+    """
+    root = Path(__file__).resolve().parents[1]
+    routes_src = (root / "routes" / "cookbook_routes.py").read_text(encoding="utf-8")
+    tasks_src = (root / "studio" / "src" / "lib" / "cookbook" / "tasks.ts").read_text(encoding="utf-8")
 
     # The Windows-local runner publishes Python's valid Win32 fallback before
     # allowing Git Bash to replace it with /proc/$$/winpid.
@@ -794,9 +792,9 @@ def test_local_windows_download_pid_tracks_inner_bash_and_stop_kills_tree():
     assert "/proc/$$/winpid" in routes_src
     assert "pid_ready_path.touch()" in routes_src
     assert '\\"$$\\" > {pp}' not in routes_src
-    assert "function Stop-Tree([int]$Id)" in running_src
-    assert "('ParentProcessId = ' + $Id)" in running_src
-    assert "Stop-Tree ([int]$p)" in running_src
+    assert "function Stop-Tree([int]$Id)" in tasks_src
+    assert "('ParentProcessId = ' + $Id)" in tasks_src
+    assert "Stop-Tree ([int]$p)" in tasks_src
 
 
 def test_llama_cpp_rebuild_cmd_runs_clean_on_a_fresh_home(tmp_path):

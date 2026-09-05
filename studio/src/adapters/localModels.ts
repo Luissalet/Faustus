@@ -217,3 +217,37 @@ export async function setDefaultModel(endpointId: string, name: string): Promise
   await call('/api/auth/settings', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ default_endpoint_id: endpointId, default_model: name }) });
 }
 export const releaseOrphanRunner = (pid: number) => call<unknown>('/api/system/gpu/orphans/release', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ pid }) });
+
+/**
+ * How to make a model fit on the card instead of spilling.
+ *
+ * `/api/system/vram-fit` measures the weights and the KV cache against the
+ * free VRAM and answers with the two numbers that decide it: how much
+ * context, and how many layers on the GPU. `fits: false` is not a refusal —
+ * it is the honest plan for a model too big to hold whole, with the layer
+ * count that keeps most of it on the card.
+ */
+export interface VramFit {
+  fits: boolean;
+  num_ctx: number;
+  /** null means "let Ollama decide", which is right when it all fits. */
+  num_gpu: number | null;
+  /** What to do, in the server's own words — one line per step. */
+  steps: string[];
+  model: string;
+  gpuName?: string;
+}
+
+export async function vramFit(model: string, targetCtx?: number): Promise<VramFit> {
+  const q = new URLSearchParams({ model });
+  if (targetCtx) q.set('target_ctx', String(targetCtx));
+  const d = await call<Record<string, unknown>>(`/api/system/vram-fit?${q.toString()}`);
+  return {
+    fits: Boolean(d.fits),
+    num_ctx: Number(d.num_ctx) || 0,
+    num_gpu: d.num_gpu == null ? null : Number(d.num_gpu),
+    steps: Array.isArray(d.steps) ? (d.steps as unknown[]).map(String) : [],
+    model: String(d.model ?? model),
+    gpuName: typeof d.gpu_name === 'string' ? d.gpu_name : undefined,
+  };
+}

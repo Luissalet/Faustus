@@ -45,6 +45,7 @@ import {
 } from '../../adapters/research';
 import { relativeTime } from '../../adapters/home';
 import { t, tn } from '../../i18n';
+import { safeExternal } from '../../lib/markdown';
 import { Rich } from '../rich';
 import '../research.css';
 
@@ -185,9 +186,15 @@ function ResultCard({ job, formats, onDiscuss, onDelete, onDismiss, say }: { job
                   <ol>
                     {sources.map((s, i) => (
                       <li key={`${s.url}-${i}`}>
-                        <a href={s.url} target="_blank" rel="noopener noreferrer">
-                          {s.title || s.url}
-                        </a>
+                        {/* The source list is data from outside: a `javascript:`
+                            URL there is a script, so it shows as text. */}
+                        {safeExternal(s.url) ? (
+                          <a href={safeExternal(s.url) as string} target="_blank" rel="noopener noreferrer">
+                            {s.title || s.url}
+                          </a>
+                        ) : (
+                          <span>{s.title || s.url}</span>
+                        )}
                       </li>
                     ))}
                   </ol>

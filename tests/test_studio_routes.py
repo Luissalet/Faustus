@@ -64,12 +64,20 @@ def test_unknown_page_does_not_get_the_shell(client: TestClient) -> None:
     assert SHELL_MARKER not in response.text
 
 
-def test_studio_bootstrap_is_off_by_default() -> None:
-    """The pilot must not load itself on a plain visit."""
+def test_the_page_loads_the_shell_and_nothing_else() -> None:
+    """It was a pilot loaded behind a flag; it is the interface now.
+
+    One entry, versioned by the hash of its own bytes so a new build is not
+    served from cache. Nothing left of the flag, and no second bundle: a page
+    that loads two interfaces has both of them fighting for the same root.
+    """
     html = (
         __import__("pathlib").Path(__file__).resolve().parents[1] / "static" / "index.html"
     ).read_text(encoding="utf-8")
-    assert "faustus_studio_shell" in html, "the pilot bootstrap is missing"
-    # The bundle is appended by script, never with a plain <script src> tag
-    # that would run for everybody.
-    assert '<script type="module" src="/static/studio/studio.js"' not in html
+    assert 'src="/static/studio/studio.js?v={{ASSET_V:studio/studio.js}}"' in html
+    assert "faustus_studio_shell" not in html, "the pilot flag is gone; so is its bootstrap"
+    assert "shell=legacy" not in html
+    # One module script, and it is that one.
+    import re
+    modules = re.findall(r'<script type="module" src="([^"]+)"', html)
+    assert modules == ["/static/studio/studio.js?v={{ASSET_V:studio/studio.js}}"], modules

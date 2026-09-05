@@ -1,4 +1,4 @@
-import { ExternalLink, FolderKanban, MessageSquare, PanelRight, X } from 'lucide-react';
+import { FolderKanban, MessageSquare, PanelRight, X } from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { Button, Dialog, IconButton, Skeleton } from '../components';
@@ -37,8 +37,8 @@ import {
   deleteMessages,
   deleteSession,
   editMessage,
-  exportUrl,
-  exportZipUrl,
+  downloadExport,
+  downloadExportZip,
   forkSession,
   listVersions,
   renameSession,
@@ -814,10 +814,17 @@ export function StudioScreen() {
           if (!sessionId) return true;
           const fmt = (args.trim().toLowerCase() || 'md') as ExportFormat;
           if (!EXPORT_FORMATS.includes(fmt)) {
-            say(`Formatos: ${EXPORT_FORMATS.join(', ')}.`, 'warning');
+            say(t('Formats: {list}.', { list: EXPORT_FORMATS.join(', ') }), 'warning');
             return true;
           }
-          window.open(exportUrl(sessionId, fmt), '_blank', 'noopener');
+          try {
+            await downloadExport(sessionId, fmt, sessions?.find((x) => x.id === sessionId)?.name);
+          } catch (error) {
+            // A blank tab is what this used to be. The server explains itself
+            // — a format it does not know, a missing PDF dependency — so say
+            // what it said.
+            say(`${t('Could not export')}: ${(error as Error).message}`, 'danger');
+          }
           return true;
         }
         case 'chats.rename':
@@ -1015,7 +1022,11 @@ export function StudioScreen() {
           const parts = args.split(/\s+/).filter(Boolean);
           const format = (parts.find((word) => (EXPORT_FORMATS as readonly string[]).includes(word.toLowerCase())) ?? 'md') as ExportFormat;
           const folder = parts.filter((word) => word.toLowerCase() !== format).join(' ');
-          window.open(exportZipUrl(format, folder ? { folder } : {}), '_blank', 'noopener');
+          try {
+            await downloadExportZip(format, folder ? { folder } : {});
+          } catch (error) {
+            say(`${t('Could not export')}: ${(error as Error).message}`, 'danger');
+          }
           return true;
         }
 
@@ -1762,9 +1773,7 @@ export function StudioScreen() {
     open_memory: () => navigate('/memory'),
     open_notes: () => navigate('/notes'),
     open_tasks: () => navigate('/automations'),
-    open_theme: () => {
-      window.location.href = '/?shell=legacy';
-    },
+    open_theme: () => navigate('/settings?s=appearance'),
   };
   useEffect(() => {
     let binds: Record<string, string> | null = null;
@@ -1841,16 +1850,6 @@ export function StudioScreen() {
               size="sm"
               onClick={() => panelDispatch(panel.open ? { type: 'close' } : { type: 'open' })}
             />
-            {sessionId && (
-              <IconButton
-                icon={ExternalLink}
-                label={t('Open in the previous interface')}
-                size="sm"
-                onClick={() => {
-                  window.location.href = `/?shell=legacy#${sessionId}`;
-                }}
-              />
-            )}
           </div>
         </header>
 

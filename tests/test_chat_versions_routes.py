@@ -126,14 +126,3 @@ def test_a_capture_failure_never_blocks_the_truncation(env, monkeypatch):
     assert len(sm.get_session("s1").history) == 2
 
 
-def test_the_composer_routes_every_truncation_through_the_version_capture():
-    """All three destructive flows (edit, regenerate, regenerate-variant) must
-    go through the helper — a raw /truncate call would silently lose the tail."""
-    from pathlib import Path
-    src = Path(__file__).resolve().parents[1].joinpath("static", "js", "chat.js").read_text(
-        encoding="utf-8", errors="replace")
-    assert src.count("await _truncateWithVersion(sessionId, keepCount") == 3
-    assert "async function _truncateWithVersion(" in src
-    assert src.count("/api/session/${sessionId}/truncate") == 1   # only inside the helper
-    # The Undo action has to hit the restore route, not just show a message.
-    assert "/versions/${encodeURIComponent(saved.id)}/restore" in src

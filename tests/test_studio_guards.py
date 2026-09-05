@@ -21,10 +21,10 @@ import pytest
 STUDIO = Path(__file__).resolve().parents[1] / "studio" / "src"
 
 # tokens.css is where literal values are ALLOWED to live - it is the file
-# that defines them. legacy-bridge.css is the second: every literal there
+# that defines them. user-theme.css is the second: every literal there
 # is a var() fallback for a theme variable that may not be set, which is
 # the one place a raw colour is the correct answer.
-TOKEN_FILES = {"tokens.css", "legacy-bridge.css"}
+TOKEN_FILES = {"tokens.css", "user-theme.css"}
 
 # A guard with no way out gets deleted the first time it is inconvenient.
 # `guard-ok:` exempts a single line and must carry its reason on that line,
@@ -109,6 +109,57 @@ def test_reduced_motion_is_handled() -> None:
             )
 
 
+def test_no_substring_guessing_about_why_a_request_failed() -> None:
+    """The server says why it refused. Studio must not overrule it.
+
+    The previous interface decided the cause of a failure by looking for the
+    word "tool" (or "auto") inside the error text, replaced whatever the
+    server had said with "this model doesn't support agent tools", and wrote a
+    mode switch to storage. Every message the approval gate exists to send
+    contains the word "tool", so the explanations were the one thing
+    guaranteed to be swallowed. `adapters/api.ts` now reads FastAPI's
+    `detail`; this keeps the heuristic from creeping back.
+    """
+    banned = ("includes('tool')", 'includes("tool")',
+              "includes('auto')", 'includes("auto")')
+    for path in [*_sources(".ts"), *_sources(".tsx")]:
+        text = path.read_text(encoding="utf-8")
+        for phrase in banned:
+            assert phrase not in text, (
+                f"{_rel(path)} guesses why a request failed from the error text; "
+                "read the server's detail instead"
+            )
+
+
 def test_studio_tree_exists() -> None:
     """Fail loudly if the guards are silently scanning nothing."""
     assert _sources(".tsx"), "no Studio sources found - are the guards pointed at the right tree?"
+
+
+def test_server_serves_every_route_the_shell_owns() -> None:
+    """A route the server does not serve is a 404 on reload.
+
+    The shell is a client-side router: the browser only asks the server for
+    a path on a full load — a reload, a pasted link, a bookmark. app.py
+    answers those from a hand-written whitelist (a catch-all would swallow
+    /api/... too and answer it with HTML). `SERVER_ROUTES` in routes.ts is
+    that list restated on the client side, and a list restated in two places
+    drifts unless something compares them. This is that something.
+    """
+    repo = Path(__file__).resolve().parents[1]
+    routes_ts = (repo / "studio" / "src" / "shell" / "routes.ts").read_text(encoding="utf-8")
+    block = routes_ts.split("export const SERVER_ROUTES", 1)[1].split("];", 1)[0]
+    declared = set(re.findall(r"'([^']+)'", block))
+    assert declared, "SERVER_ROUTES is empty - the guard would pass on nothing"
+
+    app_py = (repo / "app.py").read_text(encoding="utf-8")
+    served = set(re.findall(r'@app\.get\("(/[^"]*)"\)', app_py))
+    # FastAPI spells a parameter {name}; the list uses the same spelling, so
+    # only the API surface needs filtering out.
+    served = {r for r in served if not r.startswith("/api/")}
+
+    missing = sorted(r for r in declared if r not in served)
+    assert not missing, (
+        "routes.ts claims these but app.py does not serve them (404 on reload):\n  "
+        + "\n  ".join(missing)
+    )
