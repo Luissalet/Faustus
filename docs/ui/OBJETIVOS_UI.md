@@ -121,8 +121,9 @@ proporcionales, auditoría de la guía Vercel pasada o excepción documentada,
       «Herramientas» en la barra y la paleta (lote J); Notas como pantalla
       (`/notes`, lote J; parcial: dibujo, foto, selección múltiple); Memoria
       como pantalla (`/memory`, lote K; los ajustes de Skills van con Skills);
-      Calendario como pantalla (`/calendar`, lote L; cuentas CalDAV: anterior).
-      Faltan: Correo, Cookbook, Deep Research, Compare,
+      Calendario como pantalla (`/calendar`, lote L; cuentas CalDAV: anterior);
+      Correo como pantalla (`/email`, lote M; cuentas, IA y programación: anterior).
+      Faltan: Cookbook, Deep Research, Compare,
       Tournament, Workers, Expertos, Procedencia, Historial importado,
       runners y definiciones de agentes, Skills, Ajustes, Tema, Fondos.
 - [ ] **UI-061** Borrar los puentes muertos, el DOM legacy de cada pantalla ya

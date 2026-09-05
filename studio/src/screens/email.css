@@ -1,0 +1,389 @@
+/* Correo: folders | list | message. */
+
+.fs-mail {
+  position: relative;
+  padding-block-end: var(--fs-space-5);
+}
+
+.fs-mail__tools {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+}
+
+.fs-mail__spacer {
+  flex: 1;
+}
+
+.fs-mail__layout {
+  display: grid;
+  grid-template-columns: 180px minmax(280px, 380px) minmax(0, 1fr);
+  gap: var(--fs-space-3);
+  min-block-size: 60vh;
+}
+
+/* ── Side ── */
+
+.fs-mail__side {
+  display: grid;
+  align-content: start;
+  gap: var(--fs-space-3);
+}
+
+.fs-mail__account {
+  inline-size: 100%;
+}
+
+.fs-mail__folders {
+  display: grid;
+  gap: 2px;
+}
+
+.fs-mail__folder {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  padding: 6px var(--fs-space-3);
+  border: 0;
+  border-radius: var(--fs-radius-control);
+  background: transparent;
+  color: var(--fs-text-2);
+  font: inherit;
+  font-size: var(--fs-label-size);
+  text-align: start;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fs-mail__folder:hover {
+  background: var(--fs-highlight);
+  color: var(--fs-text-1);
+}
+
+.fs-mail__folder[data-on] {
+  background: var(--fs-ember-faint);
+  color: var(--fs-brand);
+  font-weight: 600;
+}
+
+.fs-mail__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* ── List ── */
+
+.fs-mail__list {
+  display: grid;
+  align-content: start;
+  gap: var(--fs-space-2);
+  min-inline-size: 0;
+}
+
+.fs-mail__search {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  block-size: var(--fs-control-sm);
+  padding: 0 var(--fs-space-2) 0 var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-surface-1);
+  color: var(--fs-text-3);
+}
+
+.fs-mail__search input {
+  flex: 1;
+  min-inline-size: 0;
+  border: 0;
+  background: transparent;
+  color: var(--fs-text-1);
+  font: inherit;
+  font-size: var(--fs-label-size);
+}
+
+.fs-mail__search input:focus-visible {
+  outline: none;
+}
+
+.fs-mail__error {
+  color: var(--fs-danger);
+  font-size: var(--fs-label-size);
+}
+
+.fs-mail__hint {
+  color: var(--fs-text-3);
+  font-size: var(--fs-label-size);
+}
+
+.fs-mail__rows {
+  display: grid;
+  gap: 2px;
+}
+
+.fs-mail__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'from when'
+    'subject subject'
+    'snippet snippet';
+  gap: 1px var(--fs-space-2);
+  padding: var(--fs-space-2) var(--fs-space-3);
+  border: 1px solid transparent;
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-1);
+  color: var(--fs-text-2);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  transition:
+    background-color var(--fs-duration-fast) var(--fs-ease),
+    border-color var(--fs-duration-fast) var(--fs-ease);
+}
+
+.fs-mail__row:hover {
+  border-color: var(--fs-border-strong);
+}
+
+.fs-mail__row[data-current] {
+  border-color: var(--fs-brand);
+  background: var(--fs-ember-faint);
+}
+
+.fs-mail__row[data-loading] {
+  opacity: 0.6;
+}
+
+.fs-mail__row-from {
+  grid-area: from;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-label-size);
+}
+
+.fs-mail__row[data-unread] .fs-mail__row-from,
+.fs-mail__row[data-unread] .fs-mail__row-subject {
+  color: var(--fs-text-1);
+  font-weight: 600;
+}
+
+.fs-mail__row-when {
+  grid-area: when;
+  font-size: 11px;
+  color: var(--fs-text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.fs-mail__row-subject {
+  grid-area: subject;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fs-mail__row-subject svg {
+  flex: none;
+}
+
+.fs-mail__star {
+  color: var(--fs-warning);
+}
+
+.fs-mail__row-snippet {
+  grid-area: snippet;
+  font-size: 11px;
+  color: var(--fs-text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fs-mail__pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fs-space-2);
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-3);
+}
+
+/* ── Message ── */
+
+.fs-mail__read {
+  min-inline-size: 0;
+}
+
+.fs-mail__placeholder {
+  display: grid;
+  place-items: center;
+  gap: var(--fs-space-2);
+  min-block-size: 40vh;
+  color: var(--fs-text-3);
+  border: 1px dashed var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+}
+
+.fs-mail__msg {
+  display: grid;
+  gap: var(--fs-space-3);
+  padding: var(--fs-space-3) var(--fs-space-4);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-1);
+  box-shadow: var(--fs-panel-shadow);
+}
+
+.fs-mail__msg-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fs-space-2);
+}
+
+.fs-mail__msg-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+}
+
+.fs-mail__sep {
+  inline-size: 1px;
+  block-size: 18px;
+  margin-inline: var(--fs-space-1);
+  background: var(--fs-border);
+}
+
+.fs-mail__subject {
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+.fs-mail__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-1) var(--fs-space-3);
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-2);
+}
+
+.fs-mail__addr,
+.fs-mail__to,
+.fs-mail__when {
+  color: var(--fs-text-3);
+}
+
+.fs-mail__atts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-2);
+}
+
+.fs-mail__att {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-pill);
+  color: var(--fs-text-1);
+  font-size: var(--fs-label-size);
+  text-decoration: none;
+}
+
+.fs-mail__att:hover {
+  border-color: var(--fs-brand);
+}
+
+.fs-mail__att-size {
+  color: var(--fs-text-3);
+}
+
+.fs-mail__frame {
+  inline-size: 100%;
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  background: #fff;
+}
+
+/* ── Compose ── */
+
+.fs-mail-compose {
+  display: grid;
+  gap: var(--fs-space-2);
+}
+
+.fs-mail-compose__row {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--fs-space-2);
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-3);
+}
+
+.fs-mail__link {
+  border: 0;
+  background: none;
+  color: var(--fs-brand);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.fs-mail-compose__body {
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-1);
+  color: var(--fs-text-1);
+  font: inherit;
+  padding: var(--fs-space-2);
+  resize: vertical;
+  min-block-size: 200px;
+}
+
+.fs-mail-compose__foot {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  inline-size: 100%;
+}
+
+
+@media (max-width: 1279px) {
+  .fs-mail__layout {
+    grid-template-columns: 150px minmax(0, 1fr);
+  }
+
+  .fs-mail__read {
+    grid-column: 1 / -1;
+  }
+
+  .fs-mail[data-reading] .fs-mail__side,
+  .fs-mail[data-reading] .fs-mail__list {
+    display: none;
+  }
+}
+
+@media (max-width: 767px) {
+  .fs-mail__layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .fs-mail__folders {
+    grid-auto-flow: column;
+    overflow-x: auto;
+  }
+}

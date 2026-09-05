@@ -12,3 +12,4 @@ export {
   type ExecutionTraceProps,
   type TraceStep,
 } from './ExecutionTrace';
+export { Toast } from './Toast';

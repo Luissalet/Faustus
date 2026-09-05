@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
-import { Button, Dialog, EmptyState, IconButton, QuickMenu, Skeleton } from '../components';
+import { Button, Dialog, EmptyState, IconButton, QuickMenu, Skeleton, Toast } from '../components';
 import {
   advance,
   createNote,
@@ -909,7 +909,7 @@ export function NotesScreen() {
       )}
 
       {(undo || notice) && (
-        <div className="fs-notes__toast" role="status">
+        <Toast>
           <span>{undo ? undo.label : notice}</span>
           {undo && (
             <button type="button" className="fs-btn" data-size="sm" data-variant="secondary" onClick={() => void runUndo()}>
@@ -917,7 +917,7 @@ export function NotesScreen() {
             </button>
           )}
           <IconButton icon={X} label="Cerrar" size="sm" onClick={() => { setUndo(null); setNotice(null); }} />
-        </div>
+        </Toast>
       )}
       {!archivedView && (
         <span className="fs-notes__hint">

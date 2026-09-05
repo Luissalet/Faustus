@@ -330,3 +330,25 @@ su área y baja el baseline. Ningún módulo Studio nuevo la aumenta.
     modelo de utilidad es el mismo 9B). El botón muestra el giro y el
     formulario de respaldo salta si falla, pero la espera es larga; un
     modelo de utilidad pequeño en Ajustes lo arregla sin tocar código.
+
+## Añadido tras el lote M (05-09-2026, Correo)
+
+56. **`[!]` Un aviso `position: fixed` dentro de una pantalla no es fijo.**
+    `.fs-route` y cada hijo de `.fs-screen` llevan la animación de entrada
+    (transform), así que un elemento fijo dentro se coloca respecto a ese
+    ancestro y se pinta debajo del overlay de un diálogo Radix. Regla: los
+    avisos van por `components/Toast` (portal al `#fs-overlay-root`); no
+    escribir más `.fs-x__toast` por pantalla.
+57. **`[~]` Correo: lo que sigue en la anterior.** Cuentas (IMAP/SMTP,
+    Google OAuth, prueba), resumen, traducción y respuesta con IA, estilo
+    de escritura, programar envíos y aprobaciones (`/schedule`, `/pending`),
+    adjuntar ficheros al redactar (`/compose-upload`), unsubscribe, reglas y
+    etiquetas, contactos, recordatorios desde un correo, estado de urgencia,
+    imágenes en línea (`/inline-image`), ver adjunto como documento.
+    `emailLibrary.js` son 8 800 líneas: segunda pasada con islas si hace
+    falta (DECISIONES §10).
+58. **`[~]` Verificado solo con fixtures.** El 7001 no tiene cuenta de
+    correo; `DATA_DIR/fixture_email_messages.json` (fuera del repo, en
+    `odysseus-dev-data`) activa el modo fixture del servidor. Antes de
+    retirar el correo de la anterior hay que probar con una cuenta IMAP real
+    (paginación, carpetas, mover, adjuntos, HTML de verdad).

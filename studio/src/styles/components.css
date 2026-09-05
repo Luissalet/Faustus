@@ -710,3 +710,25 @@
   outline: 2px solid var(--fs-brand);
   outline-offset: 1px;
 }
+
+/* Toast: a short status line, portalled into the overlay root (components/Toast.tsx). */
+
+.fs-toast {
+  position: fixed;
+  inset-block-end: var(--fs-space-5);
+  inset-inline-start: 50%;
+  translate: -50% 0;
+  z-index: 70;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fs-space-3);
+  max-inline-size: min(92vw, 560px);
+  padding: var(--fs-space-2) var(--fs-space-4);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-surface-2);
+  color: var(--fs-text-1);
+  font-size: var(--fs-label-size);
+  box-shadow: var(--fs-shadow-overlay);
+  animation: fs-rise var(--fs-duration-enter) var(--fs-ease-out) both;
+}

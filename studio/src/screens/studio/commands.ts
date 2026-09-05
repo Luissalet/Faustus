@@ -55,7 +55,7 @@ export const COMMANDS: SlashCommand[] = [
   { name: 'activity', usage: '/activity', help: 'Ir a Actividad.', route: '/activity' },
   { name: 'notes', usage: '/notes', help: 'Ir a Notas.', route: '/notes' },
   { name: 'calendar', usage: '/calendar', help: 'Ir al Calendario.', route: '/calendar' },
-  { name: 'email', usage: '/email', help: 'Correo (interfaz anterior).', route: '/email', legacy: true },
+  { name: 'email', usage: '/email', help: 'Ir al Correo.', route: '/email' },
   { name: 'brain', usage: '/brain', help: 'Ir a la Memoria.', route: '/memory' },
   { name: 'research', usage: '/research tema', help: 'Deep research (interfaz anterior).', route: '/?shell=legacy', legacy: true },
   { name: 'compare', usage: '/compare', help: 'Comparar modelos (interfaz anterior).', route: '/?shell=legacy', legacy: true },

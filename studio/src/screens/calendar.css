@@ -552,20 +552,6 @@
   accent-color: var(--fs-brand);
 }
 
-.fs-cal__toast {
-  position: fixed;
-  inset-block-end: var(--fs-space-5);
-  inset-inline-start: 50%;
-  translate: -50% 0;
-  z-index: 70;
-  padding: var(--fs-space-2) var(--fs-space-4);
-  border: 1px solid var(--fs-border);
-  border-radius: var(--fs-radius-pill);
-  background: var(--fs-surface-2);
-  color: var(--fs-text-1);
-  box-shadow: var(--fs-shadow-overlay);
-  animation: fs-rise var(--fs-duration-enter) var(--fs-ease-out) both;
-}
 
 @media (max-width: 1023px) {
   .fs-cal__month {

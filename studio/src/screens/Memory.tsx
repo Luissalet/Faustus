@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router';
-import { Button, Dialog, EmptyState, IconButton, Skeleton } from '../components';
+import { Button, Dialog, EmptyState, IconButton, Skeleton, Toast } from '../components';
 import { listSessions, type ChatSession } from '../adapters/chat';
 import { relativeTime } from '../adapters/home';
 import {
@@ -876,9 +876,9 @@ export function MemoryScreen() {
       )}
 
       {notice && (
-        <div className="fs-memory__toast" role="status">
+        <Toast>
           <Check size={12} aria-hidden="true" /> {notice}
-        </div>
+        </Toast>
       )}
     </div>
   );

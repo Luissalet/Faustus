@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
-import { Button, Dialog, EmptyState, IconButton, Skeleton } from '../components';
+import { Button, Dialog, EmptyState, IconButton, Skeleton, Toast } from '../components';
 import {
   addDays,
   createCalendar,
@@ -865,9 +865,7 @@ export function CalendarScreen() {
       {calsOpen && calendars && <CalendarsDialog calendars={calendars} onClose={() => setCalsOpen(false)} onChanged={refresh} say={say} />}
 
       {notice && (
-        <div className="fs-cal__toast" role="status">
-          {notice}
-        </div>
+        <Toast>{notice}</Toast>
       )}
     </div>
   );
