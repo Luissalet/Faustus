@@ -639,6 +639,60 @@ vive en `PENDIENTES.md`.
       misma razón por la que la respuesta de un par no entra como `role="user"` (`FAUSTUS.md` §56.2).
       Depende de la Fase 6 para cualquier cosa que no sea el micrófono local.
 
+## State Mirror y Opportunity Engine — lo que queda (P1)
+
+El plan 5 de 11 (`inspiration/PLAN_STATE_MIRROR_FAUSTUS.md`) está construido hasta la **fase 3**:
+contratos y freshness (fase 0), estado interno con once adaptadores, persistencia, materialización,
+consultas y cursor de cambios (fase 1), máquina local —git, servicios, modelos, hardware,
+conexiones— (fase 2), y reconciliación con conflictos y proyecciones (fase 3). Está en
+`FAUSTUS.md` §57; lo construido que no cuadra vive en `PENDIENTES.md`.
+
+### Fases 5 a 7: el Opportunity Engine no existe (P1)
+
+Nada de `src/opportunity_engine/` está escrito, y el plan es explícito en que debe llegar **después**
+del read model y empezar **en sombra**. Lo que falta, en el orden en que el plan lo pide:
+
+- [ ] **Detectores deterministas en modo sombra.** Los diez del §11.3: ejecución terminada con
+      siguiente paso conocido, ejecución bloqueada por aprobación, objetivo cuyo bloqueo acaba de
+      resolverse, cambios sin verificar, servicio necesario recuperado, artefacto maestro cambiado
+      con derivados obsoletos, recurso escaso ocupado sin trabajo, job externo sin reconciliar,
+      dependencia degradada, mantenimiento seguro pendiente. **Registrar qué habría propuesto sin
+      emitir nada**, y medir duplicación y falsos positivos antes de que nadie vea una propuesta.
+      Seis de los diez ya son consultables: `queries.running_work`, `blocked_work`,
+      `pending_approvals` y `unverified_changes` responden hoy.
+- [ ] **Presupuesto de atención.** Máximo por ventana, por proyecto y por tipo; horario silencioso;
+      prioridad mínima; enfriamiento tras descartar; agrupación. Sin esto, un detector correcto es
+      una fuente de ruido y se acaba silenciando entero.
+- [ ] **Dedupe por revisión y evidencia, y feedback acotado** (`accepted`, `dismissed`, `snoozed`,
+      `muted`). El §12 dice la regla difícil: *la ausencia de respuesta es una señal débil, no un
+      rechazo*, y nunca se aprende a ocultar una alerta obligatoria por molesta.
+- [ ] **Puente a la ejecución.** Aceptar una oportunidad **no ejecuta su texto**: revalida la
+      revisión de estado, resuelve la capacidad por id, simula, crea el run por el ejecutor común,
+      pide las aprobaciones y cierra con evidencia. Si el estado cambió desde la propuesta, se
+      recalcula o caduca.
+
+### Del propio State Mirror, lo que las fases cerradas no cierran (P1)
+
+- [ ] **`GET /api/state/project` no existe, y Context Engine lo necesita.** `projection.project()`
+      está escrito, probado y sin ruta: el §17 no lista ninguna, así que no se escribió. Es la
+      pieza que convierte este subsistema en una fuente de contexto (`SOURCE_TYPES` del Context
+      Engine ya reserva `"state"` para ella, y `ranking.py` ya sabe que una proyección de estado
+      vale medio día). Falta la ruta y el `ContextSource` que la consuma.
+- [ ] **El barrido no corre solo.** `agent_state_mirror_sweep_seconds` existe como ajuste y nada lo
+      lee: hoy un barrido ocurre porque alguien pulsa «Reconcile» o llama a `/reconcile`. Falta
+      engancharlo al supervisor de tareas (`src/task_supervisor.py`), con la condición del §2.4 —
+      polling adaptativo, ceder bajo carga, y no mantener despiertos GPU ni discos.
+- [ ] **`replay()`**: reconstruir el estado materializado desde el log append-only, o declarar
+      incompatibilidad de schema. Es un criterio de aceptación del §26 y lo que haría del schema
+      versionado una garantía en vez de una convención.
+- [ ] **Resolver un conflicto.** Hoy sólo se puede abandonar. Ver `PENDIENTES.md`: hace falta quien
+      decida, y `next_check` ya nombra qué lo zanjaría.
+- [ ] **Namespaces aislados de verdad.** `branch:`, `simulation:` y `voice:` están en el contrato,
+      el reductor se niega a mezclarlos y **nada escribe todavía en ellos**. Los llenarán Branching
+      Futures (plan 10) y la voz (plan 11); la frontera ya está puesta para cuando lleguen.
+- [ ] **Fuentes remotas (fase 7).** Webhooks firmados, cursores y reconciliación remota. Ninguna
+      fuente de este build sale de la máquina, que es la decisión correcta para empezar.
+
 ## Descartado a propósito (y por qué)
 
 - Marketplace público de plugins **antes** de tener firma, permisos y revocación.

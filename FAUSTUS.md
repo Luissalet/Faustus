@@ -4328,5 +4328,149 @@ no aquí); el consumo que informa `/usage` se pone a cero al reiniciar, porque l
 scheduler viven en el proceso; y el único camino a un cierre completo sigue siendo pedir una
 síntesis, que escribe en el flujo de auditoría — falta un `GET /{id}/summary` de sólo lectura.
 
+## 57. State Mirror: qué es verdad ahora mismo, y desde cuándo (06-09-2026)
+
+Faustus sabía muchas cosas y ninguna de ellas era *ahora*. El Memory Engine responde qué aprendimos;
+el Context Engine, qué necesita saber este agente; Objectives, qué queremos conseguir; Runs y
+Dispatch, qué estamos ejecutando; `prove`, qué se puede demostrar. Ninguna responde **cuál es el
+estado actual observable**, y esa es justo la pregunta de la que dependen las siete cosas que quedan
+por construir: el Delta Engine compara dos estados, Greedy consulta el progreso, Enséñame toma
+instantáneas antes y después, el sistema inmune publica veredictos de salud, Branching Futures
+necesita un estado base aislado y la voz consulta lo mismo que su equivalente escrito.
+
+Este plan (`inspiration/PLAN_STATE_MIRROR_FAUSTUS.md`, 5 de 11) construye ese **read model**:
+observaciones inmutables entran desde fuentes autorizadas, se validan por identidad, propiedad y
+tiempo, se reducen a un estado materializado, y salen como consultas y eventos de cambio. No es otra
+memoria y no es un knowledge graph. **Nunca es la fuente canónica de nada de lo que refleja**: git,
+el sistema de ficheros, el proveedor, el planificador y el Artifact Store siguen siendo los dueños,
+y antes de cualquier efecto que importe se revalida contra ellos.
+
+### 57.1 Las cinco reglas que hacen que esto no sea un rumor con buena postura
+
+**Todo campo material lleva tiempo, fuente y epistemología.** `FieldState` no permite guardar un
+valor sin las otras tres cosas — no es una convención, es que no hay constructor que lo haga. Un
+número sin `observed_at` no es estado operativo.
+
+**Una inferencia nunca sobrescribe una observación en silencio.** `EPISTEMICS` está **ordenado**
+(`observed > reported > derived > inferred > unknown`) y el reductor consulta ese orden antes de
+cada escritura. Un modelo que dice «el servicio está arriba» no desplaza a una sonda que hace treinta
+segundos no consiguió llegar. El orden de la tupla **es** el contrato: reordenarla cambia lo que el
+sistema cree.
+
+**Todo estado envejece, y `unknown` es una respuesta.** `freshness.rate()` toma el momento de la
+observación, el TTL del campo y *ahora*, y contesta una de cuatro palabras. Un timestamp ilegible da
+`unknown`, no `stale` y jamás `fresh`: «no hemos mirado nunca» y «miramos y estaba vacío» son hechos
+distintos y sólo uno de los dos es seguro. La misma lección que ya pagó
+`context_engine.store.age_seconds`, cuyo docstring lo dice: un campo corrupto que se lee como edad
+cero es un aprobado permanente.
+
+**El TTL es propiedad del CAMPO, no de la entidad.** `service_state.health` no vale nada al minuto;
+`service_state.capabilities` aguanta una hora. Calificar los dos por la edad de la entidad
+significaría o refrescar la lista de capacidades cada quince segundos o presentar un servicio muerto
+como disponible. `TTL_SECONDS` tiene **49 políticas** con `<schema>.<field>` como clave.
+
+**Los namespaces no se mezclan.** Una observación de `branch:b7` no puede tocar el estado de `real`.
+Es una línea en el reductor y es todo el §1.6: sin ella, una hipótesis de Branching Futures se
+convierte en un hecho sobre la máquina.
+
+### 57.2 Lo construido
+
+`src/state_mirror/` — **24 ficheros, 8.592 líneas**. `contracts.py` (1.035) con las siete formas
+congeladas, los vocabularios cerrados y los **once schemas versionados** que suman 84 campos;
+`persistence.py` (917) con su propio SQLite bajo `DATA_DIR` —y aquí la razón es el **ritmo de
+escritura**, no la duración del bloqueo: las sondas anexan varias observaciones por segundo—;
+`queries.py` (710), `reconcile.py` (595), `service.py` (539), `events.py` (499), `reducers.py` (418),
+`projection.py` (370), `ingest.py` (362), `freshness.py` (336), y `adapters/` con **once fuentes**.
+
+Tres invariantes viven en SQLite y no en Python, porque una regla que se aplica en código de
+aplicación es una regla por la que dos procesos pueden colarse a la vez: un estado materializado por
+entidad, **una fila por identidad de observación** (que es lo que hace que un evento reproducido, un
+webhook reintentado y una suscripción que reconecta se colapsen en una sola observación en vez de
+tres), y una relación viva por `(from, kind, to)`.
+
+Los once adaptadores no poseen ningún dato y no abren ninguna base: preguntan al subsistema que ya es
+dueño de la respuesta. Seis leen registros internos —`runs` unifica **cuatro registros de ejecución
+distintos** (`dispatch`, `agent_runs`, `media_runs`, `bg_jobs`) que hasta hoy nadie había unificado,
+con el id prefijado por motor porque dos registros que acuñan ids independientemente y colisionan
+fundirían dos ejecuciones en una entidad—, y cinco leen la máquina: git y el árbol de trabajo, la
+salud de los backends, los modelos cargados, GPU/CPU/RAM/disco, y las conexiones configuradas.
+
+`device_state.v1` es el **único** schema de instantánea completa, y eso es una licencia para
+**borrar** un campo. Se concede sólo cuando la fuente ve todo de una vez: un `collect_usage()` ve
+todas las tarjetas; una sonda de salud que sólo alcanzó un endpoint no puede declarar muertos a los
+demás.
+
+La API es `routes/state_mirror_routes.py` (**646 líneas, 10 rutas** bajo `/api/state`). En Studio,
+`adapters/stateMirror.ts` (976), `screens/StateMirror.tsx` (619) y su CSS (250), más
+`checks/stateMirror.check.mjs` (388). La bandera `agent_state_mirror` (por defecto **apagada**)
+frena los barridos y los refrescos —lo que le cuesta a la máquina— y **ninguna lectura**: apagarla es
+una decisión sobre qué puede ejecutarse, nunca una instrucción de ocultar lo ya observado.
+
+### 57.3 La pantalla contesta en el orden en que se pregunta
+
+`/state` responde, por ese orden: qué está corriendo ahora; qué espera por mí; qué está caducado o
+nunca se observó; qué está en conflicto; y qué tiene la máquina. Cada valor enseña su frescura y, en
+el detalle, **cuándo** se observó y **con qué fuente**. La regla que sostiene la pantalla es una
+sola: **un valor caducado no se pinta nunca como si fuera actual** — tono distinto, tachado, y la
+palabra. Una tarjeta se tiñe por su campo **peor**, no por el mejor: una fila vale lo que valga lo
+menos fiable que hay en ella, y una tarjeta verde con un número rancio dentro es exactamente la
+mentira que esta pantalla existe para impedir. Toda la derivación vive en `stateMirror.ts` y ninguna
+en un componente, que es lo que permite ejercitarla sin navegador.
+
+### 57.4 Tres fallos que sólo aparecieron al mirar
+
+`tests/test_state_mirror_wiring.py` (23 pruebas) se escribió **antes** del merge, con el único
+trabajo de preguntar si las piezas se alcanzan entre sí. Aun así, tres cosas salieron de abrir la
+pantalla y leer la respuesta real de la máquina, y las tres son de la misma familia.
+
+**Cinco adaptadores escritos, probados y sin cablear.** `workspace`, `services`, `models`, `hardware`
+y `connections` importaban, pasaban sus pruebas, y no estaban en `ADAPTER_FACTORIES` — la única
+tupla que hace que un adaptador exista. Eran ficheros. La prueba que ahora lo impide recorre el
+paquete con `pkgutil` en vez de leer una lista, porque una lista es justo lo que estaba mal.
+
+**Un barrido impecable que no observaba nada.** Los once adaptadores corrían, cero fallos, y
+`workspace` y `objectives` devolvían cero. Los dos funcionaban. A los dos se les entregaba un
+`Scope` sin carpeta y sin proyecto, que es una pregunta que no pueden contestar — y desde fuera «no
+me dijeron dónde mirar» y «miré y no hay nada» son la misma lista vacía. La resolución de la carpeta
+pertenece al barrido, que es la única capa que sabe quién pregunta.
+
+Y el arreglo de eso **se equivocó dos veces seguidas, de la misma manera**: primero llamó a
+`store.list_projects()`, un método que no ha existido nunca, protegido por un `if callable(...)` que
+convirtió el error en silencio; y luego, ya con `store.list()`, leyó la clave `folder` —que es el
+**nombre** del proyecto— en vez de `workspace`, que es la ruta. El síntoma de la segunda fue un
+`workspace_available: false` perfectamente honesto sobre un repositorio que estaba ahí mismo. Las dos
+versiones pasaban su prueba, porque el doble de la prueba tenía las mismas claves inventadas que el
+código; ahora el doble **hereda de `ProjectStore`**. La lección, ya en el código: **un `getattr` con
+respaldo sobre un método que debería existir no es robustez, es una forma de no enterarse.**
+
+**Una tarjeta que se contradecía a sí misma.** Pintaba «nothing has been observed about this yet»
+justo encima de «1 field(s)». Las dos frases estaban bien calculadas y no pueden ser las dos verdad:
+`decidingField` devuelve nulo cuando el campo decisorio del schema no se ha observado, que no es lo
+mismo que una entidad sin campos. En una pantalla cuyo propósito entero es que le crean sobre qué se
+sabe y qué no, eso no es un detalle. Y al lado, el bug de flexbox de siempre: el `text-overflow:
+ellipsis` estaba escrito, era correcto y no hacía nada, porque un hijo flex no encoge por debajo de
+su contenido sin `min-width: 0`.
+
+### 57.5 Lo que no se pudo observar, dicho en voz alta
+
+Prefiero cinco adaptadores honestos con huecos que cinco que se inventen números. Los huecos están en
+`PENDIENTES.md` uno a uno; los de fondo son tres. `run_state.v1` está diseñado como si sólo existiera
+`dispatch`: `phase`, `progress`, `worker_states`, `last_heartbeat` y `proof_status` no tienen
+equivalente en los otros tres registros, y `budget_remaining` no lo tiene en ninguno.
+`approval_pending` es inalcanzable por una razón interesante: `ApprovalRow` guarda un `run_id`
+desnudo, sin motor, y los ids de este subsistema son `<motor>:<run_id>`, así que una aprobación no
+puede nombrar la ejecución a la que pertenece. Y `connection_state` sólo publica `configured`: una
+credencial guardada no es una credencial aceptada, nada en un barrido abre un socket, y un token
+revocado se ve exactamente igual que uno vivo.
+
+**Verificado**: la suite entera da `23 failed, 11.592 passed, 83 skipped, 6 errors` en 10:34, y los
+siete de más sobre la línea base conocida (16) son los flakes de contención de `-n 6` que el propio
+`PENDIENTES.md` ya nombra: `test_disk_ballast` y `test_dispatch_external_runner` pasan los 96 en
+serie. 216 pruebas propias en verde; `tsc --noEmit` y `build-studio` limpios;
+`scripts/state_mirror_openapi_check.py` publica las diez rutas en el OpenAPI de la app real; y en el
+navegador contra el 7001, un barrido real: **once adaptadores, cero fallos, 124 observaciones**, la
+pantalla pintando frescura por campo y el proyecto `LocalAI` apareciendo con `workspace_available:
+true` en cuanto el barrido supo dónde mirar.
+
 ## Cómo mantener este documento
 Cada bloque de trabajo añade una sección (fecha, qué, por qué, ficheros, cómo se verificó, cifras) y actualiza las cifras de cabecera (`git log --oneline c9dd68d8..HEAD | wc -l`, `git diff --stat c9dd68d8..HEAD`). Los commits del fork llevan mensajes largos que explican el porqué: `git log c9dd68d8..HEAD` es la fuente detallada.

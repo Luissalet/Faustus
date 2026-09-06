@@ -72,6 +72,18 @@ EVENT_NAMES = (
     "council_claim_conflicted", "council_claim_handoff_refused",
     "council_claim_transferred", "council_objection_resolved",
     "council_decision_superseded",
+    # State Mirror. Underscored for the same reason as the two blocks above:
+    # it is the spelling the context cache and the council stream already
+    # route on, and the dotted `state.changed` the plan writes in prose would
+    # be a third dialect in a tuple that already carries two.
+    # `src/state_mirror/events.py::STATE_EVENTS` must stay a SUBSET of this
+    # tuple -- a name declared there and missing here would reach a page and
+    # then be refused by the envelope an audit replays it through.
+    "state_entity_discovered", "state_observation_received", "state_changed",
+    "state_became_stale", "state_conflict_detected", "state_conflict_resolved",
+    "state_entity_retired", "state_reconcile_started",
+    "state_reconcile_completed", "state_source_degraded",
+    "state_source_recovered", "state_error",
 )
 
 _REDACTED = "<redacted>"

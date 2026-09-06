@@ -351,6 +351,23 @@ DEFAULT_SETTINGS = {
     # recorded keeps its transcript, ledger, decisions and evidence — turning
     # the feature off is a decision about what may RUN, never a delete.
     "agent_council": False,
+    # State Mirror (src/state_mirror/): the read model of what is true right
+    # now -- one row per project, service, model, run and artifact, and every
+    # field carrying WHEN it was observed, by WHICH source and how strongly it
+    # is known. Default OFF, like the council above, and for the neighbouring
+    # reason: the sweep re-probes this machine on a timer and a refresh probes
+    # it on demand, and work nobody asked for at that moment is a cost the
+    # operator should switch on knowingly. Off = no sweep runs and no refresh
+    # is performed, so nothing probes the machine, and /api/state/refresh and
+    # /reconcile refuse and say so; every READ keeps answering, because
+    # turning the mirror off is a decision about what may COST the machine and
+    # never an instruction to hide what was already observed. A value shown
+    # with its age on it is worth more than a blank panel.
+    "agent_state_mirror": False,
+    # How often that sweep looks for fields aged past their TTL and observes
+    # them again. Only read while the switch above is on. A longer interval
+    # means a service that died is noticed later, not that it is noticed less.
+    "agent_state_mirror_sweep_seconds": 30,
     # Provenance graph (src/provenance_graph.py): the 2D audit view over the
     # memory and the workspace, built ONLY from declared edges — a dependency
     # the user wrote, an evidence span, a checkpoint diff, a citation that
