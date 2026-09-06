@@ -150,6 +150,9 @@ class SessionManager:
             history=[],
             owner=getattr(db_session, "owner", None),
             is_important=getattr(db_session, "is_important", False) or False,
+            folder=getattr(db_session, "folder", None),
+            mode=getattr(db_session, "mode", None),
+            project_id=getattr(db_session, "project_id", None),
         )
         session.message_count = getattr(db_session, "message_count", 0) or 0
         return session
@@ -208,6 +211,9 @@ class SessionManager:
             history=history,
             owner=getattr(db_session, 'owner', None),
             is_important=getattr(db_session, 'is_important', False) or False,
+            folder=getattr(db_session, 'folder', None),
+            mode=getattr(db_session, 'mode', None),
+            project_id=getattr(db_session, 'project_id', None),
         )
 
         # The rows just loaded are the whole transcript, so they — not the
@@ -485,6 +491,14 @@ class SessionManager:
             session.archived = db_session.archived
             session.owner = getattr(db_session, "owner", None)
             session.is_important = getattr(db_session, "is_important", False) or False
+            # Organisation and project identity are refreshed here too: they are
+            # real fields on the cached object now, and both are written by
+            # paths that do not go through this manager (the folder by
+            # PATCH /session/{sid}, project_id by the lazy backfill in
+            # services.projects), so a cached copy would otherwise go stale.
+            session.folder = getattr(db_session, "folder", None)
+            session.mode = getattr(db_session, "mode", None)
+            session.project_id = getattr(db_session, "project_id", None)
             session.message_count = (
                 db.query(DbChatMessage)
                 .filter(DbChatMessage.session_id == session_id)
@@ -545,9 +559,22 @@ class SessionManager:
         endpoint_url: str,
         model: str,
         rag: bool = False,
-        owner: str = None
+        owner: str = None,
+        folder: Optional[str] = None,
+        mode: Optional[str] = None,
+        project_id: Optional[str] = None,
     ) -> Session:
-        """Create a new session and save to database."""
+        """Create a new session and save to database.
+
+        ``folder``, ``mode`` and ``project_id`` are persisted on the row here
+        rather than left for the caller to set afterwards. Callers used to do
+        the latter — ``subagent_tools`` assigns ``child.folder`` /
+        ``child.mode`` on the returned object inside a try/except — and because
+        the dataclass silently accepted unknown attributes, those assignments
+        wrote to nothing durable: the child's row kept folder NULL, and with a
+        NULL folder the chat had no project at all. New parameters are keyword-
+        friendly and last with defaults so no existing call site changes.
+        """
         db = SessionLocal()
         try:
             db_session = DbSession(
@@ -558,6 +585,9 @@ class SessionManager:
                 rag=rag,
                 headers={},
                 owner=owner,
+                folder=folder or None,
+                mode=mode or None,
+                project_id=project_id or None,
                 created_at=datetime.now(timezone.utc),
                 updated_at=datetime.now(timezone.utc)
             )
@@ -572,6 +602,9 @@ class SessionManager:
                 rag=rag,
                 headers={},
                 owner=owner,
+                folder=folder or None,
+                mode=mode or None,
+                project_id=project_id or None,
             )
 
             self.sessions[session_id] = session
@@ -631,6 +664,42 @@ class SessionManager:
     # ------------------------------------------------------------------
     # Session updates
     # ------------------------------------------------------------------
+
+    def set_session_project(
+        self, session_id: str, project_id: Optional[str], *, owner: Optional[str] = None
+    ) -> bool:
+        """Bind a chat to a project (or unbind it with ``project_id=None``).
+
+        Changing project membership is a deliberate act and gets its own entry
+        point, separate from renaming or moving the chat: moving a chat between
+        sidebar folders must no longer drag its project along with it. Returns
+        False — never raises — when the row is absent or belongs to somebody
+        else, so a caller cannot use it to discover that a session exists.
+
+        ``owner=None`` means "unscoped caller" (single-user / internal), matching
+        how the rest of the codebase treats the nullable owner column.
+        """
+        db = SessionLocal()
+        try:
+            row = db.query(DbSession).filter(DbSession.id == session_id).first()
+            if row is None:
+                return False
+            row_owner = getattr(row, "owner", None)
+            if owner is not None and row_owner is not None and row_owner != owner:
+                return False
+            row.project_id = project_id or None
+            row.updated_at = datetime.now(timezone.utc)
+            db.commit()
+            cached = self.sessions.get(session_id)
+            if cached is not None:
+                cached.project_id = project_id or None
+            return True
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Error setting project on session {session_id}: {e}")
+            return False
+        finally:
+            db.close()
 
     def update_session_name(self, session_id: str, name: str):
         """Update session name."""

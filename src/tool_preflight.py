@@ -113,11 +113,17 @@ def _coerce_context(ctx) -> PreflightContext:
 # this rule fires, the tool WOULD have returned that error.
 #
 # It is also the same call the turn route already makes in the other
-# direction — `routes/chat_routes.py` force-includes these two tools when
+# direction — `routes/chat_routes.py` force-includes these tools when
 # `project_for_session` finds a project. Add-when-there-is-one and
 # remove-when-there-is-not now agree by construction, because both ask the one
 # function; they cannot drift into forcing a tool the preflight then removes.
-PROJECT_TOOLS: FrozenSet[str] = frozenset({"project_context", "search_project_chats"})
+PROJECT_TOOLS: FrozenSet[str] = frozenset({
+    "project_context", "search_project_chats",
+    # Same opening two lines in its own dispatch branch: no project, no tool.
+    # Offering a model a way to attach a source to a project that does not
+    # exist buys one wasted round and one confusing error.
+    "manage_project_context",
+})
 
 PROJECT_REASON = "this chat is not attached to a project"
 

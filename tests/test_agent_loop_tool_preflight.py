@@ -610,10 +610,13 @@ def test_a_context_can_be_a_plain_mapping_or_an_object():
         as_ctx = preflight.unusable_tools(
             preflight.PreflightContext(session_id="s", owner="admin")
         )
+    # Every project tool, whichever they are: the set grew when the mutating
+    # `manage_project_context` joined it, and pinning the names by hand here
+    # only re-states PROJECT_TOOLS in a second place that can drift from it.
     assert as_dict == as_ctx == {
-        "project_context": preflight.PROJECT_REASON,
-        "search_project_chats": preflight.PROJECT_REASON,
+        name: preflight.PROJECT_REASON for name in preflight.PROJECT_TOOLS
     }
+    assert {"project_context", "search_project_chats"} <= set(as_dict)
 
 
 def test_every_reason_reads_as_a_sentence_the_model_can_act_on():

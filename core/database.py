@@ -194,6 +194,16 @@ class Session(TimestampMixin, Base):
 
     # Organization
     folder = Column(String, nullable=True, default=None)
+
+    # Stable project identity. The folder above organises chats in the sidebar
+    # and the user renames it freely; until now it was ALSO how a chat found
+    # its project (ProjectStore.get_by_folder), so a rename silently broke the
+    # link and moving a chat silently changed its project. This column is the
+    # identity, the folder is only organisation. No foreign key: projects live
+    # in data/projects.json, so this is a logical reference validated by
+    # ProjectStore, and a dangling id degrades to "no project" rather than
+    # blocking a write.
+    project_id = Column(String, nullable=True, index=True)
     
     # Headers stored as JSON
     headers = Column(JSON, default=dict)
@@ -246,6 +256,7 @@ class Session(TimestampMixin, Base):
             'message_count': self.message_count,
             'is_important': self.is_important,
             'folder': self.folder,
+            'project_id': self.project_id,
             'total_input_tokens': self.total_input_tokens or 0,
             'total_output_tokens': self.total_output_tokens or 0,
             'crew_member_id': self.crew_member_id,
@@ -1346,6 +1357,39 @@ def _migrate_add_document_archived_column():
             logging.getLogger(__name__).info("Migrated: added 'archived' to documents")
     except Exception as e:
         logging.getLogger(__name__).warning(f"documents.archived migration failed: {e}")
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def _migrate_add_session_project_id_column():
+    """Add `project_id` to sessions (stable chat-to-project link). Guarded + idempotent.
+
+    Purely additive: existing rows keep NULL and go on resolving their project
+    through `sessions.folder`, so nothing changes for them until something
+    backfills the id. No backfill happens here — a mass rewrite at startup
+    would guess wrong for every folder claimed by two projects, and startup is
+    the worst place to discover that. `project_for_session` backfills lazily,
+    one session at a time, only when the folder match is unambiguous.
+    """
+    import sqlite3
+    db_path = DATABASE_URL.replace("sqlite:///", "")
+    if not os.path.exists(db_path):
+        return
+    conn = None
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.execute("PRAGMA table_info(sessions)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if "project_id" not in columns:
+            conn.execute("ALTER TABLE sessions ADD COLUMN project_id TEXT")
+            conn.execute("CREATE INDEX IF NOT EXISTS ix_sessions_project_id ON sessions(project_id)")
+            conn.commit()
+            logging.getLogger(__name__).info("Migrated: added 'project_id' to sessions")
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"sessions.project_id migration failed: {e}")
     finally:
         try:
             conn.close()
@@ -2801,6 +2845,7 @@ def init_db():
     _migrate_backfill_task_folders()
     _migrate_create_artifacts_table()
     _migrate_create_artifact_identity_tables()
+    _migrate_add_session_project_id_column()
 
 
 def _migrate_backfill_task_folders():

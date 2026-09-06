@@ -270,6 +270,9 @@ _TOOL_NAME_MAP = {
     "search_project_chats": "search_project_chats",
     "project_chats": "search_project_chats",
     "project_context": "project_context",
+    "manage_project_context": "manage_project_context",
+    "project_context_manage": "manage_project_context",
+    "attach_to_project": "manage_project_context",
     "chat_with_model": "chat_with_model",
     "ask_model": "chat_with_model",
     "chat_model": "chat_with_model",
@@ -689,7 +692,7 @@ def _raw_openai_tool_call_to_block(value) -> Optional[ToolBlock]:
         content = "\n".join(blocks)
     elif tool_type in ("search_chats", "search_project_chats"):
         content = args.get("query", "")
-    elif tool_type == "project_context":
+    elif tool_type in ("project_context", "manage_project_context"):
         content = json.dumps(args)
     elif tool_type == "chat_with_model":
         content = args.get("model", "") + "\n" + args.get("message", "")

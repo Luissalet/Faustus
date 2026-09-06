@@ -104,6 +104,7 @@ _COMMON_TOOL_NAMES = {
     "search_chats",
     "search_project_chats",
     "project_context",
+    "manage_project_context",
     "search_hf_models",
     "send_email",
     "send_to_session",

@@ -212,6 +212,20 @@ _register(
     result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
 )
 _register(
+    # manage_project_context MUTATES: it writes typed link records into the
+    # project's own registry (data/projects.json), so it is a private write and
+    # NOT the READ_WORKSPACE class its read-only sibling `project_context`
+    # sits in. It is not WRITE_WORKSPACE either — it never writes free-form
+    # file content, and never touches the workspace at all; attaching a source
+    # is membership, not permission, and a read_only link widens no work root.
+    # The result is EXTERNAL_UNTRUSTED because a link's label and summary come
+    # from the source (a document title, a file basename), never from Faustus:
+    # text that arrived from a document is data on the way back out too.
+    {"manage_project_context"},
+    ToolEffect.WRITE_PRIVATE,
+    result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
+)
+_register(
     {"edit_document", "update_document"},
     ToolEffect.WRITE_PRIVATE,
     # These tools can echo stored document content that was not present in

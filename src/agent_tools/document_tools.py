@@ -55,6 +55,49 @@ def clear_active_document(doc_id: Optional[str] = None) -> bool:
     return False
 
 
+def _note_turn_reference(ctx: Optional[Dict], doc_id: Optional[str], *, title: str = "",
+                         tool: str = "", relation: str = "created") -> None:
+    """Record the document this tool just made or touched, per (owner, session).
+
+    This COMPLEMENTS ``_active_document_id`` and does not replace it. That
+    pointer is process-wide: two chats in one process share it, and a turn that
+    creates two documents keeps only whichever was written last. The turn
+    registry is scoped to ``(owner, session_id)``, which is what lets "add this
+    document to the project" answer "which one?" instead of guessing — the one
+    thing the global pointer structurally cannot do (plan §10).
+
+    ``note_created`` is the harness one-liner for a creation; it fixes
+    ``relation="created"``, so an edit records its own ``TurnReference``.
+
+    Never raises. A lost reference costs a clarifying question; an exception
+    here would cost the user the document that was just written.
+    """
+    doc_id = str(doc_id or "").strip()
+    if not doc_id:
+        return
+    ctx = ctx or {}
+    try:
+        from src.project_context.references import TurnReference, note_created, registry
+        fields = dict(
+            label=str(title or ""), tool=tool,
+            session_id=str(ctx.get("session_id") or ""),
+            turn_id=str(ctx.get("turn_id") or ""),
+            run_id=str(ctx.get("run_id") or ""),
+            owner=str(ctx.get("owner") or ""),
+        )
+        if relation == "created":
+            note_created("document", doc_id, **fields)
+        else:
+            registry().note(TurnReference(
+                kind="document", ref_id=doc_id, label=fields["label"],
+                source_tool=tool, turn_id=fields["turn_id"], run_id=fields["run_id"],
+                session_id=fields["session_id"], owner=fields["owner"],
+                relation=relation,
+            ))
+    except Exception:
+        logger.debug("turn reference for document %s failed", doc_id, exc_info=True)
+
+
 def _owned_document_query(query, Document, owner: Optional[str]):
     if owner is None:
         # A bare Python `False` is not a valid SQL expression — SQLAlchemy 1.4
@@ -455,6 +498,8 @@ class CreateDocumentTool:
             db.commit()
 
             set_active_document(doc_id)
+            _note_turn_reference(ctx, doc_id, title=title, tool="create_document",
+                                 relation="created")
             try:
                 from src.event_bus import fire_event
                 fire_event("document_created", _owner)
@@ -543,6 +588,8 @@ class UpdateDocumentTool:
             db.add(ver)
             db.commit()
 
+            _note_turn_reference(ctx, target_id, title=doc.title,
+                                 tool="update_document", relation="opened")
             return {
                 "action": "update",
                 "doc_id": target_id,
@@ -626,6 +673,8 @@ class EditDocumentTool:
                     doc.version_count = new_ver
                     db.add(ver)
                     db.commit()
+                    _note_turn_reference(ctx, target_id, title=doc.title,
+                                         tool="edit_document", relation="opened")
                     return {
                         "action": "edit",
                         "doc_id": target_id,
@@ -695,6 +744,8 @@ class EditDocumentTool:
             db.add(ver)
             db.commit()
 
+            _note_turn_reference(ctx, target_id, title=doc.title,
+                                 tool="edit_document", relation="opened")
             return {
                 "action": "edit",
                 "doc_id": target_id,

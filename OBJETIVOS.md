@@ -376,6 +376,83 @@ recuperación necesitan el corpus.
       `harness_options` y la ruta todavía no lo rellena, así que hoy siempre es `False`. La
       política ya está escrita y aplicada antes de la recuperación; falta el interruptor.
 
+## Project Context Links: lo que el plan 2 deja pendiente (06-09-2026)
+
+`FAUSTUS.md` §54 cierra las fases 1 a 4 de
+`inspiration/PLAN_PROJECT_CONTEXT_LINKS_FAUSTUS.md`: identidad de proyecto en
+`sessions.project_id`, vínculos tipados sobre `context_items`, cinco resolvers, la tool
+`manage_project_context`, seis rutas HTTP, la fuente del Context Engine y la pantalla. 12 ficheros
+nuevos, 4.189 líneas, 176 tests. Lo que sigue es lo que el mismo plan deja fuera, más los cabos
+que se vieron al cablearlo.
+
+### Fases 5, 6 y 7 del plan (P1)
+
+- [ ] **Versiones `snapshot`.** `VERSION_POLICIES` la acepta y **los resolvers la rechazan** con
+      el motivo dicho: necesita materializar un Artifact inmutable desde el documento y enlazar
+      esa copia, y ese camino de escritura no existe. Hoy la única forma de fijar una revisión es
+      `pinned` con número de versión, que sigue el documento vivo si alguien borra esa versión.
+- [ ] **Invalidación atómica del índice.** `refresh` marca `index_status="stale"` y **conserva**
+      `index_revision` a propósito (§13 del plan: el índice viejo sigue sirviendo hasta que el
+      nuevo esté completo). Falta la otra mitad: el intercambio, que hoy no puede fallar porque
+      nadie lo hace.
+- [ ] **Multimodal.** Imágenes y vídeo se **describen** (etiqueta, tipo de medio, tamaño, receta
+      de generación: modelo, backend, seed, versión) y nunca se decodifican. Qué representación
+      debe recibir un modelo multimodal es decisión del Context Engine y todavía no la toma nadie.
+- [ ] **Promoción automatizada.** Nada convierte un documento muy citado, una carpeta muy leída o
+      un artefacto aprobado en un vínculo del proyecto: adjuntar es siempre un acto explícito del
+      usuario o del agente. Es la fase 7 y es la que necesita antes las señales de uso.
+
+### La indexación que nadie procesa (P0 para que el vocabulario no mienta)
+
+- [ ] **`index_status="queued"` no lo consume nadie.** `ProjectContextService.attach` lo escribe
+      en cada vínculo nuevo (salvo con `retrieval_policy="disabled"`, que nace en `none`) y
+      `refresh` escribe `stale`; **no hay indexador por proyecto**, así que ningún vínculo llega
+      jamás a `indexing` ni a `ready`. Los resolvers ya exponen `extract()` con chunks y
+      localización, y `ProjectStore.context_revision` ya existe para que un trabajo asíncrono
+      descarte su resultado si los vínculos se movieron: las dos piezas están, falta el trabajador
+      y el sitio desde donde llamarlo. Mientras tanto la lectura es directa por resolver y el
+      Context Engine la marca `degraded` con nota, que es el estado honesto — pero la pantalla
+      enseña «Indexación en cola» de algo que no está en ninguna cola.
+- [ ] **Los tres eventos que nadie emite.** `EVENT_NAMES` tiene los ocho nombres
+      `project_context_*`; el servicio emite cinco. `project_context_indexed`,
+      `project_context_index_failed` y `project_context_retrieved` esperan al indexador y al
+      recibo de recuperación.
+
+### `run_id` y `turn_id` no llegan a las tools (P0, barato)
+
+- [ ] **El `ctx` de las tools no lleva `turn_id`, y su `run_id` está siempre vacío.**
+      `src/tool_execution.py` construye el `ctx` con `progress_cb`, `session_id`, `owner`,
+      `gen_overrides`, `harness_options`, `project_id` y `run_id` — y su propio comentario dice
+      que `run_id` **no viaja en `turn_options`** (el bucle lo guarda en
+      `ToolRunSecurityContext`, que no llega ahí), así que sale `""`. `turn_id` no aparece en
+      absoluto: `do_manage_project_context` lo acepta como parámetro y el despachador no se lo
+      pasa.
+- [ ] **Consecuencia directa: las prioridades 3 y 4 de `references.resolve()` no se pueden
+      disparar.** «Creado en el turno actual» compara `e.turn_id == turn_id` y «el turno anterior
+      compatible» exige `e.turn_id` no vacío; con todo a `""` la resolución de «este documento»
+      cae siempre al puntero global de la sesión (prioridad 2) o al título (prioridad 5). El
+      código de las dos prioridades está escrito y probado con ids inyectados en los tests; lo que
+      falta es que el runtime los ponga. Es una línea en `agent_loop.py` para meter `run_id` y
+      `turn_id` en `turn_options`, y una en `tool_execution.py` para pasarlos.
+
+### Quién registra una referencia de turno (P1)
+
+- [ ] **Sólo las tools de documentos lo hacen.** `_note_turn_reference` está cableado en
+      `create_document`, `update_document` y `edit_document`. **La generación de imagen y las
+      subidas no registran nada**, así que «añade esta imagen al proyecto» justo después de
+      generarla no tiene a qué resolver y termina pidiendo un id que el usuario no ve. Los kinds
+      `artifact` y `gallery_image` ya tienen resolver; lo que falta es la llamada de una línea al
+      terminar cada uno de esos caminos.
+
+### El prompt no describe la tool nueva (P1, una entrada de diccionario)
+
+- [ ] **`TOOL_SECTIONS` (`src/agent_loop.py`) no tiene sección para `manage_project_context`.**
+      Tiene `project_context`, `search_project_chats` y `project_objectives`; la mitad mutante
+      llegó al esquema, al índice de recuperación, al preflight y al despacho, pero no a las
+      instrucciones en prosa que el prompt del sistema le da al modelo sobre cómo usarla. El
+      modelo la ve en el esquema y no en el manual, que es exactamente el reparto que produce
+      llamadas con la forma correcta y la intención equivocada.
+
 ## Descartado a propósito (y por qué)
 
 - Marketplace público de plugins **antes** de tener firma, permisos y revocación.

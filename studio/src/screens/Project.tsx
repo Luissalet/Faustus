@@ -1,4 +1,4 @@
-import { Activity, Archive, ArchiveRestore, ArrowLeft, Brain, Check, Download, Eye, FileText, FolderOpen, FolderPlus, MessageSquare, Pin, PinOff, Plus, Send, Settings2, Target, Trash2, X } from 'lucide-react';
+import { Activity, AlertTriangle, Archive, ArchiveRestore, ArrowLeft, Brain, Check, Download, Eye, FileText, FolderOpen, FolderPlus, Image, Layers, Link2, Lock, MessageSquare, PencilLine, Pin, PinOff, Plus, RefreshCw, Send, Settings2, Target, Trash2, Unlink, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { Button, Dialog, EmptyState, Menu, Skeleton, Toast } from '../components';
@@ -8,17 +8,37 @@ import { relativeTime } from '../adapters/home';
 import {
   addContextRoot,
   AGENT_FLAGS,
+  attachContextSource,
   chatsIn,
+  countLinks,
   deleteProject,
   exportProjectUrl,
   flagOn,
   getContextPreview,
   getProject,
+  groupLinksByRole,
+  inspectContextLink,
+  LINK_KINDS,
+  LINK_ROLES,
+  linkIsBehind,
+  linkIsBroken,
+  listContextLinks,
+  patchContextLink,
+  refreshContextLink,
   removeChatFromProject,
   removeContextRoot,
+  RETRIEVAL_POLICIES,
+  shortRevision,
   startChatInProject,
   updateProject,
+  type ContextLink,
+  type ContextLinkPatch,
+  type IndexStatus,
+  type LinkKind,
+  type LinkStatus,
   type Project,
+  type RefreshReport,
+  type RetrievalPolicy,
 } from '../adapters/projects';
 import { EXPORT_FORMATS } from '../adapters/sessions';
 import { ProjectAudit } from './project/Audit';
@@ -43,6 +63,376 @@ type TabId = (typeof TABS)[number]['id'];
 
 const FORMAT_LABEL: Record<string, string> = { md: 'Markdown', txt: 'Plain text', json: 'JSON', html: 'HTML', pdf: 'PDF', docx: 'Word (.docx)' };
 
+/* ── Context sources ──
+ *
+ * The list under a project stopped being "paths the agent may edit" and became
+ * typed links: what the source is, what it is for, when it may enter a prompt,
+ * which revision the project stands on, and — kept visibly apart from all of
+ * that — whether the agent may write to it.
+ *
+ * `work_root` vs `read_only` is a permission, so it is not drawn as one more
+ * grey badge among five. It gets its own icon and its own colour, because the
+ * question a user needs answered at a glance is "can it change this?" and no
+ * amount of correct text answers that if it looks like the other labels.
+ */
+
+const KIND_ICON: Record<LinkKind, typeof FileText> = {
+  file: FileText,
+  folder: FolderOpen,
+  document: FileText,
+  artifact: Layers,
+  gallery_image: Image,
+};
+
+const KIND_LABEL: Record<LinkKind, string> = {
+  file: 'File',
+  folder: 'Folder',
+  document: 'Document',
+  artifact: 'Artifact',
+  gallery_image: 'Image',
+};
+
+const POLICY_LABEL: Record<RetrievalPolicy, string> = {
+  auto: 'Automatic',
+  pinned_summary: 'Pinned summary',
+  on_demand: 'On demand',
+  disabled: 'Never',
+};
+
+const POLICY_HELP: Record<RetrievalPolicy, string> = {
+  auto: 'Searched whenever the question calls for it.',
+  pinned_summary: 'Its stored summary is searched; the full text is never injected.',
+  on_demand: 'Listed to the agent, opened only when the agent decides to.',
+  disabled: 'Never enters a prompt. It stays linked and stays readable by hand.',
+};
+
+const INDEX_LABEL: Record<IndexStatus, string> = {
+  none: 'Not indexed',
+  queued: 'Indexing queued',
+  indexing: 'Indexing',
+  ready: 'Indexed',
+  stale: 'Index behind the source',
+  failed: 'Indexing failed',
+};
+
+const ROLE_LABEL: Record<string, string> = {
+  requirements: 'Requirements',
+  reference: 'Reference',
+  decision: 'Decision',
+  style_reference: 'Style reference',
+  example: 'Example',
+  dataset: 'Dataset',
+  specification: 'Specification',
+  output: 'Output',
+  // Not plain 'Archive': that key is already the verb on the project's own
+  // archive button ("Archivar"), and a role is a noun.
+  archive: 'Historical archive',
+};
+
+const roleName = (role: string) => (ROLE_LABEL[role] ? t(ROLE_LABEL[role]) : role);
+
+/** What a refresh actually did, in one sentence the row can print. */
+function describeRefresh(report: RefreshReport): string {
+  if (!report.ok) return report.message || t('The source could not be read.');
+  if (!report.changed) return t('Unchanged, still at {rev}.', { rev: shortRevision(report.revision) });
+  return t('Changed: {from} became {to}. {index}.', {
+    from: shortRevision(report.previousRevision),
+    to: shortRevision(report.revision),
+    index: t(INDEX_LABEL[report.indexStatus]),
+  });
+}
+
+/** The state of one link, drawn once and read everywhere. */
+function LinkBadges({ link, status }: { link: ContextLink; status?: LinkStatus }) {
+  const broken = linkIsBroken(status);
+  const behind = linkIsBehind(link, status);
+  return (
+    <span className="fs-pj__badges">
+      <span className="fs-pj__badge">{t(KIND_LABEL[link.kind])}</span>
+      <span className="fs-pj__badge">{roleName(link.role)}</span>
+      <span className="fs-pj__badge" title={t(POLICY_HELP[link.retrievalPolicy])}>
+        {t(POLICY_LABEL[link.retrievalPolicy])}
+      </span>
+      <span
+        className="fs-pj__badge"
+        data-grant={link.accessMode === 'work_root' ? '' : undefined}
+        title={link.accessMode === 'work_root' ? t('The agent can write to this source.') : t('The agent can read this source and cannot change it.')}
+      >
+        {link.accessMode === 'work_root' ? <PencilLine size={11} aria-hidden="true" /> : <Lock size={11} aria-hidden="true" />}
+        {link.accessMode === 'work_root' ? t('Editable') : t('Read only')}
+      </span>
+      {!link.enabled && <span className="fs-pj__badge">{t('Off')}</span>}
+      {broken && (
+        <span className="fs-pj__badge" data-broken="">
+          <AlertTriangle size={11} aria-hidden="true" />
+          {status?.state === 'forbidden' ? t('Not available') : t('Source missing')}
+        </span>
+      )}
+      {!broken && behind && <span className="fs-pj__badge" data-warn="">{t('Needs a refresh')}</span>}
+      {!broken && !behind && <span className="fs-pj__badge">{t(INDEX_LABEL[link.indexStatus])}</span>}
+    </span>
+  );
+}
+
+interface SourcesProps {
+  project: Project;
+  links: ContextLink[] | null;
+  statuses: Record<string, LinkStatus>;
+  say: (message: string) => void;
+  reload: () => Promise<void> | void;
+}
+
+/**
+ * The manager: every link, grouped by what it is for, with the two knobs a
+ * user actually turns (role and retrieval policy), a refresh that reports what
+ * moved, and an unlink that says what it did not delete.
+ */
+function ProjectSources({ project, links, statuses, say, reload }: SourcesProps) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [reports, setReports] = useState<Record<string, string>>({});
+  const [draft, setDraft] = useState<{ kind: LinkKind; locator: string; label: string; role: string; policy: RetrievalPolicy } | null>(null);
+
+  const counts = useMemo(() => countLinks(links ?? [], statuses), [links, statuses]);
+  const groups = useMemo(() => groupLinksByRole(links ?? []), [links]);
+
+  const act = async (linkId: string, run: () => Promise<string>) => {
+    setBusy(linkId);
+    try {
+      say(await run());
+      await reload();
+    } catch (e) {
+      say((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const patch = (link: ContextLink, change: ContextLinkPatch, done: string) =>
+    act(link.id, async () => {
+      await patchContextLink(project.id, link.id, change);
+      return done;
+    });
+
+  const refreshOne = (link: ContextLink) =>
+    act(link.id, async () => {
+      const report = await refreshContextLink(project.id, link.id);
+      const sentence = describeRefresh(report);
+      setReports((all) => ({ ...all, [link.id]: sentence }));
+      return sentence;
+    });
+
+  const unlink = (link: ContextLink) =>
+    act(link.id, async () => {
+      await removeContextRoot(project.id, link.id);
+      return t('Unlinked. The source itself was not deleted.');
+    });
+
+  const attach = async () => {
+    if (!draft?.locator.trim()) return;
+    const byPath = draft.kind === 'file' || draft.kind === 'folder';
+    await act('new', async () => {
+      const link = await attachContextSource(project.id, {
+        kind: draft.kind,
+        path: byPath ? draft.locator.trim() : '',
+        id: byPath ? '' : draft.locator.trim(),
+        label: draft.label.trim(),
+        role: draft.role,
+        retrievalPolicy: draft.policy,
+      });
+      setDraft(null);
+      return t('Linked {label} as knowledge. It is read only.', { label: link.label });
+    });
+  };
+
+  const pickPath = async () => {
+    if (!draft) return;
+    try {
+      const pick = await pickNative(draft.kind === 'folder' ? 'folder' : 'file', project.workspace ?? '');
+      if (pick.status === 'ok' && pick.path) setDraft({ ...draft, locator: pick.path });
+    } catch (e) {
+      say((e as Error).message);
+    }
+  };
+
+  return (
+    <div className="fs-pj__sources">
+      <div className="fs-pj__card-head">
+        <h3>{t('Context sources')}</h3>
+        <Button
+          variant="secondary"
+          size="sm"
+          icon={Plus}
+          label={t('Link a source')}
+          onClick={() => setDraft(draft ? null : { kind: 'file', locator: '', label: '', role: 'reference', policy: 'auto' })}
+          testId="project-link-source"
+        />
+      </div>
+      <p className="fs-prose">
+        {t('Everything this project knows about, and how each piece is allowed to reach a chat. Linking a source is knowledge, not permission: only a work root can be written to.')}
+      </p>
+      {links !== null && (
+        <p className="fs-pj__muted" data-testid="project-source-counts">
+          {[
+            tn(counts.total, '{n} source', '{n} sources'),
+            counts.editable ? tn(counts.editable, '{n} work root', '{n} work roots') : '',
+            counts.behind ? tn(counts.behind, '{n} needs a refresh', '{n} need a refresh') : '',
+            counts.broken ? tn(counts.broken, '{n} broken link', '{n} broken links') : '',
+            counts.off ? tn(counts.off, '{n} source switched off', '{n} sources switched off') : '',
+          ]
+            .filter(Boolean)
+            .join(' · ')}
+        </p>
+      )}
+
+      {draft && (
+        <form
+          className="fs-pj__attach"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void attach();
+          }}
+        >
+          <select
+            className="fs-field"
+            value={draft.kind}
+            onChange={(e) => setDraft({ ...draft, kind: e.target.value as LinkKind, locator: '' })}
+            aria-label={t('Kind of source')}
+          >
+            {LINK_KINDS.map((kind) => (
+              <option key={kind} value={kind}>
+                {t(KIND_LABEL[kind])}
+              </option>
+            ))}
+          </select>
+          <input
+            className="fs-field fs-pj__grow"
+            value={draft.locator}
+            onChange={(e) => setDraft({ ...draft, locator: e.target.value })}
+            placeholder={draft.kind === 'file' || draft.kind === 'folder' ? t('Path of the file or folder') : t('Identifier of the document, artifact or image')}
+            spellCheck={false}
+            data-testid="project-source-locator"
+          />
+          {(draft.kind === 'file' || draft.kind === 'folder') && (
+            <Button variant="ghost" size="sm" icon={FolderPlus} label={t('Browse')} onClick={() => void pickPath()} />
+          )}
+          <input
+            className="fs-field"
+            value={draft.label}
+            onChange={(e) => setDraft({ ...draft, label: e.target.value })}
+            placeholder={t('Label (optional)')}
+            spellCheck={false}
+          />
+          <select className="fs-field" value={draft.role} onChange={(e) => setDraft({ ...draft, role: e.target.value })} aria-label={t('What it is for')}>
+            {LINK_ROLES.map((role) => (
+              <option key={role} value={role}>
+                {roleName(role)}
+              </option>
+            ))}
+          </select>
+          <select
+            className="fs-field"
+            value={draft.policy}
+            onChange={(e) => setDraft({ ...draft, policy: e.target.value as RetrievalPolicy })}
+            aria-label={t('When it may be used')}
+          >
+            {RETRIEVAL_POLICIES.map((policy) => (
+              <option key={policy} value={policy}>
+                {t(POLICY_LABEL[policy])}
+              </option>
+            ))}
+          </select>
+          <Button type="submit" variant="secondary" size="sm" label={t('Link')} loading={busy === 'new'} disabled={!draft.locator.trim()} />
+          <Button variant="ghost" size="sm" icon={X} label={t('Cancel')} onClick={() => setDraft(null)} />
+        </form>
+      )}
+
+      {links === null ? (
+        <Skeleton label={t('Loading the sources')} count={3} height="34px" />
+      ) : links.length === 0 ? (
+        <p className="fs-pj__muted">{t('Nothing linked yet. A linked document, folder or image becomes part of what the project knows, without being pasted into every chat.')}</p>
+      ) : (
+        groups.map((group) => (
+          <section key={group.role} className="fs-pj__group">
+            <h4 className="fs-panel__label">{roleName(group.role)}</h4>
+            <ul className="fs-pj__links">
+              {group.links.map((link) => {
+                const Icon = KIND_ICON[link.kind];
+                const status = statuses[link.id];
+                return (
+                  <li key={link.id} data-broken={linkIsBroken(status) || undefined} data-testid="project-source">
+                    <div className="fs-pj__link-main">
+                      <Icon size={13} aria-hidden="true" />
+                      <span>
+                        <strong>{link.label}</strong>
+                        <small>
+                          {link.path || link.refId}
+                          {link.contentRevision ? ` · ${shortRevision(link.contentRevision)}` : ''}
+                        </small>
+                      </span>
+                    </div>
+                    <LinkBadges link={link} status={status} />
+                    <div className="fs-pj__link-actions">
+                      <select
+                        className="fs-field"
+                        value={link.role}
+                        onChange={(e) => void patch(link, { role: e.target.value }, t('Role changed.'))}
+                        aria-label={t('What it is for')}
+                        disabled={busy === link.id}
+                      >
+                        {LINK_ROLES.map((role) => (
+                          <option key={role} value={role}>
+                            {roleName(role)}
+                          </option>
+                        ))}
+                      </select>
+                      <select
+                        className="fs-field"
+                        value={link.retrievalPolicy}
+                        onChange={(e) => void patch(link, { retrievalPolicy: e.target.value as RetrievalPolicy }, t('Retrieval policy changed.'))}
+                        aria-label={t('When it may be used')}
+                        title={t(POLICY_HELP[link.retrievalPolicy])}
+                        disabled={busy === link.id}
+                      >
+                        {RETRIEVAL_POLICIES.map((policy) => (
+                          <option key={policy} value={policy}>
+                            {t(POLICY_LABEL[policy])}
+                          </option>
+                        ))}
+                      </select>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        icon={RefreshCw}
+                        label={t('Refresh')}
+                        title={t('Read the source again and report what moved.')}
+                        loading={busy === link.id}
+                        onClick={() => void refreshOne(link)}
+                      />
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        icon={Unlink}
+                        label={t('Unlink')}
+                        title={t('Remove the link. The source itself is never deleted.')}
+                        onClick={() => void unlink(link)}
+                      />
+                    </div>
+                    {(reports[link.id] || (linkIsBroken(status) && status?.message)) && (
+                      <p className={linkIsBroken(status) ? 'fs-pj__error' : 'fs-pj__note'}>
+                        {reports[link.id] || status?.message}
+                      </p>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        ))
+      )}
+    </div>
+  );
+}
+
 /**
  * A project as a page (UI-040), and now the whole of it: start a chat
  * here, its chats, objectives, memory files, what the agent changed, the
@@ -58,6 +448,8 @@ export function ProjectScreen() {
   const [failed, setFailed] = useState(false);
   const [chats, setChats] = useState<ChatSession[] | null>(null);
   const [context, setContext] = useState<string | null>(null);
+  const [links, setLinks] = useState<ContextLink[] | null>(null);
+  const [linkStates, setLinkStates] = useState<Record<string, LinkStatus>>({});
   const [routes, setRoutes] = useState<ModelRoute[]>([]);
   const [routeId, setRouteId] = useState('');
   const [prompt, setPrompt] = useState('');
@@ -73,6 +465,41 @@ export function ProjectScreen() {
     noticeTimer.current = window.setTimeout(() => setNotice(null), 2600);
   }, []);
 
+  /**
+   * The links, and then what each source says about itself.
+   *
+   * The second half is the reason this is not one request: `index_status`
+   * is about the index, not about whether the file is still on disk, so a
+   * link whose source has been deleted would render as a healthy row. It
+   * has to LOOK broken rather than quietly keep working, so each link is
+   * inspected — four at a time, because a project at the forty-link
+   * ceiling should not open forty requests at once. A link that cannot be
+   * inspected stays unchecked rather than being called broken.
+   */
+  const loadLinks = useCallback(async () => {
+    let rows: ContextLink[] = [];
+    try {
+      rows = (await listContextLinks(projectId)).links;
+    } catch {
+      setLinks([]);
+      return;
+    }
+    setLinks(rows);
+    const queue = [...rows];
+    const found: Record<string, LinkStatus> = {};
+    const worker = async () => {
+      for (let next = queue.shift(); next; next = queue.shift()) {
+        try {
+          found[next.id] = await inspectContextLink(projectId, next.id);
+        } catch {
+          /* unchecked is not broken */
+        }
+      }
+    };
+    await Promise.all([worker(), worker(), worker(), worker()]);
+    setLinkStates(found);
+  }, [projectId]);
+
   const rawTab = params.get('tab');
   const tab: TabId = creating ? 'ajustes' : TABS.some((x) => x.id === rawTab) ? (rawTab as TabId) : 'brief';
 
@@ -84,10 +511,11 @@ export function ProjectScreen() {
       setFailed(false);
       void chatsIn(p).then(setChats).catch(() => setChats([]));
       void getContextPreview(projectId).then(setContext).catch(() => setContext(''));
+      void loadLinks();
     } catch {
       setFailed(true);
     }
-  }, [projectId, creating]);
+  }, [projectId, creating, loadLinks]);
 
   useEffect(() => {
     void reload();
@@ -211,10 +639,9 @@ export function ProjectScreen() {
     );
   }
 
-  const roots = [
-    ...(project.workspace ? [{ id: '', path: project.workspace, kind: 'folder' as const, name: project.workspace.split(/[\\/]/).filter(Boolean).pop() ?? project.workspace, primary: true }] : []),
-    ...(project.context_items ?? []).map((i) => ({ ...i, primary: false })),
-  ];
+  // The primary working folder is the one root that is not a link: it comes
+  // off the project record and is changed in Settings, not detached here.
+  const workspaceName = project.workspace ? (project.workspace.split(/[\\/]/).filter(Boolean).pop() ?? project.workspace) : '';
 
   return (
     <div className="fs-screen fs-pj" data-testid="project" data-archived={project.archived || undefined}>
@@ -333,10 +760,10 @@ export function ProjectScreen() {
 
             <section className="fs-panel fs-pj__card">
               <div className="fs-pj__card-head">
-                <h3>{t('Work roots')}</h3>
-                <Button variant="ghost" size="sm" icon={FolderPlus} label={t('Add')} onClick={() => void addRoot()} testId="project-add-root" />
+                <h3>{t('Context sources')}</h3>
+                <Button variant="ghost" size="sm" icon={FolderPlus} label={t('Add a work root')} onClick={() => void addRoot()} testId="project-add-root" />
               </div>
-              <p className="fs-pj__muted">{t('The agent can read and change every file or folder listed here.')}</p>
+              <p className="fs-pj__muted">{t('What this project knows. A work root is also editable; everything else is read only.')}</p>
               {rootInput !== null && (
                 <form
                   className="fs-pj__row"
@@ -350,29 +777,36 @@ export function ProjectScreen() {
                   <Button variant="ghost" size="sm" icon={X} label={t('Cancel')} onClick={() => setRootInput(null)} />
                 </form>
               )}
-              {roots.length === 0 ? (
-                <p className="fs-pj__muted">{t('Add a primary folder or another file or folder to start working.')}</p>
-              ) : (
-                <ul className="fs-pj__roots">
-                  {roots.map((r) => (
-                    <li key={r.id || 'primary'}>
-                      <FolderOpen size={13} aria-hidden="true" />
+              <ul className="fs-pj__roots">
+                {project.workspace && (
+                  <li key="primary">
+                    <FolderOpen size={13} aria-hidden="true" />
+                    <span>
+                      <strong>{workspaceName}</strong>
+                      <small>
+                        {project.workspace} {'\u00b7'} {t('primary work folder')}
+                      </small>
+                    </span>
+                    <Button variant="ghost" size="sm" label={t('Change')} onClick={() => setTab('ajustes')} />
+                  </li>
+                )}
+                {(links ?? []).map((link) => {
+                  const Icon = KIND_ICON[link.kind];
+                  return (
+                    <li key={link.id} data-broken={linkIsBroken(linkStates[link.id]) || undefined}>
+                      <Icon size={13} aria-hidden="true" />
                       <span>
-                        <strong>{r.name}</strong>
-                        <small>
-                          {r.path}
-                          {r.primary ? ` · ${t('primary')}` : ''}
-                        </small>
+                        <strong>{link.label}</strong>
+                        <LinkBadges link={link} status={linkStates[link.id]} />
                       </span>
-                      {r.primary ? (
-                        <Button variant="ghost" size="sm" label={t('Change')} onClick={() => setTab('ajustes')} />
-                      ) : (
-                        <Button variant="ghost" size="sm" icon={X} label={t('Remove')} onClick={() => void removeContextRoot(project.id, r.id).then(reload, (e: Error) => say(e.message))} />
-                      )}
                     </li>
-                  ))}
-                </ul>
+                  );
+                })}
+              </ul>
+              {links !== null && links.length === 0 && !project.workspace && (
+                <p className="fs-pj__muted">{t('Add a primary folder or link a document to start working.')}</p>
               )}
+              <Button variant="ghost" size="sm" icon={Link2} label={t('Manage sources')} onClick={() => setTab('contexto')} testId="project-manage-sources" />
             </section>
           </div>
           <p className="fs-file__meta">
@@ -428,7 +862,12 @@ export function ProjectScreen() {
       )}
 
       {tab === 'contexto' && (
-        <div>
+        <div className="fs-pj__brief">
+          <div className="fs-panel">
+            {/* `loadLinks`, not `reload`: toggling one policy has no reason to
+                re-fetch the chats and the whole prepended block. */}
+            <ProjectSources project={project} links={links} statuses={linkStates} say={say} reload={loadLinks} />
+          </div>
           <p className="fs-panel__label">{t('What the model receives, literally')}</p>
           <p className="fs-prose" style={{ marginBlockEnd: 'var(--fs-space-3)' }}>
             {t('This block is what Faustus prepends to every conversation of this project. It was available in the API and no screen showed it: knowing what it knows before asking for anything is half of trusting it.')}

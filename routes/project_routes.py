@@ -24,7 +24,7 @@ from pydantic import BaseModel, Field
 from core.middleware import require_admin
 from src import robot_envelope as robot
 from src import robot_projection as lean
-from src.auth_helpers import effective_user
+from src.auth_helpers import effective_user, storage_owner_for_request
 from services.projects import (
     MAX_INSTRUCTIONS,
     MAX_MEMORY_FILE,
@@ -64,8 +64,64 @@ class MemoryWriteRequest(BaseModel):
     content: str = Field("", max_length=MAX_MEMORY_FILE)
 
 
+class ContextSourceRef(BaseModel):
+    """Where a typed source lives: a row id, or a filesystem path.
+
+    ``kind`` is deliberately a plain string here. The closed vocabulary
+    lives in ``src/project_context/models.py``, whose rejection names the
+    field and the value it saw; restating it as an enum in the route would
+    give the same mistake two different error messages.
+    """
+
+    kind: str = Field(..., min_length=1, max_length=64)
+    id: str = Field("", max_length=256)
+    path: str = Field("", max_length=4096)
+
+
 class ContextAddRequest(BaseModel):
-    path: str = Field(..., min_length=1, max_length=4096)
+    """Both shapes of "add something to this project's context".
+
+    ``{"path": "..."}`` alone is what the live UI sends and has sent since
+    the endpoint existed: it still creates the same ``work_root`` item,
+    with the same ten-hex id, and answers with the same ``{"item": ...}``.
+    ``source`` is the typed shape and goes through
+    ``ProjectContextService.attach``, which validates the source before it
+    writes and deduplicates a repeated attach.
+
+    ``path`` lost its ``min_length`` so that the two shapes can share one
+    body; a request that carries neither is answered by the route, in the
+    repo's refusal convention, rather than by a 422 that names a field the
+    typed caller never meant to send.
+    """
+
+    path: str = Field("", max_length=4096)
+    source: Optional[ContextSourceRef] = None
+    label: str = Field("", max_length=512)
+    role: str = Field("reference", max_length=64)
+    retrieval_policy: str = Field("auto", max_length=64)
+    version_policy: str = Field("latest", max_length=64)
+    pinned_version: Optional[int] = Field(None, ge=1)
+    tags: List[str] = Field(default_factory=list, max_length=64)
+    access_mode: str = Field("read_only", max_length=64)
+
+
+class ContextPatchRequest(BaseModel):
+    """Policy and metadata on an existing link — ``models.PATCHABLE_FIELDS``.
+
+    ``kind``, ``ref_id`` and ``path`` are absent on purpose: they are what
+    the link IS, and editing one in place would leave everything already
+    cited under the old identity pointing at a different source.
+    """
+
+    label: Optional[str] = Field(None, max_length=512)
+    role: Optional[str] = Field(None, max_length=64)
+    tags: Optional[List[str]] = Field(None, max_length=64)
+    summary: Optional[str] = Field(None, max_length=8000)
+    retrieval_policy: Optional[str] = Field(None, max_length=64)
+    version_policy: Optional[str] = Field(None, max_length=64)
+    pinned_version: Optional[int] = Field(None, ge=1)
+    access_mode: Optional[str] = Field(None, max_length=64)
+    enabled: Optional[bool] = None
 
 
 class ObjectiveCreateRequest(BaseModel):
@@ -86,6 +142,49 @@ class ObjectiveUpdateRequest(BaseModel):
 
 class ObjectiveDeltasRequest(BaseModel):
     deltas: List[Dict[str, Any]] = Field(..., min_length=1, max_length=50)
+
+
+class _StampedPatchStore:
+    """``ProjectStore``, minus the fields it stamps on a patch itself.
+
+    ``ProjectContextService.update`` and ``.refresh`` put ``updated_at`` on
+    the patch they hand the store. ``ProjectStore.patch_link`` refuses every
+    field outside ``LINK_PATCHABLE_FIELDS``, and ``updated_at`` is not one of
+    them — because ``patch_link`` writes its own, from the same clock, on
+    every patch it applies. Each module is right about its own half; they were
+    written against each other's documentation rather than against each other,
+    and the service's own tests use a fake store that accepts anything, so
+    nothing caught it. Reproduced: ``update()`` against the real store raises
+    ``ProjectError: Not a patchable context link field: updated_at``.
+
+    Dropping the field at this seam keeps the repair inside the HTTP surface
+    this change was scoped to. ``ProjectContextService(store=...)`` is the
+    documented way to give the service a different collaborator. The permanent
+    fix is one word added to ``LINK_PATCHABLE_FIELDS`` in
+    ``services/projects.py`` — a file this change does not own — after which
+    this proxy is a no-op and can be deleted, and the tool-layer dispatch of
+    ``manage_project_context`` stops hitting the same wall.
+
+    Everything else is forwarded untouched, so the service still sees one
+    store and no behaviour is invented here.
+    """
+
+    #: Exactly the field that is mismatched, and no more. ``kind``, ``ref_id``
+    #: and ``path`` are *not* here on purpose: ``patch_link`` refuses those
+    #: with a message of its own, and swallowing them would turn "that is a
+    #: different source" into a silent no-op.
+    STAMPED_BY_THE_STORE = ("updated_at",)
+
+    def __init__(self, store) -> None:
+        self._store = store
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._store, name)
+
+    def patch_link(self, project_id: str, link_id: str, patch, *, owner=None):
+        clean = {k: v for k, v in dict(patch or {}).items()
+                 if k not in self.STAMPED_BY_THE_STORE}
+        return self._store.patch_link(project_id, link_id, clean, owner=owner)
 
 
 def setup_project_routes() -> APIRouter:
@@ -236,8 +335,121 @@ def setup_project_routes() -> APIRouter:
             db.close()
 
     # ------------------------------------------------------------------
-    # Files and folders attached as additional project work roots
+    # Typed context links
+    #
+    # A link is membership and policy, never content and never permission:
+    # "this source belongs to this project, at this revision, under this
+    # retrieval policy". Everything that decides ownership, deduplication and
+    # revision lives in `src/project_context/service.py`; this router adapts
+    # arguments and results and nothing else.
+    #
+    # Two conventions hold across the six endpoints below.
+    #
+    # **A rejection is a 200 with `{"ok": false, "error": {path, message}}`**,
+    # the same shape `routes/contracts_routes.py` uses: the caller asked a
+    # question ("can this be linked?") and got an answer. 4xx stays for a body
+    # that could not be read at all -- and for the legacy `{"path": ...}`
+    # form, whose 400 the live UI already renders.
+    #
+    # **A link that is not this owner's answers exactly like one that does not
+    # exist**: 404, never 403. A 403 confirms that the id exists, which is the
+    # one fact the ownership check was protecting.
     # ------------------------------------------------------------------
+
+    #: Which field an `AttachResult.error` is about, for the refusal body.
+    _ATTACH_ERROR_FIELD = {
+        "owner_mismatch": "owner",
+        "invalid_source": "source",
+        "unsupported_kind": "source.kind",
+        "unsupported": "version_policy",
+        "missing": "source",
+        "forbidden": "source",
+        "invalid_link": "link",
+    }
+
+    def _refused(path: str, message: str) -> Dict[str, Any]:
+        return {"ok": False, "error": {"path": path, "message": message}}
+
+    def _link_owner(request: Request) -> str:
+        """The owner the link service and the resolvers compare against.
+
+        `effective_user` is the authority and stays the authority. It is None
+        in the explicit no-login mode, and both the service and the resolvers
+        fail closed on an empty owner -- a path has no owner column, so "is
+        there an owner at all" is the whole check a filesystem resolver can
+        make. Standing the reserved local owner in for it *there* is what
+        keeps typed links usable on the single-user install this is built for,
+        without inventing an identity when auth is on: with auth enabled
+        `effective_storage_owner` returns None and the refusal stands.
+        """
+        return ((effective_user(request) or "").strip()
+                or (storage_owner_for_request(request) or ""))
+
+    def _outside_the_vocabulary(values: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """The closed vocabularies, checked at the boundary.
+
+        `ProjectStore.normalize_link` coerces an unknown enum to the
+        default instead of raising, and is right to: it reads stored data,
+        and a chat must not die because a hand-edited projects.json says
+        `always_full`. That liberality is wrong for a *request*. A PATCH
+        that answered 200 after quietly turning `always_full` into
+        `on_demand` would tell the caller it had done something it had
+        not, and the caller would find out from a retrieval that never
+        happened.
+        """
+        from src.project_context.models import (
+            ACCESS_MODES, RETRIEVAL_POLICIES, ROLES, VERSION_POLICIES,
+        )
+        closed = {"retrieval_policy": RETRIEVAL_POLICIES, "role": ROLES,
+                  "version_policy": VERSION_POLICIES,
+                  "access_mode": ACCESS_MODES}
+        for field, choices in closed.items():
+            value = values.get(field)
+            if value is not None and value not in choices:
+                return _refused(field,
+                                f"must be one of {list(choices)}, not {value!r}")
+        return None
+
+    def _actor(owner: str):
+        from src.project_context.models import ActorRef
+        return ActorRef(kind="user", name=owner)
+
+    def _context_service():
+        """The link service, talking to this router's store.
+
+        `ProjectContextService` holds no state beyond its collaborators,
+        so building one per call costs an object and keeps the store the
+        one `get_store()` resolves right now.
+        """
+        from src.project_context.service import ProjectContextService
+        return ProjectContextService(store=_StampedPatchStore(get_store()))
+
+    @router.get("/{project_id}/context")
+    def list_context(
+        project_id: str,
+        request: Request,
+        _admin: None = Depends(require_admin),
+    ) -> Dict[str, Any]:
+        """The project's links, typed, with the index state and the revision.
+
+        Nothing here calls a resolver, and that is the point: a listing that
+        opened every linked document to render a row would turn a page refresh
+        into N reads of somebody's disk, and would be the one place where
+        "the list" and "the content" could disagree. What comes back is what
+        the store holds -- membership, policy, `index_status`,
+        `content_revision` -- and not one byte of any source.
+
+        `context_revision` is the project's monotonic link counter, so a
+        caller can tell "nothing changed" from "I read a stale page".
+        """
+        owner = effective_user(request)
+        _get_or_404(project_id, owner)
+        store = get_store()
+        return {
+            "ok": True,
+            "links": store.list_links(project_id, owner=owner),
+            "context_revision": store.context_revision(project_id),
+        }
 
     @router.post("/{project_id}/context")
     def add_context(
@@ -246,13 +458,175 @@ def setup_project_routes() -> APIRouter:
         request: Request,
         _admin: None = Depends(require_admin),
     ) -> Dict[str, Any]:
+        """Attach a source. Two shapes, one endpoint.
+
+        With no `source`, this is the endpoint it has always been: the path
+        becomes a `work_root` context item through `add_context_item`, with
+        the same ten-hex id and the same `{"item": ...}` answer, and a
+        rejected path is still a 400. That promise covers the error too --
+        a compatibility that only held on the happy path would break the
+        toast the UI shows when a path is refused.
+
+        With a `source`, it goes through `ProjectContextService.attach`, which
+        validates the source *before* it writes anything, never substitutes a
+        different source with the same title, and is idempotent: attaching the
+        same thing twice answers with the first link and `deduplicated: true`.
+        """
         owner = effective_user(request)
-        _get_or_404(project_id, owner)
+        project = _get_or_404(project_id, owner)
+
+        if payload.source is None:
+            if not payload.path.strip():
+                return _refused("source", "give either a 'path' or a typed 'source'")
+            try:
+                item = get_store().add_context_item(project_id, payload.path, owner)
+            except ProjectError as e:
+                raise HTTPException(400, str(e))
+            return {"item": item}
+
+        refusal = _outside_the_vocabulary(payload.model_dump())
+        if refusal is not None:
+            return refusal
+
+        from src.project_context.models import ProjectContextError
+
+        link_owner = _link_owner(request)
         try:
-            item = get_store().add_context_item(project_id, payload.path, owner)
+            result = _context_service().attach(
+                project=project,
+                owner=link_owner,
+                source=payload.source.model_dump(),
+                actor=_actor(link_owner),
+                retrieval_policy=payload.retrieval_policy,
+                version_policy=payload.version_policy,
+                pinned_version=payload.pinned_version,
+                role=payload.role,
+                label=payload.label,
+                tags=payload.tags,
+                access_mode=payload.access_mode,
+            )
+        except ProjectContextError as e:
+            return _refused(e.path, e.message)
         except ProjectError as e:
-            raise HTTPException(400, str(e))
-        return {"item": item}
+            # The store refusing the write (too many items, unknown kind) is a
+            # rejection of the request, not a server fault.
+            return _refused("source", str(e))
+
+        if not result.ok:
+            return _refused(_ATTACH_ERROR_FIELD.get(result.error, "source"),
+                            result.message)
+        return {
+            "ok": True,
+            "action": result.action,
+            "deduplicated": result.deduplicated,
+            "message": result.message,
+            "link": result.link.to_dict() if result.link else None,
+        }
+
+    @router.patch("/{project_id}/context/{link_id}")
+    def patch_context(
+        project_id: str,
+        link_id: str,
+        payload: ContextPatchRequest,
+        request: Request,
+        _admin: None = Depends(require_admin),
+    ) -> Dict[str, Any]:
+        """Change a link's policy and metadata.
+
+        A version-policy change re-validates the source and recomputes the
+        effective revision before it is written, and marks the index stale
+        when the revision moved -- stale, not cleared, because the old index
+        is still the one serving reads until a new one is complete.
+        """
+        owner = effective_user(request)
+        project = _get_or_404(project_id, owner)
+        patch = payload.model_dump(exclude_none=True)
+        if not patch:
+            return _refused("patch", "nothing to change")
+        refusal = _outside_the_vocabulary(patch)
+        if refusal is not None:
+            return refusal
+
+        from src.project_context.models import ProjectContextError
+
+        link_owner = _link_owner(request)
+        try:
+            link = _context_service().update(
+                project=project, owner=link_owner, link_id=link_id,
+                patch=patch, actor=_actor(link_owner),
+            )
+        except ProjectContextError as e:
+            if e.path == "link_id":
+                raise HTTPException(404, "Context link not found")
+            return _refused(e.path, e.message)
+        except ProjectError as e:
+            return _refused("patch", str(e))
+        return {"ok": True, "link": link.to_dict()}
+
+    @router.get("/{project_id}/context/{link_id}")
+    def inspect_context(
+        project_id: str,
+        link_id: str,
+        request: Request,
+        _admin: None = Depends(require_admin),
+    ) -> Dict[str, Any]:
+        """The stored link beside what the source says right now.
+
+        `stale` is the disagreement between the two: the stored revision is a
+        claim written when the link was last refreshed, and the resolver is
+        the only authority on what the source is today. A link whose source
+        has been deleted answers 200 with `ok: false` and stays visible and
+        detachable -- a broken link is evidence, and hiding it is how a
+        project silently forgets what it was told to know.
+        """
+        owner = effective_user(request)
+        project = _get_or_404(project_id, owner)
+        status = _context_service().inspect(
+            project=project, owner=_link_owner(request), link_id=link_id)
+        if status.link is None:
+            raise HTTPException(404, "Context link not found")
+        body: Dict[str, Any] = {"ok": status.state == "ok", **status.to_dict()}
+        if status.state != "ok":
+            body["error"] = {"path": "source", "message": status.message}
+        return body
+
+    @router.post("/{project_id}/context/{link_id}/refresh")
+    def refresh_context(
+        project_id: str,
+        link_id: str,
+        request: Request,
+        _admin: None = Depends(require_admin),
+    ) -> Dict[str, Any]:
+        """Recompute the revision and say what changed.
+
+        `previous_revision` travels beside `revision` because the index that
+        is about to be rebuilt is still serving the old one, and a UI that
+        showed only the new number could not tell the user what moved.
+        """
+        owner = effective_user(request)
+        project = _get_or_404(project_id, owner)
+        link_owner = _link_owner(request)
+        try:
+            result = _context_service().refresh(
+                project=project, owner=link_owner, link_id=link_id,
+                actor=_actor(link_owner))
+        except ProjectError as e:
+            return _refused("link", str(e))
+        if result.link is None:
+            raise HTTPException(404, "Context link not found")
+        body: Dict[str, Any] = {
+            "ok": result.ok,
+            "changed": result.changed,
+            "previous_revision": result.previous_revision,
+            "revision": result.revision,
+            "index_status": result.index_status,
+            "state": result.state,
+            "message": result.message,
+            "link": result.link.to_dict(),
+        }
+        if not result.ok:
+            body["error"] = {"path": "source", "message": result.message}
+        return body
 
     @router.delete("/{project_id}/context/{item_id}")
     def remove_context(
@@ -261,11 +635,30 @@ def setup_project_routes() -> APIRouter:
         request: Request,
         _admin: None = Depends(require_admin),
     ) -> Dict[str, Any]:
+        """Detach. **The source is never touched.**
+
+        The document, the artifact and the file on disk all survive with their
+        versions intact; what is withdrawn is the statement that they belong
+        to this project's knowledge. The message says so because the agent
+        repeats it to the user.
+
+        One endpoint for both id shapes -- a legacy ten-hex `item_id` and a
+        `ctx_...` link id -- because they are the same list and the same `id`
+        field. `remove_context_item` is what does the removal, deliberately:
+        it needs no effective owner beyond the one `_get_or_404` already
+        checked, so a working delete does not become a fail-closed one on an
+        install where nobody is logged in.
+        """
         owner = effective_user(request)
         _get_or_404(project_id, owner)
         if not get_store().remove_context_item(project_id, item_id, owner):
             raise HTTPException(404, "Context item not found")
-        return {"success": True}
+        return {
+            "success": True,
+            "ok": True,
+            "link_id": item_id,
+            "message": "The link was removed. The source itself was not deleted.",
+        }
 
     # ------------------------------------------------------------------
     # Resolution — what the frontend asks when the user switches chats

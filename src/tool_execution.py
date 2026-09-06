@@ -644,6 +644,7 @@ async def _direct_fallback(
 
     try:
         _turn_opts = get_active_turn_options()
+        _harness_options = _turn_opts.get("harness_options") or {}
         ctx = {
             "progress_cb": progress_cb,
             "subproc_env": _subproc_env,
@@ -651,6 +652,18 @@ async def _direct_fallback(
             "owner": owner,
             "gen_overrides": _turn_opts.get("gen_overrides"),
             "harness_options": _turn_opts.get("harness_options"),
+            # The run's project identity, surfaced as its own ctx key so a tool
+            # does not have to know that the route packs it into the harness
+            # knobs (services/projects.py::agent_options puts it there). Read
+            # from where it already travels rather than re-deriving it from a
+            # folder name mid-run (plan §11: one context per run, resolved once).
+            "project_id": str(_harness_options.get("project_id") or ""),
+            # `run_id` is NOT carried in turn_options today — the agent loop
+            # keeps it on ToolRunSecurityContext, which never reaches here. Left
+            # empty on purpose: an invented run id in an audit trail is worse
+            # than an absent one. Wiring it needs turn_options to carry it,
+            # which is a change to src/agent_loop.py.
+            "run_id": str(_turn_opts.get("run_id") or ""),
         }
 
         from src.agent_tools import TOOL_HANDLERS
@@ -1315,6 +1328,23 @@ async def _execute_tool_block_impl(
                 desc = f"project_context: {action}"
             except (ProjectError, ValueError, TypeError, json.JSONDecodeError) as exc:
                 result = {"error": str(exc), "exit_code": 1}
+    elif tool == "manage_project_context":
+        # The MUTATING half of the project's context links. Everything that
+        # decides an outcome lives in ProjectContextService; this branch only
+        # hands over the session (which is what resolves the project — never an
+        # id from the model) and the run identity, and never raises.
+        desc = "manage_project_context"
+        from src.tools.project_context import do_manage_project_context
+        _turn_opts = get_active_turn_options()
+        result = await do_manage_project_context(
+            content,
+            session_id=session_id or "",
+            owner=owner,
+            run_id=str(_turn_opts.get("run_id") or ""),
+        )
+        _action = (result or {}).get("action") or ""
+        if _action:
+            desc = f"manage_project_context: {_action}"
     elif tool == "project_objectives":
         desc = "project_objectives"
         from services.projects import project_for_session

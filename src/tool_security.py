@@ -151,6 +151,7 @@ NON_ADMIN_BLOCKED_TOOLS = BUILTIN_EMAIL_TOOLS | {
     "search_chats",
     "search_project_chats",
     "project_context",
+    "manage_project_context",
     "manage_memory",
     "manage_skills",
     "manage_tasks",
@@ -206,6 +207,10 @@ PLAN_MODE_READONLY_TOOLS = {
     "web_fetch",
     "search_chats",
     "search_project_chats",
+    # The READ half of the project's context. Its mutating sibling
+    # `manage_project_context` is deliberately absent: plan mode investigates
+    # and never changes anything, and attaching a source to a project is a
+    # durable change to what every other chat in that project will see.
     "project_context",
     "list_models",
     "list_sessions",

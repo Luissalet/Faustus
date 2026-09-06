@@ -2720,7 +2720,15 @@ def setup_chat_routes(
                         from services.projects import project_for_session
                         if project_for_session(session, _user):
                             _forced_tools = set(_forced_tools or set())
-                            _forced_tools.update({"project_context", "search_project_chats"})
+                            _forced_tools.update({
+                                "project_context", "search_project_chats",
+                                # "add this to the project" is a phrase RAG
+                                # over tool descriptions retrieves badly, and
+                                # the tool is unusable outside a project
+                                # anyway — so force it exactly when there IS
+                                # one, mirroring tool_preflight.PROJECT_TOOLS.
+                                "manage_project_context",
+                            })
                     except Exception:
                         pass
                     # /agents (multi-agent delegation) names the tool explicitly;

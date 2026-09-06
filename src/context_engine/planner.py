@@ -170,6 +170,13 @@ _RESEARCH = _matcher(RESEARCH_SIGNALS)
 SOURCE_SECTIONS: Dict[str, Tuple[str, ...]] = {
     "objectives": ("active_goal", "decisions"),
     "project_memory": ("project_rules",),
+    # The project's typed context links (`adapters/project_links.py`).  The
+    # manifest is `project_rules`; a query's excerpts land in the section of
+    # whatever kind the link points at, which is why one adapter declares
+    # four.  This tuple and `ProjectLinksSource.sections` are asserted equal
+    # by tests/test_context_engine_derived_sources.py.
+    "project_links": ("project_rules", "retrieved_documents", "code_map",
+                      "multimodal_recipes"),
     "memory_engine": ("retrieved_memory",),
     "personal_memory": ("retrieved_memory",),
     "sessions": ("recent_messages",),
@@ -206,6 +213,14 @@ PERSONAL_SOURCE_IDS: Tuple[str, ...] = ("memory_engine", "personal_memory")
 #: a ``recipe`` are not on that list: an incognito turn still gets to know who
 #: it is and what has already been shown not to work, and a planner that gated
 #: more than the ranker would be a second policy contradicting the first.
+#: ``project_links`` is deliberately absent, and that is not an oversight:
+#: its rows are ``document``, ``artifact``, ``file`` and ``recipe``, and the
+#: ranker would let the first and the last through, so this list's own
+#: contract ("exactly the sources whose rows the ranker would refuse")
+#: cannot carry it without becoming a second, weaker policy.
+#: ``ProjectLinksSource._gate`` enforces ``allow_project_sources`` itself,
+#: on the event loop and before the store is consulted — a project's links
+#: are project data by construction, and an incognito turn never sees one.
 PROJECT_SOURCE_IDS: Tuple[str, ...] = ("project_memory", "files", "code_index")
 
 #: Useless without ``execution.workspace``; asking them costs a thread each.
