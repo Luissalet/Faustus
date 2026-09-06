@@ -896,3 +896,21 @@ su área y baja el baseline. Ningún módulo Studio nuevo la aumenta.
 168. **`[ ]` RUN-1.** Mientras corre una herramienta la línea enseña su nombre
     y el reloj, pero no su progreso: `tool_progress` trae un mensaje (la cola
     de un bash largo) que sí se pinta en la barra y no en el latido.
+169. **`[x]` AGENTE.** *(07-09-2026.)* Un turno `low_signal` con workspace
+    atado asignaba las herramientas de solo lectura directamente a
+    `_relevant_tools`, y eso salta la recuperación entera: los objetivos de un
+    proyecto acabaron escritos como texto en el chat porque
+    `project_objectives` nunca llegó al toolset. Ahora el suelo se une después
+    de la recuperación en vez de sustituirla.
+170. **`[x]` AGENTE.** *(07-09-2026.)* Nada en el prompt decía en qué idioma
+    contestar, y una muestra en español dentro de una regla del harness
+    («voy a modificar X», como ejemplo de lo que **no** hay que decir) bastaba
+    para que un mensaje en inglés se respondiera en español desde el primer
+    turno. `src/reply_language.py` mete ahora una línea, en el idioma que pide,
+    delante del mensaje del usuario.
+171. **`[ ]` AGENTE.** El empujón para «te han pedido una acción y has
+    contestado prosa» sigue sin existir: `_INTENT_RE` / `_MAX_INTENT_NUDGES`
+    sólo cazan la promesa corta y rota («ahora edito X» y fin de turno), no el
+    turno que responde bien redactado a algo que pedía una herramienta. Es el
+    primer turno del fallo 63, el que no es culpa nuestra pero se podría
+    ayudar.

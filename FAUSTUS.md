@@ -4783,3 +4783,33 @@ Ese último es su propio bug: Parar cerraba el stream del navegador y devolvía 
 **Ficheros.** `studio/src/screens/studio/model.ts` (`LiveRate`, `liveToken`, `livePhase`, `liveTps`), `studio/src/screens/studio/Transcript.tsx` (`LiveLine`), `studio/src/screens/studio.css`, `studio/src/adapters/chat.ts` (`tpsSource`), `src/llm_core.py` (`_ollama_rate` y la rama nativa), `tests/test_chat_metrics.py` (+3), `studio/checks/model.check.mjs` (+17 asserts), PENDIENTES_UI 165-168.
 
 **Verificado.** En el 7001 con el modelo de verdad: la línea pasando por «Waiting for the model · 00:07», «Writing · ~44.4 tok/s · 00:01» y el nombre de la herramienta mientras corre; y el pie del turno siguiente en **57.2 tok/s** sobre 583 tokens en 21 s —dividir por el reloj habría dado 27.8—.
+
+## 63. «Los ha puesto en texto, no en los putos objectives» (07-09-2026)
+
+**El informe.** Luis pide los objetivos del proyecto y el agente se los escribe **en el chat**, en prosa, con la pestaña Objetivos vacía al lado. Al insistir —«I meant put them into the project objectives tab of the project»— el modelo contesta que no tiene ninguna herramienta para eso.
+
+**Dos turnos, dos culpas distintas, y sólo una es nuestra.** En el primero `project_objectives` **sí** estaba en el toolset y el modelo la ignoró: eso es del modelo, y lo que ahí cabe es un empujón, no un arreglo. En el segundo la herramienta **no llegó nunca**, y ahí el fallo es de casa.
+
+**La rama.** Un turno clasificado como `low_signal` con un workspace atado se llevaba las herramientas de solo lectura directamente a `_relevant_tools`. Asignar ahí no es «añadir»: es **cortocircuitar**, porque todo lo que viene después —recuperación por RAG, palabras clave, sembrado por dominio— está guardado detrás de un `if _relevant_tools is None`. Y la frase que falló nombra la herramienta en voz alta: preguntado el índice a mano con esa misma frase, `project_objectives` sale entre las ocho primeras. Nadie le preguntó. La rama hermana, la de sin workspace, ya llevaba escrito en su comentario que no debía cortocircuitar; la de con workspace lo hacía sin darse cuenta.
+
+**El arreglo, que cabe en una idea.** El suelo es un suelo: se guarda aparte y se une **después** de que la recuperación haya hecho su trabajo. Las dos mitades importan —los ficheros de solo lectura porque tener un workspace ya es señal, y la recuperación porque un mensaje «vago» puede estar nombrando una herramienta.
+
+**Ficheros.** `src/agent_loop.py`, `tests/test_tool_selection_low_signal.py` (4 casos: que la rama no asigne, que el suelo se aplique después, que la mitad de solo lectura sobreviva, y que el índice devuelva `project_objectives` para la frase que falló).
+
+**Verificado.** En vivo en el 7001 con la frase exacta: antes **11** herramientas y ninguna era `project_objectives`; después **16**, con ella dentro y con el suelo de solo lectura sumándose por encima (`[tool-rag] Low-signal read-only floor added: ['get_workspace', 'glob', 'grep', 'ls', 'read_file']`).
+
+## 64. «Además responde en español cuando le hablo en inglés» (07-09-2026)
+
+**El informe, y lo que tenía de raro.** No es que el modelo arrastre el idioma de la conversación: pasa en el **primer** mensaje de un chat nuevo. Sesión `fcffabaa`, una sola frase en inglés, y el turno abre con «Voy a inspeccionar el código».
+
+**Descartado todo lo cómodo.** Sin memorias (`memories` vacía, `memory_engine.db` vacía), sin `AGENTS.md` en el workspace, sin `SYSTEM` en el Modelfile de Ollama, y la única skill guardada está en inglés. Montado el prompt real fuera del servidor y pasado un detector encima: **cero** líneas en español de setenta y cinco. El prompt entero era inglés.
+
+**La frase.** Regla 2 de `local_model_policy()`: *«Do not announce actions ("I will now edit X", "voy a modificar X")»*. Un ejemplo en español de lo que **no** hay que decir. El modelo se quedó con la muestra y tiró el «no» —los negativos se les dan mal— y la salida fue, literalmente, la construcción del ejemplo. Y por debajo de eso, lo importante: **en ningún sitio del prompt se decía en qué idioma había que contestar**. Se daba por hecho que se notaría.
+
+**Lo que se hizo.** `src/reply_language.py` lee el último turno del usuario que dé señal suficiente y monta **una línea**, escrita en ese mismo idioma —a un modelo que está a punto de contestar en el idioma equivocado, una frase en inglés sobre el inglés no le dice más que una en español—, colocada detrás del bloque de fecha y justo delante del mensaje del usuario: lo último que lee. Rol `user` y no `system` por la misma razón que la fecha: los backends locales cachean el prefijo del system byte a byte y esta línea cambia en cuanto el usuario cambia de idioma.
+
+**Callarse también es una respuesta.** «Hazlo», una ruta, un stack trace no llevan ni una palabra funcional, y fijar un idioma sobre nada sería peor que dejar que el modelo siga la conversación: se busca hacia atrás hasta el turno que sí dijo algo, y si ninguno lo dijo no se inyecta nada. Para poder distinguir «he leído inglés» de «no he leído nada y devuelvo inglés por defecto», `detect_language` se parte en `language_signal`, que devuelve además cuánta evidencia respaldó la lectura; `detect_language` contesta exactamente lo que contestaba antes.
+
+**Ficheros.** `src/reply_language.py`, `src/agent_loop.py` (`_language_message`, el último de los bloques inyectados), `src/agent_harness.py` (la regla 2 se queda sin la muestra en español: vale igual «in any language»), `src/research_citations.py` (`language_signal`), `tests/test_reply_language.py` (22 casos).
+
+**Verificado.** En el 7001 con `qwen3.5:9b`, sesión nueva y workspace atado, las dos direcciones: pregunta en inglés → respuesta en inglés; la misma pregunta en español → respuesta en español.
