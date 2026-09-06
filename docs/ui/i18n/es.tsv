@@ -68,6 +68,7 @@ A chat that starts with this report as context	Un chat que empieza con este info
 A colour swatch you can copy.	Una muestra de color que puedes copiar.
 A connection makes the block load for one session or one agent, whatever its scope says. An expiry is what makes a temporary one safe to make.	Una conexión hace que el bloque cargue para una sesión o un agente, diga lo que diga su ámbito. La caducidad es lo que hace segura una conexión temporal.
 A cow says it.	Lo dice una vaca.
+A declared capability is not a tool and a completion mode is not a permission: what this agent may actually do is the list above.	Una capacidad declarada no es una herramienta y un modo de completado no es un permiso: lo que este agente puede hacer de verdad es la lista de arriba.
 A dot marks the ones you have already seen. `/tours reset` offers them again.	Un punto marca las que ya has visto. `/tours reset` vuelve a ofrecerlas.
 A file from this computer…	Un fichero de este equipo…
 A finding is a claim with evidence behind it, posted while work is in flight. Nothing is being served right now.	Un hallazgo es una afirmación con pruebas detrás, publicada mientras el trabajo está en marcha. Ahora mismo no se está sirviendo ninguno.
@@ -490,6 +491,7 @@ CardDAV saved.	CardDAV guardado.
 CardDAV sync	Sincronización CardDAV
 Carried by this folder. It loaded because you approved this folder's instruction files.	Lo trae esta carpeta. Cargó porque aprobaste sus ficheros de instrucciones.
 Category	Categoría
+Caveats	Advertencias
 Center layer	Centrar capa
 Center on canvas	Centrar en el lienzo
 Centre on the canvas	Centrar en el lienzo
@@ -769,6 +771,7 @@ Could not read the checkpoints	No he podido leer los puntos de control
 Could not read the definitions	No he podido leer las definiciones
 Could not read the diff	No he podido leer el diff
 Could not read the document: {error}	No se pudo leer el documento: {error}
+Could not read the effective configuration	No se pudo leer la configuración efectiva
 Could not read the file.	No he podido leer el fichero.
 Could not read the learned rules.	No he podido leer las reglas aprendidas.
 Could not read the library	No he podido leer la biblioteca
@@ -1156,6 +1159,8 @@ Edits save themselves as drafts while you work; the ones you have not finished s
 Edits stay pending until you accept them file by file.	Las ediciones quedan pendientes hasta que las aceptes archivo a archivo.
 Effect	Efecto
 Effect colour	Color del efecto
+Effective configuration	Configuración efectiva
+Effective configuration of {name}	Configuración efectiva de {name}
 Effective score: confidence × freshness + helpful − 4 × harmful	Puntuación efectiva: confianza × frescura + útiles − 4 × dañinas
 Effects	Efectos
 Email	Correo
@@ -1518,6 +1523,7 @@ Horizontal rule	Línea horizontal
 Host	Equipo
 Hour height	Alto de la hora
 How	Cómo
+How far it pushes when nothing overrides it. Depth, never permission.	Hasta dónde llega cuando nada lo cambia. Profundidad, nunca permiso.
 How it failed	Cómo falló
 How long this session has been open.	Cuánto lleva abierta esta sesión.
 How many relevant published skills join each agent request. 0 turns injection off.	Cuántas skills publicadas relevantes acompañan a cada petición del agente. 0 desactiva la inyección.
@@ -1613,6 +1619,7 @@ Instructions — the standing orders it reviews by	Instrucciones — las órdene
 Integration (id)	Integración (id)
 Integration saved.	Integración guardada.
 Integrations	Integraciones
+Integrations that were not available	Integraciones que no estaban disponibles
 Integrations: MCP servers, mail, calendar, search providers.	Integraciones: servidores MCP, correo, calendario, buscadores.
 Intensity	Intensidad
 Intent	Intención
@@ -2772,6 +2779,7 @@ Reset	Restablecer
 Reset view	Restablecer vista
 Resize	Redimensionar
 Resolve with the agent	Resolver con el agente
+Resolving the effective configuration	Resolviendo la configuración efectiva
 Responds	Responde
 Restart	Reiniciar
 Restarted	Reiniciado
@@ -3841,6 +3849,7 @@ Welcome screen	Pantalla de bienvenida
 What Faustus does on its own with new mail. The triage task in Automations does the work; these switches allow it.	Lo que Faustus hace por su cuenta con el correo nuevo. La tarea de triaje de Automatizaciones hace el trabajo; estos interruptores lo permiten.
 What a model's weights can take right now, KV cache not included.	Lo que pueden ocupar ahora mismo los pesos de un modelo, sin contar la caché KV.
 What a path rule cannot promise:	Lo que una regla de ruta no puede prometer:
+What a run would start from, once the precedence has been walked. Nothing was executed.	De dónde partiría la ejecución, recorrida ya la precedencia. No se ha ejecutado nada.
 What are we	¿Qué
 What breaks if I touch this	Qué se rompe si toco esto
 What counts as urgent: deadlines, people, subjects. This task tags the mail; pausing it stops the tagging.	Qué cuenta como urgente: plazos, personas, asuntos. Esta tarea etiqueta el correo; pausarla detiene el etiquetado.
@@ -4033,6 +4042,7 @@ auto	auto
 auto-detect the test runner	detectar el runner de tests
 auto-refresh	actualizar solo
 avg	media
+avoids	evita
 backed by {refs}	respaldada por {refs}
 below {n}%	por debajo del {n}%
 blocked	bloqueado
@@ -4048,6 +4058,7 @@ by email to me	por correo a mí
 by email to {to}	por correo a {to}
 by intent or connection	por intención o conexión
 can be a worker	puede ser worker
+can do	puede
 cancelled	cancelado
 cancelling	cancelando
 cannot delegate	no delega
@@ -4057,9 +4068,11 @@ chunks	fragmentos
 claims	reclama
 claims changes it did not make	afirma cambios que no hizo
 code	código
+collaboration	colaboración
 comma-separated	separadas por comas
 comma-separated, e.g. python, build, vllm	separadas por comas, p. ej. python, build, vllm
 complete	completo
+completion mode	modo de completado
 conf {n}	conf {n}
 confidence	confianza
 configuration	configuración
@@ -4082,6 +4095,7 @@ deleted	borrados
 demoted	degradadas
 detect on set up	detectar al preparar
 detected	detectado
+discarded	descartado
 disconnected	desconectado
 documents	documentos
 does the rest.	hace el resto.
@@ -4117,18 +4131,22 @@ everything, in every category	todo, en todas las categorías
 evidence: {refs}	pruebas: {refs}
 extracted	extraída
 failed	falló
+field	campo
 finish	terminar
 finished	terminó
 finished (exit {code})	terminado (salida {code})
 finished unverified	terminó sin verificar
 fits	cabe
 free	libres
+from	de dónde sale
 from {n} chat	de {n} chat
 from {n} chats	de {n} chats
 generated	generado
 generic	genérica
+good for	va bien para
 gpu-box	gpu-box
 guard	guardia
+hands back	entrega
 has never run	nunca ha corrido
 helpful according to whom?	¿útil según quién?
 holds	retiene
@@ -4149,6 +4167,7 @@ in {amount}	en {amount}
 incomplete	incompleto
 inconclusive	no concluyente
 indexed	indexados
+inherits	hereda de
 inherits the environment	hereda el entorno
 inside the refresh interval	dentro del intervalo de refresco
 installed	instalado
@@ -4210,6 +4229,7 @@ no invocation recorded	sin invocación registrada
 no label in the result	sin etiqueta en el resultado
 no model	sin modelo
 no model on this card	ningún modelo en esta tarjeta
+no output contract declared	sin contrato de salida declarado
 no reason given	sin motivo
 no reasoning	sin razonar
 no room	no cabe
@@ -4267,6 +4287,7 @@ previous interface	interfaz anterior
 primary	principal
 primary work folder	carpeta de trabajo principal
 probing the model	sondeando el modelo
+profiles	perfiles
 projects	proyectos
 promoted	promovidas
 pruned	podadas
@@ -4292,6 +4313,7 @@ rests on	se apoya en
 review ⚠	revisión ⚠
 review ✓	revisión ✓
 reviewer	revisor
+revision	revisión
 rewritten by the teacher so it would pass	reescrita por el profesor para que pasara
 round	ronda
 round {n}	ronda {n}
@@ -4311,6 +4333,7 @@ shuffled	al azar
 skipped	saltados
 something is unaccounted for	algo queda sin justificar
 span relocated to the quote	tramo reubicado a la cita
+specialties	especialidades
 split	repartido
 split with {list}	repartido con {list}
 stale	caducada
@@ -4320,6 +4343,7 @@ stopped	parado
 subscription	suscripción
 supervisor	supervisor
 system RAM, over PCIe	RAM del sistema, por PCIe
+tags	etiquetas
 task	tarea
 task runs	runs de tareas
 teacher	profesor
@@ -4379,6 +4403,8 @@ updated {when}	actualizado {when}
 usage: n/a	uso: n/d
 used	usados
 used no tools	no usó herramientas
+value	valor
+verification	verificación
 verification failed	verificación fallida
 verified	verificado
 verified shared text	texto compartido verificado

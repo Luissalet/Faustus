@@ -3754,5 +3754,280 @@ emite `project_context_detached`; y de los **8 nombres** de evento añadidos a `
 servicio emite **5** — `project_context_indexed`, `project_context_index_failed` y
 `project_context_retrieved` esperan a que exista quien los emita.
 
+## 55
+
+Faustus ya sabía **quién trabaja**. `src/agent_defs.py` lee un `AGENT.md` y de ahí salen identidad,
+modo, modelo, runner, herramientas, denegaciones y reglas de ruta. Lo que no sabía decir era **hasta
+dónde persigue** ese trabajador una vez arrancado: todos los workers hacían lo mismo, correr hasta
+que ellos juzgaban la tarea hecha. «Cambia sólo esa línea» y «dame cuatro variantes para comparar»
+entraban al mismo bucle y salían con la misma profundidad.
+
+El plan 3 de 11 (`inspiration/PLAN_PERFILES_AGENTES_Y_COMPLETION_MODES_FAUSTUS.md`) parece invitar a
+construir un catálogo de perfiles al lado del de agentes: diez perfiles nuevos, cinco familias de
+políticas versionadas, packs, selección automática. **La decisión de cabecera de este bloque es no
+construirlo.** Un segundo almacén de «perfiles de misión» habría dado dos respuestas a *«¿qué agente
+es este?»*, que es una más de las que un sistema puede mantener honestas (§31): un permiso arreglado
+en uno se queda roto en el otro, y nadie puede contestar cuál de los dos había que usar.
+
+Lo que se hizo en su lugar: **`AgentDef` se amplía** con los quince campos que le faltaban, y todo lo
+ortogonal a la identidad —cuánto persigue, contra qué se verifica, cuánto puede gastar, cómo se
+comporta en una sala con otros agentes y qué devuelve— vive en `src/agent_profiles/`, **referenciado
+por id versionado y nunca copiado**. Un `AgentDef` dice QUIÉN. Un modo de completado dice HASTA
+DÓNDE. Ninguno de los dos puede decir lo del otro, y la última frase no es una convención: es lo que
+§55.2 explica que ninguno de los dos tipos tiene campo para expresar.
+
+### 55.1 Las cifras
+
+`src/agent_profiles/`: **8 ficheros, 5.414 líneas** — `contracts.py` (928) con el vocabulario cerrado
+y la `ResolvedAgentExecution` que consumen todos los runtimes, `resolver.py` (1.376) que recorre la
+precedencia y produce el objeto, `catalog.py` (851) con las cinco familias de perfiles,
+`selection.py` (837) con los filtros duros y el ranking, `builtin.py` (591) con los diez perfiles de
+§8, `completion.py` (448) con los cuatro modos y su escalera, `packs.py` (356) con los cinco packs y
+`__init__.py` (27), deliberadamente vacío de imports para que importar un módulo no sea importarlos
+todos.
+
+Tocado sin fichero nuevo: `src/agent_defs.py` (1.382 líneas) — **15 campos nuevos** en `AgentDef` y
+**13 claves nuevas** de frontmatter, de 12 a **25**; `src/agent_tools/subagent_tools.py` (1.905) con
+seis bloques que fijan la resolución antes de arrancar cada worker. La API es
+`routes/agent_profiles_routes.py` (362 líneas, **7 rutas** bajo `/api/agent-profiles`), y en Studio
+`adapters/agents.ts` (280) y `screens/agents/Defs.tsx` (349).
+
+Vocabulario cerrado, todo como dato y no como prosa: **4 modos de completado**, **14 capacidades**,
+**8 niveles de precedencia** (§1.6), **6 niveles** de los que puede venir un modo, **5 familias** de
+perfil, 3 modos de agente y 6 orígenes de override. El catálogo de políticas trae **35 perfiles
+versionados**: 7 de verificación, 8 de contexto, 8 de presupuesto, 9 de colaboración y 3 contratos de
+salida. Más **5 packs** (`secure_feature_team`, `research_team`, `media_production`,
+`incident_response`, `document_pipeline`).
+
+Pruebas: **8 ficheros, 2.866 líneas, 252 tests**, todos en verde —
+`test_agent_selection.py` (428 líneas), `test_agent_defs_extended.py` (448),
+`test_agent_profile_resolver.py` (446), `test_agent_profile_catalog.py` (383),
+`test_agent_profiles_builtin.py` (347), `test_agent_profiles_contracts.py` (325),
+`test_completion_modes.py` (269) y `test_agent_profiles_routes.py` (220).
+
+### 55.2 Un modo de completado no concede permisos, y no tiene con qué
+
+§3.3 dice que un modo es profundidad y nunca autoridad. Eso, escrito en un comentario, dura hasta el
+vigésimo commit. Aquí es **una propiedad de los tipos**: `CompletionPolicy` tiene ocho campos —`mode`,
+`policy_version`, `description`, `explore_frontier`, `bonus_budget_share`, `stop_on_core_proved`,
+`max_extra_layers`, `requires_verification`— y **ninguno nombra una herramienta, una ruta, un efecto,
+una raíz de trabajo ni una regla**. No es que no se usen para eso: es que no hay dónde escribirlo.
+`CompletionChoice` y `PermissionEnvelope` viven en el mismo módulo y no se tocan nunca; el envelope no
+lee el modo y el modo no puede alcanzar el envelope.
+
+Lo que convierte eso en una garantía es
+`test_a_completion_policy_has_no_field_in_which_a_permission_could_live`: lee los **nombres** de los
+campos del dataclass y falla si alguno contiene una de catorce palabras que huelen a autoridad
+(`tool`, `permission`, `deny`, `allow`, `grant`, `path`, `root`, `effect`, `scope`, `secret`,
+`network`, `write`, `read`, `trust`). Su propio docstring dice por qué mira los nombres y no el
+comportamiento: *el comportamiento puede estar bien hoy y un campo nuevo puede estropearlo el mes que
+viene sin que ningún test se entere*. `maximalist` sobre un reviewer de sólo lectura es un reviewer
+que mira más hondo y sigue sin poder escribir un byte, y el preámbulo del worker se lo dice con esas
+palabras para que no gaste una ronda averiguándolo.
+
+`requires_verification` es `True` en los cuatro modos a propósito, y el campo se gana el sitio
+diciéndolo en voz alta: **la profundidad se negocia, la evidencia no**. Un modo futuro que quisiera
+saltarse `prove` tendría que escribir el `False` y defenderlo en revisión.
+
+### 55.3 La precedencia recorrida como dato
+
+Los ocho niveles de §1.6 son una tupla, `contracts.PRECEDENCE`, y `resolver._levels` construye un
+`OrderedDict` con lo que ofrece cada uno —un nivel que calla aparece igual, con un diccionario
+vacío, porque «ausente» y «callado» son el mismo hecho y merecen la misma escritura. `_pick` la
+recorre de más fuerte a más débil **y no se para en el ganador**: un nivel meramente superado no es
+un rechazo y no gana un caveat, pero es lo que alguien pidió, y una tabla que lo omitiera contestaría
+«¿por qué este modelo?» con la mitad de la historia.
+
+Por eso el diálogo de configuración efectiva puede imprimir, debajo del valor, la línea
+`descartado: global_default → greedy — outranked by agent_default`. No es un texto redactado para la
+pantalla: es la fila que `_completion` puso en el ledger cuando `implementer` declaró `literal` y el
+`greedy` global perdió. Lo mismo con los techos, que no van por `_pick` sino por `_ceiling`, porque
+en un límite el nivel más fuerte no gana sin más: gana **el número más pequeño que alguien dijo**,
+acreditado al nivel más fuerte que lo dijo, y todos los que no redujeron quedan escritos diciéndolo.
+
+La escalera del modo es la suya propia y tiene **seis** peldaños, no ocho: `MODE_PRECEDENCE` deja
+fuera política de sistema, política de dueño y restricción de proyecto **a propósito**, porque esos
+tres gobiernan permisos y efectos, y un modo no es ninguna de las dos cosas. Dejarlos fuera es lo que
+impide que alguien confunda esa tupla con la escalera de permisos y «resuelva» con ella una pregunta
+de autoridad.
+
+### 55.4 Un override nunca amplía, y un override prohibido no revienta
+
+§15 enumera seis cosas que una tarea no puede hacer, y `resolver._restrict` las escribe como cinco
+operaciones que **no tienen forma de expresar lo contrario**: `tools` se INTERSECA, `deny` se UNE (no
+hay camino de código que quite uno), de `permission` sólo se añaden reglas `deny` —la lista es
+último-que-encaja-gana, así que un `allow` añadido de verdad reabriría lo cerrado—, `work_roots` se
+interseca **con conciencia de contención** (`src` ∩ `src/lib` es `src/lib`, no el conjunto vacío) y
+`effects` se interseca. Las dos prohibiciones restantes viven junto a sus valores: la verificación
+igual-o-más-estricta en `_profiles`, los techos en `_ceiling` y la frontera de proveedor en `_route`,
+porque una regla escrita al lado del valor que restringe es una regla que alguien encuentra.
+
+Las seis, dichas como las dice el plan: **no se quita un deny**, **no se ensancha una ruta ni un
+efecto**, **no se habilita una herramienta fuera del allowlist de la definición**, **no se debilita
+una verificación bloqueante**, **no se cruza la frontera de proveedor** y **no se supera el techo de
+presupuesto**.
+
+Y la parte que importa para operar: **un override prohibido no lanza**. El campo se ignora, el resto
+del override se aplica igual, y el motivo aterriza en `caveats` con el nombre del campo y del nivel
+que lo pidió («`tools` from task_override was ignored: …»). Rechazar la llamada entera convertiría un
+campo optimista en un trabajo muerto; concederlo sería exactamente el fallo que este módulo existe
+para impedir. Por la misma razón `resolve()` **nunca lanza** en el camino caliente: el peor caso es
+`_minimal()`, una resolución válida que no concede nada —cero herramientas, cero raíces, cero
+efectos— y cuyos caveats dicen qué salió mal. Un despachador que no puede resolver tiene que poder
+**negarse con un motivo**, y una excepción tres marcos más abajo no lo es.
+
+### 55.5 `definition_revision` se fija al resolver, no al leer
+
+Una definición es un fichero. Alguien lo edita mientras un trabajo encolado espera, y el trabajo que
+acaba corriendo no es el que se encoló. Releer el fichero después no es una respuesta: es una
+reconstrucción.
+
+`agent_defs.revision_of()` produce un digest estable de lo que dice una definición **ya
+materializada**, y `resolver.resolve()` lo fija dentro de `AgentRef` antes de que nada arranque. El
+orden de las claves en el fichero no entra —`fingerprint` es indiferente al orden y ordena las listas—
+pero **el orden de `permission` sí**, porque esas reglas son último-que-encaja-gana y una lista
+reordenada es otra política; se unen en una sola cadena justo por eso. `source`, `path`, `caveats`,
+`stated` e `inherits` quedan fuera: el origen viaja al lado de la revisión en el propio `AgentRef` y
+los otros se derivan de campos que ya cuentan.
+
+`snapshot()` escribe la resolución, su identidad y su tabla de decisiones; `rehydrate()` los lee de
+vuelta y, cuando la revisión actual difiere de la fijada, **lo dice en `caveats` y devuelve la
+configuración fijada**. No re-resuelve: re-resolver en silencio sería justo el fallo que la revisión
+existe para evitar, e ignorar el cambio en silencio dejaría al operador preguntándose por qué el run
+no se parece al fichero que está leyendo. La automatización nocturna no empieza a hacer otra cosa
+porque alguien mejorara un agente a las cuatro de la tarde.
+
+### 55.6 Diez perfiles escritos, probados e invisibles
+
+El bug de integración de este bloque no lo encontró ningún test. Los diez perfiles de §8 estaban
+escritos, parseados, validados y cubiertos por veinte tests en verde — y **la pantalla `/agents`
+seguía mostrando tres definiciones**. `agent_defs.builtins()` devolvía sólo lo que
+`agent_defs.BUILTIN_SOURCES` trae, `load_all()` iba por ahí, y nada en el camino que la pantalla y
+los resolvers usan de verdad llamaba nunca a `agent_profiles.builtin.profile_defs()`.
+
+Lo detectó el navegador. Y no es casualidad que no lo detectaran los tests: **todos los de
+`test_agent_profiles_builtin.py` llaman a `profile_defs()` directamente**, así que el módulo se
+estaba comparando consigo mismo. Un test que pregunta a la fuente si la fuente dice lo que dice pasa
+siempre; lo que no había era nadie preguntándole al **cargador**.
+
+El arreglo entra por `_load_raw()`, que es el único sitio por donde se construye el catálogo:
+primero los built-in del propio fichero, después los perfiles especializados —que **reemplazan** el
+slug que reemiten, porque enriquecer `implementer` es el objetivo y enviar las dos copias sería el
+catálogo duplicado que toda esta capa evita—, y después el almacén del usuario y las definiciones del
+repo, que siguen ganándoles. `_profile_catalogue()` importa tarde y a la defensiva: un catálogo que no
+carga cuesta los perfiles especializados, nunca las definiciones que el despachador necesita para
+funcionar.
+
+Y `builtins()` **sigue devolviendo sólo lo que ese fichero envía**, con un test que lo fija
+(`[d.slug for d in defs.builtins()] == ["reviewer", "planner", "implementer"]`). No es purismo: si
+`builtins()` incluyera los perfiles, `agent_profiles.builtin` compararía sus definiciones aumentadas
+contra sí mismas y el test de «el prompt llega intacto» dejaría de probar nada. El catálogo pasa de
+**3 a 11 definiciones**.
+
+### 55.7 `surgeon` y `auditor` no crearon gemelos
+
+La lectura perezosa de «añade los diez» produce un `auditor` sentado al lado de `reviewer` haciendo
+el mismo trabajo con otro nombre. Dos agentes iguales con dos nombres no es un catálogo más rico: es
+un catálogo donde nadie puede contestar cuál había que usar y donde un permiso arreglado en uno sigue
+roto en el otro.
+
+Dos de los diez no son definiciones nuevas. Son las que ya existían, llevando los campos que §4
+añadió:
+
+- **`surgeon` → `implementer`.** Su prompt ya ERA el cirujano: «el cambio más pequeño que hace el
+  trabajo», «el comando más estrecho que lo demuestra — el fichero de test, no la suite». Eso es
+  profundidad `literal` y verificación `targeted_tests_v1`, escrito antes de que los campos
+  existieran.
+- **`auditor` → `reviewer`.** Sólo lectura, informa y no arregla, no puede delegar. Idéntico
+  propósito.
+
+El mecanismo es `augments`: se parte del frontmatter y del cuerpo del built-in que ya se envía, se
+fusionan encima las claves nuevas y se vuelve a parsear **por el mismo parser** que lee cualquier
+`AGENT.md`. El prompt, las herramientas, las denegaciones y las reglas pasan intactos, y eso es un
+test y no una promesa de este documento. `planner` se queda sin tocar: un planificador reparte
+trabajo y lo delega, un `explorer` compara hipótesis y no delega nada al sistema de ficheros, y §7 las
+lista como responsabilidades distintas.
+
+La misma idea de fondo protege el resto: un reviewer built-in que todavía alcanzara una herramienta
+de escritura es **descartado** por `profile_defs()` con un warning, lo que pone en rojo el test de
+«los diez existen». Una regla de sólo lectura se cumple porque la definición **deniega** las
+herramientas, no porque su prompt lo pida con educación.
+
+### 55.8 La trampa de los slugs
+
+Todas las búsquedas por nombre de `agent_defs` pasan por `clean_slug`, que es `slugify`. Un built-in
+declarado `greedy_builder` **carga perfectamente y no se puede volver a encontrar nunca**: el
+slugificador lo convierte en `greedy-builder` y la búsqueda por el nombre con guion bajo devuelve
+nada. Por eso los slugs de varias palabras se envían con guion (`greedy-builder`,
+`incident-responder`, `creative-director`, `image-artist`, `video-producer`, `night-worker`),
+`PLAN_SLUGS` conserva la ortografía del plan con guiones bajos y `resolve_slug` normaliza por
+**la misma** `clean_slug` que usa todo lo demás, de forma que `greedy_builder`, `greedy-builder` y
+`Greedy Builder` son un solo agente aquí exactamente como lo son allí. `ALIASES` se construye desde
+los `aka` de cada entrada, así que el nombre del plan y el slug real no pueden discrepar.
+
+### 55.9 La fiabilidad es por tarea; una capacidad no es una prueba
+
+Un agente excelente refactorizando y desastroso con imágenes **no tiene «una tasa de éxito»**. Los
+resultados observados se guardan por `(slug, task_intent)` y se leen por tarea; pedir la fiabilidad
+de un agente sin nombrar una tarea devuelve el desglose por intención y `success_rate: None`, porque
+el número único no existe.
+
+Y `capabilities`, `specialties`, `tags`, `preferred_tasks` y `avoid_tasks` sirven **para filtrar y
+emparejar, jamás como evidencia de éxito**. Declarar `browser` te hace candidato a trabajo de
+navegador y no te da ni una herramienta que no tuvieras. El único término de éxito del ranking sale
+de `record_outcome()`, alimentado por resultados observados —un run que terminó, una verificación que
+pasó o falló— y por nada más. Nada puntúa sobre el slug, el nombre o la descripción: un agente que se
+llame a sí mismo «el experto definitivo en refactorización» no ha afirmado nada comprobable, y el
+slug se usa para una sola cosa, romper un empate numérico por orden alfabético, dicho en voz alta en
+la traza. Los filtros duros corren antes del ranking y **cada rechazo lleva su frase** —«no declara
+`image`», no un slug en una lista de perdedores—, porque un candidato rechazado sin motivo escrito es
+un candidato que el selector vuelve a proponer en el turno siguiente.
+
+La salud tampoco se inventa: no hay Sistema Inmune en esta build, así que la disponibilidad se lee de
+lo que el llamante observó y el hueco se declara en `degraded_integrations` con su motivo. Una lista
+de modelos vacía significa «nadie me pasó un registro», que no es lo mismo que «no hay nada
+disponible», y por eso no rechaza a nadie.
+
+### 55.10 El diálogo de configuración efectiva se cortaba por la derecha
+
+Verificado en el navegador contra el 7001: el diálogo «Effective configuration» sacaba una barra de
+scroll horizontal y dejaba fuera la tercera columna, `from` — **la única que da valor a la tabla**,
+porque un valor sin el nivel que lo puso es un número que el lector tiene que ir a re-derivar del
+fichero de definición. La causa es la de siempre: un diálogo de 560px y celdas con contenido
+irrompible (un digest `sha256:` de 71 caracteres, una raíz de trabajo, una regla de permiso) que
+empujan la tabla más allá del ancho disponible.
+
+El arreglo está en `screens/agents/Defs.tsx` y `screens/agents.css`, con las tres columnas intactas:
+el diálogo se ensancha **sólo para esta tabla** (`.fs-dialog:has(.fs-def__effective)`), los anchos de
+`field` y `from` se **declaran** en porcentaje en vez de medirse del contenido —en una ventana
+estrecha el diálogo lo limita el viewport, y un ancho fijo haría de `from` la primera baja—, y
+cualquier cosa irrompible parte dentro de su propia celda (`overflow-wrap: anywhere`). De paso, los
+estilos en línea de la tabla pasan a clases con las variables del sistema, que es como el resto de
+esta pantalla ya estaba escrito.
+
+### 55.11 Lo verificado, y las 264 carpetas de propina
+
+**252 tests** en los ocho ficheros del plan, en verde; `test_agent_defs.py` (53) sigue igual.
+`node scripts/build-studio.js --force` y `node node_modules/typescript/bin/tsc --noEmit` limpios.
+
+Los que fijan un fallo concreto y no una forma: una `CompletionPolicy` no puede tener un campo que se
+llame como un permiso; un modo leído de una frase ambigua es `""` y no una decisión; un `allow` en un
+override se ignora y aparece en `caveats`; un hijo no puede ensanchar el allowlist de su padre ni
+reabrir su deny, y el rechazo nombra la cadena; el prompt de un built-in aumentado es byte a byte el
+que ya se enviaba; un reviewer que alcance una herramienta de escritura no se envía; `auditor`
+resuelve a `reviewer` y la cuarentena dispara con las dos ortografías; y la ruta `/resolve` ignora
+`owner` y `project_id` del cuerpo **y lo dice** en `ignored_fields`.
+
+Al pasar por aquí se limpiaron **264 carpetas `faustus-gate-*` huérfanas** en `%TEMP%`. No era
+suciedad de este cambio y borrarlas no cerró nada: `tests/test_agent_gate.py::test_the_hook_script_is_not_left_behind`
+**sigue fallando después de borrarlas**, porque la fuga es real, es preexistente y vive en
+`src/external_worker.py::GateSession.close()`. Queda anotada en `PENDIENTES.md` con el diagnóstico.
+
+Lo que **no** cierra, con detalle en `OBJETIVOS.md`: la resolución se fija cuando arranca el tool y
+no al encolar en `src/dispatch.py`; `src/agent_loop.py` no ve la `CompletionPolicy` efectiva, así que
+la decisión de parar sigue siendo heurística; los **siete eventos** de §1.7 no los emite nadie;
+`planner` no se amplió con los campos nuevos; y el término `cost_latency_fit` se calcula con peso 0
+porque `TaskSpec` no lleva plazo ni presupuesto contra los que ajustar.
+
 ## Cómo mantener este documento
 Cada bloque de trabajo añade una sección (fecha, qué, por qué, ficheros, cómo se verificó, cifras) y actualiza las cifras de cabecera (`git log --oneline c9dd68d8..HEAD | wc -l`, `git diff --stat c9dd68d8..HEAD`). Los commits del fork llevan mensajes largos que explican el porqué: `git log c9dd68d8..HEAD` es la fuente detallada.

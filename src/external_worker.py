@@ -297,12 +297,53 @@ class _GateSession:
             logger.debug("external_worker: closing the gate listener failed: %s", e)
         try:
             if self._tmpdir:
-                import shutil as _shutil
-                _shutil.rmtree(self._tmpdir, ignore_errors=True)
+                _remove_gate_dir(self._tmpdir)
         except Exception as e:  # noqa: BLE001
             logger.debug("external_worker: removing the hook script failed: %s", e)
         led["judged_ids"] = seen
         return led
+
+
+def _remove_gate_dir(path: str) -> bool:
+    """Delete a gate scratch directory, read-only hook script included.
+
+    `agent_gate.write_hook_script` finishes with `chmod(0o500)` on purpose, so
+    that the foreign agent cannot rewrite the hook that is policing it. On
+    POSIX that still leaves the *directory* writable and `rmtree` succeeds. On
+    Windows the same call clears the read-only-file bit's inverse — the file
+    ends up 444 — and `rmtree` raises PermissionError [WinError 5] on it.
+
+    The old code passed `ignore_errors=True`, which turned that failure into
+    silence: 264 orphaned `faustus-gate-*` directories had accumulated in the
+    user's TEMP since the feature shipped, and the test that checks the script
+    is not left behind had been failing for days without anyone reading it as
+    a leak.
+
+    Retrying with a backoff would not help — the mode does not change with
+    time. Clearing the bit and retrying does, which is what `onerror` does
+    here. It still never raises: a scratch directory that cannot be deleted is
+    worth a warning, not a lost ledger.
+    """
+    import shutil as _shutil
+    import stat as _stat
+    import sys as _sys
+
+    def _force(func, target, _exc):
+        try:
+            os.chmod(target, _stat.S_IWRITE | _stat.S_IREAD)
+            func(target)
+        except Exception as inner:  # noqa: BLE001
+            logger.warning("external_worker: could not remove %s: %s", target, inner)
+
+    try:
+        # `onexc` since 3.12, `onerror` before it; passing both is an error.
+        if _sys.version_info >= (3, 12):
+            _shutil.rmtree(path, onexc=lambda f, t, e: _force(f, t, e))
+        else:
+            _shutil.rmtree(path, onerror=lambda f, t, e: _force(f, t, e))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("external_worker: gate scratch dir %s survived: %s", path, exc)
+    return not os.path.exists(path)
 
 
 def _hook_command(script: str) -> str:

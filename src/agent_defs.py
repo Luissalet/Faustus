@@ -46,14 +46,43 @@ that never loaded. An unknown tool name is a load error naming the tool: the
 alternative, dropping it, would grant less than the author asked for while
 telling them it worked.
 
+**The fields the profiles plan added** — ``default_completion_mode``,
+``capabilities``, ``specialties``, ``tags``, ``preferred_tasks``,
+``avoid_tasks``, the four ``*_profile`` references, ``output_contract``,
+``extends`` and ``prompt_append`` — are the exception to the rule above, and
+they say so rather than pretending otherwise: none of them is enforced HERE.
+They are read by selection and by the completion resolver
+(``src/agent_profiles/``), and not one of them can widen what the table above
+already decided. A completion mode is depth, never authority; a declared
+capability is not a tool; a profile id is a reference to somebody else's
+versioned policy, not a copy of it.
+
+**An unknown frontmatter key is now a load ERROR.** It used to be dropped
+without a word, which meant a file that spelled ``capabilties:`` loaded,
+looked right on the page, and was never selected for anything — the same
+failure as an unknown tool name, one level up. Every key an AGENT.md may
+carry is in :data:`FRONTMATTER_KEYS`; anything else names itself in
+``errors``, with the nearest key this build does know.
+
+**``extends`` is single-parent, at most three deep, and can only restrict.**
+The parent's denies are kept, its allowlist cannot be widened by a child, and
+the prompt is the parent's followed by the child's — never a silent
+replacement (§16). A cycle is refused with the chain printed, because "too
+deep" on its own sends the reader looking through four files.
+
 A definition that lives in a repo is instructions from whoever sent the pull
 request, so ``.faustus/agents/*.md`` loads only for a workspace whose
 instruction files the user has approved (``src/workspace_trust.py``).
 
-Stdlib only, and nothing here raises into a hot path.
+Stdlib, the skills loader, and two pure in-repo modules for the vocabulary
+and the fingerprint (``src/agent_profiles/contracts.py``,
+``src/contracts/base.py``). Nothing here raises into a hot path: loading
+files never does, and the two functions that DO raise — :func:`parse` and
+:func:`resolve_extends` — are the ones whose whole job is to say no.
 """
 from __future__ import annotations
 
+import difflib
 import logging
 import os
 import re
@@ -61,6 +90,12 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from services.memory.skill_format import emit_frontmatter, parse_frontmatter, slugify
+# The vocabulary lives in the contracts module and is imported, not repeated:
+# two lists of completion modes in one codebase is how a mode ends up valid in
+# the parser and unknown to the resolver. That package must never import this
+# one back — see its docstring.
+from src.agent_profiles.contracts import CAPABILITIES, COMPLETION_MODES
+from src.contracts.base import fingerprint
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +127,41 @@ MIN_TIMEOUT_S, MAX_TIMEOUT_S = 60, 7200
 
 #: Tools that run a shell no path pattern can see inside.
 SHELL_TOOLS: Tuple[str, ...] = ("bash", "python")
+
+#: What a definition suggests when it says nothing about how far to push.
+#: ``greedy`` is the default because it is what every worker already did: they
+#: ran until they judged the job done, and shipping a quieter default would
+#: have changed the behaviour of every existing definition on day one (§26).
+DEFAULT_COMPLETION_MODE = "greedy"
+
+#: ``extends`` is single-parent and shallow on purpose (§16): three hops is
+#: enough for base -> team -> project, and short enough that a reader can hold
+#: the materialised definition in their head. Multiple inheritance is not
+#: offered at all; composition belongs to the task, not to the frontmatter.
+MAX_EXTENDS_DEPTH = 3
+
+#: The auxiliary profiles a definition may REFERENCE by versioned id. The
+#: meaning of ``full_delivery_v1`` belongs to the verification registry; a
+#: definition that embedded it would be a stale copy of somebody else's policy.
+PROFILE_FIELDS: Tuple[str, ...] = ("verification_profile", "context_profile",
+                                   "budget_profile", "collaboration_profile")
+
+#: Every key an AGENT.md may carry. A key that is not here does not load —
+#: :func:`parse` names it and suggests the nearest one this build knows.
+FRONTMATTER_KEYS: Tuple[str, ...] = (
+    "name", "description", "mode", "model", "endpoint_id", "runner",
+    "tools", "deny", "permission", "files", "max_rounds", "timeout_s",
+    "default_completion_mode", "capabilities", "specialties", "tags",
+    "preferred_tasks", "avoid_tasks", "verification_profile", "context_profile",
+    "budget_profile", "collaboration_profile", "output_contract", "extends",
+    "prompt_append",
+)
+
+#: A profile/contract id: the same narrow shape ``src/contracts/base.py``
+#: accepts, because these ids end up in paths, URLs and event names.
+_PROFILE_ID_RE = re.compile(r"^[a-z0-9]+(?:[._-][a-z0-9]+)*$")
+_LIST_LIMIT = 40
+_WORD_MAX = 60
 
 _MAX_FILE_BYTES = 200_000
 _MAX_DEFS = 200
@@ -145,6 +215,40 @@ class AgentDef:
     #: unenforced field.
     caveats: Tuple[str, ...] = ()
 
+    # ── what the profiles plan added (§4). Every one has a default, so a
+    # definition written before they existed resolves exactly as it did.
+    # None of them is an enforcement point in this module: they choose the
+    # agent and shape the mission, they never widen what it may do.
+    #: How far this agent pushes when nothing overrides it (§3.2).
+    default_completion_mode: str = DEFAULT_COMPLETION_MODE
+    #: Declared, for selection and compatibility. NOT tools, NOT permissions.
+    capabilities: Tuple[str, ...] = ()
+    specialties: Tuple[str, ...] = ()
+    tags: Tuple[str, ...] = ()
+    preferred_tasks: Tuple[str, ...] = ()
+    avoid_tasks: Tuple[str, ...] = ()
+    #: Versioned ids of policies owned elsewhere; referenced, never embedded.
+    verification_profile: str = "default"
+    context_profile: str = "default"
+    budget_profile: str = "default"
+    collaboration_profile: str = "default"
+    output_contract: str = ""
+    #: The single parent this definition is built on, if any (§16).
+    extends: str = ""
+    #: Text added AFTER the inherited prompt. Only meaningful with `extends`,
+    #: and refused without it, so it can never be a no-op nobody notices.
+    prompt_append: str = ""
+    #: The chain this definition was materialised from, nearest parent first.
+    #: Empty for a definition that inherits nothing — which is every
+    #: definition that existed before this field did.
+    inherits: Tuple[str, ...] = ()
+    #: Which keys the FILE actually stated, sorted. Inheritance needs it: a
+    #: child that says nothing about `mode` must inherit its parent's, and
+    #: "said worker" and "said nothing, so it defaulted to worker" are the
+    #: same value. Kept out of `to_dict` on purpose — it describes the file,
+    #: not the agent, and the API publishes agents.
+    stated: Tuple[str, ...] = ()
+
     def may_delegate(self) -> bool:
         """Whether this definition ASKS to delegate. Whether it MAY is decided
         by :func:`src.subagent_permissions.derive`, which also weighs the
@@ -165,6 +269,17 @@ class AgentDef:
             "timeout_s": self.timeout_s, "prompt": self.prompt,
             "source": self.source, "path": self.path,
             "may_delegate": self.may_delegate(), "caveats": list(self.caveats),
+            "default_completion_mode": self.default_completion_mode,
+            "capabilities": list(self.capabilities), "specialties": list(self.specialties),
+            "tags": list(self.tags), "preferred_tasks": list(self.preferred_tasks),
+            "avoid_tasks": list(self.avoid_tasks),
+            "verification_profile": self.verification_profile,
+            "context_profile": self.context_profile,
+            "budget_profile": self.budget_profile,
+            "collaboration_profile": self.collaboration_profile,
+            "output_contract": self.output_contract,
+            "extends": self.extends, "prompt_append": self.prompt_append,
+            "inherits": list(self.inherits),
         }
 
 
@@ -281,11 +396,121 @@ def _int_or_error(value: Any, fieldname: str, lo: int, hi: int, caveats: List[st
     return clamped
 
 
+# ── the profile fields (§4, §5, §22) ────────────────────────────────────────
+
+def _reject_unknown_keys(fm: Dict[str, Any]) -> None:
+    """An unknown frontmatter key is an error, never a default.
+
+    The failure this replaces is quiet and expensive: a file that spelled
+    `capabilties:` used to load, show a clean page, and never be selected for
+    anything — and nobody would look at the definition, because it "worked".
+    It is the same rule the parser already applies to an unknown TOOL name,
+    and the same reason: dropping what the author wrote tells them it worked.
+    """
+    unknown = sorted(str(k) for k in fm if str(k) not in FRONTMATTER_KEYS)
+    if not unknown:
+        return
+    hints = []
+    for key in unknown:
+        near = difflib.get_close_matches(key, FRONTMATTER_KEYS, n=1, cutoff=0.75)
+        hints.append(f"`{key}`" + (f" (did you mean `{near[0]}`?)" if near else ""))
+    raise AgentDefError(
+        f"unknown frontmatter {'keys' if len(unknown) > 1 else 'key'}: " + ", ".join(hints) +
+        f". Known: {', '.join(FRONTMATTER_KEYS)}")
+
+
+def _words(value: Any, fieldname: str) -> Tuple[str, ...]:
+    """A vocabulary list, normalised: lowercase, spaces and dashes to
+    underscores, deduplicated, order kept.
+
+    Normalised because these words are matched against a task's words later,
+    and a catalogue where `PDF extraction`, `pdf-extraction` and
+    `pdf_extraction` are three different specialities matches none of them.
+    """
+    out: List[str] = []
+    for item in _as_str_list(value, fieldname)[:_LIST_LIMIT]:
+        word = re.sub(r"[\s-]+", "_", item.strip().lower())[:_WORD_MAX]
+        if word and word not in out:
+            out.append(word)
+    return tuple(out)
+
+
+def _capabilities(value: Any) -> Tuple[str, ...]:
+    """The declared capabilities, checked against the shared vocabulary.
+
+    Refused rather than dropped, for the reason an unknown tool name is: a
+    definition that reads as capable of `secutiry` review would be selected
+    for nothing and nobody would know why it never came up.
+    """
+    out: List[str] = []
+    for word in _words(value, "capabilities"):
+        if word not in CAPABILITIES:
+            raise AgentDefError(
+                f"capabilities: `{word}` is not one of {', '.join(CAPABILITIES)}. Dropping it "
+                f"would leave a definition that reads as capable of it and is never chosen for "
+                f"it, so the file does not load.")
+        out.append(word)
+    return tuple(out)
+
+
+def _profile_id(value: Any, fieldname: str, *, default: str) -> str:
+    """A reference to a versioned policy: `full_delivery_v1`, `narrow_code_v1`.
+
+    Only the SHAPE is checked here. Whether the registry has that profile is a
+    question for the registry, and answering it in the loader would mean a
+    definition stops loading the day a profile pack is not installed — which
+    is a caveat about a run, not a reason to lose the agent.
+    """
+    word = str(value or "").strip().lower()
+    if not word:
+        return default
+    if not _PROFILE_ID_RE.fullmatch(word):
+        raise AgentDefError(
+            f"{fieldname}: `{value}` is not a profile id (lowercase a-z0-9 separated by . _ or -, "
+            f"e.g. `full_delivery_v1`); it becomes a path, a URL and an event name")
+    return word
+
+
+def _extends_of(value: Any, slug: str) -> str:
+    parent = clean_slug(value)
+    if not str(value or "").strip():
+        return ""
+    if not parent:
+        raise AgentDefError(f"extends: `{value}` is not a definition slug")
+    if parent == slug:
+        raise AgentDefError(f"extends: `{slug}` extends itself")
+    return parent
+
+
+def _prompt_append_of(value: Any, extends: str) -> str:
+    """The text appended after an inherited prompt.
+
+    Two refusals, both about text that would otherwise be lost in silence:
+    this frontmatter has no block scalars, so `prompt_append: |` reads as the
+    single character `|` and the indented lines under it never arrive; and
+    `prompt_append` without `extends` appends to nothing at all.
+    """
+    word = str(value or "").strip()
+    if not word:
+        return ""
+    if word in ("|", ">", "|-", ">-", "|+", ">+"):
+        raise AgentDefError(
+            "prompt_append: this frontmatter has no block scalars — `prompt_append: |` reads as "
+            "the single character `|` and the indented lines under it are lost. Put the text on "
+            "one line in quotes, or write it in the body.")
+    if not extends:
+        raise AgentDefError(
+            "prompt_append: means nothing without `extends` — there is no inherited prompt to "
+            "append to. Write the text in the body instead.")
+    return word[:4000]
+
+
 def parse(text: str, *, slug: str, source: str = SOURCE_USER, path: str = "") -> AgentDef:
     """One AGENT.md → one definition, or :class:`AgentDefError` saying why not."""
     fm, body = parse_frontmatter(text or "")
     if not isinstance(fm, dict) or not fm:
         raise AgentDefError("no frontmatter: an AGENT.md starts with a `---` block")
+    _reject_unknown_keys(fm)
 
     caveats: List[str] = []
     mode = str(fm.get("mode") or "worker").strip().lower()
@@ -316,6 +541,12 @@ def parse(text: str, *, slug: str, source: str = SOURCE_USER, path: str = "") ->
     permission = tuple(parse_rule(r) for r in _as_str_list(fm.get("permission"), "permission"))
     files = tuple(_as_str_list(fm.get("files"), "files")[:40])
 
+    completion_mode = str(fm.get("default_completion_mode") or DEFAULT_COMPLETION_MODE).strip().lower()
+    if completion_mode not in COMPLETION_MODES:
+        raise AgentDefError(f"default_completion_mode: `{completion_mode}` is not one of "
+                            f"{', '.join(COMPLETION_MODES)}")
+    extends = _extends_of(fm.get("extends"), slug)
+
     definition = AgentDef(
         slug=slug,
         name=str(fm.get("name") or slug).strip()[:80],
@@ -333,6 +564,24 @@ def parse(text: str, *, slug: str, source: str = SOURCE_USER, path: str = "") ->
         prompt=(body or "").strip(),
         source=source,
         path=path,
+        default_completion_mode=completion_mode,
+        capabilities=_capabilities(fm.get("capabilities")),
+        specialties=_words(fm.get("specialties"), "specialties"),
+        tags=_words(fm.get("tags"), "tags"),
+        preferred_tasks=_words(fm.get("preferred_tasks"), "preferred_tasks"),
+        avoid_tasks=_words(fm.get("avoid_tasks"), "avoid_tasks"),
+        verification_profile=_profile_id(fm.get("verification_profile"),
+                                         "verification_profile", default="default"),
+        context_profile=_profile_id(fm.get("context_profile"), "context_profile",
+                                    default="default"),
+        budget_profile=_profile_id(fm.get("budget_profile"), "budget_profile",
+                                   default="default"),
+        collaboration_profile=_profile_id(fm.get("collaboration_profile"),
+                                          "collaboration_profile", default="default"),
+        output_contract=_profile_id(fm.get("output_contract"), "output_contract", default=""),
+        extends=extends,
+        prompt_append=_prompt_append_of(fm.get("prompt_append"), extends),
+        stated=tuple(sorted(str(k) for k in fm)),
     )
     definition.caveats = tuple(caveats + _caveats_for(definition))
     return definition
@@ -360,7 +609,18 @@ def _caveats_for(d: AgentDef) -> List[str]:
 
 
 def to_markdown(d: AgentDef) -> str:
-    """The definition as an AGENT.md — the same emitter ``EXPERT.md`` uses."""
+    """The definition as an AGENT.md — the same emitter ``EXPERT.md`` uses.
+
+    A field at its default is not written: ``emit_frontmatter`` already drops
+    blanks and empty lists, and the same is done here for
+    ``default_completion_mode`` and the four profile references, so saving a
+    definition that never mentioned them does not start mentioning them.
+
+    A MATERIALISED definition (one with ``inherits``) is emitted FLAT: its
+    prompt already contains its parent's, so writing ``extends`` back out
+    would fold the parent in a second time on the next load. Flattening is the
+    honest reading of "write this resolved definition to a file".
+    """
     fm: Dict[str, Any] = {
         "name": d.name or d.slug,
         "description": d.description,
@@ -375,7 +635,34 @@ def to_markdown(d: AgentDef) -> str:
         "max_rounds": d.max_rounds,
         "timeout_s": d.timeout_s,
     }
+    if not d.inherits:
+        fm["extends"] = d.extends
+        fm["prompt_append"] = d.prompt_append
+    if d.default_completion_mode != DEFAULT_COMPLETION_MODE:
+        fm["default_completion_mode"] = d.default_completion_mode
+    fm["capabilities"] = list(d.capabilities)
+    fm["specialties"] = list(d.specialties)
+    fm["tags"] = list(d.tags)
+    fm["preferred_tasks"] = list(d.preferred_tasks)
+    fm["avoid_tasks"] = list(d.avoid_tasks)
+    for name in PROFILE_FIELDS:
+        value = getattr(d, name)
+        if value != "default":
+            fm[name] = value
+    fm["output_contract"] = d.output_contract
     return f"---\n{emit_frontmatter(fm)}\n---\n\n{d.prompt.strip()}\n"
+
+
+def _known_mode(value: Any) -> str:
+    """A completion mode off a payload, or the default.
+
+    Unlike :func:`parse`, this does not refuse: the payload has already been
+    through the parser once on the way in, and refusing a whole delegation
+    because a field arrived from an older build would turn a stale word into
+    a dead job.
+    """
+    word = str(value or "").strip().lower()
+    return word if word in COMPLETION_MODES else DEFAULT_COMPLETION_MODE
 
 
 def from_dict(raw: Any) -> Optional[AgentDef]:
@@ -413,7 +700,66 @@ def from_dict(raw: Any) -> Optional[AgentDef]:
         prompt=str(raw.get("prompt") or ""), source=str(raw.get("source") or SOURCE_USER),
         path=str(raw.get("path") or ""),
         caveats=tuple(str(c) for c in (raw.get("caveats") or ())),
+        # The profile fields ride the delegation payload with the rest, and a
+        # word this build does not know is dropped here rather than refused —
+        # the same rule the rest of this function already follows.
+        default_completion_mode=_known_mode(raw.get("default_completion_mode")),
+        capabilities=tuple(str(c) for c in (raw.get("capabilities") or ())
+                           if str(c) in CAPABILITIES),
+        specialties=tuple(str(s) for s in (raw.get("specialties") or ())),
+        tags=tuple(str(t) for t in (raw.get("tags") or ())),
+        preferred_tasks=tuple(str(t) for t in (raw.get("preferred_tasks") or ())),
+        avoid_tasks=tuple(str(t) for t in (raw.get("avoid_tasks") or ())),
+        verification_profile=str(raw.get("verification_profile") or "default"),
+        context_profile=str(raw.get("context_profile") or "default"),
+        budget_profile=str(raw.get("budget_profile") or "default"),
+        collaboration_profile=str(raw.get("collaboration_profile") or "default"),
+        output_contract=str(raw.get("output_contract") or ""),
+        extends=str(raw.get("extends") or ""),
+        prompt_append=str(raw.get("prompt_append") or ""),
+        inherits=tuple(str(i) for i in (raw.get("inherits") or ())),
     )
+
+
+def revision_of(d: AgentDef) -> str:
+    """A stable digest of what a RESOLVED definition says (§20).
+
+    A run fixes this the moment it is created, so editing the file afterwards
+    cannot change how a job that was already queued behaves — the failure this
+    exists to prevent is a nightly automation that quietly starts doing
+    something else because somebody improved an agent at four in the
+    afternoon.
+
+    What reaches the digest and what does not:
+
+    * key ORDER in the file does not — `fingerprint` is order-free over named
+      parts and sorts the members of a list, so writing `mode:` above `name:`
+      is the same definition;
+    * the order of `permission` DOES — those rules are last-match-wins, so a
+      reordered list is a different policy and has to read as a different
+      revision. They are joined into one string for exactly that reason;
+    * `source`, `path`, `caveats`, `stated` and `inherits` do not. Where a
+      definition came from travels next to the revision in `AgentRef`, and the
+      other three are derived from the fields already counted.
+    """
+    return "sha256:" + fingerprint([
+        ("slug", d.slug), ("name", d.name), ("description", d.description),
+        ("mode", d.mode), ("model", d.model), ("endpoint_id", d.endpoint_id),
+        ("runner", d.runner), ("tools", list(d.tools)), ("deny", list(d.deny)),
+        ("permission", "\n".join(r.as_text() for r in d.permission)),
+        ("files", list(d.files)), ("max_rounds", d.max_rounds), ("timeout_s", d.timeout_s),
+        ("prompt", d.prompt),
+        ("default_completion_mode", d.default_completion_mode),
+        ("capabilities", list(d.capabilities)), ("specialties", list(d.specialties)),
+        ("tags", list(d.tags)), ("preferred_tasks", list(d.preferred_tasks)),
+        ("avoid_tasks", list(d.avoid_tasks)),
+        ("verification_profile", d.verification_profile),
+        ("context_profile", d.context_profile),
+        ("budget_profile", d.budget_profile),
+        ("collaboration_profile", d.collaboration_profile),
+        ("output_contract", d.output_contract),
+        ("extends", d.extends), ("prompt_append", d.prompt_append),
+    ])
 
 
 # ── the built-ins ───────────────────────────────────────────────────────────
@@ -501,7 +847,13 @@ needs in your report and let the coordinator place it.
 def builtins() -> List[AgentDef]:
     """The shipped definitions. A broken one is skipped and logged rather than
     taking the module down with it — but that is a bug in this file, not in a
-    user's, so it is logged at WARNING."""
+    user's, so it is logged at WARNING.
+
+    Exactly what THIS FILE ships, and nothing else. The specialised profiles
+    live in `src.agent_profiles.builtin` and enter through :func:`_load_raw`;
+    keeping them out of here is what lets that module compare its augmented
+    definitions against the originals without comparing them to itself.
+    """
     out: List[AgentDef] = []
     for slug, text in BUILTIN_SOURCES.items():
         try:
@@ -509,6 +861,27 @@ def builtins() -> List[AgentDef]:
         except AgentDefError as exc:
             logger.warning("agent_defs: built-in definition %r does not load: %s", slug, exc)
     return out
+
+
+def _profile_catalogue() -> List[AgentDef]:
+    """The specialised profiles from `src.agent_profiles.builtin`.
+
+    Imported late and defensively for two reasons: that module imports this
+    one, so an import at module scope is a cycle; and a catalogue that fails
+    to load must cost the specialised profiles, never the definitions the
+    dispatcher needs to work at all.
+
+    It is called from :func:`_load_raw` rather than left for a caller to
+    discover, because the Agents screen and every resolver list what the
+    loader returns — a profile that never reaches it is written, tested and
+    invisible, which is the failure this plan exists to avoid.
+    """
+    try:
+        from src.agent_profiles import builtin as _profiles
+        return list(_profiles.profile_defs())
+    except Exception as exc:  # noqa: BLE001 - the base set must survive this
+        logger.warning("agent_defs: agent_profiles catalogue unavailable: %s", exc)
+        return []
 
 
 # ── loading ─────────────────────────────────────────────────────────────────
@@ -608,16 +981,40 @@ def _absorb(result: LoadResult, seen: Dict[str, int], path: str, slug: str, sour
 
 
 def load_all(workspace: Optional[str] = None) -> LoadResult:
-    """Every definition, in precedence order: built-in < user < repo.
+    """Every definition, in precedence order: built-in < user < repo, with
+    ``extends`` chains materialised.
 
     Never raises. A workspace whose instruction files are not approved
-    contributes nothing but an entry in ``errors`` saying so.
+    contributes nothing but an entry in ``errors`` saying so, and a definition
+    whose inheritance cannot be resolved leaves the list the same way.
+    """
+    return _resolve_inheritance(_load_raw(workspace))
+
+
+def _load_raw(workspace: Optional[str] = None) -> LoadResult:
+    """The catalogue as the files say it, before any ``extends`` is folded in.
+
+    Separate from :func:`load_all` because inheritance needs to see the
+    definitions unresolved — folding a parent into a child twice would double
+    its prompt — and because the API wants to show both forms.
     """
     result = LoadResult()
     seen: Dict[str, int] = {}
     for definition in builtins():
         seen[definition.slug] = len(result.agents)
         result.agents.append(definition)
+    # The specialised profiles come after the base set and REPLACE a slug they
+    # re-emit: augmenting `implementer` with its completion mode and profile
+    # references is the point, and shipping both copies would be the duplicate
+    # catalogue this whole layer exists to avoid. They still lose to a user or
+    # repo definition of the same slug, which is loaded after them.
+    for definition in _profile_catalogue():
+        index = seen.get(definition.slug)
+        if index is None:
+            seen[definition.slug] = len(result.agents)
+            result.agents.append(definition)
+        else:
+            result.agents[index] = definition
     try:
         _load_user(result, seen)
     except Exception as exc:  # noqa: BLE001
@@ -637,6 +1034,223 @@ def get(slug: Any, workspace: Optional[str] = None) -> Optional[AgentDef]:
     if not key:
         return None
     return load_all(workspace).by_slug().get(key)
+
+
+# ── single-parent inheritance (§16) ─────────────────────────────────────────
+
+def _pattern_covers(outer: str, inner: str) -> bool:
+    """Whether a parent's deny pattern plainly covers a child's allow pattern.
+
+    Deliberately textual and narrow. The authority on matching a PATH against
+    a pattern is :mod:`src.subagent_permissions`; all this has to catch is a
+    child reopening what its parent closed with the same or a broader pattern,
+    and anything cleverer here would be a second matcher free to disagree with
+    the first.
+    """
+    a, b = str(outer or "").strip(), str(inner or "").strip()
+    if not a or not b:
+        return False
+    if a in ("*", "**") or a == b:
+        return True
+    prefix = a.split("*", 1)[0]
+    return bool(prefix) and prefix.endswith("/") and b.startswith(prefix)
+
+
+def _merge_words(parent: AgentDef, child: AgentDef, name: str) -> Tuple[str, ...]:
+    return tuple(dict.fromkeys(tuple(getattr(parent, name)) + tuple(getattr(child, name))))
+
+
+def _materialise(child: AgentDef, parent: AgentDef) -> AgentDef:
+    """One inheritance hop: the parent, with what the child's FILE stated on top.
+
+    "Inherit" means four different things depending on the field, so each one
+    is declared rather than guessed — guessing is how a child quietly loses
+    its parent's denies:
+
+    ``tools``
+        INTERSECT. A child may narrow its parent's allowlist and may never
+        step outside it; a child that names a tool the parent does not allow
+        is REFUSED, not silently trimmed, because trimming grants less than
+        the author asked for while telling them it worked.
+    ``deny``
+        ACCUMULATE. A refusal the parent wrote stays written.
+    ``permission``
+        ACCUMULATE, parent's rules first. A child ``allow`` that would reopen
+        a parent ``deny`` is refused by name: the list is last-match-wins, so
+        it really would reopen it.
+    ``capabilities``, ``specialties``, ``tags``, ``preferred_tasks``, ``avoid_tasks``
+        APPEND, parent's words first, deduplicated.
+    ``prompt``
+        The parent's, then the child's body, then ``prompt_append``. Never a
+        silent replacement.
+    every scalar and ``files``
+        REPLACE — but only where the child's file actually SAID so, which is
+        what ``stated`` is for: a child that never mentioned ``mode`` must
+        inherit its parent's, and "worker because it says worker" and "worker
+        because that is the default" are the same value in the field.
+        ``name`` is the exception and is never inherited: a definition wearing
+        its parent's name is two agents with one name on the page.
+    """
+    said = set(child.stated)
+
+    def pick(name: str) -> Any:
+        return getattr(child, name) if name in said else getattr(parent, name)
+
+    tools = tuple(child.tools) if "tools" in said else tuple(parent.tools)
+    if "tools" in said and parent.tools:
+        outside = [t for t in tools if t not in set(parent.tools)]
+        if outside:
+            raise AgentDefError(
+                f"tools: `{outside[0]}` is not in `{parent.slug}`'s allowlist. `extends` may "
+                f"narrow what a parent allows; it cannot widen it, and a tool this file asks for "
+                f"and does not get would be a permission it believes it has.")
+
+    parent_denies = [r for r in parent.permission if r.effect == "deny"]
+    for rule in child.permission:
+        if rule.effect != "allow":
+            continue
+        blocking = next((p for p in parent_denies if p.action == rule.action
+                         and _pattern_covers(p.pattern, rule.pattern)), None)
+        if blocking is not None:
+            raise AgentDefError(
+                f"permission: `{rule.as_text()}` would reopen `{blocking.as_text()}` inherited "
+                f"from `{parent.slug}`. The rules are last-match-wins, so the child's allow would "
+                f"win; a child may add restrictions, never remove one.")
+
+    pieces = [parent.prompt.strip(), child.prompt.strip(), child.prompt_append.strip()]
+    inherits = (parent.slug,) + tuple(parent.inherits)
+    merged = AgentDef(
+        slug=child.slug,
+        name=child.name,
+        description=pick("description"),
+        mode=pick("mode"),
+        model=pick("model"),
+        endpoint_id=pick("endpoint_id"),
+        runner=pick("runner"),
+        tools=tools,
+        deny=tuple(dict.fromkeys(tuple(parent.deny) + tuple(child.deny))),
+        permission=tuple(list(parent.permission)
+                         + [r for r in child.permission if r not in parent.permission]),
+        files=pick("files"),
+        max_rounds=pick("max_rounds"),
+        timeout_s=pick("timeout_s"),
+        prompt="\n\n".join(p for p in pieces if p),
+        source=child.source,
+        path=child.path,
+        default_completion_mode=pick("default_completion_mode"),
+        capabilities=_merge_words(parent, child, "capabilities"),
+        specialties=_merge_words(parent, child, "specialties"),
+        tags=_merge_words(parent, child, "tags"),
+        preferred_tasks=_merge_words(parent, child, "preferred_tasks"),
+        avoid_tasks=_merge_words(parent, child, "avoid_tasks"),
+        verification_profile=pick("verification_profile"),
+        context_profile=pick("context_profile"),
+        budget_profile=pick("budget_profile"),
+        collaboration_profile=pick("collaboration_profile"),
+        output_contract=pick("output_contract"),
+        extends=child.extends,
+        prompt_append="",          # folded into `prompt` above; never applied twice
+        inherits=inherits,
+        stated=child.stated,
+    )
+    # Keep the caveats nobody can recompute (the clamped numbers), drop the
+    # derived ones from before the merge, and derive them again from the
+    # definition that will actually run.
+    derived = set(_caveats_for(parent)) | set(_caveats_for(child))
+    kept = [c for c in list(parent.caveats) + list(child.caveats) if c not in derived]
+    merged.caveats = tuple(dict.fromkeys(
+        kept
+        + [f"materialised from {' -> '.join(inherits)}: the tools, denies and permission rules "
+           f"of every parent still apply"]
+        + _caveats_for(merged)))
+    return merged
+
+
+def _materialise_chain(definition: AgentDef, catalogue: Dict[str, AgentDef]) -> AgentDef:
+    """Walk a definition's parents, then fold them back down onto it.
+
+    The chain is printed in every refusal. "Too deep" or "cycle detected" on
+    its own sends the reader opening four files to find which one closed the
+    loop; naming the chain is the difference between a message and a hunt.
+    """
+    chain: List[str] = [definition.slug]
+    parents: List[AgentDef] = []
+    current = definition
+    while current.extends:
+        nxt = current.extends
+        if nxt in chain:
+            raise AgentDefError(f"extends: `{nxt}` closes a cycle: "
+                                f"{' -> '.join(chain + [nxt])}")
+        parent = catalogue.get(nxt)
+        if parent is None:
+            raise AgentDefError(f"extends: `{nxt}` is not a definition this build knows "
+                                f"(chain {' -> '.join(chain + [nxt])})")
+        chain.append(nxt)
+        parents.append(parent)
+        current = parent
+        if len(parents) > MAX_EXTENDS_DEPTH:
+            raise AgentDefError(
+                f"extends: {' -> '.join(chain)} is {len(parents)} parents deep and the limit is "
+                f"{MAX_EXTENDS_DEPTH}. A definition nobody can hold in their head is a set of "
+                f"permissions nobody can check.")
+    base = parents[-1]
+    for step in list(reversed(parents[:-1])) + [definition]:
+        base = _materialise(step, base)
+    return base
+
+
+def _resolve_inheritance(result: LoadResult) -> LoadResult:
+    """Materialise every definition that declares ``extends``.
+
+    Never raises: a chain that cannot be resolved takes its definition OUT of
+    ``agents`` and puts the reason in ``errors``. A half-inherited definition
+    would be the one thing worse than one that did not load — it would run
+    with some of its parent's restrictions and none of the rest.
+    """
+    if not any(d.extends and not d.inherits for d in result.agents):
+        return result
+    catalogue = result.by_slug()
+    resolved: List[AgentDef] = []
+    for definition in result.agents:
+        if not definition.extends or definition.inherits:
+            resolved.append(definition)
+            continue
+        try:
+            resolved.append(_materialise_chain(definition, catalogue))
+        except AgentDefError as exc:
+            result.errors.append({"path": definition.path, "slug": definition.slug,
+                                  "reason": str(exc)})
+        except Exception as exc:  # noqa: BLE001 - a bad chain is data, not a crash
+            result.errors.append({"path": definition.path, "slug": definition.slug,
+                                  "reason": f"{type(exc).__name__}: {exc}"[:300]})
+    result.agents = resolved
+    return result
+
+
+def resolve_extends(slug: Any, *, workspace: Optional[str] = None,
+                    defs: Optional[LoadResult] = None) -> AgentDef:
+    """The materialised definition for one slug, parents folded in.
+
+    :func:`load_all` already does this for the whole catalogue, so most
+    callers never need it; it is public because "show me what this definition
+    actually resolves to" is a question the API and a human both ask, and
+    because it is the one place that RAISES the reason instead of filing it.
+
+    ``defs`` is expected to be an UNRESOLVED result. Passing an already
+    materialised one is harmless — a definition that carries ``inherits`` is
+    returned untouched rather than folded a second time.
+    """
+    key = clean_slug(slug)
+    catalogue = defs if defs is not None else _load_raw(workspace)
+    index = catalogue.by_slug()
+    definition = index.get(key)
+    if definition is None:
+        known = ", ".join(sorted(index)[:12])
+        raise AgentDefError(f"unknown agent definition `{key or slug}`"
+                            + (f". Known: {known}" if known else ""))
+    if not definition.extends or definition.inherits:
+        return definition
+    return _materialise_chain(definition, index)
 
 
 # ── resolving a definition onto a dispatch task ─────────────────────────────
@@ -758,9 +1372,11 @@ def explain(d: AgentDef, *, tools: Optional[Sequence[str]] = None) -> List[Dict[
 
 
 __all__ = [
-    "ACTIONS", "AgentDef", "AgentDefError", "EFFECTS", "LoadResult", "MODES", "REPO_DIR",
-    "RESOLVED_KEYS", "Rule", "SOURCE_BUILTIN", "SOURCE_REPO", "SOURCE_USER",
+    "ACTIONS", "AgentDef", "AgentDefError", "DEFAULT_COMPLETION_MODE", "EFFECTS",
+    "FRONTMATTER_KEYS", "LoadResult", "MAX_EXTENDS_DEPTH", "MODES", "PROFILE_FIELDS",
+    "REPO_DIR", "RESOLVED_KEYS", "Rule", "SOURCE_BUILTIN", "SOURCE_REPO", "SOURCE_USER",
     "agents_root", "builtins", "clean_slug", "def_path", "explain", "from_dict", "get",
     "known_tools",
-    "load_all", "parse", "parse_rule", "resolve_task", "resolve_tasks", "to_markdown",
+    "load_all", "parse", "parse_rule", "resolve_extends", "resolve_task", "resolve_tasks",
+    "revision_of", "to_markdown",
 ]

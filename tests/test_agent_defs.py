@@ -101,10 +101,17 @@ def test_the_builtins_load_and_say_what_they_are():
 
 
 def test_a_user_file_replaces_a_builtin_of_the_same_slug(store):
+    before = len(defs.load_all().agents)
     _write(store, "reviewer", GOOD)
     loaded = defs.get("reviewer")
     assert loaded.source == defs.SOURCE_USER and loaded.mode == "worker"
-    assert len(defs.load_all().agents) == 3          # replaced, not appended
+    after = defs.load_all().agents
+    # Replaced, not appended. Counted as a delta rather than against a literal:
+    # the catalogue also carries the specialised profiles from
+    # `src/agent_profiles/builtin.py`, and pinning the number here would make
+    # every new profile look like a regression in this file.
+    assert len(after) == before
+    assert [d.slug for d in after].count("reviewer") == 1
 
 
 def test_a_malformed_file_is_skipped_with_its_reason_and_the_others_still_load(store):

@@ -767,3 +767,68 @@ mirar**.
   muerto y el docstring describe un mundo anterior. El buffer no molesta —cuesta una lista vacía—
   pero `CONTEXT_EVENT_NAMES` y su comentario («Listed here so whoever adds them has the set»)
   también sobran, y quien lea el módulo se creerá que sus eventos no llegan a ninguna parte.
+
+## Perfiles de agente y Completion Modes: lo cerrado, y lo que deja abierto (06-09-2026)
+
+Perfiles de agente y Completion Modes (`FAUSTUS.md` §55, `OBJETIVOS.md`) cubre el grueso del plan 3
+de 11: `src/agent_profiles/` (8 ficheros, 5.414 líneas), 15 campos nuevos en `AgentDef`, 7 rutas y
+252 tests en verde. Lo que falta por construir está en `OBJETIVOS.md`; esto es lo que está
+construido y **habría que mirar**.
+
+- `[!]` **La fuga de `faustus-gate-*` es real, es preexistente y ahora está diagnosticada.**
+  `tests/test_agent_gate.py::test_the_hook_script_is_not_left_behind` **sigue fallando después** de
+  borrar las 264 carpetas huérfanas de `%TEMP%`: cada ejecución de la suite del gate deja una nueva
+  (`1 failed, 74 passed`, y la aserción imprime el nombre de la carpeta que acaba de nacer). No es
+  «basura acumulada»: es un fallo activo. La causa exacta, comprobada a mano, **no es un bloqueo de
+  Windows**: `src/agent_gate.write_hook_script` termina con `os.chmod(path, 0o500)` a propósito
+  —para que el agente ajeno no pueda reescribir su propio hook— y en Windows eso deja el fichero en
+  modo `444`; `GateSession.close()` (`src/external_worker.py`) hace
+  `shutil.rmtree(self._tmpdir, ignore_errors=True)`, `rmtree` no puede borrar un fichero de sólo
+  lectura y devuelve `PermissionError [WinError 5] Access is denied`, y **`ignore_errors=True`
+  convierte ese fallo en silencio**. La carpeta sobrevive para siempre y nadie se entera.
+  Comprobado: un `os.chmod(path, S_IWRITE)` previo la borra a la primera, y un `rmtree` con un
+  `onerror` que hace exactamente eso limpió las 25 que quedaban de una pasada. El arreglo correcto
+  es ese manejador (dos líneas, y `ignore_errors` deja de hacer falta para el caso normal); un
+  reintento con backoff no serviría, porque el modo del fichero no cambia con el tiempo. Mientras
+  tanto el precio es una carpeta por run gated en `%TEMP%`, con el hook dentro.
+- `[x]` **El diálogo de configuración efectiva se cortaba por la derecha** — cerrado en este mismo
+  commit (`FAUSTUS.md` §55.10). Sacaba scroll horizontal y dejaba fuera la columna `from`, que es la
+  que dice de qué nivel de precedencia salió cada valor y por tanto la única que justifica el
+  diálogo. Arreglado en `studio/src/screens/agents/Defs.tsx` y `studio/src/screens/agents.css`: el
+  diálogo se ensancha sólo para esta tabla, los anchos de `field` y `from` se declaran en porcentaje
+  en vez de medirse del contenido, y un digest o una raíz de trabajo parten dentro de su celda.
+  `node scripts/build-studio.js --force` y `tsc --noEmit`, limpios.
+- `[!]` **A la selección automática le llega hoy una `TaskSpec` casi vacía.**
+  `resolver._choose` construye la spec con `_call_filtered(TaskSpec, **task)`, que pasa **sólo las
+  claves que casan con campos de `TaskSpec`** — filtrar por firma es correcto y está bien
+  justificado (los dos módulos se escribieron en paralelo, y adivinar la firma ajena rompe el día
+  que crece), pero el diccionario `task` que llega es el contrato de override de §15 (`model`,
+  `endpoint_id`, `max_rounds`, `timeout_s`, `completion_mode`…) y **no comparte casi ninguna clave**
+  con `intent`, `description`, `required_capabilities`, `required_tools`, `mode`, `specialties` y
+  `output_contract`. Consecuencia: cuando nadie nombra un agente, el ranking completo de §14 —que
+  está escrito y probado con 35 tests— decide con casi nada, y el `fallback` alfabético gana más de
+  lo que debería. Lo que falta es **el mapeo explícito de una tarea de dispatch a una `TaskSpec`**,
+  y el sitio es el llamante, no el resolver. Anotado también en `OBJETIVOS.md`.
+- `[~]` **Tres tests fijaban un número o un valor concreto en vez de un invariante, y hubo que
+  reescribirlos al cablear los perfiles.** Es la cuarta vez que pasa lo de «Un patrón que ya se ha
+  repetido tres veces», arriba, y merece quedar escrito con los tres casos por nombre porque los
+  tres fallaron **por la misma razón** —el catálogo pasó de 3 a 11 definiciones y dos built-in
+  pasaron a declarar cosas— y ninguno señalaba un fallo real:
+  - `test_a_user_file_replaces_a_builtin_of_the_same_slug` comparaba contra un **número literal** de
+    definiciones. Ahora mide la **delta** (`len(after) == before`) y que el slug aparezca una sola
+    vez, que es la regla que quería fijar: reemplaza, no añade.
+  - `test_the_payload_a_task_carries_gains_the_new_fields_and_loses_nothing` afirmaba que
+    `default_completion_mode` era el **valor por defecto del módulo**. Ahora lo compara contra lo
+    que la definición declara (`defs.get("implementer").default_completion_mode`) y contra el
+    vocabulario; afirmar el defecto sólo probaba que ninguna definición declara nunca un modo.
+  - `test_resolve_ignores_owner_and_project_id_from_the_body` daba por ganador al
+    `project_default` del cuerpo. Con `reviewer` declarando `professional`, `agent_default`
+    **outranks** `project_default` por diseño, así que ahora el test afirma que el
+    `project_default` **pierde** y que el `task_override` gana, que es la regla de §1.6 y no un
+    accidente del catálogo de septiembre.
+
+  La regla, otra vez y ahora con la variante nueva: **no fijes un inventario ni un valor por
+  defecto; fija la relación.** «Reemplaza en vez de añadir», «lo que la definición declara es lo que
+  viaja» y «este nivel gana a ese otro» sobreviven a que el catálogo crezca. «Son once», «es
+  `greedy`» y «gana el proyecto» caducan el día que alguien implementa lo que el test daba por
+  inexistente.

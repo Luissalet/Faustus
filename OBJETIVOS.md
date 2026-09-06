@@ -453,6 +453,103 @@ que se vieron al cablearlo.
       modelo la ve en el esquema y no en el manual, que es exactamente el reparto que produce
       llamadas con la forma correcta y la intención equivocada.
 
+## Perfiles de agente y Completion Modes: lo que el plan 3 deja pendiente (06-09-2026)
+
+`FAUSTUS.md` §55 cierra el grueso de
+`inspiration/PLAN_PERFILES_AGENTES_Y_COMPLETION_MODES_FAUSTUS.md` (plan 3 de 11) **sin crear un
+catálogo paralelo de perfiles**: `AgentDef` gana 15 campos y 13 claves de frontmatter, y todo lo
+ortogonal a la identidad vive en `src/agent_profiles/` (8 ficheros, 5.414 líneas), con 7 rutas HTTP,
+35 perfiles versionados en cinco familias, 5 packs y los diez perfiles de §8 — de los cuales dos
+(`surgeon`, `auditor`) se publican ampliando `implementer` y `reviewer` en lugar de duplicarlos.
+2.866 líneas de test, 252 tests. Lo que sigue es lo que el mismo plan deja fuera, más los cabos que
+se vieron al cablearlo.
+
+### La resolución se fija tarde (P0)
+
+- [ ] **Se resuelve cuando arranca el tool, no al encolar.** `_attach_resolution` en
+      `src/agent_tools/subagent_tools.py` fija la `ResolvedAgentExecution` de cada worker justo antes
+      de construir su primer prompt, que es correcto para una delegación inmediata y **no es lo
+      mismo** para un trabajo despachado: entre encolar y arrancar puede haber horas, y en esas horas
+      alguien edita el `AGENT.md`. La revisión que se fija es la del momento de arrancar, así que la
+      promesa de §20 —«un trabajo encolado hoy no cambia de comportamiento porque alguien mejore un
+      agente esta tarde»— sólo se cumple hoy para el camino corto. `src/dispatch.py` **no importa
+      `agent_profiles`** en absoluto. Lo que falta es llamar a `resolver.resolve()` + `snapshot()`
+      al construir el job y a `rehydrate()` al arrancarlo; las dos funciones existen, están probadas
+      y `rehydrate` ya sabe decir en `caveats` que la definición cambió desde que se fijó.
+
+### La `CompletionPolicy` efectiva no llega al bucle (P0)
+
+- [ ] **`src/agent_loop.py` no ve el modo resuelto, así que parar sigue siendo heurístico.** Del
+      modo sólo llega una frase al preámbulo del worker (`run.completion_note`, la `description` de
+      la política) y el recorte de `max_rounds`/`timeout_s` por `min`. Los cuatro campos que dicen
+      *cuánto más* —`explore_frontier`, `bonus_budget_share`, `stop_on_core_proved`,
+      `max_extra_layers`— **no los lee nadie**: `agent_loop.py` no importa `agent_profiles`. Un
+      `literal` y un `maximalist` producen hoy exactamente el mismo criterio de parada, y la
+      diferencia se la deja al modelo por prosa. Mientras eso siga así, un modo es una sugerencia
+      bien documentada y no una política.
+
+### Los siete eventos de §1.7 que nadie emite (P1)
+
+- [ ] **Ninguno de los siete existe en el código.** `agent_resolution_created`, `agent_selected`,
+      `agent_selection_degraded`, `completion_mode_resolved`, `completion_mode_changed`,
+      `agent_definition_updated` y `agent_capability_unavailable` no aparecen en ningún fichero del
+      repositorio — ni en `src/contracts/event.py::EVENT_NAMES`, ni emitidos, ni consumidos. Todos
+      tienen que llevar `resolution_id`, `agent_slug`, `definition_revision`, `project_id`,
+      `session_id`, `run_id` y el motivo cuando proceda, y todos esos datos ya están dentro de la
+      `ResolvedAgentExecution`: es cablear, no derivar. Sin ellos, la caché del Context Engine y
+      cualquier proyección de estado no pueden reaccionar a un cambio de definición ni a un
+      candidato que se cayó.
+
+### `planner` sin ampliar (P1)
+
+- [ ] **El tercer built-in se quedó fuera del plan.** `implementer` y `reviewer` se publican
+      aumentados desde `agent_profiles/builtin.py`; `planner` sigue exactamente como estaba, con
+      `default_completion_mode` en el valor por defecto, `capabilities` vacío y las cuatro
+      referencias de perfil en `default`. Es coherente —§7 separa planificador de explorador, y no
+      había entrada de §8 que le correspondiera— pero significa que **el coordinador que más se usa
+      es el único que no participa de la selección por capacidades**: no declara `planning` y por
+      tanto un filtro duro que la pida lo descarta. Decidir si se le añade una entrada `augments` o
+      si se acepta a propósito, y escribirlo donde se vea.
+
+### Dos constantes que deberían subir a `src/constants.py` (P2, barato)
+
+- [ ] **`OUTCOMES_FILENAME` está declarado en `src/agent_profiles/selection.py`** y su propio
+      comentario dice por qué no debería: `src/constants.py` es la única fuente de verdad de lo que
+      vive bajo `DATA_DIR`, y este cambio no podía tocarla. El fichero de resultados observados de la
+      selección (`agent_selection_outcomes.json`) es persistente y de propietario, exactamente como
+      el resto de los que sí están allí. Es una línea movida y una nota en la revisión.
+
+### `SelectionTrace` no tiene `caveats` (P2)
+
+- [ ] **La traza de selección mete sus advertencias dentro de `reason`.** `SelectionTrace` tiene
+      `requested`, `chosen`, `reason`, `alternatives_rejected` y `scores`, y no un campo para lo que
+      hay que saber sin ser un rechazo — por ejemplo que una petición humana pasó por encima de una
+      cuarentena, que hoy se escribe como `caveat: …` **concatenado dentro de `reason`** y recortado
+      a 400 caracteres con el resto. `ResolvedAgentExecution` y `AgentDef` sí tienen `caveats`, y por
+      eso pierde: una advertencia que viaja dentro de una frase no se puede contar, ni filtrar, ni
+      pintar distinta en la pantalla. Añadir el campo es barato; lo que hay que decidir antes es si
+      los caveats de selección se funden con los de la resolución al construirla o se quedan
+      separados para poder decir de dónde salió cada uno.
+
+### `cost_latency_fit` con peso 0, y el mapeo tarea→`TaskSpec` que falta (P1)
+
+- [ ] **El término existe, se calcula y se reporta con peso 0.** §14 pide un ajuste de coste y
+      latencia, y `WEIGHTS` lo lleva a `0.0` **a propósito y dicho en el código**: `TaskSpec` no
+      carga ni plazo ni presupuesto, así que no hay nada contra lo que ajustar, y preferir el carril
+      barato de todas formas sería el módulo inventando una preferencia que el llamante nunca
+      declaró. Se reporta en cero para que la entrada que falta se vea en la traza en vez de
+      olvidarse. Lo que hay que construir antes de subirle el peso es el par de campos en `TaskSpec`
+      y quién los rellena.
+- [ ] **`resolver._call_filtered(TaskSpec, **task)` sólo pasa las claves que casan con campos de
+      `TaskSpec`**, y el diccionario `task` que le llega es el contrato de override de §15
+      (`model`, `endpoint_id`, `max_rounds`, `timeout_s`, `completion_mode`…), que **no comparte casi
+      ninguna clave** con `intent`, `description`, `required_capabilities`, `required_tools`, `mode`,
+      `specialties` y `output_contract`. Resultado: cuando nadie nombra un agente, la selección
+      recibe hoy una `TaskSpec` casi vacía y decide con muy poca información, aunque el ranking
+      completo esté escrito y probado. El filtrado por firma es correcto —los dos módulos se
+      escribieron en paralelo—; lo que falta es **el mapeo explícito de una tarea de dispatch a una
+      `TaskSpec`**, y el sitio natural es el llamante, no el resolver.
+
 ## Descartado a propósito (y por qué)
 
 - Marketplace público de plugins **antes** de tener firma, permisos y revocación.
