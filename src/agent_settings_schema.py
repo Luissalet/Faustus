@@ -259,6 +259,28 @@ GROUPS: list[dict[str, Any]] = [
                  "Only the last N tool images stay in the prompt; older ones become "
                  "'[earlier image omitted]'. -1 = keep all.",
                  -1, 100),
+            _bool("agent_context_engine", "Context Engine",
+                  "One compiler decides what the model is told: a ContextPacket per call with "
+                  "a manifest, the omissions and a budget, instead of every subsystem "
+                  "concatenating its own block. Off by default — measure with shadow first."),
+            _bool("agent_context_engine_shadow", "Context Engine shadow mode",
+                  "Compile the packet and do NOT deliver it, recording what the difference "
+                  "against the prompt actually sent would have been. Changes nothing the "
+                  "model sees; costs one compilation per turn."),
+            _int("agent_context_timeout_ms", "Context retrieval timeout (ms)",
+                 "Wall clock for the whole retrieval stage — the sources run concurrently, so "
+                 "this is what a turn pays when the slowest store is wedged. A voice turn "
+                 "gets half of it.",
+                 100, 60_000, step=100),
+            _int("agent_context_ledger_days", "Context ledger days",
+                 "How long a packet's ledger row lives: tokens, section split and omission "
+                 "counts, never content. Background maintenance prunes past this.",
+                 1, 3650),
+            _int("agent_context_cache_entries", "Context cache entries",
+                 "Entries in the working set (manifests, token counts, candidate lists) kept "
+                 "per owner+project scope. Everything in it is derived, so losing it costs "
+                 "latency and nothing else.",
+                 16, 100_000),
         ],
     ),
     _group(

@@ -369,6 +369,31 @@ DEFAULT_SETTINGS = {
     # what the paste said. 0 chars = list the frames only.
     "agent_code_refs": True,
     "agent_code_ref_chars": 4000,
+    # ── Context Engine (src/context_engine/) ──
+    # The compiler that decides what a model is told: one ContextPacket per
+    # call, with a manifest, omissions and a budget, instead of nine subsystems
+    # each concatenating their own block. Off by default and deliberately so —
+    # the engine replaces the hot path, and a replacement nobody measured is
+    # how a working prompt becomes a mystery. Turn on shadow first.
+    "agent_context_engine": False,
+    # Shadow mode (Phase 0/1): compile the packet, do NOT deliver it, and
+    # record what the difference would have been against the prompt the app
+    # really sent. Costs one compilation per turn and changes nothing the model
+    # sees; this is the measurement that justifies flipping the switch above.
+    "agent_context_engine_shadow": False,
+    # Wall clock for the whole retrieval stage, not one source's share of it —
+    # the sources run concurrently, so this is what a turn pays when the
+    # slowest store is wedged. A voice turn gets half: nine seconds of silence
+    # has already failed as a conversation whatever it eventually says.
+    "agent_context_timeout_ms": 2000,
+    # How long a row lives in the Context Ledger (context_packets: tokens,
+    # section split and omission counts per packet, never content). Maintenance
+    # prunes past this. Raise it to audit further back, at a few KB per turn.
+    "agent_context_ledger_days": 30,
+    # Entries in the L1 working set (src/context_engine/cache.py): manifests,
+    # token counts and candidate lists kept per owner+project scope. Everything
+    # in it is derived, so losing it costs latency and nothing else.
+    "agent_context_cache_entries": 512,
     # Tails an edit/regenerate would otherwise delete, kept aside so they can
     # be put back (src/chat_versions.py, /versions).
     "chat_versions": True,

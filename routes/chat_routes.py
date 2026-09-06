@@ -2836,6 +2836,11 @@ def setup_chat_routes(
                                     "progress_update",
                                     # context ledger (src/context_ledger.py)
                                     "context_ledger",
+                                    # context engine, shadow mode: the packet
+                                    # the engine would have compiled, beside
+                                    # the prompt we really sent. Observation
+                                    # only (src/context_engine/wiring.py).
+                                    "context_shadow",
                                     # multi-agent delegation
                                     "subagent_event",
                                 ):

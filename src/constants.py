@@ -35,6 +35,10 @@ VAULT_FILE = os.path.join(DATA_DIR, "vault.json")
 TIDY_CALENDAR_STATE_FILE = os.path.join(DATA_DIR, "tidy_calendar_state.json")
 SKILLS_FILE = os.path.join(DATA_DIR, "skills.json")
 APP_DB = os.path.join(DATA_DIR, "app.db")
+# The Context Engine keeps its own SQLite file for the same reason
+# memory_engine.db exists: everything in it is derived, rebuildable and hot on
+# the turn path, and none of it should be able to lock app.db behind a write.
+CONTEXT_ENGINE_DB = os.path.join(DATA_DIR, "context_engine.db")
 SCHEDULED_EMAILS_DB = os.path.join(DATA_DIR, "scheduled_emails.db")
 EMAIL_CACHE_DB = os.path.join(DATA_DIR, "email_cache.db")
 

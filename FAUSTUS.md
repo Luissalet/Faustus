@@ -2776,5 +2776,577 @@ por el motivo equivocado.
   separarlas a mano antes de commitear.
 
 
+## 53. Context Engine: un solo compilador decide qué se le cuenta al modelo (06-09-2026)
+
+Faustus nunca tuvo un problema de almacenamiento. Tenía memoria aprendida con madurez y
+antipatrones, memoria de proyecto en `.odysseus/`, objetivos con log tipado, RAG de documentos,
+corpus de expertos, un grafo de procedencia, changesets y el veredicto de `prove`. Lo que no
+tenía era **una sola respuesta** a la pregunta que todos esos subsistemas venían contestando por
+su cuenta, cada uno en su formato y con su propia idea del presupuesto:
+
+> qué necesita ESTE actor para ESTE paso, dentro de ESTA ventana, y cómo se demuestra después de
+> dónde salió cada frase.
+
+Nueve subsistemas concatenando su bloque en el prompt no son un sistema de contexto: son nueve
+sistemas de contexto que no se hablan. El coste se ve en una máquina local con 32k de ventana
+—la memoria de proyecto se come un tercio antes de que el usuario escriba nada— y se ve peor
+cuando algo sale mal, porque la pregunta «¿por qué sabía eso?» no tiene a quién hacérsela.
+
+`src/context_engine/` es esa respuesta única. **No añade ningún almacén de registro**:
+`memory_engine` sigue siendo el dueño de las reglas aprendidas, `objectives` del estado de los
+objetivos, `prove` de los veredictos, y los ficheros del disco siguen siendo la verdad sobre el
+código. Lo que vive aquí es la capa de encima: adaptadores que convierten cada fuente en
+`ContextCandidate`, un compilador que valida, deduplica, ordena, presupuesta y recorta hasta
+dejar un `ContextPacket`, y un recibo que registra qué se usó de verdad, para que la selección se
+pueda medir en vez de admirar.
+
+Tres cosas sostienen todo lo demás y conviene decirlas una vez:
+
+- **Un solo compilador.** Si un segundo consumidor empieza a montar su propio megaprompt con
+  memoria más reglas de proyecto más estado, las garantías se anulan — no porque el código se
+  rompa, sino porque «¿por qué sabía eso?» deja de tener respuesta.
+- **Las omisiones son parte de la salida.** El paquete dice qué dejó fuera y por qué. El fallo
+  que este subsistema existe para evitar no es «no le contamos bastante al modelo»; es «nadie
+  puede saber qué le contamos».
+- **La degradación se declara, nunca es silenciosa.** Embeddings caídos, índice viejo, una fuente
+  que no responde: la vía léxica sigue funcionando y el paquete dice que va a la pata coja. Una
+  respuesta segura construida sobre media recuperación es el fallo más caro de todo el sistema.
+
+### 53.1 Las cifras
+
+`src/context_engine/`: **29 ficheros, 15.393 líneas**. Más `routes/context_engine_routes.py`
+(880 líneas, **34 rutas** bajo `/api/context`), `mcp_servers/context_engine_server.py`
+(733 líneas, **8 tools** MCP) y, en Studio, la pantalla `screens/Context.tsx` (1.713 líneas), su
+adaptador `adapters/context.ts` (1.112) y `screens/context.css` (545).
+
+Pruebas: **14 ficheros `tests/test_context_engine_*.py`, 6.021 líneas, 385 tests**, más
+`tests/test_studio_context_js.py` — un test de pytest que ejecuta `studio/checks/context.check.mjs`
+bajo node, con **102 comprobaciones** sobre la aritmética de la pantalla. En total **386 tests de
+pytest** para el subsistema.
+
+Vocabulario: 12 dataclasses en `contracts.py`, **14 secciones** de paquete (5 obligatorias),
+20 tipos de fuente, 7 transformaciones, 10 motivos de omisión, 7 carriles de recuperación y
+7 clases de confianza. **9 fuentes** repartidas en 8 módulos adaptadores. **13 tablas** en una
+base de datos propia, `data/context_engine.db`.
+
+### 53.2 Los contratos: dos reglas que sólo existen aquí
+
+`contracts.py` hereda de `src/contracts/base.py` las tres reglas de la Fase 0 —un rechazo nombra
+el campo y el valor, una clave desconocida es un error y nunca un valor por defecto, y nada se
+convierte de un tipo a otro— y añade dos:
+
+4. **Nada entra en un paquete sin fuente.** `ContextItem.source_ref` es obligatorio y
+   `source_type` es una lista cerrada. Una frase sin procedencia es una frase que el sistema no
+   puede invalidar después, y todo esto existe precisamente para poder invalidarla.
+5. **Una omisión es un dato.** `ContextOmission` no es logging: es parte del paquete. «¿Por qué
+   no leyó ese fichero?» tiene que poder contestarse desde el paquete solo, meses después, sin
+   que las fuentes sigan existiendo.
+
+`ContextRequest` es la pregunta, `ContextPacket` lo que se renderiza en el prompt y
+`ContextReceipt` lo que pasó después. Nada aquí lee una base de datos, abre un fichero, llama a
+un modelo ni mira el reloj salvo por un `now` inyectado.
+
+### 53.3 El compilador, y sus cinco reglas
+
+`compiler.py` (1.342 líneas) es la secuencia, y es la del plan método por método, para que
+alguien con el documento delante pueda seguir el código sin tabla de traducción:
+
+```text
+_classify_intent -> _establish_hard_context -> _build_retrieval_plan
+-> _gather_candidates -> _validate_candidates -> _dedupe_and_resolve
+-> _rerank_for_task -> _allocate_budget -> _transform_to_fit
+-> _render_packet -> _record_manifest
+```
+
+Cinco reglas cargan con el peso, y cada una tiene su test:
+
+- **El contexto obligatorio no compite.** Instrucciones de seguridad, rol del actor, objetivo
+  vivo, estado actual y decisiones vinculantes se colocan primero y fuera del reparto, antes de
+  considerar un solo candidato ordenado. Un paquete que tira una instrucción de seguridad para
+  hacer sitio a una memoria parecida no es un paquete más pequeño: es otro, y más peligroso.
+  Cuando lo obligatorio no cabe, el paquete vuelve `degraded=True` nombrando lo que se perdió.
+- **El paquete nunca supera `window.input_budget`.** No «casi nunca». Un turno que desborda la
+  ventana muere en el proveedor *después* de que las herramientas hayan corrido y los efectos
+  hayan ocurrido, que es la forma más cara de fallar que tiene este sistema. `_enforce_budget` es
+  una segunda comprobación independiente que prefiere tirar la sección de menor prioridad.
+- **`compile()` no lanza nunca.** Una fuente que revienta, un almacén bloqueado, un estimador que
+  se atraganta con un par sustituto: todo degrada. El llamante recibe un paquete válido —en el
+  peor caso sólo lo obligatorio— con un aviso que lo dice.
+- **Es determinista.** Los mismos candidatos, el mismo presupuesto y el mismo reloj inyectado
+  producen el mismo paquete byte a byte, salvo `packet_id` y `created_at`. Branching Futures
+  demuestra así que dos ramas partieron del mismo contexto; un compilador que desempatase por el
+  orden de iteración de un diccionario haría fallar esa comparación por un motivo que no tiene
+  nada que ver con el contexto.
+- **Cada descarte produce exactamente una omisión.** Ni una ausencia sin explicar, ni una
+  explicada dos veces.
+
+`_record_manifest` escribe una fila por paquete en `context_packets` —tokens, reparto por
+sección, cuentas de omisión— y **nada de contenido**: un ledger que guarda texto es una segunda
+copia de todo lo que se le ha contado al modelo, creciendo sin límite, y sería lo primero de lo
+que habría que apartar una auditoría.
+
+### 53.4 No hay un duodécimo almacén
+
+La tentación, cuando un compilador necesita once fuentes a la vez, es construir la que las
+espeja — y pasar el resto del proyecto explicando por qué el espejo está viejo. Aquí no hay
+espejo: cada adaptador le hace a un almacén que no posee una pregunta que ese almacén ya sabía
+contestar. Se borra `memory_engine.db` y los candidatos dejan de llegar en el turno siguiente, no
+después de un reindexado que nadie programó.
+
+Nueve fuentes: memoria aprendida y memoria clásica (dos fuentes en un módulo, porque una sola
+clase habría necesitado un condicional en cada método y el condicional que importa —incógnito—
+es el más fácil de equivocar), objetivos, memoria de proyecto, sesión, ficheros, documentos,
+expertos y grafo de procedencia. Cuatro propiedades que el conjunto garantiza:
+
+- **`gather()` no puede fallar.** Nueve fuentes en el camino del turno son nueve ocasiones de
+  lanzar. Cada una corre en su `try` y su `wait_for`; la que revienta, se cuelga o devuelve basura
+  se convierte en un `SourceResult` que lo dice, y las otras ocho llegan igual.
+- **El trabajo bloqueante no toca el bucle de eventos.** Todos esos almacenes son síncronos y al
+  menos uno (`rag_vector.search`) puede pasar cientos de milisegundos dentro de Chroma; nueve
+  fuentes lentas cuestan la más lenta y no la suma. La salvedad honesta está escrita una vez para
+  que nadie tenga que redescubrirla: cancelar un `to_thread` libera al *compilador*, no al *hilo*.
+  Es tolerable sólo porque aquí todas las fuentes leen.
+- **El aislamiento se aplica antes de la consulta, no a sus resultados.** `owner`, `project_id` y
+  `workspace` salen de `request.execution` y de ningún otro sitio — nunca del texto de la
+  consulta, que lo escribe un modelo. Una fuente que la política prohíbe **no se llama**:
+  `memory_engine.search()` toca `last_used` en las filas que devuelve y
+  `MemoryManager.increment_uses` hace lo mismo, así que «buscar y tirar los resultados» deja en
+  el almacén huellas que «no buscar» no deja, y esas huellas son exactamente lo que el modo
+  incógnito existe para evitar.
+- **Un candidato lleva procedencia o no existe.** `make_candidate` es el único constructor y
+  descarta lo que no tiene `source_ref` en vez de dejar que el contrato rechace el paquete entero
+  tres capas más arriba, donde el error ya no nombra a la fuente culpable. También recorta cada
+  campo a los límites del contrato, porque un título de 600 caracteres de un chunk de documento
+  convertiría una recuperación en un 500.
+
+Cada esquema de `source_ref` está documentado en el módulo que lo acuña y todos juntos en
+`adapters/__init__.py`: `mem:`, `pmem:`, `objective:`, `project:`, `doc:`, `expert:`, `session:`,
+`prov:` y `file:` (con rango de líneas opcional).
+
+Un adaptador merece nombrarse aparte, porque es una negativa deliberada y no un olvido: el de
+**sesiones** no lee la base de datos de sesiones. Lo que el resto de Faustus usa para obtener una
+transcripción es `sess.get_context_messages()` sobre un objeto que la ruta de chat ya tiene;
+llegar a él desde un id significa `SessionManager.get_session(session_id)`, que no acepta dueño
+—cualquier id, incluido uno que un modelo escriba en un mensaje, resuelve a los mensajes de esa
+sesión—, que **muta** (hidrata la caché, reconcilia el recuento y estampa `last_accessed`: montar
+un paquete no debería reordenar la lista de sesiones del usuario) y que además no es la
+transcripción que el turno está usando. Así que los mensajes se entregan desde fuera con
+`set_history_provider`, y sin proveedor instalado la fuente responde `available() == False` y no
+hay sección `recent_messages`: visiblemente ausente, que es el estado honesto, en vez de
+silenciosamente equivocada.
+
+### 53.5 El producto, no la suma
+
+La puntuación multiplica:
+
+```text
+final = task_fit x authority x freshness x source_validity
+        x diversity x historical_utility
+```
+
+Una suma ponderada dejaría que una fuente que **sabemos inválida** (`source_validity = 0`)
+comprase un hueco porque a un embedding le gustó cómo estaba escrita. Eso no es un fallo de
+ranking: es el fallo exacto que este subsistema existe para evitar, y sumar convierte el límite
+que debía impedirlo en un voto entre seis. El producto hace que cada factor sea un veto: un cero
+elimina al candidato y ninguna cantidad de similitud semántica lo recompra.
+`historical_utility` es el único que puede pasar de 1.0 (hasta 1.3), porque «esto se usó de
+verdad la vez pasada» sí es un voto y debe poder promover, no sólo dejar de castigar.
+
+**Autoridad no es relevancia.** `AUTHORITY_ORDER` contesta «cuando dos cosas se contradicen,
+¿cuál es la vigente?», no «¿cuál necesita este paso?». Entra en el producto como un factor suave
+y normalizado, y la pregunta que de verdad decide se resuelve en `conflicts.py`, contra los
+rangos crudos. Mantenerlas separadas es la razón de que una irrelevancia con mucha autoridad no
+gane a una respuesta con poca.
+
+Tres reglas menores, cada una con un fallo detrás: un `observed_at` ausente o ilegible es
+*incertidumbre*, no frescura, y puntúa como tal en vez de 1.0 (si no, un adaptador que emite
+marcas de tiempo basura consigue que sus candidatos se traten como observados este segundo, y el
+bug se presenta como «el modelo insiste en citar algo que cambió ayer»); un `source_revision` que
+ya no coincide con su fuente es `stale` en `validate()` y no una penalización blanda en `score()`
+(citar un fichero leído en la revisión A mientras el workspace va por la B está mal, no viejo, y
+un ítem equivocado que puntúa 0.7 igual se inyecta); y ningún candidato que no se pueda puntuar
+tumba el turno: pierde su hueco.
+
+Y de ahí sale la que más cara habría salido: **el dedupe no puede comerse una contradicción**.
+«La migración es segura» y «la migración no es segura» son, para cualquier medida léxica, la
+misma frase —nueve de cada diez tokens compartidos—, así que un dedupe que se fía del parecido
+conserva la que llegó primero y borra el aviso en silencio. Por eso `ranking.dedupe()` pasa cada
+descarte por `conflicts.detect()` antes, y por eso la detección vive en su propio módulo en vez
+de ser un ayudante dentro del ranker.
+
+El detector **no llama a un modelo**: uno que le pregunta a un LLM si dos frases se contradicen
+es un detector que inventa desacuerdos, y este corre en el camino del turno. Usa el sujeto y el
+veredicto que un adaptador haya declarado, la revisión, la hora de observación, la clase de
+autoridad y una prueba de polaridad deliberadamente burda — la negación gana a la afirmación,
+porque «no es seguro» contiene «seguro» y puntuar ese par como neutro es exactamente cómo se
+borra el aviso. Sobre-reporta a propósito: el coste es enseñar un par de más, uno al lado del
+otro, que es la dirección barata del error. Y cuando dos ítems que se contradicen tienen la misma
+autoridad y la misma clase de confianza, **se quedan los dos**: un paquete que enseña las dos
+versiones es honesto; uno que elige a cara o cruz no lo es, y seis meses después nadie leyendo el
+manifiesto podría decir cuál de las dos cosas pasó.
+
+### 53.6 Hacer que quepa sin inventárselo
+
+Sólo hay cuatro respuestas honestas a «no cabe»: meterlo entero; meter un trozo literal y
+contiguo y decir que es un trozo; meter un resumen que escribió otro, etiquetado como resumen; o
+meter un puntero y registrar en el paquete que el contenido se quedó fuera. `transforms.py` va de
+no buscar nunca una quinta. La escalera está ordenada de menos a más distorsión, un ítem sólo
+puede bajar por ella y nunca subir, y el `ContextItem` registra dónde paró. La cuarta respuesta
+está siempre disponible y siempre cuesta una omisión.
+
+**Nada aquí llama a un modelo.** Ni pequeño, ni local, ni «sólo para el resumen». Un paso
+generativo en el camino del turno es una segunda inferencia con su latencia, su modo de fallo y
+sus alucinaciones, dentro del componente cuyo trabajo entero es ser lo fiable sobre qué se le
+contó al modelo. `generated` existe como **etiqueta** para un resumen que otro calculó y entregó
+en `meta["summary"]`; este módulo pone la etiqueta, comprueba que cabe, y no escribe la prosa.
+
+**Las fuentes protegidas no se resumen jamás.** La redacción de una decisión, los bytes de un
+fichero, la firma de un símbolo, una proyección de estado: resumir eso produce una frase
+plausible, que cabe, y que está mal — y mal de la manera más difícil de detectar, porque se lee
+como la fuente. Cuando una de ellas no cabe, degrada a referencia y a una omisión con
+`recoverable=True`: «no he leído esto, y tú puedes» es mejor que una paráfrasis que suena a
+leída.
+
+`fit()` es determinista hasta el `item_id`, que es una huella de lo que el ítem dice y no un uuid
+nuevo — de nuevo porque Branching Futures compara contextos y un id aleatorio haría fallar todas
+las comparaciones por el motivo equivocado.
+
+### 53.7 Cuántos tokens hay, quién se los queda, y dónde se guarda todo
+
+`budgets.py` hace dos trabajos en un fichero porque son la misma decisión dos veces: **medir** y
+**repartir**.
+
+No hay tokenizador real para la mayoría de modelos locales, así que el estimador por defecto es
+una heurística *conservadora* —que sobrecuenta a propósito— y cada paquete registra con qué se
+midió (`ContextBudget.estimator`). Un presupuesto calculado con un estimador optimista no es un
+presupuesto: es una promesa que el proveedor romperá en el peor momento posible. Hay un carril
+exacto (`TokenizerEstimator`) para quien tenga un `tokenizer.json` en disco, apuntado por
+`ODYSSEUS_TOKENIZER_MAP`, y deliberadamente **no se descarga nada**: este proyecto corre offline
+por diseño y un compilador que se bloquea en una petición de red durante el turno es peor fallo
+que un conteo aproximado.
+
+La regla que manda sobre las otras dos: **las reservas se descuentan primero**. La salida y los
+resultados de herramientas no son lo que sobra después del contexto; el contexto es lo que sobra
+después de ellos. Un modelo con un contexto perfecto y sin sitio para responder ha recibido una
+forma muy cara de no decir nada.
+
+`store.py` abre una base de datos aparte, `data/context_engine.db`, con 13 tablas. Todo lo que el
+Context Engine persiste es *derivado*: bloques destilados de la memoria de proyecto, cápsulas de
+un run, experiencias de un changeset probado, un índice de símbolos de los ficheros del disco.
+Perder el fichero entero cuesta una reconstrucción y nada más, y es justo esa propiedad la que
+argumenta por una base propia en vez de cuatro tablas nuevas en `app.db`: reconstruir es un
+`DELETE FROM`, no una migración con plan de vuelta atrás; un reindexado de ocho segundos no puede
+retener un lock de escritura que está esperando un turno de chat; y cuando se corrompa —WAL en
+un Windows que se quedó sin luz— ponerla en cuarentena cuesta un reindexado en vez de las
+sesiones del usuario. `src.memory_engine` llegó a la misma conclusión con su propio `.db`; esto
+es ese patrón generalizado. El esquema vive con la funcionalidad que lo posee: cada módulo llama
+a `register_schema()` al importarse y toda conexión posterior lo aplica, con todo en
+`IF NOT EXISTS`, lo que elimina la clase entera de «la tabla todavía no se había creado».
+
+### 53.8 Los seis almacenes derivados
+
+**Bloques** (`blocks.py`, 1.002 líneas). El contexto que se conecta a propósito y no por
+accidente. El fallo tiene dos mitades y son el mismo error visto desde los dos lados: la memoria
+de proyecto crece un `.md` cada vez, `services.projects` mete el índice en el prompt de todos los
+turnos, y en un modelo local de 32k un tercio de la ventana se ha ido antes de que el usuario
+escriba — eso no lo decidió nadie; y la regla que el usuario dijo una vez («no toques nunca la
+carpeta de migraciones») vive en una nota que no carga nada, así que el agente la rompe cada tres
+sesiones — eso tampoco. Un bloque es lo de en medio: un trozo pequeño, tipado y con precio, de
+contexto permanente, con dueño, alcance y prioridad, que o se **conecta** a una sesión o un
+agente (con caducidad si hace falta) o es **siempre cargado**; y ese carril está **racionado**,
+porque «siempre» es una línea de presupuesto y no un adjetivo. Pasarse de la ración no es un
+error que se rechace al escribir: es un hecho que `audit()` reporta y sobre el que `blocks_for()`
+actúa, quedándose con lo de mayor prioridad y dejando el resto conectable a demanda. Tres reglas
+más: una revisión vieja nunca gana (`BlockConflict` lleva la revisión que había de verdad, la
+misma postura que `services.objectives`); **nunca se guarda un secreto** —el contenido pasa por
+`core.log_safety` antes de escribirse y un acierto se rechaza nombrando el patrón, porque los
+bloques son el único almacén diseñado para pegarse en un prompt y una clave aquí es una clave de
+camino a un endpoint de modelo—; y el importador propone y una persona dispone
+(`import_project_memory()` es `dry_run=True` por defecto y no marca nada como siempre cargado).
+
+**Cápsulas** (`capsules.py`, 834 líneas). Lo pequeño que todavía se puede leer cuando la ventana
+ya no está. Toda tarea larga cruza una frontera que el modelo no sobrevive —una compactación, un
+cambio de modelo a mitad, una delegación a un worker, un reinicio tras suspender la máquina— y lo
+caro no es re-leer los mismos ficheros: es **repetir una acción cuyo resultado nunca se
+confirmó**, porque «lancé la migración y no vi la salida» y «no lancé la migración» son idénticos
+desde el otro lado de una compactación. La cápsula guarda objetivo, definición de terminado,
+fase, qué está hecho, qué sigue, qué se decidió, qué queda abierto, quién tiene qué, cuál es la
+evidencia y **cuánta seguridad hay de que el último efecto aterrizó**. Sólo se entra por deltas
+tipados —un modelo al que se le devolviera la cápsula en prosa perdería en silencio las dos
+decisiones que no le parecieron importantes—, un delta mal formado se rechaza solo sin llevarse a
+los otros nueve, cada lote aplicado escribe una fila en `capsule_log` con actor y hora, y las
+operaciones son idempotentes por texto para que compactar dos veces no duplique una decisión.
+Cuando `last_verified_state` es `partial` o `unknown`, `render()` lo dice en una línea propia por
+encima de todo lo demás que la cápsula afirma: esa línea es la razón entera de que el fichero
+exista. Y `validate()` marca las referencias rotas y no borra ninguna, porque una afirmación
+sobre un fichero que se renombró es información, y tirarla convierte una pregunta que el humano
+sabría contestar en una que nadie sabe que hay que hacer.
+
+**Experiencias** (`experiences.py`, 1.020 líneas). Lo que un run **demostró**, guardado como
+patrón; lo que sólo afirmó, guardado como historia. El fallo es concreto: un worker terminó y
+escribió «arreglado el state check de OAuth, los tests pasan» en su resumen, y esa frase se
+convirtió en lo que el siguiente run recordaba, sin nada en disco que la sostuviera; el tercero
+leyó el mismo resumen y aplicó el enfoque que la evidencia ya había **contradicho**, porque la
+prosa no lleva veredicto. Aquí el veredicto es una **entrada**, nunca una conclusión: `admit()`
+exige uno de los de `prove` y, para todo lo que no sea `unproved`, al menos una referencia de
+verificación; un run sin ChangeSet y sin evidencia equivalente no entra como éxito, se rechaza
+por nombre de campo. `unproved` se almacena y se cuenta pero `search()` nunca lo devuelve, porque
+buscar es la superficie de recomendación; `contradicted` **sí** se devuelve, etiquetado como
+antipatrón, porque «probamos eso y el disco dijo que no» es la frase más cara de tener que
+aprender dos veces. La suma ponderada de la búsqueda es legítima justamente porque el filtro duro
+de validez ya corrió en `admit`: el ranking sólo puede ordenar experiencias admisibles, nunca
+promover una inadmisible.
+
+**Índice de código** (`code_index.py`, 1.422 líneas). Preguntarle a un índice vectorial dónde se
+maneja el callback de OAuth devuelve tres trozos que *hablan* de callbacks de OAuth: ninguno dice
+qué router registra el endpoint, qué módulo define la función, qué test la cubre ni qué se rompe
+si se mueve. El agente edita entonces el trozo que le enseñaron, que era un párrafo de un fichero
+y no la definición. Este es el otro índice: estructural, incremental y acotado. **Cada arista
+lleva su certeza** — un import resuelto por AST a un fichero que existe es `exact`, una llamada
+resuelta por nombre suelto es `static_inferred`, lo encontrado leyendo texto es `lexical`; una
+inferencia no se presenta nunca como arista exacta y `neighbors()` devuelve la certeza al lado de
+cada salto. Reindexa los ficheros cuyos bytes cambiaron, borra los símbolos de los que
+desaparecieron y **para cuando gasta `budget_files`**: un monorepo recibe una respuesta truncada,
+nunca una de veinte minutos. Y entrega firma, rango de líneas y un resumen corto —**nunca el
+cuerpo del fichero**— con un `source_ref` de la forma `symbol:<path>#L<inicio>-L<fin>` para que
+el agente lo abra con una herramienta: el índice apunta, la modificación se hace contra el
+fichero tal y como está ahora en disco. No indexa nada generado, vendorizado, binario ni secreto,
+podando con `src.index_walk`, la misma política que usan los índices de documentos, para que las
+dos no puedan separarse. Reutiliza los extractores de `src.repo_map` para JS/TS, Go, Rust, Java,
+Ruby, PHP, C y Swift; el camino de Python no se pudo reutilizar (`repo_map._py_defs` es privado y
+contesta otra pregunta), así que camina el mismo `ast` de la stdlib: un parser, dos lectores, y
+ningún tree-sitter nuevo en el árbol.
+
+**Pizarra compartida** (`shared_memory.py`, 740 líneas). Cuando un Consejo o una delegación
+reparten una pregunta entre cinco trabajadores, cada uno aprende algo que los demás necesitan, y
+el único canal entre ellos era el resumen del coordinador: una re-narración con pérdidas hecha
+por el único actor que no leyó nada. El fallo que argumenta por append-only es concreto — dos
+workers leyeron el mismo fichero, escribieron conclusiones opuestas en un borrador compartido,
+ganó la escritura más tardía, y al revisor le llegó la equivocada sin rastro de que la otra
+hubiera existido. Un apunte compartido que cualquiera puede sobrescribir no es memoria
+compartida: es una carrera con un nombre amable. Así que aquí no hay `update()` y no lo va a
+haber: una corrección es una **fila nueva** cuyo `supersedes` nombra a la vieja; nadie puede
+sustituir ni retirar el hallazgo de otro —quien discrepa publica una `objection`, que se lee como
+desacuerdo y no como historia reescrita—; una afirmación sobre código o sobre un resultado lleva
+`evidence_refs` o se rechaza (una pregunta o una propuesta no, son borradores por definición y
+exigirles cita sólo enseñaría a los agentes a inventarse una); `promote()` **no promueve**,
+devuelve una propuesta para una persona o un servicio con autoridad, porque el plan es explícito
+en que la pizarra no puede convertirse en memoria duradera por defecto; y los casi-duplicados se
+agrupan, nunca se borran — que dos workers digan casi lo mismo es información sobre el acuerdo.
+
+**Recetas multimodales** (`multimodal_memory.py`, 850 líneas). La procedencia se escribe para
+auditar, no para repetir. Un render que le gustó a todo el mundo, hecho con `image.product 1.0.0`
+con una semilla y dos LoRAs, se reprodujo tres semanas después contra un checkpoint que había
+sido reemplazado: el grafo seguía corriendo, los parámetros se seguían aceptando, la imagen era
+otra, y nada en el sistema lo dijo. Entregarle a un modelo una receta cuyos parámetros el motor
+instalado no va a honrar es peor que no darle ninguna: produce deriva silenciosa y segura de sí
+misma. Por eso el orden no es negociable: **compatibilidad dura primero, ranking después**.
+`search()` tira todas las recetas que esta máquina no puede correr antes de puntuar nada, y
+`compatible()` explica el rechazo campo a campo en vez de devolver un `False` pelado. Un asset de
+entrada que ha desaparecido se **nombra** en lugar de saltarse, porque la receta sigue valiendo
+con otra referencia y el llamante tiene que saber cuál perdió. `derive()` conserva al padre y
+**no** los artefactos del padre: una variación que reclama las imágenes de su padre es una
+mentira que la galería renderizaría encantada. Las señales fuertes y las débiles no son el mismo
+número, y descargar o reutilizar un fichero se modela como nada en absoluto — antes que una
+opinión equivocada, ninguna. Y una valoración con `project_id` no aporta nada a una búsqueda que
+no nombró ese proyecto, para que una campaña muy valorada no se convierta en el estilo de la casa
+de todo lo que el usuario renderice a partir de entonces. No se infiere nada sobre la persona: se
+guarda lo que hizo con una receta, no un perfil de gusto.
+
+### 53.9 Mantenimiento que no promueve nada
+
+La consolidación en segundo plano es donde un sistema de memoria se vuelve poco fiable sin avisar.
+La tentación es evidente: la máquina está ociosa, hay un modelo en la caja, y una pasada nocturna
+podría promover las reglas que «parecen» probadas, fusionar los hallazgos que «parecen»
+duplicados y resolver las contradicciones que «parecen» zanjadas. El plan lo prohíbe con todas
+las letras, así que las seis tareas de `maintenance.py` son deterministas y reversibles por
+reconstrucción: podar el ledger, caducar hallazgos (que **marca**, nunca borra), refrescar el
+índice de código por hash, degradar las experiencias cuyos ficheros ya no están (marcarlas, no
+borrarlas: una experiencia cuyo fichero se reescribió sigue siendo el registro de cómo se abordó
+un problema; lo que ha dejado de ser es una descripción del repositorio), **auditar** bloques sin
+cambiar nada, y compactar el fichero. Ninguna llama a un modelo y ninguna escribe un hecho.
+
+Dos promesas operativas, porque una pasada que rompa cualquiera de las dos la desactiva la
+primera persona a la que moleste y después no vuelve a correr nunca: **devuelve la máquina**
+—`budget_s` es un techo de reloj comprobado entre tareas, y quedarse sin tiempo es un problema de
+calendario y no un fallo, así que las tareas que no llegaron a correr vuelven con `ok=True`
+diciéndolo— y **cede al usuario**: `should_yield()` le pregunta a `src.agent_runs` si alguna
+sesión tiene un turno en vuelo, que es la única sonda de trabajo interactivo que existe en este
+repositorio (`bg_monitor` no tiene noción de «ocupado» y `bg_jobs` sigue subprocesos, no turnos)
+y de la que ya se dibujan los puntos de actividad de la barra lateral.
+
+### 53.10 La costura: al lado del camino caliente, nunca dentro
+
+La Fase 1 del plan (§20) pide una cosa y rechaza el atajo evidente: compilar el paquete que el
+motor *habría* construido para un turno, ponerlo al lado del prompt que la app mandó de verdad, y
+no cambiar nada. El criterio de salida es «no afecta respuestas y explica de dónde saldría cada
+token contextual» — una medición, no una migración.
+
+El fallo contra el que está escrito `wiring.py` no es hipotético: cada subsistema que ha llegado
+a `agent_loop.py` hasta ahora lo hizo como veinte líneas de contabilidad propia dentro de un
+generador de cuatro mil, en el bucle de rondas, donde un `None` inesperado termina el turno y el
+usuario lee «Model request failed». El context ledger sobrevivió a eso por ser un único
+`try/except` alrededor de una única llamada, y esto hace lo mismo: las banderas, el plazo, la
+petición y la forma del informe viven aquí, y lo que `agent_loop.py` recibe es una llamada que se
+lee de un tirón. Cuatro reglas, cada una con su test en `tests/test_context_engine_wiring.py`:
+
+1. **Nada aquí puede cambiar una respuesta.** `shadow_round` compila contra una foto de los
+   mensajes, nunca contra la lista; no escribe memoria, no marca nada como usado y no registra
+   fila de ledger. El paquete existe sólo dentro del informe.
+2. **Nada aquí puede terminar un turno.** Todo punto de entrada está envuelto y devuelve `None`.
+   Si el motor entero explota, el chat sigue y el único rastro es una línea de log.
+3. **Nada aquí puede costar un segundo.** La compilación corre bajo `asyncio.wait_for` contra
+   `agent_context_timeout_ms`; un almacén atascado cancela la observación en vez de retrasar la
+   respuesta.
+4. **Una vez por turno, no una por ronda.** Las rondas 2 a 9 de un turno de agente se diferencian
+   de la primera en sus resultados de herramientas, que el motor ni eligió ni habría elegido de
+   otra manera. Nueve compilaciones costarían nueve veces y contestarían lo mismo, así que
+   `round_index != 0` devuelve `None`.
+
+Y una quinta, que es la razón de que `owner` y `project_id` sean argumentos en vez de algo sacado
+de la conversación: **el alcance lo pone el runtime**. Un mensaje que dice «owner: admin» es un
+mensaje, y `build_request` nunca lo lee como otra cosa.
+
+El informe viaja al frontend como un evento `context_shadow` del stream, junto al
+`context_ledger` que ya existía. `manifest.compare()` es el instrumento: pone el paquete al lado
+de los mensajes que la app envió de verdad y clasifica esos mensajes con
+`src.context_ledger.classify` y con nada más — un segundo clasificador escrito aquí se separaría
+en una release del que la tarjeta del ledger le enseña al usuario, y entonces el informe sombra y
+el ledger discreparían sobre el mismo prompt, que es exactamente la clase de discrepancia que
+cancela una migración por el motivo equivocado. Que un ítem del paquete ya estuviera en el prompt
+enviado se decide buscando su `source_ref` en el texto: una heurística, **etiquetada como tal en
+la salida**, porque la alternativa es fingir que el montaje ad-hoc del prompt registraba una
+procedencia que nunca registró.
+
+`manifest.py` contesta además las tres preguntas con las que la gente llega de verdad, y las
+contesta desde el paquete solo: `summarize()`/`render()` («¿a dónde se fue la ventana?»: una
+tabla de secciones con tokens y porcentaje, y las omisiones agrupadas por motivo, en texto plano
+para pegar en un issue), `explain()` («¿por qué no leyó ese fichero?»: una referencia de fuente
+entra, un veredicto sale — inyectado así, descartado por esto, o **nunca fue candidato**, que es
+una respuesta de verdad y la más frecuente) y `compare()`.
+
+### 53.11 La superficie: HTTP, MCP y una pantalla
+
+Un rastro de auditoría al que sólo se llega desde dentro del turno que lo escribió no le contesta
+a nadie. `routes/context_engine_routes.py` abre **34 rutas** bajo `/api/context` —compilar,
+sombra, ledger y manifiestos, recibos, bloques y sus conexiones, cápsulas y sus deltas y su log,
+experiencias y su feedback, índice de código, hallazgos, recetas, mantenimiento y
+diagnósticos— con tres reglas en cada handler:
+
+- **El dueño nunca se lee del cuerpo.** `POST /compile` es una puerta administrativa al mismo
+  compilador que usa el camino del turno; uno que aceptase `execution.owner` del JSON sería una
+  escalada de privilegios disfrazada de diagnóstico. El dueño de la sesión se estampa encima de
+  lo que llegue, y los candidatos obligatorios del llamante **no se aceptan en absoluto**: llevan
+  `trust_class` y `authority`, y acuñar confianza desde un cuerpo de petición es el mismo agujero
+  en otro campo. El bloque de política sí se acepta, porque todas sus banderas son permisivas por
+  defecto y un llamante sólo puede estrechar lo que ya se le dio.
+- **Un rechazo es una respuesta, no un fallo.** Un bloque que lleva una credencial, una cápsula
+  cuya revisión se movió, un hallazgo sin evidencia: cada uno es un 200 con
+  `{"ok": false, "error": {"path", "message"}}`, exactamente como lo hace
+  `routes/contracts_routes.py`. Los 4xx quedan reservados para un cuerpo que no es JSON — un
+  llamante que no puede distinguir «tu entrada fue rechazada» de «tu petición estaba mal formada»
+  reintenta la equivocada, y un conflicto reintentado a ciegas es cómo se pierde la escritura que
+  te ganó.
+- **Ninguna ruta devuelve el texto de un paquete.** `GET /packets/{id}` es la fila del ledger:
+  cuentas, ids y totales por sección. El manifiesto se sirve porque es una fila por ítem **sin**
+  el ítem: dice de dónde salió cada frase y no la repite.
+
+`mcp_servers/context_engine_server.py` expone **8 tools** (`context_compile`, `context_explain`,
+`context_blocks`, `context_capsule`, `context_experiences`, `context_code_index`,
+`context_findings`, `context_diagnostics`). Existe por un fallo concreto: cuando un agente
+contesta mal, la primera pregunta es siempre «¿qué sabía en realidad?», y hasta ahora la única
+forma de averiguarlo era meter un `print` en `compiler.py` y repetir el turno. Contesta con el
+manifiesto y no con el texto, porque una herramienta que vuelca un paquete entero en la
+transcripción gasta el presupuesto que la llamaron a medir. Levanta `src/stdio_guard.py` antes de
+importar nada, porque stdout es el stream JSON-RPC y un `print` perdido del código de la app lo
+corrompe. Y está acotado por dueño con `ODYSSEUS_MCP_CONTEXT_OWNER`: sin esa variable las
+lecturas degradan a la instalación entera —que es lo que ya significa una instalación de un solo
+usuario— pero **toda escritura se rechaza** nombrando la variable, porque un bloque escrito en el
+alcance del dueño equivocado es una frase pegada en los prompts de otra persona y después no hay
+forma de saber que no era suya.
+
+En Studio, `/context`, con cinco pestañas: resumen, paquetes, bloques, conocimiento (experiencias
+y hallazgos) e índice de código. La cabecera avisa cuando el motor está apagado o en sombra, con
+enlace a Ajustes, porque una pantalla de diagnóstico que no dice que no está midiendo nada es
+peor que ninguna. La pestaña abierta vive en la URL y no en el almacenamiento local: se puede
+enlazar, mandársela a quien está preguntando por qué el modelo sabía algo, y reabrir con el botón
+de atrás — cosas que el almacenamiento local no puede hacer. Toda la aritmética que la pantalla
+afirma vive en `adapters/context.ts` y no dentro de un componente, y `studio/checks/context.check.mjs`
+la ejecuta con **102 comprobaciones** desde `tests/test_studio_context_js.py`: un panel cuyos
+números no se pueden verificar es decoración.
+
+### 53.12 Qué queda apagado, y cómo se enciende
+
+Cinco ajustes nuevos en `src/settings.py`, los cinco expuestos en Studio
+(`src/agent_settings_schema.py`):
+
+| Ajuste | Por defecto | Qué hace |
+|---|---|---|
+| `agent_context_engine` | `False` | Que el motor decida qué se le cuenta al modelo. Es **Fase 2**: hoy `wiring.enabled()` existe y su propio docstring dice que **nadie lo lee**, así que encenderlo todavía no cambia ningún prompt |
+| `agent_context_engine_shadow` | `False` | Compila el paquete, **no lo entrega**, y registra qué diferencia habría habido con el prompt real. Una compilación por turno; nada que el modelo vea cambia |
+| `agent_context_timeout_ms` | `2000` | Reloj de toda la etapa de recuperación — las fuentes van en paralelo, así que es lo que paga un turno cuando el almacén más lento está atascado. Un turno de voz recibe la mitad: nueve segundos de silencio ya han fracasado como conversación diga lo que diga después |
+| `agent_context_ledger_days` | `30` | Cuánto vive una fila del ledger (tokens, reparto por sección y cuentas de omisión; nunca contenido) |
+| `agent_context_cache_entries` | `512` | Entradas del working set L1, por alcance dueño+proyecto |
+
+El orden es deliberado y está escrito en el propio fichero de ajustes: **primero sombra**. El
+motor sustituye el camino caliente, y una sustitución que nadie midió es la forma de convertir un
+prompt que funciona en un misterio. La bandera de sombra es independiente de la otra a propósito:
+es la medición que gana a la otra, así que ponerla detrás de ella la haría inalcanzable.
+
+### 53.13 Lo verificado, y una honestidad
+
+386 tests de pytest y 102 comprobaciones bajo node. Los que merece la pena nombrar son los que
+fijan un fallo concreto:
+
+- **La caché no puede filtrar entre personas.** Dos usuarios en una instalación, un proceso, un
+  diccionario: una clave `"memories"` es la misma clave para los dos, y un acierto de caché le
+  entrega al segundo las memorias del primero sin que ningún almacén se haya consultado ni
+  ninguna comprobación de autorización haya corrido. Por eso el alcance no es parte del valor ni
+  un convenio en el que se confía, sino un **argumento posicional obligatorio** de `get` y de
+  `put`, concatenado en la clave interna con un separador que no puede aparecer en ninguna de las
+  dos mitades. `tests/test_context_engine_cache.py` fija exactamente eso.
+- **La invalidación es por evento, no por conjetura.** `cache.on_event` es la tabla del plan y
+  nada más. La alternativa —un TTL corto en todas partes y esperanza— es cómo un paquete acaba
+  citando una regla de proyecto que el usuario borró hace dos minutos, y la esperanza no es una
+  política de caché. Un nombre de evento desconocido no es un error: este proceso puede ser más
+  viejo que el emisor, y lanzar convertiría un evento nuevo en una caída.
+- El paquete nunca supera la ventana; una sección obligatoria que no cabe degrada con aviso en
+  vez de recortarse en silencio; una contradicción relevante no se elimina por dedupe; una
+  memoria de agente no gana a un estado observado; un `unproved` no se presenta como experiencia
+  exitosa; los hallazgos son append-only y una corrección crea `supersedes`; añadir, renombrar y
+  borrar un símbolo actualiza el índice; y una receta incompatible con lo que hay instalado se
+  rechaza nombrando el campo.
+
+Y la honestidad, porque conviene que esté escrita aquí y no sólo en un docstring:
+`budgets.AppParityEstimator` **no** reproduce `src.model_context.estimate_tokens` exactamente.
+Usa el mismo 0,3 caracteres por token y el mismo coste por mensaje, pero redondea hacia arriba
+donde el otro trunca, así que las dos cifras difieren en **como mucho un token por cadena**. El
+docstring de `_ledger_tokens` en `wiring.py` lo dice y por eso el informe reporta las dos
+mediciones, para que nadie concluya que una de las dos tarjetas de su pantalla está rota; el
+docstring de la propia clase todavía dice «exactly», y esa contradicción está anotada en
+`PENDIENTES.md`.
+
+### 53.14 Lo que este bloque enseñó
+
+- **Una capa, no un almacén.** La decisión que más ha ahorrado es la de no construir el
+  duodécimo almacén. Un espejo de once fuentes habría que mantenerlo sincronizado, y el día que
+  derivara —que es el día uno— «¿por qué sabía eso?» tendría una respuesta que nadie puede
+  comprobar. Un adaptador que pregunta caduca solo.
+- **La forma de la fórmula es una decisión de seguridad.** Sumar y multiplicar no son dos maneras
+  de ponderar lo mismo: la suma convierte un veto en un voto. El mismo razonamiento aparece dos
+  veces más en este bloque, y las dos veces al revés — en `experiences.search()` y en el ranking
+  de recetas sí se suma, y es legítimo **porque el filtro duro ya corrió antes**.
+- **Buscar deja huellas.** El motivo de que incógnito sea una puerta *antes* de la recuperación y
+  no un filtro después no es filosófico: `memory_engine.search()` escribe `last_used` en las filas
+  que devuelve. «Buscar y descartar» y «no buscar» son estados distintos del disco. Cualquier
+  política de privacidad que se aplique a la salida ya ha perdido.
+- **Un componente de contexto que llama a un modelo se ha derrotado a sí mismo.** Está escrito
+  tres veces —en `transforms`, en `conflicts` y en `maintenance`— porque la tentación aparece
+  tres veces. La cosa cuyo trabajo entero es ser fiable sobre qué se le contó al modelo no puede
+  tener alucinaciones propias.
+- **Apagado por defecto, y con un orden.** Dos banderas, y la que mide no depende de la que
+  cambia. Es la misma postura que el sandbox de la Fase 1 (§32) y la misma razón: lo que
+  sustituye un camino caliente se mide antes de sustituirlo.
+
 ## Cómo mantener este documento
 Cada bloque de trabajo añade una sección (fecha, qué, por qué, ficheros, cómo se verificó, cifras) y actualiza las cifras de cabecera (`git log --oneline c9dd68d8..HEAD | wc -l`, `git diff --stat c9dd68d8..HEAD`). Los commits del fork llevan mensajes largos que explican el porqué: `git log c9dd68d8..HEAD` es la fuente detallada.

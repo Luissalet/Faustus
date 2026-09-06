@@ -251,6 +251,131 @@ Regla que se hereda del informe y que SEC-1 ya siguió: **cada lote desplegable 
 separado**, un solo dueño del schema por lote, y nada se declara hecho sin un test que planta un
 centinela y demuestra dónde no aparece.
 
+## Context Engine: de la sombra a la canónica (06-09-2026)
+
+Frente propio, con su documento: `D:\LocalAI\inspiration\PLAN_CONTEXT_ENGINE_FAUSTUS.md` (§20
+reparte las fases, §23 fija la evaluación). Lo construido está en `FAUSTUS.md` §53: contratos,
+presupuestos, nueve adaptadores, compilador, manifiesto, bloques, cápsulas, experiencias, índice
+de código, pizarra compartida, recetas multimodales, mantenimiento, 34 rutas, 8 tools MCP,
+pantalla en Studio y 386 tests. Son **29 ficheros y 15.393 líneas** en `src/context_engine/`,
+todo detrás de dos banderas apagadas por defecto.
+
+Y ahí está lo que falta: **la Fase 1 está completa y la Fase 2 no está empezada**. Existen las
+piezas de las fases 3 a 8 —los almacenes, con sus reglas y sus tests— pero nadie las llama desde
+producción, porque la vía que las llamaría es la compilación canónica.
+
+| Fase | Qué entrega | Estado |
+|---|---|---|
+| 0 · Línea base | Benchmark reproducible antes de tocar el camino caliente | ⏳ **sin construir** — se saltó para llegar a la sombra |
+| 1 · Contratos y paquete en observación | Compilar en paralelo sin cambiar el prompt enviado | ✅ 06-09-2026 — §53; sombra cableada en `agent_loop`, evento `context_shadow`, `manifest.compare()` |
+| 2 · Compilación canónica | Que el `ContextPacket` decida de verdad qué se envía | ⏳ **la costura está puesta y nadie la ha cruzado** |
+| 3 · Bloques y cápsulas | Continuidad tras compactar o reiniciar | 🟡 los dos almacenes existen, están probados y tienen rutas y tools; no los llama nada en producción |
+| 4 · Experiencias verificadas | Aprender de ejecuciones reales | 🟡 el almacén y `admit()` existen; falta el extractor que destila un run terminado en una experiencia |
+| 5 · Índice estructural de código | Localizar contexto de repositorio con precisión | 🟡 el índice existe y es incremental; falta el benchmark contra búsqueda textual/vectorial que el plan exige |
+| 6 · Memoria compartida | Colaboración sin duplicar investigación | 🟡 la pizarra existe; falta integrarla con Consejo, Dispatch y subagentes |
+| 7 · Recetas multimodales | Reproducibilidad en imagen, vídeo y audio | 🟡 el almacén existe; nadie escribe una receta al renderizar ni la lee al repetir |
+| 8 · Consolidación y optimización | Scheduler en idle, caché medida, reranking opcional | 🟡 las seis tareas existen y la caché mide; **nadie las llama en bucle** |
+
+### Fase 0 — el benchmark que sigue sin existir (P0)
+
+Es la deuda más incómoda de este frente: el criterio de salida de la Fase 0 era «benchmark
+reproducible **antes** de cambiar el camino caliente», y el camino caliente ya tiene un
+observador encima. Sin esto, la Fase 2 no se puede justificar con datos.
+
+- [ ] Corpus de tareas reales: coding, investigación, escritura, imagen, vídeo y uso cotidiano.
+- [ ] Casos con información relevante, distractores, contradicciones y datos obsoletos — los
+      cuatro, porque un corpus sin distractores mide otra cosa.
+- [ ] Medir el prompt **actual**: tokens por sección, cuántos recuerdos y chunks se inyectan,
+      acierto, recuperación, latencia y consumo. La mitad de esto ya se puede leer del
+      `context_ledger` y del informe sombra; falta el arnés que lo agregue.
+- [ ] Ventanas reales por modelo y configuración (hoy `resolve_budget()` cae a
+      `DEFAULT_UNKNOWN_WINDOW` cuando no puede probarlas).
+
+### Fase 2 — migrar el camino caliente de sombra a canónica (P0)
+
+El criterio de salida, literal del plan: *igual o mejor calidad con menos contexto promedio y sin
+perder instrucciones críticas*. No se avanza sin la Fase 0 delante.
+
+- [ ] **Que `agent_context_engine` haga algo.** Hoy `wiring.enabled()` existe, lee el ajuste y su
+      propio docstring dice que **nadie lo llama**: está ahí para que los consumidores tengan un
+      solo sitio donde preguntar cuando llegue el momento. Encender la bandera hoy no cambia
+      ningún prompt.
+- [ ] **Cablear el paquete a `_build_system_prompt`** (`src/agent_loop.py:2526`), que es donde se
+      montan hoy memoria, documento activo, skills y contexto de proyecto. Es el punto de corte:
+      o el paquete manda, o siguen mandando los concatenadores.
+- [ ] **`project_id` todavía no llega a `_build_system_prompt`.** Su firma tiene `owner`,
+      `workspace` y `session_id`, y nada más; el `project_id` sí llega a `wiring.build_request()`
+      desde `harness_options`. Sin ese argumento, el alcance de proyecto —que es la mitad de la
+      clave de la caché y toda la frontera de aislamiento de bloques y recetas— no puede aplicarse
+      en el prompt canónico.
+- [ ] **El adaptador de sesiones no tiene proveedor de historial.**
+      `src/context_engine/adapters/sessions.py` se niega a propósito a leer la base de datos de
+      sesiones (`SessionManager.get_session` no acepta dueño, muta `last_accessed` y devuelve una
+      transcripción distinta de la que el turno está usando). Espera que el llamante que ya tiene
+      los mensajes se los entregue con `set_history_provider`. **Nadie lo llama en producción**,
+      así que `available()` es `False` y no hay sección `recent_messages` en ningún paquete
+      compilado hoy. Una línea en el arranque de la ruta de chat, pero hay que decidir cuál.
+- [ ] **`observe_receipt` está implementado, probado y sin cablear.**
+      `src/context_engine/wiring.py` lo tiene entero —qué referencias abrió el turno, cuántos
+      resultados de herramienta añadió, el `outcome_ref` y el veredicto— y sólo lo llaman los
+      tests. Es la costura que cierra el bucle: sin recibos, `historical_utility` no tiene de
+      dónde salir y la selección no se puede medir. Va con la Fase 2 porque un recibo sobre un
+      paquete que no se entregó no significa nada.
+- [ ] Recorte seguro de resultados de herramientas antiguos, que hoy hace `context_compactor` por
+      su cuenta y con otro criterio.
+- [ ] Recuperación bajo demanda (progressive disclosure) desde el propio turno, no sólo en la
+      compilación inicial.
+- [ ] **Fallback por bandera al comportamiento anterior**, y con test de que apagado es idéntico a
+      antes — la misma regla que se aplicó al sandbox del agente (§32).
+
+### Las ablaciones de §23
+
+El plan es explícito: *no adoptar GraphRAG, rerankers complejos o un nuevo vector store sin una
+mejora medida sobre tareas reales*. Ocho configuraciones a comparar sobre el corpus de la Fase 0,
+y ninguna se ha corrido todavía:
+
+- [ ] 1. contexto actual (el prompt que monta hoy `_build_system_prompt`);
+- [ ] 2. sólo BM25;
+- [ ] 3. BM25 + vectores;
+- [ ] 4. híbrido actual (lo que hace `memory_engine` y `rag_vector` hoy);
+- [ ] 5. Context Compiler **sin** experiencias;
+- [ ] 6. Context Compiler completo;
+- [ ] 7. con y sin índice estructural de código;
+- [ ] 8. con y sin cápsula después de compactar.
+
+Las métricas que hay que sacar de cada una están en §23: recuperación (`Recall@k`,
+`Precision@k`, MRR/nDCG, contradicciones relevantes recuperadas, fuentes obsoletas incluidas por
+error, duplicación entre secciones), agente (éxito de tarea, número de tools y pasos, relecturas
+evitables, errores por contexto ausente y por contexto obsoleto, continuidad tras compactar,
+veredicto de `prove`, intervención humana) y coste (tokens de entrada por llamada y sección,
+porcentaje de ventana, latencia de compilación y por fuente, hit rate de caché, disco y RAM por
+propietario). El ledger (`context_packets`) ya guarda la mitad de las de coste; las de
+recuperación necesitan el corpus.
+
+### Ganchos que otros planes van a necesitar
+
+- [ ] **Mantenimiento sin planificador.** Las seis tareas de `src/context_engine/maintenance.py`
+      sólo se disparan a mano: `POST /api/context/maintenance/run` o la tool
+      `context_diagnostics`. `should_yield()` ya sabe cederle la máquina a un turno en vuelo; lo
+      que falta es quien la llame en idle. Es el mismo agujero que el `advance()` de los
+      workflows (Fase 4) y probablemente el mismo planificador.
+- [ ] **Nada escribe una experiencia.** El extractor que convierte un run terminado —con su
+      ChangeSet y su veredicto de `prove`— en una llamada a `experiences.admit()` no existe. Sin
+      él la Fase 4 es un almacén vacío con muy buenas reglas de admisión.
+- [ ] **Nada escribe una receta.** `src/media_backends/` y `media_runs` tienen todo lo que
+      `GenerationRecipe` necesita; falta el enganche al terminar un render y la lectura al pedir
+      «lo mismo pero con esta otra referencia». Es lo que junta la Fase 3 del masterplan con la
+      Fase 7 de este plan.
+- [ ] **La pizarra no la usa ningún subagente.** Consejo y Dispatch siguen comunicándose por el
+      resumen del coordinador, que es exactamente el canal con pérdidas que `shared_memory`
+      existe para sustituir.
+- [ ] **`MemoryView` sigue sin cablear** (Fase 2 del masterplan, arriba). Cuando se cablee hay que
+      decidir si el alcance lo aplica él o `ContextPolicy`: dos muros para lo mismo es cómo se
+      abre un agujero en uno de los dos.
+- [ ] **Incógnito no llega desde la ruta de chat.** `wiring.build_request()` lo lee de
+      `harness_options` y la ruta todavía no lo rellena, así que hoy siempre es `False`. La
+      política ya está escrita y aplicada antes de la recuperación; falta el interruptor.
+
 ## Descartado a propósito (y por qué)
 
 - Marketplace público de plugins **antes** de tener firma, permisos y revocación.

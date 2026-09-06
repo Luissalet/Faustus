@@ -5,6 +5,7 @@ import {
   CalendarDays,
   ChefHat,
   FolderKanban,
+  Gauge,
   Home,
   Library,
   Mail,
@@ -67,6 +68,7 @@ export const TOOLS: Tool[] = [
   { path: '/compare', label: 'Compare', icon: Columns3 },
   { path: '/group', label: 'Group chat', icon: Users },
   { path: '/cookbook', label: 'Cookbook', icon: ChefHat },
+  { path: '/context', label: 'Context', icon: Gauge },
 ];
 
 /**
@@ -95,6 +97,7 @@ export const SERVER_ROUTES = [
   '/compare',
   '/group',
   '/cookbook',
+  '/context',
   // The paths the interface this one replaced owned. Still served, still in
   // bookmarks; the router redirects each to the screen that took over.
   '/gallery',
