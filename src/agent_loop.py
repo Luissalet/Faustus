@@ -6167,6 +6167,47 @@ async def stream_agent_loop(
         except Exception as _cl_err:
             logger.debug("[context-ledger] skipped: %s", _cl_err)
 
+        # --- Context Engine shadow (FAUSTUS §20, phase 1): compile the packet
+        # this round WOULD have been given and report the difference against
+        # what we are actually about to send. Measurement before migration —
+        # nothing here may touch `messages`, write memory or cost a second;
+        # the rules and the deadline live in src/context_engine/wiring.py.
+        # Once per turn (round_index 0), never once per round.
+        try:
+            from src.context_engine import wiring as _ce_wiring
+            if _ce_wiring.shadow_enabled():
+                _ce_report = await _ce_wiring.shadow_round(
+                    request=_ce_wiring.build_request(
+                        owner=owner or "",
+                        session_id=session_id or "",
+                        model=model,
+                        workspace=workspace or "",
+                        project_id=str(_hopts.get("project_id") or ""),
+                        messages=messages,
+                        agent_mode=True,
+                        # harness_options is the only per-turn bag the route
+                        # can fill without another parameter on a generator
+                        # that already has forty. When the chat route starts
+                        # forwarding incognito it lands here and becomes a
+                        # policy the planner applies before retrieval.
+                        incognito=bool(_hopts.get("incognito")),
+                    ),
+                    messages=messages,
+                    tool_schemas=all_tool_schemas or (),
+                    context_length=_last_route_context_length or context_length,
+                    window_known=bool(_last_route_context_length),
+                    max_output_tokens=max_tokens,
+                    round_index=round_num - 1,
+                )
+                if _ce_report:
+                    yield ("data: " + json.dumps({
+                        "type": "context_shadow",
+                        "round": round_num,
+                        "data": _ce_report,
+                    }) + "\n\n")
+        except Exception as _ce_err:
+            logger.debug("[context-engine] shadow skipped: %s", _ce_err)
+
         logger.info(
             "[agent-timing] round_start round=%s model=%s endpoint=%s prompt_tokens=%s tools=%s native_tools=%s timeout=%s",
             round_num,

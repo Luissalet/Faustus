@@ -784,6 +784,17 @@ app.include_router(setup_approvals_routes())
 from routes.workflows_routes import setup_workflows_routes
 app.include_router(setup_workflows_routes())
 
+# The Context Engine: what a model is told, and the ledger of what it was told.
+# Reads are owner-scoped and open to the tool layer; writes are admin. The two
+# that are require_human are the two the model does not get to decide: importing
+# project notes for real (they become standing context in every later prompt)
+# and running the maintenance pass (it prunes the ledger and vacuums the store).
+# `POST /compile` stamps the session's owner over anything the body carries —
+# without that, an administrative compile endpoint is a way to read somebody
+# else's memory by asking for it.
+from routes.context_engine_routes import setup_context_engine_routes
+app.include_router(setup_context_engine_routes())
+
 # Media renders on a separate engine. There is deliberately no endpoint that
 # takes a graph: a caller picks an approved template and fills its declared
 # inputs, and that is the whole surface.
@@ -1196,6 +1207,12 @@ async def serve_compare(request: Request):
 @app.get("/group")
 async def serve_group(request: Request):
     """Studio group chat (lot AE)."""
+    return await serve_index(request)
+
+@app.get("/context")
+async def serve_context(request: Request):
+    """Studio Context Engine panel: the ledger, its manifests, blocks,
+    experiences, the blackboard and the code index."""
     return await serve_index(request)
 
 @app.get("/login")

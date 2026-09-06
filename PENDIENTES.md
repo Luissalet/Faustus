@@ -585,3 +585,109 @@ Los 25 bugs de `inspiration/AUDITORIA_BACKEND_Y_FEATURES_FAUSTUS.md` están cerr
 - `[ ]` **B-008 sigue parcial.** SEC-1c cableó los perfiles de entorno en runners externos y
   servidores MCP; los otros siete consumidores de `native_host_environment()` siguen recibiendo
   el entorno completo menos el token interno.
+
+## Context Engine: lo cerrado, y lo que deja abierto (06-09-2026)
+
+El Context Engine (`FAUSTUS.md` §53, `OBJETIVOS.md`) cierra la Fase 1 del plan
+`inspiration/PLAN_CONTEXT_ENGINE_FAUSTUS.md`: 29 ficheros, 15.393 líneas, 386 tests, todo detrás
+de `agent_context_engine` y `agent_context_engine_shadow`, apagadas por defecto. Esto es lo que
+**no** cierra, más lo que se vio de camino.
+
+### Tests
+
+- `[!]` **`tests/test_static_checks.py::test_the_loop_does_not_spend_a_round_on_a_warning_that_was_already_there`
+  falla, y es preexistente.** Comprobado corriéndolo antes y después del cambio, en el mismo
+  árbol: falla igual en los dos. Dos motivos que se suman y ninguno es del Context Engine: el
+  arnés del test marca como cambiada una línea que nadie tocó, y el propio test **habla con el
+  Ollama vivo de esta máquina**, así que su resultado depende de qué modelo esté cargado. Un
+  test estático que necesita un modelo no es un test estático; hay que separarlo en dos o
+  saltarlo sin endpoint.
+- `[~]` **`tests/test_disk_ballast.py` (6 tests) y `test_atomic_io` fallan sólo con `pytest -n 6`.**
+  En serie pasan los siete. Es contención: los dos escriben ficheros grandes y miden espacio o
+  atomicidad, y seis workers a la vez sobre el mismo disco se pisan. **No es una regresión**, pero
+  queda anotado para que la próxima persona que vea esos rojos en paralelo no vuelva a gastar
+  media hora descartándolos. El arreglo real es marcarlos `xdist_group` o `serial`.
+
+### Deuda que el propio subsistema declara
+
+- `[!]` **`src/context_engine/wiring.py::observe_receipt` está implementado, probado y no
+  cableado.** Registra qué referencias abrió el turno, cuántos resultados de herramienta añadió,
+  el `outcome_ref` y el veredicto; sólo lo llaman los tests. Es la costura de la Fase 2, y
+  mientras no exista `historical_utility` no tiene de dónde salir: el factor está en la fórmula
+  del ranking y siempre vale lo mismo. Un recibo sobre un paquete que no se entregó no significa
+  nada, así que va con la migración, no antes.
+- `[!]` **El adaptador de sesiones no tiene proveedor de historial por defecto.**
+  `src/context_engine/adapters/sessions.py` se niega a propósito a leer la base de datos de
+  sesiones —`SessionManager.get_session` no acepta dueño (cualquier id, incluido uno que un
+  modelo escriba en un mensaje, resuelve a los mensajes de esa sesión), muta la caché y
+  `last_accessed`, y devuelve una transcripción distinta de la que el turno está usando— y espera
+  que se la entregue quien ya tiene los mensajes, con `set_history_provider`. **Nadie la llama en
+  producción.** Consecuencia: `available()` es `False` y **ningún paquete compilado hoy tiene
+  sección `recent_messages`**. Es el estado honesto (visiblemente ausente antes que
+  silenciosamente equivocado), pero es un agujero en la comparación sombra: el informe compara un
+  paquete sin historial contra un prompt que sí lo lleva.
+- `[?]` **`budgets.AppParityEstimator` no reproduce `src.model_context.estimate_tokens`
+  exactamente, y su docstring dice que sí.** Usa el mismo 0,3 caracteres por token
+  (`APP_PARITY_CHARS_PER_TOKEN = 1.0 / 0.3`) y el mismo coste de 4 tokens por mensaje, pero
+  `_BaseEstimator.count()` hace `math.ceil(len(text) / chars_per_token)` mientras
+  `estimate_tokens` hace `int(len(content) * 0.3)`: uno redondea hacia arriba y el otro trunca,
+  **≤1 token de diferencia por cadena**. La diferencia sí está documentada, pero en el docstring
+  de `_ledger_tokens` (`wiring.py`), que por eso reporta las dos mediciones para que nadie
+  concluya que una de las dos tarjetas de la pantalla está rota; el docstring de la clase en
+  `budgets.py` sigue diciendo *"Reproduces `src.model_context.estimate_tokens` exactly"*, que es
+  falso. Hay que decidir: o se unifican (que `AppParityEstimator` trunque) o se corrige el
+  docstring. Unificarlas es lo correcto — un carril que existe para comparar y no compara igual
+  no sirve para lo que se creó.
+- `[+]` **`budgets.py` nombra un test que no existe.** El comentario de `IMAGE_BLOCK_TOKENS` dice
+  *"Kept in sync by `tests/test_context_engine_budgets.py`, which reads the constant from there"*,
+  y ese fichero **no está en `tests/`**. Nada comprueba que los 1200 de
+  `context_engine/budgets.py` sigan al valor de `src/model_context.py`; si uno cambia, el otro se
+  queda callado. El docstring de `adapters/documents.py` cita ese mismo arreglo como precedente
+  del suyo (que sí existe, en `test_context_engine_sources.py`). Una línea de test.
+- `[~]` **Nada llama a `maintenance.run()` en bucle.** Las seis tareas sólo se disparan a mano
+  (`POST /api/context/maintenance/run` o la tool MCP). `should_yield()` ya sabe cederle la máquina
+  a un turno en vuelo, y `agent_context_ledger_days` promete una poda que hoy no ocurre sola: el
+  ledger crece hasta que alguien pulse el botón. Mismo agujero que el `advance()` de los
+  workflows.
+- `[?]` **La sombra no se ha corrido contra un turno real con un modelo real.** `shadow_round` y
+  `manifest.compare()` están probados con mensajes construidos en los tests. Nadie ha encendido
+  `agent_context_engine_shadow` en una conversación de verdad y leído el informe.
+- `[~]` **`agent_context_engine` no hace nada todavía.** `wiring.enabled()` lee el ajuste y su
+  propio docstring dice que nadie lo llama: existe para que los consumidores de la Fase 2 tengan
+  un solo sitio donde preguntar. Encenderlo hoy no cambia ningún prompt, lo que es correcto pero
+  no es lo que un usuario deduce de una casilla en Ajustes.
+- `[~]` **`incognito` siempre es `False` en la práctica.** `wiring.build_request()` lo lee de
+  `harness_options`, que `routes/chat_routes._project_harness_options` rellena sólo con los campos
+  de `services.projects.AGENT_OPTION_FIELDS`. La política existe, se aplica **antes** de la
+  recuperación (que es lo que importa) y está probada; lo que falta es que la ruta la rellene.
+
+### Lo que se vio en los carriles viejos (no es del Context Engine, pero está ahí)
+
+- `[!]` **`src/memory_engine.py::pack_detail()` marca como accedidas todas las memorias que
+  devuelve.** Su búsqueda interna sí llama a `search(..., touch_hits=False)`, pero al final la
+  función hace `touch(ids, now)` sobre **todo** lo que empaquetó: reglas procedurales,
+  antipatrones y aciertos. Recuperar no es usar. Un ítem que el presupuesto tira después no se
+  usó, y decirle lo contrario al curador es entrenarlo con una mentira: `access_count` y
+  `last_used` inflados desplazan la decadencia y cambian qué se promueve. El Context Engine lo
+  esquiva por otra vía —`adapters/memory.py` reconstruye la selección sin consulta desde
+  `scoped_items()`, que es una lectura pura, y registra el uso una sola vez desde
+  `ContextReceipt`— pero **el carril viejo sigue tocando en cada turno**, y es el que está
+  encendido.
+- `[!]` **`services/docs/service.py::query` no propaga `owner` a `rag_vector.search`.** La firma
+  es `query(self, query, top_k=5)` y llama a `self.rag.search(query, k=top_k)`, sin dueño.
+  `rag_vector.search` **sí** acepta `owner` y con él aplica un `where={"owner": owner}` sobre la
+  colección; sin él devuelve chunks de todos los dueños de la instalación. El Context Engine no
+  usa este camino (su adaptador de documentos pasa por `rag_manager` con el dueño de
+  `request.execution`), pero cualquiera que use `DocsService` tiene una fuga entre usuarios. El
+  arreglo es un parámetro y una línea.
+- `[+]` **`src/memory_engine.record_outcome` sólo puntúa ítems `procedural`.** Está dicho en su
+  docstring y es defendible —son las reglas que se le pidió al modelo que siguiera, así que un
+  pase o un fallo es evidencia sobre ellas—, pero la consecuencia es que `semantic` y `episodic`
+  **nunca reciben feedback**: se inyectan, se cuentan como usadas (ver el punto de `pack_detail`)
+  y su puntuación no se mueve nunca por el resultado del turno. O se les da una señal propia, o
+  conviene dejar escrito que su score no aprende.
+- `[~]` **`src/memory_view.py` y `src/contracts/memory.py` siguen sin cablear a producción.** Ya
+  estaba en `OBJETIVOS.md` (Fase 2 del masterplan) desde el 04-09 y sigue igual: sólo los llaman
+  sus tests. Ahora hay además una segunda implementación del mismo muro —`ContextPolicy` y el
+  filtrado previo del planner—, así que cuando se cablee hay que decidir cuál manda. Dos muros
+  para lo mismo es cómo se abre un agujero en uno de los dos.

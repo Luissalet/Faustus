@@ -541,6 +541,17 @@ _APP_API_BLOCKLIST_PREFIXES = (
     "/api/admin",          # admin one-shots (wipe etc.)
     "/api/shell",          # host shell execution must stay behind named command tooling
     "/api/backup/restore", # destructive restore
+    # ── /api/context/maintenance: irreversible, and never urgent ──────────
+    # The context engine's background pass prunes the packet ledger, drops code
+    # index rows, expires blackboard findings and VACUUMs the store. Every one
+    # of those is irreversible and none of them is urgent, so the route is
+    # `require_human` — the one gate the internal-tool token does not open. This
+    # prefix is the second lock: `app_api` loops back with that token, and a
+    # model that "tidied up" the audit trail of its own turns would have erased
+    # exactly the evidence the ledger exists to keep. The rest of /api/context
+    # (compiling a packet, reading the ledger, blocks, findings) stays reachable
+    # — that is the read the model needs in order to explain what it knew.
+    "/api/context/maintenance",
     # ── /api/workspace: the whole tree, on purpose ────────────────────────
     # WHY THE WHOLE PREFIX, not just the destructive verbs:
     #
@@ -673,6 +684,20 @@ _APP_API_BLOCKLIST_METHOD_PATH = (
     # decision: if `/api/workspace` is ever narrowed to an exact segment match,
     # the write must stay blocked.
     ("POST",   "/api/workspace-trust"),
+    # Context engine deletes. A block, a capsule and an experience are the three
+    # things the compiler will hand the NEXT turn: the standing rule, the
+    # checkpoint a worker resumes from, and the record of what was already
+    # tried. None of them can be restored, and a model that deleted the
+    # experience recording its own failed approach would be free to repeat it
+    # with nothing to say otherwise. The named routes are admin and reachable
+    # from the UI; the generic bridge is not the door for them.
+    ("DELETE", "/api/context"),
+    # Importing project notes for real (`dry_run: false`) turns every Markdown
+    # file under .odysseus/ into standing context that is pasted into prompts
+    # from then on. The route is already `require_human`, which this token does
+    # not open; listed anyway, because the reason is a decision and not an
+    # accident of which gate happens to be on the handler today.
+    ("POST",   "/api/context/blocks/import-project-memory"),
 )
 
 

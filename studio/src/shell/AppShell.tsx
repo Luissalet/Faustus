@@ -36,6 +36,7 @@ const EmailScreen = lazy(() => import('../screens/email/Email').then((m) => ({ d
 const ResearchScreen = lazy(() => import('../screens/research/Research').then((m) => ({ default: m.ResearchScreen })));
 const CookbookScreen = lazy(() => import('../screens/cookbook/Cookbook').then((m) => ({ default: m.CookbookScreen })));
 const CompareScreen = lazy(() => import('../screens/compare/Compare').then((m) => ({ default: m.CompareScreen })));
+const ContextScreen = lazy(() => import('../screens/Context').then((m) => ({ default: m.ContextScreen })));
 const GroupScreen = lazy(() => import('../screens/group/Group').then((m) => ({ default: m.GroupScreen })));
 const SettingsScreen = lazy(() => import('../screens/Settings').then((m) => ({ default: m.SettingsScreen })));
 const AgentsScreen = lazy(() => import('../screens/Agents').then((m) => ({ default: m.AgentsScreen })));
@@ -221,6 +222,7 @@ function RouteBody() {
         <Route path="/compare" element={<CompareScreen />} />
         <Route path="/group" element={<GroupScreen />} />
         <Route path="/cookbook" element={<CookbookScreen />} />
+        <Route path="/context" element={<ContextScreen />} />
         <Route path="/settings" element={<SettingsScreen />} />
         <Route path="/agents" element={<AgentsScreen />} />
         <Route path="/skills" element={<SkillsScreen />} />

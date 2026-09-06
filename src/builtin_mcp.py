@@ -81,6 +81,10 @@ _BUILTIN_SERVERS = {
     "memory":     ("mcp_servers/memory_server.py",     "Built-in: Memory"),
     "rag":        ("mcp_servers/rag_server.py",        "Built-in: RAG"),
     "email":      ("mcp_servers/email_server.py",      "Built-in: Email"),
+    # The context engine: compile a packet and read its manifest, explain why a
+    # source was or was not in it, and reach the stores the compiler draws from.
+    # Owner-scoped through ODYSSEUS_MCP_CONTEXT_OWNER, like the memory server.
+    "context":    ("mcp_servers/context_engine_server.py", "Built-in: Context Engine"),
 }
 
 # NPX-based built-in servers (run via npx, not Python).
