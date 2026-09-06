@@ -108,6 +108,18 @@ class Session:
     owner: Optional[str] = None
     is_important: bool = False
     message_count: int = 0
+    # These three exist as columns on ``core.database.Session`` but were absent
+    # here, and the gap was not harmless: a plain dataclass accepts any
+    # attribute assignment, so ``src/agent_tools/subagent_tools.py`` setting
+    # ``child.folder = SUBAGENT_FOLDER`` / ``child.mode = "agent"`` inside a
+    # try/except appeared to work while writing to nothing the manager ever
+    # persisted. Every delegated child session therefore ended up with no
+    # folder and, through folder-based resolution, no project. Declaring them
+    # makes the in-memory object mirror the row, so the manager can persist
+    # them at creation instead of leaving callers to poke attributes.
+    folder: Optional[str] = None
+    mode: Optional[str] = None
+    project_id: Optional[str] = None
 
     def __post_init__(self):
         if self.headers is None:

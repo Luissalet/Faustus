@@ -354,6 +354,123 @@
   overflow-wrap: anywhere;
 }
 
+/* ── Context sources: typed links ──
+ *
+ * A row has to answer four questions at a glance, and only one of them is a
+ * label: what the source is, what it is for, when it may be used, and whether
+ * the agent may write to it. The last one is a permission, so it is the one
+ * badge that is allowed to carry a colour of its own — a grant that looked
+ * like the other four would be granted by accident.
+ */
+
+.fs-pj__sources {
+  display: grid;
+  gap: var(--fs-space-3);
+}
+
+.fs-pj__group {
+  display: grid;
+  gap: var(--fs-space-1);
+}
+
+.fs-pj__attach {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fs-space-2);
+  padding: var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-ember-faint);
+}
+
+.fs-pj__links {
+  display: grid;
+  gap: var(--fs-space-1);
+  list-style: none;
+}
+
+.fs-pj__links > li {
+  display: grid;
+  gap: var(--fs-space-2);
+  padding: var(--fs-space-2) var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  font-size: var(--fs-label-size);
+}
+
+/* Broken is not hidden and not merely greyed: it is the one row a user has to
+   act on, so it keeps its buttons and gains an edge. */
+.fs-pj__links > li[data-broken],
+.fs-pj__roots li[data-broken] {
+  border-color: color-mix(in srgb, var(--fs-danger) 55%, var(--fs-border));
+  background: color-mix(in srgb, var(--fs-danger) 6%, transparent);
+}
+
+.fs-pj__link-main {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  min-inline-size: 0;
+}
+
+.fs-pj__link-main > span {
+  display: grid;
+  min-inline-size: 0;
+}
+
+.fs-pj__link-main small {
+  color: var(--fs-text-3);
+  overflow-wrap: anywhere;
+}
+
+.fs-pj__link-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fs-space-2);
+}
+
+.fs-pj__link-actions .fs-field {
+  inline-size: auto;
+  min-inline-size: 9rem;
+}
+
+.fs-pj__badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fs-space-1);
+}
+
+.fs-pj__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-pill);
+  color: var(--fs-text-3);
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+
+/* The permission, and nothing else, is coloured. */
+.fs-pj__badge[data-grant] {
+  border-color: color-mix(in srgb, var(--fs-warning) 60%, var(--fs-border));
+  color: var(--fs-warning);
+}
+
+.fs-pj__badge[data-warn] {
+  border-color: color-mix(in srgb, var(--fs-warning) 45%, var(--fs-border));
+  color: var(--fs-text-2);
+}
+
+.fs-pj__badge[data-broken] {
+  border-color: color-mix(in srgb, var(--fs-danger) 60%, var(--fs-border));
+  color: var(--fs-danger);
+}
+
 .fs-pj__chat {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

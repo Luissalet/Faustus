@@ -485,6 +485,12 @@ SUBAGENT_DISABLED_TOOLS = frozenset({
     "delegate_agents", "ask_user", "create_session", "send_to_session",
     "manage_session", "list_sessions", "pipeline", "chat_with_model",
     "ask_teacher", "update_plan",
+    # A worker inherits its parent's project (below) but must not CHANGE what
+    # that project knows. Attaching a source is a durable decision that
+    # outlives the delegation and is visible in every other chat of the
+    # project; the user asked the coordinator for it, not a worker. Hard set
+    # rather than the lean denylist, because no task text should restore it.
+    "manage_project_context",
 })
 
 # Tools a scoped worker never needs but that the retriever happily hands it
@@ -493,7 +499,14 @@ SUBAGENT_DISABLED_TOOLS = frozenset({
 # the task text itself asks for the web / memory / background jobs.
 SUBAGENT_LEAN_DENYLIST = frozenset({
     "web_search", "web_fetch", "manage_skills", "manage_bg_jobs", "manage_memory",
-    "manage_tasks", "manage_contact", "ui_control", "manage_notes", "project_context",
+    "manage_tasks", "manage_contact", "ui_control", "manage_notes",
+    # `project_context` (READ) left out deliberately. This list is for tools a
+    # scoped worker NEVER needs, and that stopped being true the moment the
+    # child session inherits its parent's project_id: a worker that owns the
+    # project's identity but cannot list or read the project's attached
+    # sources has been given an identity with no capability, and would have to
+    # guess at paths its coordinator can see. One schema of tokens is the
+    # cheaper half of that trade. Its mutating sibling stays denied above.
 })
 # Which family of lean-denied tools a task text asks for. Per family, on
 # purpose: one keyword ("memoria" in "fuga de memoria") used to restore all
@@ -1041,24 +1054,32 @@ async def _run_subagent(
     run.started = time.time()
     run.last_event_at = run.started
     if sm and not run.resumed:
+        # The child inherits its parent's PROJECT, not its parent's folder
+        # (plan §11): the folder groups sub-agent chats in the sidebar, and
+        # deriving a project from that folder name is exactly the fragile
+        # association project_id exists to replace. Resolved once here, before
+        # the worker's first prompt or tool call.
+        child_project_id = ""
+        try:
+            from services.projects import project_context_for_session
+            child_project_id = project_context_for_session(
+                parent_session_id or "", owner).project_id
+        except Exception as e:
+            logger.debug("delegate_agents: parent project lookup failed: %s", e)
         try:
             sm.create_session(
                 session_id=child_sid,
                 name=f"🤖 {run.name}" + (f" — {_short(parent_name, 40)}" if parent_name else ""),
                 endpoint_url=endpoint_url, model=model, rag=False, owner=owner,
+                # Persisted on the row by create_session. Assigning them to the
+                # returned dataclass afterwards, as this did, wrote to nothing
+                # durable: the child's row kept folder NULL and no project.
+                folder=SUBAGENT_FOLDER, mode="agent",
+                project_id=child_project_id or None,
             )
             child = sm.get_session(child_sid)
-            if child is not None:
-                if headers:
-                    child.headers = headers
-                try:
-                    child.folder = SUBAGENT_FOLDER
-                except Exception:
-                    pass
-                try:
-                    child.mode = "agent"
-                except Exception:
-                    pass
+            if child is not None and headers:
+                child.headers = headers
         except Exception as e:
             logger.warning("delegate_agents: child session creation failed: %s", e)
 

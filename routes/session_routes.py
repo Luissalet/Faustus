@@ -632,7 +632,15 @@ def setup_session_routes(
         if name is not None:
             session_manager.update_session_name(sid, name)
             result["name"] = name
-        # Update folder assignment
+        # Update folder assignment.
+        #
+        # `project_id` is deliberately NOT touched here. The folder is sidebar
+        # organisation; the project is identity. Before sessions.project_id
+        # existed the two were the same string, so renaming a folder silently
+        # broke a chat's project link and dragging a chat into another folder
+        # silently re-homed it to a different project. Changing which project a
+        # chat belongs to is a separate, explicit operation
+        # (`SessionManager.set_session_project`).
         if folder is not None:
             db = SessionLocal()
             try:
@@ -642,6 +650,11 @@ def setup_session_routes(
                     db_session.updated_at = utcnow_naive()
                     db.commit()
                     result["folder"] = folder if folder else None
+                    # Keep the cached object in step with the row it mirrors:
+                    # Session.folder is a real field now, and a stale copy would
+                    # be read back as the chat's folder for the rest of the process.
+                    if session is not None:
+                        session.folder = folder if folder else None
             finally:
                 db.close()
         # Switch model/endpoint mid-session

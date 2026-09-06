@@ -43,6 +43,14 @@ EVENT_NAMES = (
     "memory.proposed",
     "skill.installed", "skill.removed",
     "workflow.started", "workflow.node", "workflow.paused", "workflow.finished",
+    # Project Context Links.  Underscored rather than dotted because they are
+    # the names the Context Engine's cache already invalidates on
+    # (`src/context_engine/cache.py::on_event`), and one spelling that two
+    # subsystems agree on beats a prettier one that only half of them route.
+    "project_context_attached", "project_context_detached",
+    "project_context_updated", "project_context_refresh_queued",
+    "project_context_indexed", "project_context_index_failed",
+    "project_context_source_missing", "project_context_retrieved",
 )
 
 _REDACTED = "<redacted>"

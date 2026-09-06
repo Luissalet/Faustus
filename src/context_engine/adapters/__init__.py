@@ -33,6 +33,8 @@ schemes, collected here so a reader does not have to open nine files:
     prov:<node_kind>:<node_key>            provenance.py
     file:<relative/path>                   files.py
     file:<relative/path>#L10-L40           files.py
+    link:<link_id>                         project_links.py
+    link:<link_id>#line=42                 project_links.py
     block:<block_id>                       derived.py  (context_engine/blocks.py)
     capsule:<scope_id>                     derived.py  (capsules.py)
     experience:<exp_id>, exp:<exp_id>      derived.py  (experiences.py)
@@ -72,6 +74,7 @@ from .experts import ExpertSource
 from .files import FileSource
 from .memory import MemoryEngineSource, PersonalMemorySource
 from .objectives import ObjectivesSource
+from .project_links import ProjectLinksSource
 from .projects import ProjectMemorySource
 from .provenance import ProvenanceSource
 from .sessions import SessionSource, reset_history_provider, set_history_provider
@@ -79,6 +82,7 @@ from .sessions import SessionSource, reset_history_provider, set_history_provide
 SOURCE_FACTORIES: Tuple[Callable[[], ContextSource], ...] = (
     ObjectivesSource,
     ProjectMemorySource,
+    ProjectLinksSource,
     MemoryEngineSource,
     PersonalMemorySource,
     SessionSource,
@@ -108,7 +112,8 @@ __all__ = [
     "SOURCE_FACTORIES", "all_sources",
     "DocumentSource", "ExpertSource", "FileSource",
     "MemoryEngineSource", "PersonalMemorySource",
-    "ObjectivesSource", "ProjectMemorySource", "ProvenanceSource",
+    "ObjectivesSource", "ProjectLinksSource", "ProjectMemorySource",
+    "ProvenanceSource",
     "SessionSource", "set_history_provider", "reset_history_provider",
     "BlockSource", "CapsuleSource", "ExperienceSource", "CodeIndexSource",
     "FindingSource", "RecipeSource",

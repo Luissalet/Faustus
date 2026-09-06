@@ -691,3 +691,79 @@ de `agent_context_engine` y `agent_context_engine_shadow`, apagadas por defecto.
   sus tests. Ahora hay además una segunda implementación del mismo muro —`ContextPolicy` y el
   filtrado previo del planner—, así que cuando se cablee hay que decidir cuál manda. Dos muros
   para lo mismo es cómo se abre un agujero en uno de los dos.
+
+## Project Context Links: lo cerrado, y lo que deja abierto (06-09-2026)
+
+Project Context Links (`FAUSTUS.md` §54, `OBJETIVOS.md`) cierra las fases 1 a 4 del plan
+`inspiration/PLAN_PROJECT_CONTEXT_LINKS_FAUSTUS.md`: 12 ficheros nuevos, 4.189 líneas, 176 tests.
+Lo que falta por construir está en `OBJETIVOS.md`; esto es lo que está construido y **habría que
+mirar**.
+
+- `[!]` **`DELETE /api/projects/{id}/context/{item_id}` no emite `project_context_detached`.** La
+  ruta va por `ProjectStore.remove_context_item` y no por `ProjectContextService.detach`, y lo
+  hace por un motivo real y escrito en su docstring: un solo endpoint tiene que servir para el
+  `item_id` legado de diez hex y para el `ctx_...` nuevo, y `remove_context_item` no necesita
+  dueño efectivo más allá del que `_get_or_404` ya comprobó, así que un borrado que funciona no se
+  convierte en un fallo cerrado en una instalación sin login. El precio es que **el evento no
+  sale**: `src/context_engine/cache.py::on_event` invalida en `project_context_detached`, así que
+  tras un desvinculado desde la pantalla la caché del Context Engine conserva entradas derivadas
+  de un vínculo que ya no existe hasta que otra cosa la mueva. El arreglo barato es emitir el
+  evento en la ruta después del borrado; el correcto es que `detach` acepte los dos formatos de id
+  y la ruta pase por el servicio.
+- `[+]` **`_StampedPatchStore` (`routes/project_routes.py`) es ya un no-op y se puede borrar.**
+  Es un proxy que quita `updated_at` del parche antes de dárselo al store, escrito cuando
+  `LINK_PATCHABLE_FIELDS` no aceptaba ese campo y `patch_link` lo rechazaba. Su propio docstring
+  dice cuál era el arreglo permanente —«one word added to `LINK_PATCHABLE_FIELDS`»— y esa palabra
+  **ya está añadida**, con su comentario al lado. El proxy sigue en pie, envolviendo cada llamada
+  de `_context_service()`, sin cambiar nada. Borrarlo es quitar una clase y una línea; dejarlo es
+  dejar un parche que finge arreglar algo que ya no está roto, que es como se acumulan las capas
+  que nadie se atreve a tocar.
+- `[!]` **`ProjectContextService` no marca el vínculo cuando el resolver dice `missing`.**
+  `refresh` sobre una fuente borrada emite `project_context_source_missing`, devuelve
+  `RefreshResult(state="missing")` y **deja el vínculo exactamente como estaba** — que es lo
+  correcto en la mitad importante (el vínculo sobrevive, sigue siendo evidencia y se puede
+  desvincular; buscar otra fuente con el mismo título es justo lo que §19 prohíbe), pero la
+  consecuencia es que **el estado no se persiste en ninguna parte**: la forma normalizada de
+  `ProjectStore.normalize_link` no tiene campo de estado de fuente. `list_links` sigue diciendo
+  `index_status: "ready"` de algo que ya no existe, y sólo un `inspect` por vínculo —una llamada
+  por fila, que es lo que hace hoy la pantalla con cuatro workers en paralelo— descubre que está
+  roto. Añadir el campo es fácil; lo que hay que decidir antes es si un estado observado se guarda
+  junto a la pertenencia (y entonces caduca, y hay que decir cuándo se leyó) o si la lista se queda
+  siendo membresía pura y la salud se pide aparte. Hoy no está decidido, sólo está ausente.
+- `[+]` **La clave de la URL de la pestaña de proyecto es una etiqueta traducida.** `TABS` en
+  `studio/src/screens/Project.tsx` mezcla dos vocabularios: `brief` y `chats` en inglés, y
+  `objetivos`, `memoria`, `actividad`, `contexto` y `ajustes` que son **exactamente la traducción
+  al castellano** de sus etiquetas (`t('Context')` → «Contexto» en `i18n/es.ts`). Un enlace
+  profundo del producto —`/projects/{id}?tab=contexto`, que `scripts/shot_studio.py` ya tiene
+  cableado— depende así del idioma en el que se escribieron las etiquetas, no de un identificador
+  estable. **Observado en el navegador: el enlace profundo cambia según el idioma.** El código de
+  hoy no lo explica solo: `setTab` escribe `entry.id` y `rawTab` se valida contra `TABS`, así que
+  la URL no debería moverse al cambiar de idioma; conviene reproducirlo con la UI en inglés antes
+  de tocar nada, porque si de verdad cambia hay una segunda vía que no está en `Project.tsx`. El
+  arreglo de fondo es el mismo en los dos casos: ids en inglés estables, con alias de los actuales
+  para no romper los enlaces que ya existen.
+- `[+]` **No hay `studio/checks/*.check.mjs` para proyectos, y la aritmética ya está exportada
+  esperándolo.** `studio/src/adapters/projects.ts` saca fuera de los componentes todo lo que la
+  pantalla afirma: `groupLinksByRole` (orden por el vocabulario de roles, no alfabético),
+  `linkIsBehind` (dos hechos distintos —`index_status === 'stale'` y el `stale` que devuelve
+  `inspect`— colapsados en un «refréscame»), `linkIsBroken`, `countLinks`, `shortRevision`,
+  `refusalOf` (el 200 que dice que no) y `contextLinkFrom`. Es exactamente el mismo patrón que
+  `adapters/context.ts` + `studio/checks/context.check.mjs` + `tests/test_studio_context_js.py`
+  (102 comprobaciones), y aquí hay **cero**. Un panel cuyos números no se pueden verificar es
+  decoración, y estos números deciden si el usuario cree que el agente puede escribir en una
+  carpeta.
+- `[?]` **Los seis fallos de tests que se ven al correr esto son preexistentes.** Cinco en
+  `tests/test_agent_loop_offer_execute_coherence.py` y uno en
+  `tests/test_external_context_tool_gate.py`. Comprobado revirtiendo el cambio y corriendo con el
+  mismo `data/` contra master: fallan igual. Los cinco del primero además **ya estaban anotados en
+  este fichero desde el 04-09** («Lo primero que hay que mirar», §40.7), en el grupo de los 44
+  rojos heredados de Windows. Ninguno se ha diagnosticado uno por uno todavía; lo que está probado
+  es que no son de aquí.
+- `[+]` **El docstring de `src/project_context/service.py` dice que sus eventos no están en
+  `EVENT_NAMES`, y ya lo están.** La sección «Events» explica que `_emit` intenta el `emit()` real
+  y guarda el sobre en un buffer en memoria (`unrouted_events()`) porque los nombres
+  `project_context_*` «are not in `src/contracts/event.py::EVENT_NAMES`, and that file is not this
+  change's to edit». Los ocho nombres **sí** están ahí ahora, así que el camino de respaldo está
+  muerto y el docstring describe un mundo anterior. El buffer no molesta —cuesta una lista vacía—
+  pero `CONTEXT_EVENT_NAMES` y su comentario («Listed here so whoever adds them has the set»)
+  también sobran, y quien lea el módulo se creerá que sus eventos no llegan a ninguna parte.

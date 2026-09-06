@@ -86,6 +86,10 @@ TOOL_TAGS = {"bash", "python", "web_search", "web_fetch", "read_file", "write_fi
              "grep", "glob", "ls", "get_workspace", "manage_bg_jobs",
              "create_document", "update_document", "edit_document",
              "search_chats", "search_project_chats", "project_context",
+             # Mutating half of the project's context links: attach/detach a
+             # source. Separate tag from the read-only `project_context` so the
+             # fence regex, dispatch and the non-admin blocklist all see it.
+             "manage_project_context",
              "project_objectives", "memory_rules", "expert_review", "verify_claim",
              "chat_with_model", "create_session", "list_sessions",
              "send_to_session",

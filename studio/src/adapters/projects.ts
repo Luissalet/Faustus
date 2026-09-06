@@ -195,7 +195,14 @@ export async function scaffoldMemory(id: string): Promise<void> {
   await ok(await fetch(`${base(id)}/memory/scaffold`, jsonInit('POST')), 'projects/memory/scaffold');
 }
 
-/* ── Work roots ── */
+/* ── Work roots: the legacy path shape ──
+ *
+ * `POST {path}` is the shape this endpoint has always taken, and it still
+ * creates an editable `work_root` item. Kept as its own function rather
+ * than folded into `attachContextSource` because the two mean different
+ * things: this one grants the file tools a place to write, and the typed
+ * attach below deliberately does not.
+ */
 
 export async function addContextRoot(id: string, path: string): Promise<ContextItem> {
   const r = await ok(await fetch(`${base(id)}/context`, jsonInit('POST', { path })), 'projects/context');
@@ -360,4 +367,276 @@ export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/* ── Context sources: typed links ──
+ *
+ * A project's context stopped being "a list of paths the agent may edit" and
+ * became a list of typed links: what the source is, what it is for, when it
+ * may enter a prompt, which revision the project stands on, and — separately
+ * from all of that — whether the agent may write to it.
+ *
+ * The last one is the reason `accessMode` is not a decorative badge.
+ * `work_root` widens what the file tools may change; `read_only` is knowledge
+ * and widens nothing. A screen that showed them the same way would let
+ * somebody grant write access by accident and never find out.
+ *
+ * These endpoints answer a rejection with 200 and `{ok: false, error: {path,
+ * message}}` (the convention of `routes/contracts_routes.py`), so every
+ * mutation here goes through `refusalOf` before it believes it worked.
+ */
+
+export type LinkKind = 'file' | 'folder' | 'document' | 'artifact' | 'gallery_image';
+export type RetrievalPolicy = 'auto' | 'pinned_summary' | 'on_demand' | 'disabled';
+export type VersionPolicy = 'latest' | 'pinned' | 'snapshot';
+export type AccessMode = 'read_only' | 'work_root';
+export type IndexStatus = 'none' | 'queued' | 'indexing' | 'ready' | 'stale' | 'failed';
+export type SourceState = 'ok' | 'missing' | 'forbidden' | 'unsupported';
+
+export const LINK_KINDS: LinkKind[] = ['file', 'folder', 'document', 'artifact', 'gallery_image'];
+export const RETRIEVAL_POLICIES: RetrievalPolicy[] = ['auto', 'pinned_summary', 'on_demand', 'disabled'];
+export const LINK_ROLES: string[] = [
+  'requirements', 'reference', 'decision', 'style_reference', 'example',
+  'dataset', 'specification', 'output', 'archive',
+];
+
+export interface ContextLink {
+  id: string;
+  kind: LinkKind;
+  refId: string;
+  path: string;
+  label: string;
+  role: string;
+  tags: string[];
+  summary: string;
+  retrievalPolicy: RetrievalPolicy;
+  versionPolicy: VersionPolicy;
+  pinnedVersion: number | null;
+  accessMode: AccessMode;
+  indexStatus: IndexStatus;
+  contentRevision: string;
+  enabled: boolean;
+  updatedAt: number;
+}
+
+export interface Refusal {
+  path: string;
+  message: string;
+}
+
+/** The state of one link as the screen has last seen it. */
+export type LinkHealth = 'unchecked' | SourceState;
+
+export interface LinkStatus {
+  state: SourceState;
+  stale: boolean;
+  revision: string;
+  effectiveVersion: number;
+  message: string;
+}
+
+export interface RefreshReport {
+  ok: boolean;
+  changed: boolean;
+  previousRevision: string;
+  revision: string;
+  indexStatus: IndexStatus;
+  state: string;
+  message: string;
+  link: ContextLink | null;
+}
+
+const one = <T extends string>(value: unknown, allowed: readonly T[], fallback: T): T =>
+  (allowed as readonly string[]).includes(str(value)) ? (str(value) as T) : fallback;
+
+/** A 200 that says no. Null when the body is an answer rather than a refusal. */
+export function refusalOf(raw: unknown): Refusal | null {
+  const r = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : null;
+  if (!r || r.ok !== false) return null;
+  const e = r.error && typeof r.error === 'object' ? (r.error as Record<string, unknown>) : {};
+  return { path: str(e.path), message: str(e.message) || 'refused' };
+}
+
+export function contextLinkFrom(raw: unknown): ContextLink {
+  const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  const pinned = Number(r.pinned_version);
+  return {
+    id: str(r.id),
+    kind: one(r.kind, LINK_KINDS, 'file'),
+    refId: str(r.ref_id),
+    path: str(r.path),
+    label: str(r.label) || str(r.name) || str(r.path) || str(r.ref_id),
+    role: str(r.role) || 'reference',
+    tags: Array.isArray(r.tags) ? r.tags.map(String) : [],
+    summary: str(r.summary),
+    retrievalPolicy: one(r.retrieval_policy, RETRIEVAL_POLICIES, 'on_demand'),
+    versionPolicy: one(r.version_policy, ['latest', 'pinned', 'snapshot'] as const, 'latest'),
+    pinnedVersion: Number.isFinite(pinned) && pinned > 0 ? pinned : null,
+    accessMode: one(r.access_mode, ['read_only', 'work_root'] as const, 'read_only'),
+    indexStatus: one(r.index_status, ['none', 'queued', 'indexing', 'ready', 'stale', 'failed'] as const, 'none'),
+    contentRevision: str(r.content_revision),
+    enabled: r.enabled !== false,
+    updatedAt: Number(r.updated_at) || 0,
+  };
+}
+
+/** Throw the server's own words for a 200 that refused. */
+function orRefusal<T>(body: unknown, build: (b: Record<string, unknown>) => T): T {
+  const refusal = refusalOf(body);
+  if (refusal) throw new ApiError(refusal.message, 400);
+  return build((body && typeof body === 'object' ? body : {}) as Record<string, unknown>);
+}
+
+export async function listContextLinks(
+  id: string,
+  signal?: AbortSignal,
+): Promise<{ links: ContextLink[]; revision: number }> {
+  const data = await getJson<{ links?: unknown[]; context_revision?: number }>(`${base(id)}/context`, signal);
+  return {
+    links: (data.links ?? []).map(contextLinkFrom),
+    revision: Number(data.context_revision) || 0,
+  };
+}
+
+export interface AttachInput {
+  kind: LinkKind;
+  path?: string;
+  id?: string;
+  label?: string;
+  role?: string;
+  retrievalPolicy?: RetrievalPolicy;
+  accessMode?: AccessMode;
+}
+
+export async function attachContextSource(id: string, input: AttachInput): Promise<ContextLink> {
+  const r = await ok(
+    await fetch(
+      `${base(id)}/context`,
+      jsonInit('POST', {
+        source: { kind: input.kind, path: input.path ?? '', id: input.id ?? '' },
+        label: input.label ?? '',
+        role: input.role ?? 'reference',
+        retrieval_policy: input.retrievalPolicy ?? 'auto',
+        access_mode: input.accessMode ?? 'read_only',
+      }),
+    ),
+    'projects/context/attach',
+  );
+  return orRefusal(await r.json(), (b) => contextLinkFrom(b.link));
+}
+
+export interface ContextLinkPatch {
+  role?: string;
+  retrievalPolicy?: RetrievalPolicy;
+  accessMode?: AccessMode;
+  label?: string;
+  enabled?: boolean;
+}
+
+export async function patchContextLink(
+  id: string,
+  linkId: string,
+  patch: ContextLinkPatch,
+): Promise<ContextLink> {
+  const body: Record<string, unknown> = {};
+  if (patch.role !== undefined) body.role = patch.role;
+  if (patch.retrievalPolicy !== undefined) body.retrieval_policy = patch.retrievalPolicy;
+  if (patch.accessMode !== undefined) body.access_mode = patch.accessMode;
+  if (patch.label !== undefined) body.label = patch.label;
+  if (patch.enabled !== undefined) body.enabled = patch.enabled;
+  const r = await ok(
+    await fetch(`${base(id)}/context/${encodeURIComponent(linkId)}`, jsonInit('PATCH', body)),
+    'projects/context/patch',
+  );
+  return orRefusal(await r.json(), (b) => contextLinkFrom(b.link));
+}
+
+/** What the source says right now, beside what the link claims. */
+export async function inspectContextLink(
+  id: string,
+  linkId: string,
+  signal?: AbortSignal,
+): Promise<LinkStatus> {
+  const b = await getJson<Record<string, unknown>>(
+    `${base(id)}/context/${encodeURIComponent(linkId)}`,
+    signal,
+  );
+  return {
+    state: one(b.state, ['ok', 'missing', 'forbidden', 'unsupported'] as const, 'ok'),
+    stale: b.stale === true,
+    revision: str(b.revision),
+    effectiveVersion: Number(b.effective_version) || 0,
+    message: str(b.message),
+  };
+}
+
+export async function refreshContextLink(id: string, linkId: string): Promise<RefreshReport> {
+  const r = await ok(
+    await fetch(`${base(id)}/context/${encodeURIComponent(linkId)}/refresh`, jsonInit('POST')),
+    'projects/context/refresh',
+  );
+  const b = (await r.json()) as Record<string, unknown>;
+  return {
+    ok: b.ok === true,
+    changed: b.changed === true,
+    previousRevision: str(b.previous_revision),
+    revision: str(b.revision),
+    indexStatus: one(b.index_status, ['none', 'queued', 'indexing', 'ready', 'stale', 'failed'] as const, 'none'),
+    state: str(b.state),
+    message: str(b.message),
+    link: b.link ? contextLinkFrom(b.link) : null,
+  };
+}
+
+/* ── Pure arithmetic the rows are built from ── */
+
+/** A short, stable revision for a row that has to fit on one line. */
+export function shortRevision(revision: string): string {
+  const tail = revision.split(':').pop() ?? '';
+  return tail.length > 12 ? `${tail.slice(0, 12)}…` : tail || revision;
+}
+
+/**
+ * Is this link behind the source, as far as the screen can tell?
+ *
+ * Two different facts, and the row says which. `indexStatus === 'stale'` is
+ * the store's own record that the revision moved since the index was built;
+ * a `stale` from `inspect` is the resolver saying the source has changed
+ * since the link was last refreshed. Either one means "refresh me".
+ */
+export function linkIsBehind(link: ContextLink, status?: LinkStatus): boolean {
+  if (status && status.state === 'ok' && status.stale) return true;
+  return link.indexStatus === 'stale';
+}
+
+/** Broken: the source is gone, refused, or of a kind nothing can read. */
+export function linkIsBroken(status?: LinkStatus): boolean {
+  return status !== undefined && status.state !== 'ok';
+}
+
+/**
+ * Links grouped by role, in the vocabulary's own order, empty roles dropped.
+ *
+ * The order is `LINK_ROLES`, not alphabetical and not insertion: a project's
+ * requirements should be the first thing on the page and its archive the
+ * last, and sorting by label would put "Archive of 2019" above them.
+ */
+export function groupLinksByRole(links: ContextLink[]): { role: string; links: ContextLink[] }[] {
+  const known = LINK_ROLES.filter((role) => links.some((l) => l.role === role));
+  const unknown = [...new Set(links.map((l) => l.role).filter((r) => !LINK_ROLES.includes(r)))].sort();
+  return [...known, ...unknown].map((role) => ({ role, links: links.filter((l) => l.role === role) }));
+}
+
+/** "3 sources · 1 editable · 1 needs a refresh", as counts a header can print. */
+export function countLinks(
+  links: ContextLink[],
+  statuses: Record<string, LinkStatus>,
+): { total: number; editable: number; behind: number; broken: number; off: number } {
+  return {
+    total: links.length,
+    editable: links.filter((l) => l.accessMode === 'work_root').length,
+    behind: links.filter((l) => linkIsBehind(l, statuses[l.id])).length,
+    broken: links.filter((l) => linkIsBroken(statuses[l.id])).length,
+    off: links.filter((l) => !l.enabled || l.retrievalPolicy === 'disabled').length,
+  };
 }

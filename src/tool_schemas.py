@@ -395,6 +395,44 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "manage_project_context",
+            "description": "manage_project_context — Attach, detach or configure a source in the current project's durable context. Use it when the user asks to add/save/link a document, artifact, generated media, file or folder to this project. The project is resolved from the current chat; never invent a project ID. Args JSON: {\"action\":\"attach|detach|update|refresh|inspect\",\"source\":{\"kind\":\"document|artifact|file|folder|active_document\",\"id\":\"...\",\"path\":\"...\"},\"link_id\":\"...\",\"retrieval_policy\":\"auto|pinned_summary|on_demand|disabled\",\"version_policy\":\"latest|pinned|snapshot\",\"pinned_version\":null,\"role\":\"reference\",\"label\":\"...\",\"tags\":[]}",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string",
+                               "enum": ["attach", "detach", "update", "refresh", "inspect", "list"]},
+                    "source": {
+                        "type": "object",
+                        "description": "What to attach. Use kind 'active_document' for the document just created or edited in this chat.",
+                        "properties": {
+                            "kind": {"type": "string",
+                                     "enum": ["document", "artifact", "file", "folder",
+                                              "gallery_image", "active_document"]},
+                            "id": {"type": "string", "description": "Row id for document/artifact/gallery_image"},
+                            "path": {"type": "string", "description": "Absolute path for file/folder"}
+                        }
+                    },
+                    "link_id": {"type": "string", "description": "Existing link id (ctx_...) for detach/update/refresh/inspect"},
+                    "label": {"type": "string", "description": "Human-readable name for the link"},
+                    "role": {"type": "string",
+                             "enum": ["requirements", "reference", "decision", "style_reference",
+                                      "example", "dataset", "specification", "output", "archive"]},
+                    "retrieval_policy": {"type": "string",
+                                         "enum": ["auto", "pinned_summary", "on_demand", "disabled"]},
+                    "version_policy": {"type": "string", "enum": ["latest", "pinned", "snapshot"]},
+                    "pinned_version": {"type": "integer", "minimum": 1},
+                    "access_mode": {"type": "string", "enum": ["read_only", "work_root"]},
+                    "tags": {"type": "array", "items": {"type": "string"}},
+                    "enabled": {"type": "boolean", "description": "For update: suspend or resume a link without removing it"}
+                },
+                "required": ["action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "project_objectives",
             "description": "Read or update the current project's objectives dashboard. 'list' returns the objectives with dependencies and impact scores; 'apply' submits typed deltas — never rewrite the whole list. Each delta: {\"op\":\"ADD|EDIT|KILL\",\"id\":\"OBJ-1\" (EDIT/KILL),\"title\",\"status\":\"open|in_progress|blocked|done|dropped\",\"priority\":1-4 (1 highest),\"notes\",\"deps\":[\"OBJ-2\"],\"rationale\",\"base_updated_at\"}. Statuses must reflect what actually changed on disk, not intentions.",
             "parameters": {
@@ -1741,6 +1779,8 @@ def function_call_to_tool_block(name: str, arguments: str) -> Optional[ToolBlock
     elif tool_type in ("search_chats", "search_project_chats"):
         content = args.get("query", "")
     elif tool_type == "project_context":
+        content = json.dumps(args)
+    elif tool_type == "manage_project_context":
         content = json.dumps(args)
     elif tool_type == "project_objectives":
         content = json.dumps(args)
