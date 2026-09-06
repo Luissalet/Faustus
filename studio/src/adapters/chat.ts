@@ -332,6 +332,10 @@ export async function listModels(signal?: AbortSignal, refresh = false): Promise
 
 /* ── The stream ── */
 
+/** The header both `/api/chat_stream` and `/api/chat/resume` answer with,
+ *  and the one `/api/chat/stop` demands before it cancels anything. */
+export const RUN_ID_HEADER = 'X-Odysseus-Run-Id';
+
 export interface SendOptions {
   sessionId: string;
   message: string;
@@ -361,6 +365,8 @@ export interface SendOptions {
   activeDocId?: string;
   /** Compare pane: no memory, no documents, only the tools the mode allows (`compare_mode`). */
   compare?: boolean;
+  /** The run's opaque id, as soon as the server answers: Stop needs it. */
+  onRunId?: (runId: string | null) => void;
   signal?: AbortSignal;
 }
 
@@ -467,6 +473,8 @@ export interface HistoryToolEvent {
   docId?: string;
   ask?: AskUser;
   askResolved: boolean;
+  /** The decision that closed the gate (`approve`, `approve_task`, `deny`). */
+  askDecision?: string;
   subagents: SubagentPayload[];
 }
 
@@ -494,6 +502,7 @@ export function toolEventsFrom(meta: Record<string, unknown>): HistoryToolEvent[
           }
         : undefined,
       askResolved: Boolean(askRaw?.resolved) || Boolean(ev.approved),
+      askDecision: typeof askRaw?.resolved === 'string' ? askRaw.resolved : undefined,
       subagents: asArray<SubagentPayload>(ev.subagents),
     };
   });
@@ -692,6 +701,63 @@ function decode(raw: Record<string, unknown>, sseEvent: string | null): ChatEven
 }
 
 /**
+ * Reads one server-sent-event body and yields typed events until the server
+ * says [DONE] (or the body ends).
+ *
+ * Shared by the POST that starts a turn and by the GET that reconnects to one
+ * already running: a detached run replays its whole buffer to a late
+ * subscriber, so the same decoder rebuilds the same turn either way.
+ */
+async function* streamEvents(body: ReadableStream<Uint8Array>): AsyncGenerator<ChatEvent> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let sseEvent: string | null = null;
+
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let newline = buffer.indexOf('\n');
+      while (newline !== -1) {
+        const line = buffer.slice(0, newline).replace(/\r$/, '');
+        buffer = buffer.slice(newline + 1);
+        newline = buffer.indexOf('\n');
+
+        if (line.startsWith('event:')) {
+          sseEvent = line.slice(6).trim();
+          continue;
+        }
+        if (!line.startsWith('data:')) {
+          if (line === '') sseEvent = null;
+          continue;
+        }
+        const payload = line.slice(5).trim();
+        if (payload === '[DONE]') {
+          yield { type: 'done' };
+          return;
+        }
+        let raw: unknown;
+        try {
+          raw = JSON.parse(payload);
+        } catch {
+          continue;
+        }
+        if (raw && typeof raw === 'object') {
+          const event = decode(raw as Record<string, unknown>, sseEvent);
+          if (event) yield event;
+        }
+        sseEvent = null;
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  yield { type: 'done' };
+}
+
+/**
  * Sends one turn and yields typed events until the server says [DONE].
  * The caller keeps an AbortController: aborting the fetch closes the
  * stream on our side, and `stopChat` tells the server to stop generating.
@@ -749,61 +815,93 @@ export async function* sendTurn(options: SendOptions): AsyncGenerator<ChatEvent>
     return;
   }
 
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  let sseEvent: string | null = null;
-
-  try {
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      let newline = buffer.indexOf('\n');
-      while (newline !== -1) {
-        const line = buffer.slice(0, newline).replace(/\r$/, '');
-        buffer = buffer.slice(newline + 1);
-        newline = buffer.indexOf('\n');
-
-        if (line.startsWith('event:')) {
-          sseEvent = line.slice(6).trim();
-          continue;
-        }
-        if (!line.startsWith('data:')) {
-          if (line === '') sseEvent = null;
-          continue;
-        }
-        const payload = line.slice(5).trim();
-        if (payload === '[DONE]') {
-          yield { type: 'done' };
-          return;
-        }
-        let raw: unknown;
-        try {
-          raw = JSON.parse(payload);
-        } catch {
-          continue;
-        }
-        if (raw && typeof raw === 'object') {
-          const event = decode(raw as Record<string, unknown>, sseEvent);
-          if (event) yield event;
-        }
-        sseEvent = null;
-      }
-    }
-  } finally {
-    reader.releaseLock();
-  }
-  yield { type: 'done' };
+  // The run's opaque identity. Stop is fail-closed on the server: without
+  // this header back, `POST /api/chat/stop` refuses to cancel anything.
+  options.onRunId?.(response.headers.get(RUN_ID_HEADER));
+  yield* streamEvents(response.body);
 }
 
-export async function stopChat(sessionId: string): Promise<void> {
+/**
+ * Reconnects to a run that is still going server-side.
+ *
+ * A turn does not belong to the tab that started it: the server keeps the
+ * run alive when the SSE client goes away (closed tab, a walk to another
+ * screen) and replays its whole buffer to whoever subscribes next. Yields
+ * nothing at all when there is no live run for the session — that is the
+ * normal answer, not a failure.
+ */
+export async function* resumeTurn(
+  sessionId: string,
+  options: { signal?: AbortSignal; onRunId?: (runId: string | null) => void } = {},
+): AsyncGenerator<ChatEvent> {
+  let response: Response;
   try {
-    await fetch(`/api/chat/stop/${encodeURIComponent(sessionId)}`, {
-      method: 'POST',
+    response = await fetch(`/api/chat/resume/${encodeURIComponent(sessionId)}`, {
       credentials: 'same-origin',
+      signal: options.signal,
     });
   } catch {
+    return; // offline or aborted: the history already on screen stands
+  }
+  if (response.status === 404 || !response.ok || !response.body) return;
+  options.onRunId?.(response.headers.get(RUN_ID_HEADER));
+  yield* streamEvents(response.body);
+}
+
+/** What is alive right now, for the whole account, in one call. */
+export interface ChatActivity {
+  /** Sessions with a run going (queued ones included). */
+  running: string[];
+  /** Session → opaque run id, so a list can Stop what it shows. */
+  runs: Record<string, string>;
+  /** Sessions parked on an approval card nobody has answered. */
+  awaiting: string[];
+  /** Session → position in the queue, while it waits for its lane. */
+  queued: Record<string, number>;
+}
+
+export const EMPTY_ACTIVITY: ChatActivity = { running: [], runs: {}, awaiting: [], queued: {} };
+
+export async function chatActivity(signal?: AbortSignal): Promise<ChatActivity> {
+  const raw = await getJson<{
+    running?: unknown;
+    runs?: unknown;
+    awaiting_approval?: unknown;
+    queued?: unknown;
+  }>('/api/chat/activity', signal);
+  const ids = (value: unknown): string[] => asArray<unknown>(value).map(String).filter(Boolean);
+  const map = <T>(value: unknown, cast: (v: unknown) => T): Record<string, T> => {
+    const out: Record<string, T> = {};
+    if (value && typeof value === 'object') {
+      for (const [key, v] of Object.entries(value as Record<string, unknown>)) out[key] = cast(v);
+    }
+    return out;
+  };
+  return {
+    running: ids(raw.running),
+    runs: map(raw.runs, String),
+    awaiting: ids(raw.awaiting_approval),
+    queued: map(raw.queued, (v) => num(v) ?? 0),
+  };
+}
+
+/**
+ * Asks the server to cancel a run. `runId` comes from `sendTurn`'s callback
+ * or from `chatActivity().runs`; without it the server fails closed on
+ * purpose (a stale tab must not cancel the run another tab just started),
+ * so a Stop with no id is a Stop that does nothing.
+ */
+export async function stopChat(sessionId: string, runId?: string | null): Promise<boolean> {
+  try {
+    const response = await fetch(`/api/chat/stop/${encodeURIComponent(sessionId)}`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: runId ? { [RUN_ID_HEADER]: runId } : undefined,
+    });
+    const body = (await response.json()) as { stopped?: unknown };
+    return Boolean(body.stopped);
+  } catch {
     /* the abort already closed our side; the server will notice */
+    return false;
   }
 }

@@ -238,6 +238,30 @@ export function AskCard({
   );
 }
 
+/**
+ * A permission that was already answered.
+ *
+ * Not a card with dead buttons and not silence either: the gate's question
+ * is saved as the message's own text, so without this the conversation came
+ * back reading "Allow this task to continue?" with nothing under it — the
+ * exact shape of a chat that looks hung when it is not.
+ */
+export function AnsweredCard({ decision }: { decision: string }) {
+  const said =
+    decision === 'deny'
+      ? t('You denied it.')
+      : decision === 'approve_task'
+        ? t('You allowed it for the whole task.')
+        : t('You allowed it.');
+  return (
+    <p className="fs-studio__answered" data-testid="studio-approval-answered">
+      <Check size={13} aria-hidden="true" />
+      {t('Permission answered')} · {said}
+      {decision !== 'deny' && ` ${t('The work carried on from here.')}`}
+    </p>
+  );
+}
+
 async function copyText(text: string): Promise<boolean> {
   try {
     await navigator.clipboard.writeText(text);
@@ -590,6 +614,7 @@ function AssistantTurn({
           </p>
         )}
         {turn.ask && <AskCard ask={turn.ask} busy={busy} onApproval={onApproval} onAnswer={onAnswer} />}
+        {!turn.ask && turn.approval && <AnsweredCard decision={turn.approval.decision} />}
         {!turn.streaming && (turn.summary || turn.checks.length > 0) && (
           <Suspense fallback={null}>
             <Harness mode="final" summary={turn.summary} checks={turn.checks} answer={turn.text} onNotice={onNotice} />

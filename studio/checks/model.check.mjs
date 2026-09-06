@@ -108,5 +108,41 @@ assert(pending.ask && pending.ask.approvalId === 'p1' && pending.steps[0].state 
 const plain = m.restoreFromMetadata(m.blankTurn('assistant', 'hola'), { model: 'x' });
 assert(plain.steps.length === 0 && plain.summary === undefined, 'a chat turn restores nothing extra');
 
+// ── The gate that was answered (06-09-2026, seen in the wild) ──
+// The server appends the gate's question to the assistant's text, so when the
+// turn stops there the WHOLE message is "Allow this task to continue?". Read
+// back as prose, with the card gone because the gate is resolved, it is a
+// question with no buttons under it: the exact shape of a chat that looks
+// hung. The turn has to say the permission was answered instead.
+{
+  const answered = m.restoreFromMetadata(m.blankTurn('assistant', 'Allow this task to continue?'), {
+    tool_events: [
+      { round: 1, tool: 'read_file', command: 'docs/informe.md', output: 'ok', exit_code: 0 },
+      {
+        round: 6,
+        tool: 'project_objectives',
+        command: '{"action": "list"}',
+        output: 'Waiting for an exact user approval.',
+        exit_code: null,
+        ask_user: { kind: 'tool_approval', approval_id: 'KD', question: 'Allow this task to continue?', options: [], resolved: 'approve_task' },
+      },
+    ],
+    harness: { stop_reason: 'awaiting_user', tool_calls: 6, failed_calls: 1 },
+  });
+  assert(answered.ask === undefined, 'an answered gate is not a pending card');
+  assert(answered.approval && answered.approval.decision === 'approve_task', 'the decision is kept as a record');
+  assert(answered.text === '', 'the bare question does not come back as a bubble');
+  assert(answered.steps.length === 2 && answered.steps[1].meta === 'permission answered', 'the rail still shows what happened');
+
+  // The prose of a real answer is never thrown away, only the bare question.
+  const withAnswer = m.restoreFromMetadata(m.blankTurn('assistant', 'Ya está: he listado los objetivos.'), {
+    tool_events: [
+      { round: 1, tool: 'project_objectives', command: '{}', output: 'Waiting for an exact user approval.', exit_code: null, ask_user: { kind: 'tool_approval', approval_id: 'KD', question: 'Allow this task to continue?', options: [], resolved: 'approve' } },
+    ],
+  });
+  assert(withAnswer.text === 'Ya está: he listado los objetivos.', 'a real answer survives an answered gate');
+  assert(withAnswer.approval.decision === 'approve', 'and the decision is still recorded');
+}
+
 console.log(failed ? `${failed} CHECK(S) FAILED` : 'ALL OK');
 process.exit(failed ? 1 : 0);

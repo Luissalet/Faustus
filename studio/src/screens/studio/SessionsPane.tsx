@@ -1,8 +1,9 @@
 import { Archive, ArchiveRestore, ArrowUpDown, Bot, CheckSquare, Download, FolderOpen, MoreHorizontal, Plus, Search, Sparkles, Star, Trash2, Users, X } from 'lucide-react';
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router';
-import { Button, IconButton, QuickMenu, Skeleton } from '../../components';
-import type { ChatSession } from '../../adapters/chat';
+import { ActivityDot, Button, IconButton, QuickMenu, Skeleton } from '../../components';
+import { sessionActivity, useChatActivity, type SessionActivity } from '../../shell/activity';
+import type { ChatActivity, ChatSession } from '../../adapters/chat';
 import { relativeTime } from '../../adapters/home';
 import { isGroupSessionName, stripGroupPrefix } from '../../adapters/group';
 import {
@@ -58,7 +59,7 @@ function sortSessions(list: ChatSession[], mode: SortMode): ChatSession[] {
   return out.sort((a, b) => Number(b.isImportant) - Number(a.isImportant));
 }
 
-function Row({ s, i, currentId, selecting, selected, onToggle, onOpen, onMenu }: { s: ChatSession; i: number; currentId: string | null; selecting: boolean; selected: boolean; onToggle: () => void; onOpen: (id: string) => void; onMenu: () => void }) {
+function Row({ s, i, currentId, selecting, selected, live, queuePos, onToggle, onOpen, onMenu }: { s: ChatSession; i: number; currentId: string | null; selecting: boolean; selected: boolean; live: SessionActivity | null; queuePos?: number; onToggle: () => void; onOpen: (id: string) => void; onMenu: () => void }) {
   return (
     <div className="fs-studio__session-row" role="listitem" data-selected={selected || undefined} data-selecting={selecting || undefined}>
       {selecting && (
@@ -77,6 +78,7 @@ function Row({ s, i, currentId, selecting, selected, onToggle, onOpen, onMenu }:
         }}
       >
         <span className="fs-studio__session-name">
+          {live && <ActivityDot state={live} position={queuePos} />}
           {s.isImportant && <Star size={11} aria-label={t('Favourite')} className="fs-studio__star" />}
           {isGroupSessionName(s.name) && <Users size={11} aria-label={t('Group chat')} />}
           {isGroupSessionName(s.name) ? stripGroupPrefix(s.name) : s.name}
@@ -158,6 +160,9 @@ export function SessionsPane({ sessions, currentId, filter, setFilter, searchRef
   const [openFolders, setOpenFolders] = useState<Record<string, boolean>>({});
   const [confirmBulk, setConfirmBulk] = useState(false);
   const [tidying, setTidying] = useState(false);
+  // What is running right now, so a conversation you walked away from still
+  // says so from the list (src/agent_runs.py keeps the turn going).
+  const activity: ChatActivity = useChatActivity();
 
   useEffect(() => {
     try {
@@ -248,7 +253,7 @@ export function SessionsPane({ sessions, currentId, filter, setFilter, searchRef
 
   const renderRows = (list: ChatSession[], offset = 0) =>
     list.map((s, i) => (
-      <Row key={s.id} s={s} i={i + offset} currentId={currentId} selecting={selecting} selected={selected.has(s.id)} onToggle={() => toggle(s.id)} onOpen={(id) => onOpen(id)} onMenu={() => setTarget(s)} />
+      <Row key={s.id} s={s} i={i + offset} currentId={currentId} selecting={selecting} selected={selected.has(s.id)} live={sessionActivity(activity, s.id)} queuePos={activity.queued[s.id]} onToggle={() => toggle(s.id)} onOpen={(id) => onOpen(id)} onMenu={() => setTarget(s)} />
     ));
 
   return (

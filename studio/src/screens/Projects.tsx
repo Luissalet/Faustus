@@ -1,8 +1,10 @@
 import { Archive, ChevronRight, FolderKanban, Pin, Plus, Search } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
-import { Button, EmptyState, Skeleton } from '../components';
+import { ActivityDot, Button, EmptyState, Skeleton } from '../components';
 import { listProjects, type Project } from '../adapters/projects';
+import { listSessions, type ChatSession } from '../adapters/chat';
+import { groupActivity, useChatActivity } from '../shell/activity';
 import { relativeTime } from '../adapters/home';
 import './projects.css';
 import './home.css';
@@ -28,6 +30,33 @@ export function ProjectsScreen() {
     listProjects(controller.signal).then(setProjects).catch(() => setFailed(true));
     return () => controller.abort();
   }, []);
+
+  /* A project's chats belong to it by folder, and a turn keeps running after
+     you leave it: without this the list is silent about work in flight, which
+     is exactly the moment you came back to check on. */
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const activity = useChatActivity();
+  const live = activity.running.length + activity.awaiting.length;
+  useEffect(() => {
+    const controller = new AbortController();
+    // Only worth asking when something IS alive; and again when that changes.
+    if (!live) {
+      setSessions([]);
+      return () => controller.abort();
+    }
+    listSessions(controller.signal).then(setSessions).catch(() => undefined);
+    return () => controller.abort();
+  }, [live]);
+  const liveByFolder = useMemo(() => {
+    const byFolder = new Map<string, string[]>();
+    for (const s of sessions) {
+      if (!s.folder) continue;
+      byFolder.set(s.folder, [...(byFolder.get(s.folder) ?? []), s.id]);
+    }
+    const out = new Map<string, ReturnType<typeof groupActivity>>();
+    for (const [folder, ids] of byFolder) out.set(folder, groupActivity(activity, ids));
+    return out;
+  }, [sessions, activity]);
 
   const archivedCount = useMemo(() => (projects ?? []).filter((p) => p.archived).length, [projects]);
 
@@ -107,7 +136,9 @@ export function ProjectsScreen() {
 
       {projects && visible.length > 0 && (
         <div className="fs-list fs-list--rail">
-          {visible.map((project) => (
+          {visible.map((project) => {
+            const state = project.folder ? liveByFolder.get(project.folder) ?? null : null;
+            return (
             <Link
               key={project.id}
               to={`/projects/${project.id}`}
@@ -116,6 +147,7 @@ export function ProjectsScreen() {
             >
               <span className="fs-row__main">
                 <span className="fs-row__name">
+                  {state && <ActivityDot state={state} withLabel />}
                   {project.pinned && <Pin size={12} aria-hidden="true" className="fs-pj__pin" />}
                   {project.name}
                 </span>
@@ -127,7 +159,8 @@ export function ProjectsScreen() {
               </span>
               <ChevronRight size={16} aria-hidden="true" className="fs-row__go" />
             </Link>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

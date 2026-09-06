@@ -250,6 +250,67 @@
   }
 }
 
+/* ══ ActivityDot ═════════════════════════════════════════════════
+   "This one is alive", in every list that shows a conversation. The three
+   states differ in movement as well as in colour: only the one that is
+   working breathes. */
+
+.fs-live {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fs-space-1);
+  flex: none;
+  /* It sits before a name that is plain text, not a flex item: without this
+     the label ends up glued to it ("Working nowWriter's Hoard"). */
+  margin-inline-end: var(--fs-space-2);
+  color: var(--fs-live-color, var(--fs-text-3));
+  font-size: var(--fs-label-size);
+  line-height: 1.4;
+}
+
+/* On a tab it goes AFTER the word, so the breathing room swaps sides. */
+.fs-tab .fs-live {
+  margin-inline: var(--fs-space-2) 0;
+}
+
+.fs-live[data-state='running'] {
+  --fs-live-color: var(--fs-info);
+}
+.fs-live[data-state='waiting'] {
+  --fs-live-color: var(--fs-warning);
+}
+
+.fs-live__dot {
+  flex: none;
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: var(--fs-radius-pill);
+  background: currentColor;
+}
+
+.fs-live[data-state='running'] .fs-live__dot {
+  animation: fs-breathe 1.4s var(--fs-ease) infinite;
+}
+
+/* Hidden from the eye, not from a screen reader: the dot's only name. */
+.fs-live__label[data-quiet] {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fs-live[data-state='running'] .fs-live__dot {
+    animation: none;
+  }
+}
+
 /* ══ Skeleton ════════════════════════════════════════════════════ */
 
 .fs-skeleton {

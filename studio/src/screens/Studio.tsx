@@ -8,6 +8,7 @@ import {
   listSessions,
   loadHistory,
   metricsFrom,
+  resumeTurn,
   sendTurn,
   stopChat,
   type ChatSession,
@@ -54,6 +55,7 @@ import { listCheckpoints } from '../adapters/workspace';
 import { addMemory, deleteMemory, listMemories } from '../adapters/memory';
 import { createNote } from '../adapters/notes';
 import { startTour } from '../shell/store';
+import { refreshActivity } from '../shell/activity';
 import { TOURS, resetTours, seenTours } from '../lib/tours';
 import { getTheme as getMode, setTheme as setMode, type ThemeChoice } from '../shell/theme';
 import { BrandMark } from '../shell/BrandMark';
@@ -230,6 +232,13 @@ export function StudioScreen() {
   const [panel, panelDispatch] = useReducer(panelReducer, initialPanel);
 
   const controllerRef = useRef<AbortController | null>(null);
+  /* The run's opaque id, from the header the server answers with. Stop is
+     fail-closed: without it, `POST /api/chat/stop` refuses to cancel. */
+  const runIdRef = useRef<string | null>(null);
+  /* Rejoining a live run is declared further down (it needs patchLast and
+     the history loader); the effect that opens a session calls it through
+     this ref so the dependency never has to travel up the file. */
+  const rejoinRef = useRef<(sid: string) => void>(() => undefined);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -377,7 +386,14 @@ export function StudioScreen() {
           if (m.role !== 'assistant') return true;
           const next = all[i + 1]?.m;
           const text = m.content.trim();
-          return !(next && next.role === 'assistant' && text.length < 160 && text.endsWith('?'));
+          // …but a message that carries the tool rail is not noise: dropping
+          // it threw away every step of the turn that led to the gate, and
+          // left the answer looking as if it had come from nowhere. What is
+          // noise is the bare question, and that one the turn now renders as
+          // an answered permission rather than as prose.
+          const hasSteps = Array.isArray((m.metadata as { tool_events?: unknown }).tool_events)
+            && ((m.metadata as { tool_events?: unknown[] }).tool_events?.length ?? 0) > 0;
+          return !(next && next.role === 'assistant' && text.length < 160 && text.endsWith('?') && !hasSteps);
         });
       const mapped = kept.map(({ m, historyIndex }) => {
         const atts = m.role === 'user' ? attachmentsFromMetadata(m.metadata) : [];
@@ -428,11 +444,21 @@ export function StudioScreen() {
           const match = (r: ModelRoute) => r.model === result.model;
           setRouteId((id) => routes.find(match)?.id ?? id);
         }
+        // History is what was SAVED. If the turn is still going, the server
+        // still has it: rejoin so the conversation carries on in front of
+        // you instead of looking frozen at its last saved line.
+        if (!controller.signal.aborted) rejoinRef.current(sessionId);
       })
       .catch(() => {
         if (!controller.signal.aborted) setLoadError(t('Could not open this conversation.'));
       });
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      // Leaving a conversation drops OUR view of the turn, never the turn:
+      // the run is detached and lives on (the lists keep saying so).
+      controllerRef.current?.abort();
+      controllerRef.current = null;
+    };
     // routes is read once at load on purpose: the picker must not jump later.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
@@ -633,6 +659,12 @@ export function StudioScreen() {
           incognito: knobs.incognito,
           presetId: preset?.id,
           activeDocId: panel.doc && !panel.doc.streaming ? panel.doc.id ?? undefined : undefined,
+          onRunId: (id) => {
+            runIdRef.current = id;
+            // The lists say "this one is working" from the first moment,
+            // not after the next poll.
+            refreshActivity();
+          },
           signal: controller.signal,
         })) {
           patchLast((t) => apply(t, event));
@@ -644,15 +676,77 @@ export function StudioScreen() {
       } finally {
         if (controllerRef.current === controller) {
           controllerRef.current = null;
+          runIdRef.current = null;
           setBusy(false);
         }
         panelDispatch({ type: 'turn-end' });
         refreshSessions();
+        refreshActivity();
         void syncIds(sid);
       }
     },
     [knobs, workspace, route, gen, patchLast, refreshSessions, syncIds, preset, panel.doc],
   );
+
+  /**
+   * Rejoins a turn that is still running server-side.
+   *
+   * Leaving a conversation does not end its turn: the run is detached and
+   * keeps going (`src/agent_runs.py`), and the server replays its whole
+   * buffer to whoever subscribes next. Without this, coming back showed only
+   * what had been written to the database — which mid-approval is the
+   * question with no card under it, and reads as a hung chat.
+   *
+   * Yields nothing when there is no live run, which is the usual case.
+   */
+  const rejoin = useCallback(
+    async (sid: string) => {
+      const controller = new AbortController();
+      controllerRef.current = controller;
+      let joined = false;
+      try {
+        for await (const event of resumeTurn(sid, {
+          signal: controller.signal,
+          onRunId: (id) => {
+            runIdRef.current = id;
+          },
+        })) {
+          if (!joined) {
+            // Only once there IS something to show: an empty rejoin must not
+            // leave a ghost bubble at the end of the conversation.
+            joined = true;
+            setBusy(true);
+            pinnedRef.current = true;
+            panelDispatch({ type: 'turn-start' });
+            setTurns((list) => [...(list ?? []), blankTurn('assistant')]);
+            setNotice({ text: t('This conversation was still working — picking it up live.'), tone: 'info' });
+          }
+          patchLast((t) => apply(t, event));
+          panelDispatch({ type: 'event', event, busy: true });
+        }
+      } catch {
+        /* aborted (the session changed) or the run ended mid-read */
+      } finally {
+        if (controllerRef.current === controller) {
+          controllerRef.current = null;
+          runIdRef.current = null;
+          setBusy(false);
+        }
+        if (joined && !controller.signal.aborted) {
+          panelDispatch({ type: 'turn-end' });
+          refreshSessions();
+          refreshActivity();
+          // The turn is saved now: re-read it so ids, harness and metadata
+          // are the server's and not this screen's reconstruction.
+          turnsFromHistory(sid)
+            .then((result) => setTurns(result.turns))
+            .catch(() => undefined);
+        }
+      }
+    },
+    [patchLast, refreshSessions, turnsFromHistory],
+  );
+  rejoinRef.current = (sid: string) => void rejoin(sid);
 
   const ensureSession = useCallback(
     async (name: string): Promise<string | null> => {
@@ -1606,10 +1700,20 @@ export function StudioScreen() {
   const stop = useCallback(() => {
     controllerRef.current?.abort();
     controllerRef.current = null;
-    if (sessionId) void stopChat(sessionId);
+    // Closing our stream stops nothing: the run is detached. The server only
+    // cancels it when it hears the run's own id back, so a Stop without one
+    // was a button that did nothing but hide the evidence.
+    const runId = runIdRef.current;
+    runIdRef.current = null;
+    if (sessionId) {
+      void stopChat(sessionId, runId).then((stopped) => {
+        refreshActivity();
+        if (!stopped) say(t('I could not stop it: it is finishing on the server. It will save what it has.'), 'warning');
+      });
+    }
     patchLast((t) => apply(t, { type: 'done' }));
     setBusy(false);
-  }, [sessionId, patchLast]);
+  }, [sessionId, patchLast, say]);
 
   /* ── Message actions ── */
   const regenerateFrom = useCallback(

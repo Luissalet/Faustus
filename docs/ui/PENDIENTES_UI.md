@@ -851,3 +851,33 @@ su área y baja el baseline. Ningún módulo Studio nuevo la aumenta.
     de un Ollama de la red local sí se podría leer de su propio `/api/tags`
     y hoy la fila sale desnuda. Un endpoint que no sea Ollama (llama.cpp,
     vLLM) no tiene de dónde sacar el tamaño y seguiría sin número.
+160. **`[x]` RUN-1.** *(06-09-2026, visto en vivo y arreglado el 07-09.)* Un
+    turno sobrevive a que te vayas de la conversación —el run es *detached*
+    (`src/agent_runs.py`)— y la interfaz no lo decía en ninguna parte. Al
+    volver solo se releía el historial, así que un turno parado en la puerta
+    de permisos volvía como su última línea guardada («Allow this task to
+    continue?») sin tarjeta debajo: parecía colgado y estaba trabajando.
+    Arreglado con lo que el backend ya ofrecía y nadie llamaba:
+    `/api/chat/activity` (punto de actividad en la lista lateral, en la
+    pestaña Chats del proyecto y en `/projects`), `/api/chat/resume`
+    (reenganche al abrir la conversación) y la cabecera `X-Odysseus-Run-Id`
+    en `/api/chat/stop`, sin la cual el botón Parar no paraba nada.
+161. **`[ ]` RUN-1.** El punto de `/projects` necesita `GET /api/sessions`
+    entero para saber qué chat es de qué proyecto (se filtra por `folder`,
+    como `chatsIn`). Solo se pide cuando hay algo vivo, pero con muchas
+    sesiones es una lista larga para dos puntitos: lo suyo sería que
+    `/api/chat/activity` devolviese ya el `folder` de cada sesión activa.
+162. **`[ ]` RUN-1.** Un chat recién creado no aparece en la lista lateral
+    hasta que termina su primer turno (`refreshSessions` va al final), así
+    que durante ese primer turno no tiene punto. La lista se refresca sola
+    al acabar; mientras tanto, la conversación abierta ya se ve en directo.
+163. **`[ ]` RUN-1.** `/api/chat/activity` devuelve también `interrupted`
+    (runs que cortó un reinicio del servidor) y `workers` (sub-agentes
+    vivos). Ninguno de los dos se enseña todavía: un run que se llevó por
+    delante un reinicio sigue sin avisar a nadie.
+164. **`[ ]` RUN-1.** Tras un reinicio del proceso, `agent_runs.py` reconstruye
+    los `tool_events` desde el log SSE quedándose con cuatro campos
+    (`tool`, `command`, `output`, `exit_code`): el `ask_user` se pierde, y con
+    él la tarjeta de una aprobación que seguía pendiente. La aprobación en
+    memoria tampoco sobrevive al reinicio, así que hoy lo honesto sería
+    marcar esos turnos como caducados y ofrecer rehacerlos.

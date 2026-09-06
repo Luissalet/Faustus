@@ -109,6 +109,10 @@ export interface Turn {
   images: string[];
   attachments: Attachment[];
   ask?: AskUser;
+  /** A permission gate of this turn that was already answered: the record
+   *  of the decision, so a reload does not read as a question nobody can
+   *  answer any more. */
+  approval?: { question: string; decision: string };
   note?: string;
   /** Group chat transcript: who said this (metadata.group_model). */
   speaker?: string;
@@ -509,6 +513,7 @@ export function restoreFromMetadata(turn: Turn, meta: Record<string, unknown>): 
   const steps: Step[] = [];
   const workers: Worker[] = [];
   let ask: AskUser | undefined;
+  let approval: Turn['approval'];
   let rounds = turn.rounds;
   for (const ev of events) {
     const parked = ev.exitCode === null && /^Waiting for an exact user approval/i.test(ev.output.trim());
@@ -530,6 +535,10 @@ export function restoreFromMetadata(turn: Turn, meta: Record<string, unknown>): 
     rounds = Math.max(rounds, ev.round);
     ev.subagents.forEach((sa, i) => workers.push(workerFromPersisted(sa, i)));
     if (ev.ask && !ev.askResolved) ask = ev.ask;
+    // Already answered: keep the record, not a card. The question stayed in
+    // the message's own text as well, and left alone it comes back as a
+    // bubble asking for a permission that was granted minutes ago.
+    if (ev.ask && ev.askResolved) approval = { question: ev.ask.question, decision: ev.askDecision ?? '' };
   }
   const harness = meta.harness && typeof meta.harness === 'object' ? (meta.harness as Record<string, unknown>) : null;
   const rawSources = Array.isArray(meta.web_sources) ? meta.web_sources : Array.isArray(meta.research_sources) ? meta.research_sources : null;
@@ -538,13 +547,20 @@ export function restoreFromMetadata(turn: Turn, meta: Record<string, unknown>): 
         .map((x) => ({ title: s(x.title) || s(x.url), url: s(x.url) }))
         .filter((x) => x.url)
     : turn.sources;
+  // The server appends the gate's question to the message's own text. Once
+  // the gate is answered that sentence is the whole message, and reading it
+  // back as prose is how a finished decision looks like a frozen chat.
+  const text =
+    approval && turn.text.trim() === approval.question.trim() ? '' : turn.text;
   return {
     ...turn,
+    text,
     speaker,
     steps: steps.length ? steps : turn.steps,
     workers: workers.length ? workers : turn.workers,
     rounds,
     ask: ask ?? turn.ask,
+    approval: approval ?? turn.approval,
     summary: harness ? summaryFrom(harness) : turn.summary,
     sources,
   };

@@ -700,6 +700,16 @@ details.fs-studio__step > summary:hover .fs-trace__label {
   gap: var(--fs-space-2);
 }
 
+/* A permission already answered: the record of a decision, not a card that
+   asks for one. Quiet on purpose — the turn's own answer is the news. */
+.fs-studio__answered {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-3);
+}
+
 .fs-studio__sources {
   display: flex;
   flex-wrap: wrap;
