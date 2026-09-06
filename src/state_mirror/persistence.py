@@ -326,9 +326,22 @@ def _connect(path: str) -> sqlite3.Connection:
     # non-database file happily and only complains when asked to read it. The
     # council's store learned this the same way -- without this probe, a
     # corrupt file "opens successfully" and quarantine never fires.
-    conn.execute("SELECT count(*) FROM sqlite_master").fetchone()
-    _apply_schema(conn)
-    conn.commit()
+    #
+    # And the handle is CLOSED before the exception leaves, which is not
+    # tidiness: `_open` responds to this failure by quarantining the file with
+    # `os.replace`, and on Windows a rename of a file still held open fails
+    # with WinError 32. Leaking the handle here therefore degrades quarantine
+    # into a logged warning, leaves the corrupt file exactly where it was, and
+    # makes every subsequent open fail the same way forever. The Delta Engine's
+    # store hit this on its first quarantine test; the same fix belongs here.
+    try:
+        conn.execute("SELECT count(*) FROM sqlite_master").fetchone()
+        _apply_schema(conn)
+        conn.commit()
+    except Exception:
+        with contextlib.suppress(Exception):
+            conn.close()
+        raise
     return conn
 
 

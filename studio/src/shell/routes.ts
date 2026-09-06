@@ -7,6 +7,7 @@ import {
   Database,
   FolderKanban,
   Gauge,
+  GitCompare,
   Home,
   Library,
   Mail,
@@ -71,6 +72,7 @@ export const TOOLS: Tool[] = [
   { path: '/group', label: 'Group chat', icon: Users },
   { path: '/council', label: 'Council', icon: Scale },
   { path: '/state', label: 'State Mirror', icon: Database },
+  { path: '/deltas', label: 'Deltas', icon: GitCompare },
   { path: '/cookbook', label: 'Cookbook', icon: ChefHat },
   { path: '/context', label: 'Context', icon: Gauge },
 ];
@@ -102,6 +104,7 @@ export const SERVER_ROUTES = [
   '/group',
   '/council',
   '/state',
+  '/deltas',
   '/cookbook',
   '/context',
   // The paths the interface this one replaced owned. Still served, still in

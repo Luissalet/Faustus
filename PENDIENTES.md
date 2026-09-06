@@ -1215,3 +1215,134 @@ sigue siendo el único método que encuentra lo que ninguna prueba busca.
 - `[~]` **`token_budget` de una proyección es una estimación de 4 caracteres por token**, no una
   llamada al tokenizador. Sobrecuenta la puntuación JSON, así que se queda corto antes que pasarse —
   la dirección segura, pero conviene saberlo antes de ajustar un presupuesto fino.
+
+---
+
+## Universal Delta Engine: lo cerrado, y lo que deja abierto (06-09-2026)
+
+El plan 6 de 11 está construido hasta la fase 2 (contrato común, código, workflows/skills/estado) y
+documentado en `FAUSTUS.md` §58. Imagen, vídeo y audio —fases 4 y 5— **no están**; lo que falta por
+construir vive en `OBJETIVOS.md`. Esto es lo que **ya está construido y no cuadra**.
+
+**Nota de método.** `tests/test_delta_engine_wiring.py` (22 pruebas) se escribió antes del merge y
+cazó tres de las cuatro cosas de abajo. La cuarta —el `matched` sobre un contrato vacío— la encontró
+el agente que escribió los tests de servicio, leyendo el docstring del servicio y comprobando si el
+código lo cumplía. Las dos técnicas se complementan: una pregunta si las piezas se alcanzan, la otra
+si el código hace lo que su propia documentación promete.
+
+### Cerrado antes de mezclar
+
+- `[x]` **Una regresión bloqueante archivada como `info`.** El adaptador de código informaba
+  `security.permissions_not_widened: violated, blocking` por un `import subprocess` nuevo y emitía
+  ese mismo import como un `added` sin `invariant_refs`. El clasificador no podía unirlos —el
+  invariante no declara ruta, el hallazgo no nombraba invariante— así que la fila que **causaba** la
+  violación quedaba `incidental / info`. Arreglado con un join explícito en el adaptador
+  (`_widening_invariants`), que es la capa que sabe que importar `subprocess` es una ampliación; el
+  clasificador es deliberadamente ciego a lo que una ruta significa en un dominio concreto.
+
+- `[x]` **Las rutas cazaban la clase hija.** `except DeltaError` no coge un `ContractError`, que es
+  su **padre** y lo que levantan todos los helpers de `src/contracts/base.py`. `POST /api/deltas`
+  sin `source` —el error de cliente más común— contestaba 500 en vez del rechazo 200 que el propio
+  docstring del fichero promete. Ocho manejadores. Hay una prueba de cableado que falla si alguien
+  vuelve a la subclase.
+
+- `[x]` **El interruptor apagado dejaba basura en el almacén.** `create` congelaba el contrato y
+  guardaba la petición **antes** de mirar el flag, así que una comparación rechazada dejaba las dos
+  filas detrás; y `create(run=False)` con el motor apagado triunfaba entero, porque en ese camino
+  nadie leía el interruptor. Invisible desde HTTP —la ruta corta antes— y real para cualquier otro
+  llamante.
+
+- `[x]` **`matched` sin que nadie hubiera pedido nada.** `verdict.assess` no tenía regla sobre un
+  contrato vacío, así que «compara estas dos y dime qué cambió» podía contestar la palabra que
+  significa «el encargo está hecho». Ahora es `partial`.
+
+- `[x]` **Una comparación bloqueaba la aplicación entera, y sólo se vio en el navegador.** Los
+  manejadores son `async def` y llamaban al servicio en línea, así que una comparación de dos
+  checkpoints de este repositorio —minutos de CPU recorriendo y parseando el árbol— retenía el bucle
+  de eventos. El síntoma no era «los deltas van lentos»: era que **todas** las peticiones de la
+  aplicación se ponían en cola detrás de una, la pantalla se quedaba en esqueletos para siempre y el
+  log del servidor dejaba de escribir. Ninguna prueba podía verlo, porque una prueba nunca tiene una
+  segunda petición. Arreglado con `asyncio.to_thread` en los dos endpoints que trabajan, como ya
+  hacía `src/council/orchestrator.py::_verify`, y fijado con una prueba de cableado que lee el
+  fuente.
+
+- `[x]` **Fuera del plan: la cuarentena de sqlite era código muerto en Windows.** El patrón
+  `_connect` dejaba la conexión abierta cuando fallaba la sonda `SELECT count(*) FROM
+  sqlite_master`, y en Windows eso hace que el `os.replace` de la cuarentena falle con `WinError 32`:
+  el fichero corrupto se queda donde está y **todas las aperturas siguientes fallan igual para
+  siempre**. Estaba en `src/state_mirror/persistence.py`; corregido allí también. `src/council/
+  persistence.py` ya lo hacía bien.
+
+### Lo que se queda abierto, y por qué
+
+- `[~]` **Un checkpoint se compara entero, y no hay forma de acotarlo.** El presupuesto tiene
+  `max_elements`, que corta la **alineación**, pero la instantánea de cada extremo recorre el árbol
+  y parsea cada fichero antes de llegar ahí. Comparar dos checkpoints de este repositorio son
+  minutos de CPU aunque sólo cambiara un fichero. Falta lo obvio: pasar las rutas que `changed_since`
+  ya sabe decir, y dejar que el llamante acote a un subárbol. Hoy la comparación útil de código es
+  la de dos ficheros o un checkpoint pequeño; sobre el repositorio entero es correcta y cara.
+
+- `[~]` **Dos ficheros con rutas distintas no se alinean, y eso desconcierta.** Comparar
+  `_viejo/persistence.py` con `src/state_mirror/persistence.py` da «todo añadido» y ninguna
+  correspondencia, porque la clave de un elemento lleva la ruta dentro. Es correcto —emparejar por
+  nombre de fichero sería adivinar— pero es la primera cosa que alguien intenta al querer comparar
+  «el mismo fichero antes y después», y el delta no le dice que probablemente quería un checkpoint.
+  Falta una pista, no un emparejamiento.
+
+- `[~]` **`sources.py` no resuelve `artifact`, `document`, `blob`, `state`, `workflow` ni `skill`.**
+  Devuelven `readable=False` con un motivo concreto, que es un resultado correcto y no un hueco —
+  pero significa que hoy una comparación de estos dominios se hace con `sources.stash()`, es decir
+  con el contenido en la mano del llamante. Falta el puente al Artifact Store y al espejo. Los tres
+  adaptadores afectados tienen una prueba que fija el agujero para que no se cierre por accidente.
+
+- `[~]` **`correlation_id` no lo genera nadie.** El plan lo exige «en todos los eventos» y el campo
+  existe, viaja y se propaga; lo que no hay es quien lo cree. Hoy es `""` en todos los payloads, que
+  es peor que no tenerlo porque parece que funciona. Hace falta decidir dónde nace —¿el turno? ¿el
+  run? ¿la petición?— y propagarlo desde ahí. Es una decisión de arquitectura, no una línea.
+
+- `[~]` **Un ChangeSet no se persiste, así que un delta no puede apuntar a uno.** `src/changesets.py`
+  no guarda nada por diseño. La integración construye el ChangeSet, lo somete a `prove` y guarda
+  sólo `proof_ref`; el ChangeSet en sí se pierde. Para reconstruirlo hay que volver a mirar el
+  checkpoint, y `has_checkpoint()` puede decir ya que no está.
+
+- `[~]` **El adaptador de código no enumera un checkpoint entero.** `workspace_checkpoints` no expone
+  «lista todos los blobs en este sha», así que el conjunto de rutas es el árbol de trabajo corregido
+  por las filas `D` de `changed_since`. Un fichero que estaba en el checkpoint y que el paseo del
+  índice poda (oculto, `node_modules`) no se enumera. Nombrado, no rodeado con una segunda
+  integración de git.
+
+- `[~]` **El escaneo de riesgo del adaptador de código es sólo Python y sólo de tokens.** Compara
+  conjuntos de tokens sobre la revisión entera, así que mover una llamada a `subprocess` que ya
+  existía no es una ampliación —correcto— pero tampoco detecta nada en JavaScript, Go o Rust, donde
+  `repo_map` sólo tiene regex. Y `security.secrets_not_exposed` contesta **siempre** `unknown`: aquí
+  no corre ningún escáner de credenciales, y contestar `preserved` porque ningún import se movió
+  sería exactamente el fallo que la regla 1 del contrato existe para prevenir.
+
+- `[~]` **De la lista de cambios bloqueantes del §14, cuatro no son comprobables hoy** porque el
+  contrato real no tiene los campos: postcondición eliminada, rollback eliminado, timeout, y test
+  removido (`NODE_TYPES` no tiene nodo de test, así que un workflow no puede decir que tenía uno).
+  Los cuatro devuelven `unknown` con la limitación nombrada. Otros tres —permiso ampliado, secreto
+  nuevo, proveedor local→externo— sólo se comprueban si el llamante los pone en `config`.
+
+- `[~]` **`state`, `workflow` y `skill` no direccionan sus metadatos.** En workflow no se emiten
+  elementos `meta:`, así que cambiar la descripción o la versión de una definición no produce ningún
+  hallazgo; y los conflictos del espejo se acotan a la **entidad** y no al campo, porque
+  `MaterializedState.conflicts` guarda ids y no objetos.
+
+- `[~]` **Renombrar el id de un nodo de workflow sale como `missing` + `added`.** El id es la
+  dirección de la que cuelgan todos los `edge:` y `param:`, y afirmar una correspondencia que la
+  definición no hace sería inventarla. Declarado en las limitaciones del resultado.
+
+- `[~]` **No se emite ningún `EvidenceRef`.** Los hallazgos llevan direcciones (ruta, línea, símbolo,
+  celda), que es lo que hace falta para encontrarlos, pero no hay artefactos de evidencia con hash y
+  retención. El §28 pide «página/rango de evidencia» para documentos, y eso necesita la capa de
+  render por página que esta fase no tiene.
+
+- `[~]` **La cobertura de comportamiento es siempre 0.0.** Ningún adaptador recibe resultados de
+  tests. Está declarado en cada delta con su nota, y la nota dice además lo del §9 que conviene no
+  olvidar: un test en verde no demuestra la ausencia de cambio colateral.
+
+- `[~]` **`literal` es un almacén de proceso.** `sources.stash()` guarda en memoria para comparar
+  valores que el llamante ya tiene, y se olvida al terminar. No es persistencia y el docstring lo
+  dice, pero significa que un delta de un `literal` no se puede recomputar más tarde: su fingerprint
+  sigue siendo válido y sus dos extremos ya no existen.

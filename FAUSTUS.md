@@ -4472,5 +4472,206 @@ navegador contra el 7001, un barrido real: **once adaptadores, cero fallos, 124 
 pantalla pintando frescura por campo y el proyecto `LocalAI` apareciendo con `workspace_available:
 true` en cuanto el barrido supo dónde mirar.
 
+
+## 58. Universal Delta Engine: qué cambió, qué se pidió, y qué no se pudo comprobar (06-09-2026)
+
+Plan 6 de 11 (`inspiration/PLAN_UNIVERSAL_DELTA_ENGINE_FAUSTUS.md`), fases 0 a 2. Faustus ya sabía
+qué ficheros cambiaron; lo que no sabía decir es **qué significa** el cambio. Un diff dice que
+`auth.py` tiene doce líneas nuevas. Este subsistema dice: el arreglo que pediste está; también
+cambió un timeout global que nadie pidió; la firma pública sigue igual; y del comportamiento no sé
+nada porque aquí no corrió ningún test.
+
+La pregunta se responde siempre en la misma forma, sea el dominio código, un documento, un workflow,
+una skill o el propio estado de la máquina: **qué se pidió, qué hizo falta, qué salió de propina, qué
+se rompió, qué se conservó, y qué no se pudo comparar**.
+
+### 58.1 Las seis reglas que el contrato hace imposibles de romper
+
+`src/delta_engine/contracts.py` (1.815 líneas) es el único sitio donde se definen las palabras, y
+cada regla está escrita como un rechazo y no como un consejo:
+
+1. **No detectado no es conservado.** `DeltaAssertion.parse` rechaza `preserved` con confianza
+   `unknown`, y `InvariantResult.parse` rechaza `preserved` sin ninguna observación detrás. Un
+   detector que no encontró nada no ha encontrado nada; decir que «conservó el fondo» es la mentira
+   más cara que este subsistema podría contar, porque la promesa entera del producto es «cambió sólo
+   lo que pediste».
+2. **Sin revisiones inmutables no hay comparación.** Todo `RevisionRef` lleva un sha256 obligatorio.
+   Comparar contra un `latest` móvil da un resultado que no fue cierto para nadie, y después nadie
+   puede saber qué bytes se miraron.
+3. **La intención se congela antes de ver el resultado.** `IntentContract` exige `frozen_at` y no
+   tiene `unfreeze`: cambiar de idea crea un contrato **nuevo** que apunta al viejo con `supersedes`.
+   Editar el contrato después de ver el target es cómo cualquier evaluación saca un diez.
+4. **Observación e interpretación son dos campos.** `operation` es lo que el extractor vio
+   (`added`, `modified`, `moved`…); `classification` es lo que eso significa contra la intención
+   congelada (`requested`, `incidental`, `regression`…). El plan las escribe en una sola lista; son
+   dos ejes, discrepan a menudo, y juntarlas hace indistinguible «cambió» de «no debería haber
+   cambiado».
+5. **Cobertura no es confianza.** Cobertura estructural del 100% con un tier perceptual y confianza
+   `low` es una situación real y frecuente; un solo porcentaje esconde las dos mitades.
+6. **Esto no es `prove`.** `ASSESSMENTS` (`matched|partial|mismatched|regressed|inconclusive`) habla
+   del **cambio**; `prove.VERDICTS` (`proved|partial|unproved|contradicted`) sigue siendo la
+   autoridad sobre la **ejecución**. Comparten la palabra `partial` y nada más, así que
+   `integrations/prove.py` traduce explícitamente y **sólo hacia abajo**: una prueba puede rebajar
+   un veredicto de cambio, jamás subirlo.
+
+A eso se añade la escalera del determinismo del §3.2, mecanizada en vez de recomendada:
+`EXTRACTION_TIERS` (`hash > parser > algorithm > perceptual > model > human`) y un techo por tier,
+aplicado **dentro del `parse`**, de forma que un extractor no puede promocionar una conjetura
+escribiendo `exact`. Un hash perceptual se queda en `medium` porque un hash perceptual no es
+identidad, y una revisión humana se queda en `high` porque una persona leyendo una página es un
+testigo fuerte y no una suma de comprobación.
+
+### 58.2 Seis adaptadores, y un registro que no se puede olvidar de ninguno
+
+`src/delta_engine/adapters/`: `code`, `document`, `workflow`, `skill`, `state` y `binary`. Cada uno
+convierte una revisión en elementos direccionables y dice qué difiere; **ninguno clasifica**, porque
+clasificar necesita la intención congelada y un adaptador que la viera podría ponerse a buscar lo
+que la intención esperaba.
+
+- **Código** — ficheros por hash, símbolos y firmas por `ast`, imports, dependencias y claves de
+  configuración. Un renombrado es `moved` y no `missing`+`added`, que es el primer caso del §28. Un
+  fichero que no parsea sale etiquetado `parser_degraded` y **no desaparece** del resultado: su
+  ausencia no es prueba de que sus símbolos se hayan ido.
+- **Documentos** — bloques, títulos, cifras, citas y celdas de tabla. Un bloque movido con el mismo
+  hash es reflujo, no pérdida. Un total de tabla que deja de cuadrar es una regresión con confianza
+  `exact`, porque es aritmética. No hay modelo: aquí no hay «hechos extraídos por un modelo», y por
+  eso este adaptador es más pequeño de lo que el plan sugiere.
+- **Workflow y skill** — la lista de cambios bloqueantes del §14 contra los contratos **reales** del
+  repositorio. El módulo documenta qué de esa lista es comprobable hoy y qué no: `WorkflowNode` no
+  tiene postcondiciones, ni rollback, ni timeout, ni nodo de test, así que esas cuatro devuelven
+  `unknown` con la limitación nombrada en vez de una comprobación inventada.
+- **Estado** — compara dos revisiones del espejo distinguiendo las cuatro cosas del §15 que se
+  confunden constantemente: cambió el mundo, cambió lo que sabemos (llegó una observación más
+  fuerte), caducó el dato, o la fuente se corrigió a sí misma. Sólo la primera es un cambio.
+- **Binario** — el suelo honesto: tamaño, media type y hash, con cobertura semántica declarada a
+  cero y la limitación de que no sabe qué cambió dentro.
+
+**El registro descubre, no lista.** `registry.py` recorre el paquete con `pkgutil` y recoge de cada
+módulo un `ADAPTER_FACTORY`. No hay tupla que actualizar, y por tanto no hay tupla que olvidar —
+que es exactamente lo que pasó en el plan 5, donde cinco adaptadores correctos y probados no
+existían porque faltaban de una lista. Un módulo que revienta al importar cuesta su dominio y no el
+subsistema, y `adapter_for` de un dominio sin adaptador **levanta y dice por qué**: no cae al
+adaptador binario, que contestaría `reencoded` sobre un fichero Python y se le creería.
+
+### 58.3 El orden es la garantía
+
+`service.py` no añade lógica sobre los paquetes de abajo; añade el **orden**, y ahí es donde vive la
+honestidad:
+
+```
+congelar la intención → resolver las dos revisiones → extraer → comprobar invariantes
+→ clasificar contra la intención congelada → evaluar → guardar
+```
+
+La intención se congela y se guarda **antes** de leer ningún byte. `test_delta_engine_wiring.py` lee
+los números de línea de `create` con `ast` para comprobarlo, porque una refactorización que
+invirtiera esas dos llamadas no rompería nada más y nadie se enteraría.
+
+La caché del §22 tiene una decisión propia que merece contarse: el fingerprint identifica **la
+pregunta** (source, target, intención, dominio) y deja fuera las versiones de los extractores. Con
+ellas dentro, la clave sólo se puede calcular *después* de la extracción, que es la parte cara —
+ahorraría almacenamiento y cero trabajo — y una mejora del parser produciría un **fallo silencioso
+de caché**: aparece una segunda fila, la primera sigue viva, y en ningún sitio consta por qué la
+misma comparación se respondió dos veces. Identificando por la pregunta, la segunda respuesta choca
+con la primera, el servicio compara las versiones guardadas con las actuales y **retira la vieja con
+un motivo**. Una invalidación que se ve es mejor que un fallo de caché que no.
+
+### 58.4 Lo que la auditoría de conexión encontró esta vez
+
+El fichero `tests/test_delta_engine_wiring.py` (22 pruebas) hace una sola pregunta: ¿se alcanzan los
+módulos entre sí, y sabe algo de fuera que esto existe? Cinco planes seguidos han entregado un
+subsistema correcto e inalcanzable, así que la respuesta ya no se deja al azar. Lo que salió:
+
+- **Una regresión bloqueante clasificada como `info`.** El adaptador de código informaba
+  `security.permissions_not_widened: violated, blocking` por un `import subprocess` nuevo, y a la
+  vez emitía ese import como un `added` pelado sin `invariant_refs`. El clasificador no podía unir
+  las dos cosas —el invariante no declara ruta y el hallazgo no nombraba invariante— así que la fila
+  que **causaba** la violación quedaba archivada como `incidental / info`. El delta decía las dos
+  cosas y su tabla de assertions se encogía de hombros. Las dos mitades eran correctas y no se
+  alcanzaban: la trampa de siempre, en su sexta forma.
+- **Las rutas cazaban la clase hija.** Todos los manejadores hacían `except DeltaError`, y los
+  helpers compartidos de `src/contracts/base.py` levantan `ContractError`, que es la clase **padre**.
+  Resultado: `POST /api/deltas` sin `source` —el error de cliente más común que existe— contestaba
+  500 en vez del rechazo 200 que el propio docstring del fichero promete.
+- **El interruptor apagado dejaba basura.** `create` congelaba el contrato y guardaba la petición
+  antes de mirar el flag, así que una comparación rechazada dejaba las dos filas detrás; y
+  `create(run=False)` con el motor apagado **triunfaba entero**, porque en ese camino nadie leía el
+  interruptor. Invisible desde HTTP, porque la ruta corta antes; real para cualquier otro llamante.
+- **`matched` sin que nadie hubiera pedido nada.** `verdict.assess` no tenía regla sobre un contrato
+  vacío, así que una comparación sin intención podía contestar la palabra que significa «el encargo
+  está hecho» cuando nadie hizo encargo. Ahora eso es `partial`: la comparación salió bien, lo que
+  está vacío es el veredicto sobre la intención.
+
+Y el quinto no lo encontró ninguna prueba, sino el navegador, que es la razón de abrirlo siempre:
+**una comparación bloqueaba la aplicación entera**. Los manejadores son `async def` y llamaban al
+servicio en línea, así que apuntar el motor a dos checkpoints de este repositorio —minutos de CPU
+recorriendo y parseando el árbol— retenía el bucle de eventos. El síntoma no era «los deltas van
+lentos»: era que **todas** las peticiones de la aplicación se ponían en cola detrás de una, la
+pantalla se quedaba en esqueletos para siempre y el log del servidor dejaba de escribir. Ninguna
+prueba podía verlo, porque una prueba nunca tiene una segunda petición. Arreglado con
+`asyncio.to_thread`, como ya hacía el verificador del consejo, y fijado con una prueba de cableado
+que lee el fuente — porque el arreglo es un `await` que una edición futura puede deshacer sin romper
+nada visible.
+
+Y uno de propina, fuera del plan: probando la cuarentena del almacén nuevo salió que el patrón
+`_connect` **deja la conexión sqlite abierta** cuando falla la sonda `SELECT count(*) FROM
+sqlite_master`. En Windows eso hace que el `os.replace` de la cuarentena falle con `WinError 32`, así
+que un fichero corrupto degrada a un warning, se queda donde estaba y **todas las aperturas
+siguientes fallan igual para siempre**. Estaba en `src/state_mirror/persistence.py`; corregido allí
+también. El consejo ya lo hacía bien.
+
+### 58.5 Cableado hacia fuera
+
+- **Context Engine**: `SOURCE_TYPES` reservaba `"delta"` desde el plan 1 — y una palabra reservada es
+  la forma más convincente de estar desconectado, porque `/context` la lista como declarada y nadie
+  la sirve. Ahora hay `adapters/deltas.py` registrado en los cuatro sitios, con `handles =
+  ("delta:",)` y sección `past_experiences`. Se recuperan **resúmenes y refs**, y el detalle se abre
+  bajo demanda (§1.9.7): un delta con trescientas assertions no puede inundar el presupuesto de
+  contexto. Y el resumen dice el veredicto **y** lo que no se pudo comprobar, porque recuperar un
+  `matched` con cobertura semántica del 20% como si fuera un hecho es cómo una conclusión con
+  reservas se convierte en verdad tres turnos después.
+- **`prove` y ChangeSet**: un delta de código construye un ChangeSet con `intent="implement"` siempre
+  —el más estricto, la misma decisión que tomó el consejo— y lo somete a `changesets.judge()`. El
+  veredicto que vuelve puede **rebajar** el assessment y nunca subirlo, y una `regressed` no la
+  rebaja nadie: una regresión es un hecho sobre el target y se sostiene tanto si la ejecución que lo
+  produjo se pudo probar como si no.
+- **Studio**: pantalla `/deltas` con tres reglas de producto en el propio adaptador. Un `unknown`
+  jamás se pinta como `preserved` —ni con un color parecido ni agrupado con lo verde—; cobertura y
+  confianza son dos columnas y nunca un porcentaje; y una regresión bloqueante aparece entera y
+  arriba, con su invariante, su método y su evidencia.
+- **Ajustes**: `agent_delta_engine` (por defecto **off**) más dos techos, `_max_bytes` y
+  `_max_elements`. El flag apaga **comparar**, no **leer**: un delta ya guardado fue una conclusión
+  registrada honestamente, y apagar el motor es una decisión sobre lo que la máquina puede gastar,
+  nunca una instrucción para esconder lo que se concluyó.
+
+### 58.6 Lo que se decidió no hacer
+
+Imagen, vídeo y audio (fases 4 y 5 del plan) **no están**, y no por falta de tiempo: sus adaptadores
+necesitan evaluadores probabilísticos, y el plan mismo dice que sólo se abren «tras fijar
+honestidad/confidence». La escalera de tiers, los techos de confianza y las reglas de `preserved` son
+justamente esa fijación, y ahora existen. `intent.compile` tampoco llama a ningún modelo: lo que no
+sabe convertir en una condición comprobable va literalmente a `intent.unknowns`, y un contrato con
+unknowns funciona — lo único que no puede es dar `matched`.
+
+### 58.7 Cifras
+
+**281 pruebas propias** en verde repartidas en once ficheros (contratos y núcleo, persistencia,
+eventos, intención, fuentes, código, documentos, workflow, estado, servicio, rutas) más las 23 de la
+auditoría de conexión, la del Context Engine y el check de lógica pura del Studio.
+
+La suite entera: **`17 failed, 11878 passed, 83 skipped, 6 errors` en 11 min 01 s** con
+`-n 6 --dist loadfile`. Comparado como debe compararse —misma carpeta, mismo `data/`, misma lista,
+cambiando sólo el commit— una worktree en `master` da **exactamente los mismos 15** fallos al correr
+esos ficheros en serie: **cero regresiones**. Los otros dos (`test_dispatch_external_runner` y
+`test_agent_progress_ownership`) pasan en serie y son la contención de `-n 6` que `PENDIENTES.md` ya
+nombra.
+
+`tsc --noEmit` limpio, build del Studio limpio, `scripts/i18n_es.py --check` a cero, y en el
+navegador contra el servidor real: dos comparaciones de ficheros de verdad de este repositorio,
+guardadas, listadas y abiertas — con el bloque «What had to hold» pintando
+`security.network_not_widened` como **not checked / blocking / not measured** y la frase que resume
+el subsistema entero: *nothing measured this, so nothing is claimed about it. It is not evidence
+that the property held.*
+
 ## Cómo mantener este documento
 Cada bloque de trabajo añade una sección (fecha, qué, por qué, ficheros, cómo se verificó, cifras) y actualiza las cifras de cabecera (`git log --oneline c9dd68d8..HEAD | wc -l`, `git diff --stat c9dd68d8..HEAD`). Los commits del fork llevan mensajes largos que explican el porqué: `git log c9dd68d8..HEAD` es la fuente detallada.

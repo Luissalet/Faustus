@@ -84,6 +84,21 @@ EVENT_NAMES = (
     "state_entity_retired", "state_reconcile_started",
     "state_reconcile_completed", "state_source_degraded",
     "state_source_recovered", "state_error",
+    # Universal Delta Engine. The plan writes these two ways -- §1.8 with an
+    # underscore and §24 with a dot -- and this tuple already carries three
+    # underscored blocks, so the dot loses. `src/delta_engine/events.py::
+    # DELTA_EVENTS` must stay a SUBSET of this tuple, for the reason the two
+    # comments above give: a name declared there and missing here reaches a
+    # page and is then refused by the envelope an audit replays it through.
+    # `delta_inconclusive` is separate from `delta_completed` on purpose: a
+    # comparison that could not see enough to answer is not a comparison that
+    # finished, and a consumer waiting for one should not be woken by the
+    # other.
+    "delta_requested", "delta_intent_compiled", "delta_source_resolved",
+    "delta_extraction_completed", "delta_assertion_created",
+    "delta_invariant_checked", "delta_regression_detected",
+    "delta_coverage_computed", "delta_completed", "delta_inconclusive",
+    "delta_reclassified", "delta_invalidated", "delta_error",
 )
 
 _REDACTED = "<redacted>"

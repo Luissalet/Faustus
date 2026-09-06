@@ -49,6 +49,14 @@ COUNCIL_DB = os.path.join(DATA_DIR, "council.db")
 # — it is a read model of state that lives elsewhere — so losing it costs a
 # rebuild from the sources, never a fact.
 STATE_MIRROR_DB = os.path.join(DATA_DIR, "state_mirror.db")
+# The Delta Engine keeps its own file for a third reason again: what it stores
+# is an INTERPRETATION with a long life. A delta is the record of what a
+# comparison concluded at a moment, against two hashes, with named extractor
+# versions — a council decision or a proof can point at one months later, and
+# it must still read the same. Mixing that into a store that gets rebuilt would
+# make history depend on a cache. Nothing here holds a blob: evidence lives in
+# the Artifact Store and only its reference is written down.
+DELTA_ENGINE_DB = os.path.join(DATA_DIR, "delta_engine.db")
 SCHEDULED_EMAILS_DB = os.path.join(DATA_DIR, "scheduled_emails.db")
 EMAIL_CACHE_DB = os.path.join(DATA_DIR, "email_cache.db")
 

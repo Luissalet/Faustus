@@ -997,6 +997,19 @@ app.include_router(setup_council_routes())
 from routes.state_mirror_routes import setup_state_mirror_routes
 app.include_router(setup_state_mirror_routes())
 
+# Universal Delta Engine: what changed between two immutable revisions, which
+# of it was asked for, which of it was collateral, and what could not be
+# compared at all (src/delta_engine/). Admin, and owner-scoped inside that:
+# another owner's delta answers 404, never 403. The `agent_delta_engine` flag
+# gates only the three endpoints that COST this machine a re-read and a
+# re-parse of both sides (POST /, /{id}/run, /intent/compile); every read keeps
+# answering, because a delta already stored was a conclusion recorded honestly.
+# Reclassifying is additionally require_human: it is how a regression becomes a
+# required change, and a model that could call it could reinterpret its way out
+# of every finding against it.
+from routes.delta_engine_routes import setup_delta_engine_routes
+app.include_router(setup_delta_engine_routes())
+
 # Provenance graph: the 2D audit view over the memory and the workspace, built
 # from declared edges only — never one a model asserted (src/provenance_graph.py).
 from routes.provenance_routes import setup_provenance_routes
@@ -1247,6 +1260,13 @@ async def serve_state_mirror(request: Request):
     """Studio State Mirror: what is true right now, when we last looked and how
     we know. Every value on it carries its age, and a stale one is never drawn
     as the current state."""
+    return await serve_index(request)
+
+@app.get("/deltas")
+async def serve_deltas(request: Request):
+    """Studio Deltas: what changed between two revisions, whether it is what
+    was asked for, and how well we know. What nobody checked is never drawn as
+    what held, and coverage and confidence stay two separate columns."""
     return await serve_index(request)
 
 @app.get("/context")
