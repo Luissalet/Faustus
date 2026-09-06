@@ -2021,6 +2021,7 @@ Max tokens: no limit	Máx. tokens: sin límite
 Max. tokens per report	Máx. tokens por informe
 Maximum reply tokens.	Máximo de tokens de respuesta.
 May split its work between further workers, up to the depth ceiling.	Puede repartir su trabajo entre más workers, hasta el techo de profundidad.
+Measured here, from the stream. The server gives its own figure when the turn ends.	Medido aquí, a partir del stream. El servidor da su propia cifra al terminar el turno.
 Measures this model against the free VRAM and fills num_ctx and num_gpu.	Mide este modelo contra la VRAM libre y rellena num_ctx y num_gpu.
 Media	Medios
 Medium	Media
@@ -3079,6 +3080,7 @@ Runners	Runners
 Running	Ejecutando
 Running `{cmd}`…	Ejecutando `{cmd}`…
 Running a command	Ejecutando un comando
+Running a tool	Usando una herramienta
 Running right now	En marcha ahora mismo
 Running tests	Ejecutando tests
 Running {name} setup on {where}…	Ejecutando la instalación de {name} en {where}…
@@ -4134,6 +4136,7 @@ Wait for the current turn to finish before delegating.	Espera a que termine el t
 Wait for the delegation to finish before repeating a worker.	Espera a que termine la delegación antes de repetir un worker.
 Waiting for its turn	Esperando su turno
 Waiting for its turn (#{n})	Esperando su turno (#{n})
+Waiting for the model	Esperando al modelo
 Waiting for you	Esperándote
 Waiting for you to authorise it…	Esperando a que lo autorices…
 Waiting for your approval	Esperando tu aprobación
@@ -4306,6 +4309,7 @@ Write what should fill the masked area.	Escribe qué debe rellenar la zona enmas
 Write your note…	Escribe tu nota…
 Writes it big.	Lo escribe en grande.
 Writes refused by the file locks	Escrituras rechazadas por los bloqueos de fichero
+Writing	Escribiendo
 Writing style	Estilo de escritura
 Writing the report — {n} sources	Escribiendo el informe — {n} fuentes
 Writing…	Escribiendo…
@@ -5196,6 +5200,7 @@ yours	tuyo
 {n} thread	{n} hilo
 {n} threads	{n} hilos
 {n} throwaway deleted	{n} de usar y tirar borradas
+{n} tok/s over the whole turn	{n} tok/s de media del turno
 {n} token	{n} token
 {n} tokens	{n} tokens
 {n} tokens generated	{n} tokens generados

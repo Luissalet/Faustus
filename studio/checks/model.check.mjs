@@ -144,5 +144,64 @@ assert(plain.steps.length === 0 && plain.summary === undefined, 'a chat turn res
   assert(withAnswer.approval.decision === 'approve', 'and the decision is still recorded');
 }
 
+// ── El latido: qué está haciendo el turno y a cuánto va ──
+// La velocidad se mide por los huecos ENTRE los trozos que llegan, así que un
+// buffer reproducido de golpe (reenganche a un run vivo) no puede inventarse
+// 5.000 tok/s, y una espera de herramienta no puede hundirla a cero.
+{
+  let live = m.newLive(1000);
+  assert(m.liveTps(live) === null, 'sin trozos todavia no hay velocidad que decir');
+
+  // Cuarenta milisegundos por trozo = 25 tok/s.
+  for (let i = 1; i <= 6; i++) live = m.liveToken(live, 1000 + i * 40, false);
+  const tps = m.liveTps(live);
+  assert(tps !== null && Math.abs(tps - 25) < 0.5, `40 ms por trozo se leen como 25 tok/s (leido: ${tps})`);
+  assert(live.tokens === 6 && live.phase === 'writing', 'seis trozos, escribiendo');
+
+  // Un buffer reproducido llega sin huecos: no cuenta como decodificacion.
+  let replay = m.newLive(0);
+  for (let i = 1; i <= 50; i++) replay = m.liveToken(replay, i, false);
+  assert(replay.tokens === 50 && m.liveTps(replay) === null, 'un replay no inventa una velocidad');
+
+  // Una espera larga (herramienta, prefill, cola) tampoco entra en la media.
+  const before = m.liveTps(live);
+  const afterGap = m.liveToken(live, live.lastTokenAt + 30_000, false);
+  assert(Math.abs(m.liveTps(afterGap) - before) < 0.01, 'treinta segundos parado no cuentan como decodificar');
+
+  // Las fases, y su reloj: cambia solo cuando cambia lo que hace.
+  const thinking = m.liveToken(m.newLive(0), 100, true);
+  assert(thinking.phase === 'thinking', 'un trozo de razonamiento es pensar, no escribir');
+  const tool = m.livePhase(thinking, 500, 'tool', 'Read · a.md');
+  assert(tool.phase === 'tool' && tool.label === 'Read · a.md' && tool.phaseAt === 500, 'la herramienta abre fase con su nombre');
+  const same = m.livePhase(tool, 900, 'tool', 'Read · a.md');
+  assert(same.phaseAt === 500 && same.lastAt === 900, 'la misma fase mantiene su reloj y renueva la senal de vida');
+  const waiting = m.livePhase(same, 1200, 'waiting');
+  assert(waiting.phase === 'waiting' && waiting.phaseAt === 1200, 'al acabar la herramienta se espera al modelo, con reloj nuevo');
+}
+
+// ── Y lo mismo, pero por los eventos de verdad ──
+{
+  const real = Date.now;
+  let clock = 10_000;
+  Date.now = () => clock;
+  try {
+    let t = m.blankTurn('assistant');
+    assert(t.live && t.live.phase === 'waiting', 'un turno recien abierto ya esta esperando al modelo');
+    clock += 500;
+    t = m.apply(t, { type: 'tool_start', tool: 'read_file', command: 'a.md', round: 1 });
+    assert(t.live.phase === 'tool' && t.live.label.startsWith('Read'), 'tool_start dice que herramienta corre');
+    clock += 1200;
+    t = m.apply(t, { type: 'tool_output', tool: 'read_file', command: 'a.md', output: 'ok', exitCode: 0 });
+    assert(t.live.phase === 'waiting', 'con la herramienta hecha, la espera al modelo es la fase visible');
+    for (let i = 0; i < 5; i++) {
+      clock += 50;
+      t = m.apply(t, { type: 'delta', text: 'x', thinking: false });
+    }
+    assert(t.live.phase === 'writing' && Math.abs(m.liveTps(t.live) - 20) < 0.5, 'los deltas dan 20 tok/s');
+  } finally {
+    Date.now = real;
+  }
+}
+
 console.log(failed ? `${failed} CHECK(S) FAILED` : 'ALL OK');
 process.exit(failed ? 1 : 0);

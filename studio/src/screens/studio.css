@@ -400,6 +400,26 @@
   font-size: var(--fs-label-size);
 }
 
+/* The heartbeat of a turn in flight: what it is doing, since when, and — while
+   the model is decoding — how fast. The dots are written into the spans, so the
+   gap here is only the breathing room after the pulse. */
+.fs-studio__live {
+  gap: var(--fs-space-1);
+  font-variant-numeric: tabular-nums;
+}
+
+.fs-studio__live-what {
+  min-inline-size: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* A tool has a name worth reading; "waiting for the model" has not. */
+.fs-studio__live[data-phase='tool'] .fs-studio__live-what {
+  color: var(--fs-text-2);
+}
+
 .fs-turn__speaker {
   margin: 0 0 var(--fs-space-1);
   font-size: 10px;

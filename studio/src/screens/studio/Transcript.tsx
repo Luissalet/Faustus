@@ -7,7 +7,7 @@ import { Rich } from '../rich';
 import { splitMentions } from '../../lib/mentions';
 import { safeExternal } from '../../lib/markdown';
 import { stripExecutedFences, toolFenceRegex } from '../../lib/fences';
-import { formatMetrics, type Step, type Turn } from './model';
+import { formatMetrics, liveTps, type LiveRate, type Step, type Turn } from './model';
 import { t, tn } from '../../i18n';
 import { getDisplay } from '../../shell/display';
 
@@ -553,7 +553,6 @@ function AssistantTurn({
   onRerun?: TranscriptProps['onRerun'];
   onFork?: () => void;
 }) {
-  const waiting = turn.streaming && !turn.text && turn.steps.length === 0;
   // The tool call has already run and is in the rail; its fence is leftovers.
   const fences = useFenceRegex();
   const body = stripExecutedFences(turn.text, fences);
@@ -587,11 +586,6 @@ function AssistantTurn({
           </Suspense>
         )}
         {turn.research && !turn.research.done && turn.streaming && <ResearchLine research={turn.research} />}
-        {waiting && !turn.thinking && !turn.research && (
-          <p className="fs-studio__waiting" aria-live="polite">
-            <span className="fs-studio__pulse" /> Pensando
-          </p>
-        )}
         {body && <Rich text={body} />}
         {turn.streaming && body && <span className="fs-studio__cursor" aria-hidden="true" />}
         {turn.images.map((url) => (
@@ -631,6 +625,9 @@ function AssistantTurn({
           </p>
         )}
         {turn.ledger && <Ledger ledger={turn.ledger} />}
+        {/* The heartbeat, last of all: it sits exactly where the turn's own
+            numbers will appear when it finishes. */}
+        {turn.streaming && turn.live && !(turn.research && !turn.research.done) && <LiveLine live={turn.live} />}
         {!turn.streaming && (
           <div className="fs-turn__foot">
             {turn.metrics && (
@@ -654,6 +651,55 @@ function AssistantTurn({
         )}
       </div>
     </article>
+  );
+}
+
+/**
+ * What the turn is doing right now, and how fast.
+ *
+ * A turn between two tool calls emits nothing the transcript drew: the rail
+ * showed three finished reads and then silence, which is exactly what a dead
+ * turn looks like. This line is the heartbeat — it names the phase, keeps a
+ * clock on it, and while the model is decoding it says the speed.
+ *
+ * The speed is measured here, from the gaps between the chunks that arrive,
+ * so it carries a `~`. The server's own figure lands in the footer when the
+ * turn ends, and that one is the number of record.
+ */
+function LiveLine({ live }: { live: LiveRate }) {
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const timer = window.setInterval(() => tick((n) => n + 1), 500);
+    return () => window.clearInterval(timer);
+  }, []);
+  const decoding = live.phase === 'thinking' || live.phase === 'writing';
+  const tps = decoding ? liveTps(live) : null;
+  const secs = Math.max(0, Math.floor((Date.now() - live.phaseAt) / 1000));
+  const clock = `${String(Math.floor(secs / 60)).padStart(2, '0')}:${String(secs % 60).padStart(2, '0')}`;
+  const what =
+    live.phase === 'tool'
+      ? live.label || t('Running a tool')
+      : live.phase === 'thinking'
+        ? t('Thinking')
+        : live.phase === 'writing'
+          ? t('Writing')
+          : t('Waiting for the model');
+  return (
+    <p className="fs-studio__waiting fs-studio__live" data-phase={live.phase} data-testid="turn-live">
+      <span className="fs-studio__pulse" aria-hidden="true" />
+      <span className="fs-studio__live-what" role="status">
+        {what}
+      </span>
+      {tps !== null && (
+        <span
+          className="fs-studio__clock"
+          title={t('Measured here, from the stream. The server gives its own figure when the turn ends.')}
+        >
+          · ~{tps.toFixed(1)} tok/s
+        </span>
+      )}
+      <span className="fs-studio__clock"> · {clock}</span>
+    </p>
   );
 }
 

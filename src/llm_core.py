@@ -49,6 +49,26 @@ def _normalize_usage_counts(input_value=0, output_value=0):
     }
 
 
+def _ollama_rate(count, duration_ns) -> Optional[float]:
+    """Tokens per second from Ollama's own counters, or None.
+
+    Ollama reports `eval_count` / `eval_duration` (nanoseconds) on the final
+    chunk of a native `/api/chat` stream: the same pure-decode speed llama.cpp
+    calls `predicted_per_second`. A malformed or zero pair yields nothing
+    rather than a made-up number — the caller then falls back to wall-clock
+    and says so (`tps_source`).
+    """
+    if isinstance(count, bool) or isinstance(duration_ns, bool):
+        return None
+    if not isinstance(count, (int, float)) or not isinstance(duration_ns, (int, float)):
+        return None
+    if not math.isfinite(count) or not math.isfinite(duration_ns):
+        return None
+    if count <= 0 or duration_ns <= 0:
+        return None
+    return round(count / (duration_ns / 1_000_000_000), 2)
+
+
 def _normalize_http_status(value) -> Optional[int]:
     """Accept only genuine three-digit integral HTTP status values."""
 
@@ -3255,6 +3275,22 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                                 j.get("eval_count", 0),
                             )
                             if normalized_usage:
+                                # Ollama's own timings, in nanoseconds. This is the
+                                # same pure-decode figure llama.cpp reports as
+                                # predicted_per_second, and it was being thrown
+                                # away: without it the UI falls back to
+                                # tokens/wall-clock, which over an agent turn also
+                                # divides by the prefill and the tool time. Seen
+                                # live (07-09-2026): a model decoding at ~50 t/s
+                                # displayed as 0.7 t/s over three rounds.
+                                _gen_tps = _ollama_rate(j.get("eval_count"), j.get("eval_duration"))
+                                if _gen_tps:
+                                    normalized_usage["gen_tps"] = _gen_tps
+                                _pre_tps = _ollama_rate(
+                                    j.get("prompt_eval_count"), j.get("prompt_eval_duration")
+                                )
+                                if _pre_tps:
+                                    normalized_usage["prefill_tps"] = _pre_tps
                                 _annotate_usage_model(
                                     normalized_usage,
                                     model,

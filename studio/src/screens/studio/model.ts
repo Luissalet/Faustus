@@ -118,6 +118,8 @@ export interface Turn {
   speaker?: string;
   /** Deep Research running before the answer: the phase it is in. */
   research?: { phase: string; round: number; totalSources: number; message: string; startedAt: number; avgDuration: number; done: boolean };
+  /** Decoding speed measured from the stream, while it is still arriving. */
+  live?: LiveRate;
   error?: string;
   edited?: boolean;
   /** The reliability harness: what it checked, and what really happened. */
@@ -131,6 +133,79 @@ export interface Turn {
   /** Sub-agents of this turn's delegate_agents calls, in arrival order. */
   workers: Worker[];
   streaming: boolean;
+}
+
+/* ── What the turn is doing right now, and how fast ── */
+
+/**
+ * A turn in flight, measured in the browser.
+ *
+ * Two things were invisible while a turn ran: **what** it was doing between
+ * two tool calls (the rail showed three finished reads and then nothing, so
+ * a live turn looked identical to a dead one) and **how fast** it was going
+ * (the speed only existed in the footer, once it no longer mattered).
+ *
+ * The speed is measured the only way a browser can: the gaps between the
+ * chunks that arrive. It is an estimate and it says so with a `~` — one
+ * chunk is one token in every backend we serve, but not a promise — and the
+ * server's own figure (`tokens_per_second`, taken from the backend's decode
+ * timings when it reports them) replaces it in the footer when the turn ends.
+ */
+export interface LiveRate {
+  /** Chunks received: near enough to output tokens to show with a `~`. */
+  tokens: number;
+  /** The last few gaps between chunks, in ms: the speed is their average. */
+  recent: number[];
+  /** When the last chunk arrived. */
+  lastTokenAt: number;
+  /** When anything at all last happened: the sign of life. */
+  lastAt: number;
+  /** What it is doing right now, and since when. */
+  phase: 'waiting' | 'thinking' | 'writing' | 'tool';
+  phaseAt: number;
+  /** The tool's label, while the phase is a tool. */
+  label?: string;
+}
+
+/** Gaps outside this range are not decoding: a replayed buffer arrives with
+ *  no gap at all, and anything slower is a tool, a prefill or a queue. */
+const GAP_MIN_MS = 3;
+const GAP_MAX_MS = 4_000;
+/** Enough to be steady, short enough to still be "right now". */
+const RECENT = 40;
+
+export function newLive(now: number): LiveRate {
+  return { tokens: 0, recent: [], lastTokenAt: 0, lastAt: now, phase: 'waiting', phaseAt: now };
+}
+
+/** Tokens per second right now, or null while there is nothing honest to say. */
+export function liveTps(live: LiveRate | undefined): number | null {
+  if (!live || live.recent.length < 3) return null;
+  const mean = live.recent.reduce((a, b) => a + b, 0) / live.recent.length;
+  return mean > 0 ? 1000 / mean : null;
+}
+
+/** One chunk of generated text: counts it and times the gap before it. */
+export function liveToken(live: LiveRate, now: number, thinking: boolean): LiveRate {
+  const gap = live.lastTokenAt ? now - live.lastTokenAt : 0;
+  const recent =
+    gap >= GAP_MIN_MS && gap <= GAP_MAX_MS ? [...live.recent, gap].slice(-RECENT) : live.recent;
+  const phase = thinking ? 'thinking' : 'writing';
+  return {
+    ...live,
+    tokens: live.tokens + 1,
+    recent,
+    lastTokenAt: now,
+    lastAt: now,
+    phase,
+    phaseAt: live.phase === phase ? live.phaseAt : now,
+  };
+}
+
+/** Anything else that happened: a new phase, or just a sign of life. */
+export function livePhase(live: LiveRate, now: number, phase: LiveRate['phase'], label?: string): LiveRate {
+  const same = live.phase === phase && live.label === label;
+  return { ...live, lastAt: now, phase, label, phaseAt: same ? live.phaseAt : now };
 }
 
 let counter = 0;
@@ -151,6 +226,7 @@ export function blankTurn(role: Turn['role'], text = ''): Turn {
     checks: [],
     workers: [],
     streaming: role === 'assistant',
+    live: role === 'assistant' ? newLive(Date.now()) : undefined,
   };
 }
 
@@ -354,7 +430,17 @@ export function formatMetrics(m: TurnMetrics): string {
   const parts: string[] = [];
   if (m.model) parts.push(m.model);
   if (m.outputTokens !== undefined) parts.push(`${m.outputTokens} tok`);
-  if (m.tokensPerSecond !== undefined) parts.push(`${m.tokensPerSecond.toFixed(1)} tok/s`);
+  // A backend that reports its decode timings gives the speed the model was
+  // actually writing at. Without them the server divides the tokens by the
+  // whole turn — prefill, tools and all — and calling that "tok/s" next to a
+  // live meter reading fifty times more is how a number stops being believed.
+  if (m.tokensPerSecond !== undefined) {
+    parts.push(
+      m.tpsSource === 'computed'
+        ? t('{n} tok/s over the whole turn', { n: m.tokensPerSecond.toFixed(1) })
+        : `${m.tokensPerSecond.toFixed(1)} tok/s`,
+    );
+  }
   if (m.responseTime !== undefined) parts.push(`${m.responseTime.toFixed(1)} s`);
   if (m.contextPercent !== undefined) parts.push(`${t('context')} ${Math.round(m.contextPercent)}%`);
   return parts.join(' · ');
@@ -367,31 +453,43 @@ function lastRunning(steps: Step[], tool: string): number {
   return -1;
 }
 
-/** Applies one stream event to the assistant turn at the end of the list. */
+/**
+ * Applies one stream event to the assistant turn at the end of the list.
+ *
+ * Every event also feeds the live meter (`turn.live`): what the turn is
+ * doing and how fast. A turn between two tool calls emits nothing the
+ * transcript used to draw, and silence is exactly what a dead turn looks
+ * like, so "nothing to draw" is itself worth drawing.
+ */
 export function apply(turn: Turn, event: ChatEvent): Turn {
+  const now = Date.now();
+  const live = turn.live ?? newLive(now);
   switch (event.type) {
     case 'delta':
       return event.thinking
-        ? { ...turn, thinking: turn.thinking + event.text }
-        : { ...turn, text: turn.text + event.text };
+        ? { ...turn, thinking: turn.thinking + event.text, live: liveToken(live, now, true) }
+        : { ...turn, text: turn.text + event.text, live: liveToken(live, now, false) };
     case 'tool_start': {
+      const label = stepLabel(event.tool, event.command);
+      const busy = livePhase(live, now, 'tool', label);
       // After an approval the server replays the same tool's start: the
       // step that was waiting becomes the one that runs, not a twin.
       const held = turn.steps.findIndex((s) => s.state === 'waiting' && s.tool === event.tool);
       if (held !== -1) {
         const steps = turn.steps.slice();
         steps[held] = { ...steps[held], state: 'running', meta: undefined };
-        return { ...turn, steps };
+        return { ...turn, steps, live: busy };
       }
       return {
         ...turn,
+        live: busy,
         rounds: Math.max(turn.rounds, event.round),
         steps: [
           ...turn.steps,
           {
             id: uid('step'),
             tool: event.tool,
-            label: stepLabel(event.tool, event.command),
+            label,
             state: 'running',
             command: event.fullCommand ?? event.command,
             round: event.round,
@@ -401,10 +499,13 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
     }
     case 'tool_progress': {
       const index = lastRunning(turn.steps, event.tool);
-      if (index === -1) return turn;
+      // Still the same tool, but this is the proof it is alive: a long bash
+      // says so every two seconds and nothing else does.
+      const ticking = livePhase(live, now, 'tool', live.label);
+      if (index === -1) return { ...turn, live: ticking };
       const steps = turn.steps.slice();
       steps[index] = { ...steps[index], meta: event.message.slice(0, 60) };
-      return { ...turn, steps };
+      return { ...turn, steps, live: ticking };
     }
     case 'tool_output': {
       const index = lastRunning(turn.steps, event.tool);
@@ -424,10 +525,13 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
       const steps = turn.steps.slice();
       if (index === -1) steps.push(finished);
       else steps[index] = finished;
-      return { ...turn, steps };
+      // The tool is done and the model has been asked again: from here until
+      // its first chunk nothing arrives, and that silence is the stretch that
+      // used to look like a hung turn.
+      return { ...turn, steps, live: livePhase(live, now, 'waiting') };
     }
     case 'round':
-      return { ...turn, rounds: Math.max(turn.rounds, event.round) };
+      return { ...turn, rounds: Math.max(turn.rounds, event.round), live: livePhase(live, now, 'waiting') };
     case 'ask_user': {
       // The tool that needs permission is either still running or was just
       // closed by the server with an empty output (some approval paths emit

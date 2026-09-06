@@ -212,3 +212,87 @@ def test_metrics_fall_back_to_wallclock_without_backend_timings():
     assert m["tokens_per_second"] == 4.2
     assert m["tps_source"] == "computed"
     assert "prefill_tps" not in m
+
+
+# --- Ollama's native timings ------------------------------------------------
+#
+# Seen live (07-09-2026): a qwen3.5:9b writing at ~50 t/s was reported as
+# "0.7 tok/s" in the turn footer. Ollama reports its own decode timings on the
+# final chunk of a native /api/chat stream — `eval_count` / `eval_duration` in
+# nanoseconds, the same figure llama.cpp calls predicted_per_second — and this
+# branch was reading only the token counts and dropping the durations. The
+# caller then fell back to tokens/wall-clock, which over an agent turn divides
+# the tokens by the prefill and the tool time as well.
+
+def _ollama_usage_event(monkeypatch, lines):
+    """Drive stream_llm against a canned NATIVE (NDJSON) Ollama stream."""
+    monkeypatch.setattr(llm_core, "_get_http_client", lambda: _FakeClient(lines))
+    monkeypatch.setattr(llm_core, "_is_host_dead", lambda u: False)
+    monkeypatch.setattr(llm_core, "note_model_activity", lambda *a, **k: None)
+    monkeypatch.setattr(llm_core, "_clear_host_dead", lambda *a, **k: None)
+
+    async def run():
+        usage = None
+        async for chunk in llm_core.stream_llm(
+            "http://127.0.0.1:11434/api/chat",
+            "qwen3.5:9b",
+            [{"role": "user", "content": "hi"}],
+        ):
+            for ln in chunk.split("\n"):
+                ln = ln.strip()
+                if ln.startswith("data: ") and ln[6:] != "[DONE]":
+                    try:
+                        ev = json.loads(ln[6:])
+                    except ValueError:
+                        continue
+                    if ev.get("type") == "usage":
+                        usage = ev["data"]
+        return usage
+
+    return asyncio.run(run())
+
+
+def _ollama_done(**extra):
+    done = {
+        "model": "qwen3.5:9b",
+        "message": {"role": "assistant", "content": ""},
+        "done": True,
+        "done_reason": "stop",
+        "prompt_eval_count": 1200,
+        "eval_count": 136,
+    }
+    done.update(extra)
+    return [
+        json.dumps({"model": "qwen3.5:9b", "message": {"content": "Hola"}, "done": False}),
+        json.dumps(done),
+    ]
+
+
+def test_ollama_native_timings_become_gen_tps(monkeypatch):
+    # 136 tokens in 2.7 s of decoding = 50.37 t/s, whatever the turn took.
+    usage = _ollama_usage_event(monkeypatch, _ollama_done(
+        eval_duration=2_700_000_000,
+        prompt_eval_duration=600_000_000,
+    ))
+    assert usage is not None, "no usage event was emitted"
+    assert usage["input_tokens"] == 1200
+    assert usage["output_tokens"] == 136
+    assert usage["gen_tps"] == 50.37
+    assert usage["prefill_tps"] == 2000.0
+
+
+def test_ollama_without_durations_invents_no_speed(monkeypatch):
+    # An older Ollama (or a proxy that strips the timings) must leave the
+    # caller to its wall-clock fallback rather than get a made-up number.
+    usage = _ollama_usage_event(monkeypatch, _ollama_done())
+    assert usage is not None
+    assert "gen_tps" not in usage
+    assert "prefill_tps" not in usage
+
+
+def test_ollama_zero_and_malformed_durations_are_ignored(monkeypatch):
+    for bad in ({"eval_duration": 0}, {"eval_duration": -5}, {"eval_duration": "fast"},
+                {"eval_duration": True}, {"eval_duration": float("inf")}):
+        usage = _ollama_usage_event(monkeypatch, _ollama_done(**bad))
+        assert usage is not None
+        assert "gen_tps" not in usage, bad

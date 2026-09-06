@@ -61,6 +61,9 @@ export interface TurnMetrics {
   outputTokens?: number;
   inputTokens?: number;
   tokensPerSecond?: number;
+  /** `backend` = the model's own decode timings; `computed` = tokens over the
+   *  turn's wall clock, which also divides by prefill and tool time. */
+  tpsSource?: 'backend' | 'computed';
   contextPercent?: number;
 }
 
@@ -206,6 +209,7 @@ export function metricsFrom(meta: Record<string, unknown>): TurnMetrics {
     outputTokens: num(meta.output_tokens),
     inputTokens: num(meta.input_tokens),
     tokensPerSecond: num(meta.tokens_per_second),
+    tpsSource: meta.tps_source === 'backend' ? 'backend' : meta.tps_source === 'computed' ? 'computed' : undefined,
     contextPercent: num(meta.context_percent),
   };
 }
