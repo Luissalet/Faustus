@@ -679,6 +679,80 @@
   margin-block-start: var(--fs-space-1);
 }
 
+/* The "Effective configuration" dialog.
+
+   Three columns, and the third one -- `from` -- is the column the dialog
+   exists for: a value with no level is a number the reader has to go and
+   re-derive from the definition file. So it may never be the one that falls
+   off the edge. Three things keep it in view: this dialog is wider than a
+   plain confirmation, the columns are DECLARED instead of measured from the
+   content, and anything unbreakable (a sha256 revision, a work root, a
+   permission rule) wraps inside its own cell. */
+
+.fs-dialog:has(.fs-def__effective) {
+  inline-size: min(880px, calc(100vw - var(--fs-space-5) * 2));
+}
+
+.fs-def__effective {
+  display: grid;
+  gap: var(--fs-space-3);
+  min-inline-size: 0;
+}
+
+.fs-def__table {
+  inline-size: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: var(--fs-label-size);
+}
+
+.fs-def__table th {
+  padding: var(--fs-space-1) var(--fs-space-2) var(--fs-space-1) 0;
+  color: var(--fs-text-3);
+  font-weight: 600;
+  text-align: start;
+}
+
+.fs-def__table td {
+  padding: var(--fs-space-1) var(--fs-space-2) var(--fs-space-1) 0;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.fs-def__table tbody tr {
+  border-block-start: 1px solid var(--fs-border);
+}
+
+/* Percentages rather than fixed widths: the dialog is capped by the viewport
+   on a narrow window, and a fixed `from` column would be the first casualty. */
+.fs-def__table th:first-child,
+.fs-def__table td:first-child {
+  inline-size: 20%;
+}
+
+.fs-def__table th:last-child,
+.fs-def__table td:last-child {
+  inline-size: 26%;
+  padding-inline-end: 0;
+}
+
+.fs-def__cell-field {
+  color: var(--fs-text-3);
+}
+
+.fs-def__cell-from {
+  color: var(--fs-text-2);
+}
+
+.fs-def__discarded {
+  display: block;
+  color: var(--fs-text-3);
+}
+
+.fs-def__digest {
+  overflow-wrap: anywhere;
+}
+
 /* ── Expertos ── */
 
 .fs-exp__card-wrap {

@@ -839,6 +839,17 @@ class SubagentRun:
         #: Derived by DelegateAgentsTool before the run starts; None means an
         #: unrestricted worker, i.e. exactly today's behaviour.
         self.permissions: Any = None
+        #: The worker's effective configuration, PINNED before it starts
+        #: (src/agent_profiles/resolver.py, plan §19/§20): the snapshot carries
+        #: the definition's revision, so editing the AGENT.md while the job runs
+        #: cannot change what this worker was started under. None for a task
+        #: that named no definition. `permissions` above is NOT taken from it:
+        #: src/subagent_permissions.py stays the authority on what may run.
+        self.resolution: Optional[Dict[str, Any]] = None
+        #: The resolved completion mode and one sentence of what it means. Read
+        #: into the worker's preamble; depth only, never authority (§3.3).
+        self.completion_mode = ""
+        self.completion_note = ""
         #: The reviewer that runs AFTER everyone bypasses the file locks
         #: because nobody else is still writing. That is a fact about WHEN it
         #: runs, so it is set by the caller that schedules it — never derived
@@ -974,6 +985,10 @@ class SubagentRun:
             **({"agent": self.agent} if self.agent else {}),
             **({"agent_def": self.agent_def} if self.agent_def else {}),
             **({"permissions": self.permissions.to_dict()} if self.permissions is not None else {}),
+            # The configuration this worker started from, as it was pinned. A
+            # run that cannot say what it started from cannot be branched,
+            # compared or reproduced.
+            **({"resolution": self.resolution} if self.resolution else {}),
             # Conditional for the same reason `outcome` is: a worker nothing
             # refused reports exactly the dict it has always reported.
             **({"refusals": [dict(x) for x in self.refusals]} if self.refusals else {}),
@@ -1126,6 +1141,13 @@ async def _run_subagent(
             "\n\nFILES YOU OWN (exclusive — other workers cannot write them, and you must not write "
             "any file owned by another worker): " + ", ".join(run.files[:40])
         )
+    if run.completion_mode:
+        # Depth, never authority (§3.3): the sentence says so out loud, because
+        # a model told it is `maximalist` will otherwise assume it may reach
+        # further than its tools allow and spend a round finding out.
+        preamble += ("\n\nHow far to push (completion mode `" + run.completion_mode + "`): "
+                     + run.completion_note + " This is about DEPTH only: it grants you no tool, "
+                     "no path and no permission you did not already have.")
     if run.permissions is not None:
         blocked = sorted(run.permissions.denied_tools)[:12]
         if blocked:
@@ -1479,6 +1501,76 @@ def _attach_permissions(runs: List["SubagentRun"], ctx: dict, workspace: Optiona
     return ""
 
 
+def _attach_resolution(runs: List["SubagentRun"], workspace: Optional[str],
+                       owner: Optional[str], session_id: Optional[str]) -> None:
+    """Pin each definition-driven worker's effective configuration before it runs.
+
+    Two things come out of this and nothing else does:
+
+    * the SNAPSHOT is fixed on the run (§20). A job queued now must not change
+      behaviour because somebody improves an agent this afternoon, and the only
+      way to promise that is to write down the definition's revision, the model
+      route, the completion mode, the profiles and the effective envelope before
+      the first prompt is built;
+    * the completion mode and the resolved limits replace the loose defaults
+      (§19). The mode reaches the worker's preamble as DEPTH — how far to push —
+      and the two ceilings are folded in with `min`, so a resolution can only
+      ever shorten a worker's run, never lengthen it.
+
+    What it explicitly does NOT do is touch `run.permissions`:
+    `src/subagent_permissions.py` derives those from the parent's own standing
+    plus the definition, and a second computation of the same thing is how two
+    answers to "may this worker write?" get into one process.
+
+    Never raises and never blocks a delegation: a worker whose configuration
+    could not be resolved runs exactly as it does today, with a line in the log.
+    """
+    rows = [r for r in runs if r.agent_def and r.agent]
+    if not rows:
+        return
+    try:
+        from src import agent_defs
+        from src.agent_profiles import resolver
+    except Exception as exc:  # noqa: BLE001 - the resolver is not load-bearing here
+        logger.debug("delegate_agents: agent profiles unavailable: %s", exc)
+        return
+    project_id = ""
+    if session_id:
+        try:
+            from services.projects import project_context_for_session
+            project_id = project_context_for_session(session_id, owner).project_id
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("delegate_agents: project lookup for the resolution failed: %s", exc)
+    try:
+        catalogue = agent_defs.load_all(workspace)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("delegate_agents: definitions unreadable for the resolution: %s", exc)
+        return
+    for run in rows:
+        try:
+            task = {k: v for k, v in (("model", run.model_override),
+                                      ("endpoint_id", run.endpoint_id),
+                                      ("max_rounds", run.max_rounds_override),
+                                      ("timeout_s", run.timeout_s_override)) if v}
+            resolution = resolver.resolve(
+                agent=run.agent, task=task, defs=catalogue, workspace=workspace,
+                scope={"owner": str(owner or ""), "project_id": project_id,
+                       "session_id": str(session_id or "")},
+                instruction=run.instruction)
+            run.resolution = resolver.snapshot(resolution)
+            run.completion_mode = resolution.completion.mode
+            from src.agent_profiles.completion import policy_for
+            run.completion_note = policy_for(resolution.completion.mode).description
+            if resolution.max_rounds:
+                run.max_rounds_override = min(run.max_rounds_override or resolution.max_rounds,
+                                              resolution.max_rounds)
+            if resolution.timeout_s:
+                run.timeout_s_override = min(run.timeout_s_override or resolution.timeout_s,
+                                             resolution.timeout_s)
+        except Exception as exc:  # noqa: BLE001 - a preview is never worth a failed job
+            logger.debug("delegate_agents: %s could not be resolved: %s", run.agent, exc)
+
+
 def _endpoint_for(run: "SubagentRun", default_url: str, owner: Optional[str]) -> str:
     """The endpoint one worker runs on: its definition's `endpoint_id` when
     that id resolves, the coordinator's otherwise.
@@ -1556,6 +1648,10 @@ class DelegateAgentsTool:
         depth_error = _attach_permissions(runs, ctx, workspace, roots)
         if depth_error:
             return {"error": depth_error, "exit_code": 1}
+        # The effective configuration, pinned next to the permissions and
+        # deliberately after them: the resolver contributes the completion mode,
+        # the limits and the record; it never contributes authority.
+        _attach_resolution(runs, workspace, owner, parent_sid)
         # One id per delegate_agents CALL: the board keys its state by it, so
         # a second /agents in the same chat does not pile onto the first.
         delegation_id = uuid.uuid4().hex[:8]
@@ -1783,6 +1879,7 @@ class DelegateAgentsTool:
                 # dropped, because an unrestricted reviewer is the one thing
                 # this slot must never quietly become.
                 logger.warning("delegate_agents: reviewer permissions could not be derived: %s", refused)
+            _attach_resolution([reviewer], workspace, owner, parent_sid)
             try:
                 await _launch(reviewer, max_rounds=max(6, min(args["max_rounds"], 16)))
             except asyncio.CancelledError:

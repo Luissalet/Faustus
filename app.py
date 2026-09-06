@@ -964,6 +964,14 @@ app.include_router(setup_agent_runner_routes())
 from routes.agent_def_routes import setup_agent_def_routes
 app.include_router(setup_agent_def_routes())
 
+# Agent profiles: the orthogonal half of a definition (src/agent_profiles/) —
+# how far a mission pushes, which versioned policies it references, and what
+# the EFFECTIVE configuration of a run would be before anything runs. Reads
+# only, and `POST /resolve` is a preview: it takes the owner from the session
+# and the project from that session's binding, never from the body.
+from routes.agent_profiles_routes import setup_agent_profiles_routes
+app.include_router(setup_agent_profiles_routes())
+
 # Model tournament: the same prompt to N models blind and in parallel, then
 # rounds of explicit fusion over the anonymised answers, then a judged ranking
 # (src/tournament.py). Extends the A/B comparator below, it does not replace it.
