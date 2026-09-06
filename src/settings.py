@@ -368,6 +368,28 @@ DEFAULT_SETTINGS = {
     # them again. Only read while the switch above is on. A longer interval
     # means a service that died is noticed later, not that it is noticed less.
     "agent_state_mirror_sweep_seconds": 30,
+    # Universal Delta Engine (src/delta_engine/): what changed between two
+    # revisions, which of it was asked for, which of it was collateral, and
+    # what could not be compared at all. Default OFF like the two above, and
+    # for a reason of its own: a comparison READS both ends — it re-parses a
+    # tree, re-reads a checkpoint, and on a large repository that is real work
+    # nobody asked for at that moment. Off = /api/deltas refuses to compile an
+    # intent or run a comparison and says so, while every read of a delta
+    # already stored keeps answering: a conclusion recorded honestly stays
+    # readable, because switching the engine off is a decision about what may
+    # cost the machine and never an instruction to hide what was concluded.
+    "agent_delta_engine": False,
+    # The ceiling on how much of one side of a comparison is read into memory.
+    # Past it the adapter stops and the delta says so in `coverage.excluded`
+    # instead of reporting a difference it did not look for — a truncated
+    # comparison that claims completeness is the failure this whole subsystem
+    # exists to prevent, so it is declared and never silent.
+    "agent_delta_engine_max_bytes": 8_000_000,
+    # How many elements (files, symbols, nodes, fields) one comparison aligns
+    # before it stops and declares the rest uncompared. A rename across a
+    # thousand files is a real request; a delta that quietly compares the
+    # first two hundred of them is not an answer to it.
+    "agent_delta_engine_max_elements": 5000,
     # Provenance graph (src/provenance_graph.py): the 2D audit view over the
     # memory and the workspace, built ONLY from declared edges — a dependency
     # the user wrote, an evidence span, a checkpoint diff, a citation that

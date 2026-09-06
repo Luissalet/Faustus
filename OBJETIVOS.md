@@ -693,6 +693,84 @@ del read model y empezar **en sombra**. Lo que falta, en el orden en que el plan
 - [ ] **Fuentes remotas (fase 7).** Webhooks firmados, cursores y reconciliación remota. Ninguna
       fuente de este build sale de la máquina, que es la decisión correcta para empezar.
 
+
+## Universal Delta Engine — lo que queda (P1)
+
+El plan 6 de 11 (`inspiration/PLAN_UNIVERSAL_DELTA_ENGINE_FAUSTUS.md`) está construido hasta la
+**fase 2**: contrato común y modelo de confianza (fase 0), código con AST, símbolos, firmas, imports,
+dependencias y configuración (fase 1), y workflows, skills y estado (fase 2). Está en `FAUSTUS.md`
+§58; lo construido que no cuadra vive en `PENDIENTES.md`.
+
+### Fases 3 a 5: documentos completos, imagen, audio y vídeo (P2)
+
+El adaptador de documentos existe para texto, Markdown y JSON/YAML, y **deliberadamente** no toca
+PDF ni render por página. Los de imagen, audio y vídeo no existen, y el orden importa: el plan dice
+que los adaptadores probabilísticos sólo se abren «tras fijar honestidad/confidence», y esa fijación
+—la escalera de tiers, los techos de confianza, el rechazo de `preserved` sin observación— es
+justo lo que esta fase construyó. Ahora se pueden abrir.
+
+- [ ] **Documentos, fase 3 completa.** Render por página, evidencia por span y por región, y las
+      pruebas de reflujo y cambio de paginación sobre un PDF real. Lo que hay hoy compara estructura,
+      cifras, citas y aritmética de tablas, que es lo que se puede hacer sin render.
+- [ ] **Imagen, fase 4.** Metadatos, hashes, alineación geométrica, máscaras y regiones, color, y
+      evaluadores de identidad y pose **bajo política**. Con overlays de evidencia como artefactos
+      derivados con su hash y su retención, no como imágenes sueltas. El §11 del plan tiene la lista
+      de honestidad que hay que respetar: la similitud perceptual no demuestra identidad, y un
+      detector que no encuentra un objeto no prueba su ausencia.
+- [ ] **Audio y vídeo, fase 5.** Transcripción, waveform, timestamps, planos y keyframes, con
+      análisis adaptativo de los segmentos que cambiaron. Y la regla que el §12 subraya: **nunca
+      afirmar preservación frame-perfect si sólo se muestreó**.
+
+### Del propio motor, lo que las fases cerradas no cierran (P1)
+
+- [ ] **Resolver revisiones de verdad.** `sources.py` no sabe abrir un `artifact`, un `document`, un
+      `blob`, un `state`, un `workflow` ni un `skill`: devuelve `readable=False` con su motivo, que
+      es correcto y limitante. Hoy esos dominios se comparan con `sources.stash()`. Falta el puente
+      al Artifact Store (`src/artifact_identity.py`) y al espejo de estado.
+- [ ] **`correlation_id`.** El campo existe y viaja; nadie lo crea. Decidir dónde nace y propagarlo,
+      o quitarlo — un identificador que siempre vale `""` es peor que ninguno porque parece que
+      funciona. Afecta también al consejo y al espejo, que ya lo llevan en su payload común.
+- [ ] **Un ChangeSet al que apuntar.** Hoy un delta de código guarda `proof_ref` y pierde el
+      ChangeSet que lo produjo. O se persiste el ChangeSet, o se ancla en `(workspace, checkpoint)` —
+      que es durable mientras exista el repositorio en sombra, y `has_checkpoint()` existe justamente
+      para distinguir «no cambió» de «ese sha ya no está».
+- [ ] **Evidencia como artefacto.** Ningún adaptador emite `EvidenceRef` todavía. El §18 quiere
+      overlays, spans y regiones **con hash y retención**, heredando la sensibilidad de la fuente.
+      Es lo que convierte «confía en mí» en «míralo».
+- [ ] **Cobertura de comportamiento.** Siempre 0.0 porque nadie entrega resultados de tests al
+      adaptador. Conectarlo al arnés existente daría la única dimensión que hoy está declarada a cero
+      en todos los deltas.
+- [ ] **Los invariantes de `security` que sólo saben decir `unknown`.** `secrets_not_exposed` no
+      corre ningún escáner de credenciales. Mientras no lo haga, contesta `unknown` — correcto, y
+      poco útil. Hay detector de secretos en el repositorio desde el plan 1; conectarlo.
+- [ ] **Más lenguajes en el adaptador de código.** Hoy el AST es sólo Python; el resto pasa por las
+      regex de `repo_map.symbol_lines`, con tier `algorithm` declarado. El índice estructural del
+      Context Engine (`code_index.py`) ya tiene el mismo problema y la misma solución pendiente.
+
+### Fase 6: intención e invariantes avanzadas (P2)
+
+- [ ] **Perfiles por operación** y tolerancias por dominio, más allá de los cuatro que hoy son
+      descripción (`literal`, `default`, `greedy`, `maximalist`).
+- [ ] **Interpretación asistida de la petición**, versionada y confirmada. Hoy `intent.compile` es
+      determinista y todo lo que no sabe traducir va a `unknowns`, que es la decisión correcta para
+      empezar: un contrato interpretado por un modelo contamina al árbitro. Lo que falta es el paso
+      con confirmación humana, no el paso automático.
+- [ ] **Benchmark multimodal y corpus con cambios sembrados** (§29). Sin él no hay forma de medir
+      precisión y recall de los cambios semánticos, ni de saber cuántos «preserved» son falsos.
+
+### Los consumidores que este motor estaba esperando (P1)
+
+Delta Engine es la pieza de la que cuelgan cuatro de los cinco planes que quedan, y cada uno usa una
+parte distinta:
+
+- **Greedy Completion (plan 7)** — necesita `incidental` y `regression` para saber si seguir,
+  corregir o parar.
+- **Modo Enséñame (plan 8)** — relaciona acciones con efectos antes/después e infiere
+  postcondiciones; el adaptador de estado es su base.
+- **Immune System (plan 9)** — usa el diff de contratos de capacidad para canary y regresión.
+- **Branching Futures (plan 10)** — compara cada rama contra la **misma** base y entre candidatas;
+  el §1.6 avisa: nunca comparar ramas desde bases distintas sin declararlo como limitación material.
+
 ## Descartado a propósito (y por qué)
 
 - Marketplace público de plugins **antes** de tener firma, permisos y revocación.

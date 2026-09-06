@@ -87,11 +87,19 @@ FRESHNESS_FLOOR = 0.15
 
 #: Half-life in days, per source type.  A State Mirror projection is worthless
 #: by tomorrow; a binding decision is not "half true" a month later, which is
-#: why the durable kinds get a half-life longer than any session.
+#: why the durable kinds get a half-life longer than any session.  A ``delta``
+#: sits beside ``objective`` and not beside ``state``, for the distinction this
+#: table exists to make: a delta is the conclusion about two named, IMMUTABLE
+#: revisions and stays true for as long as those two revisions exist — what
+#: decays is its bearing on today's work, as newer revisions land on top of the
+#: pair it compared.  At half a day every comparison older than about two days
+#: would sit on `FRESHNESS_FLOOR`, which does not read as "this is old" but as
+#: "this never happened".
 FRESHNESS_HALF_LIFE_DAYS: Dict[str, float] = {
-    "state": 0.5, "delta": 0.5, "message": 1.0, "finding": 3.0, "web": 3.0,
+    "state": 0.5, "message": 1.0, "finding": 3.0, "web": 3.0,
     "file": 7.0, "symbol": 7.0, "capsule": 7.0, "artifact": 14.0,
-    "objective": 30.0, "memory": 45.0, "block": 60.0, "project_memory": 60.0,
+    "objective": 30.0, "delta": 30.0, "memory": 45.0, "block": 60.0,
+    "project_memory": 60.0,
     "document": 90.0, "experience": 90.0, "expert": 180.0, "recipe": 180.0,
     "decision": 3650.0, "instruction": 3650.0, "capability": 3650.0,
 }

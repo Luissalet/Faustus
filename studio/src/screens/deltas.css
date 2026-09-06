@@ -1,0 +1,596 @@
+/* Deltas: what changed, whether it was asked for, and how well we know.
+
+   The styling holds three rules that are rules of product, not of taste:
+
+   1. `unknown` never LOOKS like `preserved`. The not-checked group carries the
+      warning edge, not a muted version of the good one, and every state is
+      told by a word as well as by a tint -- a reader who cannot see the colour
+      is on this screen precisely because they need to be told.
+   2. Coverage and confidence are drawn in different places on purpose. There
+      is no rule in this file that puts a confidence inside a coverage bar, and
+      an unmeasured axis gets no bar at all, because an empty bar is a zero.
+   3. A blocking finding is a full-width block with its own frame. Nothing here
+      truncates it, and the assertions table scrolls inside its own box rather
+      than letting the page scroll sideways and take the headings with it. */
+
+.fs-dlt {
+  display: grid;
+  gap: var(--fs-space-4);
+  min-inline-size: 0;
+  padding-block-end: var(--fs-space-6);
+}
+
+.fs-dlt__lede {
+  margin-block-start: var(--fs-space-2);
+}
+
+.fs-dlt__muted {
+  min-inline-size: 0;
+  color: var(--fs-text-3);
+  font-size: 11px;
+}
+
+.fs-dlt__mono {
+  font-family: var(--fs-font-mono, ui-monospace, monospace);
+  overflow-wrap: anywhere;
+}
+
+.fs-dlt__grow {
+  overflow: hidden;
+  flex: 1 1 auto;
+  /* A flex item will not shrink below its content unless it is told it may:
+     `min-width` defaults to `auto` on a flex child, so an ellipsis without
+     this is written, correct, and does nothing. A long path ran straight out
+     of its card and across the one beside it. */
+  min-inline-size: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fs-dlt__label {
+  margin: 0;
+  color: var(--fs-text-3);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.fs-dlt__sr {
+  position: absolute;
+  clip-path: inset(50%);
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* ── A word, a tone, and never a colour on its own ── */
+
+.fs-dlt__tag {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  padding: 1px var(--fs-space-2);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-surface-2);
+  color: var(--fs-text-2);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.fs-dlt__tag[data-tone='good'] {
+  border-color: color-mix(in srgb, var(--fs-success) 45%, var(--fs-border));
+  color: var(--fs-success);
+}
+
+.fs-dlt__tag[data-tone='warn'] {
+  border-color: color-mix(in srgb, var(--fs-warning) 45%, var(--fs-border));
+  color: var(--fs-warning);
+}
+
+.fs-dlt__tag[data-tone='bad'] {
+  border-color: color-mix(in srgb, var(--fs-danger) 55%, var(--fs-border));
+  background: color-mix(in srgb, var(--fs-danger) 10%, var(--fs-surface-2));
+  color: var(--fs-danger);
+}
+
+/* `unknown` is its own look and NOT a paler `good`: nothing about "we did not
+   check this" belongs on the same visual scale as "we checked and it held". */
+.fs-dlt__tag[data-tone='unknown'] {
+  border-style: dashed;
+  border-color: var(--fs-border-strong);
+  color: var(--fs-text-3);
+}
+
+.fs-dlt__notice {
+  display: block;
+  margin: 0;
+  padding: var(--fs-space-2) var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-inline-start: 3px solid var(--fs-border-strong);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-2);
+  color: var(--fs-text-2);
+  font-size: var(--fs-label-size);
+}
+
+.fs-dlt__notice[data-tone='warning'] {
+  border-inline-start-color: var(--fs-warning);
+  background: color-mix(in srgb, var(--fs-warning) 8%, var(--fs-surface-2));
+}
+
+/* ── Filters and form rows ── */
+
+.fs-dlt__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-3);
+  align-items: end;
+  min-inline-size: 0;
+  padding: var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-1);
+}
+
+.fs-dlt__row {
+  display: grid;
+  gap: 4px;
+  min-inline-size: 0;
+  color: var(--fs-text-2);
+  font-size: var(--fs-label-size);
+}
+
+.fs-dlt__row > span {
+  color: var(--fs-text-3);
+  font-size: 11px;
+}
+
+.fs-dlt__textarea {
+  block-size: auto;
+  min-block-size: var(--fs-control-sm);
+  padding: var(--fs-space-2) var(--fs-space-3);
+  resize: vertical;
+}
+
+.fs-dlt__form {
+  display: grid;
+  gap: var(--fs-space-3);
+  min-inline-size: 0;
+}
+
+/* ── The list ── */
+
+.fs-dlt__list {
+  display: grid;
+  gap: var(--fs-space-2);
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  min-inline-size: 0;
+}
+
+.fs-dlt__card {
+  display: grid;
+  gap: 6px;
+  min-inline-size: 0;
+  padding: var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-inline-start: 3px solid var(--fs-border-strong);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-2);
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.fs-dlt__card:hover,
+.fs-dlt__card:focus-visible {
+  border-color: var(--fs-border-strong);
+  background: var(--fs-surface-3, var(--fs-surface-2));
+}
+
+/* Tinted by the verdict. `inconclusive` gets the neutral edge and not the
+   amber one: an amber card reads as "it mostly worked", and it means "we could
+   not tell you". */
+.fs-dlt__card[data-tone='good'] { border-inline-start-color: var(--fs-success); }
+.fs-dlt__card[data-tone='warn'] { border-inline-start-color: var(--fs-warning); }
+.fs-dlt__card[data-tone='bad'] { border-inline-start-color: var(--fs-danger); }
+.fs-dlt__card[data-tone='unknown'] { border-inline-start-color: var(--fs-border-strong); }
+
+.fs-dlt__card-top,
+.fs-dlt__card-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-2);
+  align-items: center;
+  /* Both here AND on the ellipsised child: one without the other does nothing. */
+  min-inline-size: 0;
+}
+
+.fs-dlt__domain {
+  color: var(--fs-text-2);
+  font-family: var(--fs-font-mono, ui-monospace, monospace);
+  font-size: 11px;
+}
+
+/* ── The two ends of the comparison ── */
+
+.fs-dlt__revisions {
+  display: flex;
+  gap: var(--fs-space-2);
+  align-items: center;
+  min-inline-size: 0;
+}
+
+.fs-dlt__rev {
+  overflow: hidden;
+  flex: 1 1 0;
+  min-inline-size: 0;
+  color: var(--fs-text-1);
+  font-family: var(--fs-font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fs-dlt__arrow {
+  flex: 0 0 auto;
+  color: var(--fs-text-3);
+}
+
+/* ── The counts, with the unknowns amongst them ── */
+
+.fs-dlt__counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-2);
+  min-inline-size: 0;
+}
+
+.fs-dlt__count {
+  color: var(--fs-text-3);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.fs-dlt__count[data-tone='bad'] {
+  color: var(--fs-danger);
+  font-weight: 600;
+}
+
+/* Not-checked is amber and never the quiet grey of a zero: a reader skimming
+   the counts has to see that something was left unexamined. */
+.fs-dlt__count[data-tone='warn'] {
+  color: var(--fs-warning);
+  font-weight: 600;
+}
+
+/* ── The detail ── */
+
+.fs-dlt__detail {
+  display: grid;
+  gap: var(--fs-space-4);
+  min-inline-size: 0;
+}
+
+.fs-dlt__detail-head {
+  display: grid;
+  gap: var(--fs-space-2);
+  min-inline-size: 0;
+  padding: var(--fs-space-4);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-1);
+}
+
+.fs-dlt__verdict {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-2);
+  align-items: center;
+  min-inline-size: 0;
+}
+
+.fs-dlt__block {
+  display: grid;
+  gap: var(--fs-space-3);
+  min-inline-size: 0;
+  padding: var(--fs-space-4);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-1);
+}
+
+.fs-dlt__block[data-tone='bad'] {
+  border-color: color-mix(in srgb, var(--fs-danger) 40%, var(--fs-border));
+  background: color-mix(in srgb, var(--fs-danger) 4%, var(--fs-surface-1));
+}
+
+.fs-dlt__title {
+  margin: 0;
+  font-size: var(--fs-heading-size, 15px);
+  font-weight: 650;
+}
+
+.fs-dlt__stack {
+  display: grid;
+  gap: var(--fs-space-2);
+  min-inline-size: 0;
+}
+
+.fs-dlt__group {
+  display: grid;
+  gap: var(--fs-space-2);
+  min-inline-size: 0;
+  padding-block-start: var(--fs-space-2);
+  border-block-start: 1px solid var(--fs-border-subtle, var(--fs-border));
+}
+
+.fs-dlt__group-head {
+  display: flex;
+  gap: var(--fs-space-2);
+  align-items: baseline;
+  min-inline-size: 0;
+}
+
+.fs-dlt__group-title {
+  margin: 0;
+  font-size: var(--fs-label-size);
+  font-weight: 650;
+}
+
+/* The heading of each group carries its own edge. Not-checked gets the warning
+   edge and the good news gets the success one: they are never two shades of
+   the same colour, because the whole point is that they are different answers. */
+.fs-dlt__group[data-classification='regression'] .fs-dlt__group-title { color: var(--fs-danger); }
+.fs-dlt__group[data-classification='unknown'] .fs-dlt__group-title { color: var(--fs-warning); }
+.fs-dlt__group[data-classification='preserved'] .fs-dlt__group-title { color: var(--fs-success); }
+
+/* ── A blocking finding, whole ── */
+
+.fs-dlt__blocking {
+  display: grid;
+  gap: var(--fs-space-2);
+  min-inline-size: 0;
+  padding: var(--fs-space-3);
+  border: 1px solid color-mix(in srgb, var(--fs-danger) 45%, var(--fs-border));
+  border-radius: var(--fs-radius-control);
+  background: color-mix(in srgb, var(--fs-danger) 7%, var(--fs-surface-2));
+}
+
+.fs-dlt__beforeafter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-2);
+  align-items: center;
+  min-inline-size: 0;
+  font-family: var(--fs-font-mono, ui-monospace, monospace);
+  font-size: 11px;
+}
+
+/* The old value is struck through as well as tinted: two signals, because a
+   reader who cannot see the colour still has to know which of the two is gone. */
+.fs-dlt__was {
+  color: var(--fs-text-3);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+.fs-dlt__now {
+  color: var(--fs-text-1);
+  font-weight: 600;
+}
+
+/* ── Invariants ── */
+
+.fs-dlt__invariant {
+  display: grid;
+  gap: 4px;
+  min-inline-size: 0;
+  padding: var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-inline-start: 3px solid var(--fs-border-strong);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-2);
+  font-size: var(--fs-label-size);
+}
+
+.fs-dlt__invariant[data-status='violated'] { border-inline-start-color: var(--fs-danger); }
+.fs-dlt__invariant[data-status='preserved'] { border-inline-start-color: var(--fs-success); }
+/* Dashed, and amber: a property nobody could check is not a paler version of
+   one that held, it is a different kind of answer and it is drawn as one. */
+.fs-dlt__invariant[data-status='unknown'] {
+  border-inline-start-color: var(--fs-warning);
+  border-inline-start-style: dashed;
+}
+
+.fs-dlt__observations,
+.fs-dlt__evidence,
+.fs-dlt__gaps {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding-inline-start: var(--fs-space-4);
+  color: var(--fs-text-3);
+  font-size: 11px;
+}
+
+.fs-dlt__evidence {
+  padding-inline-start: 0;
+  list-style: none;
+}
+
+.fs-dlt__evidence li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-2);
+  align-items: baseline;
+  min-inline-size: 0;
+}
+
+.fs-dlt__kind {
+  padding: 0 6px;
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-pill);
+  color: var(--fs-text-2);
+}
+
+/* ── The assertions table ──
+   It scrolls inside its own box. A page that scrolled sideways as a whole
+   would take the group headings with it, and those headings are the only
+   thing telling a reader whether the row in front of them was asked for. */
+
+.fs-dlt__scroll {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  overflow-x: auto;
+}
+
+.fs-dlt__table {
+  inline-size: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.fs-dlt__table th {
+  padding: var(--fs-space-2);
+  border-block-end: 1px solid var(--fs-border);
+  color: var(--fs-text-3);
+  font-weight: 600;
+  text-align: start;
+  white-space: nowrap;
+}
+
+.fs-dlt__table td {
+  padding: var(--fs-space-2);
+  border-block-end: 1px solid var(--fs-border-subtle, var(--fs-border));
+  vertical-align: top;
+}
+
+.fs-dlt__table tr[data-severity='blocking'] td,
+.fs-dlt__table tr[data-severity='material'] td {
+  background: color-mix(in srgb, var(--fs-danger) 5%, transparent);
+}
+
+.fs-dlt__how {
+  display: block;
+  color: var(--fs-text-2);
+}
+
+/* ── Coverage: bars for what was measured, words for what was not ── */
+
+.fs-dlt__ends {
+  display: grid;
+  gap: var(--fs-space-3);
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  min-inline-size: 0;
+}
+
+.fs-dlt__end {
+  display: grid;
+  gap: var(--fs-space-2);
+  min-inline-size: 0;
+  padding: var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-2);
+}
+
+.fs-dlt__coverage {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fs-dlt__coverage li {
+  display: grid;
+  gap: var(--fs-space-2);
+  align-items: center;
+  grid-template-columns: minmax(90px, 140px) 1fr auto;
+  min-inline-size: 0;
+  font-size: 11px;
+}
+
+/* An unmeasured axis has no bar at all -- it spans the bar's column with a
+   word instead. An empty bar is a zero, and "we did not measure this" is not
+   a zero; drawing one for the other is the lie this screen exists to refuse. */
+.fs-dlt__coverage li[data-measured='no'] .fs-dlt__unmeasured {
+  grid-column: 2 / span 2;
+  color: var(--fs-warning);
+  font-style: italic;
+}
+
+.fs-dlt__dimension {
+  color: var(--fs-text-2);
+}
+
+.fs-dlt__bar {
+  display: block;
+  block-size: 6px;
+  min-inline-size: 0;
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-surface-2);
+  overflow: hidden;
+}
+
+.fs-dlt__bar-fill {
+  display: block;
+  block-size: 100%;
+  /* Deliberately the neutral brand colour and never a red-to-green scale:
+     a coverage bar says how much was looked at, not whether the news is good,
+     and colouring it by value would read as a score. */
+  background: var(--fs-brand);
+}
+
+.fs-dlt__ratio {
+  color: var(--fs-text-2);
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+}
+
+/* ── Extractors ── */
+
+.fs-dlt__extractors {
+  display: grid;
+  gap: var(--fs-space-2);
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  min-inline-size: 0;
+}
+
+.fs-dlt__extractor {
+  display: grid;
+  gap: 2px;
+  min-inline-size: 0;
+  padding: var(--fs-space-2);
+  border: 1px solid var(--fs-border);
+  border-inline-start: 3px solid var(--fs-success);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-2);
+  font-size: var(--fs-label-size);
+}
+
+.fs-dlt__extractor[data-available='no'] {
+  border-inline-start-color: var(--fs-danger);
+}
+
+/* ── The provenance foot ── */
+
+.fs-dlt__foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-3);
+  align-items: baseline;
+  min-inline-size: 0;
+  padding: var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-1);
+  color: var(--fs-text-3);
+  font-size: 11px;
+}

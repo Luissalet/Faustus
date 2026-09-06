@@ -616,6 +616,31 @@ GROUPS: list[dict[str, Any]] = [
         ],
     ),
     _group(
+        "delta_engine", "Delta Engine",
+        "What actually changed between two revisions, and how much of it you asked for. Every "
+        "finding carries the method that produced it and how much to believe it, and a property "
+        "nobody measured is reported as unknown rather than as preserved: not detected is not "
+        "the same as unchanged, and that difference is the whole point of comparing at all.",
+        [
+            _bool("agent_delta_engine", "Delta Engine",
+                  "Let comparisons RUN: compile an intent, read both revisions and produce a "
+                  "delta. Off is the default because a comparison re-reads and re-parses both "
+                  "ends, which is real work on a large repository. Off = /api/deltas refuses to "
+                  "compile or compare and says so; reading a delta already stored keeps working, "
+                  "because a conclusion recorded honestly stays readable."),
+            _int("agent_delta_engine_max_bytes", "Max bytes per side",
+                 "The ceiling on how much of one revision is read into memory. Past it the "
+                 "adapter stops and the delta declares the excluded part in its coverage, rather "
+                 "than reporting a difference it never looked for.",
+                 65_536, 268_435_456, step=65_536),
+            _int("agent_delta_engine_max_elements", "Max elements aligned",
+                 "How many files, symbols, nodes or fields one comparison aligns before it stops "
+                 "and says the rest is uncompared. A big rename is a real request; quietly "
+                 "comparing the first few hundred files of it is not an answer to it.",
+                 100, 100_000, step=100),
+        ],
+    ),
+    _group(
         "provenance", "Provenance graph",
         "The audit view over the memory and the workspace: why the agent believes a thing, what is "
         "floating unreferenced, what is said twice, and what breaks if you touch a file.",

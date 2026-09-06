@@ -35,6 +35,7 @@ schemes, collected here so a reader does not have to open nine files:
     file:<relative/path>#L10-L40           files.py
     link:<link_id>                         project_links.py
     link:<link_id>#line=42                 project_links.py
+    delta:<delta_id>                       deltas.py   (delta_engine/persistence.py)
     block:<block_id>                       derived.py  (context_engine/blocks.py)
     capsule:<scope_id>                     derived.py  (capsules.py)
     experience:<exp_id>, exp:<exp_id>      derived.py  (experiences.py)
@@ -69,6 +70,7 @@ from .derived import (
     FindingSource,
     RecipeSource,
 )
+from .deltas import DeltaSource
 from .documents import DocumentSource
 from .experts import ExpertSource
 from .files import FileSource
@@ -96,6 +98,7 @@ SOURCE_FACTORIES: Tuple[Callable[[], ContextSource], ...] = (
     CodeIndexSource,
     FindingSource,
     RecipeSource,
+    DeltaSource,
 )
 
 
@@ -117,4 +120,5 @@ __all__ = [
     "SessionSource", "set_history_provider", "reset_history_provider",
     "BlockSource", "CapsuleSource", "ExperienceSource", "CodeIndexSource",
     "FindingSource", "RecipeSource",
+    "DeltaSource",
 ]

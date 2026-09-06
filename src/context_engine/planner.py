@@ -197,6 +197,19 @@ SOURCE_SECTIONS: Dict[str, Tuple[str, ...]] = {
     "experiences": ("past_experiences",),
     "shared_memory": ("peer_findings",),
     "multimodal": ("multimodal_recipes",),
+    # The Universal Delta Engine's stored comparisons (`adapters/deltas.py`).
+    # One section and not two: a delta is a conclusion about two named,
+    # immutable revisions — past by the time it exists — and `current_state` is
+    # a MANDATORY section, so declaring it there would place a delta by policy,
+    # unranked, whatever its age or its coverage.  That is §1.4's "no usa
+    # deltas como memoria infalible" mechanised backwards, and it is the whole
+    # argument in `adapters/deltas.py`.  Note that `deltas` is in none of the
+    # `*_SOURCE_IDS` lists below: it needs no workspace, no session and no
+    # council to be worth asking, and `allow_project_sources` is enforced in
+    # its own `_gate` for `project_links`' reason — the ranker's
+    # `PROJECT_SOURCE_TYPES` names ROW kinds, and a `state` or an `image` delta
+    # carries no project content for it to refuse.
+    "deltas": ("past_experiences",),
 }
 
 #: Gated by ``policy.allow_personal_memory``.  Narrow on purpose: a flag that
