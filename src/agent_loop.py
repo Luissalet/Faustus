@@ -3868,6 +3868,14 @@ _VERIFIER_EFFECTFUL_TOOLS = {
 }
 _VERIFIER_MAX_ROUNDS = 2  # cap re-verify cycles per turn — never loop forever
 
+#: How many times the completion engine may send a turn back for more work.
+#: Small, and a hard cap rather than a budget, because the failure it guards
+#: against is not expense: a cheap improvement that reveals another cheap
+#: improvement is a loop that converges on nothing, and the engine would keep
+#: finding real work forever. `agent_completion_max_bonus_rounds` tunes the
+#: engine's own reasoning; this is the loop's own floor under it.
+_CE_MAX_ROUNDS = 2
+
 
 def _build_actions_snapshot(tool_events: list, limit: int = 8000) -> str:
     """Compact record of what the agent actually did this turn, for the
@@ -5341,6 +5349,12 @@ async def stream_agent_loop(
     _effectful_used = False
     _verifier_rounds = 0
     _verifier_instruction = _extract_last_user_message(messages)
+    # Completion-engine state (plan 7). Counted apart from the verifier's
+    # rounds because the two ask different questions and either can be off: the
+    # verifier asks whether what was done is RIGHT, the completion engine asks
+    # whether ENOUGH was done. One shared counter would let either spend the
+    # other's allowance and neither would be able to say so.
+    _ce_completion_rounds = 0
     real_input_tokens = 0   # Accumulated real usage from API
     real_output_tokens = 0
     last_round_input_tokens = 0  # Last round's input tokens (for context % peak)
@@ -7328,6 +7342,90 @@ async def stream_agent_loop(
                 )
                 _ledger.stop_reason = "intent_nudge_exhausted"
                 break
+            # ── Completion engine (plan 7) ────────────────────────────
+            # The model has stopped calling tools, so this is the moment the
+            # turn ends -- and the only moment where "is this actually done?"
+            # can still be answered with the turn's own evidence in hand. The
+            # engine reads the ledger, the checks, the change set and the
+            # proof, works out what the resolved completion mode says is still
+            # owed, and answers.
+            #
+            # Default is SHADOW: it computes and records, `continue_with` comes
+            # back empty, and the loop breaks exactly as it always did. That is
+            # the measurement `agent_context_engine_shadow` set the precedent
+            # for, and the reason it is the default here is stronger: this
+            # engine can decide to keep working, and a change of that size
+            # should be switched on by someone who has seen what it would have
+            # done.
+            #
+            # Off the event loop because discovery walks the ledger and the
+            # findings; and wrapped, because a bug in the completion engine
+            # must never be the reason a user's answer disappears.
+            _ce_decision = None
+            try:
+                from src.completion_engine import service as _ce_service
+
+                if _ce_service.active():
+                    _ce_decision = await asyncio.to_thread(
+                        _ce_service.service().decide_for_turn,
+                        owner=owner or "",
+                        instruction=_last_user or "",
+                        ledger_summary=_ledger.summary({}),
+                        workspace=workspace or "",
+                        project_id=str(_hopts.get("project_id") or ""),
+                        session_id=session_id or "",
+                        run_id=str(_hopts.get("run_id") or session_id or ""),
+                        rounds_used=round_num,
+                        rounds_budget=_rounds_budget,
+                        tool_calls=len(tool_events),
+                        tokens=int((_usage_bucket_summary(usage_buckets) or {}).get("total_tokens") or 0),
+                        seconds=max(0.0, time.time() - total_start),
+                        # `TurnLedger.static_checks` is a LIST of findings and
+                        # `tests`/`review` are dicts or None. Normalised here,
+                        # at the boundary where the shapes are known, rather
+                        # than in the engine -- an engine that guessed at three
+                        # shapes would be guessing again the day a fourth
+                        # caller passed a fifth.
+                        static_checks={"findings": list(_ledger.static_checks or [])},
+                        tests=dict(_ledger.tests or {}),
+                        review=dict(_ledger.review or {}),
+                    )
+            except Exception:  # noqa: BLE001 - never the reason a turn fails
+                logger.debug("[agent] completion engine unavailable", exc_info=True)
+                _ce_decision = None
+            if isinstance(_ce_decision, dict) and _ce_decision.get("ok"):
+                yield (
+                    "data: "
+                    + json.dumps({
+                        "type": "completion_decision",
+                        "shadow": bool(_ce_decision.get("shadow")),
+                        "mode": _ce_decision.get("mode"),
+                        "stop_reason": _ce_decision.get("stop_reason"),
+                        "decision_id": _ce_decision.get("decision_id"),
+                        "summary": _ce_decision.get("summary"),
+                        "would_continue": len(_ce_decision.get("continue_with") or []),
+                    })
+                    + "\n\n"
+                )
+                _ce_next = list(_ce_decision.get("continue_with") or [])
+                if _ce_next and _ce_completion_rounds < _CE_MAX_ROUNDS:
+                    # Live mode only: `continue_with` is empty in shadow, so
+                    # this branch cannot be reached by a measurement.
+                    _ce_completion_rounds += 1
+                    _ledger.stop_reason = "completion_continue"
+                    messages.append({
+                        "role": "system",
+                        "content": (
+                            "The completion policy for this turn is `"
+                            + str(_ce_decision.get("mode") or "greedy")
+                            + "`, and by it this work is not finished. What is "
+                            "still owed, in order:\n- " + "\n- ".join(_ce_next)
+                            + "\n\nDo these now with tools, then finish. This "
+                            "changes how far you go and grants you no tool, no "
+                            "path and no permission you did not already have."
+                        ),
+                    })
+                    continue
             break  # no tools — done
 
         # ── Loop-breaker (Terminus-style stall detector) ──────────────

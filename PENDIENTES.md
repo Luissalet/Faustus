@@ -1346,3 +1346,41 @@ si el código hace lo que su propia documentación promete.
   valores que el llamante ya tiene, y se olvida al terminar. No es persistencia y el docstring lo
   dice, pero significa que un delta de un `literal` no se puede recomputar más tarde: su fingerprint
   sigue siendo válido y sus dos extremos ya no existen.
+
+## Plan 7 — Greedy Completion Engine (06-09-2026)
+
+### Ajustes: cómo quedó tu servidor
+
+`agent_completion_engine` lo encendí para verificar en el navegador y **lo he vuelto a dejar en OFF**, que es su valor por defecto. `agent_completion_engine_shadow` sigue en ON (su valor por defecto): el motor mide y no cambia nada.
+
+De sesiones anteriores **siguen encendidos** `agent_council`, `agent_state_mirror` y `agent_delta_engine`, los tres con default `False` en código. Si quieres el comportamiento de fábrica, apágalos en Settings → Agent & automation.
+
+### Encender el motor rompe 5 tests del harness — y no es un bug del motor
+
+Con `agent_completion_engine` en ON, estos cinco fallan:
+
+- `test_agent_harness_functional.py::test_tests_still_failing_after_fix_round_is_reported_not_looped`
+- `test_agent_harness_functional.py::test_pre_existing_test_failures_do_not_cost_a_fix_round`
+- `test_agent_harness_functional.py::test_ungrounded_review_errors_do_not_cost_a_fix_round`
+- `test_agent_harness_loop.py::test_truncated_output_is_auto_continued`
+- `test_agent_harness_loop_partial_work.py::test_the_model_that_writes_both_files_is_verified`
+
+Todos por lo mismo: cuentan rondas exactas (`assert calls["n"] == 2`) y el motor, cuando está encendido, añade una ronda. **Eso es exactamente lo que el motor existe para hacer.** El fallo no es del motor: es que esos tests fijan un mundo donde el motor está apagado sin decirlo. Lo correcto es que fijen el ajuste ellos mismos (un `monkeypatch` de `agent_completion_engine` a `False`), pero son tests congelados fuera del alcance del plan 7 y prefiero no tocarlos de refilón.
+
+**Comprobado:** con el ajuste en su valor por defecto, la suite completa no tiene ni una regresión mía. 24 fallos en total, 24 preexistentes — verificado con el método de siempre: misma carpeta, mismo `data/`, solo cambia el commit, en serie. Baseline 15 fallos en el subconjunto sospechoso, con mis cambios 20, y los 5 de diferencia se van al poner el ajuste como estaba.
+
+### Datos de prueba en la base
+
+`data/completion_engine.db` tiene tres decisiones sembradas a mano (`run_browser_check_1/2/3`, owner `admin`) y un rechazo real en `completion_refusals` ("este modulo se reemplaza en junio, no merece un test nuevo"). Son de la verificación en navegador. Se pueden borrar sin consecuencias; si los dejas, la pantalla Completion arranca con contenido.
+
+### Cosas para revisar
+
+1. **El motor descubre 21 mejoras y ejecuta 0.** En los tres turnos sembrados el resultado siempre fue `unfinished` con 20-21 diferidas y ninguna ejecutada. Es correcto — el enganche del `agent_loop` está en modo sombra y `MAX_PER_BATCH = 3` — pero significa que la mitad *ejecutora* del motor no se ha visto funcionar todavía con trabajo real. **Hasta que un turno de verdad ejecute una mejora y la verifique, esa mitad está construida y no probada en el producto.**
+
+2. **`decide_for_turn` nunca lanza, por diseño.** Se traga cualquier excepción para no romper el turno que estaba contabilizando. Es lo correcto, pero quiere decir que un fallo del motor se ve como "no decidió nada" y no como un error. Los eventos (`/api/completion/events`) son el único sitio donde eso se nota.
+
+3. **Los techos del presupuesto son 0 hoy.** `max_tool_calls`, `token_budget` y `wall_seconds` se pasan a 0 porque el bucle no tiene esos límites todavía; solo las *rondas* se miden de verdad. Por eso ninguna decisión puede parar por `budget` aún. Cuando el bucle tenga límites reales, hay que pasarlos aquí o el motor seguirá diciendo `unfinished` donde debería decir `budget`.
+
+4. **`declined` es nuevo en un vocabulario cerrado.** Añadir un motivo a `REJECTION_REASONS` obliga a tocar cuatro sitios (contracts, closeout, adaptador de Studio, pantalla). El test `test_every_rejection_reason_has_a_sentence` lo pilló al instante, que es lo que tenía que pasar. Vale la pena recordarlo antes de añadir el siguiente.
+
+5. **Los rechazos guardados antes de hoy no tienen motivo.** El bug de `ranked.rejected()` (ver FAUSTUS §59) estuvo vivo desde que se escribió el servicio. Cualquier decisión guardada antes del arreglo tiene sus rechazos como `status: candidate` sin `rejection_reason`, y la pantalla los dibujará como "nobody recorded why". No hay migración: son tres filas de prueba. Si algún día importa, se regeneran volviendo a decidir.

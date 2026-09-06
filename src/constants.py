@@ -57,6 +57,13 @@ STATE_MIRROR_DB = os.path.join(DATA_DIR, "state_mirror.db")
 # make history depend on a cache. Nothing here holds a blob: evidence lives in
 # the Artifact Store and only its reference is written down.
 DELTA_ENGINE_DB = os.path.join(DATA_DIR, "delta_engine.db")
+# The Completion Engine keeps its own file because what it stores is the
+# ACCOUNT of a run: what was asked, what was added beyond it, what was refused
+# and why, and what the run had spent when it stopped. That account is the
+# answer to "why did it do more than I said", so it has to outlive the caches
+# and be readable long after the run — and it must never be able to hold a
+# write lock that the turn producing it is waiting on.
+COMPLETION_ENGINE_DB = os.path.join(DATA_DIR, "completion_engine.db")
 SCHEDULED_EMAILS_DB = os.path.join(DATA_DIR, "scheduled_emails.db")
 EMAIL_CACHE_DB = os.path.join(DATA_DIR, "email_cache.db")
 
