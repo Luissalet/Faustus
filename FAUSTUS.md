@@ -4734,3 +4734,34 @@ Los tres se veían igual en cualquier agente que hayamos usado, y por eso "he te
 **La trampa del día.** La línea de presupuesto salía cortada a dos tercios del diálogo. No era el `<p>`: es que `base.css` capa **todo** `p` a 65ch (la regla de prosa legible), y una franja de cabecera no es prosa. `max-inline-size: none`, y el mismo aviso que ya vale para `li` y para las celdas de tabla.
 
 **Verificado.** `tsc --noEmit` limpio, build del Studio limpio, `scripts/i18n_es.py --check` a cero, 68 tests dirigidos en verde (`test_model_picker_vram_fit.py`, `test_studio_guards.py`, `test_dispatch.py`) y **en el navegador contra el 7001 con la GPU de verdad**: el diálogo enseñando `6.1 GB fits` / `27.9 GB no room` / `48.2 GB no room` sobre «26.4 GB usable across 2 GPUs», y las trece opciones del Brief de *Writer's Hoard* leídas del DOM, con la última —la del endpoint que no es Ollama— sin anotar.
+
+## 61. Un turno sigue vivo aunque te vayas, y ahora se ve (07-09-2026)
+
+**El síntoma, en una frase de Luis:** «he salido a la raíz del proyecto un momento y se ha bugeado, parando y preguntando *allow to continue* sin mostrar opciones… y en la raíz del proyecto no salía ninguna indicación de que seguía corriendo, como pasa contigo con un punto azul parpadeando».
+
+**Qué estaba pasando de verdad.** Nada se había colgado. El turno se paró en la puerta de permisos de `project_objectives`, Luis la aprobó (`ask_user.resolved: "approve_task"` estaba guardado en la base de datos) y la continuación arrancó: cuando lo miré llevaba **catorce minutos** corriendo, por la ronda 10, leyendo el informe otra vez. Lo que faltaba era la interfaz.
+
+**La causa, que es una sola.** `src/agent_runs.py` desacopla el run: cerrar el SSE —cerrar la pestaña, navegar, recargar— **solo quita un suscriptor**. El run sigue, guarda su mensaje al terminar, y `subscribe()` reproduce su buffer entero a quien se enganche después. Es una decisión buena y deliberada del backend. Studio, en cambio, solo sabía leer el historial: al volver enseñaba lo último **guardado**, que a mitad de una aprobación es la pregunta de la puerta —el servidor la escribe como el texto del mensaje del asistente— sin tarjeta debajo, porque la tarjeta ya estaba resuelta. Una pregunta sin botones y un resumen que dice `awaiting_user`: la forma exacta de un chat colgado que no lo está.
+
+**Y el backend ya tenía las tres respuestas, sin un solo llamador.** El patrón del §7 de PARIDAD otra vez, esta vez al revés: no una función perdida al portar, sino una función construida y nunca cableada.
+
+| Endpoint | Qué da | Consumidores |
+|---|---|---|
+| `GET /api/chat/activity` | `running`, `awaiting_approval`, `queued`, `runs` de toda la cuenta en una llamada. El comentario del código dice literalmente *«sidebar status dots in one call»* | **0** |
+| `GET /api/chat/resume/{sid}` | Reengancha el stream de un run vivo, con replay del buffer | **0** |
+| `POST /api/chat/stop/{sid}` | Cancela el run. Es *fail-closed*: sin la cabecera `X-Odysseus-Run-Id` devuelve `stopped:false` | Se llamaba **sin la cabecera** |
+
+Ese último es su propio bug: Parar cerraba el stream del navegador y devolvía el compositor a su sitio mientras el modelo seguía generando en el servidor. Un botón que no paraba nada, solo escondía la prueba. Búsqueda de `X-Odysseus-Run-Id` en todo `studio/src` antes de esto: cero coincidencias.
+
+**Lo que se hizo.**
+
+- **El punto.** `lib/activity.ts` tiene las reglas (puras, con su `.check.mjs`) y `shell/activity.ts` **un solo sondeo** para toda la aplicación: un store con recuento de suscriptores, 4 s si hay algo vivo y 20 s si no, y solo con la pestaña visible —salvo la primera lectura, porque un punto que solo aparece cuando enfocas la ventana es un punto que nunca ves—. `ActivityDot` lo pinta en la lista lateral, en la pestaña Chats de un proyecto (y en la propia pestaña), y en la fila del proyecto en `/projects`. La regla que importa: **«esperando» gana a «trabajando»**, porque un run aparcado en una aprobación está registrado en las dos listas y lo que hay que ver es que espera a una persona. Los tres estados se distinguen en color **y** en movimiento: el ámbar que espera una decisión no respira, porque una decisión no es progreso.
+- **El reenganche.** Al abrir una conversación, después del historial, Studio llama a `resumeTurn`. Si hay run vivo, el turno aparece en directo con un aviso —«esta conversación seguía trabajando: la retomo en directo»— y al terminar se relee el historial para quedarse con la versión del servidor, no con la reconstrucción del navegador.
+- **Parar de verdad.** `sendTurn` y `resumeTurn` devuelven el id opaco del run por `onRunId` y `stopChat` lo manda de vuelta. Y si el servidor contesta que no ha podido, se dice, en vez de fingir.
+- **La puerta ya respondida.** El turno guarda la decisión (`turn.approval`) y, cuando el texto del mensaje era solo la pregunta, deja de repetirla: en su lugar, una línea discreta —*«permiso respondido · lo permitiste para toda la tarea»*—. De paso, el filtro del historial dejó de tirar ese mensaje cuando lleva `tool_events`: se llevaba por delante la barra de herramientas de todo el turno, seis pasos que sí habían ocurrido.
+
+**Ficheros.** `studio/src/lib/activity.ts`, `studio/src/shell/activity.ts`, `studio/src/components/ActivityDot.tsx`, `studio/src/adapters/chat.ts` (`resumeTurn`, `chatActivity`, `stopChat` con cabecera, el lector de SSE compartido), `studio/src/screens/Studio.tsx` (`rejoin`), `SessionsPane.tsx`, `Project.tsx`, `Projects.tsx`, `studio/model.ts`, `Transcript.tsx`, `styles/components.css`, `screens/studio.css`, `tests/test_studio_activity_js.py`, `studio/checks/activity.check.mjs`, `studio/checks/model.check.mjs`, PARIDAD §2, PENDIENTES_UI 160–164.
+
+**La trampa del día.** Probarlo con el navegador automatizado no funcionaba: en esa pestaña `document.visibilityState` es `'hidden'`, así que un sondeo que respeta la visibilidad no corre nunca y el punto no aparecía jamás. No era un fallo del código —era el código haciendo justo lo que se le pidió— pero sí destapó uno de verdad: la **primera** lectura no debía saltarse, y ahora no se salta.
+
+**Verificado.** `tsc --noEmit` limpio, build limpio, `i18n_es.py --check` a cero, tests dirigidos en verde, y en el navegador contra el 7001: el punto en `/projects` y en el proyecto mientras un turno corría sin nadie mirándolo; recargar la conversación y ver el texto seguir creciendo (1.202 → 2.167 caracteres); Parar dejando `running` en 0 al instante; y la tarjeta de permiso respondido comprobada sirviendo el historial **exacto** que tenía la base de datos de Luis esa noche.
