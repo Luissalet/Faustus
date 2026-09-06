@@ -1,0 +1,531 @@
+/* Council: the room on the left, the ledger on the right, the close beneath.
+   The ledger is beside the transcript and not under it on purpose: a claim on
+   a file and an unanswered objection are what the reader has to see WHILE the
+   room talks. */
+
+.fs-cnc {
+  display: grid;
+  gap: var(--fs-space-4);
+  padding-block-end: var(--fs-space-6);
+}
+
+.fs-cnc__lede {
+  margin-block-start: var(--fs-space-2);
+}
+
+.fs-cnc__label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fs-text-3);
+}
+
+/* ── A word, a tone, and never a colour on its own ── */
+
+.fs-cnc__tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px var(--fs-space-2);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-surface-2);
+  color: var(--fs-text-2);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.fs-cnc__tag[data-tone='ok'] {
+  border-color: color-mix(in srgb, var(--fs-success) 45%, var(--fs-border));
+  color: var(--fs-success);
+}
+
+.fs-cnc__tag[data-tone='warn'] {
+  border-color: color-mix(in srgb, var(--fs-warning) 45%, var(--fs-border));
+  color: var(--fs-warning);
+}
+
+.fs-cnc__tag[data-tone='danger'] {
+  border-color: color-mix(in srgb, var(--fs-danger) 55%, var(--fs-border));
+  color: var(--fs-danger);
+}
+
+.fs-cnc__notice {
+  display: block;
+  margin: 0;
+  padding: var(--fs-space-2) var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-inline-start: 3px solid var(--fs-border-strong);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-2);
+  color: var(--fs-text-2);
+  font-size: var(--fs-label-size);
+}
+
+.fs-cnc__notice[data-tone='warning'] {
+  border-inline-start-color: var(--fs-warning);
+  background: color-mix(in srgb, var(--fs-warning) 8%, var(--fs-surface-2));
+}
+
+.fs-cnc__notice[data-tone='danger'] {
+  border-inline-start-color: var(--fs-danger);
+  background: color-mix(in srgb, var(--fs-danger) 8%, var(--fs-surface-2));
+}
+
+/* ── Opening a room ── */
+
+.fs-cnc__setup {
+  display: grid;
+  gap: var(--fs-space-4);
+  padding: var(--fs-space-4);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-1);
+}
+
+.fs-cnc__grid2 {
+  display: grid;
+  gap: var(--fs-space-3);
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.fs-cnc__field {
+  display: grid;
+  gap: var(--fs-space-2);
+}
+
+.fs-cnc__policies {
+  display: grid;
+  gap: var(--fs-space-2);
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+.fs-cnc__policy {
+  display: grid;
+  gap: 2px;
+  padding: var(--fs-space-2) var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-2);
+  color: var(--fs-text-1);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  transition: border-color var(--fs-duration-fast) var(--fs-ease);
+}
+
+.fs-cnc__policy small {
+  color: var(--fs-text-3);
+}
+
+.fs-cnc__policy:hover {
+  border-color: var(--fs-border-strong);
+}
+
+.fs-cnc__policy[aria-checked='true'] {
+  border-color: var(--fs-brand);
+  background: color-mix(in srgb, var(--fs-brand) 10%, var(--fs-surface-2));
+}
+
+.fs-cnc__policy:focus-visible {
+  outline: 2px solid var(--fs-focus);
+  outline-offset: 1px;
+}
+
+.fs-cnc__seats-edit {
+  display: grid;
+  gap: var(--fs-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fs-cnc__seat-edit {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  flex-wrap: wrap;
+  padding: var(--fs-space-2);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-2);
+}
+
+.fs-cnc__pick {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  min-inline-size: 180px;
+  padding: 4px var(--fs-space-2);
+  border: 0;
+  border-radius: var(--fs-radius-control);
+  background: none;
+  color: var(--fs-text-1);
+  font: inherit;
+  font-size: var(--fs-label-size);
+  text-align: start;
+  cursor: pointer;
+}
+
+.fs-cnc__pick:hover {
+  background: var(--fs-highlight);
+}
+
+.fs-cnc__pick small {
+  color: var(--fs-text-3);
+}
+
+.fs-cnc__name {
+  inline-size: 160px;
+  block-size: var(--fs-control-sm);
+  padding-block: 0;
+}
+
+.fs-cnc__roles {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.fs-cnc__budgets {
+  display: grid;
+  gap: var(--fs-space-2);
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+}
+
+.fs-cnc__budget {
+  display: grid;
+  gap: 2px;
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-2);
+}
+
+.fs-cnc__budget input {
+  block-size: var(--fs-control-sm);
+  padding-block: 0;
+}
+
+/* ── The list of rooms ── */
+
+.fs-cnc__list {
+  display: grid;
+  gap: var(--fs-space-2);
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+}
+
+.fs-cnc__card {
+  display: grid;
+  gap: 2px;
+  padding: var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-1);
+  color: var(--fs-text-1);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  transition: border-color var(--fs-duration-fast) var(--fs-ease);
+}
+
+.fs-cnc__card:hover {
+  border-color: var(--fs-border-strong);
+}
+
+.fs-cnc__card:focus-visible {
+  outline: 2px solid var(--fs-focus);
+  outline-offset: 1px;
+}
+
+/* ── The seats: a permission is drawn, not implied ── */
+
+.fs-cnc__seats {
+  display: grid;
+  gap: var(--fs-space-2);
+}
+
+.fs-cnc__seat {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  flex-wrap: wrap;
+  padding: var(--fs-space-2) var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-inline-start: 3px solid var(--fs-border-strong);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-1);
+  font-size: var(--fs-label-size);
+}
+
+/* A seat that can change something is marked. Read-only is the quiet state
+   because it is the common one; the loud one is the seat with a hand free. */
+.fs-cnc__seat[data-write='yes'] {
+  border-inline-start-color: var(--fs-warning);
+}
+
+.fs-cnc__seat-id {
+  display: grid;
+  min-inline-size: 0;
+}
+
+.fs-cnc__seat-id small {
+  font-size: 11px;
+}
+
+/* ── Room and ledger, side by side ── */
+
+.fs-cnc__body {
+  display: grid;
+  gap: var(--fs-space-4);
+  grid-template-columns: minmax(0, 1.6fr) minmax(280px, 1fr);
+  align-items: start;
+}
+
+.fs-cnc__room {
+  display: grid;
+  gap: var(--fs-space-3);
+  align-content: start;
+  min-block-size: 40vh;
+  max-block-size: 62vh;
+  padding: var(--fs-space-4);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-1);
+  overflow: auto;
+}
+
+.fs-cnc__empty {
+  align-self: center;
+  text-align: center;
+}
+
+.fs-cnc__turn {
+  display: grid;
+  gap: var(--fs-space-2);
+  padding-block-start: var(--fs-space-2);
+  border-block-start: 1px solid var(--fs-border);
+}
+
+.fs-cnc__turn:first-of-type {
+  border-block-start: 0;
+  padding-block-start: 0;
+}
+
+.fs-cnc__turn-head,
+.fs-cnc__turn-state {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fs-text-3);
+}
+
+.fs-cnc__msg {
+  display: grid;
+  gap: 4px;
+  max-inline-size: min(100%, 78ch);
+  padding: var(--fs-space-2) var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-2);
+  border-inline-start: 3px solid color-mix(in srgb, var(--fs-cnc-hue, var(--fs-brand)) 70%, var(--fs-border));
+}
+
+.fs-cnc__msg[data-author='user'] {
+  justify-self: end;
+  border-inline-start-width: 1px;
+  border-color: color-mix(in srgb, var(--fs-brand) 35%, var(--fs-border));
+  background: color-mix(in srgb, var(--fs-brand) 9%, var(--fs-surface-2));
+}
+
+.fs-cnc__msg[data-hue='1'] { --fs-cnc-hue: var(--fs-info); }
+.fs-cnc__msg[data-hue='2'] { --fs-cnc-hue: var(--fs-success); }
+.fs-cnc__msg[data-hue='3'] { --fs-cnc-hue: var(--fs-warning); }
+.fs-cnc__msg[data-hue='4'] { --fs-cnc-hue: var(--fs-aurora-a); }
+.fs-cnc__msg[data-hue='5'] { --fs-cnc-hue: var(--fs-aurora-b); }
+.fs-cnc__msg[data-hue='6'] { --fs-cnc-hue: var(--fs-aurora-c); }
+
+/* An objection looks like what it is, and it is also SAID in the badge: the
+   colour is corroboration, never the only carrier. */
+.fs-cnc__msg[data-kind='objection'] {
+  border-color: color-mix(in srgb, var(--fs-danger) 40%, var(--fs-border));
+}
+
+.fs-cnc__msg[data-kind='decision'],
+.fs-cnc__msg[data-kind='synthesis'] {
+  border-color: color-mix(in srgb, var(--fs-success) 35%, var(--fs-border));
+}
+
+.fs-cnc__msg-head {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  flex-wrap: wrap;
+  font-size: var(--fs-label-size);
+}
+
+/* ── The ledger ── */
+
+.fs-cnc__ledger {
+  display: grid;
+  gap: var(--fs-space-3);
+  align-content: start;
+  max-block-size: 62vh;
+  padding: var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-1);
+  overflow: auto;
+}
+
+.fs-cnc__book {
+  display: grid;
+  gap: var(--fs-space-2);
+}
+
+.fs-cnc__book-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: var(--fs-label-size);
+  font-weight: var(--fs-label-weight);
+  letter-spacing: var(--fs-label-tracking);
+  color: var(--fs-text-2);
+}
+
+.fs-cnc__rows {
+  display: grid;
+  gap: var(--fs-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fs-cnc__rows--muted {
+  opacity: 0.65;
+}
+
+.fs-cnc__row {
+  display: grid;
+  gap: 4px;
+  padding: var(--fs-space-2);
+  border: 1px solid var(--fs-border);
+  border-inline-start: 3px solid var(--fs-border-strong);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-2);
+  font-size: var(--fs-label-size);
+}
+
+.fs-cnc__row[data-tone='ok'] { border-inline-start-color: var(--fs-success); }
+.fs-cnc__row[data-tone='warn'] { border-inline-start-color: var(--fs-warning); }
+.fs-cnc__row[data-tone='danger'] { border-inline-start-color: var(--fs-danger); }
+
+.fs-cnc__row p {
+  margin: 0;
+  max-inline-size: none;
+}
+
+.fs-cnc__row-head {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  flex-wrap: wrap;
+}
+
+.fs-cnc__paths {
+  font-family: var(--fs-font-code);
+  font-size: var(--fs-code-size);
+  overflow-wrap: anywhere;
+}
+
+/* ── The close ── */
+
+.fs-cnc__close {
+  display: grid;
+  gap: var(--fs-space-3);
+  padding: var(--fs-space-4);
+  border: 1px solid var(--fs-border);
+  border-block-start: 3px solid var(--fs-border-strong);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-1);
+}
+
+/* The five closes are told apart by the word in the header first; the band
+   and the tint only corroborate it. */
+.fs-cnc__close[data-tone='ok'] { border-block-start-color: var(--fs-success); }
+.fs-cnc__close[data-tone='warn'] { border-block-start-color: var(--fs-warning); }
+.fs-cnc__close[data-tone='danger'] { border-block-start-color: var(--fs-danger); }
+.fs-cnc__close[data-tone='neutral'] { border-block-start-color: var(--fs-border-strong); }
+
+.fs-cnc__close-head {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  flex-wrap: wrap;
+}
+
+.fs-cnc__close-grid {
+  display: grid;
+  gap: var(--fs-space-3);
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  font-size: var(--fs-label-size);
+}
+
+.fs-cnc__close-grid p {
+  margin: 0 0 var(--fs-space-2);
+  max-inline-size: none;
+}
+
+.fs-cnc__stop {
+  margin: 0;
+  max-inline-size: none;
+}
+
+/* ── The composer ── */
+
+.fs-cnc__composer {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--fs-space-2);
+}
+
+.fs-cnc__textarea {
+  flex: 1;
+  inline-size: 100%;
+  padding: var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-1);
+  color: var(--fs-text-1);
+  font: inherit;
+  font-size: var(--fs-body-size);
+  line-height: var(--fs-body-line);
+  resize: vertical;
+}
+
+.fs-cnc__textarea:focus-visible {
+  outline: 2px solid var(--fs-focus);
+  outline-offset: 1px;
+}
+
+@media (max-width: 1023px) {
+  .fs-cnc__body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .fs-cnc__ledger {
+    max-block-size: none;
+  }
+}
+
+@media (max-width: 767px) {
+  .fs-cnc__seat-edit {
+    align-items: flex-start;
+  }
+
+  .fs-cnc__name {
+    inline-size: 100%;
+  }
+}

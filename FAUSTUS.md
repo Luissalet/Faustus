@@ -4029,5 +4029,304 @@ la decisión de parar sigue siendo heurística; los **siete eventos** de §1.7 n
 `planner` no se amplió con los campos nuevos; y el término `cost_latency_fit` se calcula con peso 0
 porque `TaskSpec` no lleva plazo ni presupuesto contra los que ajustar.
 
+## 56. Modo Consejo: varios modelos piensan, uno actúa (06-09-2026)
+
+Faustus ya tenía tres cuartas partes de un consejo y ningún consejo. El **chat en grupo** daba una
+sala compartida: varios modelos, una conversación. `src/tournament.py` daba rondas ciegas,
+contraste, fusión, un juez y cancelación. `src/agent_tools/subagent_tools.py` y `src/dispatch.py`
+daban trabajadores, propiedad de ficheros, un vigilante, revisión y evidencia. Lo que no tenía
+ninguno de los tres es justo lo que hace seguro combinarlos, y es la regla de cabecera de este
+bloque:
+
+> **Varios modelos pueden pensar, objetar y revisar el mismo asunto; sólo el propietario designado
+> ejecuta cada efecto o modifica cada recurso.**
+
+El fallo que este plan (`inspiration/PLAN_MODO_CONSEJO_MULTIMODELO_FAUSTUS.md`, 4 de 11) viene a
+eliminar cabe en una línea, y estaba en el chat en grupo: la respuesta de un modelo se le pasaba al
+siguiente así.
+
+```python
+{"role": "user", "content": "[Claude]: valida el state de OAuth en el cliente"}
+```
+
+Todo lo que puede salir mal en una sala de varios modelos nace ahí. Al que recibe se le dice, **por
+el único canal en el que confía**, que su *usuario* ha dicho algo que dijo un par; un modelo que
+escriba `Usuario:` en la primera línea se convierte en el usuario; y un revisor que diga «lo arreglo
+yo mismo» está a un prompt de escribir ficheros, porque nada en la representación dice que no pueda.
+Por eso en `src/council/` la identidad, la audiencia, la visibilidad y la autoridad son **campos**, y
+nunca prosa.
+
+### 56.1 Por qué esto no es un cuarto sistema multiagente
+
+La lectura perezosa del plan invita a construir un cuarto motor al lado de los tres que ya corren.
+**La decisión de cabecera es no construirlo**, por la misma razón que §55 no construyó un segundo
+catálogo de agentes: dos motores que hacen lo mismo dan dos respuestas a la misma pregunta, y sólo
+una se arregla cuando alguien arregla un permiso.
+
+- **Group Chat pasa a ser una política**, no un subsistema. `chat` es una de las seis de
+  `POLICIES` (`chat`, `consult`, `debate`, `collaborate`, `pair`, `tournament`), y lo que antes era
+  «la pantalla de chat en grupo» es ahora «la sala con la política más simple».
+- **Tournament sigue siendo el motor** de la ronda ciega y del juez: `TournamentAdapter` llama a
+  `tournament.run` y al juez del propio Tournament, así que la anonimización, los locks por modelo,
+  el semáforo de GPU compartido, el test de convergencia y el desempate determinista son los que ya
+  están en producción.
+- **Subagents/Dispatch sigue siendo el motor** del trabajo con efectos: `DispatchTaskExecutor` llama
+  a `dispatch.start/get/compact/cancel` y dirige y para por `agent_tools.subagent_tools`, las mismas
+  funciones que usan el Steer y el Stop del chat.
+- **El planificador de GPU no se duplica**: `scheduler.py` espera sobre `tournament.model_lock` y
+  `tournament.gpu_slots` (que es `subagent_tools.shared_slots`), en un orden de adquisición
+  declarado como dato — límite de paralelismo de la sala, lock del modelo, hueco de GPU — y liberado
+  al revés. Dos subsistemas tomando ese par de primitivas en dos órdenes distintos es el interbloqueo
+  de manual, y sería irreproducible: hace falta un torneo y un consejo vivos en el mismo minuto.
+
+Lo que sí es nuevo es la capa de encima: la sala, el turno, el **ledger** de lo reclamado, decidido y
+objetado, y la persistencia que hace que todo eso sobreviva a un reinicio.
+
+### 56.2 La identidad no se deduce del texto
+
+`contracts.looks_like_impersonation()` reconoce los prefijos con los que un mensaje *afirma* una
+identidad: `[Claude]:`, `Usuario:`, `ChatGPT dijo:`. Devuelve una cadena y **no está cableado en
+`parse()`**, y eso no es un descuido: si el parser actuara sobre él, un modelo podría cambiar cómo se
+guarda su propio mensaje eligiendo su primera línea, que es exactamente el poder que todo este
+paquete existe para negarle. Un mensaje conserva el `author_id` y el `author_kind` que le dio el
+runtime, diga lo que diga su texto. El detector existe **para avisar a una persona**, y la pantalla
+lo pinta como una advertencia al lado del mensaje: «esto empieza por `Usuario:`; lo escribió Claude y
+eso no ha cambiado».
+
+Por la misma razón `RESERVED_IDS` impide que un participante se llame `user`, `system`, `tool`,
+`room` o `all`: son tipos de autor y tokens de audiencia, y una sala donde un id de participante
+colisiona con uno de ellos es una sala donde a un filtro se le puede convencer de otra cosa.
+
+### 56.3 Un mensaje de un par nunca entra como `role="user"`
+
+`context.py` compone lo que se le cuenta a cada participante: un núcleo común, un suplemento privado
+y un registro de a quién se le contó qué. El bloque de pares pasa por
+`src.prompt_security.untrusted_context_message` —el mismo envoltorio que Faustus ya usa para páginas
+web y salida de herramientas— y no por un segundo envoltorio inventado aquí: dos juegos de reglas de
+escapado divergen, y el que se equivoca con los caracteres invisibles es siempre el que nadie se
+acuerda de actualizar. Un par llega como **contexto tipado, atribuido y sin autoridad de sistema**.
+
+Y no se copia el transcript entero a todo el mundo en cada turno. Eso no es sólo coste: cuatro
+participantes por seis rondas son veinticuatro generaciones, casi todas paráfrasis unas de otras,
+cada una arrastrando a las anteriores en su contexto — la sala se vuelve más lenta y más cara
+exactamente a la vez que menos informativa, y el usuario acaba leyendo cuatro formas de decir
+«estoy de acuerdo con lo de arriba». El «resumen del resto» está **contado, no escrito**: un resumen
+generado es el sitio donde una decisión desaparece sin que nadie se entere, así que decisiones,
+claims, aprobaciones y resultados de test viajan literales en una sección obligatoria.
+
+### 56.4 La ronda ciega oculta respuestas, no reglas
+
+Con `blindness="peer_outputs_hidden"` el bloque de pares va vacío **para la ronda en vuelo**, y todo
+lo demás —las reglas de la sala, las decisiones vigentes, las objeciones dirigidas a ese
+participante, la evidencia base— sigue exactamente igual. Con `identities_hidden` las palabras están
+y los nombres son `Peer A`, `Peer B`, y la correspondencia se escribe en el `disclosure_log`: las
+identidades se ocultan **entre modelos**, nunca al usuario ni a la auditoría. Una ronda ciega
+implementada a base de «acordarse de no incluir a los pares» deja de ser ciega la primera vez que
+alguien refactoriza al llamante, así que la ceguera es un valor de `Selection` y la impone
+`context.build_packet`.
+
+### 56.5 Un recurso, un propietario
+
+`request_claim` rechaza a un segundo titular y devuelve el claim que ya existe. Las escrituras
+equivalentes de una ruta —`src/a.py`, `src\a.py`, `./src/../src/a.py`— se normalizan al **mismo**
+claim, porque un lock que se esquiva escribiendo la ruta de otra manera no es un lock. Y no es un
+segundo sistema de locks: los claims de fichero se respaldan en el `FileLockRegistry` real de
+`agent_tools/subagent_tools.py`, el mismo registro que la puerta de escritura ya consulta antes de
+escribir; lo que el ledger añade es la parte que un registro dentro de una delegación no puede tener,
+que es un registro auditable que sobrevive al run y al reinicio y dice quién tuvo qué y por qué.
+
+Un traspaso es un protocolo, no un `UPDATE`: terminar o pausar, anotar, **comprobar que no hay una
+herramienta mutante corriendo**, liberar, adquirir, emitir. Con una herramienta mutante activa el
+traspaso se rechaza y el propietario no cambia. «Nunca cambiar el propietario escribiendo simplemente
+otro ID.»
+
+### 56.6 Una afirmación no verifica
+
+La regla que el plan repite más que ninguna otra: **que un modelo diga que ha terminado no termina
+nada**. El orquestador no lee nunca el CONTENIDO de un mensaje para decidir algo. Una tarea se mueve
+porque un ejecutor inyectado devolvió un resultado estructurado y el ledger lo aceptó, jamás porque
+una frase lo afirmara; el resultado del invocador se lee por una **lista fija de claves**
+(`content`, `abstained`, `error`, `usage`, `message_type`), de forma que un modelo que devuelva
+`{"task_status": "done"}` no cambia absolutamente nada.
+
+Y `verified` es la palabra de `src/prove.py` y de nadie más. `adapters.verify_task` compone un
+`ChangeSet` y se lo da a `prove`; los cuatro veredictos posibles son `verified`, `partial`,
+`unproved` y `contradicted`, y sólo el `proved` de `prove` se traduce a `verified`. Las `claims` que
+entran en la prueba **salen del ledger y los ficheros observados del disco**, nunca del informe del
+worker — que es justo el punto de la comparación: el informe podría estar equivocado. Un juez que
+falla no produce una puntuación inventada: vuelve sin puntuación y lo dice.
+
+Encima de eso hay una segunda puerta que vive en el ledger y no en el adaptador: **una objeción
+`blocking` abierta impide registrar una tarea como terminada**, porque la sala tiene un «esto está
+mal» sin contestar y anotarla como hecha por encima es exactamente la mentira que §12.1 prohíbe. Una
+objeción no se resuelve por silencio; `accepted` sigue contando como abierta, porque estar de acuerdo
+con una objeción no es haber hecho lo que pide.
+
+### 56.7 El cierre se construye desde el ledger, y siempre dice por qué paró
+
+El cierre de una actividad no lo escribe un modelo. `synthesis.build()` lee `ledger.snapshot()` y
+evidencia estructurada —un paquete de `prove`, un registro de consumo, un motivo de parada— y nada
+más: **no llama a ningún modelo y no tiene ningún parámetro por el que pudiera entrar una frase** que
+describa el resultado. Los mensajes que recibe se cuentan, no se interpretan: contestan «quién habló
+y cuánto», que es un hecho sobre el transcript y no una afirmación sobre el estado.
+
+El resultado es uno de cinco, en una escalera con un orden que importa: `disputed` (una objeción
+abierta de severidad `concern` o `blocking`, o una decisión vigente con disidentes) gana a todo,
+porque un cierre que informa de progreso por encima del desacuerdo esconde lo único que el lector
+necesitaba; después `blocked`; después `verified`, que **sólo existe si hay un paquete de prueba con
+veredicto `proved`**; después `decided` (una deliberación que concluyó y no ejecutó nada); y si no,
+`unverified`. Una decisión no se edita nunca: `supersede()` deja la vieja marcada como superada y la
+nueva apuntándola, y las dos filas se quedan, porque una decisión reescrita en silencio es un disenso
+borrado en silencio.
+
+Y el cierre **siempre lleva motivo de parada**. `STOP_REASONS` es una lista cerrada —`completed`,
+`convergence`, `judge_verdict`, `proof_passed`, `budget_exhausted`, `max_rounds`, `max_turns`,
+`user_stopped`, `blocked`, `failed`— porque «terminó» y «se quedó sin presupuesto» no pueden ser
+nunca la misma frase; si no llega ninguno se anota `unknown` en lugar de dejarlo vacío. Agotar el
+presupuesto impide **empezar** otra llamada y no mata la que está en vuelo: cortar una generación a
+medias paga los tokens igual y, mucho peor, puede dejar un efecto a medio aplicar.
+
+### 56.8 Idempotencia y recuperación: reiniciar no duplica ni repite
+
+Un POST cuya respuesta se perdió lo reintenta cualquier cliente honesto. Sin `idempotency_key` eso es
+un segundo turno, un segundo juego de generaciones y una segunda factura. El reclamo de la clave se
+toma **antes** de crear el turno y la tabla de turnos lleva un índice único sobre
+`(session_id, idempotency_key)`, así que la garantía sobrevive a dos procesos compitiendo y no sólo a
+dos hilos. La respuesta a un reintento es el id del turno que abrió el primero.
+
+`recover()` al arrancar marca los turnos que estaban en vuelo como `interrupted`, libera los claims
+cuyo titular murió con el proceso, informa de las tareas que hay que reconciliar con Dispatch y **no
+vuelve a ejecutar nada**. `interrupted` es un estado que ninguna política puede *elegir* —lo escribe
+sólo un reinicio— y del que no sale nada: reanudar es un turno nuevo, porque repetir el viejo es
+exactamente como un reinicio repite un efecto. Una aprobación pendiente sobrevive al reinicio tal
+cual: espera a una persona, no a un proceso.
+
+El flujo de eventos obedece la misma disciplina. Se escribe el estado **primero** y se emite el
+evento **después**, siempre, y los tests fijan el orden y no sólo que ocurran las dos cosas: un
+evento que dice una fase que no llegó a persistirse deja a la página, al State Mirror y al ledger de
+contexto por delante de la fuente de verdad. Una respuesta que llega después de una cancelación se
+guarda, se numera y se marca `late`, y **no avanza nada**: ni el turno, ni una tarea, ni el ledger.
+El registro de lo que pasó no es de la sala para reescribirlo.
+
+### 56.9 La pantalla `/council`
+
+Una sala de trabajo, no «varios chatbots contestando a la vez». La pantalla tiene cuatro partes, en
+el orden en que ocurre el trabajo, y **el ledger va al lado del transcript y no debajo**: un claim
+sobre un fichero y una objeción sin contestar son lo que el lector necesita ver *mientras* la sala
+habla — una decisión que desapareció de la última ronda es exactamente lo que un resumen esconde.
+
+- **La sala y sus asientos.** El formulario de apertura se pinta desde `GET /api/council/config`
+  —políticas, roles con el perfil que justifican, techos por política, presupuestos por defecto— y
+  no desde constantes copiadas al front, así que un rol añadido a `contracts.ROLES` llega a la
+  pantalla sin un segundo cambio. El formulario **no envía `tool_profile`**: pedir un permiso no es
+  tenerlo, y el servidor recalcula el perfil de cada asiento de todas formas. Tampoco envía `owner`.
+- **El transcript, en turnos.** Cada mensaje enseña autor, tipo (`proposal`, `critique`, `rebuttal`,
+  `synthesis`, `decision`, `objection`, `evidence`, `abstention`) y a quién va dirigido. Nunca se
+  pinta `[Nombre]: texto` dentro de un mensaje de usuario, que es justo lo que este plan viene a
+  eliminar. Un asiento de sólo lectura lleva un candado **y la palabra**: es un permiso leído del
+  perfil que el asiento tiene de verdad, no de su rol — un revisor al que el usuario autorizó
+  `scoped_write` escribe, y un driver al que la sala bajó a `read_only` no.
+- **Los controles del usuario**, por `POST /{id}/commands`: pausar, reanudar, cancelar el turno,
+  parar a un participante, dirigirle, reasignarle rol, traspasar una tarea y pedir la síntesis. Cada
+  rechazo llega con un **token estable** (`revision_conflict`, `turn_in_flight`, `engine_unavailable`
+  …) y una frase para la persona; la pantalla ramifica sobre el token y muestra la frase, que es la
+  lección que este repositorio ya pagó una vez adivinando la causa de un fallo leyendo su texto.
+- **El cierre**, con los cinco estados distinguidos **por palabra y no sólo por color**: `verified`
+  es el único que se lee como éxito, `decided` dice en su propia nota que decidir no es verificar, y
+  `blocked` y `disputed` llevan etiquetas distintas además de bandas distintas.
+
+Los eventos llegan por SSE. Las tramas van **sin nombre** y con el nombre del evento dentro del JSON
+—una trama SSE con `event: <nombre>` no llega nunca a `onmessage`, y eso ya costó una sesión de
+depuración en este árbol—, salvo la única trama nombrada `end`, que el servidor envía al cerrar por
+plazo pidiendo que se reabra desde el cursor. La reconexión es por `seq`: `advanceCursor` descarta lo
+que ya está por debajo del cursor en vez de pintarlo dos veces, no deja que el cursor retroceda, y
+cuando el buffer del servidor ya había descartado lo que se le pide **enseña el aviso de hueco en vez
+de fingir continuidad**. El marcador de hueco lleva el rango que falta y su `seq` es donde empiezan
+los eventos que sí sobreviven, así que la siguiente reconexión no vuelve a pedir lo que ya no está.
+
+Toda la aritmética vive en `studio/src/adapters/council.ts` y no dentro de un componente: agrupar
+mensajes por turno, deducir si una sala está bloqueada (y, por separado, si algo abierto impide
+llamarla verificada), el cursor de reconexión, el mapeo de veredicto a etiqueta y quién tiene un
+recurso. `studio/checks/council.check.mjs` las ejercita con **94 comprobaciones** y
+`tests/test_studio_council_js.py` lo envuelve. Un panel cuyo razonamiento no se puede comprobar es
+decoración.
+
+### 56.10 Las cifras y lo verificado
+
+`src/council/`: **13 ficheros, 12.652 líneas** — `persistence.py` (1.633) con su propio SQLite, WAL,
+claves de idempotencia, lecturas filtradas por visibilidad y `recover()`; `ledger.py` (1.322) con las
+tareas, los claims, las objeciones y las decisiones; `orchestrator.py` (1.285) con la máquina de
+estados de un turno; `contracts.py` (1.193) con las nueve formas y los dos grafos de estado como
+dato; `adapters.py` (1.193) con los puentes a `llm_core`, `dispatch`, `tournament` y `prove`;
+`context.py` (1.164) con el paquete por participante y la ceguera; `policies.py` (1.156) con el
+router determinista y las seis políticas; `service.py` (945) con la única puerta y el chequeo de
+propiedad; `participants.py` (795) con `effective_profile`, que sólo baja; `scheduler.py` (729) con
+el orden de adquisición y los presupuestos; `synthesis.py` (590) con el cierre; `events.py` (550) con
+el flujo reanudable; y `__init__.py` (97).
+
+La API es `routes/council_routes.py` (**715 líneas, 16 rutas** bajo `/api/council`: las 15 del §13
+más `GET /{id}/state`, declarada aparte en `scripts/council_openapi_check.py`). En Studio,
+`adapters/council.ts` (1.264), `screens/Council.tsx` (985) y `screens/council.css` (531), más
+`checks/council.check.mjs` (331) y `tests/test_studio_council_js.py` (39).
+
+Vocabulario cerrado, todo como dato: **6 políticas**, **9 roles**, **6 perfiles de herramientas**
+ordenados de menos a más peligroso, **5 tipos de autor**, **10 tipos de mensaje**, **4 visibilidades**,
+**9 estados de tarea** (los ocho del plan más `verified`, que sólo escribe `prove`), **6 tipos de
+recurso** y **6 estados de claim**, **3 severidades de objeción**, **5 estados de objeción**,
+**4 estados de decisión**, **15 estados de turno** más el `interrupted` que sólo escribe un reinicio,
+**10 estados de sesión**, **10 motivos de parada**, **8 comandos**, **8 tokens de error**,
+**23 nombres de evento** (los 15 del §1.8 más los ocho finos del ledger) y **5 estados de cierre**.
+`GET /api/council/config` los publica **todos**, cada uno leído del módulo que lo posee: una
+pantalla que tuviera que repetir una de estas listas caducaría el día que la lista creciera.
+
+Verificado: `node scripts/build-studio.js --force` y `node node_modules/typescript/bin/tsc --noEmit`
+limpios; `pytest -q tests/test_studio_council_js.py tests/test_studio_guards.py` en verde (12);
+`python scripts/i18n_es.py --check` limpio, con **145 cadenas nuevas** en `docs/ui/i18n/es.tsv`.
+
+### 56.10 La auditoría de conexión, y por qué existe
+
+Con los trece módulos escritos y **457 pruebas en verde**, la revisión previa al merge encontró seis
+fallos que ninguna de ellas podía ver. No eran errores dentro de un módulo: eran **líneas entre
+módulos que no existían**. El ledger construía sus eventos y los guardaba en una lista que nadie
+fuera del objeto leía, así que ni un claim adquirido ni una objeción ni una decisión llegaban jamás
+al SSE. `verify_task` estaba escrito, probado y no lo llamaba nadie, y `_summary()` construía el
+cierre sin `proof=`, de modo que la palabra `verified` era un peldaño al que no se podía subir.
+`EXECUTION_KEYS` tiraba `changes` y `verification` —la observación misma que el verificador
+necesita— antes de que llegaran a él. `contributions()` recibía una lista de participantes vacía, y
+el participante que calló desaparecía del cierre. `orchestrator.state()` se calculaba en cada turno
+y no lo devolvía ninguna ruta. El aviso de suplantación existía durante un render y luego nunca más.
+
+Es la **cuarta vez** en este proyecto que un subsistema se entrega construido y desconectado: las
+fuentes derivadas del Context Engine sin registrar, `LINK_PATCHABLE_FIELDS` sin `updated_at`, los
+diez perfiles de agente que no llegaban al loader, y ahora esto. El patrón es siempre el mismo —cada
+módulo hace lo correcto por su cuenta— y por eso ninguna prueba de módulo lo ve. Lo que cambia esta
+vez es que hay una prueba cuyo único trabajo es la pregunta: `tests/test_council_wiring.py`, **25
+pruebas** que no comprueban si algo funciona sino si algo **se alcanza**. Una lee los `_emit("…")`
+del fuente del ledger con `ast` y falla si aparece un nombre que `COUNCIL_EVENTS` no declara, porque
+`publish()` convierte lo desconocido en `council_error` sin ruido y ninguna prueba dispara todos los
+caminos. Otra comprueba que la sala publica en **su** flujo y no en el del registro de módulo. Otra
+compara la firma con la que el orquestador llama al verificador contra la que el adaptador ofrece.
+
+Los arreglos, en una línea cada uno: `CouncilLedger` recibe un `publisher` y `_emit()` publica;
+`COUNCIL_EVENTS` pasa de 15 a **23 nombres** (y `EVENT_NAMES` con ella); `verified` entra en
+`TASK_STATUSES` porque «lo dijo el worker» y «lo comprobamos» no pueden ser la misma palabra;
+`_run_task` llama a `_verify()` en un hilo, y ese camino **sólo puede bajar la afirmación** —sin
+verificador, sin `proved`, o con una objeción bloqueante abierta, la tarea se queda en `done`—;
+`build()` acepta `participants`; el orquestador suma entrada y salida por su cuenta; el transcript
+recalcula el aviso de suplantación por fila; y `GET /{id}/state` publica lo que el coordinador ya
+sabía. Detalle completo en `PENDIENTES.md`.
+
+Un fallo salió sólo de mirar la pantalla: con el reparto de tokens ya pintado, un turno real informó
+**`1228/79/79`** — un total menor que su propia entrada. `_tokens()` caía a `output_tokens` cuando el
+endpoint no manda un total, así que el presupuesto cobraba la respuesta y no la pregunta. Es la
+lección de siempre en su forma más barata: **un número que nadie enseña es un número que nadie
+comprueba.**
+
+Lo que **no** cierra, con detalle en `OBJETIVOS.md` y `PENDIENTES.md`: `preset_id` se acepta y no se
+guarda; `blind_round` paga una llamada de juez que nadie pidió (el arreglo está en `tournament.run`,
+no aquí); el consumo que informa `/usage` se pone a cero al reiniciar, porque los contadores del
+scheduler viven en el proceso; y el único camino a un cierre completo sigue siendo pedir una
+síntesis, que escribe en el flujo de auditoría — falta un `GET /{id}/summary` de sólo lectura.
+
 ## Cómo mantener este documento
 Cada bloque de trabajo añade una sección (fecha, qué, por qué, ficheros, cómo se verificó, cifras) y actualiza las cifras de cabecera (`git log --oneline c9dd68d8..HEAD | wc -l`, `git diff --stat c9dd68d8..HEAD`). Los commits del fork llevan mensajes largos que explican el porqué: `git log c9dd68d8..HEAD` es la fuente detallada.

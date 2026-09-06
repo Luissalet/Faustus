@@ -832,3 +832,256 @@ construido y **habría que mirar**.
   viaja» y «este nivel gana a ese otro» sobreviven a que el catálogo crezca. «Son once», «es
   `greedy`» y «gana el proyecto» caducan el día que alguien implementa lo que el test daba por
   inexistente.
+
+## Modo Consejo: lo cerrado, y lo que deja abierto (06-09-2026)
+
+**Nota de cierre (06-09-2026, antes de mezclar `feat/council`).** Esta lista se auditó entera antes
+del merge. De los seis `[!]`, **cinco quedan arreglados** y uno se queda como está a propósito; los
+`[~]` baratos también. La marca de cada entrada dice en qué estado quedó y el párrafo *Arreglado*
+explica qué se hizo — el diagnóstico original se conserva debajo porque describe el fallo mejor que
+cualquier resumen, y porque es el tipo de fallo que vuelve.
+
+Lo que protege el arreglo es `tests/test_council_wiring.py` (25 pruebas). No pregunta si un módulo
+funciona —de eso ya hay 457 pruebas, todas verdes mientras estos seis fallos estaban vivos— sino si
+los módulos **se alcanzan entre sí**. Es la cuarta vez en este proyecto que un subsistema se entrega
+construido y desconectado (fuentes derivadas sin registrar, `LINK_PATCHABLE_FIELDS` sin
+`updated_at`, diez perfiles que no llegaban al loader), y la primera en que se deja una prueba cuyo
+único trabajo es esa pregunta.
+
+El plan 4 de 11 está construido y documentado en `FAUSTUS.md` §56. Lo que falta por
+construir está en `OBJETIVOS.md`; esto es lo que **ya está construido y no cuadra**. Casi todo lo de
+abajo son desajustes **entre módulos** que se escribieron a la vez: cada uno hace lo correcto por su
+cuenta y la línea que los une no existe o dice otra cosa.
+
+- `[x]` **El ledger emite sus eventos a una lista en memoria, no al flujo de la sala.**
+  *Arreglado.* `CouncilLedger` acepta un `publisher` (con un centinela `UNSET_PUBLISHER`, para que
+  «sin configurar» y «deliberadamente mudo» no sean la misma instrucción), `_emit()` publica además
+  de anexar, y `CouncilOrchestrator.__init__` llama a `ledger.publish_to(self._events)` — sin eso el
+  ledger resolvería el flujo del registro de módulo mientras la sala escucha el que le inyectaron, y
+  una sala tendría dos flujos. Los ocho nombres finos del ledger (`council_task_added`,
+  `council_task_assigned`, `council_task_status`, `council_claim_conflicted`,
+  `council_claim_handoff_refused`, `council_claim_transferred`, `council_objection_resolved`,
+  `council_decision_superseded`) se añadieron a `COUNCIL_EVENTS` **y** a `EVENT_NAMES`. Una prueba
+  lee los `_emit("…")` del propio fuente con `ast` y falla si aparece uno sin declarar: es la única
+  forma de cubrir los que ninguna prueba dispara, y `publish()` los reescribiría como
+  `council_error` en silencio. `service.ledger()` construye el suyo con `publisher=None` — una vista
+  de lectura no debe poder anunciar nada. Diagnóstico original:
+  `CouncilLedger._emit()` construye el evento y hace `self.events.append(event)` — y nada más. No
+  toca `events.stream_for(session_id)`. Consecuencia medible: `council_claim_acquired`,
+  `council_objection_recorded` y `council_decision_recorded` **no llegan nunca al SSE**, así que una
+  página abierta no se entera de que se ha reclamado un fichero, de que alguien ha objetado ni de que
+  se ha tomado una decisión; sólo lo ve si vuelve a pedir `/ledger`. La cobertura es además desigual
+  y eso lo hace peor que un hueco limpio: el orquestador sí publica `council_claim_released` al
+  cancelar y al parar a un participante, y `council_task_handed_off` al traspasar, de modo que un
+  claim **liberado** aparece en el flujo y el mismo claim **adquirido** no. Segundo desajuste dentro
+  del mismo: el ledger emite los nombres `council_task_status` y `council_task_assigned`, que **no
+  están en `COUNCIL_EVENTS`**; el día que alguien conecte `_emit` al flujo, `publish()` los
+  reescribirá como `council_error` con `unknown_event` — que es el comportamiento correcto de
+  `events.py` y una sorpresa garantizada para quien haga la conexión. El arreglo son dos decisiones,
+  no una: pasarle el flujo al ledger (por constructor, como ya recibe `store` y `claims_backend`), y
+  añadir los dos nombres a la tupla cerrada o renombrarlos a los que ya existen. Mientras tanto la
+  pantalla `/council` recarga el ledger cuando llega cualquier evento de mensaje o de estado de
+  turno, que funciona pero es un sondeo disfrazado.
+
+- `[x]` **El cierre no puede decir `verified` hoy, y no porque falte evidencia.**
+  *Arreglado, y por los dos extremos.* `EXECUTION_KEYS` no dejaba pasar `changes` ni `verification`,
+  así que el orquestador tiraba justo la observación que `verify_task` necesita: sin ella no había
+  ChangeSet que juzgar y ninguna tarea podía probarse nunca. Ahora las acepta (son medidas de
+  `dispatch.compact`, no afirmaciones de un modelo — siguen fuera de `INVOCATION_KEYS`), y
+  `_run_task` llama a `_verify()` cuando el estado llega a `done` o `review`. Ese camino **sólo
+  puede bajar la afirmación**: sin verificador en la build la tarea se queda en `done`; si `prove`
+  no dice `proved`, se queda en `done` y el paquete se guarda igual (un «miramos y no pudimos
+  demostrarlo» es un resultado que el cierre tiene que poder contar); y si el ledger veta por una
+  objeción bloqueante abierta, se queda en `done` y se anuncia el veto. Sólo un paquete `proved`
+  **y** un ledger que consiente escriben `verified` y publican `council_activity_verified`.
+  `verify_task` es síncrono y lee el disco, así que corre en `asyncio.to_thread`: una sala con el
+  bucle bloqueado en un diff no puede responder a un `pause`. `_summary()` pasa ahora
+  `proof=self._proof_packet()`, que elige el veredicto **más débil** de los recogidos — cuatro
+  tareas probadas y una contradicha no son una sesión verificada. Y `verified` se añadió a
+  `contracts.TASK_STATUSES` y a `TERMINAL_TASK_STATUSES`: sin él, «lo dijo el worker» y «lo
+  comprobamos» serían la misma palabra. Diagnóstico original:
+  `synthesis.status_of()` sólo llega a `verified` con un paquete de `prove` cuyo veredicto sea
+  `proved`, y `orchestrator._summary()` llama a `_synthesis.build(self._ledger, messages=…,
+  usage=…, stop_reason=…)` **sin `proof=`**. Nada en el turno construye ese paquete: `verify_task`
+  existe, está probado y no lo llama nadie desde el orquestador. Resultado: todo cierre sale como
+  mucho `decided` o `unverified`, `verification.verdict` es siempre `"none"` y la nota que lo
+  acompaña dice literalmente «no proof packet was supplied». La escalera funciona; le falta el
+  peldaño de entrada. Es coherente con no mentir —mejor `unverified` que un `verified` inventado—
+  pero hay que decirlo en voz alta: **hoy la palabra `verified` es inalcanzable por la vía normal**.
+
+- `[x]` **Las líneas de contribución salen sin nombre y sin roles, y el participante que calló
+  desaparece.** *Arreglado.* `build()` tiene ahora `participants=` (palabra clave, como el resto: la
+  prueba que fijaba la lista exacta de parámetros se reescribió para fijar la **garantía** —ningún
+  argumento por el que pueda entrar una frase— en vez de una foto de la firma, que es lo que la hizo
+  fallar), `_summary()` le pasa `self._participants()`, y `_row()` acepta una cadena suelta como id
+  porque el orquestador cae a una lista de ids cuando no puede leer los asientos: un cierre que
+  descartara esas filas informaría de una sala vacía justo cuando su estado es más difícil de leer.
+  Diagnóstico original:
+  `synthesis.build()` hace `contributions=tuple(contributions(messages, ()))` — con la
+  lista de participantes **vacía**. El docstring de `contributions()` promete dos cosas que su único
+  llamante rompe: que `display_name` y `roles` vengan del participante (con `()` cae siempre al
+  `participant_id` crudo y a una lista vacía) y que «un participante que no dijo nada sigue teniendo
+  su fila, porque el silencio en una sala a la que se le pidió opinión es información» (con `()` no
+  hay de dónde sacar esa fila). Y `build()` **no tiene parámetro `participants`**, así que ni un
+  llamante que quisiera hacerlo bien podría: el arreglo toca la firma.
+
+- `[x]` **El consumo que llega al cierre no distingue entrada de salida.**
+  *Arreglado, y de paso salió un fallo de aritmética que sólo se ve cuando el número se pinta.* El
+  orquestador lleva ahora su propia suma de `input_tokens`/`output_tokens` (`_spend()`, que es el
+  único sitio que ve todos los resultados) y `_usage()` la publica junto al total del scheduler, que
+  sigue siendo el número contra el que se aplicó el presupuesto. Un `usage` que sólo trae un total
+  no se parte a ojo: inventar el reparto sería una medida que este módulo no hizo. **Y el fallo:**
+  con la pantalla ya pintando el reparto, un turno real dio `Tokens in/out/total: 1228/79/79` — un
+  total menor que su propia entrada. `_tokens()` caía a `output_tokens` cuando el endpoint no manda
+  `total_tokens`, así que el presupuesto se cobraba la respuesta y no la pregunta. Ahora suma prompt
+  y compleción, que son dos mitades de un número, no dos candidatos. Diagnóstico original:
+  `orchestrator._usage()` devuelve `total_tokens`, `calls`, `wall_seconds`, `waited_ms` y `source`,
+  y `synthesis._usage()` espera además `input_tokens` y `output_tokens`, que rellena a 0. Todo cierre
+  informa por tanto `0/0/N` tokens. Los números existen aguas arriba —`StreamingChatInvoker` devuelve
+  el `usage` de la llamada— y se pierden al agregarlos en el scheduler, que sólo cuenta el total.
+
+- `[~]` **`/api/council/{id}/usage` se pone a cero al reiniciar.** `service.usage()` lee
+  `scheduler.stats()`, y el registro de schedulers es un diccionario de proceso: los presupuestos
+  persisten en `council.db` y **el gasto no**. Una sala que consumió 80.000 tokens ayer informa hoy
+  de 0 gastados sobre un límite de 120.000, lo que no es sólo un número feo: `can_start()` volvería a
+  dejar arrancar llamadas que el presupuesto ya no debería permitir. No está claro si es deuda o
+  decisión —el plan dice «presupuesto por actividad» y una actividad no sobrevive al reinicio— pero
+  hoy no lo dice ni el código ni la API.
+
+- `[x]` **El aviso de suplantación existe, se calcula y se pierde al recargar.**
+  *Arreglado por el camino limpio y sin campo nuevo.* `claims_identity()` es una función del
+  contenido, y el contenido **sí** se guarda; el error era guardarla otra vez. `service.messages()`
+  la recalcula por fila al servir el transcript, así que la advertencia es la misma cadena que
+  produjo el evento y no puede divergir de él después de un cambio de build. El adaptador leía sólo
+  `metadata.claims_identity` —donde nada escribía nunca— y ahora lee el campo de la fila con
+  `metadata` como respaldo para mensajes guardados por builds anteriores. Diagnóstico original:
+  `CouncilMessage.claims_identity()` funciona y el orquestador lo publica en el evento
+  `council_message` (`claims_identity=claimed`). Pero **no se guarda**: `CouncilMessage` no tiene
+  campo para ello y el orquestador no lo mete en `metadata`, así que `GET /{id}/messages` no lo trae.
+  Un usuario que estaba mirando cuando llegó el mensaje ve el aviso; el que abre la sala mañana, no —
+  y es el segundo el que está auditando. El arreglo barato es `metadata: {"claims_identity": …}` al
+  componer el mensaje; el limpio es un campo. La pantalla ya lee `metadata.claims_identity` y no
+  reimplementa el detector: dos copias de esas expresiones regulares divergirían, y la que se
+  equivocara sería la del navegador.
+
+- `[x]` **Nada expone `orchestrator.state()`.** *Arreglado:* `CouncilService.state()` y
+  `GET /api/council/{id}/state`, verificado contra la app real. Lee el orquestador que **este**
+  proceso tiene y no construye uno: fabricar un coordinador para responder a un GET abriría una sala
+  que nadie pidió. Una sala sin turno en vuelo responde `live: false` con lo que sabe el store; una
+  viva añade `mutating`, `running_tasks`, `late_results`, `cancelled_turns`,
+  `stopped_participants` y el `usage`. `scripts/council_openapi_check.py` gana una lista
+  `BEYOND_PLAN` para que la ruta 16 aparezca como *declarada fuera del §13* y no como una sorpresa.
+  Diagnóstico original: ahí viven `paused`, `stopped_participants`,
+  `mutating` (qué recurso está escribiendo ahora mismo un participante), `running_tasks` y
+  `late_results`, y su docstring dice que es «todo lo que una ruta, una página o un test necesitan
+  saber». `CouncilService` no tiene método que lo devuelva y `council_routes.py` no tiene ruta.
+  Consecuencia concreta en la interfaz: «este participante está parado» y «este resultado llegó tarde
+  y no cuenta» **no se pueden pintar**; la pantalla deduce la pausa del `status` de la sesión, que es
+  una aproximación (el `_paused` del orquestador y el `status` persistido pueden no coincidir si el
+  `_set_session_status` falla, y ese caso está contemplado en el código con un `persisted: False`).
+
+- `[~]` **El único camino a un cierre completo es pedir una síntesis, y pedirla escribe.**
+  `council_activity_completed` lleva sólo `status` y `stop_reason`; el `CouncilSummary` entero viaja
+  dentro de `TurnOutcome`, que sólo sale por el valor de retorno de `run_turn` (que nadie devuelve al
+  cliente) y por `command("request_synthesis")`. Así que una página que se recarga después de un
+  turno terminado puede enseñar la palabra del veredicto y para leer las decisiones, los cambios y la
+  verificación tiene que **pedir otra síntesis** — que publica un `council_activity_completed` nuevo.
+  Un «leer» que escribe en el flujo de auditoría. Falta un `GET /{id}/summary` que construya el cierre
+  desde el ledger sin emitir nada; `synthesis.build()` ya es puro, así que es una ruta y un método.
+
+- `[~]` **`preset_id` se acepta y no se guarda.** La ruta lo lee del cuerpo, `service.create()` lo
+  recibe y lo escribe en un `logger.info`. Está razonado en el docstring —`CouncilSession` no tiene
+  campo y ensanchar un contrato ajeno para anotar algo que la ruta ya expandió en `participants` sería
+  el peor de los dos errores— y aun así el efecto neto es que **la sala no sabe de qué preset salió**,
+  que es justo lo que hace falta para «vuelve a abrir esta misma mesa» y para las métricas por
+  política de `OBJETIVOS.md`.
+
+- `[~]` **`blind_round` paga una llamada de juez que nadie pidió.** `tournament.run` rankea siempre
+  sus finalistas, así que una ronda ciega de consejo gasta un juez aunque el llamante sólo quisiera
+  las respuestas. Está dicho en el docstring del método y la salida deja `answers` y `judge`
+  separados para que se pueda ignorar, pero el coste ya se pagó. Arreglarlo es un parámetro en
+  `tournament.run` (`rank=False`), no un cambio en el consejo.
+
+- `[x]` **Tres conjuntos del ledger nombran estados de tarea que el contrato no tiene.**
+  *Arreglado el que importaba.* `verified` **está** ahora en `contracts.TASK_STATUSES` y en
+  `TERMINAL_TASK_STATUSES`, porque hace falta para el arreglo de arriba y porque la alternativa era
+  que «lo dijo el worker» y «lo comprobamos» compartieran palabra. Los comentarios de `ledger.py` y
+  `synthesis.py` se actualizaron: ya no dicen que el contrato no lo tiene, y `synthesis.py` explica
+  la diferencia entre los dos en vez de copiar el conjunto sin razón. Queda `ready`/`assigned` en
+  `STARTABLE_TASK_STATUSES` y `ASSIGNED_TASK_STATUSES`, que son los nombres del **plan** para lo que
+  el contrato llama `pending` y `claimed`: no se corresponden con ningún valor legal, así que la
+  condición sencillamente nunca los ve. Inofensivo y todavía confuso. Diagnóstico original:
+  `SATISFIED_TASK_STATUSES` y `VERIFICATION_TASK_STATUSES` incluyen `verified`, y
+  `STARTABLE_TASK_STATUSES` incluye `ready` y `assigned`; `contracts.TASK_STATUSES` es
+  `pending|claimed|running|review|done|blocked|failed|cancelled` y no tiene ninguno de los tres.
+  `ledger.py` **lo dice** en un comentario y lo hace a propósito (que una vocabulario futuro no deje
+  de satisfacer dependencias en silencio), y `_check_vocabulary` seguiría rechazando un
+  `set_task_status(…, "verified")`, así que no rompe nada hoy. Lo que sí es deuda: `synthesis.py`
+  copia el mismo conjunto **sin el comentario**, de modo que quien lea sólo ese fichero concluirá que
+  `verified` es un estado de tarea legítimo.
+
+- `[x]` **`synthesis.ABSTENTION_TYPES` cuenta una palabra que no existe.** *Aclarado sin cambiar el
+  comportamiento:* el comentario dice ahora que `abstention` es el valor del contrato y `abstain` la
+  tolerancia para un invoker que devuelva el verbo en vez del sustantivo — cosa que el orquestador
+  traduce, pero un llamante directo de `contributions()` no. Quitar la mitad muerta habría sido más
+  limpio y también más frágil. Diagnóstico original: es
+  `{"abstain", "abstention"}` y `MESSAGE_TYPES` sólo tiene `abstention`; la mitad del conjunto está
+  muerta. Inofensivo y confuso: el lector deduce que hay dos formas de abstenerse.
+
+- `[x]` **`/api/council/config` no publica media docena de vocabularios que una interfaz necesita.**
+  *Arreglado, los diecisiete.* `config()` manda ahora `turn_states`, `terminal_turn_states`,
+  `message_types`, `visibilities`, `author_kinds`, `task_statuses`, `terminal_task_statuses`,
+  `claim_kinds`, `claim_states`, `objection_targets`, `objection_severities`, `objection_statuses`,
+  `decision_statuses`, `stop_reasons`, `reserved_ids`, `events` (los 23 de `COUNCIL_EVENTS`),
+  `writing_profiles`, `close_statuses`, `round_modes`, `blindness` y `debate_phases`, cada uno leído
+  del módulo que lo posee. `FALLBACK_WRITING_PROFILES` sigue en el adaptador y ahora es lo que dice
+  ser: un respaldo para un servidor anterior al campo, no una segunda opinión sobre permisos.
+  `CLOSE_STATUSES` también se queda, porque los cinco llevan **etiqueta y tono** y eso no es
+  competencia del servidor; teniendo la lista de ambos lados, un sexto estado aparece como uno que
+  el navegador no sabe pintar en vez de como uno que pinta mal. Verificado contra la app real: 29
+  claves en `/api/council/config`. Diagnóstico original:
+  Manda `policies`, `roles`, `tool_profiles`, `policy_tool_ceilings`, `completion_modes`,
+  `session_statuses`, `default_budgets`, `commands`, `errors` y `verdicts`. **No** manda
+  `WRITING_PROFILES` (qué perfiles escriben — sin él, distinguir un asiento de sólo lectura de uno
+  que puede escribir obliga a repetir la lista en el front, que es lo que hace hoy
+  `adapters/council.ts` con un `FALLBACK_WRITING_PROFILES` y una nota), ni `synthesis.STATUSES` (los
+  cinco estados de cierre que la pantalla tiene que pintar), ni `MESSAGE_TYPES`,
+  `OBJECTION_SEVERITIES`, `TASK_STATUSES`, `CLAIM_STATES`, `STOP_REASONS` o `VISIBILITIES`, ni las
+  fases, modos y valores de ceguera de `policies.py`. La ruta hace lo correcto —`config()` lee de los
+  módulos que poseen cada lista, así que añadir una es una línea— pero mientras no se añadan, la
+  promesa de «el formulario se pinta desde el servidor» se cumple sólo para la mitad de la pantalla.
+
+- `[x]` **El *seam* `use_orchestrator` de `service.py` conecta de verdad — comprobado.** El servicio
+  se escribió contra un orquestador mockeado y `_ORCHESTRATOR_CONTRACT` es una tupla de cadenas, no un
+  `Protocol`, así que nada lo verificaba automáticamente. Comprobado a mano contra
+  `orchestrator.py`: `_orchestrator_for()` construye con `(session, store=, scheduler=, events=,
+  invoker=, executor=, clock=)` y `CouncilOrchestrator.__init__` acepta exactamente esos (más
+  `ledger=`, opcional); y las ocho llamadas de `_send()` casan con las firmas reales —`pause()`,
+  `resume()`, `request_synthesis()`, `cancel_turn(turn_id, *, actor)`,
+  `stop_participant(participant_id, *, actor)`, `steer(participant_id, message, *, actor)`,
+  `handoff_task(task_id, to, *, actor)`— incluyendo el paso por nombre de los posicionales, que es lo
+  que se rompería primero. `assign_role` no va al orquestador a propósito: cambia un asiento
+  guardado, no un turno en vuelo. La asimetría que quedaba —`state()` en el contrato
+  escrito y sin llamante— se cerró con `CouncilService.state()` y `GET /{id}/state`. El
+  contrato sigue siendo una tupla de cadenas y no un `Protocol`; ahora hay al menos una prueba que
+  compara las firmas de la costura nueva
+  (`test_the_verifier_the_room_calls_has_the_shape_the_adapter_offers`), que es el mismo truco
+  aplicado donde más barato sale.
+
+### Lo que se queda abierto a propósito
+
+Cuatro cosas de arriba siguen en `[~]` y ninguna es un descuido:
+
+- **El gasto se pone a cero al reiniciar.** Persistirlo es una tabla y una decisión sobre qué
+  significa «presupuesto por actividad» cuando la actividad sobrevive al proceso. Hasta que se
+  decida, `/usage` dice de dónde salen los números (`source: council_scheduler`) y `state()` los
+  repite, así que al menos se ve que son de este proceso.
+- **`request_synthesis` es la única vía a un cierre completo, y escribe.** Falta un
+  `GET /{id}/summary` que construya el cierre sin emitir nada; `synthesis.build()` ya es puro, así
+  que es una ruta y un método. No entra aquí porque el arreglo de `verified` cambia lo que ese
+  endpoint devolvería, y es mejor añadirlo cuando el cierre esté asentado.
+- **`preset_id` se acepta y no se guarda.** Sigue necesitando un campo en `CouncilSession` y su
+  migración; ensanchar el contrato por un `logger.info` era el peor de los dos errores y lo sigue
+  siendo.
+- **`blind_round` paga un juez que nadie pidió.** El arreglo está en `tournament.run` (`rank=False`),
+  no en el consejo, y tocar el torneo desde la rama del consejo mezcla dos cosas.

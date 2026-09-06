@@ -340,6 +340,17 @@ DEFAULT_SETTINGS = {
     # already recorded stays readable.
     "agent_tournament": True,
     "agent_tournament_max_models": 4,
+    # Council (src/council/): a durable room where 2-8 models think, object and
+    # review the same matter, and exactly one of them owns each file and each
+    # effect. Default OFF, unlike the rest of this block, and deliberately: a
+    # council multiplies one request by several models across several rounds,
+    # and in `collaborate`/`pair` it also WRITES to the workspace through a
+    # claim. That is a cost and a blast radius the operator should switch on
+    # knowingly rather than discover. Off = /api/council/{id}/messages and
+    # /commands refuse and say so; every read still answers, so a room already
+    # recorded keeps its transcript, ledger, decisions and evidence — turning
+    # the feature off is a decision about what may RUN, never a delete.
+    "agent_council": False,
     # Provenance graph (src/provenance_graph.py): the 2D audit view over the
     # memory and the workspace, built ONLY from declared edges — a dependency
     # the user wrote, an evidence span, a checkpoint diff, a citation that

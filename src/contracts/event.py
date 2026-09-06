@@ -51,6 +51,27 @@ EVENT_NAMES = (
     "project_context_updated", "project_context_refresh_queued",
     "project_context_indexed", "project_context_index_failed",
     "project_context_source_missing", "project_context_retrieved",
+    # Council. Underscored for the same reason as the block above: it is the
+    # spelling the plan uses and the one the context cache, the ledger and the
+    # state mirror already route on. `council_message`, `council_turn_state`,
+    # `council_usage` and `council_error` are the stream's own frames rather
+    # than domain events, and they are listed here so that one vocabulary
+    # covers what a page subscribes to and what an audit replays.
+    "council_activity_started", "council_participant_resolved",
+    "council_context_compiled", "council_claim_acquired",
+    "council_claim_released", "council_objection_recorded",
+    "council_task_handed_off", "council_decision_recorded",
+    "council_activity_verified", "council_activity_completed",
+    "council_activity_blocked", "council_message", "council_turn_state",
+    "council_usage", "council_error",
+    # The ledger's half of the same vocabulary. `CouncilLedger._emit` publishes
+    # through `src/council/events.py`, whose `COUNCIL_EVENTS` must stay a subset
+    # of this tuple: a name declared there and missing here would reach a page
+    # and then be refused by the envelope an audit replays it through.
+    "council_task_added", "council_task_assigned", "council_task_status",
+    "council_claim_conflicted", "council_claim_handoff_refused",
+    "council_claim_transferred", "council_objection_resolved",
+    "council_decision_superseded",
 )
 
 _REDACTED = "<redacted>"
