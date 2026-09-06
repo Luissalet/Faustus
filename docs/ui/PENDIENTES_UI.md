@@ -881,3 +881,18 @@ su área y baja el baseline. Ningún módulo Studio nuevo la aumenta.
     él la tarjeta de una aprobación que seguía pendiente. La aprobación en
     memoria tampoco sobrevive al reinicio, así que hoy lo honesto sería
     marcar esos turnos como caducados y ofrecer rehacerlos.
+165. **`[x]` RUN-1.** *(07-09-2026.)* Un turno en marcha no decía **qué**
+    estaba haciendo: entre dos herramientas no emite nada que el transcript
+    dibujara, y ese silencio es idéntico al de un turno muerto. Ahora hay una
+    línea de latido al final del turno (fase + reloj, y la velocidad mientras
+    decodifica) y la vieja línea «Pensando» se retira porque decía menos.
+166. **`[x]` RUN-1.** La velocidad sólo existía en el pie del turno. Ahora se
+    mide en el navegador por los huecos entre los trozos que llegan (ventana
+    de 40, huecos fuera de [3 ms, 4 s] descartados, se enseña con `~`).
+167. **`[ ]` RUN-1.** El latido cuenta **trozos**, no tokens: con Ollama y con
+    las APIs que conocemos un trozo es un token, pero un backend que agrupe
+    varios por mensaje leería bajo. La cifra del servidor al terminar es la
+    que manda, y por eso la del navegador lleva `~`.
+168. **`[ ]` RUN-1.** Mientras corre una herramienta la línea enseña su nombre
+    y el reloj, pero no su progreso: `tool_progress` trae un mensaje (la cola
+    de un bash largo) que sí se pinta en la barra y no en el latido.
