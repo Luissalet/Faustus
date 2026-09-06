@@ -987,6 +987,16 @@ app.include_router(setup_tournament_routes())
 from routes.council_routes import setup_council_routes
 app.include_router(setup_council_routes())
 
+# State Mirror: the read model of what is true right now, when we last looked
+# and how we know it (src/state_mirror/). Admin, like Council, and owner-scoped
+# inside that: another owner's entity answers 404, never 403. The
+# `agent_state_mirror` flag gates only the two endpoints that COST the machine
+# (POST /refresh and /reconcile); every read keeps answering, because turning
+# the mirror off is a decision about what may probe this box, not an
+# instruction to hide what was already observed.
+from routes.state_mirror_routes import setup_state_mirror_routes
+app.include_router(setup_state_mirror_routes())
+
 # Provenance graph: the 2D audit view over the memory and the workspace, built
 # from declared edges only — never one a model asserted (src/provenance_graph.py).
 from routes.provenance_routes import setup_provenance_routes
@@ -1230,6 +1240,13 @@ async def serve_group(request: Request):
 async def serve_council(request: Request):
     """Studio Council: several models think about one matter, and exactly one
     of them may act on each resource. The room, its ledger and its close."""
+    return await serve_index(request)
+
+@app.get("/state")
+async def serve_state_mirror(request: Request):
+    """Studio State Mirror: what is true right now, when we last looked and how
+    we know. Every value on it carries its age, and a stale one is never drawn
+    as the current state."""
     return await serve_index(request)
 
 @app.get("/context")

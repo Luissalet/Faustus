@@ -43,6 +43,12 @@ CONTEXT_ENGINE_DB = os.path.join(DATA_DIR, "context_engine.db")
 # an hour must not hold a write lock that a chat turn is waiting on, and losing
 # it costs a room, not a user's sessions.
 COUNCIL_DB = os.path.join(DATA_DIR, "council.db")
+# State Mirror keeps its own file, and here the reason is the write rate rather
+# than the lock duration: observations arrive from probes several times a
+# second and every one of them is an append. Nothing in this file is canonical
+# — it is a read model of state that lives elsewhere — so losing it costs a
+# rebuild from the sources, never a fact.
+STATE_MIRROR_DB = os.path.join(DATA_DIR, "state_mirror.db")
 SCHEDULED_EMAILS_DB = os.path.join(DATA_DIR, "scheduled_emails.db")
 EMAIL_CACHE_DB = os.path.join(DATA_DIR, "email_cache.db")
 

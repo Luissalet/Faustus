@@ -596,6 +596,26 @@ GROUPS: list[dict[str, Any]] = [
         ],
     ),
     _group(
+        "state_mirror", "State Mirror",
+        "What is true right now, when we last looked and how we know it: one row per project, "
+        "service, model, run and artifact, with the time and the source printed beside every "
+        "value. Nothing here is canonical. The mirror is a projection of the systems that own "
+        "the facts, and anything about to act revalidates against those systems first.",
+        [
+            _bool("agent_state_mirror", "State Mirror",
+                  "Let the mirror OBSERVE: the sweep re-reads whatever has aged past its guarantee, "
+                  "and Refresh probes a source on demand. Off is the default because both of those "
+                  "spend this machine on work nobody asked for at that moment. Off = nothing probes "
+                  "anything and the refresh and reconcile endpoints refuse and say so; every read "
+                  "keeps answering, so what was already observed stays visible with its age on it."),
+            _int("agent_state_mirror_sweep_seconds", "Sweep interval (s)",
+                 "How often the sweep looks for fields that have aged past their TTL and observes "
+                 "them again. Read only while the switch above is on. A longer interval means a "
+                 "service that died is noticed later, not that it is noticed less.",
+                 5, 3600, step=5),
+        ],
+    ),
+    _group(
         "provenance", "Provenance graph",
         "The audit view over the memory and the workspace: why the agent believes a thing, what is "
         "floating unreferenced, what is said twice, and what breaks if you touch a file.",

@@ -1,0 +1,296 @@
+/* State Mirror: five questions down the page, in the order a person asks them,
+   and every value carrying its age.
+
+   The one rule the styling exists to hold: a value that may not be presented
+   as the current state must not LOOK like one. So a row is tinted by its worst
+   freshness, a stale value is struck through as well as coloured and the word
+   itself is always printed. Colour alone would fail a reader who cannot see
+   it, and this is the screen where that failure costs a wrong decision. */
+
+.fs-stm {
+  display: grid;
+  gap: var(--fs-space-4);
+  padding-block-end: var(--fs-space-6);
+}
+
+.fs-stm__lede {
+  margin-block-start: var(--fs-space-2);
+}
+
+.fs-stm__label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fs-text-3);
+}
+
+.fs-stm__notice {
+  display: block;
+  margin: 0;
+  padding: var(--fs-space-2) var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-inline-start: 3px solid var(--fs-border-strong);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-2);
+  color: var(--fs-text-2);
+  font-size: var(--fs-label-size);
+}
+
+.fs-stm__notice[data-tone='warning'] {
+  border-inline-start-color: var(--fs-warning);
+  background: color-mix(in srgb, var(--fs-warning) 8%, var(--fs-surface-2));
+}
+
+.fs-stm__notice[data-tone='danger'] {
+  border-inline-start-color: var(--fs-danger);
+  background: color-mix(in srgb, var(--fs-danger) 8%, var(--fs-surface-2));
+}
+
+/* ── A word, a tone, and never a colour on its own ── */
+
+.fs-stm__tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px var(--fs-space-2);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-surface-2);
+  color: var(--fs-text-2);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.fs-stm__tag[data-tone='ok'] {
+  border-color: color-mix(in srgb, var(--fs-success) 45%, var(--fs-border));
+  color: var(--fs-success);
+}
+
+.fs-stm__tag[data-tone='warn'] {
+  border-color: color-mix(in srgb, var(--fs-warning) 45%, var(--fs-border));
+  color: var(--fs-warning);
+}
+
+.fs-stm__tag[data-tone='danger'] {
+  border-color: color-mix(in srgb, var(--fs-danger) 55%, var(--fs-border));
+  color: var(--fs-danger);
+  background: color-mix(in srgb, var(--fs-danger) 10%, var(--fs-surface-2));
+}
+
+/* ── The five sections ── */
+
+.fs-stm__section {
+  display: grid;
+  gap: var(--fs-space-3);
+  padding: var(--fs-space-4);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-1);
+}
+
+.fs-stm__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--fs-space-2);
+}
+
+.fs-stm__title {
+  margin: 0;
+  font-size: var(--fs-heading-size, 15px);
+  font-weight: 650;
+}
+
+.fs-stm__count {
+  color: var(--fs-text-3);
+  font-size: var(--fs-label-size);
+}
+
+.fs-stm__cards {
+  display: grid;
+  gap: var(--fs-space-2);
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+}
+
+/* ── One entity ── */
+
+.fs-stm__card {
+  display: grid;
+  gap: 4px;
+  padding: var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-inline-start: 3px solid var(--fs-border-strong);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-2);
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.fs-stm__card:hover,
+.fs-stm__card:focus-visible {
+  border-color: var(--fs-border-strong);
+  background: var(--fs-surface-3, var(--fs-surface-2));
+}
+
+/* The tint is the row's WORST rating, not its best: a card is as trustworthy
+   as the least trustworthy thing on it. */
+.fs-stm__card[data-worst='aging'] { border-inline-start-color: var(--fs-warning); }
+.fs-stm__card[data-worst='stale'] { border-inline-start-color: var(--fs-danger); }
+.fs-stm__card[data-worst='unknown'] { border-inline-start-color: var(--fs-border-strong); }
+
+.fs-stm__card-top {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  /* A flex item will not shrink below its content unless it is told it may:
+     `min-width` defaults to `auto` on a flex child, so the ellipsis below was
+     written, correct, and did nothing. A session named after its first message
+     ran straight out of its card and across the one beside it. */
+  min-width: 0;
+}
+
+.fs-stm__card-name {
+  overflow: hidden;
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fs-stm__card-id {
+  overflow: hidden;
+  color: var(--fs-text-3);
+  font-family: var(--fs-font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── One field, and the four things that qualify it ── */
+
+.fs-stm__fields {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+}
+
+.fs-stm__field {
+  display: grid;
+  gap: var(--fs-space-2);
+  align-items: baseline;
+  grid-template-columns: minmax(120px, 1fr) minmax(80px, 1.4fr) auto;
+  padding: 3px 0;
+  border-block-end: 1px solid var(--fs-border-subtle, var(--fs-border));
+  font-size: var(--fs-label-size);
+}
+
+.fs-stm__field-name {
+  color: var(--fs-text-2);
+  font-family: var(--fs-font-mono, ui-monospace, monospace);
+  font-size: 11px;
+}
+
+.fs-stm__value {
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A stale value is drawn as one. The line through it is the second signal
+   beside the colour, and the word `stale` beside it is the third: a reader
+   who sees only one of the three is still told. */
+.fs-stm__value[data-current='no'] {
+  color: var(--fs-text-3);
+}
+
+.fs-stm__value[data-freshness='stale'] {
+  color: var(--fs-danger);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+.fs-stm__value[data-freshness='unknown'] {
+  color: var(--fs-text-3);
+  font-style: italic;
+}
+
+.fs-stm__provenance {
+  color: var(--fs-text-3);
+  font-size: 11px;
+}
+
+/* ── The detail: one entity, its fields, its history ── */
+
+.fs-stm__detail {
+  display: grid;
+  gap: var(--fs-space-3);
+}
+
+.fs-stm__history {
+  display: grid;
+  gap: var(--fs-space-1, 4px);
+  max-height: 320px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.fs-stm__observation {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-2);
+  align-items: baseline;
+  padding-block: 3px;
+  border-block-end: 1px solid var(--fs-border-subtle, var(--fs-border));
+  font-size: 11px;
+}
+
+.fs-stm__mono {
+  font-family: var(--fs-font-mono, ui-monospace, monospace);
+}
+
+/* ── Conflicts: two claims side by side, neither of them chosen ── */
+
+.fs-stm__conflict {
+  display: grid;
+  gap: 4px;
+  padding: var(--fs-space-3);
+  border: 1px solid color-mix(in srgb, var(--fs-danger) 35%, var(--fs-border));
+  border-radius: var(--fs-radius-control);
+  background: color-mix(in srgb, var(--fs-danger) 6%, var(--fs-surface-2));
+}
+
+.fs-stm__claims {
+  display: grid;
+  gap: var(--fs-space-2);
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.fs-stm__claim {
+  padding: var(--fs-space-2);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-1);
+  font-size: var(--fs-label-size);
+}
+
+/* ── Where this comes from ── */
+
+.fs-stm__sources {
+  display: grid;
+  gap: var(--fs-space-2);
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+}
+
+.fs-stm__source {
+  display: grid;
+  gap: 2px;
+  padding: var(--fs-space-2);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-2);
+  font-size: var(--fs-label-size);
+}

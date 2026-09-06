@@ -149,6 +149,30 @@ def _same_remote(actual: Optional[str], expected: str) -> bool:
     return actual.casefold() == wanted.casefold()
 
 
+def current_branch(repo_dir: str, *, timeout: float = 5.0) -> str:
+    """The branch HEAD points at, or `""` when there is not one to name.
+
+    `check_preconditions` already reads this, but it reads it in order to
+    complain about it, and it pays for a remote lookup and a scan of the git
+    directory on the way. A caller that only wants to know where the working
+    tree is sitting -- a status panel, a state observer -- should not have to
+    run every other precondition to find out, and should not be tempted to
+    shell out to git a second time in its own module.
+
+    Empty covers all four ways there is no branch: no such directory, no git
+    on PATH, no repository there, and a detached HEAD. They are not
+    distinguished here on purpose. A caller that needs to tell them apart is
+    asking a question about whether committing is safe, and that question is
+    `check_preconditions`, which answers it in sentences.
+    """
+    if not repo_dir or not os.path.isdir(repo_dir):
+        return ""
+    if not shutil.which("git"):
+        return ""
+    return _out(_git(repo_dir, ["symbolic-ref", "--quiet", "--short", "HEAD"],
+                     timeout=timeout))
+
+
 def check_preconditions(repo_dir: str, *, expect_remote: Optional[str] = None,
                         expect_branch: Optional[str] = None,
                         allow_detached: bool = False) -> Preconditions:

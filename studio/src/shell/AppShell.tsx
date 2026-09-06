@@ -39,6 +39,7 @@ const CompareScreen = lazy(() => import('../screens/compare/Compare').then((m) =
 const ContextScreen = lazy(() => import('../screens/Context').then((m) => ({ default: m.ContextScreen })));
 const GroupScreen = lazy(() => import('../screens/group/Group').then((m) => ({ default: m.GroupScreen })));
 const CouncilScreen = lazy(() => import('../screens/Council').then((m) => ({ default: m.CouncilScreen })));
+const StateMirrorScreen = lazy(() => import('../screens/StateMirror').then((m) => ({ default: m.StateMirrorScreen })));
 const SettingsScreen = lazy(() => import('../screens/Settings').then((m) => ({ default: m.SettingsScreen })));
 const AgentsScreen = lazy(() => import('../screens/Agents').then((m) => ({ default: m.AgentsScreen })));
 const SkillsScreen = lazy(() => import('../screens/Skills').then((m) => ({ default: m.SkillsScreen })));
@@ -223,6 +224,7 @@ function RouteBody() {
         <Route path="/compare" element={<CompareScreen />} />
         <Route path="/group" element={<GroupScreen />} />
         <Route path="/council" element={<CouncilScreen />} />
+        <Route path="/state" element={<StateMirrorScreen />} />
         <Route path="/cookbook" element={<CookbookScreen />} />
         <Route path="/context" element={<ContextScreen />} />
         <Route path="/settings" element={<SettingsScreen />} />

@@ -1085,3 +1085,133 @@ Cuatro cosas de arriba siguen en `[~]` y ninguna es un descuido:
   siendo.
 - **`blind_round` paga un juez que nadie pidió.** El arreglo está en `tournament.run` (`rank=False`),
   no en el consejo, y tocar el torneo desde la rama del consejo mezcla dos cosas.
+
+---
+
+## State Mirror: lo cerrado, y lo que deja abierto (06-09-2026)
+
+El plan 5 de 11 está construido hasta la fase 3 (contratos, estado interno, máquina local,
+reconciliación) y documentado en `FAUSTUS.md` §57. El Opportunity Engine —fases 5 a 7— **no está**;
+lo que falta por construir vive en `OBJETIVOS.md`. Esto es lo que **ya está construido y no cuadra**.
+
+**Nota de método.** `tests/test_state_mirror_wiring.py` (23 pruebas) se escribió antes del merge,
+con el único trabajo de preguntar si las piezas se alcanzan entre sí — la respuesta a que este
+proyecto haya entregado un subsistema desconectado cuatro veces seguidas. Cazó una de las tres cosas
+de abajo. Las otras dos salieron de abrir la pantalla y leer lo que la máquina real contestaba, que
+sigue siendo el único método que encuentra lo que ninguna prueba busca.
+
+### Cerrado antes de mezclar
+
+- `[x]` **Cinco adaptadores escritos, probados y sin cablear.** `workspace`, `services`, `models`,
+  `hardware` y `connections` importaban, pasaban sus pruebas y no estaban en `ADAPTER_FACTORIES`,
+  que es la única tupla que hace que un adaptador exista. La prueba que ahora lo impide recorre el
+  paquete con `pkgutil` en lugar de leer una lista, porque una lista es exactamente lo que estaba
+  mal. La prueba hermana que había en `test_state_mirror_adapters_internal.py` comparaba conjuntos
+  con `==` y por tanto fallaba al crecer el paquete: se reescribió como subconjunto, porque el
+  reflejo ante ese fallo es **encoger `ADAPTER_FACTORIES`**, que desconectaría cinco adaptadores que
+  funcionan para poner verde una prueba en el fichero equivocado.
+
+- `[x]` **Un barrido impecable que no observaba nada.** Los once adaptadores corrían, cero fallos, y
+  `workspace` y `objectives` devolvían cero. A los dos se les entregaba un `Scope` sin carpeta y sin
+  proyecto. Los adaptadores hacen bien en no adivinar una carpeta; la resolución pertenece al
+  barrido, que es la única capa que sabe quién pregunta. Arreglado en `reconcile._with_default_folder`.
+
+- `[x]` **Y el arreglo se equivocó dos veces, de la misma manera.** Primero llamó a
+  `store.list_projects()` —un método que no ha existido nunca— envuelto en un `if callable(...)` que
+  convirtió el error en silencio; luego, ya con `store.list()`, leyó `folder` (el **nombre**) en vez
+  de `workspace` (la **ruta**), y el síntoma fue un `workspace_available: false` impecablemente
+  honesto sobre un repositorio que estaba ahí mismo. Las dos versiones pasaban su prueba, porque el
+  doble de la prueba tenía las mismas claves inventadas que el código. Ahora el doble **hereda de
+  `ProjectStore`**, así que un método renombrado falla, y el comentario en `reconcile.py` dice la
+  regla: *un `getattr` con respaldo sobre un método que debería existir no es robustez, es una forma
+  de no enterarse.*
+
+- `[x]` **Una tarjeta que se contradecía a sí misma.** Pintaba «nothing has been observed about this
+  yet» encima de «1 field(s)». `decidingField` devuelve nulo cuando el campo decisorio del schema no
+  se ha observado, que no es lo mismo que una entidad sin campos. En una pantalla cuyo propósito
+  entero es que le crean sobre qué se sabe, eso no es cosmético.
+
+- `[x]` **El `text-overflow: ellipsis` de las tarjetas estaba escrito, era correcto y no hacía
+  nada.** Un hijo flex no encoge por debajo de su contenido sin `min-width: 0`, así que una sesión
+  bautizada con su primer mensaje se salía de su tarjeta y cruzaba por encima de la de al lado.
+
+### Lo que se queda abierto, y por qué
+
+- `[~]` **`run_state.v1` está diseñado como si sólo existiera `dispatch`.** `phase`, `progress`,
+  `worker_states`, `last_heartbeat` y `proof_status` no tienen equivalente en `agent_runs`,
+  `media_runs` ni `bg_jobs`, y `budget_remaining` no lo tiene en ninguno de los cuatro. Un schema
+  que declara campos que tres de sus cuatro fuentes no pueden llenar hace que esas tres parezcan
+  incompletas cuando en realidad hablan otro idioma. O el schema se parte, o se declara
+  explícitamente que esos campos son de dispatch.
+
+- `[~]` **`last_heartbeat` no sobrevive a un reinicio ni siquiera en dispatch.** `dispatch._load()`
+  reconstruye un job desde su espejo JSON y restaura todo **menos** `events` y `worker_states`. En
+  la máquina real los 93 jobs salían de disco y ninguno de los dos campos apareció una sola vez.
+
+- `[~]` **`approval_pending` es inalcanzable, y por una razón que merece decidirse.** `ApprovalRow`
+  tiene columna `run_id`, así que el join existe en los datos — pero guarda un id desnudo sin motor,
+  y los ids de aquí son `<motor>:<run_id>`. Una aprobación no puede nombrar la ejecución a la que
+  pertenece. O `ApprovalRow` gana una columna de motor, o hace falta un resolvedor que busque un id
+  desnudo en los cuatro registros. Conviene decidirlo **antes** de construir la arista
+  aprobación→ejecución.
+
+- `[~]` **Los 93 jobs de dispatch de esta máquina no tienen dueño, y por eso el espejo no los ve.**
+  No es un fallo del adaptador: `dispatch.visible_to` dice, en su propio docstring, que «un job sin
+  dueño no es de nadie en modo multiusuario», y el barrido corre como `admin`. Es correcto y es
+  desconcertante — la pantalla de Activity los enseña y el espejo no. Lo que falta no es ensanchar
+  el filtro (eso sería una fuga), sino decidir qué pasa con el trabajo huérfano de antes de que se
+  activara la autenticación.
+
+- `[~]` **`connection_state` sólo publica `configured`.** `authenticated`, `reachable` y
+  `granted_actions` son negativas deliberadas, no huecos: una credencial guardada no es una
+  credencial aceptada, nada en un barrido abre un socket, y ningún almacén registra qué se le
+  permite hacer a una conexión. Un token revocado se ve exactamente igual que uno vivo.
+
+- `[~]` **`models` está callado hasta que otra cosa haya sondeado `/api/system/usage`.** Todas las
+  rutas a `/api/ps` son corrutinas y un barrido síncrono no arranca un bucle, así que el adaptador
+  lee el documento que `collect_usage` deja en su caché y lo sella con el `ts` de ese documento. Un
+  proceso recién arrancado da cero observaciones. Es el modo de fallo honesto —un documento de hace
+  diez minutos se califica `stale`, no `fresh`— pero significa que el estado de los modelos es tan
+  reciente como el sondeo de la interfaz.
+
+- `[~]` **`head` y `last_verified_changeset` no tienen fuente.** Nada público en el repositorio
+  devuelve el SHA de HEAD de un workspace (`git_invariants` es quien sabe ejecutar git con
+  seguridad, y sólo se le añadió `current_branch`), y `src/changesets.py` no persiste nada: su
+  propio docstring dice «nothing is stored». No hay un último ChangeSet al que apuntar.
+
+- `[~]` **`current_branch` no distingue HEAD desprendido de fallo.** Devuelve `""` para los dos, así
+  que en HEAD desprendido el campo se **omite** en vez de decir qué pasa. Distinguirlos exige
+  ensanchar el tipo de retorno.
+
+- `[~]` **Un conflicto no tiene camino a `resolved` ni a `superseded`.** Sólo a `abandoned`, que
+  `reconcile` escribe cuando la entidad se retira. Un conflicto no puede resolverse solo con lo que
+  hay: `MaterializedState` guarda UN valor por campo con UNA fuente, así que una vez plegada la
+  discrepancia no queda contra qué comparar las dos afirmaciones. `next_check` nombra lo que lo
+  zanjaría y **nadie lo ejecuta**. Hace falta quien decida: una ruta, una persona, o una re-sonda
+  dirigida que mantenga vivas ambas afirmaciones.
+
+- `[~]` **Nada reproduce el log de observaciones para reconstruir el estado.** El log es
+  append-only y `reducers.reduce_many` existe, pero no hay `replay()`. El §26 lo pide como criterio
+  de aceptación («reproducir eventos reconstruye el mismo estado materializado o declara
+  incompatibilidad de schema») y es lo que convertiría el schema versionado en una garantía en vez
+  de en una convención.
+
+- `[~]` **Las consultas de situación llevan sus propios vocabularios de estado.**
+  `contracts.SCHEMA_FIELDS` declara que una ejecución tiene `status`, no cuáles existen, así que
+  `queries.py` declara `RUNNING_RUN_STATUSES`, `PROVEN_VERDICTS` y compañía citando en comentarios
+  de dónde los sacó. Si `dispatch` o `capability_registry` añaden una palabra, la consulta deja de
+  reconocerla en silencio y **ninguna prueba dentro de este paquete puede cazarlo**.
+
+- `[~]` **`artifact_state.v1` tiene cinco campos sin fuente**: `approval`, `latest_version`,
+  `derivatives`, `stale_derivatives` y `publication_state`. `derivatives` es alcanzable vía
+  `src/artifact_identity.py::derivatives_for()`; los otros cuatro no tienen origen en ninguna parte
+  del repositorio.
+
+- `[~]` **`session_state.workspace` y `last_activity_at` están vacíos** porque el dataclass
+  `core.models.Session` no los lleva, aunque la tabla `sessions` sí tiene `last_message_at` y
+  `last_accessed`. Es el mismo hueco que el plan 2 arregló para `folder`, `mode` y `project_id`,
+  una fila más abajo.
+
+- `[~]` **`token_budget` de una proyección es una estimación de 4 caracteres por token**, no una
+  llamada al tokenizador. Sobrecuenta la puntuación JSON, así que se queda corto antes que pasarse —
+  la dirección segura, pero conviene saberlo antes de ajustar un presupuesto fino.
