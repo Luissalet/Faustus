@@ -17,6 +17,7 @@ import {
   Telescope,
   Columns3,
   Users,
+  Scale,
 } from 'lucide-react';
 
 /**
@@ -67,6 +68,7 @@ export const TOOLS: Tool[] = [
   { path: '/research', label: 'Research', icon: Telescope },
   { path: '/compare', label: 'Compare', icon: Columns3 },
   { path: '/group', label: 'Group chat', icon: Users },
+  { path: '/council', label: 'Council', icon: Scale },
   { path: '/cookbook', label: 'Cookbook', icon: ChefHat },
   { path: '/context', label: 'Context', icon: Gauge },
 ];
@@ -96,6 +98,7 @@ export const SERVER_ROUTES = [
   '/research',
   '/compare',
   '/group',
+  '/council',
   '/cookbook',
   '/context',
   // The paths the interface this one replaced owned. Still served, still in

@@ -39,6 +39,10 @@ APP_DB = os.path.join(DATA_DIR, "app.db")
 # memory_engine.db exists: everything in it is derived, rebuildable and hot on
 # the turn path, and none of it should be able to lock app.db behind a write.
 CONTEXT_ENGINE_DB = os.path.join(DATA_DIR, "context_engine.db")
+# Council keeps its own file for the same reason: a deliberation that runs for
+# an hour must not hold a write lock that a chat turn is waiting on, and losing
+# it costs a room, not a user's sessions.
+COUNCIL_DB = os.path.join(DATA_DIR, "council.db")
 SCHEDULED_EMAILS_DB = os.path.join(DATA_DIR, "scheduled_emails.db")
 EMAIL_CACHE_DB = os.path.join(DATA_DIR, "email_cache.db")
 

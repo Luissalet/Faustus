@@ -550,6 +550,95 @@ se vieron al cablearlo.
       escribieron en paralelo—; lo que falta es **el mapeo explícito de una tarea de dispatch a una
       `TaskSpec`**, y el sitio natural es el llamante, no el resolver.
 
+## Modo Consejo — lo que queda (P1)
+
+El plan 4 de 11 (`inspiration/PLAN_MODO_CONSEJO_MULTIMODELO_FAUSTUS.md`) está construido hasta la
+fase 4: contratos, persistencia, ledger, síntesis, participantes, contexto, planificador, eventos,
+políticas, orquestador, adaptadores y servicio, más `routes/council_routes.py` y la pantalla
+`/council` (`FAUSTUS.md` §56), con la auditoría de conexión de §56.10 aplicada — el ledger publica
+en el flujo, `verified` es alcanzable sólo con un paquete de `prove`, y `GET /{id}/state` existe.
+Lo que sigue **no** está, y esto es lo que falta por construir; lo que está construido y no cuadra
+vive en `PENDIENTES.md`.
+
+### Fase 5 del plan: nada de esto existe (P1)
+
+- [ ] **Router aprendido.** Hoy el enrutado es determinista (`policies.route`) y devuelve `None`
+      cuando las reglas no deciden — que es la señal de que ahí se *puede* gastar una llamada de
+      coordinador. Falta la mitad que aprende de lo que la sala acabó haciendo: qué participante
+      aportó de verdad en qué clase de asunto, para dejar de preguntar a todos. Requiere resultados
+      observados por `(participante, intención)`, que es la misma estructura que `agent_profiles`
+      ya usa para su ranking; el riesgo a evitar es inventar un segundo almacén de resultados.
+- [ ] **Compresión incremental del contexto.** `context.py` cuenta el «resumen del resto» y no lo
+      escribe, a propósito. Lo que falta es comprimir **entre turnos** en vez de recortar en cada
+      uno: hoy una sala larga paga la ventana entera en cada ronda y lo único que la protege es el
+      límite de caracteres del bloque de pares.
+- [ ] **Worktrees aislados por participante.** Un `collaborate` con dos drivers hoy se serializa a
+      base de claims sobre el mismo árbol. Con una worktree por propietario, dos tareas sin
+      solapamiento de recursos podrían correr de verdad en paralelo — y el ledger ya sabe cuáles no
+      se solapan (`ready_tasks` lo calcula). Depende de que los runs de coding pasen por el sandbox
+      (Fase 1, todavía abierta).
+- [ ] **Participantes remotos.** Un asiento es hoy un modelo local o un endpoint configurado. El
+      plan quiere sentar a un participante que vive en otra máquina; eso cae encima de la Fase 6
+      (gateway, pairing, nodos) y no antes.
+- [ ] **Métricas por política.** No hay ni una: cuánto cuesta un `debate` frente a un `consult`,
+      cuántas rondas hacen falta antes de converger, con qué frecuencia una política acaba en
+      `disputed`. `scheduler.stats()` tiene los números por sala y nadie los agrega; sin esto, elegir
+      política es una corazonada y el techo de gasto de una sala se pone a ojo.
+
+### Del plan, lo que no se hizo en las fases ya cerradas (P1)
+
+- [ ] **La aprobación humana del turno no está cableada.** `awaiting_approval` es un estado del grafo
+      y `TURN_STATES_AT_REST` lo trata como «espera a una persona, no a un proceso», pero ninguna
+      política lo elige y ninguna ruta lo resuelve. Una sala `collaborate` con efectos debería poder
+      pararse ahí; hoy pasa de `participants_selected` a `running` sin puerta.
+- [ ] **`council_usage` no lo emite nadie.** El consumo sólo se ve preguntando por `/usage` o por
+      `/state`; ninguna de las dos avisa sola, así que una sala que se está comiendo su presupuesto
+      no lo dice hasta que alguien pregunta. Emitirlo al cerrar cada ronda es barato y es lo que
+      hace que un tope sirva de algo antes de agotarse.
+      (`council_activity_verified` **ya tiene emisor**: `_verify()` lo publica cuando `prove`
+      devuelve `proved` y el ledger consiente — ver `FAUSTUS.md` §56.10.)
+
+### La migración de los presets de Group Chat (P1)
+
+- [ ] **Los grupos guardados no se convierten en salas.** `studio/src/adapters/group.ts` guarda
+      `GroupPreset` —participantes con `modelId`, `endpointId`, `characterId`— en el almacén del
+      usuario, y la pantalla `/group` sigue leyéndolos. Un `GroupPreset` es exactamente una lista de
+      asientos sin roles ni presupuestos, así que la conversión es mecánica: modelo + endpoint +
+      nombre de personaje → `ParticipantSpec` con `roles: []`, política `chat`, presupuestos por
+      defecto. Lo que hay que decidir antes de escribirla es **qué pasa con el personaje**: un
+      `characterId` es un prompt de sistema, y un asiento de consejo no tiene campo para eso hoy —
+      `CouncilParticipant` lleva `agent_slug` y `completion_mode`, no un prompt suelto.
+- [ ] **La pantalla `/group` no tiene fecha de retirada.** Group Chat es ahora la política `chat`, y
+      mantener las dos pantallas indefinidamente es mantener dos respuestas a «¿dónde hablo con
+      varios modelos?». El orden razonable es: convertir los presets, poner un aviso en `/group` que
+      lleve a `/council`, y retirarla cuando la conversión esté probada — nunca antes, porque el
+      transcript de un grupo vive en su sesión padre de Studio y no en `council.db`.
+
+### `/api/tournament` sigue existiendo, y falta el camino (P1)
+
+- [ ] **Hay dos maneras de pedir una ronda ciega.** `routes/tournament_routes.py` sigue en pie y
+      `POST /api/council` con `policy: "tournament"` hace lo mismo por dentro —el consejo llama a
+      `tournament.run`, no lo reimplementa—, pero con ledger, propietarios y cierre. Que el motor sea
+      el mismo es lo correcto; que haya **dos APIs con dos vocabularios de resultado** es deuda: una
+      contesta con el estado del torneo y la otra con un `CouncilSummary`. Lo que falta escribir es
+      el camino de migración: qué hace `/api/tournament` cuando el consejo esté probado, si pasa a
+      ser un atajo que abre una sala `tournament` o si se queda como API de bajo nivel y se dice en
+      voz alta que la de alto nivel es el consejo. Decidirlo **antes** de que alguien construya una
+      tercera cosa encima de la de bajo nivel.
+- [ ] **La pantalla de Tournament vive dentro de `/agents?t=tournament`.** Si el torneo pasa a ser
+      una política, esa pestaña debería abrir una sala en vez de una vista propia.
+
+### La voz como canal de participación (P2)
+
+- [ ] **Hablarle a la sala.** Faustus ya tiene STT y TTS (`routes/stt_routes.py`,
+      `routes/tts_routes.py`). El caso que el plan apunta y nadie ha construido es el obvio en una
+      sala de varios modelos: escuchar la deliberación mientras ocurre y **tomar la palabra por voz**
+      — que es un `POST /{id}/messages` con el texto transcrito, y una lectura del transcript filtrada
+      por autor. Lo que hay que resolver antes es la atribución: una transcripción es del usuario y
+      tiene que entrar como `author_kind: "user"` aunque llegue por otro canal, exactamente por la
+      misma razón por la que la respuesta de un par no entra como `role="user"` (`FAUSTUS.md` §56.2).
+      Depende de la Fase 6 para cualquier cosa que no sea el micrófono local.
+
 ## Descartado a propósito (y por qué)
 
 - Marketplace público de plugins **antes** de tener firma, permisos y revocación.

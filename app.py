@@ -978,6 +978,15 @@ app.include_router(setup_agent_profiles_routes())
 from routes.tournament_routes import setup_tournament_routes
 app.include_router(setup_tournament_routes())
 
+# Council: a durable room where several models think and exactly one of them
+# acts (src/council/). Admin, like Tournament — a room spends every GPU on the
+# box — and owner-scoped inside that: another owner's room answers 404, never
+# 403. The `agent_council` flag gates EXECUTION only (POST /messages and
+# /commands); every read keeps answering, because turning the feature off is a
+# decision about what may run, not an instruction to hide what already happened.
+from routes.council_routes import setup_council_routes
+app.include_router(setup_council_routes())
+
 # Provenance graph: the 2D audit view over the memory and the workspace, built
 # from declared edges only — never one a model asserted (src/provenance_graph.py).
 from routes.provenance_routes import setup_provenance_routes
@@ -1215,6 +1224,12 @@ async def serve_compare(request: Request):
 @app.get("/group")
 async def serve_group(request: Request):
     """Studio group chat (lot AE)."""
+    return await serve_index(request)
+
+@app.get("/council")
+async def serve_council(request: Request):
+    """Studio Council: several models think about one matter, and exactly one
+    of them may act on each resource. The room, its ledger and its close."""
     return await serve_index(request)
 
 @app.get("/context")

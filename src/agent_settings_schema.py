@@ -580,6 +580,22 @@ GROUPS: list[dict[str, Any]] = [
         ],
     ),
     _group(
+        "council", "Council",
+        "A durable room where several models think, object and review the same matter, and exactly "
+        "one of them owns each task and each file. Unlike the tournament, a council can also WRITE: "
+        "in the collaborate and pair policies the designated driver edits the workspace behind a "
+        "claim, and reviewers stay read-only.",
+        [
+            _bool("agent_council", "Council",
+                  "Let a council room run turns: several models answering, objecting and — under "
+                  "collaborate or pair — editing claimed files. Off is the default because one "
+                  "message becomes several models across several rounds, and some of them write. "
+                  "Off = a room can still be opened and every room already recorded stays fully "
+                  "readable (transcript, ledger, decisions, evidence); only sending a message and "
+                  "issuing a command are refused."),
+        ],
+    ),
+    _group(
         "provenance", "Provenance graph",
         "The audit view over the memory and the workspace: why the agent believes a thing, what is "
         "floating unreferenced, what is said twice, and what breaks if you touch a file.",
