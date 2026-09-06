@@ -390,6 +390,32 @@ DEFAULT_SETTINGS = {
     # thousand files is a real request; a delta that quietly compares the
     # first two hundred of them is not an answer to it.
     "agent_delta_engine_max_elements": 5000,
+    # Greedy Completion Engine (src/completion_engine/): how far a turn pushes
+    # past the literal request, and the account of what it added. The mode
+    # itself has existed since the agent profiles landed — literal,
+    # professional, greedy, maximalist — and until now it was a sentence in a
+    # worker's preamble that nothing read. This switch is what makes it real.
+    # Default OFF, and unlike the two above the reason is not cost: it is that
+    # this changes what a turn DOES, and a switch that changes behaviour has to
+    # be turned on by someone who meant to. Off = the engine still computes its
+    # decision in shadow if the setting below says so, and nothing else.
+    "agent_completion_engine": False,
+    # Shadow mode: compute the completion decision, record what it WOULD have
+    # done, and change nothing the model or the user sees. The same measurement
+    # `agent_context_engine_shadow` exists for, and for the same reason: this
+    # is the evidence that justifies turning the switch above on, and without
+    # it the choice is between an unmeasured change and no change at all.
+    "agent_completion_engine_shadow": True,
+    # The share of a turn's budget held back for verifying what it did. Never
+    # spendable on extra work, in any mode — depth is negotiable, evidence is
+    # not. Lowering this does not buy more improvements; it buys less proof
+    # that the improvements were safe.
+    "agent_completion_verification_reserve": 0.15,
+    # How many rounds of discovering-and-executing improvements one turn may
+    # run past core. A ceiling on the loop itself, independent of budget: a
+    # cheap improvement that spawns another cheap improvement forever is a
+    # convergence failure, not a bargain.
+    "agent_completion_max_bonus_rounds": 3,
     # Provenance graph (src/provenance_graph.py): the 2D audit view over the
     # memory and the workspace, built ONLY from declared edges — a dependency
     # the user wrote, an evidence span, a checkpoint diff, a citation that

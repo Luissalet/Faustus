@@ -1,0 +1,611 @@
+/* Completion: what a turn did beyond the literal ask, what it refused, and
+   why it stopped.
+
+   The styling holds three rules that are rules of product, not of taste:
+
+   1. `converged`, `budget` and `unfinished` never LOOK alike. Each ending has
+      its own edge colour AND its own edge style -- solid, dashed, doubled --
+      because a reader who cannot see the colour is on this screen precisely
+      because they need to be told which of the three they are looking at. The
+      word is always there beside the tint.
+   2. A shadow row is unmistakable at a glance: its own hatched edge and a
+      badge that says the word. Shadow measures what the engine WOULD have
+      done, and a shadow row read as a real one ruins the measurement.
+   3. Executed, refused and deferred are three blocks with three headings and
+      never one list with a status column. A refusal with no reason recorded
+      gets the warning treatment rather than the quiet grey of the others. */
+
+.fs-cmp {
+  display: grid;
+  gap: var(--fs-space-4);
+  min-inline-size: 0;
+  padding-block-end: var(--fs-space-6);
+}
+
+.fs-cmp__lede {
+  margin-block-start: var(--fs-space-2);
+}
+
+.fs-cmp__muted {
+  min-inline-size: 0;
+  color: var(--fs-text-3);
+  font-size: 11px;
+}
+
+.fs-cmp__mono {
+  font-family: var(--fs-font-mono, ui-monospace, monospace);
+  overflow-wrap: anywhere;
+}
+
+.fs-cmp__grow {
+  overflow: hidden;
+  /* `min-width` defaults to `auto` on a flex child, so an ellipsis without
+     this is written, correct, and does nothing. */
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fs-cmp__label {
+  margin: 0;
+  color: var(--fs-text-3);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.fs-cmp__sr {
+  position: absolute;
+  clip-path: inset(50%);
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* ── A word, a tone, and never a colour on its own ── */
+
+.fs-cmp__tag {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  padding: 1px var(--fs-space-2);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-surface-2);
+  color: var(--fs-text-2);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.fs-cmp__tag[data-tone='good'] {
+  border-color: color-mix(in srgb, var(--fs-success) 45%, var(--fs-border));
+  color: var(--fs-success);
+}
+
+.fs-cmp__tag[data-tone='warn'] {
+  border-color: color-mix(in srgb, var(--fs-warning) 45%, var(--fs-border));
+  color: var(--fs-warning);
+}
+
+.fs-cmp__tag[data-tone='bad'] {
+  border-color: color-mix(in srgb, var(--fs-danger) 55%, var(--fs-border));
+  background: color-mix(in srgb, var(--fs-danger) 10%, var(--fs-surface-2));
+  color: var(--fs-danger);
+}
+
+/* `unknown` is its own look and NOT a paler `good`: something outside the
+   engine ended the run, and neither good nor bad is the honest colour. */
+.fs-cmp__tag[data-tone='unknown'] {
+  border-style: dashed;
+  border-color: var(--fs-border-strong);
+  color: var(--fs-text-3);
+}
+
+/* The shadow badge. Hatched, so it reads as "not real" without depending on a
+   hue, and it is never applied to anything but a shadow row. */
+.fs-cmp__tag[data-shadow='yes'] {
+  border-style: dashed;
+  background:
+    repeating-linear-gradient(
+      135deg,
+      transparent 0 4px,
+      color-mix(in srgb, var(--fs-text-3) 14%, transparent) 4px 8px
+    ),
+    var(--fs-surface-2);
+  color: var(--fs-text-2);
+  font-weight: 600;
+}
+
+.fs-cmp__notice {
+  display: block;
+  margin: 0;
+  padding: var(--fs-space-2) var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-inline-start: 3px solid var(--fs-border-strong);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-2);
+  color: var(--fs-text-2);
+  font-size: var(--fs-label-size);
+}
+
+.fs-cmp__notice[data-tone='warning'] {
+  border-inline-start-color: var(--fs-warning);
+  background: color-mix(in srgb, var(--fs-warning) 8%, var(--fs-surface-2));
+}
+
+.fs-cmp__notice[data-tone='bad'] {
+  border-inline-start-color: var(--fs-danger);
+  background: color-mix(in srgb, var(--fs-danger) 8%, var(--fs-surface-2));
+}
+
+/* ── Filters and form rows ── */
+
+.fs-cmp__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-3);
+  align-items: end;
+  min-inline-size: 0;
+  padding: var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-1);
+}
+
+.fs-cmp__row {
+  display: grid;
+  gap: 4px;
+  min-inline-size: 0;
+  color: var(--fs-text-2);
+  font-size: var(--fs-label-size);
+}
+
+.fs-cmp__row > span {
+  color: var(--fs-text-3);
+  font-size: 11px;
+}
+
+.fs-cmp__textarea {
+  block-size: auto;
+  min-block-size: var(--fs-control-sm);
+  padding: var(--fs-space-2) var(--fs-space-3);
+  resize: vertical;
+}
+
+.fs-cmp__form {
+  display: grid;
+  gap: var(--fs-space-3);
+  min-inline-size: 0;
+}
+
+/* ── The list ── */
+
+.fs-cmp__list {
+  display: grid;
+  gap: var(--fs-space-2);
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  min-inline-size: 0;
+}
+
+.fs-cmp__card {
+  display: grid;
+  gap: 6px;
+  min-inline-size: 0;
+  padding: var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-inline-start: 3px solid var(--fs-border-strong);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-2);
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.fs-cmp__card:hover,
+.fs-cmp__card:focus-visible {
+  border-color: var(--fs-border-strong);
+  background: var(--fs-surface-3, var(--fs-surface-2));
+}
+
+/* ── The three endings, and they never look alike ──
+   Colour AND edge style AND a word. Three signals for a distinction that is
+   the entire reason this screen exists: a reader who accepts a `budget` stop
+   as a `converged` one never raises the budget, and a reader who accepts an
+   `unfinished` one never finds out what stopped the turn. */
+
+.fs-cmp__card[data-ending='finished'] {
+  border-inline-start-color: var(--fs-success);
+}
+
+/* Ran out: amber, and a doubled edge -- the money line is a wall it hit. */
+.fs-cmp__card[data-ending='budget'] {
+  border-inline-start-color: var(--fs-warning);
+  border-inline-start-style: double;
+  border-inline-start-width: 5px;
+}
+
+/* Ended with work open: red, solid, and the heaviest of the three. Nothing
+   stopped it and it stopped anyway, which is the finding shadow mode exists
+   to count. */
+.fs-cmp__card[data-ending='unfinished'] {
+  border-inline-start-color: var(--fs-danger);
+  background: color-mix(in srgb, var(--fs-danger) 4%, var(--fs-surface-2));
+}
+
+/* Something outside the engine decided: neutral, dashed. Not a verdict. */
+.fs-cmp__card[data-ending='interrupted'] {
+  border-inline-start-color: var(--fs-border-strong);
+  border-inline-start-style: dashed;
+}
+
+/* The record contradicts itself. Red and dotted: it is not an ending at all,
+   it is two endings that cannot both be true. */
+.fs-cmp__card[data-ending='contested'] {
+  border-inline-start-color: var(--fs-danger);
+  border-inline-start-style: dotted;
+  border-inline-start-width: 5px;
+}
+
+/* A shadow row is hatched down its whole edge, on top of whatever ending it
+   has. Two facts, two channels: what it would have done, and that it did
+   not. */
+.fs-cmp__card[data-shadow='yes'] {
+  border-inline-start-color: var(--fs-text-3);
+  background:
+    repeating-linear-gradient(
+      135deg,
+      transparent 0 6px,
+      color-mix(in srgb, var(--fs-text-3) 7%, transparent) 6px 12px
+    ),
+    var(--fs-surface-2);
+}
+
+.fs-cmp__card-top,
+.fs-cmp__card-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-2);
+  align-items: center;
+  /* Both here AND on the ellipsised child: one without the other does nothing. */
+  min-inline-size: 0;
+}
+
+.fs-cmp__mode {
+  color: var(--fs-text-2);
+  font-family: var(--fs-font-mono, ui-monospace, monospace);
+  font-size: 11px;
+}
+
+/* ── The counts ── */
+
+.fs-cmp__counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-2);
+  min-inline-size: 0;
+}
+
+.fs-cmp__count {
+  color: var(--fs-text-3);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.fs-cmp__count[data-tone='bad'] {
+  color: var(--fs-danger);
+  font-weight: 600;
+}
+
+/* Extras are amber even when they are good news: work nobody asked for is the
+   number a reader is most likely to skim past, and §30's whole point is that
+   it never hides inside the core summary. */
+.fs-cmp__count[data-tone='warn'] {
+  color: var(--fs-warning);
+  font-weight: 600;
+}
+
+/* ── The detail ── */
+
+.fs-cmp__detail {
+  display: grid;
+  gap: var(--fs-space-4);
+  min-inline-size: 0;
+}
+
+.fs-cmp__detail-head {
+  display: grid;
+  gap: var(--fs-space-2);
+  min-inline-size: 0;
+  padding: var(--fs-space-4);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-1);
+}
+
+/* The ending banner: the same three treatments as the card, at full width,
+   with the sentence that says what to do about it. */
+.fs-cmp__ending {
+  display: grid;
+  gap: var(--fs-space-2);
+  min-inline-size: 0;
+  padding: var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-inline-start: 4px solid var(--fs-border-strong);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-2);
+}
+
+.fs-cmp__ending[data-ending='finished'] { border-inline-start-color: var(--fs-success); }
+
+.fs-cmp__ending[data-ending='budget'] {
+  border-inline-start-color: var(--fs-warning);
+  border-inline-start-style: double;
+  border-inline-start-width: 6px;
+  background: color-mix(in srgb, var(--fs-warning) 6%, var(--fs-surface-2));
+}
+
+.fs-cmp__ending[data-ending='unfinished'] {
+  border-inline-start-color: var(--fs-danger);
+  background: color-mix(in srgb, var(--fs-danger) 7%, var(--fs-surface-2));
+}
+
+.fs-cmp__ending[data-ending='interrupted'] {
+  border-inline-start-color: var(--fs-border-strong);
+  border-inline-start-style: dashed;
+}
+
+.fs-cmp__ending[data-ending='contested'] {
+  border-inline-start-color: var(--fs-danger);
+  border-inline-start-style: dotted;
+  border-inline-start-width: 6px;
+  background: color-mix(in srgb, var(--fs-danger) 7%, var(--fs-surface-2));
+}
+
+.fs-cmp__block {
+  display: grid;
+  gap: var(--fs-space-3);
+  min-inline-size: 0;
+  padding: var(--fs-space-4);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-1);
+}
+
+.fs-cmp__block[data-tone='bad'] {
+  border-color: color-mix(in srgb, var(--fs-danger) 40%, var(--fs-border));
+  background: color-mix(in srgb, var(--fs-danger) 4%, var(--fs-surface-1));
+}
+
+.fs-cmp__title {
+  margin: 0;
+  font-size: var(--fs-heading-size, 15px);
+  font-weight: 650;
+}
+
+.fs-cmp__stack {
+  display: grid;
+  gap: var(--fs-space-2);
+  min-inline-size: 0;
+}
+
+.fs-cmp__group {
+  display: grid;
+  gap: var(--fs-space-2);
+  min-inline-size: 0;
+  padding-block-start: var(--fs-space-2);
+  border-block-start: 1px solid var(--fs-border-subtle, var(--fs-border));
+}
+
+.fs-cmp__group-head {
+  display: flex;
+  gap: var(--fs-space-2);
+  align-items: baseline;
+  min-inline-size: 0;
+}
+
+.fs-cmp__group-title {
+  margin: 0;
+  font-size: var(--fs-label-size);
+  font-weight: 650;
+}
+
+/* The heading of each layer carries its own colour. The two layers BEYOND the
+   ask are amber and not a shade of the core's colour: an extra is not a
+   better core, it is a different kind of thing, and §30's rule is that the
+   reader can always tell which they got. */
+.fs-cmp__group[data-layer='core'] .fs-cmp__group-title { color: var(--fs-success); }
+.fs-cmp__group[data-layer='professional'] .fs-cmp__group-title { color: var(--fs-success); }
+.fs-cmp__group[data-layer='bonus'] .fs-cmp__group-title { color: var(--fs-warning); }
+.fs-cmp__group[data-layer='exploratory'] .fs-cmp__group-title { color: var(--fs-warning); }
+
+/* ── The closeout, as the server wrote it ── */
+
+.fs-cmp__closeout {
+  margin: 0;
+  padding: var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-2);
+  color: var(--fs-text-1);
+  font-family: var(--fs-font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  line-height: 1.6;
+  /* The server writes one line per question a reader has, so the newlines are
+     the structure. Wrapping is allowed; collapsing them is not. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* ── One candidate ── */
+
+.fs-cmp__candidate {
+  display: grid;
+  gap: 4px;
+  min-inline-size: 0;
+  padding: var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-inline-start: 3px solid var(--fs-border-strong);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-2);
+  font-size: var(--fs-label-size);
+}
+
+.fs-cmp__candidate[data-layer='core'],
+.fs-cmp__candidate[data-layer='professional'] {
+  border-inline-start-color: var(--fs-success);
+}
+
+.fs-cmp__candidate[data-layer='bonus'],
+.fs-cmp__candidate[data-layer='exploratory'] {
+  border-inline-start-color: var(--fs-warning);
+}
+
+.fs-cmp__candidate[data-kind='rejected'] {
+  border-inline-start-color: var(--fs-text-3);
+  border-inline-start-style: dashed;
+}
+
+.fs-cmp__candidate[data-kind='deferred'] {
+  border-inline-start-color: var(--fs-border-strong);
+  border-inline-start-style: dotted;
+}
+
+/* A refusal nobody wrote a reason for. Amber and never the quiet grey the
+   explained ones get: a refusal nobody justified cannot be told, a month
+   later, from one nobody meant, and that is worth an alarm. */
+.fs-cmp__candidate[data-unrecorded='yes'] {
+  border-inline-start-color: var(--fs-warning);
+  border-inline-start-style: solid;
+  background: color-mix(in srgb, var(--fs-warning) 6%, var(--fs-surface-2));
+}
+
+.fs-cmp__candidate-title {
+  color: var(--fs-text-1);
+  font-weight: 600;
+}
+
+/* The funding line, beside the layer and never instead of it: the layer says
+   what KIND of work it was and the line says whose money it was, and the two
+   are different questions. */
+.fs-cmp__funding {
+  color: var(--fs-text-3);
+  font-family: var(--fs-font-mono, ui-monospace, monospace);
+  font-size: 11px;
+}
+
+.fs-cmp__scores {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-3);
+  min-inline-size: 0;
+  color: var(--fs-text-3);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.fs-cmp__refs {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding-inline-start: var(--fs-space-4);
+  color: var(--fs-text-3);
+  font-size: 11px;
+}
+
+/* ── The budget table ──
+   It scrolls inside its own box. A page that scrolled sideways as a whole
+   would take the headings with it, and those headings are the only thing
+   telling a reader whether the number in front of them is a spend or a
+   ceiling. */
+
+.fs-cmp__scroll {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  overflow-x: auto;
+}
+
+.fs-cmp__table {
+  inline-size: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.fs-cmp__table th {
+  padding: var(--fs-space-2);
+  border-block-end: 1px solid var(--fs-border);
+  color: var(--fs-text-3);
+  font-weight: 600;
+  text-align: start;
+  white-space: nowrap;
+}
+
+.fs-cmp__table td {
+  padding: var(--fs-space-2);
+  border-block-end: 1px solid var(--fs-border-subtle, var(--fs-border));
+  vertical-align: top;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A line that ran out. The row a `budget` stop is pointing at, and it says so
+   in the row itself rather than only in the banner above. */
+.fs-cmp__table tr[data-exhausted='yes'] td {
+  background: color-mix(in srgb, var(--fs-warning) 8%, transparent);
+}
+
+/* A line funded by another line's pot: dimmed, because its numbers are a VIEW
+   of the row above and not a second pot of money. */
+.fs-cmp__table tr[data-alias='yes'] td:first-child {
+  color: var(--fs-text-3);
+  font-style: italic;
+}
+
+/* A unit the turn never declared a total for. Not zero -- not counted, which
+   is a different fact and is the reason `may_spend` lets it through. */
+.fs-cmp__uncounted {
+  color: var(--fs-text-3);
+  font-style: italic;
+}
+
+/* ── The diagnostics foot ── */
+
+.fs-cmp__foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-3);
+  align-items: baseline;
+  min-inline-size: 0;
+  padding: var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-1);
+  color: var(--fs-text-3);
+  font-size: 11px;
+}
+
+.fs-cmp__modes {
+  display: grid;
+  gap: var(--fs-space-2);
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  min-inline-size: 0;
+}
+
+.fs-cmp__mode-card {
+  display: grid;
+  gap: 2px;
+  min-inline-size: 0;
+  padding: var(--fs-space-2);
+  border: 1px solid var(--fs-border);
+  border-inline-start: 3px solid var(--fs-border-strong);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-2);
+  font-size: var(--fs-label-size);
+}
+
+.fs-cmp__mode-card[data-active='yes'] {
+  border-inline-start-color: var(--fs-brand);
+}

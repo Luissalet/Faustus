@@ -781,3 +781,20 @@ parte distinta:
 - Una memoria global que mezcle clientes y proyectos por comodidad de recuperación.
 - El catálogo de 100 skills. Primero hay que poder **instalar, autorizar, ejecutar, cancelar,
   versionar y desinstalar una** de forma segura.
+
+## Después del plan 7 (06-09-2026)
+
+### Los planes que quedan, en orden
+
+8. `PLAN_MODO_ENSENAME_FAUSTUS.md`
+9. `PLAN_FAUSTUS_IMMUNE_SYSTEM.md`
+10. `PLAN_BRANCHING_FUTURES_FAUSTUS.md`
+11. `PLAN_VOZ_JARVIS_FAUSTUS.md`
+
+### Lo que el Completion Engine deja preparado y sin usar
+
+- **Ejecutar de verdad, no solo decidir.** Hoy el enganche del bucle propone y el modo sombra mide. El siguiente paso es dejar que un turno real ejecute una mejora del lote y la verifique, con `verification` como línea que nadie puede tocar. Es la mitad del motor que aún no ha corrido en producción.
+- **Techos reales de presupuesto en el bucle.** Mientras `max_tool_calls` / `token_budget` / `wall_seconds` sean 0, `budget` no puede ser nunca un motivo de parada, y la distinción entre `budget` y `unfinished` — que es el motivo por el que existe este motor — solo funciona a medias.
+- **La Opportunity Engine del §19.** Lo diferido se acumula (20 por turno en las pruebas) y hoy no va a ninguna parte: se cuenta y se olvida. El motor ya lo etiqueta bien (`round_full` vs `below_threshold`), que es la parte difícil.
+- **Medir la sombra.** Con `shadow` de tres estados en la API y en la pantalla, ya se puede comparar "lo que habría hecho" contra "lo que hizo". Falta el informe que ponga los dos números juntos y responda si el modo greedy vale lo que cuesta.
+- **Que el rechazo humano se propague.** `completion_refusals` es del motor. Un "no" a una mejora debería significar algo también para la Opportunity Engine y para el Immune System del plan 9, en vez de vivir en una tabla sola.

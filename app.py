@@ -1010,6 +1010,26 @@ app.include_router(setup_state_mirror_routes())
 from routes.delta_engine_routes import setup_delta_engine_routes
 app.include_router(setup_delta_engine_routes())
 
+# Greedy Completion Engine: what a turn considered doing beyond the literal
+# ask, what it funded, what it refused, and whether it stopped because the work
+# was done or because it ran out (src/completion_engine/). Admin, and
+# owner-scoped inside that: another owner's decision answers 404, never 403.
+#
+# There is deliberately NO endpoint that runs the engine. It decides inside a
+# turn, at the moment the model stops calling tools, with that turn's ledger,
+# proof and budget behind it; a POST /run would be a second door to the same
+# answer with none of those behind it, and what came out would be
+# indistinguishable from the real thing. So every route here is a read of a
+# decision already taken, plus the two switches -- which is why the
+# `agent_completion_engine` flag gates nothing at this layer: it decides
+# whether the loop consults the engine at all, not whether we may say what it
+# concluded last time. Rejecting an improvement is the single write and is
+# require_human: §12 gives a person the right to say no to an extra, and a
+# model able to reject its own improvements could quietly erase the record of
+# having been asked to make them.
+from routes.completion_engine_routes import setup_completion_engine_routes
+app.include_router(setup_completion_engine_routes())
+
 # Provenance graph: the 2D audit view over the memory and the workspace, built
 # from declared edges only — never one a model asserted (src/provenance_graph.py).
 from routes.provenance_routes import setup_provenance_routes
@@ -1267,6 +1287,14 @@ async def serve_deltas(request: Request):
     """Studio Deltas: what changed between two revisions, whether it is what
     was asked for, and how well we know. What nobody checked is never drawn as
     what held, and coverage and confidence stay two separate columns."""
+    return await serve_index(request)
+
+@app.get("/completion")
+async def serve_completion(request: Request):
+    """Studio Completion: what a turn did beyond the literal ask, what it
+    refused and why, and how it ended. Converged, out of budget and left
+    unfinished are three different endings and are never drawn alike, and a
+    shadow decision is never mixed in with what actually ran."""
     return await serve_index(request)
 
 @app.get("/context")

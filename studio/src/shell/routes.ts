@@ -10,6 +10,7 @@ import {
   GitCompare,
   Home,
   Library,
+  ListChecks,
   Mail,
   Sparkles,
   StickyNote,
@@ -73,6 +74,7 @@ export const TOOLS: Tool[] = [
   { path: '/council', label: 'Council', icon: Scale },
   { path: '/state', label: 'State Mirror', icon: Database },
   { path: '/deltas', label: 'Deltas', icon: GitCompare },
+  { path: '/completion', label: 'Completion', icon: ListChecks },
   { path: '/cookbook', label: 'Cookbook', icon: ChefHat },
   { path: '/context', label: 'Context', icon: Gauge },
 ];
@@ -105,6 +107,7 @@ export const SERVER_ROUTES = [
   '/council',
   '/state',
   '/deltas',
+  '/completion',
   '/cookbook',
   '/context',
   // The paths the interface this one replaced owned. Still served, still in

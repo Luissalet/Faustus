@@ -641,6 +641,35 @@ GROUPS: list[dict[str, Any]] = [
         ],
     ),
     _group(
+        "completion", "Completion depth",
+        "How far a turn pushes past the literal request. The four modes — literal, professional, "
+        "greedy, maximalist — decide DEPTH and never authority: no mode grants a tool, a path or "
+        "an effect the run did not already hold. What the engine adds is the account: what was "
+        "asked, what was added beyond it, what was refused and why, and whether the turn stopped "
+        "because there was nothing left worth doing or because it ran out.",
+        [
+            _bool("agent_completion_engine", "Completion engine",
+                  "Let the engine ACT on the mode: open the professional and bonus layers, run the "
+                  "improvements that are local, reversible and in scope, and stop on convergence. "
+                  "Off is the default because this changes what a turn does, and a switch that "
+                  "changes behaviour should be turned on by someone who meant to."),
+            _bool("agent_completion_engine_shadow", "Shadow mode",
+                  "Compute the decision the engine WOULD have taken and record it, without "
+                  "changing anything the model or you see. This is the measurement that justifies "
+                  "turning the switch above on; leaving it on costs one computation per turn."),
+            _float("agent_completion_verification_reserve", "Verification reserve",
+                   "The share of a turn's budget held back for verifying what it did. Never "
+                   "spendable on extra work, in any mode. Lowering it does not buy more "
+                   "improvements — it buys less proof that the improvements were safe.",
+                   0.0, 0.5, step=0.05),
+            _int("agent_completion_max_bonus_rounds", "Max improvement rounds",
+                 "How many rounds of finding-and-doing improvements one turn may run past the "
+                 "core request. A ceiling on the loop itself: a cheap improvement that spawns "
+                 "another cheap improvement forever is a convergence failure, not a bargain.",
+                 0, 20, step=1),
+        ],
+    ),
+    _group(
         "provenance", "Provenance graph",
         "The audit view over the memory and the workspace: why the agent believes a thing, what is "
         "floating unreferenced, what is said twice, and what breaks if you touch a file.",

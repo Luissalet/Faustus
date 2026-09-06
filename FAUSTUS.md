@@ -4675,3 +4675,40 @@ that the property held.*
 
 ## Cómo mantener este documento
 Cada bloque de trabajo añade una sección (fecha, qué, por qué, ficheros, cómo se verificó, cifras) y actualiza las cifras de cabecera (`git log --oneline c9dd68d8..HEAD | wc -l`, `git diff --stat c9dd68d8..HEAD`). Los commits del fork llevan mensajes largos que explican el porqué: `git log c9dd68d8..HEAD` es la fuente detallada.
+
+---
+
+## 59. Greedy Completion Engine: qué hizo el turno más allá de lo que se pidió (06-09-2026)
+
+**Qué es.** El motor que decide, en el momento en que un turno deja de llamar herramientas, si el trabajo está hecho o si queda algo abierto — y qué de lo que queda merece hacerse sin volver a preguntar. `src/completion_engine/`, `/api/completion`, pantalla **Completion** en Studio.
+
+**La pregunta que responde.** No "¿terminó?" sino tres preguntas que casi todo el mundo confunde en una:
+
+- **`converged`** — no quedaba nada que este modo considere trabajo suyo. Un final honesto.
+- **`budget`** — quedaba, y se acabó el dinero.
+- **`unfinished`** — quedaba, y ni el presupuesto ni el alcance lo pararon. El turno simplemente se acabó.
+
+Los tres se veían igual en cualquier agente que hayamos usado, y por eso "he terminado" no significaba nada. Aquí llevan color, borde y frase distintos, y `unfinished` **no** cuenta como parada honesta.
+
+**Los cuatro modos** ya existían desde el plan 3 (`src/agent_profiles/completion.py`): `literal`, `professional`, `greedy`, `maximalist`. Este motor es lo que los hace tener consecuencias — cada uno abre unas capas (`core` → `professional` → `bonus` → `exploratory`) y financia una parte distinta del turno.
+
+**El presupuesto anota GASTOS, no restos.** Un resto solo significa algo al lado del techo del que salió, y dos números que hay que leer juntos acaban leídos por separado. Tres bolsillos financian cinco líneas: `recovery` gasta de `core` (arreglar una regresión ES trabajo del encargo) y `exploration` gasta de `bonus`. `verification` es la única línea de la que nada más puede tomar prestado, en todos los modos.
+
+**Modo sombra por defecto.** Con `agent_completion_engine_shadow` el motor decide y **no** ejecuta: mide lo que HABRÍA hecho. Por eso la pantalla nunca mezcla sombra y real sin decirlo — sumar las dos produce una tasa que no describe ninguna ejecución que haya existido.
+
+**§12 y §1.8: una persona puede decir que no.** `POST /api/completion/{id}/reject-improvement` es `require_human` y exige un motivo escrito. Lo que hace con él es la parte interesante:
+
+- El rechazo se guarda en su **propia tabla** (`completion_refusals`), no dentro de la decisión. La decisión es el acta de UN turno; el rechazo tiene que sobrevivirla, porque la misma mejora se vuelve a descubrir mañana en el mismo repositorio.
+- Se guarda contra `candidate.key` (estructural) y **no** contra el id, que se acuña por decisión. Con el id, el rechazo se aplicaría exactamente una vez: contra la fila que la persona estaba mirando, nunca contra la cosa que estaba rechazando.
+- La decisión **no se toca**. Sigue mostrando que la mejora se ofreció aquí y se rechazó. La pregunta interesante dentro de un mes no es qué se ejecutó — es qué se ofreció y se rechazó.
+- Se aplica en `frontier._admit`, encima de la puntuación, con el motivo nuevo `declined`. Un filtro aplicado después de la frontera habría sido un rechazo con el que un valor alto podría discutir.
+
+**No hay `POST /run`.** A propósito. El motor decide dentro de un turno, con el ledger, la prueba y el presupuesto de ese turno detrás; una segunda puerta sin nada de eso detrás produciría una respuesta indistinguible de la de verdad.
+
+**Lo que encontró el navegador y no encontraron 395 tests.** Durante seis turnos sembrados no se rechazó nada, así que la lista de rechazos siempre estaba vacía y todo pasaba en verde. En cuanto una persona rechazó algo de verdad, la pantalla lo dibujó como **"nobody recorded why"**: `_decide` construía la lista `rejected` con una comprensión sobre las entradas de la frontera en vez de llamar a `ranked.rejected()`, que es el método cuyo único trabajo es mover el motivo y el estado *del entry al candidato*. Todos los rechazos que este motor había hecho estaban guardados sin motivo. Es la frase exacta que un vocabulario cerrado existe para hacer imposible.
+
+**Superficie.** 8 rutas, todas admin y con alcance por propietario (la decisión de otro contesta 404, nunca 403): `/modes`, `/config`, `/settings`, `/diagnostics`, `/events` (poll o SSE), `GET /` (con `shadow` de tres estados: `true` | `false` | `all`), `GET /{id}`, `POST /{id}/reject-improvement`.
+
+**Ajustes.** `agent_completion_engine` (off por defecto), `agent_completion_engine_shadow` (on), `agent_completion_verification_reserve` (0.15), `agent_completion_max_bonus_rounds` (3).
+
+**Verificado.** 395 tests propios, `scripts/completion_engine_openapi_check.py` en verde contra la app real, `studio/checks/completion.check.mjs` (172 asserts), y a mano en el navegador: sembrar un turno → rechazar una mejora con motivo → volver a sembrar → la mejora ya no se ofrece y aparece como *"refused: you said no to it, and it will not be offered again"*.

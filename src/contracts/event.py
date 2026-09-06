@@ -99,6 +99,25 @@ EVENT_NAMES = (
     "delta_invariant_checked", "delta_regression_detected",
     "delta_coverage_computed", "delta_completed", "delta_inconclusive",
     "delta_reclassified", "delta_invalidated", "delta_error",
+    # Greedy Completion Engine. Underscored like the four blocks above.
+    # `src/completion_engine/events.py::COMPLETION_EVENTS` must stay a SUBSET
+    # of this tuple, for the reason those comments give: a name declared there
+    # and missing here reaches a page and is then refused by the envelope an
+    # audit replays it through.
+    #
+    # `completion_converged` and `completion_budget_exhausted` are two names on
+    # purpose and are never emitted for the same stop. They are the difference
+    # between "there was nothing more worth doing" and "we ran out", which lead
+    # to opposite next actions, and one event covering both would make the
+    # second unreportable — which is how a budget that is too small stays too
+    # small forever.
+    "completion_contract_created", "completion_scope_compiled",
+    "completion_layer_opened", "completion_candidate_discovered",
+    "completion_candidate_rejected", "completion_batch_started",
+    "completion_layer_verified", "completion_layer_completed",
+    "completion_scope_expansion_requested", "completion_frontier_recomputed",
+    "completion_converged", "completion_budget_exhausted",
+    "completion_decision_recorded", "completion_error",
 )
 
 _REDACTED = "<redacted>"
