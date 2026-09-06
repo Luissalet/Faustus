@@ -1486,8 +1486,13 @@ def local_model_policy() -> str:
         "exist for you. Discover first: glob (e.g. \"**/*card*\"), grep for a symbol, or ls; then read_file. "
         "Only call tools by the exact names you were given (files/folders: ls, glob, grep, read_file — "
         "list_models is about AI models, not files).\n"
-        "2. Do not announce actions (\"I will now edit X\", \"voy a modificar X\"). Call the tool in the "
-        "same turn. Text without a tool call ENDS the turn and is treated as your final answer.\n"
+        # The second example here used to be the Spanish "voy a modificar X". A 27B read
+        # the sample and not the "do not", and answered English questions in Spanish from
+        # the first turn of a brand-new session; the rule holds in any language without
+        # naming one, and src/reply_language.py now says which one to answer in.
+        "2. Do not announce actions (\"I will now edit X\", \"Let me start by opening Y\"), in any "
+        "language. Call the tool in the same turn. Text without a tool call ENDS the turn and is "
+        "treated as your final answer.\n"
         "3. Never say a file was created/changed/fixed unless edit_file, write_file or apply_patch "
         "returned success in THIS turn. The runtime compares your words with the tool log and "
         "rejects unsupported claims; a shell command counts only if it actually modified files.\n"

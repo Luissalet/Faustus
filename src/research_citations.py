@@ -836,17 +836,19 @@ _CHAR_HINTS = {"ñ": "es", "¿": "es", "¡": "es", "ã": "pt", "õ": "pt",
                "ß": "de", "ê": "fr", "œ": "fr"}
 
 
-def detect_language(text: Any) -> str:
-    """Which of es/en/fr/de/pt/it a question is written in, by stopword share.
+def language_signal(text: Any) -> Tuple[str, float]:
+    """The language :func:`detect_language` reads, and how much settled it.
 
-    Each hit is weighted ``1 / (number of languages that share the word)``, so
-    ``de`` — which four of the six use — settles nothing and ``combien`` settles
-    a lot. Defaults to English, which is what the engine did before and is the
-    safe answer for a question with no function words at all.
+    The score is the winner's weighted stopword share. ``0.0`` means the text
+    carried no function word and no telling letter at all — a bare "Hazlo", a
+    path, a stack trace — and the ``"en"`` that comes back beside it is the
+    default, not a reading. A caller that must not guess (``src.reply_language``
+    pins the answer's language off this) checks the score; one that only needs
+    an answer calls :func:`detect_language` and takes English.
     """
     body = _as_text(text).lower()
     if not body.strip():
-        return "en"
+        return "en", 0.0
     words = _WORD_RE.findall(body)
     shared: Dict[str, int] = {}
     for code, vocabulary in _STOPWORD_SETS.items():
@@ -862,8 +864,20 @@ def detect_language(text: Any) -> str:
             scores[code] += 0.75
     best = max(scores.values()) if scores else 0.0
     if best <= 0:
-        return "en"
-    return min((c for c in scores if scores[c] == best), key=_LANGUAGE_ORDER.index)
+        return "en", 0.0
+    winner = min((c for c in scores if scores[c] == best), key=_LANGUAGE_ORDER.index)
+    return winner, best
+
+
+def detect_language(text: Any) -> str:
+    """Which of es/en/fr/de/pt/it a question is written in, by stopword share.
+
+    Each hit is weighted ``1 / (number of languages that share the word)``, so
+    ``de`` — which four of the six use — settles nothing and ``combien`` settles
+    a lot. Defaults to English, which is what the engine did before and is the
+    safe answer for a question with no function words at all.
+    """
+    return language_signal(text)[0]
 
 
 # ---------------------------------------------------------------------------

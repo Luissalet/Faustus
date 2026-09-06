@@ -2613,6 +2613,19 @@ def _build_system_prompt(
     except Exception as e:
         logger.warning("Failed to build datetime context message", exc_info=e)
 
+    # Which language the answer goes back in. Nothing else in this prompt says
+    # it — everything here is English, so a local model reading an English
+    # rulebook answers an English question in Spanish and nobody ever told it
+    # not to (src/reply_language.py). Same user-role treatment as the date
+    # block, and for the same KV-cache reason: this line changes the moment
+    # the user switches language.
+    _language_message = None
+    try:
+        from src.reply_language import context_message as _reply_language_message
+        _language_message = _reply_language_message(messages)
+    except Exception as e:
+        logger.warning("Failed to build reply-language context message", exc_info=e)
+
     # Document context is kept as a SEPARATE message (not merged into the tool
     # prompt) so the context trimmer doesn't destroy it when truncating the
     # massive tool-description system prompt.
@@ -3194,6 +3207,7 @@ def _build_system_prompt(
         _skills_message,
         _memory_message,
         _datetime_message,
+        _language_message,
     ):
         if injected:
             injected["_agent_injected"] = "context"
@@ -3220,6 +3234,11 @@ def _build_system_prompt(
         last_user_idx += 1
     if _datetime_message:
         merged.insert(last_user_idx, _datetime_message)
+        last_user_idx += 1
+    # Last of the injected blocks, so the language directive is the final
+    # thing the model reads before the user's own words.
+    if _language_message:
+        merged.insert(last_user_idx, _language_message)
 
     return merged, mcp_schemas
 
