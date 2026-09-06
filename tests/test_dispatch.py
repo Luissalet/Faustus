@@ -393,6 +393,43 @@ def test_mcp_render_is_one_glance_and_names_the_board(monkeypatch):
         assert pinned in names, f"the MCP server dropped or renamed {pinned}"
 
 
+def test_models_fit_gives_the_coordinator_the_size_not_only_the_verdict(monkeypatch):
+    """A coordinator names a `model` per task with nothing to judge it by.
+
+    The picker's own complaint, one layer down: "no room" without a number is
+    a verdict nobody can act on. And a model that does not fit is not
+    refused — it runs on the CPU at a tenth of the speed — so the only symptom
+    is a job that takes ten times longer and never says why.
+    """
+    ws = _load_workers_server(monkeypatch)
+    GIB = 1024 ** 3
+    text = ws.render_models_fit({
+        "vram": {"supported": True, "name": "RTX 4070 Ti + RTX 5060 Ti", "count": 2,
+                 "budget_bytes": int(26.4 * GIB), "total_bytes": int(27.9 * GIB)},
+        "models": {
+            "qwen3.5:9b": {"size_bytes": int(6.1 * GIB), "state": "fits", "digest": "aaa"},
+            "qwen3.8:27b-q8_0": {"size_bytes": int(27.9 * GIB), "state": "over", "digest": "bbb"},
+            "qwen3.8:27b-q4_K_M": {"size_bytes": int(16.5 * GIB), "state": "fits", "split": True, "digest": "ccc"},
+            "claude-sonnet-4-5:latest": {"size_bytes": int(16.5 * GIB), "state": "fits", "digest": "ccc"},
+        },
+    })
+    assert "26.4 GB usable across 2 GPUs of 27.9 GB" in text
+    assert "6.1 GB  qwen3.5:9b" in text
+    assert "NO ROOM" in text and "27.9 GB  qwen3.8:27b-q8_0" in text
+    assert "splits across the cards" in text
+    # One blob under two names: switching between them is a no-op, and the
+    # two identical sizes would otherwise read as a coincidence.
+    assert "same weights as qwen3.8:27b-q4_K_M" in text
+    assert "same weights as claude-sonnet-4-5:latest" in text
+    # No card: the sizes are still facts, the verdict is not invented.
+    bare = ws.render_models_fit({"vram": {"supported": False, "reason": "nvidia-smi not found"},
+                                 "models": {"qwen3.5:9b": {"size_bytes": int(6.1 * GIB)}}})
+    assert "no VRAM reading" in bare and "nvidia-smi not found" in bare
+    assert "6.1 GB  qwen3.5:9b" in bare
+    assert "fits" not in bare and "NO ROOM" not in bare
+    assert "models_fit" in [t.name for t in ws.TOOLS]
+
+
 def test_the_guide_is_served_to_token_holders_and_says_the_essentials(box, monkeypatch):
     c = _client(monkeypatch, token_scopes=["agents:dispatch"])
     r = c.get("/api/dispatch/guide")

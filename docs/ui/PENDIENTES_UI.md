@@ -841,3 +841,13 @@ su área y baja el baseline. Ningún módulo Studio nuevo la aumenta.
 157. **`[ ]` MAIL-1.** Los adjuntos en composición tienen ahora caducidad. Un
     borrador viejo puede perder sus adjuntos sin que la interfaz lo diga; el
     índice conoce `expires_at` y no se enseña en ninguna parte.
+158. **`[ ]`** El peso y el veredicto del Brief de un proyecto (el `<select>`
+    de «Empezar un chat en…») se leen una sola vez, al abrirse la pestaña.
+    Es el mismo caché de una vez por página que el 148, con el mismo remedio
+    pendiente: un evento del store de uso al cargar o descargar un modelo.
+159. **`[ ]`** El peso y el veredicto se anotan solo en filas servidas por un
+    Ollama **de esta máquina** (`endpoint_ids` de `/api/models/fit`). Es lo
+    correcto para el veredicto —la tarjeta es la nuestra—, pero el **peso**
+    de un Ollama de la red local sí se podría leer de su propio `/api/tags`
+    y hoy la fila sale desnuda. Un endpoint que no sea Ollama (llama.cpp,
+    vLLM) no tiene de dónde sacar el tamaño y seguiría sin número.

@@ -68,7 +68,10 @@ reviewer, model), `workers_wait` (block until done, compact result),
 `worker:<label>:<state>`, `event:<text>`, `changed` — and come back the moment
 it does), `workers_status`, `workers_events` (the board's events and what each
 worker's own output says about it, for a stuck worker), `workers_cancel`,
-`workers_list`.
+`workers_list`, `models_fit` (which models the local Ollama has, how big each
+one is and whether it fits the card — read it before naming a `model`: one
+that does not fit is not refused, it runs with layers on the CPU at a
+fraction of the speed and nothing in the result says why).
 
 A worker whose output says it is rate-limited or sitting at a prompt is
 reported, never killed: its `progress` entry carries the `state` and the `why`

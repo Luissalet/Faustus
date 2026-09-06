@@ -3,7 +3,8 @@ import { Command } from 'cmdk';
 import { Check, Cpu, RefreshCw } from 'lucide-react';
 import { overlayRoot } from '../shell/overlayRoot';
 import type { ModelRoute } from '../adapters/chat';
-import { aliasesOf, FIT_WORD, useFitHints } from '../adapters/fit';
+import { aliasesOf, FIT_WORD, fitOf, fitSize, useFitHints } from '../adapters/fit';
+import { fmtGb, shortGpuName } from '../adapters/localModels';
 import '../shell/palette.css';
 
 /** The searchable list behind the model chip. Lazy: cmdk is ~15 KB gzip
@@ -35,9 +36,20 @@ export default function ModelPalette({
     list.push(route);
     byEndpoint.set(route.endpointName, list);
   }
+  const cards = fit.vram.count ?? 1;
   return (
     <Command.Dialog open={open} onOpenChange={onOpenChange} label={t('Choose model')} className="fs-palette" container={overlayRoot()} data-testid="studio-models">
       <Command.Input placeholder={t('Search model…')} className="fs-palette__input" />
+      {/* "No room" is only an answer if you can see what the room is. The
+          budget is what the verdicts are measured against, so it is stated
+          once, above the list, instead of being hidden in every tooltip. */}
+      {fit.vram.supported && fit.vram.budgetBytes ? (
+        <p className="fs-palette__vram">
+          {cards > 1
+            ? t('{free} usable across {n} GPUs of {total}. Each row shows the weights on disk; the context window grows on top of them.', { free: fmtGb(fit.vram.budgetBytes), n: cards, total: fmtGb(fit.vram.totalBytes) })
+            : t('{free} usable of {total} on {gpu}. Each row shows the weights on disk; the context window grows on top of them.', { free: fmtGb(fit.vram.budgetBytes), total: fmtGb(fit.vram.totalBytes), gpu: shortGpuName(fit.vram.name) || t('the card') })}
+        </p>
+      ) : null}
       <Command.List className="fs-palette__list">
         <Command.Empty className="fs-palette__empty">{routes.length ? t('No model matches.') : t('No endpoint responds.')}</Command.Empty>
         {onRefresh && (
@@ -48,31 +60,44 @@ export default function ModelPalette({
         )}
         {[...byEndpoint.entries()].map(([endpoint, list]) => (
           <Command.Group key={endpoint} heading={endpoint} className="fs-palette__group">
-            {list.map((route) => (
-              <Command.Item
-                key={route.id}
-                value={`${route.model} ${route.endpointName}`}
-                onSelect={() => {
-                  onPick(route);
-                  onOpenChange(false);
-                }}
-                className="fs-palette__item"
-                data-testid={`model-${route.model}`}
-              >
-                {route.id === current?.id ? <Check size={15} aria-hidden="true" /> : <Cpu size={15} aria-hidden="true" />}
-                <span className="fs-palette__name">{route.model}</span>
-                {aliasesOf(route.model, fit).length > 0 && (
-                  <span className="fs-palette__alias" title={t('The same weights as {names}', { names: aliasesOf(route.model, fit).join(', ') })}>
-                    {t('same as {name}', { name: aliasesOf(route.model, fit)[0] })}
-                  </span>
-                )}
-                {fit.models[route.model]?.state && (
-                  <span className="fs-palette__fit" data-fit={fit.models[route.model]?.state} title={fit.models[route.model]?.note}>
-                    {t(FIT_WORD[fit.models[route.model]!.state!])}
-                  </span>
-                )}
-              </Command.Item>
-            ))}
+            {list.map((route) => {
+              // One lookup per row. `fitOf` answers nothing at all for a model
+              // served from another machine: the size and the verdict are both
+              // about the card in THIS box.
+              const hint = fitOf(route, fit);
+              const alias = hint ? aliasesOf(route.model, fit) : [];
+              const size = fitSize(hint);
+              return (
+                <Command.Item
+                  key={route.id}
+                  value={`${route.model} ${route.endpointName}`}
+                  onSelect={() => {
+                    onPick(route);
+                    onOpenChange(false);
+                  }}
+                  className="fs-palette__item"
+                  data-testid={`model-${route.model}`}
+                >
+                  {route.id === current?.id ? <Check size={15} aria-hidden="true" /> : <Cpu size={15} aria-hidden="true" />}
+                  <span className="fs-palette__name">{route.model}</span>
+                  {alias.length > 0 && (
+                    <span className="fs-palette__alias" title={t('The same weights as {names}', { names: alias.join(', ') })}>
+                      {t('same as {name}', { name: alias[0] })}
+                    </span>
+                  )}
+                  {size && (
+                    <span className="fs-palette__size" title={hint?.note ?? t('{size} on disk. Approximate — the KV cache grows on top of it with the context window.', { size })}>
+                      {size}
+                    </span>
+                  )}
+                  {hint?.state && (
+                    <span className="fs-palette__fit" data-fit={hint.state} title={hint.note}>
+                      {t(FIT_WORD[hint.state])}
+                    </span>
+                  )}
+                </Command.Item>
+              );
+            })}
           </Command.Group>
         ))}
       </Command.List>

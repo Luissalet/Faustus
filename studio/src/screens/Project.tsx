@@ -1,9 +1,11 @@
 import { Activity, AlertTriangle, Archive, ArchiveRestore, ArrowLeft, Brain, Check, Download, Eye, FileText, FolderOpen, FolderPlus, Image, Layers, Link2, Lock, MessageSquare, PencilLine, Pin, PinOff, Plus, RefreshCw, Send, Settings2, Target, Trash2, Unlink, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
-import { Button, Dialog, EmptyState, Menu, Skeleton, Toast } from '../components';
+import { ActivityDot, Button, Dialog, EmptyState, Menu, Skeleton, Toast } from '../components';
 import { listModels, type ChatSession, type ModelRoute } from '../adapters/chat';
+import { groupActivity, sessionActivity, useChatActivity } from '../shell/activity';
 import { pickNative } from '../adapters/composer';
+import { fitOf, fitSummary, useFitHints } from '../adapters/fit';
 import { relativeTime } from '../adapters/home';
 import {
   addContextRoot,
@@ -503,6 +505,21 @@ export function ProjectScreen() {
   const rawTab = params.get('tab');
   const tab: TabId = creating ? 'ajustes' : TABS.some((x) => x.id === rawTab) ? (rawTab as TabId) : 'brief';
 
+  /* A turn survives leaving the conversation, so this screen has to be able
+     to say which of its chats is still working (or waiting for a permission
+     nobody has given). One shared poll for the whole account. */
+  const activity = useChatActivity();
+  const liveChats = useMemo(
+    () => (chats ?? []).filter((c) => sessionActivity(activity, c.id) !== null).length,
+    [chats, activity],
+  );
+  /* One tone for the tab: a chat waiting for a permission outranks a chat
+     that is merely busy — one of them needs a person. */
+  const liveTone = useMemo(
+    () => groupActivity(activity, (chats ?? []).map((c) => c.id)) ?? 'running',
+    [chats, activity],
+  );
+
   const reload = useCallback(async () => {
     if (creating) return;
     try {
@@ -535,6 +552,10 @@ export function ProjectScreen() {
       })
       .catch(() => setRoutes([]));
   }, []);
+
+  // Will the model for the new chat fit on the card? Read once, when the
+  // Brief is on screen, from the same endpoint the picker uses.
+  const fit = useFitHints(tab === 'brief');
 
   const setTab = (id: TabId) => {
     const next = new URLSearchParams(params);
@@ -687,6 +708,9 @@ export function ProjectScreen() {
         {TABS.map((entry) => (
           <button key={entry.id} type="button" role="tab" aria-selected={tab === entry.id} className="fs-tab" data-testid={`project-tab-${entry.id}`} onClick={() => setTab(entry.id)}>
             {t(entry.label)}
+            {/* The tab itself says it, so a working chat is visible without
+                opening the section it lives in. */}
+            {entry.id === 'chats' && liveChats > 0 && <ActivityDot state={liveTone} />}
           </button>
         ))}
       </div>
@@ -707,11 +731,17 @@ export function ProjectScreen() {
             <div className="fs-pj__row">
               <select className="fs-field" value={routeId} onChange={(e) => setRouteId(e.target.value)} aria-label={t('Model for the new chat')} disabled={project.archived}>
                 {routes.length === 0 && <option value="">{t('No model available')}</option>}
-                {routes.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.model} · {r.endpointName}
-                  </option>
-                ))}
+                {routes.map((r) => {
+                  // The same reading the picker gives, in the only form a
+                  // native <option> can carry: "16.4 GB · no room". Empty
+                  // when the model is not served from this machine.
+                  const summary = fitSummary(fitOf(r, fit));
+                  return (
+                    <option key={r.id} value={r.id}>
+                      {summary ? `${r.model} · ${summary} · ${r.endpointName}` : `${r.model} · ${r.endpointName}`}
+                    </option>
+                  );
+                })}
               </select>
               <Button type="submit" variant="primary" size="sm" icon={Send} label={t('Start chat')} loading={busy === 'start'} disabled={project.archived || !routes.length} testId="project-start" />
             </div>
@@ -827,17 +857,25 @@ export function ProjectScreen() {
             <p className="fs-pj__muted">{t('No chats yet. Start one from the brief and it will stay grouped here.')}</p>
           ) : (
             <div className="fs-list fs-list--rail">
-              {chats.map((c) => (
-                <div key={c.id} className="fs-pj__chat">
-                  <Link to={`/studio?s=${encodeURIComponent(c.id)}`} className="fs-row" data-testid="project-chat">
-                    <span className="fs-row__main">
-                      <span className="fs-row__name">{c.name || t('Untitled')}</span>
-                      <span className="fs-row__meta">{[c.model, tn(c.messageCount, '{n} message', '{n} messages'), relativeTime(c.lastMessageAt ?? c.createdAt)].filter(Boolean).join(' · ')}</span>
-                    </span>
-                  </Link>
-                  <Button variant="ghost" size="sm" icon={Trash2} label={t('Delete')} onClick={() => setConfirm({ chat: c.id })} />
-                </div>
-              ))}
+              {chats.map((c) => {
+                const live = sessionActivity(activity, c.id);
+                return (
+                  <div key={c.id} className="fs-pj__chat">
+                    <Link to={`/studio?s=${encodeURIComponent(c.id)}`} className="fs-row" data-testid="project-chat">
+                      <span className="fs-row__main">
+                        <span className="fs-row__name">
+                          {live && <ActivityDot state={live} position={activity.queued[c.id]} withLabel />}
+                          {c.name || t('Untitled')}
+                        </span>
+                        <span className="fs-row__meta">
+                          {[c.model, tn(c.messageCount, '{n} message', '{n} messages'), relativeTime(c.lastMessageAt ?? c.createdAt)].filter(Boolean).join(' · ')}
+                        </span>
+                      </span>
+                    </Link>
+                    <Button variant="ghost" size="sm" icon={Trash2} label={t('Delete')} onClick={() => setConfirm({ chat: c.id })} />
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getJson } from './api';
+import { fmtGb } from './localModels';
+import { t } from '../i18n';
 
 /**
  * Will this model fit on this card?
@@ -36,13 +38,31 @@ export interface ModelFit {
   digest?: string;
 }
 
+export interface FitVram {
+  supported: boolean;
+  reason?: string;
+  /** What a model's weights can take right now, KV cache not included. */
+  budgetBytes?: number;
+  totalBytes?: number;
+  /** Cards the budget is spread over: with more than one, Ollama pools them. */
+  count?: number;
+  name?: string;
+}
+
 export interface FitHints {
-  vram: { supported: boolean; reason?: string };
+  vram: FitVram;
+  /**
+   * The endpoints these verdicts are about: the Ollama servers on THIS
+   * machine, which is the only card we can measure. A LAN or tailnet
+   * endpoint can serve a tag with the very same name off somebody else's
+   * GPU, and a row that borrowed our answer would be a confident lie.
+   */
+  endpointIds: string[];
   /** Keyed by the model tag as the picker spells it. */
   models: Record<string, ModelFit>;
 }
 
-const EMPTY: FitHints = { vram: { supported: false }, models: {} };
+const EMPTY: FitHints = { vram: { supported: false }, endpointIds: [], models: {} };
 
 const STATES: FitState[] = ['fits', 'tight', 'over'];
 
@@ -59,7 +79,19 @@ function parse(raw: Record<string, unknown>): FitHints {
       digest: typeof m?.digest === 'string' && m.digest ? m.digest : undefined,
     };
   }
-  return { vram: { supported: Boolean(vramRaw.supported), reason: typeof vramRaw.reason === 'string' ? vramRaw.reason : undefined }, models };
+  const num = (v: unknown): number | undefined => (typeof v === 'number' && v > 0 ? v : undefined);
+  return {
+    vram: {
+      supported: Boolean(vramRaw.supported),
+      reason: typeof vramRaw.reason === 'string' ? vramRaw.reason : undefined,
+      budgetBytes: num(vramRaw.budget_bytes),
+      totalBytes: num(vramRaw.total_bytes),
+      count: num(vramRaw.count),
+      name: typeof vramRaw.name === 'string' ? vramRaw.name : undefined,
+    },
+    endpointIds: Array.isArray(raw.endpoint_ids) ? raw.endpoint_ids.map(String) : [],
+    models,
+  };
 }
 
 let cached: Promise<FitHints> | null = null;
@@ -101,6 +133,40 @@ export const FIT_WORD: Record<FitState, string> = {
   tight: 'tight',
   over: 'no room',
 };
+
+/**
+ * What we know about the model on THIS row, or nothing at all.
+ *
+ * Gated on the endpoint, not on the name: `/api/models/fit` measures the
+ * Ollama servers running on this machine and says which endpoint ids those
+ * are. A row served from another box keeps its name and gets no annotation —
+ * neither a size nor a verdict — because both would be about our card.
+ */
+export function fitOf(route: { model: string; endpointId: string }, hints: FitHints): ModelFit | undefined {
+  if (!hints.endpointIds.includes(route.endpointId)) return undefined;
+  return hints.models[route.model];
+}
+
+/**
+ * The weights on disk, the number every verdict is actually about.
+ *
+ * This is the answer to "no room compared to WHAT?", and it is a fact even
+ * when there is no card to judge it against, so it is drawn whenever Ollama
+ * gave it — with or without a verdict beside it. Empty when unknown.
+ */
+export function fitSize(fit?: ModelFit): string {
+  return fit?.sizeBytes ? fmtGb(fit.sizeBytes) : '';
+}
+
+/**
+ * "16.4 GB · no room" — size and verdict as one string, for the places that
+ * can only render text (a native `<select>` option). Either half may be
+ * missing; neither is ever invented.
+ */
+export function fitSummary(fit?: ModelFit): string {
+  const word = fit?.state ? t(FIT_WORD[fit.state]) : '';
+  return [fitSize(fit), word].filter(Boolean).join(' · ');
+}
 
 /**
  * The other tags that are the same weights as this one.

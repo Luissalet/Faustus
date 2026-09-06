@@ -41,7 +41,7 @@ _PALETTE_CSS = (_REPO / "studio" / "src" / "shell" / "palette.css").read_text(en
 def test_the_badge_paints_nothing_without_data():
     """`state` is absent whenever the server cannot tell. An invented verdict
     is worse than none, because people act on it."""
-    assert "fit.models[route.model]?.state && (" in _PALETTE, (
+    assert "{hint?.state && (" in _PALETTE, (
         "the badge must be conditional on a state actually being there"
     )
     assert "STATES.includes(state as FitState) ? (state as FitState) : undefined" in _FIT_ADAPTER, (
@@ -67,8 +67,63 @@ def test_the_badge_says_the_state_in_words_not_only_in_colour():
 def test_the_title_carries_the_backends_sentence():
     """The server explains itself in a sentence; the row keeps it on hover
     rather than paraphrasing it."""
-    assert "title={fit.models[route.model]?.note}" in _PALETTE
+    assert "title={hint.note}" in _PALETTE
     assert "note:" in _FIT_ADAPTER
+
+
+# ── the size, which is what the verdict is about ──────────────────────────
+#
+# "no room" on its own is a verdict with the number filed off: it says the
+# model does not fit and never says how big it is or how big the card is.
+# Both figures existed in the payload and only lived in a `title=`, where a
+# touch screen and a screenshot never reach them.
+
+def test_the_row_shows_the_weights_on_disk():
+    """A size is a fact even when there is no card to judge it against, so it
+    is drawn on its own account and not as part of the verdict."""
+    assert "const size = fitSize(hint);" in _PALETTE
+    assert "className=\"fs-palette__size\"" in _PALETTE
+    assert ".fs-palette__size {" in _PALETTE_CSS
+    body = _FIT_ADAPTER[_FIT_ADAPTER.index("export function fitSize("):]
+    body = body[:body.index("\n}")]
+    assert "fit?.sizeBytes ? fmtGb(fit.sizeBytes) : ''" in body, (
+        "no size from Ollama means no number, not a zero"
+    )
+
+
+def test_the_budget_the_verdicts_are_measured_against_is_stated_once():
+    """Without it, "no room" is unanswerable: room compared to what?"""
+    assert "fs-palette__vram" in _PALETTE and ".fs-palette__vram {" in _PALETTE_CSS
+    assert "fit.vram.supported && fit.vram.budgetBytes ?" in _PALETTE, (
+        "no card, no line — the same rule as the badge"
+    )
+    for key in ("budget_bytes", "total_bytes"):
+        assert key in _FIT_ADAPTER, key
+
+
+def test_a_verdict_is_never_borrowed_by_another_machines_endpoint():
+    """`/api/models/fit` measures the Ollama servers in THIS box and says
+    which endpoint ids they are. A tailnet endpoint serving a tag with the
+    same name gets no annotation rather than our card's answer."""
+    assert "endpoint_ids" in _ROUTES and "endpoint_ids" in _FIT_ADAPTER
+    body = _FIT_ADAPTER[_FIT_ADAPTER.index("export function fitOf("):]
+    body = body[:body.index("\n}")]
+    assert "hints.endpointIds.includes(route.endpointId)" in body
+    assert "const hint = fitOf(route, fit);" in _PALETTE, "the row must go through the gate"
+
+
+def test_the_project_brief_gives_the_same_reading():
+    """The picker is not the only place a model is chosen: a new chat in a
+    project is started from a native <select>, which had neither number nor
+    verdict on it."""
+    project = (_REPO / "studio" / "src" / "screens" / "Project.tsx").read_text(encoding="utf-8")
+    assert "fitSummary(fitOf(r, fit))" in project
+    assert "useFitHints(" in project
+    body = _FIT_ADAPTER[_FIT_ADAPTER.index("export function fitSummary("):]
+    body = body[:body.index("\n}")]
+    assert "[fitSize(fit), word].filter(Boolean)" in body, (
+        "either half may be missing, and neither is invented"
+    )
 
 
 def test_a_model_that_does_not_fit_is_still_selectable():

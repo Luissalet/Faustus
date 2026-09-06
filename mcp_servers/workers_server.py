@@ -22,7 +22,9 @@ Tools: workers_guide (read first), dispatch_workers (start a job),
 workers_wait (block until done, then the compact result), workers_wait_for
 (block until ONE condition holds — a phase, a worker state, an event, a file
 change — and return the moment it does), workers_status,
-workers_events, workers_cancel, workers_list, objectives_list/objectives_apply,
+workers_events, workers_cancel, workers_list, models_fit (which local models
+exist, how big each one is and whether it fits the card — read before naming a
+`model`), objectives_list/objectives_apply,
 guard_explain, memory_pack (what this machine has already learned), and
 contracts_backends / contracts_validate_skill / contracts_plan_run (which
 execution backends exist and whether each is actually up, whether a manifest
@@ -412,6 +414,58 @@ def render_apply(result: Dict[str, Any]) -> str:
     for o in (result.get("state") or {}).get("objectives") or []:
         if o.get("status") != "dropped":
             lines.append(f"{o.get('id')} [{o.get('status')}] (P{o.get('priority')}) {o.get('title')}")
+    return "\n".join(lines)
+
+
+def _gb(value: Any) -> str:
+    try:
+        n = float(value or 0)
+    except (TypeError, ValueError):
+        return "?"
+    return f"{n / (1024 ** 3):.1f} GB" if n > 0 else "?"
+
+
+def render_models_fit(data: Dict[str, Any]) -> str:
+    """What this machine can actually run, and at what speed.
+
+    The size is the point, not the verdict: "no room" with no number is
+    something a coordinator cannot reason about, and a model whose weights do
+    not fit still answers — with layers on the CPU or weights paging over
+    PCIe, at a fraction of the speed (measured: 4 tok/s on a 27B-q8_0 in
+    12 GB). That is a slow job, not a failed one, and nothing in the result
+    ever says why. Two tags with one digest are named out loud too, because
+    switching between them looks like a change and is a no-op.
+
+    No card, no verdict — the sizes are still facts and still travel.
+    """
+    vram = data.get("vram") or {}
+    models = data.get("models") or {}
+    lines: List[str] = []
+    if vram.get("supported"):
+        count = int(vram.get("count") or 1)
+        where = f"across {count} GPUs" if count > 1 else "on the card"
+        lines.append(f"{vram.get('name') or 'GPU'} — {_gb(vram.get('budget_bytes'))} usable {where} "
+                     f"of {_gb(vram.get('total_bytes'))}")
+    else:
+        lines.append("no VRAM reading on this machine "
+                     f"({vram.get('reason') or 'no nvidia-smi'}): sizes below, no verdict")
+    lines.append("sizes are the weights on disk; the KV cache grows on top with the context window")
+    twins: Dict[str, List[str]] = {}
+    for name, entry in models.items():
+        digest = str((entry or {}).get("digest") or "")
+        if digest:
+            twins.setdefault(digest, []).append(str(name))
+    for name in sorted(models):
+        entry = models[name] or {}
+        state = str(entry.get("state") or "")
+        word = "NO ROOM" if state == "over" else (state or "-")
+        note = " · splits across the cards" if entry.get("split") else ""
+        same = [n for n in twins.get(str(entry.get("digest") or ""), []) if n != name]
+        if same:
+            note += f" · same weights as {', '.join(sorted(same))}"
+        lines.append(f"  {word:<7} {_gb(entry.get('size_bytes')):>9}  {name}{note}")
+    if not models:
+        lines.append("  (no Ollama on this machine, or it did not answer)")
     return "\n".join(lines)
 
 
@@ -831,6 +885,22 @@ TOOLS: List[Tool] = [
         inputSchema={"type": "object", "properties": {"limit": {"type": "integer", "default": 20}}},
     ),
     Tool(
+        name="models_fit",
+        description=(
+            "Which models the local Ollama has, HOW BIG each one is and whether it fits this "
+            "machine's card — read it before naming a `model` in a dispatched task, and before "
+            "asking for a big context window. A model whose weights do not fit is not rejected: it "
+            "runs with layers on the CPU or paging over PCIe at a fraction of the speed, so the "
+            "only symptom is a job that takes ten times longer for no stated reason. Also names the "
+            "tags that are the same weights under two names, where switching is a no-op."
+        ),
+        inputSchema={"type": "object", "properties": {
+            "refresh": {"type": "boolean", "default": False,
+                        "description": "Ask the card and Ollama again instead of the server's 20 s cache. "
+                                       "Worth it right after loading or unloading a model, not otherwise."},
+        }},
+    ),
+    Tool(
         name="objectives_list",
         description=(
             "The objectives dashboard of a Faustus project: every objective with status, priority, "
@@ -1199,6 +1269,10 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
             result = await asyncio.to_thread(
                 _request, "POST", f"/api/projects/{project.get('id')}/objectives/deltas", body)
             return _text(render_apply(result))
+        if name == "models_fit":
+            refresh = "true" if args.get("refresh") else "false"
+            data = await asyncio.to_thread(_request, "GET", f"/api/models/fit?refresh={refresh}")
+            return _text(render_models_fit(data))
         if name == "memory_pack":
             project = str(args.get("project") or "")
             if project:

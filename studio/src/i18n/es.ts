@@ -4935,6 +4935,8 @@ export const es: Record<string, string> = {
   "{field} on {entity}": "{field} en {entity}",
   "{files} files · indexed {when}": "{files} ficheros · indexado {when}",
   "{free} free of {total} where Ollama keeps its blobs ({path}).": "{free} libres de {total} donde Ollama guarda sus blobs ({path}).",
+  "{free} usable across {n} GPUs of {total}. Each row shows the weights on disk; the context window grows on top of them.": "{free} aprovechables entre {n} GPUs de {total}. Cada fila enseña los pesos en disco; la ventana de contexto crece por encima.",
+  "{free} usable of {total} on {gpu}. Each row shows the weights on disk; the context window grows on top of them.": "{free} aprovechables de {total} en {gpu}. Cada fila enseña los pesos en disco; la ventana de contexto crece por encima.",
   "{from}–{to} of {total}": "{from}–{to} de {total}",
   "{granted} of {total} always-loaded blocks are being served": "se están sirviendo {granted} de {total} bloques de carga permanente",
   "{helpful} helpful · {harmful} harmful": "{helpful} útiles · {harmful} perjudiciales",

@@ -178,19 +178,55 @@
  * the meaning; the colour only agrees with it.
  */
 .fs-palette__name {
+  /* Takes the slack, gives it back first: on a phone the row is name, alias,
+     size and verdict, and without this the alias chip (which cannot wrap)
+     pushed the model name clean out of the dialog — the one thing on the row
+     nobody can do without. */
+  flex: 1 1 auto;
+  min-inline-size: 5ch;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+/* The weights on disk. It takes the free space, so it and the verdict sit
+   together at the end of the row: the number first, the word about it after.
+   Tabular figures keep the column of sizes readable as a column. */
+.fs-palette__size {
+  margin-inline-start: auto;
+  flex: none;
+  font-size: var(--fs-label-size);
+  font-variant-numeric: tabular-nums;
+  color: var(--fs-text-3);
+  white-space: nowrap;
+}
+
+/* What the verdicts are measured against, said once instead of per row.
+   `max-inline-size` because base.css caps every <p> at 65ch, which here
+   left the strip ending in mid-air two thirds across the dialog. */
+.fs-palette__vram {
+  margin: 0;
+  max-inline-size: none;
+  padding: var(--fs-space-2) var(--fs-space-4);
+  border-block-end: 1px solid var(--fs-border);
+  background: var(--fs-surface-2);
+  font-size: 11px;
+  color: var(--fs-text-3);
+}
+
 .fs-palette__fit {
   margin-inline-start: auto;
+  flex: none;
   padding: 1px var(--fs-space-2);
   border-radius: var(--fs-radius-pill);
   border: 1px solid var(--fs-border);
   font-size: var(--fs-label-size);
   color: var(--fs-text-3);
   white-space: nowrap;
+  /* One width for every verdict, so the sizes in front of them line up as a
+     column instead of stepping in and out with the length of the word. */
+  min-inline-size: 4.4rem;
+  text-align: center;
 }
 
 .fs-palette__fit[data-fit='fits'] {
@@ -208,12 +244,27 @@
   color: var(--fs-danger);
 }
 
-/* Two tags, one model: said quietly, because it is a footnote, not a warning. */
+/* Two tags, one model: said quietly, because it is a footnote, not a warning —
+   and a footnote gives way before the name does when the row runs out of
+   room, so it truncates instead of pushing. */
 .fs-palette__alias {
+  flex: 0 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   padding: 1px var(--fs-space-2);
   border-radius: var(--fs-radius-pill);
   background: var(--fs-surface-2);
   font-size: var(--fs-label-size);
   color: var(--fs-text-3);
   white-space: nowrap;
+}
+
+/* On a phone the row cannot hold four things, and a chip truncated to
+   "same as …" says nothing at all. The footnote is the one that goes: the
+   name and the two numbers are what the choice is made on. */
+@media (max-width: 520px) {
+  .fs-palette__alias {
+    display: none;
+  }
 }
