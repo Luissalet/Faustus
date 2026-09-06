@@ -4708,6 +4708,16 @@ async def stream_agent_loop(
     _t1 = time.time()
     if _relevant_tools:
         logger.info(f"[tool-rag] Using caller-provided relevant_tools ({len(_relevant_tools)} tools)")
+    # A read-only floor a low-signal turn earns from having a workspace bound.
+    # It is a FLOOR and not a selection: it used to be assigned straight into
+    # `_relevant_tools`, which short-circuits the retrieval below — and that is
+    # how "I meant put them into the project objectives tab of the project"
+    # reached the model with no `project_objectives` in its toolset (seen live,
+    # 07-09-2026). The phrase names the tool, the index returns it for that
+    # exact query, and nobody asked the index. The model then said, truthfully,
+    # that it had no such tool, which reads as a lie to the person who can see
+    # the tab. The no-workspace branch already knew this ("don't short-circuit").
+    _low_signal_readonly_floor: set = set()
     if not guide_only and not _relevant_tools and _low_signal_turn:
         from src.tool_index import ALWAYS_AVAILABLE
         if workspace:
@@ -4719,9 +4729,9 @@ async def stream_agent_loop(
             # PLAN_MODE_READONLY_TOOLS is imported at module scope; a local
             # `from ... import` here would rebind it as a function local and
             # leave the closures above reading it before assignment.
-            _relevant_tools = set(ALWAYS_AVAILABLE)
-            _relevant_tools |= (_DOMAIN_TOOL_MAP["files"] & PLAN_MODE_READONLY_TOOLS)
-            logger.info("[tool-rag] Low-signal but workspace active; including read-only file tools")
+            _low_signal_readonly_floor = set(ALWAYS_AVAILABLE)
+            _low_signal_readonly_floor |= (_DOMAIN_TOOL_MAP["files"] & PLAN_MODE_READONLY_TOOLS)
+            logger.info("[tool-rag] Low-signal but workspace active; read-only file tools as a floor, retrieval still runs")
         else:
             # Don't short-circuit: fall through to RAG retrieval below.
             # Non-English queries are flagged low_signal by the English-only
@@ -4855,6 +4865,16 @@ async def stream_agent_loop(
             if _missing:
                 _relevant_tools.update(_WORKSPACE_TERMINUS_TOOLS)
                 logger.info("[tool-rag] Workspace bound; adding file/terminal tools: %s", sorted(_missing))
+
+    # And now the low-signal floor, on top of whatever the retrieval chose.
+    # Both halves matter: the read-only file tools because a bound workspace is
+    # itself the signal, and the retrieval because a "vague" message can still
+    # name a tool out loud.
+    if _low_signal_readonly_floor and _relevant_tools is not None:
+        _added = sorted(_low_signal_readonly_floor - set(_relevant_tools))
+        _relevant_tools = set(_relevant_tools) | _low_signal_readonly_floor
+        if _added:
+            logger.info("[tool-rag] Low-signal read-only floor added: %s", _added)
 
     # The floor, above every selection path. The branches above cover the
     # confident cases; this covers the rest, so the floor holds whichever path
