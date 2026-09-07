@@ -20,7 +20,7 @@ from src.auth_helpers import require_user
 from src.constants import COOKBOOK_STATE_FILE
 from pydantic import BaseModel
 
-from core.middleware import require_admin
+from core.middleware import require_admin, require_human
 from routes._validators import validate_remote_host, validate_ssh_port
 from core.atomic_io import atomic_write_text
 from core.log_safety import redact_secrets
@@ -1165,6 +1165,7 @@ def setup_cookbook_routes() -> APIRouter:
         require_admin(request)
         host = validate_remote_host(req.host)
         ssh_port = validate_ssh_port(req.ssh_port)
+        proc = None
         try:
             # Built here rather than through run_ssh_command_async because the
             # trust flags live in ssh_trust now, and this is the attended action
@@ -1175,6 +1176,7 @@ def setup_cookbook_routes() -> APIRouter:
                 *ssh_trust.ssh_argv(host, ssh_port, "echo ok", connect_timeout=5),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                **({'creationflags': subprocess.CREATE_NO_WINDOW} if IS_WINDOWS else {'start_new_session': True}),
             )
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=8)
             code = proc.returncode
@@ -1182,6 +1184,14 @@ def setup_cookbook_routes() -> APIRouter:
             return {"stdout": "", "stderr": "SSH test timed out", "exit_code": 124}
         except Exception as e:
             return {"stdout": "", "stderr": str(e), "exit_code": -1}
+        finally:
+            if proc is not None and proc.returncode is None:
+                from src.agent_tools.subprocess_tools import _kill_tree_async
+                await _kill_tree_async(proc)
+                try:
+                    await asyncio.wait_for(proc.wait(), timeout=5)
+                except (asyncio.TimeoutError, ProcessLookupError):
+                    logger.warning('SSH probe cleanup could not be confirmed')
         return {
             "stdout": stdout.decode("utf-8", errors="replace"),
             "stderr": stderr.decode("utf-8", errors="replace"),
@@ -1234,7 +1244,9 @@ def setup_cookbook_routes() -> APIRouter:
         swapped identity gets waved through, so re-approval has to be a separate
         deliberate act (unpair, then pair again).
         """
-        require_admin(request)
+        require_human(request)
+        from routes.workspace_routes import _reject_cross_origin
+        _reject_cross_origin(request)
         host = validate_remote_host(req.host)
         ssh_port = validate_ssh_port(req.ssh_port)
         if not host:
@@ -1260,7 +1272,9 @@ def setup_cookbook_routes() -> APIRouter:
         The deliberate exit from the 409 above. Kept separate from pair so that
         accepting a changed key always costs an explicit second decision.
         """
-        require_admin(request)
+        require_human(request)
+        from routes.workspace_routes import _reject_cross_origin
+        _reject_cross_origin(request)
         host = validate_remote_host(req.host)
         ssh_port = validate_ssh_port(req.ssh_port)
         if not host:

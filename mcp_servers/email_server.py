@@ -21,7 +21,7 @@ import sys
 import os
 import os.path
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import uuid
 from contextvars import ContextVar
 from urllib.parse import parse_qs, unquote, urlparse
@@ -1410,7 +1410,7 @@ def _stash_agent_draft(*, to, subject, body, in_reply_to=None, references=None,
         return {"success": False, "error": "Pending-email storage unavailable"}
     pending_id = uuid.uuid4().hex[:16]
     far_future = "9999-12-31T00:00:00"
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     try:
         conn = sqlite3.connect(SCHEDULED_EMAILS_DB)
         # Touch the schema in case the email-routes init hasn't run yet

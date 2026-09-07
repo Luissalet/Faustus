@@ -1259,6 +1259,8 @@ def setup_chat_routes(
             if request.headers.get("content-type", "").startswith("application/json"):
                 try:
                     body = await request.json()
+                    if not isinstance(body, dict):
+                        raise HTTPException(400, 'The chat request must be a JSON object.')
                 except json.JSONDecodeError as e:
                     raise HTTPException(400, f"Invalid JSON: {e}")
         except HTTPException:
@@ -1269,8 +1271,8 @@ def setup_chat_routes(
         _set_user_time_from_request(request)
 
         form_data = await request.form()
-        message = form_data.get("message")
-        session = form_data.get("session")
+        message = form_data.get("message") or (body or {}).get("message")
+        session = form_data.get("session") or (body or {}).get("session")
         attachments = form_data.get("attachments")
         use_web = form_data.get("use_web")
         use_research = form_data.get("use_research")
@@ -1288,10 +1290,10 @@ def setup_chat_routes(
         allow_web_search = form_data.get("allow_web_search") or (body or {}).get("allow_web_search")
         use_rag = form_data.get("use_rag")
         search_context = form_data.get("search_context")  # pre-fetched web search results (compare mode)
-        compare_mode = str(form_data.get("compare_mode", "")).lower() == "true"
-        incognito = str(form_data.get("incognito", "")).lower() == "true"
+        compare_mode = str(form_data.get("compare_mode") or (body or {}).get("compare_mode") or "").lower() == "true"
+        incognito = str(form_data.get("incognito") or (body or {}).get("incognito") or "").lower() == "true"
         plan_mode = str(form_data.get("plan_mode") or (body or {}).get("plan_mode") or "").lower() == "true"
-        chat_mode = str(form_data.get("mode", "")).lower()  # 'chat' or 'agent'
+        chat_mode = str(form_data.get("mode") or (body or {}).get("mode") or "").lower()  # 'chat' or 'agent'
         tool_approval_id = (
             form_data.get("tool_approval_id")
             or (body or {}).get("tool_approval_id")
@@ -1307,7 +1309,7 @@ def setup_chat_routes(
         tool_approval_continuation = False
         # Workspace: confine the agent's file/shell tools to this folder.
         workspace, workspace_rejected = _resolve_request_workspace(
-            request, form_data.get("workspace")
+            request, form_data.get("workspace") or (body or {}).get("workspace")
         )
         # A project bound to this chat's sidebar folder owns the workspace.
         # Chats that belong to no project fall through to the posted value, so
@@ -1457,6 +1459,17 @@ def setup_chat_routes(
             _verify_session_owner(request, session)
             sess = session_manager.get_session(session)
             owner = effective_user(request)
+            # Resolve JSON/default session IDs and check ownership BEFORE reading
+            # the pinned roster. A newly opened UI may send before its team GET.
+            from src import chat_team
+            try:
+                _chat_team = chat_team.load(session, owner)['team'] if not incognito else None
+            except (ValueError, OSError):
+                raise HTTPException(status_code=409, detail='Could not read the chat team. Repair its configuration before continuing.')
+            if _chat_team and _chat_team.get('enabled'):
+                chat_mode = 'agent'
+                user_requested_agent = True
+                auto_escalated = False
             if tool_approval_id:
                 # Codes, not prose: the browser must branch on the machine
                 # field and render the message as-is (src/tool_security.py).
@@ -2101,10 +2114,12 @@ def setup_chat_routes(
                     _prior_report = ""
                     _prior_findings = None
                     _prior_urls = None
-                    _prior_json = research_handler._get_session_json(session)
+                    _prior_citations = None
+                    _prior_json = research_handler._get_session_json(session, owner=_user or "")
                     if _prior_json:
                         _prior_report = _prior_json.get("raw_report", "")
                         _prior_findings = _prior_json.get("raw_findings")
+                        _prior_citations = _prior_json.get("citation_registry")
                         _src_urls = {s.get("url", "") for s in (_prior_json.get("sources") or []) if s.get("url")}
                         _prior_urls = _src_urls if _src_urls else None
                         if _prior_report:
@@ -2122,6 +2137,7 @@ def setup_chat_routes(
                         prior_report=_prior_report,
                         prior_findings=_prior_findings,
                         prior_urls=_prior_urls,
+                        prior_citations=_prior_citations,
                         on_complete=_on_research_done,
                         owner=_user,
                     )
@@ -2772,6 +2788,13 @@ def setup_chat_routes(
                     # project options object shared by the rest of the route.
                     _loop_harness_options = dict(_loop_harness_options or {})
                     _loop_harness_options["incognito"] = bool(incognito)
+
+                    from src import chat_team
+                    _team = _chat_team
+                    if _team and _team['enabled']:
+                        _loop_harness_options['chat_team'] = _team
+                        _forced_tools = set(_forced_tools or ()) | {'delegate_agents'}
+                        messages = [*messages, {'role': 'system', 'content': chat_team.instruction(_team)}]
 
                     async for chunk in stream_agent_loop(
                         sess.endpoint_url,

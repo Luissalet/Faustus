@@ -1,9 +1,34 @@
 # ART-1 · Separar identidad de bytes de identidad de artefacto (B-017)
 
-Nota de diseño previa a cualquier migración de datos. El lote ART-1 exige
-diseño aprobado antes de tocar filas existentes, así que este documento fija el
-modelo, el orden de migración y la frontera entre lo que ya se ha implementado y
-lo que queda pendiente.
+Diseño y registro de implantación. El diseño original precedió a la copia de
+datos; la petición de Luis de implementar el conjunto autoriza ahora su cierre.
+
+## Estado de implantación · 07-09-2026
+
+Las fases 2–5 están conectadas: `artifact_migration.copy_legacy` copia por lotes
+de 50, mide bytes reales, conserva los originales y los alias; `startup_copy`
+lo ejecuta fuera del bucle del servidor. El catálogo lee filas antiguas mientras
+se copian, evitando una ventana sin lectores. Los IDs nuevos identifican eventos
+(run, propietario, nombre y procedencia), no sólo hashes. Reintentos del mismo
+evento son idempotentes. El archivo físico se publica de forma atómica.
+
+`artifact_catalog` alimenta contexto de proyecto y State Mirror. Las rutas
+`/api/artifacts`, `/{id}` y `/{id}/download` autorizan por propietario y no
+ofrecen acceso por hash. Los previews se preservan como derivados. Las marcas
+`artifact_tombstones` impiden que una eliminación reaparezca desde la tabla vieja
+o la migración. Un rollback con ocurrencias o marcas existentes se rechaza.
+
+`workflows/artifacts.save` guarda texto UTF-8 o referencias a resultados del run,
+con límite de 10 MiB, nombres confinados y proyecto autorizado. HTTP y worker
+usan el mismo conjunto de handlers. Actividad ofrece descargas de resultados.
+
+Verificación: 126 pruebas de consumidores; 49 de migración/identidad/workflows;
+112 de rutas/Actividad/wiring. Lotes solapados. Copia de seguridad de SQLite antes
+del reinicio de 18:03; base real sin artefactos históricos que copiar. Prueba real
+`wfr_121604eaaf5d49c2a5ea`: espera automática y Markdown guardado, sin modelo.
+
+Las secciones siguientes conservan las decisiones del diseño original. Las
+etiquetas «pendiente» de sus fases describen aquel momento, no el estado actual.
 
 Ámbito: `src/artifact_store.py`, la tabla `artifacts` de `core/database.py`, el
 nuevo contrato `src/contracts/blob.py` y el nuevo módulo `src/artifact_identity.py`.

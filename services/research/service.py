@@ -152,10 +152,12 @@ class ResearchService:
         llm_endpoint: str,
         llm_model: str,
         max_time: int = 300,
+        *,
+        owner: str = "",
     ) -> dict:
         """Start research in background. Returns task info."""
         return self.handler.start_research(
-            session_id, topic, llm_endpoint, llm_model, max_time
+            session_id, topic, llm_endpoint, llm_model, max_time, owner=owner
         )
 
     def get_status(self, session_id: str) -> Optional[dict]:

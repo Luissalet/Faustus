@@ -23,15 +23,9 @@ Four decisions worth stating, because each has a tempting wrong version:
   provenance the caller can prove, and leaves every field it cannot know as
   NULL for `Artifact.provenance_gaps()` to report.
 
-B-017 (lot ART-1) priced the first decision. The logical id is
-`art_{sha256[:24]}`, so `persist()` reads a second run's identical bytes as a
-row that already exists and drops that run with it: its owner, label,
-provenance, approval and retention are gone, and `Collected.deduplicated`
-counts files not written, not occurrences lost. The store that separates the
-identity of the bytes from the identity of the artifact is
-`src/artifact_identity.py`. Nothing here calls it yet — the cutover needs the
-copy migration set out in `docs/design/ART-1-artifacts.md` — so this module is
-still the production write path and still has that defect.
+Logical ids identify production events, not bytes. `persist()` records each
+event through `src/artifact_identity.py`; only the blob is shared. Historical
+ids survive the additive copy in `src/artifact_migration.py` as explicit aliases.
 """
 
 from __future__ import annotations
@@ -40,7 +34,9 @@ import hashlib
 import logging
 import mimetypes
 import os
-import shutil
+import tempfile
+import uuid
+import json
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -110,6 +106,48 @@ def _stored_name(digest: str, original: str) -> str:
     return f"{digest}.{ext}" if ext else digest
 
 
+def publish_copy(source: str, store: str, original: str, *, max_bytes=2 * 1024**3):
+    """Snapshot, hash and atomically publish bytes without replacing a blob.
+
+    The temporary lives on the destination volume. Readers never observe a
+    partially copied target, including when source and store are on different
+    drives. An existing target is verified, not blindly trusted by its name.
+    """
+    os.makedirs(store, exist_ok=True)
+    digest = hashlib.sha256()
+    size = 0
+    temporary = None
+    try:
+        with open(source, 'rb') as incoming, tempfile.NamedTemporaryFile(
+                dir=store, prefix='.collect-', delete=False) as outgoing:
+            temporary = outgoing.name
+            for chunk in iter(lambda: incoming.read(_HASH_CHUNK), b''):
+                size += len(chunk)
+                if size > max_bytes:
+                    raise ValueError('artifact exceeds the collection byte limit')
+                digest.update(chunk)
+                outgoing.write(chunk)
+            outgoing.flush()
+            os.fsync(outgoing.fileno())
+        hexdigest = digest.hexdigest()
+        filename = _stored_name(hexdigest, original)
+        target = path_of(filename, store_dir=store)
+        try:
+            os.link(temporary, target)
+            created = True
+        except FileExistsError:
+            if os.path.getsize(target) != size or sha256_of(target) != hexdigest:
+                raise ValueError('existing artifact bytes do not match their content hash')
+            created = False
+        return hexdigest, size, filename, created
+    finally:
+        if temporary is not None:
+            try:
+                os.unlink(temporary)
+            except FileNotFoundError:
+                pass
+
+
 @dataclass(frozen=True)
 class Collected:
     """What `collect()` did, including what it would not touch."""
@@ -145,7 +183,7 @@ def collect(result: ExecutionResult, *, source_dir: str,
 
     for name in result.artifact_filenames:
         src = os.path.join(source_dir, name)
-        if os.path.sep in name or (os.path.altsep and os.path.altsep in name):
+        if '/' in name or '\\' in name or ':' in name or name in ('.', '..'):
             skipped.append({"name": name, "reason": "not_a_bare_name"})
             continue
         if not os.path.isfile(src):
@@ -153,27 +191,33 @@ def collect(result: ExecutionResult, *, source_dir: str,
             # run deleted its own output. Either way, say so.
             skipped.append({"name": name, "reason": "vanished_before_collection"})
             continue
+        if os.path.islink(src) or os.path.commonpath([os.path.realpath(source_dir), os.path.realpath(src)]) != os.path.realpath(source_dir):
+            skipped.append({'name': name, 'reason': 'source_is_not_a_regular_workspace_file'})
+            continue
+        before = os.stat(src)
         size = os.path.getsize(src)
         if size > max_bytes:
             skipped.append({"name": name, "reason": f"larger_than_{max_bytes}_bytes"})
             continue
 
-        digest = sha256_of(src)
-        stored = _stored_name(digest, name)
-        target = os.path.join(store, stored)
-        if os.path.exists(target):
-            # Same bytes, same name. Nothing to write, and the earlier file is
-            # not replaced — identical content is identical content.
+        digest, size, stored, created = publish_copy(src, store, name, max_bytes=max_bytes)
+        if not created:
             deduped += 1
-            try:
+        try:
+            after = os.stat(src)
+            # Don't discard a newer output written while we copied this one.
+            if (before.st_ino, before.st_size, before.st_mtime_ns) == (after.st_ino, after.st_size, after.st_mtime_ns):
                 os.unlink(src)
-            except OSError:
-                logger.debug("could not remove the collected source file", exc_info=True)
-        else:
-            shutil.move(src, target)
+        except OSError:
+            logger.debug('could not remove the collected source file', exc_info=True)
+
+        effective_provenance = {'backend': result.backend, **(provenance or {})}
+        event = json.dumps([owner, project_id, result.run_id, name, digest,
+                            skill_id, skill_version, effective_provenance, retention or {},
+                            bool(result.partial)], sort_keys=True, ensure_ascii=False)
 
         made.append(Artifact.parse({
-            "id": f"art_{digest[:24]}",
+            "id": 'occ_' + uuid.uuid5(uuid.NAMESPACE_URL, event).hex,
             "kind": kind_of(name),
             "filename": stored,
             "sha256": digest,
@@ -185,62 +229,57 @@ def collect(result: ExecutionResult, *, source_dir: str,
             "skill_id": skill_id, "skill_version": skill_version,
             "created_at": now_iso(),
             "partial": bool(result.partial),
-            "provenance": {"backend": result.backend, **(provenance or {})},
+            "provenance": effective_provenance,
             "retention": retention or {"policy": "keep"},
         }))
     return Collected(tuple(made), tuple(skipped), deduped)
 
 
 def persist(artifacts: Iterable[Artifact], *, session_id: str = "") -> Dict[str, int]:
-    """Write the rows. Idempotent by artifact id, which is derived from the
-    content hash, so collecting the same bytes twice updates nothing."""
-    from core.database import ArtifactRow, SessionLocal
+    """Persist occurrences while deduplicating only the physical bytes.
+
+    Historical rows are copied in background and remain readable meanwhile.
+    The historical table remains intact. A repeated event
+    is idempotent; reusing its id with different ownership is an error.
+    """
+    from src import artifact_identity as identity
+    from src.contracts.blob import ArtifactOccurrence, DerivedArtifact
 
     created = existing = 0
-    db = SessionLocal()
-    try:
-        for art in artifacts:
-            if db.get(ArtifactRow, art.id) is not None:
-                existing += 1
-                continue
-            p = art.provenance
-            db.add(ArtifactRow(
-                id=art.id, kind=art.kind, filename=art.filename,
-                sha256=art.sha256 or None, media_type=art.media_type or None,
-                byte_size=art.byte_size, label=art.label, partial=art.partial,
-                preview_filename=art.preview_filename or None,
-                owner=art.owner or None, project_id=art.project_id or None,
-                run_id=art.run_id or None, session_id=session_id or None,
-                skill_id=art.skill_id or None, skill_version=art.skill_version or None,
-                model=p.model, model_license=p.model_license, backend=p.backend,
-                recipe=p.recipe, recipe_version=p.recipe_version,
-                recipe_fingerprint=p.recipe_fingerprint,
-                inputs_digest=p.inputs_digest, seed=p.seed,
-                engine=p.engine, engine_job_id=p.engine_job_id,
-                provenance_note=p.note or "",
-                retention_policy=art.retention.policy,
-                retention_days=art.retention.days,
-                retention_reason=art.retention.reason or "",
-                schema_version=art.schema_version,
-            ))
-            created += 1
-        db.commit()
-    except Exception:
-        db.rollback()
-        raise
-    finally:
-        db.close()
-    return {"created": created, "already_there": existing}
+    for art in artifacts:
+        if not art.sha256 or art.byte_size is None:
+            raise ValueError('an artifact needs measured bytes before persistence')
+        identity.ensure_blob(sha256=art.sha256, byte_size=art.byte_size,
+                             filename=art.filename, media_type=art.media_type)
+        if art.preview_filename:
+            preview = path_of(art.preview_filename)
+            identity.record_derivative(DerivedArtifact.parse({
+                'source_sha256': art.sha256, 'derived_kind': 'preview',
+                'filename': art.preview_filename, 'sha256': sha256_of(preview),
+                'byte_size': os.path.getsize(preview),
+            }))
+        occurrence = ArtifactOccurrence.parse({
+            'id': art.id, 'blob_sha256': art.sha256, 'kind': art.kind,
+            'label': art.label, 'owner': art.owner, 'project_id': art.project_id,
+            'run_id': art.run_id, 'session_id': session_id,
+            'skill_id': art.skill_id, 'skill_version': art.skill_version,
+            'created_at': art.created_at, 'partial': art.partial,
+            'provenance': art.provenance.to_dict(), 'retention': art.retention.to_dict(),
+        })
+        _, made = identity.ensure_occurrence(occurrence)
+        created += int(made)
+        existing += int(not made)
+    return {'created': created, 'already_there': existing}
 
 
 def path_of(artifact_filename: str, *, store_dir: Optional[str] = None) -> str:
     """Resolve a stored name to a path, refusing anything that is not a bare
     name inside the store. The contract already rejects a path in `filename`;
     this is the second lock, on the side that touches the filesystem."""
-    store = os.path.abspath(store_dir or ARTIFACT_STORE_DIR)
-    if not artifact_filename or os.path.sep in artifact_filename or "/" in artifact_filename:
+    store = os.path.realpath(store_dir or ARTIFACT_STORE_DIR)
+    if not artifact_filename or '\\' in artifact_filename or '/' in artifact_filename or ':' in artifact_filename or artifact_filename in ('.', '..'):
         raise ValueError(f"{artifact_filename!r} is not a bare artifact name")
-    resolved = os.path.abspath(os.path.join(store, artifact_filename))
+    resolved = os.path.realpath(os.path.join(store, artifact_filename))
     if os.path.commonpath([store, resolved]) != store:
         raise ValueError(f"{artifact_filename!r} resolves outside the artifact store")
     return resolved

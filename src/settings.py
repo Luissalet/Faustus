@@ -241,6 +241,7 @@ DEFAULT_SETTINGS = {
     # removes tools, and never one the workspace floor guarantees. Set false to
     # send every selected tool regardless.
     "agent_tool_preflight": True,
+    "agent_tool_rerank": False,
     # ── Reliability harness (src/agent_harness.py and friends) ──
     # Claims-vs-evidence checks, syntax check, fabricated-path detection.
     "agent_harness_checks": True,
@@ -971,6 +972,7 @@ _PER_USER_KEYS = {
     "default_endpoint_id", "default_model",
     "utility_endpoint_id", "utility_model", "utility_model_fallbacks",
     "research_endpoint_id", "research_model",
+    "rerank_endpoint_id", "rerank_model", "agent_tool_rerank",
 }
 
 

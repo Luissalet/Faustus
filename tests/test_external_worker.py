@@ -84,6 +84,34 @@ print("done", flush=True)
 
 # ── the happy path ──────────────────────────────────────────────────────────
 
+def test_large_stdin_cannot_block_timeout_or_cancel(tmp_path):
+    from dataclasses import replace
+    runner = replace(_agent(tmp_path, 'never_reads', 'import time; time.sleep(120)'),
+                     stdin_task=True)
+    started = time.monotonic()
+    result = external_worker.run_task(runner, 'context ' * 250000,
+                                     workspace=str(tmp_path), timeout_s=1)
+    assert result['timed_out'] and result['killed']
+    assert time.monotonic() - started < 15
+    checks = []
+    def cancel_after_spawn():
+        checks.append(True)
+        return len(checks) > 1  # first check now correctly happens before spawn
+    result = external_worker.run_task(runner, 'context ' * 250000,
+                                     workspace=str(tmp_path), should_cancel=cancel_after_spawn)
+    assert result['cancelled'] and result['killed']
+
+
+def test_stdin_and_output_preserve_spanish_and_unicode(tmp_path):
+    from dataclasses import replace
+    runner = replace(_agent(tmp_path, 'unicode_io',
+        'import sys\nsys.stdin.reconfigure(encoding="utf-8")\n'
+        'sys.stdout.reconfigure(encoding="utf-8")\nprint(sys.stdin.read())'), stdin_task=True)
+    prompt = 'Español: imágenes, programación. English. 日本語 🌟'
+    result = external_worker.run_task(runner, prompt, workspace=str(tmp_path))
+    assert result['ok'] and prompt in result['output_tail']
+    assert prompt not in result['argv_shown']
+
 def test_a_runner_that_succeeds_reports_what_it_did(tmp_path):
     ws = tmp_path / "ws"
     ws.mkdir()

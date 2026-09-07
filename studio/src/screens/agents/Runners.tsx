@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, IconButton, Skeleton, Toast } from '../../components';
 import { launchRunner, listRunners, workerStatus, type Runner, type RunnerCatalogue } from '../../adapters/workers';
 import { t } from '../../i18n';
+import { RunnerConnections } from './RunnerConnections';
 
 /**
  * Agent runners (agentRunners.js): the CLI agents this machine can run AS A
@@ -95,6 +96,7 @@ export function Runners({ onUseRunner }: { onUseRunner: (key: string) => void })
   const all = data?.runners ?? [];
   return (
     <div className="fs-run" data-testid="runners">
+      <RunnerConnections />
       <div className="fs-agents__intro">
         <p className="fs-prose">{t('Any of these can be one of Faustus\'s workers: the checkpoint before, the diff after, Faustus\'s own verification and the honest proof — around an agent Faustus did not write.')}</p>
         <p className="fs-agents__guard">

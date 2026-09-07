@@ -45,6 +45,7 @@ import './projects.css';
 import './settings.css';
 import { bool, Field, fromList, list, SaveBar, Select, str, Text, Toggle, useDraft, type Opt } from './settings/fields';
 import { DeviceSignIn } from './settings/DeviceSignIn';
+import { ProviderConnect } from './settings/ProviderConnect';
 import { AccountSection } from './settings/Account';
 import { UsersSection } from './settings/Users';
 import { ToolsSection } from './settings/Tools';
@@ -140,7 +141,7 @@ function ModelsSection({ endpoints, onChanged, say }: { endpoints: ModelEndpoint
       <header className="fs-set__section-head">
         <div>
           <h2 id="fs-set-models" className="fs-set__title">Modelos</h2>
-          <p className="fs-prose">{t('Each endpoint is a server compatible with the OpenAI API (Ollama, llama.cpp, vLLM, OpenAI, Anthropic through a proxy…). Its models appear in the Studio picker.')}</p>
+          <p className="fs-prose">{t('Connect a cloud provider or a local model server. Choose its models in the chat picker.')}</p>
         </div>
         <div className="fs-set__row-actions">
           <Button variant="ghost" size="sm" icon={LogIn} label={t('Sign in with a subscription')} onClick={() => setSigningIn((v) => !v)} />
@@ -149,6 +150,8 @@ function ModelsSection({ endpoints, onChanged, say }: { endpoints: ModelEndpoint
       </header>
 
       {signingIn && <DeviceSignIn onDone={onChanged} onClose={() => setSigningIn(false)} say={say} />}
+
+      <ProviderConnect onDone={onChanged} />
 
       {adding && (
         <div className="fs-set__card">

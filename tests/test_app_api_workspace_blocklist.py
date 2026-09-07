@@ -28,6 +28,7 @@ def _no_loopback(monkeypatch, why):
 # Every /api/workspace verb that hands the model destructive power without an
 # approval prompt. Each must be refused before the request leaves the process.
 BLOCKED_WORKSPACE_CALLS = [
+    ("PUT", "/api/workspace/file"),
     ("POST", "/api/workspace/revert"),
     ("POST", "/api/workspace/checkpoint/restore"),
     ("POST", "/api/workspace/checkpoint/reset"),

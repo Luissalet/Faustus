@@ -1545,3 +1545,18 @@
   color: var(--fs-text-2);
   line-height: 1.5;
 }
+.fs-set__quick-connect { display: grid; gap: var(--fs-space-3); padding-block: var(--fs-space-4); border-block-end: 1px solid var(--fs-border); }
+.fs-set__provider-form { display: grid; gap: var(--fs-space-3); max-inline-size: 640px; }
+.fs-set__provider-models { margin: 0; padding: var(--fs-space-3); border: 1px solid var(--fs-border); max-block-size: 280px; overflow: auto; }
+.fs-set__provider-models label { display: flex; gap: var(--fs-space-2); align-items: center; min-block-size: 44px; overflow-wrap: anywhere; }
+.fs-set__provider-models label span { min-inline-size: 0; }
+.fs-set__quick-connect .fs-btn { min-block-size: 44px; }
+.fs-set__quick-connect, .fs-set__provider-form, .fs-set__provider-models { min-inline-size: 0; }
+.fs-set__quick-connect .fs-set__row-actions { flex-wrap: wrap; }
+.fs-set__quick-connect .fs-btn[aria-pressed='true'] { border-color: var(--fs-brand); background: var(--fs-surface-3); color: var(--fs-text-1); }
+.fs-set__quick-connect .fs-btn[aria-pressed='false'] { background: var(--fs-surface-2); color: var(--fs-text-2); }
+
+.fs-dialog[data-testid='chat-model-connections'] .fs-set__row-actions { flex-wrap: wrap; gap: var(--fs-space-2); margin-block: var(--fs-space-3); }
+.fs-dialog[data-testid='chat-model-connections'] :is(.fs-btn, .fs-field) { min-block-size: 44px; }
+.fs-dialog[data-testid='chat-model-connections'] .fs-set__help { font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.fs-dialog[data-testid='chat-model-connections'] .fs-field { font-size: 16px; min-inline-size: 0; inline-size: 100%; }

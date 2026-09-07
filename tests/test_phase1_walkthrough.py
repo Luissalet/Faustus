@@ -18,8 +18,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from core import database as db_mod
-from core.database import ArtifactRow, Base
-from src import artifact_store, capability_registry as registry, execution_router as router
+from core.database import ArtifactRow, ArtifactOccurrenceRow, BlobRow, Base
+from src import artifact_catalog, artifact_store, capability_registry as registry, execution_router as router
 from src.contracts import SkillManifest
 from src.execution_backends import DockerWorkspaceBackend
 
@@ -91,7 +91,16 @@ def test_a_manifest_becomes_a_container_and_the_output_becomes_a_row(stage):
     assert artifact_store.persist(collected.artifacts) == {"created": 1, "already_there": 0}
     db = db_mod.SessionLocal()
     try:
-        row = db.query(ArtifactRow).one()
+        # New producers write one owned occurrence and a content-addressed blob,
+        # not another legacy row. Read through the production catalogue seam.
+        assert db.query(ArtifactRow).count() == 0
+        occurrence = db.query(ArtifactOccurrenceRow).one()
+        blob = db.query(BlobRow).one()
+        assert occurrence.id == art.id
+        assert blob.sha256 == art.sha256
+        row = artifact_catalog.get(db, art.id)
+        assert row is not None
+        assert (row.owner, row.project_id) == ("luis", "book")
         assert (row.run_id, row.backend, row.skill_id) == \
                ("phase1-1", "docker_workspace", "document.report")
         assert row.model is None            # nothing here knew a model; it says so

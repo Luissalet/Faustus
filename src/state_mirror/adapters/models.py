@@ -13,13 +13,12 @@ wherever the scheduler is, which sooner or later is inside a loop that is
 already running. So this adapter reads the document `collect_usage` leaves in
 its own cache and does not collect anything itself.
 
-That is a real limitation and it is visible rather than hidden: the
-observation is stamped with the cached document's own `ts`, so a machine
-nobody has asked about in ten minutes produces observations that `freshness`
-rates `stale`, and a consumer that needs current numbers is told to refresh
-instead of being handed old ones dressed as new. With nothing cached at all --
-a process where nothing has ever called `/api/system/usage` -- there is
-nothing to observe and this adapter returns an empty list.
+The application scheduler refreshes this measured cache before an idle,
+owner-scoped mirror sweep, using the server's event loop rather than creating
+another one in the adapter thread. An open usage page is no longer required.
+The observation still uses the cache document's own `ts`: a failed or skipped
+collection cannot make old measurements fresh. In an isolated process with
+no collection yet, there is nothing to observe and this adapter returns [].
 
 **A model absent from `/api/ps` is not observed here.** Ollama's ps lists what
 is RESIDENT. It is not a catalogue, so this adapter never says `loaded=False`

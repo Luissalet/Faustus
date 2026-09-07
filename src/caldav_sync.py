@@ -22,6 +22,7 @@ Design notes:
   user's local TZ correctly.
 """
 
+from datetime import timezone as _utc_timezone
 import asyncio
 import hashlib
 import ipaddress
@@ -306,8 +307,8 @@ def _sync_blocking(owner: str, url: str, username: str, password: str, account_i
                 result["errors"].append(f"No calendars and URL fallback failed: {e}")
                 return result      # outer finally will call client.close()
 
-        start = datetime.utcnow() - timedelta(days=_LOOKBACK_DAYS)
-        end = datetime.utcnow() + timedelta(days=_LOOKAHEAD_DAYS)
+        start = datetime.now(_utc_timezone.utc).replace(tzinfo=None) - timedelta(days=_LOOKBACK_DAYS)
+        end = datetime.now(_utc_timezone.utc).replace(tzinfo=None) + timedelta(days=_LOOKAHEAD_DAYS)
 
         db = SessionLocal()        # if this raises, outer finally still calls client.close()
         try:

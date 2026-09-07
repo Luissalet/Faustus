@@ -1,5 +1,6 @@
 """Workspace API - browse server directories to pick a tool workspace folder."""
 import os
+import json
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Request, HTTPException, Query
@@ -547,6 +548,8 @@ def setup_workspace_routes():
         except OSError as e:
             raise HTTPException(status_code=500, detail=str(e))
         truncated = len(raw) > _FILE_VIEW_MAX
+        import hashlib
+        revision = hashlib.sha256(raw).hexdigest() if not truncated else None
         raw = raw[:_FILE_VIEW_MAX]
         binary = b"\x00" in raw[:8000]
         # Display only: normalise CRLF so line numbers and the diff view agree.
@@ -559,7 +562,52 @@ def setup_workspace_routes():
             "binary": binary, "truncated": truncated, "text": text, "crlf": crlf,
             "lines": (text.count("\n") + (1 if text and not text.endswith("\n") else 0)) if text else 0,
             "mtime": os.path.getmtime(target),
+            "revision": revision,
         }
+
+    @router.put('/file')
+    async def save_workspace_file(request: Request):
+        _reject_cross_origin(request)
+        owner = get_current_user(request)
+        if not owner_is_admin_or_single_user(owner):
+            raise HTTPException(403, 'Workspace files are admin-only')
+        raw_body = await request.body()
+        if len(raw_body) > 3 * _FILE_VIEW_MAX:
+            raise HTTPException(413, 'File is too large for the panel editor')
+        try:
+            body = json.loads(raw_body)
+            workspace, path = body['workspace'], body['path']
+            content, revision = body['content'], body['revision']
+            if not all(isinstance(v, str) for v in (workspace, path, content, revision)):
+                raise ValueError('Invalid file editor fields')
+            target = _confine(workspace, path)
+            if not target.lower().endswith(('.md', '.markdown', '.txt')):
+                raise HTTPException(400, 'The panel edits Markdown and text files only')
+            encoded = content.encode('utf-8')
+            if len(encoded) > _FILE_VIEW_MAX:
+                raise HTTPException(413, 'File is too large for the panel editor')
+            import hashlib
+            from src.workspace_checkpoints import _lock_for
+            from core.atomic_io import atomic_write_text
+            with _lock_for(os.path.realpath(workspace)):
+                with open(target, 'rb') as file:
+                    current = file.read(_FILE_VIEW_MAX + 1)
+                if len(current) > _FILE_VIEW_MAX or hashlib.sha256(current).hexdigest() != revision:
+                    raise HTTPException(409, 'The file changed. Reload and review before saving; your draft was not written.')
+                current.decode('utf-8', errors='strict')
+                if b'\x00' in current:
+                    raise HTTPException(400, 'Binary files cannot be edited here')
+                if b'\r\n' in current:
+                    content = content.replace('\r\n', '\n').replace('\n', '\r\n')
+                # Re-vet immediately before publishing to catch changed symlinks.
+                if _confine(workspace, path) != target:
+                    raise HTTPException(409, 'The file location changed')
+                atomic_write_text(target, content, newline='')
+            return read_workspace_file(request, workspace, path)
+        except (ValueError, KeyError, TypeError) as exc:
+            raise HTTPException(400, 'Invalid text file or editor request') from exc
+        except FileNotFoundError as exc:
+            raise HTTPException(404, 'File no longer exists; draft was not written') from exc
 
     @router.get("/file_diff")
     def workspace_file_diff(

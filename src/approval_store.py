@@ -213,29 +213,42 @@ def check(plan: Any, *, owner: str = "") -> Dict[str, Any]:
 
 
 def consume(approval_id: str, plan: Any) -> Dict[str, Any]:
-    """Spend one use, atomically enough that two runs cannot spend the same
-    yes: the plan is re-checked against the stored card **inside** the same
-    transaction that decrements it. A `check()` that happened a second ago is
-    not evidence at the moment of acting."""
+    """Spend one use with a conditional write, rechecking after a lost race.
+
+    Reading then assigning uses_left is not atomic: two workers can read one
+    use and both report success. The exact status, plan and remaining uses
+    checked below must still hold when the database accepts the decrement.
+    """
     from core.database import ApprovalRow, SessionLocal
 
     parsed = plan if isinstance(plan, ApprovalPlan) else ApprovalPlan.parse(plan)
     db = SessionLocal()
     try:
-        row = db.get(ApprovalRow, approval_id)
-        if row is None:
-            return {"ok": False, "reason": "not_found"}
-        approval = _from_row(row)
-        verdict = approval.covers(parsed)
-        if not verdict["ok"]:
-            return {"ok": False, "reason": verdict["reason"],
-                    "changes": [dict(c) for c in verdict.get("changes", ())]}
-        spent = approval.consumed()
-        row.uses_left = spent.uses_left
-        row.status = spent.status
-        db.commit()
-        return {"ok": True, "reason": "consumed", "uses_left": row.uses_left,
-                "status": row.status}
+        for _attempt in range(4):
+            row = db.get(ApprovalRow, approval_id)
+            if row is None:
+                return {"ok": False, "reason": "not_found"}
+            approval = _from_row(row)
+            verdict = approval.covers(parsed)
+            if not verdict["ok"]:
+                return {"ok": False, "reason": verdict["reason"],
+                        "changes": [dict(c) for c in verdict.get("changes", ())]}
+            spent = approval.consumed()
+            changed = (db.query(ApprovalRow).filter(
+                ApprovalRow.id == approval_id, ApprovalRow.status == 'granted',
+                ApprovalRow.uses_left == approval.uses_left,
+                ApprovalRow.plan_fingerprint == parsed.fingerprint(),
+                ApprovalRow.plan_json == row.plan_json,
+                ApprovalRow.owner == row.owner,
+                ApprovalRow.expires_at == row.expires_at,
+            ).update({'uses_left': spent.uses_left, 'status': spent.status}, synchronize_session=False))
+            if changed:
+                db.commit()
+                return {"ok": True, "reason": "consumed", "uses_left": spent.uses_left,
+                        "status": spent.status}
+            db.rollback()
+            db.expire_all()
+        return {"ok": False, "reason": "concurrent_change"}
     except Exception:
         db.rollback()
         raise

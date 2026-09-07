@@ -252,7 +252,11 @@ _BUILTIN: Tuple[Runner, ...] = (
     Runner(
         key="codex", label="Codex", kind="cli", licence="subscription",
         install="ollama launch codex",
-        argv=("codex", "exec", "{task}", "--model", "{model}"),
+        argv=("codex", "exec", "--json", "-", "--model", "{model}"),
+        stdin_task=True,
+        task_transport_verified="codex exec --help on this machine, 2026-09-07: "
+                                "PROMPT '-' reads the initial instructions from stdin; "
+                                "https://learn.chatgpt.com/docs/non-interactive-mode",
         env={"OPENAI_BASE_URL": "{endpoint}"},
         env_allow=("OPENAI_API_KEY", "OPENAI_BASE_URL", "CODEX_HOME"),
         detect=("codex",),
@@ -682,6 +686,10 @@ def build_argv(runner: Runner, task: str, *, model: Optional[str] = None,
               "settings": config, "session": str(session or "")}
     out: List[str] = []
     tokens = list(runner.argv) + (list(runner.gate_argv) if config else [])
+    if runner.key == 'codex' and session and tokens[:2] == ['codex', 'exec']:
+        # Verified by `codex exec resume --help`, 2026-09-07. Never use --last:
+        # continuation must target the exact ID recorded for this worker.
+        tokens = ['codex', 'exec', 'resume', '{session}', *tokens[2:]]
     for token in tokens:
         if runner.stdin_task and token.strip() == "{task}":
             continue

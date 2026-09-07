@@ -63,6 +63,22 @@ def test_validate_describes_a_good_definition_without_storing_anything(client):
     assert client.get("/api/workflows/runs/wfr_nothing").status_code == 404
 
 
+def test_list_includes_unstarted_steps_without_exposing_inputs(client):
+    created = client.post('/api/workflows/runs', json={
+        'definition': FLOW, 'inputs': {'private_prompt': 'not for the list'}}).json()
+    response = client.get('/api/workflows/runs?limit=10')
+    assert response.status_code == 200
+    row = response.json()['runs'][0]
+    assert row['id'] == created['run_id']
+    assert row['title'] == FLOW['title']
+    assert [n['id'] for n in row['nodes']] == ['start', 'check', 'send']
+    assert row['nodes'][1]['needs'] == ['start']
+    assert 'private_prompt' not in response.text
+    assert all(n['status'] == 'pending' for n in row['nodes'])
+    assert client.get('/api/workflows/runs?limit=0').status_code == 400
+    assert client.get('/api/workflows/runs?limit=201').status_code == 400
+
+
 def test_a_definition_that_could_never_start_is_refused_by_field(client):
     """A cycle is a mistake in the file someone wrote. It comes back as a
     named field and a message about the circle, not as a stack trace."""
@@ -169,3 +185,40 @@ def test_resuming_a_node_that_is_not_paused_is_a_conflict_not_a_500(client):
     out = client.post(f"/api/workflows/runs/{run_id}/resume/start")
     assert out.status_code == 409
     assert out.json()["detail"] == "not_paused"
+
+
+@pytest.mark.parametrize('limit', [True, 'many', '2', 1.5, 0, -1, 501, None])
+def test_invalid_node_budget_is_a_400_not_a_server_error(client, limit):
+    response = client.post('/api/workflows/runs/not-started/advance', json={'max_nodes': limit})
+    assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_http_cancel_is_processed_while_a_handler_is_still_running(client, monkeypatch):
+    import asyncio
+    import threading
+    import httpx
+    from routes import workflows_routes
+    from src.workflows import WorkflowEngine
+    started, release = threading.Event(), threading.Event()
+    invoked = []
+    def handler(node, context):
+        invoked.append(node.id)
+        started.set()
+        if not release.wait(4):
+            raise RuntimeError('HTTP event loop did not process cancellation')
+        return {}
+    monkeypatch.setattr(workflows_routes, '_engine', lambda store: WorkflowEngine({'manual': handler}, store))
+    run_id = client.post('/api/workflows/runs', json={'definition': FLOW}).json()['run_id']
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=client.app), base_url='http://testserver') as http:
+        advance = asyncio.create_task(http.post(f'/api/workflows/runs/{run_id}/advance'))
+        try:
+            assert await asyncio.to_thread(started.wait, 3)
+            cancelled = await http.post(f'/api/workflows/runs/{run_id}/cancel')
+            assert cancelled.json()['status'] == 'cancelled'
+            assert not advance.done(), 'Handler should still be awaiting our release'
+        finally:
+            release.set()
+            result = await advance
+    assert result.json()['status'] == 'cancelled'
+    assert invoked == ['start']

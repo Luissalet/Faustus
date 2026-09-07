@@ -127,9 +127,9 @@ def test_document_opens_with_the_question_then_its_metadata():
     md = text_of(research_json())
     lines = [line for line in md.splitlines() if line.strip()]
     assert lines[0] == "# " + SPANISH_QUERY
-    assert lines[1].startswith("*Completed ")
-    for expected in ("Model: qwen3:14b", "Rounds: 3", "Sources: 2",
-                     "Duration: 182.4s", "Category: Health"):
+    assert lines[1].startswith("*Completado ")
+    for expected in ("Modelo: qwen3:14b", "Rondas: 3", "Fuentes: 2",
+                     "Duración: 182.4s", "Categoría: Health"):
         assert expected in lines[1]
 
 
@@ -175,7 +175,7 @@ def test_a_report_with_no_completion_time_claims_none():
     """The start time must not be printed as the completion time."""
     data = research_json(completed_at=None)
     md = text_of(data)
-    assert "Completed" not in md
+    assert "Completado" not in md
     # The filename still gets a stamp, from the start time.
     assert report_filename(data, "md") == "research_Es_eficaz_la_fisioterapia_" \
                                           "para_el_dolor_lumbar_cronico_20260225_061320.md"
@@ -190,13 +190,13 @@ def test_a_report_with_nothing_but_a_question_still_renders():
 
 def test_missing_sources_produce_no_appendix():
     md = text_of(research_json(sources=None))
-    assert "## Sources" not in md
-    assert "Sources:" not in md      # the metadata count goes too
+    assert "## Fuentes" not in md
+    assert "Fuentes:" not in md      # the metadata count goes too
 
 
 def test_sources_appendix_is_a_numbered_list_of_links():
     md = text_of(research_json())
-    assert "## Sources" in md
+    assert "## Fuentes" in md
     assert "1. [Cochrane review](https://cochrane.org/lbp)" in md
     assert "2. [NICE guideline NG59](https://nice.org.uk/ng59)" in md
 
@@ -228,14 +228,14 @@ def test_body_that_already_ends_in_sources_gets_no_second_appendix(heading):
 def test_a_sources_heading_that_is_not_last_does_not_suppress_the_appendix():
     body = "## Sources of error\n\nTexto.\n\n## Conclusión\n\nFin.\n"
     md = text_of(research_json(raw_report=body))
-    assert "## Sources\n" in md
+    assert "## Fuentes\n" in md
     assert "1. [Cochrane review](https://cochrane.org/lbp)" in md
 
 
 def test_a_sources_heading_inside_a_code_fence_does_not_suppress_the_appendix():
     body = "Cuerpo.\n\n```markdown\n## Fuentes\n```\n"
     md = text_of(research_json(raw_report=body))
-    assert "## Sources" in md
+    assert md.count("## Fuentes") == 2  # one literal code line, one real appendix
 
 
 def test_ends_with_sources_section_ignores_a_body_with_no_headings():
@@ -426,8 +426,8 @@ def test_docx_opens_with_the_question_the_export_date_and_the_metadata_line():
     pytest.importorskip("docx")
     texts = docx_texts(render_report(research_json(), "docx").content)
     assert texts[0] == SPANISH_QUERY
-    assert re.fullmatch(r"Exported \d{4}-\d{2}-\d{2} \d{2}:\d{2}", texts[1])
-    assert texts[2].startswith("Completed ")
+    assert re.fullmatch(r"Exportado \d{4}-\d{2}-\d{2} \d{2}:\d{2}", texts[1])
+    assert texts[2].startswith("Completado ")
     # The count of a chat with one turn in it, on a document with no turns.
     assert not any("message" in text for text in texts[:3])
 
@@ -444,7 +444,7 @@ def test_pdf_contains_the_report_text():
     assert "Assistant" not in text
     assert "1 message" not in text
     assert not re.search(r"^\s*Report\s*$", text, re.M)
-    assert re.search(r"^Exported \d{4}-\d{2}-\d{2} \d{2}:\d{2}$", text, re.M)
+    assert re.search(r"^Exportado \d{4}-\d{2}-\d{2} \d{2}:\d{2}$", text, re.M)
 
 
 def test_missing_binary_dependency_surfaces_as_export_unavailable(monkeypatch):
@@ -585,7 +585,7 @@ def test_three_real_timezones_produce_the_same_name():
 
 def test_the_metadata_line_is_the_utc_instant_too():
     md = text_of(research_json(completed_at=INSTANT))
-    assert "Completed 2026-02-25 06:16" in md
+    assert "Completado 2026-02-25 06:16" in md
 
 
 def test_a_garbage_time_is_ignored_rather_than_guessed():

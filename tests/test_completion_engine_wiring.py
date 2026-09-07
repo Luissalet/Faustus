@@ -117,6 +117,20 @@ def spec():
 # -- the router reaches the app ---------------------------------------------
 
 
+def test_compaction_has_one_canonical_post_handler(spec):
+    import app as application
+    from fastapi import routing
+    # Newer FastAPI versions retain included routers as branches rather than
+    # eagerly flattening app.routes; inspect the same view OpenAPI consumes.
+    routes = (routing.iter_route_contexts(application.app.routes)
+              if hasattr(routing, 'iter_route_contexts') else application.app.routes)
+    handlers = [route for route in routes
+                if getattr(route, 'path', '') == '/api/session/{session_id}/compact'
+                and 'POST' in getattr(route, 'methods', ())]
+    assert len(handlers) == 1
+    assert handlers[0].endpoint.__module__ == 'routes.session_routes'
+
+
 @pytest.mark.parametrize("path,methods", sorted(EXPECTED_ROUTES.items()))
 def test_every_route_is_published_by_the_real_app(spec, path, methods):
     """Asked of the running application, not of the router object.

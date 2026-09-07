@@ -1,8 +1,8 @@
 import { t } from '../i18n';
 import { Check, Copy, CornerDownLeft } from 'lucide-react';
-import { useId, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useContext, useId, useMemo, useState, type ReactNode } from 'react';
 import { findSensitive, getDisplay, stripEmojis, useDisplay } from '../shell/display';
-import { parseMarkdown, type Block, type Footnote, type Inline } from '../lib/markdown';
+import { parseMarkdown, workspaceLink, type Block, type Footnote, type Inline } from '../lib/markdown';
 import { replaceShortcodesInProse } from '../lib/emoji';
 
 /**
@@ -27,6 +27,18 @@ function Censored({ text }: { text: string }) {
       {text}
     </button>
   );
+}
+
+const OpenWorkspaceFile = createContext<((path: string) => void) | undefined>(undefined);
+
+function RichLink({ href, children }: { href: string; children: ReactNode }) {
+  const onOpenFile = useContext(OpenWorkspaceFile);
+  const path = workspaceLink(href);
+  return <a className="fs-link" href={href} target={path && onOpenFile ? undefined : '_blank'} rel="noreferrer" onClick={event => {
+    if (!path || !onOpenFile || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    onOpenFile(path);
+  }}>{children}</a>;
 }
 
 function inlines(nodes: Inline[], key: string, uid: string): ReactNode[] {
@@ -64,9 +76,9 @@ function inlines(nodes: Inline[], key: string, uid: string): ReactNode[] {
         break;
       default:
         out.push(
-          <a key={k} className="fs-link" href={node.href} target="_blank" rel="noreferrer">
+          <RichLink key={k} href={node.href}>
             {inlines(node.children, k, uid)}
-          </a>,
+          </RichLink>,
         );
     }
   });
@@ -204,7 +216,7 @@ function Notes({ notes, uid }: { notes: Footnote[]; uid: string }) {
   );
 }
 
-export function Rich({ text: raw }: { text: string }) {
+export function Rich({ text: raw, onOpenFile }: { text: string; onOpenFile?: (path:string)=>void }) {
   const display = useDisplay();
   // useId gives ':r3:'; a colon in a fragment id is legal but awkward to link.
   const uid = useId().replace(/:/g, 'x');
@@ -215,9 +227,11 @@ export function Rich({ text: raw }: { text: string }) {
   const text = display.emojis ? written : stripEmojis(written);
   const { blocks, footnotes } = useMemo(() => parseMarkdown(text), [text]);
   return (
+    <OpenWorkspaceFile.Provider value={onOpenFile}>
     <div className="fs-rich">
       <Blocks blocks={blocks} k="b" uid={uid} />
       {footnotes.length > 0 && <Notes notes={footnotes} uid={uid} />}
     </div>
+    </OpenWorkspaceFile.Provider>
   );
 }

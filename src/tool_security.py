@@ -141,6 +141,9 @@ NON_ADMIN_BLOCKED_TOOLS = BUILTIN_EMAIL_TOOLS | {
     "delegate_agents",
     "manage_bg_jobs",
     "read_file",
+    "inspect_media",
+    "plan_media_transform",
+    "transform_media",
     "write_file",
     "edit_file",
     "apply_patch",
@@ -202,6 +205,8 @@ NON_ADMIN_BLOCKED_TOOLS = BUILTIN_EMAIL_TOOLS | {
 # (read_file, grep, glob, ls) instead of freestyle shell.
 PLAN_MODE_READONLY_TOOLS = {
     "read_file",
+    "inspect_media",
+    "plan_media_transform",
     "grep",
     "glob",
     "ls",

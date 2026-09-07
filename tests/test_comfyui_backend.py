@@ -437,6 +437,59 @@ def test_two_outputs_with_the_same_name_do_not_overwrite_each_other(tmp_path, en
     assert open(second, "rb").read() == b"second"
 
 
+def test_download_byte_limit_removes_partial_files(tmp_path, engine):
+    fake, comfy = engine
+    fake.files['large.png'] = b'123456789'
+    with pytest.raises(ComfyUIError, match='byte limit'):
+        comfy.download({'filename': 'large.png'}, into=str(tmp_path), max_bytes=5)
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_concurrent_download_names_are_reserved_atomically(tmp_path, engine):
+    from concurrent.futures import ThreadPoolExecutor
+    from pathlib import Path
+    fake, comfy = engine
+    fake.files['same.png'] = b'same content'
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        paths = list(executor.map(lambda _: comfy.download({'filename': 'same.png'},
+                                 into=str(tmp_path)), range(4)))
+    assert len(set(paths)) == 4
+    assert all(Path(path).read_bytes() == b'same content' for path in paths)
+    assert len(list(tmp_path.iterdir())) == 4
+
+
+@pytest.mark.parametrize('chunked', [False, True])
+def test_truncated_http_download_is_retryable_and_publishes_nothing(tmp_path, chunked):
+    class Truncated(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def do_GET(self):
+            self.send_response(200)
+            if chunked:
+                self.send_header('Transfer-Encoding', 'chunked')
+                body = b'20\r\npartial'
+            else:
+                self.send_header('Content-Length', '32')
+                body = b'partial'
+            self.end_headers()
+            self.wfile.write(body)
+            self.close_connection = True
+
+    server = ThreadingHTTPServer(('127.0.0.1', 0), Truncated)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        client = ComfyUIBackend(f'http://127.0.0.1:{server.server_address[1]}')
+        with pytest.raises(ComfyUIError) as caught:
+            client.download({'filename': 'result.png'}, into=str(tmp_path))
+        assert caught.value.reason == 'incomplete_download'
+        assert list(tmp_path.iterdir()) == []
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
 # ── the registry sees it ──────────────────────────────────────────────────
 
 def test_the_capability_registry_reports_the_engine_it_actually_finds(engine, monkeypatch):

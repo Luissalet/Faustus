@@ -7,6 +7,9 @@ user data.
 
 import asyncio
 import json
+import logging
+import os
+import subprocess
 import zipfile
 from io import BytesIO
 from pathlib import Path
@@ -36,6 +39,57 @@ CALENDAR_WRITE_SCOPES = {"calendar:write"}
 DOCS_READ_SCOPES = {"documents:read", "documents:write"}
 DOCS_WRITE_SCOPES = {"documents:write"}
 WRITE_ACTIONS = {"add", "create", "new", "save", "remind", "update", "delete", "toggle_item", "remove", "remove_item"}
+
+SHELL_OUTPUT_BYTES = 1024 * 1024
+
+
+async def _run_shell(cmd: str, timeout: float = 15.0) -> dict:
+    """Bound a Cookbook query in time/output and retain ownership on cancel.
+
+    These commands use POSIX syntax even on Windows. Reuse the same Bash
+    selection and clean host environment as the existing agent shell tool.
+    """
+    from src.agent_tools.subprocess_tools import _create_bash_subprocess, _kill_tree_async
+    from src.media_inspection import _read_bounded, MediaInspectionError
+    proc = None
+    readers = []
+    try:
+        options = {'creationflags': subprocess.CREATE_NO_WINDOW} if os.name == 'nt' else {}
+        spawn = asyncio.create_task(_create_bash_subprocess(cmd,
+            stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE, **options))
+        try:
+            proc = await asyncio.shield(spawn)
+        except asyncio.CancelledError:
+            proc = await spawn
+            raise
+        readers = [asyncio.create_task(_read_bounded(proc.stdout, SHELL_OUTPUT_BYTES)),
+                   asyncio.create_task(_read_bounded(proc.stderr, SHELL_OUTPUT_BYTES))]
+        async def collect():
+            stdout, stderr = await asyncio.gather(*readers)
+            await proc.wait()
+            return {'exit_code': proc.returncode,
+                    'stdout': stdout.decode('utf-8', errors='replace'),
+                    'stderr': stderr.decode('utf-8', errors='replace')}
+        return await asyncio.wait_for(collect(), timeout=timeout)
+    except asyncio.TimeoutError:
+        return {'exit_code': -1, 'stdout': '', 'stderr': 'timed out'}
+    except MediaInspectionError:
+        return {'exit_code': -1, 'stdout': '', 'stderr': 'command output exceeded the limit'}
+    except Exception:
+        logging.getLogger(__name__).debug('Cookbook query failed', exc_info=True)
+        return {'exit_code': -1, 'stdout': '', 'stderr': 'command could not be completed'}
+    finally:
+        for reader in readers:
+            reader.cancel()
+        if proc is not None:
+            if proc.returncode is None:
+                await _kill_tree_async(proc)
+            try:
+                await asyncio.wait_for(proc.wait(), timeout=5)
+            except asyncio.TimeoutError:
+                logging.getLogger(__name__).warning('Cookbook query cleanup could not be confirmed')
+        await asyncio.gather(*readers, return_exceptions=True)
 
 
 def _ssh_prefix_for_task(task: dict) -> tuple[str, str]:
@@ -522,28 +576,6 @@ def setup_codex_routes(
     # commands on the user's hosts. The existing _validate_serve_cmd
     # allowlist (vllm/python3/sglang/llama-server/etc., no shell metachars)
     # keeps the agent inside the same sandbox the UI uses.
-
-    async def _run_shell(cmd: str, timeout: float = 15.0) -> dict:
-        """Run a shell command, return {exit_code, stdout, stderr}."""
-        import asyncio as _asyncio
-        try:
-            proc = await _asyncio.create_subprocess_shell(
-                cmd,
-                stdout=_asyncio.subprocess.PIPE,
-                stderr=_asyncio.subprocess.PIPE,
-            )
-            try:
-                stdout_b, stderr_b = await _asyncio.wait_for(proc.communicate(), timeout=timeout)
-            except _asyncio.TimeoutError:
-                proc.kill()
-                return {"exit_code": -1, "stdout": "", "stderr": "timed out"}
-            return {
-                "exit_code": proc.returncode,
-                "stdout": stdout_b.decode(errors="replace"),
-                "stderr": stderr_b.decode(errors="replace"),
-            }
-        except Exception as exc:
-            return {"exit_code": -1, "stdout": "", "stderr": str(exc)}
 
     def _read_cookbook_state() -> dict:
         from pathlib import Path as _Path

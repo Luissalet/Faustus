@@ -110,6 +110,39 @@ def test_a_redelivered_trigger_is_one_run_not_two(store):
     assert second["run_id"] == first["run_id"]
 
 
+@pytest.mark.parametrize('handler_status', ['completed', 'paused', 'failed'])
+def test_cancelling_a_running_node_stops_downstream_and_stays_cancelled(store, handler_status):
+    sent = []
+    run_id = store.create_run(definition())["run_id"]
+    def first(node, context):
+        store.set_run_status(run_id, 'cancelled', reason='user stopped this run')
+        return {'status': handler_status, 'approval_id': 'not-a-real-card'}
+    result = WorkflowEngine({'skill': first, 'deliver': lambda n,c: sent.append('sent') or {}}, store).advance(run_id)
+    assert result['status'] == 'cancelled'
+    assert store.get_run(run_id)['run'].status == 'cancelled'
+    assert list(store.node_runs(run_id)) == ['gather']
+    assert sent == []
+
+
+def test_terminal_workflow_cannot_be_overwritten_by_late_result(store):
+    run_id = store.create_run(definition())["run_id"]
+    assert store.set_run_status(run_id, 'cancelled', reason='human cancel')
+    for status in ('running', 'paused', 'completed', 'failed'):
+        assert store.set_run_status(run_id, status, reason='late worker') is False
+    saved = store.get_run(run_id)['run']
+    assert saved.status == 'cancelled' and saved.reason == 'human cancel'
+
+
+def test_cancel_in_running_event_does_not_start_the_handler(store):
+    run_id = store.create_run(definition())["run_id"]
+    invoked = []
+    def event(name, data):
+        if name == 'workflow.node' and data.get('status') == 'running':
+            store.set_run_status(run_id, 'cancelled')
+    result = WorkflowEngine({'skill':lambda n,c: invoked.append(n.id) or {}},store,on_event=event).advance(run_id)
+    assert invoked == [] and result['status'] == 'cancelled'
+
+
 # ── the contract refuses the dangerous definition ─────────────────────────
 
 def test_retrying_something_that_reaches_outside_needs_saying_so():

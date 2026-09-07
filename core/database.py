@@ -464,6 +464,17 @@ class ArtifactRow(TimestampMixin, Base):
     )
 
 
+class ArtifactTombstoneRow(Base):
+    """Prevent legacy fallback or migration from resurrecting a removed output.
+
+    No foreign key: this minimal identity record deliberately outlives the
+    occurrence. Historical rows and files are never edited by this mechanism.
+    """
+    __tablename__ = 'artifact_tombstones'
+    id = Column(String, primary_key=True)
+    legacy_artifact_id = Column(String, nullable=True, unique=True, index=True)
+
+
 class BlobRow(TimestampMixin, Base):
     """Immutable bytes, addressed by hash, owned by nobody (B-017).
 
@@ -2477,6 +2488,7 @@ def _migrate_seed_email_account():
     """
     import json as _json
     import uuid as _uuid
+    from sqlalchemy import bindparam
 
     settings_file = Path(SETTINGS_FILE)
     if not settings_file.exists():
@@ -2513,7 +2525,8 @@ def _migrate_seed_email_account():
                :imap_host, :imap_port, :imap_user, :imap_password, :imap_starttls,
                :smtp_host, :smtp_port, :smtp_user, :smtp_password,
                :from_address, :created_at, :updated_at)
-        """), {
+        """).bindparams(bindparam('created_at', type_=DateTime()),
+                         bindparam('updated_at', type_=DateTime())), {
             "id": _uuid.uuid4().hex,
             "owner": None,
             "name": "Default",
@@ -2679,7 +2692,7 @@ def rollback_artifacts_table():
 def _migrate_create_artifact_identity_tables():
     """Create the blob/occurrence/derivative tables (B-017, lot ART-1).
 
-    Strictly additive: three new tables, no column added to `artifacts`, no row
+    Strictly additive: identity tables and deletion markers, no column added to `artifacts`, no row
     of any existing table read or rewritten. That is the whole point of running
     it as its own step — the design note in `docs/design/ART-1-artifacts.md`
     splits ART-1 into schema, copy, and the two cutovers, and only the schema
@@ -2696,7 +2709,7 @@ def _migrate_create_artifact_identity_tables():
     log = logging.getLogger(__name__)
     try:
         tables = [BlobRow.__table__, ArtifactOccurrenceRow.__table__,
-                  DerivedArtifactRow.__table__]
+                  DerivedArtifactRow.__table__, ArtifactTombstoneRow.__table__]
         before = set(inspect(engine).get_table_names())
         Base.metadata.create_all(bind=engine, tables=tables, checkfirst=True)
         created = sorted({t.name for t in tables} - before)
@@ -2729,19 +2742,23 @@ def rollback_artifact_identity_tables():
     and reversible" is a function a test can run rather than a claim in a
     commit message.
 
-    Dropping these three loses no data that `artifacts` does not still hold,
-    because nothing has been copied out of it yet: while the copy phase is
-    deferred, `artifacts` remains the only census of what exists.
+    Once occurrences or deletion markers exist, an automatic rollback is no
+    longer lossless: new outputs are not stored in the historical table. Refuse
+    that rollback; the operator needs a separately verified data export.
     """
     with engine.connect() as conn:
-        for table in ("artifact_derivatives", "artifact_occurrences", "artifact_blobs"):
+        existing = set(inspect(conn).get_table_names())
+        for table in ('artifact_occurrences', 'artifact_tombstones'):
+            if table in existing and conn.execute(text(f'SELECT COUNT(*) FROM {table}')).scalar():
+                raise RuntimeError('artifact identity rollback would discard recorded outputs or deletions')
+        for table in ("artifact_derivatives", "artifact_occurrences", "artifact_blobs", "artifact_tombstones"):
             conn.execute(text(f"DROP TABLE IF EXISTS {table}"))
         try:
             conn.commit()
         except Exception:
             pass
     logging.getLogger(__name__).info(
-        "artifact identity tables dropped; artifacts is untouched and still authoritative")
+        "empty artifact identity schema dropped; historical artifacts untouched")
 
 
 

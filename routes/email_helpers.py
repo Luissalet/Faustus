@@ -520,8 +520,8 @@ def _q(name: str) -> str:
 def _attach_compose_uploads(outer: MIMEMultipart, tokens, owner=None) -> None:
     """Attach each staged item to `outer`, resolving it by (id, owner).
 
-    `owner=None` is the scheduled-delivery caller: the poller already selected
-    its row by owner and carries no request identity to re-check. Every
+    The scheduled-delivery caller passes its persisted row owner as well.
+    `owner=None` remains the legacy capability-only compatibility path. Every
     request-facing caller passes the authenticated user, so a staging id that
     leaked out of one account - through an error log, a shared browser, a
     support session - attaches nothing when replayed from another. Unknown ids

@@ -800,6 +800,8 @@ app.include_router(setup_context_engine_routes())
 # inputs, and that is the whole surface.
 from routes.media_routes import setup_media_routes
 app.include_router(setup_media_routes())
+from routes.artifact_routes import setup_artifact_routes
+app.include_router(setup_artifact_routes())
 
 # "Prove it": a change set is assembled from records Faustus already keeps and
 # judged by src/prove.py. Nothing is stored — asking twice about the same job
@@ -827,7 +829,7 @@ app.include_router(setup_research_routes(research_handler, session_manager=sessi
 
 # History
 from routes.history.history_routes import setup_history_routes
-app.include_router(setup_history_routes(session_manager, upload_handler=upload_handler))
+app.include_router(setup_history_routes(session_manager, upload_handler=upload_handler, include_compact=False))
 
 # Search
 from routes.search.search_routes import setup_search_routes
@@ -1668,6 +1670,16 @@ async def _startup_event():
                 await asyncio.sleep(3600)
 
     _supervisor.spawn(_null_owner_sweep_loop(), name="null-owner-sweep")
+
+    # Durable workflows continue while their chat is closed. Draft runs and
+    # unanswered human approvals are never started by this worker.
+    from src.workflows.scheduler import scheduler_loop as _workflow_loop
+    _supervisor.spawn(_workflow_loop(), name="workflow-continuation")
+
+    from src.artifact_migration import startup_copy as _artifact_copy
+    _supervisor.spawn(_artifact_copy(), name="artifact-identity-copy")
+    from src.media_scheduler import scheduler_loop as _media_loop
+    _supervisor.spawn(_media_loop(), name="media-continuation")
 
     # Keep Context Engine indexes and degradable memories healthy without
     # making the first user turn pay the maintenance cost.

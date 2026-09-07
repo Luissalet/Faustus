@@ -47,6 +47,8 @@ def run_pending(projects: Sequence[Mapping[str, Any]] = (), *,
     actor = ActorRef(kind="system", name="project-context-indexer")
 
     for raw in projects or ():
+        if len(rows) >= cap or time.monotonic() - began >= ceiling:
+            return rows
         project = dict(raw or {})
         project_id = str(project.get("id") or "").strip()
         owner = str(project.get("owner") or "").strip()
@@ -54,8 +56,16 @@ def run_pending(projects: Sequence[Mapping[str, Any]] = (), *,
         if not owner or not project_id or scope in seen:
             continue
         seen.add(scope)
-        for link in worker.list(project=project, owner=owner):
-            if link.index_status not in PENDING_STATUSES:
+        try:
+            links = worker.list(project=project, owner=owner)
+        except Exception as exc:  # noqa: BLE001 - isolate a project's storage failure
+            logger.exception("project context indexer could not list %s", project_id)
+            rows.append({"ok": False, "project_id": project_id, "status": "failed",
+                         "error": f"{type(exc).__name__}: {exc}"})
+            continue
+        for link in links:
+            if (not link.enabled or link.retrieval_policy == "disabled"
+                    or link.index_status not in PENDING_STATUSES):
                 continue
             if len(rows) >= cap or time.monotonic() - began >= ceiling:
                 return rows

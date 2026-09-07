@@ -2377,13 +2377,16 @@ def setup_model_routes(model_discovery):
         # re-adding manually-added endpoints under their host:port name.
         from src.auth_helpers import get_current_user as _gcu_dedup
         _caller = _gcu_dedup(request) or None
+        if not _truthy(shared) and not _caller:
+            raise HTTPException(400, "Sign in before creating a private connection")
         _incoming_api_key = api_key.strip()
         _db_dedup = SessionLocal()
         try:
             _same_url_rows = (
                 _db_dedup.query(ModelEndpoint)
                 .filter(ModelEndpoint.base_url == base_url)
-                .filter((ModelEndpoint.owner.is_(None)) | (ModelEndpoint.owner == _caller))
+                .filter(((ModelEndpoint.owner.is_(None)) | (ModelEndpoint.owner == _caller))
+                        if _truthy(shared) else (ModelEndpoint.owner == _caller))
                 .order_by(ModelEndpoint.owner.desc())  # prefer owned over shared
                 .all()
             )
@@ -2530,7 +2533,7 @@ def setup_model_routes(model_discovery):
                 current_default_ep = db.query(ModelEndpoint).filter(
                     ModelEndpoint.id == current_default_id
                 ).first()
-            if _default_endpoint_needs_assignment(
+            if _shared_flag and _default_endpoint_needs_assignment(
                 current_default_id,
                 enabled_ids,
                 current_default_endpoint=current_default_ep,
@@ -2583,6 +2586,7 @@ def setup_model_routes(model_discovery):
         ping = {"reachable": True, "error": None} if models else _ping_endpoint(base_url, api_key.strip() or None, timeout=min(probe_timeout, 10.0))
         return {
             "base_url": base_url,
+            "private_connections_supported": True,
             "online": bool(models) or bool(ping.get("reachable")),
             "status": "online" if models else ("loading" if ping.get("loading") else ("empty" if ping.get("reachable") else "offline")),
             "ping_error": ping.get("error") if ping else None,

@@ -31,10 +31,12 @@ traceback.
 from __future__ import annotations
 
 import logging
+import json
 import os
 import platform
 import shutil
 import sys
+import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -125,7 +127,9 @@ def _data_dir() -> Finding:
     if writable and free_gb is not None and free_gb < 2:
         state, detail = "warn", detail + " — renders and checkpoints need room"
     return Finding("runtime", "data directory", state, detail,
-                   fix="" if writable else f"{DATA_DIR} is not writable by this user",
+                   fix=(f"{DATA_DIR} is not writable by this user" if not writable
+                        else "free disk space before starting another render or checkpoint"
+                        if state == "warn" else ""),
                    facts={"path": DATA_DIR, "free_gb": free_gb})
 
 
@@ -316,10 +320,11 @@ def _workflows() -> Finding:
     if not (paused or running):
         return Finding("workflows", "runs", "ok", "nothing in flight")
     return Finding(
-        "workflows", "runs", "warn",
+        "workflows", "runs", "warn" if paused else "ok",
         f"{paused} paused, {running} still going",
-        fix="nothing calls advance() on a timer yet, so a paused run waits until "
-            "somebody asks — POST /api/workflows/runs/{id}/advance",
+        fix=("open Activity to inspect the waiting step: the running server "
+             "continues active workflows and elapsed timers automatically, "
+             "but a human approval still needs your answer" if paused else ""),
         facts={"paused": paused, "running": running})
 
 
@@ -335,9 +340,9 @@ def _media_runs() -> Finding:
         db.close()
     if not open_runs:
         return Finding("media", "renders", "ok", "nothing queued")
-    return Finding("media", "renders", "warn",
-                   f"{open_runs} render(s) not collected",
-                   fix="nothing polls them on a timer — POST /api/media/runs/{id}/poll",
+    return Finding("media", "renders", "ok",
+                   f"{open_runs} render(s) in flight; the running server collects "
+                   "submitted jobs automatically — inspect progress in Activity",
                    facts={"open": open_runs})
 
 
@@ -385,6 +390,109 @@ def _skills() -> Finding:
 
 # ── the report ────────────────────────────────────────────────────────────
 
+def _probe_json(url: str) -> Any:
+    """Read-only, bounded health request; never follow an endpoint redirect."""
+    import httpx
+
+    deadline = time.monotonic() + 6
+    body = bytearray()
+    with httpx.stream("GET", url, timeout=2.5, follow_redirects=False) as response:
+        response.raise_for_status()
+        for chunk in response.iter_bytes(chunk_size=16384):
+            if time.monotonic() > deadline or len(body) + len(chunk) > 1024 * 1024:
+                raise ValueError("health response exceeded its budget")
+            body.extend(chunk)
+    return json.loads(body)
+
+
+def _models() -> Finding:
+    from routes.system_usage_routes import _ollama_base
+
+    try:
+        data = _probe_json(_ollama_base() + "/api/tags")
+        models = data.get("models") if isinstance(data, dict) else None
+        if not isinstance(models, list) or any(
+                not isinstance(m, dict) or not isinstance(m.get("name"), str)
+                or not m["name"].strip() for m in models):
+            raise ValueError("invalid model catalogue")
+    except Exception as exc:
+        return Finding("models", "Ollama catalogue", "unknown",
+                       f"could not verify the local catalogue ({type(exc).__name__})",
+                       fix="start Ollama or check OLLAMA_BASE_URL / OLLAMA_HOST; "
+                           "cloud API models do not require Ollama")
+    return Finding("models", "Ollama catalogue", "ok" if models else "absent",
+                   f"{len(models)} installed model(s); no inference was started",
+                   fix="" if models else "install a model from Settings → Local models, "
+                       "or connect a cloud provider",
+                   facts={"count": len(models), "models": [m["name"][:300] for m in models[:100]]})
+
+
+def _memory_store() -> Finding:
+    from src.constants import DATA_DIR
+
+    path = os.path.join(DATA_DIR, "memory.json")
+    try:
+        with open(path, "rb") as stream:
+            raw = stream.read(16 * 1024 * 1024 + 1)
+        if len(raw) > 16 * 1024 * 1024:
+            return Finding("memory", "stored memories", "unknown",
+                           "store exceeds the diagnostic read budget",
+                           fix="inspect the memory store with a backup; the diagnostic "
+                               "does not truncate or rewrite it")
+        records = json.loads(raw)
+        if not isinstance(records, list) or any(not isinstance(r, dict) for r in records):
+            raise ValueError("expected a list of memory records")
+    except FileNotFoundError:
+        return Finding("memory", "stored memories", "absent", "no memory file yet",
+                       fix="save a memory in a chat; this check creates no files")
+    except (ValueError, OSError) as exc:
+        return Finding("memory", "stored memories", "fail",
+                       f"memory store is unreadable ({type(exc).__name__})",
+                       fix="back up memory.json and restore a readable copy; "
+                           "do not replace it with an empty store")
+    return Finding("memory", "stored memories", "ok",
+                   f"{len(records)} readable record(s); contents are not included",
+                   facts={"count": len(records)})
+
+
+def _memory_vectors() -> Finding:
+    import httpx
+
+    host = os.getenv("CHROMADB_HOST", "localhost")
+    port = int(os.getenv("CHROMADB_PORT", "8100"))
+    url = str(httpx.URL(scheme="http", host=host, port=port, path="/api/v2/heartbeat"))
+    try:
+        data = _probe_json(url)
+        value = data.get("nanosecond heartbeat") if isinstance(data, dict) else None
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            raise ValueError("invalid heartbeat")
+    except Exception as exc:
+        return Finding("memory", "Chroma vector service", "unknown",
+                       f"heartbeat not verified ({type(exc).__name__}); "
+                       "this does not imply stored memories are lost",
+                       fix="start ChromaDB or check CHROMADB_HOST / CHROMADB_PORT; "
+                           "vector retrieval needs the service, plain memory storage does not")
+    return Finding("memory", "Chroma vector service", "ok",
+                   "service heartbeat answered; no collection or embedding was created")
+
+
+def _browser() -> Finding:
+    from src.tool_utils import get_mcp_manager
+
+    manager = get_mcp_manager()
+    if manager is None:
+        return Finding("browser", "integrated browser", "unknown",
+                       "no browser manager in this process",
+                       fix="run this diagnostic in the running app to inspect its browser")
+    status = manager.get_server_status("builtin_browser").get("status", "unknown")
+    connected = status == "connected"
+    return Finding("browser", "integrated browser", "ok" if connected else "warn",
+                   "browser process connected; no page was opened" if connected else
+                   f"browser connection is {status}",
+                   fix="" if connected else "open Settings → MCP and restart the built-in "
+                       "browser; check its installation if it cannot start",
+                   facts={"status": status})
+
 def run(*, areas: Optional[List[str]] = None) -> Dict[str, Any]:
     """Ask everything, and say what is worth doing about it."""
     probes: List[Tuple[str, str, Callable]] = [
@@ -401,14 +509,20 @@ def run(*, areas: Optional[List[str]] = None) -> Dict[str, Any]:
         ("approvals", "pending cards", _approvals),
         ("workflows", "runs", _workflows),
         ("skills", "installed", _skills),
+        ("models", "Ollama catalogue", _models),
+        ("memory", "stored memories", _memory_store),
+        ("memory", "Chroma vector service", _memory_vectors),
+        ("browser", "integrated browser", _browser),
     ]
 
     findings: List[Finding] = []
-    try:
-        findings.extend(_backends())
-    except Exception as e:
-        findings.append(Finding("backends", "registry", "unknown",
-                                f"the check itself failed: {e}"))
+    if not areas or "backends" in areas:
+        try:
+            findings.extend(_backends())
+        except Exception as e:
+            findings.append(Finding("backends", "registry", "unknown",
+                                    f"the check itself failed: {e}",
+                                    fix="inspect the backend registry and service logs"))
     for area, name, probe in probes:
         if areas and area not in areas:
             continue

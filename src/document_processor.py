@@ -6,6 +6,7 @@ import logging
 import mimetypes
 import base64
 import tempfile
+from itertools import islice
 from typing import List, Dict, Any
 
 from src.llm_core import llm_call
@@ -14,6 +15,9 @@ logger = logging.getLogger(__name__)
 
 MAX_INLINE_ATTACHMENT_CHARS = 24000
 MIN_INLINE_ATTACHMENT_SLICE = 500
+MAX_PDF_INLINE_CHARS = 15000
+MAX_PDF_ATTACHMENT_PAGES = 100
+MAX_PDF_ATTACHMENT_VISION_CALLS = 6
 
 
 def _is_text_file(path: str) -> bool:
@@ -110,24 +114,48 @@ def _process_text_file(path: str) -> str:
 
 
 def _process_pdf(path: str, owner: str | None = None) -> str:
-    """Process PDF file with text extraction (pypdf). Uses VL model for image-heavy pages."""
+    """Bounded PDF preview, not complete corpus ingestion or exhaustive OCR.
+
+    Stop work before producing text we would discard. The original uploaded
+    file remains available for explicit page inspection/full indexing.
+    """
     try:
         from pypdf import PdfReader
         pdf_text = ""
         reader = PdfReader(path)
+        vision_calls = 0
+        limits = set()
 
         for page_num, page in enumerate(reader.pages):
+            if len(pdf_text) >= MAX_PDF_INLINE_CHARS:
+                limits.add('text')
+                break
+            if page_num >= MAX_PDF_ATTACHMENT_PAGES:
+                limits.add('pages')
+                break
             page_text = (page.extract_text() or "").strip()
             if page_text:
                 pdf_text += f"\n\n[Page {page_num + 1} text]:\n{page_text}"
 
-            # For pages with images but little text, try VL model
+            if len(pdf_text) >= MAX_PDF_INLINE_CHARS:
+                limits.add('text')
+                break
+            # Do not decode embedded images on already-readable pages.
+            if len(page_text) >= 50:
+                continue
+            if vision_calls >= MAX_PDF_ATTACHMENT_VISION_CALLS:
+                limits.add('vision')
+                continue
             try:
-                images = list(page.images)
+                images = islice(page.images, min(3, MAX_PDF_ATTACHMENT_VISION_CALLS - vision_calls))
             except Exception:
                 images = []
-            if images and len(page_text) < 50:
-                for img_index, img in enumerate(images[:3]):  # cap at 3 images per page
+            try:
+                for img_index, img in enumerate(images):
+                    if len(pdf_text) >= MAX_PDF_INLINE_CHARS:
+                        limits.add('text')
+                        break
+                    vision_calls += 1  # Failed attempts consume the budget too.
                     try:
                         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
                             temp_img_path = tmp.name
@@ -144,10 +172,28 @@ def _process_pdf(path: str, owner: str | None = None) -> str:
                     except Exception as e:
                         logger.warning(f"Failed to analyze image in PDF: {e}")
                         continue
+            except Exception as e:
+                logger.warning("Failed to decode PDF page images: %s", e)
 
+        if len(pdf_text) > MAX_PDF_INLINE_CHARS:
+            limits.add('text')
+        pdf_text = pdf_text[:MAX_PDF_INLINE_CHARS]
+        if 'text' in limits:
+            pdf_text += "\n[PDF content truncated]"
+        if limits:
+            reasons = []
+            if 'text' in limits:
+                reasons.append(f"{MAX_PDF_INLINE_CHARS:,}-character text limit")
+            if 'pages' in limits:
+                reasons.append(f"{MAX_PDF_ATTACHMENT_PAGES}-page preview limit")
+            if 'vision' in limits:
+                reasons.append(f"{MAX_PDF_ATTACHMENT_VISION_CALLS}-attempt image analysis limit")
+            pdf_text += (
+                "\n[Partial PDF preview: " + "; ".join(reasons)
+                + ". Not all content was inspected. Inspect the original PDF's "
+                "specific pages or index it explicitly for broader coverage.]"
+            )
         if pdf_text:
-            if len(pdf_text) > 15000:
-                pdf_text = pdf_text[:15000] + "\n[PDF content truncated]"
             return f"\n\n[PDF content]:{pdf_text}"
         else:
             return "\n\n[PDF processed but no readable content found]"
@@ -499,18 +545,19 @@ def build_user_content(
                         # Inline the PDF body in the chat content too. Without
                         # this, the assistant only saw the "PDF attached"
                         # banner and had no idea what was inside — even though
-                        # the sidebar Document held the full extracted text.
+                        # the sidebar Document held the extracted preview.
                         # Cap the inline copy so a multi-hundred-page PDF
-                        # doesn't blow the model's context; the sidebar still
-                        # carries the full body for direct reference.
+                        # doesn't blow the model's context. The sidebar carries
+                        # the same bounded extraction, not a complete OCR pass.
                         _MAX_INLINE_CHARS = 15000
                         body_for_chat = (pdf_body_text or "").strip()
                         truncated_marker = ""
                         if body_for_chat and len(body_for_chat) > _MAX_INLINE_CHARS:
                             body_for_chat = body_for_chat[:_MAX_INLINE_CHARS]
                             truncated_marker = (
-                                "\n[…truncated for inline context — full text "
-                                "available in the document viewer.]"
+                                "\n[…truncated for inline context — extracted preview "
+                                "available in the document viewer; inspect the original "
+                                "PDF for complete coverage.]"
                             )
 
                         if is_form:

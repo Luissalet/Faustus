@@ -46,6 +46,58 @@ def project(store, workspace):
 # ── legacy compatibility ──────────────────────────────────────────────
 
 
+def test_conditional_publication_serializes_policy_mutations(store, project):
+    from concurrent.futures import ThreadPoolExecutor
+    link, _ = store.upsert_link(project['id'], {'kind': 'document', 'ref_id': 'doc-one',
+        'enabled': True, 'content_revision': 'r1', 'index_status': 'indexing'})
+    entered, release, attempting, updated = (threading.Event() for _ in range(4))
+    def publish():
+        entered.set()
+        assert release.wait(3)
+        return 2
+    def disable():
+        attempting.set()
+        store.patch_link(project['id'], link['id'], {'enabled': False, 'index_status': 'none'})
+        updated.set()
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        future = pool.submit(store.patch_link_if_current, project['id'], link['id'],
+                             {'index_status': 'ready'}, expected={'enabled': True, 'content_revision': 'r1'},
+                             before_patch=publish)
+        assert entered.wait(3)
+        disable_future = pool.submit(disable)
+        try:
+            assert attempting.wait(3)
+            assert not updated.wait(.05), 'Policy write interleaved with publication'
+        finally:
+            release.set()
+        saved, count = future.result(timeout=3)
+        disable_future.result(timeout=3)
+    assert saved['index_status'] == 'ready' and count == 2
+    current = store.get_link(project['id'], link['id'])
+    assert current['enabled'] is False and current['index_status'] == 'none'
+
+
+def test_mismatch_never_calls_publisher_or_overwrites_policy(store, project):
+    link, _ = store.upsert_link(project['id'], {'kind': 'document', 'ref_id': 'doc-one', 'enabled': False})
+    def forbidden():
+        pytest.fail('Stale publisher ran')
+    assert store.patch_link_if_current(project['id'], link['id'], {'index_status': 'ready'},
+        expected={'enabled': True}, before_patch=forbidden) == (None, None)
+    assert not store.get_link(project['id'], link['id'])['enabled']
+
+
+def test_conditional_write_checks_owner_and_rejects_unchecked_publication(store):
+    project = store.create('Private', folder='Private', owner='alice')
+    link, _ = store.upsert_link(project['id'], {'kind': 'document', 'ref_id': 'doc-one'}, owner='alice')
+    def forbidden():
+        pytest.fail('Unauthorized publisher ran')
+    assert store.patch_link_if_current(project['id'], link['id'], {'index_status': 'ready'},
+        expected={'enabled': True}, owner='bob', before_patch=forbidden) == (None, None)
+    with pytest.raises(ProjectError):
+        store.patch_link_if_current(project['id'], link['id'], {'index_status': 'ready'},
+            expected={}, owner='alice', before_patch=forbidden)
+
+
 def test_a_legacy_item_normalizes_without_losing_write_access(store, project, tmp_path):
     """The defaults of §7, and the one that would change behaviour if wrong.
 

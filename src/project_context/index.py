@@ -13,7 +13,8 @@ import re
 import sqlite3
 import threading
 import time
-from typing import Any, Dict, List, Mapping, Optional, Sequence
+from contextlib import contextmanager
+from typing import Any, Dict, Iterator, List, Mapping, Optional, Sequence
 
 from src.constants import PROJECT_CONTEXT_INDEX_DB
 from .models import ExtractedCorpus, SourceMatch
@@ -32,32 +33,39 @@ def path() -> str:
     return _PATH or PROJECT_CONTEXT_INDEX_DB
 
 
-def _db() -> sqlite3.Connection:
+@contextmanager
+def _db() -> Iterator[sqlite3.Connection]:
     target = path()
     os.makedirs(os.path.dirname(target) or ".", exist_ok=True)
     conn = sqlite3.connect(target, timeout=15.0)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA busy_timeout=15000")
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS project_context_indexes ("
-        "owner TEXT NOT NULL, project_id TEXT NOT NULL, link_id TEXT NOT NULL, "
-        "revision TEXT NOT NULL, chunk_count INTEGER NOT NULL DEFAULT 0, "
-        "indexed_at REAL NOT NULL, PRIMARY KEY(owner, project_id, link_id))"
-    )
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS project_context_chunks ("
-        "owner TEXT NOT NULL, project_id TEXT NOT NULL, link_id TEXT NOT NULL, "
-        "chunk_index INTEGER NOT NULL, revision TEXT NOT NULL, text TEXT NOT NULL, "
-        "title TEXT NOT NULL DEFAULT '', location TEXT NOT NULL DEFAULT '{}', "
-        "media_type TEXT NOT NULL DEFAULT '', indexed_at REAL NOT NULL, "
-        "PRIMARY KEY(owner, project_id, link_id, chunk_index))"
-    )
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_project_context_scope "
-        "ON project_context_chunks(owner, project_id, link_id, revision)"
-    )
-    return conn
+    try:
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=15000")
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS project_context_indexes ("
+            "owner TEXT NOT NULL, project_id TEXT NOT NULL, link_id TEXT NOT NULL, "
+            "revision TEXT NOT NULL, chunk_count INTEGER NOT NULL DEFAULT 0, "
+            "indexed_at REAL NOT NULL, PRIMARY KEY(owner, project_id, link_id))"
+        )
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS project_context_chunks ("
+            "owner TEXT NOT NULL, project_id TEXT NOT NULL, link_id TEXT NOT NULL, "
+            "chunk_index INTEGER NOT NULL, revision TEXT NOT NULL, text TEXT NOT NULL, "
+            "title TEXT NOT NULL DEFAULT '', location TEXT NOT NULL DEFAULT '{}', "
+            "media_type TEXT NOT NULL DEFAULT '', indexed_at REAL NOT NULL, "
+            "PRIMARY KEY(owner, project_id, link_id, chunk_index))"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_project_context_scope "
+            "ON project_context_chunks(owner, project_id, link_id, revision)"
+        )
+        # SQLite's own context manager commits/rolls back, but never closes.
+        # Keep both guarantees, including when schema initialization fails.
+        with conn:
+            yield conn
+    finally:
+        conn.close()
 
 
 def replace(*, owner: str, project_id: str, link_id: str,

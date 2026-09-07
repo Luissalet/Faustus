@@ -47,6 +47,7 @@ VERDICTS = (VERDICT_SUPPORTED, VERDICT_REFUTED, VERDICT_UNCHECKED)
 
 MAX_TEXT_CHARS = 2_000_000
 MAX_SOURCE_NUMBER = 999
+MAX_SOURCE_URL_CHARS = 8192
 
 # Query parameters that identify a campaign, not a page. Dropping them is what
 # makes the same article arriving from two different search providers one
@@ -164,6 +165,17 @@ class SourceRegistry:
         if not isinstance(finding, dict):
             return 0
         url = _as_text(finding.get("url")).strip()
+        if len(url) > MAX_SOURCE_URL_CHARS:
+            return 0
+        try:
+            parsed_url = urlsplit(url)
+            if parsed_url.scheme.lower() not in ("http", "https") or not parsed_url.hostname:
+                return 0
+            if parsed_url.username is not None or parsed_url.password is not None:
+                return 0
+            parsed_url.port  # Reject malformed ports before canonicalisation.
+        except ValueError:
+            return 0
         key = canonical_url(url)
         if not key:
             return 0
@@ -203,6 +215,49 @@ class SourceRegistry:
 
     def all(self) -> List[Dict[str, Any]]:
         return list(self._entries)
+
+    def snapshot(self) -> Dict[str, Any]:
+        """Versioned identities plus bounded evidence, independent of UI filtering.
+
+        Keep every numbered identity even when the display discards a weak
+        finding. Text truncation never changes a number or URL.
+        """
+        remaining = 8 * 1024 * 1024
+        sources = []
+        for entry in self._entries:
+            saved = {key: entry[key] for key in ("n", "url", "fetched_at")}
+            saved["fetched_at"] = saved["fetched_at"][:128]
+            for key, limit in (("title", 1000), ("summary", 4000), ("evidence", 32000)):
+                value = _as_text(entry.get(key))[:min(limit, remaining)]
+                saved[key] = value
+                remaining -= len(value)
+            sources.append(saved)
+        return {"version": 1, "sources": sources}
+
+    @classmethod
+    def restore(cls, snapshot: Any) -> "SourceRegistry":
+        """Reject damaged numbering rather than silently assigning new citations."""
+        if not isinstance(snapshot, dict) or type(snapshot.get("version")) is not int or snapshot["version"] != 1:
+            raise ValueError("unsupported citation registry snapshot")
+        sources = snapshot.get("sources")
+        if not isinstance(sources, list) or len(sources) > MAX_SOURCE_NUMBER:
+            raise ValueError("invalid citation registry sources")
+        registry = cls()
+        remaining = 8 * 1024 * 1024
+        for expected, source in enumerate(sources, 1):
+            if not isinstance(source, dict) or type(source.get("n")) is not int or source["n"] != expected:
+                raise ValueError("invalid citation registry numbering")
+            if not isinstance(source.get("url"), str) or len(source["url"]) > MAX_SOURCE_URL_CHARS:
+                raise ValueError("invalid citation registry URL")
+            for key, limit in (("title", 1000), ("summary", 4000), ("evidence", 32000), ("fetched_at", 128)):
+                value = source.get(key, "")
+                if not isinstance(value, str) or len(value) > limit:
+                    raise ValueError("invalid citation registry text")
+                if key != "fetched_at":
+                    remaining -= len(value)
+            if remaining < 0 or registry.number_for(source["url"]) is not None or registry.add(source) != expected:
+                raise ValueError("duplicate or invalid citation registry identity")
+        return registry
 
     def __len__(self) -> int:
         return len(self._entries)
@@ -334,6 +389,22 @@ _WORDISH_RE = re.compile(r"[^\W_]+", re.UNICODE)
 # expect to carry a citation. Counting those would understate coverage.
 _MIN_SENTENCE_WORDS = 4
 
+# Deliberately bounded exceptions, not a claim to linguistic segmentation.
+# A citation following "Fig. 3" supports the entire sentence, not just "3".
+_TITLE_ABBREVIATION_RE = re.compile(r"(?<!\w)(?:dr|dra|sr|sra|srta|mr|mrs|ms|prof)\.$", re.I)
+_REFERENCE_ABBREVIATION_RE = re.compile(r"(?<!\w)(?:figs?|eqs?|secs?|arts?|pp?|vol|no|núm)\.$", re.I)
+_EXAMPLE_ABBREVIATION_RE = re.compile(r"(?<!\w)(?:p\.\s*ej|e\.g|i\.e)\.$", re.I)
+
+
+def _continues_abbreviation(chunk: str, boundary: int, following: int) -> bool:
+    before = chunk[max(0, boundary - 32):boundary]
+    after = chunk[following:following + 1]
+    if not after or after in '["\'“¿¡(':
+        return False
+    return bool((_TITLE_ABBREVIATION_RE.search(before) and after.isalpha())
+                or (_REFERENCE_ABBREVIATION_RE.search(before) and after.isdigit())
+                or (_EXAMPLE_ABBREVIATION_RE.search(before) and after.isalnum()))
+
 
 def _counts_as_sentence(text: str) -> bool:
     return len(_WORDISH_RE.findall(strip_markers(text))) >= _MIN_SENTENCE_WORDS
@@ -428,7 +499,12 @@ def _split_sentences(text: str, start: int, end: int) -> List[Tuple[int, int]]:
     for match in _SENT_SPLIT_RE.finditer(chunk):
         if match.end() <= cursor:
             continue
-        spans.append((start + cursor, start + match.start()))
+        if _continues_abbreviation(chunk, match.start(), match.end()):
+            continue
+        # The regex consumes closing quotes/brackets as well as whitespace.
+        # Keep that punctuation in the original claim's span.
+        punctuation_end = match.start() + len(match.group().rstrip())
+        spans.append((start + cursor, start + punctuation_end))
         cursor = match.end()
     spans.append((start + cursor, end))
     return [(s, e) for s, e in spans if text[s:e].strip()]

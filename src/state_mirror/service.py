@@ -670,6 +670,33 @@ def run_scheduled(scopes: Sequence[Mapping[str, Any]] = ()) -> List[Dict[str, An
     return out
 
 
+async def refresh_runtime_usage(scopes: Sequence[Mapping[str, Any]] = ()) -> bool:
+    """Refresh the measured model/GPU cache before the background mirror sweep.
+
+    Run in the server's event loop, like the usage HTTP endpoint: its asyncio
+    lock must not be moved into the thread used for SQLite/adapter work. No
+    model is loaded or asked to generate. Disabled, unowned and busy sweeps
+    perform no service probes.
+    """
+    import asyncio
+    if not enabled() or not any(isinstance(scope, Mapping) and _text(scope.get("owner"))
+                                for scope in scopes or ()):
+        return False
+    try:
+        from src.agent_runs import active_session_ids
+        if active_session_ids():
+            return False
+        from routes.system_usage_routes import collect_usage
+        await asyncio.wait_for(collect_usage(), timeout=8)
+        return True
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        # Keep the old cache's own timestamp; never relabel a stale reading.
+        logger.warning("state mirror: runtime usage refresh failed", exc_info=True)
+        return False
+
+
 async def scheduler_loop(
     *,
     scopes_provider: Optional[Callable[[], Sequence[Mapping[str, Any]]]] = None,
@@ -691,6 +718,7 @@ async def scheduler_loop(
     while True:
         try:
             scopes = list(scopes_provider() or ()) if scopes_provider else ()
+            await refresh_runtime_usage(scopes)
             await asyncio.to_thread(run_scheduled, scopes)
         except asyncio.CancelledError:
             raise

@@ -108,6 +108,10 @@ GROUPS: list[dict[str, Any]] = [
                  0, 10),
             _bool("agent_harness_checks", "Reliability harness",
                   "Claims-vs-evidence check, syntax check and fabricated-path detection after each turn."),
+            _bool("agent_tool_rerank", "Rerank tool candidates",
+                  "Send your query and public built-in tool descriptions to your configured reranker "
+                  "to improve tool selection. Private connector descriptions are never sent. Adds up "
+                  "to a short request; failures keep the original selection. Off by default."),
             _bool("agent_tool_preflight", "Tool preflight",
                   "Drop the tools that cannot work in this turn (no project, no mailbox…) before the tool "
                   "list goes out. Saves rounds and schema tokens for small local models."),

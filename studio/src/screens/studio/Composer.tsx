@@ -14,6 +14,7 @@ import {
   Mic,
   MicOff,
   Paperclip,
+  RefreshCw,
   SlidersHorizontal,
   Square,
   Terminal,
@@ -24,6 +25,7 @@ import {
   useCallback,
   useEffect,
   useRef,
+  useMemo,
   useState,
   type ChangeEvent,
   type ClipboardEvent,
@@ -45,6 +47,8 @@ import {
   type WorkspaceFile,
 } from '../../adapters/composer';
 import { matchCommands, type Suggestion } from './commands';
+import { clipboardFiles, insertPastedText } from '../../lib/clipboard-attachments';
+import { createAttachmentUploads, type PendingAttachment } from '../../lib/attachment-uploads';
 
 export type Mode = 'chat' | 'agent';
 
@@ -122,7 +126,23 @@ export function Composer({
   textareaRef,
 }: ComposerProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [uploading, setUploading] = useState(false);
+  const [pendingFiles, setPendingFiles] = useState<PendingAttachment[]>([]);
+  const attachmentTarget = useRef({sessionId, setAttachments});
+  attachmentTarget.current = {sessionId, setAttachments};
+  const uploads = useMemo(() => createAttachmentUploads<Attachment>({
+    upload: (file, signal) => uploadFiles([file], sessionId, signal),
+    ready: (uploaded) => {
+      if (attachmentTarget.current.sessionId !== sessionId) return;
+      attachmentTarget.current.setAttachments((list) => [...list, ...uploaded.filter((u) => !list.some((a) => a.id === u.id))]);
+    },
+    change: (entries) => { if (attachmentTarget.current.sessionId === sessionId) setPendingFiles(entries); },
+    preview: (file) => isImage(file.type) ? URL.createObjectURL(file) : '',
+    revoke: (url) => URL.revokeObjectURL(url),
+    timeoutMessage: () => t('Upload timed out. Retry or remove this attachment.'),
+    emptyMessage: () => t('The server returned no attachment. Retry the upload.'),
+  }), [sessionId]);
+  useEffect(() => { uploads.resume(); return () => uploads.dispose(); }, [uploads]);
+  const uploading = pendingFiles.some((file) => file.state !== 'failed');
   const [dragging, setDragging] = useState(false);
 
   /* ── Dictation ── */
@@ -231,27 +251,20 @@ export function Composer({
   };
 
   /* ── Attachments ── */
-  const addFiles = useCallback(
-    async (files: File[]) => {
-      if (!files.length) return;
-      setUploading(true);
-      try {
-        const uploaded = await uploadFiles(files, sessionId);
-        setAttachments((list) => [...list, ...uploaded.filter((u) => !list.some((a) => a.id === u.id))]);
-      } catch (error) {
-        onNotice(`${t('Could not upload the file')}: ${(error as Error).message}`, 'danger');
-      } finally {
-        setUploading(false);
-      }
-    },
-    [sessionId, setAttachments, onNotice],
-  );
+  const addFiles = (files: File[]) => uploads.add(files);
 
   const onPaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
-    const files = Array.from(event.clipboardData.files ?? []);
+    const files = clipboardFiles(event.clipboardData);
     if (files.length) {
       event.preventDefault();
-      void addFiles(files);
+      const text = event.clipboardData.getData('text/plain');
+      if (text) {
+        const input = event.currentTarget;
+        const pasted = insertPastedText(input.value, input.selectionStart, input.selectionEnd, text);
+        setDraft(pasted.value);
+        requestAnimationFrame(() => { input.focus(); input.setSelectionRange(pasted.caret, pasted.caret); });
+      }
+      addFiles(files);
     }
   };
 
@@ -289,7 +302,7 @@ export function Composer({
     }
     if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault();
-      onSend(draft);
+      if (!uploads.hasPending()) onSend(draft);
       return;
     }
     if (event.key === 'ArrowUp' && !draft && lastSent) {
@@ -320,7 +333,7 @@ export function Composer({
   }, [draft, textareaRef]);
 
   const genLabel = describeGen(gen);
-  const canSend = (draft.trim().length > 0 || attachments.length > 0) && !uploading;
+  const canSend = (draft.trim().length > 0 || attachments.length > 0) && pendingFiles.length === 0;
 
   return (
     <form
@@ -328,7 +341,7 @@ export function Composer({
       data-dragging={dragging || undefined}
       onSubmit={(event) => {
         event.preventDefault();
-        onSend(draft);
+        if (!uploads.hasPending()) onSend(draft);
       }}
       onDragOver={(event) => {
         event.preventDefault();
@@ -380,8 +393,21 @@ export function Composer({
         </ul>
       )}
 
-      {attachments.length > 0 && (
+      {(attachments.length > 0 || pendingFiles.length > 0) && (
         <ul className="fs-studio__attachments" aria-label={t('Attachments')}>
+          {pendingFiles.map((entry) => (
+            <li key={entry.id} className="fs-studio__attachment" data-state={entry.state} data-testid="studio-pending-attachment">
+              {entry.preview ? <img src={entry.preview} alt="" width={36} height={36} /> : <FileText size={16} aria-hidden="true" />}
+              <span className="fs-studio__attachment-info">
+                <span className="fs-studio__attachment-name" title={entry.file.name}>{entry.file.name || t('Screenshot')}</span>
+                <span role={entry.state === 'failed' ? 'alert' : 'status'} className="fs-studio__attachment-status">
+                  {entry.state === 'failed' ? entry.error : entry.state === 'queued' ? t('Waiting to upload…') : t('Uploading…')}
+                </span>
+              </span>
+              {entry.state === 'failed' && <button type="button" className="fs-studio__attachment-x" aria-label={t('Retry {name}', {name:entry.file.name})} onClick={() => uploads.retry(entry.id)}><RefreshCw size={13} aria-hidden="true" /></button>}
+              <button type="button" className="fs-studio__attachment-x" aria-label={t('Remove {name}', {name:entry.file.name})} onClick={() => uploads.remove(entry.id)}><X size={12} aria-hidden="true" /></button>
+            </li>
+          ))}
           {attachments.map((a) => (
             <li key={a.id} className="fs-studio__attachment" data-testid="studio-attachment">
               {isImage(a.mime) ? (
@@ -424,6 +450,7 @@ export function Composer({
         onClick={(event) => refreshSuggestions(draft, event.currentTarget.selectionStart ?? draft.length)}
         data-testid="studio-input"
       />
+      <p className="fs-studio__paste-hint">{t('Paste a screenshot with Ctrl+V, or drop a file here.')}</p>
 
       <div className="fs-studio__bar">
         <div className="fs-studio__seg" role="radiogroup" aria-label={t('Mode')}>

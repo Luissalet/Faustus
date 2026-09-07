@@ -227,22 +227,27 @@ class WorkflowStore:
     def set_run_status(self, run_id: str, status: str, *, reason: str = "") -> bool:
         from core.database import SessionLocal, WorkflowRunRow
         from src.contracts.workflow import TERMINAL_WORKFLOW
+        from sqlalchemy import func
 
         db = SessionLocal()
         try:
-            row = db.get(WorkflowRunRow, run_id)
-            if row is None:
-                return False
-            row.status = status
-            if reason:
-                row.reason = reason
-            if status == "running" and not row.started_at:
-                row.started_at = now_iso()
+            updates = {'status': status}
+            if reason or status in ('running', 'completed'):
+                updates['reason'] = reason
+            if status == "running":
+                updates['started_at'] = func.coalesce(WorkflowRunRow.started_at, now_iso())
             if status in TERMINAL_WORKFLOW:
-                row.ended_at = row.ended_at or now_iso()
-                row.started_at = row.started_at or row.ended_at
+                moment = now_iso()
+                updates['ended_at'] = func.coalesce(WorkflowRunRow.ended_at, moment)
+                updates['started_at'] = func.coalesce(WorkflowRunRow.started_at, moment)
+            # The predicate and write are one database operation. A late
+            # completion/pause cannot undo a cancellation or any terminal state.
+            changed = (db.query(WorkflowRunRow)
+                       .filter(WorkflowRunRow.id == run_id,
+                               WorkflowRunRow.status.notin_(TERMINAL_WORKFLOW))
+                       .update(updates, synchronize_session=False))
             db.commit()
-            return True
+            return bool(changed)
         except Exception:
             db.rollback()
             raise
@@ -396,7 +401,8 @@ class WorkflowStore:
 
     def finish_node(self, run_id: str, node_id: str, *, status: str,
                     result: Optional[Mapping[str, Any]] = None,
-                    reason: str = "", approval_id: str = "") -> bool:
+                    reason: str = "", approval_id: str = "",
+                    worker_id: str = "") -> bool:
         """Write what happened, before the next node is chosen.
 
         The lease goes too: the attempt is over, and a row nobody is holding
@@ -419,21 +425,25 @@ class WorkflowStore:
                    .order_by(NodeRunRow.attempt.desc()).first())
             if row is None:
                 return False
-            row.status = status
-            row.reason = reason or row.reason
-            row.approval_id = approval_id or row.approval_id
+            query = db.query(NodeRunRow).filter(NodeRunRow.id == row.id)
+            if worker_id:
+                query = query.filter(NodeRunRow.status == 'running',
+                                     NodeRunRow.lease_owner == worker_id)
+            values = {'status': status, 'reason': reason if status == 'completed' else reason or row.reason,
+                      'approval_id': approval_id or row.approval_id,
+                      'lease_owner': None, 'lease_expires_at': None,
+                      'lease_heartbeat_at': None}
             if result is not None:
-                row.result_json = _json(dict(result))
+                values['result_json'] = _json(dict(result))
             if status in TERMINAL_NODE:
-                row.ended_at = row.ended_at or now_iso()
-            row.lease_owner = None
-            row.lease_expires_at = None
-            row.lease_heartbeat_at = None
+                values['ended_at'] = row.ended_at or now_iso()
             if status == "completed" and (row.effect_state or "none") != "unknown":
-                row.effect_state = "confirmed"
+                values['effect_state'] = 'confirmed'
+            changed = query.update(values, synchronize_session=False)
             db.commit()
-            fault("after_result", run_id=run_id, node_id=node_id, status=status)
-            return True
+            if changed:
+                fault("after_result", run_id=run_id, node_id=node_id, status=status)
+            return bool(changed)
         except Exception:
             db.rollback()
             raise
@@ -460,10 +470,12 @@ class WorkflowStore:
                 return False
             # The key is released, not the row: the attempt stays in the record
             # so "this waited on an approval" is still visible afterwards.
-            row.idempotency_key = None
-            row.status = "pending"
+            changed = (db.query(NodeRunRow)
+                       .filter(NodeRunRow.id == row.id, NodeRunRow.status == 'paused')
+                       .update({'idempotency_key': None, 'status': 'pending'},
+                               synchronize_session=False))
             db.commit()
-            return True
+            return bool(changed)
         except Exception:
             db.rollback()
             raise
@@ -576,40 +588,50 @@ class WorkflowStore:
                         db.get(WorkflowRunRow, row.workflow_run_id))
                 node_type = types_by_run[row.workflow_run_id].get(row.node_id, "")
                 effectful = node_type in EFFECTFUL_TYPES or not node_type
-                row.lease_owner = None
-                row.lease_expires_at = None
-                row.lease_heartbeat_at = None
+                values = {'lease_owner': None, 'lease_expires_at': None,
+                          'lease_heartbeat_at': None}
                 if (row.effect_state or "none") == "confirmed":
                     # The handler said the provider answered before the worker
                     # died. That is the one case where the effect is NOT in
                     # doubt: the result was never written, but nothing is owed
                     # to the outside world, so this needs no reconciliation and
                     # must not be retried either.
-                    row.status = "failed"
-                    row.ended_at = row.ended_at or moment
-                    row.reason = (
+                    values['status'] = 'failed'
+                    values['ended_at'] = row.ended_at or moment
+                    values['reason'] = (
                         "the effect landed and was confirmed before the worker "
                         "stopped answering, but its result was never written; "
                         "nothing is owed outside, so this is not retried")
                     outcome = "effect_confirmed"
                 elif effectful:
-                    row.status = "failed"
-                    row.ended_at = row.ended_at or moment
-                    row.effect_state = "unknown"
-                    row.reason = (
+                    values['status'] = 'failed'
+                    values['ended_at'] = row.ended_at or moment
+                    values['effect_state'] = 'unknown'
+                    values['reason'] = (
                         f"unknown_effect: the worker holding this {node_type or 'unknown'} "
                         f"node stopped answering across its call, so nobody saw whether "
                         f"the effect happened; this needs reconciling with the provider "
                         f"or a decision, not a retry")
                     outcome = "unknown_effect"
                 else:
-                    row.status = "pending"
-                    row.idempotency_key = None
-                    row.reason = (
+                    values['status'] = 'pending'
+                    values['idempotency_key'] = None
+                    values['reason'] = (
                         f"the worker holding this {node_type} node stopped answering; "
                         f"the node reaches nothing outside Faustus, so the attempt is "
                         f"simply released")
                     outcome = "released"
+                # The worker may heartbeat or finish after the SELECT. Recovery
+                # must lose that race, not overwrite the fresh result/lease.
+                changed = (db.query(NodeRunRow)
+                           .filter(NodeRunRow.id == row.id,
+                                   NodeRunRow.status == 'running',
+                                   NodeRunRow.lease_owner == row.lease_owner,
+                                   NodeRunRow.lease_expires_at == row.lease_expires_at,
+                                   NodeRunRow.effect_state == row.effect_state)
+                           .update(values, synchronize_session=False))
+                if not changed:
+                    continue
                 handled.append({"run_id": row.workflow_run_id, "node_id": row.node_id,
                                 "attempt": row.attempt, "node_type": node_type,
                                 "outcome": outcome})

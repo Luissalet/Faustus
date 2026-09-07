@@ -171,13 +171,13 @@ _LOCK_CTX: contextvars.ContextVar[Optional[_LockGuard]] = contextvars.ContextVar
 #: the agent loop spawns. None outside a definition-driven worker, which is
 #: what keeps every existing delegation on exactly its old path.
 _PERMS_CTX: contextvars.ContextVar[Any] = contextvars.ContextVar("odysseus_subagent_perms", default=None)
-_WRITE_TOOLS = frozenset({"write_file", "edit_file", "apply_patch"})
+_WRITE_TOOLS = frozenset({"write_file", "edit_file", "apply_patch", "transform_media"})
 #: Tools whose first argument is ONE path this module can read out with
 #: certainty. `grep`/`glob`/`ls` take a root plus a pattern and answer about a
 #: tree, so a `read` rule is not applied to them: refusing a listing on a path
 #: rule would be theatre, and allowing one while claiming the rule held would
 #: be worse.
-_READ_TOOLS = frozenset({"read_file"})
+_READ_TOOLS = frozenset({"read_file", "inspect_media", "plan_media_transform", "transform_media"})
 
 
 def _targets(tool: str, content: Any) -> Optional[List[str]]:
@@ -205,8 +205,9 @@ def _read_target(tool: str, content: Any) -> Optional[str]:
     read out of the arguments."""
     if tool not in _READ_TOOLS:
         return None
+    key = "source" if tool in {"plan_media_transform", "transform_media"} else "path"
     if isinstance(content, dict):
-        path = content.get("path")
+        path = content.get(key)
         return str(path).strip() if isinstance(path, str) and path.strip() else None
     raw = str(content or "").strip()
     if not raw:
@@ -216,7 +217,7 @@ def _read_target(tool: str, content: Any) -> Optional[str]:
             data = json.loads(raw)
         except (TypeError, ValueError):
             return None
-        path = data.get("path") if isinstance(data, dict) else None
+        path = data.get(key) if isinstance(data, dict) else None
         return str(path).strip() if isinstance(path, str) and path.strip() else None
     first = raw.split("\n", 1)[0].strip()
     return first or None
@@ -244,6 +245,16 @@ def permission_block_reason(tool: Any, content: Any) -> Optional[str]:
         return (f"{tool}: refused — {perms.why_tool_denied(tool)} (agent definition). Do not call it "
                 f"again in this turn; do the part of the task your tools reach and say in your "
                 f"report what you could not do and why.")
+    # A conversion reads one source AND writes a different destination. Check
+    # both permissions, not just the action selected by the write-tool branch.
+    if tool == "transform_media" and perms.restricts_action("read"):
+        from src.subagent_permissions import normalise_path
+        source = _read_target(tool, content)
+        if not source:
+            return "transform_media: refused — source path could not be determined."
+        source = normalise_path(source, getattr(perms, "workspace", "") or None)
+        if perms.path_denied("read", source):
+            return f"transform_media: refused — {perms.why_path_denied('read', source)} and `{source}` matches it."
     action = "write" if tool in _WRITE_TOOLS else ("read" if tool in _READ_TOOLS else "")
     if not action or not perms.restricts_action(action):
         return None
@@ -732,6 +743,8 @@ def parse_delegation_args(content: str, *, workspace: Optional[str] = None) -> D
                                "model": model[:120], "files": files}
         if isinstance(t, dict):
             # Selection vocabulary belongs to TaskSpec, not to the resolver's
+            if isinstance(t.get('team_member'), str):
+                row['team_member'] = t['team_member'][:80]
             # model/timeout override contract. Preserve it explicitly at the
             # caller boundary so automatic selection has an actual task to
             # measure. Payloads without these keys remain byte-for-byte equal.
@@ -857,6 +870,7 @@ class SubagentRun:
         self.agent_def: Optional[Dict[str, Any]] = task.get("agent_def") if isinstance(task.get("agent_def"), dict) else None
         self.system_prompt = str(task.get("system_prompt") or "")
         self.endpoint_id = str(task.get("endpoint_id") or "")
+        self.team_bound = bool(task.get('team_bound'))
         self.max_rounds_override = task.get("max_rounds") or None
         self.timeout_s_override = task.get("timeout_s") or None
         #: Derived by DelegateAgentsTool before the run starts; None means an
@@ -1597,7 +1611,7 @@ def _attach_resolution(runs: List["SubagentRun"], workspace: Optional[str],
             logger.debug("delegate_agents: %s could not be resolved: %s", run.agent, exc)
 
 
-def _endpoint_for(run: "SubagentRun", default_url: str, owner: Optional[str]) -> str:
+def _route_for(run: "SubagentRun", default_url: str, owner: Optional[str], default_headers=None):
     """The endpoint one worker runs on: its definition's `endpoint_id` when
     that id resolves, the coordinator's otherwise.
 
@@ -1607,21 +1621,32 @@ def _endpoint_for(run: "SubagentRun", default_url: str, owner: Optional[str]) ->
     own card that it did not run where the definition said it would.
     """
     if not run.endpoint_id:
-        return default_url
+        return default_url, default_headers
     try:
         from src.endpoint_resolver import resolve_endpoint_by_id
-        resolved = resolve_endpoint_by_id(run.endpoint_id, run.model_override or None, owner=owner)
+        kwargs = {'owner': owner}
+        if run.team_bound:
+            kwargs['require_exact_model'] = True
+        resolved = resolve_endpoint_by_id(run.endpoint_id, run.model_override or None, **kwargs)
     except Exception as exc:  # noqa: BLE001 - a route lookup never fails a run
         logger.debug("delegate_agents: endpoint %s unavailable: %s", run.endpoint_id, exc)
         resolved = None
     if resolved and resolved[0]:
-        return str(resolved[0])
+        # Authentication belongs to the destination, never the coordinator.
+        return str(resolved[0]), resolved[2]
+    if run.team_bound:
+        raise ValueError('The selected team model is unavailable; no fallback was used.')
     note = (f"endpoint `{run.endpoint_id}` from the agent definition did not resolve; this worker ran "
             f"on the coordinator's endpoint instead")
     logger.info("delegate_agents: %s", note)
     if run.agent_def is not None:
         run.agent_def = dict(run.agent_def, caveats=list(run.agent_def.get("caveats") or []) + [note])
-    return default_url
+    return default_url, default_headers
+
+
+def _endpoint_for(run: "SubagentRun", default_url: str, owner: Optional[str]) -> str:
+    """Compatibility helper for callers interested only in the destination."""
+    return _route_for(run, default_url, owner)[0]
 
 
 class DelegateAgentsTool:
@@ -1633,6 +1658,13 @@ class DelegateAgentsTool:
             return {"error": str(e), "exit_code": 1}
         parent_sid = ctx.get("session_id")
         owner = ctx.get("owner")
+        team = (ctx.get('harness_options') or {}).get('chat_team')
+        if team:
+            from src.chat_team import bind_tasks
+            try:
+                args = bind_tasks(args, team, owner)
+            except ValueError as exc:
+                return {'error': str(exc), 'exit_code': 1}
         progress_cb = ctx.get("progress_cb")
         from src.ai_interaction import get_session_manager
         sm = get_session_manager()
@@ -1658,7 +1690,7 @@ class DelegateAgentsTool:
         explicit_model = str(ctx.get("model") or "").strip()
         if explicit_model:
             model = explicit_model
-        else:
+        elif not (team and team.get('enabled')):
             worker_model = str(_setting("agent_subagent_worker_model", "") or "").strip()
             if worker_model and worker_model.lower() != "auto":
                 model = worker_model
@@ -1705,6 +1737,7 @@ class DelegateAgentsTool:
         except (TypeError, ValueError):
             max_parallel = 2
         slots = shared_slots(endpoint_url, max(1, max_parallel)) if max_parallel > 0 else None
+        team_slots = asyncio.Semaphore(team['max_parallel']) if team and team.get('enabled') else None
 
         async def watchdog(run: SubagentRun, emit) -> None:
             """Heartbeat + deterministic supervisor. Emits a `tick` every
@@ -1763,7 +1796,7 @@ class DelegateAgentsTool:
         async def one(run: SubagentRun, max_rounds: Optional[int] = None):
             emit = await emit_for(run)
             dog: Optional[asyncio.Task] = None
-            queued = slots is not None and slots.locked()
+            queued = (slots is not None and slots.locked()) or (team_slots is not None and team_slots.locked())
             if queued:
                 await emit({"event": "queued"})
             # A definition's own ceilings, when it has them. Both are already
@@ -1776,10 +1809,24 @@ class DelegateAgentsTool:
             # slot stays keyed on the COORDINATOR's endpoint on purpose: it
             # bounds how many workers generate at once on this box, and reading
             # it per-endpoint would raise that bound rather than honour it.
-            worker_url = _endpoint_for(run, endpoint_url, owner)
             try:
-                if slots is not None:
-                    await slots.acquire()
+                worker_url, worker_headers = _route_for(run, endpoint_url, owner, headers)
+            except ValueError as exc:
+                run.error = str(exc)
+                run.finished = time.time()
+                await emit({'event': 'error', 'message': run.error})
+                await emit({'event': 'done', **run.report()})
+                return
+            try:
+                if team_slots is not None:
+                    await team_slots.acquire()
+                try:
+                    if slots is not None:
+                        await slots.acquire()
+                except BaseException:
+                    if team_slots is not None:
+                        team_slots.release()
+                    raise
                 try:
                     dog = asyncio.create_task(watchdog(run, emit))
                     # Wall-clock bound per worker: a worker stuck on a foreground
@@ -1788,7 +1835,7 @@ class DelegateAgentsTool:
                     await asyncio.wait_for(
                         _run_subagent(
                             run,
-                            endpoint_url=worker_url, model=run.model_override or model, headers=headers, owner=owner,
+                            endpoint_url=worker_url, model=run.model_override or model, headers=worker_headers, owner=owner,
                             workspace=workspace, workspace_roots=roots, max_rounds=rounds,
                             shared_context=args["shared_context"], parent_session_id=parent_sid,
                             emit=emit, gen_overrides=gen_overrides, locks=locks, harness_options=harness_options,
@@ -1799,6 +1846,8 @@ class DelegateAgentsTool:
                 finally:
                     if slots is not None:
                         slots.release()
+                    if team_slots is not None:
+                        team_slots.release()
             except asyncio.TimeoutError:
                 run.error = run.error or f"worker timed out after {limit}s (its running command was killed)"
                 run.stop_reason = "timeout"

@@ -1,4 +1,5 @@
 import { ApiError, getJson } from './api';
+import { modelIds } from '../lib/provider-presets';
 
 /**
  * The app's settings (`/api/auth/settings`) as Studio needs them: the
@@ -208,14 +209,17 @@ export async function listEndpoints(signal?: AbortSignal): Promise<ModelEndpoint
   return (list as Record<string, unknown>[]).map(endpointFrom);
 }
 
-export async function addEndpoint(input: { name: string; baseUrl: string; apiKey: string; modelType: string; kind: string }): Promise<void> {
+export async function addEndpoint(input: { name: string; baseUrl: string; apiKey: string; modelType: string; kind: string; pinnedModels?: string[]; shared?: boolean; requireModels?: boolean }, signal?: AbortSignal): Promise<void> {
   const fd = new FormData();
   fd.append('name', input.name);
   fd.append('base_url', input.baseUrl);
   fd.append('api_key', input.apiKey);
   fd.append('model_type', input.modelType);
   fd.append('endpoint_kind', input.kind);
-  await okr(await fetch('/api/model-endpoints', { method: 'POST', credentials: 'same-origin', body: fd }), 'model-endpoints');
+  if (input.pinnedModels) fd.append('pinned_models', JSON.stringify(input.pinnedModels));
+  if (input.shared !== undefined) fd.append('shared', String(input.shared));
+  if (input.requireModels !== undefined) fd.append('require_models', String(input.requireModels));
+  await okr(await fetch('/api/model-endpoints', { method: 'POST', credentials: 'same-origin', body: fd, signal }), 'model-endpoints');
 }
 
 export async function patchEndpoint(id: string, body: Record<string, unknown>): Promise<void> {
@@ -236,18 +240,18 @@ export async function deleteEndpoint(id: string): Promise<void> {
 
 /** Re-reads the model list from the endpoint itself (`?refresh=true`). */
 export async function refreshEndpointModels(id: string): Promise<string[]> {
-  const data = await getJson<{ models?: unknown[] }>(`/api/model-endpoints/${encodeURIComponent(id)}/models?refresh=true`);
-  return Array.isArray(data.models) ? data.models.map((m) => (typeof m === 'string' ? m : String((m as { id?: unknown })?.id ?? ''))).filter(Boolean) : [];
+  const data = await getJson<unknown>(`/api/model-endpoints/${encodeURIComponent(id)}/models?refresh=true`);
+  return modelIds(data);
 }
 
-export async function testEndpoint(baseUrl: string, apiKey: string): Promise<{ ok: boolean; models: string[]; error: string | null }> {
+export async function testEndpoint(baseUrl: string, apiKey: string, signal?: AbortSignal): Promise<{ ok: boolean; models: string[]; error: string | null; privateConnectionsSupported: boolean }> {
   const fd = new FormData();
   fd.append('base_url', baseUrl);
   fd.append('api_key', apiKey);
-  const r = await fetch('/api/model-endpoints/test', { method: 'POST', credentials: 'same-origin', body: fd });
+  const r = await fetch('/api/model-endpoints/test', { method: 'POST', credentials: 'same-origin', body: fd, signal });
   const data = (await r.json().catch(() => ({}))) as Record<string, unknown>;
-  const models = Array.isArray(data.models) ? data.models.map((m) => (typeof m === 'string' ? m : String((m as { id?: unknown })?.id ?? ''))).filter(Boolean) : [];
-  return { ok: r.ok && data.ok !== false && !data.error && Boolean(data.online ?? true), models, error: typeof data.error === 'string' ? data.error : typeof data.ping_error === 'string' ? data.ping_error : typeof data.detail === 'string' ? data.detail : null };
+  const models = modelIds(data);
+  return { ok: r.ok && data.ok !== false && !data.error && Boolean(data.online ?? true), models, privateConnectionsSupported: data.private_connections_supported === true, error: typeof data.error === 'string' ? data.error : typeof data.ping_error === 'string' ? data.ping_error : typeof data.detail === 'string' ? data.detail : null };
 }
 
 /** The combo a key event stands for, in the app's `ctrl+alt+x` spelling. */

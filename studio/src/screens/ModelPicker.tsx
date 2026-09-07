@@ -4,6 +4,7 @@ import { lazy, Suspense, useEffect, useState } from 'react';
 import type { ModelRoute } from '../adapters/chat';
 
 const ModelPalette = lazy(() => import('./ModelPalette'));
+const ModelConnections = lazy(() => import('./ModelConnections'));
 
 /**
  * The model picker is a palette, not a dropdown.
@@ -32,6 +33,7 @@ export function ModelPicker({
 }) {
   const [open, setOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [connecting, setConnecting] = useState(false);
   useEffect(() => {
     if (openSignal > 0) {
       setLoaded(true);
@@ -58,9 +60,10 @@ export function ModelPicker({
       </button>
       {loaded && (
         <Suspense fallback={null}>
-          <ModelPalette open={open} onOpenChange={setOpen} routes={routes} current={current} onPick={onPick} onRefresh={onRefresh} refreshing={refreshing} />
+          <ModelPalette open={open} onOpenChange={setOpen} routes={routes} current={current} onPick={onPick} onRefresh={onRefresh} refreshing={refreshing} onConnect={() => {setOpen(false); setConnecting(true);}} />
         </Suspense>
       )}
+      {connecting && <Suspense fallback={null}><ModelConnections open={connecting} onOpenChange={setConnecting} onDone={() => onRefresh?.()} /></Suspense>}
     </>
   );
 }

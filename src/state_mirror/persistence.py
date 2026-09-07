@@ -602,6 +602,27 @@ class StateStore:
             params + [max(1, min(int(limit or 50), 500))])
         return _kept(self._observation(r) for r in rows)
 
+    def observation_cursor(self, entity_id: str) -> int:
+        row = self._one("SELECT COALESCE(MAX(rowid), 0) AS cursor FROM state_observations WHERE entity_id = ?",
+                        [str(entity_id)])
+        return int(row["cursor"]) if row else 0
+
+    def latest_field_observations(self, entity_id: str, field: str) -> List[StateObservation]:
+        """Newest measurement per source, not newest arrival of an old event.
+
+        Complete samples are retained even when they omit the field: omission
+        cannot be used as evidence that the sources agree. A 33rd source is a
+        sentinel; reconciliation declines oversized source sets conservatively.
+        """
+        rows = self._all(
+            "WITH ranked AS (SELECT *, ROW_NUMBER() OVER (PARTITION BY source "
+            "ORDER BY julianday(observed_at) DESC, sequence DESC, rowid DESC) AS rank "
+            "FROM state_observations WHERE entity_id = ? "
+            "AND (json_type(state, ?) IS NOT NULL OR partial = 0)) "
+            "SELECT * FROM ranked WHERE rank = 1 LIMIT 33",
+            [str(entity_id), '$.' + json.dumps(str(field))])
+        return _kept(self._observation(r) for r in rows)
+
     # -- materialised state -----------------------------------------------
 
     def put_state(self, state: MaterializedState, *, changed: bool = True) -> int:
@@ -767,13 +788,20 @@ class StateStore:
         return True, conflict.id
 
     def settle_conflict(self, conflict_id: str, *, status: str,
-                        resolution: str = "") -> bool:
+                        resolution: str = "", observation_cursor: Optional[int] = None) -> bool:
+        if status not in ("resolved", "superseded", "abandoned"):
+            raise ValueError("a conflict can only settle to a terminal status")
         try:
             with self._db() as conn:
+                guard = ""
+                params = [str(status), str(resolution or ""), now_iso(), str(conflict_id)]
+                if observation_cursor is not None:
+                    guard = (" AND (SELECT COALESCE(MAX(rowid), 0) FROM state_observations "
+                             "WHERE entity_id = state_conflicts.entity_id) = ?")
+                    params.append(int(observation_cursor))
                 cursor = conn.execute(
                     "UPDATE state_conflicts SET status = ?, resolution = ?, "
-                    "resolved_at = ? WHERE id = ? AND status = 'reconciling'",
-                    [str(status), str(resolution or ""), now_iso(), str(conflict_id)])
+                    "resolved_at = ? WHERE id = ? AND status = 'reconciling'" + guard, params)
                 return cursor.rowcount > 0
         except sqlite3.Error as exc:
             raise StateStoreError("conflict", f"could not settle {conflict_id}",

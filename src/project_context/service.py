@@ -38,13 +38,9 @@ change no permission, tool, project or policy.
 
 Events
 ------
-The names this subsystem needs — ``project_context_attached`` and friends — are
-not in ``src/contracts/event.py::EVENT_NAMES``, and that file is not this
-change's to edit. ``_emit`` therefore *tries* the real ``emit()`` first, so the
-moment those names are added every event routes for free, and until then it
-records the envelope in a bounded in-process buffer (``unrouted_events()``) and
-logs it. Nothing silently vanishes and nothing is smuggled out under a name
-that means something else.
+``project_context_attached`` and friends are registered in the shared event
+contract. ``_emit`` routes through it first; a bounded in-process buffer
+(``unrouted_events()``) and logging remain a fallback for unavailable routing.
 """
 
 from __future__ import annotations
@@ -71,8 +67,7 @@ __all__ = [
     "note_retrieved", "service", "unrouted_events",
 ]
 
-#: The event names this subsystem emits. None of them is in ``EVENT_NAMES``
-#: yet; see the module docstring. Listed here so whoever adds them has the set.
+#: This subsystem's registered names; tests keep them aligned with EVENT_NAMES.
 CONTEXT_EVENT_NAMES: Tuple[str, ...] = (
     "project_context_attached",
     "project_context_detached",
@@ -90,11 +85,7 @@ _UNROUTED_LOCK = threading.RLock()
 
 
 def unrouted_events() -> List[Dict[str, Any]]:
-    """Events whose name ``EVENT_NAMES`` does not know yet, newest last.
-
-    An event nothing routes is a line in a log; keeping the envelopes means the
-    day the names land, the gap is provable rather than remembered.
-    """
+    """Envelopes rejected by the event contract, newest last, bounded in memory."""
     with _UNROUTED_LOCK:
         return [dict(e) for e in _UNROUTED]
 
@@ -113,7 +104,7 @@ def _emit(name: str, **payload: Any) -> None:
         contract_emit(name, **payload)
         return
     except ContractError:
-        pass  # not in EVENT_NAMES — expected until those names are added
+        pass  # Contract rejection is observable, not a failed project mutation.
     except Exception as exc:  # noqa: BLE001
         logger.debug("project_context: emit(%s) failed: %s", name, exc)
         return
@@ -122,8 +113,7 @@ def _emit(name: str, **payload: Any) -> None:
         _UNROUTED.append(envelope)
         if len(_UNROUTED) > _UNROUTED_MAX:
             del _UNROUTED[: len(_UNROUTED) - _UNROUTED_MAX]
-    logger.info("project_context event %s (not yet in EVENT_NAMES): %s",
-                name, {k: v for k, v in envelope.items() if k != "name"})
+    logger.info("project_context event %s rejected by the event contract; buffered", name)
 
 
 def note_retrieved(*, owner: str, project_id: str, link_id: str,
@@ -522,6 +512,14 @@ class ProjectContextService:
                 # new one is complete (§13).
                 patch["index_status"] = "stale"
 
+        enabled = patch.get("enabled", link.enabled)
+        retrieval = patch.get("retrieval_policy", link.retrieval_policy)
+        if not enabled or retrieval == "disabled":
+            patch["index_status"] = "none"
+        elif not link.enabled or link.retrieval_policy == "disabled":
+            # Re-enabling must check the source again, even if an old index
+            # remains available. A disabled source may have changed meanwhile.
+            patch["index_status"] = "queued"
         patch["updated_at"] = self._now()
         saved = self._op("patch_link")(project_id, link_id, patch, owner=owner)
         updated = self._parse_link(saved)
@@ -670,18 +668,28 @@ class ProjectContextService:
                                  index_status=marked.index_status,
                                  message=message)
         if revision == link.content_revision:
+            retry = (link.index_status == "failed" and link.enabled
+                     and link.retrieval_policy != "disabled")
+            patch = {"source_state": "ok", "source_checked_at": self._now(),
+                     "source_message": "", "updated_at": self._now()}
+            if retry:
+                patch["index_status"] = "queued"
             saved = self._op("patch_link")(
                 project_id,
                 link_id,
-                {"source_state": "ok", "source_checked_at": self._now(),
-                 "source_message": "", "updated_at": self._now()},
+                patch,
                 owner=owner,
             )
             checked = self._parse_link(saved) if saved else link
+            if retry:
+                self._event("project_context_refresh_queued", project_id=project_id,
+                            owner=owner, actor=actor, link=checked,
+                            previous_revision=link.content_revision, revision=revision)
             return RefreshResult(ok=True, link=checked, state="ok", changed=False,
                                  previous_revision=link.content_revision,
                                  revision=revision, index_status=checked.index_status,
-                                 message="the source has not changed")
+                                 message=("retrying the failed index" if retry else
+                                          "the source has not changed"))
 
         # index_revision is deliberately absent from this patch: the old index
         # keeps serving until the new one is complete.
@@ -745,11 +753,13 @@ class ProjectContextService:
             return self._index_failed(project_id, owner, actor, link, "missing",
                                       "the requested revision no longer exists")
         if target_revision != link.content_revision:
-            queued = self._parse_link(self._op("patch_link")(
-                project_id, link_id,
+            saved, _ = self._patch_index_link(project_id, owner, link,
                 {"content_revision": target_revision, "index_status": "stale",
                  "source_state": "ok", "source_checked_at": self._now(),
-                 "source_message": "", "updated_at": self._now()}, owner=owner))
+                 "source_message": "", "updated_at": self._now()})
+            if saved is None:
+                return self._index_superseded(project_id, owner, link_id)
+            queued = self._parse_link(saved)
             self._event("project_context_refresh_queued", project_id=project_id,
                         owner=owner, actor=actor, link=queued,
                         previous_revision=link.content_revision,
@@ -759,11 +769,13 @@ class ProjectContextService:
                                state="stale",
                                message="source changed before indexing; requeued")
 
-        marked = self._parse_link(self._op("patch_link")(
-            project_id, link_id,
+        saved, _ = self._patch_index_link(project_id, owner, link,
             {"index_status": "indexing", "source_state": "ok",
              "source_checked_at": self._now(), "source_message": "",
-             "updated_at": self._now()}, owner=owner))
+             "updated_at": self._now()})
+        if saved is None:
+            return self._index_superseded(project_id, owner, link_id)
+        marked = self._parse_link(saved)
         try:
             corpus = resolver.extract(
                 marked.source_ref, version_policy=marked.version_policy,
@@ -781,12 +793,20 @@ class ProjectContextService:
                                state="detached", error="detached",
                                message="link was detached while it was being indexed")
         current = self._parse_link(current_raw)
+        if not current.enabled or current.retrieval_policy == "disabled":
+            return IndexResult(ok=True, link=current, project_id=project_id,
+                               link_id=link_id, revision=current.content_revision,
+                               state="disabled",
+                               message="link was disabled during indexing; result discarded")
         after_meta = resolver.metadata(current.source_ref, owner=owner, project=project)
         after_refusal = self._refusal(after_meta, owner)
         after_revision = ("" if after_refusal else resolver.revision(
             current.source_ref, version_policy=current.version_policy,
             pinned_version=current.pinned_version))
-        corpus_revision = str(getattr(corpus, "revision", "") or target_revision)
+        corpus_revision = str(getattr(corpus, "revision", "") or "")
+        if not corpus_revision:
+            return self._index_failed(project_id, owner, actor, current, "failed",
+                                      "extraction returned no verifiable revision")
         if (after_refusal or not after_revision or after_revision != target_revision
                 or current.content_revision != target_revision
                 or corpus_revision != target_revision):
@@ -800,8 +820,10 @@ class ProjectContextService:
                 patch.update({"content_revision": latest, "source_state": "ok",
                               "source_message": "",
                               "source_checked_at": self._now()})
-            queued = self._parse_link(self._op("patch_link")(
-                project_id, link_id, patch, owner=owner))
+            saved, _ = self._patch_index_link(project_id, owner, current, patch)
+            if saved is None:
+                return self._index_superseded(project_id, owner, link_id)
+            queued = self._parse_link(saved)
             self._event("project_context_refresh_queued", project_id=project_id,
                         owner=owner, actor=actor, link=queued,
                         previous_revision=target_revision, revision=latest)
@@ -811,15 +833,22 @@ class ProjectContextService:
                                         "discarded and requeued"))
 
         from . import index as context_index
-        count = context_index.replace(owner=owner, project_id=project_id,
-                                      link_id=link_id, corpus=corpus)
-        ready = self._parse_link(self._op("patch_link")(
-            project_id, link_id,
-            {"index_status": "ready", "index_revision": target_revision,
-             "source_state": "ok", "source_checked_at": self._now(),
-             "source_message": (str(getattr(corpus, "note", "") or "")[:512]
-                                if getattr(corpus, "degraded", False) else ""),
-             "updated_at": self._now()}, owner=owner))
+        try:
+            saved, count = self._patch_index_link(project_id, owner, current,
+                {"index_status": "ready", "index_revision": target_revision,
+                 "source_state": "ok", "source_checked_at": self._now(),
+                 "source_message": (str(getattr(corpus, "note", "") or "")[:512]
+                                    if getattr(corpus, "degraded", False) else ""),
+                 "updated_at": self._now()},
+                before_patch=lambda: context_index.replace(owner=owner, project_id=project_id,
+                                                          link_id=link_id, corpus=corpus))
+        except Exception as exc:  # noqa: BLE001 - report failed publication, never a false ready
+            logger.exception("project_context: index publication failed for %s", link_id)
+            return self._index_failed(project_id, owner, actor, current, "failed",
+                                      f"{type(exc).__name__}: {exc}")
+        if saved is None:
+            return self._index_superseded(project_id, owner, link_id)
+        ready = self._parse_link(saved)
         self._event("project_context_indexed", project_id=project_id, owner=owner,
                     actor=actor, link=ready, revision=target_revision,
                     chunks=count, degraded=bool(getattr(corpus, "degraded", False)))
@@ -827,14 +856,36 @@ class ProjectContextService:
                            link_id=link_id, revision=target_revision, chunks=count,
                            state="ready", message=f"indexed {count} chunk(s)")
 
+    def _patch_index_link(self, project_id, owner, link, patch, *, before_patch=None):
+        # Only fields shared by the typed link and the store's legacy
+        # normalizer. Include policies, not just timestamps (second precision).
+        keys = ('enabled', 'retrieval_policy', 'version_policy', 'pinned_version',
+                'content_revision', 'index_revision', 'index_status', 'updated_at',
+                'source_state', 'source_checked_at', 'access_mode')
+        expected = {key: getattr(link, key) for key in keys}
+        return self._op('patch_link_if_current')(project_id, link.id, patch,
+            expected=expected, owner=owner, before_patch=before_patch)
+
+    def _index_superseded(self, project_id, owner, link_id):
+        raw = self._op('get_link')(project_id, link_id, owner=owner)
+        link = self._parse_link(raw) if raw else None
+        state = ('detached' if link is None else 'disabled' if
+                 not link.enabled or link.retrieval_policy == 'disabled' else 'superseded')
+        return IndexResult(ok=True, project_id=project_id, link_id=link_id, link=link,
+                           state=state, message='Link changed during indexing; stale work discarded without updating it.')
+
     def _index_failed(self, project_id: str, owner: str, actor: ActorRef,
                       link: ProjectContextLink, state: str,
                       message: str) -> IndexResult:
-        saved = self._op("patch_link")(
-            project_id, link.id,
-            {"index_status": "failed", "source_state": state,
+        saved, _ = self._patch_index_link(project_id, owner, link,
+            # A processing failure does not mean the source disappeared or
+            # lost access. "failed" belongs to index_status, not source_state.
+            {"index_status": "failed", "source_state": (link.source_state
+                                                         if state == "failed" else state),
              "source_checked_at": self._now(), "source_message": str(message)[:512],
-             "updated_at": self._now()}, owner=owner)
+             "updated_at": self._now()})
+        if saved is None:
+            return self._index_superseded(project_id, owner, link.id)
         failed = self._parse_link(saved) if saved else link
         self._event("project_context_index_failed", project_id=project_id,
                     owner=owner, actor=actor, link=failed, state=state,

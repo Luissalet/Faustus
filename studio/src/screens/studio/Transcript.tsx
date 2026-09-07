@@ -563,7 +563,7 @@ function AssistantTurn({
         {turn.speaker && <p className="fs-turn__speaker">{turn.speaker}</p>}
         {turn.thinking && getDisplay().thinking && (
           <details className="fs-studio__thinking">
-            <summary>Razonamiento {turn.streaming && !turn.text ? <span className="fs-studio__pulse" /> : null}</summary>
+            <summary>{t('Reasoning')} {turn.streaming && !turn.text ? <span className="fs-studio__pulse" /> : null}</summary>
             <p className="fs-prose">{turn.thinking}</p>
           </details>
         )}
@@ -586,7 +586,7 @@ function AssistantTurn({
           </Suspense>
         )}
         {turn.research && !turn.research.done && turn.streaming && <ResearchLine research={turn.research} />}
-        {body && <Rich text={body} />}
+        {body && <Rich text={body} onOpenFile={onOpenFile} />}
         {turn.streaming && body && <span className="fs-studio__cursor" aria-hidden="true" />}
         {turn.images.map((url) => (
           <img key={url} className="fs-studio__image" src={url} alt={t('Generated image')} loading="lazy" />
@@ -611,7 +611,7 @@ function AssistantTurn({
         {!turn.ask && turn.approval && <AnsweredCard decision={turn.approval.decision} />}
         {!turn.streaming && (turn.summary || turn.checks.length > 0) && (
           <Suspense fallback={null}>
-            <Harness mode="final" summary={turn.summary} checks={turn.checks} answer={turn.text} onNotice={onNotice} />
+            <Harness mode="final" summary={turn.summary} checks={turn.checks} answer={turn.text} onNotice={onNotice} permissionAnswered={Boolean(turn.approval)} />
           </Suspense>
         )}
         {turn.note && (

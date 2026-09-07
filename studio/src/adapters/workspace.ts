@@ -43,6 +43,7 @@ export interface WorkspaceFileText {
   truncated: boolean;
   text: string;
   lines: number;
+  revision?: string;
 }
 
 /** Text of one file inside the bound workspace (the side viewer). */
@@ -56,7 +57,14 @@ export async function readWorkspaceFile(workspace: string, path: string, signal?
     truncated: Boolean(raw.truncated),
     text: raw.text ?? '',
     lines: raw.lines ?? 0,
+    revision: raw.revision,
   };
+}
+
+export async function saveWorkspaceFile(workspace:string,path:string,content:string,revision:string):Promise<WorkspaceFileText> {
+  const response=await fetch('/api/workspace/file',{method:'PUT',credentials:'same-origin',signal:AbortSignal.timeout(20000),headers:{'Content-Type':'application/json'},body:JSON.stringify({workspace,path,content,revision})});
+  if(!response.ok){let detail='';try{detail=String((await response.json()).detail||'');}catch{/* generic status */}throw new ApiError(detail||'Could not save the file',response.status);}
+  return response.json();
 }
 
 export interface FileDiff {

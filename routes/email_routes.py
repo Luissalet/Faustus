@@ -31,6 +31,7 @@ from html.parser import HTMLParser as _HTMLParser
 import logging
 import uuid
 from datetime import datetime
+from core.database import utcnow_naive
 from pathlib import Path
 
 from email.mime.text import MIMEText
@@ -161,7 +162,7 @@ def _set_auto_reply_settings_for_account(settings: dict, data: dict, account_id:
     if "email_auto_reply" in data:
         next_auto_reply = bool(target.get("email_auto_reply", False))
         if next_auto_reply and (not prev_auto_reply or not str(target.get("email_auto_reply_enabled_at") or "").strip()):
-            target["email_auto_reply_enabled_at"] = datetime.utcnow().isoformat()
+            target["email_auto_reply_enabled_at"] = utcnow_naive().isoformat()
         elif not next_auto_reply:
             target.pop("email_auto_reply_enabled_at", None)
     if key:
@@ -372,7 +373,7 @@ def _record_email_received_events(owner: str, account_id: str | None, folder: st
     try:
         from src.event_bus import fire_event
         account_key = (account_id or "default").strip() or "default"
-        now = datetime.utcnow().isoformat() + "Z"
+        now = utcnow_naive().isoformat() + "Z"
         keys = []
         for e in emails:
             key = (e.get("message_id") or e.get("uid") or "").strip()
@@ -1049,7 +1050,7 @@ def _email_imap_search_criteria(query: str) -> str:
 def _email_index_upsert(owner: str, account_id: str | None, folder: str, emails: list[dict]):
     if not emails:
         return
-    now = datetime.utcnow().isoformat() + "Z"
+    now = utcnow_naive().isoformat() + "Z"
     rows = []
     for e in emails:
         uid = str(e.get("uid") or "").strip()
@@ -1127,7 +1128,7 @@ def _email_index_update_flags(owner: str, account_id: str | None, folder: str, u
                 parts.discard(flag)
             conn.execute(
                 "UPDATE email_message_index SET flags=?, updated_at=? WHERE owner=? AND account_key=? AND folder=? AND uid=?",
-                (" ".join(sorted(parts)), datetime.utcnow().isoformat() + "Z", owner or "", _account_cache_key(account_id, owner), folder, str(uid)),
+                (" ".join(sorted(parts)), utcnow_naive().isoformat() + "Z", owner or "", _account_cache_key(account_id, owner), folder, str(uid)),
             )
             conn.commit()
         finally:
@@ -1187,7 +1188,7 @@ def _email_preview_cache_put(owner: str, account_id: str | None, folder: str, ui
     if not payload:
         return
     try:
-        now = datetime.utcnow().isoformat() + "Z"
+        now = utcnow_naive().isoformat() + "Z"
         message_id = (payload.get("message_id") or "").strip()
         stored = dict(payload)
         stored["sync"] = {"source": "preview_cache", "updated_at": now}
@@ -1275,7 +1276,7 @@ def _email_attachment_meta_cache_put(owner: str, account_id: str | None, folder:
                     str(uid),
                     (message_id or "").strip(),
                     json.dumps(attachments or [], ensure_ascii=False),
-                    datetime.utcnow().isoformat() + "Z",
+                    utcnow_naive().isoformat() + "Z",
                 ),
             )
             conn.commit()
@@ -1802,7 +1803,7 @@ def setup_email_routes():
             "emails": visible,
             "total": total,
             "folder": folder,
-            "sync": {"source": "fixture", "updated_at": datetime.utcnow().isoformat() + "Z"},
+            "sync": {"source": "fixture", "updated_at": utcnow_naive().isoformat() + "Z"},
         }
 
     def _fixture_email_read(uid: str, folder: str, owner: str) -> dict | None:
@@ -1892,13 +1893,13 @@ def setup_email_routes():
                 # "What's pending in the last month" — UNANSWERED + delivered
                 # within the last 30 days. SINCE takes a DD-Mon-YYYY date.
                 from datetime import datetime as _dt, timedelta as _td
-                _since = (_dt.utcnow() - _td(days=30)).strftime("%d-%b-%Y")
+                _since = (utcnow_naive() - _td(days=30)).strftime("%d-%b-%Y")
                 status, data = _imap_uid_search(conn, f'(UNANSWERED SINCE "{_since}"{from_clause})')
             elif filter_ == "stale_30d":
                 # "What's been sitting too long" — UNANSWERED + delivered
                 # MORE than 30 days ago. BEFORE excludes the cutoff date itself.
                 from datetime import datetime as _dt, timedelta as _td
-                _before = (_dt.utcnow() - _td(days=30)).strftime("%d-%b-%Y")
+                _before = (utcnow_naive() - _td(days=30)).strftime("%d-%b-%Y")
                 status, data = _imap_uid_search(conn, f'(UNANSWERED BEFORE "{_before}"{from_clause})')
             elif filter_ and filter_.startswith("tag:"):
                 # Tag-based filter — resolve UIDs from email_tags first, then
@@ -2249,7 +2250,7 @@ def setup_email_routes():
                 "sync": {
                     "source": "imap",
                     "indexed": len(cached_rows) if uid_list else 0,
-                    "updated_at": datetime.utcnow().isoformat() + "Z",
+                    "updated_at": utcnow_naive().isoformat() + "Z",
                 },
             }
         except EmailNotConfiguredError:
@@ -2853,7 +2854,7 @@ def setup_email_routes():
                         "source": "imap",
                         "sync": {
                             "source": "imap",
-                            "updated_at": datetime.utcnow().isoformat() + "Z",
+                            "updated_at": utcnow_naive().isoformat() + "Z",
                         },
                     }
 
@@ -2912,7 +2913,7 @@ def setup_email_routes():
                     "source": "imap",
                     "sync": {
                         "source": "imap",
-                        "updated_at": datetime.utcnow().isoformat() + "Z",
+                        "updated_at": utcnow_naive().isoformat() + "Z",
                     },
                 }
         except Exception as e:
@@ -3588,7 +3589,7 @@ def setup_email_routes():
                 )
 
                 upload_id = f"{uuid.uuid4().hex}.pdf"
-                today = datetime.utcnow().strftime("%Y/%m/%d")
+                today = utcnow_naive().strftime("%Y/%m/%d")
                 dated_dir = _os.path.join(UPLOAD_DIR, today)
                 _os.makedirs(dated_dir, exist_ok=True)
                 dest_path = _os.path.join(dated_dir, upload_id)
@@ -3959,7 +3960,7 @@ def setup_email_routes():
                 "folders": result,
                 "sync": {
                     "source": "imap",
-                    "updated_at": datetime.utcnow().isoformat() + "Z",
+                    "updated_at": utcnow_naive().isoformat() + "Z",
                     "status": status.decode() if isinstance(status, bytes) else status,
                 },
             }
@@ -4280,7 +4281,7 @@ def setup_email_routes():
         if cc:
             outer["Cc"] = cc
         outer["Subject"] = subject or ""
-        outer["Date"] = datetime.utcnow().strftime("%a, %d %b %Y %H:%M:%S +0000")
+        outer["Date"] = utcnow_naive().strftime("%a, %d %b %Y %H:%M:%S +0000")
         _apply_odysseus_headers(outer, odysseus_kind or "scheduled", odysseus_ref)
         if in_reply_to:
             outer["In-Reply-To"] = in_reply_to
@@ -4321,14 +4322,14 @@ def setup_email_routes():
                 parsed_at = _dt.fromisoformat(send_at.replace("Z", "+00:00"))
             except ValueError:
                 return {"success": False, "error": "send_at must be ISO8601"}
-            now_utc = _dt.now(_tz.utc) if parsed_at.tzinfo else _dt.utcnow()
+            now_utc = _dt.now(_tz.utc) if parsed_at.tzinfo else utcnow_naive()
             # Tiny 30s grace so a user clicking Send right at the chosen
             # minute doesn't trip the past-time guard.
             if parsed_at < now_utc:
                 return {"success": False, "error": "send_at must be in the future"}
             # Normalize to naive UTC before storing: the poller selects due
             # rows with a lexicographic string compare against a naive
-            # datetime.utcnow().isoformat(), so storing the raw client string
+            # utcnow_naive().isoformat(), so storing the raw client string
             # makes "+02:00" schedules fire hours late, negative offsets fire
             # hours early, and a "Z" suffix compares after the fractional
             # seconds of the poller timestamp.
@@ -4365,7 +4366,7 @@ def setup_email_routes():
                 req.get("references") or None,
                 json.dumps(attachments),
                 send_at,
-                datetime.utcnow().isoformat(),
+                utcnow_naive().isoformat(),
                 req.get("account_id") or None,
                 req.get("odysseus_kind") or "scheduled",
                 owner or "",
@@ -4456,7 +4457,7 @@ def setup_email_routes():
                 """UPDATE scheduled_emails
                    SET status = 'pending', send_at = ?
                    WHERE id = ? AND status = 'agent_draft' AND owner = ?""",
-                (datetime.utcnow().isoformat(), sid, owner or ""),
+                (utcnow_naive().isoformat(), sid, owner or ""),
             )
             conn.commit()
             affected = cur.rowcount
@@ -4570,7 +4571,7 @@ def setup_email_routes():
         if req.cc:
             outer["Cc"] = req.cc
         outer["Subject"] = req.subject
-        outer["Date"] = datetime.utcnow().strftime("%a, %d %b %Y %H:%M:%S +0000")
+        outer["Date"] = utcnow_naive().strftime("%a, %d %b %Y %H:%M:%S +0000")
         outer["Message-ID"] = email.utils.make_msgid(domain="odysseus.local")
 
         if req.in_reply_to:
@@ -4768,7 +4769,7 @@ def setup_email_routes():
         if req.bcc:
             msg["Bcc"] = req.bcc
         msg["Subject"] = req.subject
-        msg["Date"] = datetime.utcnow().strftime("%a, %d %b %Y %H:%M:%S +0000")
+        msg["Date"] = utcnow_naive().strftime("%a, %d %b %Y %H:%M:%S +0000")
 
         if req.in_reply_to:
             msg["In-Reply-To"] = req.in_reply_to
@@ -5000,7 +5001,7 @@ def setup_email_routes():
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
                         mid, owner, data.get("uid", ""), data.get("folder", ""),
-                        subject, sender, content, model, datetime.utcnow().isoformat(),
+                        subject, sender, content, model, utcnow_naive().isoformat(),
                     ))
                     _c.commit()
                     _c.close()
@@ -5131,7 +5132,7 @@ def setup_email_routes():
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
                         body_hash, owner, target_language, data.get("uid", ""), data.get("folder", ""),
-                        subject, sender, "", 1, model, datetime.utcnow().isoformat(),
+                        subject, sender, "", 1, model, utcnow_naive().isoformat(),
                     ))
                     _c.commit()
                     _c.close()
@@ -5155,7 +5156,7 @@ def setup_email_routes():
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     body_hash, owner, target_language, data.get("uid", ""), data.get("folder", ""),
-                    subject, sender, content, 0, model, datetime.utcnow().isoformat(),
+                    subject, sender, content, 0, model, utcnow_naive().isoformat(),
                 ))
                 _c.commit()
                 _c.close()
@@ -5449,7 +5450,7 @@ def setup_email_routes():
                         INSERT OR REPLACE INTO email_ai_replies
                         (message_id, owner, uid, folder, reply, model_used, created_at)
                         VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """, (message_id, owner, source_uid, source_folder, reply, model, datetime.utcnow().isoformat()))
+                    """, (message_id, owner, source_uid, source_folder, reply, model, utcnow_naive().isoformat()))
                     _c.commit()
                     _c.close()
                 except Exception as e:

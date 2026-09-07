@@ -2118,6 +2118,9 @@ def llm_call(url: str, model: str, messages: List[Dict], temperature: float = LL
     the native endpoint to make a schema fit: no sync caller asks for one, so
     that would be an unexercised routing change on a shared code path.
     """
+    if str(url or '').startswith('faustus-cli://'):
+        from src.cli_model import complete
+        return complete(url, model, messages, headers, timeout)
     h = _provider_headers(_detect_provider(url))
     # Tolerate headers that arrive as a JSON string (some sessions stored them
     # double-encoded) — otherwise h.update() throws "dictionary update sequence
@@ -2438,6 +2441,10 @@ async def llm_call_async(
     enforces it while decoding (``format`` on /api/chat); every other provider
     ignores it and never sees it, so callers keep their own parsing as a net.
     """
+    if str(url or '').startswith('faustus-cli://'):
+        from src.cli_model import complete_async
+        text = await complete_async(url, model, messages, headers, timeout)
+        return (text, model) if return_model_metadata else text
     # A direct API-chat endpoint supplied by a token holder persists this
     # private marker with the session. It is consumed here and NEVER sent to
     # the provider. This keeps resumed sessions protected from DNS rebinding.
@@ -2999,6 +3006,11 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
                      tools: Optional[List[Dict]] = None, session_id: Optional[str] = None,
                      tool_choice_none: bool = False, workload: str = "foreground",
                      gen_overrides: Optional[Dict] = None):
+    if str(url or '').startswith('faustus-cli://'):
+        from src.cli_model import stream
+        async for chunk in stream(url, model, messages, headers, timeout, tools=tools):
+            yield chunk
+        return
     # Saved per-model load defaults (Settings → Local models) ride along as
     # overrides — under the caller's own — so a saved num_ctx also triggers
     # the native reroute below and lands in the Ollama `options`.
@@ -4047,6 +4059,11 @@ async def stream_llm_with_fallback(candidates, messages, **kwargs):
         raw_candidates,
         candidate_route_descriptors,
     )
+    # A selected official client is an explicit account/billing choice, even
+    # for background callers using the legacy unrestricted fallback policy.
+    if str(cands[0][0] or '').startswith('faustus-cli://'):
+        cands = cands[:1]
+        route_descriptors = route_descriptors[:1]
 
     primary_model = cands[0][1]
     primary_route = route_descriptors[0]

@@ -100,6 +100,9 @@ def _drive_scheduler(monkeypatch, pre_start_setup=None):
     dispatched = []
     def _fake_create_task(coro):
         dispatched.append(coro)
+        # This fake deliberately never schedules the coroutine. Own and close
+        # it now, instead of leaking a RuntimeWarning into a later test's GC.
+        coro.close()
         class _T:
             def cancel(self): pass
         return _T()

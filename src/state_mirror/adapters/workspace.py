@@ -66,11 +66,6 @@ SCHEMA = "project_state.v1"
 #: Kept as data rather than as prose in a docstring so a diagnostics route can
 #: show a person the gap instead of leaving them to infer it from an absence.
 UNOBSERVED_FIELDS: Dict[str, str] = {
-    "head": "nothing in this repository exposes a workspace's HEAD sha to a "
-            "caller; git_invariants owns running git safely and was opened for "
-            "one addition, and parsing .git/HEAD here would be a second, "
-            "weaker implementation of what git rev-parse already gets right "
-            "for worktrees and .git-file checkouts",
     "last_verified_changeset": "src/changesets.py builds a ChangeSet and "
                                "stores nothing -- app.py says so out loud -- "
                                "so there is no last one to point at",
@@ -130,6 +125,12 @@ def workspace_identifier(scope: Scope) -> str:
     return f"{_slug(os.path.basename(absolute.rstrip(os.sep)))}-{digest}"
 
 
+def read_head(workspace: str) -> str:
+    """Read the commit through the same bounded, non-interactive Git runner."""
+    from src.git_invariants import current_head
+    return current_head(workspace, timeout=GIT_TIMEOUT_SECONDS)
+
+
 def read_branch(workspace: str) -> str:
     """The branch, or `""` when there is not one this adapter may name.
 
@@ -172,7 +173,8 @@ def _read_uncached(workspace: str) -> Dict[str, Any]:
     reading: Dict[str, Any] = {"available": os.path.isdir(workspace)}
     if not reading["available"]:
         return reading
-    for key, reader in (("branch", read_branch),
+    for key, reader in (("head", read_head),
+                        ("branch", read_branch),
                         ("changes", read_changes),
                         ("checkpoints", read_checkpoints)):
         try:
@@ -216,6 +218,9 @@ def _state_from(reading: Dict[str, Any]) -> Dict[str, Any]:
         return state
 
     branch = str(reading.get("branch") or "").strip()
+    head = str(reading.get("head") or "").strip()
+    if head:
+        state["head"] = head
     if branch:
         state["current_branch"] = branch
 

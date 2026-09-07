@@ -33,14 +33,17 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import shutil
+import subprocess
+import time
 from typing import Any, AsyncIterator, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from core.middleware import require_admin
+from core.middleware import require_admin, require_human
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +56,11 @@ LINE_CHARS = 2000
 class LaunchBody(BaseModel):
     config_only: Optional[bool] = None
     model: Optional[str] = None
+
+
+class ClientModelBody(BaseModel):
+    billing_mode: str
+    model: str = 'client-default'
 
 
 def _payload(*, versions: bool = False, refresh: bool = False) -> Dict[str, Any]:
@@ -71,23 +79,41 @@ async def _launch_stream(argv: list, key: str) -> AsyncIterator[str]:
                                  "command": " ".join(argv)}) + "\n\n"
     proc = None
     code: Optional[int] = None
+    deadline = time.monotonic() + LAUNCH_TIMEOUT_S
     try:
-        proc = await asyncio.create_subprocess_exec(
-            *argv, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
+        process_options = ({"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0)}
+                           if os.name == "nt" else {"start_new_session": True})
+        spawn = asyncio.create_task(asyncio.create_subprocess_exec(
+            *argv, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+            **process_options))
+        try:
+            proc = await asyncio.shield(spawn)
+        except asyncio.CancelledError:
+            # Keep the process handle even if the HTTP stream disappears while
+            # Windows is still starting it; finally owns its cleanup.
+            proc = await spawn
+            raise
         assert proc.stdout is not None
         while True:
             try:
-                raw = await asyncio.wait_for(proc.stdout.readline(), timeout=LAUNCH_TIMEOUT_S)
+                raw = await asyncio.wait_for(proc.stdout.readline(),
+                                            timeout=max(0.001, deadline - time.monotonic()))
             except asyncio.TimeoutError:
                 yield "data: " + json.dumps({"event": "error", "runner": key,
-                                             "message": f"`{argv[0]} launch` produced nothing for "
+                                             "message": f"`{argv[0]} launch` exceeded its time limit of "
                                                         f"{int(LAUNCH_TIMEOUT_S)}s — stopped"}) + "\n\n"
                 break
             if not raw:
                 break
             line = raw.decode("utf-8", "replace").rstrip("\n")[:LINE_CHARS]
             yield "data: " + json.dumps({"event": "output", "runner": key, "line": line}) + "\n\n"
-        code = await proc.wait()
+        if proc.returncode is None:
+            try:
+                code = await asyncio.wait_for(proc.wait(), timeout=max(0.001, deadline - time.monotonic()))
+            except asyncio.TimeoutError:
+                pass
+        else:
+            code = proc.returncode
     except FileNotFoundError:
         yield "data: " + json.dumps({"event": "error", "runner": key,
                                      "message": "ollama is not installed on this machine"}) + "\n\n"
@@ -98,9 +124,13 @@ async def _launch_stream(argv: list, key: str) -> AsyncIterator[str]:
     finally:
         if proc is not None and proc.returncode is None:
             try:
-                proc.kill()
+                # The installer can spawn helpers. Disconnect/timeout must not
+                # leave them running, or await an unbounded proc.wait().
+                from src.agent_tools.subprocess_tools import _kill_tree
+                await asyncio.to_thread(_kill_tree, proc)
+                await asyncio.wait_for(proc.wait(), timeout=5)
             except Exception:  # noqa: BLE001
-                pass
+                logger.warning("agent runner installer cleanup could not be confirmed")
     installed = False
     try:
         from src import agent_runners as reg
@@ -136,6 +166,83 @@ def setup_agent_runner_routes() -> APIRouter:
         row["launch_config_command"] = " ".join(reg.launch_argv(runner.key, config_only=True))
         return {"status": "success", "runner": row, "enabled": reg.enabled(),
                 "timeout_s": reg.timeout_s(), "guard_note": reg.GUARD_NOTE}
+
+    @router.get("/{key}/connection")
+    async def connection(key: str, _admin: None = Depends(require_admin)) -> Dict[str, Any]:
+        """Explicit read-only check; listing runners never starts an auth probe."""
+        from src.runner_connections import AUTH_COMMANDS, connection_status
+        if key not in AUTH_COMMANDS:
+            raise HTTPException(status_code=404, detail="No verified connection diagnostic for this runner")
+        return {"status": "success", "connection": await connection_status(key)}
+
+    @router.post("/{key}/model")
+    async def connect_model(key: str, body: ClientModelBody, request: Request,
+                            _human: None = Depends(require_human)) -> Dict[str, Any]:
+        """Human-only opt-in to text inference; never enables all runners."""
+        import secrets
+        import uuid
+        from core.database import ModelEndpoint, SessionLocal
+        from routes.workspace_routes import _reject_cross_origin
+        from src.auth_helpers import get_current_user
+        from src import agent_runners as reg
+        from src.runner_billing import prepare, verify
+        _reject_cross_origin(request)
+        if key != 'claude':
+            raise HTTPException(400, 'This client does not yet have a verified text-only chat adapter')
+        if not reg.enabled():
+            raise HTTPException(409, 'Enable external agent runners explicitly in Settings first')
+        model = body.model.strip()
+        if not model or len(model) > 200 or model.startswith('-') or any(c in model for c in '\r\n\0'):
+            raise HTTPException(400, 'Invalid client model identifier')
+        owner = get_current_user(request)
+        if not owner:
+            # NULL-owner endpoints are shared; this authority must be private.
+            raise HTTPException(403, 'Sign in to add a private official-client connection')
+        try:
+            _, env = prepare(key, body.billing_mode, [], reg.build_env(reg.get(key, help_source='')))
+            facts = await asyncio.to_thread(verify, key, body.billing_mode, env)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(503, 'Official-client authentication could not be checked; no model added') from exc
+        def persist():
+            # The database primary key arbitrates concurrent/retried registrations.
+            # Never rotate the capability or silently re-enable a revoked endpoint.
+            from sqlalchemy.exc import IntegrityError
+            identity = json.dumps(['faustus-official-cli-v1', owner, key, body.billing_mode, model])
+            ident = uuid.uuid5(uuid.NAMESPACE_URL, identity).hex
+            base_url = f'faustus-cli://claude/{body.billing_mode}/{ident}'
+            reused = False
+            with SessionLocal() as db:
+                ep = db.get(ModelEndpoint, ident)
+                if ep is None:
+                    ep = ModelEndpoint(id=ident, name=f'Claude Code · {body.billing_mode}',
+                        base_url=base_url, api_key=secrets.token_urlsafe(48), owner=owner, is_enabled=True,
+                        endpoint_kind='official-cli', model_refresh_mode='manual', model_type='llm',
+                        supports_tools=False, pinned_models=json.dumps([model]), cached_models=json.dumps([model]))
+                    db.add(ep)
+                    try:
+                        db.commit()
+                    except IntegrityError:
+                        db.rollback()
+                        ep = db.get(ModelEndpoint, ident)
+                        if ep is None:
+                            raise
+                        reused = True
+                else:
+                    reused = True
+                if reused:
+                    from src.cli_model import authorize, ClientModelError
+                    if ep.owner != owner or ep.base_url != base_url or ep.supports_tools:
+                        raise HTTPException(409, 'This connection was modified; review it in Settings')
+                    try:
+                        authorize(base_url, model, {'Authorization': f'Bearer {ep.api_key}'})
+                    except ClientModelError as exc:
+                        raise HTTPException(409, 'This connection was disabled or modified; review it in Settings') from exc
+            return {'status': 'success', 'endpoint_id': ident, 'model': model, 'billing': facts,
+                    'text_only': True, 'tools': 'faustus', 'default_changed': False, 'reused': reused}
+        # A SQLite lock must not stop all chats or prevent cancellation requests.
+        return await asyncio.to_thread(persist)
 
     @router.post("/{key}/launch")
     async def launch(key: str, body: LaunchBody,

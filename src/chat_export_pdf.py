@@ -91,6 +91,10 @@ LABELS = {
     "image": "[image]",
 }
 
+from src.export_locale import Labels, localized_render
+
+LABELS = Labels(LABELS, pdf=True)
+
 # --- page geometry -----------------------------------------------------------
 PAGE_MARGIN_X = 50.0          # ~17.6 mm
 PAGE_MARGIN_TOP = 44.0
@@ -1058,6 +1062,7 @@ def _numbered_canvas(kit: _FontKit, footer_left: str):
 # ---------------------------------------------------------------------------
 
 
+@localized_render
 def render(transcript: Transcript) -> bytes:
     """Render a transcript as a PDF document.
 
@@ -1089,8 +1094,8 @@ def render(transcript: Transcript) -> bytes:
         pagesize=(page_width, page_height),
         leftMargin=PAGE_MARGIN_X, rightMargin=PAGE_MARGIN_X,
         topMargin=PAGE_MARGIN_TOP, bottomMargin=PAGE_MARGIN_BOTTOM,
-        title=name, author="Faustus", subject="Chat transcript",
-        creator="Faustus chat export",
+        title=name, author="Faustus", subject=LABELS["document"] if is_document(transcript) else "Chat transcript",
+        creator=LABELS["document_creator"] if is_document(transcript) else "Faustus chat export",
     )
     doc.build(story, canvasmaker=_numbered_canvas(kit, footer_left))
     return buffer.getvalue()

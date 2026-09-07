@@ -85,11 +85,14 @@ COLLECTION_NAME = "odysseus_tool_index"
 # Each tool gets a searchable description that helps retrieval.
 # These are richer than the system prompt one-liners — they're for embedding.
 BUILTIN_TOOL_DESCRIPTIONS: Dict[str, str] = {
+    "plan_media_transform": "Preflight a local media conversion without writing: convert/resize image to PNG JPEG WebP, or extract the first audio track from audio/video to WAV MP3. Reports requirements, loss of transparency/quality, limits and missing FFmpeg. Planificar conversión, redimensionar imagen, extraer audio de vídeo.",
+    "transform_media": "Convert and resize local single-frame images to PNG JPEG WebP, or extract audio from video/audio to WAV MP3 using a fixed validated recipe. Writes a NEW workspace file, preserves original, no shell/filter code. Checks output and returns source/output hashes. Convertir foto, reducir resolución, extraer audio. Use plan_media_transform for read-only preflight. Not AI generation, video encoding, transcription or subtitles.",
     "bash": "Run shell commands on the server. Install packages, git operations, builds, system info, process management. Prefer a dedicated tool whenever one fits the job (file read/write/edit, search, listing); use bash only for what no dedicated tool covers. Do not use for web lookup/search; use web_search or web_fetch when web tools are available.",
     "python": "Execute Python code for computation, data processing, math, scripting, and parsing. Not for writing code for the user. Prefer a dedicated tool for reading, writing, or searching files; use python only for what no dedicated tool covers. Do not use for web lookup/search; use web_search or web_fetch when web tools are available.",
     "web_search": "Quick single web lookup for a fact, current event, latest/current information, or doc mid-task. Use this instead of bash/curl/python/requests for web searches. NOT for 'research X' / 'do research on X' requests — those are deep-research jobs (use trigger_research). web_search = one query; trigger_research = a full researched report in the sidebar.",
     "web_fetch": "Fetch and read the text content of a specific URL/website the user names (e.g. 'check example.com', 'open this link'). Use when you have a concrete URL; for open-ended lookups use web_search instead.",
     "read_file": "Read a file from disk and return its contents. View source code, config files, logs. Supports an optional line range (offset/limit) for large files.",
+    "inspect_media": "Inspect local images, audio and video: width, height, dimensions, display orientation, transparency channel, format, duration, codecs, tracks, sample rate and channels. Measure before editing or converting media, without a model or shell. Imagen, vídeo, audio, dimensiones, duración, resolución, pistas. Does not transcribe or describe visual content.",
     "grep": "Search file CONTENTS for a regex across a directory tree (ripgrep-backed, honours .gitignore). Returns file:line:match. Use to find where code/symbols/strings live — prefer over bash grep.",
     "glob": "Find FILES by glob pattern (e.g. '**/*.py'), newest first. Use to locate files by name/extension — prefer over bash find/ls.",
     "ls": "List a directory's entries (folders then files with sizes). Use to see what's in a folder — prefer over bash ls.",
@@ -753,11 +756,16 @@ class ToolIndex:
     }
 
     def get_tools_for_query(
-        self, query: str, k: int = 8, always_include: Optional[Set[str]] = None
+        self, query: str, k: int = 8, always_include: Optional[Set[str]] = None,
+        *, owner: Optional[str] = None, rerank_tools: bool = False,
     ) -> Set[str]:
         """Get the set of tool names to include for a given user query."""
         base = set(always_include or ALWAYS_AVAILABLE)
-        retrieved = self.retrieve(query, k=k)
+        if rerank_tools and owner and k > 0:
+            candidates = self.retrieve(query, k=min(32, max(k, k * 4)))
+            retrieved = rerank_candidates(query, candidates, k=k, owner=owner)
+        else:
+            retrieved = self.retrieve(query, k=k)
         base.update(retrieved)
         # Keyword-based force-include for common intents. Match on word
         # boundaries, not raw substrings, so short hints like "fix", "line",
@@ -844,6 +852,45 @@ _retry_interval = _RETRY_INTERVAL
 # once (keyword fallback) instead of queueing behind a model load; the agent
 # loop's per-request timeout therefore never fires on the index itself.
 _build_lock = threading.Lock()
+
+
+def tool_rerank_options(owner: Optional[str]) -> dict:
+    """Default-off, owner-bound choice; legacy callers keep their exact signature."""
+    if not owner or not str(owner).strip():
+        return {}
+    try:
+        from src.settings import get_user_setting
+        if get_user_setting("agent_tool_rerank", owner, False) is True:
+            return {"owner": owner, "rerank_tools": True}
+    except Exception:
+        logger.debug("tool reranker setting unavailable", exc_info=True)
+    return {}
+
+
+def rerank_candidates(query: str, names: List[str], *, k: int, owner: str) -> List[str]:
+    """Rescore public built-ins only. MCP positions and descriptions stay local."""
+    fallback = list(names[:max(0, k)])
+    if not owner or not str(owner).strip() or k <= 0:
+        return fallback
+    public = [{"id": name, "text": BUILTIN_TOOL_DESCRIPTIONS[name]}
+              for name in names if name in BUILTIN_TOOL_DESCRIPTIONS]
+    if len(public) < 2:
+        return fallback
+    try:
+        from src.rerank import rerank
+        result = rerank(query, public, owner=owner, head=32, timeout=2.0)
+        if not result.reranked:
+            logger.info("Tool reranking unavailable (%s); keeping retrieval order", result.reason)
+            return fallback
+        ordered = [row["id"] for row in result.passages]
+        if sorted(ordered) != sorted(row["id"] for row in public):
+            return fallback
+        ranked = iter(ordered)
+        return [next(ranked) if name in BUILTIN_TOOL_DESCRIPTIONS else name
+                for name in names][:k]
+    except Exception:
+        logger.warning("Tool reranking failed; keeping retrieval order", exc_info=True)
+        return fallback
 
 
 def _build_index() -> ToolIndex:

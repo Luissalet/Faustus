@@ -75,6 +75,10 @@ LABELS = {
     "page_of": " of ",
 }
 
+from src.export_locale import Labels, localized_render
+
+LABELS = Labels(LABELS)
+
 ROLE_COLORS = {
     "user": ("1D4ED8", "EFF6FF"),
     "assistant": ("047857", "ECFDF5"),
@@ -737,6 +741,7 @@ def _setup_page(document, name: str) -> float:
 # ---------------------------------------------------------------------------
 
 
+@localized_render
 def render(transcript: Transcript) -> bytes:
     """Render a transcript as a .docx document.
 
@@ -748,6 +753,9 @@ def render(transcript: Transcript) -> bytes:
     styles = _build_styles(document)
     name = _clean(getattr(transcript, "name", "")).strip() or "Conversation"
     text_width_pt = _setup_page(document, name)
+    if is_document(transcript):
+        document.core_properties.comments = LABELS['document_comment']
+        document.core_properties.subject = LABELS['document']
     ctx = _Ctx(document, styles, text_width_pt, document_mode=is_document(transcript))
 
     _add_header(ctx, transcript)

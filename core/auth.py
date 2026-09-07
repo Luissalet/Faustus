@@ -171,26 +171,50 @@ class AuthManager:
         self._migrate_secret_material()
 
     def _load(self):
+        """Only a missing first-run file permits setup; read failures fail closed.
+
+        Parse into a temporary value so a failed reload cannot discard users.
+        Windows replacement/antivirus sharing errors may be transient, so retry
+        briefly before refusing to start. Never repair or overwrite the file.
+        """
         try:
-            if os.path.exists(self.auth_path):
-                with open(self.auth_path, "r", encoding="utf-8") as f:
-                    self._config = json.load(f)
-                # Normalize all stored usernames to lowercase so they match
-                # the .strip().lower() applied at login/verify time. Fixes
-                # "Invalid credentials" when auth.json was written with
-                # mixed-case keys (e.g. via manual edit or a future migration).
-                if "users" in self._config:
-                    self._config["users"] = {
-                        k.strip().lower(): v
-                        for k, v in self._config["users"].items()
-                    }
-                logger.info("Auth config loaded")
-            else:
-                self._config = {}
-                logger.info("No auth config found — first-run setup required")
+            for attempt in range(3):
+                try:
+                    with open(self.auth_path, "r", encoding="utf-8") as f:
+                        loaded = json.load(f)
+                    break
+                except PermissionError:
+                    if attempt == 2:
+                        raise
+                    time.sleep(0.05 * (attempt + 1))
+                except FileNotFoundError:
+                    if self._config:
+                        raise
+                    logger.info("No auth config found — first-run setup required")
+                    return
+            if not isinstance(loaded, dict):
+                raise ValueError("Auth configuration must be an object")
+            if "users" in loaded:
+                if not isinstance(loaded["users"], dict):
+                    raise ValueError("Auth users must be an object")
+                normalized = {}
+                for key, user in loaded["users"].items():
+                    if not isinstance(key, str) or not key.strip() or not isinstance(user, dict):
+                        raise ValueError("Invalid auth user record")
+                    name = key.strip().lower()
+                    if name in normalized:
+                        raise ValueError("Ambiguous normalized auth usernames")
+                    normalized[name] = user
+                loaded["users"] = normalized
+            self._config = loaded
+            logger.info("Auth config loaded")
         except Exception as e:
-            logger.error(f"Failed to load auth config: {e}")
-            self._config = {}
+            logger.error("Could not load authentication configuration (%s); refusing first-run fallback", type(e).__name__)
+            raise RuntimeError(
+                "Could not load authentication configuration. Check auth.json "
+                "permissions and JSON validity, or restore a known-good backup. "
+                "The file has not been reset; first-run setup is not permitted."
+            ) from e
 
     def _load_sessions(self):
         """Load persisted session digests from disk, pruning expired ones."""

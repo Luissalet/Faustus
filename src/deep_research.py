@@ -390,6 +390,7 @@ class DeepResearcher:
         prior_report: str = "",
         prior_findings: Optional[List[Dict]] = None,
         prior_urls: Optional[Set[str]] = None,
+        prior_citations: Optional[Dict] = None,
     ) -> str:
         """Run iterative research and return a final report.
 
@@ -404,6 +405,11 @@ class DeepResearcher:
         self.subquestions = self._extract_subquestions(question)
         findings: List[Dict] = list(prior_findings) if prior_findings else []
         report = prior_report or ""
+        # Persisted numbering is authoritative, including sources omitted by
+        # the display's quality filter. Old research files retain the legacy
+        # reconstruction path; damaged snapshots must not silently renumber.
+        if prior_citations is not None:
+            self.citations = SourceRegistry.restore(prior_citations)
         # A continuation inherits the earlier run's pages; registering them
         # first keeps their numbers below the ones this run hands out.
         for finding in findings:

@@ -21,18 +21,19 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import uuid
 from typing import Any, Optional
 
 from core.platform_compat import restrict_to_owner
 
 
-def _open_new(path: str, private: bool):
+def _open_new(path: str, private: bool, newline: Optional[str] = None):
     """Create `path` exclusively; owner-only from the start when private."""
     if not private:
-        return open(path, "w", encoding="utf-8")
+        return open(path, "w", encoding="utf-8", newline=newline)
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    return os.fdopen(fd, "w", encoding="utf-8")
+    return os.fdopen(fd, "w", encoding="utf-8", newline=newline)
 
 
 def _finish(tmp: str, path: str, private: bool) -> None:
@@ -40,7 +41,17 @@ def _finish(tmp: str, path: str, private: bool) -> None:
         # POSIX already has 0600 from os.open; this is what locks the file
         # down on Windows, where the mode argument is ignored.
         restrict_to_owner(tmp)
-    os.replace(tmp, path)
+    # Windows readers/antivirus can briefly keep the destination open without
+    # delete sharing. Retry only the atomic replacement, never truncate/delete
+    # the previous file, loosen its ACL, or recreate the already-fsynced bytes.
+    for attempt in range(6):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError as exc:
+            if getattr(exc, 'winerror', None) not in {5, 32, 33} or attempt == 5:
+                raise
+            time.sleep(0.005 * (2 ** attempt))
 
 
 def atomic_write_json(
@@ -76,14 +87,14 @@ def atomic_write_json(
             pass
 
 
-def atomic_write_text(path: str, text: str, *, private: bool = False) -> None:
+def atomic_write_text(path: str, text: str, *, private: bool = False, newline: Optional[str] = None) -> None:
     if not isinstance(text, str):
         raise TypeError("atomic_write_text expects a string")
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     tmp = f"{path}.tmp.{uuid.uuid4().hex}"
 
     try:
-        with _open_new(tmp, private) as f:
+        with _open_new(tmp, private, newline=newline) as f:
             f.write(text)
             f.flush()
             os.fsync(f.fileno())

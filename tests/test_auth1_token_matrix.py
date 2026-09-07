@@ -26,18 +26,29 @@ from core.authz import (
 
 def test_the_reachable_surface_is_exactly_this():
     """If this list grows, someone widened what a bearer token can touch."""
-    assert api_surface() == {
+    surface = api_surface()
+    assert {key: value for key, value in surface.items() if '/api/codex/' not in key} == {
         "DELETE|PATCH|POST|PUT /api/v1/chat": ("chat",),
         "GET|HEAD|OPTIONS /api/models": ("chat",),
-        "DELETE|GET|HEAD|OPTIONS|PATCH|POST|PUT /api/codex/*": tuple(sorted(KNOWN_SCOPES)),
         "DELETE|GET|HEAD|OPTIONS|PATCH|POST|PUT /api/dispatch*": ("agents:dispatch",),
         "GET|HEAD|OPTIONS /api/changesets/from-dispatch/*": ("agents:dispatch",),
+    }
+    assert {key for key in surface if '/api/codex/' in key} == {
+        *("GET|HEAD|OPTIONS /api/codex/" + path for path in (
+            "capabilities", "plugin.zip", "todos", "emails", "emails/{uid}", "memory",
+            "calendar/events", "documents", "documents/{doc_id}", "cookbook/tasks",
+            "cookbook/servers", "cookbook/output/{session_id}", "cookbook/cached", "cookbook/presets")),
+        *("POST /api/codex/" + path for path in (
+            "todos", "emails/draft-document", "emails/draft", "emails/send", "memory", "calendar/events",
+            "documents", "cookbook/serve", "cookbook/stop/{session_id}", "cookbook/preset/{name}", "cookbook/adopt")),
+        *("DELETE /api/codex/" + path for path in (
+            "memory/{memory_id}", "calendar/events/{uid}", "documents/{doc_id}")),
     }
 
 
 def test_every_scope_named_in_the_matrix_is_a_real_scope():
     for rule in API_TOKEN_RULES:
-        for scope in rule.scopes:
+        for scope in (*rule.scopes, *rule.requires):
             assert scope in KNOWN_SCOPES, f"{rule.path} names an unknown scope: {scope}"
 
 
@@ -86,8 +97,8 @@ def test_the_refusal_says_what_is_wrong_without_a_lecture():
     ("GET", "/api/changesets/from-dispatch/job-1", ["agents:dispatch"]),
     ("GET", "/api/codex/todos", ["todos:read"]),
     ("POST", "/api/codex/todos", ["todos:write"]),
-    ("GET", "/api/codex/email/list", ["email:read"]),
-    ("POST", "/api/codex/memory/add", ["memory:write"]),
+    ("GET", "/api/codex/emails", ["email:read"]),
+    ("POST", "/api/codex/memory", ["memory:write"]),
     ("GET", "/api/codex/cookbook/tasks", ["cookbook:read"]),
 ])
 def test_the_documented_integrations_are_not_broken(method, path, scopes):
@@ -99,6 +110,33 @@ def test_a_scopeless_token_reaches_nothing_even_on_the_codex_surface():
     allowed, why = api_token_allowed("GET", "/api/codex/todos", [])
     assert allowed is False
     assert "scope" in why
+
+
+@pytest.mark.parametrize("method,path,scope", [
+    ("GET", "/api/codex/todos", "chat"),
+    ("GET", "/api/codex/emails/123", "documents:read"),
+    ("POST", "/api/codex/emails/send", "email:draft"),
+    ("POST", "/api/codex/cookbook/serve", "cookbook:read"),
+    ("DELETE", "/api/codex/documents/id", "documents:read"),
+    ("DELETE", "/api/codex/memory/id", "memory:read"),
+    ("POST", "/api/codex/calendar/events", "calendar:read"),
+])
+def test_codex_family_scopes_are_checked_before_route_dispatch(method, path, scope):
+    assert not api_token_allowed(method, path, [scope])[0]
+
+
+@pytest.mark.parametrize("path", ["/api/codex/future", "/api/codex/memory/add",
+                                 "/api/codex/cookbook/preset/a/b", "/api/codex/emails/"])
+def test_unknown_codex_paths_are_not_opened_by_a_family_prefix(path):
+    assert not api_token_allowed("POST", path, KNOWN_SCOPES)[0]
+
+
+def test_email_document_draft_requires_both_domains():
+    path = "/api/codex/emails/draft-document"
+    assert not api_token_allowed("POST", path, ["email:draft"])[0]
+    assert not api_token_allowed("POST", path, ["documents:write"])[0]
+    assert api_token_allowed("POST", path, ["email:draft", "documents:write"])[0]
+    assert api_token_allowed("POST", path, ["email:send", "documents:write"])[0]
 
 
 def test_the_dispatch_prefix_does_not_leak_into_a_neighbour():

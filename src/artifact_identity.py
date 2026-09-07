@@ -1,18 +1,14 @@
 """
 artifact_identity.py — blobs, occurrences and derivatives (B-017, lot ART-1).
 
-`src/artifact_store.py` names a logical artifact after its bytes
-(`art_{sha256[:24]}`) and treats that name as the idempotency key, so the
-second run to produce identical bytes is discarded as "already there" together
-with its owner, run, label, provenance, approval and retention. This module is
-the store that does not do that. It writes only the three new tables —
+The production collector gives each event its own identity while this module
+deduplicates its bytes. It writes only the three tables —
 `artifact_blobs`, `artifact_occurrences`, `artifact_derivatives` — and reads
 `artifacts` for exactly one purpose: refusing to delete bytes the old table
 still names.
 
-Nothing here is wired into `collect()` or `persist()` yet. The cutover, and the
-copy of existing rows into occurrences, need a migration this lot deliberately
-deferred; `docs/design/ART-1-artifacts.md` says why and in what order.
+`collect()` and `persist()` use this store. The insert-only background copy in
+`src/artifact_migration.py` preserves historical ids as explicit aliases.
 
 Four rules, each of which has a tempting wrong version:
 
@@ -244,7 +240,7 @@ def record_occurrence(occurrence: ArtifactOccurrence) -> ArtifactOccurrence:
     Refuses an occurrence whose blob is not recorded — `ensure_blob()` first,
     always — and refuses to reuse an id, because an id that can be overwritten
     is an id that can lose a provenance, which is the whole bug."""
-    from core.database import ArtifactOccurrenceRow, BlobRow, SessionLocal
+    from core.database import ArtifactOccurrenceRow, BlobRow, SessionLocal, ArtifactTombstoneRow as Gone
 
     def attempt() -> ArtifactOccurrence:
         db = SessionLocal()
@@ -258,6 +254,10 @@ def record_occurrence(occurrence: ArtifactOccurrence) -> ArtifactOccurrence:
                     f"occurrence {occurrence.id} already exists; occurrence ids name "
                     f"an event and are never reused")
             p = occurrence.provenance
+            if db.get(Gone, occurrence.id) is not None or (
+                    occurrence.legacy_artifact_id and db.query(Gone).filter(
+                        Gone.legacy_artifact_id == occurrence.legacy_artifact_id).first()):
+                raise ValueError('this artifact was explicitly removed and cannot be replayed')
             db.add(ArtifactOccurrenceRow(
                 id=occurrence.id, blob_sha256=occurrence.blob_sha256,
                 kind=occurrence.kind, label=occurrence.label, partial=occurrence.partial,
@@ -307,6 +307,33 @@ def occurrence(occurrence_id: str) -> Optional[ArtifactOccurrence]:
         return _to_occurrence(row) if row is not None else None
     finally:
         db.close()
+
+
+def ensure_occurrence(value: ArtifactOccurrence) -> Tuple[ArtifactOccurrence, bool]:
+    """Idempotent delivery of ONE event, never deduplication by its bytes.
+
+    A retry can differ in its collection timestamp, but cannot change owner,
+    provenance, retention or any other logical field under an existing id.
+    Concurrent inserts race on the primary key and increment refcount once.
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    def equivalent(found):
+        return ({k: v for k, v in found.to_dict().items() if k != 'created_at'} ==
+                {k: v for k, v in value.to_dict().items() if k != 'created_at'})
+
+    found = occurrence(value.id)
+    if found is not None:
+        if not equivalent(found):
+            raise ValueError('artifact occurrence id already belongs to a different event')
+        return found, False
+    try:
+        return record_occurrence(value), True
+    except (IntegrityError, ValueError):
+        found = occurrence(value.id)
+        if found is None or not equivalent(found):
+            raise
+        return found, False
 
 
 def resolve(artifact_id: str) -> Optional[ArtifactOccurrence]:
@@ -408,7 +435,7 @@ def forget_occurrence(occurrence_id: str) -> Dict[str, Any]:
 
     Returns what is left, so the caller can see that the sibling survived
     rather than having to ask again."""
-    from core.database import ArtifactOccurrenceRow, BlobRow, SessionLocal
+    from core.database import ArtifactOccurrenceRow, BlobRow, SessionLocal, ArtifactTombstoneRow
 
     def attempt() -> Dict[str, Any]:
         db = SessionLocal()
@@ -418,7 +445,14 @@ def forget_occurrence(occurrence_id: str) -> Dict[str, Any]:
                 return {"removed": False, "reason": "no such occurrence",
                         "blob_sha256": "", "references_left": 0}
             digest = row.blob_sha256
-            db.delete(row)
+            removed = db.query(ArtifactOccurrenceRow).filter(
+                ArtifactOccurrenceRow.id == occurrence_id).delete(synchronize_session=False)
+            if not removed:
+                db.rollback()
+                return {'removed': False, 'reason': 'already removed',
+                        'blob_sha256': digest, 'references_left': reference_count(digest)}
+            db.add(ArtifactTombstoneRow(id=occurrence_id,
+                                       legacy_artifact_id=row.legacy_artifact_id or None))
             # Guarded so a double delete cannot drive the counter negative and
             # make a live blob look collectable.
             db.query(BlobRow).filter(BlobRow.sha256 == digest,
@@ -476,7 +510,14 @@ def record_derivative(derived: DerivedArtifact) -> DerivedArtifact:
         finally:
             db.close()
 
-    return _retry_on_lock(attempt, "record_derivative")
+    from sqlalchemy.exc import IntegrityError
+    try:
+        return _retry_on_lock(attempt, "record_derivative")
+    except IntegrityError:
+        # Another publisher can insert the deterministic id between SELECT
+        # and INSERT. Retry as an update; unrelated constraint errors still
+        # propagate on the second attempt.
+        return _retry_on_lock(attempt, "record_derivative")
 
 
 def derivatives_for(occurrence_id: str, *, owner: str,

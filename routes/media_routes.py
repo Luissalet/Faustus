@@ -11,6 +11,7 @@ publication, and lives on the approvals routes behind `require_human`.
 """
 
 import logging
+import asyncio
 
 from fastapi import APIRouter, HTTPException, Request
 
@@ -91,7 +92,7 @@ def setup_media_routes():
         if not workflow_id:
             raise HTTPException(status_code=400,
                                 detail="name the template in `workflow`")
-        return media_runs.plan(
+        return await asyncio.to_thread(media_runs.plan,
             workflow_id, payload.get("inputs") or {},
             version=str(payload.get("version") or ""),
             check_engine=bool(payload.get("check_engine", True)))
@@ -104,10 +105,16 @@ def setup_media_routes():
         if not workflow_id:
             raise HTTPException(status_code=400,
                                 detail="name the template in `workflow`")
-        out = media_runs.start(
+        from core import middleware
+        from src.owner_identity import effective_storage_owner
+        owner = effective_storage_owner(payload.get('owner') or _current_user(request),
+                                        auth_is_disabled=middleware.auth_disabled())
+        if not owner:
+            raise HTTPException(400, 'A render needs an owner for its outputs')
+        out = await asyncio.to_thread(media_runs.start,
             workflow_id, payload.get("inputs") or {},
             version=str(payload.get("version") or ""),
-            owner=str(payload.get("owner") or _current_user(request) or ""),
+            owner=owner,
             project_id=str(payload.get("project_id") or ""),
             session_id=str(payload.get("session_id") or ""),
             approval_id=str(payload.get("approval_id") or ""))

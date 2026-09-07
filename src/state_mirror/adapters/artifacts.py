@@ -1,11 +1,7 @@
 """Whether the files a run produced are still there, and still themselves.
 
-`src/artifact_store.py` collects and persists; `src/contracts/artifact.py` is
-the shape it persists. Neither of them lists, so the row read here is the
-`artifacts` table directly -- the same exception, for the same reason, that
-`src/project_context/resolvers/artifact.py` writes down in its own docstring:
-listing belongs to whoever is asking, and putting a query in the store would
-give every caller a different idea of which artifacts count.
+`src/artifact_catalog.py` lists occurrences and blobs, plus historical rows
+not yet copied. Scope and logical identity survive physical deduplication.
 
 Two fields come off the filesystem and are therefore `observed`: `exists` and
 `byte_size`. They are the ones worth having. A row in the artifacts table is
@@ -114,17 +110,13 @@ class ArtifactsAdapter(ThreadedAdapter):
         with every run: a sweep that walked all of it would stat the entire
         history of the machine to learn about the last hour of it.
         """
-        from core.database import ArtifactRow, SessionLocal
+        from core.database import SessionLocal
+        from src.artifact_catalog import recent
 
         db = SessionLocal()
         try:
-            query = db.query(ArtifactRow)
-            if scope.owner:
-                query = query.filter(ArtifactRow.owner == scope.owner)
-            if scope.project_id:
-                query = query.filter(ArtifactRow.project_id == scope.project_id)
-            return list(query.order_by(ArtifactRow.id.desc())
-                        .limit(scope.capped(200)).all())
+            return recent(db, owner=scope.owner, project_id=scope.project_id,
+                          limit=scope.capped(200))
         finally:
             db.close()
 
@@ -136,10 +128,8 @@ class ArtifactsAdapter(ThreadedAdapter):
         because "this row's filename is not a filename" is not the same fact as
         "the file is gone", and only the second one means somebody lost work.
         """
-        from src import artifact_store
-
-        path = self._safe(artifact_store.path_of,
-                          _word(getattr(row, "filename", ""), 512), default="")
+        from src.artifact_catalog import path as catalog_path
+        path = self._safe(catalog_path, row, default="")
         if not path:
             return None, None
         if not os.path.isfile(path):

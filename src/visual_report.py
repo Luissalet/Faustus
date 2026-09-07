@@ -1902,7 +1902,7 @@ def generate_visual_report(
 
     # Build stats bar
     stat_items = []
-    for key, label in [("Duration", "Duration"), ("Rounds", "Rounds"), ("Queries", "Queries"), ("URLs", "URLs Analyzed"), ("Model", "Model"), ("Search", "Search")]:
+    for key, label in [("Duration", "Duration"), ("Rounds", "Rounds"), ("Queries", "Queries"), ("URLs", "URLs Analyzed"), ("Model", "Model"), ("Search", "Search"), ("Citations", "Citations"), ("Claims cited", "Claims cited")]:
         val = stats.get(key)
         if val is not None:
             stat_items.append(

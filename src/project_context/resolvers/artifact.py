@@ -1,17 +1,9 @@
 """
 project_context/resolvers/artifact.py — run outputs as project sources.
 
-Reads ``ArtifactRow`` from ``core/database.py`` and the bytes through
-``src.artifact_store.path_of``, which is the one function allowed to turn a
-stored name into a path (it refuses anything that is not a bare name inside
-the store).
-
-**``src/artifact_store.py`` has no ``get_by_id``**, so the row query lives
-here. That is a deliberate, stated exception rather than an oversight: adding a
-lookup to the store is somebody else's file to change, and duplicating a
-one-line query is cheaper than a cross-module edit in flight. If a
-``get_by_id`` ever lands there, this resolver should call it and delete
-``_row()``.
+Reads occurrences and their blobs through ``src.artifact_catalog``. Legacy
+aliases and unmigrated rows remain readable during the additive copy. Stored
+paths are confined to the artifact store (or the historical gallery root).
 
 Obligations of every resolver (see ``base.py``): owner checked before the
 source is touched; ``missing``/``forbidden`` leak nothing; stable revision;
@@ -104,10 +96,8 @@ class ArtifactResolver(ResolverBase):
         return path_of(filename, store_dir=self._store_dir)
 
     def _row(self, db, artifact_id: str):
-        """The one place this subsystem queries ``artifacts`` directly; see the
-        module docstring for why it is not in ``artifact_store``."""
-        ArtifactRow = self._model()
-        return db.query(ArtifactRow).filter(ArtifactRow.id == str(artifact_id or "")).first()
+        from src.artifact_catalog import get
+        return get(db, str(artifact_id or ""))
 
     def _authorised(self, db, artifact_id: str, owner: str,
                     project: Mapping[str, Any]) -> "Tuple[Any, str, str]":
@@ -160,7 +150,8 @@ class ArtifactResolver(ResolverBase):
         if (row.kind or "") in _MEDIA_KINDS:
             return self._describe(row), False, "binary content is described, not decoded"
         try:
-            path = self._path(row.filename or "")
+            from src.artifact_catalog import path as catalog_path
+            path = catalog_path(row, store_dir=self._store_dir)
         except (ValueError, TypeError) as exc:
             logger.debug("artifact path refused for %r: %s", row.id, exc)
             return "", True, "the artifact filename is not a bare store name"

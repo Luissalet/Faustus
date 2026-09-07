@@ -375,6 +375,35 @@ def setup_session_routes(
     SESSION_MODEL_VALIDATION_TIMEOUT = min(float(REQUEST_TIMEOUT or 20), 3.0)
     OPENAI_API_KEY = config.get("OPENAI_API_KEY")
     SESSIONS_FILE = config.get("SESSIONS_FILE")
+
+    @router.get('/session/{sid}/team')
+    def get_chat_team(request: Request, sid: str):
+        _verify_session_owner(request, sid, session_manager)
+        from src import chat_team
+        try:
+            return chat_team.load(sid, effective_user(request))
+        except (ValueError, OSError) as exc:
+            raise HTTPException(409, 'Could not read the saved team; existing data was preserved') from exc
+
+    @router.put('/session/{sid}/team')
+    async def put_chat_team(request: Request, sid: str):
+        _verify_session_owner(request, sid, session_manager)
+        from routes.workspace_routes import _reject_cross_origin
+        from src import chat_team
+        _reject_cross_origin(request)
+        raw = await request.body()
+        if len(raw) > 64000:
+            raise HTTPException(413, 'Team configuration is too large')
+        try:
+            body = json.loads(raw)
+            team = chat_team.validate(body['team'])
+            from src.endpoint_resolver import resolve_endpoint_by_id
+            for member in team['members']:
+                if member['endpoint_id'] and not resolve_endpoint_by_id(member['endpoint_id'], member['model'], owner=effective_user(request), require_exact_model=True):
+                    raise ValueError('A selected team model is unavailable')
+            return chat_team.save(sid, effective_user(request), team, body['revision'])
+        except (ValueError, KeyError, TypeError) as exc:
+            raise HTTPException(409, str(exc)) from exc
     
     @router.get("/sessions")
     def list_sessions(request: Request):

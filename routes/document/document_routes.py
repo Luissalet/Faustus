@@ -67,7 +67,7 @@ def _email_source_key(content: str) -> tuple[str, str]:
 
 
 from routes.document_helpers import (
-    DocumentCreate, DocumentUpdate, DocumentPatch,
+    DocumentCreate, DocumentUpdate, DocumentPatch, DocumentRestore,
     _doc_to_dict, _version_to_dict,
     _verify_doc_owner, _owner_session_filter,
     _slug, _resolve_user_upload_path, _assert_pdf_marker_upload_owned, _derive_title,
@@ -629,6 +629,15 @@ def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
                 raise HTTPException(404, "Document not found")
             _verify_doc_owner(db, doc, user)
 
+            if req.expected_content is not None:
+                # A conditional row write holds the transaction's write lock;
+                # coalesced versions do not change version_count, so compare content.
+                changed = db.query(Document).filter(Document.id == doc_id,
+                    Document.current_content == req.expected_content).update(
+                    {'updated_at': datetime.now(timezone.utc)}, synchronize_session=False)
+                if not changed:
+                    raise HTTPException(409, 'Document changed. Your draft was not saved; review the latest version.')
+
             incoming_content = req.content
             from src.agent_tools.document_tools import _coerce_email_document_content, _looks_like_email_document
             is_email_doc = (
@@ -808,7 +817,7 @@ def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
 
     # ---- POST /api/document/{doc_id}/restore/{num} ----
     @router.post("/api/document/{doc_id}/restore/{num}")
-    async def restore_version(request: Request, doc_id: str, num: int) -> Dict[str, Any]:
+    async def restore_version(request: Request, doc_id: str, num: int, req: Optional[DocumentRestore] = None) -> Dict[str, Any]:
         user = get_current_user(request)
         db = SessionLocal()
         try:
@@ -823,6 +832,14 @@ def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
             ).first()
             if not old_ver:
                 raise HTTPException(404, "Version not found")
+
+            if req is not None and req.expected_content is not None:
+                changed = db.query(Document).filter(Document.id == doc_id,
+                    Document.current_content == req.expected_content).update(
+                    {'updated_at': datetime.now(timezone.utc)}, synchronize_session=False)
+                if not changed:
+                    raise HTTPException(409, 'Document changed. Reload it before restoring a version.')
+                db.refresh(doc)
 
             new_ver_num = doc.version_count + 1
             ver = DocumentVersion(

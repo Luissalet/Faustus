@@ -97,6 +97,17 @@ def test_a_plan_says_when_the_engine_lacks_the_model_rather_than_at_render_time(
 
 # ── running ───────────────────────────────────────────────────────────────
 
+
+def test_cancel_after_engine_completion_does_not_lose_uncollected_output(world):
+    started = media_runs.start('image.product', ASK, owner='alice')
+    run_id = started['run_id']
+    world.finish(media_runs.get(run_id)['engine_job_id'])
+    stopped = media_runs.cancel(run_id)
+    assert stopped['ok'] is False
+    assert media_runs.get(run_id)['status'] != 'cancelled'
+    assert media_runs.poll(run_id)['status'] == 'completed'
+    assert media_runs.get(run_id)['artifact_ids']
+
 def test_a_render_goes_from_queued_to_an_artifact_with_its_whole_story(world):
     started = media_runs.start("image.product", ASK, owner="luis",
                                project_id="proj-1", session_id="sess-1")
@@ -139,10 +150,10 @@ def test_a_render_goes_from_queued_to_an_artifact_with_its_whole_story(world):
     assert run_id in prov["note"]
 
     # and it is a row, not just a return value
-    from core.database import ArtifactRow, SessionLocal
+    from core.database import ArtifactOccurrenceRow, SessionLocal
     db = SessionLocal()
     try:
-        row = db.get(ArtifactRow, art["id"])
+        row = db.get(ArtifactOccurrenceRow, art["id"])
         assert row is not None
         assert row.model_license == "CreativeML Open RAIL++-M"
         assert row.recipe == "image.product"
@@ -178,6 +189,10 @@ def test_a_finished_render_is_answered_from_the_row_without_asking_again(world):
     again = media_runs.poll(started["run_id"])
     assert again["status"] == "completed" and again["checked"] is False
     assert len(world.calls) == before, "it went back to the engine for a finished run"
+    from src.contracts import Artifact
+    restored = Artifact.parse(again['artifacts'][0])
+    assert restored.run_id == started['run_id'] and restored.sha256
+    assert restored.provenance.unknowns() == ()
 
 
 def test_a_render_survives_the_process_that_started_it(world):
@@ -208,6 +223,7 @@ def test_the_engine_being_down_makes_a_run_unknown_not_failed(world):
     assert out["engine_reachable"] is False
     assert out["status"] == "queued", "it invented a failure it had not seen"
     assert media_runs.get(started["run_id"])["status"] == "queued"
+    assert 'Engine unavailable' in media_runs.get(started['run_id'])['reason']
 
 
 def test_a_render_somebody_stopped_reads_as_cancelled_not_failed(world):
@@ -313,5 +329,5 @@ def test_two_renders_of_the_same_thing_share_one_stored_file(world):
     b = media_runs.poll(second["run_id"])
 
     assert a["artifacts"][0]["sha256"] == b["artifacts"][0]["sha256"]
-    assert a["artifacts"][0]["id"] == b["artifacts"][0]["id"]
+    assert a["artifacts"][0]["id"] != b["artifacts"][0]["id"]
     assert b["run_id"] != a["run_id"]

@@ -61,6 +61,7 @@ class Rule:
     effect: str = "read"          # read | reversible | external | admin
     owner_rule: str = "own"       # own | any | none
     note: str = ""
+    requires: Tuple[str, ...] = ()  # all-of, in addition to the any-of scopes
 
     def matches(self, method: str, path: str) -> bool:
         if method.upper() not in self.methods:
@@ -70,6 +71,11 @@ class Rule:
             # the rule written for `/api/dispatch`.
             base = self.path.rstrip("/")
             return path == base or path.startswith(base + "/")
+        if "{" in self.path:
+            expected, actual = self.path.split("/"), path.split("/")
+            return len(expected) == len(actual) and all(
+                bool(value) if part.startswith("{") and part.endswith("}") else part == value
+                for part, value in zip(expected, actual))
         return path == self.path
 
 
@@ -101,13 +107,36 @@ API_TOKEN_RULES: Tuple[Rule, ...] = (
     _read("/api/models", "chat",
           note="which models the token's owner may name in a chat call"),
 
-    # The Codex/Claude skill surface. Every route under it resolves its own
-    # scope through `_scope_owner` (routes/codex_routes.py) — todos, email,
-    # calendar, memory, documents, cookbook. The middleware's job here is only
-    # to keep out a token that carries no scope at all.
-    Rule(ANY_METHOD, "/api/codex/", tuple(sorted(KNOWN_SCOPES)), prefix=True,
-         effect="reversible",
-         note="the route decides WHICH scope; this rule only says a scope is required"),
+    # Codex/Claude integrations: explicit methods/paths, matching the route's
+    # owner checks. A new endpoint does not inherit blanket token admission.
+    _read("/api/codex/capabilities", *sorted(KNOWN_SCOPES), note="the token's available capabilities"),
+    _read("/api/codex/plugin.zip", *sorted(KNOWN_SCOPES), note="download the integration bundle"),
+    _read("/api/codex/todos", "todos:read", "todos:write", note="owned notes and todos"),
+    Rule(frozenset({"POST"}), "/api/codex/todos", ("todos:read", "todos:write"),
+         effect="reversible", note="action route additionally requires write scope for mutations"),
+    *(_read(path, "email:read", "email:draft", "email:send", note="owned email reads")
+      for path in ("/api/codex/emails", "/api/codex/emails/{uid}")),
+    Rule(frozenset({"POST"}), "/api/codex/emails/draft-document", ("email:draft", "email:send"),
+         effect="reversible", requires=("documents:write",), note="draft email as an owned document"),
+    Rule(frozenset({"POST"}), "/api/codex/emails/draft", ("email:draft", "email:send"),
+         effect="reversible", note="stage an owned email draft"),
+    Rule(frozenset({"POST"}), "/api/codex/emails/send", ("email:send",),
+         effect="external", note="send email through the owned account"),
+    _read("/api/codex/memory", "memory:read", "memory:write", note="owned memories"),
+    Rule(frozenset({"POST"}), "/api/codex/memory", ("memory:write",), effect="reversible", note="save owned memory"),
+    Rule(frozenset({"DELETE"}), "/api/codex/memory/{memory_id}", ("memory:write",), effect="reversible", note="delete owned memory"),
+    _read("/api/codex/calendar/events", "calendar:read", "calendar:write", note="owned calendar events"),
+    Rule(frozenset({"POST"}), "/api/codex/calendar/events", ("calendar:write",), effect="reversible", note="save owned event"),
+    Rule(frozenset({"DELETE"}), "/api/codex/calendar/events/{uid}", ("calendar:write",), effect="reversible", note="delete owned event"),
+    *(_read(path, "documents:read", "documents:write", note="owned documents")
+      for path in ("/api/codex/documents", "/api/codex/documents/{doc_id}")),
+    Rule(frozenset({"POST"}), "/api/codex/documents", ("documents:write",), effect="reversible", note="create owned document"),
+    Rule(frozenset({"DELETE"}), "/api/codex/documents/{doc_id}", ("documents:write",), effect="reversible", note="delete owned document"),
+    *(_read("/api/codex/cookbook/" + path, "cookbook:read", "cookbook:launch", note="inspect Cookbook; route also checks admin")
+      for path in ("tasks", "servers", "output/{session_id}", "cached", "presets")),
+    *(Rule(frozenset({"POST"}), "/api/codex/cookbook/" + path, ("cookbook:launch",),
+           effect="external", note="control Cookbook processes; route also checks admin")
+      for path in ("serve", "stop/{session_id}", "preset/{name}", "adopt")),
 
     # Dispatching local workers from outside the app (Fable, Claude Desktop, a
     # script). `routes/dispatch_routes.py` additionally requires the token's
@@ -138,6 +167,9 @@ def api_token_allowed(method: str, path: str, scopes: Iterable[str]) -> Tuple[bo
         return False, ("this route is not part of the API-token surface: tokens reach only "
                        "the chat, codex-skill and dispatch routes")
     held = {str(s).strip() for s in (scopes or ()) if str(s).strip()}
+    missing = set(rule.requires) - held
+    if missing:
+        return False, "API token missing required scope: " + " and ".join(sorted(missing))
     if held.intersection(rule.scopes):
         return True, ""
     required = " or ".join(sorted(rule.scopes)) if len(rule.scopes) <= 3 else "one of its scopes"
@@ -145,7 +177,7 @@ def api_token_allowed(method: str, path: str, scopes: Iterable[str]) -> Tuple[bo
 
 
 def api_surface() -> Dict[str, Tuple[str, ...]]:
-    """The whole reachable surface as data, for the auditor test and the docs."""
+    """Legacy any-of surface view; inspect Rule.requires for additional all-of gates."""
     out: Dict[str, Tuple[str, ...]] = {}
     for rule in API_TOKEN_RULES:
         key = f"{'|'.join(sorted(rule.methods))} {rule.path}{'*' if rule.prefix else ''}"

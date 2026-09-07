@@ -1,3 +1,4 @@
+from datetime import timezone as _utc_timezone
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -22,8 +23,8 @@ def test_sqlite_foreign_keys_cascade():
         name="Test Session",
         endpoint_url="http://localhost:8000",
         model="gpt-4",
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow()
+        created_at=datetime.now(_utc_timezone.utc).replace(tzinfo=None),
+        updated_at=datetime.now(_utc_timezone.utc).replace(tzinfo=None)
     )
     m = ChatMessage(id="test-msg-123", session_id=session_id, role="user", content="test message")
     

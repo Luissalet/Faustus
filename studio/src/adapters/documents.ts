@@ -48,6 +48,7 @@ function docFrom(raw: Record<string, unknown>): Doc {
 async function send(path: string, method: string, body?: unknown): Promise<Record<string, unknown>> {
   const response = await fetch(path, {
     method,
+    signal: AbortSignal.timeout(20000),
     headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
     credentials: 'same-origin',
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -87,8 +88,8 @@ export async function createDoc(input: { title: string; language?: string; conte
 
 /** Saves the content; the server coalesces quick successive saves into one
  *  version unless `forceVersion`. */
-export async function saveDoc(id: string, content: string, summary?: string, forceVersion = false): Promise<Doc> {
-  return docFrom(await send(`/api/document/${enc(id)}`, 'PUT', { content, summary: summary ?? null, force_version: forceVersion }));
+export async function saveDoc(id: string, content: string, summary?: string, forceVersion = false, expectedContent?:string): Promise<Doc> {
+  return docFrom(await send(`/api/document/${enc(id)}`, 'PUT', { content, summary: summary ?? null, force_version: forceVersion, expected_content:expectedContent }));
 }
 
 export async function renameDoc(id: string, title: string, language?: string): Promise<Doc> {
@@ -115,8 +116,8 @@ export async function listDocVersions(id: string): Promise<DocVersion[]> {
   }));
 }
 
-export async function restoreDocVersion(id: string, number: number): Promise<Doc> {
-  return docFrom(await send(`/api/document/${enc(id)}/restore/${number}`, 'POST'));
+export async function restoreDocVersion(id: string, number: number, expectedContent?:string): Promise<Doc> {
+  return docFrom(await send(`/api/document/${enc(id)}/restore/${number}`, 'POST', expectedContent === undefined ? undefined : {expected_content:expectedContent}));
 }
 
 export function docPdfUrl(id: string): string {

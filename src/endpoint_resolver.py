@@ -270,6 +270,8 @@ def _anthropic_api_root(base: str) -> str:
 
 def build_chat_url(base: str) -> str:
     """Return the correct chat endpoint URL for a given base."""
+    if str(base or '').startswith('faustus-cli://'):
+        return base
     base = _prepare_endpoint_base(base)
     provider = _detect_provider(base)
     if provider == "anthropic":
@@ -294,6 +296,8 @@ def build_models_url(base: str) -> Optional[str]:
     untouched (so custom prefixes like ``/openai`` or ``/api/openai/v1`` keep
     their semantics).
     """
+    if str(base or '').startswith('faustus-cli://'):
+        return None
     base = _prepare_endpoint_base(base)
     provider = _detect_provider(base)
     if provider == "anthropic":

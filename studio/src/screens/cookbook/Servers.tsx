@@ -5,6 +5,7 @@ import { generateSshKey, isLocal, serverKey, setHfToken, setupServer, sshKey, te
 import { t, tn } from '../../i18n';
 import { SERVER_COLORS as COLORS } from '../../lib/cookbook/colors';
 import { CopyButton, Field, Switch } from './parts';
+import { SshTrust } from './SshTrust';
 
 /**
  * Servers: this machine plus every SSH box models can be pulled to and
@@ -191,6 +192,7 @@ export function Servers({ say }: { say: (m: string) => void }) {
           </form>
         </div>
         {!isNew && result[k] && <p className="fs-ck__result">{result[k]}</p>}
+        {!local && !isNew && <SshTrust key={k} host={s.host} port={s.port} disabled={dirty(s)} />}
         {!local && !isNew && key?.public_key && (
           <details className="fs-ck__keybox">
             <summary>{t('Authorise the app’s SSH key on this server')}</summary>

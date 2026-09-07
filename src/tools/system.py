@@ -592,6 +592,8 @@ _APP_API_BLOCKLIST_PREFIXES = (
 # {"tasks": []} to /api/cookbook/state, which overwrote the whole file.
 # Use dedicated tools or UI flows instead.
 _APP_API_BLOCKLIST_METHOD_PATH = (
+    # The human editor must not bypass the agent's write approval gate.
+    ("PUT",    "/api/workspace/file"),
     ("GET",    "/api/email/accounts"),  # owner-filtered in tool context; use list_email_accounts MCP tool
     ("POST",   "/api/cookbook/state"),   # whole-file overwrite — agent must use serve_preset/serve_model instead
     ("DELETE", "/api/cookbook/state"),

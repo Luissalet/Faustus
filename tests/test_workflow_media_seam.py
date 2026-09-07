@@ -136,6 +136,27 @@ def test_a_render_that_fails_stops_the_workflow_with_the_engine_s_words(world):
     assert out["never_reached"] == ["gate"], "the gate was asked about a render that failed"
 
 
+def test_background_collection_before_workflow_wake_preserves_the_output(world):
+    from src.media_scheduler import MediaScheduler
+    fake, store = world
+    engine = WorkflowEngine(default_handlers(approvals=FakeApprovals()), store)
+    run_id = store.create_run(WorkflowDefinition.parse(BRIEF), owner='alice')['run_id']
+    engine.advance(run_id)
+    media_id = store.node_runs(run_id)['render'].result['media_run_id']
+    fake.finish('p1')
+    MediaScheduler().tick()
+    saved_ids = media_runs.get(media_id)['artifact_ids']
+    assert len(saved_ids) == 1
+    _wake(store, run_id, 'render')
+    engine.advance(run_id)
+    result = store.node_runs(run_id)['render'].result
+    assert result['artifact_ids'] == saved_ids
+    assert result['artifacts'][0]['id'] == saved_ids[0]
+    assert result['artifacts'][0]['provenance']['recipe'] == 'image.product'
+    assert len(fake.submitted) == 1
+    assert sum(call[1] == '/view' for call in fake.calls) == 1
+
+
 def test_a_template_the_render_node_names_wrongly_fails_before_the_engine(world):
     fake, store = world
     broken = {**BRIEF, "nodes": [
@@ -146,6 +167,33 @@ def test_a_template_the_render_node_names_wrongly_fails_before_the_engine(world)
 
     assert out["status"] == "failed"
     assert "no_such_workflow" in str(out["ran"][0]["reason"])
+    assert fake.submitted == []
+
+
+def test_media_output_inherits_verified_workflow_project_not_node_override(world, monkeypatch):
+    from services import projects
+    class Projects:
+        def get(self, project_id, owner=None):
+            return {'id': 'owned', 'owner': 'alice'} if project_id == 'owned' and owner == 'alice' else None
+    monkeypatch.setattr(projects, 'get_store', lambda: Projects())
+    fake, store = world
+    definition = WorkflowDefinition.parse({**BRIEF, 'nodes': [{
+        'id': 'render', 'type': 'skill', 'config': {'skill': 'media:image.product',
+            'project_id': 'foreign', 'inputs': {'prompt': 'QA'}}}]})
+    run_id = store.create_run(definition, owner='alice', project_id='owned')['run_id']
+    engine = WorkflowEngine(default_handlers(), store)
+    assert engine.advance(run_id)['status'] == 'paused'
+    media_id = store.node_runs(run_id)['render'].result['media_run_id']
+    assert media_runs.get(media_id)['project_id'] == 'owned'
+    assert len(fake.submitted) == 1
+
+
+def test_invalid_media_conversation_is_refused_before_gpu_submission(world):
+    fake, store = world
+    run_id = store.create_run(WorkflowDefinition.parse(BRIEF), owner='alice',
+                              inputs={'session_id': 'missing-chat'})['run_id']
+    out = WorkflowEngine(default_handlers(), store).advance(run_id)
+    assert out['status'] == 'failed'
     assert fake.submitted == []
 
 

@@ -13,6 +13,7 @@ events; the ``/events`` collection holds one VEVENT) and assert the sync now
 maps the principal URL to its events collection and pulls the event. No live
 Google account is required.
 """
+from datetime import timezone as _utc_timezone
 import sys
 import tempfile
 import types
@@ -42,7 +43,7 @@ _GOOGLE_EVENTS = "https://apidata.googleusercontent.com/caldav/v2/me@gmail.com/e
 
 def _ics_one_event():
     # An event inside the sync window (now-90d .. now+365d).
-    dt = datetime.utcnow() + timedelta(days=2)
+    dt = datetime.now(_utc_timezone.utc).replace(tzinfo=None) + timedelta(days=2)
     stamp = dt.strftime("%Y%m%dT%H%M%SZ")
     return (
         "BEGIN:VCALENDAR\r\n"

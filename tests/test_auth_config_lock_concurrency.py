@@ -6,6 +6,7 @@ with missing users or assertion errors.
 """
 
 import json
+import os
 import threading
 import time
 import contextlib
@@ -210,6 +211,9 @@ class TestDiskConsistency:
 
         stop_event = threading.Event()
         corruption_found = []
+        reader_errors = []
+        writer_errors = []
+        successful_reads = []
 
         def reader():
             while not stop_event.is_set():
@@ -217,16 +221,30 @@ class TestDiskConsistency:
                     with open(mgr.auth_path, "r") as f:
                         content = f.read()
                     json.loads(content)
+                    successful_reads.append(True)
                 except json.JSONDecodeError as e:
                     corruption_found.append(str(e))
                     break
                 except FileNotFoundError:
                     pass
+                except PermissionError as e:
+                    # Windows may deny a read briefly while a private file is
+                    # atomically replaced. Keep checking; do not let the reader
+                    # silently die and leave a green test with no coverage.
+                    if os.name != 'nt':
+                        reader_errors.append(repr(e))
+                        break
+                except Exception as e:
+                    reader_errors.append(repr(e))
+                    break
                 time.sleep(0.001)
 
         def writer():
-            for i in range(50):
-                mgr.create_user(f"stress{i}", f"pw{i}")
+            try:
+                for i in range(50):
+                    mgr.create_user(f"stress{i}", f"pw{i}")
+            except Exception as e:
+                writer_errors.append(repr(e))
 
         reader_thread = threading.Thread(target=reader)
         writer_thread = threading.Thread(target=writer)
@@ -238,3 +256,9 @@ class TestDiskConsistency:
         reader_thread.join()
 
         assert not corruption_found, f"Corrupt JSON detected: {corruption_found[0]}"
+        assert not reader_errors, reader_errors
+        assert not writer_errors, writer_errors
+        assert successful_reads, 'The concurrent reader must actually validate JSON'
+        with open(mgr.auth_path, 'r', encoding='utf-8') as f:
+            final = json.load(f)
+        assert set(final['users']) == {'admin', *(f'stress{i}' for i in range(50))}

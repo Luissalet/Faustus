@@ -2010,10 +2010,12 @@ class TaskScheduler:
         # Without this, all 40+ tools get sent and models hit their tool limit.
         relevant_tools = None
         try:
-            from src.tool_index import get_tool_index, ASSISTANT_ALWAYS_AVAILABLE
+            from src.tool_index import get_tool_index, ASSISTANT_ALWAYS_AVAILABLE, tool_rerank_options
             tool_idx = get_tool_index()
             if tool_idx:
-                rag_tools = tool_idx.get_tools_for_query(task.prompt or "", k=8)
+                rag_tools = await asyncio.wait_for(asyncio.to_thread(
+                    tool_idx.get_tools_for_query, task.prompt or "", k=8,
+                    **tool_rerank_options(task.owner)), timeout=15.0)
                 relevant_tools = compose_task_relevant_tools(
                     rag_tools, ASSISTANT_ALWAYS_AVAILABLE, disabled_tools
                 )
@@ -2216,7 +2218,8 @@ class TaskScheduler:
             from routes.email_routes import _resolve_send_config
             from routes.email_helpers import _send_smtp_message
 
-            cfg = _resolve_send_config(account_id=account_id or None, owner=task.owner or "")
+            cfg = await asyncio.to_thread(
+                _resolve_send_config, account_id=account_id or None, owner=task.owner or "")
             to_addr = explicit or cfg.get("from_address") or cfg.get("smtp_user") or ""
             if not to_addr:
                 raise RuntimeError("No email recipient resolved for task output")
@@ -2230,7 +2233,8 @@ class TaskScheduler:
             msg["X-Odysseus-Kind"] = "task"
             msg["X-Odysseus-Ref"] = str(task.id)
             msg.set_content(result or "")
-            _send_smtp_message(cfg, from_addr, [to_addr], msg.as_string(), timeout=30)
+            await asyncio.to_thread(
+                _send_smtp_message, cfg, from_addr, [to_addr], msg.as_string(), timeout=30)
             logger.info("Task %s emailed result (recipient_set=%s, %sb)", task.id, bool(to_addr), len(result or ""))
         except Exception as e:
             logger.error("Task %s email delivery failed: %s", task.id, e, exc_info=True)

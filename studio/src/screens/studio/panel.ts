@@ -7,7 +7,8 @@ import { t } from '../../i18n';
  * workspace. State and reducer only; SidePanel.tsx paints it.
  */
 
-export type PanelTab = 'browser' | 'doc' | 'file';
+export type PanelTab = 'outputs' | 'sources' | 'agents' | 'browser' | 'doc' | 'file';
+export interface PanelDraft {text:string; base:string; revision?:string}
 
 export interface DocState {
   /** Set while the agent streams the document; the id arrives at the end. */
@@ -29,6 +30,11 @@ export interface PanelState {
   live: boolean;
   doc: DocState | null;
   file: { workspace: string; path: string } | null;
+  documents: DocState[];
+  files: {workspace:string;path:string}[];
+  drafts: Record<string,PanelDraft>;
+  width: number;
+  streamDoc: DocState | null;
 }
 
 export const MAX_FRAMES = 8;
@@ -53,15 +59,22 @@ export function setAutoOpen(on: boolean): void {
 
 export const initialPanel: PanelState = {
   open: false,
-  tab: 'browser',
+  tab: 'outputs',
   frames: [],
   active: -1,
   live: false,
   doc: null,
   file: null,
+  documents: [], files: [], drafts: {}, width: 520, streamDoc: null,
 };
 
 export type PanelAction =
+  | {type:'draft';key:string;draft:PanelDraft|null}
+  | {type:'draft-saved';key:string;submitted:PanelDraft;base:string;revision?:string}
+  | {type:'width';width:number}
+  | {type:'forget';key:string}
+  | {type:'doc-saved';doc:DocState}
+  | {type:'doc-renamed';id:string;title:string}
   | { type: 'event'; event: ChatEvent; busy: boolean }
   | { type: 'open'; tab?: PanelTab }
   | { type: 'close' }
@@ -71,10 +84,10 @@ export type PanelAction =
   | { type: 'turn-end' }
   | { type: 'file'; workspace: string; path: string }
   | { type: 'doc'; doc: DocState | null }
-  | { type: 'suggestions'; suggestions: DocSuggestion[] }
+  | { type: 'suggestions'; docId?:string|null; suggestions: DocSuggestion[] }
   | { type: 'session-switch' };
 
-export function panelReducer(state: PanelState, action: PanelAction): PanelState {
+function reducePanel(state: PanelState, action: PanelAction): PanelState {
   switch (action.type) {
     case 'open':
       return { ...state, open: true, tab: action.tab ?? state.tab };
@@ -89,7 +102,7 @@ export function panelReducer(state: PanelState, action: PanelAction): PanelState
     case 'turn-end':
       return { ...state, live: false, doc: state.doc?.streaming ? { ...state.doc, streaming: false } : state.doc };
     case 'session-switch':
-      return { ...state, live: false, doc: null, file: null };
+      return { ...initialPanel };
     case 'file':
       return { ...state, open: true, tab: 'file', file: { workspace: action.workspace, path: action.path } };
     case 'doc':
@@ -166,5 +179,50 @@ export function panelReducer(state: PanelState, action: PanelAction): PanelState
       }
       return state;
     }
+    default: return state;
   }
+}
+
+export const fileKey=(file:{workspace:string;path:string})=>'file:'+JSON.stringify([file.workspace,file.path]);
+export const docKey=(doc:DocState)=>'doc:'+(doc.id || 'streaming');
+export function panelReducer(state:PanelState,action:PanelAction):PanelState {
+  if(action.type==='suggestions' && action.docId !== undefined) {
+    const update=(doc:DocState)=>doc.id===action.docId?{...doc,suggestions:action.suggestions}:doc;
+    return {...state,documents:state.documents.map(update),doc:state.doc?update(state.doc):null};
+  }
+  if(action.type==='doc-renamed') {
+    const rename=(doc:DocState)=>doc.id===action.id?{...doc,title:action.title}:doc;
+    return {...state,documents:state.documents.map(rename),doc:state.doc?rename(state.doc):null};
+  }
+  if(action.type==='draft-saved') {
+    const current=state.drafts[action.key];
+    if(!current||current.base!==action.submitted.base||current.revision!==action.submitted.revision)return state;
+    const drafts={...state.drafts};
+    if(current.text===action.submitted.text)delete drafts[action.key];
+    else drafts[action.key]={...current,base:action.base,revision:action.revision};
+    return {...state,drafts};
+  }
+  if(action.type==='doc-saved') return {...state,documents:[...state.documents.filter(d=>d.id!==action.doc.id),action.doc],doc:state.doc?.id===action.doc.id?action.doc:state.doc};
+  if(action.type==='draft') {const drafts={...state.drafts};if(action.draft)drafts[action.key]=action.draft;else delete drafts[action.key];return {...state,drafts};}
+  if(action.type==='width') return {...state,width:Math.max(320,Math.min(900,action.width))};
+  if(action.type==='forget') {
+    if(state.drafts[action.key]) return state;
+    const documents=state.documents.filter(d=>docKey(d)!==action.key),files=state.files.filter(f=>fileKey(f)!==action.key);
+    const closingDoc=Boolean(state.doc&&docKey(state.doc)===action.key),closingFile=Boolean(state.file&&fileKey(state.file)===action.key);
+    return {...state,documents,files,doc:closingDoc?null:state.doc,file:closingFile?null:state.file,tab:(closingDoc&&state.tab==='doc')||(closingFile&&state.tab==='file')?'outputs':state.tab};
+  }
+  const streamingEvent=action.type==='event'&&action.event.type==='doc_delta';
+  const next=reducePanel(streamingEvent?{...state,doc:state.streamDoc}:state,action);
+  if(next===state)return state;
+  if(action.type==='event'&&(action.event.type==='doc_open'||action.event.type==='doc_delta')) next.streamDoc=next.doc;
+  if(action.type==='event'&&action.event.type==='doc_update') next.streamDoc=null;
+  if(next.doc?.id) next.documents=[...next.documents.filter(d=>d.id!==next.doc?.id),next.doc];
+  if(next.file) next.files=[...next.files.filter(f=>fileKey(f)!==fileKey(next.file!)),next.file];
+  // Background output is recorded without navigating away from the person's
+  // selected resource. Updates to that same document still show its latest base.
+  if(action.type==='event'&&state.open&&state.tab!=='outputs') {
+    next.tab=state.tab;
+    if(state.doc?.id&&next.doc?.id!==state.doc.id) next.doc=state.doc;
+  }
+  return next;
 }

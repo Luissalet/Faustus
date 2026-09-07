@@ -1,4 +1,5 @@
 """Tests for topic keyword matching (src/topic_analyzer.py)."""
+from datetime import timezone as _utc_timezone
 from types import SimpleNamespace
 import pytest
 from sqlalchemy import create_engine
@@ -59,15 +60,15 @@ def test_topic_analyzer_hydrates_sessions(monkeypatch):
         model="gpt-4",
         owner="alice",
         message_count=1,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow()
+        created_at=datetime.now(_utc_timezone.utc).replace(tzinfo=None),
+        updated_at=datetime.now(_utc_timezone.utc).replace(tzinfo=None)
     )
     m = DbChatMessage(
         id="msg-1",
         session_id=session_id,
         role="user",
         content="I love writing python code.",
-        timestamp=datetime.utcnow()
+        timestamp=datetime.now(_utc_timezone.utc).replace(tzinfo=None)
     )
     
     db.add(s)

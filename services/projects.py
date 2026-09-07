@@ -233,6 +233,7 @@ class ProjectStore:
     def __init__(self, data_dir: str):
         self.path = os.path.join(data_dir, "projects.json")
         self._cache: Optional[List[Dict[str, Any]]] = None
+        self._seen_persisted_file = False
         # Every read-modify-write on projects.json runs under this lock, cache
         # invalidation included. Two agents attaching a source at the same time
         # used to interleave load/modify/save and drop one of the two links.
@@ -251,22 +252,31 @@ class ProjectStore:
                 return self._cache
             rows: List[Dict[str, Any]] = []
             try:
-                if os.path.exists(self.path):
-                    with open(self.path, "r", encoding="utf-8") as fh:
-                        data = json.load(fh)
-                    if isinstance(data, list):
-                        rows = [r for r in data if isinstance(r, dict)]
-                    elif isinstance(data, dict) and isinstance(data.get("projects"), list):
-                        rows = [r for r in data["projects"] if isinstance(r, dict)]
-            except (OSError, json.JSONDecodeError) as e:
-                # A corrupt file must not take the app down. Start empty and keep
-                # the broken copy so nothing is silently destroyed on next save.
-                logger.error("projects.json unreadable (%s); starting empty", e)
-                try:
-                    os.replace(self.path, self.path + ".corrupt")
-                except OSError:
-                    pass
-                rows = []
+                for attempt in range(3):
+                    try:
+                        with open(self.path, "r", encoding="utf-8") as fh:
+                            data = json.load(fh)
+                        break
+                    except PermissionError:
+                        if attempt == 2:
+                            raise
+                        time.sleep(.02 * (attempt + 1))
+                if isinstance(data, dict) and isinstance(data.get("projects"), list):
+                    data = data["projects"]  # accepted legacy envelope
+                if not isinstance(data, list) or any(not isinstance(row, dict) for row in data):
+                    raise ProjectError('projects.json has an invalid structure; the original file was preserved')
+                rows = data
+                self._seen_persisted_file = True
+            except FileNotFoundError as exc:
+                if self._seen_persisted_file:
+                    raise ProjectError('The existing projects.json is missing; refusing to reset the project list') from exc
+                rows = []  # genuinely fresh store only
+            except (OSError, ValueError) as exc:
+                # A transient Windows read lock is not corruption, and corrupt
+                # JSON is not permission to replace every project with []. Keep
+                # the source AND any recovery copy untouched; do not cache empty.
+                logger.error('projects.json could not be loaded (%s); original preserved', type(exc).__name__)
+                raise ProjectError('Could not read projects.json. The project list was not reset; retry or repair the original file.') from exc
             # New presentation-only fields stay backwards compatible with the
             # first projects.json format.  Normalising them here means every API
             # consumer sees a stable shape without forcing a migration or an
@@ -280,11 +290,9 @@ class ProjectStore:
 
     def _save(self, rows: List[Dict[str, Any]]) -> None:
         with self._lock:
-            tmp = self.path + ".tmp"
-            os.makedirs(os.path.dirname(self.path), exist_ok=True)
-            with open(tmp, "w", encoding="utf-8") as fh:
-                json.dump(rows, fh, indent=2, ensure_ascii=False)
-            os.replace(tmp, self.path)   # atomic: no half-written projects.json
+            from core.atomic_io import atomic_write_text
+            atomic_write_text(self.path, json.dumps(rows, indent=2, ensure_ascii=False))
+            self._seen_persisted_file = True
             self._cache = rows
 
     # ------------------------------------------------------------------
@@ -822,6 +830,30 @@ class ProjectStore:
                 self._save(rows)
                 return True
             return False
+
+    def patch_link_if_current(
+        self, project_id: str, link_id: str, patch: Mapping[str, Any], *,
+        expected: Mapping[str, Any], owner: Optional[str] = None,
+        before_patch=None,
+    ) -> Tuple[Optional[Dict[str, Any]], Any]:
+        """Compare and update a derived index under this store's mutation lock.
+
+        `before_patch` is an internal synchronous publisher, never request data.
+        It runs only if the link still matches; detach/update cannot interleave
+        between the comparison, SQLite publication and the ready marker. The
+        callback must not acquire another ProjectStore's lock. This is not a
+        cross-process transaction across projects.json and the SQLite index.
+        """
+        if not expected:
+            raise ProjectError('Conditional context update requires an expected state')
+        if any(k not in LINK_PATCHABLE_FIELDS for k in patch):
+            raise ProjectError('Conditional context update contains unpatchable fields')
+        with self._lock:
+            current = self.get_link(project_id, link_id, owner=owner)
+            if current is None or any(current.get(k) != v for k, v in expected.items()):
+                return None, None
+            payload = before_patch() if before_patch is not None else None
+            return self.patch_link(project_id, link_id, patch, owner=owner), payload
 
     def context_revision(self, project_id: str) -> int:
         """Monotonic counter, bumped by every link mutation of this project.

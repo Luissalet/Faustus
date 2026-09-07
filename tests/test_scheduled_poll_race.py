@@ -89,7 +89,7 @@ def test_concurrent_pollers_do_not_double_send(tmp_path, monkeypatch):
     monkeypatch.setattr(email_pollers, "_send_smtp_message", fake_send_smtp_message)
     monkeypatch.setattr(email_pollers, "_imap", FakeImap)
     monkeypatch.setattr(email_pollers, "_detect_sent_folder", lambda imap: "Sent")
-    monkeypatch.setattr(email_pollers, "_cleanup_compose_uploads", lambda attachments: None)
+    monkeypatch.setattr(email_pollers, "_cleanup_compose_uploads", lambda attachments, owner=None: None)
 
     results = []
 

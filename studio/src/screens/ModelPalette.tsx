@@ -1,6 +1,6 @@
 import { t } from '../i18n';
 import { Command } from 'cmdk';
-import { Check, Cpu, RefreshCw } from 'lucide-react';
+import { Check, Cpu, Plus, RefreshCw } from 'lucide-react';
 import { overlayRoot } from '../shell/overlayRoot';
 import type { ModelRoute } from '../adapters/chat';
 import { aliasesOf, FIT_WORD, fitOf, fitSize, useFitHints } from '../adapters/fit';
@@ -17,6 +17,7 @@ export default function ModelPalette({
   onPick,
   onRefresh,
   refreshing = false,
+  onConnect,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -26,6 +27,7 @@ export default function ModelPalette({
   /** Ask every endpoint again (the old picker's ↻). */
   onRefresh?: () => void;
   refreshing?: boolean;
+  onConnect?: () => void;
 }) {
   // Will it fit on this card? Read once each time the picker opens; the
   // server answers nothing at all when it cannot tell, and nothing is drawn.
@@ -51,6 +53,9 @@ export default function ModelPalette({
         </p>
       ) : null}
       <Command.List className="fs-palette__list">
+        {onConnect && <Command.Item value="connect conectar provider proveedor claude API" onSelect={onConnect} className="fs-palette__item">
+          <Plus size={15} aria-hidden="true" />{t('Connect an AI provider')}
+        </Command.Item>}
         <Command.Empty className="fs-palette__empty">{routes.length ? t('No model matches.') : t('No endpoint responds.')}</Command.Empty>
         {onRefresh && (
           <Command.Item value="refrescar modelos endpoints" onSelect={onRefresh} className="fs-palette__item" data-testid="model-refresh" disabled={refreshing}>

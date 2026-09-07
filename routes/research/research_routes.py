@@ -1,5 +1,6 @@
 """Research background task routes — /api/research/*."""
 
+from datetime import timezone as _utc_timezone
 import asyncio
 import os
 import json
@@ -838,7 +839,7 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
         # The user can open the visual report for source details; keeping sources
         # out of the chat context saves tokens and avoids the AI fabricating
         # citations.
-        date_str = datetime.utcnow().strftime("%Y-%m-%d")
+        date_str = datetime.now(_utc_timezone.utc).replace(tzinfo=None).strftime("%Y-%m-%d")
         primer = (
             f"[Research context — {date_str}]\n\n"
             f"The user previously ran a deep research investigation. Use the "

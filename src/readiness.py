@@ -6,6 +6,7 @@ writable, and storage is local-first. Served by ``GET /api/ready`` and suitable
 for an orchestrator readiness probe (200 only when every critical check passes).
 """
 
+from datetime import timezone as _utc_timezone
 import os
 import uuid
 from datetime import datetime
@@ -57,5 +58,5 @@ def check_readiness() -> Dict[str, object]:
         "ready": ready,
         "version": APP_VERSION,
         "checks": checks,
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(_utc_timezone.utc).replace(tzinfo=None).isoformat(),
     }

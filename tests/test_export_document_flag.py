@@ -297,3 +297,14 @@ def test_a_document_with_no_messages_still_renders():
                        extra={DOCUMENT_FLAG: True})
     assert render_docx(empty)[:2] == b"PK"
     assert render_pdf(empty)[:5] == b"%PDF-"
+
+
+def test_export_metadata_distinguishes_documents_from_chats():
+    docx = pytest.importorskip('docx')
+    pytest.importorskip('reportlab')
+    pypdf = pytest.importorskip('pypdf')
+    for transcript, subject in [(make_document(), 'Document'), (make_transcript(), 'Chat transcript')]:
+        document = docx.Document(io.BytesIO(render_docx(transcript)))
+        assert document.core_properties.comments == subject + ' exported by Faustus'
+        pdf = pypdf.PdfReader(io.BytesIO(render_pdf(transcript)))
+        assert pdf.metadata.subject == subject

@@ -117,6 +117,8 @@ class ResearchHandler:
             "k", "kk", "go", "go ahead", "go for it", "do it", "please",
             "yes please", "sounds good", "continue", "proceed", "lets go",
             "let's go", "yes go ahead",
+            "sí", "si", "vale", "de acuerdo", "adelante", "hazlo", "dale",
+            "continúa", "continua", "sigue", "sí por favor", "si por favor",
         }
 
         def _normalize(text: str) -> str:
@@ -256,6 +258,7 @@ class ResearchHandler:
         extraction_timeout: int = None,
         extraction_concurrency: int = None,
         owner: str = "",
+        prior_citations: dict = None,
     ) -> dict:
         """Start research as a background task. Returns task info dict.
 
@@ -264,6 +267,9 @@ class ResearchHandler:
         """
         if _research_json_path(session_id) is None:
             raise ValueError("Invalid research session_id")
+        if prior_citations is not None:
+            from src.research_citations import SourceRegistry
+            SourceRegistry.restore(prior_citations)
 
         # Resolve the hard wall-clock timeout from settings when the caller
         # didn't pin one. Local / edge models routinely need more than the
@@ -334,6 +340,7 @@ class ResearchHandler:
                         prior_report=prior_report,
                         prior_findings=prior_findings,
                         prior_urls=prior_urls,
+                        prior_citations=prior_citations,
                         max_rounds=max_rounds,
                         search_provider=search_provider,
                         category=category,
@@ -359,9 +366,9 @@ class ResearchHandler:
                 # If we have partial results, save what we have
                 researcher = entry.get("researcher")
                 if researcher and researcher.evolving_report:
-                    entry["result"] = self._format_research_report(
+                    entry["result"] = self._format_completed_report(
                         query, researcher.evolving_report,
-                        researcher.get_stats(), hard_timeout,
+                        researcher.get_stats(), hard_timeout, researcher,
                     )
                     entry["status"] = "done"
                     self._save_result(session_id, entry)
@@ -383,9 +390,9 @@ class ResearchHandler:
                 researcher = entry.get("researcher")
                 if researcher and researcher.evolving_report:
                     _elapsed = time.time() - entry["started_at"]
-                    entry["result"] = self._format_research_report(
+                    entry["result"] = self._format_completed_report(
                         query, researcher.evolving_report,
-                        researcher.get_stats(), _elapsed,
+                        researcher.get_stats(), _elapsed, researcher,
                     )
                     entry["status"] = "done"
                     self._save_result(session_id, entry)
@@ -594,7 +601,8 @@ class ResearchHandler:
             try:
                 data = json.loads(path.read_text(encoding="utf-8"))
                 data["consumed"] = True
-                path.write_text(json.dumps(data), encoding="utf-8")
+                from core.atomic_io import atomic_write_json
+                atomic_write_json(str(path), data, private=True)
             except Exception:
                 pass
 
@@ -621,6 +629,9 @@ class ResearchHandler:
                 "raw_report": entry.get("raw_report", ""),
                 "sources": sources,
                 "raw_findings": raw_findings,
+                "report_language": getattr(researcher, "report_language", None) if researcher else None,
+                "citation_registry": (researcher.citations.snapshot()
+                    if researcher and getattr(researcher, "citations", None) is not None else None),
                 "stats": entry.get("stats"),
                 "category": entry.get("category"),
                 "started_at": entry["started_at"],
@@ -628,7 +639,8 @@ class ResearchHandler:
                 # SECURITY: stamp owner so route handlers can filter by user.
                 "owner": entry.get("owner", ""),
             }
-            path.write_text(json.dumps(data), encoding="utf-8")
+            from core.atomic_io import atomic_write_json
+            atomic_write_json(str(path), data, private=True)
             logger.info(f"Research result saved to {path}")
             try:
                 from src.event_bus import fire_event
@@ -638,14 +650,17 @@ class ResearchHandler:
         except Exception as e:
             logger.error(f"Failed to save research result: {e}")
 
-    def _get_session_json(self, session_id: str) -> Optional[dict]:
+    def _get_session_json(self, session_id: str, *, owner: Optional[str] = None) -> Optional[dict]:
         """Load the saved research JSON for a session, if it exists."""
         path = _research_json_path(session_id)
         if path is None:
             return None
         if path.exists():
             try:
-                return json.loads(path.read_text(encoding="utf-8"))
+                data = json.loads(path.read_text(encoding="utf-8"))
+                if not isinstance(data, dict) or (owner is not None and data.get("owner", "") != owner):
+                    return None
+                return data
             except Exception:
                 pass
         return None
@@ -754,6 +769,7 @@ class ResearchHandler:
         category: str = None,
         extraction_timeout: int = None,
         extraction_concurrency: int = None,
+        prior_citations: dict = None,
     ) -> str:
         """
         Run iterative deep research using the LLM-in-the-loop DeepResearcher.
@@ -771,6 +787,11 @@ class ResearchHandler:
         Returns:
             Formatted research report with expandable section and summary
         """
+        if prior_citations is not None:
+            # Validate before a provider probe and outside the fallback handler:
+            # corrupted saved numbering is not permission to start over.
+            from src.research_citations import SourceRegistry
+            SourceRegistry.restore(prior_citations)
         is_continuation = bool(prior_report)
         logger.info(f"{'Continuing' if is_continuation else 'Starting'} IterResearch Deep Research")
         logger.info(f"Query: {query}")
@@ -839,6 +860,7 @@ class ResearchHandler:
                 prior_report=prior_report,
                 prior_findings=prior_findings,
                 prior_urls=prior_urls,
+                prior_citations=prior_citations,
             )
             elapsed = time.time() - start_time
 
@@ -852,7 +874,7 @@ class ResearchHandler:
                 _task_entry["raw_report"] = strip_thinking(report)
                 _task_entry["stats"] = stats
 
-            return self._format_research_report(query, report, stats, elapsed)
+            return self._format_completed_report(query, report, stats, elapsed, researcher)
 
         except Exception as e:
             logger.error(f"DeepResearcher failed: {e}", exc_info=True)
@@ -866,7 +888,6 @@ class ResearchHandler:
         # Try legacy orchestrator
         if self._legacy_engine:
             try:
-                import asyncio
                 logger.info("Falling back to legacy ResearchOrchestrator...")
                 loop = asyncio.get_running_loop()
                 result = await loop.run_in_executor(
@@ -879,7 +900,7 @@ class ResearchHandler:
                 logger.error(f"Legacy engine also failed: {e}")
 
         # Fall back to basic web search
-        return self._handle_research_failure(query, primary_error)
+        return await asyncio.to_thread(self._handle_research_failure, query, primary_error)
 
     def _get_legacy_stats(self) -> dict:
         """Get statistics from the legacy research engine."""
@@ -896,6 +917,10 @@ class ResearchHandler:
         except Exception:
             return {}
 
+    def _format_completed_report(self, query, report, stats, elapsed, researcher):
+        """Presentation seam; service reports also include the source appendix."""
+        return self._format_research_report(query, report, stats, elapsed)
+
     def _format_research_report(
         self, query: str, full_report: str, stats: dict, elapsed: float,
     ) -> str:
@@ -907,6 +932,9 @@ class ResearchHandler:
             f"**Queries:** {stats.get('Queries', stats.get('Searches', '?'))}",
             f"**URLs Analyzed:** {stats.get('URLs', '?')}",
         ]
+        for key in ('Citations', 'Claims cited'):
+            if stats.get(key) is not None:
+                summary_lines.append(f"**{key}:** {stats[key]}")
         summary_text = " | ".join(summary_lines)
 
         formatted = f"""---

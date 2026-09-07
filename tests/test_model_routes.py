@@ -1603,6 +1603,34 @@ class _RouteQuery:
         return self.rows[0] if self.rows else None
 
 
+@pytest.mark.parametrize('existing_key', ['', 'test-key'])
+def test_private_add_does_not_reuse_shared_connection(monkeypatch, existing_key):
+    shared = _make_endpoint(base_url='https://api.openai.com/v1', api_key=existing_key)
+    db = _RouteDb([shared])
+    settings = _patch_create_deps(monkeypatch, db, settings={})
+    monkeypatch.setattr('src.auth_helpers.get_current_user', lambda req: 'alice')
+    monkeypatch.setattr(model_routes, '_probe_endpoint', lambda *a, **k: ['gpt-test'])
+    result = _get_route('/api/model-endpoints', 'POST')(
+        _PinnedFakeRequest(), base_url=shared.base_url,
+        **_create_form_kwargs(shared='false', api_key='test-key', endpoint_kind='api',
+                              require_models='true', pinned_models='["gpt-test"]'))
+    assert result['id'] != shared.id
+    assert shared.api_key == existing_key
+    assert db.added[0].owner == 'alice'
+    assert settings == {}  # A personal key must not become the global default.
+
+
+def test_private_add_requires_identified_owner(monkeypatch):
+    db = _RouteDb([])
+    _patch_create_deps(monkeypatch, db)
+    with pytest.raises(HTTPException) as exc:
+        _get_route('/api/model-endpoints', 'POST')(
+            _PinnedFakeRequest(), base_url='https://api.openai.com/v1',
+            **_create_form_kwargs(shared='false', api_key='test-key'))
+    assert exc.value.status_code == 400
+    assert not db.added
+
+
 class _RouteDb:
     def __init__(self, rows):
         self.rows = rows

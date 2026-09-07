@@ -34,8 +34,10 @@ here builds one from free text.
 from __future__ import annotations
 
 import json
+import http.client
 import logging
 import os
+import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -52,6 +54,8 @@ DEFAULT_BASE_URL = "http://127.0.0.1:8188"
 #: How long a single API call may take. Not how long a render may take — a
 #: render is polled, never held open on one socket.
 CALL_TIMEOUT_S = 15.0
+MAX_DOWNLOAD_BYTES = 2 * 1024**3
+MAX_JSON_BYTES = 16 * 1024**2
 
 #: Nodes and checkpoints change when someone restarts ComfyUI with new files,
 #: not between two calls a second apart.
@@ -106,11 +110,14 @@ class ComfyUIBackend:
             headers={"Content-Type": "application/json"} if data else {})
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
-                payload = response.read()
+                limit = 64 * 1024**2 if raw else MAX_JSON_BYTES
+                payload = response.read(limit + 1)
+                if len(payload) > limit:
+                    raise ComfyUIError('response_too_large', f'API response exceeds {limit} bytes')
         except urllib.error.HTTPError as e:
             detail = ""
             try:
-                detail = e.read().decode("utf-8", "replace")[:2000]
+                detail = e.read(8000).decode("utf-8", "replace")[:2000]
             except Exception:
                 pass
             raise ComfyUIError(f"http_{e.code}", detail or str(e)) from e
@@ -120,6 +127,8 @@ class ComfyUIBackend:
             # ComfyUI", not "an error occurred".
             raise ComfyUIError("unreachable",
                                f"nothing answered at {self.base_url} ({e.reason})") from e
+        except ComfyUIError:
+            raise
         except Exception as e:
             raise ComfyUIError("call_failed", f"{type(e).__name__}: {e}") from e
 
@@ -408,7 +417,8 @@ class ComfyUIBackend:
                                   "node": str(node_id)})
         return found
 
-    def download(self, descriptor: Mapping[str, Any], *, into: str) -> str:
+    def download(self, descriptor: Mapping[str, Any], *, into: str,
+                 max_bytes: int = MAX_DOWNLOAD_BYTES) -> str:
         """Fetch one output into `into`, and return the path written.
 
         The engine's own filename is used only for its extension. Everything
@@ -417,10 +427,12 @@ class ComfyUIBackend:
         filename = str(descriptor.get("filename") or "")
         if not filename:
             raise ComfyUIError("no_filename", "the descriptor names no file")
-        payload = self._call("/view", params={
+        if type(max_bytes) is not int or max_bytes < 0:
+            raise ValueError('max_bytes must be a nonnegative integer')
+        url = self._url("/view", params={
             "filename": filename,
             "subfolder": descriptor.get("subfolder") or "",
-            "type": descriptor.get("type") or "output"}, raw=True)
+            "type": descriptor.get("type") or "output"})
 
         stem, ext = os.path.splitext(os.path.basename(filename))
         ext = "".join(c for c in ext.lower() if c.isalnum() or c == ".")[:8] or ".bin"
@@ -429,14 +441,52 @@ class ComfyUIBackend:
         # dot was stripped and then a new one appended.
         safe = "".join(c for c in stem if c.isalnum() or c in "-_")[:60] or "output"
         os.makedirs(into, exist_ok=True)
-        target = os.path.join(into, f"{safe}{ext}")
-        suffix = 1
-        while os.path.exists(target):
-            target = os.path.join(into, f"{safe}-{suffix}{ext}")
-            suffix += 1
-        with open(target, "wb") as fh:
-            fh.write(payload)
-        return target
+        temporary = None
+        copied = 0
+        deadline = time.monotonic() + 300
+        try:
+            with urllib.request.urlopen(url, timeout=self.timeout) as response, tempfile.NamedTemporaryFile(
+                    dir=into, prefix='.download-', delete=False) as fh:
+                temporary = fh.name
+                expected = response.headers.get('Content-Length')
+                expected = int(expected) if expected is not None else None
+                if expected is not None and (expected < 0 or expected > max_bytes):
+                    raise ComfyUIError('download_too_large', 'The output exceeds the download byte limit')
+                while True:
+                    if time.monotonic() > deadline:
+                        raise ComfyUIError('download_timeout', 'The output download exceeded five minutes')
+                    chunk = response.read(min(1024**2, max_bytes - copied + 1))
+                    if not chunk:
+                        break
+                    copied += len(chunk)
+                    if copied > max_bytes:
+                        raise ComfyUIError('download_too_large', 'The output exceeds the download byte limit')
+                    fh.write(chunk)
+                if expected is not None and copied != expected:
+                    raise ComfyUIError('incomplete_download', 'The engine closed the download before all bytes arrived')
+                fh.flush()
+                os.fsync(fh.fileno())
+            suffix = 0
+            while True:
+                name = f'{safe}-{suffix}{ext}' if suffix else f'{safe}{ext}'
+                target = os.path.join(into, name)
+                try:
+                    os.link(temporary, target)
+                    return target
+                except FileExistsError:
+                    suffix += 1
+        except ComfyUIError:
+            raise
+        except http.client.IncompleteRead as exc:
+            raise ComfyUIError('incomplete_download', 'The engine closed the download before all bytes arrived') from exc
+        except (OSError, ValueError, http.client.HTTPException) as exc:
+            raise ComfyUIError('download_failed', str(exc)) from exc
+        finally:
+            if temporary is not None:
+                try:
+                    os.unlink(temporary)
+                except FileNotFoundError:
+                    pass
 
 
 def _client_id_of(item: Any) -> str:

@@ -87,3 +87,28 @@ def test_revert_refuses_outside_git(client, tmp_path):
     r = client.post("/api/workspace/revert", params={"workspace": str(ws), "path": "f.txt"})
     assert r.status_code == 400
     assert (ws / "f.txt").exists()
+
+
+@pytest.mark.parametrize('newline', [b'\n', b'\r\n'])
+def test_editor_preserves_line_endings_and_refuses_stale_save(client, tmp_path, newline):
+    path = tmp_path / 'plan.md'
+    path.write_bytes(b'# Plan' + newline + b'Original' + newline)
+    params = {'workspace': str(tmp_path), 'path': 'plan.md'}
+    original = client.get('/api/workspace/file', params=params).json()
+    body = {**params, 'content': '# Plan\nEdited\n', 'revision': original['revision']}
+    response = client.put('/api/workspace/file', json=body)
+    assert response.status_code == 200, response.text
+    assert path.read_bytes() == b'# Plan' + newline + b'Edited' + newline
+    assert response.json()['revision'] != original['revision']
+    assert client.put('/api/workspace/file', json=body).status_code == 409
+    assert path.read_bytes() == b'# Plan' + newline + b'Edited' + newline
+
+
+def test_editor_denies_cross_origin_outside_binary_and_non_text(client, tmp_path):
+    params = {'workspace': str(tmp_path), 'path': 'a.md', 'content': 'new', 'revision': '0'}
+    assert client.put('/api/workspace/file', json=params, headers={'Origin': 'https://evil.example'}).status_code == 403
+    assert client.put('/api/workspace/file', json={**params, 'path': '../outside.md'}).status_code == 400
+    assert client.put('/api/workspace/file', json={**params, 'path': 'code.py'}).status_code == 400
+    (tmp_path / 'a.md').write_bytes(b'\x00binary')
+    revision = client.get('/api/workspace/file', params=params).json()['revision']
+    assert client.put('/api/workspace/file', json={**params, 'revision': revision}).status_code == 400

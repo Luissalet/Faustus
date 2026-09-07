@@ -120,7 +120,7 @@ _register(
     result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
 )
 _register(
-    {"get_workspace", "glob", "grep", "ls", "read_file", "project_context"},
+    {"get_workspace", "glob", "grep", "ls", "read_file", "inspect_media", "plan_media_transform", "project_context"},
     ToolEffect.READ_WORKSPACE,
     result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
 )
@@ -181,6 +181,11 @@ _register(
     ToolEffect.WRITE_WORKSPACE,
     # Successful writes include unified diffs that can echo arbitrary existing
     # workspace content back into the next model round.
+    result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
+)
+_register(
+    {"transform_media"},
+    ToolEffect.READ_WORKSPACE, ToolEffect.WRITE_WORKSPACE,
     result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
 )
 _register(

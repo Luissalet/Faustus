@@ -174,10 +174,12 @@ def wait_handler(node: WorkflowNode, context: Mapping[str, Any]) -> Dict[str, An
     the node once that time is past, and the second pass — which recognises
     itself by the wake time in `context["previous"]` — completes. Computing
     the deadline again on the second pass is how a `wait` becomes forever."""
+    import math
+    from .clock import due, normalized
     previous = context.get("previous") or {}
     already = str(previous.get("wake_at") or "")
     if already:
-        if already <= now_iso():
+        if due(already, now_iso()):
             return {"waited_until": already}
         return {"status": "paused", "wake_at": already,
                 "reason": f"waiting until {already}"}
@@ -185,15 +187,23 @@ def wait_handler(node: WorkflowNode, context: Mapping[str, Any]) -> Dict[str, An
     until = str(node.config.get("until") or "")
     seconds = node.config.get("seconds")
     if until:
-        wake_at = until
-    elif isinstance(seconds, (int, float)) and seconds >= 0:
-        wake_at = (datetime.now(timezone.utc)
-                   + timedelta(seconds=float(seconds))).strftime("%Y-%m-%dT%H:%M:%SZ")
+        try:
+            wake_at = normalized(until)
+        except (ValueError, TypeError, OverflowError):
+            return {'status': 'failed', 'reason': 'config.until must be an ISO timestamp'}
+    elif type(seconds) in (int, float) and seconds >= 0:
+        try:
+            if not math.isfinite(seconds):
+                raise ValueError('non-finite wait')
+            wake_at = normalized((datetime.now(timezone.utc)
+                                  + timedelta(seconds=float(seconds))).isoformat())
+        except (OverflowError, ValueError):
+            return {'status': 'failed', 'reason': 'config.seconds exceeds the supported time range'}
     else:
         return {"status": "failed",
                 "reason": "a wait node needs `config.seconds` (a number) or "
                           "`config.until` (an ISO timestamp)"}
-    if wake_at <= now_iso():
+    if due(wake_at, now_iso()):
         return {"waited_until": wake_at, "detail": "the time had already passed"}
     return {"status": "paused", "wake_at": wake_at, "reason": f"waiting until {wake_at}"}
 
@@ -357,13 +367,17 @@ def media_skill_runner(*, poll_seconds: int = 15) -> Callable:
 
         if not run_id:
             workflow_id = str(node.config.get("skill") or "")[len("media:"):]
+            from src.workflows.scope import validate_output_scope
+            owner = str(context.get('owner') or '')
+            project_id = str(context.get('project_id') or '')
+            session_id = str((context.get('inputs') or {}).get('session_id')
+                             or node.config.get('session_id') or '')
+            validate_output_scope(owner, project_id, session_id)
             started = media_runs.start(
                 workflow_id,
                 node.config.get("inputs") or {},
                 version=str(node.config.get("version") or ""),
-                owner=str(context.get("owner") or ""),
-                project_id=str(node.config.get("project_id") or ""),
-                session_id=str(node.config.get("session_id") or ""))
+                owner=owner, project_id=project_id, session_id=session_id)
             if not started.get("ok"):
                 return {"status": "failed",
                         "reason": f"{started.get('reason')}: {started.get('detail', '')}",
@@ -377,7 +391,7 @@ def media_skill_runner(*, poll_seconds: int = 15) -> Callable:
         status = state.get("status")
         if status == "completed":
             return {"media_run_id": run_id,
-                    "artifact_ids": [a["id"] for a in state.get("artifacts") or []],
+                    "artifact_ids": state.get('artifact_ids') or [a["id"] for a in state.get("artifacts") or []],
                     "artifacts": state.get("artifacts") or [],
                     "values": state.get("values") or {}}
         if status in ("failed", "cancelled"):

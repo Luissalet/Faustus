@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import {build} from 'esbuild';
+const bundle=await build({entryPoints:['studio/src/screens/studio/harness-status.ts'],bundle:true,platform:'node',format:'esm',write:false});
+const {harnessOutcomeWords}=await import('data:text/javascript;base64,'+Buffer.from(bundle.outputFiles[0].text).toString('base64'));
+assert.deepEqual(harnessOutcomeWords('awaiting_user'),{stop:'Waiting for your permission',failed:'{n} incomplete'});
+assert.deepEqual(harnessOutcomeWords('awaiting_user',true),{stop:'Permission answered',failed:'{n} incomplete'});
+assert.deepEqual(harnessOutcomeWords('error',true),{stop:'error',failed:'{n} failed'});
+assert.deepEqual(harnessOutcomeWords('complete',true),{stop:'finished',failed:'{n} failed'});
+assert.equal(harnessOutcomeWords('unknown-future-status').stop,'unknown-future-status');
+console.log('ALL OK: answered permissions do not claim to be waiting or hide actual errors');

@@ -221,7 +221,7 @@ export function isImage(mime: string): boolean {
   return mime.startsWith('image/');
 }
 
-export async function uploadFiles(files: File[], sessionId?: string | null): Promise<Attachment[]> {
+export async function uploadFiles(files: File[], sessionId?: string | null, signal?: AbortSignal): Promise<Attachment[]> {
   const fd = new FormData();
   for (const file of files) fd.append('files', file, file.name);
   if (sessionId) fd.append('session_id', sessionId);
@@ -229,6 +229,7 @@ export async function uploadFiles(files: File[], sessionId?: string | null): Pro
     method: 'POST',
     body: fd,
     credentials: 'same-origin',
+    signal,
   });
   if (!response.ok) {
     let detail = '';
@@ -240,7 +241,7 @@ export async function uploadFiles(files: File[], sessionId?: string | null): Pro
     throw new ApiError(detail || `upload responded ${response.status}`, response.status);
   }
   const raw = (await response.json()) as { files?: unknown };
-  return asArray<Record<string, unknown>>(raw.files).map((f) => ({
+  return asArray<Record<string, unknown>>(raw.files).filter((f) => typeof f.id === 'string' && f.id.trim()).map((f) => ({
     id: String(f.id),
     name: String(f.name ?? 'archivo'),
     mime: String(f.mime ?? 'application/octet-stream'),

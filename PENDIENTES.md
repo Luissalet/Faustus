@@ -15,6 +15,202 @@ La deuda y los riesgos del overhaul de interfaz viven aparte, en
 
 ## Lo primero que hay que mirar
 
+- `[x]` **Recogida multimedia independiente del navegador.** Worker del servidor
+  para renders ya enviados, con reconciliación de envíos inciertos, reintentos de
+  descarga y avance por lotes. No envía nuevos prompts. Descargas por bloques al
+  disco, límite de 2 GiB, detección de transferencias incompletas y publicación
+  atómica sin sobrescribir nombres concurrentes. Cancelar no cambia un render ya
+  terminado ni hace pasar una negativa del motor por una cancelación efectiva.
+  El workflow recupera sus artefactos aunque el worker multimedia los haya recogido
+  antes. Pruebas: 60 correctas de transporte/cancelación y 33 de continuidad/seam.
+  Prueba en servidor real: `mrun_51870e80569c420383ee`, imagen sintética de 8×8,
+  completada automáticamente y descargable en Actividad; no inferencia ni GPU.
+  Reinicio 18:41, PID 73268, HTTP 200, incluyendo recuperación por workflow y
+  validación de proyecto. Pruebas adicionales: 39 de ámbito y 27 de roundtrip.
+
+- `[x]` **README bilingüe y presentación profesional sincronizados.** README
+  inglés renovado y `README.es.md` completo: los once sistemas conectados,
+  workbench, proveedores, equipos, multimedia, voz, instalación y permisos.
+  Portfolio: ficha, destacados, resumen y cinco puntos del CV en ambos idiomas,
+  basados en las capacidades implementadas. CV abierto desde sus botones reales
+  en español e inglés; comprobación de 17 proyectos, 8 entradas y 150 habilidades.
+  Lint, build y `check:cv` correctos. Sin commit, push ni publicación.
+
+- `[x]` **ART-1: identidad, migración y resultados recuperables.** El productor
+  escribe ocurrencias por evento y deduplica los bytes, conservando dueño/run/
+  proyecto/procedencia. Copia aditiva por lotes al arrancar, hash de galería,
+  alias antiguos, previews y marcas que impiden resucitar un resultado borrado.
+  Contexto de proyecto y State Mirror leen el catálogo unificado; descargas HTTP
+  autorizadas por propietario. Publicación atómica sin sobrescribir un blob
+  corrupto. El rollback rechaza perder ocurrencias ya escritas.
+  `artifact_store` de workflows guarda texto/resultados declarados, con ámbito
+  de proyecto comprobado; Actividad enlaza los archivos de workflows y renders.
+  Pruebas: 126 correctas del corte de lectura, 49 del cierre de migración y
+  112 de integración HTTP/Actividad/contexto. Lotes solapados, no sumables.
+
+- `[x]` **Workflows: avance automático y visibilidad en Actividad.** El worker
+  del servidor continúa runs iniciados, despierta esperas vencidas y recupera
+  intentos abandonados. No inicia borradores ni responde aprobaciones humanas.
+  Identidad única por intento, heartbeat y escrituras condicionales impiden que
+  un resultado antiguo pise al nuevo o que la recuperación borre un heartbeat.
+  Actividad muestra los pasos, dependencias, decisiones y controles de inicio/
+  cancelación. Se conservan estados previos ante fallos de conexión. Pruebas:
+  `tests/test_workflow_scheduler.py` y contratos HTTP/TypeScript de Actividad.
+  Las fechas se comparan como instantes UTC, incluyendo offsets y fracciones;
+  las esperas inválidas fallan con motivo en vez de quedar aparcadas para siempre.
+
+- `[x]` **Respuesta de ausencia y UTC.** La hora de activación histórica, guardada
+  en UTC sin zona, se interpretaba como la zona del remitente. Dos pruebas con
+  `+0200`/`-0500` reproducían respuestas a correo anterior y omisión de correo
+  posterior. Corregido junto con conversiones del cooldown que trataban UTC
+  ingenuo como hora local. Sustituidos `utcnow()` obsoletos de rutas/pollers por
+  el helper UTC compatible, sin migrar ni cambiar los formatos guardados.
+  35 pruebas correctas tratando deprecaciones como errores (`logs/astra-mail-utc.xml`).
+
+- `[x]` **Cancelar un workflow ya no se deshace al llegar una respuesta tardía.**
+  Reproducido en cinco pruebas antes del arreglo: una cancelación acababa como
+  completada/pausada/fallida e incluso se ejecutaban pasos posteriores. El estado
+  terminal ahora se protege mediante escritura condicional en SQLite; el motor
+  comprueba la parada entre nodos y antes de entrar en el handler. El HTTP de
+  avance/reanudación trabaja fuera del bucle principal, por lo que la petición de
+  cancelar puede atenderse mientras trabaja el nodo. Prueba concurrente con HTTP
+  y un handler inerte retenido. **No interrumpe ni deshace un efecto externo que
+  ya había empezado**: registra su resultado y no inicia el siguiente paso.
+  También informa `waiting_on_worker` sin repetir 50 veces una reclamación ocupada.
+  `logs/astra-workflow-cancellation-final.xml`: 59 correctos; otras 103 pruebas del
+  bloque workflow pasaron antes del último ajuste HTTP.
+
+- `[x]` **Consultas e instaladores no dejan una espera ilimitada al cancelar.**
+  `agent_runner_routes`, `runner_connections` y `codex_routes` conservan el handle
+  si la cancelación llega durante el arranque, limpian el árbol y acotan la espera.
+  Las consultas Cookbook usan Bash también en Windows, con entorno de host limpio
+  y salida limitada a 1 MiB por canal. Pruebas con procesos inertes; no prueba de
+  instalación, comando remoto ni aislamiento completo mediante Job Objects.
+
+- `[?]` **Nuevo bloque local para revisar (07-09-2026): conversiones y conexiones.**
+  `plan_media_transform` comprueba una receta sin escribir; `transform_media`
+  convierte/redimensiona imágenes a PNG/JPEG/WebP y extrae audio a WAV/MP3.
+  Progreso, cancelación, límites, copia de trabajo, validación y publicación sin
+  sobrescribir; procedencia con hashes en el resultado del chat. No confundir con
+  vídeo subtitulado, composición por capas ni cadenas duraderas de artefactos.
+  `GET /api/agent-runners/{codex|claude}/connection` consulta el cliente oficial,
+  distingue sesión/API/estado desconocido y no devuelve credenciales. Ambos CLI
+  instalados reportan suscripción en la comprobación local. Runners siguen apagados.
+  La pantalla Agentes → Runners ya ofrece comprobación explícita, cancelación,
+  estados ES/EN y ayuda oficial (`docs/ui/runner-connections.md`).
+  Claude dispone ahora de alta privada desde el selector y vía suscripción/API
+  comprobada por ejecución; `docs/design/official-client-chat.md`. La prueba real
+  de generación y el puente equivalente de Codex siguen abiertos; no es una
+  garantía de cobro ni orquestación de todos los clientes terminada.
+  Detalles y pruebas en `docs/design/mejoras-tras-jarvis.md` §§10–14.
+  Última suite general: **12.687 correctos, 82 omitidos y ningún aviso**, sin fallos
+  (`logs/astra-post-citations-regression.xml`, 19 min 35 s). Exportación, Office,
+  permisos Codex y refresco State Mirror posteriores a la colección: 199 correctos,
+  1 omitido (`logs/astra-office-scopes-runtime.xml`). No sumar lotes solapados ni
+  presentar esa suite como prueba de código añadido después.
+  TypeScript, traducciones y build correctos. Reinicio comprobado: 19:39,
+  PID 34696 y HTTP 200; carga Office, permisos y refresco de State Mirror.
+  No equivale a cerrar toda la deuda ni a generación CLI real verificada.
+
+- `[x]` **Panel lateral de trabajo unificado (Luis, capturas del 07-09-2026).**
+  Ampliación del visor Markdown: pestañas persistentes de resultados/archivos,
+  fuentes/adjuntos y contexto de proyecto, agentes con tarea/estado/resultado,
+  navegador/capturas; anchura ajustable y estado por conversación. Reutilizar
+  panel existente y datos reales, no una maqueta con contadores inventados.
+  Relacionado con orquestador en chat, W12 conexiones y W13 Markdown. No perder
+  borradores al cerrar pestañas, cambiar chat o recibir actualizaciones del agente.
+  Referencias visuales del usuario: panel de recursos y pestaña Subagents de Codex.
+  Implementado en `SidePanel`, `WorkbenchResources`, `panel` y `useChatPanel`.
+  Borradores por conversación, guardado con conflicto, pestañas y anchura ajustable.
+  Revisión independiente de los componentes: pass. Contrato y límites:
+  `docs/ui/studio-workbench.md`. Navegador sigue siendo visor de capturas;
+  navegación interactiva y sincronización de borradores entre dispositivos no
+  forman parte de este cierre.
+
+- `[+]` **Conectar proveedores conocidos con el mínimo de pasos (Luis, 07-09-2026).**
+  Accesos OpenAI, Claude y Gemini con dirección y protocolo preconfigurados,
+  enlace oficial para obtener credenciales, prueba de conexión y catálogo real
+  de modelos. Reutilizar `settings.ts`, `ModelsSection` y `DeviceSignIn`, no otro
+  almacén de secretos. Separar claramente API de suscripción del chat; verificar
+  qué autenticaciones admite cada proveedor para terceros antes de prometer OAuth.
+  Claves sólo en el servidor, sin cookies copiadas, sin modelos ficticios ni
+  cambios automáticos del modelo de conversaciones existentes. Primera porción API
+  implementada en `settings/ProviderConnect.tsx` y reutilizada desde el selector del chat.
+  **Ampliación pedida por Luis:** conectar también clientes oficiales instalados
+  (Codex CLI y Claude Code/Agent SDK) usando su sesión de suscripción, no forzar
+  API. La documentación actual confirma ambas vías; consumen los límites del plan,
+  no son ilimitadas. Detectar instalación/autenticación sin leer tokens; exponer
+  modo de cobro y detenerse al agotar cuota, sin fallback a API de pago. El adaptador
+  CLI **ya existe como base** en `src/agent_runners.py`, `src/external_worker.py`
+  y `src/dispatch.py`, con pantalla Agentes → Runners/Workers. Pendiente es
+  conectarlo al chat/orquestador y hacer explícito el modo suscripción/API;
+  no escribir otro ejecutor de procesos. Mantener API como opción (Luis lo
+  confirma explícitamente), mezclable por agente con CLI y modelos locales.
+
+- `[x]` **Markdown generado: lectura y edición en el panel lateral (Luis, 07-09-2026).**
+  Pulsar el archivo `.md` del chat abre su contenido formateado junto a la
+  conversación, con edición, guardado explícito y acceso al Markdown original.
+  Extender `studio/SidePanel.tsx`, `panel.ts` y el adaptador `documents.ts`:
+  ya existen documentos editables y archivos, pero hay que verificar y completar
+  el enlace entre archivo generado y visor editable. No crear copias silenciosas.
+  Preservar cambios sin guardar, detectar conflictos de versión, respetar permisos
+  del proyecto y sanear HTML/enlaces. Implementado: archivo confinado al workspace,
+  CAS por SHA-256, documentos por contenido base, borradores conservados incluso
+  ante confirmaciones tardías. Pruebas de CRLF, conflictos y enlaces Windows.
+  También persisten respuestas de guardado en chats no visibles; renombrar cambia
+  sólo el título y restaurar detecta conflictos con el agente. Archivar/restaurar
+  no roba el foco a otro documento ni permite descartar un borrador durante guardado.
+
+- `[x]` **Orquestador y agentes configurables dentro del chat (petición de Luis,
+  07-09-2026).** Crear un chat dentro del proyecto, elegir modelo y poder marcarlo
+  como orquestador desde ese mismo selector/contexto. Añadir sus agentes (minions),
+  modelo/proveedor por agente, rol, herramientas, permisos heredados/restringidos
+  y límites de concurrencia sin navegar a otro menú. Reutilizar perfiles y
+  `delegate_agents`; distinguir orquestación de ejecución del Consejo para debatir.
+  Mostrar quién hace qué, qué espera y los resultados; pausar/quitar un agente no
+  debe terminar los demás por accidente. Guardar configuración por chat, con
+  configuración humana fijada por turno. Implementado y probado con Qwen local:
+  guardado/recarga, aprobación, delegación real, retorno al chat y respuesta en
+  español. Destinos exactos y credenciales por miembro, sin sustitución silenciosa.
+  Quedan separados del cierre: plantilla compartida de equipo por proyecto y puente
+  de Codex. Claude ya puede registrarse como modelo textual privado; sigue pendiente
+  verificar generación y equipo mixto reales, no sólo contratos simulados.
+
+- `[?]` **Mejoras posteriores a Jarvis pendientes de revisión de Luis (07-09-2026).**
+  Registro en `docs/design/mejoras-tras-jarvis.md`: recuperación de índices de
+  contexto, Actividad con conversaciones y estados desactualizados explícitos,
+  preprocesado PDF acotado y carga de autenticación que no reinicia la configuración
+  ante errores. Se añade recuperación limitada de reemplazos atómicos bloqueados
+  transitoriamente en Windows, inspección multimedia, adjuntos Ctrl+V robustos y
+  conexión guiada por API. Esta última exige reiniciar el backend actualizado antes
+  de guardar conexiones privadas; no confundirla con la integración CLI pendiente.
+  Cambios locales, sin commit ni push; backend actualizado y reiniciado para las
+  pruebas de equipo, frontend reconstruido. Prueba real local de delegación correcta;
+  no equivale a validación con micrófono ni a ausencia de fallos en toda la aplicación.
+
+- `[x]` **Publicación tardía del contexto: comparación condicional implementada.**
+  `ProjectStore.patch_link_if_current` compara revisión/estado/políticas bajo el
+  mismo bloqueo que las mutaciones del proyecto. El publicador SQLite y el marcado
+  ready sólo ejecutan si sigue vigente. Errores tardíos tampoco pisan un enlace
+  desactivado. Cubierto con carreras deterministas y concurrencia real de hilos.
+  `[~]` No es una transacción distribuida JSON/SQLite ni bloqueo entre procesos;
+  un fallo al guardar JSON después de SQLite requiere recuperación del índice
+  derivado. El contenido fuente puede cambiar externamente tras verificarlo.
+  La reparación explícita de registros históricos sigue pendiente.
+
+- `[x]` **Un bloqueo de lectura no vacía los proyectos.** `ProjectStore._load`
+  deja intactos `projects.json` y cualquier copia de recuperación ante JSON inválido,
+  estructura inválida o error de lectura. Reintenta bloqueos transitorios y no
+  cachea una lista vacía como si fuese válida. `_save` usa el escritor atómico
+  compartido, con temporales únicos y recuperación limitada en Windows.
+
+- `[+]` **Workstation multipropósito: backlog contrastado, no otro inventario.**
+  `D:/LocalAI/inspiration/AUDITORIA_WORKSTATION_APPS_Y_COMMANDERTURTLE.md` relaciona
+  apps grandes y repos con capacidades existentes, rutas y criterios de aceptación.
+  B-017/ART-1 ya tiene migración aditiva y cortes de lectura/escritura, autorizados
+  por la petición de implementar el conjunto. Después: resultados enlazados,
+  transformaciones multimedia, skills progresivas y evidencia versionada.
+
 - `[?]` **Jarvis: validación con micrófono real pendiente (07-09-2026).** La implementación de voz
   está en `docs/design/voice-jarvis.md`: Whisper local, inglés/español, síntesis nativa
   de Windows, esfera reactiva, revisión de transcripción e interrupción manual.
@@ -173,26 +369,31 @@ al romperlo:
   esas rutas y **no se ha tocado**: son complementarios, no duplicados — uno aprueba un comando,
   el otro un plan.
 
-- `[~]` **Los nodos `deliver` y `artifact_store` no están cableados a nada.** Rechazan por su nombre
+- `[+]` **Faltan el canal de `deliver` y las skills no multimedia en workflows.** `artifact_store`
+  ya está conectado en el runtime de producción y guarda resultados con propiedad,
+  ámbito y enlaces descargables. `deliver` todavía rechaza por su nombre
   (*«no sender is wired to the 'deliver' node type; nothing was sent»*) y eso es deliberado: un run
   verde sin correo enviado es el peor fallo posible de un motor de workflows. `deliver` necesita un
   canal (Fase 6). `skill` **sí** está cableado, pero solo para `media:<plantilla>` (§36); una skill
   de código sigue necesitando el `execution_router` con un workspace (Fase 1), y su rechazo apunta
   a lo que sí funciona.
 
-- `[+]` **Nadie llama a `advance()` en bucle.** Lo llaman la ruta `/api/workflows/runs/{id}/advance`,
-  la tool MCP o una persona. `advance()` ya despierta los `wait` cuya hora pasó, así que un
-  planificador de un minuto sería la implementación entera — pero mientras no exista, un nodo
-  `wait` se queda pausado hasta que alguien pregunte.
+- `[x]` **Los workflows iniciados continúan solos.** `src/workflows/scheduler.py`
+  está registrado en el supervisor del servidor; tick acotado, cursor rotativo,
+  recuperación y protección de resultados tardíos. Los borradores quedan sin iniciar.
 
-- `[+]` **La UI no enseña los workflows.** Todo está en rutas y tools; no hay página de runs, ni
-  lista de pausados, ni botón de reanudar. Un run pausado esperando a una persona solo se ve desde
-  la lista de aprobaciones pendientes, que es la mitad de la historia.
+- `[x]` **Workflows integrados en Actividad.** Listado HTTP acotado y vista de pasos
+  con estados/dependencias/horas, aprobación enlazada y comprobación explícita de
+  decisión, inicio de borradores y cancelación. No expone el prompt ni inputs en
+  el listado; estados de conexión degradada conservan la última lectura como antigua.
 
-- `[+]` **El doctor no mira la memoria, el navegador ni los modelos.** Cubre runtime, backends,
-  ejecución, coding, medios, aprobaciones, workflows y skills — que es donde han caído las seis
-  fases del masterplan. Lo que no toca todavía: si Ollama responde y con qué modelos, el estado del
-  navegador integrado, y si la memoria/Chroma está sana. Son las tres siguientes.
+- `[x]` **Diagnóstico de modelos, memoria y navegador.** Doctor consulta el catálogo
+  de Ollama y heartbeat Chroma con lecturas acotadas y sin redirecciones; verifica
+  memoria JSON sin modificarla ni revelar su contenido y comprueba la conexión del
+  navegador sin abrir páginas. Distingue ausencia, fallo y desconocido, con acción
+  de recuperación. El filtro de áreas no consulta backends ajenos. Corregidas las
+  instrucciones antiguas sobre avance manual de workflows/renders y el aviso de
+  disco escaso sin solución. 30 pruebas correctas (`astra-doctor-services.xml`).
 
 - `[?]` **El `ChangeSet` del turno no se ha visto en un turno real todavía.** Ya se construye al
   final de cada turno del agente y su veredicto viaja en la tarjeta de resumen (probado bajo node y
@@ -228,13 +429,18 @@ al romperlo:
   milisegundos; con motores remotos o con más de dos habría que cachear como hace el registro de
   capacidades (10 s) y refrescar en segundo plano.
 
-- `[+]` **Los artefactos de un render no se ven en ninguna parte.** La fila lleva receta, semilla,
-  modelo y licencia; no hay galería que lo enseñe ni botón de «variar/reproducir», que es justo lo
+- `[+]` **Galería y variaciones de renders.** Actividad ya muestra sus artefactos
+  descargables con propiedad comprobada. La fila lleva receta, semilla,
+  modelo y licencia; falta integrarlos en la galería y el botón de «variar/reproducir», que es justo lo
   que hace útil guardar la semilla. Los dos mundos siguen separados: `generate_image` escribe en
   `generated_images/` + `gallery_images`, y un render escribe en el almacén de artefactos.
 
-- `[+]` **Nada llama a `media_runs.poll()` solo.** Igual que `advance()` en los workflows: lo llaman
-  la ruta, la tool o una persona. Un render encolado no se recoge hasta que alguien pregunta.
+- `[x]` **Recogida automática de renders.** `media_scheduler` consulta ejecuciones
+  iniciadas por páginas limitadas; nunca envía prompts nuevos. Reconcilia envíos
+  dudosos con margen para no condenar una petición aún en vuelo. Descargas fallidas
+  quedan reintentables con motivo visible; no se anuncian completas sin archivos.
+  El estado terminal se protege de respuestas tardías y cada recogida tiene un
+  directorio aislado. Las rutas de plan/envío no bloquean el bucle principal.
 
 - `[~]` **hwfit sabe decir «no cabe» y nadie se lo pregunta antes de encolar.**
   `rank_image_models()` ya calcula si un modelo entra en la VRAM de esta máquina, con margen del
@@ -324,49 +530,67 @@ al romperlo:
 
 ## Mejoras pendientes
 
-- `[+]` **`tool_index.py` no rerankea.** Una línea de opt-in en su llamada a
-  `two_tier_search.search()`. Es donde caería la mejora de 6/8 → 8/8 medida.
+- `[x]` **Reranking opcional de herramientas conectado.** Preferencia privada
+  `agent_tool_rerank`, apagada por defecto, aplicada al agente y al programador.
+  Sólo envía descripciones públicas de herramientas incorporadas; no textos de
+  conectores privados. Conserva herramientas obligatorias y orden original si el
+  servicio falla. 86 pruebas correctas de selección, reranker y preferencias;
+  falta medir la mejora con un reranker y hardware reales, no se extrapola 8/8.
 
 - `[+]` **`experts.search` hace una consulta a la BD por llamada** para ver si
   hay reranker. Sub-milisegundo frente a ~10 ms de búsqueda, pero está en una
   ruta donde el usuario espera y no está cacheada.
 
-- `[+]` **`Citations` y `Claims cited` se calculan y no se enseñan.**
-  `research_handler._format_research_report` y `visual_report.py` pintan una
-  lista fija de claves (`Duration/Rounds/Queries/URLs/Model/Search`).
+- `[x]` **Métricas de citas visibles.** Ambos `research_handler` y el informe
+  visual muestran `Citations` y `Claims cited` cuando existen; no inventan valores
+  si falta la medición. Pruebas de ausencia y escape HTML.
 
-- `[+]` **El registro de citas no se persiste.** Muere con el investigador, así
-  que una investigación continuada reconstruye los números desde
-  `prior_findings` — mismas URLs dan mismos números solo si llegan en el mismo
-  orden.
+- `[x]` **Registro de citas persistido para continuaciones.** El resultado guarda
+  una instantánea versionada de todas las fuentes numeradas, también las que el
+  filtro visual omite. La continuación restaura primero las identidades y después
+  incorpora hallazgos: reordenarlos no cambia `[n]`. Texto acotado, URLs web sin
+  credenciales, rechazo de duplicados/numeración dañada antes de consultar al modelo
+  y lectura de continuaciones por propietario. Guardado atómico privado conserva
+  el resultado anterior si falla la sustitución. Compatibilidad con investigaciones
+  antiguas sin snapshot. 445 pruebas correctas de research/citas, incluyendo
+  persistencia, continuación real del motor con respuestas simuladas y fallo de disco.
 
-- `[+]` **La segmentación de frases es heurística.** Parte en `.!?…` seguido de
-  mayúscula/dígito/comilla. Se equivoca en "Dr. Smith" o "p. ej." y eso mueve la
-  frase a la que se pega un marcador. Los marcadores nunca se pierden.
+- `[~]` **La segmentación de frases sigue siendo heurística.** Corregidas
+  abreviaturas comunes EN/ES (`Dr.`, `Dra.`, `p. ej.`, `e.g.`) y conservación de
+  comillas de cierre. No es un segmentador lingüístico general ni cubre todos los
+  nombres/abreviaturas. Pruebas en `test_citation_sentence_boundaries.py`.
 
-- `[+]` **`Fig. 3` se parte.** Un dígito cuenta como inicio de frase. La regla
-  del dígito es la que mantiene entera `"40%. [1] Recovery"`, así que no es
-  gratis quitarla.
+- `[x]` **`Fig. 3` conserva la afirmación completa.** Excepción acotada para
+  referencias numéricas, sin eliminar la regla de inicio por dígito. Se mantiene
+  la cita pospuesta de `40%. [1] 30 participants…` en su afirmación original.
+  96 pruebas de citas correctas; siete regresiones fallaban antes del cambio.
 
-- `[+]` **La metadata del fichero exportado sigue diciendo "chat".** El docx
-  guarda `comments = "Chat transcript exported by Faustus"` y el PDF
-  `subject="Chat transcript"`. Invisible en la página, visible en Propiedades.
+- `[x]` **Metadatos de documentos exportados.** DOCX y PDF distinguen documento
+  de transcripción; no cambian los metadatos de chats. Regresión sobre ambos
+  formatos en `test_export_document_flag.py`. Traducción de etiquetas sigue aparte.
 
-- `[+]` **El documento exportado mezcla idiomas.** Sus etiquetas (metadatos,
-  "Sources", el pie) son inglesas aunque el informe sea español. Tres constantes.
+- `[x]` **Exportaciones de informes en español e inglés.** Metadatos, fuentes,
+  pie, asunto DOCX/PDF y `lang` HTML siguen el idioma del informe; detección de la
+  pregunta para archivos antiguos y campo explícito para los nuevos. Contexto
+  independiente por exportación, restaurado incluso al fallar, sin contaminar
+  otro idioma en exportaciones concurrentes. 153 pruebas correctas, 1 omitida.
 
-- `[+]` **`_blocks_to_txt` sigue juntando la lista.** Se dejó a propósito: el
-  texto plano nunca se vuelve a parsear, así que no hay fallo de fidelidad.
+- `[x]` **TXT conserva listas profundas y sangría de código.** Eliminado el
+  `lstrip` que aplanaba hijos al escribir cada elemento. Prueba con tres niveles
+  y un bloque Python anidado; el texto plano sigue sin necesitar reparseo Markdown.
 
 - `[+]` **`test_dispatch_external_runner.py` creció ~330 líneas.** El repo tiene
   un `OVERSIZED_TEST_SPLIT_PLAN.md`; este fichero es candidato.
 
-- `[+]` **`static/favicon.png` está en `.gitignore` y dos tests dependen de él.**
-  Pasan en el árbol de Luis y fallan en cualquier worktree limpio. O se commitea
-  el asset o el test deja de depender de un artefacto ignorado.
+- `[x]` **`static/favicon.png` ya es un archivo versionado.** Comprobado con
+  `git ls-files --error-unmatch`; la nota de archivo ignorado quedó obsoleta.
+  Pasan las pruebas de marca y referencias a imágenes, sin añadirlo al staging.
 
-- `[+]` **`markitdown[docx]` no está instalado** y un test lo pide. Fallo
-  ambiental permanente en la suite.
+- `[x]` **Convertidor Office opcional instalado y comprobado.** Instalado
+  `markitdown[docx,pptx,xlsx,xls]==0.1.6`, conservando ONNX 1.29.0 y NumPy 2.5.2.
+  El lector nativo DOCX funciona sin él, ahora conserva encabezados y rechaza XML
+  descomprimido mayor de 16 MiB antes de leerlo. Conversión DOCX real comprobada;
+  `pip check` correcto y bloque de 199 pruebas correctas, 1 omitida por otro motivo.
 
 ---
 
@@ -382,8 +606,10 @@ Cada uno es una línea (`env=native_host_environment()`), listados por valor:
   con `shutil.which(argv[0], path=full_env["PATH"])`, así que si el usuario
   instaló su CLI en nuestro venv, limpiar el PATH lo deja "no instalado". Hace
   falta `which()` contra el PATH original y lanzar con el entorno limpio.
-- `[+]` `routes/agent_runner_routes.py:76`, `routes/codex_routes.py:532` — se
-  arreglan solos con el anterior.
+- `[x]` `routes/agent_runner_routes.py`, `routes/codex_routes.py` — consultas,
+  arranque y clientes usan los helpers de entorno/supervisión; Cookbook usa Bash
+  con entorno nativo limpio y lectura acotada. Regresiones de cancelación y
+  arranque cubiertas en el lote de conexiones descrito al inicio del documento.
 
 ---
 
@@ -431,9 +657,11 @@ tokens `ody_`, y B-004; el registro está en `FAUSTUS.md` §43. Lo que **no** ci
   (`user`, `api_token`, `internal`, `mcp`), con `owner_rule` aplicado de verdad y no sólo
   declarado. `Rule.owner_rule` y `effect_class` ya viajan en cada regla precisamente para eso:
   están escritos, todavía no se consultan.
-- `[+]` **`/api/codex/*` sigue siendo un agujero declarado.** La regla exige *todos* los
-  scopes conocidos, que es la manera honesta de decir «esto no está segmentado». Segmentarla
-  requiere decidir qué hace cada ruta de codex, y eso es trabajo de RUN-1.
+- `[x]` **Superficie Codex segmentada por método, ruta y permiso.** Eliminada la
+  admisión global: documentos, correo, memoria, calendario, tareas y Cookbook
+  tienen reglas explícitas; las rutas nuevas quedan cerradas por defecto.
+  Crear un documento desde correo exige ambos permisos. Se conservan controles
+  de dueño y administrador, con pruebas de cruces de ámbito y rutas desconocidas.
 - `[?]` **El presupuesto del clasificador no es configurable.** `gate_check` llama a
   `classify_tool` con los 50 ms por defecto. En la máquina de pruebas un comando adversario de
   4.095 reglas evaluadas ni se acerca al límite, así que no hay prisa; si alguna vez sube
@@ -453,11 +681,10 @@ El Sprint 0B (rama `feat/sec-1`, 05-09-2026) cierra B-002, B-003, B-005, B-006 y
 auditoría; el registro está en `FAUSTUS.md` §44. Lo que **no** cierra:
 
 - `[x]` **B-007 se cerró justo después**, en su propio commit (`FAUSTUS.md` §45).
-- `[+]` **La misma política de UTC falta en `chat_export.py`.** B-005 se arregló donde el
-  informe lo señala (`report_export.py`), pero `chat_export.py:692` sigue usando
-  `datetime.now()` sin zona y su nombre de fichero (`:1467`) sale de ahí. Es el mismo fallo,
-  fuera del alcance del lote; el arreglo es una línea y un repaso de los tests que fijan la
-  cadena *"Exported: ..."*.
+- `[x]` **Las transcripciones exportadas usan UTC.** `build_transcript` ya utiliza
+  `datetime.now(timezone.utc)`. Nueva regresión `test_chat_export_utc.py` exige zona
+  explícita y comprueba nombre de archivo y fecha JSON con `+00:00`; no depende de
+  que el ordenador de pruebas esté en UTC. Las etiquetas humanas mantienen su formato.
 - `[?]` **`semver_key` acepta lo que acepta el validador, que es más laxo que semver.org.**
   El regex del contrato permite identificadores de prerelease con ceros a la izquierda
   (`1.0.0-01`), que la especificación prohíbe. Se ha dejado como estaba para no invalidar
@@ -498,9 +725,8 @@ Los 25 bugs de `inspiration/AUDITORIA_BACKEND_Y_FEATURES_FAUSTUS.md` están cerr
   leer-modificar-guardar con él. Ahora toman el lock y suben la revisión, así que no se
   entrelazan, pero no pasan `expected_revision`: gana el último. Migrarlos a `update_settings`
   es trabajo mecánico y hay que hacerlo ruta a ruta.
-- `[+]` **La misma política de UTC falta en `chat_export.py`.** B-005 se arregló en
-  `report_export.py`, que es donde lo señala el informe; `chat_export.py:692` sigue usando
-  `datetime.now()` sin zona y su nombre de fichero sale de ahí.
+- `[x]` **UTC en exportación de chat:** cerrado y cubierto por
+  `test_chat_export_utc.py`; véase Sprint 0B arriba (entrada duplicada histórica).
 - `[~]` **Dos mecanismos de lock en el mismo árbol.** STATE-1 usa `core/file_lock.py` (O_EXCL
   con rotura por antigüedad) y UPLOAD-1 usa locks consultivos del sistema operativo, que se
   sueltan solos al morir el proceso. Los segundos son mejores; habría que quedarse con ellos.
@@ -518,9 +744,12 @@ Los 25 bugs de `inspiration/AUDITORIA_BACKEND_Y_FEATURES_FAUSTUS.md` están cerr
 
 ### SSH-1 (B-025)
 
-- `[!]` **Rompe conexiones existentes y no hay interfaz para arreglarlo.** Con el `known_hosts`
-  privado vacío, todo host remoto deja de conectar hasta emparejarlo. Los endpoints están
-  (`/api/cookbook/ssh/fingerprint`, `/pair`, `/unpair`); Studio no.
+- `[x]` **Studio ya permite emparejar servidores SSH.** Con el `known_hosts` privado
+  vacío sigue siendo necesario verificar la identidad antes de conectar. Cookbook →
+  Servers ahora ofrece inspección, huellas guardadas/ofrecidas, confirmación manual
+  y revocación separada; nunca acepta una clave cambiada automáticamente. Se reutilizan
+  `/api/cookbook/ssh/fingerprint`, `/pair`, `/unpair`; las dos mutaciones exigen humano
+  y mismo origen. Pruebas y límites en `docs/ui/ssh-trust.md`.
 - `[x]` **Los sitios con el flag antiguo quedaron cerrados:** `routes/hwfit_routes.py` y
   `services/hwfit/hardware.py` pasan `strict_host_key_checking=False`, y
   `core/platform_compat._ssh_exec_argv` y `routes/cookbook_helpers.run_ssh_command_async`
@@ -538,8 +767,9 @@ Los 25 bugs de `inspiration/AUDITORIA_BACKEND_Y_FEATURES_FAUSTUS.md` están cerr
   autenticado. El arreglo es una llamada a `register_compose_upload`; el fichero no está entre
   los que B-023 nombra, y hay un test que fija el puente para que quitarlo sea deliberado.
   **Cerrado:** ahora registra el fichero con dueño mediante `register_compose_upload`.
-- `[+]` **El poller programado no pasa dueño.** `email_pollers.py` tiene `row_owner` a mano y
-  llama sin él. Una línea.
+- `[x]` **El poller programado ya pasa dueño.** `email_pollers.py` usa `row_owner`
+  tanto al adjuntar como al limpiar el staging. Regresión de entrega programada
+  comprueba ambas llamadas con el dueño persistido; no se envía correo real.
 - `[+]` **La limpieza de adjuntos es oportunista**, colgada de la ruta de staging, no de un
   scheduler.
 - `[+]` **B-021 sólo tomó el camino corto.** La migración a SQLite, escribir metadatos antes de
@@ -576,9 +806,9 @@ Los 25 bugs de `inspiration/AUDITORIA_BACKEND_Y_FEATURES_FAUSTUS.md` están cerr
 
 ### ART-1 (B-017)
 
-- `[~]` **La migración entera está pendiente, y ese es el plan.** Fases 2 a 5 de la nota:
-  copiar `artifacts` a ocurrencias, hashear las filas de galería, y los dos cortes. Nada llama
-  todavía al almacén nuevo desde `collect()`/`persist()`; `artifacts` sigue siendo la verdad.
+- `[x]` **Fases 2–5 conectadas.** Copia aditiva por lotes, hash de galería, aliases,
+  escrituras por ocurrencia y catálogo compartido para lectores. La tabla histórica
+  se conserva; eliminar una ocurrencia no la hace reaparecer por ese historial.
 - `[+]` **La recolección de basura no borra bytes por defecto**, y aunque se le pida se niega a
   tocar lo que la tabla vieja todavía nombre. Dos censos cubren los mismos ficheros hasta la
   fase 5 y sólo uno sabe del otro.
@@ -781,16 +1011,12 @@ mirar**.
   de tocar nada, porque si de verdad cambia hay una segunda vía que no está en `Project.tsx`. El
   arreglo de fondo es el mismo en los dos casos: ids en inglés estables, con alias de los actuales
   para no romper los enlaces que ya existen.
-- `[+]` **No hay `studio/checks/*.check.mjs` para proyectos, y la aritmética ya está exportada
-  esperándolo.** `studio/src/adapters/projects.ts` saca fuera de los componentes todo lo que la
-  pantalla afirma: `groupLinksByRole` (orden por el vocabulario de roles, no alfabético),
-  `linkIsBehind` (dos hechos distintos —`index_status === 'stale'` y el `stale` que devuelve
-  `inspect`— colapsados en un «refréscame»), `linkIsBroken`, `countLinks`, `shortRevision`,
-  `refusalOf` (el 200 que dice que no) y `contextLinkFrom`. Es exactamente el mismo patrón que
-  `adapters/context.ts` + `studio/checks/context.check.mjs` + `tests/test_studio_context_js.py`
-  (102 comprobaciones), y aquí hay **cero**. Un panel cuyos números no se pueden verificar es
-  decoración, y estos números deciden si el usuario cree que el agente puede escribir en una
-  carpeta.
+- `[x]` **Contratos JavaScript de proyectos añadidos.** `studio/checks/projects.check.mjs`
+  y `tests/test_studio_projects_js.py` verifican permisos, contadores, orden, parseo,
+  rechazo HTTP 200 y rutas. Se corrigieron estados desconocidos que parecían sanos,
+  versiones fraccionarias y respuestas de alta sin vínculo que parecían guardadas.
+  Las negativas ya no se convierten en listas vacías. Los permisos efectivos siguen
+  decidiéndose en el servidor, no en estos contadores.
 - `[x]` **Los seis fallos heredados de coherencia de tools están diagnosticados y cerrados.** Cinco en
   `tests/test_agent_loop_offer_execute_coherence.py` y uno en
   `tests/test_external_context_tool_gate.py`. Comprobado revirtiendo el cambio y corriendo con el
@@ -800,14 +1026,10 @@ mirar**.
   era que no son de aquí. La disponibilidad dinámica retira `suggest_document` hasta que exista
   documento y la repone al abrir/crear uno; las skills editables siguen atravesando correctamente
   la aprobación exacta en vez de ejecutar como si fueran de confianza.
-- `[+]` **El docstring de `src/project_context/service.py` dice que sus eventos no están en
-  `EVENT_NAMES`, y ya lo están.** La sección «Events» explica que `_emit` intenta el `emit()` real
-  y guarda el sobre en un buffer en memoria (`unrouted_events()`) porque los nombres
-  `project_context_*` «are not in `src/contracts/event.py::EVENT_NAMES`, and that file is not this
-  change's to edit». Los ocho nombres **sí** están ahí ahora, así que el camino de respaldo está
-  muerto y el docstring describe un mundo anterior. El buffer no molesta —cuesta una lista vacía—
-  pero `CONTEXT_EVENT_NAMES` y su comentario («Listed here so whoever adds them has the set»)
-  también sobran, y quien lea el módulo se creerá que sus eventos no llegan a ninguna parte.
+- `[x]` **Comentarios de eventos alineados con el contrato.** Corregidos los textos
+  del registro, buffer y log; el fallback indica rechazo de contrato, no nombres
+  pendientes de registrar, y no vuelca el payload en el log. La prueba existente
+  verifica los ocho nombres registrados y que la emisión correcta no usa el buffer.
 
 ## Perfiles de agente y Completion Modes: lo cerrado, y lo que deja abierto (06-09-2026)
 
@@ -1218,28 +1440,31 @@ sigue siendo el único método que encuentra lo que ninguna prueba busca.
   credencial aceptada, nada en un barrido abre un socket, y ningún almacén registra qué se le
   permite hacer a una conexión. Un token revocado se ve exactamente igual que uno vivo.
 
-- `[~]` **`models` está callado hasta que otra cosa haya sondeado `/api/system/usage`.** Todas las
-  rutas a `/api/ps` son corrutinas y un barrido síncrono no arranca un bucle, así que el adaptador
-  lee el documento que `collect_usage` deja en su caché y lo sella con el `ts` de ese documento. Un
-  proceso recién arrancado da cero observaciones. Es el modo de fallo honesto —un documento de hace
-  diez minutos se califica `stale`, no `fresh`— pero significa que el estado de los modelos es tan
-  reciente como el sondeo de la interfaz.
+- `[x]` **Modelos medidos antes de los barridos de State Mirror.** El worker
+  recoge uso real en el bucle del servidor antes de invocar los adaptadores en
+  su hilo. Ya no requiere mantener abierta la página de uso. Sólo en barridos
+  habilitados, con dueño y sin chat activo; timeout acotado, cancelación respetada
+  y fecha antigua conservada si falla la sonda. No carga ni genera con modelos.
+  33 pruebas correctas de cableado, orden de sonda/barrido y estados degradados.
 
-- `[~]` **`head` y `last_verified_changeset` no tienen fuente.** Nada público en el repositorio
-  devuelve el SHA de HEAD de un workspace (`git_invariants` es quien sabe ejecutar git con
-  seguridad, y sólo se le añadió `current_branch`), y `src/changesets.py` no persiste nada: su
-  propio docstring dice «nothing is stored». No hay un último ChangeSet al que apuntar.
+- `[x]` **HEAD real del proyecto disponible en State Mirror.** `git_invariants.current_head`
+  verifica el commit con Git, con timeout y sin shell; compatible con HEAD desprendido,
+  worktrees y SHA-1/SHA-256. Comparte la caché y fecha originales del adaptador.
+  101 pruebas correctas, incluyendo un repositorio Git temporal real.
+- `[~]` **`last_verified_changeset` necesita persistencia.** `src/changesets.py`
+  construye el resultado sin guardarlo; falta una fuente duradera para el último verificado.
 
 - `[~]` **`current_branch` no distingue HEAD desprendido de fallo.** Devuelve `""` para los dos, así
   que en HEAD desprendido el campo se **omite** en vez de decir qué pasa. Distinguirlos exige
   ensanchar el tipo de retorno.
 
-- `[~]` **Un conflicto no tiene camino a `resolved` ni a `superseded`.** Sólo a `abandoned`, que
-  `reconcile` escribe cuando la entidad se retira. Un conflicto no puede resolverse solo con lo que
-  hay: `MaterializedState` guarda UN valor por campo con UNA fuente, así que una vez plegada la
-  discrepancia no queda contra qué comparar las dos afirmaciones. `next_check` nombra lo que lo
-  zanjaría y **nadie lo ejecuta**. Hace falta quien decida: una ruta, una persona, o una re-sonda
-  dirigida que mantenga vivas ambas afirmaciones.
+- `[x]` **Conflictos resueltos cuando las fuentes vuelven a coincidir.** El log duradero
+  conserva las mediciones de cada fuente aunque el estado reducido sólo retenga una.
+  La ingestión compara muestras nuevas, frescas, del mismo dueño/ámbito; un tercero
+  discrepante, una lectura antigua, una inferencia o un campo ausente no cierran el caso.
+  Resolución condicionada a que no haya entrado otra observación; evento único e historial
+  conservado. Corregidas también referencias a IDs de conflictos no guardados al deduplicar.
+  75 pruebas correctas (`astra-state-convergence.xml`). La retirada mantiene `abandoned`.
 
 - `[~]` **Nada reproduce el log de observaciones para reconstruir el estado.** El log es
   append-only y `reducers.reduce_many` existe, pero no hay `replay()`. El §26 lo pide como criterio

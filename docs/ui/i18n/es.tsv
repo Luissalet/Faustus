@@ -1,4 +1,8 @@
  (check it)	 (revísalo)
+Workflow	Flujo de trabajo
+Workflows	Flujos de trabajo
+Rerank tool candidates	Afinar la selección de herramientas
+Send your query and public built-in tool descriptions to your configured reranker to improve tool selection. Private connector descriptions are never sent. Adds up to a short request; failures keep the original selection. Off by default.	Envía tu consulta y las descripciones públicas de herramientas al modelo de clasificación configurado para afinar la selección. Nunca envía descripciones privadas de conectores. Añade una petición breve; si falla, conserva la selección original. Desactivado por defecto.
  (in series)	 (en serie)
  (one per task)	 (uno por tarea)
  + reviewer	 + revisor
@@ -5316,3 +5320,171 @@ Speech output failed. The full response is still in the chat.	Falló la síntesi
 Could not play speech audio.	No se pudo reproducir la voz.
 I did not hear anything. Try again closer to the microphone.	No he oído nada. Prueba de nuevo más cerca del micrófono.
 Microphone permission was denied. Allow it in your browser and retry.	No se concedió permiso para el micrófono. Actívalo en el navegador y vuelve a intentarlo.
+Conversations, tasks, renders and approvals. Work continues when you leave a chat.	Conversaciones, tareas, imágenes y permisos. El trabajo continúa cuando sales de un chat.
+Connection interrupted. Showing the last known activity; it may have changed. Use Refresh to try again.	Se ha interrumpido la conexión. Se muestra la última actividad conocida; puede haber cambiado. Pulsa Actualizar para reintentarlo.
+Last checked {time}	Última consulta: {time}
+Open this conversation to review and answer its permission request.	Abre esta conversación para revisar y responder a su solicitud de permiso.
+This work runs on the server. You can use other chats while it continues.	Este trabajo se ejecuta en el servidor. Puedes usar otros chats mientras continúa.
+Stop this run	Detener esta ejecución
+Could not stop this run. It may have ended; refresh its status before trying again.	No se pudo detener esta ejecución. Puede que haya terminado; actualiza su estado antes de reintentarlo.
+Last progress	Último avance
+A quiet model is not necessarily stuck. Last progress refers to model or tool output, not a connection heartbeat.	Un modelo sin novedades no está necesariamente bloqueado. El último avance indica actividad del modelo o de sus herramientas, no una señal de conexión.
+conversation names	nombres de conversaciones
+chat	chat
+Open conversation	Abrir conversación
+Elapsed	Tiempo transcurrido
+Could not refresh {what}. Any retained rows are last known activity, not current status. Use Refresh to try again.	No se pudo actualizar: {what}. Las filas conservadas muestran la última actividad conocida, no su estado actual. Pulsa Actualizar para reintentarlo.
+Some activity is unavailable	Parte de la actividad no está disponible
+The unavailable sources may contain work. Refresh to check again.	Puede haber trabajo en los servicios que no responden. Actualiza para comprobarlo de nuevo.
+Last known activity	Última actividad conocida
+Last known activity. Refresh before taking action.	Última actividad conocida. Actualiza antes de realizar acciones.
+Upload timed out. Retry or remove this attachment.	La subida ha tardado demasiado. Reintenta o quita este adjunto.
+Waiting to upload…	Esperando para subir…
+Retry {name}	Reintentar {name}
+Paste a screenshot with Ctrl+V, or drop a file here.	Pega una captura con Ctrl+V o arrastra un archivo aquí.
+The server returned no attachment. Retry the upload.	El servidor no devolvió ningún adjunto. Reintenta la subida.
+Connect an AI provider	Conecta un proveedor de IA
+AI providers	Proveedores de IA
+Use an API key. API usage is billed separately from chat subscriptions; provider limits and free tiers may apply.	Usa una clave de API. Su consumo se factura aparte de la suscripción del chat; puede haber límites y planes gratuitos del proveedor.
+Get a key from {provider}	Obtener una clave de {provider}
+Only you can use this connection. Your key is sent to the Faustus server, not stored in this browser.	Esta conexión es privada para tu usuario. La clave se envía al servidor de Faustus, no se guarda en este navegador.
+Choose models for the chat picker	Elige modelos para el selector del chat
+This checks the model list, not generation access or every model capability.	Esto comprueba el catálogo, no el acceso a generar ni todas las capacidades de cada modelo.
+Connect selected models	Conectar los modelos elegidos
+Check connection	Comprobar conexión
+Checking connection…	Comprobando conexión…
+Saving connection…	Guardando conexión…
+{n} model selected	{n} modelo elegido
+{n} models selected	{n} modelos elegidos
+Connected. Your selected models are now available in the chat picker.	Conectado. Tus modelos elegidos ya están disponibles en el selector del chat.
+Could not verify this key. Check the key, API access and provider status, then retry.	No se pudo verificar la clave. Revisa la clave, el acceso a la API y el estado del proveedor, y reintenta.
+The provider returned no models. Check API access before connecting.	El proveedor no devolvió modelos. Comprueba el acceso a la API antes de conectar.
+The save was not confirmed. Refresh the connections before retrying to check whether it completed.	No se confirmó el guardado. Actualiza las conexiones antes de reintentar para comprobar si llegó a completarse.
+Connect a cloud provider or a local model server. Choose its models in the chat picker.	Conecta un proveedor en la nube o un servidor de modelos local. Elige sus modelos en el selector del chat.
+Restart the updated Faustus server before adding a private connection.	Reinicia el servidor actualizado de Faustus antes de añadir una conexión privada.
+Subscription session detected	Sesión de suscripción detectada
+API session detected	Sesión de API detectada
+Sign in to the official client, then check again.	Inicia sesión en el cliente oficial y vuelve a comprobar.
+Client not found on the Faustus server. Follow the setup instructions, then check again.	No se encontró el cliente en el servidor de Faustus. Sigue las instrucciones de instalación y vuelve a comprobar.
+A session was detected, but environment settings may change the access method. Review the client configuration.	Se detectó una sesión, pero la configuración del entorno puede cambiar la vía de acceso. Revisa la configuración del cliente.
+The client took too long to answer. Check that it opens normally, then retry.	El cliente tardó demasiado en responder. Comprueba que abre con normalidad y reintenta.
+The client did not confirm a recognized access method. Check its sign-in status, then retry.	El cliente no confirmó una vía de acceso reconocida. Comprueba su sesión y reintenta.
+Sign in as an administrator to check this client.	Inicia sesión como administrador para comprobar este cliente.
+Restart the updated Faustus server to enable client connection checks.	Reinicia el servidor actualizado de Faustus para habilitar la comprobación de clientes.
+The connection check timed out. Try again.	La comprobación de conexión agotó el tiempo de espera. Vuelve a intentarlo.
+Could not check the client. Check your connection to Faustus and retry.	No se pudo comprobar el cliente. Comprueba tu conexión con Faustus y reintenta.
+Connection check cancelled.	Comprobación de conexión cancelada.
+Checking the official client…	Comprobando el cliente oficial…
+Not checked. Your existing sign-in stays with the official client.	Sin comprobar. Tu sesión se mantiene en el cliente oficial.
+External jobs are still off. This check does not enable them.	Los trabajos externos siguen desactivados. Esta comprobación no los activa.
+Settings to review	Configuración que revisar
+Check {name} connection	Comprobar conexión de {name}
+Setup and sign-in help	Ayuda de instalación e inicio de sesión
+Your official clients	Tus clientes oficiales
+Check an existing Codex or Claude Code sign-in. Subscription and API access are shown separately; no prompt is sent.	Comprueba una sesión existente de Codex o Claude Code. Se distingue entre suscripción y API; no se envía ninguna tarea al modelo.
+This is a snapshot, not a quota or billing guarantee. Nothing is installed and your account settings are not changed by Faustus.	Es una comprobación puntual, no una garantía de cuota o facturación. Faustus no instala nada ni cambia la configuración de tu cuenta.
+Enable external agent runners in Settings before connecting a client.	Activa los ejecutores de agentes externos en Ajustes antes de conectar un cliente.
+Sign in as an administrator to add this private connection.	Inicia sesión como administrador para añadir esta conexión privada.
+The client did not confirm the selected access method. Check its sign-in status, then retry.	El cliente no ha confirmado la vía de acceso elegida. Comprueba su sesión y vuelve a intentarlo.
+The connection was not confirmed. Refresh the model list before retrying.	No se ha confirmado la conexión. Actualiza la lista de modelos antes de volver a intentarlo.
+Connected. Refresh the model picker and select the new connection. Your current model has not changed.	Conectado. Abre el selector de modelos y elige la nueva conexión. Tu modelo actual no ha cambiado.
+Add a private connection without leaving this conversation. Existing chats keep their current model.	Añade una conexión privada sin salir de esta conversación. Los chats existentes conservan su modelo.
+Connection type	Tipo de conexión
+Provider API	API del proveedor
+Use the official Claude Code sign-in on the Faustus server. Text only; Faustus runs the tools. Subscription limits apply. No automatic switch to paid API.	Usa la sesión oficial de Claude Code del servidor de Faustus. Sólo texto; Faustus ejecuta las herramientas. Se aplican los límites de la suscripción. No cambia automáticamente a una API de pago.
+Access method	Vía de acceso
+Client model (optional)	Modelo del cliente (opcional)
+Leave blank to use the client default. Availability depends on your account; no model catalog is assumed.	Déjalo vacío para usar el modelo predeterminado del cliente. La disponibilidad depende de tu cuenta; no se presupone un catálogo de modelos.
+Connect Claude Code	Conectar Claude Code
+Add agent	Añadir agente
+Agent {n}	Agente {n}
+Agent {n} name	Nombre del agente {n}
+Agents in this conversation	Agentes de esta conversación
+Allowed tools (comma-separated; empty inherits)	Herramientas permitidas (separadas por comas; vacío hereda)
+Assigned files	Archivos asignados
+Assigned files (one per line)	Archivos asignados (uno por línea)
+Chat team	Equipo del chat
+Choose a coordinator model first.	Elige primero un modelo coordinador.
+Close team settings	Cerrar configuración del equipo
+Close {name}	Cerrar {name}
+Coordinator	Coordinador
+Could not load the team. Reopen the conversation to retry.	No se ha podido cargar el equipo. Abre de nuevo la conversación para reintentarlo.
+Discard draft	Descartar borrador
+File content	Contenido del archivo
+File saved.	Archivo guardado.
+Files and documents produced in this conversation. Open one to read or edit it alongside the chat.	Archivos y documentos creados en esta conversación. Abre uno para leerlo o editarlo junto al chat.
+Input	Entrada
+Live	En directo
+Loading team…	Cargando equipo…
+May edit files within inherited permissions	Puede editar archivos dentro de los permisos heredados
+Microphone	Micrófono
+No agents have worked in this conversation yet. Configure a team beside the model picker.	Aún no han trabajado agentes en esta conversación. Configura un equipo junto al selector de modelos.
+No results yet. Generated work will appear here.	Aún no hay resultados. El trabajo generado aparecerá aquí.
+No server signal for {n}s	Sin señal del servidor desde hace {n}s
+Open automatically	Abrir automáticamente
+Open results	Abrir resultados
+Panel width	Anchura del panel
+References, attachments and project context will appear here.	Aquí aparecerán las referencias, los adjuntos y el contexto del proyecto.
+Reload file	Volver a cargar archivo
+Researching	Investigando
+Role and instructions	Rol e instrucciones
+Same as coordinator	Igual que el coordinador
+Save team for this chat	Guardar equipo para este chat
+Select the workspace to open this file	Selecciona el espacio de trabajo para abrir este archivo
+Sources and context	Fuentes y contexto
+Starting	Iniciando
+Steered	Redirigido
+Sub-agents	Subagentes
+Subscription	Suscripción
+Suggestion	Sugerencia
+System default	Predeterminado del sistema
+Team changes are available after the current turn.	Podrás cambiar el equipo cuando termine el turno actual.
+The agent updated this document. Your draft is preserved; review before saving.	El agente ha actualizado este documento. Tu borrador se conserva; revísalo antes de guardar.
+The file changed outside this editor. Your draft is preserved.	El archivo ha cambiado fuera de este editor. Tu borrador se conserva.
+The selected chat model coordinates this team. Changes apply to the next turn; running agents keep their configuration.	El modelo seleccionado en el chat coordina este equipo. Los cambios se aplican al siguiente turno; los agentes en ejecución conservan su configuración.
+This conversation belongs to this project.	Esta conversación pertenece a este proyecto.
+Tools and file assignments	Herramientas y asignación de archivos
+Unavailable	No disponible
+Use this model as orchestrator	Usar este modelo como orquestador
+Workspace file	Archivo del espacio de trabajo
+{n} stalled	{n} sin progreso
+Host paired. You can now test SSH.	Servidor emparejado. Ya puedes probar SSH.
+Host trust removed. Inspect and verify its identity again before pairing.	Confianza retirada. Inspecciona y verifica de nuevo su identidad antes de emparejarlo.
+The host key changed. Verify the server identity independently; never accept a replacement automatically.	La clave del servidor ha cambiado. Verifica su identidad por otro canal; nunca aceptes el cambio automáticamente.
+Only a signed-in administrator can change host trust.	Sólo un administrador con sesión iniciada puede cambiar la confianza del servidor.
+Could not inspect this host. Check its address, port and network, then retry.	No se ha podido inspeccionar el servidor. Comprueba su dirección, puerto y red, y vuelve a intentarlo.
+The trust change was not confirmed. Inspect the host again before retrying.	No se ha confirmado el cambio de confianza. Inspecciona de nuevo el servidor antes de reintentarlo.
+Verify the remote server identity	Verificar la identidad del servidor remoto
+Faustus only connects to trusted SSH hosts. This is separate from the login key below.	Faustus sólo conecta con servidores SSH de confianza. Esta verificación es independiente de la clave de acceso que aparece debajo.
+Save the server changes before checking trust.	Guarda los cambios del servidor antes de comprobar su identidad.
+Inspect host fingerprints	Inspeccionar huellas del servidor
+Host identity matches the saved key.	La identidad del servidor coincide con la clave guardada.
+This host has not been paired yet.	Este servidor aún no se ha emparejado.
+Saved fingerprints	Huellas guardadas
+Offered fingerprints	Huellas ofrecidas
+Fingerprint verified through the server console	Huella verificada en la consola del servidor
+Get the SHA256 fingerprint from the server administrator or console through a trusted channel. Paste it here; do not simply copy the offered value.	Obtén la huella SHA256 del administrador o de la consola del servidor por un canal de confianza. Pégala aquí; no copies sin más el valor ofrecido.
+Trust this verified host	Confiar en este servidor verificado
+Remove saved host trust	Retirar confianza guardada
+Remove saved host trust?	¿Retirar la confianza guardada?
+Connections to this server will be refused until you verify and pair its identity again. This does not trust the replacement key.	Se rechazarán las conexiones a este servidor hasta que vuelvas a verificar y emparejar su identidad. Esta acción no acepta la clave nueva.
+Invalid project context response	La respuesta del contexto del proyecto no es válida
+Invalid project context status response	La respuesta sobre el estado del contexto no es válida
+{n} incomplete	{n} sin completar
+Invalid workflow response. Refresh to try again.	La respuesta del workflow no es válida. Actualiza para volver a intentarlo.
+The workflow action was not confirmed. Refresh its status.	No se ha confirmado la acción del workflow. Actualiza su estado.
+workflows	workflows
+workflow	workflow
+Started workflows continue in the background. Timed waits resume automatically; human approvals still need your decision.	Los workflows iniciados continúan en segundo plano. Las esperas temporizadas se reanudan solas; las aprobaciones siguen necesitando tu decisión.
+Start workflow	Iniciar workflow
+Cancel workflow	Cancelar workflow
+Resumes at {time}	Se reanuda el {time}
+Review approval	Revisar aprobación
+Check decision	Comprobar decisión
+Not started	Sin iniciar
+Output {number}	Resultado {number}
+Generated files	Archivos generados
+Download {name}	Descargar {name}
+Checking submission	Comprobando envío
+Checking engine status	Comprobando estado del motor
+The render could not be cancelled. Refresh and try again.	No se pudo cancelar el render. Actualiza e inténtalo de nuevo.

@@ -81,16 +81,15 @@ def test_a_table_from_before_phase_3_gains_the_provenance_columns(own_database):
     _migrate_add_artifact_provenance_columns()
 
     # And the table works afterwards, with the new fields written.
-    from src import artifact_store
-    from src.contracts import Artifact
-    made = Artifact.parse({
-        "id": "art_migrationcheck", "kind": "image", "filename": "a" * 64 + ".png",
-        "sha256": "b" * 64, "byte_size": 10,
-        "provenance": {"recipe": "image.product", "recipe_version": "1.0.0",
-                       "seed": 7, "engine": "comfyui", "engine_job_id": "p1"}})
-    assert artifact_store.persist([made])["created"] == 1
     db = db_mod.SessionLocal()
     try:
+        # This is specifically the historical schema migration. Production
+        # persist now writes occurrences, so exercise the old table directly.
+        db.add(ArtifactRow(id='art_migrationcheck', kind='image',
+                          filename='a' * 64 + '.png', sha256='b' * 64, byte_size=10,
+                          recipe='image.product', recipe_version='1.0.0',
+                          seed=7, engine='comfyui', engine_job_id='p1'))
+        db.commit()
         row = db.get(ArtifactRow, "art_migrationcheck")
         assert row.seed == 7 and row.engine == "comfyui"
     finally:

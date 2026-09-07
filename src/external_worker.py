@@ -53,7 +53,8 @@ What this module DOES guarantee, gated or not:
 * **the output is read, not policed** — every chunk goes to `on_output` and
   the tail is classified by `src.output_rules`. An agent that is rate-limited
   or sitting at a prompt is REPORTED, never killed for it (§25.1). Only the
-  hard timeout and an explicit cancel ever kill anything;
+  hard timeout, an explicit cancel or an invalid/oversized output stream kill
+  the process; ordinary silence is not a termination condition;
 * **four-value outcomes** — `src.tool_outcome`: a run the user cancelled is
   `cancelled`, not a failure, and a timeout is an `expected_error`, not a
   panic;
@@ -381,6 +382,10 @@ class _Stream:
         self.session_id = ""
         self.parsed = 0
         self.unparsed = 0
+        self.overflow = False
+        # The answer is not the diagnostic tail (which includes tool receipts,
+        # progress and cost annotations). Retain it separately and bounded.
+        self.response_text = ""
 
     def feed(self, line: str) -> str:
         """One raw stream line → the text to show. Never raises."""
@@ -396,8 +401,12 @@ class _Stream:
             self.unparsed += 1
             return line
         self.parsed += 1
-        if not self.session_id:
-            self.session_id = str(event.get("session_id") or "")
+        if not self.session_id and not event.get('parent_tool_use_id'):
+            ident = str(event.get("session_id") or "")
+            if len(ident) > 256:
+                self.overflow = True
+                return ''
+            self.session_id = ident
         try:
             return self._render(event)
         except Exception as e:  # noqa: BLE001 - a stream reader never kills a run
@@ -413,7 +422,7 @@ class _Stream:
         # reporting the wrong worker.
         prefix = f"  ↳[{str(parent)[-8:]}] " if parent else ""
         if kind == "result":
-            self.result = {
+            result = {
                 "subtype": str(event.get("subtype") or ""),
                 "is_error": bool(event.get("is_error")),
                 "num_turns": event.get("num_turns"),
@@ -421,11 +430,15 @@ class _Stream:
                 "total_cost_usd": event.get("total_cost_usd"),
                 "session_id": str(event.get("session_id") or ""),
             }
+            if not parent:
+                self.result = result
             cost = event.get("total_cost_usd")
             tail = f" (${float(cost):.4f})" if isinstance(cost, (int, float)) else ""
             final = str(event.get("result") or "")
-            return f"{final}\n[{self.result['subtype'] or 'result'}{tail}]\n" if final \
-                else f"[{self.result['subtype'] or 'result'}{tail}]\n"
+            if not parent:
+                self.response_text = final
+            return f"{final}\n[{result['subtype'] or 'result'}{tail}]\n" if final \
+                else f"[{result['subtype'] or 'result'}{tail}]\n"
         message = event.get("message")
         blocks = (message or {}).get("content") if isinstance(message, dict) else None
         if not isinstance(blocks, list):
@@ -440,7 +453,13 @@ class _Stream:
                 if body:
                     out.append(prefix + body + "\n")
             elif btype == "tool_use":
+                if len(self.tool_calls) >= 4096:
+                    self.overflow = True
+                    return ''
                 name = str(block.get("name") or "?")
+                if any(len(value) > 256 for value in (name, str(block.get('id') or ''), str(parent))):
+                    self.overflow = True
+                    return ''
                 self.tool_calls.append({
                     "id": str(block.get("id") or ""), "name": name,
                     "parent_tool_use_id": str(parent or ""),
@@ -450,6 +469,53 @@ class _Stream:
                 body = block.get("content")
                 out.append(f"{prefix}← {_digest(body, limit=160)}\n")
         return "".join(out)
+
+
+class _CodexStream(_Stream):
+    """Documented `codex exec --json` events, without claiming a tool gate.
+
+    https://learn.chatgpt.com/docs/non-interactive-mode
+    Reasoning payloads stay out of the progress log; tool names and phases are
+    enough to explain activity. Only a completed agent message is answer text.
+    """
+
+    def _render(self, event: Dict[str, Any]) -> str:
+        kind = event.get('type')
+        if kind == 'thread.started':
+            ident = event.get('thread_id')
+            if isinstance(ident, str) and ident and not ident.startswith('-') and len(ident) <= 200:
+                self.session_id = self.session_id or ident
+            return '[Codex session started]\n'
+        if kind == 'turn.started':
+            return '[Codex working]\n'
+        if kind == 'turn.completed':
+            usage = event.get('usage')
+            self.result = {'is_error': False, 'subtype': 'success', 'usage': {
+                key: value for key, value in (usage.items() if isinstance(usage, dict) else [])
+                if key in {'input_tokens', 'cached_input_tokens', 'output_tokens', 'reasoning_output_tokens'}
+                and type(value) is int and value >= 0}}
+            return '[Codex turn completed]\n'
+        if kind in {'turn.failed', 'error'}:
+            error = event.get('error')
+            message = error.get('message') if isinstance(error, dict) else event.get('message')
+            # A standalone error can describe a retry; only turn.failed is final.
+            if kind == 'turn.failed':
+                self.result = {'is_error': True, 'subtype': 'turn.failed'}
+            return '[Codex error] ' + _digest(message, 500) + '\n'
+        item = event.get('item')
+        if not isinstance(item, dict):
+            return ''
+        item_type = item.get('type')
+        if item_type == 'agent_message' and kind == 'item.completed':
+            self.response_text = str(item.get('text') or '')
+            return self.response_text + '\n'
+        if item_type == 'reasoning':
+            return ''
+        if kind not in {'item.started', 'item.completed'}:
+            return ''
+        phase = 'started' if kind == 'item.started' else 'completed'
+        detail = _digest(item.get('command') or item.get('tool') or item.get('query') or '', 160)
+        return f'[Codex {item_type or "item"} {phase}] {detail}\n'
 
 
 def _digest(value: Any, limit: int = 100) -> str:
@@ -510,7 +576,8 @@ def run_task(runner_key: Any, task: str, *, workspace: Optional[str] = None,
              locks: Any = None,
              worker_key: Optional[str] = None,
              resume: Optional[str] = None,
-             allow_argv_task: bool = False) -> Dict[str, Any]:
+             allow_argv_task: bool = False,
+             billing_mode: Optional[str] = None) -> Dict[str, Any]:
     """Run ONE task with one external agent and report what happened.
 
     ``runner_key`` is a key or alias from src/agent_runners.py — or a
@@ -583,6 +650,10 @@ def run_task(runner_key: Any, task: str, *, workspace: Optional[str] = None,
     if not runner.argv:
         return _fail(key, f"{runner.label} is {reg.NOT_RUNNABLE_NOTE}: Faustus has no row saying how to "
                           f"run one task with it (src/agent_runners.py)")
+    for field, value in (('model', model), ('resume', resume)):
+        if value is not None and (not isinstance(value, str) or value.lstrip().startswith('-')
+                                  or any(c in value for c in ('\n', '\r', '\0'))):
+            return _fail(key, f'Invalid {field}: an option or control character is not a model/session identifier')
     if not runner.stdin_task and task_looks_sensitive(task) and not allow_argv_task:
         # SEC-1 (B-022). Refuse rather than warn: an argv prompt is readable by
         # every process on the machine, it lands in diagnostics and OS crash
@@ -635,9 +706,27 @@ def run_task(runner_key: Any, task: str, *, workspace: Optional[str] = None,
 
         full_env = dict(reg.build_env(runner, base=env, model=model, cwd=cwd, endpoint=endpoint))
         full_env.update(gate_env)
-        return _spawn(runner, key, task, argv=argv, shown=shown, cwd=cwd, full_env=full_env,
+        billing = None
+        if billing_mode is not None:
+            from src.runner_billing import prepare, verify
+            try:
+                argv, full_env = prepare(key, billing_mode, argv, full_env, endpoint=endpoint)
+                billing = verify(key, billing_mode, full_env)
+                shown = _shown(argv, dict(table_env, **gate_env), task=str(task or ''))
+            except Exception as exc:
+                logger.debug('Official client authentication could not be verified: %s', type(exc).__name__)
+                return _fail(key, str(exc) if isinstance(exc, ValueError) else
+                             'Official client authentication check failed; no task was sent')
+        if should_cancel is not None and should_cancel():
+            result = _fail(key, '', argv_shown=shown)
+            result.update(status='cancelled', cancelled=True, outcome='cancelled')
+            return result
+        result = _spawn(runner, key, task, argv=argv, shown=shown, cwd=cwd, full_env=full_env,
                       timeout_s=timeout_s, on_output=on_output, should_cancel=should_cancel,
                       gate=gate, started=started)
+        if billing is not None:
+            result['billing'] = billing
+        return result
     finally:
         if gate is not None:
             # Idempotent. `_spawn` closes it as soon as the process is gone, so
@@ -678,7 +767,7 @@ def _spawn(runner: Any, key: str, task: str, *, argv: List[str], shown: str,
     popen_kwargs: Dict[str, Any] = {
         "cwd": cwd, "env": full_env, "stdout": subprocess.PIPE, "stderr": subprocess.STDOUT,
         "stdin": subprocess.PIPE if runner.stdin_task else subprocess.DEVNULL,
-        "text": True, "bufsize": 1,
+        "text": True, "encoding": "utf-8", "errors": "replace", "bufsize": 1,
     }
     if os.name == "nt":
         popen_kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -693,25 +782,43 @@ def _spawn(runner: Any, key: str, task: str, *, argv: List[str], shown: str,
         return _fail(key, f"{runner.label} could not be started: {type(e).__name__}: {e}"[:300],
                      argv_shown=shown)
 
-    if runner.stdin_task:
+    def _write_input() -> None:
+        # Writing a long context can fill the pipe while the CLI is still
+        # starting (or printing). Never block the supervisor on stdin.
         try:
             proc.stdin.write(str(task or "") + "\n")           # type: ignore[union-attr]
-            proc.stdin.close()                                  # type: ignore[union-attr]
         except Exception as e:  # noqa: BLE001
             logger.debug("external_worker: %s would not take the task on stdin: %s", key, e)
+        finally:
+            try:
+                proc.stdin.close()                              # type: ignore[union-attr]
+            except Exception:  # noqa: BLE001
+                pass
 
     # A gated run reads the CLI's structured stream, so the board and the
     # output rules see prose (not JSONL) and the tool calls the binary reports
     # can be reconciled against the gate's ledger afterwards.
-    events = _Stream() if (gate is not None and "stream-json" in argv) else None
+    events = (_CodexStream() if key == 'codex' and '--json' in argv else
+              _Stream() if gate is not None and 'stream-json' in argv else None)
+
+    transport_failed = threading.Event()
+    max_line_chars = 1024 * 1024
 
     def _read() -> None:
         stream = proc.stdout
         if stream is None:
             return
         try:
-            for line in iter(stream.readline, ""):
+            # A CLI can print an unbounded JSON event (or never a newline).
+            # Bound the read itself, not only the tail retained afterwards.
+            for line in iter(lambda: stream.readline(max_line_chars + 1), ""):
+                if len(line) > max_line_chars:
+                    transport_failed.set()
+                    break
                 shown_line = events.feed(line) if events is not None else line
+                if events is not None and events.overflow:
+                    transport_failed.set()
+                    break
                 if not shown_line:
                     continue
                 buf.add(shown_line)
@@ -722,6 +829,7 @@ def _spawn(runner: Any, key: str, task: str, *, argv: List[str], shown: str,
                         logger.debug("external_worker: on_output failed: %s", e)
         except Exception as e:  # noqa: BLE001
             logger.debug("external_worker: reading %s failed: %s", key, e)
+            transport_failed.set()
         finally:
             try:
                 stream.close()
@@ -730,12 +838,20 @@ def _spawn(runner: Any, key: str, task: str, *, argv: List[str], shown: str,
 
     reader = threading.Thread(target=_read, name=f"external-worker-{key}", daemon=True)
     reader.start()
+    writer = None
+    if runner.stdin_task:
+        writer = threading.Thread(target=_write_input, name=f"external-input-{key}", daemon=True)
+        writer.start()
 
     from src.agent_tools.subprocess_tools import _kill_tree
 
     deadline = time.monotonic() + limit
     timed_out = cancelled = killed = False
     while True:
+        if transport_failed.is_set():
+            killed = True
+            _kill_tree(proc)
+            break
         if proc.poll() is not None:
             break
         if should_cancel is not None:
@@ -748,8 +864,8 @@ def _spawn(runner: Any, key: str, task: str, *, argv: List[str], shown: str,
                 _kill_tree(proc)
                 break
         if time.monotonic() >= deadline:
-            # The ONLY two reasons anything here kills a process: the clock,
-            # and an explicit cancel. Never a state read off the output.
+            # Clock, explicit cancel, or broken/oversized transport. Never a
+            # semantic state such as "rate limited" read from the output.
             timed_out = killed = True
             _kill_tree(proc)
             break
@@ -763,6 +879,8 @@ def _spawn(runner: Any, key: str, task: str, *, argv: List[str], shown: str,
         except Exception:  # noqa: BLE001
             pass
     reader.join(timeout=5)
+    if writer is not None:
+        writer.join(timeout=5)
 
     # Closed here, not in the caller's `finally`: the token stops working the
     # moment the process this gate exists for is gone.
@@ -777,6 +895,12 @@ def _spawn(runner: Any, key: str, task: str, *, argv: List[str], shown: str,
     elif timed_out:
         status = "timeout"
         error = f"{runner.label} was stopped after {int(limit)}s (its process tree was killed)"
+    elif transport_failed.is_set():
+        status = 'error'
+        error = f'{runner.label} output exceeded transport limits or could not be read; the run was stopped'
+    elif events is not None and events.result.get('is_error'):
+        status = 'error'
+        error = f"{runner.label} reported {events.result.get('subtype') or 'an error'}"
     elif exit_code == 0:
         status, error = "done", ""
     else:
@@ -785,11 +909,12 @@ def _spawn(runner: Any, key: str, task: str, *, argv: List[str], shown: str,
         if read.get("state"):
             error += f" — its output says {read['state']}"
     out = {
-        "ok": bool(exit_code == 0 and not timed_out and not cancelled),
+        "ok": status == 'done',
         "exit_code": exit_code,
         "outcome": _outcome(status, error=error or None, cancelled=cancelled),
         "output_tail": tail[-RESULT_TAIL_CHARS:],
         "output_chars": buf.total,
+        "response_text": events.response_text if events is not None else "",
         "state": read.get("state") or "",
         "states": read.get("states") or [],
         "why": read.get("why") or "",
@@ -815,6 +940,8 @@ def _spawn(runner: Any, key: str, task: str, *, argv: List[str], shown: str,
         # runner that reports nothing leaves the caller on its fresh-worker
         # path instead of being handed a handle nobody can use.
         out["session_id"] = events.session_id
+    if events is not None and events.result:
+        out['client_result'] = dict(events.result)
     if ledger:
         out["gate"] = ledger
         cost = (ledger.get("result") or {}).get("total_cost_usd")

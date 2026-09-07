@@ -249,7 +249,11 @@ def test_collecting_the_same_outputs_twice_downloads_them_once(world):
     assert len(first["artifacts"]) == 1
 
     # As if the process had died after `_collect` and before the status write.
-    media_runs._update(started["run_id"], status="queued", ended_at=None)
+    from core.database import MediaRunRow, SessionLocal
+    with SessionLocal() as db:
+        row = db.get(MediaRunRow, started['run_id'])
+        row.status, row.ended_at = 'queued', None
+        db.commit()
     downloads = len([c for c in world.calls if c[:2] == ("GET", "/view")])
 
     again = media_runs.poll(started["run_id"])

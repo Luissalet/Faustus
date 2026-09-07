@@ -1017,9 +1017,11 @@ def _block_to_txt(block: Block, indent: str = "") -> str:
             marker = f"{index}. " if block.ordered else "- "
             body = _blocks_to_txt(item)
             item_lines = body.split("\n") if body else [""]
-            lines.append(indent + marker + item_lines[0].lstrip())
+            lines.append(indent + marker + item_lines[0])
             for line in item_lines[1:]:
-                lines.append((indent + "    " + line.lstrip()) if line.strip() else "")
+                # Retain the child's indentation: stripping it flattened deeper
+                # lists and destroyed the indentation of code inside an item.
+                lines.append((indent + "    " + line) if line.strip() else "")
         return "\n".join(lines)
     if kind == "quote":
         return _pad(_blocks_to_txt(block.children), "> ")

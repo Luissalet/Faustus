@@ -1,10 +1,12 @@
-import { Activity as ActivityIcon, Check, CircleStop, Copy, ExternalLink, FileText, MessageSquare, Play, Search, Trash2, Workflow, X } from 'lucide-react';
+import { Activity as ActivityIcon, Check, CircleStop, Copy, Download, ExternalLink, FileText, MessageSquare, Play, RefreshCw, Search, Trash2, Workflow, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { Button, EmptyState, Skeleton, StatusBadge, Toast, type RunStatus } from '../components';
-import { cancelRender, decideApproval, duration, loadActivity, openRunInChat, reportUrl, type ActivityRun } from '../adapters/activity';
+import { artifactLinks, cancelRender, changeWorkflow, decideApproval, duration, loadActivity, normaliseStatus, openRunInChat, reportUrl, retainUnavailableRuns, type ActivityRun, type ArtifactLink } from '../adapters/activity';
 import { CACHE_LABELS, clearAutomationCache, runAutomation, stopAutomation } from '../adapters/automations';
 import { relativeTime } from '../adapters/home';
+import { stopChat } from '../adapters/chat';
+import { createActivityPoller } from '../lib/activity-poller';
 import { Rich } from './rich';
 import './projects.css';
 import './home.css';
@@ -27,7 +29,7 @@ const FILTERS: { id: string; label: string; match: (run: ActivityRun) => boolean
   { id: 'fallido', label: 'Failed', match: (run) => run.status === 'failed' },
 ];
 
-type Kind = 'all' | 'task' | 'render' | 'approval' | 'notification';
+type Kind = 'all' | 'task' | 'render' | 'approval' | 'notification' | 'chat' | 'workflow';
 
 function DetailRow({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -44,12 +46,17 @@ export function ActivityScreen() {
   const [runs, setRuns] = useState<ActivityRun[] | null>(null);
   const [degraded, setDegraded] = useState<string[]>([]);
   const [failed, setFailed] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [updatedAt, setUpdatedAt] = useState<number | null>(null);
   const [query, setQuery] = useState('');
   const [kind, setKind] = useState<Kind>('all');
   const [busy, setBusy] = useState<string | null>(null);
   const [reason, setReason] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
   const noticeTimer = useRef<number | null>(null);
+  const detailTitle = useRef<HTMLHeadingElement | null>(null);
+  const rowButtons = useRef(new Map<string, HTMLButtonElement>());
+  const focusAfterSelection = useRef<'detail' | string | null>(null);
 
   const say = useCallback((msg: string) => {
     setNotice(msg);
@@ -61,45 +68,48 @@ export function ActivityScreen() {
   const filter = FILTERS.find((entry) => entry.id === filterId) ?? FILTERS[0];
   const currentId = params.get('run');
 
-  const reload = useCallback(async (signal?: AbortSignal) => {
-    try {
-      const data = await loadActivity(signal);
-      setRuns(data.runs);
+  const poller = useMemo(() => createActivityPoller({
+    load: loadActivity,
+    live: (data) => data.unavailableKinds.length > 0 || data.runs.some((r) => ['running', 'queued', 'waiting', 'paused'].includes(r.status)),
+    visible: () => document.visibilityState === 'visible',
+    data: (data) => {
+      setRuns((previous) => retainUnavailableRuns(previous ?? [], data));
       setDegraded(data.degraded);
       setFailed(false);
-    } catch {
-      if (!signal?.aborted) setFailed(true);
-    }
-  }, []);
+      setUpdatedAt(Date.now());
+    },
+    error: () => setFailed(true),
+    refreshing: setRefreshing,
+    schedule: (fn, delay) => window.setTimeout(fn, delay),
+    clear: (id) => window.clearTimeout(id),
+  }), []);
+  const reload = poller.refresh;
 
   useEffect(() => {
-    const controller = new AbortController();
-    void reload(controller.signal);
-    return () => controller.abort();
-  }, [reload]);
-
-  // Runs move on their own; look again while something is in flight.
-  useEffect(() => {
-    const live = runs?.some((r) => r.status === 'running' || r.status === 'queued' || r.status === 'waiting');
-    const id = window.setInterval(() => void reload(), live ? 5000 : 30000);
-    return () => window.clearInterval(id);
-  }, [runs, reload]);
+    poller.start();
+    document.addEventListener('visibilitychange', poller.visibilityChanged);
+    return () => {
+      poller.dispose();
+      if (noticeTimer.current) window.clearTimeout(noticeTimer.current);
+      document.removeEventListener('visibilitychange', poller.visibilityChanged);
+    };
+  }, [poller]);
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     return (runs ?? []).filter((run) => {
       if (!filter.match(run)) return false;
       const isNotification = run.kind === 'task' && run.task?.outputTarget === 'notification';
+      if (q && !`${run.title} ${run.detail ?? ''} ${run.chat?.model ?? ''}`.toLowerCase().includes(q)) return false;
       if (kind === 'notification') return isNotification;
       if (isNotification && kind === 'all') return false;
       if (kind !== 'all' && run.kind !== kind) return false;
-      if (q && !`${run.title} ${run.detail ?? ''}`.toLowerCase().includes(q)) return false;
       return true;
     });
   }, [runs, filter, kind, query]);
 
   const counts = useMemo(() => {
-    const c = { all: 0, task: 0, render: 0, approval: 0, notification: 0 };
+    const c = { all: 0, task: 0, render: 0, approval: 0, notification: 0, chat: 0, workflow: 0 };
     for (const run of runs ?? []) {
       if (run.kind === 'task' && run.task?.outputTarget === 'notification') c.notification++;
       else {
@@ -112,8 +122,20 @@ export function ActivityScreen() {
 
   const waiting = useMemo(() => (runs ?? []).filter((run) => run.status === 'waiting').length, [runs]);
   const current = useMemo(() => (currentId ? (runs ?? []).find((r) => `${r.kind}-${r.id}` === currentId) ?? null : null), [currentId, runs]);
+  const currentStale = failed || !!current?.stale;
+
+  useEffect(() => {
+    const target = focusAfterSelection.current;
+    if (!target) return;
+    focusAfterSelection.current = null;
+    if (target === 'detail') detailTitle.current?.focus();
+    else rowButtons.current.get(target)?.focus();
+  }, [currentId]);
 
   const open = (run: ActivityRun | null) => {
+    if (window.matchMedia('(max-width: 899px)').matches) {
+      focusAfterSelection.current = run ? 'detail' : currentId;
+    }
     setReason('');
     setParams(
       (prev) => {
@@ -127,6 +149,7 @@ export function ActivityScreen() {
   };
 
   const act = async (key: string, fn: () => Promise<void>, done?: string) => {
+    if (currentStale || busy) return;
     setBusy(key);
     try {
       await fn();
@@ -139,7 +162,7 @@ export function ActivityScreen() {
     }
   };
 
-  if (failed) {
+  if (failed && !runs) {
     return (
       <div className="fs-screen fs-act" data-testid="activity">
         <EmptyState icon={ActivityIcon} title={t('Could not read the activity')} body={t('None of the subsystems responded.')} primaryAction={{ label: t('Retry'), onClick: () => void reload() }} />
@@ -152,9 +175,22 @@ export function ActivityScreen() {
       <header className="fs-screen__head">
         <div>
           <h1 className="fs-screen__title">{t('Activity')}</h1>
-          <p className="fs-prose fs-act__lede">{waiting > 0 ? tn(waiting, '{n} thing is waiting for your decision.', '{n} things are waiting for your decision.') : t('Tasks, renders and approvals, in the same language for all.')}</p>
+          <p className="fs-prose fs-act__lede">{waiting > 0 ? tn(waiting, '{n} thing is waiting for your decision.', '{n} things are waiting for your decision.') : t('Conversations, tasks, renders and approvals. Work continues when you leave a chat.')}</p>
         </div>
+        <Button variant="secondary" size="sm" icon={RefreshCw} label={t('Refresh')} loading={refreshing} onClick={() => void reload()} testId="activity-refresh" />
       </header>
+
+      {failed && (
+        <p className="fs-notice" data-tone="warning" role="status">
+          {t('Connection interrupted. Showing the last known activity; it may have changed. Use Refresh to try again.')}
+        </p>
+      )}
+      {!failed && degraded.length > 0 && (
+        <p className="fs-notice" data-tone="warning" role="status">
+          {t('Could not refresh {what}. Any retained rows are last known activity, not current status. Use Refresh to try again.', { what: degraded.join(', ') })}
+        </p>
+      )}
+      {updatedAt && <p className="fs-act__freshness">{t('Last checked {time}', { time: new Date(updatedAt).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit', second: '2-digit' }) })}</p>}
 
       <div className="fs-tabs" role="tablist" aria-label={t('Filter activity')}>
         {FILTERS.map((entry) => (
@@ -186,15 +222,17 @@ export function ActivityScreen() {
           {(
             [
               ['all', t('All'), counts.all],
+              ['chat', t('Conversations'), counts.chat],
               ['task', t('Tasks'), counts.task],
               ['render', t('Renders'), counts.render],
+              ['workflow', t('Workflows'), counts.workflow],
               ['approval', t('Approvals'), counts.approval],
               ['notification', t('Notifications'), counts.notification],
             ] as [Kind, string, number][]
           )
-            .filter(([k, , n]) => k === 'all' || n > 0)
+            .filter(([k, , n]) => k === 'all' || k === kind || n > 0)
             .map(([k, label, n]) => (
-              <button key={k} type="button" className="fs-chip" data-on={kind === k || undefined} onClick={() => setKind(k)} data-testid={`activity-kind-${k}`}>
+              <button key={k} type="button" className="fs-chip" aria-pressed={kind === k} data-on={kind === k || undefined} onClick={() => setKind(k)} data-testid={`activity-kind-${k}`}>
                 {label} <span className="fs-act__chip-n">{n}</span>
               </button>
             ))}
@@ -209,8 +247,8 @@ export function ActivityScreen() {
             <EmptyState
               icon={ActivityIcon}
               headingLevel={3}
-              title={filterId === 'todo' && kind === 'all' && !query ? t('Nothing has run yet') : t('Nothing in this state')}
-              body={filterId === 'todo' && kind === 'all' && !query ? t('When a task, a render or an agent does something, it will appear here with its state and how long it took.') : t('Try another filter: the one you chose has nothing right now.')}
+              title={degraded.length > 0 || failed ? t('Some activity is unavailable') : filterId === 'todo' && kind === 'all' && !query ? t('Nothing has run yet') : t('Nothing in this state')}
+              body={degraded.length > 0 || failed ? t('The unavailable sources may contain work. Refresh to check again.') : filterId === 'todo' && kind === 'all' && !query ? t('When a task, a render or an agent does something, it will appear here with its state and how long it took.') : t('Try another filter: the one you chose has nothing right now.')}
             />
           )}
 
@@ -219,7 +257,7 @@ export function ActivityScreen() {
               {visible.map((run) => {
                 const key = `${run.kind}-${run.id}`;
                 return (
-                  <button type="button" className="fs-run fs-act__row" key={key} data-state={run.status} aria-current={key === currentId || undefined} onClick={() => open(run)} data-testid="activity-run">
+                  <button type="button" className="fs-run fs-act__row" key={key} ref={(node) => { if (node) rowButtons.current.set(key, node); else rowButtons.current.delete(key); }} data-state={run.status} aria-current={key === currentId || undefined} onClick={() => open(run)} data-testid="activity-run">
                     <span className="fs-run__kind" data-kind={run.kind}>
                       {t(run.kind)}
                     </span>
@@ -230,6 +268,7 @@ export function ActivityScreen() {
                       </span>
                       {run.detail && <span className="fs-run__detail">{run.detail}</span>}
                       <span className="fs-row__meta">{[relativeTime(run.startedAt), duration(run.startedAt, run.finishedAt)].filter(Boolean).join(' · ')}</span>
+                      {(failed || run.stale) && <span className="fs-row__meta">{t('Last known activity')}</span>}
                     </span>
                     <StatusBadge status={run.status as RunStatus} label={run.statusLabel} />
                   </button>
@@ -238,11 +277,6 @@ export function ActivityScreen() {
             </div>
           )}
 
-          {degraded.length > 0 && (
-            <p className="fs-notice" data-tone="warning">
-              {t('Could not read {what}. The rest of the list is real.', { what: degraded.join(', ') })}
-            </p>
-          )}
         </div>
 
         <div className="fs-act__pane">
@@ -256,7 +290,7 @@ export function ActivityScreen() {
                   <span className="fs-run__kind" data-kind={current.kind}>
                     {t(current.kind)}
                   </span>
-                  <h2 id="fs-act-title">{current.title}</h2>
+                  <h2 id="fs-act-title" ref={detailTitle} tabIndex={-1}>{current.title}</h2>
                   <p className="fs-act__when">
                     {current.startedAt ? new Date(current.startedAt).toLocaleString(locale(), { dateStyle: 'medium', timeStyle: 'short' }) : ''}
                     {duration(current.startedAt, current.finishedAt) ? ` · ${duration(current.startedAt, current.finishedAt)}` : ''}
@@ -265,6 +299,65 @@ export function ActivityScreen() {
                 </div>
                 <StatusBadge status={current.status as RunStatus} label={current.statusLabel} size="md" />
               </header>
+              {currentStale && <p className="fs-notice" data-tone="warning">{t('Last known activity. Refresh before taking action.')}</p>}
+
+              {current.workflow && <>
+                <p className="fs-prose">{t('Started workflows continue in the background. Timed waits resume automatically; human approvals still need your decision.')}</p>
+                {current.detail && <p className="fs-act__hint">{current.detail}</p>}
+                {['running', 'queued', 'paused', 'waiting'].includes(current.status) && <div className="fs-act__actions">
+                  {current.status === 'queued' && <Button icon={Play} label={t('Start workflow')} disabled={currentStale || !!busy} loading={busy === 'workflow-start'}
+                    onClick={() => void act('workflow-start', () => changeWorkflow(current.id, 'advance'))} />}
+                  <Button variant="danger" icon={CircleStop} label={t('Cancel workflow')} disabled={currentStale || !!busy} loading={busy === 'workflow-cancel'}
+                    onClick={() => void act('workflow-cancel', () => changeWorkflow(current.id, 'cancel'))} />
+                </div>}
+                <dl className="fs-act__facts">
+                  <DetailRow label={t('Workflow')}>{current.workflow.recipe}</DetailRow>
+                  {current.workflow.projectId && <DetailRow label={t('Project')}>{current.workflow.projectId}</DetailRow>}
+                </dl>
+                <h3>{t('Steps')}</h3>
+                <ol className="fs-act__workflow" data-testid="activity-workflow-steps">
+                  {current.workflow.nodes.map((node) => <li key={node.id}>
+                    <div className="fs-act__step-head"><strong>{node.title}</strong><StatusBadge status={node.status === 'paused' && node.approvalId ? 'waiting' : normaliseStatus(node.status).status} label={node.status === 'pending' ? t('Not started') : normaliseStatus(node.status).label} /></div>
+                    {node.reason && <p>{node.reason}</p>}
+                    <ArtifactDownloads items={node.artifacts} />
+                    {node.needs.length > 0 && <p>{t('After')}: {node.needs.map((id) => current.workflow!.nodes.find((n) => n.id === id)?.title || id).join(', ')}</p>}
+                    {node.wakeAt && Number.isFinite(Date.parse(node.wakeAt)) && node.status === 'paused' && <p>{t('Resumes at {time}', { time: new Date(node.wakeAt).toLocaleString(locale()) })}</p>}
+                    {node.status === 'paused' && node.approvalId && current.status === 'waiting' && <div className="fs-act__actions">
+                      <Link className="fs-act__link" to={`/activity?run=approval-${encodeURIComponent(node.approvalId)}`}>{t('Review approval')}</Link>
+                      <Button size="sm" variant="secondary" icon={RefreshCw} label={t('Check decision')} disabled={currentStale || !!busy} loading={busy === `resume-${node.id}`}
+                        onClick={() => void act(`resume-${node.id}`, () => changeWorkflow(current.id, 'advance', node.id))} />
+                    </div>}
+                  </li>)}
+                </ol>
+              </>}
+
+              {current.kind === 'chat' && current.chat && (
+                <>
+                  <p className="fs-act__chat-phase" role="status">{current.detail}</p>
+                  <p className="fs-prose">{current.status === 'waiting'
+                    ? t('Open this conversation to review and answer its permission request.')
+                    : t('This work runs on the server. You can use other chats while it continues.')}</p>
+                  <div className="fs-act__actions">
+                    <Button variant="primary" icon={MessageSquare} label={t('Open conversation')}
+                      onClick={() => navigate(`/studio?s=${encodeURIComponent(current.chat!.sessionId)}`)} testId="activity-open-conversation" />
+                    {current.chat.runId && <Button variant="danger" size="sm" icon={CircleStop} label={t('Stop this run')}
+                      loading={busy === 'stop-chat'} disabled={!!busy || currentStale}
+                      onClick={() => void act('stop-chat', async () => {
+                        const stopped = await stopChat(current.chat!.sessionId, current.chat!.runId);
+                        if (!stopped) throw new Error(t('Could not stop this run. It may have ended; refresh its status before trying again.'));
+                      }, t('Stopped'))} testId="activity-stop-conversation" />}
+                  </div>
+                  <dl className="fs-act__facts">
+                    {current.chat.model && <DetailRow label={t('Model')}>{current.chat.model}</DetailRow>}
+                    {current.chat.progress && <>
+                      <DetailRow label={t('Elapsed')}>{duration(current.startedAt, new Date((current.chat.progress.startedAt || 0) + current.chat.progress.elapsedS * 1000).toISOString()) || '—'}</DetailRow>
+                      {current.chat.progress.lastEventAt > 0 && <DetailRow label={t('Last progress')}>{new Date(current.chat.progress.lastEventAt).toLocaleTimeString(locale())}</DetailRow>}
+                      {current.chat.progress.round > 0 && <DetailRow label={t('Round')}>{current.chat.progress.round}</DetailRow>}
+                    </>}
+                  </dl>
+                  {current.status === 'running' && <p className="fs-act__hint">{t('A quiet model is not necessarily stuck. Last progress refers to model or tool output, not a connection heartbeat.')}</p>}
+                </>
+              )}
 
               {current.kind === 'approval' && current.approval && (
                 <>
@@ -287,8 +380,8 @@ export function ActivityScreen() {
                     <input className="fs-field" value={reason} onChange={(e) => setReason(e.target.value)} data-testid="activity-reason" />
                   </label>
                   <div className="fs-act__actions">
-                    <Button variant="primary" size="sm" icon={Check} label={t('Approve')} loading={busy === 'grant'} onClick={() => void act('grant', () => decideApproval(current.approval!.approvalId, true, reason).then(() => open(null)), t('Approved'))} testId="activity-approve" />
-                    <Button variant="danger" size="sm" icon={X} label={t('Deny')} loading={busy === 'deny'} onClick={() => void act('deny', () => decideApproval(current.approval!.approvalId, false, reason).then(() => open(null)), t('Denied'))} testId="activity-deny" />
+                    <Button variant="primary" size="sm" icon={Check} label={t('Approve')} disabled={currentStale || !!busy} loading={busy === 'grant'} onClick={() => void act('grant', () => decideApproval(current.approval!.approvalId, true, reason).then(() => open(null)), t('Approved'))} testId="activity-approve" />
+                    <Button variant="danger" size="sm" icon={X} label={t('Deny')} disabled={currentStale || !!busy} loading={busy === 'deny'} onClick={() => void act('deny', () => decideApproval(current.approval!.approvalId, false, reason).then(() => open(null)), t('Denied'))} testId="activity-deny" />
                   </div>
                 </>
               )}
@@ -297,17 +390,17 @@ export function ActivityScreen() {
                 <>
                   <div className="fs-act__actions">
                     {(current.task.taskType === 'llm' || current.task.taskType === 'research') && current.task.result.trim() && current.status !== 'running' && current.status !== 'queued' && (
-                      <Button variant="primary" size="sm" icon={MessageSquare} label={t('Open in a chat')} loading={busy === 'chat'} onClick={() => void act('chat', async () => navigate(`/studio?s=${encodeURIComponent(await openRunInChat(current))}`))} testId="activity-open-chat" />
+                      <Button variant="primary" size="sm" icon={MessageSquare} label={t('Open in a chat')} disabled={currentStale || !!busy} loading={busy === 'chat'} onClick={() => void act('chat', async () => navigate(`/studio?s=${encodeURIComponent(await openRunInChat(current))}`))} testId="activity-open-chat" />
                     )}
                     {reportUrl(current) && <Button variant="secondary" size="sm" icon={FileText} label={t('Open the report')} onClick={() => window.open(reportUrl(current), '_blank', 'noopener')} />}
                     {current.task.taskId && (current.status === 'running' || current.status === 'queued') && (
-                      <Button variant="danger" size="sm" icon={CircleStop} label={t('Stop')} loading={busy === 'stop'} onClick={() => void act('stop', () => stopAutomation(current.task!.taskId), t('Stopped'))} />
+                      <Button variant="danger" size="sm" icon={CircleStop} label={t('Stop')} disabled={currentStale || !!busy} loading={busy === 'stop'} onClick={() => void act('stop', () => stopAutomation(current.task!.taskId), t('Stopped'))} />
                     )}
                     {current.task.taskId && current.status !== 'running' && current.status !== 'queued' && (
-                      <Button variant="secondary" size="sm" icon={Play} label={t('Run again')} loading={busy === 'again'} onClick={() => void act('again', () => runAutomation(current.task!.taskId), t('Started'))} testId="activity-run-again" />
+                      <Button variant="secondary" size="sm" icon={Play} label={t('Run again')} disabled={currentStale || !!busy} loading={busy === 'again'} onClick={() => void act('again', () => runAutomation(current.task!.taskId), t('Started'))} testId="activity-run-again" />
                     )}
                     {current.task.taskId && (current.status === 'running' || current.status === 'queued') && (
-                      <Button variant="ghost" size="sm" icon={Play} label={t('Run another beside it')} loading={busy === 'force'} onClick={() => void act('force', () => runAutomation(current.task!.taskId, true), t('Started a second run beside the first'))} />
+                      <Button variant="ghost" size="sm" icon={Play} label={t('Run another beside it')} disabled={currentStale || !!busy} loading={busy === 'force'} onClick={() => void act('force', () => runAutomation(current.task!.taskId, true), t('Started a second run beside the first'))} />
                     )}
                     {(current.task.result || current.task.error) && (
                       <Button
@@ -324,7 +417,7 @@ export function ActivityScreen() {
                       />
                     )}
                     {current.task.action && CACHE_LABELS[current.task.action] && current.task.taskId && (
-                      <Button variant="ghost" size="sm" icon={Trash2} label={t('Clear cache')} loading={busy === 'cache'} onClick={() => void act('cache', async () => void (await clearAutomationCache(current.task!.taskId)), t('Cleared'))} />
+                      <Button variant="ghost" size="sm" icon={Trash2} label={t('Clear cache')} disabled={currentStale || !!busy} loading={busy === 'cache'} onClick={() => void act('cache', async () => void (await clearAutomationCache(current.task!.taskId)), t('Cleared'))} />
                     )}
                     {current.task.taskId && (
                       <Link className="fs-act__link" to={`/automations?task=${encodeURIComponent(current.task.taskId)}`}>
@@ -355,8 +448,9 @@ export function ActivityScreen() {
 
               {current.kind === 'render' && current.render && (
                 <>
+                  <ArtifactDownloads items={artifactLinks(current.render.record.artifacts || current.render.record.artifact_ids)} />
                   <div className="fs-act__actions">
-                    {(current.status === 'running' || current.status === 'queued') && <Button variant="danger" size="sm" icon={CircleStop} label={t('Cancel the render')} loading={busy === 'cancel'} onClick={() => void act('cancel', () => cancelRender(current.render!.runId), t('Cancelled'))} />}
+                    {(current.status === 'running' || current.status === 'queued') && <Button variant="danger" size="sm" icon={CircleStop} label={t('Cancel the render')} disabled={currentStale || !!busy} loading={busy === 'cancel'} onClick={() => void act('cancel', () => cancelRender(current.render!.runId), t('Cancelled'))} />}
                     <Link className="fs-act__link" to="/library?type=imagen">
                       <ExternalLink size={13} aria-hidden="true" /> {t('The images')}
                     </Link>
@@ -392,4 +486,14 @@ export function ActivityScreen() {
       )}
     </div>
   );
+}
+
+function ArtifactDownloads({ items }: { items: ArtifactLink[] }) {
+  if (!items.length) return null;
+  return <div className="fs-act__outputs" aria-label={t('Generated files')}>
+    {items.map((item) => <a key={item.id} className="fs-act__link" href={item.url} download
+      aria-label={t('Download {name}', { name: item.label })}>
+      <Download size={16} aria-hidden="true" /><span>{item.label}</span>
+    </a>)}
+  </div>;
 }

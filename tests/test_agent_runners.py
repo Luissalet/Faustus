@@ -336,7 +336,7 @@ ARGV_BEFORE_RESUME = {
     # the pre-resume one MINUS the prompt token. Everything else is untouched.
     "claude":   ["claude", "-p", "--model", "qwen3.5:9b"],
     "opencode": ["opencode", "run", "add apply_tax", "--model", "qwen3.5:9b"],
-    "codex":    ["codex", "exec", "add apply_tax", "--model", "qwen3.5:9b"],
+    "codex":    ["codex", "exec", "--json", "-", "--model", "qwen3.5:9b"],
     "qwen":     ["qwen", "-p", "add apply_tax", "-m", "qwen3.5:9b"],
 }
 

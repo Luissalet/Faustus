@@ -100,7 +100,7 @@ def _merge_continue_rows_to_delete(db_messages, db1, db2):
     return to_delete
 
 
-def setup_history_routes(session_manager, upload_handler=None) -> APIRouter:
+def setup_history_routes(session_manager, upload_handler=None, *, include_compact=True) -> APIRouter:
     router = APIRouter(tags=["history"])
 
     def _reserve_message_uploads(
@@ -767,7 +767,6 @@ def setup_history_routes(session_manager, upload_handler=None) -> APIRouter:
             logger.error(f"Context usage error {session_id}: {e}")
             raise HTTPException(500, str(e))
 
-    @router.post("/api/session/{session_id}/compact")
     async def compact_session(request: Request, session_id: str):
         """Manually trigger context compaction for a session."""
         _verify_session_owner(request, session_id)
@@ -903,4 +902,9 @@ def setup_history_routes(session_manager, upload_handler=None) -> APIRouter:
             logger.error(f"Manual compact error {session_id}: {e}")
             raise HTTPException(500, str(e))
 
+    # Standalone/legacy consumers can retain the older handler. The full app
+    # already registers the canonical session route: never shadow it with a
+    # second POST whose OpenAPI contract disagrees with the one actually used.
+    if include_compact:
+        router.add_api_route('/api/session/{session_id}/compact', compact_session, methods=['POST'])
     return router

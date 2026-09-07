@@ -70,7 +70,8 @@ import { Rich } from './rich';
 import { knownGroupParents, stripGroupPrefix } from '../adapters/group';
 import { Composer, type Knobs } from './studio/Composer';
 import { apply, blankTurn, cleanUserText, restoreFromMetadata, type Turn } from './studio/model';
-import { initialPanel, panelReducer } from './studio/panel';
+import { useChatPanel } from './studio/useChatPanel';
+import ChatTeam from './studio/ChatTeam';
 import { SessionsPane } from './studio/SessionsPane';
 import { Transcript, type Decision } from './studio/Transcript';
 import { Vitals } from './studio/Vitals';
@@ -230,7 +231,8 @@ export function StudioScreen() {
   const [wsOpen, setWsOpen] = useState(false);
   const [gen, setGen] = useState<GenOverrides>({});
   const [modelSignal, setModelSignal] = useState(0);
-  const [panel, panelDispatch] = useReducer(panelReducer, initialPanel);
+  const [panel, panelDispatch] = useChatPanel(sessionId,knobs.incognito);
+  const [teamEnabled,setTeamEnabled] = useState(false);
 
   const controllerRef = useRef<AbortController | null>(null);
   const runEpoch = useRef(0);
@@ -433,7 +435,6 @@ export function StudioScreen() {
     setLoadError(null);
     setNotice(null);
     setAttachments([]);
-    panelDispatch({ type: 'session-switch' });
     if (!sessionId) {
       setTurns([]);
       setTitle('');
@@ -655,12 +656,12 @@ export function StudioScreen() {
           message,
           useResearch: research,
           // A delegation only makes sense with tools: it forces agent mode.
-          mode: options.delegation ? 'agent' : knobs.mode,
+          mode: options.delegation || teamEnabled ? 'agent' : knobs.mode,
           planMode: knobs.mode === 'agent' && knobs.plan && !research,
-          allowBash: (knobs.mode === 'agent' || Boolean(options.delegation)) && knobs.bash,
+          allowBash: (knobs.mode === 'agent' || Boolean(options.delegation) || teamEnabled) && knobs.bash,
           allowWebSearch: knobs.web,
           useRag: knobs.rag,
-          workspace: knobs.mode === 'agent' || options.delegation ? workspace || undefined : undefined,
+          workspace: knobs.mode === 'agent' || options.delegation || teamEnabled ? workspace || undefined : undefined,
           route,
           attachments: options.attachments?.map((a) => a.id),
           genOverrides: Object.keys(gen).length ? (gen as Record<string, number | boolean>) : undefined,
@@ -699,7 +700,7 @@ export function StudioScreen() {
         refreshActivity();
       }
     },
-    [knobs, workspace, route, gen, patchLast, refreshSessions, syncIds, preset, panel.doc],
+    [knobs, workspace, route, gen, patchLast, refreshSessions, syncIds, preset, panel.doc,teamEnabled,panelDispatch],
   );
 
   /**
@@ -1936,7 +1937,7 @@ export function StudioScreen() {
   const isEmpty = !sessionId && turns !== null && turns.length === 0;
 
   return (
-    <div className="fs-studio" data-testid="studio" data-voice={Boolean(voiceSession && voiceSession === sessionId) || undefined} data-drawer={drawerOpen || undefined} data-pane={paneHidden ? 'hidden' : undefined} data-panel={panel.open || undefined} data-incognito={knobs.incognito || undefined}>
+    <div className="fs-studio" style={{['--fs-panel-width' as string]:`${panel.width}px`}} data-testid="studio" data-voice={Boolean(voiceSession && voiceSession === sessionId) || undefined} data-drawer={drawerOpen || undefined} data-pane={paneHidden ? 'hidden' : undefined} data-panel={panel.open || undefined} data-incognito={knobs.incognito || undefined}>
       <SessionsPane
         sessions={sessions}
         currentId={sessionId}
@@ -2088,7 +2089,7 @@ export function StudioScreen() {
           voiceActive={Boolean(voiceSession)}
           onNotice={say}
           modelPicker={<ModelPicker routes={routes} current={route} onPick={(r) => setRouteId(r.id)} onRefresh={refreshModels} refreshing={refreshingModels} openSignal={modelSignal} />}
-          presetChip={<PresetPicker current={preset} onPick={(p) => setPreset(p ? { id: p.id, name: p.name } : null)} onNotice={say} openSignal={presetSignal} />}
+          presetChip={<><PresetPicker current={preset} onPick={(p) => setPreset(p ? { id: p.id, name: p.name } : null)} onNotice={say} openSignal={presetSignal} />{!knobs.incognito&&<ChatTeam sessionId={sessionId} routes={routes} coordinator={route} busy={busy} ensureSession={()=>ensureSession(t('Conversation'))} onEnabled={setTeamEnabled}/>}</>}
           lastSent={lastSent}
           textareaRef={textareaRef}
         />
@@ -2096,7 +2097,7 @@ export function StudioScreen() {
 
       {panel.open && (
         <Suspense fallback={<aside className="fs-panel" aria-busy="true" />}>
-          <SidePanel state={panel} dispatch={panelDispatch} onNotice={say} />
+          <SidePanel state={panel} dispatch={panelDispatch} onNotice={say} turns={turns||[]} workspace={workspace} project={project} busy={busy} onRerun={rerunWorker} />
         </Suspense>
       )}
 

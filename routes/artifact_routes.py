@@ -1,0 +1,74 @@
+"""Owner-scoped access to generated outputs, including historical aliases."""
+import os
+
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import FileResponse
+
+from src import artifact_catalog
+
+
+def _owner(request):
+    # Authentication middleware supplies the principal. Reading one's own
+    # output is not an administrative capability.
+    from core import middleware
+    from src.owner_identity import effective_storage_owner
+    owner = effective_storage_owner(getattr(request.state, 'current_user', None),
+                                    auth_is_disabled=middleware.auth_disabled())
+    if not owner:
+        raise HTTPException(401, 'An authenticated artifact owner is required')
+    return owner
+
+
+def _metadata(row):
+    return {'id': row.id, 'kind': row.kind, 'label': row.label or row.filename,
+            'sha256': row.sha256, 'byte_size': row.byte_size,
+            'media_type': row.media_type, 'project_id': row.project_id or '',
+            'run_id': row.run_id or '', 'session_id': row.session_id or '',
+            'partial': bool(row.partial), 'created_at': str(row.created_at),
+            'download_url': '/api/artifacts/' + row.id + '/download'}
+
+
+def setup_artifact_routes():
+    router = APIRouter(prefix='/api/artifacts', tags=['artifacts'])
+
+    @router.get('')
+    def list_artifacts(request: Request, project_id: str = '', limit: int = 80):
+        owner = _owner(request)
+        if not 1 <= limit <= 200:
+            raise HTTPException(400, 'limit must be between 1 and 200')
+        from core.database import SessionLocal
+        with SessionLocal() as db:
+            return {'ok': True, 'artifacts': [_metadata(row) for row in artifact_catalog.recent(
+                db, owner=owner, project_id=project_id, limit=limit)]}
+
+    def owned(request, artifact_id):
+        owner = _owner(request)
+        from core.database import SessionLocal
+        with SessionLocal() as db:
+            row = artifact_catalog.get(db, artifact_id)
+            if row is None or (row.owner or '') != owner:
+                raise HTTPException(404, 'Artifact not found')
+            return row
+
+    @router.get('/{artifact_id}')
+    def metadata(request: Request, artifact_id: str):
+        return {'ok': True, 'artifact': _metadata(owned(request, artifact_id))}
+
+    @router.get('/{artifact_id}/download')
+    def download(request: Request, artifact_id: str):
+        row = owned(request, artifact_id)
+        try:
+            filename = artifact_catalog.path(row)
+        except (ValueError, TypeError):
+            raise HTTPException(404, 'Artifact file unavailable')
+        if not os.path.isfile(filename):
+            raise HTTPException(404, 'Artifact file unavailable')
+        # HTML/SVG outputs are downloads, never active code under the app origin.
+        label = os.path.basename((row.label or row.filename).replace('\\', '/'))
+        label = ''.join(c for c in label if c >= ' ' and c != '\x7f')[:200] or 'artifact'
+        return FileResponse(filename, media_type=row.media_type or 'application/octet-stream',
+                            filename=label, headers={'X-Content-Type-Options': 'nosniff',
+                            'Content-Security-Policy': "sandbox; default-src 'none'",
+                            'Cache-Control': 'private, no-store'})
+
+    return router

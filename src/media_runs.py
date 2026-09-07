@@ -29,7 +29,8 @@ from __future__ import annotations
 import json
 import logging
 import os
-import shutil
+import tempfile
+import threading
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Mapping, Optional
@@ -55,6 +56,7 @@ STATUSES = ("submit_pending", "submitted", "submit_unknown", "pending",
 
 #: Statuses meaning "we do not know whether a job of ours is on a GPU".
 UNSETTLED_SUBMIT = ("submit_pending", "submit_unknown")
+_POLL_LOCKS = tuple(threading.RLock() for _ in range(64))
 
 #: Submit failures that PROVE the engine never took the job: it read the graph
 #: and refused it. Anything else -- a socket that died, a gateway that timed
@@ -299,11 +301,11 @@ def reconcile_run(run_id: str, *, grace_seconds: int = 60,
     if not client_id:
         # A row from before per-run client ids. There is nothing to correlate
         # on, and guessing would adopt somebody else's job.
-        _update(run_id, status="failed", ended_at=now_iso(),
+        changed = _update(run_id, _only_unsubmitted=True, status="failed", ended_at=now_iso(),
                 reason="this run carries no client id, so a job of its on the "
                        "engine cannot be told from anyone else's")
         return {"ok": True, "run_id": run_id, "reason": "no_correlation",
-                "changed": True}
+                "changed": changed}
 
     engine = _backend(record["engine_url"] or "", client_id=client_id)
     try:
@@ -313,19 +315,19 @@ def reconcile_run(run_id: str, *, grace_seconds: int = 60,
                 "detail": str(e), "changed": False}
 
     if found["found"]:
-        _update(run_id, status="submitted", engine_job_id=found["prompt_id"],
+        changed = _update(run_id, _only_unsubmitted=True, status="submitted", engine_job_id=found["prompt_id"],
                 started_at=record.get("started_at") or now_iso(),
                 reason=f"adopted from the engine's {found['where']} by client id")
         logger.info("media run %s adopted engine job %s from %s", run_id,
                     found["prompt_id"], found["where"])
         return {"ok": True, "run_id": run_id, "reason": "adopted",
                 "engine_job_id": found["prompt_id"], "where": found["where"],
-                "changed": True}
+                "changed": changed}
 
-    _update(run_id, status="failed", ended_at=now_iso(),
+    changed = _update(run_id, _only_unsubmitted=True, status="failed", ended_at=now_iso(),
             reason="the engine is reachable and holds no job carrying this run's "
                    "client id, so the prompt never reached the queue")
-    return {"ok": True, "run_id": run_id, "reason": "never_queued", "changed": True}
+    return {"ok": True, "run_id": run_id, "reason": "never_queued" if changed else "already_settled", "changed": changed}
 
 
 def reconcile(*, grace_seconds: int = 60, limit: int = 50) -> Dict[str, Any]:
@@ -361,17 +363,19 @@ def reconcile(*, grace_seconds: int = 60, limit: int = 50) -> Dict[str, Any]:
             "runs": settled}
 
 
-def _update(run_id: str, **fields: Any) -> bool:
+def _update(run_id: str, *, _only_unsubmitted: bool = False, **fields: Any) -> bool:
     from core.database import MediaRunRow, SessionLocal
     db = SessionLocal()
     try:
-        row = db.get(MediaRunRow, run_id)
-        if row is None:
-            return False
-        for key, value in fields.items():
-            setattr(row, key, value)
+        query = db.query(MediaRunRow).filter(MediaRunRow.id == run_id,
+            MediaRunRow.status.notin_(['completed', 'failed', 'cancelled']))
+        if _only_unsubmitted:
+            from sqlalchemy import or_
+            query = query.filter(MediaRunRow.status.in_(UNSETTLED_SUBMIT),
+                                 or_(MediaRunRow.engine_job_id.is_(None), MediaRunRow.engine_job_id == ''))
+        changed = query.update(fields, synchronize_session=False)
         db.commit()
-        return True
+        return bool(changed)
     except Exception:
         db.rollback()
         raise
@@ -423,7 +427,52 @@ def recent(*, owner: str = "", limit: int = 20) -> List[Dict[str, Any]]:
 
 # ── watching one ──────────────────────────────────────────────────────────
 
+def artifact_details(record: Mapping[str, Any]) -> List[Dict[str, Any]]:
+    """Reload outputs collected by another worker, without an engine call.
+
+    Stale ids cannot expose another owner's result or resurrect removed data.
+    """
+    from src import artifact_catalog
+    from src.contracts.artifact import Provenance
+    from core.database import SessionLocal
+    found = []
+    with SessionLocal() as db:
+        for artifact_id in record.get('artifact_ids') or []:
+            row = artifact_catalog.get(db, artifact_id)
+            if row is None or (row.owner or '') != record.get('owner') or row.run_id != record.get('id'):
+                continue
+            provenance = {key: getattr(row, key, None) for key in Provenance._KEYS
+                          if key not in ('note', 'source_artifact_ids')}
+            provenance['note'] = row.provenance_note or ''
+            provenance['source_artifact_ids'] = json.loads(getattr(row, 'source_artifact_ids', None) or '[]')
+            found.append({'id': row.id, 'label': row.label,
+                          'kind': row.kind, 'filename': row.filename,
+                          'sha256': row.sha256, 'owner': row.owner or '',
+                          'project_id': row.project_id or '', 'run_id': row.run_id or '',
+                          'skill_id': row.skill_id or '', 'skill_version': row.skill_version or '',
+                          'created_at': str(row.created_at).replace(' ', 'T'),
+                          'partial': bool(row.partial),
+                          'retention': {'policy': row.retention_policy or 'keep',
+                                        'days': row.retention_days, 'reason': row.retention_reason or ''},
+                          'media_type': row.media_type, 'byte_size': row.byte_size,
+                          'provenance': provenance})
+    return found
+
+
 def poll(run_id: str, *, collect: bool = True) -> Dict[str, Any]:
+    # HTTP, workflow and media continuation can ask at once. Bound the lock
+    # inventory; isolated collection directories also protect multi-process use.
+    with _POLL_LOCKS[hash(run_id) % len(_POLL_LOCKS)]:
+        result = _poll(run_id, collect=collect)
+        current = get(run_id)
+        if current and collect:
+            result.update(current)
+            if current['status'] == 'completed' and not result.get('artifacts'):
+                result['artifacts'] = artifact_details(current)
+        return result
+
+
+def _poll(run_id: str, *, collect: bool = True) -> Dict[str, Any]:
     """Ask the engine what happened, write it down, and keep the outputs.
 
     Safe to call as often as anyone likes, and safe to call after a restart —
@@ -442,7 +491,7 @@ def poll(run_id: str, *, collect: bool = True) -> Dict[str, Any]:
         # The outbox for this run is still open. Whoever was sending it is not
         # here any more -- we are -- so ask the engine, rather than report that
         # a run "never reached" an engine that may be rendering it right now.
-        reconcile_run(run_id, grace_seconds=0, record=record)
+        reconcile_run(run_id, grace_seconds=60 if record['status'] == 'submit_pending' else 0, record=record)
         record = get(run_id) or record
     if record["status"] in ("completed", "failed", "cancelled"):
         return {"ok": True, "run_id": run_id, **record, "checked": False}
@@ -458,11 +507,12 @@ def poll(run_id: str, *, collect: bool = True) -> Dict[str, Any]:
         # The engine being down does NOT make the run failed. It makes what
         # the run is doing unknown, and a status written on a guess is how a
         # finished render gets reported as a failure.
+        _update(run_id, reason=f'Engine unavailable; retrying: {e}')
         return {"ok": True, "run_id": run_id, **record, "checked": True,
                 "engine_reachable": False, "detail": str(e)}
 
     if state["status"] in ("queued", "running"):
-        _update(run_id, status=state["status"])
+        _update(run_id, status=state["status"], reason='')
         return {"ok": True, "run_id": run_id, **{**record, "status": state["status"]},
                 "checked": True, "ahead": state.get("ahead")}
 
@@ -501,8 +551,19 @@ def poll(run_id: str, *, collect: bool = True) -> Dict[str, Any]:
                 "checked": True, "artifacts": [], "skipped": [],
                 "detail": "the outputs of this run were already collected"}
 
-    kept = _collect(record, outputs, engine)
+    if not outputs:
+        _update(run_id, status='failed', ended_at=now_iso(),
+                reason='the engine finished without reporting any output files')
+        return {'ok': True, 'run_id': run_id, 'checked': True}
+    try:
+        kept = _collect(record, outputs, engine)
+    except (ComfyUIError, OSError, ValueError) as exc:
+        # The render exists; a temporarily inaccessible /view or full disk is
+        # not a completed result. Keep it retryable and name the retrieval failure.
+        _update(run_id, status='running', reason=f'Could not collect render outputs: {exc}')
+        return {'ok': True, 'run_id': run_id, 'checked': True, 'collection_pending': True}
     _update(run_id, status="completed", ended_at=now_iso(),
+            reason='',
             artifact_ids=",".join(a["id"] for a in kept["artifacts"]))
     return {"ok": True, "run_id": run_id,
             **{**record, "status": "completed"},
@@ -512,12 +573,17 @@ def poll(run_id: str, *, collect: bool = True) -> Dict[str, Any]:
 
 def _collect(record: Mapping[str, Any], outputs: List[Dict[str, Any]],
              engine: ComfyUIBackend) -> Dict[str, Any]:
+    with tempfile.TemporaryDirectory(prefix='faustus-render-') as scratch:
+        return _collect_into(record, outputs, engine, scratch)
+
+
+def _collect_into(record: Mapping[str, Any], outputs: List[Dict[str, Any]],
+                  engine: ComfyUIBackend, scratch: str) -> Dict[str, Any]:
     """Download what the engine made and put it in the artifact store, with
     the whole story attached."""
     from src import artifact_store
     from src.contracts import ExecutionResult
 
-    scratch = artifact_store.run_dir(record["id"])
     names: List[str] = []
     for descriptor in outputs:
         try:
@@ -526,6 +592,7 @@ def _collect(record: Mapping[str, Any], outputs: List[Dict[str, Any]],
         except ComfyUIError as e:
             logger.warning("media run %s: could not fetch %s: %s",
                            record["id"], descriptor.get("filename"), e)
+            raise
 
     models = record.get("models") or []
     result = ExecutionResult.parse({
@@ -559,10 +626,11 @@ def _collect(record: Mapping[str, Any], outputs: List[Dict[str, Any]],
                     f"{record['version']}; the graph was not written by a model. "
                     f"The exact inputs are on media run {record['id']}.",
         })
+    if collected.skipped or len(collected.artifacts) != len(outputs):
+        raise ValueError('not every render output could be collected')
     artifact_store.persist(collected.artifacts,
                            session_id=record.get("session_id") or "")
 
-    shutil.rmtree(scratch, ignore_errors=True)
     return {"artifacts": [a.to_dict() for a in collected.artifacts],
             "skipped": [dict(s) for s in collected.skipped]}
 
@@ -597,11 +665,21 @@ def cancel(run_id: str) -> Dict[str, Any]:
     if record["status"] in ("completed", "failed"):
         return {"ok": False, "reason": f"already_{record['status']}", "run_id": run_id}
     if record["status"] in UNSETTLED_SUBMIT and not record["engine_job_id"]:
-        reconcile_run(run_id, grace_seconds=0, record=record)
+        settled = reconcile_run(run_id, grace_seconds=60 if record['status'] == 'submit_pending' else 0, record=record)
         record = get(run_id) or record
+        if settled.get('reason') in ('too_soon', 'engine_unreachable'):
+            return {'ok': False, 'run_id': run_id, 'status': record['status'],
+                    'reason': 'submission_not_settled',
+                    'detail': 'The submission is still in progress or the engine cannot be reached. Retry cancellation shortly.'}
+        if record['status'] in ('completed', 'failed', 'cancelled'):
+            return {'ok': record['status'] == 'cancelled', 'run_id': run_id,
+                    'status': record['status'], 'reason': 'already_' + record['status']}
     if not record["engine_job_id"]:
-        _update(run_id, status="cancelled", reason="cancelled before it was queued",
-                ended_at=now_iso())
+        if not _update(run_id, status="cancelled", reason="cancelled before it was queued",
+                       ended_at=now_iso()):
+            current = get(run_id) or {}
+            return {'ok': current.get('status') == 'cancelled', 'run_id': run_id,
+                    'status': current.get('status'), 'reason': 'already_' + str(current.get('status'))}
         return {"ok": True, "run_id": run_id, "status": "cancelled",
                 "detail": "it had not reached the engine"}
 
@@ -611,6 +689,14 @@ def cancel(run_id: str) -> Dict[str, Any]:
         stopped = engine.cancel(record["engine_job_id"])
     except ComfyUIError as e:
         return {"ok": False, "run_id": run_id, "reason": e.reason, "detail": e.detail}
-    _update(run_id, status="cancelled", ended_at=now_iso(),
-            reason=f"cancelled while {stopped.get('was')}")
+    if not stopped.get('ok'):
+        # A finished render or an engine that refused the stop is not a
+        # cancellation. Leave the durable row for normal collection/retry.
+        return {**stopped, 'ok': False, 'run_id': run_id,
+                'status': (get(run_id) or record)['status']}
+    if not _update(run_id, status="cancelled", ended_at=now_iso(),
+                   reason=f"cancelled while {stopped.get('was')}"):
+        current = get(run_id) or {}
+        return {'ok': current.get('status') == 'cancelled', 'run_id': run_id,
+                'status': current.get('status'), 'reason': 'already_' + str(current.get('status'))}
     return {"ok": True, "run_id": run_id, "status": "cancelled", **stopped}

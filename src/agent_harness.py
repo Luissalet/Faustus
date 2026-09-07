@@ -1034,6 +1034,8 @@ class TurnLedger:
             "round": round_num, "tool": tool, "ok": ok, "kind": kind,
             "paths": paths, "error": (result or {}).get("error") if not ok else None,
         }
+        if (result or {}).get('approval_required') is True:
+            ev['approval_required'] = True
         self.events.append(ev)
         if tool == "ask_user":
             self.asked_user = True
@@ -1405,7 +1407,10 @@ class TurnLedger:
             "language": self.language,
             "tools_run": self.tools_run(),
             "tool_calls": len(self.events),
-            "failed_calls": len(self.failed),
+            # Waiting at the authorization boundary is neither successful
+            # execution nor an execution failure. Keep the raw ledger intact.
+            "failed_calls": sum(not e.get('approval_required') for e in self.failed),
+            "waiting_approval_calls": sum(bool(e.get('approval_required')) for e in self.events),
             "mutations": self.mutated_paths(),
             "effects": len(self.effects),
             "rejections": self.rejections,

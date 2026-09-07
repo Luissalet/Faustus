@@ -93,9 +93,25 @@ const ESCAPED = new RegExp('\\\\([\\\\`*_{}\\[\\]()#+\\-.!>~|])', 'g');
 
 /** A model can write any URL; only these schemes get to be a live link. */
 export function safeHref(href: string): string {
+  const local = href.trim().replace(/^<|>$/g, '');
+  if (/^[a-z]:[\\/]/i.test(local)) return '#workspace-file=' + encodeURIComponent(local);
+  if (/^[^:/]+\.[a-z0-9]+:\d+(?::\d+)?$/i.test(local)) return '#workspace-file=' + encodeURIComponent(local);
   const value = href.trim().split(/\s+/)[0] ?? '';
   if (/^[a-z][a-z0-9+.-]*:/i.test(value)) return /^(?:https?|mailto):/i.test(value) ? value : '#';
   return value || '#';
+}
+
+/** Local references remain confined by the workspace API; never navigate to file: URLs. */
+export function workspaceLink(href: string): string | null {
+  if (href.startsWith('#workspace-file=')) {
+    try { return decodeURIComponent(href.slice(16)).replace(/:\d+(?::\d+)?$/, ''); } catch { return null; }
+  }
+  if (/^[^:/]+\.[a-z0-9]+:\d+(?::\d+)?$/i.test(href)) return href.replace(/:\d+(?::\d+)?$/, '');
+  if (/^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i.test(href)) return null;
+  try {
+    const path = decodeURIComponent(href).replace(/:\d+(?::\d+)?$/, '');
+    return /\.[a-z0-9]{1,12}$/i.test(path) ? path : null;
+  } catch { return null; }
 }
 
 /**

@@ -463,6 +463,7 @@ export function refusalOf(raw: unknown): Refusal | null {
 export function contextLinkFrom(raw: unknown): ContextLink {
   const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
   const pinned = Number(r.pinned_version);
+  const checkedAt = Number(r.source_checked_at);
   return {
     id: str(r.id),
     kind: one(r.kind, LINK_KINDS, 'file'),
@@ -474,12 +475,12 @@ export function contextLinkFrom(raw: unknown): ContextLink {
     summary: str(r.summary),
     retrievalPolicy: one(r.retrieval_policy, RETRIEVAL_POLICIES, 'on_demand'),
     versionPolicy: one(r.version_policy, ['latest', 'pinned', 'snapshot'] as const, 'latest'),
-    pinnedVersion: Number.isFinite(pinned) && pinned > 0 ? pinned : null,
+    pinnedVersion: Number.isSafeInteger(pinned) && pinned > 0 ? pinned : null,
     accessMode: one(r.access_mode, ['read_only', 'work_root'] as const, 'read_only'),
     indexStatus: one(r.index_status, ['none', 'queued', 'indexing', 'ready', 'stale', 'failed'] as const, 'none'),
     contentRevision: str(r.content_revision),
-    sourceState: one(r.source_state, ['ok', 'missing', 'forbidden', 'unsupported'] as const, 'ok'),
-    sourceCheckedAt: Number(r.source_checked_at) || 0,
+    sourceState: one(r.source_state, ['ok', 'missing', 'forbidden', 'unsupported'] as const, r.source_state == null ? 'ok' : 'unsupported'),
+    sourceCheckedAt: Number.isFinite(checkedAt) && checkedAt > 0 ? checkedAt : 0,
     sourceMessage: str(r.source_message),
     enabled: r.enabled !== false,
     updatedAt: Number(r.updated_at) || 0,
@@ -493,13 +494,22 @@ function orRefusal<T>(body: unknown, build: (b: Record<string, unknown>) => T): 
   return build((body && typeof body === 'object' ? body : {}) as Record<string, unknown>);
 }
 
+function returnedLink(raw: unknown): ContextLink {
+  const link = contextLinkFrom(raw);
+  if (!link.id.trim()) throw new ApiError(t('Invalid project context response'), 502);
+  return link;
+}
+
 export async function listContextLinks(
   id: string,
   signal?: AbortSignal,
 ): Promise<{ links: ContextLink[]; revision: number }> {
   const data = await getJson<{ links?: unknown[]; context_revision?: number }>(`${base(id)}/context`, signal);
   return {
-    links: (data.links ?? []).map(contextLinkFrom),
+    links: orRefusal(data, (body) => {
+      if (!Array.isArray(body.links)) throw new ApiError(t('Invalid project context response'), 502);
+      return body.links.map(returnedLink);
+    }),
     revision: Number(data.context_revision) || 0,
   };
 }
@@ -528,7 +538,7 @@ export async function attachContextSource(id: string, input: AttachInput): Promi
     ),
     'projects/context/attach',
   );
-  return orRefusal(await r.json(), (b) => contextLinkFrom(b.link));
+  return orRefusal(await r.json(), (b) => returnedLink(b.link));
 }
 
 export interface ContextLinkPatch {
@@ -554,7 +564,7 @@ export async function patchContextLink(
     await fetch(`${base(id)}/context/${encodeURIComponent(linkId)}`, jsonInit('PATCH', body)),
     'projects/context/patch',
   );
-  return orRefusal(await r.json(), (b) => contextLinkFrom(b.link));
+  return orRefusal(await r.json(), (b) => returnedLink(b.link));
 }
 
 /** What the source says right now, beside what the link claims. */
@@ -568,7 +578,12 @@ export async function inspectContextLink(
     signal,
   );
   return {
-    state: one(b.state, ['ok', 'missing', 'forbidden', 'unsupported'] as const, 'ok'),
+    state: orRefusal(b, (body) => {
+      if (!['ok', 'missing', 'forbidden', 'unsupported'].includes(str(body.state))) {
+        throw new ApiError(t('Invalid project context status response'), 502);
+      }
+      return body.state as SourceState;
+    }),
     stale: b.stale === true,
     revision: str(b.revision),
     effectiveVersion: Number(b.effective_version) || 0,

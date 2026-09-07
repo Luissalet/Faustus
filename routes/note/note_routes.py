@@ -1,6 +1,7 @@
 # routes/note_routes.py
 """Google Keep-style notes / checklists API."""
 
+from datetime import timezone as _utc_timezone
 import json
 import uuid
 import logging
@@ -366,7 +367,7 @@ async def dispatch_reminder(
                 _t = title or 'Note'
                 _t = _t[len('Reminder:'):].strip() if _t.lower().startswith('reminder:') else _t
                 msg["Subject"] = f"Reminder (Faustus): {_t}"
-                msg["Date"] = _dt.utcnow().strftime("%a, %d %b %Y %H:%M:%S +0000")
+                msg["Date"] = _dt.now(_utc_timezone.utc).replace(tzinfo=None).strftime("%a, %d %b %Y %H:%M:%S +0000")
                 msg["X-Odysseus-Origin"] = "odysseus-ui"
                 msg["X-Odysseus-Kind"] = "reminder"
                 msg["X-Odysseus-Ref"] = str(note_id)

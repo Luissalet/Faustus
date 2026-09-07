@@ -431,8 +431,8 @@ def _route_endpoint(router, path):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("path", ["/api/chat", "/api/chat_stream"])
-async def test_model_send_routes_hydrate_before_context_build(monkeypatch, path):
+@pytest.mark.parametrize("path,private", [("/api/chat", False), ("/api/chat_stream", False), ("/api/chat_stream", True)])
+async def test_model_send_routes_hydrate_before_context_build(monkeypatch, path, private):
     # A real SessionManager over a real (temp) DB — a stub here would only
     # assert that the stub hydrates, not that SessionManager does.
     engine, db_factory = _database()
@@ -443,6 +443,9 @@ async def test_model_send_routes_hydrate_before_context_build(monkeypatch, path)
 
     async def assert_complete_context(session, *_args, **_kwargs):
         contexts_built.append(session)
+        if path == '/api/chat_stream':
+            assert _kwargs['incognito'] is private
+            assert _kwargs['agent_mode'] is True
         assert [message.content for message in session.history] == [
             f"content-{index}" for index in range(6)
         ]
@@ -523,7 +526,7 @@ async def test_model_send_routes_hydrate_before_context_build(monkeypatch, path)
             await endpoint(
                 _json_request(
                     path,
-                    {"message": "hello", "session": "session-1"},
+                    {"message": "hello", "session": "session-1", "mode": "agent", "incognito": private},
                 )
             )
 

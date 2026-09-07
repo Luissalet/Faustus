@@ -19,7 +19,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from core import database as db_mod
-from core.database import ArtifactRow, Base
+from core.database import ArtifactOccurrenceRow, Base
 from src import artifact_store
 from src.contracts import ExecutionResult
 
@@ -84,7 +84,7 @@ def test_the_stored_name_is_the_content_hash_so_a_run_cannot_overwrite_another(r
     assert os.path.exists(os.path.join(run_output["store"], art.filename))
 
 
-def test_identical_bytes_are_one_file_and_one_row(run_output, own_database, tmp_path):
+def test_identical_bytes_are_one_file_but_keep_both_runs(run_output, own_database, tmp_path):
     first = artifact_store.collect(_result(["data.csv"]), source_dir=run_output["dir"],
                                    store_dir=run_output["store"])
     assert artifact_store.persist(first.artifacts) == {"created": 1, "already_there": 0}
@@ -98,6 +98,8 @@ def test_identical_bytes_are_one_file_and_one_row(run_output, own_database, tmp_
 
     assert second.deduplicated == 1
     assert len(os.listdir(run_output["store"])) == 1
+    assert first.artifacts[0].id != second.artifacts[0].id
+    assert artifact_store.persist(second.artifacts) == {"created": 1, "already_there": 0}
     assert artifact_store.persist(second.artifacts) == {"created": 0, "already_there": 1}
 
 
@@ -120,7 +122,7 @@ def test_a_partial_run_keeps_its_output_and_says_it_is_partial(run_output, own_d
     artifact_store.persist(collected.artifacts)
     db = db_mod.SessionLocal()
     try:
-        assert db.query(ArtifactRow).one().partial is True
+        assert db.query(ArtifactOccurrenceRow).one().partial is True
     finally:
         db.close()
 
@@ -138,7 +140,7 @@ def test_the_row_records_the_backend_and_leaves_what_it_cannot_know_null(run_out
     artifact_store.persist(collected.artifacts, session_id="s1")
     db = db_mod.SessionLocal()
     try:
-        row = db.query(ArtifactRow).one()
+        row = db.query(ArtifactOccurrenceRow).one()
         assert (row.backend, row.recipe, row.owner) == ("docker_workspace", "report.v1", "luis")
         assert row.model is None and row.model_license is None and row.inputs_digest is None
         assert row.session_id == "s1"

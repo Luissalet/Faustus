@@ -77,9 +77,9 @@ function pill(w: Worker, now: number): { status: RunStatus; label: string } {
     return { status: 'running', label: t('running') };
   }
   if (w.status === 'done') return { status: 'succeeded', label: t('done') };
-  if (w.status === 'stopped') return { status: 'cancelled', label: t('stalled') };
-  if (w.status === 'failed') return { status: 'failed', label: 'fallido' };
-  return { status: 'paused', label: w.stopReason || 'parcial' };
+  if (w.status === 'stopped') return { status: 'cancelled', label: t('stopped') };
+  if (w.status === 'failed') return { status: 'failed', label: t('failed') };
+  return { status: 'paused', label: w.stopReason || t('partial') };
 }
 
 const fmtTok = (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(v));
@@ -159,8 +159,8 @@ function WorkerCard({ w, live, now, onRerun, onNotice }: { w: Worker; live: bool
           </span>
         )}
         <span>
-          {w.toolCalls} {w.toolCalls === 1 ? 'herramienta' : 'herramientas'}
-          {w.failedCalls ? ` (${w.failedCalls} fallidas)` : ''}
+          {tn(w.toolCalls, '{n} tool', '{n} tools')}
+          {w.failedCalls ? ` (${t('{n} failed', {n:w.failedCalls})})` : ''}
         </span>
         {(w.inTok !== null || w.outTok !== null) && <span title="tokens">{fmtTok(w.inTok ?? 0)} in · {fmtTok(w.outTok ?? 0)} out</span>}
         {!alive && w.mutations.length > 0 && <span>{tn(w.mutations.length, '{n} file changed', '{n} files changed')}</span>}
@@ -171,7 +171,7 @@ function WorkerCard({ w, live, now, onRerun, onNotice }: { w: Worker; live: bool
       {w.note && last !== w.note && <p className="fs-sa__muted">{w.note}</p>}
       {w.files.length > 0 && (
         <p className="fs-sa__files fs-sa__muted">
-          posee {w.files.map((f) => <code key={f} title={f}>{f.split(/[\\/]/).pop()}</code>)}
+          {t('Assigned files')}: {w.files.map((f) => <code key={f} title={f}>{f.split(/[\\/]/).pop()}</code>)}
         </p>
       )}
       {!alive && w.mutations.length > 0 && (
@@ -182,7 +182,7 @@ function WorkerCard({ w, live, now, onRerun, onNotice }: { w: Worker; live: bool
       {(w.steers.length > 0 || w.supervisor.length > 0) && (
         <div className="fs-sa__lines">
           {w.steers.map((st, i) => (
-            <p key={`s${i}`}>→ dirigido{st.source && st.source !== 'user' ? ` (${st.source})` : ''}: {st.text}</p>
+            <p key={`s${i}`}>→ {t('Steered')}{st.source && st.source !== 'user' ? ` (${st.source})` : ''}: {st.text}</p>
           ))}
           {w.supervisor.map((sv, i) => (
             <p key={`v${i}`}>{t('supervisor')}: {sv.action === 'nudge' ? t('nudge') : sv.action === 'stop' ? t('stopped') : sv.action || t('acted')}{sv.reason ? ` — ${sv.reason}` : ''}</p>
@@ -196,7 +196,7 @@ function WorkerCard({ w, live, now, onRerun, onNotice }: { w: Worker; live: bool
               size="sm"
               variant="danger"
               icon={Square}
-              label={stopState === 'stopping' ? t('Stopping…') : stopState === 'stopped' ? t('Stalled') : stopState === 'gone' ? t('Was not running') : t('Stop')}
+              label={stopState === 'stopping' ? t('Stopping…') : stopState === 'stopped' ? t('stopped') : stopState === 'gone' ? t('Was not running') : t('Stop')}
               disabled={stopState !== 'idle'}
               onClick={() => void stop()}
             />
@@ -260,12 +260,12 @@ export default function SubagentBoard({ workers, live, onRerun, onNotice }: Suba
   const running = workers.filter((w) => w.status === 'running').length;
   const queued = workers.filter((w) => w.status === 'queued').length;
   const stalled = workers.filter((w) => w.status === 'running' && w.stalled).length;
-  const bits = [running ? `${running} en marcha` : '', queued ? `${queued} en cola` : '', stalled ? `${stalled} parados` : ''].filter(Boolean);
+  const bits = [running ? t('{n} running', {n:running}) : '', queued ? t('{n} queued', {n:queued}) : '', stalled ? t('{n} stalled', {n:stalled}) : ''].filter(Boolean);
 
   return (
     <section className="fs-sa-board" data-testid="subagent-board" data-open={anyLive || undefined}>
       <header className="fs-sa-board__head">
-        <strong>Sub-agentes</strong>
+        <strong>{t('Sub-agents')}</strong>
         <span className="fs-sa-board__count">{done}/{workers.length}</span>
         {bits.length > 0 && <span className="fs-sa__muted" data-stalled={stalled > 0 || undefined}> · {bits.join(' · ')}</span>}
       </header>

@@ -149,6 +149,18 @@ def _same_remote(actual: Optional[str], expected: str) -> bool:
     return actual.casefold() == wanted.casefold()
 
 
+def current_head(repo_dir: str, *, timeout: float = 5.0) -> str:
+    """Full commit identity, including detached HEAD and linked worktrees.
+
+    Unborn repositories and failed reads return no identity, not a guessed
+    branch or raw .git/HEAD contents. Accept Git's SHA-1 and SHA-256 formats.
+    """
+    if not repo_dir or not os.path.isdir(repo_dir):
+        return ""
+    value = _out(_git(repo_dir, ["rev-parse", "--verify", "HEAD^{commit}"], timeout=timeout))
+    return value.lower() if re.fullmatch(r"(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})", value) else ""
+
+
 def current_branch(repo_dir: str, *, timeout: float = 5.0) -> str:
     """The branch HEAD points at, or `""` when there is not one to name.
 

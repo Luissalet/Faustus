@@ -12,6 +12,7 @@ import logging
 import os
 
 logger = logging.getLogger(__name__)
+MAX_NATIVE_DOCX_XML_BYTES = 16 * 1024 * 1024
 
 MARKITDOWN_MISSING = (
     "Office/EPUB document extraction requires markitdown. Install optional "
@@ -47,8 +48,9 @@ def _extract_docx_native(path: str) -> str | None:
     inside <w:p> paragraphs. Iterating with ElementTree (rather than
     re.findall) keeps paragraph breaks intact and lets the XML parser handle
     namespaces + entity unescaping. Loses tables, footnotes, images and
-    list bullets — keeps ~95% of "summarize this doc" content, which is the
-    case people hit when markitdown isn't installed.
+    list bullets. Standard heading styles are retained as Markdown headings.
+    Bound the decompressed XML before parsing so an attachment cannot expand
+    an arbitrarily large ZIP member into the application's memory.
     """
     import zipfile
     import xml.etree.ElementTree as ET
@@ -56,7 +58,14 @@ def _extract_docx_native(path: str) -> str | None:
     ns = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
     try:
         with zipfile.ZipFile(path) as z:
-            xml_bytes = z.read("word/document.xml")
+            member = z.getinfo("word/document.xml")
+            if member.file_size > MAX_NATIVE_DOCX_XML_BYTES:
+                logger.warning("DOCX document XML exceeds the native extraction budget")
+                return None
+            with z.open(member) as stream:
+                xml_bytes = stream.read(MAX_NATIVE_DOCX_XML_BYTES + 1)
+            if len(xml_bytes) > MAX_NATIVE_DOCX_XML_BYTES:
+                return None
     except (zipfile.BadZipFile, KeyError, OSError):
         return None
     try:
@@ -68,6 +77,10 @@ def _extract_docx_native(path: str) -> str | None:
         runs = [t.text or "" for t in para.iter(f"{ns}t")]
         line = "".join(runs).strip()
         if line:
+            style = para.find(f"{ns}pPr/{ns}pStyle")
+            style_id = (style.get(f"{ns}val", "") if style is not None else "").lower()
+            if style_id.startswith("heading") and style_id[7:] in {str(n) for n in range(1, 10)}:
+                line = "#" * min(int(style_id[7:]), 6) + " " + line
             paragraphs.append(line)
     return "\n\n".join(paragraphs) if paragraphs else None
 

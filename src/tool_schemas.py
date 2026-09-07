@@ -23,6 +23,7 @@ _REQUIRED_NATIVE_TOOL_ARGS = {
     "web_search": ("query", "queries"),
     "web_fetch": ("url",),
     "read_file": ("path",),
+    "inspect_media": ("path",),
     "write_file": ("path",),
     "edit_file": ("path",),
     "apply_patch": ("patch_text", "patchText", "patch"),
@@ -32,6 +33,61 @@ _REQUIRED_NATIVE_TOOL_ARGS = {
 # OpenAI-compatible function tool schemas
 # ---------------------------------------------------------------------------
 FUNCTION_TOOL_SCHEMAS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "plan_media_transform",
+            "description": "Read-only preflight of a fixed media recipe: convert/resize single-frame images to PNG/JPEG/WebP or extract first audio track to WAV/MP3 (stereo 48 kHz, max 10 minutes). Measures input, reports losses and engine requirements. Does not write, install or run a conversion. Original always preserved. path must be a new filename in an existing workspace folder.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "source": {"type": "string", "description": "Local authorized source file"},
+                    "path": {"type": "string", "description": "Proposed NEW output filename with matching extension"},
+                    "format": {"type": "string", "enum": ["png", "jpeg", "webp", "wav", "mp3"]},
+                    "max_width": {"type": "integer", "minimum": 1, "maximum": 8192},
+                    "max_height": {"type": "integer", "minimum": 1, "maximum": 8192},
+                    "quality": {"type": "integer", "minimum": 1, "maximum": 100, "description": "JPEG/WebP only, default 90; not a filesize target"},
+                    "background": {"type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "description": "JPEG only: explicit background for images with alpha"}
+                },
+                "required": ["source", "path", "format"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "transform_media",
+            "description": "Execute a fixed local media recipe to a NEW workspace file; never overwrite original or existing output. Images: PNG/JPEG/WebP, max 16MP, preserves aspect/no upscale, rejects animation/multipage, strips metadata; JPEG alpha needs explicit background. Audio/video: extract first audio track to WAV 16-bit or MP3 192k, stereo 48kHz, up to 10 minutes, FFmpeg required. Max input 256MiB/output 128MiB, bounded runtime, cancellable with progress. Returns validated output and hashes; no installs or AI calls. Preflight with plan_media_transform. Not video encoding, subtitles, color-managed print or target-filesize compression.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "source": {"type": "string", "description": "Local authorized source file"},
+                    "path": {"type": "string", "description": "NEW output filename in an existing authorized folder; matching extension"},
+                    "format": {"type": "string", "enum": ["png", "jpeg", "webp", "wav", "mp3"]},
+                    "max_width": {"type": "integer", "minimum": 1, "maximum": 8192},
+                    "max_height": {"type": "integer", "minimum": 1, "maximum": 8192},
+                    "quality": {"type": "integer", "minimum": 1, "maximum": 100, "description": "JPEG/WebP only, default 90"},
+                    "background": {"type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "description": "JPEG only: explicit background for images with alpha"}
+                },
+                "required": ["source", "path", "format"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "inspect_media",
+            "description": "Inspect a local image, audio or video before editing/converting it. Returns measured dimensions, display orientation, format, duration and stream metadata when available. Read-only, workspace-confined; no model call, network fetch, transcription or generation. Images and PCM WAV work locally; compressed audio/video require FFprobe. Missing metadata is not guessed.",
+            "parameters": {
+                "type": "object",
+                "properties": {"path": {"type": "string", "description": "Local media file path inside the allowed workspace; not a URL or playlist"}},
+                "required": ["path"],
+                "additionalProperties": False
+            }
+        }
+    },
     {
         "type": "function",
         "function": {
@@ -251,6 +307,7 @@ FUNCTION_TOOL_SCHEMAS = [
                             "type": "object",
                             "properties": {
                                 "name": {"type": "string", "description": "Short label shown in the UI"},
+                                "team_member": {"type": "string", "description": "Configured chat team member ID. Required when the user enabled a chat team; routes and restrictions come from that member."},
                                 "instruction": {"type": "string", "description": "Complete instruction for the worker"}
                             },
                             "required": ["instruction"]
@@ -1785,7 +1842,7 @@ def function_call_to_tool_block(name: str, arguments: str) -> Optional[ToolBlock
             content = json.dumps(args)
         else:
             content = args.get("path", "")
-    elif tool_type in ("grep", "glob", "ls"):
+    elif tool_type in ("grep", "glob", "ls", "inspect_media", "plan_media_transform", "transform_media"):
         content = json.dumps(args) if args else "{}"
     elif tool_type == "get_workspace":
         content = ""

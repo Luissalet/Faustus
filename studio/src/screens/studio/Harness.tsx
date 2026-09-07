@@ -5,6 +5,7 @@ import type { HarnessCheck, HarnessSummary, Todo } from '../../adapters/chat';
 import { commitFiles, commitProposal, fileDiff, restoreCheckpoint, revertFile } from '../../adapters/workspace';
 import { Rich } from '../rich';
 import { t, tn } from '../../i18n';
+import { harnessOutcomeWords } from './harness-status';
 
 /**
  * The reliability harness, shown where it happened: the turn summary
@@ -41,16 +42,6 @@ const REASON_WORDS: Record<string, string> = {
   no_tools: 'used no tools',
 };
 
-const STOP_WORDS: Record<string, string> = {
-  complete: 'finished',
-  complete_unverified: 'finished unverified',
-  rounds: 'ran out of rounds',
-  budget: 'ran out of budget',
-  stopped: 'stopped',
-  error: 'error',
-  asked_user: 'asked you',
-};
-
 export function CheckList({ checks }: { checks: HarnessCheck[] }) {
   if (!checks.length) return null;
   return (
@@ -68,7 +59,7 @@ export function CheckList({ checks }: { checks: HarnessCheck[] }) {
               {c.reasons && c.reasons.length > 0 ? `: ${c.reasons.map((r) => (REASON_WORDS[r] ? t(REASON_WORDS[r]) : r)).join(', ')}` : ''}
               {c.detail && !c.reasons?.length ? ` · ${c.detail}` : ''}
             </span>
-            {c.round !== undefined && <span className="fs-trace__meta">ronda {c.round}</span>}
+            {c.round !== undefined && <span className="fs-trace__meta">{t('round {n}', {n: c.round})}</span>}
           </li>
         );
       })}
@@ -165,10 +156,12 @@ export function HarnessCard({
   checks,
   answer,
   onNotice,
+  permissionAnswered = false,
 }: {
   summary: HarnessSummary;
   checks: HarnessCheck[];
   answer: string;
+  permissionAnswered?: boolean;
   onNotice: (t: string, tone?: 'info' | 'warning' | 'danger') => void;
 }) {
   const [committing, setCommitting] = useState(false);
@@ -176,6 +169,7 @@ export function HarnessCard({
   const [busy, setBusy] = useState(false);
   const [restored, setRestored] = useState(false);
   const verdict = summary.changeset?.verdict;
+  const outcomeWords = harnessOutcomeWords(summary.stopReason, permissionAnswered);
   const unverified = checks.some((c) => c.status === 'unverified') || summary.stopReason === 'complete_unverified';
   const verified = checks.some((c) => c.status === 'verified');
   const tests = summary.tests;
@@ -233,13 +227,13 @@ export function HarnessCard({
       <summary>
         {unverified ? <ShieldAlert size={14} aria-hidden="true" /> : verified ? <ShieldCheck size={14} aria-hidden="true" /> : <History size={14} aria-hidden="true" />}
         <span className="fs-harness__title">
-          {unverified ? t('Unverified') : verified ? 'Verified' : t('Turn summary')}
+          {unverified ? t('Unverified') : verified ? t('Verified') : t('Turn summary')}
         </span>
         <span className="fs-trace__meta">
           {tn(summary.toolCalls, '{n} tool', '{n} tools')}
-          {summary.failedCalls ? ` · ${t('{n} failed', { n: summary.failedCalls })}` : ''}
+          {summary.failedCalls ? ` · ${t(outcomeWords.failed, { n: summary.failedCalls })}` : ''}
           {summary.mutations.length ? ` · ${tn(summary.mutations.length, '{n} change', '{n} changes')}` : ''}
-          {` · ${STOP_WORDS[summary.stopReason] ? t(STOP_WORDS[summary.stopReason]) : summary.stopReason}`}
+          {` · ${t(outcomeWords.stop)}`}
         </span>
         <ChevronDown size={13} aria-hidden="true" className="fs-harness__chev" />
       </summary>
@@ -301,6 +295,7 @@ export default function Harness(props: {
   todos?: Todo[];
   checks: HarnessCheck[];
   summary?: HarnessSummary;
+  permissionAnswered?: boolean;
   answer: string;
   onNotice: (t: string, tone?: 'info' | 'warning' | 'danger') => void;
 }) {
@@ -314,7 +309,7 @@ export default function Harness(props: {
     );
   }
   if (props.summary) {
-    return <HarnessCard summary={props.summary} checks={props.checks} answer={props.answer} onNotice={props.onNotice} />;
+    return <HarnessCard summary={props.summary} checks={props.checks} answer={props.answer} onNotice={props.onNotice} permissionAnswered={props.permissionAnswered} />;
   }
   return <CheckList checks={props.checks} />;
 }

@@ -27,6 +27,7 @@ from .subagent_tools import DelegateAgentsTool
 from .document_tools import CreateDocumentTool, UpdateDocumentTool, EditDocumentTool, SuggestDocumentTool, ManageDocumentTool
 from .interaction_tools import AskUserTool, UpdatePlanTool
 from .model_interaction_tools import ChatWithModelTool, AskTeacherTool, ListModelsTool
+from .media_tools import InspectMediaTool, MediaTransformTool
 from .bg_job_tools import ManageBgJobsTool
 from .session_tools import CreateSessionTool, ListSessionsTool, SendToSessionTool, ManageSessionTool
 from .admin_tools import (
@@ -42,6 +43,9 @@ TOOL_HANDLERS = {
     "web_search": WebSearchTool().execute,
     "web_fetch": WebFetchTool().execute,
     "read_file": ReadFileTool().execute,
+    "inspect_media": InspectMediaTool().execute,
+    "plan_media_transform": MediaTransformTool(preview=True).execute,
+    "transform_media": MediaTransformTool().execute,
     "write_file": WriteFileTool().execute,
     "edit_file": EditFileTool().execute,
     "apply_patch": ApplyPatchTool().execute,
@@ -81,7 +85,8 @@ SHELL_TIMEOUT = 60
 PYTHON_TIMEOUT = 30
 
 # Tool types that trigger execution
-TOOL_TAGS = {"bash", "python", "web_search", "web_fetch", "read_file", "write_file", "edit_file",
+TOOL_TAGS = {"bash", "python", "web_search", "web_fetch", "read_file", "inspect_media", "write_file", "edit_file",
+             "plan_media_transform", "transform_media",
              "apply_patch", "todowrite", "delegate_agents",
              "grep", "glob", "ls", "get_workspace", "manage_bg_jobs",
              "create_document", "update_document", "edit_document",

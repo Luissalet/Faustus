@@ -93,6 +93,22 @@ _SOURCES_TITLE = "Sources"
 _FOOTER_PREFIX = "Exported from Faustus"
 
 
+def _language(data):
+    from src.export_locale import language
+    from src.research_citations import detect_language
+    return language(data.get("report_language") or data.get("language") or
+                    detect_language(_text(data.get("query"))))
+
+
+def _label(data, english):
+    if _language(data) != "es":
+        return english
+    return {"Completed": "Completado", "Model": "Modelo", "Rounds": "Rondas",
+            "Sources": "Fuentes", "Duration": "Duración", "Category": "Categoría",
+            "Exported from Faustus": "Exportado desde Faustus",
+            "Research report": "Informe de investigación"}.get(english, english)
+
+
 # ---------------------------------------------------------------------------
 # reading the research JSON
 # ---------------------------------------------------------------------------
@@ -190,30 +206,30 @@ def _metadata_bits(data: Dict[str, Any]) -> List[str]:
     # finished.
     completed = _time_of(data, "completed_at")
     if completed is not None:
-        bits.append("Completed %s" % completed.strftime("%Y-%m-%d %H:%M"))
+        bits.append("%s %s" % (_label(data, "Completed"), completed.strftime("%Y-%m-%d %H:%M")))
 
     model = _text(stats.get("model"))
     if model:
-        bits.append("Model: %s" % model)
+        bits.append("%s: %s" % (_label(data, "Model"), model))
 
     rounds = _text(stats.get("rounds"))
     if rounds:
-        bits.append("Rounds: %s" % rounds)
+        bits.append("%s: %s" % (_label(data, "Rounds"), rounds))
 
     sources = _sources(data)
     if sources:
-        bits.append("Sources: %d" % len(sources))
+        bits.append("%s: %d" % (_label(data, "Sources"), len(sources)))
     # Deliberately no fallback to stats["URLs"]: that counts every page fetched,
     # including the ones the researcher discarded, so printing it under
     # "Sources" would overstate what the report actually rests on.
 
     duration = _text(stats.get("duration"))
     if duration:
-        bits.append("Duration: %s" % duration)
+        bits.append("%s: %s" % (_label(data, "Duration"), duration))
 
     category = _text(data.get("category")) or _text(stats.get("category"))
     if category:
-        bits.append("Category: %s" % category.capitalize())
+        bits.append("%s: %s" % (_label(data, "Category"), category.capitalize()))
 
     return bits
 
@@ -263,7 +279,7 @@ def _sources_blocks(data: Dict[str, Any]) -> List[Block]:
         items.append([Block(kind="para", spans=[span])])
     if not items:
         return []
-    return [_heading(_SOURCES_TITLE, 2),
+    return [_heading(_label(data, _SOURCES_TITLE), 2),
             Block(kind="list", ordered=True, items=items)]
 
 
@@ -295,7 +311,7 @@ def build_report_blocks(data: Dict[str, Any], *,
 
     blocks.append(Block(kind="hr"))
     blocks.append(_para("%s · %s"
-                        % (_FOOTER_PREFIX, exported_at.strftime("%Y-%m-%d %H:%M:%S")),
+                        % (_label(data, _FOOTER_PREFIX), exported_at.strftime("%Y-%m-%d %H:%M:%S")),
                         italic=True))
     return blocks
 
@@ -324,7 +340,7 @@ def build_report_transcript(data: Dict[str, Any], *,
 
     exported_at = datetime.now(timezone.utc)
     stats = _stats(data)
-    query = _text(data.get("query")) or "Research report"
+    query = _text(data.get("query")) or _label(data, "Research report")
     message = ExportMessage(
         role=REPORT_ROLE,
         blocks=build_report_blocks(data, exported_at=exported_at,
@@ -338,6 +354,7 @@ def build_report_transcript(data: Dict[str, Any], *,
         messages=[message],
         extra={
             DOCUMENT_FLAG: True,
+            "language": _language(data),
             "kind": "research_report",
             "query": query,
             "status": _text(data.get("status")),
@@ -413,7 +430,7 @@ def _render_html_document(transcript: Transcript, blocks: Sequence[Block]) -> st
     title = escape_html(transcript.name or "Research report")
     return "\n".join([
         "<!DOCTYPE html>",
-        '<html lang="en">',
+        '<html lang="%s">' % transcript.extra.get("language", "en"),
         "<head>",
         '<meta charset="utf-8">',
         '<meta name="viewport" content="width=device-width, initial-scale=1">',

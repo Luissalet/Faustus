@@ -51,7 +51,7 @@ refused is recorded as `degraded` rather than as silently absent.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 from src.state_mirror import persistence as _persistence
@@ -243,7 +243,7 @@ def _ensure_entity(store: Any, observation: StateObservation,
 
 
 def _record_conflicts(store: Any, reduction: Any, observation: StateObservation,
-                      batch: _Batch, publisher: Any) -> None:
+                      batch: _Batch, publisher: Any) -> Dict[str, str]:
     """Open the conflicts this fold found, announcing only the NEW ones.
 
     `store.open_conflict` answers `(opened, id)` and `opened=False` means one
@@ -252,6 +252,7 @@ def _record_conflicts(store: Any, reduction: Any, observation: StateObservation,
     repeat would put a hundred frames on the stream for one disagreement, and a
     page showing a hundred rows for one argument is a page nobody reads.
     """
+    identities = {}
     for conflict in reduction.conflicts:
         try:
             opened, conflict_id = store.open_conflict(conflict)
@@ -261,6 +262,7 @@ def _record_conflicts(store: Any, reduction: Any, observation: StateObservation,
                                 f"({type(exc).__name__}: {exc})")
             continue
         batch.conflicts.append(conflict_id)
+        identities[conflict.id] = conflict_id
         if not opened:
             continue
         _publish(publisher, observation.owner, "state_conflict_detected",
@@ -269,6 +271,7 @@ def _record_conflicts(store: Any, reduction: Any, observation: StateObservation,
                  conflict_id=conflict_id, field=conflict.field,
                  claims=[dict(c) for c in conflict.claims],
                  next_check=conflict.next_check)
+    return identities
 
 
 def ingest(observations: Iterable[Any], *, store: Any = None,
@@ -397,8 +400,19 @@ def _one(store: Any, observation: StateObservation, batch: _Batch,
         batch.refused.append(f"{observation.entity_id}: {reduction.refusal}")
         return
 
+    identities = _record_conflicts(store, reduction, observation, batch, publisher)
+    reduction = replace(reduction, state=replace(reduction.state, conflicts=tuple(dict.fromkeys(
+        identities.get(cid, cid) for cid in reduction.state.conflicts))))
     store.put_state(reduction.state, changed=reduction.changed())
-    _record_conflicts(store, reduction, observation, batch, publisher)
+    try:
+        from src.state_mirror.conflicts import resolve_confirmed
+        for conflict in resolve_confirmed(store, reduction.state, now=now):
+            _publish(publisher, observation.owner, "state_conflict_resolved",
+                     entity_id=observation.entity_id, namespace=observation.namespace,
+                     project_id=observation.project_id, conflict_id=conflict.id,
+                     field=conflict.field, status="resolved")
+    except Exception as exc:
+        batch.errors.append(f"{observation.entity_id}: conflict reconciliation failed ({type(exc).__name__})")
 
     # Always -- a poll that confirmed what we already knew still moved every
     # field's freshness forward, and a consumer watching a source's liveness

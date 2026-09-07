@@ -1,6 +1,7 @@
 import type { RunStatus } from '../components';
 import { ApiError, asArray, getJson } from './api';
-import { createSession, listModels } from './chat';
+import { chatActivity, createSession, listModels, listSessions, type ChatActivity, type ChatSession, type RunActivityDetail } from './chat';
+import { sessionActivity } from '../lib/activity';
 import { t } from '../i18n';
 
 /**
@@ -53,7 +54,7 @@ export interface RenderDetail {
 
 export interface ActivityRun {
   id: string;
-  kind: 'task' | 'render' | 'approval';
+  kind: 'task' | 'render' | 'approval' | 'chat' | 'workflow';
   title: string;
   detail?: string;
   status: RunStatus;
@@ -64,9 +65,88 @@ export interface ActivityRun {
   error?: string | null;
   /** How many identical rows this one stands for (the previous Activity stacked them). */
   repeats: number;
+  /** Retained from a prior successful read, not a fresh server state. */
+  stale?: boolean;
   task?: TaskRunDetail;
   approval?: ApprovalDetail;
   render?: RenderDetail;
+  chat?: { sessionId: string; runId: string; model: string; progress?: RunActivityDetail };
+  workflow?: WorkflowDetail;
+}
+
+export interface WorkflowStep {
+  id: string; title: string; status: string; reason: string; approvalId: string;
+  wakeAt: string; needs: string[]; artifacts: ArtifactLink[];
+}
+export interface ArtifactLink { id: string; label: string; url: string }
+export function artifactLinks(value: unknown): ArtifactLink[] {
+  const seen = new Set<string>();
+  return asArray<unknown>(value).slice(0, 100).flatMap((raw, index) => {
+    const item = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
+    const id = typeof raw === 'string' ? raw : str(item.id);
+    if (!/^[a-zA-Z0-9_-]{1,128}$/.test(id) || seen.has(id)) return [];
+    seen.add(id);
+    return [{ id, label: str(item.label).slice(0, 300) || t('Output {number}', { number: index + 1 }),
+      url: `/api/artifacts/${encodeURIComponent(id)}/download` }];
+  });
+}
+export interface WorkflowDetail { runId: string; recipe: string; projectId: string; nodes: WorkflowStep[] }
+
+export function workflowFrom(item: Record<string, unknown>): ActivityRun {
+  if (typeof item.id !== 'string' || !item.id) throw new ApiError(t('Invalid workflow response. Refresh to try again.'), 502);
+  const nodes: WorkflowStep[] = asArray<Record<string, unknown>>(item.nodes).map((node) => ({
+    id: str(node.id), title: str(node.title) || str(node.id), status: str(node.status),
+    reason: str(node.reason), approvalId: str(node.approval_id), wakeAt: str(node.wake_at),
+    needs: asArray<unknown>(node.needs).filter((v): v is string => typeof v === 'string'),
+    artifacts: artifactLinks(node.artifacts),
+  }));
+  const mapped = normaliseStatus(item.status);
+  const human = item.status === 'paused' && nodes.some((n) => n.status === 'paused' && n.approvalId);
+  return { id: item.id, kind: 'workflow', title: str(item.title) || t('Workflow'),
+    detail: str(item.reason), status: human ? 'waiting' : mapped.status, statusLabel: mapped.label,
+    startedAt: str(item.started_at), finishedAt: str(item.finished_at), repeats: 1,
+    workflow: { runId: item.id, recipe: str(item.workflow_id), projectId: str(item.project_id), nodes } };
+}
+
+export async function changeWorkflow(runId: string, action: 'advance' | 'cancel', nodeId?: string): Promise<void> {
+  const tail = nodeId ? `resume/${encodeURIComponent(nodeId)}` : action;
+  const response = await fetch(`/api/workflows/runs/${encodeURIComponent(runId)}/${tail}`, {
+    method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ max_nodes: 10 }), signal: AbortSignal.timeout(20000),
+  });
+  await ok(response, 'workflows');
+  const body = await response.json();
+  if (body.ok !== true) throw new ApiError(body.reason || t('The workflow action was not confirmed. Refresh its status.'), 409);
+}
+
+/** Only live server-owned turns, never inferred from a conversation's age. */
+export function conversationRuns(activity: ChatActivity, sessions: ChatSession[]): ActivityRun[] {
+  const byId = new Map(sessions.map((s) => [s.id, s]));
+  const ids = new Set([...activity.running, ...activity.awaiting, ...Object.keys(activity.queued)]);
+  return [...ids].flatMap((id) => {
+    const state = sessionActivity(activity, id);
+    if (!state) return [];
+    const session = byId.get(id);
+    const progress = activity.details[id];
+    const phase = progress?.phase;
+    let detail = state === 'waiting' ? t('Waiting for your permission')
+      : state === 'queued' ? t('Waiting for its turn (#{n})', { n: activity.queued[id] })
+      : phase === 'tool' && progress?.tool ? t('Using {tool}', { tool: progress.tool.replace(/_/g, ' ') })
+      : phase === 'thinking' ? t('Thinking')
+      : phase === 'writing' ? t('Writing')
+      : phase === 'waiting_model' ? t('Waiting for the model')
+      : phase === 'research' ? t('Researching')
+      : phase === 'starting' ? t('Starting') : t('Working now');
+    if (state === 'running' && progress?.detail) detail += ` · ${progress.detail}`;
+    return [{
+      id, kind: 'chat' as const, title: session?.name || t('Conversation'),
+      detail, status: state, repeats: 1,
+      startedAt: progress?.startedAt && Number.isFinite(progress.startedAt)
+        ? new Date(progress.startedAt).toISOString() : null,
+      chat: { sessionId: id, runId: activity.runs[id] || progress?.runId || '',
+              model: session?.model || '', progress },
+    }];
+  });
 }
 
 /**
@@ -84,12 +164,14 @@ export function normaliseStatus(raw: unknown): { status: RunStatus; label?: stri
   if (['success', 'succeeded', 'ok', 'done', 'completed'].includes(value)) return { status: 'succeeded' };
   if (['failed', 'error', 'failure'].includes(value)) return { status: 'failed' };
   if (['running', 'in_progress', 'started', 'active'].includes(value)) return { status: 'running' };
+  if (value === 'submit_unknown') return { status: 'running', label: t('Checking submission') };
+  if (value === 'unknown') return { status: 'running', label: t('Checking engine status') };
   if (['paused', 'suspended'].includes(value)) return { status: 'paused' };
   if (['cancelled', 'canceled', 'stopped', 'aborted', 'abort'].includes(value)) return { status: 'cancelled' };
   // A run that decided there was nothing to do: over, and not an error.
   if (value === 'skipped') return { status: 'cancelled', label: t('skipped') };
   if (['waiting', 'waiting_approval', 'pending_approval', 'needs_approval'].includes(value)) return { status: 'waiting' };
-  if (['queued', 'pending', 'scheduled', ''].includes(value)) return { status: 'queued' };
+  if (['queued', 'pending', 'scheduled', 'submitted', 'submit_pending', ''].includes(value)) return { status: 'queued' };
   return { status: 'queued', label: value };
 }
 
@@ -201,21 +283,23 @@ function approvalFrom(item: RawApproval, index: number): ActivityRun {
   };
 }
 
-function renderFrom(item: RawMediaRun, index: number): ActivityRun {
+export function renderFrom(item: RawMediaRun, index: number): ActivityRun {
   const { status, label } = normaliseStatus(item.status);
   const id = str(item.run_id) || str(item.id) || `media-${index}`;
+  const recipe = str(item.workflow) || str(item.recipe);
+  const reason = str(item.reason) || str(item.error);
   return {
     id,
     kind: 'render',
-    title: item.recipe ? `${t('Render')} · ${item.recipe}` : t('Render'),
-    detail: str(item.error) || undefined,
+    title: recipe ? `${t('Render')} · ${recipe}` : t('Render'),
+    detail: reason || undefined,
     status,
     statusLabel: label,
     startedAt: item.created_at,
-    finishedAt: item.finished_at ?? null,
-    error: item.error ?? null,
+    finishedAt: str(item.ended_at) || item.finished_at || null,
+    error: status === 'failed' ? reason || null : null,
     repeats: 1,
-    render: { runId: id, recipe: str(item.recipe), rawStatus: str(item.status), record: item as Record<string, unknown> },
+    render: { runId: id, recipe, rawStatus: str(item.status), record: item as Record<string, unknown> },
   };
 }
 
@@ -253,24 +337,67 @@ function stack(runs: ActivityRun[]): ActivityRun[] {
   return out;
 }
 
-export async function loadActivity(signal?: AbortSignal): Promise<{ runs: ActivityRun[]; degraded: string[] }> {
+export interface ActivityFeed {
+  runs: ActivityRun[];
+  degraded: string[];
+  unavailableKinds: ActivityRun['kind'][];
+}
+
+export function retainUnavailableRuns(previous: ActivityRun[], feed: ActivityFeed): ActivityRun[] {
+  return [...feed.runs, ...previous.filter((run) => feed.unavailableKinds.includes(run.kind))
+    .map((run) => ({ ...run, stale: true }))];
+}
+
+export async function loadActivity(signal?: AbortSignal): Promise<ActivityFeed> {
   const degraded: string[] = [];
-  const [tasks, media, approvals] = await Promise.all([
+  const unavailableKinds: ActivityRun['kind'][] = [];
+  const [tasks, media, approvals, conversations, workflows] = await Promise.all([
     getJson<unknown>('/api/tasks/runs/recent?limit=120', signal).catch(() => {
       degraded.push(t('task runs'));
+      unavailableKinds.push('task');
       return { runs: [] };
     }),
     getJson<unknown>('/api/media/runs', signal).catch(() => {
       degraded.push(t('renders'));
+      unavailableKinds.push('render');
       return { runs: [] };
     }),
     getJson<unknown>('/api/approvals/pending', signal).catch(() => {
       degraded.push(t('approvals'));
+      unavailableKinds.push('approval');
       return { pending: [] };
     }),
+    chatActivity(signal).then(async (activity) => {
+      if (!activity.running.length && !activity.awaiting.length && !Object.keys(activity.queued).length) return [];
+      const sessions = await listSessions(signal).catch(() => {
+        degraded.push(t('conversation names'));
+        return [];
+      });
+      return conversationRuns(activity, sessions);
+    }).catch(() => {
+      degraded.push(t('conversations'));
+      unavailableKinds.push('chat');
+      return null;
+    }),
+    getJson<{ ok?: boolean; runs?: unknown }>('/api/workflows/runs?limit=80', signal).then((body) => {
+      if (body.ok !== true || !Array.isArray(body.runs)) throw new ApiError('workflows', 502);
+      return body.runs.map(workflowFrom);
+    }).catch(() => {
+      degraded.push(t('workflows'));
+      unavailableKinds.push('workflow');
+      return [];
+    }),
   ]);
+  signal?.throwIfAborted();
+  // Empty and unavailable are different states. Keep the last good snapshot
+  // in the screen when all sources are unavailable.
+  if (unavailableKinds.length === 5) {
+    throw new ApiError(t('Could not read the activity'), 503);
+  }
 
   const runs: ActivityRun[] = [
+    ...(conversations ?? []),
+    ...workflows,
     ...asArray<RawApproval>(approvals, 'pending').map(approvalFrom),
     ...stack(asArray<RawTaskRun>(tasks, 'runs').map(taskFrom)),
     ...asArray<RawMediaRun>(media, 'runs').map(renderFrom),
@@ -278,13 +405,13 @@ export async function loadActivity(signal?: AbortSignal): Promise<{ runs: Activi
 
   // Anything still waiting on a person goes first: an approval nobody is
   // shown is not a gate.
-  const weight = (run: ActivityRun) => (run.status === 'waiting' ? 0 : run.status === 'running' ? 1 : 2);
+  const weight = (run: ActivityRun) => (run.status === 'waiting' ? 0 : run.status === 'running' ? 1 : run.status === 'queued' ? 2 : 3);
   runs.sort((a, b) => {
     const byState = weight(a) - weight(b);
     if (byState !== 0) return byState;
     return Date.parse(b.startedAt ?? '') - Date.parse(a.startedAt ?? '') || 0;
   });
-  return { runs, degraded };
+  return { runs, degraded, unavailableKinds };
 }
 
 export function duration(startedAt?: string | null, finishedAt?: string | null): string {
@@ -313,7 +440,7 @@ async function ok(response: Response, what: string): Promise<Response> {
 }
 
 const post = (path: string, body?: unknown) =>
-  fetch(path, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body ?? {}) });
+  fetch(path, { method: 'POST', credentials: 'same-origin', signal: AbortSignal.timeout(20000), headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body ?? {}) });
 
 /** The server records who decided; the reason is optional and kept. */
 export async function decideApproval(approvalId: string, granted: boolean, reason = ''): Promise<void> {
@@ -323,7 +450,9 @@ export async function decideApproval(approvalId: string, granted: boolean, reaso
 }
 
 export async function cancelRender(runId: string): Promise<void> {
-  await ok(await post(`/api/media/runs/${encodeURIComponent(runId)}/cancel`), 'media/cancel');
+  const response = await ok(await post(`/api/media/runs/${encodeURIComponent(runId)}/cancel`), 'media/cancel');
+  const body = await response.json() as {ok?: boolean; detail?: string; reason?: string};
+  if (body.ok !== true) throw new ApiError(body.detail || body.reason || t('The render could not be cancelled. Refresh and try again.'), 409);
 }
 
 /**

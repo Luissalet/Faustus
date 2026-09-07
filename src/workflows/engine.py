@@ -22,6 +22,9 @@ The three rules it enforces, in the order they matter:
 from __future__ import annotations
 
 import logging
+import threading
+import uuid
+from contextlib import contextmanager
 from typing import Any, Callable, Dict, List, Mapping, Optional, Protocol, Tuple
 
 from src.contracts import NodeRun, WorkflowDefinition, WorkflowNode
@@ -29,8 +32,40 @@ from src.contracts.base import now_iso
 from src.contracts.workflow import TERMINAL_NODE
 
 from .store import WorkflowStore
+from .clock import due, normalized
 
 logger = logging.getLogger(__name__)
+
+
+class LostClaim(RuntimeError):
+    """A recovered/replaced attempt cannot publish a late result."""
+
+
+@contextmanager
+def _keep_claim(store, run_id, node_id, worker_id, *, interval=30):
+    stopped = threading.Event()
+    lost = threading.Event()
+
+    def heartbeat():
+        while not stopped.wait(interval):
+            try:
+                if not store.heartbeat_node(run_id, node_id, worker_id=worker_id):
+                    lost.set()
+                    return
+            except Exception:
+                # A transient DB lock isn't proof of expiry; the conditional
+                # finish still refuses a result if recovery actually took over.
+                logger.warning('Workflow heartbeat failed', exc_info=True)
+
+    thread = threading.Thread(target=heartbeat, name='workflow-lease', daemon=True)
+    thread.start()
+    try:
+        yield
+        if lost.is_set():
+            raise LostClaim('workflow attempt no longer owns its lease')
+    finally:
+        stopped.set()
+        thread.join(timeout=5)
 
 
 class NodeHandler(Protocol):
@@ -116,7 +151,18 @@ class WorkflowEngine:
 
     # ── one pass ──────────────────────────────────────────────────────────
 
-    def advance(self, run_id: str, *, max_nodes: int = 50) -> Dict[str, Any]:
+    def _terminal_result(self, run_id: str, ran=None):
+        loaded = self.store.get_run(run_id)
+        if loaded is None:
+            return {'ok': False, 'reason': 'not_found', 'run_id': run_id, 'ran': ran or []}
+        status = loaded['run'].status
+        if status in ('completed', 'failed', 'cancelled'):
+            return {'ok': True, 'reason': f'already_{status}', 'status': status,
+                    'run_id': run_id, 'ran': ran or []}
+        return None
+
+    def advance(self, run_id: str, *, max_nodes: int = 50,
+                should_stop: Optional[Callable[[], bool]] = None) -> Dict[str, Any]:
         """Run every node that can run right now, then report.
 
         `max_nodes` is a stop, not a schedule: a definition that somehow keeps
@@ -126,6 +172,9 @@ class WorkflowEngine:
         if loaded is None:
             return {"ok": False, "reason": "not_found", "run_id": run_id}
         run, definition = loaded["run"], loaded["definition"]
+        if should_stop and should_stop():
+            return {'ok': True, 'reason': 'worker_stopping', 'run_id': run_id,
+                    'status': run.status, 'ran': []}
         if run.status in ("completed", "failed", "cancelled"):
             return {"ok": True, "reason": f"already_{run.status}", "run_id": run_id,
                     "status": run.status, "ran": []}
@@ -139,16 +188,33 @@ class WorkflowEngine:
 
         ran: List[Dict[str, Any]] = []
         for _ in range(max(1, max_nodes)):
+            if should_stop and should_stop():
+                return {'ok': True, 'reason': 'worker_stopping', 'run_id': run_id,
+                        'status': self.store.get_run(run_id)['run'].status, 'ran': ran}
+            terminal = self._terminal_result(run_id, ran)
+            if terminal:
+                return terminal
             states = self.store.node_runs(run_id)
             runnable, blocked = ready_nodes(definition, states)
             if not runnable:
                 return self._settle(run_id, definition, states, blocked, ran)
-            outcome = self._run_node(run_id, definition, runnable[0], states,
-                                     inputs=run.inputs, owner=run.owner)
+            try:
+                outcome = self._run_node(run_id, definition, runnable[0], states,
+                                         inputs=run.inputs, owner=run.owner, project_id=run.project_id)
+            except LostClaim:
+                return {'ok': True, 'reason': 'claim_lost', 'run_id': run_id,
+                        'status': self.store.get_run(run_id)['run'].status, 'ran': ran}
             ran.append(outcome)
+            terminal = self._terminal_result(run_id, ran)
+            if terminal:
+                return terminal
+            if outcome['status'] == 'running' and outcome.get('reason') == 'already_attempted':
+                return {'ok': True, 'reason': 'waiting_on_worker', 'run_id': run_id,
+                        'status': 'running', 'ran': ran, 'waiting_on': outcome['node_id']}
             if outcome["status"] == "paused":
-                self.store.set_run_status(run_id, "paused",
-                                          reason=f"waiting on {outcome['node_id']}")
+                if not self.store.set_run_status(run_id, "paused",
+                                                reason=f"waiting on {outcome['node_id']}"):
+                    return self._terminal_result(run_id, ran)
                 self._emit("workflow.paused", run_id=run_id, node=outcome["node_id"],
                            approval_id=outcome.get("approval_id", ""))
                 return {"ok": True, "reason": "paused", "run_id": run_id,
@@ -157,7 +223,9 @@ class WorkflowEngine:
                         "approval_id": outcome.get("approval_id", ""),
                         "wake_at": outcome.get("wake_at", "")}
 
-        states = self.store.node_runs(run_id)
+        terminal = self._terminal_result(run_id, ran)
+        if terminal:
+            return terminal
         return {"ok": True, "reason": "max_nodes_reached", "run_id": run_id,
                 "status": "running", "ran": ran,
                 "detail": f"stopped after {max_nodes} nodes in one pass; call advance() again"}
@@ -166,7 +234,7 @@ class WorkflowEngine:
     def _run_node(self, run_id: str, definition: WorkflowDefinition,
                   node: WorkflowNode, states: Mapping[str, NodeRun],
                   *, inputs: Optional[Mapping[str, Any]] = None,
-                  owner: str = "") -> Dict[str, Any]:
+                  owner: str = "", project_id: str = "") -> Dict[str, Any]:
         previous = states.get(node.id)
         # Coming back from a pause is the SAME attempt continuing, not a new
         # one. Counting each poll as an attempt is how a run waiting a week on
@@ -191,6 +259,7 @@ class WorkflowEngine:
             # appear in anyone's pending list — the gate would be asking a
             # person who is never shown the question.
             "owner": owner or "",
+            "project_id": project_id or "",
             "results": {nid: dict(st.result) for nid, st in states.items()
                         if st.status == "completed"},
             # What this same node returned last time it ran. A `wait` needs it
@@ -200,7 +269,8 @@ class WorkflowEngine:
             "previous": dict(previous.result) if previous and previous.result else {},
         }
 
-        claim = self.store.start_node(run_id, node, attempt=attempt,
+        worker_id = uuid.uuid4().hex
+        claim = self.store.start_node(run_id, node, attempt=attempt, worker_id=worker_id,
                                       inputs=context["results"])
         if not claim["claimed"]:
             # The key was already there. Either another pass is doing this node
@@ -210,20 +280,34 @@ class WorkflowEngine:
                     "reason": "already_attempted", "attempt": claim["attempt"],
                     "result": claim.get("result", {})}
 
+        def finish(**kwargs):
+            if not self.store.finish_node(run_id, node.id, worker_id=worker_id, **kwargs):
+                raise LostClaim('late workflow result rejected')
+
         handler = self.handlers.get(node.type)
         if handler is None:
-            self.store.finish_node(run_id, node.id, status="failed",
+            finish(status="failed",
                                    reason=f"no handler for node type {node.type!r}")
             return {"node_id": node.id, "status": "failed",
                     "reason": f"no handler for node type {node.type!r}"}
 
         self._emit("workflow.node", run_id=run_id, node=node.id, type=node.type,
                    attempt=attempt, status="running")
+        terminal = self._terminal_result(run_id)
+        if terminal:
+            # The claimed handler has not begun. A handler already executing
+            # may still finish; its result is retained, but no successor starts.
+            finish(status='cancelled',
+                                   reason='workflow stopped before handler execution')
+            return {'node_id': node.id, 'status': 'cancelled', 'attempt': attempt}
         try:
-            raw = handler(node, context) or {}
+            with _keep_claim(self.store, run_id, node.id, worker_id):
+                raw = handler(node, context) or {}
+        except LostClaim:
+            raise
         except Exception as e:                       # a handler must not kill the run
             logger.exception("workflow node %s raised", node.id)
-            failed = self._maybe_retry(run_id, node, attempt, f"{type(e).__name__}: {e}")
+            failed = self._maybe_retry(run_id, node, attempt, f"{type(e).__name__}: {e}", worker_id=worker_id)
             return {"node_id": node.id, **failed}
 
         status = str(raw.get("status") or "completed")
@@ -234,16 +318,23 @@ class WorkflowEngine:
         if status == "paused":
             approval_id = str(raw.get("approval_id") or "")
             wake_at = str(raw.get("wake_at") or "")
+            if wake_at:
+                try:
+                    wake_at = normalized(wake_at)
+                    raw = {**raw, 'wake_at': wake_at}
+                except (ValueError, TypeError, OverflowError):
+                    finish(status='failed', reason='handler returned an invalid wake time')
+                    return {'node_id': node.id, 'status': 'failed',
+                            'reason': 'handler returned an invalid wake time'}
             if not approval_id and not wake_at:
                 # A pause nobody and nothing can end is a stall. Refuse it
                 # rather than park the run forever: either a person can answer
                 # it (an approval id) or time can (a wake time).
-                self.store.finish_node(
-                    run_id, node.id, status="failed",
+                finish(status="failed",
                     reason="the handler paused without an approval id or a wake time")
                 return {"node_id": node.id, "status": "failed",
                         "reason": "paused without an approval id or a wake time"}
-            self.store.finish_node(run_id, node.id, status="paused",
+            finish(status="paused",
                                    result=raw, approval_id=approval_id,
                                    reason=str(raw.get("reason")
                                               or (f"waiting until {wake_at}" if wake_at
@@ -254,9 +345,9 @@ class WorkflowEngine:
         if status == "failed":
             return {"node_id": node.id,
                     **self._maybe_retry(run_id, node, attempt,
-                                        str(raw.get("reason") or "the node failed"))}
+                                        str(raw.get("reason") or "the node failed"), worker_id=worker_id)}
 
-        self.store.finish_node(run_id, node.id, status=status, result=raw)
+        finish(status=status, result=raw)
         self._emit("workflow.node", run_id=run_id, node=node.id, type=node.type,
                    attempt=attempt, status=status)
         return {"node_id": node.id, "status": status, "attempt": attempt,
@@ -264,7 +355,7 @@ class WorkflowEngine:
 
 
     def _maybe_retry(self, run_id: str, node: WorkflowNode, attempt: int,
-                     reason: str) -> Dict[str, Any]:
+                     reason: str, *, worker_id: str) -> Dict[str, Any]:
         """Retries are per node and declared in the definition, not global.
 
         A retry releases the key so the next pass can claim a fresh attempt —
@@ -276,13 +367,16 @@ class WorkflowEngine:
             # reader would treat the node as finished and never come back to
             # it — which is how `max_attempts: 3` silently meant one. The
             # failure is kept in `reason`, so the record still shows it.
-            self.store.finish_node(
-                run_id, node.id, status="pending",
-                reason=f"attempt {attempt}/{node.max_attempts} failed: {reason}")
+            if not self.store.finish_node(
+                run_id, node.id, status="pending", worker_id=worker_id,
+                reason=f"attempt {attempt}/{node.max_attempts} failed: {reason}"):
+                raise LostClaim('late retry rejected')
             self.store.release_key(run_id, node.id, attempt)
             return {"status": "failed", "retryable": True, "attempt": attempt,
                     "reason": reason}
-        self.store.finish_node(run_id, node.id, status="failed", reason=reason)
+        if not self.store.finish_node(run_id, node.id, status="failed", reason=reason,
+                                      worker_id=worker_id):
+            raise LostClaim('late failure rejected')
         self._emit("workflow.node", run_id=run_id, node=node.id, type=node.type,
                    attempt=attempt, status="failed", reason=reason)
         return {"status": "failed", "retryable": False, "attempt": attempt,
@@ -294,8 +388,8 @@ class WorkflowEngine:
         paused = [n for n in blocked if (states.get(n.id) or None)
                   and states[n.id].status == "paused"]
         if paused:
-            self.store.set_run_status(run_id, "paused",
-                                      reason=f"waiting on {paused[0].id}")
+            if not self.store.set_run_status(run_id, "paused", reason=f"waiting on {paused[0].id}"):
+                return self._terminal_result(run_id, ran)
             waiting = states[paused[0].id]
             return {"ok": True, "reason": "paused", "run_id": run_id,
                     "status": "paused", "ran": ran, "waiting_on": paused[0].id,
@@ -319,7 +413,8 @@ class WorkflowEngine:
             detail = f"failed: {sorted(failures)}"
             if unreached:
                 detail += f"; never reached: {sorted(unreached)}"
-            self.store.set_run_status(run_id, "failed", reason=detail)
+            if not self.store.set_run_status(run_id, "failed", reason=detail):
+                return self._terminal_result(run_id, ran)
             self._emit("workflow.finished", run_id=run_id, status="failed", detail=detail)
             return {"ok": True, "reason": "failed", "run_id": run_id,
                     "status": "failed", "ran": ran, "failed_nodes": sorted(failures),
@@ -331,7 +426,8 @@ class WorkflowEngine:
         # way to hide broken steps behind a green run.
         detail = (f"completed with tolerated failures: {sorted(tolerated)}"
                   if tolerated else "")
-        self.store.set_run_status(run_id, "completed", reason=detail)
+        if not self.store.set_run_status(run_id, "completed", reason=detail):
+            return self._terminal_result(run_id, ran)
         self._emit("workflow.finished", run_id=run_id, status="completed",
                    detail=detail)
         return {"ok": True, "reason": "completed", "run_id": run_id,
@@ -369,7 +465,7 @@ class WorkflowEngine:
             if state.status != "paused":
                 continue
             wake_at = str((state.result or {}).get("wake_at") or "")
-            if wake_at and wake_at <= now and self.store.reopen_node(run_id, node_id):
+            if wake_at and due(wake_at, now) and self.store.reopen_node(run_id, node_id):
                 woken.append(node_id)
                 self._emit("workflow.node", run_id=run_id, node=node_id,
                            status="woken", wake_at=wake_at)

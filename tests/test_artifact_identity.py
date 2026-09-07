@@ -400,7 +400,7 @@ def test_an_occurrence_naming_bytes_the_store_lost_says_so(own_database, store):
 
 # ── the migration is additive and reversible ───────────────────────────────
 
-def test_the_migration_adds_three_tables_and_edits_none(own_database):
+def test_the_migration_adds_identity_tables_and_edits_none(own_database):
     """Same posture as the artifacts migration: the reverse is a DROP, so it
     cannot depend on which SQLite the user happens to have."""
     columns = {c["name"] for c in inspect(own_database).get_columns("artifacts")}
@@ -408,7 +408,7 @@ def test_the_migration_adds_three_tables_and_edits_none(own_database):
 
     db_mod._migrate_create_artifact_identity_tables()      # idempotent on a live schema
     tables = set(inspect(own_database).get_table_names())
-    assert {"artifact_blobs", "artifact_occurrences", "artifact_derivatives"} <= tables
+    assert {"artifact_blobs", "artifact_occurrences", "artifact_derivatives", "artifact_tombstones"} <= tables
 
     with own_database.connect() as conn:
         indexes = {r[0] for r in conn.execute(text(
@@ -424,17 +424,15 @@ def test_the_migration_runs_twice_and_reverses(own_database):
 
     db_mod.rollback_artifact_identity_tables()
     tables = set(inspect(own_database).get_table_names())
-    assert not ({"artifact_blobs", "artifact_occurrences", "artifact_derivatives"} & tables)
+    assert not ({"artifact_blobs", "artifact_occurrences", "artifact_derivatives", "artifact_tombstones"} & tables)
     assert "artifacts" in tables                  # untouched, and still authoritative
 
 
 # ── the bug this replaces, kept as a witness ───────────────────────────────
 
-def test_the_old_store_still_loses_the_second_occurrence(own_database, tmp_path):
-    """Not a failing test: a record of what `persist()` does until phase 4 of
-    `docs/design/ART-1-artifacts.md` lands. Alice and Bob write identical
-    bytes; the second row is dropped as "already there" and Bob's provenance
-    goes with it. The new store, on the same bytes, keeps both."""
+def test_reusing_an_artifact_id_for_another_owner_is_rejected(own_database, tmp_path):
+    """A caller retaining the obsolete content-derived id must not silently
+    discard Bob's result or give Bob Alice's id. collect() now mints event ids."""
     from src import artifact_store
     from src.contracts import Artifact
 
@@ -447,17 +445,16 @@ def test_the_old_store_still_loses_the_second_occurrence(own_database, tmp_path)
 
     assert artifact_store.persist([legacy("alice", "run-a")]) == {"created": 1,
                                                                  "already_there": 0}
-    assert artifact_store.persist([legacy("bob", "run-b")]) == {"created": 0,
-                                                               "already_there": 1}
+    with pytest.raises(ValueError, match='different event'):
+        artifact_store.persist([legacy("bob", "run-b")])
     db = db_mod.SessionLocal()
     try:
-        rows = db.query(ArtifactRow).all()
+        rows = db.query(ArtifactOccurrenceRow).all()
         assert len(rows) == 1 and rows[0].owner == "alice"
         assert "run-b" not in (rows[0].provenance_note or "")
     finally:
         db.close()
 
-    _blob()
     ident.record_occurrence(_occurrence("alice", "run-a"))
     ident.record_occurrence(_occurrence("bob", "run-b"))
     assert {o.owner for o in ident.occurrences_of(DIGEST)} == {"alice", "bob"}
