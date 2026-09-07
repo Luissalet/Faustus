@@ -29,9 +29,25 @@ incluidos en la huella de la aprobación. Cambiar cualquiera invalida el permiso
 La tarjeta muestra asunto, remitente, huella y una vista previa del cuerpo;
 cuando se recorta, lo indica para revisar el contenido completo del workflow.
 
-El cuerpo se limita a 1 MiB, el asunto a 200 caracteres y los destinatarios a 50.
-Esta versión admite texto plano y `to`: adjuntos, HTML, CC y BCC se rechazan con
-motivo, no se descartan silenciosamente. No se leen rutas arbitrarias del disco.
+El cuerpo y la alternativa HTML se limitan a 1 MiB cada uno, el asunto a 200
+caracteres y los destinatarios combinados (`to`, `cc`, `bcc`) a 50. BCC sólo
+aparece en el sobre SMTP y en la aprobación del propietario, nunca en las
+cabeceras del mensaje. `html` o `html_from` añaden la alternativa HTML; se
+conserva el cuerpo de texto como alternativa accesible.
+
+`attachments` admite hasta diez adjuntos, con un total de 10 MiB. Cada entrada
+lleva `filename` (nombre sin ruta), `content` o `content_from` (referencia a
+un resultado del flujo), `encoding` (`utf-8` por defecto, o `base64` para
+binarios) y `mime_type` opcional. Ejemplo:
+
+```json
+{"filename": "informe.md", "content_from": "results.write_report.text", "mime_type": "text/markdown"}
+```
+
+No se leen rutas arbitrarias del disco. La aprobación incluye nombres, tamaños,
+tipos y huellas de los adjuntos, además de todos los destinatarios y del HTML.
+Modificar cualquiera de estos datos invalida la aprobación anterior. Los datos
+se preparan en memoria antes de autorizar el transporte: éste envía esos bytes.
 
 ## Persistencia y respuestas
 

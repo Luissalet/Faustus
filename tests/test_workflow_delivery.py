@@ -140,3 +140,67 @@ def test_partial_delivery_keeps_safe_recipient_receipt(store, transport, monkeyp
     assert result["accepted_recipients"] == ["bob@example.com"]
     assert result["rejected_recipients"] == ["carol@example.com"]
     assert "private server response" not in str(result)
+
+
+def test_rich_delivery_binds_attachments_and_keeps_bcc_out_of_headers(store, transport):
+    import base64
+    config = {"to": "bob@example.com", "cc": "carol@example.com", "bcc": "hidden@example.com",
+              "body": "Plain fallback", "html": "<h1>Informe</h1>",
+              "attachments": [{"filename": "informe.md", "content": "# Español", "mime_type": "text/markdown"},
+                              {"filename": "binary.bin", "content": base64.b64encode(b"\x00\xff").decode(), "encoding": "base64"}]}
+    run, engine, first = start(store, config)
+    assert first["status"] == "paused"
+    card = approval_store.get(first["approval_id"])
+    assert "hidden@example.com" in card.plan.recipients
+    assert len(card.plan.permissions["email"]["attachments"]) == 2
+    approval_store.decide(card.id, granted=True, by="alice")
+    assert engine.resume(run, "send")["status"] == "completed"
+    args, _ = transport["calls"][0]
+    assert args[2] == ["bob@example.com", "carol@example.com", "hidden@example.com"]
+    message = BytesParser(policy=policy.default).parsebytes(args[3])
+    assert message["Bcc"] is None
+    assert "hidden@example.com" not in str(message)
+    assert message.get_body(preferencelist=("html",)).get_content().strip() == "<h1>Informe</h1>"
+    attachments = list(message.iter_attachments())
+    assert attachments[0].get_filename() == "informe.md"
+    assert attachments[0].get_payload(decode=True) == "# Español".encode()
+    assert attachments[1].get_payload(decode=True) == b"\x00\xff"
+
+
+@pytest.mark.parametrize("field,value", [("cc", "new@example.com"), ("bcc", "hidden@example.com"),
+                                       ("html", "<b>changed</b>"),
+                                       ("attachments", [{"filename": "x.txt", "content": "changed"}])])
+def test_rich_content_changes_invalidate_exact_approval(transport, field, value):
+    from src.workflows.delivery import _prepare
+    config = {"to": "bob@example.com", "body": "hello"}
+    context = {"owner": "alice", "run_id": "run", "node_id": "node", "mark_effect": lambda _: True}
+    old = _prepare(config, context)[4]
+    new = _prepare({**config, field: value}, context)[4]
+    assert old.fingerprint() != new.fingerprint()
+
+
+@pytest.mark.parametrize("attachment", ["C:/private.txt", {"filename": "../x", "content": "x"},
+    {"filename": "x\r\nInjected", "content": "x"}, {"filename": "x", "path": "private.txt"},
+    {"filename": "x", "content": "%%%", "encoding": "base64"},
+    {"filename": "x", "content": "x", "mime_type": "text/plain\r\nBad"},
+    {"filename": "x", "content_from": "results.missing"},
+    {"filename": "x", "content": "x", "content_from": "inputs.x"}])
+def test_bad_attachment_never_opens_approval(store, transport, attachment):
+    _, _, result = start(store, {"to": "bob@example.com", "body": "x", "attachments": [attachment]})
+    assert result["status"] == "failed"
+    assert not transport["calls"]
+    assert not approval_store.pending(owner="alice")
+
+
+def test_attachment_from_run_and_combined_byte_limit(transport, monkeypatch):
+    from src.workflows import delivery
+    context = {"owner": "alice", "run_id": "run", "node_id": "node", "mark_effect": lambda _: True,
+               "results": {"report": {"text": "report"}}}
+    config = {"to": "bob@example.com", "body": "x", "attachments": [
+        {"filename": "report.txt", "content_from": "results.report.text"}]}
+    message = delivery._prepare(config, context)[5]
+    assert next(message.iter_attachments()).get_payload(decode=True) == b"report"
+    monkeypatch.setattr(delivery, "MAX_ATTACHMENT_BYTES", 10)
+    config["attachments"].append({"filename": "second.txt", "content": "12345"})
+    with pytest.raises(ValueError, match="combined"):
+        delivery._prepare(config, context)
