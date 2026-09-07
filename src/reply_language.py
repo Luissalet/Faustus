@@ -24,6 +24,7 @@ did, no message is built.
 from __future__ import annotations
 
 from typing import Any, Dict, Iterable, List, Optional
+import re
 
 from src.research_citations import language_signal
 
@@ -84,7 +85,18 @@ def visible_text(content: Any) -> str:
 
 def language_of(text: Any) -> Optional[str]:
     """The language one message settles, or ``None`` when it settles none."""
-    code, signal = language_signal(visible_text(text) if not isinstance(text, str) else text)
+    text = visible_text(text) if not isinstance(text, str) else text
+    # A direct language request wins over the language used to ask for it.
+    # Anchor to the user's opening instruction, not quotations or code later.
+    explicit = re.match(r"\s*(?:(?:please|por favor)[, ]+)?(?:answer|reply|respond|write|responde|contesta|escribe)"
+                        r"(?:\s+(?:only|entirely|solo|únicamente))?\s+(?:in|en)\s+"
+                        r"(english|inglés|ingles|spanish|español|espanol|french|francés|german|alemán|portuguese|portugués|italian|italiano)\b",
+                        text, re.IGNORECASE)
+    if explicit:
+        return {"english": "en", "inglés": "en", "ingles": "en", "spanish": "es", "español": "es", "espanol": "es",
+                "french": "fr", "francés": "fr", "german": "de", "alemán": "de", "portuguese": "pt", "portugués": "pt",
+                "italian": "it", "italiano": "it"}[explicit.group(1).lower()]
+    code, signal = language_signal(text)
     return code if signal >= MIN_SIGNAL else None
 
 
@@ -100,10 +112,19 @@ def conversation_language(messages: Optional[Iterable[Dict[str, Any]]]) -> Optio
             continue
         if message.get("_agent_injected"):
             continue
+        if isinstance(message.get("metadata"), dict) and message["metadata"].get("trusted") is False:
+            continue
         code = language_of(message.get("content"))
         if code:
             return code
     return None
+
+
+def refresh_continuation(messages: List[Dict[str, Any]], hint: Optional[Dict[str, str]]) -> None:
+    """One current reminder after tool results, never a growing prompt tail."""
+    messages[:] = [m for m in messages if m.get("_agent_injected") != "reply_language_continuity"]
+    if hint:
+        messages.append({**hint, "_agent_injected": "reply_language_continuity"})
 
 
 def context_message(

@@ -4143,6 +4143,9 @@ async def stream_agent_loop(
       - data: [DONE]                                        (end)
     """
 
+    from src.reply_language import context_message as _turn_language, refresh_continuation as _refresh_language
+    _reply_language_hint = _turn_language(messages)
+
     run_security = ToolRunSecurityContext(
         external_untrusted_context_seen=(
             bool(external_untrusted_context_seen)
@@ -6120,11 +6123,15 @@ async def stream_agent_loop(
                 if not _steer_text:
                     continue
                 _steer_src = "supervisor" if isinstance(_steer, dict) and _steer.get("source") == "supervisor" else "user"
+                if _steer_src == "user":
+                    _reply_language_hint = _turn_language([{"role": "user", "content": _steer_text}]) or _reply_language_hint
                 messages.append({"role": "user", "content": (
                     f"[Steering message from the {_steer_src}, received while you were working — "
                     f"it refines your task; follow it from now on] {_steer_text}")})
                 yield "data: " + json.dumps({"type": "steer", "round": round_num,
                                              "text": _steer_text[:300], "source": _steer_src}) + "\n\n"
+        if round_num > 1 or _approved_result_injected:
+            _refresh_language(messages, _reply_language_hint)
         round_response = ""
         round_reasoning = ""  # reasoning_content deltas (DeepSeek-thinking, vLLM --reasoning-parser)
         native_tool_calls = []  # populated if model uses function calling

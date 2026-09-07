@@ -4,6 +4,7 @@ import importlib
 import json
 import sys
 import types
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -79,7 +80,7 @@ def _default_chat_endpoint():
 
 def _install_model_route_import_stubs(monkeypatch):
     core_mod = types.ModuleType("core")
-    core_mod.__path__ = []
+    core_mod.__path__ = [str(Path(__file__).resolve().parents[1] / "core")]
     db_mod = types.ModuleType("core.database")
     db_mod.SessionLocal = lambda: _FakeDb([])
     db_mod.ModelEndpoint = _FakeModelEndpoint

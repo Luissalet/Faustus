@@ -901,7 +901,6 @@ def _normalize_thinking(text: str) -> str:
 
     Handles:
     - "Thinking Process:" (Qwen3.5)
-    - Gemma-style inline reasoning ("The user said/asked...", "I should/need to...")
     - Garbled <think> tags (reasoning before the tag, unclosed tags)
     """
     import re
@@ -968,49 +967,9 @@ def _normalize_thinking(text: str) -> str:
         think = thinking_prefix_re.sub('', text).strip()
         return '<think>' + think + '</think>'
 
-    # Gemma-style: starts with reasoning ("The user", "I need", "I should", etc.)
-    stripped_text = text.lstrip()
-    first_line = stripped_text.split('\n')[0].strip()
-    reasoning_starts = (
-        'The user ', 'I need ', 'I should ', 'I will ',
-        'They are ', 'The question ', 'I can ',
-    )
-    reply_starts = (
-        'Hey', 'Hi ', 'Hi!', 'Hello', 'Sure', 'Yes', 'No ', 'No,', 'Yo', 'OK',
-        'Here', 'Absolutely', 'Of course', 'Great', 'Alright',
-        'Thanks', 'Welcome', 'Good ', "I'm happy", "I'd be",
-    )
-    if any(first_line.startswith(p) for p in reasoning_starts):
-        # Try line-by-line split first
-        lines = stripped_text.split('\n')
-        for i, line in enumerate(lines):
-            stripped = line.strip()
-            if not stripped:
-                continue
-            if i > 0 and any(stripped.startswith(p) for p in reply_starts):
-                think = '\n'.join(lines[:i])
-                reply = '\n'.join(lines[i:])
-                return '<think>' + think + '</think>\n' + reply
-
-        # Try within-line split — model mashed thinking + reply on one line
-        # Look for reply pattern after a period or sentence end
-        for p in reply_starts:
-            # Match: "...reasoning text.Reply text" or "...reasoning text. Reply text"
-            pattern = r'([.!?])\s*(' + re.escape(p) + r')'
-            m = re.search(pattern, stripped_text)
-            if m and m.start() > 20:  # at least 20 chars of reasoning before
-                think = stripped_text[:m.start() + 1]  # include the period
-                reply = stripped_text[m.start() + 1:].lstrip()
-                return '<think>' + think + '</think>\n' + reply
-
-        # Last resort: find last non-reasoning line
-        for i in range(len(lines) - 1, 0, -1):
-            stripped = lines[i].strip()
-            if stripped and not any(stripped.startswith(p) for p in reasoning_starts) and not stripped.startswith('*') and len(stripped) > 3:
-                think = '\n'.join(lines[:i])
-                reply = '\n'.join(lines[i:])
-                return '<think>' + think + '</think>\n' + reply
-
+    # Ordinary prose is not a reasoning channel. In particular, "I will check"
+    # is visible progress narration; guessing from it hid whole paragraphs on
+    # reload. Only the explicit markers handled above can separate thinking.
     return text
 
 
@@ -1043,7 +1002,7 @@ def _extract_thinking_meta(text: str) -> dict | None:
         if thinking and reply:
             return {"thinking": thinking, "reply": reply, "time": think_time}
 
-    # Detect Thinking Process: or Gemma-style reasoning
+    # Detect explicitly marked Thinking Process sections only.
     normalized = _normalize_thinking(text)
     if '<think>' in normalized:
         think_match2 = re.match(r'^[\s]*<think(?:ing)?>([\s\S]*?)</think(?:ing)?>\s*([\s\S]*)', normalized, re.IGNORECASE)

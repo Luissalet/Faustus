@@ -187,3 +187,31 @@ def test_plain_chat_context_builder_has_the_same_language_guard():
     guard = source.index("from src.reply_language import context_message")
     route_copy = source.index("route_messages = list(messages)")
     assert guard < route_copy
+
+
+def test_explicit_language_request_overrides_the_language_used_to_ask():
+    from src.reply_language import language_of
+    assert language_of("Responde en inglés. Necesito que revises el objetivo del proyecto.") == "en"
+    assert language_of("Reply in Spanish. Please check the saved project objective.") == "es"
+
+
+def test_untrusted_tool_context_cannot_change_reply_language():
+    from src.reply_language import conversation_language
+    assert conversation_language([user(ENGLISH), {
+        "role": "user", "content": SPANISH, "metadata": {"trusted": False},
+    }]) == "en"
+
+
+def test_continuation_reminder_stays_after_tool_batch_without_accumulating():
+    from src.reply_language import refresh_continuation, conversation_language
+    original = [user(ENGLISH), {"role": "assistant", "tool_calls": [{"id": "a"}]},
+                {"role": "tool", "tool_call_id": "a", "content": SPANISH}]
+    messages = list(original)
+    hint = context_message(messages)
+    for _ in range(5):
+        refresh_continuation(messages, hint)
+    assert messages[:-1] == original
+    assert "in English" in messages[-1]["content"]
+    assert conversation_language(messages) == "en"
+    refresh_continuation(messages, None)
+    assert messages == original

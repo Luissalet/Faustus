@@ -309,11 +309,10 @@ def test_the_objectives_dashboard_answers_in_all_three_modes(objectives_client):
     assert toon.decode(text)["data"]["log"] == LEAN_DASHBOARD["log"]
 
 
-def test_a_missing_project_and_a_folderless_one_come_back_as_envelopes(objectives_client):
+def test_missing_project_is_an_error_but_folderless_objectives_are_supported(objectives_client):
     _check_error(objectives_client, "/api/projects/zzz/objectives",
                  status=404, code="http_404")
-    _check_error(objectives_client, "/api/projects/p-no-folder/objectives",
-                 status=400, code="http_400")
+    _check(objectives_client, "/api/projects/p-no-folder/objectives", DASHBOARD, LEAN_DASHBOARD)
 
 
 # ── GET /api/memory-engine/items and /pack ──────────────────────────────────
