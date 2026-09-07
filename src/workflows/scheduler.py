@@ -55,13 +55,23 @@ class WorkflowScheduler:
                 if not loaded or loaded['run'].status not in ('running', 'paused'):
                     continue
                 if loaded['run'].status == 'paused':
-                    # A timer cannot answer a human approval. Only due timed
-                    # nodes wake here; approvals use the existing resume route.
+                    # Observe answers; never create or grant them. A person
+                    # need not reopen the workflow after answering its card.
+                    from src import approval_store
+                    answered = False
+                    for node_id, state in self.store.node_runs(run_id).items():
+                        approval_id = (state.result or {}).get('approval_id')
+                        if state.status != 'paused' or not approval_id:
+                            continue
+                        card = approval_store.get(str(approval_id))
+                        if card and (card.status != 'pending' or
+                                     (card.expires_at and due(card.expires_at, now_iso()))):
+                            answered = self.store.reopen_node(run_id, node_id) or answered
                     clock_ready = any(state.status == 'paused' and
                               (state.result or {}).get('wake_at') and
                               due(state.result['wake_at'], now_iso())
                               for state in self.store.node_runs(run_id).values())
-                    if not clock_ready:
+                    if not clock_ready and not answered:
                         continue
                 results.append(self.engine.advance(run_id, max_nodes=self.max_nodes,
                                                    should_stop=self.stopped.is_set))

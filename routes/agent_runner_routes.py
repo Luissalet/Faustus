@@ -187,7 +187,7 @@ def setup_agent_runner_routes() -> APIRouter:
         from src import agent_runners as reg
         from src.runner_billing import prepare, verify
         _reject_cross_origin(request)
-        if key != 'claude':
+        if key not in {'claude', 'codex'}:
             raise HTTPException(400, 'This client does not yet have a verified text-only chat adapter')
         if not reg.enabled():
             raise HTTPException(409, 'Enable external agent runners explicitly in Settings first')
@@ -200,6 +200,13 @@ def setup_agent_runner_routes() -> APIRouter:
             raise HTTPException(403, 'Sign in to add a private official-client connection')
         try:
             _, env = prepare(key, body.billing_mode, [], reg.build_env(reg.get(key, help_source='')))
+            if key == 'codex':
+                from src.codex_chat import verify_support
+                from src.cli_model import ClientModelError
+                try:
+                    await asyncio.to_thread(verify_support, env)
+                except ClientModelError as exc:
+                    raise ValueError(str(exc)) from exc
             facts = await asyncio.to_thread(verify, key, body.billing_mode, env)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
@@ -211,12 +218,13 @@ def setup_agent_runner_routes() -> APIRouter:
             from sqlalchemy.exc import IntegrityError
             identity = json.dumps(['faustus-official-cli-v1', owner, key, body.billing_mode, model])
             ident = uuid.uuid5(uuid.NAMESPACE_URL, identity).hex
-            base_url = f'faustus-cli://claude/{body.billing_mode}/{ident}'
+            base_url = f'faustus-cli://{key}/{body.billing_mode}/{ident}'
             reused = False
             with SessionLocal() as db:
                 ep = db.get(ModelEndpoint, ident)
                 if ep is None:
-                    ep = ModelEndpoint(id=ident, name=f'Claude Code · {body.billing_mode}',
+                    label = 'Claude Code' if key == 'claude' else 'Codex'
+                    ep = ModelEndpoint(id=ident, name=f'{label} · {body.billing_mode}',
                         base_url=base_url, api_key=secrets.token_urlsafe(48), owner=owner, is_enabled=True,
                         endpoint_kind='official-cli', model_refresh_mode='manual', model_type='llm',
                         supports_tools=False, pinned_models=json.dumps([model]), cached_models=json.dumps([model]))

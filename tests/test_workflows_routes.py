@@ -111,9 +111,8 @@ def test_plan_says_what_would_run_first(client):
 
 
 def test_a_run_advances_and_a_second_advance_does_not_redo_it(client):
-    """The double-clicked button. The unwired `deliver` node fails the run —
-    which is the honest outcome for this process — and the second call reads
-    that instead of trying again."""
+    """The double-clicked button. This delivery has no body, so it fails
+    validation without sending; the second call must not try it again."""
     created = client.post("/api/workflows/runs",
                           json={"definition": FLOW, "inputs": {"score": 90},
                                 "advance": True})
@@ -124,7 +123,7 @@ def test_a_run_advances_and_a_second_advance_does_not_redo_it(client):
 
     assert first["status"] == "failed"
     assert first["failed_nodes"] == ["send"]
-    assert "no sender" in first["ran"][-1]["reason"]
+    assert "needs body" in first["ran"][-1]["reason"]
 
     again = client.post(f"/api/workflows/runs/{run_id}/advance")
     assert again.status_code == 200

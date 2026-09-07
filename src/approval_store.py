@@ -151,18 +151,38 @@ def decide(approval_id: str, *, granted: bool, by: str, reason: str = "") -> Dic
             return {"ok": False, "reason": f"already_{row.status}",
                     "detail": f"decided by {row.decided_by or 'someone'} "
                               f"at {row.decided_at or 'an unknown time'}"}
-        if row.expires_at and now_iso() > row.expires_at:
-            row.status = "expired"
-            db.commit()
-            return {"ok": False, "reason": "expired", "detail": row.expires_at}
-
-        row.status = "granted" if granted else "denied"
-        row.decided_at = now_iso()
-        row.decided_by = who
-        if reason:
-            row.reason = reason
+        stamp = now_iso()
+        expired = bool(row.expires_at and stamp > row.expires_at)
+        values = {"status": "expired" if expired else ("granted" if granted else "denied")}
+        if not expired:
+            values.update(decided_at=stamp, decided_by=who)
+            if reason:
+                values["reason"] = reason
+        # Preserve exactly the card that was read, not a concurrent edit, a
+        # terminal answer, or an expiry written while the person was deciding.
+        answer = _from_row(row).to_dict()
+        answer.update(values)
+        changed = (db.query(ApprovalRow).filter(
+            ApprovalRow.id == approval_id, ApprovalRow.status == "pending",
+            ApprovalRow.plan_json == row.plan_json,
+            ApprovalRow.plan_fingerprint == row.plan_fingerprint,
+            ApprovalRow.owner == row.owner, ApprovalRow.expires_at == row.expires_at,
+        ).update(values, synchronize_session=False))
+        if not changed:
+            db.rollback()
+            db.expire_all()
+            current = db.get(ApprovalRow, approval_id)
+            if current is None:
+                return {"ok": False, "reason": "not_found", "detail": approval_id}
+            return {"ok": False,
+                    "reason": (f"already_{current.status}" if current.status != "pending"
+                               else "concurrent_change"),
+                    "detail": f"decided by {current.decided_by or 'someone'} "
+                              f"at {current.decided_at or 'an unknown time'}"}
         db.commit()
-        return {"ok": True, "reason": row.status, "approval": _from_row(row).to_dict()}
+        if expired:
+            return {"ok": False, "reason": "expired", "detail": answer["expires_at"]}
+        return {"ok": True, "reason": answer["status"], "approval": answer}
     except Exception:
         db.rollback()
         raise
@@ -187,7 +207,8 @@ def check(plan: Any, *, owner: str = "") -> Dict[str, Any]:
     try:
         exact = (db.query(ApprovalRow)
                  .filter(ApprovalRow.plan_fingerprint == parsed.fingerprint(),
-                         ApprovalRow.status == "granted")
+                         ApprovalRow.status == "granted",
+                         ApprovalRow.owner == (owner or None))
                  .order_by(ApprovalRow.decided_at.desc()).all())
         for row in exact:
             verdict = _from_row(row).covers(parsed, now=stamp)
@@ -196,9 +217,8 @@ def check(plan: Any, *, owner: str = "") -> Dict[str, Any]:
                         "changes": []}
 
         query = db.query(ApprovalRow).filter(
-            ApprovalRow.status == "granted", ApprovalRow.action == parsed.action)
-        if owner:
-            query = query.filter(ApprovalRow.owner == owner)
+            ApprovalRow.status == "granted", ApprovalRow.action == parsed.action,
+            ApprovalRow.owner == (owner or None))
         near = query.order_by(ApprovalRow.decided_at.desc()).limit(20).all()
         for row in near:
             verdict = _from_row(row).covers(parsed, now=stamp)
@@ -212,7 +232,22 @@ def check(plan: Any, *, owner: str = "") -> Dict[str, Any]:
         db.close()
 
 
-def consume(approval_id: str, plan: Any) -> Dict[str, Any]:
+def _spend_row(db, row, parsed: ApprovalPlan, approval: Approval) -> Optional[Approval]:
+    """Compare-and-swap one checked card inside the caller's transaction."""
+    from core.database import ApprovalRow
+
+    spent = approval.consumed()
+    changed = (db.query(ApprovalRow).filter(
+        ApprovalRow.id == row.id, ApprovalRow.status == "granted",
+        ApprovalRow.uses_left == approval.uses_left,
+        ApprovalRow.plan_fingerprint == parsed.fingerprint(),
+        ApprovalRow.plan_json == row.plan_json,
+        ApprovalRow.owner == row.owner, ApprovalRow.expires_at == row.expires_at,
+    ).update({"uses_left": spent.uses_left, "status": spent.status}, synchronize_session=False))
+    return spent if changed else None
+
+
+def consume(approval_id: str, plan: Any, *, owner: Optional[str] = None) -> Dict[str, Any]:
     """Spend one use with a conditional write, rechecking after a lost race.
 
     Reading then assigning uses_left is not atomic: two workers can read one
@@ -228,26 +263,73 @@ def consume(approval_id: str, plan: Any) -> Dict[str, Any]:
             row = db.get(ApprovalRow, approval_id)
             if row is None:
                 return {"ok": False, "reason": "not_found"}
+            if owner is not None and (row.owner or "") != owner:
+                return {"ok": False, "reason": "not_found"}
             approval = _from_row(row)
             verdict = approval.covers(parsed)
             if not verdict["ok"]:
                 return {"ok": False, "reason": verdict["reason"],
                         "changes": [dict(c) for c in verdict.get("changes", ())]}
-            spent = approval.consumed()
-            changed = (db.query(ApprovalRow).filter(
-                ApprovalRow.id == approval_id, ApprovalRow.status == 'granted',
-                ApprovalRow.uses_left == approval.uses_left,
-                ApprovalRow.plan_fingerprint == parsed.fingerprint(),
-                ApprovalRow.plan_json == row.plan_json,
-                ApprovalRow.owner == row.owner,
-                ApprovalRow.expires_at == row.expires_at,
-            ).update({'uses_left': spent.uses_left, 'status': spent.status}, synchronize_session=False))
-            if changed:
+            spent = _spend_row(db, row, parsed, approval)
+            if spent is not None:
                 db.commit()
                 return {"ok": True, "reason": "consumed", "uses_left": spent.uses_left,
                         "status": spent.status}
             db.rollback()
             db.expire_all()
+        return {"ok": False, "reason": "concurrent_change"}
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
+def consume_plans(plans: Sequence[Any], *, owner: str) -> Dict[str, Any]:
+    """Spend all permissions for one execution atomically, or spend none.
+
+    This is an execution boundary, not a preview. Matching is owner-scoped;
+    a changed/missing/expired card rolls back every earlier decrement. A lost
+    compare-and-swap retries the whole set. A subsequent backend error does
+    not refund permissions: an external effect may already have happened.
+    """
+    from core.database import ApprovalRow, SessionLocal
+
+    parsed_plans = [p if isinstance(p, ApprovalPlan) else ApprovalPlan.parse(p) for p in plans]
+    unique = {p.fingerprint(): p for p in parsed_plans}
+    db = SessionLocal()
+    try:
+        for _attempt in range(4):
+            receipts = []
+            retry = False
+            for fingerprint, parsed in unique.items():
+                candidates = (db.query(ApprovalRow).filter(
+                    ApprovalRow.plan_fingerprint == fingerprint,
+                    ApprovalRow.owner == (owner or None),
+                    ApprovalRow.status == "granted", ApprovalRow.uses_left > 0,
+                ).order_by(ApprovalRow.decided_at.desc(), ApprovalRow.id).all())
+                selected = None
+                for row in candidates:
+                    approval = _from_row(row)
+                    if approval.covers(parsed)["ok"]:
+                        selected = (row, approval)
+                        break
+                if selected is None:
+                    db.rollback()
+                    return {"ok": False, "reason": "no_approval", "action": parsed.action}
+                row, approval = selected
+                spent = _spend_row(db, row, parsed, approval)
+                if spent is None:
+                    retry = True
+                    break
+                receipts.append({"approval_id": approval.id, "action": parsed.action,
+                                 "uses_left": spent.uses_left, "status": spent.status})
+            if retry:
+                db.rollback()
+                db.expire_all()
+                continue
+            db.commit()
+            return {"ok": True, "reason": "consumed", "approvals": receipts}
         return {"ok": False, "reason": "concurrent_change"}
     except Exception:
         db.rollback()
@@ -263,14 +345,13 @@ def expire_stale(*, now: Optional[str] = None) -> int:
     stamp = now or now_iso()
     db = SessionLocal()
     try:
-        rows = (db.query(ApprovalRow)
+        changed = (db.query(ApprovalRow)
                 .filter(ApprovalRow.status == "pending",
                         ApprovalRow.expires_at.isnot(None),
-                        ApprovalRow.expires_at < stamp).all())
-        for row in rows:
-            row.status = "expired"
+                        ApprovalRow.expires_at < stamp)
+                .update({"status": "expired"}, synchronize_session=False))
         db.commit()
-        return len(rows)
+        return changed
     except Exception:
         db.rollback()
         raise

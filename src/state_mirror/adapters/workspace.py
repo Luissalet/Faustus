@@ -66,9 +66,6 @@ SCHEMA = "project_state.v1"
 #: Kept as data rather than as prose in a docstring so a diagnostics route can
 #: show a person the gap instead of leaving them to infer it from an absence.
 UNOBSERVED_FIELDS: Dict[str, str] = {
-    "last_verified_changeset": "src/changesets.py builds a ChangeSet and "
-                               "stores nothing -- app.py says so out loud -- "
-                               "so there is no last one to point at",
     "active_objectives": "the objectives adapter owns these",
     "blocked_objectives": "the objectives adapter owns these",
 }
@@ -295,4 +292,22 @@ class WorkspaceAdapter(ThreadedAdapter):
             # writes to the same row.
             partial=True,
         )
-        return [obs] if obs is not None else []
+        rows = [obs] if obs is not None else []
+        # This is a reading of durable evidence, not a fresh Git measurement.
+        # Do not reuse the workspace-only cache (it is shared across owners)
+        # or inject real-world receipts into an isolated simulation namespace.
+        if scope.namespace == "real":
+            try:
+                from src.changeset_store import Store
+                verified = Store().list(owner=scope.owner, project_id=scope.project_id,
+                                        workspace=workspace, verified_only=True, limit=1)
+                if verified:
+                    receipt = observation(
+                        target, SOURCE, {"last_verified_changeset": verified[0]["id"]},
+                        scope=scope, schema=SCHEMA, epistemic="observed",
+                        observed_at=now_iso(), partial=True)
+                    if receipt is not None:
+                        rows.append(receipt)
+            except Exception as exc:
+                logger.debug("workspace: evidence history unavailable (%s)", type(exc).__name__)
+        return rows

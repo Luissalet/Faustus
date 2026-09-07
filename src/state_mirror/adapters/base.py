@@ -171,6 +171,8 @@ class ThreadedAdapter:
         try:
             return fn(*args, **kwargs)
         except Exception as exc:                               # noqa: BLE001
+            from src.state_mirror.read_health import note_failure
+            note_failure(fn, exc)
             logger.debug("state adapter %s: %s failed: %s",
                          self.name or type(self).__name__,
                          getattr(fn, "__name__", fn), exc)

@@ -1916,6 +1916,8 @@ async def _run(job: DispatchJob) -> None:
         _record_turn(job)
         job._persist()
         job._notify()
+        from src.changeset_store import record_dispatch
+        await asyncio.to_thread(record_dispatch, job)
 
 
 async def _verify(job: DispatchJob) -> Dict[str, Any]:

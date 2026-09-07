@@ -187,14 +187,20 @@ def _send_smtp_message(cfg: dict, from_addr: str, recipients: list[str], message
     if security == "ssl":
         with smtplib.SMTP_SSL(host, port, timeout=timeout) as smtp:
             _auth_smtp(smtp)
-            smtp.sendmail(from_addr, recipients, message)
+            refused = smtp.sendmail(from_addr, recipients, message)
+            if refused:
+                # sendmail returns normally if SOME recipients were accepted.
+                # Reporting this as full success hides a partial delivery.
+                raise smtplib.SMTPRecipientsRefused(refused)
         return
 
     with smtplib.SMTP(host, port, timeout=timeout) as smtp:
         if security == "starttls":
             smtp.starttls()
         _auth_smtp(smtp)
-        smtp.sendmail(from_addr, recipients, message)
+        refused = smtp.sendmail(from_addr, recipients, message)
+        if refused:
+            raise smtplib.SMTPRecipientsRefused(refused)
 
 
 def _friendly_email_auth_error(protocol: str, host: str, error: object) -> str:

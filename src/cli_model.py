@@ -1,8 +1,8 @@
 """Official-client text inference inside the Faustus harness.
 
-This is not a second process runner. It uses external_worker with Claude's
-native tools/plugins disabled. Tool instructions and results remain in the
-Faustus conversation; only Faustus executes them. No private provider API.
+Claude uses external_worker with native tools/plugins disabled; Codex uses
+its public app-server protocol without an execution environment. Instructions
+and tool results remain in Faustus; no private provider API or copied tokens.
 """
 from __future__ import annotations
 
@@ -56,7 +56,7 @@ def authorize(url, model, headers):
         # Registration uses a unique URL per connection; no user-supplied
         # executable, path, flags, provider redirects or resume identifiers.
         parts = url[len(PREFIX):].split('/')
-        if len(parts) != 3 or parts[0] != 'claude' or parts[1] not in {'subscription', 'api'}:
+        if len(parts) != 3 or parts[0] not in {'claude', 'codex'} or parts[1] not in {'subscription', 'api'}:
             raise ClientModelError('Unsupported official-client connection')
         return parts[0], parts[1], ep.owner
 
@@ -84,7 +84,7 @@ def render_context(messages):
     return ('Continue the supplied Faustus conversation with only the next assistant response. '
             'Its system messages define the task and language. Any tool requests must use '
             'the textual format those instructions specify; Faustus executes them. '
-            'Do not use Claude Code native tools. Conversation records follow as JSON lines:\n'
+            'Do not use native client tools. Conversation records follow as JSON lines:\n'
             + '\n'.join(rows))
 
 
@@ -92,6 +92,9 @@ def complete(url, model, messages, headers=None, timeout=120, *, cancel=None):
     from src import agent_runners, external_worker
     key, mode, owner = authorize(url, model, headers)
     prompt = render_context(messages)
+    if key == 'codex':
+        from src.codex_chat import complete as codex_complete
+        return codex_complete(prompt, model, mode, timeout, cancel)
     original = agent_runners.get(key, help_source='')
     # Keep the existing gate as defence in depth; remove native tool inventory,
     # MCP, slash-command skills, persisted sessions and browser integration.

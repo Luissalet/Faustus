@@ -5396,6 +5396,8 @@ Access method	Vía de acceso
 Client model (optional)	Modelo del cliente (opcional)
 Leave blank to use the client default. Availability depends on your account; no model catalog is assumed.	Déjalo vacío para usar el modelo predeterminado del cliente. La disponibilidad depende de tu cuenta; no se presupone un catálogo de modelos.
 Connect Claude Code	Conectar Claude Code
+Connect Codex	Conectar Codex
+Use the official Codex sign-in on the Faustus server. Text only; Faustus runs the tools. Subscription limits apply. No automatic switch to paid API.	Usa la sesión oficial de Codex del servidor de Faustus. Sólo texto; Faustus ejecuta las herramientas. Se aplican los límites de la suscripción. No cambia automáticamente a una API de pago.
 Add agent	Añadir agente
 Agent {n}	Agente {n}
 Agent {n} name	Nombre del agente {n}
@@ -5488,3 +5490,12 @@ Download {name}	Descargar {name}
 Checking submission	Comprobando envío
 Checking engine status	Comprobando estado del motor
 The render could not be cancelled. Refresh and try again.	No se pudo cancelar el render. Actualiza e inténtalo de nuevo.
+This permission request is closed. No approval was granted.	Esta solicitud de permiso está cerrada. No se concedió autorización.
+Evidence is not saved in incognito mode.	Las evidencias no se guardan en modo incógnito.
+The turn finished, but its evidence could not be saved. The summary remains in this chat.	El turno terminó, pero no se pudo guardar su evidencia. El resumen permanece en este chat.
+Hide saved evidence	Ocultar evidencia guardada
+Read saved evidence	Leer evidencia guardada
+This is the original evidence. File diffs compare with the current workspace.	Esta es la evidencia original. Las diferencias de archivos se comparan con la carpeta de trabajo actual.
+Loading saved evidence…	Cargando evidencia guardada…
+Could not load the evidence. Check your connection and access, then retry.	No se pudo cargar la evidencia. Comprueba tu conexión y acceso e inténtalo de nuevo.
+Checks completed	Comprobaciones realizadas

@@ -55,6 +55,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -226,7 +227,9 @@ class DockerWorkspaceBackend:
         return ready
 
     def _docker(self, args: Sequence[str], *, timeout: float = 60) -> subprocess.CompletedProcess:
-        return subprocess.run([self.docker, *args], capture_output=True, timeout=timeout)
+        from src.native_env import native_host_environment
+        return subprocess.run([self.docker, *args], capture_output=True, timeout=timeout,
+                              env=native_host_environment())
 
 
     # ── the command line, built once and readable ─────────────────────────
@@ -237,7 +240,7 @@ class DockerWorkspaceBackend:
         assert on the flags without starting anything — the security claims of
         this backend live in this list."""
         args = [
-            "run", "--rm", "--name", name,
+            "run", "--rm", "--pull", "never", "--name", name,
             "--user", f"{RUN_UID}:{RUN_GID}",
             "--cap-drop", "ALL",
             "--security-opt", "no-new-privileges",
@@ -266,11 +269,17 @@ class DockerWorkspaceBackend:
 
     def run(self, spec: ExecutionSpec, command: Any, *, run_id: str = "",
             secrets: Optional[Dict[str, str]] = None,
-            on_event: Optional[Callable[[str, Dict[str, Any]], None]] = None) -> ExecutionResult:
+            on_event: Optional[Callable[[str, Dict[str, Any]], None]] = None,
+            cancel_requested: Optional[Callable[[], bool]] = None) -> ExecutionResult:
         argv = _argv(command, self.id)
         gate = self.preflight(spec)
         if not gate["ok"]:
             return _refused(spec, run_id, gate["reason"], gate["detail"])
+
+        if cancel_requested is not None and cancel_requested():
+            return ExecutionResult.parse({"run_id": run_id, "backend": self.id,
+                "status": "cancelled", "reason": "cancelled before execution",
+                "started_at": now_iso(), "ended_at": now_iso()})
 
         undeclared = sorted(set(secrets or {}) - set(spec.secret_names))
         if undeclared:
@@ -285,22 +294,55 @@ class DockerWorkspaceBackend:
         env_file = self._write_env_file(secrets or {})
         started = now_iso()
         clock = time.monotonic()
-        if on_event:
-            on_event("backend.started", {"backend": self.id, "isolation": self.isolation,
-                                         "image": self.image, "network": spec.network})
+        created_id = None
+        stopped = {"container": False}
+        proc = None
         try:
-            proc = subprocess.Popen(
-                [self.docker, *self.docker_args(spec, name, env_file=env_file), *argv],
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            )
-            timed_out = False
-            try:
-                out, err = proc.communicate(timeout=timeout)
-            except subprocess.TimeoutExpired:
-                timed_out = True
-                self._kill(name)
-                out, err = proc.communicate(timeout=30)
+            if on_event:
+                on_event("backend.started", {"backend": self.id, "isolation": self.isolation,
+                                             "image": self.image, "network": spec.network})
+            from src.bounded_process_output import Capture, capture
+            from src.native_env import native_host_environment
+            args = self.docker_args(spec, name, env_file=env_file)
+            if cancel_requested is not None:
+                # Split creation from start so cancellation during setup can
+                # never race a late `docker run` into executing user code.
+                # Cleanup uses the returned immutable id, not a reused name.
+                args[0] = "create"
+                created = self._docker([*args, *argv], timeout=min(timeout, 30))
+                candidate = (created.stdout or b"").decode("ascii", "replace").strip()
+                if created.returncode != 0 or not re.fullmatch(r"[a-f0-9]{64}", candidate):
+                    detail, _ = _tail(created.stderr or b"")
+                    return _refused(spec, run_id, "container_create_failed", detail or "No container id returned")
+                created_id = candidate
+                command_line = [self.docker, "start", "--attach", created_id]
+            else:
+                command_line = [self.docker, *args, *argv]
+
+            def stop():
+                stopped["container"] = self._kill(created_id or name)
+
+            if cancel_requested is not None and cancel_requested():
+                captured = Capture(b"", b"", False, False, True)
+                stopped["container"] = True  # created, but never started
+            else:
+                proc = subprocess.Popen(command_line,
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL,
+                    env=native_host_environment())
+                captured = capture(proc, timeout=timeout, stop=stop, limit=OUTPUT_TAIL_BYTES,
+                                   cancel_requested=cancel_requested)
+            out, err, timed_out = captured.stdout, captured.stderr, captured.timed_out
         finally:
+            if created_id:
+                try:
+                    # --rm may already have removed it. Force removal also
+                    # cancels a start that raced the first kill attempt.
+                    removed = self._docker(["rm", "--force", created_id], timeout=30)
+                    if removed.returncode == 0:
+                        stopped["container"] = True
+                except Exception:
+                    logger.warning("could not confirm cleanup of workflow container %s", created_id,
+                                   exc_info=True)
             if env_file:
                 try:
                     os.unlink(env_file)
@@ -312,8 +354,14 @@ class DockerWorkspaceBackend:
         produced = _produced(spec.artifacts_dir, before)
         duration = int((time.monotonic() - clock) * 1000)
 
-        if timed_out:
-            status, reason, code = "timeout", f"killed after {timeout}s", None
+        if captured.cancelled:
+            status, code = "cancelled", None
+            reason = ("cancelled; container stopped" if stopped["container"] else
+                      "cancelled; container termination was not confirmed")
+        elif timed_out:
+            reason = (f"killed after {timeout}s" if stopped["container"] else
+                      f"timed out after {timeout}s; container termination was not confirmed")
+            status, code = "timeout", None
         elif proc.returncode == 0:
             status, reason, code = "completed", "", 0
         else:
@@ -332,11 +380,11 @@ class DockerWorkspaceBackend:
             "exit_code": code if status != "timeout" else None,
             "reason": reason, "started_at": started, "ended_at": now_iso(),
             "duration_ms": duration, "stdout_tail": stdout, "stderr_tail": stderr,
-            "output_truncated": cut_out or cut_err,
+            "output_truncated": captured.truncated or cut_out or cut_err,
             "artifact_filenames": produced,
             # A killed run may well have written half a file. Keeping the
             # output and marking it partial is the honest half of cancelling.
-            "partial": timed_out and bool(produced),
+            "partial": (timed_out or captured.cancelled) and bool(produced),
         })
         if on_event:
             on_event("backend.finished", {"backend": self.id, "status": status,
@@ -359,6 +407,11 @@ class DockerWorkspaceBackend:
         the host process table. It is deleted in the caller's `finally`."""
         if not secrets:
             return None
+        for key, value in secrets.items():
+            if not isinstance(key, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
+                raise ValueError("secret names must be environment variable identifiers")
+            if not isinstance(value, str) or any(char in value for char in "\r\n\x00"):
+                raise ValueError("container env-file secrets must be single-line strings")
         fd, path = tempfile.mkstemp(prefix="faustus-run-", suffix=".env")
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as fh:
@@ -401,11 +454,17 @@ class LocalAttendedBackend:
 
     def run(self, spec: ExecutionSpec, command: Any, *, run_id: str = "",
             secrets: Optional[Dict[str, str]] = None,
-            on_event: Optional[Callable[[str, Dict[str, Any]], None]] = None) -> ExecutionResult:
+            on_event: Optional[Callable[[str, Dict[str, Any]], None]] = None,
+            cancel_requested: Optional[Callable[[], bool]] = None) -> ExecutionResult:
         argv = _argv(command, self.id)
         gate = self.preflight(spec)
         if not gate["ok"]:
             return _refused(spec, run_id, gate["reason"], gate["detail"])
+
+        if cancel_requested is not None and cancel_requested():
+            return ExecutionResult.parse({"run_id": run_id, "backend": self.id,
+                "status": "cancelled", "reason": "cancelled before execution",
+                "started_at": now_iso(), "ended_at": now_iso()})
 
         before = _snapshot(spec.artifacts_dir)
         timeout = spec.limits.seconds or 900
@@ -413,9 +472,8 @@ class LocalAttendedBackend:
         # and a child that inherits VIRTUAL_ENV/PYTHONHOME picks up our
         # interpreter instead of the user's — Diogenes D2, which bit them and
         # would bite us the same way.
-        env = {k: v for k, v in os.environ.items()
-               if k not in ("VIRTUAL_ENV", "PYTHONHOME", "PYTHONPATH",
-                            "UV_ACTIVE", "_OLD_VIRTUAL_PATH")}
+        from src.native_env import native_host_environment
+        env = native_host_environment()
         env.update(secrets or {})
         if spec.artifacts_dir:
             env["FAUSTUS_ARTIFACTS_DIR"] = os.path.abspath(spec.artifacts_dir)
@@ -424,32 +482,40 @@ class LocalAttendedBackend:
         if on_event:
             on_event("backend.started", {"backend": self.id, "isolation": "none",
                                          "attended": True})
-        timed_out = False
+        from src.bounded_process_output import capture
+        from src import process_ownership
+        from src.agent_tools.subprocess_tools import _kill_tree
+        proc = None
         try:
-            proc = subprocess.run(argv, cwd=spec.workspace or None, env=env,
-                                  capture_output=True, timeout=timeout)
-            out, err, code = proc.stdout, proc.stderr, proc.returncode
-        except subprocess.TimeoutExpired as expired:
-            timed_out = True
-            out, err, code = expired.stdout or b"", expired.stderr or b"", None
+            proc = subprocess.Popen(argv, cwd=spec.workspace or None, env=env,
+                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                    stdin=subprocess.DEVNULL, start_new_session=os.name != "nt")
+            process_ownership.note_started(proc)
+            captured = capture(proc, timeout=timeout, stop=lambda: _kill_tree(proc),
+                               limit=OUTPUT_TAIL_BYTES, cancel_requested=cancel_requested)
+            out, err, code = captured.stdout, captured.stderr, proc.returncode
+            timed_out = captured.timed_out
         except FileNotFoundError as missing:
             return _refused(spec, run_id, "policy", f"{argv[0]!r} is not on this machine: {missing}")
+        finally:
+            if proc is not None:
+                process_ownership.forget(proc)
 
         stdout, cut_out = _tail(out)
         stderr, cut_err = _tail(err)
         produced = _produced(spec.artifacts_dir, before)
         result = ExecutionResult.parse({
             "run_id": run_id, "backend": self.id,
-            "status": "timeout" if timed_out else ("completed" if code == 0 else "failed"),
-            "exit_code": code if not timed_out else None,
-            "reason": f"killed after {timeout}s" if timed_out
+            "status": "cancelled" if captured.cancelled else ("timeout" if timed_out else ("completed" if code == 0 else "failed")),
+            "exit_code": code if not (timed_out or captured.cancelled) else None,
+            "reason": "cancelled" if captured.cancelled else f"killed after {timeout}s" if timed_out
                       else ("" if code == 0 else f"exit code {code}"),
             "started_at": started, "ended_at": now_iso(),
             "duration_ms": int((time.monotonic() - clock) * 1000),
             "stdout_tail": stdout, "stderr_tail": stderr,
-            "output_truncated": cut_out or cut_err,
+            "output_truncated": captured.truncated or cut_out or cut_err,
             "artifact_filenames": produced,
-            "partial": timed_out and bool(produced),
+            "partial": (timed_out or captured.cancelled) and bool(produced),
         })
         if on_event:
             on_event("backend.finished", {"backend": self.id, "status": result.status,
@@ -457,10 +523,9 @@ class LocalAttendedBackend:
         return result
 
     def cancel(self, run_id: str) -> bool:
-        """Not supported: this backend's process is owned by `subprocess.run`,
-        and killing by pid without proving ownership is how a recycled pid
-        takes down someone else's tree. Cancellation on the host belongs with
-        the existing process-ownership machinery, not here."""
+        """No persistent run-id-to-process mapping exists for this backend.
+        Timeout cleanup holds a verified Popen object; a later cancellation
+        cannot reconstruct that authority from a run id or an unverified PID."""
         return False
 
 

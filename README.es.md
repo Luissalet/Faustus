@@ -62,9 +62,10 @@ Instalación nativa, Windows/macOS, GPU, HTTPS y configuración: [guía de insta
 - Delegar a conversaciones hijas con propiedad de archivos, progreso, cancelación y dirección durante la tarea.
 - Utilizar **Consejo** para rondas iniciales ciegas, crítica y síntesis entre varios modelos, con un ejecutor designado para las acciones.
 - Usar skills, MCP, herramientas de archivos, shell y navegador bajo los permisos configurados.
-- Conectar workers de **Codex CLI y Claude Code** mediante el sistema de runners y dispatch. Claude Code dispone también de una conexión privada de texto para el bucle de chat de Faustus.
+- Conectar workers de **Codex CLI y Claude Code** mediante el sistema de runners y dispatch. Ambos disponen también de conexiones privadas de texto para el chat de Faustus, con elección explícita de suscripción/API. El chat de Codex usa un hilo efímero de App Server sin entorno de ejecución; Faustus conserva sus herramientas y aprobaciones.
 - Elegir explícitamente suscripción o API. La autenticación del cliente oficial se comprueba antes del trabajo; un error de suscripción no activa una API de pago como alternativa silenciosa.
 - Consultar evidencias de herramientas, comprobaciones de sintaxis, tests del proyecto y revisiones. Los checkpoints con git sombra permiten ver diferencias y restaurar sin sustituir el repositorio del proyecto.
+- Volver a abrir la evidencia original desde el resumen del turno. Los registros aislados por propietario sobreviven a reinicios, distinguen guardar una evidencia de verificar un resultado y alimentan State Mirror; se excluyen los turnos incógnitos. [Historial de evidencias](docs/design/durable-change-evidence.md).
 
 Estas comprobaciones aportan evidencia sobre acciones compatibles; no demuestran que toda afirmación del modelo sea verdadera. Elegir un modelo no habilita automáticamente herramientas, verificaciones ni ejecutores externos.
 
@@ -88,9 +89,9 @@ El motor de contexto recupera y distribuye material relevante entre fuentes del 
 | State Mirror | Mantener observaciones fechadas del proyecto, con vigencia y procedencia. | [state_mirror](src/state_mirror/) |
 | Universal Delta Engine | Comparar los cambios solicitados con los observados en los ámbitos compatibles. | [delta_engine](src/delta_engine/) |
 | Greedy Completion Engine | Descubrir y valorar trabajo adicional útil según modo, alcance y presupuesto. | [completion_engine](src/completion_engine/) |
-| Voz Jarvis | Interacción oral en español e inglés, respuestas habladas y esfera reactiva. | [notas de voz](docs/design/mejoras-tras-jarvis.md) |
+| Voz Jarvis | Interacción oral en español e inglés, respuestas habladas y esfera reactiva. | [guía de voz](docs/design/voice-jarvis.md) |
 
-Historial de implementación, conexiones entre sistemas y verificaciones: [FAUSTUS.md](FAUSTUS.md) y [notas recientes de ingeniería](docs/design/mejoras-tras-jarvis.md).
+Detalles de implementación: [FAUSTUS.md](FAUSTUS.md). Verificaciones actuales y cierre: [PENDIENTES.md](PENDIENTES.md).
 
 ### Imágenes, vídeo y audio
 
@@ -114,6 +115,14 @@ ComfyUI es un servicio separado; los pesos de modelos, nodos adicionales y sus l
 - Ver memoria de modelos locales, colocación en GPU, estimaciones de capacidad, descargas y salud de servicios en Cookbook.
 
 ### Workflows duraderos
+
+Los workflows de proyecto pueden ejecutar scripts declarados de skills en Python, JavaScript y Bash dentro de Docker, con una copia acotada del código, permisos vinculados al código y comando exactos y recogida de archivos resultantes. La [guía de scripts de skills](docs/design/workflow-script-skills.md) explica requisitos y contrato. La salida de los procesos se recoge continuamente conservando sólo el tramo final, para que un script muy verboso no agote la memoria del equipo.
+
+Cancelar un workflow de scripts en ejecución también detiene su contenedor. El worker comprueba el intento exacto y su permiso vigente para continuar; si se cancela durante la preparación del contenedor, el script no llega a arrancar. Los efectos externos parciales quedan registrados y no se reintentan automáticamente.
+
+Los objetivos de proyecto admiten cambios tipados de agentes sin perder actualizaciones simultáneas. Se protegen las ediciones humanas frente a cambios de agentes basados en una versión anterior, incluso dentro del mismo segundo, y se conservan los archivos dañados durante su recuperación.
+
+El [paso de envío de correo](docs/design/workflow-email-delivery.md) envía texto plano mediante una cuenta SMTP del propietario, tras aprobar destinatarios y contenido. Los permisos se consumen una vez al ejecutar, las esperas aprobadas continúan automáticamente y un efecto externo incierto no se reintenta por sí solo. La aceptación del servidor SMTP se distingue de la entrega en la bandeja de entrada.
 
 Combina disparadores, condiciones, esperas, aprobaciones humanas, pasos multimedia e informes guardados. La continuación del servidor hace avanzar workflows iniciados y despierta esperas vencidas. Los intentos tienen reservas temporales y escrituras condicionales para que una respuesta tardía no pise una cancelación ni un intento nuevo.
 
@@ -158,7 +167,7 @@ python -m src.doctor
 
 La suite incluye aislamiento entre propietarios, persistencia, concurrencia, cancelación, migración, integración HTTP y comprobaciones de interfaz sin navegador. Los motores físicos y las cuentas requieren además pruebas en su entorno configurado; un fixture HTTP no demuestra calidad del modelo ni acceso a una cuenta.
 
-Las verificaciones tienen fecha en las [notas de ingeniería](docs/design/mejoras-tras-jarvis.md). [PENDIENTES.md](PENDIENTES.md) registra trabajo y regresiones, no actúa como catálogo de funciones.
+Las verificaciones más recientes y las comprobaciones que faltan están en [PENDIENTES.md](PENDIENTES.md).
 
 ## Capturas
 

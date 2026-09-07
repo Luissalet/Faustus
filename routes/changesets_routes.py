@@ -1,6 +1,6 @@
 """Change sets over HTTP — "prove it" as an endpoint.
 
-Nothing here stores anything. A change set is assembled from records Faustus
+The preview endpoints store nothing. A change set is assembled from records Faustus
 already keeps, judged by `prove`, and handed back; asking twice about the same
 job gives the same fingerprint, which is what makes it a report rather than a
 new measurement.
@@ -14,6 +14,8 @@ sent.
 """
 
 import logging
+import asyncio
+import sqlite3
 
 from fastapi import APIRouter, HTTPException, Request
 
@@ -35,8 +37,8 @@ async def _json_object(request: Request) -> dict:
     return payload
 
 
-def _answer(changeset) -> dict:
-    proof = changesets.judge(changeset)
+def _answer(changeset, proof=None) -> dict:
+    proof = proof if proof is not None else changesets.judge(changeset)
     return {
         "ok": True, "checked_at": now_iso(),
         "changeset": changeset.to_dict(),
@@ -52,6 +54,39 @@ def _answer(changeset) -> dict:
 def setup_changesets_routes():
     router = APIRouter(prefix="/api/changesets", tags=["changesets"])
 
+    @router.get("/receipts")
+    def receipts(request: Request, project_id: str | None = None,
+                 workspace: str | None = None, run_id: str | None = None,
+                 verified_only: bool = False, limit: int = 50, before: int | None = None):
+        """Immutable evidence from completed execution, never client previews."""
+        require_admin(request)
+        from routes.dispatch_routes import _owner
+        from src.changeset_store import Store, ReceiptError
+        owner = _owner(request) or ""
+        if not 1 <= limit <= 200 or (before is not None and before < 1):
+            raise HTTPException(400, "invalid receipt pagination")
+        try:
+            rows = Store().list(owner=owner, project_id=project_id, workspace=workspace,
+                                run_id=run_id, verified_only=verified_only, limit=limit, before=before)
+        except (ReceiptError, OSError, sqlite3.Error):
+            raise HTTPException(503, "Evidence history is unavailable; no records were changed")
+        return {"ok": True, "receipts": rows,
+                "next_cursor": rows[-1]["cursor"] if len(rows) == limit else None}
+
+    @router.get("/receipts/{receipt_id}")
+    def receipt(receipt_id: str, request: Request):
+        require_admin(request)
+        from routes.dispatch_routes import _owner
+        from src.changeset_store import Store, ReceiptError
+        owner = _owner(request) or ""
+        try:
+            saved = Store().get(receipt_id, owner=owner)
+        except (ReceiptError, OSError, sqlite3.Error):
+            raise HTTPException(503, "Evidence history is unavailable; no records were changed")
+        if saved is None:
+            raise HTTPException(404, "no such evidence receipt")
+        return {"ok": True, **saved}
+
     @router.post("/build")
     async def build(request: Request):
         """Pure. Assemble, judge, and say what does not add up — before
@@ -63,11 +98,11 @@ def setup_changesets_routes():
                 intent=str(payload.get("intent") or "implement"),
                 workspace=str(payload.get("workspace") or ""),
                 checkpoint=str(payload.get("checkpoint") or ""),
-                changes=payload.get("changes") or {},
-                verification=payload.get("verification") or {},
-                claims=payload.get("claims") or [],
-                commands=payload.get("commands") or [],
-                review=payload.get("review") or {},
+                changes=payload.get("changes"),
+                verification=payload.get("verification"),
+                claims=payload.get("claims"),
+                commands=payload.get("commands"),
+                review=payload.get("review"),
                 plan=str(payload.get("plan") or ""),
                 title=str(payload.get("title") or ""),
                 run_id=str(payload.get("run_id") or ""),
@@ -94,15 +129,24 @@ def setup_changesets_routes():
         job = dispatch.get(job_id)
         if job is None:
             raise HTTPException(status_code=404, detail=f"no dispatched job {job_id}")
+        # Use exactly the same owner/token-scope policy as the job's own route.
+        # An admin identity is not a grant to read another admin's work.
+        from routes.dispatch_routes import _owner
+        owner = _owner(request)
+        if not dispatch.visible_to(job, owner or None):
+            raise HTTPException(status_code=404, detail="no such dispatch job")
         compact = dispatch.compact(job)
         try:
             changeset = changesets.from_dispatch(
                 compact, intent=intent,
-                workspace=str(getattr(job, "workspace", "") or ""))
+                workspace=str(getattr(job, "workspace", "") or ""),
+                owner=str(getattr(job, "owner", "") or ""))
         except ContractError as e:
             return {"ok": False, "field": e.path, "reason": e.message,
                     "job_id": job_id}
-        answer = _answer(changeset)
+        measured = compact.get("result") or {}
+        job_proof = measured.get("proof") if isinstance(measured, dict) else None
+        answer = _answer(changeset, job_proof if isinstance(job_proof, dict) else None)
         # The job's own one-line verdict travels alongside, unchanged. It is a
         # sentence for a person; the proof is the part with the doubts in it,
         # and showing both keeps the difference visible.
@@ -118,16 +162,21 @@ def setup_changesets_routes():
         kilobytes of text nobody asked for is the cost this avoids."""
         require_admin(request)
         payload = await _json_object(request)
+        max_chars = payload.get("max_chars", 400_000)
+        if isinstance(max_chars, bool) or not isinstance(max_chars, int) or not 1 <= max_chars <= 400_000:
+            raise HTTPException(400, "max_chars must be an integer between 1 and 400000")
+        path = payload.get("path", "")
+        if not isinstance(path, str) or len(path) > 2000:
+            raise HTTPException(400, "path must be text of at most 2000 characters")
         try:
             changeset = changesets.build(
                 intent=str(payload.get("intent") or "implement"),
                 workspace=str(payload.get("workspace") or ""),
                 checkpoint=str(payload.get("checkpoint") or ""),
-                changes=payload.get("changes") or {})
+                changes=payload.get("changes"))
         except ContractError as e:
             return {"ok": False, "field": e.path, "reason": e.message}
-        return changesets.diff_of(changeset, path=str(payload.get("path") or ""),
-                                  max_chars=int(payload.get("max_chars") or 400_000))
+        return await asyncio.to_thread(changesets.diff_of, changeset, path=path, max_chars=max_chars)
 
     return router
 

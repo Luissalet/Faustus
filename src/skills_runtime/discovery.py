@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import logging
 import os
+import stat
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -82,7 +83,7 @@ def roots_for(start: str, max_depth: int = MAX_DEPTH) -> Tuple[List[str], str]:
     current = start
     for _ in range(max_depth):
         chain.append(current)
-        if os.path.isdir(os.path.join(current, ".git")):
+        if os.path.exists(os.path.join(current, ".git")):
             return chain, "repository root"
         parent = os.path.dirname(current)
         if not parent or parent == current:
@@ -119,6 +120,15 @@ def _skill_files(folder: str) -> Iterable[Tuple[str, str]]:
                 yield name, nested
 
 
+def _contained(path: str, root: str) -> bool:
+    try:
+        resolved_root = os.path.normcase(os.path.realpath(root))
+        resolved_path = os.path.normcase(os.path.realpath(path))
+        return os.path.commonpath([resolved_root, resolved_path]) == resolved_root
+    except (ValueError, OSError):
+        return False
+
+
 def discover(workspace: str, *, extra_roots: Optional[Iterable[str]] = None,
              max_depth: int = MAX_DEPTH) -> List[DiscoveredSkill]:
     """Every skill visible from `workspace`, nearest first.
@@ -136,9 +146,13 @@ def discover(workspace: str, *, extra_roots: Optional[Iterable[str]] = None,
     for distance, root in enumerate(roots):
         for origin in SKILL_DIR_NAMES:
             folder = os.path.join(root, origin)
-            if not os.path.isdir(folder):
+            if not os.path.isdir(folder) or not _contained(folder, root):
                 continue
             for name, path in _skill_files(folder):
+                if not _contained(path, root):
+                    found.append(DiscoveredSkill(name, path, origin, root, distance,
+                                                 error="skill source is outside its discovery root"))
+                    continue
                 try:
                     size = os.path.getsize(path)
                 except OSError as e:
@@ -164,11 +178,36 @@ def shadowed(found: Iterable[DiscoveredSkill]) -> Dict[str, List[DiscoveredSkill
     return {name: items for name, items in by_name.items() if len(items) > 1}
 
 
+def read_markdown(found: DiscoveredSkill) -> str:
+    """Revalidate the source at use time and bound the actual read, not a hint.
+
+    Discovery metadata may be old. Opening a resolved regular file and comparing
+    its identity also rejects a replacement between validation and opening.
+    """
+    if found.error:
+        raise ValueError(found.error)
+    if not _contained(found.path, found.root):
+        raise ValueError("skill source is outside its discovery root")
+    resolved = os.path.realpath(found.path)
+    before = os.stat(resolved)
+    if not stat.S_ISREG(before.st_mode):
+        raise ValueError("skill source is not a regular file")
+    if before.st_size > MAX_SKILL_BYTES:
+        raise ValueError(f"skill is larger than {MAX_SKILL_BYTES} bytes; not loaded")
+    with open(resolved, "rb") as fh:
+        opened = os.fstat(fh.fileno())
+        if (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino):
+            raise ValueError("skill source changed while opening")
+        data = fh.read(MAX_SKILL_BYTES + 1)
+    if len(data) > MAX_SKILL_BYTES:
+        raise ValueError(f"skill is larger than {MAX_SKILL_BYTES} bytes; not loaded")
+    return data.decode("utf-8", "replace")
+
+
 def load(found: DiscoveredSkill):
     """Read one discovered skill into a `Skill`. Kept separate from `discover`
     because listing what exists and paying to parse it are different costs,
     and the masterplan asks for instructions loaded on demand."""
     from services.memory.skill_format import Skill
 
-    with open(found.path, "r", encoding="utf-8", errors="replace") as fh:
-        return Skill.from_markdown(fh.read(), path=found.path)
+    return Skill.from_markdown(read_markdown(found), path=found.path)

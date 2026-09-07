@@ -25,7 +25,7 @@ literal word `user` or `agent`: it names who last touched the row, not who the
 row belongs to. It is never read here. Every entity carries the scope's owner,
 which on this install is the only owner objectives have.
 
-Entity ids: `objective://<owner>/<namespace>/OBJ-3`. `source_refs` carry
+Entity ids include a stable project/workspace suffix after `OBJ-3`. `source_refs` carry
 `objective:OBJ-3`, the same scheme `context_engine/adapters/objectives.py`
 mints, so the two subsystems name the same objective the same way.
 """
@@ -33,6 +33,8 @@ mints, so the two subsystems name the same objective the same way.
 from __future__ import annotations
 
 import logging
+import hashlib
+import os
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from src.contracts.base import now_iso
@@ -54,6 +56,13 @@ logger = logging.getLogger(__name__)
 
 SCHEMA = "objective_state.v1"
 
+
+def objective_identifier(scope: Scope, oid: str) -> str:
+    """OBJ numbers belong to a project, or to one canonical bare workspace."""
+    identity = ('project:' + scope.project_id) if scope.project_id else (
+        'workspace:' + os.path.normcase(os.path.realpath(scope.workspace)) if scope.workspace else '')
+    return oid + '~' + hashlib.sha256(identity.encode('utf-8')).hexdigest()[:24] if identity else oid
+
 #: The status that stops an objective from blocking its dependents. One word,
 #: and `dropped` is deliberately not in it: a dependency somebody abandoned
 #: leaves its dependent stuck, and calling that "unblocked" would send an agent
@@ -72,23 +81,17 @@ def _word(value: Any, limit: int = 128) -> str:
 def resolve_project(scope: Scope) -> Optional[Dict[str, Any]]:
     """The project record for this scope, or `None`.
 
-    The same order, and the same fallback, as
-    `context_engine/adapters/objectives.py::resolve_project`: an explicit
-    project id first, then a bare workspace path. `objectives.objectives_dir`
-    reads only `project["workspace"]`, so the second really is a complete
-    record for this purpose. Never raises -- a broken `projects.json` must cost
-    the objectives, not the sweep.
+    An explicit project must resolve for the exact owner. Do not fall back to
+    a workspace when lookup fails: that would hide an outage or bypass the
+    project ownership check. The caller's _safe wrapper records that failure
+    without taking down the sweep or treating the missing read as deletion.
     """
     if scope.project_id:
-        try:
-            from services.projects import get_store
-
-            project = get_store().get(scope.project_id, scope.owner or None)
-            if project:
-                return project
-        except Exception as exc:                               # noqa: BLE001
-            logger.debug("objectives adapter: project %s not resolvable: %s",
-                         scope.project_id, exc)
+        from services.projects import get_store
+        project = get_store().get(scope.project_id, scope.owner)
+        if not isinstance(project, dict):
+            raise LookupError('Project objectives are unavailable for this owner')
+        return project
     if scope.workspace:
         return {"workspace": scope.workspace}
     return None
@@ -153,8 +156,10 @@ class ObjectivesAdapter(ThreadedAdapter):
         project = resolve_project(scope)
         if not project:
             return {}
-        payload = objectives.dashboard_payload(project)
-        return dict(payload) if isinstance(payload, Mapping) else {}
+        payload = objectives.dashboard_payload(project, strict=True)
+        if not isinstance(payload, Mapping) or not isinstance(payload.get('objectives'), list):
+            raise ValueError('Objective source did not return an objective snapshot')
+        return dict(payload)
 
     def _records(self, scope: Scope) -> Tuple[List[Mapping[str, Any]],
                                               Dict[str, Any], Dict[str, int]]:
@@ -172,7 +177,7 @@ class ObjectivesAdapter(ThreadedAdapter):
         out: List[StateEntity] = []
         for record in records:
             oid = _word(record.get("id"), 64)
-            made = entity("objective", oid, scope=scope, schema=SCHEMA,
+            made = entity("objective", objective_identifier(scope, oid), scope=scope, schema=SCHEMA,
                           display_name=_word(record.get("title"), 300),
                           labels=(_word(record.get("status"), 32),),
                           source_refs=(f"objective:{oid}",),
@@ -190,7 +195,7 @@ class ObjectivesAdapter(ThreadedAdapter):
         out: List[StateObservation] = []
         for record in records:
             oid = _word(record.get("id"), 64)
-            target = self._safe(entity_id, "objective", scope.owner, oid,
+            target = self._safe(entity_id, "objective", scope.owner, objective_identifier(scope, oid),
                                 namespace=scope.namespace, default="")
             if not target:
                 continue
@@ -248,14 +253,14 @@ class ObjectivesAdapter(ThreadedAdapter):
         out: List[StateRelation] = []
         for record in records:
             oid = _word(record.get("id"), 64)
-            source_id = self._safe(entity_id, "objective", scope.owner, oid,
+            source_id = self._safe(entity_id, "objective", scope.owner, objective_identifier(scope, oid),
                                    namespace=scope.namespace, default="")
             if not source_id:
                 continue
             deps = [d for d in (_word(x, 64) for x in list(record.get("deps") or [])) if d]
             blocking = set(_blocked_by(deps, statuses))
             for dep in deps:
-                target = self._safe(entity_id, "objective", scope.owner, dep,
+                target = self._safe(entity_id, "objective", scope.owner, objective_identifier(scope, dep),
                                     namespace=scope.namespace, default="")
                 if not target:
                     continue
@@ -267,3 +272,11 @@ class ObjectivesAdapter(ThreadedAdapter):
                                         source=self.name, scope=scope,
                                         origin="observed", observed_at=stamp))
         return [edge for edge in out if edge is not None]
+
+    def can_retire(self, scope: Scope, row: StateEntity) -> bool:
+        if scope.project_id:
+            return row.project_id == scope.project_id
+        if not scope.workspace:
+            return False  # An unbound sweep has not enumerated any workspace.
+        suffix = objective_identifier(scope, 'OBJ-1').split('~', 1)[1]
+        return row.id.endswith('~' + suffix)

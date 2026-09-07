@@ -247,6 +247,11 @@ export function AskCard({
  * exact shape of a chat that looks hung when it is not.
  */
 export function AnsweredCard({ decision }: { decision: string }) {
+  if (!['approve', 'approve_task', 'deny'].includes(decision)) {
+    return <p className="fs-studio__answered" data-testid="studio-approval-answered">
+      {t('This permission request is closed. No approval was granted.')}
+    </p>;
+  }
   const said =
     decision === 'deny'
       ? t('You denied it.')

@@ -247,7 +247,7 @@ class FakeApprovals:
         self.requests += 1
         self.opened_with.append(kw)
         card = {"id": f"apr_{self.requests}", "plan": plan, "status": "pending",
-                "reason": "", "decided_by": ""}
+                "reason": "", "decided_by": "", "owner": kw.get("owner", "")}
         self.cards[card["id"]] = card
         return card
 

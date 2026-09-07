@@ -6,6 +6,7 @@ import { commitFiles, commitProposal, fileDiff, restoreCheckpoint, revertFile } 
 import { Rich } from '../rich';
 import { t, tn } from '../../i18n';
 import { harnessOutcomeWords } from './harness-status';
+import { SavedEvidence } from './SavedEvidence';
 
 /**
  * The reliability harness, shown where it happened: the turn summary
@@ -32,7 +33,7 @@ const CHECK_WORDS: Record<string, string> = {
   tests_failed: 'Tests failed',
   review_running: 'Reviewing the diff',
   review_issues: 'The review found problems',
-  verified: 'Verified',
+  verified: 'Checks completed',
 };
 
 const REASON_WORDS: Record<string, string> = {
@@ -171,7 +172,7 @@ export function HarnessCard({
   const verdict = summary.changeset?.verdict;
   const outcomeWords = harnessOutcomeWords(summary.stopReason, permissionAnswered);
   const unverified = checks.some((c) => c.status === 'unverified') || summary.stopReason === 'complete_unverified';
-  const verified = checks.some((c) => c.status === 'verified');
+  const verified = summary.changeset?.verified === true;
   const tests = summary.tests;
   const testsLine = tests && typeof tests === 'object' && ('passed' in tests || 'failed' in tests || 'status' in tests)
     ? `tests: ${String(tests.status ?? '')} ${tests.passed !== undefined ? `${tests.passed} ok` : ''} ${tests.failed !== undefined ? t('{n} failed', { n: String(tests.failed) }) : ''}`.replace(/\s+/g, ' ').trim()
@@ -256,6 +257,7 @@ export function HarnessCard({
           {t('Changed these without saying so: {files}', { files: summary.changeset.unclaimed.join(', ') })}
         </p>
       )}
+      {summary.changeset && <SavedEvidence key={summary.changeset.id} evidence={summary.changeset} />}
 
       {summary.mutations.length > 0 && (
         <ul className="fs-harness__files" aria-label={t('Changed files')}>

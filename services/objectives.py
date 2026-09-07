@@ -10,6 +10,8 @@ Why it is built this way
   current state (one record per objective, plus separate dependency-edge
   records, beads-style); ``objectives_log.jsonl`` is an append-only audit log
   of applied deltas, recorded conflicts and evidence.
+  Projects without a workspace use an owner-scoped managed store. Rebinding
+  a folder preserves existing goals there before the new binding is saved.
 
 * **Updates are a deterministic delta compiler**, not an LLM rewrite: the
   model (or the dashboard) proposes ADD/EDIT/KILL deltas, and this module
@@ -30,10 +32,17 @@ import json
 import logging
 import os
 import re
-import time
+import stat
+import tempfile
+import threading
+import uuid
 from collections import deque
-from datetime import datetime, timezone
+from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
+
+from core.kernel_file_lock import KernelFileLock
+from services import objective_locations as _locations
 
 logger = logging.getLogger(__name__)
 
@@ -58,14 +67,13 @@ class ObjectiveError(ValueError):
 
 
 def _now_iso() -> str:
-    # Second precision, UTC, sortable as a plain string (which is how
-    # base_updated_at comparisons are done).
-    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    return datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
 
 
 def _parse_iso(text: str) -> Optional[datetime]:
     try:
-        return datetime.fromisoformat(str(text).replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(str(text).replace("Z", "+00:00"))
+        return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed
     except (TypeError, ValueError):
         return None
 
@@ -81,8 +89,7 @@ def _id_num(obj_id: str) -> int:
 
 
 def objectives_dir(project: Dict[str, Any]) -> str:
-    ws = (project or {}).get("workspace") or ""
-    return os.path.join(ws, OBJECTIVES_DIRNAME) if ws else ""
+    return _locations.directory(project)
 
 
 def objectives_path(project: Dict[str, Any]) -> str:
@@ -95,25 +102,105 @@ def log_path(project: Dict[str, Any]) -> str:
     return os.path.join(base, OBJECTIVES_LOG_FILENAME) if base else ""
 
 
-def load_state(project: Dict[str, Any]) -> Dict[str, Any]:
+_held_stores = threading.local()
+
+
+def _check_store_paths(base: str) -> None:
+    """Objective grants do not authorize following metadata links elsewhere."""
+    for path in (base, *(os.path.join(base, name) for name in
+                        (OBJECTIVES_FILENAME, OBJECTIVES_LOG_FILENAME, "objectives.lock"))):
+        try:
+            info = os.lstat(path)
+        except FileNotFoundError:
+            continue
+        if (stat.S_ISLNK(info.st_mode)
+                or getattr(info, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+                or (stat.S_ISREG(info.st_mode) and info.st_nlink > 1)):
+            raise PermissionError("Objectives storage must not use linked metadata paths")
+
+
+@contextmanager
+def _store_guard(project: Dict[str, Any]):
+    with _locations.routing_guard(project):
+        if (not (project or {}).get('workspace') and _locations.managed_dir(project)
+                and not _locations.active(project)):
+            _locations.activate(project, _atomic_write)
+        with _location_guard(project):
+            yield
+
+
+@contextmanager
+def _location_guard(project: Dict[str, Any]):
+    """Serialize the whole transaction, including recovery and log rotation.
+
+    Re-entry on this thread lets apply_deltas use the same public storage
+    helpers as other callers without dropping its process-owned lock.
+    """
+    base = objectives_dir(project)
+    if not base:
+        yield
+        return
+    _check_store_paths(base)
+    # Resolve the directory, not the held file: on Windows realpath of a
+    # byte-locked file can fall back to a differently prefixed spelling.
+    path = os.path.join(os.path.realpath(base), "objectives.lock")
+    key = os.path.normcase(path)
+    if key.startswith("\\\\?\\unc\\"):
+        key = "\\\\" + key[8:]
+    elif key.startswith("\\\\?\\"):
+        key = key[4:]
+    held = getattr(_held_stores, "paths", None)
+    if held is None:
+        held = _held_stores.paths = set()
+    if key in held:
+        yield
+        return
+    with KernelFileLock(path):
+        _check_store_paths(base)
+        held.add(key)
+        try:
+            yield
+        finally:
+            held.remove(key)
+
+
+def load_state(project: Dict[str, Any], *, strict: bool = False) -> Dict[str, Any]:
     """Current objectives + dependency edges.
 
     Returns ``{"objectives": {id: record}, "edges": [{"from","to"}]}``.
     A corrupt file is renamed to ``.corrupt`` and treated as empty — this is
-    read on the chat hot path and must never raise.
+    read on the chat hot path and must never raise. Strict writers and mirror
+    snapshots instead refuse corrupt data without moving the original.
     """
+    if not strict and not os.path.lexists(objectives_path(project)):
+        return {"objectives": {}, "edges": []}
+    try:
+        with _store_guard(project):
+            return _load_state(project, strict=strict)
+    except OSError as exc:
+        if strict:
+            raise
+        logger.warning("Could not read objectives safely: %s", exc)
+        return {"objectives": {}, "edges": []}
+
+
+def _load_state(project: Dict[str, Any], *, strict: bool = False) -> Dict[str, Any]:
     state: Dict[str, Any] = {"objectives": {}, "edges": []}
     path = objectives_path(project)
-    if not path or not os.path.isfile(path):
+    if not path:
         return state
     try:
-        with open(path, "r", encoding="utf-8") as fh:
+        with open(path, "rb") as fh:
             raw = fh.read()
+    except FileNotFoundError:
+        return state
     except OSError as e:
+        if strict:
+            raise
         logger.warning("objectives.jsonl unreadable (%s); treating as empty", e)
         return state
     try:
-        for line in raw.splitlines():
+        for line in raw.decode("utf-8").splitlines():
             line = line.strip()
             if not line:
                 continue
@@ -125,11 +212,16 @@ def load_state(project: Dict[str, Any]) -> Dict[str, Any]:
             elif rec.get("t") == "dep" and rec.get("from") and rec.get("to"):
                 state["edges"].append({"from": str(rec["from"]), "to": str(rec["to"])})
     except (ValueError, TypeError) as e:
+        if strict:
+            raise ObjectiveError('Objective data is corrupt; the original file was preserved') from e
         # Corrupt state must not take a chat down: keep the broken copy so
         # nothing is silently destroyed, then start empty.
         logger.warning("objectives.jsonl corrupt (%s); renaming to .corrupt", e)
         try:
-            os.replace(path, path + ".corrupt")
+            backup = path + ".corrupt"
+            if os.path.lexists(backup):
+                backup = path + "." + uuid.uuid4().hex + ".corrupt"
+            os.replace(path, backup)
         except OSError:
             pass
         return {"objectives": {}, "edges": []}
@@ -138,9 +230,61 @@ def load_state(project: Dict[str, Any]) -> Dict[str, Any]:
 
 def save_state(project: Dict[str, Any], state: Dict[str, Any]) -> None:
     """Atomic rewrite of objectives.jsonl (tmp file + os.replace)."""
+    try:
+        with _store_guard(project):
+            _save_state(project, state)
+    except OSError as exc:
+        raise ObjectiveError(f"Could not save objectives: {exc}") from exc
+
+
+def _atomic_write(path: str, content: bytes) -> None:
+    """Unique, exclusively created temp file; failures leave no partial file."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix=os.path.basename(path) + ".", suffix=".tmp",
+                               dir=os.path.dirname(path))
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(content)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+
+
+def preserve_for_rebinding(project: Dict[str, Any]) -> None:
+    """Keep goals and their audit trail before changing a workspace binding.
+
+    Old portable files are retained. All writers with this project identity,
+    including old snapshots, switch to the managed store once the last marker
+    write succeeds. A failed copy leaves the original store authoritative.
+    """
+    with _locations.routing_guard(project):
+        target = _locations.managed_dir(project)
+        if not target or _locations.active(project) or not project.get('workspace'):
+            return
+        with _location_guard(project):
+            source = objectives_dir(project)
+            copies = []
+            for name in (OBJECTIVES_FILENAME, OBJECTIVES_LOG_FILENAME):
+                try:
+                    with open(os.path.join(source, name), 'rb') as fh:
+                        copies.append((name, fh.read()))
+                except FileNotFoundError:
+                    continue
+            if not copies:
+                return  # An empty project may adopt the new folder's goals.
+            _check_store_paths(target)
+            for name, content in copies:
+                _atomic_write(os.path.join(target, name), content)
+            _locations.activate(project, _atomic_write)
+
+
+def _save_state(project: Dict[str, Any], state: Dict[str, Any]) -> None:
     path = objectives_path(project)
     if not path:
-        raise ObjectiveError("Project has no folder bound, so it has no objectives")
+        raise ObjectiveError("Objectives require a project identity or workspace")
     lines: List[str] = []
     for oid in sorted(state.get("objectives") or {}, key=_id_num):
         lines.append(json.dumps(state["objectives"][oid], ensure_ascii=False))
@@ -148,11 +292,7 @@ def save_state(project: Dict[str, Any], state: Dict[str, Any]) -> None:
         lines.append(json.dumps({"t": "dep", "from": edge["from"], "to": edge["to"]},
                                 ensure_ascii=False))
     try:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        tmp = path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as fh:
-            fh.write("\n".join(lines) + ("\n" if lines else ""))
-        os.replace(tmp, path)   # atomic: no half-written objectives.jsonl
+        _atomic_write(path, ("\n".join(lines) + ("\n" if lines else "")).encode("utf-8"))
     except OSError as e:
         raise ObjectiveError(f"Could not save objectives: {e}")
 
@@ -163,6 +303,15 @@ def append_log(project: Dict[str, Any], record: Dict[str, Any]) -> bool:
     Swallow-and-log: a failed audit write must never fail the apply that
     produced it.
     """
+    try:
+        with _store_guard(project):
+            return _append_log(project, record)
+    except OSError as exc:
+        logger.warning("Could not lock objectives log: %s", exc)
+        return False
+
+
+def _append_log(project: Dict[str, Any], record: Dict[str, Any]) -> bool:
     path = log_path(project)
     if not path:
         return False
@@ -185,14 +334,22 @@ def _rotate_log(path: str) -> None:
     half = data[len(data) // 2:]
     nl = half.find(b"\n")
     kept = half[nl + 1:] if nl >= 0 else half
-    tmp = path + ".tmp"
-    with open(tmp, "wb") as fh:
-        fh.write(kept)
-    os.replace(tmp, path)
+    _atomic_write(path, kept)
 
 
 def read_log(project: Dict[str, Any], limit: int = 50) -> List[Dict[str, Any]]:
     """The last `limit` audit records, oldest first. Never raises."""
+    if not os.path.lexists(log_path(project)):
+        return []
+    try:
+        with _store_guard(project):
+            return _read_log(project, limit)
+    except OSError as exc:
+        logger.warning("Could not read objectives log safely: %s", exc)
+        return []
+
+
+def _read_log(project: Dict[str, Any], limit: int) -> List[Dict[str, Any]]:
     path = log_path(project)
     if not path or not os.path.isfile(path):
         return []
@@ -273,11 +430,25 @@ def _valid_status(value: Any) -> Optional[str]:
 
 
 def _valid_priority(value: Any) -> Optional[int]:
+    # bool is an int in Python; int(1.9) silently truncates. Neither is a
+    # priority supplied by the user. Keep integral legacy strings/floats.
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        return None
+    if isinstance(value, float) and not value.is_integer():
+        return None
     try:
         pri = int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
     return pri if 1 <= pri <= 4 else None
+
+
+def _valid_deps(value: Any) -> Optional[List[str]]:
+    if value is None:
+        return []
+    if not isinstance(value, list) or any(not isinstance(d, str) or not _ID_RE.fullmatch(d) for d in value):
+        return None
+    return list(dict.fromkeys(value))
 
 
 def _replace_deps(state: Dict[str, Any], oid: str, deps: List[str],
@@ -307,8 +478,36 @@ def apply_deltas(
     Apply order: all ADDs (input order), then all EDITs, then all KILLs.
     Returns ``{"applied":[...], "conflicts":[...], "state":{...}}``.
     """
+    try:
+        with _store_guard(project):
+            return _apply_deltas(project, deltas, actor, session_id)
+    except OSError as exc:
+        raise ObjectiveError(f"Could not update objectives safely: {exc}") from exc
+
+
+def _next_timestamp(state: Dict[str, Any]) -> str:
+    """Strictly advance the revision even when the clock stalls or moves back."""
+    now = _parse_iso(_now_iso()) or datetime.now(timezone.utc)
+    for record in state["objectives"].values():
+        previous = _parse_iso(record.get("updated_at"))
+        if previous is not None and previous >= now:
+            now = previous + timedelta(microseconds=1)
+    return now.astimezone(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
+
+
+def _human_conflict(actor: str, delta: Dict[str, Any], record: Dict[str, Any]) -> bool:
+    base = delta.get("base_updated_at")
+    if actor != "agent" or not base or record.get("last_actor") != "user":
+        return False
+    current, snapshot = _parse_iso(record.get("updated_at")), _parse_iso(base)
+    # Compare instants, not strings: '.123Z' sorts BEFORE 'Z'. Invalid or
+    # future snapshots cannot authorize overwriting a human change either.
+    return current is None or snapshot is None or current != snapshot
+
+
+def _apply_deltas(project, deltas, actor, session_id):
     actor = "agent" if actor == "agent" else "user"
-    state = load_state(project)
+    state = load_state(project, strict=True)
     applied: List[Dict[str, Any]] = []
     conflicts: List[Dict[str, Any]] = []
 
@@ -330,10 +529,10 @@ def apply_deltas(
             conflicts.append({"op": op or None, "id": delta.get("id"),
                               "reason": f"unknown op '{delta.get('op')}' (use ADD, EDIT or KILL)"})
 
-    now = _now_iso()
+    now = _next_timestamp(state)
 
     for delta in adds:
-        title = str(delta.get("title") or "").strip()
+        title = delta["title"].strip() if isinstance(delta.get("title"), str) else ""
         if not 1 <= len(title) <= MAX_TITLE_CHARS:
             conflicts.append({"op": "ADD", "id": None,
                               "reason": f"ADD requires a title of 1..{MAX_TITLE_CHARS} characters"})
@@ -355,7 +554,11 @@ def apply_deltas(
             conflicts.append({"op": "ADD", "id": None,
                               "reason": f"invalid priority '{delta.get('priority')}' (1..4, 1 highest)"})
             continue
-        deps = [str(d) for d in (delta.get("deps") or [])]
+        deps = _valid_deps(delta.get("deps"))
+        if deps is None:
+            conflicts.append({"op": "ADD", "id": None,
+                              "reason": "deps must be an array of OBJ identifiers"})
+            continue
         unknown = [d for d in deps if d not in state["objectives"]]
         if unknown:
             conflicts.append({"op": "ADD", "id": None,
@@ -389,7 +592,7 @@ def apply_deltas(
         changes: Dict[str, Any] = {}
         bad = None
         if "title" in editable:
-            title = str(editable["title"] or "").strip()
+            title = editable["title"].strip() if isinstance(editable["title"], str) else ""
             if not 1 <= len(title) <= MAX_TITLE_CHARS:
                 bad = f"invalid title (1..{MAX_TITLE_CHARS} characters)"
             else:
@@ -406,23 +609,32 @@ def apply_deltas(
                 bad = f"invalid priority '{editable['priority']}' (1..4)"
             else:
                 changes["priority"] = priority
+        if bad is None and ("title" in changes or "status" in changes):
+            title = changes.get("title", obj.get("title", ""))
+            status = changes.get("status", obj.get("status"))
+            duplicate = next((other for other_id, other in state["objectives"].items()
+                if other_id != oid and other.get("status") != "dropped"
+                and str(other.get("title") or "").strip().casefold() == title.casefold()), None)
+            if status != "dropped" and duplicate:
+                bad = f"duplicate title of {duplicate.get('id')}: '{title}'"
         if bad is None and "notes" in editable:
             changes["notes"] = str(editable["notes"] or "")
         deps: Optional[List[str]] = None
         if bad is None and "deps" in editable:
-            deps = [str(d) for d in (editable["deps"] or [])]
-            unknown = [d for d in deps if d not in state["objectives"]]
-            if unknown:
-                bad = f"unknown dep id(s): {', '.join(unknown)}"
+            deps = _valid_deps(editable["deps"])
+            if deps is None:
+                bad = "deps must be an array of OBJ identifiers"
+            else:
+                unknown = [d for d in deps if d not in state["objectives"]]
+                if unknown:
+                    bad = f"unknown dep id(s): {', '.join(unknown)}"
         if bad:
             conflicts.append({"op": "EDIT", "id": oid, "reason": bad})
             continue
         # Human edit wins: an agent editing over a user's newer change is a
         # conflict, not a silent overwrite. The agent passes base_updated_at
         # (the updated_at it last saw); a user edit after that wins.
-        base = str(delta.get("base_updated_at") or "")
-        if (actor == "agent" and base and str(obj.get("updated_at") or "") > base
-                and obj.get("last_actor") == "user"):
+        if _human_conflict(actor, delta, obj):
             conflicts.append({"op": "EDIT", "id": oid,
                               "reason": "human edit wins: the objective was edited by a user "
                                         "after the state this delta was based on"})
@@ -447,6 +659,10 @@ def apply_deltas(
         if actor == "agent" and not rationale:
             conflicts.append({"op": "KILL", "id": oid,
                               "reason": "KILL requires a rationale when the agent proposes it"})
+            continue
+        if _human_conflict(actor, delta, obj):
+            conflicts.append({"op": "KILL", "id": oid,
+                              "reason": "human edit wins: the objective changed since this snapshot"})
             continue
         # The record is kept with status "dropped" — history stays diffable.
         obj["status"] = "dropped"
@@ -672,7 +888,7 @@ _STANDING_INSTRUCTION = (
     "Read these objectives before planning. When a turn of real work ends, "
     "update them with the `project_objectives` tool using typed deltas "
     "(ADD/EDIT/KILL, each with a rationale); never rewrite the whole list. "
-    "Statuses must reflect what actually changed on disk, not intentions."
+    "Statuses must reflect actual work and evidence, not intentions."
 )
 
 
@@ -680,7 +896,7 @@ def objectives_block(project: Dict[str, Any], cap: int = MAX_SECTION_CHARS,
                      include_instruction: bool = True) -> str:
     """The '## Project objectives' section, or '' when there is nothing to
     show. Only changes when the objectives change (KV-cache friendly)."""
-    if not (project or {}).get("workspace"):
+    if not objectives_dir(project):
         return ""
     state = load_state(project)
     lines = render_lines(state)
@@ -704,9 +920,9 @@ def list_payload(project: Dict[str, Any]) -> Dict[str, Any]:
     return {"objectives": serialized["objectives"], "scores": impact_scores(state)}
 
 
-def dashboard_payload(project: Dict[str, Any], log_limit: int = 50) -> Dict[str, Any]:
+def dashboard_payload(project: Dict[str, Any], log_limit: int = 50, *, strict: bool = False) -> Dict[str, Any]:
     """The full dashboard answer for the HTTP API."""
-    state = load_state(project)
+    state = load_state(project, strict=strict)
     serialized = serialize_state(state)
     return {
         "objectives": serialized["objectives"],

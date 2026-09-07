@@ -98,7 +98,7 @@ def _mark_tool_approval_resolved(sess, approval_id: Any, decision: Any) -> bool:
 
     approval_key = str(approval_id or "")
     normalized_decision = str(decision or "").strip().lower()
-    if not approval_key or normalized_decision not in {"approve", "approve_task", "deny"}:
+    if not approval_key or normalized_decision not in {"approve", "approve_task", "deny", "superseded"}:
         return False
 
     message_id = None
@@ -145,6 +145,25 @@ def _mark_tool_approval_resolved(sess, approval_id: Any, decision: Any) -> bool:
         return False
     finally:
         db.close()
+
+
+def _supersede_tool_approval_history(sess) -> None:
+    """Retire stale buttons as well as the in-memory grant on a new user turn."""
+    ids = set()
+    for item in getattr(sess, "history", []) or []:
+        metadata = getattr(item, "metadata", None)
+        if not isinstance(metadata, dict):
+            continue
+        events = metadata.get("tool_events")
+        if not isinstance(events, list):
+            continue
+        for event in events:
+            ask = event.get("ask_user") if isinstance(event, dict) else None
+            if (isinstance(ask, dict) and ask.get("kind") == "tool_approval"
+                    and ask.get("approval_id") and not ask.get("resolved")):
+                ids.add(str(ask["approval_id"]))
+    for approval_id in ids:
+        _mark_tool_approval_resolved(sess, approval_id, "superseded")
 
 
 async def _tool_approval_resolution_stream(decision: str) -> AsyncGenerator[str, None]:
@@ -1589,6 +1608,7 @@ def setup_chat_routes(
                     owner=owner,
                     session_id=session,
                 )
+                _supersede_tool_approval_history(sess)
                 external_untrusted_context_seen = (
                     external_untrusted_context_seen or retired_tool_approval_taint
                 )

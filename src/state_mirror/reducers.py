@@ -49,6 +49,8 @@ instead of the whole state.
 from __future__ import annotations
 
 import logging
+import hashlib
+import json
 from dataclasses import dataclass, field as dataclass_field
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
@@ -61,7 +63,6 @@ from src.state_mirror.contracts import (
     StateConflict,
     StateObservation,
     epistemic_rank,
-    new_id,
     schema_fields,
 )
 
@@ -223,8 +224,12 @@ def _conflict_between(entity_id: str, name: str, owner: str, namespace: str,
         return None
     if not current.source or current.source == incoming.source:
         return None
+    identity = json.dumps([entity_id, owner, namespace, name,
+        current.observation_id, current.source, current.observed_at,
+        observation.id, incoming.source, incoming.observed_at],
+        sort_keys=True, ensure_ascii=False, separators=(",", ":"))
     return StateConflict.parse({
-        "id": new_id("cfl"),
+        "id": "cfl_" + hashlib.sha256(identity.encode("utf-8")).hexdigest()[:32],
         "entity_id": entity_id,
         "field": name,
         "owner": owner,
@@ -273,6 +278,9 @@ def reduce_observation(state: Optional[MaterializedState],
         return Reduction(state=current, applied=False,
                          refusal=f"observation is about {observation.entity_id}, "
                                  f"this state is about {current.entity_id}")
+
+    if current.owner != observation.owner:
+        return Reduction(state=current, applied=False, refusal="observation and state have different owners")
 
     # Rule 5. One line, and it is the whole of section 1.6: a branch's
     # observation may not touch the real world's state, and vice versa.
@@ -351,7 +359,16 @@ def reduce_observation(state: Optional[MaterializedState],
     # an adapter can drop a value, never a whole shape.
     if observation.complete():
         for name in sorted(set(fields) - set(observation.state)):
-            held = fields.pop(name)
+            held = fields[name]
+            # Absence is a claim too: a late snapshot or weaker guess must
+            # not erase a newer, measured fact that normal replacement keeps.
+            if _is_older(FieldState(observed_at=observation.observed_at), held):
+                continue
+            take, _ = _should_replace(held, incoming_rank, now=now,
+                                      schema=observation.schema, field=name)
+            if not take:
+                continue
+            fields.pop(name)
             changes.append(FieldChange(field=name, before=held.value, after=None,
                                        reason="absent from a complete snapshot"))
 

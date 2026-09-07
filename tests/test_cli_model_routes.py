@@ -50,6 +50,32 @@ def test_registration_is_private_text_only_and_never_returns_capability(app_clie
     assert response.json()['default_changed'] is False
 
 
+@pytest.mark.parametrize('mode', ['subscription', 'api'])
+def test_codex_registration_uses_same_private_capability_and_explicit_billing(app_client, monkeypatch, mode):
+    from src import codex_chat
+    checked = []
+    monkeypatch.setattr(codex_chat, 'verify_support', lambda env: checked.append(True))
+    client, saved = app_client
+    response = client.post('/api/agent-runners/codex/model', json={'billing_mode': mode})
+    assert response.status_code == 200 and checked == [True]
+    ep = saved[0]
+    assert ep.base_url.startswith(f'faustus-cli://codex/{mode}/')
+    assert ep.owner == 'alice' and ep.api_key not in response.text and not ep.supports_tools
+    from src.cli_model import authorize
+    assert authorize(ep.base_url, 'client-default', {'Authorization': f'Bearer {ep.api_key}'}) == ('codex', mode, 'alice')
+
+
+def test_codex_registration_refuses_unverified_protocol(app_client, monkeypatch):
+    from src import codex_chat
+    from src.cli_model import ClientModelError
+    def unsupported(env):
+        raise ClientModelError('Update the official client')
+    monkeypatch.setattr(codex_chat, 'verify_support', unsupported)
+    client, saved = app_client
+    response = client.post('/api/agent-runners/codex/model', json={'billing_mode': 'subscription'})
+    assert response.status_code == 400 and 'Update' in response.text and not saved
+
+
 def test_cross_origin_cannot_grant_a_client_capability(app_client):
     client, saved = app_client
     response = client.post('/api/agent-runners/claude/model', json={'billing_mode': 'subscription'}, headers={'Origin': 'https://attacker.test'})
@@ -71,7 +97,7 @@ def test_disabled_execution_is_not_silently_enabled(app_client, monkeypatch):
 
 
 @pytest.mark.parametrize('key,body', [
-    ('codex', {'billing_mode': 'subscription'}),
+    ('unverified-client', {'billing_mode': 'subscription'}),
     ('claude', {'billing_mode': 'free'}),
     ('claude', {'billing_mode': 'api', 'model': '--dangerously-skip-permissions'}),
 ])

@@ -208,6 +208,18 @@ def wait_handler(node: WorkflowNode, context: Mapping[str, Any]) -> Dict[str, An
     return {"status": "paused", "wake_at": wake_at, "reason": f"waiting until {wake_at}"}
 
 
+def _approval_plan(node, context):
+    from src.contracts import ApprovalPlan
+    plan = {"action": str(node.config.get("action") or "deliver"),
+            "detail": str(node.config.get("detail") or node.title
+                          or f"workflow {context.get('workflow')} step {node.id}")}
+    for key in ("recipients", "cost_units", "skill_id", "skill_version",
+                "backend", "secret_names", "output_kinds", "permissions"):
+        if key in node.config:
+            plan[key] = node.config[key]
+    return ApprovalPlan.parse(plan)
+
+
 def approval_handler(store: Any = None, *, owner: str = "",
                      ttl_seconds: Optional[int] = None) -> Callable:
     """`human_approval`: open a card, pause, and read the answer on the way back.
@@ -224,12 +236,29 @@ def approval_handler(store: Any = None, *, owner: str = "",
 
         previous = context.get("previous") or {}
         approval_id = str(previous.get("approval_id") or "")
+        card_owner = str(context.get("owner") or owner or node.config.get("owner") or "")
+        if node.config.get("owner") and node.config["owner"] != card_owner:
+            return {"status": "failed", "reason": "approval owner differs from the workflow owner"}
+        expected = _approval_plan(node, context)
 
         if approval_id:
             card = approvals.get(approval_id)
             if card is None:
                 return {"status": "failed",
                         "reason": f"approval {approval_id} is gone; nothing to read"}
+            if str(_field(card, "owner") or "") != card_owner:
+                return {"status": "failed", "reason": "approval belongs to another owner"}
+            from src.contracts import ApprovalPlan
+            actual = _field(card, "plan")
+            actual = actual if isinstance(actual, ApprovalPlan) else ApprovalPlan.parse(actual)
+            if actual.fingerprint() != expected.fingerprint():
+                return {"status": "failed", "reason": "approval plan changed while the workflow waited"}
+            expires_at = _field(card, "expires_at")
+            if expires_at:
+                from src.workflows.clock import due
+                if due(expires_at, now_iso()):
+                    return {"status": "failed", "approval_id": approval_id,
+                            "reason": "the approval expired; nothing was authorized"}
             status = _field(card, "status")
             if status == "granted":
                 return {"approved": True, "approval_id": approval_id,
@@ -251,16 +280,7 @@ def approval_handler(store: Any = None, *, owner: str = "",
             return {"status": "paused", "approval_id": approval_id,
                     "reason": "waiting on a person"}
 
-        plan = {
-            "action": str(node.config.get("action") or "deliver"),
-            "detail": str(node.config.get("detail")
-                          or node.title
-                          or f"workflow {context.get('workflow')} step {node.id}"),
-        }
-        for key in ("recipients", "cost_units", "skill_id", "skill_version",
-                    "backend", "secret_names", "output_kinds", "permissions"):
-            if key in node.config:
-                plan[key] = node.config[key]
+        plan = expected.to_dict()
 
         extra: Dict[str, Any] = {}
         ttl = node.config.get("ttl_seconds", ttl_seconds)
@@ -273,9 +293,6 @@ def approval_handler(store: Any = None, *, owner: str = "",
         # The run's owner is the fallback, and it matters: a card with no
         # owner is in nobody's pending list, so the gate would be waiting on a
         # person who is never shown the question.
-        card_owner = str(node.config.get("owner")
-                         or owner
-                         or context.get("owner") or "")
         opened = approvals.request(plan, owner=card_owner,
                                    run_id=str(context.get("run_id") or ""), **extra)
         new_id = _field(opened, "id") or _field(opened, "approval_id")
@@ -307,7 +324,7 @@ def deliver_handler(send: Optional[Callable] = None) -> Callable:
                 "a mail client and will not pretend it did")}
         payload = dict(node.config)
         result = send(payload, dict(context)) or {}
-        return {"delivered": True, **result}
+        return {"delivered": result.get("status", "completed") == "completed", **result}
 
     return handle
 
@@ -336,7 +353,7 @@ def skill_handler(run: Optional[Callable] = None, *,
                 "template as 'media:<id>', which is wired")}
         outcome = run(node, dict(context)) or {}
         if outcome.get("status") in ("failed", "refused"):
-            return {"status": "failed",
+            return {**outcome, "status": "failed",
                     "reason": str(outcome.get("reason") or "the skill run failed"),
                     "detail": outcome.get("detail", "")}
         return dict(outcome)

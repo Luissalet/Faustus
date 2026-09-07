@@ -494,18 +494,16 @@ class WorkflowStore:
 
         db = SessionLocal()
         try:
-            row = (db.query(NodeRunRow)
-                   .filter(NodeRunRow.workflow_run_id == run_id,
-                           NodeRunRow.node_id == node_id,
-                           NodeRunRow.attempt == attempt).first())
-            if row is None or row.status == "completed":
-                return False
-            row.idempotency_key = None
-            row.lease_owner = None
-            row.lease_expires_at = None
-            row.lease_heartbeat_at = None
+            changed = (db.query(NodeRunRow)
+                       .filter(NodeRunRow.workflow_run_id == run_id,
+                               NodeRunRow.node_id == node_id,
+                               NodeRunRow.attempt == attempt,
+                               NodeRunRow.status == "pending")
+                       .update({"idempotency_key": None, "lease_owner": None,
+                                "lease_expires_at": None, "lease_heartbeat_at": None},
+                               synchronize_session=False))
             db.commit()
-            return True
+            return bool(changed)
         except Exception:
             db.rollback()
             raise
@@ -666,7 +664,8 @@ class WorkflowStore:
                          getattr(run_row, "id", "?"), exc_info=True)
             return {}
 
-    def mark_effect(self, run_id: str, node_id: str, state: str) -> bool:
+    def mark_effect(self, run_id: str, node_id: str, state: str, *,
+                    worker_id: str = "", attempt: Optional[int] = None) -> bool:
         """Record what the handler knows about its own side effect.
 
         The handler is the only thing that can say "I am about to call the
@@ -677,7 +676,7 @@ class WorkflowStore:
         """
         if state not in EFFECT_STATES:
             raise ValueError(f"effect state must be one of {EFFECT_STATES}, not {state!r}")
-        from core.database import NodeRunRow, SessionLocal
+        from core.database import NodeRunRow, SessionLocal, WorkflowRunRow
         db = SessionLocal()
         try:
             row = (db.query(NodeRunRow)
@@ -686,14 +685,58 @@ class WorkflowStore:
                    .order_by(NodeRunRow.attempt.desc()).first())
             if row is None:
                 return False
-            row.effect_state = state
+            current = row.effect_state or "none"
+            allowed = {"none": {"none", "pending", "confirmed", "unknown"},
+                       "pending": {"pending", "confirmed", "unknown"},
+                       "unknown": {"unknown", "confirmed"}, "confirmed": {"confirmed"}}
+            if state not in allowed.get(current, set()):
+                return False
+            query = db.query(NodeRunRow).filter(
+                NodeRunRow.id == row.id, NodeRunRow.status == "running",
+                NodeRunRow.effect_state == row.effect_state,
+                NodeRunRow.lease_owner == row.lease_owner)
+            if worker_id:
+                query = query.filter(NodeRunRow.lease_owner == worker_id,
+                                     NodeRunRow.lease_expires_at >= now_iso())
+                if state == "pending":
+                    # Starting an external action requires a live run; a
+                    # confirmation for an already-started call may arrive
+                    # after cancellation and must still be recorded.
+                    live_run = db.query(WorkflowRunRow.id).filter(
+                        WorkflowRunRow.id == run_id, WorkflowRunRow.status == "running").exists()
+                    query = query.filter(live_run)
+            if attempt is not None:
+                query = query.filter(NodeRunRow.attempt == attempt)
+            changed = query.update({"effect_state": state}, synchronize_session=False)
             db.commit()
-            return True
+            return bool(changed)
         except Exception:
             db.rollback()
             raise
         finally:
             db.close()
+
+    def claim_active(self, run_id: str, node_id: str, *, worker_id: str, attempt: int) -> bool:
+        """Whether this exact attempt may keep executing, without renewing it."""
+        from core.database import NodeRunRow, SessionLocal, WorkflowRunRow
+        with SessionLocal() as db:
+            return db.query(NodeRunRow.id).join(
+                WorkflowRunRow, WorkflowRunRow.id == NodeRunRow.workflow_run_id
+            ).filter(
+                WorkflowRunRow.id == run_id, WorkflowRunRow.status == "running",
+                NodeRunRow.node_id == node_id, NodeRunRow.status == "running",
+                NodeRunRow.attempt == attempt, NodeRunRow.lease_owner == worker_id,
+                NodeRunRow.lease_expires_at >= now_iso(),
+            ).first() is not None
+
+    def effect_state(self, run_id: str, node_id: str, attempt: int) -> str:
+        """Read one attempt's effect without confusing it with a newer worker."""
+        from core.database import NodeRunRow, SessionLocal
+        with SessionLocal() as db:
+            row = db.query(NodeRunRow.effect_state).filter(
+                NodeRunRow.workflow_run_id == run_id, NodeRunRow.node_id == node_id,
+                NodeRunRow.attempt == attempt).first()
+            return str(row[0] or "none") if row else "unknown"
 
     def needs_reconciliation(self, *, run_id: str = "") -> List[Dict[str, Any]]:
         """The nodes whose effect nobody observed.

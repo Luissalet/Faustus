@@ -498,8 +498,24 @@ FUNCTION_TOOL_SCHEMAS = [
                     "action": {"type": "string", "enum": ["list", "apply"]},
                     "deltas": {
                         "type": "array",
-                        "items": {"type": "object"},
-                        "description": "Typed deltas for action 'apply' (ADD/EDIT/KILL as described above)"
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "op": {"type": "string", "enum": ["ADD", "EDIT", "KILL"]},
+                                "id": {"type": "string", "description": "Existing OBJ-N identifier for EDIT or KILL"},
+                                "title": {"type": "string", "minLength": 1, "maxLength": 200,
+                                          "description": "Required for ADD; the objective's readable title"},
+                                "status": {"type": "string", "enum": ["open", "in_progress", "blocked", "done", "dropped"]},
+                                "priority": {"type": "integer", "minimum": 1, "maximum": 4},
+                                "notes": {"type": "string", "description": "Description or supporting details"},
+                                "deps": {"type": "array", "items": {"type": "string"}},
+                                "rationale": {"type": "string", "description": "Why this change is justified; required for KILL"},
+                                "base_updated_at": {"type": "string", "description": "Timestamp read before EDIT, to detect concurrent changes"}
+                            },
+                            "required": ["op"],
+                            "additionalProperties": False
+                        },
+                        "description": "Typed objective changes; not JSON Patch paths or nested value objects"
                     }
                 },
                 "required": ["action"]

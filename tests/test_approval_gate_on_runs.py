@@ -118,6 +118,11 @@ def test_one_more_secret_and_the_granted_card_no_longer_covers_it(stage):
     approval_store.decide(card.id, granted=True, by="luis")
     assert _run(stage, manifest(), run_id="r2")[1].status == "completed"
 
+    # The first run spent its single use. Grant another unchanged plan so
+    # this test still reaches drift detection rather than merely exhaustion.
+    next_card = approval_store.request(card.plan, owner="luis")
+    approval_store.decide(next_card.id, granted=True, by="luis")
+
     greedier = manifest(permissions={"backends": ["docker_workspace"], "max_seconds": 60,
                                      "secrets": ["youtube"]})
     decision, result = _run(stage, greedier, run_id="r3")

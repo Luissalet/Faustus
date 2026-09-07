@@ -62,9 +62,10 @@ Native installation, Windows/macOS instructions, GPU setup, HTTPS and environmen
 - Delegate to child conversations with file ownership, progress, cancellation and steering.
 - Use **Council** for blind first rounds, critique and synthesis across multiple models, with a designated executor for actions.
 - Use skills, MCP tools, filesystem tools, shell execution and browser capabilities under the configured permissions.
-- Connect official **Codex CLI and Claude Code workers** through the existing runner/dispatch system. Claude Code also has a private text-model connection for the Faustus chat loop.
+- Connect official **Codex CLI and Claude Code workers** through the existing runner/dispatch system. Both also have private text-model connections for the Faustus chat loop, with an explicit subscription/API choice. Codex chat uses an ephemeral, environment-less App Server thread; Faustus retains tool execution and approvals.
 - Keep subscription and API routes explicit. Official-client authentication is checked before work; a subscription error does not silently fall back to paid API usage.
 - Inspect tool evidence, syntax checks, project tests and review results. Shadow-git checkpoints support diffs and restoration without replacing the project's own repository.
+- Reopen original change evidence from a turn's summary. Owner-scoped receipts survive restarts, distinguish saved evidence from verified success, and feed the project's State Mirror; incognito turns are excluded. [Evidence history](docs/design/durable-change-evidence.md).
 
 These checks provide evidence about supported actions; they are not a proof that every model statement is true. Tool access, automatic verification and external runners are configurable rather than implicitly enabled by choosing a model.
 
@@ -88,9 +89,9 @@ The context engine retrieves and budgets relevant material from project sources,
 | State Mirror | Keep timestamped observations of project state, with freshness and provenance. | [state_mirror](src/state_mirror/) |
 | Universal Delta Engine | Compare intended and observed changes across supported domains. | [delta_engine](src/delta_engine/) |
 | Greedy Completion Engine | Discover and assess useful follow-up work according to the chosen mode, scope and budget. | [completion_engine](src/completion_engine/) |
-| Jarvis voice | Voice interaction in English and Spanish, spoken replies and a reactive sphere. | [voice guide](docs/design/mejoras-tras-jarvis.md) |
+| Jarvis voice | Voice interaction in English and Spanish, spoken replies and a reactive sphere. | [voice guide](docs/design/voice-jarvis.md) |
 
-For implementation history, integration details and verification records, see [FAUSTUS.md](FAUSTUS.md) and [recent engineering notes](docs/design/mejoras-tras-jarvis.md).
+For implementation details, see [FAUSTUS.md](FAUSTUS.md). Current verification work is tracked in [PENDIENTES.md](PENDIENTES.md).
 
 ### Images, video and audio
 
@@ -118,6 +119,14 @@ ComfyUI is a separate service; model weights, custom nodes and their licences ar
 Compose triggers, conditions, waits, human approvals, media steps and stored reports. Server-side continuation advances started workflows and wakes timed steps. Attempts have leases and conditional writes so late results do not overwrite a cancellation or a newer attempt.
 
 Generated reports can resolve text from the run's inputs or previous results and save it as an owned artifact. Workflow outputs inherit the verified project and conversation scope. Activity shows dependencies, reasons for waiting and links to output files.
+
+Project workflows can run declared Python, JavaScript and Bash skill scripts in Docker, with a bounded source snapshot, permissions bound to the exact code and command, and collected output files. [Script skill setup](docs/design/workflow-script-skills.md) describes the contract and prerequisites. Process output is drained continuously and retained as bounded tails so verbose scripts cannot exhaust host memory.
+
+Cancelling a running script workflow also stops its container. The worker checks the exact live attempt and lease, and cancellation during container setup prevents the script from starting. Partial external effects remain explicit and are not automatically retried.
+
+Project objectives accept typed updates from agents without losing simultaneous changes. Human edits are protected against stale agent updates, including edits within the same second; damaged state files are preserved during recovery.
+
+The [email delivery step](docs/design/workflow-email-delivery.md) sends plain-text messages through an owned SMTP account after approval of the recipients and content. Approvals are consumed once at execution, approved waits resume automatically, and an uncertain external effect is not retried automatically. SMTP acceptance is recorded separately from inbox delivery.
 
 Workflow nodes that perform external actions still need the appropriate configured capability and authorization. Cancelling stops subsequent work; it cannot undo an external action that already occurred.
 
@@ -158,7 +167,7 @@ python -m src.doctor
 
 The suite includes owner isolation, persistence, concurrency, cancellation, migration, HTTP integration and headless interface checks. Hardware engines and account integrations also need tests in their configured environment; an HTTP fixture does not demonstrate model quality or a provider's account access.
 
-Validation records are dated in [engineering notes](docs/design/mejoras-tras-jarvis.md). [PENDIENTES.md](PENDIENTES.md) tracks work and regression findings rather than serving as a feature catalogue.
+Current verification results and remaining checks are listed in [PENDIENTES.md](PENDIENTES.md).
 
 ## Screens
 

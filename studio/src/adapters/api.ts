@@ -26,19 +26,20 @@ export class ApiError extends Error {
  * So: read FastAPI's `{"detail": …}` and show it. When there is nothing to
  * read, say the status and the path and claim nothing else.
  */
-async function reason(response: Response, path: string): Promise<string> {
+export async function responseReason(response: Response, path: string, fallback?: string): Promise<string> {
   try {
-    const body = (await response.clone().json()) as { detail?: unknown };
+    const body = (await response.clone().json()) as { detail?: unknown; message?: unknown };
     const detail = body?.detail;
     if (typeof detail === 'string' && detail.trim()) return detail;
     if (detail && typeof detail === 'object') {
       const message = (detail as { message?: unknown }).message;
       if (typeof message === 'string' && message.trim()) return message;
     }
+    if (typeof body?.message === 'string' && body.message.trim()) return body.message;
   } catch {
     /* not JSON, or already consumed: fall through to the status line */
   }
-  return `${path} responded ${response.status}`;
+  return fallback ?? `${path} responded ${response.status}`;
 }
 
 export async function getJson<T>(path: string, signal?: AbortSignal): Promise<T> {
@@ -49,7 +50,7 @@ export async function getJson<T>(path: string, signal?: AbortSignal): Promise<T>
   });
 
   if (!response.ok) {
-    throw new ApiError(await reason(response, path), response.status);
+    throw new ApiError(await responseReason(response, path), response.status);
   }
 
   return (await response.json()) as T;

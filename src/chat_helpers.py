@@ -310,7 +310,7 @@ def coerce_message_and_session(req_json: dict | None, message: str | None,
     """
     try:
         if message is None or session is None:
-            if req_json is None:
+            if req_json is None and (session is None or not allow_empty):
                 raise HTTPException(
                     status_code=400,
                     detail={
@@ -318,8 +318,9 @@ def coerce_message_and_session(req_json: dict | None, message: str | None,
                         "message": "Missing 'message' and/or 'session' in request"
                     }
                 )
-            message = message or req_json.get("message")
-            session = session or req_json.get("session")
+            if req_json is not None:
+                message = message if message is not None else req_json.get("message")
+                session = session if session is not None else req_json.get("session")
 
         if allow_empty and (message is None or not str(message).strip()):
             message = ""

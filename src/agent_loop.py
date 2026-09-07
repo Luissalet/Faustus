@@ -8717,6 +8717,12 @@ async def stream_agent_loop(
 
         # Separator in accumulated response
         full_response += "\n\n"
+        # The route persists streamed deltas, not this private accumulator.
+        # Without the matching frame, commentary and the final answer become
+        # "I'll check.Done" both live and after a history reload. Don't create
+        # a whitespace-only response for rounds consisting solely of tools.
+        if any(round_texts):
+            yield 'data: ' + json.dumps({"delta": "\n\n"}) + '\n\n'
 
     # If the loop hit the round cap while still working, tell the client so it
     # can show a "Continue" affordance instead of the turn just stopping.
@@ -8824,6 +8830,8 @@ async def stream_agent_loop(
             if workspace and (_hsum.get("mutations") or _claimed):
                 _changeset = _changesets.from_turn(
                     _hsum, workspace=workspace,
+                    owner=owner or "", project_id=str(_hopts.get("project_id") or ""),
+                    run_id=str(session_id or ""),
                     claims=[{"path": p, "kind": "modified"} for p in _claimed])
                 _proof = _changesets.judge(_changeset)
                 _hsum["changeset"] = {
@@ -8837,6 +8845,12 @@ async def stream_agent_loop(
                     "unclaimed_changes": list(_changeset.unclaimed_changes())[:20],
                     "rendered": _changesets.render(_changeset, _proof),
                 }
+                from src.changeset_store import record_turn as _record_changeset
+                _hsum["changeset"].update(await asyncio.to_thread(
+                    _record_changeset, _changeset, _proof,
+                    session_id=str(session_id or ""),
+                    completed=_hsum.get("stop_reason") == "complete",
+                    incognito=bool(_hopts.get("incognito"))))
                 if _changeset.unsupported_claims():
                     logger.info("[harness] the answer claimed paths the checkpoint "
                                 "did not see change: %s",
@@ -8927,7 +8941,7 @@ async def stream_agent_loop(
                 "length_continues", "finish_reasons", "git", "notes", "progress", "language",
                 "static_checks", "static_analysis", "static_fix_rounds",
                 "workspace", "checkpoint", "tests", "tests_fix_rounds",
-                "review", "review_fix_rounds", "asked_user",
+                "review", "review_fix_rounds", "asked_user", "changeset", "round_count",
             )
         }
         metrics["harness"]["review_mode"] = bool(_hopts.get("review_mode")) and bool(_hsum.get("mutations"))

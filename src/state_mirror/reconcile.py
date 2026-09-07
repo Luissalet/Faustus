@@ -136,6 +136,9 @@ class _Run:
     def __init__(self, owner: str, namespace: str) -> None:
         self.owner = owner
         self.namespace = namespace
+        self.scope: Any = None
+        self.project_id = ''
+        self.retirement_filters: Dict[str, Any] = {}
         self.sweep_id = new_id("sweep")
         self.started_at = now_iso()
         self.began = time.monotonic()
@@ -325,6 +328,16 @@ def _health_table(store: Any) -> Dict[str, str]:
 _NOT_RUN = object()
 
 
+def _read_adapter(adapter: Any, method: str, scope: Any, run: _Run, name: str) -> list:
+    from src.state_mirror.read_health import capture_failures
+    with capture_failures() as failures:
+        rows = list(getattr(adapter, method)(scope) or [])
+    if failures:
+        run.failed.append(name)
+        run.errors.append(f'{name}.{method}: read fallback after ' + ', '.join(sorted(failures)))
+    return rows
+
+
 def _ask(store: Any, run: _Run, adapters: Sequence[Any], scope: Any,
          publisher: Any) -> None:
     """Phase 1: discover, observe and relate, one adapter at a time.
@@ -350,11 +363,14 @@ def _ask(store: Any, run: _Run, adapters: Sequence[Any], scope: Any,
             continue
 
         run.ran.append(name)
+        predicate = getattr(adapter, 'can_retire', None)
+        if callable(predicate):
+            run.retirement_filters[name] = predicate
         raised = False
 
         found: Any = _NOT_RUN
         try:
-            found = list(adapter.discover(scope) or [])
+            found = _read_adapter(adapter, 'discover', scope, run, name)
         except Exception as exc:  # noqa: BLE001
             raised = True
             run.fail(f"{name}.discover", exc)
@@ -363,7 +379,7 @@ def _ask(store: Any, run: _Run, adapters: Sequence[Any], scope: Any,
                                            source=name)
 
         try:
-            observed = list(adapter.observe(scope) or [])
+            observed = _read_adapter(adapter, 'observe', scope, run, name)
         except Exception as exc:  # noqa: BLE001
             raised = True
             run.fail(f"{name}.observe", exc)
@@ -372,7 +388,7 @@ def _ask(store: Any, run: _Run, adapters: Sequence[Any], scope: Any,
             [o for o in observed if _belongs(o, scope, run, name)])
 
         try:
-            edges = list(adapter.relations(scope) or [])
+            edges = _read_adapter(adapter, 'relations', scope, run, name)
         except Exception as exc:  # noqa: BLE001
             raised = True
             run.fail(f"{name}.relations", exc)
@@ -380,6 +396,7 @@ def _ask(store: Any, run: _Run, adapters: Sequence[Any], scope: Any,
         run.relations.extend(
             [e for e in edges if _belongs(e, scope, run, name)])
 
+        raised = raised or name in run.failed
         if raised:
             run.failed.append(name)
         _note(store, name, HEALTH_DEGRADED if raised else HEALTH_OK,
@@ -417,6 +434,7 @@ def _record(store: Any, run: _Run, entities: Sequence[Any], scope: Any,
             existing = store.get_entity(entity.id)
             store.upsert_entity(entity)
         except Exception as exc:  # noqa: BLE001 - one row, not the sweep
+            run.failed.append(source)
             run.fail(f"{source}.discover[{getattr(entity, 'id', '?')}]", exc)
             continue
         ids.add(entity.id)
@@ -476,11 +494,22 @@ def _retire(store: Any, run: _Run, publisher: Any) -> None:
         run.fail("retire.list_entities", exc)
         return
     for entity in live:
+        if (entity.project_id != run.project_id
+                and (entity.project_id or entity.kind in ('objective', 'project', 'repo'))):
+            continue
         owning = _owning_source(store.get_state(entity.id))
-        if not owning or owning not in run.discovered:
+        if not owning or owning not in run.discovered or owning in run.failed:
             continue
         if entity.id in reported:
             continue
+        predicate = run.retirement_filters.get(owning)
+        if predicate is not None:
+            try:
+                if not predicate(run.scope, entity):
+                    continue
+            except Exception as exc:
+                run.fail(f'{owning}.can_retire', exc)
+                continue
         try:
             gone = bool(store.retire_entity(entity.id))
         except Exception as exc:  # noqa: BLE001
@@ -629,6 +658,8 @@ def sweep(*, owner: str, scope: Any = None, adapters: Any = None,
     holder = str(owner or "")
     resolved = _scope_for(holder, scope)
     run = _Run(holder, str(getattr(resolved, "namespace", "") or REAL_NAMESPACE))
+    run.scope = resolved
+    run.project_id = str(getattr(resolved, 'project_id', '') or '')
     db = store if store is not None else _persistence.store()
     chosen = _adapters(adapters)
 

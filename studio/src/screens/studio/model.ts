@@ -178,6 +178,22 @@ export function newLive(now: number): LiveRate {
   return { tokens: 0, recent: [], lastTokenAt: 0, lastAt: now, phase: 'waiting', phaseAt: now };
 }
 
+export function beginApproval(turn: Turn, now = Date.now()): Turn {
+  return { ...turn, streaming: true, error: undefined, live: newLive(now) };
+}
+
+export function closeApproval(turn: Turn, decision: string): Turn {
+  if (turn.ask?.kind !== 'tool_approval') return turn;
+  const question = turn.ask.question.trim();
+  let text = turn.text.trimEnd();
+  if (question && text.endsWith(question)) text = text.slice(0, -question.length).trimEnd();
+  const superseded = decision === 'superseded';
+  return { ...turn, ask: undefined, approval: { question, decision },
+    text: text ? `${text}\n\n` : '', summary: undefined,
+    steps: superseded ? turn.steps.map(step => step.state === 'waiting'
+      ? { ...step, state: 'cancelled' as const, meta: t('Cancelled') } : step) : turn.steps };
+}
+
 /** Tokens per second right now, or null while there is nothing honest to say. */
 export function liveTps(live: LiveRate | undefined): number | null {
   if (!live || live.recent.length < 3) return null;
@@ -640,12 +656,13 @@ export function restoreFromMetadata(turn: Turn, meta: Record<string, unknown>): 
     const parked = ev.exitCode === null && /^Waiting for an exact user approval/i.test(ev.output.trim());
     const ok = ev.exitCode === null || ev.exitCode === 0;
     const pending = parked && ev.ask !== undefined && !ev.askResolved;
+    const superseded = ev.askResolved && ev.askDecision === 'superseded';
     steps.push({
       id: uid('step'),
       tool: ev.tool,
       label: stepLabel(ev.tool, ev.command),
-      state: pending ? 'waiting' : parked ? 'cancelled' : ok ? 'succeeded' : 'failed',
-      meta: pending ? t('permission requested') : parked ? (ev.askResolved ? t('permission answered') : t('permission requested')) : !ok ? `exit ${ev.exitCode}` : undefined,
+      state: superseded ? 'cancelled' : pending ? 'waiting' : parked ? 'cancelled' : ok ? 'succeeded' : 'failed',
+      meta: superseded ? t('Cancelled') : pending ? t('permission requested') : parked ? (ev.askResolved ? t('permission answered') : t('permission requested')) : !ok ? `exit ${ev.exitCode}` : undefined,
       command: ev.command,
       output: parked ? '' : ev.output,
       round: ev.round,
@@ -679,10 +696,10 @@ export function restoreFromMetadata(turn: Turn, meta: Record<string, unknown>): 
     speaker,
     steps: steps.length ? steps : turn.steps,
     workers: workers.length ? workers : turn.workers,
-    rounds,
-    ask: ask ?? turn.ask,
+    rounds: Math.max(rounds, Math.max(0, Math.trunc(n(harness?.round_count) ?? 0))),
+    ask: ask ?? (approval ? undefined : turn.ask),
     approval: approval ?? turn.approval,
-    summary: harness ? summaryFrom(harness) : turn.summary,
+    summary: approval?.decision === 'superseded' && !ask ? undefined : harness ? summaryFrom(harness) : turn.summary,
     sources,
   };
 }

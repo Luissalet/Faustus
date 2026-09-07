@@ -660,10 +660,7 @@ def setup_project_routes() -> APIRouter:
     # ------------------------------------------------------------------
 
     def _objectives_project(project_id: str, owner: Optional[str]) -> Dict[str, Any]:
-        project = _get_or_404(project_id, owner)
-        if not (project.get("workspace") or ""):
-            raise HTTPException(400, "Project has no folder bound, so it has no objectives")
-        return project
+        return _get_or_404(project_id, owner)
 
     def _apply_or_raise(
         project: Dict[str, Any],

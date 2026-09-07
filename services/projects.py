@@ -470,6 +470,12 @@ class ProjectStore:
                     if new_row["pinned"]:
                         new_row["archived"] = False
                 new_row["updated_at"] = _now()
+                if new_row.get('workspace', '') != r.get('workspace', ''):
+                    from services.objectives import preserve_for_rebinding
+                    try:
+                        preserve_for_rebinding(r)
+                    except OSError as exc:
+                        raise ProjectError('Could not preserve project objectives; the folder binding was not changed.') from exc
                 rows[i] = new_row
                 self._save(rows)
                 return new_row

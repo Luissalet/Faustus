@@ -69,7 +69,7 @@ import { Egg } from './studio/Egg';
 import { Rich } from './rich';
 import { knownGroupParents, stripGroupPrefix } from '../adapters/group';
 import { Composer, type Knobs } from './studio/Composer';
-import { apply, blankTurn, cleanUserText, restoreFromMetadata, type Turn } from './studio/model';
+import { apply, beginApproval, blankTurn, cleanUserText, closeApproval, restoreFromMetadata, type Turn } from './studio/model';
 import { useChatPanel } from './studio/useChatPanel';
 import ChatTeam from './studio/ChatTeam';
 import { SessionsPane } from './studio/SessionsPane';
@@ -634,14 +634,9 @@ export function StudioScreen() {
       pinnedRef.current = true;
       panelDispatch({ type: 'turn-start' });
       if (options.approval) {
-        patchLast((t) => {
-          // The server also streams the permission question as text; once
-          // answered it is noise above the real answer, so drop it.
-          let text = t.text.trimEnd();
-          const q = (t.ask?.question ?? '').trim();
-          if (q && text.endsWith(q)) text = text.slice(0, -q.length).trimEnd();
-          return { ...t, ask: undefined, streaming: true, text: text ? `${text}\n\n` : '' };
-        });
+        // Keep the sealed question until the server accepts the control.
+        // A failed request must leave an actionable card, not a silent stall.
+        patchLast((t) => beginApproval(t));
       } else {
         const user = blankTurn('user', message);
         user.attachments = options.attachments ?? [];
@@ -673,6 +668,11 @@ export function StudioScreen() {
           onRunId: (id) => {
             if (controller.signal.aborted || controllerRef.current !== controller) return;
             runIdRef.current = id;
+            if (options.approval) {
+              patchLast((t) => closeApproval(t, options.approval!.decision));
+            } else {
+              setTurns((list) => list?.map((t) => closeApproval(t, 'superseded')) ?? list);
+            }
             // The lists say "this one is working" from the first moment,
             // not after the next poll.
             refreshActivity();

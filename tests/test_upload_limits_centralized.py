@@ -38,9 +38,11 @@ def _reload_clean(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def _restore_module():
+def _restore_module(monkeypatch):
     # Ensure later tests see the env-default module, not a test-mutated reload.
     yield
+    # Restore environment before importing, independent of fixture ordering.
+    monkeypatch.undo()
     importlib.reload(upload_limits)
 
 

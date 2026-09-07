@@ -14,8 +14,8 @@ Rules (same as the original rename, 31-08-2026):
     not `fooOdysseus`, not `_Odysseus`) → `Faustus`;
   * lowercase `odysseus` and uppercase `ODYSSEUS` are identifiers: untouched;
   * upstream-only material is skipped: website/, specs/, .github/, licenses/,
-    CONTRIBUTING.md, ROADMAP.md, ACKNOWLEDGMENTS.md; README.md keeps the
-    upstream body (the fork notice at its top is maintained by hand);
+    CONTRIBUTING.md, ROADMAP.md, ACKNOWLEDGMENTS.md; the English and Spanish
+    READMEs keep intentional upstream attribution, maintained by hand;
     FAUSTUS.md is the fork's own record.
 """
 from __future__ import annotations
@@ -29,7 +29,7 @@ from typing import Dict, List, Tuple
 TOKEN_RE = re.compile(r"(?<![\w\-])Odysseus(?![\w])")
 SKIP_DIRS = ("website/", "specs/", ".github/", "licenses/")
 SKIP_FILES = {
-    "README.md", "FAUSTUS.md", "ACKNOWLEDGMENTS.md", "CONTRIBUTING.md", "ROADMAP.md",
+    "README.md", "README.es.md", "FAUSTUS.md", "ACKNOWLEDGMENTS.md", "CONTRIBUTING.md", "ROADMAP.md",
     # Tests that check upstream material (issue templates, the README wordmark).
     "tests/test_issue_description_check.py", "tests/test_readme_ascii_fenced.py",
     # This very test suite / script mention both names on purpose.

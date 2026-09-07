@@ -24,6 +24,8 @@ handing it over — the router does not get to trust itself either.
 from __future__ import annotations
 
 import os
+import hashlib
+import json
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -153,7 +155,8 @@ def _verified(manifest: SkillManifest, backend_id: str, workspace: str,
 
 
 def plan_for(manifest: SkillManifest, spec: ExecutionSpec, action: str, *,
-             detail: str = "") -> "ApprovalPlan":
+             detail: str = "", command: Any = None,
+             image: Optional[str] = None, binding: Any = None) -> "ApprovalPlan":
     """The card this run would show for one of its triggers.
 
     Built from the manifest and the spec rather than from anything the caller
@@ -161,6 +164,22 @@ def plan_for(manifest: SkillManifest, spec: ExecutionSpec, action: str, *,
     later run with one more secret produces a different plan, which is the
     whole mechanism."""
     from src.contracts import ApprovalPlan
+    description = detail or manifest.title
+    if command is not None:
+        argv = execution_backends._argv(command, spec.backend)
+        workspace = os.path.normcase(os.path.realpath(spec.workspace))
+        execution = {"argv": argv, "workspace": workspace,
+                     "binding": binding,
+                     "limits": spec.limits.to_dict(),
+                     "image": ((image or execution_backends.DEFAULT_IMAGE)
+                               if spec.backend == "docker_workspace" else "")}
+        digest = hashlib.sha256(json.dumps(execution, ensure_ascii=False, sort_keys=True,
+                                          separators=(",", ":")).encode("utf-8")).hexdigest()
+        # Arguments may contain credentials; bind all bytes without copying
+        # them into a persistent approval card. The command remains in the
+        # originating run, not a second plaintext argument log here.
+        description = (f"{description[:900]}\nWorkspace: {workspace[:500]}\n"
+                       f"Command arguments: {len(argv)}; execution SHA-256: {digest}")
     return ApprovalPlan.parse({
         "action": action,
         "skill_id": manifest.id,
@@ -170,12 +189,14 @@ def plan_for(manifest: SkillManifest, spec: ExecutionSpec, action: str, *,
         "secret_names": list(spec.secret_names),
         "permissions": manifest.permissions.to_dict(),
         "output_kinds": list(manifest.output_kinds()),
-        "detail": detail or manifest.title,
+        "detail": description,
     })
 
 
 def approvals_missing(manifest: SkillManifest, spec: ExecutionSpec, *,
-                      owner: str = "", open_cards: bool = True) -> List[Dict[str, Any]]:
+                      owner: str = "", open_cards: bool = True,
+                      command: Any = None, image: Optional[str] = None,
+                      binding: Any = None) -> List[Dict[str, Any]]:
     """Which of this run's triggers are not covered right now.
 
     Opens a pending card for each uncovered one by default, so the answer a
@@ -186,7 +207,7 @@ def approvals_missing(manifest: SkillManifest, spec: ExecutionSpec, *,
 
     missing: List[Dict[str, Any]] = []
     for action in manifest.effective_approvals():
-        plan = plan_for(manifest, spec, action)
+        plan = plan_for(manifest, spec, action, command=command, image=image, binding=binding)
         verdict = approval_store.check(plan, owner=owner)
         if verdict["ok"]:
             continue
@@ -207,7 +228,9 @@ def execute(manifest: SkillManifest, command: Any, *, workspace: str,
             image: Optional[str] = None,
             owner: str = "",
             require_approval: bool = True,
+            approval_binding: Any = None,
             on_event: Optional[Callable[[str, Dict[str, Any]], None]] = None,
+            cancel_requested: Optional[Callable[[], bool]] = None,
             ) -> Tuple[Decision, Optional[ExecutionResult]]:
     """Choose, then run. Returns both so a caller can report *why* a run went
     where it went, not only what came back.
@@ -215,6 +238,7 @@ def execute(manifest: SkillManifest, command: Any, *, workspace: str,
     A manifest that raises approval cards does not start without them. That
     check is here rather than at each call site because a gate you have to
     remember to call is a gate that will be forgotten once."""
+    command = execution_backends._argv(command, "execution_router")
     decision = choose(manifest, workspace=workspace, artifacts_root=artifacts_root,
                       run_id=run_id, attended_ack=attended_ack, prefer=prefer)
     if not decision.ok:
@@ -223,7 +247,8 @@ def execute(manifest: SkillManifest, command: Any, *, workspace: str,
         return decision, None
 
     if require_approval and manifest.effective_approvals():
-        uncovered = approvals_missing(manifest, decision.spec, owner=owner)
+        uncovered = approvals_missing(manifest, decision.spec, owner=owner,
+                                      command=command, image=image, binding=approval_binding)
         if uncovered:
             names = ", ".join(m["action"] for m in uncovered)
             if on_event:
@@ -258,6 +283,29 @@ def execute(manifest: SkillManifest, command: Any, *, workspace: str,
             "started_at": now_iso(), "ended_at": now_iso(),
         })
 
+    # A preview check cannot reserve a permission. Spend the complete set at
+    # the execution boundary, after local preflight, before any backend effect.
+    if require_approval and manifest.effective_approvals():
+        from src import approval_store
+
+        spent = approval_store.consume_plans(
+            [plan_for(manifest, decision.spec, action, command=command, image=image,
+                      binding=approval_binding)
+             for action in manifest.effective_approvals()], owner=owner)
+        if not spent["ok"]:
+            if on_event:
+                on_event("tool.blocked", {"reason": "approval_unavailable",
+                                          "detail": spent["reason"], "run_id": run_id})
+            return decision, ExecutionResult.parse({
+                "run_id": run_id, "backend": decision.backend, "status": "refused",
+                "reason": f"policy: approval unavailable at execution ({spent['reason']}); "
+                          "request a new approval before retrying",
+                "started_at": now_iso(), "ended_at": now_iso(),
+            })
+        if on_event:
+            on_event("approval.consumed", {"run_id": run_id, "approvals": spent["approvals"]})
+
+    cancellation = {"cancel_requested": cancel_requested} if cancel_requested is not None else {}
     result = backend.run(decision.spec, command, run_id=run_id,
-                         secrets=granted, on_event=on_event)
+                         secrets=granted, on_event=on_event, **cancellation)
     return decision, result

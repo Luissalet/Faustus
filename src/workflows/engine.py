@@ -284,6 +284,13 @@ class WorkflowEngine:
             if not self.store.finish_node(run_id, node.id, worker_id=worker_id, **kwargs):
                 raise LostClaim('late workflow result rejected')
 
+        context["idempotency_key"] = claim["idempotency_key"]
+        context["node_id"] = node.id
+        context["mark_effect"] = lambda state: self.store.mark_effect(
+            run_id, node.id, state, worker_id=worker_id, attempt=attempt)
+        context["cancel_requested"] = lambda: not self.store.claim_active(
+            run_id, node.id, worker_id=worker_id, attempt=attempt)
+
         handler = self.handlers.get(node.type)
         if handler is None:
             finish(status="failed",
@@ -345,7 +352,8 @@ class WorkflowEngine:
         if status == "failed":
             return {"node_id": node.id,
                     **self._maybe_retry(run_id, node, attempt,
-                                        str(raw.get("reason") or "the node failed"), worker_id=worker_id)}
+                                        str(raw.get("reason") or "the node failed"),
+                                        worker_id=worker_id, result=raw)}
 
         finish(status=status, result=raw)
         self._emit("workflow.node", run_id=run_id, node=node.id, type=node.type,
@@ -355,27 +363,38 @@ class WorkflowEngine:
 
 
     def _maybe_retry(self, run_id: str, node: WorkflowNode, attempt: int,
-                     reason: str, *, worker_id: str) -> Dict[str, Any]:
+                     reason: str, *, worker_id: str,
+                     result: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
         """Retries are per node and declared in the definition, not global.
 
         A retry releases the key so the next pass can claim a fresh attempt —
         and the contract already refused `max_attempts > 1` on a node that
         reaches outside unless its author marked the effect idempotent, so
         this cannot quietly send an email twice."""
-        if attempt < node.max_attempts:
+        effect = self.store.effect_state(run_id, node.id, attempt)
+        if effect == "pending":
+            # An exception after admission is not evidence that nothing was
+            # sent. Preserve uncertainty and stop automatic retries.
+            self.store.mark_effect(run_id, node.id, "unknown", worker_id=worker_id,
+                                   attempt=attempt)
+            effect = "unknown"
+        if effect in ("unknown", "confirmed"):
+            reason = f"{effect}_effect: {reason}; automatic retry withheld"
+        if attempt < node.max_attempts and effect == "none":
             # `pending`, not `failed`: a failed row is terminal, and the graph
             # reader would treat the node as finished and never come back to
             # it — which is how `max_attempts: 3` silently meant one. The
             # failure is kept in `reason`, so the record still shows it.
             if not self.store.finish_node(
                 run_id, node.id, status="pending", worker_id=worker_id,
+                result=result,
                 reason=f"attempt {attempt}/{node.max_attempts} failed: {reason}"):
                 raise LostClaim('late retry rejected')
             self.store.release_key(run_id, node.id, attempt)
             return {"status": "failed", "retryable": True, "attempt": attempt,
                     "reason": reason}
         if not self.store.finish_node(run_id, node.id, status="failed", reason=reason,
-                                      worker_id=worker_id):
+                                      worker_id=worker_id, result=result):
             raise LostClaim('late failure rejected')
         self._emit("workflow.node", run_id=run_id, node=node.id, type=node.type,
                    attempt=attempt, status="failed", reason=reason)

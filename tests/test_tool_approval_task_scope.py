@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import pytest
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -219,7 +220,8 @@ def test_private_continuation_state_is_canonical_bounded_and_digest_bound():
     ) is False
 
 
-def test_consumed_card_resolution_updates_memory_and_persisted_metadata(monkeypatch):
+@pytest.mark.parametrize("decision", ["approve", "approve_task", "deny", "superseded"])
+def test_consumed_card_resolution_updates_memory_and_persisted_metadata(monkeypatch, decision):
     from routes import chat_routes
 
     ask_user = {
@@ -277,11 +279,11 @@ def test_consumed_card_resolution_updates_memory_and_persisted_metadata(monkeypa
     assert chat_routes._mark_tool_approval_resolved(
         sess,
         "approval-1",
-        "approve",
+        decision,
     ) is True
-    assert ask_user["resolved"] == "approve"
+    assert ask_user["resolved"] == decision
     persisted = json.loads(db_message.meta_data)
-    assert persisted["tool_events"][0]["ask_user"]["resolved"] == "approve"
+    assert persisted["tool_events"][0]["ask_user"]["resolved"] == decision
     assert "_db_id" not in persisted
     assert db.committed is True
     assert db.rolled_back is False

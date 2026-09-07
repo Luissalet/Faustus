@@ -50,7 +50,7 @@ from src.state_mirror.adapters.approvals import ApprovalsAdapter
 from src.state_mirror.adapters.artifacts import ArtifactsAdapter
 from src.state_mirror.adapters.base import Scope
 from src.state_mirror.adapters.council import CouncilAdapter
-from src.state_mirror.adapters.objectives import ObjectivesAdapter
+from src.state_mirror.adapters.objectives import ObjectivesAdapter, objective_identifier
 from src.state_mirror.adapters.runs import RunsAdapter
 from src.state_mirror.adapters.sessions import SessionsAdapter
 
@@ -212,15 +212,14 @@ def _objectives() -> types.ModuleType:
                 {"kind": "ADD", "id": "OBJ-1"}],
     }
     return _mod("services.objectives",
-                dashboard_payload=lambda _project, log_limit=50: payload)
+                dashboard_payload=lambda _project, log_limit=50, **kwargs: payload)
 
 
 def _projects() -> types.ModuleType:
-    """A store that knows no projects, so `resolve_project` falls to the
-    workspace path and the test never touches the real `projects.json`."""
+    """An explicit scoped project without reading the real registry."""
     return _mod("services.projects",
                 get_store=lambda: types.SimpleNamespace(
-                    get=lambda _project_id, _owner=None: None))
+                    get=lambda _project_id, _owner=None: {'id': _project_id, 'owner': _owner, 'workspace': '/tmp/ws'}))
 
 
 def _council_service() -> types.ModuleType:
@@ -513,17 +512,17 @@ def test_runs_keeps_a_workers_word_apart_from_what_it_measured(world):
 
 def test_objectives_derives_blocked_by_and_a_done_dep_blocks_nothing(world):
     blocked = _by_field(ObjectivesAdapter().observe(SCOPE), "blocked_by")
-    assert blocked[contracts.entity_id("objective", OWNER, "OBJ-3")] == ["OBJ-2"]
+    assert blocked[contracts.entity_id("objective", OWNER, objective_identifier(SCOPE, "OBJ-3"))] == ["OBJ-2"]
     # OBJ-1 is done, so it appears in nobody's blockers and has none of its own.
-    assert blocked[contracts.entity_id("objective", OWNER, "OBJ-1")] == []
+    assert blocked[contracts.entity_id("objective", OWNER, objective_identifier(SCOPE, "OBJ-1"))] == []
 
 
 def test_objectives_emit_the_dependency_edge_and_only_the_live_block(world):
     edges = {(e.from_id, e.kind, e.to_id, e.origin)
              for e in ObjectivesAdapter().relations(SCOPE)}
-    work = contracts.entity_id("objective", OWNER, "OBJ-3")
-    landed = contracts.entity_id("objective", OWNER, "OBJ-1")
-    pending = contracts.entity_id("objective", OWNER, "OBJ-2")
+    work = contracts.entity_id("objective", OWNER, objective_identifier(SCOPE, "OBJ-3"))
+    landed = contracts.entity_id("objective", OWNER, objective_identifier(SCOPE, "OBJ-1"))
+    pending = contracts.entity_id("objective", OWNER, objective_identifier(SCOPE, "OBJ-2"))
 
     assert (work, "depends_on", landed, "declared") in edges
     assert (work, "depends_on", pending, "declared") in edges
@@ -533,7 +532,7 @@ def test_objectives_emit_the_dependency_edge_and_only_the_live_block(world):
 
 def test_objectives_carry_the_impact_score_and_the_evidence_they_have(world):
     seen = ObjectivesAdapter().observe(SCOPE)
-    work = contracts.entity_id("objective", OWNER, "OBJ-3")
+    work = contracts.entity_id("objective", OWNER, objective_identifier(SCOPE, "OBJ-3"))
     assert _by_field(seen, "impact")[work] == 0.8125
     assert _by_field(seen, "evidence_count")[work] == 2
 

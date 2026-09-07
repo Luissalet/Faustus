@@ -132,6 +132,8 @@ def test_native_model_real_native_tool_call_is_executed(monkeypatch):
     assert len(exec_calls) == 1, f"expected the native tool call to execute, got: {exec_calls}"
     assert exec_calls[0].tool_type == "bash"
     assert "echo hi" in exec_calls[0].content
+    displayed = ''.join(e.get('delta', '') for e in events if not e.get('thinking'))
+    assert 'Sure, let me check that for you.\n\nAll done' in displayed
 
 
 # ---------------------------------------------------------------------------

@@ -1,5 +1,5 @@
 import { t } from '../i18n';
-import { ApiError, asArray, getJson } from './api';
+import { ApiError, asArray, getJson, responseReason } from './api';
 
 /**
  * Studio talks to the same chat backend the legacy screen does: one
@@ -108,6 +108,10 @@ export interface HarnessSummary {
   review?: Record<string, unknown>;
   staticAnalysis?: Record<string, unknown>;
   changeset?: {
+    id?: string;
+    stored?: boolean;
+    verified?: boolean;
+    storageReason?: string;
     verdict?: string;
     confidence?: number;
     unsupported: string[];
@@ -454,6 +458,10 @@ export function summaryFrom(data: Record<string, unknown>): HarnessSummary {
       data.static_analysis && typeof data.static_analysis === 'object' ? (data.static_analysis as Record<string, unknown>) : undefined,
     changeset: cs
       ? {
+          id: typeof cs.id === 'string' ? cs.id : undefined,
+          stored: typeof cs.stored === 'boolean' ? cs.stored : undefined,
+          verified: cs.evidence_verified === true,
+          storageReason: typeof cs.storage_reason === 'string' ? cs.storage_reason : undefined,
           verdict: str(cs.verdict) || undefined,
           confidence: num(cs.confidence),
           unsupported: asArray<Record<string, unknown>>(cs.unsupported_claims).map((p) => str(p.path)),
@@ -818,13 +826,7 @@ export async function* sendTurn(options: SendOptions): AsyncGenerator<ChatEvent>
     signal: options.signal,
   });
   if (!response.ok || !response.body) {
-    let detail = '';
-    try {
-      detail = str(((await response.json()) as { detail?: unknown }).detail);
-    } catch {
-      detail = '';
-    }
-    yield { type: 'error', message: detail || t('The server responded {status}', { status: response.status }) };
+    yield { type: 'error', message: await responseReason(response, '/api/chat_stream') };
     yield { type: 'done' };
     return;
   }

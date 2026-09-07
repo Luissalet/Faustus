@@ -3,6 +3,7 @@ import sys
 import os
 import types
 import importlib.util
+import pytest
 from unittest.mock import MagicMock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -16,6 +17,36 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # This only unblocks collection/import-time init; it does not provide a shared
 # file-backed DB across processes - tests needing that must set DATABASE_URL.
 os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
+
+
+@pytest.fixture(autouse=True)
+def isolated_changeset_receipts(tmp_path_factory):
+    """New completion hooks must never write test receipts to the real app.
+
+    Allocate lazily: most tests don't use evidence history at all.
+    """
+    from src import changeset_store
+    allocated = []
+    def path():
+        if not allocated:
+            allocated.append(tmp_path_factory.mktemp("receipts") / "receipts.sqlite3")
+        return allocated[0]
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(changeset_store, "default_path", path)
+        yield
+
+
+@pytest.fixture(autouse=True)
+def isolated_managed_objectives(tmp_path_factory):
+    from services import objective_locations
+    allocated = []
+    def path():
+        if not allocated:
+            allocated.append(tmp_path_factory.mktemp('managed-objectives'))
+        return str(allocated[0])
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(objective_locations, 'managed_root', path)
+        yield
 
 # Child processes the tests spawn (node for the JS contract tests, python for
 # scripts) must speak UTF-8 regardless of the host code page: on Windows the

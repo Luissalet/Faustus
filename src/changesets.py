@@ -37,6 +37,29 @@ from src.contracts.base import now_iso
 logger = logging.getLogger(__name__)
 
 
+def _mapping(value: Any, path: str) -> Dict[str, Any]:
+    if value is None:
+        return {}
+    if not isinstance(value, Mapping):
+        raise ContractError(path, "expected an object")
+    return dict(value)
+
+
+def _records(value: Any, path: str) -> List[Dict[str, Any]]:
+    if value is None:
+        return []
+    if not isinstance(value, (list, tuple)):
+        raise ContractError(path, "expected an array of objects")
+    if len(value) > 500:
+        raise ContractError(path, "at most 500 records are allowed")
+    records = []
+    for index, item in enumerate(value):
+        if not isinstance(item, Mapping):
+            raise ContractError(f"{path}[{index}]", "expected an object")
+        records.append(dict(item))
+    return records
+
+
 def build(*, intent: str, workspace: str = "", checkpoint: str = "",
           changes: Optional[Mapping[str, Any]] = None,
           verification: Optional[Mapping[str, Any]] = None,
@@ -61,10 +84,10 @@ def build(*, intent: str, workspace: str = "", checkpoint: str = "",
         "plan": plan,
         "checkpoint": checkpoint,
         "files": _changes_block(changes),
-        "claims": [dict(c) for c in (claims or ())],
-        "commands": [dict(c) for c in (commands or ())],
+        "claims": _records(claims, "changeset.claims"),
+        "commands": _records(commands, "changeset.commands"),
         "verification": _verification_block(verification),
-        "review": dict(review or {}),
+        "review": _mapping(review, "changeset.review"),
         "artifact_ids": list(artifact_ids or ()),
         "run_id": run_id, "owner": owner, "project_id": project_id,
         "created_at": now_iso(),
@@ -78,14 +101,14 @@ def _changes_block(raw: Optional[Mapping[str, Any]]) -> Dict[str, Any]:
     use. Dropping them here rather than widening the contract keeps the
     envelope narrow — a ChangeSet is what someone reads to decide whether to
     believe a report, not a dump of everything that was measured."""
-    data = dict(raw or {})
+    data = _mapping(raw, "changeset.files")
     return {k: data[k] for k in
             ("source", "added", "modified", "deleted", "checkpoint", "truncated")
             if k in data}
 
 
 def _verification_block(raw: Optional[Mapping[str, Any]]) -> Dict[str, Any]:
-    data = dict(raw or {})
+    data = _mapping(raw, "changeset.verification")
     return {k: data[k] for k in
             ("mode", "ran", "ok", "inconclusive", "pre_existing_only",
              "command", "summary", "failures")
@@ -252,6 +275,7 @@ def from_turn(summary: Mapping[str, Any], *, intent: str = "implement",
         "mode": "tests" if tests.get("ran") else "none",
         "ran": bool(tests.get("ran")),
         "ok": tests.get("ok"),
+        "inconclusive": bool(tests.get("inconclusive")),
         "pre_existing_only": bool(tests.get("pre_existing_only")),
         "command": tests.get("command") or "",
         "summary": tests.get("summary") or "",
@@ -274,13 +298,17 @@ def from_dispatch(compact: Mapping[str, Any], *, intent: str = "implement",
     file list with what Faustus SAW on disk, and keeps the difference in
     `claimed_only`. That difference is exactly what becomes a claim here, so
     the check has something to be wrong about."""
-    changes = dict(compact.get("changes") or {})
+    # The public dispatch envelope keeps evidence under `result`; older
+    # internal callers pass that result directly. Never mistake the envelope
+    # for an empty result (or prefer a worker's claims to the measured files).
+    result = _mapping(compact.get("result"), "dispatch.result") if "result" in compact else compact
+    changes = _mapping(result.get("changes"), "dispatch.changes")
     claims = [{"path": p, "kind": "modified"}
-              for p in (compact.get("claimed_only") or ())]
+              for p in (result.get("claimed_only") or ())]
     return build(intent=intent, workspace=workspace,
                  checkpoint=str(changes.get("checkpoint") or ""),
                  changes=changes,
-                 verification=compact.get("verification") or {},
+                 verification=result.get("verification"),
                  claims=claims,
                  title=str(compact.get("title") or ""),
                  run_id=str(compact.get("id") or ""),

@@ -535,9 +535,11 @@ def test_api_maps_conflicts_to_http_errors(client, project):
     assert client.get("/api/projects/nope/objectives").status_code == 404
 
 
-def test_api_refuses_a_project_without_a_workspace(client, store):
+def test_api_supports_a_project_without_a_workspace(client, store):
     bare = store.create("No folder")
-    assert client.get(f"/api/projects/{bare['id']}/objectives").status_code == 400
+    response = client.get(f"/api/projects/{bare['id']}/objectives")
+    assert response.status_code == 200
+    assert response.json()['objectives'] == []
 
 
 def test_api_deltas_endpoint_reports_conflicts_in_band(client, project):
