@@ -33,7 +33,7 @@ TRUST_CLASSES = ("candidate", "proven", "anti_pattern", "retired")
 MEMORY_SOURCES = ("user", "agent", "tool", "import", "curator", "skill")
 
 DROP_REASONS = ("budget", "scope", "stale", "duplicate", "conflict",
-                "low_trust", "retired", "not_relevant")
+                "low_trust", "retired", "not_relevant", "unavailable", "policy", "quarantined")
 
 
 @dataclass(frozen=True)

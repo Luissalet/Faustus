@@ -190,6 +190,8 @@ Revisa y controla el trabajo recurrente.
 
 ## Seguridad y datos
 
+El resumen de cada paquete de contexto incluye un registro de selección de memoria: entradas incluidas, omisiones y motivos, caracteres utilizados y degradación. Describe el paquete final del Context Engine, sin volver a consultar la memoria ni añadir una segunda selección.
+
 Mantén `AUTH_ENABLED=true` en cualquier despliegue accesible por red.
 Mantén `LOCALHOST_BYPASS=false` fuera del desarrollo local.
 

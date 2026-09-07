@@ -77,6 +77,8 @@ def summarize(packet: ContextPacket) -> Dict[str, Any]:
     Derived from the packet on every call rather than stored anywhere: a
     summary that can drift from the packet it describes is worse than none,
     because it will be believed."""
+    from src.memory_view import from_context_packet, explain as explain_memory
+    memory_view = from_context_packet(packet)
     total = packet.tokens()
     budget = packet.window.input_budget
     items = packet.items()
@@ -112,6 +114,8 @@ def summarize(packet: ContextPacket) -> Dict[str, Any]:
 
     return {
         "packet_id": packet.packet_id,
+        "memory_view": memory_view.to_dict(),
+        "memory_explanation": explain_memory(memory_view),
         "request_id": packet.request_id,
         "identity": packet.identity(),
         "model": packet.model,

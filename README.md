@@ -190,6 +190,8 @@ Inspect and control recurring work.
 
 ## Security and data
 
+Context packet summaries include a memory-selection receipt: included entries, omissions and reasons, character usage and degradation. It describes the final Context Engine packet without querying memory again or adding a second selection pass.
+
 Keep `AUTH_ENABLED=true` for any network-accessible deployment.
 Keep `LOCALHOST_BYPASS=false` outside local development.
 

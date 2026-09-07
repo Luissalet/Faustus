@@ -27,6 +27,8 @@ Three rules, and the first is the only one that is a security property:
 from __future__ import annotations
 
 import logging
+import hashlib
+import json
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from src.contracts import MemoryEntry, MemoryView
@@ -40,6 +42,38 @@ logger = logging.getLogger(__name__)
 TRUST_ORDER = {"anti_pattern": 0, "proven": 1, "candidate": 2, "retired": 9}
 
 DEFAULT_BUDGET_CHARS = 4000
+
+
+def from_context_packet(packet) -> MemoryView:
+    """Audit the FINAL Context Engine selection; never retrieve or rank again.
+
+    Scope ``run`` describes this packet, not permission to consult a store.
+    Character budgets are unknown because the engine budgets tokens. IDs hash
+    the selected body and revision so changes to one memory remain detectable.
+    Existing packet manifests retain the human-readable source references.
+    """
+    def identity(*parts):
+        return hashlib.sha256(json.dumps(parts, ensure_ascii=False).encode()).hexdigest()
+
+    kinds = {"memory", "project_memory"}
+    items = [item for item in packet.items() if item.source_type in kinds]
+    reasons = {"unauthorised": "scope", "low_confidence": "low_trust",
+               "contradicted": "conflict", "irrelevant": "not_relevant"}
+    dropped = [{"id": identity(o.source_type, o.source_ref),
+                "reason": reasons.get(o.reason, o.reason),
+                # Avoid copying rejected owners' labels or arbitrary content.
+                "detail": "Context Engine omission: " + o.reason}
+               for o in packet.omissions if o.source_type in kinds]
+    degraded = packet.degraded or any(item.degraded for item in items)
+    return MemoryView.parse({
+        "run_id": identity(packet.request_id, packet.turn_id), "scopes": ["run"],
+        "entry_ids": [identity(item.source_type, item.source_ref, item.source_revision, item.body)
+                      for item in items],
+        "dropped": dropped, "used_chars": sum(len(item.body) for item in items),
+        "budget_chars": None, "degraded": degraded,
+        "degraded_reason": "Context packet or selected memory is degraded; inspect packet warnings" if degraded else "",
+        "built_at": packet.created_at or now_iso(),
+    })
 
 
 def _sort_key(entry: MemoryEntry) -> Tuple[int, str, str]:
