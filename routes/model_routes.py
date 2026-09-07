@@ -1386,19 +1386,51 @@ _FIT_TIGHT_HEADROOM_BYTES = 1536 * 1024 * 1024
 _FIT_RESERVE_BYTES = 800 * 1024 * 1024
 
 
-def _fit_state(size_bytes: int, budget_bytes: int) -> str:
+# Once the footprint is measured the band above is double counting: it exists
+# to stand in for a KV cache of unknown size, and there is no longer one to
+# stand in for. What stays is the ordinary margin — compute buffers, a little
+# fragmentation — that a plain subtraction does not see.
+_FIT_MEASURED_HEADROOM_BYTES = 512 * 1024 * 1024
+
+# What a model really costs is weights + the KV cache of the context it loads
+# with, and only the first half is in the file. Learned per blob from
+# `/api/ps` while the model is resident — `(size - file) / context_length`,
+# which src/vram_fit.py already computes and calls "measured" — and kept, so
+# the verdict for a model you have run once stops pretending the context is
+# free the moment it is evicted. A model nobody has run keeps the weights-only
+# verdict: this table only ever holds numbers measured on this machine, and it
+# is keyed by blob digest because two tags of one blob have one footprint.
+_KV_RATES: Dict[str, Dict[str, float]] = {}
+_KV_RATES_MAX = 64
+
+
+def _remember_kv_rate(key: str, per_token: float, ctx: int) -> None:
+    if not key or per_token <= 0 or ctx <= 0:
+        return
+    if key not in _KV_RATES and len(_KV_RATES) >= _KV_RATES_MAX:
+        _KV_RATES.pop(next(iter(_KV_RATES)), None)
+    _KV_RATES[key] = {"per_token": float(per_token), "ctx": float(ctx)}
+
+
+def _fit_state(size_bytes: int, budget_bytes: int, measured: bool = False) -> str:
     """'fits' | 'tight' | 'over', or '' when there is nothing to say.
 
     An empty string is the honest answer when we do not know the card or the
     model size, and the UI is expected to render nothing at all for it rather
     than guess.
+
+    ``measured`` says ``size_bytes`` is the whole footprint — weights plus the
+    KV cache of the context this model actually loads with — and not just the
+    file on disk. That earns the narrower band: the wide one is there to cover
+    a cache whose size we are guessing at.
     """
     if size_bytes <= 0 or budget_bytes <= 0:
         return ""
     headroom = budget_bytes - size_bytes
     if headroom < 0:
         return "over"
-    if headroom < _FIT_TIGHT_HEADROOM_BYTES:
+    band = _FIT_MEASURED_HEADROOM_BYTES if measured else _FIT_TIGHT_HEADROOM_BYTES
+    if headroom < band:
         return "tight"
     return "fits"
 
@@ -1408,25 +1440,52 @@ def _gb(n: float) -> str:
 
 
 def _fit_note(size_bytes: int, budget_bytes: int, total_bytes: int, state: str,
-              count: int = 1, pool_name: str = "", split: bool = False) -> str:
+              count: int = 1, pool_name: str = "", split: bool = False,
+              kv_bytes: int = 0, kv_ctx: int = 0, spill_bytes: int = 0) -> str:
     """The `title=` text: the real numbers, and what they do not include.
 
     With several cards the budget is the pool's (Ollama splits a model that
     fits no single card), so the head says so, and `split` adds the sentence
-    that says the model is one of those."""
+    that says the model is one of those.
+
+    Two versions of the same sentence, and which one you get depends on how
+    much we actually know. Without ``kv_bytes`` the only number we have is the
+    file on disk, so the note says the file, says the verdict is about the
+    file, and says the cache grows on top — it must never promise room for a
+    context window it has not counted. With ``kv_bytes`` the footprint was
+    measured on this machine while the model was resident, so the note names
+    both halves and the context they were measured at, and ``spill_bytes``
+    says how much of it the driver had already pushed off the card.
+    """
     if not state:
         return ""
-    if count > 1:
-        head = (f"~{_gb(size_bytes)} of weights against {_gb(budget_bytes)} usable "
-                f"across {count} GPUs ({_gb(total_bytes)}).")
+    weights = _gb(size_bytes)
+    where = (f"{_gb(budget_bytes)} usable across {count} GPUs ({_gb(total_bytes)})."
+             if count > 1 else
+             f"{_gb(budget_bytes)} usable of {_gb(total_bytes)} on the card.")
+    if kv_bytes > 0:
+        head = (f"~{_gb(size_bytes + kv_bytes)} in VRAM — {weights} of weights plus "
+                f"{_gb(kv_bytes)} of KV cache at a {kv_ctx:,}-token context — against {where}")
     else:
-        head = (f"~{_gb(size_bytes)} of weights against {_gb(budget_bytes)} usable "
-                f"of {_gb(total_bytes)} on the card.")
+        head = f"~{weights} of weights against {where}"
     if split:
-        where = f" ({pool_name})" if pool_name else ""
-        head += f" Bigger than any one card: Ollama splits it across {count} GPUs{where}."
+        pool = f" ({pool_name})" if pool_name else ""
+        head += f" Bigger than any one card: Ollama splits it across {count} GPUs{pool}."
+    if kv_bytes > 0:
+        verdict = {
+            "fits": "Room to spare.",
+            "tight": "It fits, but barely.",
+            "over": ("It does not fit: expect layers on the CPU, or weights paging "
+                     "over PCIe and a fraction of the speed."),
+        }[state]
+        if spill_bytes > 0:
+            verdict = (f"It is spilling right now: {_gb(spill_bytes)} of it is not on the "
+                       f"GPU and is being served over PCIe, at a fraction of the speed.")
+        tail = ("Measured on this machine while the model was loaded, so it is the real "
+                "footprint and not the file on disk. A smaller context window shrinks it.")
+        return f"{head} {verdict} {tail}"
     verdict = {
-        "fits": "Room to spare for the context window.",
+        "fits": "The weights fit; the context window comes on top of them.",
         "tight": "It fits, but barely — a large context window may push it over.",
         "over": ("It does not fit: expect layers on the CPU, or weights paging "
                  "over PCIe and a fraction of the speed."),
@@ -1751,6 +1810,13 @@ def setup_model_routes(model_discovery):
         """
         bases: List[str] = []
         ep_ids: List[str] = []
+        # `localhost:11434` and `127.0.0.1:11434` are one server under two
+        # spellings, and deduplicating the *strings* kept both: every model was
+        # sized twice and, worse, `held_by_runner` counted the resident model
+        # twice, which inflates the budget the verdicts are measured against.
+        # src/model_load_options.py collapses loopback aliases for exactly this
+        # reason; the port is what actually identifies the server.
+        seen: set = set()
         db = SessionLocal()
         try:
             endpoints = db.query(ModelEndpoint).filter(ModelEndpoint.is_enabled == True).all()
@@ -1767,7 +1833,12 @@ def setup_model_routes(model_discovery):
             if host not in _LOCAL_HOSTS:
                 continue
             root = base[:-3].rstrip("/") if base.endswith("/v1") else base.rstrip("/")
-            if root not in bases:
+            try:
+                port = urlparse(root).port or 11434
+            except Exception:
+                port = 11434
+            if port not in seen:
+                seen.add(port)
                 bases.append(root)
             ep_id = str(getattr(ep, "id", "") or "")
             if ep_id and ep_id not in ep_ids:
@@ -1791,6 +1862,7 @@ def setup_model_routes(model_discovery):
         digests: Dict[str, str] = {}
         held_by_runner = 0
         loaded_by_root: Dict[str, List[Dict[str, Any]]] = {}
+        resident: Dict[str, Dict[str, int]] = {}
         for root in roots:
             try:
                 r = httpx.get(root + "/api/tags", timeout=3.0, verify=llm_verify())
@@ -1819,8 +1891,32 @@ def setup_model_routes(model_discovery):
                 for m in (r.json() or {}).get("models") or []:
                     held_by_runner += int(m.get("size_vram") or 0)
                     loaded_by_root.setdefault(root, []).append(m)
+                    # The only place the real footprint is ever visible: while
+                    # the model is resident, `size` is weights + KV cache and
+                    # `context_length` is the window it was loaded with. That
+                    # is one subtraction away from bytes per token, and it is
+                    # worth more than any formula — a hybrid-attention model
+                    # (Qwen 3.5 interleaves SSM blocks) breaks the textbook
+                    # one outright.
+                    _n = str(m.get("name") or m.get("model") or "")
+                    if _n:
+                        resident[_n] = {
+                            "key": str(m.get("digest") or "") or _n,
+                            "total": int(m.get("size") or 0),
+                            "in_vram": int(m.get("size_vram") or 0),
+                            "ctx": int(m.get("context_length") or 0),
+                        }
             except Exception as e:
                 logger.debug("fit hints: /api/ps failed for %s: %s", _redact_url_for_log(root), e)
+
+        # Learn from whatever is loaded right now, and keep it: an evicted
+        # model whose cost we have already seen must not go back to being
+        # judged on its weights alone.
+        for _n, live in resident.items():
+            rate = vram_fit.kv_bytes_per_token_measured(
+                live["total"], sizes.get(_n) or 0, live["ctx"])
+            if rate:
+                _remember_kv_rate(live["key"], rate, live["ctx"])
 
         out: Dict[str, Any] = {"ts": _time.time(), "endpoint_ids": ep_ids, "models": {}}
         if not vram.get("supported"):
@@ -1853,15 +1949,34 @@ def setup_model_routes(model_discovery):
         budget = int(block["budget_bytes"])
         count = int(block["count"])
         for name, size in sizes.items():
-            state = _fit_state(size, budget)
+            # The footprint, when we have ever seen it, is what the verdict is
+            # about — "16.5 GB · fits" for a model that then spills is the
+            # whole complaint, and it came from judging a 27B by its file
+            # while 9 GB of KV cache went uncounted.
+            rate = _KV_RATES.get(digests.get(name) or name) or {}
+            kv_ctx = int(rate.get("ctx") or 0)
+            kv_bytes = int(rate.get("per_token", 0.0) * kv_ctx)
+            footprint = size + kv_bytes
+            # And when it is loaded *and already spilling*, no arithmetic is
+            # needed: the driver has answered the question.
+            live = resident.get(name) or {}
+            spill = 0
+            if live.get("total", 0) > 0 and 0 < live.get("in_vram", 0) < live["total"]:
+                spill = live["total"] - live["in_vram"]
+            state = "over" if spill else _fit_state(footprint, budget, measured=bool(kv_bytes))
             entry: Dict[str, Any] = _with_digest({"size_bytes": size}, digests.get(name))
+            if kv_bytes:
+                entry["kv_bytes"] = kv_bytes
+                entry["kv_ctx"] = kv_ctx
+                entry["footprint_bytes"] = footprint
             if state:
-                split = vram_fit.needs_split(size, block)
+                split = vram_fit.needs_split(footprint, block)
                 entry["state"] = state
-                entry["headroom_bytes"] = budget - size
+                entry["headroom_bytes"] = budget - footprint
                 entry["split"] = split
                 entry["note"] = _fit_note(size, budget, total, state, count=count,
-                                          pool_name=str(block.get("name") or ""), split=split)
+                                          pool_name=str(block.get("name") or ""), split=split,
+                                          kv_bytes=kv_bytes, kv_ctx=kv_ctx, spill_bytes=spill)
             out["models"][name] = entry
         return out
 

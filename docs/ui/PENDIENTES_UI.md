@@ -914,3 +914,27 @@ su área y baja el baseline. Ningún módulo Studio nuevo la aumenta.
     turno que responde bien redactado a algo que pedía una herramienta. Es el
     primer turno del fallo 63, el que no es culpa nuestra pero se podría
     ayudar.
+172. **`[x]` MODELOS.** *(07-09-2026.)* La insignia del selector juzgaba el
+    fichero en disco y llamaba «fits» a un modelo que luego hacía spill: 16,5
+    GB de pesos y 9 GB de caché KV que nadie contaba. Ahora, cuando la huella
+    se ha medido alguna vez en esta máquina (`/api/ps`: `size` menos el
+    fichero, partido por `context_length`), el veredicto es sobre la huella, y
+    si el modelo está cargado y ya derramando el veredicto es «over» sin más
+    aritmética. La frase «Room to spare for the context window» desaparece de
+    la rama que no ha contado la ventana.
+173. **`[ ]` MODELOS.** Un modelo que no se ha ejecutado nunca en este proceso
+    sigue juzgándose por sus pesos. `src/vram_fit.kv_bytes_per_token_estimated`
+    ya sabe leer los metadatos GGUF (y corrige la atención híbrida), pero
+    falta la mitad difícil: a qué ventana proyectar. Ollama elige la suya
+    (`OLLAMA_CONTEXT_LENGTH`, o lo que pida quien carga) y la API no la
+    publica hasta que el modelo está dentro. Inventarse 32k o 128k sería otra
+    vez el mismo error.
+174. **`[ ]` MODELOS.** Lo que de verdad quiere saber quien elige no es
+    «cabe/no cabe» sino «cabe hasta qué ventana». `vram_fit.plan()` ya calcula
+    `max_ctx_that_fits`; la insignia podría leer «fits · hasta 32k» y dejar de
+    ser un booleano. Cambia el payload, el adaptador y el i18n.
+175. **`[ ]` MODELOS.** La tabla de huellas medidas vive en memoria del
+    proceso: reiniciar Faustus la vacía y los modelos vuelven a juzgarse por
+    su fichero hasta que se cargan una vez. Persistirla es barato (son dos
+    números por digest) pero hay que decidir dónde y cuándo caduca — la huella
+    cambia si cambia el `num_ctx` guardado.

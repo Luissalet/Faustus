@@ -4813,3 +4813,26 @@ Ese último es su propio bug: Parar cerraba el stream del navegador y devolvía 
 **Ficheros.** `src/reply_language.py`, `src/agent_loop.py` (`_language_message`, el último de los bloques inyectados), `src/agent_harness.py` (la regla 2 se queda sin la muestra en español: vale igual «in any language»), `src/research_citations.py` (`language_signal`), `tests/test_reply_language.py` (22 casos).
 
 **Verificado.** En el 7001 con `qwen3.5:9b`, sesión nueva y workspace atado, las dos direcciones: pregunta en inglés → respuesta en inglés; la misma pregunta en español → respuesta en español.
+
+## 65. «No tiene sentido que haga spill este modelo, que es el que he elegido» (07-09-2026)
+
+**La captura.** La fila del selector: `qwen3.8:27b-q4_K_M — 16.5 GB · fits`. Y debajo, en el panel de salud, el aviso de spill por PCIe del mismo modelo. Los dos números eran correctos y el veredicto estaba mal igual.
+
+**Lo que la insignia comparaba.** El fichero en disco contra el presupuesto de VRAM. Pero lo que ocupa un modelo es **pesos + caché KV de la ventana con la que se carga**, y sólo la primera mitad está en el fichero: 17,7 GB de pesos y, a 131.072 tokens de contexto, 9,1 GB de caché. La insignia contaba la mitad y el `title=` remataba prometiendo *«Room to spare for the context window»* sobre una cifra que excluía justamente la ventana de contexto.
+
+**Y la aritmética ya estaba escrita.** `src/vram_fit.py` tiene `kv_bytes_per_token_measured` desde el primer día —`(size − fichero) / context_length`, exactamente lo que `/api/ps` regala mientras el modelo está residente— y ningún llamador en las rutas del selector. El §7 de PARIDAD por tercera vez esta semana.
+
+**Lo que se hizo.**
+
+- **Se mide.** De cada modelo residente se aprende su coste por token y se guarda por **digest** de blob, no por nombre: dos etiquetas del mismo blob tienen una sola huella, así que el apodo (`claude-sonnet-4-5:latest`) hereda el veredicto real en vez del favorecedor. La tabla sobrevive a que el modelo se descargue, que es cuando la insignia volvía a mentir.
+- **Y cuando ya está derramando, no se calcula nada.** Si `/api/ps` dice `size_vram < size`, el driver ya ha contestado la pregunta: `over`, y el `title=` dice cuántos GB están fuera de la tarjeta.
+- **La banda se estrecha cuando ya no tapa nada.** Los 1,5 GB de margen existen para cubrir una caché KV desconocida; aplicarlos encima de una caché ya contada llamaría «tight» a algo que cabe. Medido, la banda es de 512 MB.
+- **Y la rama que no ha medido deja de prometer.** «The weights fit; the context window comes on top of them», que es lo que sabe.
+
+**El fallo que apareció por el camino.** `localhost:11434` y `127.0.0.1:11434` son el mismo servidor, y la deduplicación comparaba **cadenas**: se sondeaban los dos, cada modelo se medía dos veces y —lo que importa— la VRAM del modelo residente se sumaba dos veces a `held_by_runner`. Como el presupuesto es «total − reserva − lo que sujeta otro», ese doble conteo dejaba «lo que sujeta otro» en cero y **regalaba 1,8 GB de presupuesto** a todos los veredictos. Ahora se deduplica por puerto, como ya hacía `src/model_load_options.py`.
+
+**Ficheros.** `routes/model_routes.py` (`_KV_RATES`, `_remember_kv_rate`, `_fit_state(measured=…)`, `_fit_note(kv_bytes, kv_ctx, spill_bytes)`, `resident` en `_collect_fit_hints`, la deduplicación por puerto), `tests/test_model_picker_vram_fit.py` (+13), PENDIENTES_UI 172-175.
+
+**Verificado en vivo en el 7001**, contra las dos tarjetas de verdad: con `qwen3.5:9b` cargado a 131.072 tokens la fila pasa de `6.1 GB · fits` a **`foot=9.3 GB · kv=3.2 GB · ctx=131072`** con el `title=` nombrando las dos mitades; y `held_by_runner` baja de 20,01 GB (dos veces el mismo modelo) a 10,01 GB, con el presupuesto corregido de 26,4 a 23,4 GB.
+
+**Lo que queda, y es la mitad difícil.** Un modelo que no se ha cargado nunca en este proceso se sigue juzgando por sus pesos. Estimarlo desde los metadatos GGUF ya está resuelto (`kv_bytes_per_token_estimated`, con su corrección para atención híbrida); lo que no se puede saber sin cargarlo es **a qué ventana proyectar**, porque Ollama elige la suya y no la publica hasta que el modelo está dentro. Inventarse 32k o 128k sería exactamente el error que este arreglo quita. Apuntado en PENDIENTES 173-175, junto con la insignia que debería decir «cabe hasta qué ventana» en vez de sí/no.

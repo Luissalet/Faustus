@@ -619,3 +619,153 @@ def test_the_fit_endpoint_carries_the_blob_digest():
     assert src.count("_with_digest(") >= 3  # helper + both branches
 
 
+
+
+# ── The footprint, which is not the file ─────────────────────────────────
+#
+# "No tiene sentido que haga spill este modelo, que es el que he elegido" —
+# the picker said `16.5 GB · fits` for a 27B-q4_K_M and the model then spilled
+# over PCIe. Both numbers were right and the verdict was still wrong: the file
+# is 17.7 GB and `ollama ps` reports 26.8 GB resident, because a 131k context
+# window costs 9 GB of KV cache that nothing in the badge had counted. The
+# arithmetic to count it was already in src/vram_fit.py, unused from here.
+
+@pytest.fixture(autouse=True)
+def _forget_measured_rates():
+    """The rate table is module state on purpose — a model keeps its measured
+    cost after it is evicted — so each test starts from nothing."""
+    mr._KV_RATES.clear()
+    yield
+    mr._KV_RATES.clear()
+
+
+_BIG_TAGS = [
+    {"name": "qwen3.8:27b-q4_K_M", "size": 8_000_000_000, "digest": "25b8"},
+    {"name": "claude-sonnet-4-5:latest", "size": 8_000_000_000, "digest": "25b8"},
+    {"name": "llama3.2:3b", "size": 2_000_000_000, "digest": "aaaa"},
+]
+# Resident: 12 GB for 8 GB of weights, so 4 GB of KV cache at 32k tokens.
+_RESIDENT = [{"name": "qwen3.8:27b-q4_K_M", "digest": "25b8", "size": 12_000_000_000,
+              "size_vram": 12_000_000_000, "context_length": 32768}]
+
+
+def test_the_weights_alone_would_have_called_this_one_a_fit(monkeypatch):
+    """The starting point, so the next test is a change and not a coincidence:
+    8 GB of weights against a 10.8 GiB budget is comfortable."""
+    data, _ = _fit_payload(monkeypatch, _4070TI, tags=_BIG_TAGS)
+    entry = data["models"]["qwen3.8:27b-q4_K_M"]
+    assert entry["state"] == "fits"
+    assert "kv_bytes" not in entry, "nothing has been measured yet"
+
+
+def test_the_measured_footprint_outlives_the_model_being_unloaded(monkeypatch):
+    """A rate seen once is kept: switching away from a model must not send its
+    row back to being judged on its file."""
+    _fit_payload(monkeypatch, _4070TI, tags=_BIG_TAGS, ps=_RESIDENT)   # learn
+    data, _ = _fit_payload(monkeypatch, _4070TI, tags=_BIG_TAGS)       # evicted
+    entry = data["models"]["qwen3.8:27b-q4_K_M"]
+    assert entry["kv_bytes"] == 4_000_000_000
+    assert entry["kv_ctx"] == 32768
+    assert entry["footprint_bytes"] == 12_000_000_000
+    assert entry["state"] == "over", "12 GB does not fit a 10.8 GiB budget"
+    assert entry["headroom_bytes"] < 0
+
+
+def test_the_measured_note_names_both_halves_and_the_context(monkeypatch):
+    _fit_payload(monkeypatch, _4070TI, tags=_BIG_TAGS, ps=_RESIDENT)
+    data, _ = _fit_payload(monkeypatch, _4070TI, tags=_BIG_TAGS)
+    note = data["models"]["qwen3.8:27b-q4_K_M"]["note"]
+    assert "7.5 GB of weights" in note
+    assert "3.7 GB of KV cache" in note
+    assert "32,768-token context" in note
+    assert "Measured on this machine" in note
+    assert "Approximate" not in note, "a measurement is not an approximation"
+
+
+def test_a_loaded_model_that_is_already_spilling_is_never_called_a_fit(monkeypatch):
+    """When the driver has already pushed part of it off the card there is
+    nothing left to calculate — that is the answer."""
+    spilling = [dict(_RESIDENT[0], size=12_000_000_000, size_vram=9_000_000_000)]
+    big_card = dict(_4070TI, total=40000 * MIB, free=39600 * MIB)
+    data, _ = _fit_payload(monkeypatch, big_card, tags=_BIG_TAGS, ps=spilling)
+    entry = data["models"]["qwen3.8:27b-q4_K_M"]
+    assert entry["state"] == "over", "the budget says it fits; the card says it does not"
+    assert "spilling right now" in entry["note"]
+    assert "2.8 GB" in entry["note"] and "PCIe" in entry["note"]
+
+
+def test_two_tags_of_one_blob_share_the_measurement(monkeypatch):
+    """The rate is keyed by digest, so the nickname gets the real verdict too
+    instead of the flattering one."""
+    _fit_payload(monkeypatch, _4070TI, tags=_BIG_TAGS, ps=_RESIDENT)
+    data, _ = _fit_payload(monkeypatch, _4070TI, tags=_BIG_TAGS)
+    alias = data["models"]["claude-sonnet-4-5:latest"]
+    assert alias["footprint_bytes"] == 12_000_000_000
+    assert alias["state"] == "over"
+
+
+def test_a_model_nobody_has_run_keeps_its_weights_only_verdict(monkeypatch):
+    """One model's measurement says nothing about another's."""
+    _fit_payload(monkeypatch, _4070TI, tags=_BIG_TAGS, ps=_RESIDENT)
+    data, _ = _fit_payload(monkeypatch, _4070TI, tags=_BIG_TAGS)
+    other = data["models"]["llama3.2:3b"]
+    assert "kv_bytes" not in other and "footprint_bytes" not in other
+    assert other["state"] == "fits"
+    assert "Approximate" in other["note"]
+
+
+def test_the_note_stops_promising_room_it_has_not_counted(monkeypatch):
+    """The old "fits" sentence read "Room to spare for the context window."
+    about a figure that excluded the context window."""
+    data, _ = _fit_payload(monkeypatch, _4070TI, tags=_BIG_TAGS)
+    note = data["models"]["llama3.2:3b"]["note"]
+    assert "Room to spare for the context window" not in note
+    assert "comes on top" in note
+
+
+def test_the_band_narrows_once_there_is_nothing_left_to_stand_in_for():
+    """The 1.5 GB band is a placeholder for an uncounted KV cache. Applying it
+    on top of a counted one would call a real fit "tight"."""
+    footprint, budget = 10 * GIB, 11 * GIB
+    assert mr._fit_state(footprint, budget) == "tight"
+    assert mr._fit_state(footprint, budget, measured=True) == "fits"
+    # Over is over either way.
+    assert mr._fit_state(12 * GIB, budget, measured=True) == "over"
+
+
+def test_the_measurement_uses_the_helper_that_already_existed():
+    """src/vram_fit.py had `kv_bytes_per_token_measured` and no caller here —
+    the same "an endpoint without a caller is a lost feature" as PARIDAD §7."""
+    collect = _ROUTES[_ROUTES.index("def _collect_fit_hints("):]
+    collect = collect[:collect.index('@router.get("/models/fit")')]
+    assert "vram_fit.kv_bytes_per_token_measured(" in collect
+    assert "context_length" in collect
+
+
+def test_one_ollama_under_two_spellings_is_probed_once(monkeypatch):
+    """`localhost:11434` and `127.0.0.1:11434` are the same server. Dedup by
+    string kept both, so every model was sized twice and the resident model's
+    VRAM was counted twice into `held_by_runner` — which inflates the very
+    budget these verdicts are measured against."""
+    router = mr.setup_model_routes(model_discovery=None)
+    endpoint = [r.endpoint for r in router.routes if getattr(r, "path", "") == "/api/models/fit"][0]
+    rows = [
+        _Ep(id="ollama-a", name="Ollama", base_url="http://localhost:11434/v1",
+            api_key=None, is_enabled=True, endpoint_kind="local"),
+        _Ep(id="ollama-b", name="Ollama (ip)", base_url="http://127.0.0.1:11434/v1",
+            api_key=None, is_enabled=True, endpoint_kind="local"),
+    ]
+    fake = _FakeHttpx(_TAGS, [{"name": "qwen3.5:9b", "size_vram": 4 * GIB}])
+    monkeypatch.setattr(mr, "SessionLocal", lambda: _Db(rows))
+    monkeypatch.setattr(mr, "httpx", fake)
+    monkeypatch.setattr(mr.gpu_shared_memory, "vram_snapshot", lambda: _4070TI)
+    request = SimpleNamespace(
+        state=SimpleNamespace(current_user="luis", api_token=False),
+        app=SimpleNamespace(state=SimpleNamespace(auth_manager=None)),
+    )
+    data = asyncio.run(endpoint(request, refresh=True))
+    assert len(fake.calls) == 2, f"one server, one /api/tags and one /api/ps: {fake.calls}"
+    assert data["vram"]["held_by_runner_bytes"] == 4 * GIB, "counted once, not twice"
+    # Both endpoint ids still travel, because both rows in the picker are
+    # genuinely served from this machine.
+    assert data["endpoint_ids"] == ["ollama-a", "ollama-b"]
