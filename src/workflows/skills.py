@@ -98,8 +98,9 @@ def run(node, context):
     found, manifest = match
     if node.config.get("version") and node.config["version"] != manifest.version:
         raise ValueError("installed skill version differs from the workflow's pinned version")
-    if manifest.permissions.secrets:
-        raise ValueError("script workflow cannot inject credentials without an explicit secret binding")
+    from src.workflows import credentials
+    secret_bindings = node.config.get("secret_bindings", {})
+    bound_secrets = credentials.bind(owner, manifest.permissions.secrets, secret_bindings)
     if manifest.permissions.filesystem == "none":
         raise ValueError("a script skill needs declared workspace filesystem access")
     # Scripts may modify the mounted project. That capability needs an
@@ -133,7 +134,8 @@ def run(node, context):
                                         run_id=execution_id, prefer="docker_workspace", create_dirs=False)
     if not decision.ok:
         return {"status": "failed", "reason": decision.detail or decision.reason}
-    binding = {"run_id": run_id, "node_id": node.id, "source_sha256": digest}
+    binding = {"run_id": run_id, "node_id": node.id, "source_sha256": digest,
+               "secret_bindings": bound_secrets}
     plans = {action: execution_router.plan_for(manifest, decision.spec, action,
                                               command=command, binding=binding)
              for action in manifest.effective_approvals()}
@@ -174,12 +176,20 @@ def run(node, context):
             from src.workflows.engine import LostClaim
             raise LostClaim("workflow stopped before script execution")
 
+    granted_secrets = credentials.bind(owner, manifest.permissions.secrets, secret_bindings,
+                                       reveal=True, expected=bound_secrets)
     decision, result = execution_router.execute(
         manifest, command, workspace=str(workspace), artifacts_root=root, run_id=execution_id,
         owner=owner, prefer="docker_workspace", approval_binding=binding, on_event=event,
-        cancel_requested=context.get("cancel_requested"))
+        cancel_requested=context.get("cancel_requested"), secrets=granted_secrets)
     if result is None:
         return {"status": "failed", "reason": decision.detail or decision.reason}
+    def redact(text):
+        for value in sorted(set(granted_secrets.values()), key=len, reverse=True):
+            text = text.replace(value, "[REDACTED]")
+        return text
+    result = replace(result, stdout_tail=redact(result.stdout_tail),
+                     stderr_tail=redact(result.stderr_tail), reason=redact(result.reason))
     if result.status != "refused":
         context["mark_effect"]("confirmed" if result.status == "completed" else "unknown")
     collected = artifact_store.collect(replace(result, run_id=run_id), source_dir=str(scratch),

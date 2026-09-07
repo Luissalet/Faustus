@@ -74,7 +74,7 @@ PROFILES = (PROFILE_CONTENT, PROFILE_FULL)
 
 #: Files directly under data/ that are credentials, not content.
 SECRET_FILES = (".app_key", "auth.json", "sessions.json", "vault.json",
-                "integrations.json")
+                "integrations.json", "workflow_credentials.json")
 #: Directories under data/ that contain nothing but credentials.
 SECRET_DIRS = ("mcp_oauth",)
 

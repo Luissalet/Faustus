@@ -51,6 +51,8 @@ def _engine(store: WorkflowStore) -> WorkflowEngine:
 
 def setup_workflows_routes():
     router = APIRouter(prefix="/api/workflows", tags=["workflows"])
+    from routes.workflow_credentials_routes import setup_workflow_credentials_routes
+    router.include_router(setup_workflow_credentials_routes())
     store = WorkflowStore()
 
     @router.post("/validate")

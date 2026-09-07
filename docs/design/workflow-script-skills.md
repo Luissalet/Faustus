@@ -52,8 +52,22 @@ an instruction file reread after approval. A bundle permits 256 files and 256
 directories, up to 16 MiB total. Links escaping the source folder are refused.
 Discovery supports Git worktrees and rechecks the document size at load time.
 
-Credential injection needs a separate explicit secret binding; this runner
-refuses a secret-bearing manifest rather than obtaining ambient credentials.
+Credential injection requires explicit owner-scoped bindings. A human saves a
+credential through `PUT /api/workflows/credentials/{name}` with `{"value":"…"}`;
+`GET /api/workflows/credentials` returns names and opaque revisions only, never
+values. Replacement and `DELETE` require `expected_revision` to avoid lost updates.
+Tool/internal tokens cannot manage this store. Secrets are encrypted on disk and
+omitted from content-only backups; encrypted full backups include them.
+
+Declare `permissions_secrets: [API_KEY]` in the skill and set
+`"secret_bindings": {"API_KEY": "my-provider"}` in the node config. Bindings must
+exactly match the declared slots. Approval cards identify the credential name and
+revision, and rotating or deleting it while approval is pending prevents execution.
+Plaintext is resolved only after approval and supplied through Docker's temporary
+environment file, removed after execution. No ambient credentials are obtained.
+Exact secret values are redacted from returned stdout/stderr/reason, but scripts
+with access can encode or write them to artifacts: only grant secrets to trusted
+code. Docker daemon access is privileged and can inspect container environments.
 It never treats discovery location as permission to read another project's files.
 
 ## Results and recovery

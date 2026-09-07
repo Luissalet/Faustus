@@ -180,6 +180,9 @@ def plan_for(manifest: SkillManifest, spec: ExecutionSpec, action: str, *,
         # originating run, not a second plaintext argument log here.
         description = (f"{description[:900]}\nWorkspace: {workspace[:500]}\n"
                        f"Command arguments: {len(argv)}; execution SHA-256: {digest}")
+    permissions = manifest.permissions.to_dict()
+    if isinstance(binding, dict) and binding.get("secret_bindings"):
+        permissions["secret_bindings"] = binding["secret_bindings"]
     return ApprovalPlan.parse({
         "action": action,
         "skill_id": manifest.id,
@@ -187,7 +190,7 @@ def plan_for(manifest: SkillManifest, spec: ExecutionSpec, action: str, *,
         "backend": spec.backend,
         "cost_units": spec.limits.cost_units,
         "secret_names": list(spec.secret_names),
-        "permissions": manifest.permissions.to_dict(),
+        "permissions": permissions,
         "output_kinds": list(manifest.output_kinds()),
         "detail": description,
     })

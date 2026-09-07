@@ -120,6 +120,8 @@ Los workflows de proyecto pueden ejecutar scripts declarados de skills en Python
 
 Cancelar un workflow de scripts en ejecución también detiene su contenedor. El worker comprueba el intento exacto y su permiso vigente para continuar; si se cancela durante la preparación del contenedor, el script no llega a arrancar. Los efectos externos parciales quedan registrados y no se reintentan automáticamente.
 
+Las credenciales de scripts se cifran por propietario y se asocian explícitamente por nombre y revisión a los permisos. Cambiarlas invalida una ejecución pendiente; los workflows no heredan claves de otros proveedores. La guía de scripts explica los endpoints exclusivos para usuarios humanos y su configuración.
+
 Los objetivos de proyecto admiten cambios tipados de agentes sin perder actualizaciones simultáneas. Se protegen las ediciones humanas frente a cambios de agentes basados en una versión anterior, incluso dentro del mismo segundo, y se conservan los archivos dañados durante su recuperación.
 
 El [paso de envío de correo](docs/design/workflow-email-delivery.md) envía texto con HTML opcional, CC/BCC y adjuntos acotados del propio flujo mediante una cuenta SMTP del propietario. La aprobación vincula todos los destinatarios y el contenido exacto, incluidas las huellas de los adjuntos. Los permisos se consumen una vez al ejecutar, las esperas aprobadas continúan automáticamente y un efecto externo incierto no se reintenta por sí solo. La aceptación del servidor SMTP se distingue de la entrega en la bandeja de entrada.
