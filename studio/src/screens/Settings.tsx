@@ -380,7 +380,7 @@ function useSaver(onSave: (patch: Settings) => Promise<void>, say: (t: string) =
   return { saving, save };
 }
 
-const VOICE_KEYS = ['tts_enabled', 'tts_provider', 'tts_model', 'tts_voice', 'tts_speed', 'stt_enabled', 'stt_provider', 'stt_model', 'stt_language'];
+const VOICE_KEYS = ['tts_enabled', 'tts_provider', 'tts_model', 'tts_voice', 'tts_speed', 'stt_enabled', 'stt_provider', 'stt_model', 'stt_language', 'stt_device'];
 
 function VoiceSection({ settings, endpoints, onSave, say }: { settings: Settings | null; endpoints: ModelEndpoint[]; onSave: (patch: Settings) => Promise<void>; say: (t: string) => void }) {
   const { draft, set, changed, dirty } = useDraft(settings, VOICE_KEYS);
@@ -391,14 +391,19 @@ function VoiceSection({ settings, endpoints, onSave, say }: { settings: Settings
     <section className="fs-set__section" aria-labelledby="fs-set-voice">
       <header className="fs-set__section-head">
         <div>
-          <h2 id="fs-set-voice" className="fs-set__title">Voz</h2>
+          <h2 id="fs-set-voice" className="fs-set__title">{t('Voice')}</h2>
           <p className="fs-prose">{t('Read aloud (TTS) and dictate (STT). "Browser" uses what your browser ships; "Local" a model on this machine; an endpoint, its API.')}</p>
         </div>
       </header>
+      <p className="fs-prose">{t('For local voice on Windows: Whisper for input and Windows installed voices for output. The first Whisper use downloads its model. CPU leaves GPU memory free for your assistant.')}</p>
+      <Button variant="ghost" size="sm" label={t('Prepare local voice on Windows')} onClick={() => {
+        set('stt_enabled', true); set('stt_provider', 'local'); set('stt_model', 'base'); set('stt_device', 'cpu');
+        set('tts_enabled', true); set('tts_provider', 'system'); set('tts_voice', '');
+      }} />
       <Field label={t('Read aloud')}>
         <div className="fs-set__inline">
           <Toggle id="tts-on" checked={bool(draft.tts_enabled)} onChange={(v) => set('tts_enabled', v)} label={t('On')} />
-          <Select id="tts-prov" value={str(draft.tts_provider, 'disabled')} onChange={(v) => set('tts_provider', v)} options={[{ value: 'disabled', label: t('Off') }, { value: 'browser', label: t('Browser') }, { value: 'local', label: 'Local (Kokoro)' }, ...apiOpts]} />
+          <Select id="tts-prov" value={str(draft.tts_provider, 'disabled')} onChange={(v) => set('tts_provider', v)} options={[{ value: 'disabled', label: t('Off') }, { value: 'browser', label: t('Browser') }, { value: 'system', label: t('Windows · installed voices (offline)') }, { value: 'local', label: 'Local (Kokoro)' }, ...apiOpts]} />
         </div>
       </Field>
       <div className="fs-set__grid2">
@@ -426,6 +431,9 @@ function VoiceSection({ settings, endpoints, onSave, say }: { settings: Settings
           <Text id="stt-lang" value={str(draft.stt_language)} onChange={(v) => set('stt_language', v)} placeholder="es" />
         </Field>
       </div>
+      <Field label={t('Transcription device')} htmlFor="stt-device">
+        <Select id="stt-device" value={str(draft.stt_device, 'auto')} onChange={v => set('stt_device', v)} options={[{ value: 'auto', label: t('Automatic') }, { value: 'cpu', label: 'CPU · int8' }, { value: 'cuda', label: 'GPU · CUDA' }]} />
+      </Field>
       <SaveBar dirty={dirty} saving={saving} onSave={() => void save(changed)} />
     </section>
   );

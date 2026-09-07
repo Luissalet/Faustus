@@ -125,7 +125,9 @@ def test_the_directive_is_a_user_turn_not_a_system_one():
 
 
 def test_the_directive_is_framed_as_context_not_as_the_user_talking():
-    assert context_message([user(ENGLISH)])["content"].startswith("[Context —")
+    msg = context_message([user(ENGLISH)])
+    assert msg["content"].startswith("[Runtime requirement —")
+    assert msg["_agent_injected"] == "context"
 
 
 # ---------------------------------------------------------------------------
@@ -149,7 +151,7 @@ def test_the_directive_is_the_last_thing_read_before_the_user():
         owner="admin",
     )
     assert built[-1]["content"] == ENGLISH, "the user's own words stay last"
-    assert built[-2]["content"].startswith("[Context —")
+    assert built[-2]["content"].startswith("[Runtime requirement —")
     assert "in English" in built[-2]["content"]
     assert built[-2]["_agent_injected"] == "context"
 
@@ -173,4 +175,15 @@ def test_a_turn_that_settles_nothing_adds_no_message_at_all():
         relevant_tools={"ls", "read_file", "ask_user", "update_plan"},
         owner="admin",
     )
-    assert not any("[Context — the language" in (m.get("content") or "") for m in built)
+    assert not any("[Runtime requirement — reply language]" in (m.get("content") or "") for m in built)
+
+
+def test_plain_chat_context_builder_has_the_same_language_guard():
+    """Chat mode bypasses agent_loop, so the shared builder must wire the
+    guard itself before it copies route_messages."""
+    import inspect
+    from routes.chat_helpers import build_chat_context
+    source = inspect.getsource(build_chat_context)
+    guard = source.index("from src.reply_language import context_message")
+    route_copy = source.index("route_messages = list(messages)")
+    assert guard < route_copy

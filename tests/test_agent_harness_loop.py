@@ -241,7 +241,7 @@ def test_delegate_agents_worker_reports_are_persisted_with_the_tool_event(tmp_pa
         "http://127.0.0.1:11434/v1", "qwen3-coder:30b",
         [{"role": "user", "content": "Delega: añade /api/stats"}],
         max_rounds=4, relevant_tools={"delegate_agents", "read_file"},
-        workspace=str(tmp_path), session_id="sess-delegate",
+        workspace=str(tmp_path), session_id="sess-delegate", security_gate_bypass=True,
     )
     events = _events(_collect(gen))
     metrics = [e for e in events if e.get("type") == "metrics"][-1]["data"]
@@ -252,5 +252,54 @@ def test_delegate_agents_worker_reports_are_persisted_with_the_tool_event(tmp_pa
     assert sa["stop_reason"] == "complete" and sa["tool_calls"] == 3 and sa["duration_s"] == 41.2
     assert len(sa["final_text"]) == 400          # shortened for history
     assert "git" not in sa and "static_checks" not in sa  # evidence fields only
+
+
+def test_explicit_project_objective_order_cannot_finish_as_prose_only(tmp_path, monkeypatch):
+    _patch_common(monkeypatch)
+    # This test exercises the completion supervisor, not project discovery.
+    # Model an already-attached project so preflight keeps the mutation tool.
+    import src.tool_preflight as tool_preflight
+    monkeypatch.setattr(tool_preflight, "prune_for_turn", lambda *_a, **_k: {})
+    objective_call = "```project_objectives\n" + json.dumps({
+        "action": "apply",
+        "deltas": [{"op": "ADD", "title": "Ship the release", "rationale": "user asked"}],
+    }) + "\n```"
+    calls = _scripted_stream(monkeypatch, [
+        ("Hecho, lo he añadido a objetivos.", "stop"),
+        (objective_call, "tool_calls"),
+        ("Añadido a los objetivos del proyecto.", "stop"),
+    ])
+    gen = al.stream_agent_loop(
+        "http://127.0.0.1:11434/v1", "qwen3-coder:30b",
+        [{"role": "user", "content": "Añade Ship the release a los objetivos del proyecto"}],
+        max_rounds=5, relevant_tools={"project_objectives"}, workspace=str(tmp_path),
+        session_id="sess-objectives", security_gate_bypass=True,
+    )
+    events = _events(_collect(gen))
+    required = [e for e in events if e.get("type") == "harness_check"
+                and e.get("status") == "required_action"]
+    assert len(required) == 1
+    metrics = [e for e in events if e.get("type") == "metrics"][-1]["data"]
+    assert any(e["tool"] == "project_objectives" for e in metrics["tool_events"])
+    assert calls["n"] == 3
+
+
+def test_missing_project_cannot_be_reported_as_a_successful_objective_change(tmp_path, monkeypatch):
+    _patch_common(monkeypatch)
+    calls = _scripted_stream(monkeypatch, [
+        ("Hecho, ya está en los objetivos del proyecto.", "stop"),
+        ("No se ha cambiado nada: este chat no está vinculado a un proyecto.", "stop"),
+    ])
+    gen = al.stream_agent_loop(
+        "http://127.0.0.1:11434/v1", "qwen3-coder:30b",
+        [{"role": "user", "content": "Añade Ship the release a los objetivos del proyecto"}],
+        max_rounds=4, relevant_tools={"project_objectives"}, workspace=str(tmp_path),
+        session_id="sess-without-project", security_gate_bypass=True,
+    )
+    events = _events(_collect(gen))
+    unavailable = [e for e in events if e.get("type") == "harness_check"
+                   and e.get("status") == "required_action_unavailable"]
+    assert len(unavailable) == 1
+    assert calls["n"] == 2
 
 

@@ -58,8 +58,9 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 from src.contracts.base import ContractError
 
 from .models import (
-    ActorRef, AttachResult, ContextLinkStatus, DetachResult, PATCHABLE_FIELDS,
-    ProjectContextError, ProjectContextLink, RefreshResult, SourceMetadata, SourceRef,
+    ActorRef, AttachResult, ContextLinkStatus, DetachResult, IndexResult,
+    PATCHABLE_FIELDS, ProjectContextError, ProjectContextLink, RefreshResult,
+    SourceMetadata, SourceRef,
 )
 from .resolvers.base import get_resolver
 
@@ -67,7 +68,7 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     "CONTEXT_EVENT_NAMES", "ProjectContextService", "clear_unrouted_events",
-    "service", "unrouted_events",
+    "note_retrieved", "service", "unrouted_events",
 ]
 
 #: The event names this subsystem emits. None of them is in ``EVENT_NAMES``
@@ -77,7 +78,10 @@ CONTEXT_EVENT_NAMES: Tuple[str, ...] = (
     "project_context_detached",
     "project_context_updated",
     "project_context_refresh_queued",
+    "project_context_indexed",
+    "project_context_index_failed",
     "project_context_source_missing",
+    "project_context_retrieved",
 )
 
 _UNROUTED_MAX = 200
@@ -120,6 +124,19 @@ def _emit(name: str, **payload: Any) -> None:
             del _UNROUTED[: len(_UNROUTED) - _UNROUTED_MAX]
     logger.info("project_context event %s (not yet in EVENT_NAMES): %s",
                 name, {k: v for k, v in envelope.items() if k != "name"})
+
+
+def note_retrieved(*, owner: str, project_id: str, link_id: str,
+                   source_kind: str, source_ref: str, revision: str,
+                   mode: str, matches: int) -> None:
+    """Publish retrieval provenance without retaining the user's query."""
+    _emit(
+        "project_context_retrieved", owner=str(owner or ""),
+        project_id=str(project_id or ""), link_id=str(link_id or ""),
+        source_kind=str(source_kind or ""), source_ref=str(source_ref or ""),
+        revision=str(revision or ""), mode=str(mode or ""),
+        matches=max(0, int(matches or 0)),
+    )
 
 
 class ProjectContextService:
@@ -360,7 +377,8 @@ class ProjectContextService:
             "created_at": now, "updated_at": now,
             "content_revision": revision,
             "index_status": ("none" if retrieval_policy == "disabled" else "queued"),
-            "index_revision": "", "access_mode": access_mode, "enabled": True,
+            "index_revision": "", "source_state": "ok", "source_checked_at": now,
+            "source_message": "", "access_mode": access_mode, "enabled": True,
         }
         try:
             candidate = ProjectContextLink.parse(raw).to_dict()
@@ -432,6 +450,12 @@ class ProjectContextService:
                                 message="no such link in this project")
         self._event("project_context_detached", project_id=project_id, owner=owner,
                     actor=actor, link=link)
+        try:
+            from . import index as context_index
+            context_index.delete(owner=owner, project_id=project_id, link_id=link_id)
+        except Exception as exc:  # noqa: BLE001 - the index is derived data
+            logger.warning("project_context: detached %s but could not prune its index: %s",
+                           link_id, exc)
         return DetachResult(
             ok=True, action="detached", link_id=link_id, project_id=project_id,
             message=(f"{link.label!r} is no longer part of this project's context. "
@@ -609,26 +633,61 @@ class ProjectContextService:
                 # is exactly what §19 forbids.
                 self._event("project_context_source_missing", project_id=project_id,
                             owner=owner, actor=actor, link=link)
-            return RefreshResult(ok=False, link=link, state=state, error=state,
+            saved = self._op("patch_link")(
+                project_id,
+                link_id,
+                {
+                    "source_state": state,
+                    "source_checked_at": self._now(),
+                    "source_message": message,
+                    "index_status": "failed" if state == "missing" else link.index_status,
+                    "updated_at": self._now(),
+                },
+                owner=owner,
+            )
+            marked = self._parse_link(saved) if saved else link
+            return RefreshResult(ok=False, link=marked, state=state, error=state,
                                  previous_revision=link.content_revision,
-                                 index_status=link.index_status, message=message)
+                                 index_status=marked.index_status, message=message)
 
         revision = resolver.revision(link.source_ref, version_policy=link.version_policy,
                                      pinned_version=link.pinned_version)
         if not revision:
-            return RefreshResult(ok=False, link=link, state="missing", error="missing",
+            message = "the requested revision no longer exists"
+            saved = self._op("patch_link")(
+                project_id,
+                link_id,
+                {"source_state": "missing", "source_checked_at": self._now(),
+                 "source_message": message, "index_status": "failed",
+                 "updated_at": self._now()},
+                owner=owner,
+            )
+            marked = self._parse_link(saved) if saved else link
+            self._event("project_context_source_missing", project_id=project_id,
+                        owner=owner, actor=actor, link=marked)
+            return RefreshResult(ok=False, link=marked, state="missing", error="missing",
                                  previous_revision=link.content_revision,
-                                 index_status=link.index_status,
-                                 message="the requested revision no longer exists")
+                                 index_status=marked.index_status,
+                                 message=message)
         if revision == link.content_revision:
-            return RefreshResult(ok=True, link=link, state="ok", changed=False,
+            saved = self._op("patch_link")(
+                project_id,
+                link_id,
+                {"source_state": "ok", "source_checked_at": self._now(),
+                 "source_message": "", "updated_at": self._now()},
+                owner=owner,
+            )
+            checked = self._parse_link(saved) if saved else link
+            return RefreshResult(ok=True, link=checked, state="ok", changed=False,
                                  previous_revision=link.content_revision,
-                                 revision=revision, index_status=link.index_status,
+                                 revision=revision, index_status=checked.index_status,
                                  message="the source has not changed")
 
         # index_revision is deliberately absent from this patch: the old index
         # keeps serving until the new one is complete.
         patch = {"content_revision": revision, "index_status": "stale",
+                 "source_state": "ok", "source_checked_at": self._now(),
+                 "source_message": "",
                  "updated_at": self._now()}
         saved = self._op("patch_link")(project_id, link_id, patch, owner=owner)
         updated = self._parse_link(saved)
@@ -641,6 +700,148 @@ class ProjectContextService:
             index_status=updated.index_status,
             message="the source changed; its index is stale and a rebuild is queued",
         )
+
+    def index(self, *, project, owner: str, link_id: str, actor) -> IndexResult:
+        """Extract and atomically publish one queued or stale link.
+
+        Access is checked before extraction and again before publication. If
+        the source changes meanwhile, the extracted result is discarded and
+        the link stays stale for the next pass.
+        """
+        project_id = self._project_id(project)
+        actor = self._as_actor(actor)
+        owner = self._effective_owner(owner)
+        deny = self._owner_mismatch(project, owner, actor)
+        if deny:
+            return IndexResult(ok=False, project_id=project_id,
+                               link_id=str(link_id or ""), state="forbidden",
+                               error="owner_mismatch", message=deny)
+        link_id = str(link_id or "").strip()
+        existing = self._op("get_link")(project_id, link_id, owner=owner)
+        if not existing:
+            return IndexResult(ok=False, project_id=project_id, link_id=link_id,
+                               state="missing", error="missing",
+                               message="no such link in this project")
+        link = self._parse_link(existing)
+        if not link.enabled or link.retrieval_policy == "disabled":
+            return IndexResult(ok=True, link=link, project_id=project_id,
+                               link_id=link_id, revision=link.content_revision,
+                               state="disabled",
+                               message="indexing is disabled for this link")
+        resolver = self._resolver(link.kind)
+        if resolver is None:
+            return self._index_failed(project_id, owner, actor, link,
+                                      "unsupported", f"no resolver for kind {link.kind!r}")
+
+        metadata = resolver.metadata(link.source_ref, owner=owner, project=project)
+        refusal = self._refusal(metadata, owner)
+        if refusal:
+            return self._index_failed(project_id, owner, actor, link,
+                                      refusal[0], refusal[1])
+        target_revision = resolver.revision(
+            link.source_ref, version_policy=link.version_policy,
+            pinned_version=link.pinned_version)
+        if not target_revision:
+            return self._index_failed(project_id, owner, actor, link, "missing",
+                                      "the requested revision no longer exists")
+        if target_revision != link.content_revision:
+            queued = self._parse_link(self._op("patch_link")(
+                project_id, link_id,
+                {"content_revision": target_revision, "index_status": "stale",
+                 "source_state": "ok", "source_checked_at": self._now(),
+                 "source_message": "", "updated_at": self._now()}, owner=owner))
+            self._event("project_context_refresh_queued", project_id=project_id,
+                        owner=owner, actor=actor, link=queued,
+                        previous_revision=link.content_revision,
+                        revision=target_revision)
+            return IndexResult(ok=True, link=queued, project_id=project_id,
+                               link_id=link_id, revision=target_revision,
+                               state="stale",
+                               message="source changed before indexing; requeued")
+
+        marked = self._parse_link(self._op("patch_link")(
+            project_id, link_id,
+            {"index_status": "indexing", "source_state": "ok",
+             "source_checked_at": self._now(), "source_message": "",
+             "updated_at": self._now()}, owner=owner))
+        try:
+            corpus = resolver.extract(
+                marked.source_ref, version_policy=marked.version_policy,
+                pinned_version=marked.pinned_version)
+        except Exception as exc:  # noqa: BLE001 - one source must not stop the worker
+            logger.exception("project_context: extraction failed for %s", link_id)
+            return self._index_failed(project_id, owner, actor, marked, "failed",
+                                      f"{type(exc).__name__}: {exc}")
+
+        # Re-authorise after the expensive extraction. A detach, policy update
+        # or source edit all lose this race without publishing stale bytes.
+        current_raw = self._op("get_link")(project_id, link_id, owner=owner)
+        if not current_raw:
+            return IndexResult(ok=False, project_id=project_id, link_id=link_id,
+                               state="detached", error="detached",
+                               message="link was detached while it was being indexed")
+        current = self._parse_link(current_raw)
+        after_meta = resolver.metadata(current.source_ref, owner=owner, project=project)
+        after_refusal = self._refusal(after_meta, owner)
+        after_revision = ("" if after_refusal else resolver.revision(
+            current.source_ref, version_policy=current.version_policy,
+            pinned_version=current.pinned_version))
+        corpus_revision = str(getattr(corpus, "revision", "") or target_revision)
+        if (after_refusal or not after_revision or after_revision != target_revision
+                or current.content_revision != target_revision
+                or corpus_revision != target_revision):
+            latest = after_revision or current.content_revision
+            patch = {"index_status": "stale", "updated_at": self._now()}
+            if after_refusal:
+                patch.update({"source_state": after_refusal[0],
+                              "source_message": after_refusal[1],
+                              "source_checked_at": self._now()})
+            elif latest:
+                patch.update({"content_revision": latest, "source_state": "ok",
+                              "source_message": "",
+                              "source_checked_at": self._now()})
+            queued = self._parse_link(self._op("patch_link")(
+                project_id, link_id, patch, owner=owner))
+            self._event("project_context_refresh_queued", project_id=project_id,
+                        owner=owner, actor=actor, link=queued,
+                        previous_revision=target_revision, revision=latest)
+            return IndexResult(ok=True, link=queued, project_id=project_id,
+                               link_id=link_id, revision=latest, state="stale",
+                               message=("source changed during indexing; result "
+                                        "discarded and requeued"))
+
+        from . import index as context_index
+        count = context_index.replace(owner=owner, project_id=project_id,
+                                      link_id=link_id, corpus=corpus)
+        ready = self._parse_link(self._op("patch_link")(
+            project_id, link_id,
+            {"index_status": "ready", "index_revision": target_revision,
+             "source_state": "ok", "source_checked_at": self._now(),
+             "source_message": (str(getattr(corpus, "note", "") or "")[:512]
+                                if getattr(corpus, "degraded", False) else ""),
+             "updated_at": self._now()}, owner=owner))
+        self._event("project_context_indexed", project_id=project_id, owner=owner,
+                    actor=actor, link=ready, revision=target_revision,
+                    chunks=count, degraded=bool(getattr(corpus, "degraded", False)))
+        return IndexResult(ok=True, link=ready, project_id=project_id,
+                           link_id=link_id, revision=target_revision, chunks=count,
+                           state="ready", message=f"indexed {count} chunk(s)")
+
+    def _index_failed(self, project_id: str, owner: str, actor: ActorRef,
+                      link: ProjectContextLink, state: str,
+                      message: str) -> IndexResult:
+        saved = self._op("patch_link")(
+            project_id, link.id,
+            {"index_status": "failed", "source_state": state,
+             "source_checked_at": self._now(), "source_message": str(message)[:512],
+             "updated_at": self._now()}, owner=owner)
+        failed = self._parse_link(saved) if saved else link
+        self._event("project_context_index_failed", project_id=project_id,
+                    owner=owner, actor=actor, link=failed, state=state,
+                    message=str(message)[:512])
+        return IndexResult(ok=False, link=failed, project_id=project_id,
+                           link_id=link.id, revision=link.content_revision,
+                           state=state, error="index_failed", message=str(message))
 
 
 # ── the process singleton ──────────────────────────────────────────────────

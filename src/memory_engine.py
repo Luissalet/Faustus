@@ -987,8 +987,6 @@ def pack_detail(
 
     if not ids:
         return {"text": "", "ids": [], "items": [], "degraded": degraded}
-    with contextlib.suppress(Exception):
-        touch(ids, now)
     return {
         "text": "\n".join(lines),
         "ids": ids,
@@ -1047,6 +1045,11 @@ def note_injected(key: Any, ids: Iterable[str], *, now_ts: Optional[float] = Non
             _INJECTED[key] = {"ids": ids, "ts": stamp}
             _INJECTED.move_to_end(key)
             _sweep_injected(stamp)
+        # Retrieval is not use. Only after the caller confirms that these ids
+        # were actually placed in the model's prompt do they earn an access.
+        # Doing this in pack_detail inflated every candidate that a later
+        # budget/compiler pass dropped and taught the curator a false signal.
+        touch(ids, datetime.fromtimestamp(stamp, timezone.utc))
     except Exception as exc:  # noqa: BLE001 - prompt path
         logger.debug("memory engine: note_injected failed: %s", exc)
 

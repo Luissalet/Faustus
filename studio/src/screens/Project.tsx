@@ -20,6 +20,7 @@ import {
   getProject,
   groupLinksByRole,
   inspectContextLink,
+  persistedLinkStatus,
   LINK_KINDS,
   LINK_ROLES,
   linkIsBehind,
@@ -146,8 +147,9 @@ function describeRefresh(report: RefreshReport): string {
 
 /** The state of one link, drawn once and read everywhere. */
 function LinkBadges({ link, status }: { link: ContextLink; status?: LinkStatus }) {
-  const broken = linkIsBroken(status);
-  const behind = linkIsBehind(link, status);
+  const effectiveStatus = status ?? persistedLinkStatus(link);
+  const broken = linkIsBroken(effectiveStatus);
+  const behind = linkIsBehind(link, effectiveStatus);
   return (
     <span className="fs-pj__badges">
       <span className="fs-pj__badge">{t(KIND_LABEL[link.kind])}</span>
@@ -167,7 +169,7 @@ function LinkBadges({ link, status }: { link: ContextLink; status?: LinkStatus }
       {broken && (
         <span className="fs-pj__badge" data-broken="">
           <AlertTriangle size={11} aria-hidden="true" />
-          {status?.state === 'forbidden' ? t('Not available') : t('Source missing')}
+          {effectiveStatus?.state === 'forbidden' ? t('Not available') : t('Source missing')}
         </span>
       )}
       {!broken && behind && <span className="fs-pj__badge" data-warn="">{t('Needs a refresh')}</span>}
@@ -864,7 +866,7 @@ export function ProjectScreen() {
                     <Link to={`/studio?s=${encodeURIComponent(c.id)}`} className="fs-row" data-testid="project-chat">
                       <span className="fs-row__main">
                         <span className="fs-row__name">
-                          {live && <ActivityDot state={live} position={activity.queued[c.id]} withLabel />}
+                          {live && <ActivityDot state={live} position={activity.queued[c.id]} detail={activity.details[c.id]} withLabel />}
                           {c.name || t('Untitled')}
                         </span>
                         <span className="fs-row__meta">

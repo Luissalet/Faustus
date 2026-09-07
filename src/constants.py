@@ -39,6 +39,10 @@ APP_DB = os.path.join(DATA_DIR, "app.db")
 # memory_engine.db exists: everything in it is derived, rebuildable and hot on
 # the turn path, and none of it should be able to lock app.db behind a write.
 CONTEXT_ENGINE_DB = os.path.join(DATA_DIR, "context_engine.db")
+# Project Context keeps extracted source chunks in a separate rebuildable
+# index.  Membership and policy remain in projects.json; losing this file only
+# changes a link back to direct resolver reads until it is rebuilt.
+PROJECT_CONTEXT_INDEX_DB = os.path.join(DATA_DIR, "project_context_index.db")
 # Council keeps its own file for the same reason: a deliberation that runs for
 # an hour must not hold a write lock that a chat turn is waiting on, and losing
 # it costs a room, not a user's sessions.
@@ -64,6 +68,16 @@ DELTA_ENGINE_DB = os.path.join(DATA_DIR, "delta_engine.db")
 # and be readable long after the run — and it must never be able to hold a
 # write lock that the turn producing it is waiting on.
 COMPLETION_ENGINE_DB = os.path.join(DATA_DIR, "completion_engine.db")
+# Demonstration-to-skill keeps raw observations and compiled procedures apart
+# from chat history.  The records are durable evidence: deleting a chat must
+# never silently delete what the user explicitly taught.
+TEACH_MODE_DB = os.path.join(DATA_DIR, "teach_mode.db")
+# Operational health and incident history must survive cache rebuilds and may
+# be written at a much higher rate than capability manifests themselves.
+IMMUNE_SYSTEM_DB = os.path.join(DATA_DIR, "immune_system.db")
+# Futures are disposable, but their selection/commit ledger is not: it is the
+# answer to which isolated result was chosen and why.
+BRANCHING_FUTURES_DB = os.path.join(DATA_DIR, "branching_futures.db")
 SCHEDULED_EMAILS_DB = os.path.join(DATA_DIR, "scheduled_emails.db")
 EMAIL_CACHE_DB = os.path.join(DATA_DIR, "email_cache.db")
 

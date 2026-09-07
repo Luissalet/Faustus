@@ -816,6 +816,24 @@ async def build_chat_context(
         except Exception:
             logger.debug("Failed to add current date/time context", exc_info=True)
 
+        # Agent mode already adds this in agent_loop.  Plain chat bypasses that
+        # prompt builder entirely, which meant the language guarantee silently
+        # disappeared as soon as the user selected Chat instead of Agent.
+        # Put it last among injected messages, immediately before the user's
+        # words, so English tools/sources cannot steer a Spanish reply (or the
+        # reverse).  context_message marks itself as injected, so later turns
+        # never detect the directive instead of the user.
+        try:
+            from src.reply_language import context_message as _reply_language_message
+            _language_msg = _reply_language_message(messages)
+            if _language_msg:
+                if messages and messages[-1].get("role") == "user":
+                    messages.insert(len(messages) - 1, _language_msg)
+                else:
+                    messages.append(_language_msg)
+        except Exception:
+            logger.debug("Failed to add reply-language context", exc_info=True)
+
     route_messages = list(messages)
     # Explicit fallback routing must shape from the same route-neutral prompt
     # for every candidate. Running selected-model compaction here would mutate

@@ -59,6 +59,10 @@ OTHER_EFFECT_TOOLS = frozenset({
     "generate_image", "edit_image", "manage_session", "create_session",
     "manage_endpoints", "manage_mcp", "manage_webhooks", "manage_tokens",
     "manage_settings", "manage_skills", "manage_contact",
+    # Typed project mutations are effects too.  Without these entries the
+    # harness could reject a truthful "added to project objectives" receipt as
+    # unsupported even though the dedicated tool had succeeded.
+    "project_objectives", "manage_project_context",
 })
 # Tools whose OUTPUT grounds paths: anything they print exists (or existed).
 DISCOVERY_TOOLS = frozenset({

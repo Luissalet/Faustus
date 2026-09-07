@@ -19,6 +19,19 @@ import importlib
 from pathlib import Path
 
 import pytest
+from tests.helpers.import_state import preserve_import_state
+
+
+@pytest.fixture(autouse=True)
+def restore_filename_route_imports():
+    # Filename tests deliberately reload the canonical routes. Restore them
+    # afterwards so legacy aliases and consumers of shared ownership helpers
+    # do not keep references to a different generation of the same module.
+    with preserve_import_state(
+        "routes.session_routes", "routes.gallery.gallery_routes",
+        "routes.gallery.gallery_helpers",
+    ):
+        yield
 
 
 # ── prompt-injection context wrapper ────────────────────────────

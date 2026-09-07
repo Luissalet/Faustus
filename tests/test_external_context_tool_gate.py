@@ -1379,6 +1379,9 @@ def test_authorized_document_stream_precedes_completed_update(monkeypatch):
             [{"role": "user", "content": "update the active document"}],
             max_rounds=1,
             relevant_tools={"update_document"},
+            # This test is about event ordering after an authorized result;
+            # the approval gate itself has separate sealed-action coverage.
+            security_gate_bypass=True,
         )
     )
     event_types = [event.get("type") for event in events]

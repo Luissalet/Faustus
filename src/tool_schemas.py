@@ -452,6 +452,59 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "manage_teach_mode",
+            "description": "Record a demonstration in this chat and compile it into a learned procedure. start begins automatic capture of subsequent semantic tool calls; stop ends capture; compile creates a candidate; simulate/validate advance it with evidence. Agents cannot approve or install their own procedure.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["status", "start", "pause", "resume", "stop", "cancel", "compile", "simulate", "validate"]},
+                    "title": {"type": "string"}, "intent": {"type": "string"},
+                    "type": {"type": "string", "enum": ["tool_native", "workflow", "workspace", "computer_use", "hybrid"]},
+                    "demonstration_id": {"type": "string"}, "procedure_id": {"type": "string"},
+                    "source_refs": {"type": "array", "items": {"type": "string"}},
+                    "target_refs": {"type": "array", "items": {"type": "string"}},
+                    "evidence": {"type": "object"}
+                },
+                "required": ["action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "capability_health",
+            "description": "Read or update Immune System health for a skill, workflow, tool, connector, model or learned procedure. Use report_failure when a capability actually fails so repeated failures can be deduplicated and contained.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["get", "list", "register", "assess", "report_failure"]},
+                    "asset_id": {"type": "string"}, "status": {"type": "string"},
+                    "asset": {"type": "object"}, "assessment": {"type": "object"},
+                    "failure": {"type": "object"}
+                },
+                "required": ["action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "branch_futures",
+            "description": "Create and inspect equivalent isolated alternatives, submit their observed results and evaluate them. Branches never have real external effects. Selection and commit are human-only operations.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["get", "list", "create", "start_branch", "submit_result", "evaluate"]},
+                    "future_id": {"type": "string"}, "branch_id": {"type": "string"},
+                    "future": {"type": "object"}, "result": {"type": "object"}
+                },
+                "required": ["action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "memory_rules",
             "description": "The learned-memory store: rules and facts that are SCORED by what happened after they were used, decay on their own, and are inverted into anti-patterns when they keep causing failures. 'add' records a new one (level 'procedural' for a rule you should follow, 'semantic' for a durable fact); 'search' returns the ones relevant to a query with their ids and scores; 'feedback' credits or blames one by id after you saw it help or hurt; 'list' shows what is stored. Add a rule only when a turn actually taught you something reusable — not to restate the request.",
             "parameters": {
@@ -1783,6 +1836,8 @@ def function_call_to_tool_block(name: str, arguments: str) -> Optional[ToolBlock
     elif tool_type == "manage_project_context":
         content = json.dumps(args)
     elif tool_type == "project_objectives":
+        content = json.dumps(args)
+    elif tool_type in ("manage_teach_mode", "capability_health", "branch_futures"):
         content = json.dumps(args)
     elif tool_type == "memory_rules":
         content = json.dumps(args)

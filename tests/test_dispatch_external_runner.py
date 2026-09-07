@@ -278,7 +278,13 @@ def test_cancelling_a_job_kills_the_external_agent_and_still_says_it_ran(box):
     async def run():
         job = await dispatch.start("luis", {"tasks": [{"instruction": "hang", "runner": "hang"}],
                                             "workspace": box["ws"], "verify": "none"})
-        await asyncio.sleep(0.4)
+        # Wait for the observable start marker instead of assuming a loaded
+        # Windows CI worker launches the process within 400 ms.
+        for _ in range(100):
+            if "hang" in job.runners_used:
+                break
+            await asyncio.sleep(0.02)
+        assert "hang" in job.runners_used, "the external worker never started"
         assert dispatch.cancel(job) is True
         assert await dispatch.wait(job, 10)
         return job

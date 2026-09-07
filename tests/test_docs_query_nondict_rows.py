@@ -34,6 +34,21 @@ def test_query_skips_non_dict_rag_rows():
     assert out[0].score == 0.9
 
 
+def test_query_pushes_owner_scope_into_the_vector_search():
+    seen = {}
+
+    class _OwnedRag:
+        def search(self, query, k=5, owner=None):
+            seen.update(query=query, k=k, owner=owner)
+            return []
+
+    svc = DocsService.__new__(DocsService)
+    svc.rag = _OwnedRag()
+
+    assert asyncio.run(svc.query("private", top_k=3, owner="alice")) == []
+    assert seen == {"query": "private", "k": 3, "owner": "alice"}
+
+
 def test_index_maps_live_vectorrag_result_shape():
     svc = DocsService.__new__(DocsService)
     svc.rag = _FakeRag()

@@ -174,33 +174,27 @@ def pid_alive(pid: Optional[int]) -> bool:
 def kill_process_tree(pid: Optional[int]) -> None:
     """Terminate ``pid`` and all of its descendants.
 
-    POSIX: signal the whole process group (``killpg``), falling back to a plain
-    ``kill`` if the pid isn't a group leader.
-    Windows: ``taskkill /T /F`` walks and kills the child tree (there is no
-    process-group signalling).
+    This entry point is used by the admin-facing GPU-process action, where the
+    operator deliberately chose a live PID but Faustus did not spawn it. The
+    root may therefore be signalled, while descendants still have to be walked
+    by creation time. In particular, Windows' ``taskkill /T`` cannot be used:
+    an orphan keeps its old parent PID forever and that number can later be
+    recycled into the selected tree.
+
+    ``src.process_ownership`` owns the verified walk. The import is local to
+    avoid a module cycle (that module imports ``IS_WINDOWS`` from here).
     """
     if not pid:
         return
-    if IS_WINDOWS:
-        try:
-            subprocess.run(
-                ["taskkill", "/F", "/T", "/PID", str(pid)],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-            )
-        except Exception:
-            pass
-        return
-    import signal
-
     try:
-        os.killpg(os.getpgid(pid), signal.SIGTERM)
+        from src.process_ownership import terminate_tree
+
+        terminate_tree(int(pid), unverified_tree_ok=True)
     except Exception:
-        try:
-            os.kill(pid, signal.SIGTERM)
-        except Exception:
-            pass
+        # Teardown helpers are best-effort by contract. With psutil installed
+        # (a core dependency) this should only be an import/shutdown edge case;
+        # never fall back to an unconditional tree walk here.
+        pass
 
 
 # ── Shell / executable resolution ───────────────────────────────────────────
@@ -429,29 +423,24 @@ def _ssh_exec_argv(
     connect_timeout: int | None = None,
     strict_host_key_checking: bool | None = None,
 ) -> list[str]:
-    """Build a consistent ssh argv for remote command execution."""
-    remote_value = str(remote or "").strip()
-    remote_host = remote_value.rsplit("@", 1)[-1]
-    if not remote_value or remote_value.startswith("-") or not remote_host or remote_host.startswith("-"):
-        raise ValueError("Invalid SSH remote host")
-    argv = ["ssh"]
-    if connect_timeout is not None:
-        argv.extend(["-o", f"ConnectTimeout={int(connect_timeout)}"])
-    if strict_host_key_checking is not None:
-        argv.extend(
-            [
-                "-o",
-                "StrictHostKeyChecking=yes"
-                if strict_host_key_checking
-                else "StrictHostKeyChecking=no",
-            ]
-        )
-    if ssh_port and ssh_port != "22":
-        argv.extend(["-p", str(ssh_port)])
-    argv.append(remote)
-    if remote_cmd is not None:
-        argv.append(remote_cmd)
-    return argv
+    """Build an SSH argv using Faustus' paired-host trust store.
+
+    ``strict_host_key_checking`` remains in the signature for callers compiled
+    against the old helper, but explicitly disabling verification is no longer
+    supported.  A generic platform helper must not be the escape hatch around
+    the application's deliberate SSH pairing boundary.
+    """
+    if strict_host_key_checking is False:
+        raise ValueError("SSH host-key verification cannot be disabled")
+    from src import ssh_trust
+
+    return ssh_trust.ssh_argv(
+        remote,
+        ssh_port,
+        remote_cmd,
+        connect_timeout=connect_timeout,
+        attended=False,
+    )
 
 
 def run_ssh_command(

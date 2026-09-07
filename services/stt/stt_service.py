@@ -5,6 +5,7 @@ import io
 import logging
 import httpx
 import tempfile
+import threading
 from pathlib import Path
 from typing import Optional, Dict, Any
 
@@ -24,6 +25,8 @@ class STTService:
 
     def __init__(self):
         self._whisper_model = None  # lazy-init
+        self._whisper_name = None
+        self._model_lock = threading.RLock()
 
     # ── Settings ──
 
@@ -35,6 +38,7 @@ class STTService:
             "stt_provider": saved.get("stt_provider", "disabled"),
             "stt_model": saved.get("stt_model", "base"),
             "stt_language": saved.get("stt_language", ""),
+            "stt_device": saved.get("stt_device", "auto"),
         }
 
     @property
@@ -49,14 +53,23 @@ class STTService:
             return True  # handled client-side
         if provider == "local":
             return self._get_whisper() is not None
-        if provider.startswith("endpoint:"):
+        if isinstance(provider, str) and provider.startswith("endpoint:"):
             return True  # assume reachable
         return False
 
     # ── Local Whisper ──
 
     def _get_whisper(self):
-        if self._whisper_model is None:
+        with self._model_lock:
+            return self._load_whisper()
+
+    def _load_whisper(self):
+        settings = self._load_settings()
+        model_size = settings.get("stt_model", "base")
+        requested_device = settings.get("stt_device", "auto")
+        model_key = (model_size, requested_device)
+        if self._whisper_model is None or self._whisper_name != model_key:
+            self._whisper_model = None
             try:
                 from faster_whisper import WhisperModel
             except ImportError:
@@ -79,15 +92,18 @@ class STTService:
                 except Exception:
                     use_cuda = False
                 device = "cuda" if use_cuda else "cpu"
+                if requested_device in ("cpu", "cuda"):
+                    device = requested_device
                 compute_type = "float16" if device == "cuda" else "int8"
                 self._whisper_model = WhisperModel(model_size, device=device, compute_type=compute_type)
+                self._whisper_name = model_key
                 logger.info(f"faster-whisper model '{model_size}' loaded on {device}")
             except Exception as e:
                 logger.error(f"Failed to load whisper model: {e}")
                 return None
         return self._whisper_model
 
-    def _transcribe_local(self, audio_bytes: bytes, language: str = "") -> Optional[str]:
+    def _transcribe_local(self, audio_bytes: bytes, language: str = "", metadata: Optional[dict] = None) -> Optional[str]:
         model = self._get_whisper()
         if not model:
             return None
@@ -104,6 +120,8 @@ class STTService:
 
             segments, info = model.transcribe(tmp_path, **kwargs)
             text = " ".join(seg.text.strip() for seg in segments)
+            if metadata is not None:
+                metadata["language"] = info.language
 
             logger.info(f"Local STT: {len(text)} chars, lang={info.language}, prob={info.language_probability:.2f}")
             return text
@@ -153,20 +171,24 @@ class STTService:
 
     # ── Public interface ──
 
-    def transcribe(self, audio_bytes: bytes) -> Optional[str]:
+    def transcribe(self, audio_bytes: bytes, *, expected_provider: str = "", language_override: str = "", metadata: Optional[dict] = None) -> Optional[str]:
         settings = self._load_settings()
+        if expected_provider and settings.get("stt_provider") != expected_provider:
+            raise ValueError("Speech provider changed before transcription")
         if settings.get("stt_enabled") is False:
             return None
         provider = settings["stt_provider"]
         model = settings["stt_model"]
         language = settings.get("stt_language", "")
+        if language_override:
+            language = "" if language_override == "auto" else language_override.split("-")[0]
 
         if provider in ("disabled", "browser"):
             return None
 
         if provider == "local":
-            return self._transcribe_local(audio_bytes, language)
-        elif provider.startswith("endpoint:"):
+            return self._transcribe_local(audio_bytes, language, metadata) if metadata is not None else self._transcribe_local(audio_bytes, language)
+        elif isinstance(provider, str) and provider.startswith("endpoint:"):
             endpoint_id = provider.split(":", 1)[1]
             return self._transcribe_api(audio_bytes, endpoint_id, model, language)
         else:
@@ -192,7 +214,7 @@ class STTService:
             stats["model_loaded"] = whisper is not None
         elif provider == "browser":
             stats["model"] = "Browser (Web Speech API)"
-        elif provider.startswith("endpoint:"):
+        elif isinstance(provider, str) and provider.startswith("endpoint:"):
             stats["endpoint_id"] = provider.split(":", 1)[1]
 
         return stats

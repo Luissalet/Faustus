@@ -48,7 +48,9 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import Any, Callable, List, Mapping, Optional, Sequence
+from contextlib import contextmanager
+from contextvars import ContextVar
+from typing import Any, Callable, Iterator, List, Mapping, Optional, Sequence, Tuple
 
 from ..candidates import RetrievalRequest, ThreadedSource, make_candidate
 from ..contracts import ContextCandidate
@@ -63,6 +65,15 @@ HistoryProvider = Callable[[str, str], Sequence[Mapping[str, Any]]]
 
 _LOCK = threading.RLock()
 _PROVIDER: Optional[HistoryProvider] = None
+
+# The chat loop owns the authoritative, already-shaped transcript.  A global
+# provider cannot safely point at that per-request value: two simultaneous
+# users would race and one packet could read the other's messages.  ContextVar
+# follows the coroutine (and ``asyncio.to_thread`` copies its context), so the
+# threaded source sees exactly the history scoped around this compilation.
+_SCOPED_HISTORY: ContextVar[
+    Optional[Tuple[str, str, Tuple[Mapping[str, Any], ...]]]
+] = ContextVar("context_engine_history", default=None)
 
 #: A single message longer than this is a pasted file, not a turn of
 #: conversation; the head is enough to know it happened.
@@ -94,7 +105,40 @@ def reset_history_provider() -> None:
 
 def history_provider() -> Optional[HistoryProvider]:
     with _LOCK:
-        return _PROVIDER
+        explicit = _PROVIDER
+    if explicit is not None:
+        return explicit
+    if _SCOPED_HISTORY.get() is None:
+        return None
+    return _scoped_history_provider
+
+
+def _scoped_history_provider(session_id: str, owner: str) -> Sequence[Mapping[str, Any]]:
+    scoped = _SCOPED_HISTORY.get()
+    if scoped is None:
+        return ()
+    wanted_session, wanted_owner, messages = scoped
+    if str(session_id or "") != wanted_session or str(owner or "") != wanted_owner:
+        # Scope mismatches are authorization failures, not fuzzy lookups.
+        return ()
+    return messages
+
+
+@contextmanager
+def history_scope(session_id: str, owner: str,
+                  messages: Sequence[Mapping[str, Any]]) -> Iterator[None]:
+    """Expose one turn's transcript only for the duration of its compile.
+
+    The mappings are copied so a source can never mutate the hot-path list.
+    Nested and concurrent compiles are isolated by the ContextVar token.
+    """
+    snapshot = tuple(dict(row) for row in messages or ()
+                     if isinstance(row, Mapping))
+    token = _SCOPED_HISTORY.set((str(session_id or ""), str(owner or ""), snapshot))
+    try:
+        yield
+    finally:
+        _SCOPED_HISTORY.reset(token)
 
 
 class SessionSource(ThreadedSource):
@@ -191,4 +235,5 @@ class SessionSource(ThreadedSource):
 
 
 __all__ = ["SessionSource", "set_history_provider", "reset_history_provider",
-           "history_provider", "HistoryProvider", "MAX_MESSAGE_CHARS"]
+           "history_provider", "history_scope", "HistoryProvider",
+           "MAX_MESSAGE_CHARS"]

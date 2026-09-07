@@ -304,6 +304,17 @@ def test_pack_reports_the_ids_it_injected(store):
     assert all(f"[{i[:8]}]" in detail["text"] for i in detail["ids"])
 
 
+def test_packing_does_not_claim_that_the_prompt_used_every_candidate(store):
+    item = _rule("The deploy script lives in ops/deploy.sh", level="semantic")
+
+    detail = engine.pack_detail("luis", "", "deploy script", now=NOW)
+    assert item["id"] in detail["ids"]
+    assert engine.get_item(item["id"])["access_count"] == 0
+
+    engine.note_injected("sess-used", detail["ids"], now_ts=NOW.timestamp())
+    assert engine.get_item(item["id"])["access_count"] == 1
+
+
 # ── the maturity ladder ───────────────────────────────────────────────
 
 

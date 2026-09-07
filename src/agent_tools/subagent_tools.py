@@ -491,6 +491,7 @@ SUBAGENT_DISABLED_TOOLS = frozenset({
     # project; the user asked the coordinator for it, not a worker. Hard set
     # rather than the lean denylist, because no task text should restore it.
     "manage_project_context",
+    "manage_teach_mode", "capability_health", "branch_futures",
 })
 
 # Tools a scoped worker never needs but that the retriever happily hands it
@@ -729,6 +730,22 @@ def parse_delegation_args(content: str, *, workspace: Optional[str] = None) -> D
             name = _short(instruction, 48)
         row: Dict[str, Any] = {"name": name[:80], "instruction": instruction[:8000],
                                "model": model[:120], "files": files}
+        if isinstance(t, dict):
+            # Selection vocabulary belongs to TaskSpec, not to the resolver's
+            # model/timeout override contract. Preserve it explicitly at the
+            # caller boundary so automatic selection has an actual task to
+            # measure. Payloads without these keys remain byte-for-byte equal.
+            for _key in ("intent", "description", "mode", "output_contract"):
+                _value = str(t.get(_key) or "").strip()
+                if _value:
+                    row[_key] = _value[:1000 if _key == "description" else 120]
+            for _key in ("required_capabilities", "required_tools", "specialties"):
+                _value = t.get(_key)
+                if isinstance(_value, str):
+                    _value = [part.strip() for part in _value.split(",") if part.strip()]
+                if isinstance(_value, (list, tuple)) and _value:
+                    row[_key] = [str(part).strip()[:120] for part in _value
+                                 if str(part).strip()][:40]
         # `agent` and `resume` are carried ONLY when the caller named one —
         # the discipline `runner` already keeps in src/dispatch.py. A task with
         # neither key must produce the dict this parser produced before they
@@ -827,6 +844,12 @@ class SubagentRun:
         self.model_override = task.get("model") or ""
         self.files: List[str] = list(task.get("files") or [])
         self.role = role
+        self.task_spec: Dict[str, Any] = {
+            key: task[key] for key in (
+                "intent", "description", "required_capabilities",
+                "required_tools", "mode", "specialties", "output_contract",
+            ) if task.get(key)
+        }
         # ── the agent definition this worker came from (src/agent_defs.py) ──
         # Every one of these is empty/None for a task that named no agent, and
         # each is read at exactly one enforcement point below.
@@ -1548,10 +1571,13 @@ def _attach_resolution(runs: List["SubagentRun"], workspace: Optional[str],
         return
     for run in rows:
         try:
-            task = {k: v for k, v in (("model", run.model_override),
-                                      ("endpoint_id", run.endpoint_id),
-                                      ("max_rounds", run.max_rounds_override),
-                                      ("timeout_s", run.timeout_s_override)) if v}
+            task = dict(run.task_spec)
+            task.setdefault("description", run.instruction)
+            task.setdefault("mode", run.role or "worker")
+            task.update({k: v for k, v in (("model", run.model_override),
+                                           ("endpoint_id", run.endpoint_id),
+                                           ("max_rounds", run.max_rounds_override),
+                                           ("timeout_s", run.timeout_s_override)) if v})
             resolution = resolver.resolve(
                 agent=run.agent, task=task, defs=catalogue, workspace=workspace,
                 scope={"owner": str(owner or ""), "project_id": project_id,

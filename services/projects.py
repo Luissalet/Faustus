@@ -93,6 +93,7 @@ LINK_PATCHABLE_FIELDS = (
     "label", "role", "tags", "retrieval_policy", "version_policy",
     "pinned_version", "summary", "summary_revision", "enabled",
     "index_status", "index_revision", "content_revision", "access_mode",
+    "source_state", "source_checked_at", "source_message",
     # `updated_at` is accepted and then overwritten by `patch_link`, which
     # stamps its own. It is listed because refusing it made PATCH and refresh
     # unusable against the real store: `ProjectContextService` sends the field
@@ -626,6 +627,10 @@ class ProjectStore:
             "content_revision": str(raw.get("content_revision") or ""),
             "index_status": _one_of(raw.get("index_status"), INDEX_STATUSES, "none"),
             "index_revision": str(raw.get("index_revision") or ""),
+            "source_state": _one_of(raw.get("source_state"),
+                                    ("ok", "missing", "forbidden", "unsupported"), "ok"),
+            "source_checked_at": int(raw.get("source_checked_at") or 0),
+            "source_message": str(raw.get("source_message") or "")[:512],
             "access_mode": _one_of(raw.get("access_mode"), ACCESS_MODES, "work_root"),
             "enabled": bool(raw.get("enabled", True)),
         }

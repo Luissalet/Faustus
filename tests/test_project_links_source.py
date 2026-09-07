@@ -347,7 +347,9 @@ def test_a_queued_link_is_readable_and_says_it_is_not_indexed(store, project,
     assert "queued" in got.meta["note"]
     assert link["id"] == got.meta["link_id"]
 
-    # An indexed one makes no such disclaimer.
+    # A stored `ready` marker alone is not proof that the derived index exists.
+    # This fixture deliberately creates no index row, so retrieval stays
+    # available but must say it fell back to the resolver.
     ready = attach(store, project, note, id="ctx_readyready",
                    label="Ready", retrieval_policy="auto",
                    index_status="ready", version_policy="pinned",
@@ -355,8 +357,9 @@ def test_a_queued_link_is_readable_and_says_it_is_not_indexed(store, project,
     settled = [c for c in _excerpts(_search(
         _round(_request(query="TOON", project_id=project["id"]),
                sections=("code_map",)))) if c.meta["link_id"] == ready["id"]]
-    assert settled and all(c.degraded is False for c in settled)
-    assert all("note" not in (c.meta or {}) for c in settled)
+    assert settled and all(c.degraded is True for c in settled)
+    assert all("durable index could not be verified" in c.meta.get("note", "")
+               for c in settled)
 
 
 # ── reopening a ref ────────────────────────────────────────────────────────

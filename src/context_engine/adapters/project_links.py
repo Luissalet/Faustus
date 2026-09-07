@@ -441,12 +441,56 @@ class ProjectLinksSource(ThreadedSource):
             logger.error("project_links: resolver returned an ok result owned by "
                          "somebody else; refusing to search it")
             return []
+
+        link_id = str(link.get("id") or "")
+        project_id = str(project.get("id") or "")
+        expected_revision = str(link.get("content_revision") or "")
+        index_revision = str(link.get("index_revision") or "")
+        status = str(link.get("index_status") or "none")
+        if status == "ready" and expected_revision and index_revision == expected_revision:
+            try:
+                from src.project_context import index as context_index
+                durable_revision = context_index.indexed_revision(
+                    owner=owner, project_id=project_id, link_id=link_id)
+                if durable_revision == expected_revision:
+                    indexed = context_index.search(
+                        owner=owner, project_id=project_id, link_id=link_id,
+                        query=query, limit=limit)
+                    hits = [_RetrievedMatch.from_match(
+                        hit, degraded=False, mode="index") for hit in indexed[:limit]]
+                    if hits:
+                        from src.project_context.service import note_retrieved
+                        note_retrieved(
+                            owner=owner, project_id=project_id, link_id=link_id,
+                            source_kind=kind,
+                            source_ref=str(link.get("ref_id") or link.get("path") or ""),
+                            revision=expected_revision, mode="index", matches=len(hits))
+                    return hits
+            except Exception as exc:  # noqa: BLE001 - direct read remains available
+                logger.debug("index search for link %s failed: %s", link_id, exc)
         try:
-            hits = list(resolver.search(ref, query, limit=limit) or [])
+            direct = list(resolver.search(ref, query, limit=limit) or [])
         except Exception as exc:                                # noqa: BLE001
             logger.debug("search inside link %s failed: %s", link.get("id"), exc)
             return []
-        return hits[:limit]
+        # A ready marker without its matching durable index is degraded too:
+        # serving a direct read is preferable to dropping the source, but it
+        # must not be described as an indexed result.
+        degraded = status in PENDING_INDEX_STATUSES or status == "ready"
+        hits = [_RetrievedMatch.from_match(
+            hit, degraded=degraded, mode="direct") for hit in direct[:limit]]
+        if hits:
+            try:
+                from src.project_context.service import note_retrieved
+                note_retrieved(
+                    owner=owner, project_id=project_id, link_id=link_id,
+                    source_kind=kind,
+                    source_ref=str(link.get("ref_id") or link.get("path") or ""),
+                    revision=str(getattr(hits[0], "revision", "") or expected_revision),
+                    mode="direct", matches=len(hits))
+            except Exception as exc:  # noqa: BLE001 - telemetry cannot break retrieval
+                logger.debug("could not emit retrieval event for %s: %s", link_id, exc)
+        return hits
 
     def _excerpt_candidate(self, req: RetrievalRequest, project: Mapping[str, Any],
                            link: Mapping[str, Any], match: Any, section: str, *,
@@ -460,16 +504,19 @@ class ProjectLinksSource(ThreadedSource):
         revision = (str(getattr(match, "revision", "") or "")
                     or str(link.get("content_revision") or ""))
         status = str(link.get("index_status") or "none")
-        degraded = status in PENDING_INDEX_STATUSES
+        degraded = bool(getattr(match, "degraded", status in PENDING_INDEX_STATUSES))
 
         meta = self._provenance(link)
         meta["location"] = location
         meta["revision"] = revision
         meta["retrieval_reason"] = "explicit_reference" if named else "keyword+role"
+        meta["retrieval_mode"] = str(getattr(match, "mode", "direct") or "direct")
         if degraded:
             # §12: usable now, and honest about how. Never "indexed".
+            suffix = ("the durable index could not be verified"
+                      if status == "ready" else f"this link's index is {status}")
             meta["note"] = (f"read directly through the {link.get('kind')} resolver; "
-                            f"this link's index is {status}")
+                            f"{suffix}")
         if not lanes:
             lanes = ("explicit", "lexical") if named else ("lexical",)
         return make_candidate(
@@ -613,6 +660,30 @@ class _Window:
         self.snippet = snippet
         self.score = score
         self.revision = revision
+
+
+class _RetrievedMatch:
+    """A resolver/index match carrying how it was obtained."""
+
+    __slots__ = ("location", "snippet", "score", "revision", "degraded", "mode")
+
+    def __init__(self, *, location: Mapping[str, Any], snippet: str,
+                 score: float, revision: str, degraded: bool, mode: str) -> None:
+        self.location = dict(location or {})
+        self.snippet = str(snippet or "")
+        self.score = float(score or 0.0)
+        self.revision = str(revision or "")
+        self.degraded = bool(degraded)
+        self.mode = str(mode or "direct")
+
+    @classmethod
+    def from_match(cls, match: Any, *, degraded: bool,
+                   mode: str) -> "_RetrievedMatch":
+        return cls(location=getattr(match, "location", None) or {},
+                   snippet=getattr(match, "snippet", ""),
+                   score=getattr(match, "score", 0.0),
+                   revision=getattr(match, "revision", ""),
+                   degraded=degraded, mode=mode)
 
 
 __all__ = [

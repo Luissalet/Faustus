@@ -206,6 +206,13 @@ class ReadFileTool:
         # A ranged read, and any file that fits, are untouched below.
         ranged = offset > 0 or limit > 0
         window_tokens = 0 if ranged else read_plan.resolve_window_tokens(ctx)
+        # On Windows opening a directory raises PermissionError rather than
+        # IsADirectoryError.  Classify it before open() so the agent gets the
+        # actionable, platform-independent instruction it has always been
+        # promised instead of being told the folder's ACL is wrong.
+        if os.path.isdir(path):
+            return {"error": f"read_file: {path}: is a directory (use ls)",
+                    "exit_code": 1}
         try:
             def _read():
                 if ranged:

@@ -65,7 +65,7 @@ import importlib
 import json as _json
 import re
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 from html.parser import HTMLParser
 from typing import Any, Dict, List, Optional, Sequence
 
@@ -689,7 +689,10 @@ def build_transcript(session, *, include_tools: bool = True,
     return Transcript(
         name=_text_value(_attr(session, "name", "")),
         model=_text_value(_attr(session, "model", "")),
-        exported_at=datetime.now(),
+        # Exports can be produced by background workers on hosts with a
+        # different local timezone.  Persist an unambiguous instant; renderers
+        # keep the existing human-readable layout while JSON retains +00:00.
+        exported_at=datetime.now(timezone.utc),
         messages=messages,
         session_id=_text_value(_attr(session, "id", "")),
     )

@@ -67,24 +67,18 @@ async def test_run_ssh_command_executes_with_stdin_and_returns_output(monkeypatc
         "python -",
         timeout=5,
         connect_timeout=4,
-        strict_host_key_checking=False,
+        strict_host_key_checking=True,
         stdin_data=b"python -m pip install vllm",
     )
 
     assert rc == 0
     assert out == b"stdout"
     assert err == b"stderr"
-    assert captured["args"] == [
-        "ssh",
-        "-o",
-        "ConnectTimeout=4",
-        "-o",
-        "StrictHostKeyChecking=no",
-        "-p",
-        "2222",
-        "alice@gpu-box",
-        "python -",
-    ]
+    assert captured["args"][0] == "ssh"
+    assert "ConnectTimeout=4" in captured["args"]
+    assert "StrictHostKeyChecking=yes" in captured["args"]
+    assert any(part.startswith("UserKnownHostsFile=") for part in captured["args"])
+    assert captured["args"][-4:] == ["-p", "2222", "alice@gpu-box", "python -"]
     assert captured["stdin"] is not None
     assert captured["stdout"] is not None
     assert captured["stderr"] is not None

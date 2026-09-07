@@ -15,15 +15,24 @@ La deuda y los riesgos del overhaul de interfaz viven aparte, en
 
 ## Lo primero que hay que mirar
 
-- `[~]` **44 tests rojos en Windows, ninguno de hoy, y 17 los provoca el `data/` local.** Medido el
-  04-09 (§40.7): la suite entera da **10.345 en verde**, 47 fallos, 6 errores, 74 saltados en
-  15 min 34 s. Comparado como debe compararse —misma carpeta, mismo `data/`, misma lista, cambiando
-  solo el commit— el commit anterior da **exactamente los mismos 44**: cero regresiones. Lo nuevo es
-  saber que **17 desaparecen en una worktree limpia**, así que no son «de Windows» sino del estado
-  local de esta máquina. Los grupos: `test_sys_usage_js` (11), `test_process_ownership` (6),
-  `test_agent_loop_offer_execute_coherence` (5), `test_report_export` (4), y los 6 errores de
-  parámetros gigantes (`test_claim_verify`, `test_output_rules`, `test_research_citations`). Ninguno
-  se ha diagnosticado uno por uno todavía; lo que está probado es que son heredados.
+- `[?]` **Jarvis: validación con micrófono real pendiente (07-09-2026).** La implementación de voz
+  está en `docs/design/voice-jarvis.md`: Whisper local, inglés/español, síntesis nativa
+  de Windows, esfera reactiva, revisión de transcripción e interrupción manual.
+  Los 20 tests específicos, TypeScript y compilación pasan. La revisión visual
+  de escritorio/móvil cerró tres hallazgos. Falta comprobar micrófono físico y conversación completa con
+  el LLM. Activación por palabra y barge-in acústico son mejoras pendientes,
+  no capacidades incluidas en esta entrega inicial.
+
+- `[x]` **La referencia histórica de 44 tests rojos ya no describe esta revisión.**
+  La primera suite completa del 07-09 produjo 12.307 correctos, 12 fallos y 82
+  omitidos. Se corrigieron el color de respaldo de la esfera y la contaminación
+  de identidad de módulos causada por tests que recargaban autenticación y rutas
+  sin restaurarlas. La reproducción conjunta de esos archivos y sus consumidores
+  pasa: 222 correctos, uno omitido. La segunda suite completa da 12.318 correctos,
+  82 omitidos y sólo un fallo de ubicación documental, corregido moviendo la guía
+  de Jarvis a `docs/design/` y revalidando el área afectada. No se repitió la suite
+  completa tras ese movimiento. Conservar la medición histórica del 04-09 en
+  `FAUSTUS.md` §40.7, no como estado actual.
 
 ---
 
@@ -62,20 +71,24 @@ al romperlo:
   `data/skills/ai-integration-setup`, que ya no está en el árbol, así que la
   reproducción exacta de aquel fallo no se ha repetido.
 
-- `[!]` **`bg_jobs.refresh()` mata por pid sin comprobar propiedad en la rama
+- `[x]` **`bg_jobs.refresh()` mataba por pid sin comprobar propiedad en la rama
   de timeout.** El orden del `elif` hace que `_pid_alive` nunca se alcance para
   un registro caducado, y un `_pid_alive` no ayudaría: un pid reciclado *está*
   vivo. El arreglo real es persistir la hora de creación del pid al lanzar y
   compararla al matar — que es lo que hace `process_ownership.note_started` en
   memoria, pero su `_create_time` es privado. Ruta del monitor, no alcanzable
-  por el agente.
+  por el agente. **Cerrado en la auditoría actual:** el lanzamiento registra la
+  identidad del proceso y el timeout sólo termina el árbol si esa identidad
+  sigue coincidiendo; un PID reciclado se rechaza.
 
-- `[!]` **`taskkill /T` en Windows y el pid del padre huérfano.** Windows nunca
+- `[x]` **`taskkill /T` en Windows y el pid del padre huérfano.** Windows nunca
   limpia el pid del padre de un huérfano, así que un proceso cuyo padre real
   murió hace tiempo y cuyo pid de padre registrado se recicló en nuestro
   `bash.exe` está *dentro de nuestro árbol* para taskkill. Desde el pid no hay
   nada comprobable. Solo lo arreglaría recorrer el árbol filtrando por hora de
   creación, lo que haría que `psutil` fuese obligatorio en la ruta de matar.
+  **Cerrado en la auditoría actual:** `kill_process_tree` usa el registro de
+  propiedad y `psutil`; ya no entrega un PID desnudo a `taskkill /T`.
 
 ---
 
@@ -402,9 +415,10 @@ Lo que **no** cierra, dicho aquí para que se pueda encontrar:
 - `[~]` **`vault.json` y `BW_SESSION`.** El perfil `content` ya lo excluye entero, así que la
   sesión de Bitwarden no viaja en un backup en claro. Lo que el informe pide además —no
   persistir `BW_SESSION`, o cifrarlo con caducidad— sigue pendiente en `routes/vault`.
-- `[!]` `tests/test_agent_gate.py::test_the_hook_script_is_not_left_behind` falla en Windows
+- `[x]` `tests/test_agent_gate.py::test_the_hook_script_is_not_left_behind` fallaba en Windows
   **desde antes de esta rama** (comprobado con el árbol guardado en stash): el directorio
-  `faustus-gate-*` del hook queda en el temporal. No es de SEC-1, pero está sin dueño.
+  `faustus-gate-*` del hook queda en el temporal. **Cerrado en la auditoría actual:** el
+  cierre quita el atributo de sólo lectura antes de borrar y la regresión pasa en Windows.
 
 ## AUTH-1: lo cerrado, y lo que el mismo informe deja abierto
 
@@ -493,10 +507,12 @@ Los 25 bugs de `inspiration/AUDITORIA_BACKEND_Y_FEATURES_FAUSTUS.md` están cerr
 
 ### NET-1 (B-019)
 
-- `[!]` **Uno de los dos casos visibles del informe sigue abierto.**
+- `[x]` **El segundo caso visible de rebinding quedó cerrado en la auditoría actual.**
   `routes/webhook/webhook_routes.py` valida la `base_url` en la ruta, pero la petición la emite
   `llm_call_async` en `src/llm_core.py`, que B-019 no lista. La ventana de rebinding sigue ahí
-  y necesita un lote que sea dueño de `llm_core`.
+  y necesita un lote que sea dueño de `llm_core`. `llm_call_async` valida la resolución,
+  fija la IP pública usada por el transporte, desactiva redirecciones y no hereda proxies
+  del entorno para esta ruta; el pin se vuelve a construir en cada petición.
 - `[+]` **`src/url_security.py` es un tercer clasificador de direcciones privadas.** Parte de
   la fragmentación que B-019 describe; fuera de las rutas que nombra.
 
@@ -505,21 +521,23 @@ Los 25 bugs de `inspiration/AUDITORIA_BACKEND_Y_FEATURES_FAUSTUS.md` están cerr
 - `[!]` **Rompe conexiones existentes y no hay interfaz para arreglarlo.** Con el `known_hosts`
   privado vacío, todo host remoto deja de conectar hasta emparejarlo. Los endpoints están
   (`/api/cookbook/ssh/fingerprint`, `/pair`, `/unpair`); Studio no.
-- `[+]` **Quedan sitios con el flag antiguo:** `routes/hwfit_routes.py` y
+- `[x]` **Los sitios con el flag antiguo quedaron cerrados:** `routes/hwfit_routes.py` y
   `services/hwfit/hardware.py` pasan `strict_host_key_checking=False`, y
   `core/platform_compat._ssh_exec_argv` y `routes/cookbook_helpers.run_ssh_command_async`
-  siguen aceptando ese valor. No están entre las rutas de B-025.
+  seguían aceptando ese valor. Ya pasan por el almacén emparejado de Faustus y el helper
+  genérico rechaza explícitamente `strict_host_key_checking=False`.
 - `[?]` **Nada se probó contra un SSH real.** `ssh-keyscan` está doblado en todos los tests, así
   que la forma real de su salida y el comportamiento de `UserKnownHostsFile` con una ruta de
   Windows están sin verificar contra un `ssh.exe` de verdad.
 
 ### MAIL-1 (B-023) y UPLOAD-1 (B-021)
 
-- `[!]` **Agujero residual en `document_routes.py`.** `prepare-signed-reply` sigue dejando
+- `[x]` **Agujero residual en `document_routes.py`.** `prepare-signed-reply` dejaba
   ficheros `<uuid>_<nombre>` planos en la raíz del staging, y hay un puente que los resuelve con
   la semántica antigua. Un token filtrado de ahí sigue siendo adjuntable por cualquier usuario
   autenticado. El arreglo es una llamada a `register_compose_upload`; el fichero no está entre
   los que B-023 nombra, y hay un test que fija el puente para que quitarlo sea deliberado.
+  **Cerrado:** ahora registra el fichero con dueño mediante `register_compose_upload`.
 - `[+]` **El poller programado no pasa dueño.** `email_pollers.py` tiene `row_owner` a mano y
   llama sin él. Una línea.
 - `[+]` **La limpieza de adjuntos es oportunista**, colgada de la ruta de staging, no de un
@@ -532,14 +550,14 @@ Los 25 bugs de `inspiration/AUDITORIA_BACKEND_Y_FEATURES_FAUSTUS.md` están cerr
 - `[+]` **Sin Job Objects en Windows.** Se persiste el pgid en POSIX; en Windows la propiedad se
   demuestra por hora de creación. Un Job Object habría que crearlo al lanzar, en
   `core/platform_compat`, fuera de las rutas de B-001.
-- `[+]` **`core/platform_compat.kill_process_tree` se queda como estaba**, así que
-  `routes/cookbook_routes.py` sigue llamando a `taskkill /T` sobre un pid pelado. Mismo fallo,
-  fichero no listado.
+- `[x]` **`core/platform_compat.kill_process_tree` ya no llama a `taskkill /T` sobre un PID
+  pelado.** Delega en la terminación con prueba de propiedad y conserva el fallback explícito
+  sólo para los llamantes que han aceptado el árbol no verificado.
 - `[?]` **La rama POSIX está simulada.** Todos sus tests corren en Windows con `IS_WINDOWS`
   monkeypatcheado y `os.getpgid`/`os.killpg` inyectados. Nada se ha ejecutado en POSIX real.
-- `[!]` **psutil pasa a ser necesario** para desmontar árboles, y no hay pin en `requirements`.
-  Sin él, `bg_jobs` se niega a señalar —que es la regla del informe— donde antes mataba sin
-  preguntar.
+- `[x]` **psutil pasa a ser necesario** para desmontar árboles, y ya está fijado en
+  `requirements.txt` (`psutil>=5.9,<8`). Sin él, `bg_jobs` se niega a señalar —que es la regla
+  del informe— donde antes mataba sin preguntar.
 
 ### RUN-1 (B-014, B-015, B-016)
 
@@ -558,7 +576,7 @@ Los 25 bugs de `inspiration/AUDITORIA_BACKEND_Y_FEATURES_FAUSTUS.md` están cerr
 
 ### ART-1 (B-017)
 
-- `[!]` **La migración entera está pendiente, y ese es el plan.** Fases 2 a 5 de la nota:
+- `[~]` **La migración entera está pendiente, y ese es el plan.** Fases 2 a 5 de la nota:
   copiar `artifacts` a ocurrencias, hashear las filas de galería, y los dos cortes. Nada llama
   todavía al almacén nuevo desde `collect()`/`persist()`; `artifacts` sigue siendo la verdad.
 - `[+]` **La recolección de basura no borra bytes por defecto**, y aunque se le pida se niega a
@@ -595,13 +613,14 @@ de `agent_context_engine` y `agent_context_engine_shadow`, apagadas por defecto.
 
 ### Tests
 
-- `[!]` **`tests/test_static_checks.py::test_the_loop_does_not_spend_a_round_on_a_warning_that_was_already_there`
-  falla, y es preexistente.** Comprobado corriéndolo antes y después del cambio, en el mismo
+- `[x]` **`tests/test_static_checks.py::test_the_loop_does_not_spend_a_round_on_a_warning_that_was_already_there`
+  ya pasa.** Comprobado corriéndolo antes y después del cambio, en el mismo
   árbol: falla igual en los dos. Dos motivos que se suman y ninguno es del Context Engine: el
   arnés del test marca como cambiada una línea que nadie tocó, y el propio test **habla con el
   Ollama vivo de esta máquina**, así que su resultado depende de qué modelo esté cargado. Un
   test estático que necesita un modelo no es un test estático; hay que separarlo en dos o
-  saltarlo sin endpoint.
+  saltarlo sin endpoint. **Cerrado en la auditoría actual:** el editor falso conserva los
+  finales de línea y ya no atribuye al turno un cambio LF→CRLF que no hizo.
 - `[~]` **`tests/test_disk_ballast.py` (6 tests) y `test_atomic_io` fallan sólo con `pytest -n 6`.**
   En serie pasan los siete. Es contención: los dos escriben ficheros grandes y miden espacio o
   atomicidad, y seis workers a la vez sobre el mismo disco se pisan. **No es una regresión**, pero
@@ -610,13 +629,14 @@ de `agent_context_engine` y `agent_context_engine_shadow`, apagadas por defecto.
 
 ### Deuda que el propio subsistema declara
 
-- `[!]` **`src/context_engine/wiring.py::observe_receipt` está implementado, probado y no
+- `[x]` **`src/context_engine/wiring.py::observe_receipt` está implementado, probado y
   cableado.** Registra qué referencias abrió el turno, cuántos resultados de herramienta añadió,
   el `outcome_ref` y el veredicto; sólo lo llaman los tests. Es la costura de la Fase 2, y
   mientras no exista `historical_utility` no tiene de dónde salir: el factor está en la fórmula
   del ranking y siempre vale lo mismo. Un recibo sobre un paquete que no se entregó no significa
-  nada, así que va con la migración, no antes.
-- `[!]` **El adaptador de sesiones no tiene proveedor de historial por defecto.**
+  nada, así que va con la migración, no antes. El bucle lo llama sólo después de entregar un
+  paquete real y de conocer el veredicto del turno.
+- `[x]` **El adaptador de sesiones tiene proveedor de historial acotado al turno.**
   `src/context_engine/adapters/sessions.py` se niega a propósito a leer la base de datos de
   sesiones —`SessionManager.get_session` no acepta dueño (cualquier id, incluido uno que un
   modelo escriba en un mensaje, resuelve a los mensajes de esa sesión), muta la caché y
@@ -625,9 +645,11 @@ de `agent_context_engine` y `agent_context_engine_shadow`, apagadas por defecto.
   producción.** Consecuencia: `available()` es `False` y **ningún paquete compilado hoy tiene
   sección `recent_messages`**. Es el estado honesto (visiblemente ausente antes que
   silenciosamente equivocado), pero es un agujero en la comparación sombra: el informe compara un
-  paquete sin historial contra un prompt que sí lo lleva.
-- `[?]` **`budgets.AppParityEstimator` no reproduce `src.model_context.estimate_tokens`
-  exactamente, y su docstring dice que sí.** Usa el mismo 0,3 caracteres por token
+  paquete sin historial contra un prompt que sí lo lleva. **Cerrado:** `history_scope` recibe
+  exactamente el historial que ya posee el turno y exige coincidencia de dueño y sesión, sin
+  tocar la caché global ni `last_accessed`.
+- `[x]` **`budgets.AppParityEstimator` reproduce `src.model_context.estimate_tokens`
+  exactamente.** Usa el mismo 0,3 caracteres por token
   (`APP_PARITY_CHARS_PER_TOKEN = 1.0 / 0.3`) y el mismo coste de 4 tokens por mensaje, pero
   `_BaseEstimator.count()` hace `math.ceil(len(text) / chars_per_token)` mientras
   `estimate_tokens` hace `int(len(content) * 0.3)`: uno redondea hacia arriba y el otro trunca,
@@ -637,33 +659,39 @@ de `agent_context_engine` y `agent_context_engine_shadow`, apagadas por defecto.
   `budgets.py` sigue diciendo *"Reproduces `src.model_context.estimate_tokens` exactly"*, que es
   falso. Hay que decidir: o se unifican (que `AppParityEstimator` trunque) o se corrige el
   docstring. Unificarlas es lo correcto — un carril que existe para comparar y no compara igual
-  no sirve para lo que se creó.
-- `[+]` **`budgets.py` nombra un test que no existe.** El comentario de `IMAGE_BLOCK_TOKENS` dice
+  no sirve para lo que se creó. Ya usa truncado y las mismas reglas para bloques y tool calls.
+- `[x]` **`budgets.py` ya tiene la prueba de paridad que nombra.** El comentario de `IMAGE_BLOCK_TOKENS` dice
   *"Kept in sync by `tests/test_context_engine_budgets.py`, which reads the constant from there"*,
   y ese fichero **no está en `tests/`**. Nada comprueba que los 1200 de
   `context_engine/budgets.py` sigan al valor de `src/model_context.py`; si uno cambia, el otro se
   queda callado. El docstring de `adapters/documents.py` cita ese mismo arreglo como precedente
-  del suyo (que sí existe, en `test_context_engine_sources.py`). Una línea de test.
-- `[~]` **Nada llama a `maintenance.run()` en bucle.** Las seis tareas sólo se disparan a mano
+  del suyo (que sí existe, en `test_context_engine_sources.py`). `test_context_engine_budgets.py`
+  fija la constante y compara entradas generadas contra la función canónica.
+- `[x]` **El mantenimiento del Context Engine ya corre en bucle.** Las seis tareas también se disparan a mano
   (`POST /api/context/maintenance/run` o la tool MCP). `should_yield()` ya sabe cederle la máquina
   a un turno en vuelo, y `agent_context_ledger_days` promete una poda que hoy no ocurre sola: el
   ledger crece hasta que alguien pulse el botón. Mismo agujero que el `advance()` de los
-  workflows.
+  workflows. `scheduler_loop` reparte las tareas de workspace entre todos los proyectos,
+  respeta un presupuesto y cede mientras haya conversación activa; el supervisor lo arranca
+  después del primer render.
 - `[?]` **La sombra no se ha corrido contra un turno real con un modelo real.** `shadow_round` y
   `manifest.compare()` están probados con mensajes construidos en los tests. Nadie ha encendido
   `agent_context_engine_shadow` en una conversación de verdad y leído el informe.
-- `[~]` **`agent_context_engine` no hace nada todavía.** `wiring.enabled()` lee el ajuste y su
+- `[x]` **`agent_context_engine` ya gobierna el camino canónico.** `wiring.enabled()` lee el ajuste y su
   propio docstring dice que nadie lo llama: existe para que los consumidores de la Fase 2 tengan
   un solo sitio donde preguntar. Encenderlo hoy no cambia ningún prompt, lo que es correcto pero
-  no es lo que un usuario deduce de una casilla en Ajustes.
-- `[~]` **`incognito` siempre es `False` en la práctica.** `wiring.build_request()` lo lee de
+  no es lo que un usuario deduce de una casilla en Ajustes. El bucle compila el paquete por ronda,
+  entrega el render acotado, emite el manifiesto y registra el recibo; apagado conserva el camino
+  anterior.
+- `[x]` **`incognito` llega desde la ruta de chat.** `wiring.build_request()` lo lee de
   `harness_options`, que `routes/chat_routes._project_harness_options` rellena sólo con los campos
   de `services.projects.AGENT_OPTION_FIELDS`. La política existe, se aplica **antes** de la
-  recuperación (que es lo que importa) y está probada; lo que falta es que la ruta la rellene.
+  recuperación (que es lo que importa) y está probada; la ruta lo añade ahora a las opciones
+  internas sin convertirlo en una preferencia persistente del proyecto.
 
 ### Lo que se vio en los carriles viejos (no es del Context Engine, pero está ahí)
 
-- `[!]` **`src/memory_engine.py::pack_detail()` marca como accedidas todas las memorias que
+- `[x]` **`src/memory_engine.py::pack_detail()` ya no marca como accedidas las memorias que
   devuelve.** Su búsqueda interna sí llama a `search(..., touch_hits=False)`, pero al final la
   función hace `touch(ids, now)` sobre **todo** lo que empaquetó: reglas procedurales,
   antipatrones y aciertos. Recuperar no es usar. Un ítem que el presupuesto tira después no se
@@ -672,14 +700,14 @@ de `agent_context_engine` y `agent_context_engine_shadow`, apagadas por defecto.
   esquiva por otra vía —`adapters/memory.py` reconstruye la selección sin consulta desde
   `scoped_items()`, que es una lectura pura, y registra el uso una sola vez desde
   `ContextReceipt`— pero **el carril viejo sigue tocando en cada turno**, y es el que está
-  encendido.
-- `[!]` **`services/docs/service.py::query` no propaga `owner` a `rag_vector.search`.** La firma
+  encendido. El toque se hace únicamente en `note_injected`, después de saber qué se entregó.
+- `[x]` **`services/docs/service.py::query` propaga `owner` a `rag_vector.search`.** La firma
   es `query(self, query, top_k=5)` y llama a `self.rag.search(query, k=top_k)`, sin dueño.
   `rag_vector.search` **sí** acepta `owner` y con él aplica un `where={"owner": owner}` sobre la
   colección; sin él devuelve chunks de todos los dueños de la instalación. El Context Engine no
   usa este camino (su adaptador de documentos pasa por `rag_manager` con el dueño de
   `request.execution`), pero cualquiera que use `DocsService` tiene una fuga entre usuarios. El
-  arreglo es un parámetro y una línea.
+  arreglo es un parámetro y una línea; ambos están ya aplicados y cubiertos por regresión.
 - `[+]` **`src/memory_engine.record_outcome` sólo puntúa ítems `procedural`.** Está dicho en su
   docstring y es defendible —son las reglas que se le pidió al modelo que siguiera, así que un
   pase o un fallo es evidencia sobre ellas—, pero la consecuencia es que `semantic` y `episodic`
@@ -699,7 +727,15 @@ Project Context Links (`FAUSTUS.md` §54, `OBJETIVOS.md`) cierra las fases 1 a 4
 Lo que falta por construir está en `OBJETIVOS.md`; esto es lo que está construido y **habría que
 mirar**.
 
-- `[!]` **`DELETE /api/projects/{id}/context/{item_id}` no emite `project_context_detached`.** La
+- `[x]` **La cola de indexación ya es real.** `src/project_context/indexer.py` consume enlaces
+  `queued`, `stale` y `indexing`, cede ante conversaciones activas y publica por transacción en
+  `data/project_context_index.db`. La lectura comprueba dueño, proyecto y revisión antes de usar
+  chunks; conserva la lectura directa degradada como respaldo. Los eventos `indexed`,
+  `index_failed` y `retrieved` ya tienen productor. Verificado con 198 pruebas del servicio,
+  fuentes del Context Engine, configuración y supervisor, incluidas carreras de revisión y
+  aislamiento entre dueños.
+
+- `[x]` **`DELETE /api/projects/{id}/context/{item_id}` emite `project_context_detached`.** La
   ruta va por `ProjectStore.remove_context_item` y no por `ProjectContextService.detach`, y lo
   hace por un motivo real y escrito en su docstring: un solo endpoint tiene que servir para el
   `item_id` legado de diez hex y para el `ctx_...` nuevo, y `remove_context_item` no necesita
@@ -709,8 +745,9 @@ mirar**.
   tras un desvinculado desde la pantalla la caché del Context Engine conserva entradas derivadas
   de un vínculo que ya no existe hasta que otra cosa la mueva. El arreglo barato es emitir el
   evento en la ruta después del borrado; el correcto es que `detach` acepte los dos formatos de id
-  y la ruta pase por el servicio.
-- `[+]` **`_StampedPatchStore` (`routes/project_routes.py`) es ya un no-op y se puede borrar.**
+  y la ruta pase por el servicio. La ruta ya pasa por `ProjectContextService.detach`, que acepta
+  ambos identificadores e invalida la caché por el evento normal.
+- `[x]` **`_StampedPatchStore` (`routes/project_routes.py`) se ha eliminado.**
   Es un proxy que quita `updated_at` del parche antes de dárselo al store, escrito cuando
   `LINK_PATCHABLE_FIELDS` no aceptaba ese campo y `patch_link` lo rechazaba. Su propio docstring
   dice cuál era el arreglo permanente —«one word added to `LINK_PATCHABLE_FIELDS`»— y esa palabra
@@ -718,7 +755,7 @@ mirar**.
   de `_context_service()`, sin cambiar nada. Borrarlo es quitar una clase y una línea; dejarlo es
   dejar un parche que finge arreglar algo que ya no está roto, que es como se acumulan las capas
   que nadie se atreve a tocar.
-- `[!]` **`ProjectContextService` no marca el vínculo cuando el resolver dice `missing`.**
+- `[x]` **`ProjectContextService` marca el vínculo cuando el resolver dice `missing`.**
   `refresh` sobre una fuente borrada emite `project_context_source_missing`, devuelve
   `RefreshResult(state="missing")` y **deja el vínculo exactamente como estaba** — que es lo
   correcto en la mitad importante (el vínculo sobrevive, sigue siendo evidencia y se puede
@@ -729,7 +766,9 @@ mirar**.
   por fila, que es lo que hace hoy la pantalla con cuatro workers en paralelo— descubre que está
   roto. Añadir el campo es fácil; lo que hay que decidir antes es si un estado observado se guarda
   junto a la pertenencia (y entonces caduca, y hay que decir cuándo se leyó) o si la lista se queda
-  siendo membresía pura y la salud se pide aparte. Hoy no está decidido, sólo está ausente.
+  siendo membresía pura y la salud se pide aparte. Se eligió persistir `source_state`,
+  `source_checked_at` y `source_message`: pertenencia y salud siguen siendo datos distintos,
+  pero la lista ya muestra el último estado observado sin una consulta por fila.
 - `[+]` **La clave de la URL de la pestaña de proyecto es una etiqueta traducida.** `TABS` en
   `studio/src/screens/Project.tsx` mezcla dos vocabularios: `brief` y `chats` en inglés, y
   `objetivos`, `memoria`, `actividad`, `contexto` y `ajustes` que son **exactamente la traducción
@@ -752,13 +791,15 @@ mirar**.
   (102 comprobaciones), y aquí hay **cero**. Un panel cuyos números no se pueden verificar es
   decoración, y estos números deciden si el usuario cree que el agente puede escribir en una
   carpeta.
-- `[?]` **Los seis fallos de tests que se ven al correr esto son preexistentes.** Cinco en
+- `[x]` **Los seis fallos heredados de coherencia de tools están diagnosticados y cerrados.** Cinco en
   `tests/test_agent_loop_offer_execute_coherence.py` y uno en
   `tests/test_external_context_tool_gate.py`. Comprobado revirtiendo el cambio y corriendo con el
   mismo `data/` contra master: fallan igual. Los cinco del primero además **ya estaban anotados en
   este fichero desde el 04-09** («Lo primero que hay que mirar», §40.7), en el grupo de los 44
   rojos heredados de Windows. Ninguno se ha diagnosticado uno por uno todavía; lo que está probado
-  es que no son de aquí.
+  era que no son de aquí. La disponibilidad dinámica retira `suggest_document` hasta que exista
+  documento y la repone al abrir/crear uno; las skills editables siguen atravesando correctamente
+  la aprobación exacta en vez de ejecutar como si fueran de confianza.
 - `[+]` **El docstring de `src/project_context/service.py` dice que sus eventos no están en
   `EVENT_NAMES`, y ya lo están.** La sección «Events» explica que `_emit` intenta el `emit()` real
   y guarda el sobre en un buffer en memoria (`unrouted_events()`) porque los nombres
@@ -775,7 +816,7 @@ de 11: `src/agent_profiles/` (8 ficheros, 5.414 líneas), 15 campos nuevos en `A
 252 tests en verde. Lo que falta por construir está en `OBJETIVOS.md`; esto es lo que está
 construido y **habría que mirar**.
 
-- `[!]` **La fuga de `faustus-gate-*` es real, es preexistente y ahora está diagnosticada.**
+- `[x]` **La fuga de `faustus-gate-*` quedó cerrada.**
   `tests/test_agent_gate.py::test_the_hook_script_is_not_left_behind` **sigue fallando después** de
   borrar las 264 carpetas huérfanas de `%TEMP%`: cada ejecución de la suite del gate deja una nueva
   (`1 failed, 74 passed`, y la aserción imprime el nombre de la carpeta que acaba de nacer). No es
@@ -790,7 +831,8 @@ construido y **habría que mirar**.
   `onerror` que hace exactamente eso limpió las 25 que quedaban de una pasada. El arreglo correcto
   es ese manejador (dos líneas, y `ignore_errors` deja de hacer falta para el caso normal); un
   reintento con backoff no serviría, porque el modo del fichero no cambia con el tiempo. Mientras
-  tanto el precio es una carpeta por run gated en `%TEMP%`, con el hook dentro.
+  tanto el precio era una carpeta por run gated en `%TEMP%`, con el hook dentro. El cierre hace
+  escribible el hook de sólo lectura antes de retirar el directorio y la regresión pasa en Windows.
 - `[x]` **El diálogo de configuración efectiva se cortaba por la derecha** — cerrado en este mismo
   commit (`FAUSTUS.md` §55.10). Sacaba scroll horizontal y dejaba fuera la columna `from`, que es la
   que dice de qué nivel de precedencia salió cada valor y por tanto la única que justifica el
@@ -798,7 +840,7 @@ construido y **habría que mirar**.
   diálogo se ensancha sólo para esta tabla, los anchos de `field` y `from` se declaran en porcentaje
   en vez de medirse del contenido, y un digest o una raíz de trabajo parten dentro de su celda.
   `node scripts/build-studio.js --force` y `tsc --noEmit`, limpios.
-- `[!]` **A la selección automática le llega hoy una `TaskSpec` casi vacía.**
+- `[x]` **La selección automática recibe una `TaskSpec` completa.**
   `resolver._choose` construye la spec con `_call_filtered(TaskSpec, **task)`, que pasa **sólo las
   claves que casan con campos de `TaskSpec`** — filtrar por firma es correcto y está bien
   justificado (los dos módulos se escribieron en paralelo, y adivinar la firma ajena rompe el día
@@ -808,7 +850,8 @@ construido y **habría que mirar**.
   `output_contract`. Consecuencia: cuando nadie nombra un agente, el ranking completo de §14 —que
   está escrito y probado con 35 tests— decide con casi nada, y el `fallback` alfabético gana más de
   lo que debería. Lo que falta es **el mapeo explícito de una tarea de dispatch a una `TaskSpec`**,
-  y el sitio es el llamante, no el resolver. Anotado también en `OBJETIVOS.md`.
+  y el sitio es el llamante, no el resolver. El llamante construye ahora el mapeo explícito y
+  conserva capacidades, tools, intención, especialidades, modo y contrato de salida.
 - `[~]` **Tres tests fijaban un número o un valor concreto en vez de un invariante, y hubo que
   reescribirlos al cablear los perfiles.** Es la cuarta vez que pasa lo de «Un patrón que ya se ha
   repetido tres veces», arriba, y merece quedar escrito con los tres casos por nombre porque los
@@ -1134,6 +1177,14 @@ sigue siendo el único método que encuentra lo que ninguna prueba busca.
 - `[x]` **El `text-overflow: ellipsis` de las tarjetas estaba escrito, era correcto y no hacía
   nada.** Un hijo flex no encoge por debajo de su contenido sin `min-width: 0`, así que una sesión
   bautizada con su primer mensaje se salía de su tarjeta y cruzaba por encima de la de al lado.
+
+- `[x]` **La proyección de proyecto estaba escrita y no era alcanzable.** Ya existe
+  `GET /api/state/project`, con dueño y vocabularios validados, y el Context Engine la consume
+  mediante `StateMirrorSource` sin lanzar sondeos en el camino caliente.
+
+- `[x]` **El intervalo de barrido era un ajuste decorativo.** El supervisor arranca ahora el
+  bucle del State Mirror; deduplica ámbitos de usuario/proyecto, nunca usa un dueño vacío, respeta
+  la bandera y cede mientras haya un chat activo.
 
 ### Lo que se queda abierto, y por qué
 

@@ -84,6 +84,7 @@ import { useDisplay } from '../shell/display';
    panel (browser frames, document editor, file viewer) arrive when opened. */
 const WorkspaceDialog = lazy(() => import('./studio/WorkspaceDialog'));
 const SidePanel = lazy(() => import('./studio/SidePanel'));
+const VoicePanel = lazy(() => import('../voice/VoicePanel'));
 
 /* The speech adapter (TTS/STT with browser fallbacks) loads on first use. */
 const speak = (text: string) => import('../adapters/speech').then((m) => m.speak(text));
@@ -232,6 +233,7 @@ export function StudioScreen() {
   const [panel, panelDispatch] = useReducer(panelReducer, initialPanel);
 
   const controllerRef = useRef<AbortController | null>(null);
+  const runEpoch = useRef(0);
   /* The run's opaque id, from the header the server answers with. Stop is
      fail-closed: without it, `POST /api/chat/stop` refuses to cancel. */
   const runIdRef = useRef<string | null>(null);
@@ -254,6 +256,10 @@ export function StudioScreen() {
 
   const route = useMemo(() => routes.find((r) => r.id === routeId) ?? routes[0] ?? null, [routes, routeId]);
   const current = useMemo(() => sessions?.find((s) => s.id === sessionId) ?? null, [sessions, sessionId]);
+  const visibleSession = useRef(sessionId);
+  visibleSession.current = sessionId;
+  const [voiceSession, setVoiceSession] = useState<string | null>(null);
+  useEffect(() => { setVoiceSession(id => id === sessionId ? id : null); }, [sessionId]);
 
   const say = useCallback((text: string, tone: Notice['tone'] = 'info') => {
     setNotice({ text, tone });
@@ -437,6 +443,7 @@ export function StudioScreen() {
     const controller = new AbortController();
     turnsFromHistory(sessionId, controller.signal)
       .then((result) => {
+        if (controller.signal.aborted) return;
         setTitle(result.name);
         setTurns(result.turns);
         pinnedRef.current = true;
@@ -584,8 +591,10 @@ export function StudioScreen() {
   /** After a turn lands, borrow the server's ids so edit/delete can work. */
   const syncIds = useCallback(
     async (sid: string) => {
+      const epoch = runEpoch.current;
       try {
         const result = await turnsFromHistory(sid);
+        if (visibleSession.current !== sid || runEpoch.current !== epoch) return;
         setTurns((list) => {
           if (!list) return list;
           const out = list.slice();
@@ -618,6 +627,7 @@ export function StudioScreen() {
       options: { approval?: { id: string; decision: Decision }; attachments?: Attachment[]; delegation?: Delegation } = {},
     ) => {
       const controller = new AbortController();
+      runEpoch.current++;
       controllerRef.current = controller;
       setBusy(true);
       pinnedRef.current = true;
@@ -660,6 +670,7 @@ export function StudioScreen() {
           presetId: preset?.id,
           activeDocId: panel.doc && !panel.doc.streaming ? panel.doc.id ?? undefined : undefined,
           onRunId: (id) => {
+            if (controller.signal.aborted || controllerRef.current !== controller) return;
             runIdRef.current = id;
             // The lists say "this one is working" from the first moment,
             // not after the next poll.
@@ -667,22 +678,25 @@ export function StudioScreen() {
           },
           signal: controller.signal,
         })) {
+          if (controller.signal.aborted || controllerRef.current !== controller) break;
           patchLast((t) => apply(t, event));
           panelDispatch({ type: 'event', event, busy: true });
         }
       } catch (error) {
-        if (!controller.signal.aborted) patchLast((t) => apply(t, { type: 'error', message: (error as Error).message }));
-        patchLast((t) => apply(t, { type: 'done' }));
+        if (!controller.signal.aborted && controllerRef.current === controller) {
+          patchLast((t) => apply(t, { type: 'error', message: (error as Error).message }));
+          patchLast((t) => apply(t, { type: 'done' }));
+        }
       } finally {
         if (controllerRef.current === controller) {
           controllerRef.current = null;
           runIdRef.current = null;
           setBusy(false);
+          panelDispatch({ type: 'turn-end' });
+          void syncIds(sid);
         }
-        panelDispatch({ type: 'turn-end' });
         refreshSessions();
         refreshActivity();
-        void syncIds(sid);
       }
     },
     [knobs, workspace, route, gen, patchLast, refreshSessions, syncIds, preset, panel.doc],
@@ -708,9 +722,11 @@ export function StudioScreen() {
         for await (const event of resumeTurn(sid, {
           signal: controller.signal,
           onRunId: (id) => {
+            if (controller.signal.aborted || controllerRef.current !== controller) return;
             runIdRef.current = id;
           },
         })) {
+          if (controller.signal.aborted || controllerRef.current !== controller) break;
           if (!joined) {
             // Only once there IS something to show: an empty rejoin must not
             // leave a ghost bubble at the end of the conversation.
@@ -739,7 +755,9 @@ export function StudioScreen() {
           // The turn is saved now: re-read it so ids, harness and metadata
           // are the server's and not this screen's reconstruction.
           turnsFromHistory(sid)
-            .then((result) => setTurns(result.turns))
+            .then((result) => {
+              if (!controller.signal.aborted && visibleSession.current === sid && !controllerRef.current) setTurns(result.turns);
+            })
             .catch(() => undefined);
         }
       }
@@ -1918,7 +1936,7 @@ export function StudioScreen() {
   const isEmpty = !sessionId && turns !== null && turns.length === 0;
 
   return (
-    <div className="fs-studio" data-testid="studio" data-drawer={drawerOpen || undefined} data-pane={paneHidden ? 'hidden' : undefined} data-panel={panel.open || undefined} data-incognito={knobs.incognito || undefined}>
+    <div className="fs-studio" data-testid="studio" data-voice={Boolean(voiceSession && voiceSession === sessionId) || undefined} data-drawer={drawerOpen || undefined} data-pane={paneHidden ? 'hidden' : undefined} data-panel={panel.open || undefined} data-incognito={knobs.incognito || undefined}>
       <SessionsPane
         sessions={sessions}
         currentId={sessionId}
@@ -2039,6 +2057,11 @@ export function StudioScreen() {
           </div>
         )}
 
+        {voiceSession && voiceSession === sessionId && <Suspense fallback={<div className="fs-studio__notice" role="status">{t('Opening voice mode…')}</div>}>
+          <VoicePanel key={voiceSession} sessionName={project?.name || title || t('Conversation')} busy={busy}
+            turn={turns?.slice().reverse().find(turn => turn.role === 'assistant')}
+            onSend={text => void send(text)} onStop={stop} onClose={() => setVoiceSession(null)} />
+        </Suspense>}
         <Composer
           draft={draft}
           setDraft={setDraft}
@@ -2056,6 +2079,13 @@ export function StudioScreen() {
           sessionId={sessionId}
           onSend={(text) => void send(text)}
           onStop={stop}
+          onVoice={() => {
+            if (voiceSession) { setVoiceSession(null); return; }
+            void ensureSession(t('Voice conversation')).then(sid => {
+              if (sid && (visibleSession.current === sid || freshRef.current === sid)) setVoiceSession(sid);
+            });
+          }}
+          voiceActive={Boolean(voiceSession)}
           onNotice={say}
           modelPicker={<ModelPicker routes={routes} current={route} onPick={(r) => setRouteId(r.id)} onRefresh={refreshModels} refreshing={refreshingModels} openSignal={modelSignal} />}
           presetChip={<PresetPicker current={preset} onPick={(p) => setPreset(p ? { id: p.id, name: p.name } : null)} onNotice={say} openSignal={presetSignal} />}

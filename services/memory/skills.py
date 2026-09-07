@@ -315,6 +315,7 @@ class SkillsManager:
         fallback_for_toolsets: Optional[List[str]] = None,
         status: str = "draft",
         version: str = "1.0.0",
+        dedupe: bool = True,
     ) -> Dict:
         # Normalize name
         nm = slugify(name or title or description or "skill")
@@ -326,7 +327,7 @@ class SkillsManager:
         # handles the fuzzier near-duplicates this cheap check won't catch.
         _all = self.load_all()
         _dedup_pool = _all if owner is None else [s for s in _all if s.get("owner") == owner]
-        if source != "user":
+        if dedupe and source != "user":
             cand = _tokenize(" ".join([
                 nm, (description or title or ""),
                 (when_to_use if when_to_use is not None else (problem or "")),

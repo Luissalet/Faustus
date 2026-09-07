@@ -59,7 +59,7 @@ function sortSessions(list: ChatSession[], mode: SortMode): ChatSession[] {
   return out.sort((a, b) => Number(b.isImportant) - Number(a.isImportant));
 }
 
-function Row({ s, i, currentId, selecting, selected, live, queuePos, onToggle, onOpen, onMenu }: { s: ChatSession; i: number; currentId: string | null; selecting: boolean; selected: boolean; live: SessionActivity | null; queuePos?: number; onToggle: () => void; onOpen: (id: string) => void; onMenu: () => void }) {
+function Row({ s, i, currentId, selecting, selected, live, queuePos, liveDetail, onToggle, onOpen, onMenu }: { s: ChatSession; i: number; currentId: string | null; selecting: boolean; selected: boolean; live: SessionActivity | null; queuePos?: number; liveDetail?: ChatActivity['details'][string]; onToggle: () => void; onOpen: (id: string) => void; onMenu: () => void }) {
   return (
     <div className="fs-studio__session-row" role="listitem" data-selected={selected || undefined} data-selecting={selecting || undefined}>
       {selecting && (
@@ -78,7 +78,7 @@ function Row({ s, i, currentId, selecting, selected, live, queuePos, onToggle, o
         }}
       >
         <span className="fs-studio__session-name">
-          {live && <ActivityDot state={live} position={queuePos} />}
+          {live && <ActivityDot state={live} position={queuePos} detail={liveDetail} />}
           {s.isImportant && <Star size={11} aria-label={t('Favourite')} className="fs-studio__star" />}
           {isGroupSessionName(s.name) && <Users size={11} aria-label={t('Group chat')} />}
           {isGroupSessionName(s.name) ? stripGroupPrefix(s.name) : s.name}
@@ -253,7 +253,7 @@ export function SessionsPane({ sessions, currentId, filter, setFilter, searchRef
 
   const renderRows = (list: ChatSession[], offset = 0) =>
     list.map((s, i) => (
-      <Row key={s.id} s={s} i={i + offset} currentId={currentId} selecting={selecting} selected={selected.has(s.id)} live={sessionActivity(activity, s.id)} queuePos={activity.queued[s.id]} onToggle={() => toggle(s.id)} onOpen={(id) => onOpen(id)} onMenu={() => setTarget(s)} />
+      <Row key={s.id} s={s} i={i + offset} currentId={currentId} selecting={selecting} selected={selected.has(s.id)} live={sessionActivity(activity, s.id)} queuePos={activity.queued[s.id]} liveDetail={activity.details[s.id]} onToggle={() => toggle(s.id)} onOpen={(id) => onOpen(id)} onMenu={() => setTarget(s)} />
     ));
 
   return (

@@ -389,11 +389,98 @@ def test_note_event_swallows_everything_including_an_unknown_name():
     wiring.note_event("", None)
 
 
+# -- live delivery ---------------------------------------------------------
+
+async def test_live_delivery_is_scoped_rendered_and_auditable(flags, monkeypatch):
+    from src.context_engine.adapters.sessions import history_provider
+    from src.context_engine.contracts import (
+        ContextBudget, ContextItem, ContextPacket, ContextSection,
+    )
+
+    flags["agent_context_engine"] = True
+    monkeypatch.setattr(wiring, "_live_budget", lambda *a, **k: 900)
+    seen = {}
+
+    class LiveCompiler:
+        async def compile(self, request, **kw):
+            provider = history_provider()
+            seen["history"] = list(provider("s1", "luis")) if provider else []
+            seen["wrong_owner"] = list(provider("s1", "admin")) if provider else []
+            seen["budget"] = request.policy.token_budget
+            return ContextPacket(
+                packet_id="ctxpkt_live",
+                request_id=request.request_id,
+                owner="luis",
+                session_id="s1",
+                model="test-model",
+                window=ContextBudget(max_tokens=4096, input_budget=900),
+                sections=(
+                    ContextSection(kind="recent_messages", items=(
+                        ContextItem(item_id="recent", source_type="message",
+                                    source_ref="session:s1#0", body="do not duplicate",
+                                    tokens=4),
+                    )),
+                    ContextSection(kind="retrieved_memory", items=(
+                        ContextItem(item_id="memory", source_type="memory",
+                                    source_ref="mem:one", title="Known preference",
+                                    body="Use concise prose", tokens=6),
+                    )),
+                ),
+            )
+
+    monkeypatch.setattr(compiler_module, "compiler", lambda: LiveCompiler())
+    result = await wiring.deliver_round(
+        request=_request(), messages=MESSAGES, context_length=4096,
+        window_known=True, round_index=2,
+    )
+
+    assert result and result["report"]["delivered"] is True
+    assert result["report"]["packet_id"] == "ctxpkt_live"
+    assert result["report"]["round"] == 2
+    assert result["report"]["items"] == 1
+    assert result["report"]["history_carried_by_prompt"] is True
+    assert "Use concise prose" in result["message"]["content"]
+    assert "do not duplicate" not in result["message"]["content"]
+    assert result["message"]["metadata"]["trusted"] is False
+    assert result["message"]["_agent_injected"] == "context_engine"
+    assert seen["history"] == MESSAGES
+    assert seen["wrong_owner"] == []
+    assert seen["budget"] == 900
+    assert history_provider() is None, "the transcript escaped the compile scope"
+
+
+async def test_live_delivery_is_free_when_disabled(flags, fake):
+    flags["agent_context_engine"] = False
+    double = fake()
+    assert await wiring.deliver_round(request=_request(), messages=MESSAGES) is None
+    assert double.calls == []
+
+
+async def test_live_delivery_never_breaks_the_existing_prompt(flags, monkeypatch):
+    flags["agent_context_engine"] = True
+    monkeypatch.setattr(wiring, "_live_budget", lambda *a, **k: 900)
+
+    class BrokenCompiler:
+        async def compile(self, request, **kw):
+            raise RuntimeError("store unavailable")
+
+    monkeypatch.setattr(compiler_module, "compiler", lambda: BrokenCompiler())
+    before = copy.deepcopy(MESSAGES)
+    assert await wiring.deliver_round(request=_request(), messages=MESSAGES) is None
+    assert MESSAGES == before
+
+
 # ── the splice, read as text (cf. tests/test_context_ledger_wiring.py) ─────
 
 def test_the_loop_asks_the_engine_to_watch():
     assert "from src.context_engine import wiring as _ce_wiring" in LOOP
     assert '"type": "context_shadow"' in LOOP
+
+
+def test_the_loop_delivers_and_receipts_live_packets():
+    assert ".deliver_round(" in LOOP
+    assert '"type": "context_packet"' in LOOP
+    assert "_ce_wiring.observe_receipt(" in LOOP
 
 
 def test_the_engine_is_imported_lazily():

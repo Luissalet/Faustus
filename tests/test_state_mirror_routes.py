@@ -216,11 +216,24 @@ def test_every_route_of_the_plan_answers_for_an_admin(client_pair):
     assert client.get("/api/state/changes").json()["ok"] is True
     assert client.get("/api/state/conflicts").json()["conflicts"] == []
     assert client.get("/api/state/diagnostics").json()["diagnostics"]["enabled"] is True
+    projected = client.get("/api/state/project", params={"entity_ref": ident}).json()
+    assert projected["ok"] is True
+    assert projected["projection"]["entity_refs"] == [ident]
     assert client.get("/api/state/events").json()["events"] == []
     assert client.get("/api/state/situation/running_work").json()["ok"] is True
     assert client.post("/api/state/refresh",
                        json={"entity_id": ident}).status_code == 200
     assert client.post("/api/state/reconcile").json()["ok"] is True
+
+
+def test_project_projection_validates_its_closed_vocabularies(client_pair):
+    client, _ = client_pair
+    invalid = client.get(
+        "/api/state/project", params={"minimum_freshness": "probably"}
+    ).json()
+    assert invalid["ok"] is False
+    assert invalid["error"]["code"] == "invalid_argument"
+    assert invalid["error"]["path"] == "minimum_freshness"
 
 
 def test_a_refresh_wakes_the_adapter_the_fields_name(client_pair, adapter):

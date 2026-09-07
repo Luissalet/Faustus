@@ -469,6 +469,23 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
       return event.thinking
         ? { ...turn, thinking: turn.thinking + event.text, live: liveToken(live, now, true) }
         : { ...turn, text: turn.text + event.text, live: liveToken(live, now, false) };
+    case 'heartbeat': {
+      const phase: LiveRate['phase'] =
+        event.phase === 'thinking' || event.phase === 'writing' || event.phase === 'tool'
+          ? event.phase
+          : 'waiting';
+      const label = phase === 'tool'
+        ? [event.tool.replace(/_/g, ' '), event.detail].filter(Boolean).join(' · ')
+        : event.phase === 'research' && event.detail
+          ? event.detail
+          : undefined;
+      const next = livePhase(live, now, phase, label);
+      return {
+        ...turn,
+        rounds: Math.max(turn.rounds, event.round),
+        live: { ...next, phaseAt: event.phaseAt > 0 ? event.phaseAt : next.phaseAt },
+      };
+    }
     case 'tool_start': {
       const label = stepLabel(event.tool, event.command);
       const busy = livePhase(live, now, 'tool', label);

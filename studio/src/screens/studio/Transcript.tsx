@@ -675,6 +675,7 @@ function LiveLine({ live }: { live: LiveRate }) {
   const decoding = live.phase === 'thinking' || live.phase === 'writing';
   const tps = decoding ? liveTps(live) : null;
   const secs = Math.max(0, Math.floor((Date.now() - live.phaseAt) / 1000));
+  const silentFor = Math.max(0, Math.floor((Date.now() - live.lastAt) / 1000));
   const clock = `${String(Math.floor(secs / 60)).padStart(2, '0')}:${String(secs % 60).padStart(2, '0')}`;
   const what =
     live.phase === 'tool'
@@ -699,6 +700,11 @@ function LiveLine({ live }: { live: LiveRate }) {
         </span>
       )}
       <span className="fs-studio__clock"> · {clock}</span>
+      {silentFor >= 20 && (
+        <span className="fs-studio__clock" data-stale="true">
+          {' '}· {t('No server signal for {n}s', { n: silentFor })}
+        </span>
+      )}
     </p>
   );
 }

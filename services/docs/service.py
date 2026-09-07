@@ -38,18 +38,34 @@ class DocsService:
     def __init__(self, persist_dir: str = CHROMA_DIR):
         self.rag = RAGManager(persist_directory=persist_dir)
 
-    async def query(self, query: str, top_k: int = 5) -> List[DocChunk]:
+    async def query(
+        self,
+        query: str,
+        top_k: int = 5,
+        *,
+        owner: str | None = None,
+    ) -> List[DocChunk]:
         """
         Query the document index.
 
         Args:
             query: Search query
             top_k: Number of results
+            owner: Effective storage owner. When supplied, retrieval is
+                constrained at the vector-store query rather than filtered
+                after another owner's text has already been returned.
 
         Returns:
             List of DocChunk objects
         """
-        results = self.rag.search(query, k=top_k)
+        # Preserve the explicit single-user/no-auth path for callers that do
+        # not have an owner at all. In authenticated paths, passing the owner
+        # here is the security boundary; filtering the returned rows would be
+        # too late because another user's text was already retrieved.
+        if owner is None:
+            results = self.rag.search(query, k=top_k)
+        else:
+            results = self.rag.search(query, k=top_k, owner=owner)
         chunks = []
 
         for result in results:

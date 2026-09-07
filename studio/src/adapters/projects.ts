@@ -415,6 +415,9 @@ export interface ContextLink {
   accessMode: AccessMode;
   indexStatus: IndexStatus;
   contentRevision: string;
+  sourceState: SourceState;
+  sourceCheckedAt: number;
+  sourceMessage: string;
   enabled: boolean;
   updatedAt: number;
 }
@@ -475,6 +478,9 @@ export function contextLinkFrom(raw: unknown): ContextLink {
     accessMode: one(r.access_mode, ['read_only', 'work_root'] as const, 'read_only'),
     indexStatus: one(r.index_status, ['none', 'queued', 'indexing', 'ready', 'stale', 'failed'] as const, 'none'),
     contentRevision: str(r.content_revision),
+    sourceState: one(r.source_state, ['ok', 'missing', 'forbidden', 'unsupported'] as const, 'ok'),
+    sourceCheckedAt: Number(r.source_checked_at) || 0,
+    sourceMessage: str(r.source_message),
     enabled: r.enabled !== false,
     updatedAt: Number(r.updated_at) || 0,
   };
@@ -614,6 +620,18 @@ export function linkIsBroken(status?: LinkStatus): boolean {
   return status !== undefined && status.state !== 'ok';
 }
 
+/** Last durable source observation, used before/without the live inspector. */
+export function persistedLinkStatus(link: ContextLink): LinkStatus | undefined {
+  if (!link.sourceCheckedAt) return undefined;
+  return {
+    state: link.sourceState,
+    stale: false,
+    revision: link.contentRevision,
+    effectiveVersion: link.pinnedVersion ?? 0,
+    message: link.sourceMessage,
+  };
+}
+
 /**
  * Links grouped by role, in the vocabulary's own order, empty roles dropped.
  *
@@ -635,8 +653,8 @@ export function countLinks(
   return {
     total: links.length,
     editable: links.filter((l) => l.accessMode === 'work_root').length,
-    behind: links.filter((l) => linkIsBehind(l, statuses[l.id])).length,
-    broken: links.filter((l) => linkIsBroken(statuses[l.id])).length,
+    behind: links.filter((l) => linkIsBehind(l, statuses[l.id] ?? persistedLinkStatus(l))).length,
+    broken: links.filter((l) => linkIsBroken(statuses[l.id] ?? persistedLinkStatus(l))).length,
     off: links.filter((l) => !l.enabled || l.retrievalPolicy === 'disabled').length,
   };
 }

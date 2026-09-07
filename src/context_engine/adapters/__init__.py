@@ -80,6 +80,7 @@ from .project_links import ProjectLinksSource
 from .projects import ProjectMemorySource
 from .provenance import ProvenanceSource
 from .sessions import SessionSource, reset_history_provider, set_history_provider
+from .state_mirror import StateMirrorSource
 
 SOURCE_FACTORIES: Tuple[Callable[[], ContextSource], ...] = (
     ObjectivesSource,
@@ -99,6 +100,7 @@ SOURCE_FACTORIES: Tuple[Callable[[], ContextSource], ...] = (
     FindingSource,
     RecipeSource,
     DeltaSource,
+    StateMirrorSource,
 )
 
 
@@ -121,4 +123,5 @@ __all__ = [
     "BlockSource", "CapsuleSource", "ExperienceSource", "CodeIndexSource",
     "FindingSource", "RecipeSource",
     "DeltaSource",
+    "StateMirrorSource",
 ]

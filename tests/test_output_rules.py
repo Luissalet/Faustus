@@ -223,7 +223,8 @@ def test_the_same_input_always_gives_the_same_verdict():
 @pytest.mark.parametrize("junk", [
     None, 0, 12.5, b"", b"no space left on device", bytearray(b"429 too many requests"),
     {"a": 1}, [1, 2, 3], object(), "\x00\x00�", "\n" * 500, "é" * 9000,
-])
+], ids=["none", "zero", "float", "empty-bytes", "bytes", "bytearray",
+        "mapping", "list", "object", "nul", "newlines", "very-long"])
 def test_junk_never_raises_and_answers_the_empty_verdict_shape(junk):
     verdict = classify_output(junk)
     assert set(verdict) == {"states", "matches", "confidence"}

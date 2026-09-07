@@ -118,6 +118,25 @@ EVENT_NAMES = (
     "completion_scope_expansion_requested", "completion_frontier_recomputed",
     "completion_converged", "completion_budget_exhausted",
     "completion_decision_recorded", "completion_error",
+    # Modo Enséñame: demonstration capture and learned-procedure lifecycle.
+    "teach_recording_started", "teach_observation_captured",
+    "teach_recording_stopped", "teach_recording_cancelled",
+    "teach_procedure_compiled", "teach_procedure_ready_for_replay",
+    "teach_procedure_validated", "teach_procedure_needs_correction",
+    "teach_procedure_approved", "teach_procedure_installed",
+    "teach_procedure_established", "teach_procedure_deprecated",
+    "teach_procedure_revoked", "teach_procedure_quarantined",
+    # Immune System: health, incident containment and repair gates.
+    "immune_asset_registered", "immune_health_assessed",
+    "immune_failure_detected", "immune_capability_quarantined",
+    "immune_repair_candidate_created", "immune_repair_certified",
+    "immune_repair_canary", "immune_repair_promoted",
+    "immune_repair_rejected", "immune_repair_rolled_back",
+    # Branching Futures: isolated outcome lifecycle and real-state receipt.
+    "branching_future_created", "branching_branch_started",
+    "branching_branch_completed", "branching_evaluation_completed",
+    "branching_branch_selected", "branching_future_committed",
+    "branching_future_cancelled",
 )
 
 _REDACTED = "<redacted>"

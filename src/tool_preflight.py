@@ -123,6 +123,7 @@ PROJECT_TOOLS: FrozenSet[str] = frozenset({
     # Offering a model a way to attach a source to a project that does not
     # exist buys one wasted round and one confusing error.
     "manage_project_context",
+    "project_objectives",
 })
 
 PROJECT_REASON = "this chat is not attached to a project"

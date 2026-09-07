@@ -1,0 +1,3 @@
+# Optional local dictation on Windows/Linux/macOS, without Torch or a cloud API.
+# TTS on Windows can use the built-in `system` provider without Python extras.
+faster-whisper==1.2.1

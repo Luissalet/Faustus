@@ -220,6 +220,27 @@ def tools_sent(*args, **kwargs):
     return set(run_turn(*args, **kwargs)[0])
 
 
+def test_experimental_capability_tools_follow_their_feature_flags(workspace):
+    capability_tools = {"manage_teach_mode", "capability_health", "branch_futures"}
+    request = "Teach this repeatable procedure and compare its capability health alternatives"
+    assert not (tools_sent(
+        request, workspace, project=A_PROJECT, relevant_tools=capability_tools,
+    ) & capability_tools)
+
+    names = tools_sent(
+        request,
+        workspace,
+        project=A_PROJECT,
+        relevant_tools=capability_tools,
+        settings={
+            "agent_teach_mode": True,
+            "agent_immune_system": True,
+            "agent_branching_futures": True,
+        },
+    )
+    assert capability_tools <= names
+
+
 # --------------------------------------------------------------------------
 # 1. The reproduction: project tools in a chat with no project
 # --------------------------------------------------------------------------

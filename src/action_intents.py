@@ -8,6 +8,7 @@ user asks how a feature works.
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass
 from typing import Iterable, Pattern
 
@@ -90,6 +91,16 @@ _ROUTING_PATTERNS: tuple[tuple[str, str, Pattern[str]], ...] = tuple(
         ("ui", "open/show panel request", rf"{_PLEASE}(?:open|show|bring\s+up)\s+(?:me\s+)?(?:my\s+|the\s+)?{_PANEL}\b"),
         ("ui", "tool or feature toggle request", r"\b(?:disable|enable|turn\s+(?:on|off))\s+(?:the\s+)?(?:shell|search|web|browser|documents?|memory|skills|images?|calendar|email|mail|research|incognito)\b"),
 
+        # Project control-plane mutations.  These are deliberately separate
+        # from coding intent: adding an objective or attaching a document needs
+        # a typed project tool, but must not enable shell/file mutation merely
+        # because the noun "project" appeared.
+        ("project", "project objective action request", rf"{_PLEASE}(?:add|create|put|set|update|edit|change|remove|delete|mark|complete)\b.{{0,160}}\b(?:project\s+)?(?:objectives?|goals?)\b"),
+        ("project", "project objective follow-up", r"\b(?:put|add|move)\s+(?:it|this|that|them|these)\b.{0,120}\b(?:project\s+)?(?:objectives?|goals?)\b"),
+        ("project", "Spanish project objective action request", r"\b(?:aÃ±ade|anade|agrega|mete|pon|crea|actualiza|edita|cambia|elimina|borra|marca|completa)\b.{0,160}\b(?:objetivos?|metas?)(?:\s+del?\s+proyecto)?\b"),
+        ("project", "project context attachment request", rf"{_PLEASE}(?:add|attach|link|put|move)\b.{{0,160}}\b(?:to|into|in)\s+(?:this|the|my)\s+project(?:\s+context)?\b"),
+        ("project", "Spanish project context attachment request", r"\b(?:aÃ±ade|anade|agrega|adjunta|vincula|enlaza|mete|pon)\b.{0,160}\b(?:al|en el|dentro del)\s+(?:contexto\s+del\s+)?proyecto\b"),
+
         # Deep research jobs, not quick conceptual mentions of research.
         ("web", "explicit web search request", rf"{_PLEASE}(?:do|run|use|perform|make)\s+(?:a\s+)?(?:web\s+search|search\s+the\s+web)\b.+"),
         ("web", "generic search request", rf"{_PLEASE}search\s+(?!(?:my\s+)?(?:chats?|history|sessions?|notes?|todos?|emails?|mail|inbox|documents?|docs|gallery|images?|files?)\b).+"),
@@ -142,14 +153,43 @@ _TOOL_INTENT_PATTERNS: tuple[Pattern[str], ...] = tuple(
 )
 
 
+def _routing_text(text: str) -> str:
+    """Return a stable comparison form for multilingual routing.
+
+    Besides decomposed Unicode, accept the common UTF-8-as-Latin-1 mojibake
+    produced by older persisted chats.  This keeps old sessions actionable
+    while treating a correctly encoded new message in exactly the same way.
+    """
+    candidate = text
+    for _ in range(2):
+        if "\u00c3" not in candidate and "\u00c2" not in candidate:
+            break
+        try:
+            repaired = candidate.encode("latin-1").decode("utf-8")
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            break
+        if repaired == candidate:
+            break
+        candidate = repaired
+    return "".join(
+        char for char in unicodedata.normalize("NFKD", candidate)
+        if not unicodedata.combining(char)
+    )
+
+
 def classify_tool_intent(text: str) -> ToolIntent:
     """Classify whether a chat message should be promoted to agent mode."""
     if not text:
         return ToolIntent(False, reason="empty message")
-    if _EXPLANATORY_PREFIX.search(text):
+    # Route natural-language commands independently of accents.  This is
+    # important for Spanish imperatives such as ``Añade``: transport and model
+    # layers do not always preserve the same Unicode composition, while the
+    # intent itself is unchanged.
+    routing_text = _routing_text(text)
+    if _EXPLANATORY_PREFIX.search(routing_text):
         return ToolIntent(False, reason="explanatory feature question")
     for category, reason, pattern in _ROUTING_PATTERNS:
-        if pattern.search(text):
+        if pattern.search(routing_text):
             return ToolIntent(True, category=category, reason=reason)
     return ToolIntent(False, reason="no tool-action pattern matched")
 
@@ -158,8 +198,8 @@ def message_needs_tools(text: str, patterns: Iterable[Pattern[str]] = _TOOL_INTE
     """Return True when a plain chat message should be promoted to agent mode."""
     if not text:
         return False
-    if _EXPLANATORY_PREFIX.search(text):
-        return False
     if patterns is _TOOL_INTENT_PATTERNS:
         return classify_tool_intent(text).needs_tools
+    if _EXPLANATORY_PREFIX.search(text):
+        return False
     return any(pattern.search(text) for pattern in patterns)

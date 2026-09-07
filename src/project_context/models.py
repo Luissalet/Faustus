@@ -46,7 +46,7 @@ __all__ = [
     "ACCESS_MODES", "ACTOR_KINDS", "INDEX_STATUSES", "LINK_KINDS", "PATCHABLE_FIELDS",
     "PATH_KINDS", "REF_KINDS", "RELATIONS", "RETRIEVAL_POLICIES", "ROLES",
     "SOURCE_STATES", "VERSION_POLICIES",
-    "ActorRef", "AttachResult", "ContextLinkStatus", "DetachResult",
+    "ActorRef", "AttachResult", "ContextLinkStatus", "DetachResult", "IndexResult",
     "ExtractedChunk", "ExtractedCorpus", "ProjectContextError", "ProjectContextLink",
     "RefreshResult", "SourceContent", "SourceMatch", "SourceMetadata", "SourceRef",
 ]
@@ -398,6 +398,9 @@ class ProjectContextLink:
     content_revision: str = ""
     index_status: str = "none"
     index_revision: str = ""
+    source_state: str = "ok"
+    source_checked_at: int = 0
+    source_message: str = ""
     access_mode: str = "read_only"
     enabled: bool = True
 
@@ -406,7 +409,8 @@ class ProjectContextLink:
         "pinned_version", "retrieval_policy", "role", "tags", "summary",
         "summary_revision", "created_by", "created_from_session_id",
         "created_from_run_id", "created_at", "updated_at", "content_revision",
-        "index_status", "index_revision", "access_mode", "enabled",
+        "index_status", "index_revision", "source_state", "source_checked_at",
+        "source_message", "access_mode", "enabled",
     )
 
     @classmethod
@@ -458,6 +462,12 @@ class ProjectContextLink:
                                     required=False, default="none"),
                 index_revision=text(data, "index_revision", path, required=False,
                                     max_len=512),
+                source_state=one_of(data, "source_state", path, choices=SOURCE_STATES,
+                                    required=False, default="ok"),
+                source_checked_at=whole(data, "source_checked_at", path,
+                                        default=0, minimum=0),
+                source_message=text(data, "source_message", path, required=False,
+                                    max_len=512),
                 access_mode=one_of(data, "access_mode", path, choices=ACCESS_MODES,
                                    required=False, default="read_only"),
                 enabled=flag(data, "enabled", path, default=True),
@@ -483,7 +493,9 @@ class ProjectContextLink:
             "created_from_run_id": self.created_from_run_id,
             "created_at": self.created_at, "updated_at": self.updated_at,
             "content_revision": self.content_revision, "index_status": self.index_status,
-            "index_revision": self.index_revision, "access_mode": self.access_mode,
+            "index_revision": self.index_revision, "source_state": self.source_state,
+            "source_checked_at": self.source_checked_at,
+            "source_message": self.source_message, "access_mode": self.access_mode,
             "enabled": self.enabled,
         }
 
@@ -554,6 +566,28 @@ class RefreshResult:
         return {"ok": self.ok, "previous_revision": self.previous_revision,
                 "revision": self.revision, "changed": self.changed,
                 "index_status": self.index_status, "state": self.state,
+                "message": self.message, "error": self.error,
+                "link": self.link.to_dict() if self.link else None}
+
+
+@dataclass(frozen=True)
+class IndexResult:
+    """Outcome of building and atomically publishing one link's index."""
+
+    ok: bool = False
+    link: Optional[ProjectContextLink] = None
+    project_id: str = ""
+    link_id: str = ""
+    revision: str = ""
+    chunks: int = 0
+    state: str = ""
+    message: str = ""
+    error: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"ok": self.ok, "project_id": self.project_id,
+                "link_id": self.link_id, "revision": self.revision,
+                "chunks": self.chunks, "state": self.state,
                 "message": self.message, "error": self.error,
                 "link": self.link.to_dict() if self.link else None}
 

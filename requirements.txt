@@ -4,6 +4,10 @@ python-multipart
 python-dotenv
 httpx
 httpcore>=1.0,<2.0
+# Process creation timestamps and verified descendant walks are load-bearing
+# on Windows: without them a recycled parent PID can make taskkill /T stop an
+# unrelated process. Keep this a core dependency, not an optional extra.
+psutil>=5.9,<8
 pydantic>=2.13.4
 pydantic-settings>=2.14.1
 SQLAlchemy

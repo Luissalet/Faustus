@@ -562,10 +562,15 @@ def _real_edit(workspace):
             return None
         args = json.loads(block.content)
         p = os.path.join(workspace, args["path"])
-        text = open(p, encoding="utf-8").read()
+        # Preserve the file's newline spelling.  Text-mode writes on Windows
+        # otherwise turn the fixture's LF into CRLF, making Git report every
+        # line as replaced and falsely attributing old warnings to this turn.
+        with open(p, encoding="utf-8", newline="") as fh:
+            text = fh.read()
         if args["old_string"] not in text:
             return {"error": "old_string not found", "exit_code": 1}
-        open(p, "w", encoding="utf-8").write(text.replace(args["old_string"], args["new_string"], 1))
+        with open(p, "w", encoding="utf-8", newline="") as fh:
+            fh.write(text.replace(args["old_string"], args["new_string"], 1))
         return {"output": f"Edited {args['path']} (1 replacement)", "exit_code": 0,
                 "diff": {"added": 1, "removed": 1}}
     return _exec

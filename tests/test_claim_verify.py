@@ -219,7 +219,8 @@ def test_the_judge_prompt_is_the_one_question_every_caller_asks():
     ("\x00\x01\x02", SOURCE),
     ("x" * 50_000, "y" * 50_000),
     (["a", "list"], {"a": "dict"}),
-])
+], ids=["none", "empty", "empty-source", "empty-claim", "bytes", "number",
+        "objects", "control-bytes", "very-long", "containers"])
 def test_verify_never_raises_on_junk(claim, source):
     result = cv.verify(claim, source)
     assert set(result) >= {"supported", "layer", "confidence", "why",

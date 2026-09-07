@@ -158,6 +158,7 @@ export type SubagentPayload = Record<string, unknown>;
 /** Everything the stream can say, narrowed to what the screen renders. */
 export type ChatEvent =
   | { type: 'delta'; text: string; thinking: boolean }
+  | { type: 'heartbeat'; phase: string; phaseAt: number; tool: string; detail: string; round: number }
   | { type: 'tool_start'; tool: string; command: string; fullCommand?: string; round: number }
   | { type: 'tool_progress'; tool: string; message: string }
   | {
@@ -625,6 +626,15 @@ function decode(raw: Record<string, unknown>, sseEvent: string | null): ChatEven
         startedAt: num(data.started_at) ?? 0,
         avgDuration: num(data.avg_duration) ?? 0,
       };
+    case 'run_activity':
+      return {
+        type: 'heartbeat',
+        phase: str(data.phase, 'waiting_model'),
+        phaseAt: (num(data.phase_since) ?? 0) * 1000,
+        tool: str(data.tool),
+        detail: str(data.detail),
+        round: num(data.round) ?? 0,
+      };
     case 'generated_image':
       return raw.url ? { type: 'image', url: str(raw.url) } : null;
     case 'fallback':
@@ -853,23 +863,40 @@ export async function* resumeTurn(
 }
 
 /** What is alive right now, for the whole account, in one call. */
+export interface RunActivityDetail {
+  runId: string;
+  phase: string;
+  phaseSince: number;
+  lastEventAt: number;
+  serverAliveAt: number;
+  startedAt: number;
+  elapsedS: number;
+  round: number;
+  tool: string;
+  detail: string;
+  queuedPosition: number;
+}
+
 export interface ChatActivity {
   /** Sessions with a run going (queued ones included). */
   running: string[];
   /** Session → opaque run id, so a list can Stop what it shows. */
   runs: Record<string, string>;
+  /** Session → current server-side phase of the detached run. */
+  details: Record<string, RunActivityDetail>;
   /** Sessions parked on an approval card nobody has answered. */
   awaiting: string[];
   /** Session → position in the queue, while it waits for its lane. */
   queued: Record<string, number>;
 }
 
-export const EMPTY_ACTIVITY: ChatActivity = { running: [], runs: {}, awaiting: [], queued: {} };
+export const EMPTY_ACTIVITY: ChatActivity = { running: [], runs: {}, details: {}, awaiting: [], queued: {} };
 
 export async function chatActivity(signal?: AbortSignal): Promise<ChatActivity> {
   const raw = await getJson<{
     running?: unknown;
     runs?: unknown;
+    details?: unknown;
     awaiting_approval?: unknown;
     queued?: unknown;
   }>('/api/chat/activity', signal);
@@ -881,9 +908,30 @@ export async function chatActivity(signal?: AbortSignal): Promise<ChatActivity> 
     }
     return out;
   };
+  const detailMap: Record<string, RunActivityDetail> = {};
+  if (raw.details && typeof raw.details === 'object') {
+    for (const [sessionId, value] of Object.entries(raw.details as Record<string, unknown>)) {
+      if (!value || typeof value !== 'object') continue;
+      const d = value as Record<string, unknown>;
+      detailMap[sessionId] = {
+        runId: str(d.run_id),
+        phase: str(d.phase, 'starting'),
+        phaseSince: (num(d.phase_since) ?? 0) * 1000,
+        lastEventAt: (num(d.last_event_at) ?? 0) * 1000,
+        serverAliveAt: (num(d.server_alive_at) ?? 0) * 1000,
+        startedAt: (num(d.started_at) ?? 0) * 1000,
+        elapsedS: num(d.elapsed_s) ?? 0,
+        round: num(d.round) ?? 0,
+        tool: str(d.tool),
+        detail: str(d.detail),
+        queuedPosition: num(d.queued_position) ?? 0,
+      };
+    }
+  }
   return {
     running: ids(raw.running),
     runs: map(raw.runs, String),
+    details: detailMap,
     awaiting: ids(raw.awaiting_approval),
     queued: map(raw.queued, (v) => num(v) ?? 0),
   };

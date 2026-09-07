@@ -80,3 +80,11 @@ def test_the_index_had_the_answer_all_along():
     except Exception as exc:                      # pragma: no cover - env dependent
         pytest.skip(f"retrieval unavailable: {exc}")
     assert "project_objectives" in set(tools) - set(ALWAYS_AVAILABLE)
+
+
+def test_project_objectives_is_guaranteed_for_every_project_agent_turn():
+    routes = (_REPO / "routes" / "chat_routes.py").read_text(encoding="utf-8")
+    forced = routes[routes.index("_forced_tools.update({"):routes.index("})", routes.index("_forced_tools.update({"))]
+    assert '"project_objectives"' in forced
+    from src.tool_preflight import PROJECT_TOOLS
+    assert "project_objectives" in PROJECT_TOOLS

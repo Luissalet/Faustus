@@ -325,6 +325,7 @@ async def test_api_chat_direct_base_url_allows_mocked_public_endpoint(monkeypatc
     assert response["response"] == "mocked response"
     assert response["model"] == "test-model"
     assert session_manager.created[0]["endpoint_url"] == "https://api.example.com/v1/chat/completions"
+    assert session_manager.created[0]["session"].headers["X-Faustus-Public-DNS-Pin"] == "1"
 
 
 def test_api_chat_fallback_endpoint_selection_for_owned_token(monkeypatch):

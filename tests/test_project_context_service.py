@@ -655,6 +655,10 @@ def test_refresh_on_a_deleted_source_reports_missing_and_keeps_the_link(svc, sto
     assert result.ok is False
     assert result.state == "missing"
     assert len(store.list_links("prj_1")) == 1
+    persisted = store.get_link("prj_1", link.id)
+    assert persisted["source_state"] == "missing"
+    assert persisted["source_checked_at"] > 0
+    assert persisted["index_status"] == "failed"
 
     detached = svc.detach(project=PROJECT, owner=OWNER, link_id=link.id, actor=USER)
     assert detached.ok is True

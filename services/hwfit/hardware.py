@@ -38,7 +38,6 @@ def _run(cmd):
                 cmd_str,
                 timeout=15,
                 connect_timeout=5,
-                strict_host_key_checking=False,
                 text=True,
             )
         else:

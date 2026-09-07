@@ -584,7 +584,7 @@ _DOMAIN_TOOL_MAP = {
     "notes_calendar_tasks": {"manage_notes", "manage_calendar", "manage_tasks"},
     "ui": {"ui_control"},
     "sessions": {"create_session", "list_sessions", "manage_session", "send_to_session", "search_chats", "search_project_chats"},
-    "files": {"bash", "python", "read_file", "write_file", "edit_file", "apply_patch", "todowrite", "grep", "glob", "ls", "get_workspace", "project_context", "project_objectives", "manage_bg_jobs"},
+    "files": {"bash", "python", "read_file", "write_file", "edit_file", "apply_patch", "todowrite", "grep", "glob", "ls", "get_workspace", "project_context", "project_objectives", "manage_project_context", "manage_bg_jobs"},
     "settings": {"manage_settings", "manage_endpoints", "manage_mcp", "manage_webhooks", "manage_tokens", "app_api"},
     "contacts": {"resolve_contact", "manage_contact"},
     "integrations": {"api_call"},
@@ -668,7 +668,9 @@ DENIAL_ORIGIN_NON_ADMIN = "non_admin_denylist"
 DENIAL_ORIGIN_PLAN_MODE = "plan_mode_readonly"
 DENIAL_ORIGIN_EMAIL_DRAFT = "active_email_draft"
 DENIAL_ORIGIN_PREFLIGHT = "tool_preflight"
+DENIAL_ORIGIN_AVAILABILITY = "runtime_availability"
 DENIAL_ORIGIN_ODY_NO_TOOL = "odysseus_no_tool_clamp"
+DENIAL_ORIGIN_FEATURE_DISABLED = "feature_disabled"
 
 
 def _denial_for_tool(
@@ -761,7 +763,11 @@ def _domain_rules_for_tools(tool_names: set) -> list[str]:
 TOOL_SECTIONS = {
     "search_project_chats": "- ```search_project_chats``` - Search only earlier transcripts from the current project. Use for prior project decisions, attempts and discussions before answering from memory or guessing.",
     "project_context": "- ```project_context``` - Inspect roots attached to the current project. Args (JSON): {\"action\":\"list|read|search\",\"item_id\":\"...\",\"path\":\"relative/file\",\"query\":\"...\"}. Attached roots are real working roots: normal file tools may read and modify them.",
+    "manage_project_context": "- ```manage_project_context``` - Attach, inspect, refresh, update or detach a typed source from this chat's current project. Use it when the user says to add the document/image/folder you just created to the project context. Resolve recent references from the current turn; do not ask for an internal id the user cannot see. Attaching context is not the same as making a folder writable.",
     "project_objectives": "- ```project_objectives``` - Read or update the project's objectives dashboard. Args (JSON): {\"action\":\"list|apply\",\"deltas\":[{\"op\":\"ADD|EDIT|KILL\",\"id\":\"OBJ-1\",\"title\":\"...\",\"status\":\"open|in_progress|blocked|done|dropped\",\"priority\":1,\"deps\":[\"OBJ-2\"],\"rationale\":\"...\"}]}. When a turn of real work ends, update with typed deltas and a rationale; never rewrite the whole list, and only mark statuses that reflect what actually changed on disk.",
+    "manage_teach_mode": "- ```manage_teach_mode``` - Record the current chat's semantic tool actions as a demonstration, stop it and compile a reusable candidate. Simulate and validate with evidence; human approval/install cannot be self-issued by an agent.",
+    "capability_health": "- ```capability_health``` - Inspect operational health or report an actual capability failure. Repeated/high-severity failures may quarantine the asset; never report a speculative failure as observed.",
+    "branch_futures": "- ```branch_futures``` - Create and compare 2-12 isolated alternatives from one frozen base. Branches cannot make real external effects; only submit results actually observed in their namespace.",
     "expert_review": "- ```expert_review``` - Have a specialist expert (a profile plus its OWN indexed corpus of books) review a passage of the user's writing. Args (JSON): {\"action\":\"review|experts|bible|apply|feedback\",\"slug\":\"brenner_bot\",\"text\":\"...\",\"deltas\":[...],\"accept\":[\"D1\"],\"accepted\":2,\"rejected\":1}. `review` returns typed span deltas over the ORIGINAL text (EDIT/ADD/KILL with the quote they replace, a rationale, a rubric rule and a severity) — never rewritten prose. Each correction is either ANCHORED to the corpus, with the book and page it came from, or labelled \"model's opinion, not the corpus\": pass that label on to the user verbatim, never present an opinion as coming from a book, and never invent a page number. `bible` checks a passage against the project's story bible for continuity errors. Accepting or rejecting corrections is the user's call, not yours; report the outcome with `feedback`.",
     "verify_claim": "- ```verify_claim``` - Check ONE claim against the source text it is supposed to come from, deterministically. Args (JSON): {\"claim\":\"the 2025 figure was 3.4 %\",\"source\":\"...the text you already have...\",\"url\":\"https://…\"}. Four layers, cheapest first: verbatim, then case/accent-folded, then content-word overlap, then every figure and capitalised name in the claim having to occur in the source — that fourth one is what catches an invented number, and it only ever REFUTES: passing it is not support. Use it before you repeat a figure, a date or a name from a page you fetched or a document you read. Nothing is fetched (`url` only records where your text came from), and there is no model-judgement layer here: `layer: null` means nothing could show the claim, which is not the same as false — say that, do not round it to either.",
     "memory_rules": "- ```memory_rules``` - The learned-memory store: rules and facts scored by what happened after they were used. Args (JSON): {\"action\":\"add|search|feedback|list\",\"text\":\"...\",\"level\":\"procedural|semantic\",\"query\":\"...\",\"id\":\"ab12cd34\",\"kind\":\"helpful|harmful\",\"reason\":\"...\"}. Add a rule ONLY when a turn taught you something reusable (a rule to follow -> level procedural; a durable fact -> semantic), never to restate the request. When a rule from the 'Learned rules' block turned out to be right or wrong, say so with feedback and its [id8] — that is how the store learns and how a bad rule gets retired.",
@@ -1332,11 +1338,23 @@ def _user_turn_count(messages: List[Dict]) -> int:
 
 
 def _insert_before_latest_user(messages: List[Dict], context_msg: Dict) -> List[Dict]:
-    """Insert a context message immediately before the latest user turn."""
+    """Insert context before the latest user turn, preserving language last.
+
+    The reply-language directive is intentionally the final runtime message
+    before the user's own words. Retrieved English prose inserted after it can
+    make small models switch language, so context goes immediately before that
+    directive when it is present.
+    """
     out = list(messages or [])
     for idx in range(len(out) - 1, -1, -1):
-        if out[idx].get("role") == "user":
-            out.insert(idx, context_msg)
+        if out[idx].get("role") == "user" and not out[idx].get("_agent_injected"):
+            insert_at = idx
+            for prior in range(idx - 1, -1, -1):
+                content = str(out[prior].get("content") or "")
+                if content.startswith("[Runtime requirement") and "reply language" in content:
+                    insert_at = prior
+                    break
+            out.insert(insert_at, context_msg)
             return out
     out.append(context_msg)
     return out
@@ -3098,7 +3116,15 @@ def _build_system_prompt(
     #     turn's verification result (tests / auto-review, attributed at the
     #     scorecard hook below) lands on exactly the rules that were shown.
     # Wrapped whole: a broken store costs the block, never the turn.
-    if not suppress_local_context:
+    _legacy_memory_lane = True
+    try:
+        # Live Context Engine owns learned-memory selection. Keeping the old
+        # injector too would show and count the same rule twice.
+        from src.context_engine import wiring as _context_wiring
+        _legacy_memory_lane = not _context_wiring.enabled()
+    except Exception:
+        _legacy_memory_lane = True
+    if not suppress_local_context and _legacy_memory_lane:
         try:
             from src import memory_engine as _mem_engine
             if _mem_engine.injection_enabled():
@@ -3248,6 +3274,7 @@ _ADMIN_TOOLS = {
     "manage_endpoints", "manage_mcp", "manage_webhooks", "manage_tokens",
     "manage_documents", "manage_settings", "create_session", "list_sessions",
     "send_to_session", "pipeline", "ask_teacher", "list_models",
+    "manage_teach_mode", "capability_health", "branch_futures",
 }
 
 def _build_base_prompt(
@@ -4175,6 +4202,21 @@ async def stream_agent_loop(
         # public/non-admin users rather than trying to enumerate every tool.
         mcp_mgr = None
 
+    # Experimental subsystems are dark until their explicit settings are on.
+    # Keeping a disabled tool in the model's schema costs context and invites
+    # a wasted round whose only possible result is "feature disabled".
+    _feature_tools = {
+        "manage_teach_mode": "agent_teach_mode",
+        "capability_health": "agent_immune_system",
+        "branch_futures": "agent_branching_futures",
+    }
+    _feature_off = {
+        tool_name for tool_name, setting_name in _feature_tools.items()
+        if not bool(get_setting(setting_name, False))
+    }
+    disabled_tools.update(_feature_off)
+    _note_denials(_feature_off, DENIAL_ORIGIN_FEATURE_DISABLED)
+
     if plan_mode:
         # Plan mode: investigate read-only, propose a plan, don't execute. The
         # route also unions the read-only-disabled set, but enforce here too so
@@ -5041,10 +5083,46 @@ async def stream_agent_loop(
     _intent_domains = set(_intent.get("domains") or set())
     _base_relevant_tools = None if _relevant_tools is None else set(_relevant_tools)
     _runtime_skill_tools: Set[str] = set()
-    # B-007: tools that refused themselves this turn (offered, then not
-    # applicable). Name -> the reason, so the withdrawal can be explained and
-    # undone when the thing that was missing appears.
+    # Conditional tools start withdrawn when the runtime can already prove
+    # their prerequisite is absent.  This keeps the first schema list honest
+    # while retaining the dynamic restoration B-007 needs: creating/opening a
+    # document during the turn makes suggest_document available next round.
+    # Name -> reason; only tools which were part of this turn's selection are
+    # tracked, so restoration never expands an unrelated tool set.
     _withdrawn_tools: Dict[str, str] = {}
+    try:
+        from src import tool_availability as _initial_availability
+
+        _availability_ctx = {
+            "active_document_id": str(getattr(active_document, "id", "") or ""),
+        }
+        for _conditional_name in _initial_availability.conditional_tools():
+            _selected_now = (
+                _relevant_tools is None or _conditional_name in _relevant_tools
+            )
+            if not _selected_now or _conditional_name in disabled_tools:
+                continue
+            _verdict = _initial_availability.evaluate(
+                _conditional_name, _availability_ctx
+            )
+            if _verdict.available:
+                continue
+            _withdrawn_tools[_conditional_name] = _verdict.reason
+            disabled_tools.add(_conditional_name)
+            _preflight_pruned[_conditional_name] = _verdict.reason
+            _note_denials(
+                {_conditional_name}, DENIAL_ORIGIN_AVAILABILITY
+            )
+            if _relevant_tools is not None:
+                _relevant_tools.discard(_conditional_name)
+            if _base_relevant_tools is not None:
+                _base_relevant_tools.discard(_conditional_name)
+            logger.info(
+                "[tool-availability] %s starts withdrawn: %s",
+                _conditional_name, _verdict.reason,
+            )
+    except Exception as _av_err:  # noqa: BLE001 - availability fails open
+        logger.debug("initial tool availability skipped: %r", _av_err)
 
     def _route_finetune_modes(candidate_model: str):
         is_ody = _is_odysseus_qwen_model(candidate_model)
@@ -5171,6 +5249,35 @@ async def stream_agent_loop(
 
     if _relevant_tools is not None:
         logger.info("[agent-intent] selected_tools=%s", sorted(_relevant_tools)[:50])
+
+    # An explicit project-objective mutation is an obligation, not merely a
+    # retrieval hint.  Previously the tool could be visible and even forced
+    # into the schema list, yet a small model could still answer in prose and
+    # end the turn without touching the dashboard.  The bounded supervisor
+    # below checks for an observed successful `apply` call before accepting a
+    # final answer.
+    _project_objective_requested = False
+    _requires_project_objective_apply = False
+    _project_objective_unavailable = False
+    try:
+        from src.action_intents import classify_tool_intent as _classify_action_intent
+        _project_intent = _classify_action_intent(_last_user)
+        _project_objective_requested = bool(
+            _project_intent.category == "project"
+            and "objective" in _project_intent.reason.lower()
+        )
+        _requires_project_objective_apply = bool(
+            _project_objective_requested
+            and (_relevant_tools is None or "project_objectives" in _relevant_tools)
+            and "project_objectives" not in disabled_tools
+        )
+        _project_objective_unavailable = bool(
+            _project_objective_requested and not _requires_project_objective_apply
+        )
+    except Exception:
+        _project_objective_requested = False
+        _requires_project_objective_apply = False
+        _project_objective_unavailable = False
 
     prep_timings["tool_selection"] = time.time() - _t1
 
@@ -5318,6 +5425,14 @@ async def stream_agent_loop(
             _prepend_agent_directive(route_messages, build_active_plan_note(approved_plan))
         if guide_only:
             _prepend_agent_directive(route_messages, GUIDE_ONLY_DIRECTIVE)
+        if _project_objective_unavailable:
+            _prepend_agent_directive(
+                route_messages,
+                "PROJECT OBJECTIVE ACTION UNAVAILABLE: The user asked to change project objectives, "
+                "but this turn has no usable project_objectives tool (usually because this chat is "
+                "not attached to a project or policy blocks project mutations). Do not claim the "
+                "objective was changed. Explain the blocker and the smallest next step needed.",
+            )
         return {
             "messages": route_messages,
             "mcp_schemas": route_mcp_schemas,
@@ -5418,6 +5533,10 @@ async def stream_agent_loop(
     _last_route_context_length = _initial_route_context_length
     # Last context ledger pushed to the client (FAUSTUS) — see src/context_ledger.
     _context_ledger_sent = None
+    # A packet is compiled per provider call. Every packet actually inserted
+    # gets a receipt after the turn's checks have established the outcome.
+    _context_packets_delivered: List[Dict[str, str]] = []
+    _context_turn_id = f"{session_id or 'session'}:{int(total_start * 1000)}"[:128]
 
     # Loop-breaker state. Small models (e.g. deepseek-v4-flash) can get
     # stuck firing the same tool call over and over with no text — burns
@@ -5494,6 +5613,42 @@ async def stream_agent_loop(
     _think_cutoffs = 0
     _unknown_tool_nudges = 0
     _empty_round_nudges = 0
+    _project_objective_nudges = 0
+    _project_objective_unavailable_nudges = 0
+
+    def _project_objective_apply_succeeded() -> bool:
+        for event in tool_events:
+            if str(event.get("tool") or "") != "project_objectives":
+                continue
+            if event.get("exit_code") not in (None, 0):
+                continue
+            if "APPROVAL REQUIRED" in str(event.get("desc") or ""):
+                continue
+            try:
+                payload = json.loads(str(event.get("command") or "{}"))
+            except (TypeError, ValueError):
+                continue
+            if isinstance(payload, dict) and str(payload.get("action") or "").lower() == "apply":
+                return True
+        return False
+
+    def _claims_unobserved_project_objective_change(value: str) -> bool:
+        try:
+            from src.action_intents import _routing_text as _fold_action_text
+            folded = _fold_action_text(value).casefold()
+        except Exception:
+            folded = str(value or "").casefold()
+        if any(phrase in folded for phrase in (
+            "no se ha", "no he ", "no fue", "no pude", "no puedo", "sin cambiar",
+            "nothing was", "not changed", "did not", "could not", "cannot", "can't",
+            "no active project", "no hay proyecto", "not attached", "no esta vinculado",
+        )):
+            return False
+        return bool(re.search(
+            r"\b(?:done|added|updated|completed|hecho|listo|anadid[oa]s?|agregad[oa]s?|"
+            r"actualizad[oa]s?|completad[oa]s?)\b",
+            folded,
+        ))
 
     # ── Turn baseline (src/workspace_checkpoints.py) ──────────────────────
     # A shadow snapshot of the workspace right before the FIRST change of the
@@ -5661,7 +5816,12 @@ async def stream_agent_loop(
                     workspace_roots=workspace_roots,
                     security_context=run_security,
                     exact_approval=exact_approval,
-                    turn_options={"gen_overrides": gen_overrides, "harness_options": _hopts},
+                    turn_options={
+                        "gen_overrides": gen_overrides,
+                        "harness_options": _hopts,
+                        "run_id": str(_hopts.get("run_id") or session_id or ""),
+                        "turn_id": _context_turn_id,
+                    },
                 )
             finally:
                 await approved_progress_q.put(None)
@@ -5999,6 +6159,70 @@ async def stream_agent_loop(
             )
         except Exception as _slim_err:
             logger.debug("[tool-slim] skipped: %s", _slim_err)
+
+        # Context Engine live path: one replacement packet per provider call.
+        # Conversation and tool results stay in their native roles; only the
+        # retrieved packet is replaced between rounds.
+        try:
+            from src.context_engine import wiring as _ce_live_wiring
+            if _ce_live_wiring.enabled():
+                messages = [
+                    dict(_message) for _message in messages
+                    if _message.get("_agent_injected") != "context_engine"
+                ]
+                _ce_live = await _ce_live_wiring.deliver_round(
+                    request=_ce_live_wiring.build_request(
+                        owner=owner or "",
+                        session_id=session_id or "",
+                        model=model,
+                        workspace=workspace or "",
+                        project_id=str(_hopts.get("project_id") or ""),
+                        run_id=str(_hopts.get("run_id") or session_id or ""),
+                        turn_id=_context_turn_id,
+                        messages=messages,
+                        agent_mode=True,
+                        incognito=bool(_hopts.get("incognito")),
+                    ),
+                    messages=messages,
+                    tool_schemas=all_tool_schemas or (),
+                    context_length=_last_route_context_length or context_length,
+                    window_known=bool(_last_route_context_length),
+                    max_output_tokens=max_tokens,
+                    round_index=round_num - 1,
+                )
+                if _ce_live:
+                    messages = _insert_before_latest_user(
+                        messages, _ce_live["message"])
+                    _active_route_state["messages"] = messages
+                    _active_route_state.pop("request_messages", None)
+                    _active_route_state["tools"] = all_tool_schemas
+                    _ce_live_report = dict(_ce_live["report"])
+                    _context_packets_delivered.append({
+                        "packet_id": str(_ce_live_report.get("packet_id") or ""),
+                        "request_id": str(_ce_live_report.get("request_id") or ""),
+                    })
+                    # Learned rules are marked as used only after their packet
+                    # really entered the model request, never when retrieved.
+                    _ce_memory_ids = [
+                        str(_row.get("source_ref") or "")[4:]
+                        for _row in _ce_live_report.get("sources") or ()
+                        if str(_row.get("source_ref") or "").startswith("mem:")
+                    ]
+                    if _ce_memory_ids:
+                        try:
+                            from src import memory_engine as _mem_engine
+                            _mem_engine.note_injected(session_id, _ce_memory_ids)
+                        except Exception as _mem_note_err:
+                            logger.debug("[context-engine] memory attribution skipped: %s",
+                                         _mem_note_err)
+                    yield ("data: " + json.dumps({
+                        "type": "context_packet",
+                        "round": round_num,
+                        "data": _ce_live_report,
+                    }) + "\n\n")
+        except Exception as _ce_err:
+            logger.warning("[context-engine] live packet skipped: %s", _ce_err,
+                           exc_info=True)
         agent_stream_timeout = int(get_setting("agent_stream_timeout_seconds", 300) or 300)
         # Local runners can sit silent for minutes while they prefill a long
         # prompt (qwen3-coder-next on a 12 GB card: ~280 s for 14k tokens). The
@@ -6114,7 +6338,19 @@ async def stream_agent_loop(
             )
             _last_route_context_length = state["context_length"]
             run_security.observe_messages(request_messages)
-            candidate_tools = _tool_schemas_for_route(state)
+            candidate_tools = state.get("tools")
+            if candidate_tools is None:
+                candidate_tools = _tool_schemas_for_route(state)
+                try:
+                    from src.tool_slimming import slim_tool_schemas
+                    candidate_tools, _ = slim_tool_schemas(
+                        candidate_tools,
+                        context_length=state["context_length"],
+                        enabled=bool(get_setting("agent_tool_schema_slim", True)),
+                    )
+                except Exception as _candidate_slim_err:
+                    logger.debug("[tool-slim] candidate skipped: %s",
+                                 _candidate_slim_err)
             state["tools"] = candidate_tools
             _candidate_request_states[index] = state
             return {
@@ -6228,7 +6464,7 @@ async def stream_agent_loop(
         # Once per turn (round_index 0), never once per round.
         try:
             from src.context_engine import wiring as _ce_wiring
-            if _ce_wiring.shadow_enabled():
+            if _ce_wiring.shadow_enabled() and not _ce_wiring.enabled():
                 _ce_report = await _ce_wiring.shadow_round(
                     request=_ce_wiring.build_request(
                         owner=owner or "",
@@ -6969,6 +7205,74 @@ async def stream_agent_loop(
             # ── (2) Claims vs. evidence. Only meaningful where the model could
             # have acted: a workspace turn, a coding-looking request, or a turn
             # in which tools already ran.
+            # An explicit instruction to mutate the project objectives cannot
+            # be satisfied by saying it was done. Require the typed `apply`
+            # call and give the model two bounded chances to issue it. The
+            # request classifier and active-project selection must both agree
+            # before this narrow obligation exists.
+            if _project_objective_unavailable and _project_objective_unavailable_nudges < 1:
+                try:
+                    _unavailable_check = _ledger.check_completion(_hc_text)
+                    _claimed_unavailable_action = "claims_without_mutation" in (
+                        _unavailable_check.get("reasons") or []
+                    ) or _claims_unobserved_project_objective_change(_hc_text)
+                except Exception:
+                    _claimed_unavailable_action = _claims_unobserved_project_objective_change(_hc_text)
+                if _claimed_unavailable_action:
+                    _project_objective_unavailable_nudges += 1
+                    _ledger.notes.append(f"project_objective_unavailable_nudge@{round_num}")
+                    if round_response.strip():
+                        messages.append({"role": "assistant", "content": round_response})
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            "[Harness check — automatic message from the runtime, not from the user] "
+                            "You claimed the project objectives were changed, but this turn has no usable "
+                            "project_objectives tool and no mutation evidence. Retract the claim. State that "
+                            "nothing was changed, explain that the chat must be attached to a project (or the "
+                            "policy must permit it), and give the smallest next step."
+                        ),
+                    })
+                    yield (
+                        "data: " + json.dumps({
+                            "type": "harness_check", "status": "required_action_unavailable",
+                            "tool": "project_objectives", "round": round_num,
+                            "attempt": 1, "max_attempts": 1,
+                        }) + "\n\n"
+                    )
+                    full_response += "\n\n"
+                    yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
+                    continue
+            if (
+                _requires_project_objective_apply
+                and not _project_objective_apply_succeeded()
+                and _project_objective_nudges < 2
+            ):
+                _project_objective_nudges += 1
+                _ledger.notes.append(f"project_objective_apply_nudge@{round_num}")
+                if round_response.strip():
+                    messages.append({"role": "assistant", "content": round_response})
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "[Harness check — automatic message from the runtime, not from the user] "
+                        "The user explicitly asked to change the active project's objectives, but no "
+                        "successful `project_objectives` call with `action: apply` is in this turn's "
+                        "tool log. Prose is not the requested action. Call that tool now with the "
+                        "smallest truthful ADD/EDIT/KILL delta and a rationale. If the request is "
+                        "ambiguous, call `ask_user`; do not claim the objective was changed."
+                    ),
+                })
+                yield (
+                    "data: " + json.dumps({
+                        "type": "harness_check", "status": "required_action",
+                        "tool": "project_objectives", "action": "apply", "round": round_num,
+                        "attempt": _project_objective_nudges, "max_attempts": 2,
+                    }) + "\n\n"
+                )
+                full_response += "\n\n"
+                yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
+                continue
             if _hc_text and (_harness_scope_active or _ledger.events):
                 try:
                     _check = _ledger.check_completion(_hc_text)
@@ -7746,7 +8050,12 @@ async def stream_agent_loop(
                             workspace=workspace,
                             workspace_roots=workspace_roots,
                             security_context=run_security,
-                            turn_options={"gen_overrides": gen_overrides, "harness_options": _hopts},
+                            turn_options={
+                                "gen_overrides": gen_overrides,
+                                "harness_options": _hopts,
+                                "run_id": str(_hopts.get("run_id") or session_id or ""),
+                                "turn_id": _context_turn_id,
+                            },
                         )
                     finally:
                         # Sentinel so the drainer knows to stop.
@@ -7867,6 +8176,13 @@ async def stream_agent_loop(
                     for _name in list(_withdrawn_tools):
                         if block.tool_type in _availability.restored_by(_name):
                             _withdrawn_tools.pop(_name, None)
+                            # Remove only the temporary denial installed by
+                            # this availability pass.  Operator/policy denials
+                            # existed before it and must remain authoritative.
+                            if _denial_origin.get(_name) == DENIAL_ORIGIN_AVAILABILITY:
+                                disabled_tools.discard(_name)
+                                _preflight_pruned.pop(_name, None)
+                                _denial_origin.pop(_name, None)
                             if _relevant_tools is not None:
                                 _relevant_tools.add(_name)
                                 if _base_relevant_tools is not None:
@@ -8532,6 +8848,36 @@ async def stream_agent_loop(
             yield f"data: {json.dumps({'type': 'harness_summary', 'data': _hsum})}\n\n"
     except Exception as _hs_err:
         logger.debug("[harness] summary failed: %s", _hs_err)
+
+    # Receipts are recorded only after verification, so their verdict is an
+    # observed turn result rather than a prediction made before tools ran.
+    if _context_packets_delivered:
+        try:
+            from src.context_engine import wiring as _ce_wiring
+            _ctx_changeset = (_hsum or {}).get("changeset") or {}
+            _ctx_outcome_ref = str(_ctx_changeset.get("id") or session_id or "")
+            _ctx_verdict = str(
+                _ctx_changeset.get("verdict")
+                or ((_hsum or {}).get("tests") or {}).get("status")
+                or (_hsum or {}).get("stop_reason")
+                or "complete"
+            )[:64]
+            _seen_context_packets = set()
+            for _ctx_packet in _context_packets_delivered:
+                _ctx_packet_id = _ctx_packet.get("packet_id") or ""
+                if not _ctx_packet_id or _ctx_packet_id in _seen_context_packets:
+                    continue
+                _seen_context_packets.add(_ctx_packet_id)
+                _ce_wiring.observe_receipt(
+                    packet_id=_ctx_packet_id,
+                    request_id=_ctx_packet.get("request_id") or "",
+                    messages=messages,
+                    tool_results=len(tool_events),
+                    outcome_ref=_ctx_outcome_ref,
+                    verdict=_ctx_verdict,
+                )
+        except Exception as _ctx_receipt_err:
+            logger.debug("[context-engine] receipt skipped: %s", _ctx_receipt_err)
 
     # --- Final metrics ---
     total_duration = time.time() - total_start

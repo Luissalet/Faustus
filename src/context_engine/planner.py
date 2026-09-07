@@ -210,6 +210,7 @@ SOURCE_SECTIONS: Dict[str, Tuple[str, ...]] = {
     # `PROJECT_SOURCE_TYPES` names ROW kinds, and a `state` or an `image` delta
     # carries no project content for it to refuse.
     "deltas": ("past_experiences",),
+    "state_mirror": ("current_state",),
 }
 
 #: Gated by ``policy.allow_personal_memory``.  Narrow on purpose: a flag that

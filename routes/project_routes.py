@@ -144,49 +144,6 @@ class ObjectiveDeltasRequest(BaseModel):
     deltas: List[Dict[str, Any]] = Field(..., min_length=1, max_length=50)
 
 
-class _StampedPatchStore:
-    """``ProjectStore``, minus the fields it stamps on a patch itself.
-
-    ``ProjectContextService.update`` and ``.refresh`` put ``updated_at`` on
-    the patch they hand the store. ``ProjectStore.patch_link`` refuses every
-    field outside ``LINK_PATCHABLE_FIELDS``, and ``updated_at`` is not one of
-    them — because ``patch_link`` writes its own, from the same clock, on
-    every patch it applies. Each module is right about its own half; they were
-    written against each other's documentation rather than against each other,
-    and the service's own tests use a fake store that accepts anything, so
-    nothing caught it. Reproduced: ``update()`` against the real store raises
-    ``ProjectError: Not a patchable context link field: updated_at``.
-
-    Dropping the field at this seam keeps the repair inside the HTTP surface
-    this change was scoped to. ``ProjectContextService(store=...)`` is the
-    documented way to give the service a different collaborator. The permanent
-    fix is one word added to ``LINK_PATCHABLE_FIELDS`` in
-    ``services/projects.py`` — a file this change does not own — after which
-    this proxy is a no-op and can be deleted, and the tool-layer dispatch of
-    ``manage_project_context`` stops hitting the same wall.
-
-    Everything else is forwarded untouched, so the service still sees one
-    store and no behaviour is invented here.
-    """
-
-    #: Exactly the field that is mismatched, and no more. ``kind``, ``ref_id``
-    #: and ``path`` are *not* here on purpose: ``patch_link`` refuses those
-    #: with a message of its own, and swallowing them would turn "that is a
-    #: different source" into a silent no-op.
-    STAMPED_BY_THE_STORE = ("updated_at",)
-
-    def __init__(self, store) -> None:
-        self._store = store
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._store, name)
-
-    def patch_link(self, project_id: str, link_id: str, patch, *, owner=None):
-        clean = {k: v for k, v in dict(patch or {}).items()
-                 if k not in self.STAMPED_BY_THE_STORE}
-        return self._store.patch_link(project_id, link_id, clean, owner=owner)
-
-
 def setup_project_routes() -> APIRouter:
     router = APIRouter(prefix="/api/projects", tags=["projects"])
 
@@ -422,7 +379,7 @@ def setup_project_routes() -> APIRouter:
         one `get_store()` resolves right now.
         """
         from src.project_context.service import ProjectContextService
-        return ProjectContextService(store=_StampedPatchStore(get_store()))
+        return ProjectContextService(store=get_store())
 
     @router.get("/{project_id}/context")
     def list_context(
@@ -642,22 +599,28 @@ def setup_project_routes() -> APIRouter:
         to this project's knowledge. The message says so because the agent
         repeats it to the user.
 
-        One endpoint for both id shapes -- a legacy ten-hex `item_id` and a
-        `ctx_...` link id -- because they are the same list and the same `id`
-        field. `remove_context_item` is what does the removal, deliberately:
-        it needs no effective owner beyond the one `_get_or_404` already
-        checked, so a working delete does not become a fail-closed one on an
-        install where nobody is logged in.
+        One endpoint accepts both a legacy ten-hex ``item_id`` and a
+        ``ctx_...`` id because the store normalises both into the same typed
+        link. Going through ``ProjectContextService.detach`` is important: it
+        emits ``project_context_detached``, which invalidates compiled context
+        immediately instead of leaving a removed source cached.
         """
         owner = effective_user(request)
-        _get_or_404(project_id, owner)
-        if not get_store().remove_context_item(project_id, item_id, owner):
+        project = _get_or_404(project_id, owner)
+        link_owner = _link_owner(request)
+        result = _context_service().detach(
+            project=project,
+            owner=link_owner,
+            link_id=item_id,
+            actor=_actor(link_owner),
+        )
+        if not result.ok:
             raise HTTPException(404, "Context item not found")
         return {
             "success": True,
             "ok": True,
             "link_id": item_id,
-            "message": "The link was removed. The source itself was not deleted.",
+            "message": result.message,
         }
 
     # ------------------------------------------------------------------

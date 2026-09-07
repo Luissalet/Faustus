@@ -929,6 +929,32 @@ def test_tasks_without_a_workspace_say_so_instead_of_failing(ce_db):
     assert "no workspace" in results["degrade_experiences"].detail
 
 
+def test_scheduled_pass_fans_scoped_tasks_over_every_project(ce_db, monkeypatch):
+    calls = []
+
+    def task(**scope):
+        calls.append(dict(scope))
+        return 1, "updated"
+
+    tasks = dict(maintenance.TASKS)
+    tasks["refresh_code_index"] = task
+    monkeypatch.setattr(maintenance, "TASKS", tasks)
+    monkeypatch.setattr(maintenance, "due", lambda: ["refresh_code_index"])
+
+    results = maintenance.run_scheduled(projects=[
+        {"id": "p1", "owner": "alice", "workspace": "A:/one"},
+        {"id": "p2", "owner": "bob", "workspace": "B:/two"},
+        {"id": "empty", "owner": "bob", "workspace": ""},
+    ])
+
+    assert [(c["owner"], c["project_id"], c["workspace"]) for c in calls] == [
+        ("alice", "p1", "A:/one"),
+        ("bob", "p2", "B:/two"),
+    ]
+    assert results[0].changed == 2
+    assert "2/2 project workspace(s)" in results[0].detail
+
+
 def test_audit_blocks_reports_and_changes_nothing(ce_db):
     result = maintenance.run(("audit_blocks",), owner="luis", project_id="p1")[0]
     assert result.ok and result.changed == 0

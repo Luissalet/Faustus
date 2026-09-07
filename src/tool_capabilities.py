@@ -221,7 +221,7 @@ _register(
     # The result is EXTERNAL_UNTRUSTED because a link's label and summary come
     # from the source (a document title, a file basename), never from Faustus:
     # text that arrived from a document is data on the way back out too.
-    {"manage_project_context"},
+    {"manage_project_context", "manage_teach_mode", "capability_health", "branch_futures"},
     ToolEffect.WRITE_PRIVATE,
     result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
 )

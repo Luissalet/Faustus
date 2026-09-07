@@ -2728,6 +2728,11 @@ def setup_chat_routes(
                                 # anyway — so force it exactly when there IS
                                 # one, mirroring tool_preflight.PROJECT_TOOLS.
                                 "manage_project_context",
+                                # Objectives are project state, not prose.  If
+                                # the user explicitly says "add this to the
+                                # objectives", the capability must not depend
+                                # on semantic tool retrieval guessing right.
+                                "project_objectives",
                             })
                     except Exception:
                         pass
@@ -2760,6 +2765,13 @@ def setup_chat_routes(
                                 break
                     else:
                         _loop_harness_options = _harness_options
+
+                    # Privacy is a property of this turn, not of the project.
+                    # The Context Engine consumes this per-turn bag, so carry
+                    # incognito explicitly and never mutate the request-wide
+                    # project options object shared by the rest of the route.
+                    _loop_harness_options = dict(_loop_harness_options or {})
+                    _loop_harness_options["incognito"] = bool(incognito)
 
                     async for chunk in stream_agent_loop(
                         sess.endpoint_url,
@@ -2849,6 +2861,9 @@ def setup_chat_routes(
                                     # the prompt we really sent. Observation
                                     # only (src/context_engine/wiring.py).
                                     "context_shadow",
+                                    # live packet actually delivered to this
+                                    # provider call.
+                                    "context_packet",
                                     # multi-agent delegation
                                     "subagent_event",
                                 ):
@@ -3180,7 +3195,9 @@ def setup_chat_routes(
         owner = effective_user(request)
         running: List[str] = []
         runs: Dict[str, str] = {}   # session → opaque run id (needed to Stop from the sidebar)
+        details: Dict[str, Dict[str, Any]] = {}
         try:
+            all_details = agent_runs.activity_details()
             for sid in agent_runs.active_session_ids():
                 try:
                     _verify_session_owner(request, sid, session_manager)
@@ -3190,8 +3207,11 @@ def setup_chat_routes(
                 rid = agent_runs.get_run_id(sid)
                 if rid and agent_runs.is_active(sid):
                     runs[sid] = rid
+                    if sid in all_details:
+                        details[sid] = all_details[sid]
         except Exception:
             running = []
+            details = {}
         try:
             awaiting = tool_approval_store.pending_session_ids(owner=owner)
         except Exception:
@@ -3227,7 +3247,8 @@ def setup_chat_routes(
                 workers[sid] = card
         except Exception:
             workers = {}
-        return {"running": running, "runs": runs, "awaiting_approval": awaiting, "queued": queued,
+        return {"running": running, "runs": runs, "details": details,
+                "awaiting_approval": awaiting, "queued": queued,
                 "interrupted": interrupted, "workers": workers, "ts": time.time()}
 
     @router.post("/api/chat/interrupted/ack")

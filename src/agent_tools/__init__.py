@@ -90,7 +90,8 @@ TOOL_TAGS = {"bash", "python", "web_search", "web_fetch", "read_file", "write_fi
              # source. Separate tag from the read-only `project_context` so the
              # fence regex, dispatch and the non-admin blocklist all see it.
              "manage_project_context",
-             "project_objectives", "memory_rules", "expert_review", "verify_claim",
+             "project_objectives", "manage_teach_mode", "capability_health", "branch_futures",
+             "memory_rules", "expert_review", "verify_claim",
              "chat_with_model", "create_session", "list_sessions",
              "send_to_session",
              "pipeline",

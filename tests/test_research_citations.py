@@ -741,7 +741,8 @@ def test_sources_heading_follows_the_language():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("junk", ["", None, 42, "x" * 50000])
+@pytest.mark.parametrize("junk", ["", None, 42, "x" * 50000],
+                         ids=["empty", "none", "number", "very-long"])
 def test_audit_survives_junk(junk):
     audit = audit_citations(junk, SourceRegistry())
     assert isinstance(audit.claims, list)

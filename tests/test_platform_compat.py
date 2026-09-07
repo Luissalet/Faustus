@@ -5,6 +5,8 @@ import io
 import sys
 from pathlib import Path
 
+import pytest
+
 
 _MODULE_PATH = Path(__file__).resolve().parents[1] / "core" / "platform_compat.py"
 _SPEC = importlib.util.spec_from_file_location("platform_compat_under_test", _MODULE_PATH)
@@ -256,28 +258,36 @@ def test_run_wsl_windows_powershell_calls_subprocess_with_expected_argv(monkeypa
 
 def test_ssh_exec_argv_builds_default_command():
     argv = platform_compat._ssh_exec_argv("alice@gpu-box", None, remote_cmd="echo ok")
-    assert argv == ["ssh", "alice@gpu-box", "echo ok"]
+    assert argv[0] == "ssh"
+    assert "StrictHostKeyChecking=yes" in argv
+    assert any(part.startswith("UserKnownHostsFile=") for part in argv)
+    assert argv[-2:] == ["alice@gpu-box", "echo ok"]
 
 
-def test_ssh_exec_argv_includes_port_and_options():
+def test_ssh_exec_argv_refuses_disabled_host_verification():
+    with pytest.raises(ValueError, match="cannot be disabled"):
+        platform_compat._ssh_exec_argv(
+            "alice@gpu-box",
+            "2222",
+            remote_cmd="tmux ls",
+            connect_timeout=6,
+            strict_host_key_checking=False,
+        )
+
+
+def test_ssh_exec_argv_includes_port_and_secure_options():
     argv = platform_compat._ssh_exec_argv(
         "alice@gpu-box",
         "2222",
         remote_cmd="tmux ls",
         connect_timeout=6,
-        strict_host_key_checking=False,
+        strict_host_key_checking=True,
     )
-    assert argv == [
-        "ssh",
-        "-o",
-        "ConnectTimeout=6",
-        "-o",
-        "StrictHostKeyChecking=no",
-        "-p",
-        "2222",
-        "alice@gpu-box",
-        "tmux ls",
-    ]
+    assert argv[0] == "ssh"
+    assert "ConnectTimeout=6" in argv
+    assert "StrictHostKeyChecking=yes" in argv
+    assert any(part.startswith("UserKnownHostsFile=") for part in argv)
+    assert argv[-4:] == ["-p", "2222", "alice@gpu-box", "tmux ls"]
 
 
 def test_run_ssh_command_uses_built_argv(monkeypatch):
@@ -306,17 +316,11 @@ def test_run_ssh_command_uses_built_argv(monkeypatch):
     )
 
     assert result.returncode == 0
-    assert captured["args"] == [
-        "ssh",
-        "-o",
-        "ConnectTimeout=3",
-        "-o",
-        "StrictHostKeyChecking=yes",
-        "-p",
-        "2200",
-        "alice@gpu-box",
-        "tmux ls",
-    ]
+    assert captured["args"][0] == "ssh"
+    assert "ConnectTimeout=3" in captured["args"]
+    assert "StrictHostKeyChecking=yes" in captured["args"]
+    assert any(part.startswith("UserKnownHostsFile=") for part in captured["args"])
+    assert captured["args"][-4:] == ["-p", "2200", "alice@gpu-box", "tmux ls"]
     assert captured["kwargs"]["timeout"] == 7
     assert captured["kwargs"]["capture_output"] is True
     assert captured["kwargs"]["text"] is False

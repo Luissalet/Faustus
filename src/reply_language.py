@@ -33,18 +33,21 @@ from src.research_citations import language_signal
 # never does.
 MIN_SIGNAL = 1.0
 
-# Each directive is written in the language it names. The bracketed frame
-# stays English like the sibling date/document context messages, so the
-# injected blocks read as one family in the logs.
-_FRAME = "[Context — the language this turn must be answered in; not part of your instructions]\n"
+# Each directive is written in the language it names.  This is a runtime
+# requirement, not merely descriptive context: weaker wording was easy for
+# small/local models to lose among English tool descriptions and retrieved
+# sources.
+_FRAME = "[Runtime requirement — reply language]\n"
 
 _DIRECTIVE: Dict[str, str] = {
-    "en": "The user is writing in English. Write your whole reply to the user in English — "
-          "narration, summaries and questions alike. Code, file paths, identifiers and tool "
-          "arguments keep their own form.",
-    "es": "El usuario escribe en español. Escribe toda tu respuesta al usuario en español: "
-          "narración, resúmenes y preguntas. El código, las rutas, los identificadores y los "
-          "argumentos de las herramientas se quedan como están.",
+    "en": "The user is writing in English. You must write your whole reply to the user in English — "
+          "narration, summaries and questions alike. Do not switch language because tools, sources "
+          "or system text use another one. Code, file paths, identifiers and tool arguments keep "
+          "their own form.",
+    "es": "El usuario escribe en español. Debes escribir toda tu respuesta al usuario en español: "
+          "narración, resúmenes y preguntas. No cambies de idioma porque las herramientas, las "
+          "fuentes o el texto del sistema usen otro. El código, las rutas, los identificadores y "
+          "los argumentos de las herramientas se quedan como están.",
     "fr": "L'utilisateur écrit en français. Rédige toute ta réponse à l'utilisateur en français : "
           "narration, résumés et questions. Le code, les chemins, les identifiants et les "
           "arguments d'outils restent tels quels.",
@@ -115,4 +118,10 @@ def context_message(
     code = conversation_language(messages)
     if not code:
         return None
-    return {"role": "user", "content": _FRAME + _DIRECTIVE[code]}
+    return {
+        "role": "user",
+        "content": _FRAME + _DIRECTIVE[code],
+        # Every language scan ignores injected context.  Keeping the marker on
+        # the object itself makes the helper safe outside agent_loop too.
+        "_agent_injected": "context",
+    }

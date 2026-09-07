@@ -1,6 +1,7 @@
 import { t } from '../../i18n';
 import {
   ArrowUp,
+  AudioLines,
   Bot,
   Database,
   EyeOff,
@@ -76,6 +77,8 @@ export interface ComposerProps {
   sessionId: string | null;
   onSend: (text: string) => void;
   onStop: () => void;
+  onVoice?: () => void;
+  voiceActive?: boolean;
   onNotice: (text: string, tone?: 'info' | 'warning' | 'danger') => void;
   modelPicker: ReactNode;
   /** The preset chip (picker + clear), rendered by the screen. */
@@ -110,6 +113,8 @@ export function Composer({
   sessionId,
   onSend,
   onStop,
+  onVoice,
+  voiceActive,
   onNotice,
   modelPicker,
   presetChip,
@@ -123,6 +128,11 @@ export function Composer({
   /* ── Dictation ── */
   const [dictation, setDictation] = useState<Dictation | null>(null);
   const [transcribing, setTranscribing] = useState(false);
+  const dictationController = useRef<AbortController | null>(null);
+  useEffect(() => () => { dictationController.current?.abort(); }, [sessionId]);
+  useEffect(() => {
+    if (voiceActive) { dictationController.current?.abort(); setDictation(null); setTranscribing(false); }
+  }, [voiceActive]);
   const toggleDictation = async () => {
     if (dictation) {
       dictation.stop();
@@ -132,15 +142,19 @@ export function Composer({
     try {
       // The speech adapter (recorder + browser fallbacks) loads on first use.
       const { startDictation } = await import('../../adapters/speech');
-      const d = await startDictation();
+      const controller = new AbortController();
+      dictationController.current?.abort(); dictationController.current = controller;
+      const d = await startDictation(undefined, controller.signal);
+      if (controller.signal.aborted) { d.cancel(); return; }
       setDictation(d);
       d.done
         .then((text) => {
+          if (controller.signal.aborted) return;
           const current = textareaRef.current?.value ?? '';
           if (text) setDraft(current ? `${current.trimEnd()} ${text}` : text);
           else onNotice(t('I did not hear anything.'), 'warning');
         })
-        .catch((e: Error) => onNotice(`${t('Dictation')}: ${e.message}`, 'danger'))
+        .catch((e: Error) => { if (!controller.signal.aborted) onNotice(`${t('Dictation')}: ${e.message}`, 'danger'); })
         .finally(() => {
           setDictation(null);
           setTranscribing(false);
@@ -459,7 +473,7 @@ export function Composer({
               icon={dictation ? MicOff : Mic}
               label={dictation ? t('Stop dictating') : transcribing ? t('Transcribing…') : t('Dictate')}
               size="sm"
-              disabled={transcribing}
+              disabled={transcribing || voiceActive}
               onClick={() => void toggleDictation()}
               testId="studio-mic"
             />
@@ -563,6 +577,7 @@ export function Composer({
         </div>
 
         <div className="fs-studio__send">
+          {onVoice && <IconButton icon={AudioLines} label={t(voiceActive ? 'Close voice mode' : 'Talk to Faustus')} onClick={onVoice} testId="studio-voice" />}
           {busy ? (
             <IconButton icon={Square} label={t('Stop')} onClick={onStop} testId="studio-stop" />
           ) : (

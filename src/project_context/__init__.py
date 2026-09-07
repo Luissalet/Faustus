@@ -42,7 +42,7 @@ from __future__ import annotations
 from .models import (  # noqa: F401
     ACCESS_MODES, ACTOR_KINDS, INDEX_STATUSES, LINK_KINDS, PATCHABLE_FIELDS,
     PATH_KINDS, REF_KINDS, RELATIONS, RETRIEVAL_POLICIES, ROLES, SOURCE_STATES,
-    VERSION_POLICIES, ActorRef, AttachResult, ContextLinkStatus, DetachResult,
+    VERSION_POLICIES, ActorRef, AttachResult, ContextLinkStatus, DetachResult, IndexResult,
     ExtractedChunk, ExtractedCorpus, ProjectContextError, ProjectContextLink,
     RefreshResult, SourceContent, SourceMatch, SourceMetadata, SourceRef,
 )
@@ -64,6 +64,7 @@ __all__ = [
     "ActorRef", "ArtifactResolver", "AttachResult", "ContextLinkStatus",
     "ContextSourceResolver", "DetachResult", "DocumentResolver", "ExtractedChunk",
     "ExtractedCorpus", "FilesystemResolver", "GalleryImageResolver",
+    "IndexResult",
     "ProjectContextError", "ProjectContextLink", "ProjectContextService",
     "RefreshResult", "SourceContent", "SourceMatch", "SourceMetadata", "SourceRef",
     "TurnReference", "TurnReferenceRegistry", "get_resolver", "note_created",

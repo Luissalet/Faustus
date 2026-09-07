@@ -83,3 +83,9 @@ def test_router_reports_non_calendar_categories():
     assert classify_tool_intent("reply to that email").category == "email"
     assert classify_tool_intent("open my calendar").category == "ui"
     assert classify_tool_intent("research cost effective local models").category == "research"
+
+
+def test_spanish_project_objective_order_is_unicode_normalization_safe():
+    intent = classify_tool_intent("Añade este documento a los objetivos del proyecto")
+    assert intent.needs_tools
+    assert intent.category == "project"

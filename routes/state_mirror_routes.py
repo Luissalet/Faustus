@@ -78,7 +78,7 @@ import time
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 from urllib.parse import unquote
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
 from core.middleware import require_admin, require_human
@@ -87,6 +87,7 @@ from src.owner_identity import effective_storage_owner
 from src.state_mirror import service as state_service
 from src.state_mirror.contracts import (
     ENTITY_KINDS,
+    MINIMUM_FRESHNESS_LEVELS,
     NAMESPACE_KINDS,
     REAL_NAMESPACE,
     StateError,
@@ -473,6 +474,56 @@ def setup_state_mirror_routes() -> APIRouter:
         payload["sweep_seconds"] = _sweep_seconds()
         payload["route_errors"] = list(ROUTE_ERRORS)
         return {"ok": True, "diagnostics": payload}
+
+    @router.get("/project")
+    async def project(request: Request, project_id: str = "",
+                      entity_ref: Optional[List[str]] = Query(None),
+                      field: Optional[List[str]] = Query(None),
+                      minimum_freshness: str = "informational",
+                      namespace: str = REAL_NAMESPACE,
+                      token_budget: int = 0, reason: str = ""):
+        """A bounded projection for Context Engine and other consumers.
+
+        Query lists use repeated ``entity_ref`` and ``field`` parameters.  An
+        empty list intentionally means "the useful fields in this project",
+        as defined by the projection service, rather than a route-side guess.
+        """
+        require_admin(request)
+        owner = _require_owner(request)
+        world = _namespace_arg(namespace)
+        if not world:
+            return _refusal("namespace",
+                            f"must be one of {', '.join(NAMESPACE_KINDS)}, "
+                            "optionally followed by ':<id>'",
+                            code="invalid_argument")
+        freshness = str(minimum_freshness or "informational").strip()
+        if freshness not in MINIMUM_FRESHNESS_LEVELS:
+            return _refusal(
+                "minimum_freshness",
+                f"must be one of {', '.join(MINIMUM_FRESHNESS_LEVELS)}",
+                code="invalid_argument",
+            )
+        refs = [_entity_id(value) for value in (entity_ref or ()) if str(value).strip()]
+        for ref in refs:
+            if not is_entity_id(ref):
+                return _refusal("entity_ref", "must contain state entity ids",
+                                code="invalid_argument", got=ref)
+        try:
+            payload = _service().project(
+                owner=owner,
+                project_id=str(project_id or ""),
+                entity_refs=refs,
+                fields=[str(value) for value in (field or ()) if str(value).strip()],
+                minimum_freshness=freshness,
+                namespace=world,
+                token_budget=_int_arg(token_budget, 0, low=0, high=2 ** 31 - 1),
+                reason=str(reason or "")[:500],
+            )
+        except Exception:  # noqa: BLE001 - projections are read paths
+            logger.exception("state routes: project projection failed")
+            payload = {}
+        return {"ok": True, "projection": dict(payload or {}),
+                "enabled": enabled()}
 
     @router.get("/situation/{name}")
     async def situation(request: Request, name: str, project_id: str = "",

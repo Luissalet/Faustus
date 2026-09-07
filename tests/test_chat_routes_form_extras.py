@@ -58,6 +58,18 @@ def test_workspace_bound_coding_chat_is_escalated_to_agent():
     assert not looks("Explain what a closure is")
 
 
+def test_project_mutations_promote_plain_chat_without_enabling_shell():
+    from src.action_intents import classify_tool_intent
+    for message in (
+        "Add this to the project objectives",
+        "Put them into the project objectives tab",
+        "AÃ±ade este documento a los objetivos del proyecto",
+        "Vincula este documento al contexto del proyecto",
+    ):
+        intent = classify_tool_intent(message)
+        assert intent.needs_tools and intent.category == "project", message
+
+
 def test_activity_snapshot_helpers():
     """Sidebar activity dots: detached runs + pending approvals in one call."""
     from src import agent_runs
@@ -95,6 +107,30 @@ def test_activity_snapshot_helpers():
     assert store.pending_session_ids(owner="someone-else") == []
     store.retire_for_session(owner="luis", session_id="s1")
     assert store.pending_session_ids(owner="luis") == []
+
+
+def test_detached_activity_names_model_and_tool_phases():
+    from src import agent_runs
+
+    def event(**payload):
+        return "data: " + json.dumps(payload) + "\n\n"
+
+    run = agent_runs._Run(label="A long task")
+    saved = dict(agent_runs._RUNS)
+    try:
+        agent_runs._RUNS["phase-test"] = run
+        agent_runs._publish(run, event(type="agent_step", round=3))
+        assert agent_runs.activity_snapshot("phase-test")["phase"] == "waiting_model"
+        agent_runs._publish(run, event(type="tool_start", tool="read_file",
+                                       command="read a very useful file", round=3))
+        snapshot = agent_runs.activity_snapshot("phase-test")
+        assert snapshot["phase"] == "tool" and snapshot["tool"] == "read_file"
+        assert snapshot["round"] == 3 and "useful file" in snapshot["detail"]
+        agent_runs._publish(run, event(delta="hello"))
+        assert agent_runs.activity_snapshot("phase-test")["phase"] == "writing"
+    finally:
+        agent_runs._RUNS.clear()
+        agent_runs._RUNS.update(saved)
 
 
 def test_detached_run_buffer_compacts_progress_ticks():

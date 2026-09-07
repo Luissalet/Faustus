@@ -88,6 +88,11 @@ def _run_loop(monkeypatch, model, deltas, native_calls=None, max_rounds=2, endpo
         [{"role": "user", "content": "Do not run anything yet, just show me an example."}],
         max_rounds=max_rounds,
         relevant_tools={"bash"},
+        # These tests isolate the tool-call transport. User-editable skills in
+        # the real data directory correctly arm the external-context gate;
+        # letting that unrelated policy intercept the fake executor would
+        # turn a parser test into an approval-flow test.
+        security_gate_bypass=True,
     )
     return _types(_collect(gen))
 

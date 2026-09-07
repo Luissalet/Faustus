@@ -43,6 +43,7 @@ from src.context_engine.adapters import (
     projects as ad_projects,
     provenance as ad_provenance,
     sessions as ad_sessions,
+    state_mirror as ad_state_mirror,
 )
 from src.context_engine.contracts import (
     ContextCandidate,
@@ -128,6 +129,44 @@ class StubSource:
 
     async def fetch(self, source_ref, req):
         return None
+
+
+def test_state_mirror_source_uses_an_owner_scoped_projection(monkeypatch):
+    calls = []
+
+    class _Mirror:
+        def entities(self, **scope):
+            calls.append(("entities", dict(scope)))
+            return [{"id": "service://alice/real/comfyui"}]
+
+        def project(self, **scope):
+            calls.append(("project", dict(scope)))
+            return {
+                "projection_id": "stateproj_1",
+                "revision": "state:7",
+                "as_of": "2026-09-07T00:00:00Z",
+                "freshness": "fresh",
+                "sufficient": True,
+                "entity_refs": ["service://alice/real/comfyui"],
+                "fields": {
+                    "service://alice/real/comfyui#health": {
+                        "value": "available", "freshness": "fresh",
+                        "epistemic": "observed", "source": "services",
+                    }
+                },
+                "unknown_fields": [], "conflicts": [], "refresh_actions": [],
+            }
+
+    monkeypatch.setattr("src.state_mirror.service.service", lambda: _Mirror())
+    req = make_request(owner="alice", project_id="project-1")
+    rows = list(ad_state_mirror.StateMirrorSource()._search(req))
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.source_type == "state" and row.section == "current_state"
+    assert row.source_ref == "state:project-1"
+    assert row.authority == "observed_state" and "available" in row.body
+    assert all(call[1]["owner"] == "alice" for call in calls)
+    assert calls[1][1]["entity_refs"] == ["service://alice/real/comfyui"]
 
 
 @pytest.fixture(autouse=True)

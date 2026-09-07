@@ -323,6 +323,9 @@ class TestNonStreamingCallReroute:
         monkeypatch.setattr(llm_core, "_clear_host_dead", lambda *a, **k: None)
         monkeypatch.setattr(llm_core, "get_context_length", lambda u, m: 32768)
         monkeypatch.setattr(llm_core, "_ollama_model_caps", lambda u, m: caps)
+        # A developer's saved per-model settings must not decide this wire
+        # routing unit test. Those settings have their own routing coverage.
+        monkeypatch.setattr(llm_core, "_model_load_defaults", lambda u, m: {})
         monkeypatch.setattr(llm_core, "_get_cached_response", lambda k: None)
         monkeypatch.setattr(llm_core, "_set_cached_response", lambda *a, **k: None)
         out = asyncio.run(llm_core.llm_call_async(url, model, [{"role": "user", "content": "review this"}], max_retries=1))

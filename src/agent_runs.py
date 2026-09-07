@@ -70,7 +70,8 @@ def _outcome_of(status: str) -> Optional[str]:
 
 class _Run:
     __slots__ = ("buffer", "subscribers", "status", "task", "evict_task", "run_id", "last_key",
-                 "lane", "queued_position", "log", "started_at", "label")
+                 "lane", "queued_position", "log", "started_at", "label",
+                 "phase", "phase_since", "last_event_at", "round", "tool", "detail")
 
     @property
     def outcome(self) -> Optional[str]:
@@ -91,6 +92,16 @@ class _Run:
         self.log: Optional["_RunLog"] = None
         self.started_at: float = time.time()
         self.label: str = label
+        # A compact, owner-filtered account of what the detached task is doing.
+        # The replay buffer has the evidence, but making every sidebar parse a
+        # potentially huge token stream just to distinguish prefill from a
+        # running tool would be wasteful and brittle.
+        self.phase: str = "starting"
+        self.phase_since: float = self.started_at
+        self.last_event_at: float = self.started_at
+        self.round: int = 1
+        self.tool: Optional[str] = None
+        self.detail: str = ""
 
 
 _RUNS: Dict[str, _Run] = {}
@@ -237,6 +248,7 @@ class _RunLog:
 def _publish(run: _Run, ev: str) -> None:
     """Append one SSE event (or replace the previous progress tick of the same
     tool call) and fan it out to every live subscriber."""
+    _observe_activity(run, ev)
     key = _compact_key(ev)
     replaced = False
     if key is not None and run.last_key == key and run.buffer:
@@ -253,6 +265,119 @@ def _publish(run: _Run, ev: str) -> None:
             q.put_nowait((seq, ev, replaced))
         except Exception:
             pass
+
+
+def _brief(value: Any, limit: int = 160) -> str:
+    """One safe line for an activity card, never a full command or output."""
+    text = re.sub(r"\s+", " ", str(value or "")).strip()
+    try:
+        from core.log_safety import redact_secrets
+        text = redact_secrets(text)
+    except Exception:
+        pass
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def _set_phase(run: _Run, phase: str, *, tool: Optional[str] = None, detail: Any = "") -> None:
+    now = time.time()
+    if phase != run.phase or tool != run.tool:
+        run.phase_since = now
+    run.phase = phase
+    run.last_event_at = now
+    run.tool = tool
+    run.detail = _brief(detail)
+
+
+def _observe_activity(run: _Run, ev: str) -> None:
+    """Fold one replay event into the small live activity snapshot.
+
+    This never affects delivery.  Unknown/malformed events merely count as a
+    sign of life, so observability cannot break a model run.
+    """
+    run.last_event_at = time.time()
+    if ev.startswith("data: [DONE]"):
+        _set_phase(run, "finishing")
+        return
+    if not ev.startswith("data: "):
+        return
+    try:
+        payload = json.loads(ev[6:])
+    except (TypeError, ValueError):
+        return
+    if not isinstance(payload, dict):
+        return
+    if "delta" in payload and not payload.get("type"):
+        _set_phase(run, "thinking" if payload.get("thinking") else "writing")
+        return
+    event_type = str(payload.get("type") or "")
+    if event_type == "queue_status":
+        if payload.get("queued"):
+            _set_phase(run, "queued", detail=f"position {payload.get('position') or '?'}")
+        else:
+            _set_phase(run, "waiting_model")
+    elif event_type == "tool_start":
+        try:
+            run.round = max(run.round, int(payload.get("round") or run.round))
+        except (TypeError, ValueError):
+            pass
+        _set_phase(run, "tool", tool=_brief(payload.get("tool"), 64) or "tool",
+                   detail=payload.get("command") or payload.get("full_command"))
+    elif event_type == "tool_progress":
+        # Worker-board progress is still useful as a sign of life, but its
+        # nested payload can be large and may contain task instructions.
+        detail = payload.get("message") or payload.get("event") or payload.get("tail")
+        _set_phase(run, "tool", tool=_brief(payload.get("tool"), 64) or run.tool or "tool",
+                   detail=detail)
+    elif event_type == "tool_output":
+        _set_phase(run, "waiting_model")
+    elif event_type == "agent_step":
+        try:
+            run.round = max(run.round, int(payload.get("round") or run.round))
+        except (TypeError, ValueError):
+            pass
+        _set_phase(run, "waiting_model")
+    elif event_type == "research_progress":
+        data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+        detail = data.get("message") or data.get("phase") or "research"
+        _set_phase(run, "research", detail=detail)
+    elif event_type == "ask_user":
+        _set_phase(run, "awaiting_user")
+    elif event_type in {"model_info", "fallback"}:
+        _set_phase(run, "waiting_model")
+
+
+def activity_snapshot(session_id: str) -> Optional[Dict[str, Any]]:
+    """Current phase of one detached run; None for absent/terminal runs."""
+    run = _RUNS.get(session_id)
+    if run is None or run.status != "running":
+        return None
+    now = time.time()
+    return {
+        "run_id": run.run_id,
+        "status": run.status,
+        "phase": run.phase,
+        "phase_since": run.phase_since,
+        "last_event_at": run.last_event_at,
+        "server_alive_at": now,
+        "started_at": run.started_at,
+        "elapsed_s": max(0, round(now - run.started_at, 1)),
+        "round": run.round,
+        "tool": run.tool,
+        "detail": run.detail,
+        "queued_position": run.queued_position,
+        "label": run.label,
+        "subscribers": len(run.subscribers),
+    }
+
+
+def activity_details() -> Dict[str, Dict[str, Any]]:
+    """Current detached-run details keyed by session id."""
+    out: Dict[str, Dict[str, Any]] = {}
+    for session_id in list(_RUNS):
+        snapshot = activity_snapshot(session_id)
+        if snapshot is not None:
+            out[session_id] = snapshot
+    return out
 
 
 def _wake_run_subscribers(run: _Run) -> None:
@@ -601,12 +726,18 @@ async def subscribe(
                 seq, ev, replaced = await asyncio.wait_for(q.get(), timeout=10.0)
             except asyncio.TimeoutError:
                 # Keep slow local models/proxies alive while they prefill before
-                # the first token. SSE comments are ignored by the UI but reset
-                # browser/proxy idle timers, which prevents "empty response"
-                # disconnects on llama.cpp first-token latencies of 30s+.
+                # the first token. This is a visible sign of life as well as an
+                # HTTP keepalive: the UI can now distinguish a 90-second model
+                # prefill from a dead connection, and can retain the last known
+                # phase while the user moves between conversations.
                 if run.status == "running":
                     heartbeat_idx += 1
-                    yield f": heartbeat {heartbeat_idx}\n\n"
+                    heartbeat = {
+                        "type": "run_activity",
+                        "data": activity_snapshot(session_id) or {},
+                        "heartbeat": heartbeat_idx,
+                    }
+                    yield "data: " + json.dumps(heartbeat, ensure_ascii=False) + "\n\n"
                     continue
                 seq, ev, replaced = (None, None, False)
             if seq is None:            # end sentinel

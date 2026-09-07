@@ -5254,3 +5254,65 @@ yours	tuyo
 …and {n} more.	…y {n} más.
 …or upload a file	…o sube un archivo
 ⟨insert⟩	⟨insertar⟩
+Conversation language	Idioma de conversación
+Automatic · English / Spanish	Automático · Inglés / Español
+Browser recognition needs a fixed language. Choose English or Spanish; automatic detection uses local Whisper.	El reconocimiento del navegador necesita un idioma fijo. Elige inglés o español; la detección automática usa Whisper local.
+Windows · installed voices (offline)	Windows · voces instaladas (sin conexión)
+For local voice on Windows: Whisper for input and Windows installed voices for output. The first Whisper use downloads its model. CPU leaves GPU memory free for your assistant.	Para voz local en Windows: Whisper para escuchar y las voces instaladas de Windows para responder. El primer uso de Whisper descarga su modelo. Usar CPU deja la memoria de la GPU libre para tu asistente.
+Transcription device	Dispositivo de transcripción
+Prepare local voice on Windows	Preparar voz local en Windows
+Talk to Faustus	Habla con Faustus
+Close voice mode	Cerrar modo de voz
+Opening voice mode…	Abriendo el modo de voz…
+Voice conversation	Conversación por voz
+Ready when you are	Cuando quieras, te escucho
+Opening microphone…	Abriendo el micrófono…
+Listening to you	Te estoy escuchando
+Turning your voice into text…	Transcribiendo tu voz…
+Is this what you meant?	¿Es esto lo que querías decir?
+Faustus is working	Faustus está trabajando
+Faustus is speaking	Faustus está hablando
+Your approval is needed	Hace falta tu aprobación
+Let’s reconnect	Vamos a reconectar
+Same chat, same tools	El mismo chat y sus herramientas
+Microphone active	Micrófono activo
+Microphone off	Micrófono apagado
+Start speaking	Empezar a hablar
+Finish speaking	Terminar de hablar
+Interrupt and speak	Interrumpir y hablar
+Silence voice	Callar la voz
+Mute microphone	Silenciar micrófono
+Cancel task	Cancelar tarea
+Send message	Enviar mensaje
+Waiting for the current task	Esperando a la tarea actual
+Voice options & privacy	Opciones de voz y privacidad
+Read responses aloud	Leer respuestas en voz alta
+Listen again after each response	Volver a escuchar después de cada respuesta
+Send without reviewing transcription	Enviar sin revisar la transcripción
+On this server	En este servidor
+Configured endpoint · may be remote	Endpoint configurado · puede ser remoto
+Open speech settings	Abrir ajustes de voz
+Using tool	Usando herramienta
+The model may need time to load. You can keep using the app.	El modelo puede tardar en cargar. Puedes seguir usando la aplicación.
+Review the approval in the chat. Spoken answers cannot approve sensitive actions.	Revisa la aprobación en el chat. Las respuestas habladas no autorizan acciones sensibles.
+Browser recognition may send audio to its speech service. Choose Whisper for local transcription.	El navegador puede enviar el audio a su servicio de reconocimiento. Elige Whisper para transcribir en local.
+Audio capture is temporary. Voice replies skip the disk cache. Final messages follow this chat’s history settings. Endpoint retention depends on its provider.	La captura es temporal. Las respuestas de voz no se guardan en la caché de disco. Los mensajes finales siguen los ajustes de historial del chat. La retención del endpoint depende de su proveedor.
+Listening pauses while Faustus speaks. Use Interrupt and speak to take your turn. Changing chat or hiding this tab mutes voice; the task continues.	La escucha se pausa mientras Faustus habla. Usa Interrumpir y hablar para tomar el turno. Cambiar de chat u ocultar esta pestaña silencia la voz; la tarea continúa.
+Voice excerpt finished. The complete answer, including code and tables, is in the chat.	Ha terminado el extracto hablado. La respuesta completa, con código y tablas, está en el chat.
+Alt + V to talk or finish · Escape to mute. Closing voice does not cancel the task.	Alt + V para hablar o terminar · Escape para silenciar. Cerrar la voz no cancela la tarea.
+Could not load voice settings. Refresh or check the server.	No se pudieron cargar los ajustes de voz. Recarga o comprueba el servidor.
+Enable a speech recognition provider in Settings → Voice.	Activa un proveedor de reconocimiento en Ajustes → Voz.
+This browser cannot transcribe speech. Choose local Whisper in Settings → Voice.	Este navegador no puede transcribir voz. Elige Whisper local en Ajustes → Voz.
+Microphone access needs HTTPS or localhost and a supported browser.	El micrófono necesita HTTPS o localhost y un navegador compatible.
+Recording is too large. Try a shorter message.	La grabación es demasiado grande. Prueba un mensaje más corto.
+Recording failed. Reconnect your microphone and retry.	Falló la grabación. Reconecta el micrófono y vuelve a intentarlo.
+Microphone disconnected. Reconnect it and retry.	Se ha desconectado el micrófono. Reconéctalo e inténtalo de nuevo.
+Transcription failed. Check Settings → Voice and try again.	Falló la transcripción. Revisa Ajustes → Voz e inténtalo de nuevo.
+Enable a speech output provider in Settings → Voice.	Activa un proveedor de síntesis en Ajustes → Voz.
+This browser has no speech output.	Este navegador no dispone de síntesis de voz.
+No local browser voice for this language. Configure a speech output provider.	No hay una voz local del navegador para este idioma. Configura un proveedor de síntesis.
+Speech playback timed out.	Se ha agotado el tiempo de reproducción de voz.
+Speech output failed. The full response is still in the chat.	Falló la síntesis de voz. La respuesta completa sigue en el chat.
+Could not play speech audio.	No se pudo reproducir la voz.
+I did not hear anything. Try again closer to the microphone.	No he oído nada. Prueba de nuevo más cerca del micrófono.
+Microphone permission was denied. Allow it in your browser and retry.	No se concedió permiso para el micrófono. Actívalo en el navegador y vuelve a intentarlo.

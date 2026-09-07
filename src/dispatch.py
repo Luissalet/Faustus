@@ -1051,7 +1051,61 @@ def build_args(body: Dict[str, Any]) -> Dict[str, Any]:
     if not body.get("timeout_s"):
         args["timeout_s"] = _DEFAULT_TIMEOUT_S
     _attach_runners(args, body)
+    _select_dispatch_agents(args, str(body.get("workspace") or "") or None)
     return args
+
+
+def _dispatch_task_spec(task: Dict[str, Any]) -> Dict[str, Any]:
+    """Map a dispatch task onto the selector's vocabulary, explicitly.
+
+    The instruction is always the description and the slot is always worker;
+    the remaining fields are caller declarations preserved by the delegation
+    parser.  No resolver override key is mistaken for selection evidence.
+    """
+    spec = {
+        key: task[key] for key in (
+            "intent", "description", "required_capabilities",
+            "required_tools", "mode", "specialties", "output_contract",
+        ) if task.get(key)
+    }
+    spec.setdefault("description", str(task.get("instruction") or ""))
+    spec.setdefault("mode", "worker")
+    return spec
+
+
+def _select_dispatch_agents(args: Dict[str, Any], workspace: Optional[str]) -> None:
+    """Choose a profile for unnamed built-in dispatch workers before enqueue.
+
+    External runners keep their own identity. A named agent remains a human
+    choice. The selected slug is then resolved through the ordinary agent-def
+    path, so permissions are derived before the worker starts rather than
+    bolted on after selection.
+    """
+    tasks = list(args.get("tasks") or ())
+    unnamed = [task for task in tasks
+               if isinstance(task, dict) and not task.get("agent")
+               and not task.get("runner")]
+    if not unnamed:
+        return
+    try:
+        from src import agent_defs
+        from src.agent_profiles.selection import TaskSpec, select
+        from src.agent_tools.subagent_tools import _apply_agent_defs
+
+        catalogue = agent_defs.load_all(workspace)
+        for task in unnamed:
+            trace = select(
+                catalogue,
+                TaskSpec(**_dispatch_task_spec(task)),
+            )
+            if trace.chosen:
+                task["agent"] = trace.chosen
+                task["selected_automatically"] = True
+                task["selection_reason"] = trace.reason[:400]
+        if any(task.get("agent") for task in unnamed):
+            _apply_agent_defs(args, str(args.get("reviewer_agent") or ""), workspace)
+    except Exception as exc:  # noqa: BLE001 - dispatch still has legacy workers
+        logger.warning("dispatch: automatic agent selection unavailable: %s", exc)
 
 
 def _attach_runners(args: Dict[str, Any], body: Dict[str, Any]) -> None:

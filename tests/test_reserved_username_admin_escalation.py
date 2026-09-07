@@ -17,9 +17,18 @@ import pytest
 from fastapi import HTTPException
 
 from src.owner_identity import DEFAULT_LOCAL_OWNER
-from tests.helpers.import_state import clear_module
+from tests.helpers.import_state import clear_module, preserve_import_state
 
 _RESERVED_NAMES = ["internal-tool", "api", "demo", "system", DEFAULT_LOCAL_OWNER]
+
+
+@pytest.fixture(autouse=True)
+def restore_auth_imports():
+    # Fresh imports mint a new internal token and dependency function objects.
+    # Keep them inside this test: existing routers must retain the matching
+    # middleware module and FastAPI dependency overrides after it finishes.
+    with preserve_import_state("core.auth", "core.middleware"):
+        yield
 
 
 def _fresh_auth_manager(tmp_path):

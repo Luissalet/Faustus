@@ -131,6 +131,7 @@ DEFAULT_SETTINGS = {
     "stt_provider": "disabled",
     "stt_model": "base",
     "stt_language": "",
+    "stt_device": "auto",
     "search_provider": "searxng",
     # Default fallback chain — when the primary provider fails or
     # rate-limits, we try DuckDuckGo next. Free, no API key required, so
@@ -416,6 +417,18 @@ DEFAULT_SETTINGS = {
     # cheap improvement that spawns another cheap improvement forever is a
     # convergence failure, not a bargain.
     "agent_completion_max_bonus_rounds": 3,
+    # Modo Enséñame (src/teach_mode/): record semantic tool events and compile
+    # them into reviewable procedures. Off prevents capture/compilation and
+    # lifecycle mutations; existing demonstrations remain readable.
+    "agent_teach_mode": False,
+    # Immune System (src/immune_system/): health verdicts, incident
+    # containment and governed repair promotion. Off prevents new assessments
+    # and repairs; recorded health remains readable by diagnostics.
+    "agent_immune_system": False,
+    # Branching Futures (src/branching_futures/): isolated alternatives with a
+    # shared base snapshot. Off prevents new futures/results/commits; history
+    # remains inspectable.
+    "agent_branching_futures": False,
     # Provenance graph (src/provenance_graph.py): the 2D audit view over the
     # memory and the workspace, built ONLY from declared edges — a dependency
     # the user wrote, an evidence span, a checkpoint diff, a citation that
@@ -466,6 +479,9 @@ DEFAULT_SETTINGS = {
     # section split and omission counts per packet, never content). Maintenance
     # prunes past this. Raise it to audit further back, at a few KB per turn.
     "agent_context_ledger_days": 30,
+    "agent_context_maintenance_seconds": 300,
+    # Queued project links are consumed quickly while the machine is idle.
+    "agent_project_context_index_seconds": 15,
     # Entries in the L1 working set (src/context_engine/cache.py): manifests,
     # token counts and candidate lists kept per owner+project scope. Everything
     # in it is derived, so losing it costs latency and nothing else.

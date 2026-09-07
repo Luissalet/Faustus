@@ -1,0 +1,47 @@
+.fs-studio[data-voice] .fs-studio__stage { display: flex; flex-direction: column; }
+.fs-studio[data-voice] .fs-studio__head, .fs-studio[data-voice] .fs-studio__composer { flex-shrink: 0; }
+.fs-studio[data-voice] .fs-studio__composer { grid-template-columns: minmax(0, 1fr); }
+.fs-studio[data-voice] .fs-studio__bar, .fs-studio[data-voice] .fs-studio__input { min-inline-size: 0; }
+.fs-studio[data-voice] .fs-studio__scroll { flex: 1; min-height: 0; }
+.fs-voice { display: grid; grid-template-columns: minmax(150px, 230px) minmax(0, 1fr); gap: var(--fs-space-4); padding: var(--fs-space-5); margin: 0 var(--fs-space-4) var(--fs-space-3); background: var(--fs-surface-1); border: 1px solid var(--fs-border); border-radius: 16px; max-height: 62dvh; min-height: 0; overflow: auto; flex: 0 1 auto; }
+.fs-voice__visual { align-self: center; text-align: center; }
+.fs-voice { width: min(1000px, calc(100% - 32px)); box-sizing: border-box; align-self: center; }
+.fs-voice__orb { display: block; width: 100%; aspect-ratio: 1; }
+.fs-voice__micstate { font-size: 12px; color: var(--fs-text-2); }
+.fs-voice__heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.fs-voice h2 { margin: 0; font-size: 21px; font-weight: 600; letter-spacing: -0.02em; }
+.fs-voice__context { color: var(--fs-text-2); margin: 4px 0 18px; font-size: 12px; overflow-wrap: anywhere; }
+.fs-voice__language { display: flex; gap: 10px; align-items: center; font-size: 12px; margin: 12px 0; }
+.fs-voice__language select { width: auto; max-width: 65%; }
+.fs-voice__status { display: flex; align-items: baseline; gap: 12px; }
+.fs-voice__status strong { font-size: 17px; font-weight: 500; }
+.fs-voice__status span { color: var(--fs-text-2); font-size: 12px; font-variant-numeric: tabular-nums; }
+.fs-voice__hint, .fs-voice__settings p { font-size: 12px; color: var(--fs-text-2); line-height: 1.6; margin: 8px 0; }
+.fs-voice__error { color: var(--fs-danger); font-size: 13px; line-height: 1.5; }
+.fs-voice__transcript { display: grid; gap: 6px; margin: 14px 0; font-size: 12px; }
+.fs-voice textarea, .fs-voice select { background: var(--fs-surface-2); border: 1px solid var(--fs-border-strong); border-radius: 8px; color: var(--fs-text-1); padding: 10px; font: inherit; caret-color: var(--fs-brand); width: 100%; box-sizing: border-box; }
+.fs-voice textarea { resize: vertical; font-size: 14px; line-height: 1.5; }
+.fs-voice__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 16px 0 12px; }
+.fs-voice button { display: inline-flex; justify-content: center; align-items: center; gap: 7px; min-height: 38px; background: var(--fs-surface-2); color: var(--fs-text-1); border: 1px solid var(--fs-border); padding: 8px 12px; border-radius: 8px; font: inherit; font-size: 12px; cursor: pointer; }
+.fs-voice button:hover:not(:disabled) { background: var(--fs-surface-3); border-color: var(--fs-border-strong); }
+.fs-voice button.fs-voice__primary { background: var(--fs-brand); color: var(--fs-on-brand); border-color: transparent; font-weight: 600; }
+.fs-voice button.fs-voice__primary:hover:not(:disabled) { background: var(--fs-brand-hover); }
+.fs-voice button:disabled { opacity: 0.5; cursor: not-allowed; }
+.fs-voice button.fs-voice__icon { background: transparent; border-color: transparent; padding: 8px; }
+.fs-voice :is(button, textarea, select, input, summary, a):focus-visible { outline: 2px solid var(--fs-focus); outline-offset: 3px; }
+.fs-voice__settings { padding-top: 6px; font-size: 12px; }
+.fs-voice__settings summary { display: flex; align-items: center; gap: 7px; cursor: pointer; width: fit-content; color: var(--fs-text-2); }
+.fs-voice__settings label { display: flex; align-items: center; gap: 8px; margin: 12px 0; }
+.fs-voice input { accent-color: var(--fs-brand); }
+.fs-voice a { color: var(--fs-focus); text-underline-offset: 3px; }
+@media (max-width: 640px) {
+  .fs-studio[data-voice] .fs-studio__knobs { flex: 0 0 100%; order: 3; flex-wrap: nowrap; overflow-x: auto; min-inline-size: 0; padding-block: 4px; }
+  .fs-studio[data-voice] .fs-studio__knobs > * { flex-shrink: 0; }
+  .fs-studio[data-voice] .fs-studio__send { display: flex; gap: 8px; }
+  .fs-studio[data-voice] .fs-studio__input { max-block-size: 80px; }
+  .fs-voice { grid-template-columns: 1fr; padding: 16px; margin-inline: 8px; gap: 4px; max-height: 65dvh; }
+  .fs-voice__visual { width: 128px; justify-self: center; }
+  .fs-voice__orb { margin-block: -12px; }
+  .fs-voice__context { margin-bottom: 12px; }
+  .fs-voice button { min-height: 44px; }
+}

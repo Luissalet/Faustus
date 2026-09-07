@@ -121,7 +121,6 @@ def _run_model_probe(host: str, ssh_port: str, cmd: str) -> str:
                 cmd,
                 timeout=15,
                 connect_timeout=5,
-                strict_host_key_checking=False,
                 text=True,
             )
         else:

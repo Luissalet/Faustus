@@ -276,6 +276,14 @@ GROUPS: list[dict[str, Any]] = [
                  "How long a packet's ledger row lives: tokens, section split and omission "
                  "counts, never content. Background maintenance prunes past this.",
                  1, 3650),
+            _int("agent_context_maintenance_seconds", "Context maintenance interval (s)",
+                 "How often idle deterministic maintenance checks for due work. It yields "
+                 "while a conversation is running.",
+                 60, 86_400),
+            _int("agent_project_context_index_seconds", "Project context index interval (s)",
+                 "How quickly queued project documents become searchable. The worker yields "
+                 "while a conversation is running and publishes indexes atomically.",
+                 5, 3600),
             _int("agent_context_cache_entries", "Context cache entries",
                  "Entries in the working set (manifests, token counts, candidate lists) kept "
                  "per owner+project scope. Everything in it is derived, so losing it costs "
@@ -667,6 +675,36 @@ GROUPS: list[dict[str, Any]] = [
                  "core request. A ceiling on the loop itself: a cheap improvement that spawns "
                  "another cheap improvement forever is a convergence failure, not a bargain.",
                  0, 20, step=1),
+        ],
+    ),
+    _group(
+        "teach_mode", "Modo Enséñame",
+        "Record a task as semantic tool actions, compile it into a reusable procedure and require "
+        "simulation, evidence and explicit approval before installation.",
+        [
+            _bool("agent_teach_mode", "Modo Enséñame",
+                  "Allow demonstrations to record tool actions and compile procedures. Turning it off "
+                  "stops capture and lifecycle changes but never hides or deletes prior teaching."),
+        ],
+    ),
+    _group(
+        "immune_system", "Immune System",
+        "Track whether skills, tools, workflows and connectors are healthy; deduplicate failures, "
+        "quarantine unsafe capabilities and gate repair promotion on proof and canary evidence.",
+        [
+            _bool("agent_immune_system", "Immune System",
+                  "Allow health assessments, containment and repair lifecycle changes. Existing health "
+                  "and incident history remains readable while disabled."),
+        ],
+    ),
+    _group(
+        "branching_futures", "Branching Futures",
+        "Compare observed results from equivalent isolated branches before touching real state. A branch "
+        "cannot perform real external effects and a commit must revalidate its frozen base.",
+        [
+            _bool("agent_branching_futures", "Branching Futures",
+                  "Allow futures, branch results, evaluation and commits. Existing runs and selection "
+                  "receipts remain readable while disabled."),
         ],
     ),
     _group(

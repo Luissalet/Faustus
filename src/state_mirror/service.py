@@ -44,7 +44,7 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from src.state_mirror import events as _events
 from src.state_mirror import freshness as _freshness
@@ -63,6 +63,8 @@ __all__ = [
     "StateMirrorService",
     "service",
     "reset_service",
+    "run_scheduled",
+    "scheduler_loop",
 ]
 
 #: The setting that gates the sweeps. Default OFF: this subsystem forks
@@ -617,3 +619,81 @@ def reset_service() -> None:
     global _SERVICE
     with _SERVICE_GUARD:
         _SERVICE = None
+
+
+def run_scheduled(scopes: Sequence[Mapping[str, Any]] = ()) -> List[Dict[str, Any]]:
+    """Reconcile each explicit owner scope once when the machine is idle.
+
+    A background pass must never turn an empty owner into an unscoped read.
+    Invalid and duplicate scopes are therefore skipped, and the caller gets a
+    row explaining every attempted scope.  This function is synchronous so
+    the scheduler can put the whole sweep on a worker thread.
+    """
+    if not enabled():
+        return []
+    try:
+        from src.agent_runs import active_session_ids
+
+        if active_session_ids():
+            return [{"ok": True, "status": "yielded", "reason": "interactive_run"}]
+    except Exception:  # noqa: BLE001 - inability to probe must not kill upkeep
+        logger.debug("state mirror: could not probe interactive work", exc_info=True)
+
+    out: List[Dict[str, Any]] = []
+    seen = set()
+    for raw in scopes or ():
+        if not isinstance(raw, Mapping):
+            continue
+        owner = _text(raw.get("owner"))
+        if not owner:
+            continue
+        project_id = _text(raw.get("project_id") or raw.get("id"))
+        workspace = _text(raw.get("workspace"))
+        namespace = _text(raw.get("namespace")) or REAL_NAMESPACE
+        key = (owner, project_id, workspace, namespace)
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            answer = service().reconcile(
+                owner=owner,
+                project_id=project_id,
+                workspace=workspace,
+                namespace=namespace,
+            )
+            row = dict(answer) if isinstance(answer, Mapping) else {"ok": False}
+        except Exception as exc:  # noqa: BLE001 - one scope cannot stop the rest
+            logger.warning("state mirror scheduled sweep failed for %s: %s", owner, exc)
+            row = {"ok": False, "error": "sweep_failed", "detail": str(exc)[:512]}
+        row.update({"owner": owner, "project_id": project_id})
+        out.append(row)
+    return out
+
+
+async def scheduler_loop(
+    *,
+    scopes_provider: Optional[Callable[[], Sequence[Mapping[str, Any]]]] = None,
+    interval_s: Optional[float] = None,
+) -> None:
+    """Run State Mirror sweeps periodically until application shutdown."""
+    import asyncio
+
+    if interval_s is None:
+        try:
+            from src.settings import get_setting
+
+            interval_s = float(get_setting("agent_state_mirror_sweep_seconds", 30) or 30)
+        except Exception:  # noqa: BLE001
+            interval_s = 30.0
+    interval = max(5.0, min(float(interval_s), 3600.0))
+    # Startup already has migrations and warmups competing for disk and CPU.
+    await asyncio.sleep(interval)
+    while True:
+        try:
+            scopes = list(scopes_provider() or ()) if scopes_provider else ()
+            await asyncio.to_thread(run_scheduled, scopes)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - upkeep is never app-fatal
+            logger.warning("state mirror scheduled pass failed: %s", exc)
+        await asyncio.sleep(interval)

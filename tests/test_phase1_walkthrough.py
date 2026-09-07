@@ -122,5 +122,6 @@ def test_the_registry_now_answers_from_a_probe_and_not_from_a_promise():
     observed = registry.observe("docker_workspace", fresh=True)
     assert observed.state == "available"
     assert "docker " in observed.evidence and "image" in observed.evidence
-    assert registry.observe("media_worker").state == "unavailable"
-    assert "not implemented" in registry.observe("media_worker").evidence
+    media = registry.observe("media_worker", fresh=True)
+    assert media.state in registry.STATES
+    assert media.evidence, "an implemented media backend must report its real probe"

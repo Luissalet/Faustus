@@ -11,7 +11,6 @@ from sqlalchemy import case, func, or_
 from core.database import SessionLocal, Document, DocumentVersion
 from core.database import Session as DbSession
 from src.auth_helpers import get_current_user, _auth_disabled
-from src.constants import MAIL_ATTACHMENTS_DIR
 from src.upload_handler import reserve_upload_references
 
 logger = logging.getLogger(__name__)
@@ -1623,8 +1622,6 @@ def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
         """
         import base64
         import tempfile
-        import shutil
-        import uuid as _uuid
         import email as _email_mod
         from src.pdf_form_doc import (
             find_source_upload_id, parse_markdown_to_values,
@@ -1632,12 +1629,7 @@ def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
         )
         from src.pdf_forms import fill_fields, stamp_signatures, stamp_annotations
         from core.database import Signature
-        # COMPOSE_UPLOADS_DIR lives in email_routes — re-derive here so we
-        # don't import from a routes file (cycle-prone). Same env override
-        # as email_routes (ODYSSEUS_MAIL_ATTACHMENTS_DIR).
-        from pathlib import Path as _Path
-        _COMPOSE_DIR = _Path(MAIL_ATTACHMENTS_DIR) / "_compose"
-        _COMPOSE_DIR.mkdir(parents=True, exist_ok=True)
+        from routes.email_helpers import register_compose_upload
 
         user = get_current_user(request)
         db = SessionLocal()
@@ -1732,12 +1724,14 @@ def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
                 except Exception as e:
                     logger.warning(f"stamp_annotations failed for {doc_id}: {e}")
 
-            # 2) Move/copy into COMPOSE_UPLOADS_DIR with the token format
-            #    `<uuid>_<original_name>` that /api/email/send expects.
+            # 2) Publish through the owned staging registry. The old direct
+            # writer produced an ownerless `<uuid>_<name>` capability in the
+            # shared root, so any authenticated user who learned the token
+            # could attach it. The registry stores bytes under an owner-scoped
+            # directory and resolves another owner's id exactly like a miss.
             filename = _slug(doc.title or "signed") + "_signed.pdf"
-            token = f"{_uuid.uuid4().hex}_{filename}"
-            dest = _COMPOSE_DIR / token
-            shutil.copyfile(out_path, str(dest))
+            staged = register_compose_upload(user, filename, src_path=out_path)
+            token = staged["id"]
             # Unlink the intermediate temp PDFs now that they've been
             # copied into COMPOSE_UPLOADS_DIR.
             for _p in _to_unlink:
@@ -1790,7 +1784,7 @@ def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
                 "attachment": {
                     "token": token,
                     "filename": filename,
-                    "size": dest.stat().st_size,
+                    "size": staged["size"],
                 },
                 "reply": {
                     "to": to_addr,

@@ -423,6 +423,9 @@ _ADMIN_TOOLS = {
     "manage_webhooks",
     "manage_tokens",
     "manage_settings",
+    "manage_teach_mode",
+    "capability_health",
+    "branch_futures",
     "download_model",
     "serve_model",
     "serve_preset",
@@ -664,6 +667,7 @@ async def _direct_fallback(
             # than an absent one. Wiring it needs turn_options to carry it,
             # which is a change to src/agent_loop.py.
             "run_id": str(_turn_opts.get("run_id") or ""),
+            "turn_id": str(_turn_opts.get("turn_id") or ""),
         }
 
         from src.agent_tools import TOOL_HANDLERS
@@ -1039,6 +1043,7 @@ async def execute_tool_block(
     roots_token = _active_workspace_roots.set(tuple(roots))
     opts_token = _active_turn_options.set(turn_options or None)
     try:
+        _tool_started_at = time.monotonic()
         output = await _execute_tool_block_impl(
             block,
             session_id=session_id,
@@ -1073,6 +1078,35 @@ async def execute_tool_block(
                 _lock_note(getattr(block, "tool_type", None), getattr(block, "content", None), output[1])
             except Exception:
                 pass
+        # Modo Enséñame records the semantic action/result while this turn's
+        # session, owner and project bindings are still available. It is
+        # deliberately best-effort: teaching must never turn a successful
+        # tool into a failed tool. The control tool itself is excluded so
+        # "start recording" does not become step one of the learned task.
+        _captured_tool = str(getattr(block, "tool_type", None) or "")
+        if _captured_tool != "manage_teach_mode" and owner and session_id:
+            try:
+                from src.settings import get_setting as _teach_setting
+                if _teach_setting("agent_teach_mode", False):
+                    from services.projects import project_for_session as _project_for_session
+                    from src.teach_mode.service import capture_tool_observation as _capture_teach
+                    _project = _project_for_session(session_id, owner) or {}
+                    try:
+                        _arguments = json.loads(str(getattr(block, "content", "") or "{}"))
+                    except Exception:
+                        _arguments = {"content": str(getattr(block, "content", "") or "")}
+                    _result = output[1] if len(output) > 1 else {}
+                    _failed = bool(isinstance(_result, dict) and (
+                        _result.get("error") or int(_result.get("exit_code") or 0) != 0
+                    ))
+                    _capture_teach(
+                        owner=str(owner), session_id=str(session_id),
+                        project_id=str(_project.get("id") or ""), tool=_captured_tool,
+                        arguments=_arguments, result=_result, success=not _failed,
+                        duration_ms=max(0, int((time.monotonic() - _tool_started_at) * 1000)),
+                    )
+            except Exception:
+                logger.exception("teach capture hook failed without affecting tool=%s", _captured_tool)
         return output
     finally:
         _active_turn_options.reset(opts_token)
@@ -1341,6 +1375,7 @@ async def _execute_tool_block_impl(
             session_id=session_id or "",
             owner=owner,
             run_id=str(_turn_opts.get("run_id") or ""),
+            turn_id=str(_turn_opts.get("turn_id") or ""),
         )
         _action = (result or {}).get("action") or ""
         if _action:
@@ -1372,6 +1407,18 @@ async def _execute_tool_block_impl(
             except (objectives_svc.ObjectiveError, ValueError, TypeError,
                     json.JSONDecodeError) as exc:
                 result = {"error": str(exc), "exit_code": 1}
+    elif tool in ("manage_teach_mode", "capability_health", "branch_futures"):
+        from src.tools.capability_systems import (
+            do_branch_futures, do_capability_health, do_manage_teach_mode,
+        )
+        handler = {"manage_teach_mode": do_manage_teach_mode,
+                   "capability_health": do_capability_health,
+                   "branch_futures": do_branch_futures}[tool]
+        desc = tool
+        result = await handler(content, session_id=session_id or "", owner=str(owner or ""))
+        action = str((result or {}).get("action") or "")
+        if action:
+            desc = f"{tool}: {action}"
     elif tool == "memory_rules":
         desc = "memory_rules"
         from src import memory_engine as _engine

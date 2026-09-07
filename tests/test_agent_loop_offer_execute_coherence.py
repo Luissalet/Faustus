@@ -372,9 +372,15 @@ def test_every_floor_tool_the_turn_offers_also_runs(tool, message, workspace):
         calls=[tool],
     )
     assert tool in turn.offered, f"{tool} was not offered: {turn.offered}"
-    assert tool in turn.executed, (
-        f"{tool} was offered and then refused: "
-        f"{turn.refusals.get(tool, {}).get('output')}"
+    approval = any(
+        e.get("type") == "tool_output"
+        and e.get("tool") == tool
+        and e.get("ask_user", {}).get("kind") == "tool_approval"
+        for e in turn.events
+    )
+    assert tool in turn.executed or approval, (
+        f"{tool} was offered but reached neither execution nor its exact "
+        f"approval boundary: {turn.refusals.get(tool, {}).get('output')}"
     )
 
 

@@ -128,6 +128,9 @@ BUILTIN_TOOL_DESCRIPTIONS: Dict[str, str] = {
     "project_context": "List, read, or search the files and folders attached as working roots to the active project. These roots may also be modified with normal file tools.",
     "manage_project_context": "Attach, detach or configure a source in the active project's DURABLE context, so it stays available in every other chat of that project: 'attach' links a document, artifact, generated image, file or folder (source.kind 'active_document' means the document just created or edited here); 'detach' removes a link and never the source itself; 'update' changes its label, role, tags, retrieval policy or pinned version; 'refresh' re-checks the source for changes; 'inspect' and 'list' report what is linked and whether it is still current. Use for 'add this document to the project', 'save this image as a project reference', 'link that folder to the project', 'pin this version as the requirements', 'remove the old draft from the project context', 'what sources does this project have'. The project is resolved from the current chat — never pass a project id.",
     "project_objectives": "Read ('list') or update ('apply') the active project's objectives dashboard. Updates are typed ADD/EDIT/KILL deltas with a rationale, never a rewrite of the list; statuses must reflect what actually changed on disk.",
+    "manage_teach_mode": "Teach Faustus a repeatable procedure by recording semantic tool calls in the active chat. Start/stop a demonstration, compile it into a candidate, simulate and validate it with evidence. Human approval and installation cannot be granted by the agent itself.",
+    "capability_health": "Inspect Immune System health for skills, workflows, tools, connectors, models and procedures; register health contracts, record evidence-based assessments, and report real failures for deduplication and quarantine.",
+    "branch_futures": "Create two to twelve isolated alternatives from one frozen base, start branches, submit observed results and compare them by declared criteria. Branches cannot perform real external effects; selection and commit stay human-controlled.",
     "expert_review": "Review your writing with one of your specialist experts — each expert is its own profile plus its own indexed corpus of books. 'review' returns typed span deltas (EDIT/ADD/KILL over character offsets of your original text, each carrying its quote, rationale, rubric rule and severity) instead of rewritten prose; every correction is either ANCHORED to that corpus, naming which book and page it came from, or plainly labelled \"model's opinion, not the corpus\" — page numbers are copied, never invented. 'bible' reads this project's story bible or checks writing against it for continuity errors: whose eyes were green in chapter 3, who was already dead. 'experts' reads one profile, 'apply' splices accepted deltas into your text, 'feedback' reports how many corrections were accepted or rejected. Use for 'review my chapter', 'revisa este capítulo', proofreading against style corpora, continuity checks.",
     "verify_claim": "Fact-check one claim against its source text before repeating it: verify, corroborate, cite, catch hallucinated statistics and invented citations. Four deterministic layers, cheapest first — verbatim occurrence; occurrence after folding case and accents; content-word overlap; then figures and proper names, where every number and every capitalised name claimed must occur in its source. That last layer catches fabricated figures, and only ever refutes: passing it never counts as support. Answers supported, which layer settled it, confidence, and exactly which terms were missing. No judge model, so nothing can be talked into agreeing. Use before quoting fetched pages, citing documents, or reporting statistics you did not compute.",
     "memory_rules": "Learned memory: rules and facts scored by what happened after they were used. 'add' stores a reusable lesson (level 'procedural' for a rule to follow, 'semantic' for a durable fact), 'search' finds the relevant ones with their ids, 'feedback' credits ('helpful') or blames ('harmful') one by id, 'list' shows what is stored. Use it when a turn taught you something reusable, or when an injected rule turned out to be right or wrong.",
@@ -440,7 +443,20 @@ class ToolIndex:
             # which needs no model and no network.
             return self.lexical_retrieve(query, k=k)
         rows.sort(key=lambda row: (-row["score"], lane_priority.get(row["embedding_lane"], 99)))
-        return [row["tool_name"] for row in dedupe_results(rows, id_key="tool_name", limit=k)]
+        names = [row["tool_name"] for row in
+                 dedupe_results(rows, id_key="tool_name", limit=k)]
+        if getattr(self, "backend", "") == BACKEND_MEMORY and k > 0:
+            # The local fallback is deliberately available even with a tiny or
+            # user-supplied embedder. As the catalogue grows, a weak hashing
+            # model can collide badly enough to omit an exact intent such as
+            # "shell command". Keep the vector ranking, but reserve one tail
+            # slot for a near-literal first-sentence intent.
+            anchor = self._strong_lexical_anchor(query)
+            if anchor and anchor not in names:
+                if len(names) >= k:
+                    names.pop()
+                names.append(anchor)
+        return names[:max(0, int(k))]
 
     def _set_corpus(self, section: str, docs: Dict[str, str]) -> None:
         """Replace one section of the lexical floor's corpus, wholesale."""
@@ -489,6 +505,47 @@ class ToolIndex:
             logger.debug("tool index: no vector lane answered; lexical floor served "
                          "%d tools (tier=%s)", len(names), found.get("tier"))
         return names
+
+    def _strong_lexical_anchor(self, query: str) -> str:
+        """One near-literal tool intent that a weak embedding may miss.
+
+        Only the first sentence is considered: descriptions intentionally
+        cross-reference other tools later on, while their opening sentence
+        states what the tool itself does. At least two meaningful query terms
+        must agree, so a generic word such as ``run`` cannot force a tool.
+        """
+        stop = {"a", "an", "the", "to", "on", "in", "of", "for", "and",
+                "my", "this", "that", "with", "please"}
+
+        def terms(value: str) -> Set[str]:
+            out = set()
+            for token in re.findall(r"[a-z0-9_]+", str(value or "").lower()):
+                if token in stop:
+                    continue
+                # Enough morphology for command/commands, file/files and
+                # model/models without pretending to be a language stemmer.
+                if token.endswith("s") and len(token) > 4:
+                    token = token[:-1]
+                out.add(token)
+            return out
+
+        wanted = terms(query)
+        if len(wanted) < 2:
+            return ""
+        best_name = ""
+        best_score = (0.0, 0, 0)
+        for order, row in enumerate(self.corpus_rows()):
+            text = str(row.get("text") or "")
+            opening = re.split(r"[.!?\n]", text, maxsplit=2)
+            first = " ".join(opening[:2])
+            overlap = wanted & terms(first)
+            if len(overlap) < 2:
+                continue
+            score = (len(overlap) / len(wanted), len(overlap), -order)
+            if score > best_score:
+                best_score = score
+                best_name = str(row.get("id") or "")
+        return best_name
 
     # Structural recurring-schedule intent. Typo-resilient (matches "every dya"
     # via "every <word>"), and catches bare clock times ("at 7:30 am", "7am").

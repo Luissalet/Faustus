@@ -313,6 +313,11 @@ def setup_webhook_routes(
                 model=model, owner=token_owner,
             )
             sess.headers = build_headers(api_key, base_url)
+            if direct_base_url:
+                # Internal transport directive, consumed and stripped by
+                # llm_call_async. Persisting it protects resumed API sessions,
+                # not only the request that created them.
+                sess.headers["X-Faustus-Public-DNS-Pin"] = "1"
             session_manager.save_sessions()
             session_id = sid
 

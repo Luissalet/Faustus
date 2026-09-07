@@ -71,6 +71,8 @@ class TTSService:
             return False
         if provider == "browser":
             return True  # handled client-side
+        if provider == "system":
+            return os.name == "nt"
         if provider == "local":
             kokoro = self._get_kokoro()
             return kokoro is not None and kokoro.available
@@ -196,8 +198,10 @@ class TTSService:
 
     # ── Public interface ──
 
-    def synthesize(self, text: str, use_cache: bool = True) -> Optional[bytes]:
+    def synthesize(self, text: str, use_cache: bool = True, *, expected_provider: str = "", language: str = "") -> Optional[bytes]:
         settings = self._load_settings()
+        if expected_provider and settings.get("tts_provider") != expected_provider:
+            raise ValueError("Speech provider changed before synthesis")
         if settings.get("tts_enabled") is False:
             return None
         provider = settings["tts_provider"]
@@ -210,6 +214,11 @@ class TTSService:
 
         if len(text) > 5000:
             text = text[:5000]
+
+        if provider == "system":
+            from .system_voice import synthesize_system
+            # System voice is cheap and language-dependent: never use shared cache.
+            return synthesize_system(text, voice, language, speed)
 
         if use_cache:
             key = self._cache_key(text, provider, model, voice, speed)
@@ -227,7 +236,7 @@ class TTSService:
             else:
                 logger.warning("Kokoro TTS not available")
                 return None
-        elif provider.startswith("endpoint:"):
+        elif isinstance(provider, str) and provider.startswith("endpoint:"):
             endpoint_id = provider.split(":", 1)[1]
             audio_data = self._synthesize_api(text, endpoint_id, model, voice, speed)
         else:
@@ -275,7 +284,7 @@ class TTSService:
             stats["model"] = "Kokoro-82M (GPU)" if (kokoro and kokoro.available) else "Kokoro (not loaded)"
         elif provider == "browser":
             stats["model"] = "Browser (Web Speech API)"
-        elif provider.startswith("endpoint:"):
+        elif isinstance(provider, str) and provider.startswith("endpoint:"):
             stats["endpoint_id"] = provider.split(":", 1)[1]
 
         return stats

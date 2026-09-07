@@ -1030,6 +1030,21 @@ app.include_router(setup_delta_engine_routes())
 from routes.completion_engine_routes import setup_completion_engine_routes
 app.include_router(setup_completion_engine_routes())
 
+# Modo Enséñame turns semantic tool observations into a procedure that must be
+# simulated, proven and explicitly approved before installation.
+from routes.teach_mode_routes import setup_teach_mode_routes
+app.include_router(setup_teach_mode_routes())
+
+# Immune System owns operational health, incident dedupe, quarantine and the
+# evidence-gated repair/canary/promotion lifecycle.
+from routes.immune_system_routes import setup_immune_system_routes
+app.include_router(setup_immune_system_routes())
+
+# Branching Futures compares isolated outcomes from one frozen base and writes
+# a commit receipt only after real-state revalidation and explicit approval.
+from routes.branching_futures_routes import setup_branching_futures_routes
+app.include_router(setup_branching_futures_routes())
+
 # Provenance graph: the 2D audit view over the memory and the workspace, built
 # from declared edges only — never one a model asserted (src/provenance_graph.py).
 from routes.provenance_routes import setup_provenance_routes
@@ -1432,6 +1447,17 @@ async def _startup_event():
             logger.warning("Recovered %d interrupted agent run(s) from the previous process", len(_interrupted))
     except Exception as e:
         logger.warning(f"Interrupted-run recovery skipped: {e}")
+    # A recording that was live when the process stopped cannot still be
+    # recording after boot.  Recover it eagerly (when the feature is enabled),
+    # rather than waiting for the first Teach API call to make persisted state
+    # truthful.  The service scan is idempotent and never resumes actions.
+    try:
+        from src.settings import get_setting as _feature_setting
+        if _feature_setting("agent_teach_mode", False):
+            from src.teach_mode.service import service as _teach_service
+            await asyncio.to_thread(_teach_service)
+    except Exception as e:
+        logger.warning(f"Teach recording recovery skipped: {e}")
     # A power cut, not a restart: records that all stopped being written at the
     # same instant around the last boot (src/crash_recovery.py). It marks those
     # dispatched jobs `interrupted` with the reason and leaves a resume PLAN —
@@ -1642,6 +1668,86 @@ async def _startup_event():
                 await asyncio.sleep(3600)
 
     _supervisor.spawn(_null_owner_sweep_loop(), name="null-owner-sweep")
+
+    # Keep Context Engine indexes and degradable memories healthy without
+    # making the first user turn pay the maintenance cost.
+    try:
+        from src.context_engine.maintenance import scheduler_loop as _context_maintenance_loop
+        _supervisor.spawn(_context_maintenance_loop(), name="context-maintenance")
+    except Exception as _e:
+        logger.warning("Failed to start context maintenance: %s", _e)
+
+    # Turn Project Context Links' queued/stale states into a real searchable
+    # index. Legacy ownerless projects are scoped to the primary admin here;
+    # the worker itself deliberately refuses to guess an owner.
+    try:
+        from src.project_context.indexer import scheduler_loop as _project_index_loop
+
+        def _project_index_projects():
+            users = list(auth_manager.list_users() or ())
+            names = [str(row.get("username") or "").strip() for row in users
+                     if isinstance(row, dict) and str(row.get("username") or "").strip()]
+            primary = next((str(row.get("username") or "").strip() for row in users
+                            if isinstance(row, dict) and row.get("is_admin")), "")
+            primary = primary or (names[0] if names else "")
+            from services.projects import get_store as _project_store
+            projects = []
+            for raw in _project_store().list(None) or ():
+                if not isinstance(raw, dict):
+                    continue
+                project = dict(raw)
+                project["owner"] = str(project.get("owner") or primary or "").strip()
+                if project["owner"]:
+                    projects.append(project)
+            return projects
+
+        _supervisor.spawn(
+            _project_index_loop(projects_provider=_project_index_projects),
+            name="project-context-index",
+        )
+    except Exception as _e:
+        logger.warning("Failed to start project context indexer: %s", _e)
+
+    # Refresh the owner-scoped State Mirror in the background.  The provider
+    # is app-owned because only the app has both the authenticated user list
+    # and the legacy-project ownership rule in hand.
+    try:
+        from src.state_mirror.service import scheduler_loop as _state_mirror_loop
+
+        def _state_mirror_scopes():
+            users = list(auth_manager.list_users() or ())
+            names = [str(row.get("username") or "").strip() for row in users
+                     if isinstance(row, dict) and str(row.get("username") or "").strip()]
+            primary = next((str(row.get("username") or "").strip() for row in users
+                            if isinstance(row, dict) and row.get("is_admin")), "")
+            primary = primary or (names[0] if names else "")
+            from services.projects import get_store as _project_store
+            projects = list(_project_store().list(None) or ())
+            scopes = []
+            owners_with_scope = set()
+            for project in projects:
+                if not isinstance(project, dict):
+                    continue
+                owner = str(project.get("owner") or primary or "").strip()
+                if not owner:
+                    continue
+                owners_with_scope.add(owner)
+                scopes.append({
+                    "owner": owner,
+                    "project_id": str(project.get("id") or ""),
+                    "workspace": str(project.get("workspace") or ""),
+                })
+            for owner in names:
+                if owner not in owners_with_scope:
+                    scopes.append({"owner": owner})
+            return scopes
+
+        _supervisor.spawn(
+            _state_mirror_loop(scopes_provider=_state_mirror_scopes),
+            name="state-mirror-sweep",
+        )
+    except Exception as _e:
+        logger.warning("Failed to start State Mirror maintenance: %s", _e)
 
     # Nightly skill audit — at ~02:00 local, test + judge a batch of the
     # least-recently-checked skills, auto-fixing/escalating weak ones (never

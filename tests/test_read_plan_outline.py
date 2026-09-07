@@ -171,7 +171,9 @@ async def test_small_file_output_is_byte_identical(ws, name, text):
 
 async def test_file_just_under_the_cap_is_untouched(ws):
     src = ws / "edge.py"
-    src.write_text("a = 1  # pad\n" * (MAX_READ_CHARS // 13 - 1), encoding="utf-8")
+    line = "a = 1  # pad\n"
+    src.write_text(line * ((MAX_READ_CHARS - 1) // len(line)),
+                   encoding="utf-8", newline="")
     assert src.stat().st_size < MAX_READ_CHARS
     out = (await read(src))["output"]
     assert out == legacy_read(str(src))

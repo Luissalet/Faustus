@@ -491,7 +491,8 @@ def test_every_service_method_the_routes_call_exists():
 
     facade = S.service()
     for name in ("entities", "entity", "history", "changes", "conflicts",
-                 "refresh", "reconcile", "diagnostics", "events", "situation"):
+                 "project", "refresh", "reconcile", "diagnostics", "events",
+                 "situation"):
         assert callable(getattr(facade, name, None)), (
             f"routes call service().{name}() and it does not exist")
         params = inspect.signature(getattr(facade, name)).parameters
@@ -504,7 +505,7 @@ def test_the_router_publishes_the_routes_the_screen_calls():
     import routes.state_mirror_routes as R
 
     paths = {getattr(route, "path", "") for route in R.setup_state_mirror_routes().routes}
-    for tail in ("/entities", "/changes", "/conflicts", "/diagnostics",
+    for tail in ("/entities", "/changes", "/conflicts", "/diagnostics", "/project",
                  "/events", "/refresh", "/reconcile"):
         assert f"/api/state{tail}" in paths, (
             f"/api/state{tail} is not published; the screen calls it")
@@ -578,3 +579,31 @@ def test_the_flag_stops_the_sweep_and_stops_nothing_else(store, monkeypatch):
         "the flag hid a read; off must mean 'do not probe', not 'forget'")
     refused = S.service().reconcile(owner="alice")
     assert refused.get("ok") is False, "the flag did not stop a sweep"
+
+
+def test_scheduled_sweep_is_owner_scoped_deduplicated_and_yields(monkeypatch):
+    from src.state_mirror import service as S
+
+    calls = []
+
+    class _Facade:
+        def reconcile(self, **scope):
+            calls.append(dict(scope))
+            return {"ok": True}
+
+    monkeypatch.setattr(S, "enabled", lambda: True)
+    monkeypatch.setattr(S, "service", lambda: _Facade())
+    monkeypatch.setattr("src.agent_runs.active_session_ids", lambda: [])
+    rows = S.run_scheduled([
+        {"owner": "alice", "project_id": "p1", "workspace": "A:/one"},
+        {"owner": "alice", "project_id": "p1", "workspace": "A:/one"},
+        {"owner": "", "project_id": "leak", "workspace": "A:/foreign"},
+    ])
+    assert len(rows) == 1 and len(calls) == 1
+    assert calls[0]["owner"] == "alice" and calls[0]["project_id"] == "p1"
+
+    monkeypatch.setattr("src.agent_runs.active_session_ids", lambda: ["chat-live"])
+    assert S.run_scheduled([{"owner": "alice"}]) == [
+        {"ok": True, "status": "yielded", "reason": "interactive_run"}
+    ]
+    assert len(calls) == 1, "a background sweep competed with the active chat"

@@ -56,7 +56,7 @@ import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from . import store
 
@@ -66,6 +66,11 @@ TASK_NAMES: Tuple[str, ...] = (
     "prune_packets", "expire_findings", "refresh_code_index",
     "degrade_experiences", "audit_blocks", "vacuum",
 )
+
+# These tasks describe one project workspace. A scheduled pass fans them out
+# over every project instead of recording a misleading global "no workspace"
+# success and then sleeping until the next interval.
+SCOPED_TASK_NAMES = frozenset({"refresh_code_index", "degrade_experiences"})
 
 #: How often each task is worth running, in seconds.  These are floors, not
 #: schedules: :func:`due` says a task *may* run, and something else decides
@@ -407,8 +412,119 @@ def run(names: Sequence[str] = (), *, owner: str = "", project_id: str = "",
     return results
 
 
+def run_scheduled(*, projects: Sequence[Mapping[str, Any]] = (),
+                  budget_s: float = 30.0) -> List[TaskResult]:
+    """Run every due task, fanning workspace tasks across all projects."""
+    ready = due()
+    if not ready:
+        return []
+    try:
+        ceiling = max(1.0, float(budget_s))
+    except (TypeError, ValueError):
+        ceiling = 30.0
+    started = time.monotonic()
+    results: List[TaskResult] = []
+
+    scopes: List[Dict[str, str]] = []
+    seen = set()
+    for raw in projects or ():
+        if not isinstance(raw, Mapping):
+            continue
+        workspace = str(raw.get("workspace") or "").strip()
+        project_id = str(raw.get("id") or raw.get("project_id") or "").strip()
+        owner = str(raw.get("owner") or "").strip()
+        if not workspace or not project_id:
+            continue
+        key = (owner, project_id, os.path.realpath(workspace))
+        if key in seen:
+            continue
+        seen.add(key)
+        scopes.append({"owner": owner, "project_id": project_id,
+                       "workspace": workspace})
+
+    for name in ready:
+        remaining = ceiling - (time.monotonic() - started)
+        if remaining <= 0:
+            result = TaskResult(
+                name=name,
+                detail=f"skipped: the {ceiling:.0f}s scheduled budget was spent",
+            )
+            results.append(result)
+            _remember(result)
+            continue
+        if name not in SCOPED_TASK_NAMES:
+            one = run((name,), budget_s=remaining)
+            if one:
+                results.append(one[0])
+            continue
+        if not scopes:
+            one = run((name,), budget_s=remaining)
+            if one:
+                results.append(one[0])
+            continue
+
+        changed = elapsed_ms = failures = completed = yielded = 0
+        for scope in scopes:
+            remaining = ceiling - (time.monotonic() - started)
+            if remaining <= 0:
+                break
+            one = run((name,), budget_s=remaining, **scope)
+            if not one:
+                continue
+            row = one[0]
+            changed += row.changed
+            elapsed_ms += row.elapsed_ms
+            failures += 0 if row.ok else 1
+            yielded += 1 if row.detail.startswith("skipped:") else 0
+            completed += 1
+        omitted = max(0, len(scopes) - completed)
+        detail = (
+            f"{completed}/{len(scopes)} project workspace(s); "
+            f"changed {changed}; failures {failures}; yielded {yielded}"
+            + (f"; budget skipped {omitted}" if omitted else "")
+        )
+        aggregate = TaskResult(
+            name=name, ok=failures == 0, changed=changed,
+            detail=detail, elapsed_ms=elapsed_ms,
+        )
+        _remember(aggregate)
+        results.append(aggregate)
+    return results
+
+
+async def scheduler_loop(*, interval_s: Optional[float] = None,
+                         budget_s: float = 30.0) -> None:
+    """Run deterministic maintenance periodically until app shutdown."""
+    import asyncio
+
+    if interval_s is None:
+        try:
+            from src.settings import get_setting
+            interval_s = float(get_setting(
+                "agent_context_maintenance_seconds", 300
+            ) or 300)
+        except Exception:  # noqa: BLE001
+            interval_s = 300.0
+    interval = max(60.0, min(float(interval_s), 86_400.0))
+    # Do not make first paint compete with index/database maintenance.
+    await asyncio.sleep(min(60.0, interval))
+    while True:
+        try:
+            from services.projects import get_store
+            projects = await asyncio.to_thread(get_store().list, None)
+            await asyncio.to_thread(
+                run_scheduled, projects=projects, budget_s=budget_s
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("scheduled context maintenance failed: %s", exc)
+        await asyncio.sleep(interval)
+
+
 __all__ = [
     "TASK_NAMES", "TASK_INTERVALS_S", "LEDGER_DAYS_SETTING",
     "DEFAULT_LEDGER_DAYS", "MAX_EXPERIENCE_ROWS", "SCHEMA", "TASKS",
-    "TaskResult", "should_yield", "run", "due", "last_run",
+    "SCOPED_TASK_NAMES", "TaskResult", "should_yield", "run",
+    "run_scheduled", "scheduler_loop", "due", "last_run",
 ]

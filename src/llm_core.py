@@ -2430,6 +2430,7 @@ async def llm_call_async(
     availability_only_transport: bool = False,
     return_model_metadata: bool = False,
     response_schema: Optional[Dict] = None,
+    pin_public_dns: bool = False,
 ) -> str | tuple[str, str]:
     """Asynchronous LLM call using httpx with connection pooling, timeout, retry logic, and performance logging.
 
@@ -2437,6 +2438,18 @@ async def llm_call_async(
     enforces it while decoding (``format`` on /api/chat); every other provider
     ignores it and never sees it, so callers keep their own parsing as a net.
     """
+    # A direct API-chat endpoint supplied by a token holder persists this
+    # private marker with the session. It is consumed here and NEVER sent to
+    # the provider. This keeps resumed sessions protected from DNS rebinding.
+    clean_headers = dict(headers or {})
+    for _header_name in list(clean_headers):
+        if str(_header_name).lower() == "x-faustus-public-dns-pin":
+            _raw_pin = str(clean_headers.pop(_header_name) or "").strip().lower()
+            pin_public_dns = pin_public_dns or _raw_pin in {
+                "1", "true", "yes", "on",
+            }
+    headers = clean_headers or None
+
     # Same reroute as stream_llm: Ollama's /v1 ignores `think`, so a
     # thinking-capable model (qwen3.5, gemma…) would spend the whole
     # num_predict budget reasoning and return an empty `content` (seen live:
@@ -2602,6 +2615,22 @@ async def llm_call_async(
         raise HTTPException(503, f"Upstream {_host_key(target_url)} marked unreachable (cooldown active)")
 
     call_timeout = _call_timeout(timeout)
+    _pinned_ips = None
+    _pinned_transport_type = None
+    if pin_public_dns:
+        try:
+            from src.webhook_manager import (
+                _PinnedAsyncTransport as _PinnedTransport,
+                _validated_public_ips,
+            )
+            _pinned_ips = list(_validated_public_ips(target_url))
+            _pinned_transport_type = _PinnedTransport
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+        except Exception as exc:
+            logger.warning("public DNS pinning failed closed for %s: %s",
+                           _host_key(target_url), exc)
+            raise HTTPException(503, "Could not establish a safe connection to the endpoint")
     attempt = 0
     while attempt < max_retries:
         attempt += 1
@@ -2609,8 +2638,27 @@ async def llm_call_async(
         try:
             async with _local_model_slot(target_url, model, workload):
                 note_model_activity(target_url, model)
-                client = _get_http_client()
-                r = await httpx_post_kimi_aware_async(client, target_url, h, json=payload, timeout=call_timeout)
+                if _pinned_ips and _pinned_transport_type is not None:
+                    # The URL keeps the original hostname for Host/SNI; only
+                    # the TCP destination is pinned to the already-validated
+                    # public address. Redirects and proxy environment are off.
+                    _pin = _pinned_ips[(attempt - 1) % len(_pinned_ips)]
+                    _transport = _pinned_transport_type(_pin)
+                    async with httpx.AsyncClient(
+                        transport=_transport,
+                        follow_redirects=False,
+                        trust_env=False,
+                    ) as client:
+                        r = await httpx_post_kimi_aware_async(
+                            client, target_url, h, json=payload,
+                            timeout=call_timeout,
+                        )
+                else:
+                    client = _get_http_client()
+                    r = await httpx_post_kimi_aware_async(
+                        client, target_url, h, json=payload,
+                        timeout=call_timeout,
+                    )
             duration = time.time() - start
             if not r.is_success:
                 friendly = _format_upstream_error(r.status_code, r.text, target_url)

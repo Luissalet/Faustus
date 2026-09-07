@@ -36,10 +36,10 @@ reads them back and, when the definition has been edited since, says so in
 doing something else because somebody improved an agent at four in the
 afternoon.
 
-**A missing integration degrades with a reason (§1.3).** There is no Immune
-System in this build, so `degraded_integrations` carries `capability_health`
-with the reason and availability is read from what the caller observed. Nothing
-here ever invents `healthy`.
+**Capability health fails safely (§1.3).** When Immune System is enabled, its
+fresh owner-scoped verdicts augment the caller's unhealthy/quarantine lists;
+when it is disabled or unreadable, the resolution records that degradation and
+continues from what the caller directly observed. Nothing invents `healthy`.
 
 And one property that is not a rule but a promise: :func:`resolve` never raises
 on the hot path. Every failure it can have — a broken definition, an unreadable
@@ -1080,11 +1080,34 @@ def resolve(*, agent: str = "", task: Optional[Mapping] = None,
     project_map, owner_map = _map(project_defaults), _map(owner_policy)
     scope_map = _map(scope)
     try:
+        # Merge durable operational health before selection/routing. Asset ids
+        # use typed refs (`agent://slug`, `model://name`, `runner://name`); the
+        # suffix is what the existing selector vocabulary already consumes.
+        _unhealthy = list(unhealthy)
+        _quarantined = list(quarantined)
+        _immune_live = False
+        try:
+            from src.settings import get_setting as _health_setting
+            _immune_live = bool(_health_setting("agent_immune_system", False))
+            _health_owner = _word(scope_map.get("owner"), 128)
+            if _immune_live and _health_owner:
+                from src.immune_system.service import service as _immune_service
+                for _asset in _immune_service().assets(owner=_health_owner, limit=1000):
+                    _asset_id = str(_asset.get("asset_id") or _asset.get("id") or "")
+                    _name = _asset_id.split("://", 1)[-1].strip()
+                    _status = str(_asset.get("effective_status") or _asset.get("status") or "unknown")
+                    if _name and _status in ("quarantined", "blocked_by_dependency"):
+                        _quarantined.append(_name)
+                    elif _name and _status in ("failing", "degraded"):
+                        _unhealthy.append(_name)
+        except Exception as _health_exc:  # noqa: BLE001 - health cannot crash resolution
+            ledger.degrade("capability_health", "Immune System could not be read ({})"
+                           .format(type(_health_exc).__name__))
         _unknown_keys("task override", task_map, ledger)
         _unknown_keys("activity policy", activity_map, ledger)
         index = _defs_index(defs, workspace, ledger)
         definition, selection = _choose(agent, task_map, index, ledger,
-                                        unhealthy=unhealthy, quarantined=quarantined)
+                                        unhealthy=_unhealthy, quarantined=_quarantined)
         if definition is None:
             return _minimal(agent or _word(task_map.get("agent"), 80), scope_map, ledger,
                             "there is no agent definition to resolve: the store is empty and "
@@ -1092,16 +1115,14 @@ def resolve(*, agent: str = "", task: Optional[Mapping] = None,
         levels = _levels(definition=definition, task=task_map, activity=activity_map,
                          project_defaults=project_map, owner_policy=owner_map)
         caps = _system_caps()
-        # The health signal comes from the caller because there is nothing here
-        # to ask. Saying so is the point of §1.3: an absent integration degrades
-        # with a reason, and never to an invented `healthy`.
-        ledger.degrade("capability_health",
-                       "no Immune System in this build; availability was read from the {} model(s) "
-                       "and {} runner(s) the caller observed"
-                       .format(len(list(available_models)), len(list(available_runners))))
+        if not _immune_live:
+            ledger.degrade("capability_health",
+                           "Immune System is disabled; availability was read from the {} model(s) "
+                           "and {} runner(s) the caller observed"
+                           .format(len(list(available_models)), len(list(available_runners))))
         route = _route(levels, ledger, available_models=available_models,
-                       available_runners=available_runners, unhealthy=unhealthy,
-                       quarantined=quarantined)
+                       available_runners=available_runners, unhealthy=_unhealthy,
+                       quarantined=_quarantined)
         completion = _completion(levels, ledger, instruction)
         profiles = _profiles(levels, ledger)
         permissions = _restrict(_base_envelope(definition, levels, ledger), levels, ledger)

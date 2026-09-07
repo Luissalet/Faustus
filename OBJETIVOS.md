@@ -296,36 +296,42 @@ observador encima. Sin esto, la Fase 2 no se puede justificar con datos.
 El criterio de salida, literal del plan: *igual o mejor calidad con menos contexto promedio y sin
 perder instrucciones críticas*. No se avanza sin la Fase 0 delante.
 
-- [ ] **Que `agent_context_engine` haga algo.** Hoy `wiring.enabled()` existe, lee el ajuste y su
+- [x] **`agent_context_engine` gobierna ya el camino canónico.** `wiring.enabled()` lee el ajuste y su
       propio docstring dice que **nadie lo llama**: está ahí para que los consumidores tengan un
       solo sitio donde preguntar cuando llegue el momento. Encender la bandera hoy no cambia
-      ningún prompt.
-- [ ] **Cablear el paquete a `_build_system_prompt`** (`src/agent_loop.py:2526`), que es donde se
+      ningún prompt. Ahora compila y entrega un paquete por ronda, emite su manifiesto y registra
+      el recibo; apagado conserva el carril anterior.
+- [x] **El paquete está cableado al prompt enviado al modelo**, después de `_build_system_prompt`,
+      que es donde se
       montan hoy memoria, documento activo, skills y contexto de proyecto. Es el punto de corte:
-      o el paquete manda, o siguen mandando los concatenadores.
-- [ ] **`project_id` todavía no llega a `_build_system_prompt`.** Su firma tiene `owner`,
+      o el paquete manda, o siguen mandando los concatenadores. Se inserta al final de la
+      construcción para no obligar a duplicar las fuentes dinámicas del constructor legado.
+- [x] **`project_id` llega al compilador canónico por `harness_options`.** `_build_system_prompt`
+      mantiene su firma de `owner`,
       `workspace` y `session_id`, y nada más; el `project_id` sí llega a `wiring.build_request()`
       desde `harness_options`. Sin ese argumento, el alcance de proyecto —que es la mitad de la
       clave de la caché y toda la frontera de aislamiento de bloques y recetas— no puede aplicarse
-      en el prompt canónico.
-- [ ] **El adaptador de sesiones no tiene proveedor de historial.**
+      en el prompt canónico. El paquete se compila después con el id real y la misma historia.
+- [x] **El adaptador de sesiones tiene un proveedor de historial acotado al turno.**
       `src/context_engine/adapters/sessions.py` se niega a propósito a leer la base de datos de
       sesiones (`SessionManager.get_session` no acepta dueño, muta `last_accessed` y devuelve una
       transcripción distinta de la que el turno está usando). Espera que el llamante que ya tiene
       los mensajes se los entregue con `set_history_provider`. **Nadie lo llama en producción**,
       así que `available()` es `False` y no hay sección `recent_messages` en ningún paquete
-      compilado hoy. Una línea en el arranque de la ruta de chat, pero hay que decidir cuál.
-- [ ] **`observe_receipt` está implementado, probado y sin cablear.**
+      compilado hoy. `history_scope` exige dueño y sesión y usa la lista que ya tiene el bucle,
+      sin consultar ni mutar otra sesión.
+- [x] **`observe_receipt` está implementado, probado y cableado.**
       `src/context_engine/wiring.py` lo tiene entero —qué referencias abrió el turno, cuántos
       resultados de herramienta añadió, el `outcome_ref` y el veredicto— y sólo lo llaman los
       tests. Es la costura que cierra el bucle: sin recibos, `historical_utility` no tiene de
       dónde salir y la selección no se puede medir. Va con la Fase 2 porque un recibo sobre un
-      paquete que no se entregó no significa nada.
+      paquete que no se entregó no significa nada. Sólo se escribe para paquetes entregados,
+      una vez conocido el veredicto.
 - [ ] Recorte seguro de resultados de herramientas antiguos, que hoy hace `context_compactor` por
       su cuenta y con otro criterio.
 - [ ] Recuperación bajo demanda (progressive disclosure) desde el propio turno, no sólo en la
       compilación inicial.
-- [ ] **Fallback por bandera al comportamiento anterior**, y con test de que apagado es idéntico a
+- [x] **Fallback por bandera al comportamiento anterior**, con test de que apagado es idéntico a
       antes — la misma regla que se aplicó al sandbox del agente (§32).
 
 ### Las ablaciones de §23
@@ -354,11 +360,12 @@ recuperación necesitan el corpus.
 
 ### Ganchos que otros planes van a necesitar
 
-- [ ] **Mantenimiento sin planificador.** Las seis tareas de `src/context_engine/maintenance.py`
+- [x] **Mantenimiento planificado.** Las seis tareas de `src/context_engine/maintenance.py`
       sólo se disparan a mano: `POST /api/context/maintenance/run` o la tool
       `context_diagnostics`. `should_yield()` ya sabe cederle la máquina a un turno en vuelo; lo
       que falta es quien la llame en idle. Es el mismo agujero que el `advance()` de los
-      workflows (Fase 4) y probablemente el mismo planificador.
+      workflows (Fase 4) y probablemente el mismo planificador. `scheduler_loop` las ejecuta con
+      presupuesto, cede ante chats activos y reparte las tareas acotadas entre proyectos.
 - [ ] **Nada escribe una experiencia.** El extractor que convierte un run terminado —con su
       ChangeSet y su veredicto de `prove`— en una llamada a `experiences.admit()` no existe. Sin
       él la Fase 4 es un almacén vacío con muy buenas reglas de admisión.
@@ -372,9 +379,10 @@ recuperación necesitan el corpus.
 - [ ] **`MemoryView` sigue sin cablear** (Fase 2 del masterplan, arriba). Cuando se cablee hay que
       decidir si el alcance lo aplica él o `ContextPolicy`: dos muros para lo mismo es cómo se
       abre un agujero en uno de los dos.
-- [ ] **Incógnito no llega desde la ruta de chat.** `wiring.build_request()` lo lee de
+- [x] **Incógnito llega desde la ruta de chat.** `wiring.build_request()` lo lee de
       `harness_options` y la ruta todavía no lo rellena, así que hoy siempre es `False`. La
-      política ya está escrita y aplicada antes de la recuperación; falta el interruptor.
+      política ya está escrita y aplicada antes de la recuperación; la ruta lo añade a las
+      opciones internas del turno sin persistirlo en el proyecto.
 
 ## Project Context Links: lo que el plan 2 deja pendiente (06-09-2026)
 
@@ -391,10 +399,11 @@ que se vieron al cablearlo.
       el motivo dicho: necesita materializar un Artifact inmutable desde el documento y enlazar
       esa copia, y ese camino de escritura no existe. Hoy la única forma de fijar una revisión es
       `pinned` con número de versión, que sigue el documento vivo si alguien borra esa versión.
-- [ ] **Invalidación atómica del índice.** `refresh` marca `index_status="stale"` y **conserva**
+- [x] **Invalidación atómica del índice.** `refresh` marca `index_status="stale"` y **conserva**
       `index_revision` a propósito (§13 del plan: el índice viejo sigue sirviendo hasta que el
-      nuevo esté completo). Falta la otra mitad: el intercambio, que hoy no puede fallar porque
-      nadie lo hace.
+      nuevo esté completo). `src/project_context/index.py::replace` publica ahora el marcador de
+      revisión y todos sus chunks en una sola transacción; el trabajador vuelve a autorizar y
+      comparar la revisión tras extraer, y descarta el resultado si hubo una carrera.
 - [ ] **Multimodal.** Imágenes y vídeo se **describen** (etiqueta, tipo de medio, tamaño, receta
       de generación: modelo, backend, seed, versión) y nunca se decodifican. Qué representación
       debe recibir un modelo multimodal es decisión del Context Engine y todavía no la toma nadie.
@@ -404,36 +413,33 @@ que se vieron al cablearlo.
 
 ### La indexación que nadie procesa (P0 para que el vocabulario no mienta)
 
-- [ ] **`index_status="queued"` no lo consume nadie.** `ProjectContextService.attach` lo escribe
+- [x] **`index_status="queued"` ya tiene consumidor.** `ProjectContextService.attach` lo escribe
       en cada vínculo nuevo (salvo con `retrieval_policy="disabled"`, que nace en `none`) y
-      `refresh` escribe `stale`; **no hay indexador por proyecto**, así que ningún vínculo llega
-      jamás a `indexing` ni a `ready`. Los resolvers ya exponen `extract()` con chunks y
-      localización, y `ProjectStore.context_revision` ya existe para que un trabajo asíncrono
-      descarte su resultado si los vínculos se movieron: las dos piezas están, falta el trabajador
-      y el sitio desde donde llamarlo. Mientras tanto la lectura es directa por resolver y el
-      Context Engine la marca `degraded` con nota, que es el estado honesto — pero la pantalla
-      enseña «Indexación en cola» de algo que no está en ninguna cola.
-- [ ] **Los tres eventos que nadie emite.** `EVENT_NAMES` tiene los ocho nombres
-      `project_context_*`; el servicio emite cinco. `project_context_indexed`,
-      `project_context_index_failed` y `project_context_retrieved` esperan al indexador y al
-      recibo de recuperación.
+      y `refresh` escribe `stale`. `src/project_context/indexer.py` consume `queued`, `stale` y un
+      `indexing` abandonado tras reinicio, cede el equipo si hay un turno activo y tiene un límite
+      de tiempo y de enlaces por pasada. El arranque lo supervisa como `project-context-index`.
+      Los resultados listos se leen desde el índice SQLite aislado por dueño/proyecto/enlace; si
+      el índice no se puede verificar, la lectura directa sigue disponible y se marca degradada.
+- [x] **Los tres eventos restantes ya se emiten.** `project_context_indexed` y
+      `project_context_index_failed` salen del servicio; `project_context_retrieved` sale de la
+      recuperación sin guardar el texto de la consulta. Los ocho nombres del subsistema coinciden
+      con `EVENT_NAMES` y su test de contrato.
 
 ### `run_id` y `turn_id` no llegan a las tools (P0, barato)
 
-- [ ] **El `ctx` de las tools no lleva `turn_id`, y su `run_id` está siempre vacío.**
+- [x] **El `ctx` de las tools lleva `turn_id` y el `run_id` real.**
       `src/tool_execution.py` construye el `ctx` con `progress_cb`, `session_id`, `owner`,
       `gen_overrides`, `harness_options`, `project_id` y `run_id` — y su propio comentario dice
       que `run_id` **no viaja en `turn_options`** (el bucle lo guarda en
       `ToolRunSecurityContext`, que no llega ahí), así que sale `""`. `turn_id` no aparece en
       absoluto: `do_manage_project_context` lo acepta como parámetro y el despachador no se lo
-      pasa.
-- [ ] **Consecuencia directa: las prioridades 3 y 4 de `references.resolve()` no se pueden
+      pasa. El bucle los pone en `turn_options` y el despachador los conserva.
+- [x] **Las prioridades 3 y 4 de `references.resolve()` ya se pueden
       disparar.** «Creado en el turno actual» compara `e.turn_id == turn_id` y «el turno anterior
       compatible» exige `e.turn_id` no vacío; con todo a `""` la resolución de «este documento»
       cae siempre al puntero global de la sesión (prioridad 2) o al título (prioridad 5). El
       código de las dos prioridades está escrito y probado con ids inyectados en los tests; lo que
-      falta es que el runtime los ponga. Es una línea en `agent_loop.py` para meter `run_id` y
-      `turn_id` en `turn_options`, y una en `tool_execution.py` para pasarlos.
+      runtime los pone y hay regresiones de la resolución de referencia.
 
 ### Quién registra una referencia de turno (P1)
 
@@ -446,12 +452,13 @@ que se vieron al cablearlo.
 
 ### El prompt no describe la tool nueva (P1, una entrada de diccionario)
 
-- [ ] **`TOOL_SECTIONS` (`src/agent_loop.py`) no tiene sección para `manage_project_context`.**
+- [x] **`TOOL_SECTIONS` (`src/agent_loop.py`) describe `manage_project_context`.**
       Tiene `project_context`, `search_project_chats` y `project_objectives`; la mitad mutante
       llegó al esquema, al índice de recuperación, al preflight y al despacho, pero no a las
       instrucciones en prosa que el prompt del sistema le da al modelo sobre cómo usarla. El
       modelo la ve en el esquema y no en el manual, que es exactamente el reparto que produce
-      llamadas con la forma correcta y la intención equivocada.
+      llamadas con la forma correcta y la intención equivocada. La tool también pertenece al
+      dominio de ficheros/proyecto para que reciba las reglas pertinentes.
 
 ## Perfiles de agente y Completion Modes: lo que el plan 3 deja pendiente (06-09-2026)
 
@@ -540,7 +547,8 @@ se vieron al cablearlo.
       declaró. Se reporta en cero para que la entrada que falta se vea en la traza en vez de
       olvidarse. Lo que hay que construir antes de subirle el peso es el par de campos en `TaskSpec`
       y quién los rellena.
-- [ ] **`resolver._call_filtered(TaskSpec, **task)` sólo pasa las claves que casan con campos de
+- [x] **El llamante construye un mapeo explícito y completo hacia `TaskSpec`;**
+      `resolver._call_filtered(TaskSpec, **task)` conserva sólo las claves que casan con campos de
       `TaskSpec`**, y el diccionario `task` que le llega es el contrato de override de §15
       (`model`, `endpoint_id`, `max_rounds`, `timeout_s`, `completion_mode`…), que **no comparte casi
       ninguna clave** con `intent`, `description`, `required_capabilities`, `required_tools`, `mode`,
@@ -548,7 +556,7 @@ se vieron al cablearlo.
       recibe hoy una `TaskSpec` casi vacía y decide con muy poca información, aunque el ranking
       completo esté escrito y probado. El filtrado por firma es correcto —los dos módulos se
       escribieron en paralelo—; lo que falta es **el mapeo explícito de una tarea de dispatch a una
-      `TaskSpec`**, y el sitio natural es el llamante, no el resolver.
+      `TaskSpec`, y el sitio natural es el llamante, no el resolver.
 
 ## Modo Consejo — lo que queda (P1)
 
@@ -673,15 +681,15 @@ del read model y empezar **en sombra**. Lo que falta, en el orden en que el plan
 
 ### Del propio State Mirror, lo que las fases cerradas no cierran (P1)
 
-- [ ] **`GET /api/state/project` no existe, y Context Engine lo necesita.** `projection.project()`
-      está escrito, probado y sin ruta: el §17 no lista ninguna, así que no se escribió. Es la
+- [x] **`GET /api/state/project` existe y Context Engine lo consume.** `projection.project()`
+      está escrito, probado y publicado con dueño y vocabularios validados. Es la
       pieza que convierte este subsistema en una fuente de contexto (`SOURCE_TYPES` del Context
       Engine ya reserva `"state"` para ella, y `ranking.py` ya sabe que una proyección de estado
-      vale medio día). Falta la ruta y el `ContextSource` que la consuma.
-- [ ] **El barrido no corre solo.** `agent_state_mirror_sweep_seconds` existe como ajuste y nada lo
-      lee: hoy un barrido ocurre porque alguien pulsa «Reconcile» o llama a `/reconcile`. Falta
-      engancharlo al supervisor de tareas (`src/task_supervisor.py`), con la condición del §2.4 —
-      polling adaptativo, ceder bajo carga, y no mantener despiertos GPU ni discos.
+      vale medio día). `StateMirrorSource` obtiene la proyección sin sondear en el camino caliente,
+      mantiene frescura y conflictos visibles y la entrega como `current_state` observado.
+- [x] **El barrido corre solo.** `agent_state_mirror_sweep_seconds` gobierna el bucle que el
+      supervisor arranca. Deduplica ámbitos, rechaza el dueño vacío, cede bajo carga y no hace
+      nada mientras la bandera esté apagada.
 - [ ] **`replay()`**: reconstruir el estado materializado desde el log append-only, o declarar
       incompatibilidad de schema. Es un criterio de aceptación del §26 y lo que haría del schema
       versionado una garantía en vez de una convención.
@@ -784,12 +792,17 @@ parte distinta:
 
 ## Después del plan 7 (06-09-2026)
 
-### Los planes que quedan, en orden
+### Estado de los planes 8–11 (07-09-2026)
 
-8. `PLAN_MODO_ENSENAME_FAUSTUS.md`
-9. `PLAN_FAUSTUS_IMMUNE_SYSTEM.md`
-10. `PLAN_BRANCHING_FUTURES_FAUSTUS.md`
-11. `PLAN_VOZ_JARVIS_FAUSTUS.md`
+8. `PLAN_MODO_ENSENAME_FAUSTUS.md`: servicios, persistencia y rutas iniciales implementados en `src/teach_mode` y `routes/teach_mode_routes.py`.
+9. `PLAN_FAUSTUS_IMMUNE_SYSTEM.md`: servicios, persistencia y rutas iniciales implementados en `src/immune_system` y `routes/immune_system_routes.py`.
+10. `PLAN_BRANCHING_FUTURES_FAUSTUS.md`: servicios, persistencia y rutas iniciales implementados en `src/branching_futures` y `routes/branching_futures_routes.py`.
+11. `PLAN_VOZ_JARVIS_FAUSTUS.md`: conversación por turnos implementada; configuración, mapa de código y límites en `docs/design/voice-jarvis.md`.
+
+Esto no declara completas todas las fases de los documentos de inspiración.
+En voz quedan pendientes activación por palabra, barge-in acústico y validación
+con micrófono físico y un turno completo del LLM. Las capturas verifican la
+distribución en escritorio y móvil; no demuestran esos recorridos de audio.
 
 ### Lo que el Completion Engine deja preparado y sin usar
 

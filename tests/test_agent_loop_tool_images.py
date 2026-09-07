@@ -95,6 +95,7 @@ def loop(monkeypatch):
             "http://127.0.0.1:11434/v1", model,
             [{"role": "user", "content": "haz una captura de pantalla"}],
             max_rounds=4, relevant_tools={"desktop_screenshot"},
+            security_gate_bypass=True,
         )
         return _events(_collect(gen)), seen, b64
     return _run
