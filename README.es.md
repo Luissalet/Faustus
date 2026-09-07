@@ -86,7 +86,7 @@ El motor de contexto recupera y distribuye material relevante entre fuentes del 
 | Immune System | Registrar incidentes, evidencias y reglas correctivas para fallos recurrentes. | [immune_system](src/immune_system/) |
 | Branching Futures | Explorar alternativas en ramas aisladas antes de elegir. | [branching_futures](src/branching_futures/) |
 | Consejo | Organizar discusión, crítica, decisiones y ejecución controlada entre varios modelos. | [council](src/council/) |
-| State Mirror | Mantener observaciones fechadas del proyecto, con vigencia y procedencia. | [state_mirror](src/state_mirror/) |
+| State Mirror | Mantener observaciones fechadas con vigencia y procedencia; verificar y restaurar el estado materializado desde su historial. | [Recuperación](docs/design/state-mirror-recovery.md) |
 | Universal Delta Engine | Comparar los cambios solicitados con los observados en los ámbitos compatibles. | [delta_engine](src/delta_engine/) |
 | Greedy Completion Engine | Descubrir y valorar trabajo adicional útil según modo, alcance y presupuesto. | [completion_engine](src/completion_engine/) |
 | Voz Jarvis | Interacción oral en español e inglés, respuestas habladas y esfera reactiva. | [guía de voz](docs/design/voice-jarvis.md) |

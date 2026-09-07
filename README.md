@@ -86,7 +86,7 @@ The context engine retrieves and budgets relevant material from project sources,
 | Immune System | Record incidents, evidence and corrective rules for recurring failures. | [immune_system](src/immune_system/) |
 | Branching Futures | Explore alternative approaches in isolated branches before choosing one. | [branching_futures](src/branching_futures/) |
 | Council | Organize multi-model discussion, critique, decisions and controlled execution. | [council](src/council/) |
-| State Mirror | Keep timestamped observations of project state, with freshness and provenance. | [state_mirror](src/state_mirror/) |
+| State Mirror | Keep timestamped observations with freshness and provenance; verify and restore materialized state from its committed journal. | [Recovery](docs/design/state-mirror-recovery.md) |
 | Universal Delta Engine | Compare intended and observed changes across supported domains. | [delta_engine](src/delta_engine/) |
 | Greedy Completion Engine | Discover and assess useful follow-up work according to the chosen mode, scope and budget. | [completion_engine](src/completion_engine/) |
 | Jarvis voice | Voice interaction in English and Spanish, spoken replies and a reactive sphere. | [voice guide](docs/design/voice-jarvis.md) |

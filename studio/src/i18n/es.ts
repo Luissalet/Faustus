@@ -5506,4 +5506,13 @@ export const es: Record<string, string> = {
   "…and {n} more.": "…y {n} más.",
   "…or upload a file": "…o sube un archivo",
   "⟨insert⟩": "⟨insertar⟩",
+  "State integrity": "Integridad del estado",
+  "Verify saved state": "Comprobar estado guardado",
+  "Restore verified state": "Restaurar estado verificado",
+  "Compare this saved view with its verified journal. Repair restores the saved state, not the original files or services.": "Compara esta vista guardada con su historial verificado. La reparación restaura el estado guardado, no los archivos ni servicios originales.",
+  "The journal could not be verified. It may be unavailable, damaged or changed. No state was replaced. Check the connection and try again.": "No se pudo verificar el historial: puede no estar disponible, estar dañado o haber cambiado. No se ha reemplazado ningún estado. Comprueba la conexión e inténtalo de nuevo.",
+  "Saved state restored from the verified journal.": "Estado guardado restaurado desde el historial verificado.",
+  "Saved state matches the verified journal.": "El estado guardado coincide con el historial verificado.",
+  "The saved view differs from its journal. You can restore the verified state.": "La vista guardada difiere de su historial. Puedes restaurar el estado verificado.",
+  "Verification starts from a checkpoint created during upgrade; older probe history is not reconstructed.": "La verificación parte de un punto de control creado durante la actualización; no se reconstruye el historial de observaciones anterior.",
 };

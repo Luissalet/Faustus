@@ -290,7 +290,54 @@ function Sources({ diagnostics, openConflicts }: {
  * The unobserved fields are LISTED rather than omitted. An absence a consumer
  * cannot see is one they will eventually read as a `false`.
  */
-function Detail({ entity, history, conflicts, busy, canRefresh, onRefresh, onClose }: {
+function Recovery({ entityId, onRebuilt }: { entityId: string; onRebuilt: () => void }) {
+  const [receipt, setReceipt] = useState<api.ReplayCheck | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const alive = useRef(true);
+  const pending = useRef(false);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  const check = async (repair = false) => {
+    if (pending.current) return;
+    pending.current = true;
+    setBusy(true);
+    setError('');
+    try {
+      const answer = await api.verifyMaterialization(entityId, repair ? receipt?.receipt.sha256 : '');
+      if (!alive.current) return;
+      setReceipt(answer);
+      if (answer.repaired) onRebuilt();
+    } catch {
+      if (!alive.current) return;
+      setReceipt(null);
+      setError(t('The journal could not be verified. It may be unavailable, damaged or changed. No state was replaced. Check the connection and try again.'));
+    } finally {
+      pending.current = false;
+      if (alive.current) setBusy(false);
+    }
+  };
+  return <section className="fs-stm__recovery" aria-label={t('State integrity')}>
+    <h3 className="fs-stm__label">{t('State integrity')}</h3>
+    <p className="fs-muted fs-stm__provenance">{t('Compare this saved view with its verified journal. Repair restores the saved state, not the original files or services.')}</p>
+    <div className="fs-inline">
+      <Button size="sm" label={t('Verify saved state')} loading={busy} onClick={() => void check()} />
+      {receipt && !receipt.matches && !receipt.repaired && <Button size="sm" variant="danger"
+        label={t('Restore verified state')} disabled={busy} onClick={() => void check(true)} />}
+    </div>
+    <div role="status">
+      {error && <p className="fs-stm__notice" data-tone="warning">{error}</p>}
+      {receipt && <p className="fs-stm__provenance">{receipt.repaired
+        ? t('Saved state restored from the verified journal.')
+        : receipt.matches ? t('Saved state matches the verified journal.')
+          : t('The saved view differs from its journal. You can restore the verified state.')}</p>}
+      {receipt?.receipt.origin === 'legacy_checkpoint' && <p className="fs-muted fs-stm__provenance">
+        {t('Verification starts from a checkpoint created during upgrade; older probe history is not reconstructed.')}
+      </p>}
+    </div>
+  </section>;
+}
+
+function Detail({ entity, history, conflicts, busy, canRefresh, onRefresh, onClose, onRebuilt }: {
   entity: api.StateEntity;
   history: api.Observation[] | null;
   conflicts: api.Conflict[];
@@ -298,6 +345,7 @@ function Detail({ entity, history, conflicts, busy, canRefresh, onRefresh, onClo
   canRefresh: boolean;
   onRefresh: () => void;
   onClose: () => void;
+  onRebuilt: () => void;
 }) {
   const current = api.currentFields(entity);
   const aged = api.agedFields(entity);
@@ -359,6 +407,7 @@ function Detail({ entity, history, conflicts, busy, canRefresh, onRefresh, onClo
           </>
         )}
 
+        <Recovery key={entity.id} entityId={entity.id} onRebuilt={onRebuilt} />
         <p className="fs-stm__label">{t('How we know')}</p>
         {history === null
           ? <Skeleton label={t('Reading the observations')} count={2} height="18px" />
@@ -647,6 +696,7 @@ export function StateMirrorScreen() {
           canRefresh={enabled}
           onRefresh={() => void lookAgain(selected.id)}
           onClose={() => setParams({}, { replace: true })}
+          onRebuilt={() => void load()}
         />
       )}
 

@@ -64,14 +64,19 @@ def from_context_packet(packet) -> MemoryView:
                 # Avoid copying rejected owners' labels or arbitrary content.
                 "detail": "Context Engine omission: " + o.reason}
                for o in packet.omissions if o.source_type in kinds]
-    degraded = packet.degraded or any(item.degraded for item in items)
+    entry_ids = [identity(item.source_type, item.source_ref, item.source_revision, item.body) for item in items]
+    overflow = len(entry_ids) > 2000
+    degraded = packet.degraded or any(item.degraded for item in items) or overflow
+    detail = "Context packet or selected memory is degraded; inspect packet warnings" if degraded else ""
+    if overflow:
+        detail = (f"Receipt lists 2000 of {len(entry_ids)} selected memories; full selection SHA-256: "
+                  f"{identity(entry_ids)}. Inspect packet warnings for other degradation.")
     return MemoryView.parse({
         "run_id": identity(packet.request_id, packet.turn_id), "scopes": ["run"],
-        "entry_ids": [identity(item.source_type, item.source_ref, item.source_revision, item.body)
-                      for item in items],
+        "entry_ids": entry_ids[:2000],
         "dropped": dropped, "used_chars": sum(len(item.body) for item in items),
         "budget_chars": None, "degraded": degraded,
-        "degraded_reason": "Context packet or selected memory is degraded; inspect packet warnings" if degraded else "",
+        "degraded_reason": detail,
         "built_at": packet.created_at or now_iso(),
     })
 

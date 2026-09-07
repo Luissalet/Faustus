@@ -1016,6 +1016,23 @@ export async function reconcile(): Promise<Record<string, unknown>> {
   return obj(await send<unknown>(`${BASE}/reconcile`));
 }
 
+export interface ReplayCheck {
+  matches: boolean;
+  repaired: boolean;
+  receipt: { sha256: string; sequence: number; origin: string };
+}
+
+export async function verifyMaterialization(entityId: string, expectedSha256 = ''): Promise<ReplayCheck> {
+  const answer = await send<ReplayCheck>(`${BASE}/rebuild`, {
+    entity_id: entityId, apply: Boolean(expectedSha256), expected_sha256: expectedSha256,
+  });
+  if (!answer.receipt || !/^[a-f0-9]{64}$/.test(answer.receipt.sha256)
+      || typeof answer.matches !== 'boolean' || typeof answer.repaired !== 'boolean') {
+    throw new Error('The server did not return a verified state receipt.');
+  }
+  return answer;
+}
+
 export async function loadSituation(name: string, signal?: AbortSignal): Promise<Record<string, unknown>> {
   const payload = obj(await read<unknown>(`${BASE}/situation/${encodeURIComponent(str(name))}`, signal));
   return obj('situation' in payload ? payload.situation : payload);

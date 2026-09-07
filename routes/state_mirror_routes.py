@@ -602,6 +602,34 @@ def setup_state_mirror_routes() -> APIRouter:
             relayed["enabled"] = True
         return relayed
 
+    @router.post("/rebuild")
+    async def rebuild(request: Request):
+        require_admin(request)
+        require_human(request)
+        owner = _require_owner(request)
+        body = bytearray()
+        async for chunk in request.stream():
+            body.extend(chunk)
+            if len(body) > 4096:
+                raise HTTPException(413, "rebuild request is too large")
+        try:
+            args = json.loads(body)
+            if (not isinstance(args, dict) or set(args) - {"entity_id", "apply", "expected_sha256"}
+                    or not isinstance(args.get("entity_id"), str)
+                    or not isinstance(args.get("apply", False), bool)):
+                raise ValueError()
+        except (ValueError, UnicodeError):
+            raise HTTPException(400, "invalid rebuild request") from None
+        from src.state_mirror.persistence import store, NotFound
+        try:
+            return await asyncio.to_thread(store().rebuild_state, args["entity_id"], owner=owner,
+                apply=args.get("apply", False), expected_sha256=args.get("expected_sha256", ""))
+        except NotFound:
+            raise HTTPException(404, "no such entity") from None
+        except (ValueError, StateError):
+            return _refusal("rebuild", "Journal verification failed or its receipt changed; no state was replaced.",
+                            code="invalid_argument")
+
     @router.post("/reconcile")
     async def reconcile(request: Request):
         """Ask the disagreeing sources again, and settle what can be settled.

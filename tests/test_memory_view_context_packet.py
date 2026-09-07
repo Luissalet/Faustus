@@ -50,3 +50,14 @@ def test_degraded_and_empty_packets_do_not_invent_memories():
     assert not view.entry_ids
     assert view.used_chars == 0
     assert view.degraded and view.degraded_reason
+
+
+def test_large_receipt_is_explicitly_bounded_without_breaking_context_summary():
+    items = tuple(ContextItem(source_type="memory", source_ref=f"mem:{i}", body="x") for i in range(2001))
+    p = ContextPacket(sections=(ContextSection(kind="retrieved_memory", items=items),))
+    view = from_context_packet(p)
+    assert len(view.entry_ids) == 2000 and view.used_chars == 2001
+    assert view.degraded and '2000 of 2001' in view.degraded_reason
+    changed = replace(p, sections=(replace(p.sections[0], items=items[:-1] + (replace(items[-1], body='y'),)),))
+    assert view.fingerprint() != from_context_packet(changed).fingerprint()
+    assert summarize(p)['memory_view']['degraded']

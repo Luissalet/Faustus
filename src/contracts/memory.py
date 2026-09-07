@@ -196,4 +196,5 @@ class MemoryView:
             ("scopes", list(self.scopes)),
             ("entries", list(self.entry_ids)),
             ("degraded", self.degraded),
+            ("degraded_reason", self.degraded_reason if self.degraded else ""),
         ])

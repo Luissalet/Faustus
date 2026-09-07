@@ -51,6 +51,7 @@ from src.state_mirror.contracts import (
     StateObservation,
     StateRelation,
 )
+from src.state_mirror.replay import SCHEMA as _REPLAY_SCHEMA
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +130,7 @@ def store() -> "StateStore":
         return _STORE
 
 
-_CORE_SCHEMA: Tuple[str, ...] = (
+_CORE_SCHEMA: Tuple[str, ...] = _REPLAY_SCHEMA + (
     """
     CREATE TABLE IF NOT EXISTS state_entities (
         id            TEXT PRIMARY KEY,
@@ -635,6 +636,10 @@ class StateStore:
         data = state.to_dict()
         try:
             with self._db() as conn:
+                from src.state_mirror import replay
+                row = conn.execute("SELECT * FROM state_materialized WHERE entity_id=?", [state.entity_id]).fetchone()
+                previous = self._state(row) if row else None
+                replay.record(conn, previous.to_dict() if previous else None, data)
                 if changed:
                     seq = self._next_seq(conn)
                 else:
@@ -664,6 +669,47 @@ class StateStore:
         row = self._one("SELECT * FROM state_materialized WHERE entity_id = ?",
                         [str(entity_id)])
         return self._state(row) if row else None
+
+    def rebuild_state(self, entity_id: str, *, owner: str, apply: bool = False,
+                      expected_sha256: str = "") -> Dict[str, Any]:
+        """Verify the committed transition journal; optionally repair its read model.
+
+        A caller must first inspect a receipt, then apply that exact head. The
+        journal, scope check and repair share a write lock, so a concurrent probe
+        cannot be overwritten with a stale reconstruction.
+        """
+        from src.state_mirror import replay
+        if not owner:
+            raise NotFound("entity", entity_id)
+        with self._db() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            entity = conn.execute("SELECT owner FROM state_entities WHERE id=?", [entity_id]).fetchone()
+            if entity is None or entity["owner"] != owner:
+                raise NotFound("entity", entity_id)
+            data, receipt = replay.verify(conn, entity_id)
+            state = MaterializedState.parse(data)
+            if state.entity_id != entity_id or state.owner != owner:
+                raise ValueError("journal scope does not match its entity")
+            row = conn.execute("SELECT * FROM state_materialized WHERE entity_id=?", [entity_id]).fetchone()
+            live = self._state(row) if row else None
+            matches = bool(live and replay.digest(live.to_dict()) == receipt["sha256"])
+            if apply and expected_sha256 != receipt["sha256"]:
+                raise ValueError("journal changed; verify the current receipt before applying")
+            repaired = bool(apply and not matches)
+            if repaired:
+                seq = self._next_seq(conn)
+                conn.execute(
+                    "INSERT INTO state_materialized (entity_id, owner, namespace, project_id, schema, "
+                    "revision, fields, conflicts, updated_at, changed_seq, schema_version) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(entity_id) DO UPDATE SET "
+                    "owner=excluded.owner, namespace=excluded.namespace, project_id=excluded.project_id, "
+                    "schema=excluded.schema, revision=excluded.revision, fields=excluded.fields, "
+                    "conflicts=excluded.conflicts, updated_at=excluded.updated_at, "
+                    "changed_seq=excluded.changed_seq, schema_version=excluded.schema_version",
+                    [entity_id, owner, state.namespace, state.project_id, state.schema, state.revision,
+                     _dumps(data["fields"]), _dumps(data["conflicts"]), state.updated_at, seq, state.schema_version])
+            return {"ok": True, "entity_id": entity_id, "matches": matches,
+                    "repaired": repaired, "receipt": receipt, "state": data}
 
     def list_states(self, *, owner: Any = "", namespace: str = "",
                     project_id: str = "", kind: str = "",

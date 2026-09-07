@@ -226,6 +226,32 @@ def test_every_route_of_the_plan_answers_for_an_admin(client_pair):
     assert client.post("/api/state/reconcile").json()["ok"] is True
 
 
+def test_rebuild_previews_then_repairs_only_the_current_owners_entity(client_pair):
+    client, caller = client_pair
+    ident = _seed("alice", "service", "replay", SERVICE_FIELDS)
+    preview = client.post("/api/state/rebuild", json={"entity_id": ident}).json()
+    assert preview["ok"] and preview["matches"]
+    with P.store()._db() as conn:
+        conn.execute("DELETE FROM state_materialized WHERE entity_id=?", [ident])
+    denied = client.post("/api/state/rebuild", json={"entity_id": ident, "apply": True}).json()
+    assert not denied["ok"]
+    repaired = client.post("/api/state/rebuild", json={"entity_id": ident, "apply": True,
+        "expected_sha256": preview["receipt"]["sha256"]}).json()
+    assert repaired["repaired"]
+    caller.who = "bob"
+    assert client.post("/api/state/rebuild", json={"entity_id": ident}).status_code == 404
+
+
+def test_rebuild_refuses_malformed_requests_and_journal(client_pair):
+    client, _ = client_pair
+    ident = _seed("alice", "service", "replay", SERVICE_FIELDS)
+    assert client.post("/api/state/rebuild", json={"entity_id": ident, "apply": "false"}).status_code == 400
+    assert client.post("/api/state/rebuild", content='x' * 4097).status_code == 413
+    with P.store()._db() as conn:
+        conn.execute("UPDATE state_replay_steps SET patch='{}'")
+    assert not client.post("/api/state/rebuild", json={"entity_id": ident}).json()["ok"]
+
+
 def test_project_projection_validates_its_closed_vocabularies(client_pair):
     client, _ = client_pair
     invalid = client.get(

@@ -9,7 +9,7 @@ Actualizado: 08-09-2026. Sólo trabajo vigente; quitar cada entrada al cerrarla.
 - **Voz física:** conversación completa con micrófono en español e inglés. No activar grabación ni permisos para cerrar esta casilla sin intervención del usuario.
 - **Entrega:** revisar diff, arranque y recorrido principal. README EN/ES, portfolio y CV ya están actualizados; sólo sincronizar cambios posteriores.
 
-Carencias funcionales: [OBJETIVOS.md](OBJETIVOS.md).
+Las carencias de backend del índice anterior están implementadas; se ha eliminado ese índice vacío.
 Comprobaciones específicas de interfaz: [PENDIENTES_UI.md](docs/ui/PENDIENTES_UI.md).
 No contar planes de inspiración o notas de implementación como otra cola de tareas.
 

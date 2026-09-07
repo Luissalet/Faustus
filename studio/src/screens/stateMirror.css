@@ -294,3 +294,10 @@
   background: var(--fs-surface-2);
   font-size: var(--fs-label-size);
 }
+
+@media (max-width: 767px) {
+  .fs-stm__recovery .fs-btn {
+    min-block-size: 44px;
+    font-size: var(--fs-body-size, 14px);
+  }
+}
