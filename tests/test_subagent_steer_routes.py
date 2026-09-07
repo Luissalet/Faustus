@@ -234,5 +234,10 @@ def test_loop_injects_queued_steer_before_the_next_round(tmp_path, monkeypatch):
     r2_user = [m for m in seen_requests[1] if m.get("role") == "user" and "write the test now" in str(m.get("content"))]
     assert not r1_user and len(r2_user) == 1
     assert "Steering" in r2_user[0]["content"] and "user" in r2_user[0]["content"]
-    assert seen_requests[1][-1] is not None and "write the test now" in str(seen_requests[1][-1].get("content"))
+    actionable = [m for m in seen_requests[1]
+                  if m.get("_agent_injected") != "reply_language_continuity"]
+    assert "write the test now" in str(actionable[-1].get("content"))
+    reminders = [m for m in seen_requests[1]
+                 if m.get("_agent_injected") == "reply_language_continuity"]
+    assert len(reminders) == 1 and "English" in reminders[0]["content"]
     assert queue == []

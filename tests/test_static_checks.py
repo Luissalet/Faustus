@@ -629,7 +629,11 @@ def test_the_loop_flags_the_undefined_name_BEFORE_it_spends_40s_on_pytest(projec
     assert flagged["errors"][0]["path"] == "src/calc.py" and "F821" in flagged["errors"][0]["error"]
 
     # The model got it as a runtime message naming file, line and rule.
-    fix_prompt = calls["messages"][2][-1]["content"]
+    # The language reminder follows runtime instructions; it must not hide
+    # the repair request or make this check depend on the transport tail.
+    repair_messages = [m for m in calls["messages"][2]
+                       if m.get("_agent_injected") != "reply_language_continuity"]
+    fix_prompt = repair_messages[-1]["content"]
     assert fix_prompt.startswith("[Harness check") and "F821" in fix_prompt
     assert "src/calc.py:5" in fix_prompt and "Depends" in fix_prompt
 

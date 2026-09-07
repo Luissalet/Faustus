@@ -15,9 +15,9 @@ No contar planes de inspiración o notas de implementación como otra cola de ta
 
 ## Última evidencia
 
-- Suite completa: **13.120 correctas, 81 omitidas y una expectativa antigua fallida** (`logs/checkpoint-full-20260908.xml`): el test exigía rechazar objetivos sin carpeta. Corregido y verificado en el bloque posterior de **134 pruebas correctas**. No hubo errores de teardown.
+- Suite completa: **13.153 correctas, 81 omitidas y dos expectativas de orden fallidas** (`logs/checkpoint-final-20260908.xml`): el recordatorio de idioma va después de las instrucciones de reparación y dirección. Actualizadas las comprobaciones para conservar su verificación sin depender del último mensaje; bloque posterior de **63 correctas y una omitida** (`logs/checkpoint-language-regression.xml`). Sin errores de teardown.
 - Navegador Brave y Qwen local: objetivo OBJ-1 creado en proyecto sin carpeta, conservado tras recarga; trabajo continuado fuera del chat. Respuesta inglesa tras herramienta y texto entre rondas completos tanto en vivo como tras recargar (08-09, 01:15).
 - Objetivos y aislamiento: **225 correctas** (`logs/astra-objective-scope-focused.xml`).
 - Integración: **203 correctas** (`logs/astra-objective-scope-integration.xml`).
 - Servidor reiniciado el 08-09: HTTP 200.
-- Control previo al checkpoint: **147 correctas** (`logs/checkpoint-20260908.xml`), TypeScript y compilación de producción correctos. Persiste el aviso de tamaño del bundle.
+- TypeScript y compilación de producción correctos. Separada la caché de React sin adelantar la carga del editor; ya no aparece el aviso de tamaño del bundle.
