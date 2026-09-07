@@ -195,6 +195,8 @@ Mantén `LOCALHOST_BYPASS=false` fuera del desarrollo local.
 
 Mantén la autenticación activada. No publiques puertos sin autenticación de modelos, ComfyUI ni servicios internos. No subas credenciales ni datos privados de `data/` a Git.
 
+Las sesiones de Bitwarden se guardan cifradas y caducan tras una hora, tanto en ajustes como en las herramientas del agente. Las sesiones antiguas en claro se eliminan al acceder y requieren desbloquear de nuevo. Protege `data/.app_key`: el cifrado no protege frente a un equipo comprometido.
+
 Aprueba las herramientas e instrucciones del proyecto de forma deliberada. Las restricciones de agentes, fuentes propias, aprobaciones, sandbox y supervisión de procesos son controles distintos. Si falta un sandbox requerido, la ruta configurada no debe ejecutar silenciosamente el comando en el anfitrión.
 
 Consulta el [modelo de amenazas](THREAT_MODEL.md), la [política de seguridad](SECURITY.md) y las [notas de despliegue seguro](website/setup.md#security-notes).

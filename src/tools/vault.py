@@ -10,18 +10,12 @@ from typing import Dict, Optional
 
 from src.constants import VAULT_FILE
 from src.tools._common import _parse_tool_args
+from src import vault_storage
 
 
 def _load_vault_config() -> Dict:
     """Load Vaultwarden config from data/vault.json."""
-    from pathlib import Path
-    p = Path(VAULT_FILE)
-    if p.exists():
-        try:
-            return json.loads(p.read_text(encoding="utf-8"))
-        except Exception:
-            pass
-    return {}
+    return vault_storage.load_config(VAULT_FILE)
 
 
 async def _run_bw(args: list, session: Optional[str] = None, input_text: Optional[str] = None) -> tuple:
@@ -30,6 +24,8 @@ async def _run_bw(args: list, session: Optional[str] = None, input_text: Optiona
     env = {}
     import os as _os
     env.update(_os.environ)
+    env.pop("BW_SESSION", None)
+    env.pop("BW_PASSWORD", None)
     if session:
         env["BW_SESSION"] = session
 
@@ -167,23 +163,11 @@ async def do_vault_unlock(content: str, owner: Optional[str] = None) -> Dict:
     if not session:
         return {"error": "bw returned empty session", "exit_code": 1}
 
-    # Save session to vault.json
-    from pathlib import Path
-    p = Path(VAULT_FILE)
-    cfg = {}
-    if p.exists():
-        try:
-            cfg = json.loads(p.read_text(encoding="utf-8"))
-        except Exception:
-            pass
+    # Same encrypted, expiring store used by the settings endpoints.
+    cfg = _load_vault_config()
     cfg["session"] = session
-    from datetime import datetime as _dt
-    cfg["unlocked_at"] = _dt.utcnow().isoformat()
-    p.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
-    try:
-        import os as _os
-        _os.chmod(str(p), 0o600)
-    except Exception:
-        pass
+    from datetime import datetime as _dt, timezone
+    cfg["unlocked_at"] = _dt.now(timezone.utc).isoformat()
+    vault_storage.save_config(VAULT_FILE, cfg)
 
-    return {"output": "Vault unlocked. Session saved.", "exit_code": 0}
+    return {"output": "Vault unlocked. Encrypted session expires in one hour.", "exit_code": 0}

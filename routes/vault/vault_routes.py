@@ -2,22 +2,21 @@
 vault_routes.py
 
 Vaultwarden / Bitwarden CLI integration — config and unlock endpoints.
-Stores the BW_SESSION key in data/vault.json with restrictive permissions.
+Stores an encrypted, expiring BW_SESSION in data/vault.json.
 """
 
-import json
 import logging
 import os
-import shutil
 import asyncio
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
 from core.middleware import require_admin
-from core.platform_compat import IS_WINDOWS, safe_chmod, which_tool
+from core.platform_compat import IS_WINDOWS, which_tool
 from src.constants import VAULT_FILE as _VAULT_FILE
+from src import vault_storage
 
 logger = logging.getLogger(__name__)
 
@@ -60,27 +59,19 @@ def _find_bw() -> str:
 
 
 def _load_config() -> dict:
-    if VAULT_FILE.exists():
-        try:
-            data = json.loads(VAULT_FILE.read_text(encoding="utf-8"))
-            return data if isinstance(data, dict) else {}
-        except Exception:
-            pass
-    return {}
+    return vault_storage.load_config(VAULT_FILE)
 
 
 def _save_config(cfg: dict):
-    VAULT_FILE.parent.mkdir(parents=True, exist_ok=True)
-    VAULT_FILE.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
-    # POSIX: restrict the BW_SESSION store to 0o600. Windows: no-op (profile dir
-    # is ACL-restricted already).
-    safe_chmod(str(VAULT_FILE), 0o600)
+    vault_storage.save_config(VAULT_FILE, cfg)
 
 
 async def _run_bw(args: list, session: str = None, input_text: str = None,
                   bw_password: str = None) -> tuple:
     env = {}
     env.update(os.environ)
+    env.pop("BW_SESSION", None)
+    env.pop("BW_PASSWORD", None)
     if session:
         env["BW_SESSION"] = session
     # Secrets must never be passed as argv — process arguments are world-readable
@@ -144,6 +135,8 @@ def setup_vault_routes():
         """Save vault URL + email. Runs 'bw config server' to point at Vaultwarden."""
         require_admin(request)
         cfg = _load_config()
+        if (cfg.get("server_url", ""), cfg.get("email", "")) != (req.server_url.strip().rstrip("/"), req.email.strip()):
+            vault_storage.clear_session(cfg)
         cfg["server_url"] = req.server_url.strip().rstrip("/")
         cfg["email"] = req.email.strip()
 
@@ -161,6 +154,7 @@ def setup_vault_routes():
         require_admin(request)
         cfg = _load_config()
         # Update email
+        vault_storage.clear_session(cfg)
         cfg["email"] = req.email
         _save_config(cfg)
 
@@ -176,7 +170,7 @@ def setup_vault_routes():
         # bw login --raw prints session key on success (when 2FA disabled)
         if stdout:
             cfg["session"] = stdout
-            cfg["unlocked_at"] = datetime.utcnow().isoformat()
+            cfg["unlocked_at"] = datetime.now(timezone.utc).isoformat()
             _save_config(cfg)
         return {"ok": True}
 
@@ -198,7 +192,7 @@ def setup_vault_routes():
             return {"ok": False, "error": "bw returned empty session"}
         cfg = _load_config()
         cfg["session"] = session
-        cfg["unlocked_at"] = datetime.utcnow().isoformat()
+        cfg["unlocked_at"] = datetime.now(timezone.utc).isoformat()
         _save_config(cfg)
         return {"ok": True, "message": "Vault unlocked"}
 
