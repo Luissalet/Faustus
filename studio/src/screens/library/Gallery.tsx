@@ -26,6 +26,7 @@ import {
 import { relativeTime } from '../../adapters/home';
 import { ImageViewer } from './Viewer';
 import { t, tn } from '../../i18n';
+import { PageCursor } from '../../lib/page-cursor';
 
 /**
  * The images of the Library (the previous Gallery). A grid that stays a
@@ -40,6 +41,8 @@ export function ImageGallery({ query, say }: { query: string; say: (m: string) =
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
   const [items, setItems] = useState<GalleryImage[] | null>(null);
+  const cursor = useRef(new PageCursor<GalleryImage>());
+  const [loadingMore, setLoadingMore] = useState(false);
   const [total, setTotal] = useState(0);
   const [tags, setTags] = useState<string[]>([]);
   const [models, setModels] = useState<string[]>([]);
@@ -62,6 +65,9 @@ export function ImageGallery({ query, say }: { query: string; say: (m: string) =
   const favorites = params.get('fav') === '1';
   const sort = (params.get('sort') ?? 'recent') as 'recent' | 'oldest' | 'shuffle';
   const openId = params.get('img');
+  const queryKey = JSON.stringify([query, params.get('tag'), model, album, favorites, sort, seed]);
+  const currentQuery = useRef(queryKey);
+  currentQuery.current = queryKey;
 
   const setParam = (key: string, value: string) => {
     setParams(
@@ -77,19 +83,29 @@ export function ImageGallery({ query, say }: { query: string; say: (m: string) =
 
   const reload = useCallback(
     async (append = false) => {
+      if (currentQuery.current !== queryKey) return;
+      const ticket = cursor.current.begin(append);
+      if (!ticket) return;
+      setLoadingMore(append);
       try {
-        const page = await loadGallery({ search: query, tag: tagFilter, model, album, favorites, sort, seed, offset: append ? (items?.length ?? 0) : 0, limit: PAGE });
-        setItems((prev) => (append && prev ? [...prev, ...page.items] : page.items));
+        const page = await loadGallery({ search: query, tag: tagFilter, model, album, favorites, sort, seed, offset: ticket.offset, limit: PAGE }, ticket.signal);
+        if (currentQuery.current !== queryKey) return;
+        const rows = cursor.current.accept(ticket, page.items);
+        if (!rows) return;
+        setItems(rows);
+        setLoadingMore(false);
         setTotal(page.total);
         setTags(page.tags);
         setModels(page.models);
       } catch (e) {
+        if (!cursor.current.fail(ticket)) return;
+        setLoadingMore(false);
         say((e as Error).message);
         setItems((prev) => prev ?? []);
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [query, params.get('tag'), model, album, favorites, sort, seed, say],
+    [queryKey, say],
   );
 
   const reloadAlbums = useCallback(() => {
@@ -100,6 +116,7 @@ export function ImageGallery({ query, say }: { query: string; say: (m: string) =
   useEffect(() => {
     setItems(null);
     void reload();
+    return () => cursor.current.cancel();
   }, [reload]);
   useEffect(reloadAlbums, [reloadAlbums]);
 
@@ -334,7 +351,7 @@ export function ImageGallery({ query, say }: { query: string; say: (m: string) =
           </div>
           {items.length < total && (
             <div className="fs-gal__more">
-              <Button variant="secondary" size="sm" label={t('Show more ({n} left)', { n: total - items.length })} onClick={() => void reload(true)} />
+              <Button variant="secondary" size="sm" loading={loadingMore} label={t('Show more ({n} left)', { n: total - items.length })} onClick={() => void reload(true)} />
             </div>
           )}
           <p className="fs-gal__muted fs-gal__stats">

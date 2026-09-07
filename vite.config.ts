@@ -24,8 +24,9 @@ export default defineConfig({
         // tree unmounting the first time a lazy dialog opened. With all
         // real code in hashed chunks, the entry owns nothing anyone else
         // needs, and a new build changes the chunk names, so nothing stale
-        // can be reused either. No manualChunks: a forced vendor chunk
-        // would drag the gallery-only Radix menus into every page load.
+        // can be reused either. Only React's always-required runtime gets a
+        // stable cache boundary; optional Radix menus stay with their callers.
+        // Do not group all node_modules: that would eagerly load gallery tools.
         //
         // One thing the entry cannot help owning is Vite's own preload
         // helper (`__vitePreload`), which the app chunk imports from
@@ -34,6 +35,11 @@ export default defineConfig({
         // before — two roots on one container, the shell dying on the first
         // language change.
         entryFileNames: 'studio.js',
+        manualChunks(id) {
+          const path = id.replace(/\\/g, '/');
+          if (/\/react-dom\/(?:cjs\/react-dom-server|server|static)/.test(path)) return;
+          if (/\/node_modules\/(react|react-dom|scheduler)\//.test(path)) return 'react-runtime';
+        },
         chunkFileNames: 'chunks/[name]-[hash].js',
         assetFileNames: 'assets/[name]-[hash][extname]',
       },

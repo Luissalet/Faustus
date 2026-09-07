@@ -6,6 +6,7 @@ import { deleteDoc, docFilename, duplicateDoc, exportDocsZip, getDoc, importDocu
 import { relativeTime } from '../../adapters/home';
 import { t, tn } from '../../i18n';
 import { BulkBar, downloadBlob, Highlight, SelectToggle, useSelection } from './parts';
+import { PageCursor } from '../../lib/page-cursor';
 
 const PAGE = 50;
 
@@ -31,35 +32,43 @@ export function DocumentsLibrary({ query, say, archived = false }: { query: stri
   const [confirm, setConfirm] = useState<{ ids: string[] } | null>(null);
   const [dragging, setDragging] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
-  const count = useRef(0);
+  const cursor = useRef(new PageCursor<LibraryDoc>());
+  const [loadingMore, setLoadingMore] = useState(false);
+  const queryKey = JSON.stringify([query, language, sort, archived]);
+  const currentQuery = useRef(queryKey);
+  currentQuery.current = queryKey;
   const sel = useSelection<LibraryDoc>();
 
   const load = useCallback(
-    async (append = false, signal?: AbortSignal) => {
+    async (append = false) => {
+      if (currentQuery.current !== queryKey) return;
+      const ticket = cursor.current.begin(append);
+      if (!ticket) return;
+      setLoadingMore(append);
       try {
-        const page = await loadDocLibrary({ search: query, language, sort, offset: append ? count.current : 0, limit: PAGE, archived }, signal);
-        if (signal?.aborted) return;
-        setDocs((cur) => {
-          const next = append && cur ? [...cur, ...page.documents] : page.documents;
-          count.current = next.length;
-          return next;
-        });
+        const page = await loadDocLibrary({ search: query, language, sort, offset: ticket.offset, limit: PAGE, archived }, ticket.signal);
+        if (currentQuery.current !== queryKey) return;
+        const rows = cursor.current.accept(ticket, page.documents);
+        if (!rows) return;
+        setDocs(rows);
+        setLoadingMore(false);
         setTotal(page.total);
         setLanguages(page.languages);
         setSessionCount(page.sessionCount);
         setError(null);
       } catch (e) {
-        if (!signal?.aborted) setError((e as Error).message);
+        if (!cursor.current.fail(ticket)) return;
+        setLoadingMore(false);
+        setError((e as Error).message);
       }
     },
-    [query, language, sort, archived],
+    [query, language, sort, archived, queryKey],
   );
 
   useEffect(() => {
-    const ac = new AbortController();
     setDocs(null);
-    void load(false, ac.signal);
-    return () => ac.abort();
+    void load(false);
+    return () => cursor.current.cancel();
   }, [load]);
 
   const act = async (what: string, work: () => Promise<void>, done?: string) => {
@@ -260,7 +269,7 @@ export function DocumentsLibrary({ query, say, archived = false }: { query: stri
 
       {docs && docs.length < total && (
         <div className="fs-gal__more">
-          <Button variant="secondary" label={t('Show more ({n} left)', { n: total - docs.length })} onClick={() => void load(true)} />
+          <Button variant="secondary" loading={loadingMore} label={t('Show more ({n} left)', { n: total - docs.length })} onClick={() => void load(true)} />
         </div>
       )}
 
