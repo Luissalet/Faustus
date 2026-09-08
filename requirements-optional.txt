@@ -25,7 +25,16 @@ soundfile; python_version >= "3.11" and python_version < "3.13"
 # DuckDuckGo as a search provider option.
 # Install if you want DDG in the search-provider dropdown.
 # Alternatives: SearXNG, Brave, Tavily, Serper, Google PSE.
+# Without it DDG degrades to scraping html.duckduckgo.com, which answers 202
+# with no results to anything that looks like a bot: the provider stays in the
+# dropdown and returns zero every time (08-09-2026, a research that searched
+# seven times and read nothing).
 ddgs
+
+# Reading PDFs that Deep Research finds. Guidelines and papers are PDFs more
+# often than not; without this the fetcher logs "pdfminer.six is not installed"
+# and drops the source silently.
+pdfminer.six
 
 # PDF form-filling feature (fillable AcroForm detection, field extraction,
 # value/annotation/signature stamping, page rendering for the form overlay).

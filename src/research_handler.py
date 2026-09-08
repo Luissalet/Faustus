@@ -306,6 +306,9 @@ class ResearchHandler:
             "status": "running",
             "progress": {"model": llm_model},
             "result": None,
+            # Why it failed, kept apart from the report so that a reason is
+            # never served as one (see the error branches of `_run`).
+            "error": "",
             "started_at": time.time(),
             "category": category,
             # SECURITY: track ownership so all reads / saves can filter by user.
@@ -379,7 +382,12 @@ class ResearchHandler:
                     except Exception as e:
                         logger.warning(f"on_complete callback failed in timeout branch: {e}")
                 else:
-                    entry["result"] = f"Research timed out after {hard_timeout}s. The model may be too slow for deep research."
+                    # A reason is not a report: parking it in `result` made
+                    # /api/research/result answer 200 with the failure text as
+                    # if it were the report (and clear it), so the screen then
+                    # asked for the real one and got a 404. It lives in
+                    # `error`, which is what the stream's final event carries.
+                    entry["error"] = f"Research timed out after {hard_timeout}s. The model may be too slow for deep research."
                 on_progress({"phase": "error", "message": f"Research timed out after {hard_timeout}s"})
             except asyncio.CancelledError:
                 entry["status"] = "cancelled"
@@ -404,8 +412,12 @@ class ResearchHandler:
                         logger.warning(f"on_complete callback failed in error branch: {cb_err}")
                     on_progress({"phase": "warning", "message": f"Research finished with errors — partial results saved ({_elapsed:.0f}s elapsed)"})
                 else:
-                    entry["result"] = str(e)
+                    entry["error"] = str(e)
                     entry["status"] = "error"
+                    # Without this the reason never left the server: the
+                    # timeout branch announced itself, this one went silent and
+                    # the screen fell back to a bare "The research failed."
+                    on_progress({"phase": "error", "message": str(e)})
 
         task = asyncio.create_task(_run())
         entry["task"] = task
@@ -732,11 +744,57 @@ class ResearchHandler:
             return False
 
     @staticmethod
-    async def _probe_endpoint(endpoint: str, model: str, headers: dict = None):
-        """Quick probe to verify the LLM endpoint/model responds before research."""
-        from src.llm_core import llm_call_async
+    def _probe_plan(endpoint: str) -> tuple:
+        """(seconds to wait, is the model being loaded locally?).
+
+        A local model that is not resident is READ OFF DISK before it can
+        answer anything: 29 GB of weights do not reach VRAM inside the 15s
+        this used to allow, so "the model is loading" surfaced as "the
+        research failed" before round one (08-09-2026, qwen3.8:27b-q8_0 —
+        13-17s to load, probe budget 15s). The chat never had that problem
+        because it does not race the load, it waits (LLMConfig.STREAM_TIMEOUT);
+        the pre-flight now waits the same way. A remote endpoint loads nothing,
+        so there a silent call still means a dead endpoint — short budget.
+        """
+        from src.llm_core import LLMConfig
+        from src.settings import get_setting
         try:
-            logger.info(f"Probing {model} at {endpoint} (has_auth={bool(headers and 'Authorization' in (headers or {}))})")
+            from src.model_context import is_local_endpoint
+            local = bool(is_local_endpoint(endpoint))
+        except Exception:
+            local = False
+        default = int(LLMConfig.STREAM_TIMEOUT) if local else 60
+        budget = _bounded_int(
+            get_setting("research_model_load_timeout_seconds", default),
+            default=default,
+            minimum=15,
+            maximum=7200,
+        )
+        return budget, local
+
+    @staticmethod
+    async def _probe_endpoint(endpoint: str, model: str, headers: dict = None,
+                              progress_callback=None):
+        """Load the model and wait until it answers — research starts after.
+
+        This is a load, not a race: see `_probe_plan` for why the budget is
+        the chat's and not a fixed 15s.
+        """
+        from src.llm_core import llm_call_async
+        budget, local = ResearchHandler._probe_plan(endpoint)
+        if progress_callback:
+            # The screen says "loading the model" for as long as this takes,
+            # instead of a spinner that gives up.
+            progress_callback({
+                "phase": "loading_model" if local else "probing",
+                "model": model,
+            })
+        started = time.time()
+        try:
+            logger.info(
+                f"{'Loading' if local else 'Probing'} {model} at {endpoint} "
+                f"(budget={budget}s, has_auth={bool(headers and 'Authorization' in (headers or {}))})"
+            )
             await llm_call_async(
                 url=endpoint,
                 model=model,
@@ -744,13 +802,35 @@ class ResearchHandler:
                 temperature=0,
                 max_tokens=5,
                 headers=headers,
-                timeout=15,
+                timeout=budget,
                 max_retries=1,
             )
-            logger.info(f"Endpoint probe OK: {model}")
+            logger.info(f"Model ready: {model} ({time.time() - started:.1f}s)")
         except Exception as e:
-            logger.error(f"Probe failed for {model}: {e}")
+            logger.error(f"Probe failed for {model} after {time.time() - started:.1f}s: {e}")
             raise RuntimeError(_format_probe_failure(model, e)) from e
+
+    @staticmethod
+    async def _ensure_search_backend(search_provider, progress_callback=None) -> None:
+        """Start the self-hosted search backend if it is down, and wait for it.
+
+        Never raises: a run whose backend refuses to come up still has the
+        fallback chain, and a thinner report beats no report. What it must not
+        do is spend four minutes searching against a service nobody started.
+        """
+        try:
+            from services.search.appliance import ensure_backend
+            from src.settings import get_setting
+            provider = (search_provider or get_setting("search_provider", "searxng") or "").strip()
+            if not provider or provider == "disabled":
+                return
+            ready, reason = await ensure_backend(provider, on_progress=progress_callback)
+            if not ready and reason:
+                logger.warning(f"Search backend not ready: {reason}")
+                if progress_callback:
+                    progress_callback({"phase": "warning", "message": reason})
+        except Exception as e:
+            logger.warning(f"Search backend preflight failed: {e}")
 
     async def call_research_service(
         self,
@@ -800,10 +880,12 @@ class ResearchHandler:
         if is_continuation:
             logger.info(f"Prior: {len(prior_findings or [])} findings, {len(prior_urls or set())} URLs")
 
-        # Probe the endpoint before committing to a long research run
-        if progress_callback:
-            progress_callback({"phase": "probing", "model": llm_model})
-        await self._probe_endpoint(llm_endpoint, llm_model, llm_headers)
+        # Load the model (and wait for it) before committing to a long run
+        await self._probe_endpoint(llm_endpoint, llm_model, llm_headers, progress_callback)
+        # …and do the same for the search backend. A run that plans, searches
+        # seven times and reads nothing because its own SearXNG container was
+        # down is not a search failure, it is a dependency nobody started.
+        await self._ensure_search_backend(search_provider, progress_callback)
 
         try:
             from src.deep_research import DeepResearcher

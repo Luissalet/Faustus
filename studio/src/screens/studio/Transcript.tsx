@@ -726,6 +726,7 @@ function ResearchLine({ research }: { research: NonNullable<Turn['research']> })
   const avg = research.avgDuration ? ` / ~${String(Math.floor(research.avgDuration / 60)).padStart(2, '0')}:${String(Math.round(research.avgDuration % 60)).padStart(2, '0')}` : '';
   const phase: Record<string, string> = {
     probing: t('probing the model'),
+    loading_model: t('loading the model into memory'),
     planning: t('planning'),
     searching: t('searching'),
     reading: t('reading {n} sources', { n: research.totalSources }),

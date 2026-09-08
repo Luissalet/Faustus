@@ -192,6 +192,7 @@ Add an event in your own words…	Añade un evento en tus palabras…
 Add an objective…	Añadir un objetivo…
 Add as a draft	Añadir como borrador
 Add endpoint	Añadir endpoint
+Add files and tools	Añadir archivos y herramientas
 Add folder	Añadir carpeta
 Add guidance that should apply to every chat in this project.	Añade las pautas que deban aplicarse a todas las conversaciones de este proyecto.
 Add item	Añadir elemento
@@ -260,6 +261,7 @@ All {n} declared sources are built and reachable.	Las {n} fuentes declaradas est
 All#f	Todas
 Allow browser notifications	Permitir avisos del navegador
 Allow once	Permitir una vez
+Allow routine desktop actions; ask when other approval checks require it.	Permite acciones habituales del escritorio; pregunta cuando otros controles requieren permiso.
 Allow this exact action once?	¿Permitir esta acción exacta una vez?
 Allowed models	Modelos permitidos
 Alphabetical	Alfabético
@@ -329,6 +331,7 @@ Apply crop or transform	Aplicar recorte o transformación
 Apply style	Aplicar estilo
 Applying…	Aplicando…
 Approval	Aprobación
+Approval mode for all Faustus chats. Only an administrator can change it.	Se aplica a todos los chats de Faustus. Solo un administrador puede cambiarlo.
 Approvals	Aprobaciones
 Approve	Aprobar
 Approve and send	Aprobar y enviar
@@ -362,6 +365,7 @@ Ascending	Ascendente
 Ask	Preguntar
 Ask a real question. Research does several rounds of searching and reading before it answers.	Haz una pregunta de verdad. Research da varias rondas de búsqueda y lectura antes de contestar.
 Ask for a synthesis	Pedir una síntesis
+Ask for approval	Preguntar
 Ask something worth several searches. Faustus plans, reads, reflects and writes a report with its sources.	Pregunta algo que merezca varias búsquedas. Faustus planifica, lee, reflexiona y escribe un informe con sus fuentes.
 Ask the source that owns this to look again now.	Pide a la fuente dueña de esto que vuelva a mirar ahora.
 Ask the sources that disagree, and settle what can be settled.	Pregunta a las fuentes que discrepan y resuelve lo que se pueda resolver.
@@ -415,6 +419,7 @@ Auto tool choice	Elección automática de herramientas
 Auto — Ollama picks the freest card, splits when needed	Auto — Ollama elige la tarjeta más libre y reparte cuando hace falta
 Auto — freest card, split when nothing fits one	Auto — la tarjeta más libre, repartido cuando no cabe en una
 Automatic	Automática
+Automatic approval	Automático
 Automatic extraction off.	Extracción automática desactivada.
 Automatic extraction on.	Extracción automática activada.
 Automations	Automatizaciones
@@ -573,6 +578,7 @@ Chats	Chats
 Check	Comprobar
 Check again	Comprobar de nuevo
 Checked on {where}	Comprobado en {where}
+Checking memory…	Comprobando memoria…
 Checking packages	Comprobando paquetes
 Checking the hardware	Comprobando el hardware
 Checkpoint saved	Punto de control guardado
@@ -687,6 +693,7 @@ Confidence from the anchoring layer that passed	Confianza de la capa de anclaje 
 Confidence up to	Confianza hasta
 Confidence ≤ {n}%	Confianza ≤ {n}%
 Configure webhook events	Configura eventos de webhook
+Confirm desktop input and actions that require approval.	Confirma acciones de ratón y teclado y otras que requieren permiso.
 Connect	Conectar
 Connect this block	Conectar este bloque
 Connect with Google	Conectar con Google
@@ -703,6 +710,7 @@ Content	Contenido
 Context	Contexto
 Context Engine	Motor de contexto
 Context length the model was trained for (from /api/show)	Longitud de contexto para la que se entrenó el modelo (de /api/show)
+Context memory preview	Memoria al cambiar el contexto
 Context sources	Fuentes de contexto
 Continue	Continuar
 Continue in Studio	Seguir en Studio
@@ -945,6 +953,7 @@ Current	Actual
 Current password	Contraseña actual
 Custom (no preset)	Personalizado (sin plantilla)
 Custom background (chosen in the previous interface)	Fondo propio (elegido en la interfaz anterior)
+Custom order	Orden personalizado
 Custom persona	Personaje propio
 Custom persona (prefix, suffix, sampling)…	Personaje propio (prefijo, sufijo, muestreo)…
 Custom…	Personalizado…
@@ -1228,6 +1237,7 @@ Edit and retry	Editar y reintentar
 Edit document	Editar documento
 Edit message	Editar mensaje
 Edit the event	Editar el evento
+Edit the full prompt. Closing this editor keeps your changes without starting research.	Edita el prompt completo. Al cerrar el editor se conserva lo escrito sin iniciar la investigación.
 Edit the note	Editar la nota
 Edit the question	Editar la pregunta
 Edit this block	Editar este bloque
@@ -1273,6 +1283,7 @@ Enhance faces	Mejorar caras
 Enhanced faces	Caras mejoradas
 Enhancing…	Mejorando…
 Enter	Intro
+Enter a context and use automatic GPU layers and placement to estimate memory.	Introduce un contexto y deja las capas y la selección de GPU en automático para estimar la memoria.
 Enter the code.	Escribe el código.
 Enter your password.	Escribe tu contraseña.
 Entrants	Participantes
@@ -1284,6 +1295,8 @@ Erase the masked content and continue the background; the prompt is ignored	Borr
 Eraser	Goma
 Error	Error
 Escape	Escape
+Estimate: {needed} needed / {available} VRAM available. Actual placement may differ; RAM use can reduce speed.	Estimación: necesita {needed} / {available} de VRAM disponibles. El reparto real puede variar; usar RAM puede reducir la velocidad.
+Estimated maximum in VRAM: {n} tokens.	Máximo estimado en VRAM: {n} tokens.
 Evaluating the run…	Evaluando la ejecución…
 Event	Evento
 Event colour	Color del evento
@@ -1346,6 +1359,7 @@ Execute bash commands	Ejecuta órdenes de bash
 Execution timed out (10 s)	La ejecución agotó el tiempo (10 s)
 Expand	Ampliar
 Expand (+) or contract (−) the selection	Expandir (+) o contraer (−) la selección
+Expand editor	Ampliar editor
 Expand with AI	Expandir con IA
 Expected: {answer}	Esperada: {answer}
 Expert deleted	Experto borrado
@@ -1435,6 +1449,7 @@ First time in {where}? There is a two-minute tour.	¿Primera vez en {where}? Hay
 Fit	Ajustar
 Fit for this machine	Ajuste a esta máquina
 Fit to VRAM	Ajustar a la VRAM
+Fits in VRAM · no PCIe spill expected.	Cabe en VRAM · no se espera PCIe spill.
 Fix	Arreglar
 Fix empty titles, drop broken documents, and let a model flag the accidental ones	Arregla los títulos vacíos, quita los documentos rotos y deja que un modelo señale los accidentales
 Fix rounds	Rondas de arreglo
@@ -1499,11 +1514,14 @@ GGUF	GGUF
 GGUF file	Archivo GGUF
 GGUF quant	Cuantización GGUF
 GPU	GPU
+GPU fill order	Orden de llenado de GPUs
 GPU layers	Capas en GPU
 GPU memory	Memoria de GPU
 GPU not detected	GPU sin detectar
 GPU pool	Grupo de GPU
 GPU preference	Preferencia de GPU
+GPU priority	Prioridad de GPUs
+GPU priority saved.	Prioridad de GPUs guardada.
 GPU selection cleared	Selección de GPU borrada
 GPU usage (previous interface).	Uso de GPU (interfaz anterior).
 GPU {n} — not listed on this endpoint	GPU {n} — no está en este endpoint
@@ -1720,6 +1738,7 @@ In the database	En la base de datos
 In the previous interface	En la interfaz anterior
 Inbox	Bandeja de entrada
 Included	Incluidos
+Includes GPU reserve and the model limit. Changes with available memory; not a guarantee against spill.	Incluye la reserva de GPU y el límite del modelo. Cambia con la memoria disponible; no garantiza que nunca haya spill.
 Incognito	Incógnito
 Incognito mode	Modo incógnito
 Inconclusive	No concluyente
@@ -1910,6 +1929,7 @@ Listing the repo	Listando el repo
 Lists the commands.	Lista los comandos.
 Lists the indexed folders.	Lista las carpetas indexadas.
 Lists the memories.	Lista los recuerdos.
+Live Ollama: {state}	Ollama ahora: {state}
 Live edge trimming of the last result: {name}	Recorte del borde en directo del último resultado: {name}
 Live on the last cut-out: {name}	En directo sobre el último recorte: {name}
 Live usage	Uso en vivo
@@ -1924,6 +1944,7 @@ LoRA style	Estilo LoRA
 Load	Cargar
 Load into VRAM now	Cargar en la VRAM ahora
 Load project	Cargar proyecto
+Loaded context: {ctx}; model RAM: {ram}.	Contexto cargado: {ctx}; RAM del modelo: {ram}.
 Loaded now	Cargados ahora
 Loading	Cargando
 Loading archived	Cargando archivadas
@@ -1964,6 +1985,7 @@ Loading the images	Cargando las imágenes
 Loading the jobs	Cargando los trabajos
 Loading the library	Cargando la biblioteca
 Loading the memory	Cargando la memoria
+Loading the model into memory…	Cargando el modelo en memoria…
 Loading the objectives	Cargando los objetivos
 Loading the outbox	Cargando la bandeja de salida
 Loading the project	Cargando el proyecto
@@ -2070,6 +2092,7 @@ Medium	Media
 Memories	Recuerdos
 Memory	Memoria
 Memory & skills	Memoria y skills
+Memory estimate unavailable. Retry by reopening Options.	No se puede estimar la memoria. Vuelve a abrir Opciones para reintentar.
 Memory fraction	Fracción de memoria
 Memory off.	Memoria desactivada.
 Memory on	Memoria activa
@@ -2119,6 +2142,7 @@ Model, chaining and notifications	Modelo, encadenado y avisos
 Model: {name}	Modelo: {name}
 Model: {name} ({where})	Modelo: {name} ({where})
 Models	Modelos
+Models could not be loaded. Reload this page to retry.	No se pudieron cargar los modelos. Recarga esta página para reintentar.
 Models loaded by Ollama	Modelos cargados por Ollama
 Models tried in order if the utility one fails; comma-separated.	Modelos que se prueban en orden si el de utilidad falla; separados por comas.
 Models, defaults, voice, search, reminders, the whole agent and the shortcuts. Saved per section, only what changes.	Modelos, valores por defecto, voz, búsqueda, recordatorios, el agente entero y los atajos. Se guarda por sección, solo lo que cambia.
@@ -2141,6 +2165,8 @@ Motion blur…	Desenfoque de movimiento…
 Mouse click (asks every time)	Clic de ratón (pregunta cada vez)
 Mouse wheel (asks every time)	Rueda del ratón (pregunta cada vez)
 Move	Mover
+Move GPU {n} down	Bajar GPU {n}
+Move GPU {n} up	Subir GPU {n}
 Move down	Bajar
 Move layer	Mover capa
 Move them to spam	Moverlos a spam
@@ -2207,6 +2233,7 @@ New group	Nuevo grupo
 New layer	Capa nueva
 New mail	Nuevo correo
 New mail account	Nueva cuenta de correo
+New models use the first GPU with enough free memory, then the next. Loaded models stay in place. If none fits, Ollama decides how to split or offload. Per-model GPU settings take priority.	Los modelos nuevos usan la primera GPU con suficiente memoria libre y, después, la siguiente. Los modelos cargados se mantienen donde están. Si no caben en ninguna, Ollama decide cómo repartirlos o usar la CPU. Los ajustes de GPU por modelo tienen prioridad.
 New note	Nueva nota
 New on Hugging Face	Nuevo en Hugging Face
 New owner	Nuevo propietario
@@ -2254,9 +2281,11 @@ No chats yet. Start one from the brief and it will stay grouped here.	Aún no ha
 No checkpoints in this folder yet.	No hay puntos de control en esta carpeta todavía.
 No citation — nothing in the corpus was named.	Sin cita — no se nombró nada del corpus.
 No close recorded	Sin cierre anotado
+No confirmations	Sin confirmaciones
 No contact data found.	No se han encontrado datos de contactos.
 No contacts.	No hay contactos.
 No context block	Sin bloque de contexto
+No context fits entirely in the available VRAM.	Ningún contexto cabe por completo en la VRAM disponible.
 No conversation has that name.	Ninguna conversación se llama así.
 No conversation matches "{q}".	Ninguna conversación coincide con «{q}».
 No conversations yet. You start the first one below.	Todavía no hay conversaciones. La primera la empiezas abajo.
@@ -2622,6 +2651,8 @@ Overlaps with another skill	Se solapa con otra skill
 Overview	Resumen
 Owner: {owner} · Reviewer: {reviewer}	Propietario: {owner} · Revisor: {reviewer}
 PCIe spill	Desborda a PCIe
+PCIe spill detected	PCIe spill detectado
+PCIe spill telemetry unavailable	medición de PCIe spill no disponible
 PDF	PDF
 PDF tools	Herramientas PDF
 PDF, Word, spreadsheets, code and text files; or drop them on the list	PDF, Word, hojas de cálculo, código y texto; o suéltalos sobre la lista
@@ -2834,6 +2865,7 @@ Quote	Cita
 RAG / documents	RAG / documentos
 RAM	RAM
 RAM (GB)	RAM (GB)
+RAM required · PCIe spill risk. Estimated overflow: {ram}.	Necesita RAM · riesgo de PCIe spill. Exceso estimado: {ram}.
 Radius	Radio
 Rain	Lluvia
 Rain.	Lluvia.
@@ -3024,6 +3056,7 @@ Rescan	Volver a escanear
 Rescan hardware	Volver a escanear el hardware
 Research	Investigar
 Research finished	Investigación terminada
+Research instructions	Instrucciones de investigación
 Research on a schedule	Investigación con horario
 Research on an event	Investigación con evento
 Research on the web 	Investiga en la web 
@@ -3032,6 +3065,7 @@ Reset	Restablecer
 Reset view	Restablecer vista
 Resize	Redimensionar
 Resolve with the agent	Resolver con el agente
+Resolving model…	Determinando el modelo…
 Resolving the effective configuration	Resolviendo la configuración efectiva
 Responds	Responde
 Restart	Reiniciar
@@ -3105,6 +3139,7 @@ Run a test	Lanzar una prueba
 Run again	Ejecutar de nuevo
 Run another beside it	Lanzar otra al lado
 Run by Faustus in the folder after the workers — their own claims are never the proof. Empty = the project's test runner is detected (pytest, npm test, cargo, go, make test)	Lo corre Faustus en la carpeta después de los workers — sus propias afirmaciones nunca son la prueba. Vacío = se detecta el runner de tests del proyecto (pytest, npm test, cargo, go, make test)
+Run enabled tools without approval prompts. Tool and account restrictions still apply.	Ejecuta herramientas activadas sin pedir permiso. Se mantienen las restricciones de herramientas y de la cuenta.
 Run it	Ejecutarla
 Run it now, rather than only recording the request	Ejecutarlo ahora, en vez de solo registrar la petición
 Run maintenance	Ejecutar mantenimiento
@@ -3713,6 +3748,7 @@ The engine is in shadow mode: it compiles a packet each turn and delivers none o
 The engine is off: nothing here is being compiled for a real turn.	El motor está apagado: aquí no se está compilando nada para un turno real.
 The engine is off: nothing is compiled and nothing is recorded. Turn Context Engine on in Settings — shadow mode first, which changes nothing the model sees.	El motor está apagado: no se compila nada y no se registra nada. Enciende el motor de contexto en Ajustes; primero el modo sombra, que no cambia nada de lo que ve el modelo.
 The engine is on but has not compiled anything in this scope yet. The first turn it handles will land here.	El motor está encendido pero todavía no ha compilado nada en este ámbito. El primer turno que atienda aterrizará aquí.
+The estimate follows your edits. Live readings describe the loaded model; saving applies the new context on its next request.	La estimación cambia al editar. La medición corresponde al modelo cargado; al guardar, el contexto nuevo se aplica en su siguiente petición.
 The experiences could not be read	No se han podido leer las experiencias
 The feedback could not be recorded	No se ha podido anotar la valoración
 The file goes with it. This cannot be undone.	El archivo se va con ella. No se puede deshacer.
@@ -3976,6 +4012,7 @@ Tomorrow morning	Mañana por la mañana
 Tones	Tonos
 Too generic to be worth a saved skill	Demasiado genérica para merecer una skill guardada
 Tool	Herramienta
+Tool approvals	Permisos de herramientas
 Tool prose trimmed to fit the window: {before} → {after} tokens (descriptions capped at {limit} characters, no tool removed).	Texto de las herramientas recortado para caber en la ventana: {before} → {after} tokens (descripciones limitadas a {limit} caracteres, sin quitar ninguna herramienta).
 Tool results	Resultados de herramientas
 Tool schemas	Esquemas de herramientas
@@ -4115,6 +4152,7 @@ Usage: /todo what has to be done	Uso: /todo lo que hay que hacer
 Usage: /truncate N — keeps the first N messages and deletes the rest.	Uso: /truncate N — conserva los N primeros mensajes y borra el resto.
 Usage: /workspace <path> · pick · clear	Uso: /workspace <ruta> · pick · clear
 Use case	Uso
+Use estimated maximum	Usar máximo estimado
 Use in a job	Usar en un trabajo
 Use the IMAP username and password for SMTP too.	Usar el usuario y la contraseña de IMAP también para SMTP.
 Use the first remote as default target	Usar el primer remoto como destino por defecto
@@ -4634,6 +4672,7 @@ last {when}	última {when}
 layers opened: {what}	capas abiertas: {what}
 left work open	dejó trabajo abierto
 loaded	cargado
+loading the model into memory	cargando el modelo en memoria
 local	local
 locked	bloqueada
 looks for work beyond the ask	busca trabajo más allá de lo pedido
@@ -4680,6 +4719,7 @@ next {when}	próxima {when}
 no	no
 no HF token set (gated repos need one, in Servers)	sin token de HF (los repos restringidos lo necesitan; en Servidores)
 no Ollama server owns them	ningún servidor de Ollama los reclama
+no PCIe spill detected	sin PCIe spill detectado
 no colour	sin color
 no data source yet	todavía sin fuente de datos
 no delivery	sin entrega

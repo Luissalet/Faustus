@@ -353,6 +353,10 @@ export function phaseLabel(p: ResearchProgress | null, maxRounds: number): strin
   switch (p.phase) {
     case 'probing':
       return t('Probing the model…');
+    case 'loading_model':
+      // A local model that is not resident is read off disk first. This can
+      // take minutes for a big one, and the wait is the honest thing to show.
+      return t('Loading the model into memory…');
     case 'planning':
       return t('Planning the research…');
     case 'searching':

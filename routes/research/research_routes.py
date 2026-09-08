@@ -682,8 +682,8 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
                 if st != "running":
                     final = {'status': st, 'final': True}
                     task = research_handler._active_tasks.get(session_id, {})
-                    if st == "error" and task.get("result"):
-                        final['error'] = str(task["result"])[:500]
+                    if st == "error" and (task.get("error") or task.get("result")):
+                        final['error'] = str(task.get("error") or task["result"])[:500]
                     yield f"data: {json.dumps(final)}\n\n"
                     return
                 await asyncio.sleep(1.5)
