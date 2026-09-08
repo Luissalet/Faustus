@@ -1200,6 +1200,17 @@ details.fs-studio__step > summary:hover .fs-trace__label {
   border-radius: 4px;
 }
 
+.fs-studio__transcript-stage { position: relative; min-block-size: 0; min-inline-size: 0; display: grid; grid-template-columns: minmax(0,1fr); }
+.fs-studio__transcript-stage[data-message-nav] > .fs-studio__scroll { padding-inline-start: 48px; }
+.fs-message-nav { position: absolute; inset-block: 28px; inset-inline-start: 0; inline-size: 44px; z-index: 2; }
+.fs-message-nav__track { position: absolute; inset: 0; cursor: pointer; touch-action: none; outline-offset: -3px; }
+.fs-message-nav__track i, .fs-message-nav__track b { position: absolute; inset-inline-start: 12px; inline-size: 9px; block-size: 2px; background: var(--fs-text-3); pointer-events: none; }
+.fs-message-nav__track b { inline-size: 25px; background: var(--fs-text-1); }
+.fs-message-nav__track:hover i, .fs-message-nav__track:focus-visible i { inline-size: 15px; }
+.fs-message-nav__preview { position: absolute; inset-inline-start: 42px; inline-size: min(320px,calc(100vw - 100px)); padding: 12px; border: 1px solid var(--fs-border); border-radius: 12px; background: var(--fs-surface-2); color: var(--fs-text-1); pointer-events: none; font-size: 14px; }
+.fs-message-nav__preview strong { font-size: 12px; }
+.fs-message-nav__preview p { margin: 6px 0 0; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+
 .fs-studio__composer .fs-studio__attachment img {
   inline-size: 64px;
   block-size: 64px;

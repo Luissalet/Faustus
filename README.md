@@ -51,6 +51,7 @@ Native installation, Windows/macOS instructions, GPU setup, HTTPS and environmen
 
 - Switch between local and API models; connect OpenAI, Claude and Gemini through guided API setup with connection testing.
 - Paste screenshots directly with **Ctrl+V**, upload attachments and reference workspace files.
+- Navigate long chats with the message rail: hover previews, click/drag to jump, or use arrows, Home/End and Page Up/Down. Browsing older messages pauses automatic stream following.
 - Read generated Markdown beside the chat, edit it and save it with conflict detection. Unsaved drafts belong to their conversation and survive panel navigation.
 - Keep files, generated outputs, sources, project context, agent activity and browser captures in a resizable side panel.
 - Move to another conversation while the server keeps the current turn running. See queue position, current activity, tool use and permission requests; reconnect to the existing work.

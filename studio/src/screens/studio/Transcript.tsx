@@ -482,7 +482,7 @@ function UserTurn({
 }) {
   const [editing, setEditing] = useState(false);
   return (
-    <article className="fs-turn fs-turn--user" data-db-id={turn.dbId} data-testid="turn-user">
+    <article className="fs-turn fs-turn--user" data-nav-id={turn.id} data-db-id={turn.dbId} data-testid="turn-user">
       <div className="fs-turn__user-wrap">
         {editing ? (
           <Editor
@@ -562,7 +562,7 @@ function AssistantTurn({
   const fences = useFenceRegex();
   const body = stripExecutedFences(turn.text, fences);
   return (
-    <article className="fs-turn fs-turn--assistant" data-db-id={turn.dbId} data-streaming={turn.streaming || undefined} data-testid="turn-assistant">
+    <article className="fs-turn fs-turn--assistant" data-nav-id={turn.id} data-db-id={turn.dbId} data-streaming={turn.streaming || undefined} data-testid="turn-assistant">
       <span className="fs-turn__node" aria-hidden="true" />
       <div className="fs-turn__body">
         {turn.speaker && <p className="fs-turn__speaker">{turn.speaker}</p>}

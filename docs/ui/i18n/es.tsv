@@ -5541,6 +5541,9 @@ Checks completed	Comprobaciones realizadas
 Skip memory recall	Sin recuerdos automáticos
 Skip automatic personal-memory recall. Chat history and project context stay available; this is not incognito mode.	Omitir la recuperación automática de recuerdos personales. El historial y el contexto del proyecto siguen disponibles; no es el modo incógnito.
 State integrity	Integridad del estado
+Message navigation	Navegación de mensajes
+Jump to message	Saltar al mensaje
+Message without text	Mensaje sin texto
 File provenance	Procedencia del archivo
 Originating run	Ejecución de origen
 Loading file provenance…	Cargando procedencia del archivo…

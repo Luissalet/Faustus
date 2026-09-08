@@ -1,5 +1,6 @@
 import { FolderKanban, MessageSquare, PanelRight, X } from 'lucide-react';
 import {withImageReferences} from '../lib/image-references';
+import {MessageNavigator} from './studio/MessageNavigator';
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { Button, Dialog, IconButton, Skeleton } from '../components';
@@ -1996,6 +1997,7 @@ export function StudioScreen() {
           </div>
         </header>
 
+        <div className="fs-studio__transcript-stage" data-message-nav={turns&&turns.length>1||undefined}>
         <div className="fs-studio__scroll" ref={scrollRef} onScroll={onScroll} data-testid="studio-transcript">
           {turns === null && !loadError && (
             <div className="fs-studio__loading">
@@ -2061,6 +2063,9 @@ export function StudioScreen() {
               onQuote={quote}
             />
           )}
+        </div>
+
+        {turns&&<MessageNavigator key={sessionId||'new'} turns={turns} scrollRef={scrollRef} onJump={()=>{pinnedRef.current=false;}}/>}
         </div>
 
         {notice && (

@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import {build} from 'esbuild';
+const bundle=await build({entryPoints:['studio/src/screens/studio/MessageNavigator.tsx'],bundle:true,platform:'node',format:'esm',write:false,jsx:'automatic'});
+const {navigationIndex}=await import('data:text/javascript;base64,'+Buffer.from(bundle.outputFiles[0].text).toString('base64'));
+assert.equal(navigationIndex(-20,0,100,10),0);
+assert.equal(navigationIndex(120,0,100,10),9);
+assert.equal(navigationIndex(50,0,100,11),5);
+assert.equal(navigationIndex(110,10,100,10000),9999);
+assert.equal(navigationIndex(10,10,0,1),0);
+console.log('Message navigation: bounds, middle, large history and zero-height checks passed');

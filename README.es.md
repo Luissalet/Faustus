@@ -51,6 +51,7 @@ Instalación nativa, Windows/macOS, GPU, HTTPS y configuración: [guía de insta
 
 - Alternar entre modelos locales y APIs; conectar OpenAI, Claude y Gemini con configuración guiada y prueba de conexión.
 - Pegar capturas directamente con **Ctrl+V**, adjuntar archivos y mencionar ficheros del workspace.
+- Navegar por mensajes con la barra lateral: previsualización, clic o arrastre, flechas, Inicio/Fin y RePág/AvPág. Consultar mensajes anteriores pausa el seguimiento automático de la respuesta.
 - Leer el Markdown generado junto al chat, editarlo y guardarlo con detección de conflictos. Los borradores pertenecen a su conversación y se conservan al navegar por el panel.
 - Reunir archivos, resultados, fuentes, contexto, actividad de agentes y capturas del navegador en un panel lateral ajustable.
 - Cambiar de conversación mientras el servidor continúa el turno. Ver la posición en cola, la actividad, las herramientas y las solicitudes de permiso; reconectar con el trabajo existente.
