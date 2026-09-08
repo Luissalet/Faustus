@@ -49,6 +49,7 @@ import {
 } from '../../adapters/composer';
 import { matchCommands, type Suggestion } from './commands';
 import { clipboardFiles, insertPastedText } from '../../lib/clipboard-attachments';
+import {REFERENCE_ROLES} from '../../lib/image-references';
 import { createAttachmentUploads, type PendingAttachment } from '../../lib/attachment-uploads';
 
 export type Mode = 'chat' | 'agent';
@@ -412,14 +413,21 @@ export function Composer({
             </li>
           ))}
           {attachments.map((a) => (
-            <li key={a.id} className="fs-studio__attachment" data-testid="studio-attachment">
+            <li key={a.id} className="fs-studio__attachment" data-image={isImage(a.mime)||undefined} data-testid="studio-attachment">
               {isImage(a.mime) ? (
                 <img src={attachmentUrl(a.id)} alt="" width={36} height={36} />
               ) : (
                 <FileText size={16} aria-hidden="true" />
               )}
-              <span className="fs-studio__attachment-name" title={a.name}>
-                {a.name}
+              <span className="fs-studio__attachment-info">
+                <span className="fs-studio__attachment-name" title={a.name}>{a.name}</span>
+                {isImage(a.mime) && <select className="fs-studio__reference-role"
+                  aria-label={t('Reference role for {name}', {name:a.name})}
+                  title={t('Adds visible guidance to your message. The image model determines how closely it can follow it.')}
+                  value={a.referenceRole || ''}
+                  onChange={event=>{const role=REFERENCE_ROLES.find(role=>role.value===event.target.value)?.value;
+                    setAttachments(list=>list.map(item=>item.id===a.id?{...item,referenceRole:role}:item));}}
+                ><option value="">{t('Attachment only')}</option>{REFERENCE_ROLES.map(role=><option key={role.value} value={role.value}>{t(role.label)}</option>)}</select>}
               </span>
               <button
                 type="button"

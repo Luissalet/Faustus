@@ -97,6 +97,7 @@ For implementation details, see [FAUSTUS.md](FAUSTUS.md). Current verification w
 
 ### Images, video and audio
 
+- Mark attached images as subject/character, style or composition references. The selected roles become visible guidance in the sent message; they do not guarantee pixel-level conditioning. Gallery images can start a new reference chat while retaining the link to their original conversation.
 - Plan and run approved **ComfyUI recipes** for images, reference editing and short video. Inspect required models before queueing work.
 - With multiple configured engines, select by availability, queue and capacity, retaining the reason for the choice.
 - Preserve recipe, version, seed, model licence, engine job and input digest with generated artifacts.

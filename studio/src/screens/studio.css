@@ -1204,6 +1204,28 @@ details.fs-studio__step > summary:hover .fs-trace__label {
   gap: 4px;
 }
 
+.fs-studio__reference-role {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  min-block-size: 32px;
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-1);
+  color: var(--fs-text-1);
+  font: inherit;
+}
+@media (max-width: 899px) {
+  .fs-studio__reference-role { min-block-size: 44px; font-size: 16px; }
+  .fs-studio__composer .fs-studio__attachment[data-image] {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 44px;
+    inline-size: min(280px, 100%);
+  }
+  .fs-studio__attachment[data-image] .fs-studio__attachment-info { grid-column: 1 / -1; grid-row: 2; }
+  .fs-studio__attachment[data-image] .fs-studio__attachment-x { grid-column: 2; grid-row: 1; }
+}
+.fs-studio__composer .fs-studio__attachment[data-image] { max-inline-size: min(360px, 100%); }
+
 .fs-studio__attachment-status {
   font-size: var(--fs-label-size);
   overflow-wrap: anywhere;

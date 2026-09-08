@@ -1652,6 +1652,15 @@ Identity	Identidad
 If the button does not work: {url}	Si el botón no funciona: {url}
 Image	Imagen
 Image attached	Imagen adjuntada
+Use as reference	Usar como referencia
+Subject or character	Sujeto o personaje
+Visual style	Estilo visual
+Composition	Composición
+Attachment only	Solo adjunto
+Reference role for {name}	Papel de referencia de {name}
+Image reference guidance:	Indicaciones para las imágenes de referencia:
+Image {n} ({name}): use as a reference for {role}.	Imagen {n} ({name}): úsala como referencia de {role}.
+Adds visible guidance to your message. The image model determines how closely it can follow it.	Añade indicaciones visibles al mensaje. El modelo de imagen determina con qué fidelidad puede seguirlas.
 Only images from this Faustus instance can be attached from the gallery.	Desde la galería solo puedes adjuntar imágenes de esta instancia de Faustus.
 Could not load the gallery image ({status}).	No se ha podido cargar la imagen de la galería ({status}).
 The gallery did not return an image.	La galería no ha devuelto una imagen.

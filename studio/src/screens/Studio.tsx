@@ -1,4 +1,5 @@
 import { FolderKanban, MessageSquare, PanelRight, X } from 'lucide-react';
+import {withImageReferences} from '../lib/image-references';
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { Button, Dialog, IconButton, Skeleton } from '../components';
@@ -1696,7 +1697,7 @@ export function StudioScreen() {
       setNotice(null);
       const sid = await ensureSession(message || sent.map((a) => a.name).join(', '));
       if (!sid) return;
-      void run(sid, message, { attachments: sent });
+      void run(sid, withImageReferences(message, sent), { attachments: sent });
     },
     [attachments, busy, runCommand, ensureSession, run],
   );

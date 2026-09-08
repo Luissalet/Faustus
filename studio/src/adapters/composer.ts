@@ -211,6 +211,8 @@ export interface Attachment {
   size: number;
   width?: number;
   height?: number;
+  /** Explicit user guidance, serialized into the visible message when sent. */
+  referenceRole?: 'subject' | 'style' | 'composition';
 }
 
 export function attachmentUrl(id: string): string {

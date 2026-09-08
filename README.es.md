@@ -97,6 +97,7 @@ Detalles de implementación: [FAUSTUS.md](FAUSTUS.md). Verificaciones actuales y
 
 ### Imágenes, vídeo y audio
 
+- Marcar imágenes adjuntas como referencias de sujeto/personaje, estilo o composición. Los papeles elegidos se incluyen como indicaciones visibles en el mensaje enviado; no garantizan condicionamiento a nivel de píxel. Una imagen de galería puede iniciar otro chat de referencia sin perder el enlace a su conversación original.
 - Planificar y ejecutar **recetas aprobadas de ComfyUI** para imágenes, edición con referencias y vídeo corto. Comprobar los modelos necesarios antes de poner el trabajo en cola.
 - Elegir entre varios motores configurados según disponibilidad, cola y capacidad, conservando el motivo de la elección.
 - Guardar receta, versión, semilla, licencia del modelo, trabajo del motor y huella de las entradas con los artefactos generados.

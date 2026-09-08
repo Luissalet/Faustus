@@ -10,6 +10,7 @@ const bundled = await build({stdin:{contents:`
 import React,{useState,useRef} from 'react';
 import {createRoot} from 'react-dom/client';
 import {Composer} from './studio/src/screens/studio/Composer';
+import {withImageReferences} from './studio/src/lib/image-references';
 import {setLang} from './studio/src/i18n';
 import './studio/src/styles/index.css';
 import './studio/src/screens/studio.css';
@@ -21,10 +22,10 @@ function Preview(){
  const [notice,setNotice]=useState(''),[sent,setSent]=useState(''); const textarea=useRef(null);
  const copy = async()=>{try{await navigator.clipboard.write([new ClipboardItem({'image/png':new Blob([await(await fetch('/fixture/image')).arrayBuffer()],{type:'image/png'})})]);setNotice('Sample image copied. Paste it in Message with Ctrl+V.');textarea.current.focus();}catch(error){setNotice(error.message);}};
  return <div className="fs-app"><aside className="fixture-controls">Synthetic clipboard QA · No real uploads or model calls
- <button onClick={copy}>Copy sample image</button><button onClick={()=>fetch('/fixture/release',{method:'POST'})}>Finish uploads</button>
+ <button onClick={copy}>Copy sample image</button><button onClick={()=>setAttachments([{id:'sample',name:'reference.png',mime:'image/png',size:100}])}>Attach sample reference</button><button onClick={()=>fetch('/fixture/release',{method:'POST'})}>Finish uploads</button>
  <button onClick={()=>fetch('/fixture/fail',{method:'POST'})}>Fail next upload</button><button onClick={()=>{setSession(session==='qa-a'?'qa-b':'qa-a');setAttachments([]);}}>Switch session</button></aside>
  <main className="fs-main"><div className="fs-main__inner fixture-composer"><h1>Capturas en el chat</h1><p>Preview with the production composer. Session: {session}</p><p role="status">{notice}</p>
- <Composer draft={draft} setDraft={setDraft} busy={false} pending={false} knobs={knobs} setKnobs={setKnobs} workspace="" onPickWorkspace={()=>{}} onClearWorkspace={()=>{}} gen={{}} onClearGen={()=>{}} attachments={attachments} setAttachments={setAttachments} sessionId={session} onSend={text=>{setSent(JSON.stringify({text,attachments:attachments.map(a=>a.name)}));setDraft('');setAttachments([]);}} onStop={()=>{}} onNotice={setNotice} modelPicker={<span>Local model (synthetic)</span>} textareaRef={textarea}/>
+ <Composer draft={draft} setDraft={setDraft} busy={false} pending={false} knobs={knobs} setKnobs={setKnobs} workspace="" onPickWorkspace={()=>{}} onClearWorkspace={()=>{}} gen={{}} onClearGen={()=>{}} attachments={attachments} setAttachments={setAttachments} sessionId={session} onSend={text=>{setSent(JSON.stringify({text:withImageReferences(text,attachments),attachments:attachments.map(a=>a.name)}));setDraft('');setAttachments([]);}} onStop={()=>{}} onNotice={setNotice} modelPicker={<span>Local model (synthetic)</span>} textareaRef={textarea}/>
  <output aria-label="Sent fixture message">{sent}</output></div></main></div>;
 }createRoot(document.getElementById('root')).render(<React.StrictMode><Preview/></React.StrictMode>);
 `,resolveDir:process.cwd(),sourcefile:'composer-preview.tsx',loader:'tsx'},bundle:true,format:'esm',platform:'browser',write:false,outfile:'/fixture/app.js',jsx:'automatic',logLevel:'silent',external:['/static/*']});
@@ -35,7 +36,7 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewp
 createServer(async(req,res)=>{
  const url=new URL(req.url,'http://127.0.0.1');
  const json=(body,status=200)=>{res.writeHead(status,{'Content-Type':'application/json'});res.end(JSON.stringify(body));};
- if(url.pathname==='/fixture/image'){res.writeHead(200,{'Content-Type':'image/png'});return res.end(picture);}
+ if(url.pathname==='/fixture/image'||url.pathname==='/api/upload/sample'){res.writeHead(200,{'Content-Type':'image/png'});return res.end(picture);}
  if(url.pathname==='/fixture/fail'){failNext=true;return json({ok:true});}
  if(url.pathname==='/fixture/release'){for(const release of waiting.splice(0))release();return json({ok:true});}
  if(url.pathname==='/fixture.js'||url.pathname==='/fixture.css'){const ext=extname(url.pathname);res.writeHead(200,{'Content-Type':ext==='.js'?'text/javascript':'text/css'});return res.end(assets.get(ext));}
