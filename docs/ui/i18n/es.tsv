@@ -5541,6 +5541,19 @@ Checks completed	Comprobaciones realizadas
 Skip memory recall	Sin recuerdos automáticos
 Skip automatic personal-memory recall. Chat history and project context stay available; this is not incognito mode.	Omitir la recuperación automática de recuerdos personales. El historial y el contexto del proyecto siguen disponibles; no es el modo incógnito.
 State integrity	Integridad del estado
+File provenance	Procedencia del archivo
+Originating run	Ejecución de origen
+Loading file provenance…	Cargando procedencia del archivo…
+Could not read file provenance. Retry or download the file.	No se ha podido leer la procedencia. Reintenta o descarga el archivo.
+Partial output	Resultado parcial
+Complete output	Resultado completo
+Open the source conversation	Abrir la conversación de origen
+Edit image and masks: {name}	Editar imagen y máscaras: {name}
+Open the image editor in another tab. Your chat draft stays here.	Abrir el editor de imagen en otra pestaña. El borrador del chat se conserva aquí.
+Attach result to chat	Adjuntar resultado al chat
+Attach a PNG copy without sending a message. Layers and masks stay in the editor draft.	Adjunta una copia PNG sin enviar un mensaje. Las capas y máscaras se conservan en el borrador del editor.
+Preparing image for chat…	Preparando imagen para el chat…
+Could not save the editor draft. Try again.	No se ha podido guardar el borrador del editor. Inténtalo de nuevo.
 Verify saved state	Comprobar estado guardado
 Restore verified state	Restaurar estado verificado
 Compare this saved view with its verified journal. Repair restores the saved state, not the original files or services.	Compara esta vista guardada con su historial verificado. La reparación restaura el estado guardado, no los archivos ni servicios originales.

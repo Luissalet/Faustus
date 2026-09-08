@@ -330,6 +330,10 @@
 .fs-act__outputs { display: grid; gap: var(--fs-space-1, 4px); margin-block: var(--fs-space-3, 12px); }
 .fs-act__outputs .fs-act__link { min-height: 44px; min-width: 0; overflow-wrap: anywhere; text-decoration: underline; text-underline-offset: 3px; }
 .fs-act__outputs svg { flex: 0 0 auto; }
+.fs-act__artifact-info { min-inline-size: 0; }
+.fs-act__artifact-info summary { cursor: pointer; min-block-size: 44px; align-content: center; color: var(--fs-text-2); }
+.fs-act__artifact-info dd { margin: 0; overflow-wrap: anywhere; }
+.fs-act__artifact-info .fs-act__fact { align-content: start; }
 
 .fs-act__facts {
   display: grid;

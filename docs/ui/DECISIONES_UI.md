@@ -140,7 +140,7 @@ Esto sustituye al ticket de extracción manual que estaba previsto.
   sin nombre accesible, ningún color o radio fuera de tokens) y comprobaciones
   de accesibilidad sobre la página ya renderizada en Playwright.
 - **Regla de oro**: ningún test existente se borra sin que su sustituto pase
-  antes. Si algo se queda sin cobertura, va a `PENDIENTES_UI.md` con nombre y
+  antes. Si algo se queda sin cobertura, va a `PENDIENTES.md` en la raíz con nombre y
   apellidos, no se calla.
 
 ## 8. Estilo y verificación: en el navegador, en cada ticket

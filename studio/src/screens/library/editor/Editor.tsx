@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router';
 import { Button, Dialog, EmptyState, IconButton, Menu, Popover, Skeleton, Toast } from '../../../components';
 import { getImage } from '../../../adapters/gallery';
 import * as api from '../../../adapters/imageTools';
+import { attachmentUrl, uploadFiles } from '../../../adapters/composer';
 import { adjustmentLabel, canvasToBlob, ctx2d, deserialize, imageToCanvas, loadImage, makeCanvas, serialize, thumbnail, toBase64Png, type AdjustmentType, type ProjectJson } from '../../../lib/pixel';
 import { locale, t } from '../../../i18n';
 import { ASK_SUGGESTIONS, matchSuggestions, parseAsk, type AskSuggestion } from './ask';
@@ -31,8 +32,9 @@ export function EditorScreen() {
   const img = params.get('img');
   const draft = params.get('draft');
   const fresh = params.get('new');
-  if (!img && !draft && !fresh) return <Landing />;
-  return <Workbench key={`${img}|${draft}|${fresh}`} imageId={img} draftId={draft} fresh={fresh} />;
+  const attachment = params.get('attachment');
+  if (!img && !draft && !fresh && !attachment) return <Landing />;
+  return <Workbench key={`${img}|${draft}|${fresh}|${attachment}`} imageId={img} draftId={draft} fresh={fresh} attachmentId={attachment} attachmentName={params.get('name')} chatId={params.get('chat')} />;
 }
 
 /* ── Landing: new canvas, or resume a draft ── */
@@ -135,7 +137,7 @@ const TOOL_GROUPS: { title: string; tools: { id: Tool; icon: typeof Move; key?: 
 
 const TOOL_KEYS: Record<string, Tool> = { v: 'move', c: 'crop', t: 'transform', b: 'brush', e: 'eraser', k: 'clone', l: 'lasso', w: 'wand', m: 'inpaint', s: 'sharpen' };
 
-function Workbench({ imageId, draftId, fresh }: { imageId: string | null; draftId: string | null; fresh: string | null }) {
+function Workbench({ imageId, draftId, fresh, attachmentId, attachmentName, chatId }: { imageId: string | null; draftId: string | null; fresh: string | null; attachmentId: string | null; attachmentName: string | null; chatId: string | null }) {
   const navigate = useNavigate();
   const ed = useMemo(() => new PixelEditor(), []);
   const version = useSyncExternalStore(ed.subscribe, ed.getVersion);
@@ -156,6 +158,8 @@ function Workbench({ imageId, draftId, fresh }: { imageId: string | null; draftI
   const fileRef = useRef<HTMLInputElement>(null);
   const projectRef = useRef<HTMLInputElement>(null);
   const noticeTimer = useRef<number>(0);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
 
   const say = useCallback((msg: string, tone: 'ok' | 'warn' = 'ok') => {
     setNotice({ text: msg, tone });
@@ -169,7 +173,13 @@ function Workbench({ imageId, draftId, fresh }: { imageId: string | null; draftI
     let cancelled = false;
     (async () => {
       try {
-        if (fresh) {
+        if (attachmentId) {
+          const image = await loadImage(attachmentUrl(attachmentId));
+          if (cancelled) return;
+          ed.imageName = attachmentName || 'image.png';
+          ed.draftName = ed.imageName.replace(/\.[^.]+$/, '');
+          ed.loadImage(image, t('Original'));
+        } else if (fresh) {
           const m = /^(\d+)x(\d+)$/.exec(fresh);
           const w = m ? Number(m[1]) : 1024, h = m ? Number(m[2]) : 1024;
           ed.loadBlank(w, h);
@@ -219,7 +229,7 @@ function Workbench({ imageId, draftId, fresh }: { imageId: string | null; draftI
     return () => {
       cancelled = true;
     };
-  }, [ed, imageId, draftId, fresh, say]);
+  }, [ed, imageId, draftId, fresh, attachmentId, attachmentName, say]);
 
   useEffect(() => {
     const ac = new AbortController();
@@ -500,6 +510,37 @@ function Workbench({ imageId, draftId, fresh }: { imageId: string | null; draftI
       setSaving(null);
     }
   }, [ed, encode, say]);
+
+  const toChat = useCallback(async () => {
+    if (saving || ed.busy) return;
+    setSaving('chat');
+    ed.setBusy(t('Preparing image for chat…'));
+    window.clearTimeout(persistTimer.current);
+    try {
+      // Wait for autosave, then persist the latest layer/mask snapshot before
+      // leaving. A failed draft save must leave the editor open for retry.
+      while (persistBusy.current) await persistBusy.current;
+      const savedDraft = await api.saveDraft(ed.draftId, {name:ed.draftName || t('Untitled'), source_image_id:ed.imageId,
+        width:ed.doc.width, height:ed.doc.height, payload:serialize(ed.doc), thumbnail:thumbnail(ed.doc)});
+      if (!savedDraft) throw new Error(t('Could not save the editor draft. Try again.'));
+      ed.draftId = savedDraft;
+      unsaved.current = false;
+      const blob = await canvasToBlob(ed.flat(), 'image/png');
+      const name = `${ed.draftName || 'edited'}-edited.png`;
+      const uploaded = await uploadFiles([new File([blob], name, {type:'image/png'})], chatId);
+      if (!uploaded[0]) throw new Error(t('No image came back'));
+      const query = new URLSearchParams({image:attachmentUrl(uploaded[0].id), name});
+      if (chatId) query.set('s', chatId);
+      // Export only the visible result. Layers/masks remain in the editor draft;
+      // returning to Studio attaches a copy and never starts an inference.
+      if (mounted.current) navigate(`/studio?${query}`);
+    } catch (e) {
+      say(t('Save failed: {error}', {error:(e as Error).message}), 'warn');
+    } finally {
+      setSaving(null);
+      ed.setBusy(null);
+    }
+  }, [ed, saving, chatId, navigate, say]);
 
   const download = useCallback((blob: Blob, name: string) => {
     const a = document.createElement('a');
@@ -808,6 +849,8 @@ function Workbench({ imageId, draftId, fresh }: { imageId: string | null; draftI
             ]}
           />
           <IconButton icon={Keyboard} label={t('Keyboard shortcuts (?)')} onClick={() => setShortcuts(true)} />
+          <Button size="sm" variant="secondary" label={t('Attach result to chat')} loading={saving === 'chat'} disabled={!!saving || !!ed.busy}
+            title={t('Attach a PNG copy without sending a message. Layers and masks stay in the editor draft.')} onClick={() => void toChat()} />
           <Menu
             align="end"
             trigger={<Button size="sm" variant="primary" label={saving ? t('Saving…') : t('Save')} icon={Save} loading={!!saving} />}

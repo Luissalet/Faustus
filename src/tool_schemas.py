@@ -1463,6 +1463,8 @@ FUNCTION_TOOL_SCHEMAS = [
                     "action": {"type": "string", "enum": ["upscale", "rembg", "inpaint", "harmonize"], "description": "Edit action"},
                     "prompt": {"type": "string", "description": "For inpaint: what to fill the masked area with"},
                     "scale": {"type": "number", "description": "For upscale: scale factor (default 2)"},
+                    "mask_id": {"type": "string", "description": "Required for inpaint: owned gallery mask ID, same dimensions as source; white redraws, black preserves"},
+                    "strength": {"type": "number", "minimum": 0, "maximum": 1, "description": "Inpaint/harmonize edit strength"},
                 },
                 "required": ["image_id", "action"]
             }

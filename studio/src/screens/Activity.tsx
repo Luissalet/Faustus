@@ -8,6 +8,7 @@ import { relativeTime } from '../adapters/home';
 import { stopChat } from '../adapters/chat';
 import { createActivityPoller } from '../lib/activity-poller';
 import { Rich } from './rich';
+import {ArtifactInfo} from './ArtifactInfo';
 import './projects.css';
 import './home.css';
 import './activity.css';
@@ -491,9 +492,9 @@ export function ActivityScreen() {
 function ArtifactDownloads({ items }: { items: ArtifactLink[] }) {
   if (!items.length) return null;
   return <div className="fs-act__outputs" aria-label={t('Generated files')}>
-    {items.map((item) => <a key={item.id} className="fs-act__link" href={item.url} download
+    {items.map((item) => <div key={item.id}><a className="fs-act__link" href={item.url} download
       aria-label={t('Download {name}', { name: item.label })}>
       <Download size={16} aria-hidden="true" /><span>{item.label}</span>
-    </a>)}
+    </a><ArtifactInfo id={item.id}/></div>)}
   </div>;
 }

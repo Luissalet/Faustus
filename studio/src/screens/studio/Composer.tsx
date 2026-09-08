@@ -420,7 +420,11 @@ export function Composer({
           {attachments.map((a) => (
             <li key={a.id} className="fs-studio__attachment" data-image={isImage(a.mime)||undefined} data-testid="studio-attachment">
               {isImage(a.mime) ? (
-                <img src={attachmentUrl(a.id)} alt="" width={36} height={36} />
+                <a href={`/library/edit?attachment=${encodeURIComponent(a.id)}&name=${encodeURIComponent(a.name)}${sessionId ? `&chat=${encodeURIComponent(sessionId)}` : ''}`} target="_blank" rel="noopener noreferrer"
+                  className="fs-studio__attachment-edit" aria-label={t('Edit image and masks: {name}', {name:a.name})}
+                  title={t('Open the image editor in another tab. Your chat draft stays here.')}>
+                  <img src={attachmentUrl(a.id)} alt="" width={36} height={36} />
+                </a>
               ) : (
                 <FileText size={16} aria-hidden="true" />
               )}

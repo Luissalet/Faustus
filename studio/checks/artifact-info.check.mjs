@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import {build} from 'esbuild';
+const built=await build({entryPoints:['studio/src/adapters/artifact-info.ts'],bundle:true,platform:'node',format:'esm',write:false});
+const {loadArtifactInfo}=await import('data:text/javascript;base64,'+Buffer.from(built.outputFiles[0].text).toString('base64'));
+let calls=0;
+globalThis.fetch=async(url,options)=>{calls++; assert.equal(url,'/api/artifacts/art-1'); assert.equal(options.credentials,'same-origin'); return new Response(JSON.stringify({ok:true,artifact:{id:'art-1',label:'Report',byte_size:42,sha256:'a'.repeat(64),partial:true,session_id:'chat',run_id:'run'}}),{headers:{'Content-Type':'application/json'}});};
+await assert.rejects(()=>loadArtifactInfo('../admin'));
+assert.equal(calls,0);
+const info=await loadArtifactInfo('art-1');
+assert.equal(info.byteSize,42);assert.equal(info.partial,true);assert.equal(info.sessionId,'chat');assert.equal(info.sha256.length,64);
+globalThis.fetch=async()=>new Response(JSON.stringify({ok:false}),{headers:{'Content-Type':'application/json'}});
+await assert.rejects(()=>loadArtifactInfo('art-1'),/metadata/);
+globalThis.fetch=async()=>new Response(JSON.stringify({detail:'Not found'}),{status:404,headers:{'Content-Type':'application/json'}});
+await assert.rejects(()=>loadArtifactInfo('art-1'));
+console.log('Artifact metadata: owned route, validation, partial output and failures passed');

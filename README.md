@@ -100,6 +100,7 @@ For implementation details, see [FAUSTUS.md](FAUSTUS.md). Current verification w
 ### Images, video and audio
 
 - Mark attached images as subject/character, style or composition references. The selected roles become visible guidance in the sent message; they do not guarantee pixel-level conditioning. Gallery images can start a new reference chat while retaining the link to their original conversation.
+- Open an attached image's thumbnail in the full editor, including masks and inpainting, without losing the chat draft. **Attach result to chat** saves the layer/mask draft and returns a PNG copy without sending a message. Inpainting requires a configured compatible image service.
 - Plan and run approved **ComfyUI recipes** for images, reference editing and short video. Inspect required models before queueing work.
 - The chat's **Media recipe** picker exposes installed recipes and their inputs, checks engine requirements without queueing a job, and adds an editable request to the draft. Reference-edit recipes support variations with strength and seed controls; engine-side image names are distinguished from chat attachments.
 - With multiple configured engines, select by availability, queue and capacity, retaining the reason for the choice.
@@ -108,6 +109,7 @@ For implementation details, see [FAUSTUS.md](FAUSTUS.md). Current verification w
 - Inspect image, audio and video properties before deciding how to process them.
 - Convert and resize PNG/JPEG/WebP images and extract WAV/MP3 audio with scoped media tools, progress and cancellation.
 - Download outputs through owner-scoped artifact links. Identical bytes can be shared physically without merging ownership or provenance.
+- Expand **File provenance** beside Activity downloads to inspect size, type, SHA-256, partial/complete status and originating run, project or conversation.
 
 ComfyUI is a separate service; model weights, custom nodes and their licences are not bundled. Use [media recipes](config/media_workflows/) and [workers documentation](website/fable-workers.md) to configure the engines.
 

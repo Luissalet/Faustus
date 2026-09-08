@@ -100,6 +100,7 @@ Detalles de implementación: [FAUSTUS.md](FAUSTUS.md). Verificaciones actuales y
 ### Imágenes, vídeo y audio
 
 - Marcar imágenes adjuntas como referencias de sujeto/personaje, estilo o composición. Los papeles elegidos se incluyen como indicaciones visibles en el mensaje enviado; no garantizan condicionamiento a nivel de píxel. Una imagen de galería puede iniciar otro chat de referencia sin perder el enlace a su conversación original.
+- Abrir la miniatura de un adjunto en el editor completo, con máscaras e inpainting, sin perder el borrador del chat. **Adjuntar resultado al chat** guarda el borrador de capas y máscaras y devuelve una copia PNG sin enviar un mensaje. El inpainting requiere un servicio de imagen compatible configurado.
 - Planificar y ejecutar **recetas aprobadas de ComfyUI** para imágenes, edición con referencias y vídeo corto. Comprobar los modelos necesarios antes de poner el trabajo en cola.
 - El selector **Receta multimedia** del chat muestra recetas instaladas y sus parámetros, comprueba requisitos del motor sin poner trabajos en cola y añade una petición editable al borrador. Las recetas de edición permiten variantes con intensidad y semilla; distinguen los nombres de imagen del motor de los adjuntos del chat.
 - Elegir entre varios motores configurados según disponibilidad, cola y capacidad, conservando el motivo de la elección.
@@ -108,6 +109,7 @@ Detalles de implementación: [FAUSTUS.md](FAUSTUS.md). Verificaciones actuales y
 - Inspeccionar propiedades de imágenes, audio y vídeo antes de procesarlos.
 - Convertir y redimensionar PNG/JPEG/WebP, y extraer audio WAV/MP3 con herramientas acotadas, progreso y cancelación.
 - Descargar resultados mediante enlaces autorizados por propietario. Los mismos bytes pueden compartirse físicamente sin mezclar dueños ni procedencia.
+- Desplegar **Procedencia del archivo** junto a las descargas de Actividad para consultar tamaño, formato, SHA-256, estado parcial/completo y ejecución, proyecto o conversación de origen.
 
 ComfyUI es un servicio separado; los pesos de modelos, nodos adicionales y sus licencias no se incluyen. Consulta las [recetas multimedia](config/media_workflows/) y la [documentación de workers](website/fable-workers.md).
 

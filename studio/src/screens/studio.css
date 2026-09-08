@@ -1052,6 +1052,15 @@ details.fs-studio__step > summary:hover .fs-trace__label {
 }
 
 @media (max-width: 767px) {
+  /* Keep send/stop visible: the full agent toolbar must not become a tall
+     second column beside the mode switch on a narrow phone. */
+  .fs-studio__composer { grid-template-columns: minmax(0, 1fr); }
+  .fs-studio__bar, .fs-studio__input { min-inline-size: 0; }
+  .fs-studio__send { display: flex; align-items: center; gap: 4px; }
+  .fs-studio__knobs { flex: 0 0 100%; order: 3; flex-wrap: nowrap; overflow-x: auto; min-inline-size: 0; padding-block: 4px; }
+  .fs-studio__knobs > * { flex-shrink: 0; }
+  .fs-studio__knobs .fs-studio__chip { min-block-size: 44px; }
+  .fs-studio__composer .fs-studio__attachments { max-block-size: 180px; overflow-y: auto; }
   .fs-studio__chip--model span {
     max-inline-size: 12ch;
   }
@@ -1234,6 +1243,8 @@ details.fs-studio__step > summary:hover .fs-trace__label {
   .fs-studio__attachment[data-image] .fs-studio__attachment-x { grid-column: 2; grid-row: 1; }
 }
 .fs-studio__composer .fs-studio__attachment[data-image] { max-inline-size: min(360px, 100%); }
+.fs-studio__attachment-edit { display: grid; place-items: center; min-inline-size: 44px; min-block-size: 44px; border-radius: 6px; }
+.fs-studio__attachment-edit:hover { background: var(--fs-surface-3); }
 
 .fs-studio__attachment-status {
   font-size: var(--fs-label-size);

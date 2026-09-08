@@ -57,6 +57,7 @@ createServer(async (req, res) => {
   }
   if (url.pathname.startsWith('/api/')) {
     if (offline) return json({detail:'Synthetic offline mode'}, 503);
+    if (url.pathname === '/api/artifacts/occ_qa_report') return json({ok:true,artifact:{id:'occ_qa_report',label:'Informe de referencias y decisiones.md',kind:'document',media_type:'text/markdown',byte_size:12345,partial:true,sha256:'ab'.repeat(32),project_id:'project-qa',run_id:'workflow-qa',session_id:'working',created_at:'2026-09-08T02:00:00Z'}});
     if (chatOffline && url.pathname === '/api/chat/activity') return json({detail:'Synthetic conversations outage'}, 503);
     if (url.pathname === '/api/chat/activity') return json({
       running: stopped ? ['waiting','queued'] : ['working','waiting','queued'], awaiting_approval:['waiting'],
