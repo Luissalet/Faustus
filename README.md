@@ -141,6 +141,7 @@ ComfyUI is a separate service; model weights, custom nodes and their licences ar
 ### Research, documents and everyday work
 
 - Research with source tracking, citation checks and report export.
+- Retain labelled original-source excerpts when extraction fails, preserve the previous report if final generation is empty, and pass bounded evidence alongside summaries. Shared scheduled lookups recover from cancellation without stranding other tasks. [Diogenes adaptations](docs/design/diogenes-adaptations.md).
 - Write and edit documents; export supported content to Markdown, text, HTML, PDF, DOCX or JSON.
 - Search imported ChatGPT, Claude, LM Studio and Faustus history alongside local knowledge.
 - Organize notes, tasks and calendars; connect email with IMAP/SMTP and calendars through CalDAV.

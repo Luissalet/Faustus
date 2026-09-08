@@ -922,6 +922,8 @@ class DeepResearcher:
                 summary = summary.strip() if isinstance(summary, str) else ""
                 evidence = parsed.get("evidence")
                 evidence = evidence.strip() if isinstance(evidence, str) else ""
+                if not summary and not evidence:
+                    return self._rendered_page_finding(url, title, page, content)
                 # An empty `summary` beside real `evidence` is the extractor
                 # skipping a field, not a verdict that the page was useless.
                 # is_low_quality("") is True, so this finding used to be thrown
@@ -933,18 +935,42 @@ class DeepResearcher:
                     logger.info(f"Skipping low-quality extraction from {url}")
                     return None
                 return parsed
-            # If JSON parsing fails, treat entire response as evidence
+            raw_response = str(response or "").strip()
+            if not raw_response:
+                return self._rendered_page_finding(url, title, page, content)
+            if is_low_quality(raw_response):
+                return None
+            # Preserve substantive non-JSON output, never an empty finding.
             return {
                 "url": url,
                 "title": title or page.get("title", ""),
                 "og_image": page.get("og_image", ""),
                 "rational": "LLM extraction (raw)",
-                "evidence": response[:3000],
-                "summary": response[:500],
+                "evidence": raw_response[:3000],
+                "summary": raw_response[:500],
             }
         except Exception as e:
             logger.warning(f"LLM extraction failed for {url}: {e}")
+            return self._rendered_page_finding(url, title, page, content)
+
+    @staticmethod
+    def _rendered_page_finding(url: str, title: str, page: Dict, content: str) -> Optional[Dict]:
+        """Retain source text after extraction failure, never fabricate a finding.
+
+        Adapted from CommanderTurtle/diogenes 87d01f6f (AGPL-3.0-or-later).
+        """
+        rendered = str(content or "").strip()
+        if not rendered or is_low_quality(rendered):
             return None
+        evidence = rendered[:6000]
+        boundary = evidence.rfind("\n\n")
+        if len(rendered) > 6000 and boundary > 4800:
+            evidence = evidence[:boundary]
+        return {"url": url, "title": title or page.get("title", ""),
+                "og_image": page.get("og_image", ""),
+                "rational": "Extraction failed; retained original source text, not a verified conclusion.",
+                "evidence": evidence, "summary": evidence[:1200],
+                "extraction_mode": "rendered_page_fallback"}
 
     # ------------------------------------------------------------------
     # SYNTHESIZE
@@ -1042,6 +1068,9 @@ class DeepResearcher:
                 timeout=180,
             )
 
+            if not str(result or "").strip():
+                logger.warning("Empty final research answer; preserving the evolving report")
+                return report
             # If report is too short, ask the LLM to expand it
             if len(result.split()) < 400:
                 logger.info(f"Final report too short ({len(result.split())} words), requesting expansion")
@@ -1180,12 +1209,20 @@ class DeepResearcher:
         for i, f in enumerate(findings, 1):
             url = f.get("url", "unknown")
             title = f.get("title", "")
-            summary = f.get("summary", "")
-            evidence = f.get("evidence", "")
-            # Use summary if available, fall back to truncated evidence
-            content = summary if summary else (evidence[:1000] if evidence else "(no content)")
+            content = self._finding_content(f)
             parts.append(f"**Finding {i}** — [{title}]({url})\n{content}")
         return "\n\n".join(parts)
+
+    @staticmethod
+    def _finding_content(finding: Dict) -> str:
+        """Give synthesis both conclusion and bounded evidence, labelled honestly."""
+        summary = str(finding.get("summary") or "")[:500]
+        evidence = str(finding.get("evidence") or "")[:2000]
+        if finding.get("extraction_mode") == "rendered_page_fallback":
+            return "Unprocessed source excerpt (extraction failed; not a verified conclusion):\n" + evidence
+        if evidence and summary and not evidence.startswith(summary):
+            return f"Summary: {summary}\n\nEvidence:\n{evidence}"
+        return evidence or summary or "(no content)"
 
     def _sections_block(self) -> str:
         """The report's required ## sections — the user's questions, in order.
@@ -1243,9 +1280,7 @@ class DeepResearcher:
                 number = index
             url = finding.get("url", "")
             title = finding.get("title") or url or "Untitled"
-            summary = finding.get("summary") or ""
-            evidence = finding.get("evidence") or ""
-            content = summary or (evidence[:1000] if evidence else "(no content)")
+            content = self._finding_content(finding)
             parts.append(f"[{number}] {title} — {url}\n{content}")
         return "\n\n".join(parts) if parts else "(No citable evidence yet.)"
 

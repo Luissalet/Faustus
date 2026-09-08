@@ -314,6 +314,16 @@ async def do_manage_tasks(content: str, owner: Optional[str] = None) -> Dict:
             ZoneInfo(args["timezone"])
         except (TypeError, ValueError, KeyError):
             return {"error": "Use a valid IANA timezone, such as Europe/Madrid", "exit_code": 1}
+    if args.get("scheduled_date") is not None:
+        try:
+            from datetime import datetime, timezone
+            from zoneinfo import ZoneInfo
+            parsed_date = datetime.fromisoformat(args["scheduled_date"].replace("Z", "+00:00"))
+            if parsed_date.tzinfo is None:
+                parsed_date = parsed_date.replace(tzinfo=ZoneInfo(args.get("timezone") or "UTC"))
+            args["scheduled_date"] = parsed_date.astimezone(timezone.utc).replace(tzinfo=None)
+        except (AttributeError, TypeError, ValueError, KeyError):
+            return {"error": "Use an ISO date and time for scheduled_date", "exit_code": 1}
     db = SessionLocal()
     try:
         if action == "list":
@@ -354,6 +364,8 @@ async def do_manage_tasks(content: str, owner: Optional[str] = None) -> Dict:
                     schedule, args.get("scheduled_time", "09:00"),
                     args.get("scheduled_day"),
                     tz_name=args.get("timezone"),
+                    scheduled_date=args.get("scheduled_date"),
+                    cron_expression=args.get("cron_expression"),
                 )
                 if next_run is None:
                     return {"error": "The schedule is invalid or has no future occurrence. Supply a valid time and weekday/date.", "exit_code": 1}
@@ -374,6 +386,8 @@ async def do_manage_tasks(content: str, owner: Optional[str] = None) -> Dict:
                 timezone=args.get("timezone") or None,
                 scheduled_time=args.get("scheduled_time", "09:00") if trigger_type == "schedule" else None,
                 scheduled_day=args.get("scheduled_day"),
+                scheduled_date=args.get("scheduled_date"),
+                cron_expression=args.get("cron_expression"),
                 trigger_type=trigger_type,
                 trigger_event=args.get("trigger_event"),
                 trigger_count=args.get("trigger_count"),
@@ -422,7 +436,7 @@ async def do_manage_tasks(content: str, owner: Optional[str] = None) -> Dict:
                 changed.append("trigger_count")
 
             schedule_changed = False
-            for field in ("schedule", "scheduled_time", "scheduled_day", "timezone"):
+            for field in ("schedule", "scheduled_time", "scheduled_day", "timezone", "scheduled_date", "cron_expression"):
                 if args.get(field) is not None:
                     setattr(task, field, args[field])
                     changed.append(field)
@@ -432,6 +446,8 @@ async def do_manage_tasks(content: str, owner: Optional[str] = None) -> Dict:
                 task.next_run = compute_next_run(
                     task.schedule, task.scheduled_time, task.scheduled_day,
                     tz_name=_resolve_task_timezone(db, task),
+                    scheduled_date=task.scheduled_date,
+                    cron_expression=task.cron_expression,
                 )
                 if task.next_run is None:
                     db.rollback()
@@ -472,7 +488,12 @@ async def do_manage_tasks(content: str, owner: Optional[str] = None) -> Dict:
                     task.next_run = compute_next_run(
                         task.schedule, task.scheduled_time, task.scheduled_day,
                         tz_name=_resolve_task_timezone(db, task),
+                        scheduled_date=task.scheduled_date,
+                        cron_expression=task.cron_expression,
                     )
+                    if task.next_run is None:
+                        db.rollback()
+                        return {"error": "This task has no future occurrence; edit its schedule before resuming", "exit_code": 1}
             db.commit()
             return {"response": f"Task '{task.name}' {action}d", "exit_code": 0}
 

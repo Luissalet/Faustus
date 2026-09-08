@@ -141,6 +141,7 @@ ComfyUI es un servicio separado; los pesos de modelos, nodos adicionales y sus l
 ### Investigación, documentos y trabajo cotidiano
 
 - Investigar con seguimiento de fuentes, comprobación de citas y exportación de informes.
+- Conservar extractos originales identificados cuando falla la extracción, mantener el informe anterior si la generación final queda vacía y aportar evidencias acotadas junto a los resúmenes. Las consultas compartidas de tareas se recuperan de cancelaciones sin dejar otras tareas bloqueadas. [Adaptaciones de Diogenes](docs/design/diogenes-adaptations.md).
 - Escribir y editar documentos; exportar contenido compatible a Markdown, texto, HTML, PDF, DOCX o JSON.
 - Buscar en historiales importados de ChatGPT, Claude, LM Studio y Faustus junto al conocimiento local.
 - Organizar notas, tareas y calendarios; conectar correo IMAP/SMTP y calendarios CalDAV.

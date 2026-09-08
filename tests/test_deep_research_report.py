@@ -445,7 +445,7 @@ async def test_an_extraction_with_evidence_but_no_summary_is_kept(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_an_extraction_with_neither_summary_nor_evidence_is_still_dropped(monkeypatch):
+async def test_an_empty_extraction_preserves_original_source_with_a_fallback_label(monkeypatch):
     _install_fetch(monkeypatch)
     researcher = _researcher()
 
@@ -453,7 +453,11 @@ async def test_an_extraction_with_neither_summary_nor_evidence_is_still_dropped(
         return json.dumps({"rational": "r", "summary": "", "evidence": ""})
 
     researcher._llm = fake_llm
-    assert await researcher._fetch_and_extract("https://a.test/1", "q", "T") is None
+    result = await researcher._fetch_and_extract("https://a.test/1", "q", "T")
+    assert result['extraction_mode'] == 'rendered_page_fallback'
+    assert result['url'] == 'https://a.test/1'
+    assert result['evidence'].strip()
+    assert 'not a verified conclusion' in researcher._finding_content(result)
 
 
 @pytest.mark.asyncio

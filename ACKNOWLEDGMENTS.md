@@ -11,11 +11,20 @@ issue — it will be corrected promptly.
 
 ## Adapted / borrowed code
 
+- **[Diogenes](https://github.com/CommanderTurtle/diogenes)** by **CommanderTurtle**,
+  **AGPL-3.0-or-later** (the same license as this repository): bounded source-text
+  recovery after research extraction failure and evidence-aware synthesis,
+  adapted from commit `87d01f6f801276fecc7b6b9c8aa0c9a88585de69`.
+  Its upstream history also supplied the shared-fetch cancellation repair by
+  **daixiheguu**, commit `ce04dc1db46bd198e2455b61a7b1102df2c5a274`.
+  Original authors retain copyright; adaptations are in `src/deep_research.py`
+  and `src/task_scheduler.py`. See this repository's [AGPL license](LICENSE).
+
 Portions of this project were adapted from other open-source repositories.
 Their original authors retain copyright over the adapted portions, under the
 licenses noted below.
 
-The sources below are under permissive licenses (MIT / Apache-2.0), which permit
+The remaining sources below are under permissive licenses (MIT / Apache-2.0), which permit
 this use as long as their original copyright and license notices are preserved.
 The full license texts are kept in [`licenses/`](licenses/).
 

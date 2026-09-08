@@ -166,19 +166,25 @@ async def _cached(key: Tuple, ttl: float, fetch: Callable[[], Awaitable[Any]]) -
             pending = fut
             owner = True
     if not owner:
-        return await pending
+        # A cancelled consumer must not cancel the shared operation.
+        return await asyncio.shield(pending)
     try:
         val = await fetch()
         async with _shared_cache_lock:
             _shared_cache[key] = (time.monotonic() + ttl, val)
-            _shared_cache_pending.pop(key, None)
         pending.set_result(val)
         return val
-    except Exception as e:
-        async with _shared_cache_lock:
-            _shared_cache_pending.pop(key, None)
-        pending.set_exception(e)
+    except asyncio.CancelledError:
+        pending.cancel()
         raise
+    except Exception as e:
+        pending.set_exception(e)
+        pending.exception()  # Also consume when there were no waiting consumers.
+        raise
+    finally:
+        # Same event-loop thread; cleanup must survive repeated cancellation.
+        if _shared_cache_pending.get(key) is pending:
+            _shared_cache_pending.pop(key, None)
 
 
 def compute_next_run(schedule: str, scheduled_time: str,

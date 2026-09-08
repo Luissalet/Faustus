@@ -17,9 +17,11 @@ const runtime=async(args)=>{
   const {stdout}=await execute(python,[join(root,'server_runtime.py'),...args],{cwd:root,windowsHide:true,timeout:150000,maxBuffer:1024*1024});
   const result=JSON.parse(stdout.trim());if(result.error)throw new Error(result.error);return result;
 };
+const windowState=window=>({maximized:window.isMaximized(),fullscreen:window.isFullScreen()});
 function secureWindow(window){
+  for(const event of ['maximize','unmaximize','enter-full-screen','leave-full-screen'])window.on(event,()=>window.webContents.send('faustus:window-state',windowState(window)));
   window.webContents.setWindowOpenHandler(({url})=>{
-    if(localNavigation(url,origin))return {action:'allow',overrideBrowserWindowOptions:{autoHideMenuBar:true,webPreferences:{nodeIntegration:false,contextIsolation:true,sandbox:true}}};
+    if(localNavigation(url,origin))return {action:'allow',overrideBrowserWindowOptions:{frame:false,autoHideMenuBar:true,webPreferences:{preload:join(__dirname,'preload.cjs'),nodeIntegration:false,contextIsolation:true,sandbox:true}}};
     if(externalNavigation(url))void shell.openExternal(url);
     return {action:'deny'};
   });
@@ -51,18 +53,17 @@ else{
       if(response.response===0)allowed.add(permission);callback(response.response===0);
     });
     mainWindow=new BrowserWindow({title:'Faustus',frame:false,width:1400,height:920,minWidth:390,minHeight:600,show:true,autoHideMenuBar:true,backgroundColor:'#17191d',webPreferences:{preload:join(__dirname,'preload.cjs'),nodeIntegration:false,contextIsolation:true,sandbox:true,webSecurity:true}});
-    const windowState=()=>({maximized:mainWindow.isMaximized(),fullscreen:mainWindow.isFullScreen()});
     ipcMain.handle('faustus:window',(event,action)=>{
-      if(event.sender!==mainWindow.webContents||event.senderFrame!==mainWindow.webContents.mainFrame||!(localNavigation(event.senderFrame.url,origin)||(event.senderFrame.url===splash&&action==='close')))throw new Error('Untrusted window');
+      const target=BrowserWindow.fromWebContents(event.sender);
+      if(!target||event.senderFrame!==target.webContents.mainFrame||!(localNavigation(event.senderFrame.url,origin)||(target===mainWindow&&event.senderFrame.url===splash&&action==='close')))throw new Error('Untrusted window');
       if(!['state','minimize','maximize','fullscreen','close'].includes(action))throw new Error('Unknown window action');
-      if(action==='minimize')mainWindow.minimize();
-      if(action==='maximize'){if(mainWindow.isFullScreen())mainWindow.setFullScreen(false);if(mainWindow.isMaximized())mainWindow.unmaximize();else mainWindow.maximize();}
-      if(action==='fullscreen')mainWindow.setFullScreen(!mainWindow.isFullScreen());
-      const state=windowState();
-      if(action==='close')setImmediate(()=>mainWindow.close());
+      if(action==='minimize')target.minimize();
+      if(action==='maximize'){if(target.isFullScreen())target.setFullScreen(false);if(target.isMaximized())target.unmaximize();else target.maximize();}
+      if(action==='fullscreen')target.setFullScreen(!target.isFullScreen());
+      const state=windowState(target);
+      if(action==='close')setImmediate(()=>{if(!target.isDestroyed())target.close();});
       return state;
     });
-    for(const event of ['maximize','unmaximize','enter-full-screen','leave-full-screen'])mainWindow.on(event,()=>mainWindow.webContents.send('faustus:window-state',windowState()));
     secureWindow(mainWindow);
     mainWindow.on('closed',()=>void shutdown());
     // The native bridge accepts only window controls from the main local page.
