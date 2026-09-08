@@ -15,3 +15,5 @@ Resultados: pruebas de exclusión de escrituras fallidas, pendientes y cancelada
 Referencias de imagen: selector y foco comprobados en escritorio y móvil de 390 px con el compositor real y una captura sintética. Ajustado el ancho móvil; el mensaje de prueba conserva el papel elegido como texto visible. Pruebas de orden de imágenes, adjuntos no visuales y nombres con saltos de línea correctas. Todos los scripts `studio/checks/*.check.mjs` pasan.
 
 Creación de chat: comprobada la aplicación de producción contra un fallo HTTP 503 simulado, sin reenviar escrituras a la aplicación real. Muestra que está creando la conversación, desactiva el doble envío y conserva el borrador al fallar. Los adjuntos se retiran sólo después de crear el chat; las altas tardías no fuerzan el regreso a una conversación abandonada.
+
+Recetas multimedia: catálogo real y campos obligatorios comprobados; la consulta de requisitos devuelve el diagnóstico de ComfyUI apagado sin crear un render. Añadir al mensaje conserva receta, versión y parámetros en texto editable. Comprobados anchos reales de 390/358 px en móvil y acotada la altura del desplegable al espacio disponible.

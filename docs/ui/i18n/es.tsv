@@ -1654,6 +1654,23 @@ Identity	Identidad
 If the button does not work: {url}	Si el botón no funciona: {url}
 Image	Imagen
 Image attached	Imagen adjuntada
+Media recipe	Receta multimedia
+Recipes that could not be loaded	Recetas que no se han podido cargar
+Choose a recipe	Elige una receta
+No media recipes are installed.	No hay recetas multimedia instaladas.
+Choose a recipe, check its requirements and add it to your message. This does not start a render.	Elige una receta, comprueba sus requisitos y añádela al mensaje. Esto no inicia un render.
+Use the image name already uploaded to the engine, not a local file path or a chat attachment ID.	Usa el nombre de la imagen ya subida al motor, no una ruta local ni el identificador de un adjunto del chat.
+Required models	Modelos necesarios
+Check requirements	Comprobar requisitos
+Add to message	Añadir al mensaje
+Added to your draft. Review it before sending.	Añadido al borrador. Revísalo antes de enviarlo.
+The engine can run this recipe. Nothing has been queued.	El motor puede ejecutar esta receta. No se ha puesto nada en cola.
+The engine is not ready.	El motor no está listo.
+Required: {field}	Obligatorio: {field}
+Invalid value: {field}	Valor no válido: {field}
+Unsupported input type: {type}	Tipo de entrada no compatible: {type}
+Could not check the recipe ({status}).	No se ha podido comprobar la receta ({status}).
+Use this media recipe for my request. Check the engine and required models first, then use the normal approval flow before rendering.	Usa esta receta multimedia para mi petición. Comprueba primero el motor y los modelos necesarios y utiliza el flujo normal de aprobación antes de renderizar.
 Use as reference	Usar como referencia
 Subject or character	Sujeto o personaje
 Visual style	Estilo visual

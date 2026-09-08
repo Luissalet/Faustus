@@ -99,6 +99,7 @@ For implementation details, see [FAUSTUS.md](FAUSTUS.md). Current verification w
 
 - Mark attached images as subject/character, style or composition references. The selected roles become visible guidance in the sent message; they do not guarantee pixel-level conditioning. Gallery images can start a new reference chat while retaining the link to their original conversation.
 - Plan and run approved **ComfyUI recipes** for images, reference editing and short video. Inspect required models before queueing work.
+- The chat's **Media recipe** picker exposes installed recipes and their inputs, checks engine requirements without queueing a job, and adds an editable request to the draft. Reference-edit recipes support variations with strength and seed controls; engine-side image names are distinguished from chat attachments.
 - With multiple configured engines, select by availability, queue and capacity, retaining the reason for the choice.
 - Preserve recipe, version, seed, model licence, engine job and input digest with generated artifacts.
 - Collect submitted renders in the server even with no chat open. Interrupted downloads remain retryable; completed outputs appear in Activity.

@@ -50,6 +50,7 @@ import {
 import { matchCommands, type Suggestion } from './commands';
 import { clipboardFiles, insertPastedText } from '../../lib/clipboard-attachments';
 import {REFERENCE_ROLES} from '../../lib/image-references';
+import {MediaRecipes} from './MediaRecipes';
 import { createAttachmentUploads, type PendingAttachment } from '../../lib/attachment-uploads';
 
 export type Mode = 'chat' | 'agent';
@@ -491,6 +492,7 @@ export function Composer({
         </div>
 
         <div className="fs-studio__knobs">
+          <MediaRecipes onInsert={text=>setDraft(draft.trim()?`${draft.trimEnd()}\n\n${text}`:text)}/>
           <input
             ref={fileInputRef}
             type="file"

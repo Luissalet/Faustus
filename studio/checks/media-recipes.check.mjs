@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import {build} from 'esbuild';
+const bundle=await build({entryPoints:['studio/src/adapters/media-recipes.ts'],bundle:true,platform:'node',format:'esm',write:false});
+const {recipeInputs,recipeMessage,previewMediaRecipe}=await import('data:text/javascript;base64,'+Buffer.from(bundle.outputFiles[0].text).toString('base64'));
+const recipe={id:'image.qa',version:'1.0',inputs:[{name:'prompt',type:'text',required:true,max_len:10},{name:'seed',type:'seed'},{name:'quality',type:'enum',choices:['draft','final'],default:'draft'},{name:'enabled',type:'boolean',default:false}]};
+assert.deepEqual({...recipeInputs(recipe,{prompt:'hello'})},{prompt:'hello',quality:'draft',enabled:false});
+for(const values of [{},{prompt:'01234567890'},{prompt:'x',seed:'NaN'},{prompt:'x',seed:'1.2'},{prompt:'x',seed:'9999999999999999999'},{prompt:'x',quality:'unknown'},{prompt:'x',enabled:'yes'}])assert.throws(()=>recipeInputs(recipe,values));
+assert.ok(recipeMessage(recipe,{prompt:'hello'}).includes('"workflow": "image.qa"'));
+let queued=false;
+globalThis.fetch=async(url,options)=>{assert.equal(url,'/api/media/plan');assert.equal(JSON.parse(options.body).version,'1.0');queued=url.includes('/runs');return new Response(JSON.stringify({ok:false,reason:'not_configured'}));};
+assert.equal((await previewMediaRecipe(recipe,{prompt:'hello'})).reason,'not_configured');assert.equal(queued,false);
+console.log('ALL OK: typed recipe inputs, defaults, required fields and planning without queueing');

@@ -1204,6 +1204,14 @@ details.fs-studio__step > summary:hover .fs-trace__label {
   gap: 4px;
 }
 
+.fs-popover.fs-media-recipes { inline-size: min(460px, calc(100vw - 32px)); max-inline-size: calc(100vw - 32px); max-block-size: min(640px, 75dvh, var(--radix-popover-content-available-height, 75dvh)); overflow: auto; }
+.fs-media-recipes section { display: grid; gap: var(--fs-space-3); }
+.fs-media-recipes h3, .fs-media-recipes p { margin: 0; }
+.fs-media-recipes label { display: grid; gap: 6px; min-inline-size: 0; }
+.fs-media-recipes input, .fs-media-recipes select { inline-size: 100%; min-block-size: 40px; background: var(--fs-surface-1); color: var(--fs-text-1); border: 1px solid var(--fs-border); border-radius: var(--fs-radius-control); padding: 6px; font: inherit; }
+.fs-media-recipes small, .fs-media-recipes p { overflow-wrap: anywhere; }
+@media (max-width: 899px) { .fs-media-recipes input, .fs-media-recipes select { min-block-size: 44px; font-size: 16px; } }
+
 .fs-studio__reference-role {
   min-inline-size: 0;
   max-inline-size: 100%;
