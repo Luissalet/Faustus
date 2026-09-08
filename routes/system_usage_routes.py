@@ -563,6 +563,12 @@ async def collect_fit(model: str, target_ctx: Optional[int] = None) -> Dict[str,
     result["loaded"] = bool(loaded)
     result["gpu_name"] = pool.get("name") or gpu_shared_memory.pool_name(pool.get("names") or [])
     result["gpu_count"] = count
+    # Reclaim only this model for the preview, leaving other models resident.
+    result["preview_budget_bytes"] = max(0, total_bytes - max(0, used_bytes - int((loaded or {}).get("size_vram") or 0)) - vram_fit.DEFAULT_RESERVE_BYTES * count)
+    result["runtime_context"] = (loaded or {}).get("context_length")
+    result["runtime_ram_bytes"] = max(0, int((loaded or {}).get("size") or 0) - int((loaded or {}).get("size_vram") or 0)) if loaded else None
+    telemetry = ((usage.get("gpu_mem") or {}).get("ollama") or {})
+    result["runtime_spilling"] = telemetry.get("spilling")
     return result
 
 

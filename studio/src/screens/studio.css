@@ -3181,3 +3181,24 @@ aside.fs-panel {
 .fs-media-recipes fieldset { min-inline-size: 0; display: grid; gap: 10px; border: 1px solid var(--fs-border); padding: 12px; }
 .fs-media-recipes .fs-panel__row > label { flex: 1; min-inline-size: 0; }
 @media (max-width: 767px) { .fs-media-recipes textarea, .fs-frame-selection textarea, .fs-frame-selection input { font-size: 16px; } }
+
+/* Compact composer: optional controls live in the add popover. */
+.fs-popover.fs-studio__add-menu { max-inline-size: calc(100vw - 24px); inline-size: min(420px, calc(100vw - 24px)); max-block-size: min(65vh, 580px); overflow-y: auto; }
+.fs-studio__add-content { display: grid; gap: var(--fs-space-3); }
+.fs-studio__add-options { display: grid; gap: var(--fs-space-2); }
+.fs-studio__add-options > .fs-studio__chip,
+.fs-studio__add-options > .fs-icon-btn { justify-content: flex-start; inline-size: 100%; min-block-size: 36px; border-radius: var(--fs-radius-control); }
+.fs-studio__model-control { margin-inline-start: auto; min-inline-size: 0; }
+.fs-popover.fs-studio__permission-menu { max-inline-size: calc(100vw - 24px); inline-size: min(380px, calc(100vw - 24px)); }
+.fs-studio__permission-menu p { color: var(--fs-text-2); margin-block: 0 var(--fs-space-2); }
+.fs-studio__permission-menu [role="radiogroup"] { display: grid; gap: var(--fs-space-1); }
+.fs-studio__permission-menu [role="radio"] { display: grid; gap: var(--fs-space-1); text-align: start; padding: var(--fs-space-2); border: 1px solid transparent; border-radius: var(--fs-radius-control); background: transparent; color: var(--fs-text-1); cursor: pointer; }
+.fs-studio__permission-menu [role="radio"] span { color: var(--fs-text-2); font-size: var(--fs-label); }
+.fs-studio__permission-menu [role="radio"]:hover { background: var(--fs-surface-3); }
+.fs-studio__permission-menu [aria-checked="true"] { border-color: var(--fs-focus); background: var(--fs-surface-2); }
+.fs-studio__chip[data-permission="full"] { color: var(--fs-warning); }
+@media (max-width: 600px) { .fs-studio__bar { flex-wrap: wrap; } .fs-studio__permission-menu [role="radio"], .fs-studio__add-options > .fs-studio__chip { min-block-size: 44px; } }
+
+:root .fs-popover.fs-studio__add-menu,
+:root .fs-popover.fs-studio__permission-menu { background: var(--fs-surface-2); backdrop-filter: none; }
+.fs-studio__bar > .fs-studio__send { display: flex; align-items: center; margin-inline-start: 0; }

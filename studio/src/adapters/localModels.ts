@@ -228,6 +228,12 @@ export const releaseOrphanRunner = (pid: number) => call<unknown>('/api/system/g
  * count that keeps most of it on the card.
  */
 export interface VramFit {
+  previewBudget: number | null;
+  weights: number;
+  bytesPerToken: number | null;
+  runtimeContext: number | null;
+  runtimeRam: number | null;
+  runtimeSpilling: boolean | null;
   fits: boolean;
   num_ctx: number;
   /** null means "let Ollama decide", which is right when it all fits. */
@@ -249,5 +255,11 @@ export async function vramFit(model: string, targetCtx?: number): Promise<VramFi
     steps: Array.isArray(d.steps) ? (d.steps as unknown[]).map(String) : [],
     model: String(d.model ?? model),
     gpuName: typeof d.gpu_name === 'string' ? d.gpu_name : undefined,
+    previewBudget: d.preview_budget_bytes == null ? null : Number(d.preview_budget_bytes),
+    weights: Number(d.file_size_bytes) || 0,
+    bytesPerToken: d.kv_bytes_per_token == null ? null : Number(d.kv_bytes_per_token),
+    runtimeContext: d.runtime_context == null ? null : Number(d.runtime_context),
+    runtimeRam: d.runtime_ram_bytes == null ? null : Number(d.runtime_ram_bytes),
+    runtimeSpilling: typeof d.runtime_spilling === 'boolean' ? d.runtime_spilling : null,
   };
 }

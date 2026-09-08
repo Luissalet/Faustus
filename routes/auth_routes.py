@@ -738,6 +738,8 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
             raise HTTPException(403, "Admin only")
         body = await request.json()
         current = _load_settings()
+        if "tool_approval_mode" in body and body["tool_approval_mode"] not in ("ask", "auto", "full"):
+            raise HTTPException(400, "tool_approval_mode must be ask, auto or full")
         # Per-key validation for numeric settings: coerce to int and clamp to a
         # sane range so a bad value can't disable the agent or let it run away.
         _INT_RANGES = {

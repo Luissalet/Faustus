@@ -7,7 +7,7 @@ const {localNavigation,externalNavigation}=require('./policy.cjs');
 const execute=promisify(execFile),root=resolve(__dirname,'..');
 const python=join(root,'venv',process.platform==='win32'?'Scripts/python.exe':'bin/python');
 const port=Number(process.env.FAUSTUS_PORT||7000),origin=`http://127.0.0.1:${port}`;
-let mainWindow,ownedToken='',quitting=false,startup=null;
+let mainWindow,ownedToken='',quitting=false,startup=null,stopDesktopControl=()=>{};
 const splash='data:text/html;charset=utf-8,'+encodeURIComponent(`<!doctype html><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'"><title>Faustus</title><body style="background:#17191d;color:#eee;font:18px system-ui;margin:0"><header style="height:40px;display:flex;background:#121418"><span style="-webkit-app-region:drag;flex:1;padding:8px 18px;color:#e06c75">Faustus</span><button aria-label="Close / Cerrar" onclick="window.faustusWindow.command('close')" style="background:transparent;border:0;color:inherit;padding:0 20px">×</button></header><main style="padding:48px"><h1>Faustus</h1><p>Starting your local workspace… / Iniciando tu espacio local…</p><p>You can close this window to cancel. / Puedes cerrar esta ventana para cancelar.</p></main></body>`);
 app.setName('Faustus');
 // Per-checkout cookies stay separate from browsers and from other installations.
@@ -31,7 +31,7 @@ function secureWindow(window){
   window.webContents.on('did-create-window',secureWindow);
 }
 async function shutdown(){
-  if(quitting)return;quitting=true;
+  if(quitting)return;quitting=true;stopDesktopControl();
   try{await startup;}catch{/* A failed page load must not skip server cleanup. */}
   try{if(ownedToken)await runtime(['stop','--token',ownedToken]);}
   catch(error){console.error('Faustus shutdown:',error.message);}
@@ -44,6 +44,7 @@ else{
   app.on('before-quit',event=>{if(!quitting){event.preventDefault();void shutdown();}});
   app.on('window-all-closed',()=>void shutdown());
   app.whenReady().then(async()=>{
+    stopDesktopControl=require('./desktop-control.cjs').startDesktopControl(require('electron'),root);
     if(!existsSync(python)){dialog.showErrorBox('Faustus','Run Start-Faustus-Desktop.bat to install this checkout first.');app.quit();return;}
     const allowed=new Set();
     session.defaultSession.setPermissionCheckHandler((contents,permission,requestingOrigin)=>localNavigation(requestingOrigin,origin)&&allowed.has(permission));

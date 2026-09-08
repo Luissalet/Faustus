@@ -241,5 +241,16 @@ def test_fit_advisor_without_a_card_is_a_503(box, monkeypatch):
     assert e.value.status_code == 503
 
 
+def test_context_preview_keeps_other_models_and_unknown_telemetry(box, monkeypatch):
+    out = _fit(monkeypatch, model="not-loaded", target_ctx=262144)
+    assert out["preview_budget_bytes"] == (12282 + 16311 - 1046 - 9263) * MIB - out["reserve_bytes"]
+    assert out["runtime_spilling"] is None
+    assert out["runtime_ram_bytes"] is None
+    loaded = _fit(monkeypatch, model="qwen3.5:9b", file_size=6_600_000_000)
+    assert loaded["preview_budget_bytes"] > out["preview_budget_bytes"]
+    assert loaded["runtime_context"] == 32768
+    assert loaded["runtime_ram_bytes"] == 0
+
+
 def test_pool_name_comes_from_the_shared_helper():
     assert gpu_shared_memory.pool_name(["NVIDIA GeForce RTX 4070 Ti", "NVIDIA GeForce RTX 5060 Ti"]) == "RTX 4070 Ti + RTX 5060 Ti"

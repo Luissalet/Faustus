@@ -6,12 +6,30 @@ are not active (the common case while a client polls a finished report). It is
 now computed only for active sessions and memoized on the entry.
 """
 from src.research_handler import ResearchHandler
+import asyncio
 
 
 def _handler():
     h = ResearchHandler.__new__(ResearchHandler)
     h._active_tasks = {}
     return h
+
+
+def test_resolved_model_survives_research_phase_changes(monkeypatch):
+    h = _handler()
+    async def research(*args, **kwargs):
+        kwargs['progress_callback']({'phase': 'searching'})
+        await asyncio.sleep(20)
+    monkeypatch.setattr(h, 'call_research_service', research)
+    monkeypatch.setattr(h, 'get_avg_duration', lambda: None)
+    async def run():
+        h.start_research('rp-model-display', 'topic', 'http://example.test', 'chosen-model')
+        await asyncio.sleep(0.02)
+        assert h.get_status('rp-model-display')['progress']['model'] == 'chosen-model'
+        task = h._active_tasks['rp-model-display']['task']
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+    asyncio.run(run())
 
 
 def test_inactive_session_does_not_compute_avg(monkeypatch):

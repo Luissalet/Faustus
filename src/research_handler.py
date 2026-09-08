@@ -304,7 +304,7 @@ class ResearchHandler:
             "researcher": None,
             "query": query,
             "status": "running",
-            "progress": {},
+            "progress": {"model": llm_model},
             "result": None,
             "started_at": time.time(),
             "category": category,
@@ -314,7 +314,7 @@ class ResearchHandler:
         self._active_tasks[session_id] = entry
 
         def on_progress(event):
-            entry["progress"] = event
+            entry["progress"] = {**event, "model": llm_model}
 
         _completed = False
 

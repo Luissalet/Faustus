@@ -18,7 +18,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { Button, Dialog, EmptyState, IconButton, Menu, Skeleton, Toast } from '../../components';
-import { listEndpoints, type ModelEndpoint } from '../../adapters/settings';
+import { listModels, type ModelRoute } from '../../adapters/chat';
 import {
   activeResearch,
   applyResearchFit,
@@ -309,7 +309,9 @@ export function ResearchScreen() {
   const [dismissed, setDismissed] = useState<Set<string>>(() => new Set(readJson<string[]>(DISMISSED_KEY, [])));
   const [recent, setRecent] = useState<ResearchItem[] | null>(null);
   const [providers, setProviders] = useState<SearchProvider[]>([]);
-  const [endpoints, setEndpoints] = useState<ModelEndpoint[]>([]);
+  const [modelRoutes, setModelRoutes] = useState<ModelRoute[]>([]);
+  const [modelsError, setModelsError] = useState(false);
+  const endpoints = [...new Map(modelRoutes.map(route => [route.endpointId, { id: route.endpointId, name: route.endpointName }])).values()];
   const [formats, setFormats] = useState<string[]>(['md']);
   const [editing, setEditing] = useState<Job | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Job | null>(null);
@@ -347,11 +349,13 @@ export function ResearchScreen() {
       const c = new AbortController();
       followers.current.set(job.id, c);
       let lastMessage = '';
+      let resolvedModel = job.progress?.model;
       void followResearch(
         job.sessionId,
         (p) => {
           if (p.message) lastMessage = p.message;
-          patch(job.id, { progress: p });
+          resolvedModel = p.model || resolvedModel;
+          patch(job.id, { progress: { ...p, model: resolvedModel } });
         },
         c.signal,
       ).then(async (status) => {
@@ -400,7 +404,7 @@ export function ResearchScreen() {
       .catch(() => undefined);
     loadResearchLibrary({ limit: 8 }, c.signal).then((r) => setRecent(r.items)).catch(() => setRecent([]));
     searchProviders(c.signal).then(setProviders);
-    listEndpoints(c.signal).then((l) => setEndpoints(l.filter((e) => e.enabled))).catch(() => undefined);
+    listModels(c.signal).then(setModelRoutes).catch(() => { if (!c.signal.aborted) setModelsError(true); });
     exportFormats().then(setFormats);
     if ('Notification' in window && Notification.permission === 'default') void Notification.requestPermission();
     return () => c.abort();
@@ -604,14 +608,18 @@ export function ResearchScreen() {
             </label>
             <label className="fs-rs__setting">
               <span>{t('Model')}</span>
-              <select className="fs-field" value={settings.model} disabled={!endpoint} onChange={(e) => setSettings((s) => ({ ...s, model: e.target.value }))}>
+              <select className="fs-field" value={settings.model ? `${settings.endpointId}::${settings.model}` : ''} onChange={(e) => {
+                const route = modelRoutes.find(r => r.id === e.target.value);
+                setSettings(s => ({ ...s, model: route?.model ?? '', endpointId: route?.endpointId ?? s.endpointId }));
+              }}>
                 <option value="">{t('Default')}</option>
-                {(endpoint?.models ?? []).map((m) => (
-                  <option key={m} value={m}>
-                    {m}
+                {modelRoutes.filter(r => !settings.endpointId || r.endpointId === settings.endpointId).map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.model} · {r.endpointName}
                   </option>
                 ))}
               </select>
+              {modelsError && <span role="alert">{t('Models could not be loaded. Reload this page to retry.')}</span>}
             </label>
           </div>
         )}
@@ -668,6 +676,7 @@ export function ResearchScreen() {
                       <Telescope size={12} aria-hidden="true" />
                       {phaseLabel(job.progress, job.settings.maxRounds)} · <Clock from={job.startedAt} />
                     </p>
+                    <p className="fs-rs__meta">{t('Model')}: {job.progress?.model || job.settings.model || t('Resolving model…')}</p>
                   </div>
                   <Button variant="ghost" size="sm" icon={X} label={t('Cancel')} onClick={() => void cancel(job)} />
                 </div>

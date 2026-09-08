@@ -66,6 +66,7 @@ DESKTOP_TOOLS = DESKTOP_READ_TOOLS | DESKTOP_CONTROL_TOOLS
 _BUTTONS = ("left", "right", "double", "middle")
 _MAX_TYPE_CHARS = 5000
 _MAX_SCROLL_NOTCHES = 100
+_focused_targets: Dict[str, Dict[str, Any]] = {}
 
 
 class DesktopError(Exception):
@@ -364,10 +365,21 @@ class WindowsBackend(DesktopBackend):
 
     def focus_window(self, title: str) -> Dict[str, Any]:
         needle = title.lower()
-        matches = [w for w in self.list_windows() if needle in w["title"].lower()]
+        windows = self.list_windows()
+        matches = [w for w in windows if needle == w["title"].lower()]
+        if not matches:
+            matches = [w for w in windows if needle in w["title"].lower()]
         if not matches:
             raise DesktopError(f"no visible window title contains {title!r}")
+        if len(matches) != 1:
+            raise DesktopError(f"ambiguous window title {title!r}; use the exact title from desktop_list_windows")
         target = matches[0]
+        return self.focus_target(target)
+
+    def focus_target(self, target: Dict[str, Any]) -> Dict[str, Any]:
+        current = next((w for w in self.list_windows() if w["handle"] == target["handle"] and w["title"] == target["title"]), None)
+        if current is None:
+            raise DesktopError("The selected window changed or closed. List windows and select it again.")
         hwnd = self.wintypes.HWND(target["handle"])
         SW_RESTORE = 9
         try:
@@ -383,6 +395,8 @@ class WindowsBackend(DesktopBackend):
             raise DesktopError(f"could not focus {target['title']!r}: {exc}") from exc
         if not ok:
             raise DesktopError(f"Windows refused to bring {target['title']!r} to the foreground")
+        if int(self.user32.GetForegroundWindow()) != target["handle"]:
+            raise DesktopError("The selected window did not receive focus; input was not sent.")
         return target
 
     # -- input (SendInput) --
@@ -873,7 +887,21 @@ class DesktopTool:
         if not ok:
             raise DesktopError(reason)
         handler = getattr(self, "_" + self.name[len("desktop_"):])
-        return handler(args, backend)
+        session = str((ctx or {}).get("session_id") or "")
+        if isinstance(backend, WindowsBackend):
+            from src.desktop_control_session import ensure_indicator
+            await ensure_indicator()
+        if isinstance(backend, WindowsBackend) and self.name in {"desktop_key", "desktop_type"}:
+            target = _focused_targets.get(session)
+            if not target:
+                raise DesktopError("Select the intended window with desktop_focus_window before sending keyboard input.")
+            # Approval and progress UI can steal focus between tools. Reacquire
+            # the observed handle after approval, immediately before SendInput.
+            backend.focus_target(target)
+        result = handler(args, backend)
+        if self.name == "desktop_focus_window" and result[1].get("window"):
+            _focused_targets[session] = dict(result[1]["window"])
+        return result
 
     # -- desktop_screenshot --
     def _screenshot(self, args: Dict[str, Any], backend: DesktopBackend):

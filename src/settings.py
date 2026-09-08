@@ -96,6 +96,7 @@ DEFAULT_SETTINGS = {
     # "ask_each" = approval card on EVERY call, "ask_task" = the normal
     # scoped approval gate, "off" = not offered at all.
     "desktop_control_mode": "ask_each",
+    "tool_approval_mode": "ask",
     # Destructive command guard (src/command_guard.py): classifies bash/python
     # commands into SAFE/CAUTION/DANGEROUS/CRITICAL. "enforce" = the two
     # destructive tiers need a sealed exact approval before running,

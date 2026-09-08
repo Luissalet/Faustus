@@ -1539,6 +1539,9 @@
   background: color-mix(in srgb, var(--fs-warning) 8%, transparent);
 }
 
+.fs-lm__memory-preview {
+  grid-column: 1 / -1;
+}
 .fs-lm__plan[data-fits] {
   border-color: color-mix(in srgb, var(--fs-success) 40%, transparent);
   background: color-mix(in srgb, var(--fs-success) 8%, transparent);

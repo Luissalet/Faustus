@@ -670,6 +670,8 @@ async def do_manage_settings(content: str, owner: Optional[str] = None) -> Dict:
             key = _resolve(raw)
             if not _is_managed_key(key):
                 return {"error": f"Unknown setting '{raw}'. Use action='list' to see available settings.", "exit_code": 1}
+            if key == "tool_approval_mode":
+                return {"error": "Change approval mode using the permissions selector in the composer.", "exit_code": 1}
             if _is_secret(key):
                 return {"response": f"'{key}' is a credential/secret. For security I can't set it from chat. Open Settings and set it there.", "exit_code": 0}
             # Structured settings (dicts/lists like keybinds or vision fallbacks)
@@ -703,6 +705,8 @@ async def do_manage_settings(content: str, owner: Optional[str] = None) -> Dict:
             key = _resolve(args.get("key", ""))
             if not _is_managed_key(key):
                 return {"error": f"Unknown setting '{args.get('key')}'.", "exit_code": 1}
+            if key == "tool_approval_mode":
+                return {"error": "Change approval mode using the permissions selector in the composer.", "exit_code": 1}
             if _is_secret(key):
                 return {"response": f"'{key}' is a credential. Reset it in the panel.", "exit_code": 0}
             s = load_settings()

@@ -569,12 +569,11 @@ def _settings_getter(values):
 
 # ── ALWAYS_APPROVE gate ────────────────────────────────────────────────────
 
-def test_control_tools_need_approval_on_every_call_even_when_bypassed(_settings):
+def test_control_tools_respect_whole_task_approval(_settings):
     ctx = ToolRunSecurityContext(approval_gate_bypassed=True)
     for name in CONTROL_TOOLS:
         decision = ctx.decision_for(name, '{"x": 1, "y": 1}')
-        assert decision.allowed is False, name
-        assert name in decision.reason
+        assert decision.allowed is True, name
         assert tool_requires_per_call_approval(name)
     # Read-only desktop tools follow the normal rules.
     assert ctx.decision_for("desktop_screenshot").allowed is True
@@ -600,7 +599,7 @@ def test_ask_task_mode_uses_normal_scoped_gate(_settings):
 
 def test_unknown_mode_falls_back_to_ask_each(_settings):
     _settings["desktop_control_mode"] = "whatever"
-    assert ToolRunSecurityContext(approval_gate_bypassed=True).decision_for("desktop_key").allowed is False
+    assert ToolRunSecurityContext().decision_for("desktop_key").allowed is False
 
 
 @pytest.mark.asyncio

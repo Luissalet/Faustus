@@ -130,6 +130,7 @@ export interface ResearchSettings {
 }
 
 export interface ResearchProgress {
+  model?: string;
   phase: string;
   round?: number;
   queries?: number;
@@ -176,6 +177,7 @@ export async function cancelResearch(id: string): Promise<void> {
 
 function progressFrom(raw: Record<string, unknown>): ResearchProgress {
   return {
+    model: typeof raw.model === 'string' ? raw.model : undefined,
     phase: String(raw.phase ?? ''),
     round: typeof raw.round === 'number' ? raw.round : undefined,
     queries: typeof raw.queries === 'number' ? raw.queries : undefined,

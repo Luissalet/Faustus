@@ -1,3 +1,4 @@
+import { getSettings, saveSettings } from '../../adapters/settings';
 import { t } from '../../i18n';
 import {
   ArrowUp,
@@ -15,6 +16,8 @@ import {
   Mic,
   MicOff,
   Paperclip,
+  Plus,
+  Shield,
   RefreshCw,
   SlidersHorizontal,
   Square,
@@ -477,29 +480,11 @@ export function Composer({
       <p className="fs-studio__paste-hint">{t('Paste a screenshot with Ctrl+V, or drop a file here.')}</p>
 
       <div className="fs-studio__bar">
-        <div className="fs-studio__seg" role="radiogroup" aria-label={t('Mode')}>
-          <span className="fs-studio__seg-thumb" data-mode={knobs.mode} aria-hidden="true" />
-          <button
-            type="button"
-            role="radio"
-            aria-checked={knobs.mode === 'chat'}
-            onClick={() => setKnobs((k) => ({ ...k, mode: 'chat' }))}
-            data-testid="studio-mode-chat"
-          >
-            <MessageSquare size={13} aria-hidden="true" /> {t('Chat')}
-          </button>
-          <button
-            type="button"
-            role="radio"
-            aria-checked={knobs.mode === 'agent'}
-            onClick={() => setKnobs((k) => ({ ...k, mode: 'agent' }))}
-            data-testid="studio-mode-agent"
-          >
-            <Bot size={13} aria-hidden="true" /> {t('Agent')}
-          </button>
-        </div>
+        <Popover side="top" className="fs-studio__add-menu" testId="studio-add-menu" trigger={<IconButton icon={Plus} label={t('Add files and tools')} testId="studio-add" />}>
+          <div className="fs-studio__add-content">
 
-        <div className="fs-studio__knobs">
+
+        <div className="fs-studio__add-options">
           <MediaRecipes onInsert={text=>setDraft(draft.trim()?`${draft.trimEnd()}\n\n${text}`:text)}/>
           {extraControls}
           <input
@@ -513,24 +498,8 @@ export function Composer({
             }}
             data-testid="studio-file-input"
           />
-          <IconButton
-            icon={Paperclip}
-            label={uploading ? t('Uploading…') : t('Attach files')}
-            size="sm"
-            disabled={uploading}
-            onClick={() => fileInputRef.current?.click()}
-            testId="studio-attach"
-          />
-          <span className="fs-studio__mic" data-recording={dictation ? true : undefined}>
-            <IconButton
-              icon={dictation ? MicOff : Mic}
-              label={dictation ? t('Stop dictating') : transcribing ? t('Transcribing…') : t('Dictate')}
-              size="sm"
-              disabled={transcribing || voiceActive}
-              onClick={() => void toggleDictation()}
-              testId="studio-mic"
-            />
-          </span>
+          <button type="button" className="fs-studio__chip" disabled={uploading} onClick={() => fileInputRef.current?.click()} data-testid="studio-attach"><Paperclip size={14} />{uploading ? t('Uploading…') : t('Attach files')}</button>
+
           <button
             type="button"
             className="fs-studio__chip"
@@ -649,9 +618,42 @@ export function Composer({
               </button>
             </span>
           )}
-          {modelPicker}
         </div>
-
+          </div>
+        </Popover>
+        <div className="fs-studio__seg" role="radiogroup" aria-label={t('Mode')}>
+          <span className="fs-studio__seg-thumb" data-mode={knobs.mode} aria-hidden="true" />
+          <button
+            type="button"
+            role="radio"
+            aria-checked={knobs.mode === 'chat'}
+            onClick={() => setKnobs((k) => ({ ...k, mode: 'chat' }))}
+            data-testid="studio-mode-chat"
+          >
+            <MessageSquare size={13} aria-hidden="true" /> {t('Chat')}
+          </button>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={knobs.mode === 'agent'}
+            onClick={() => setKnobs((k) => ({ ...k, mode: 'agent' }))}
+            data-testid="studio-mode-agent"
+          >
+            <Bot size={13} aria-hidden="true" /> {t('Agent')}
+          </button>
+        </div>
+        <ApprovalSelector disabled={busy} onNotice={onNotice} />
+        <div className="fs-studio__model-control">{modelPicker}</div>
+          <span className="fs-studio__mic" data-recording={dictation ? true : undefined}>
+            <IconButton
+              icon={dictation ? MicOff : Mic}
+              label={dictation ? t('Stop dictating') : transcribing ? t('Transcribing…') : t('Dictate')}
+              size="sm"
+              disabled={transcribing || voiceActive}
+              onClick={() => void toggleDictation()}
+              testId="studio-mic"
+            />
+          </span>
         <div className="fs-studio__send">
           {onVoice && <IconButton icon={AudioLines} label={t(voiceActive ? 'Close voice mode' : 'Talk to Faustus')} onClick={onVoice} testId="studio-voice" />}
           {busy ? (
@@ -665,4 +667,29 @@ export function Composer({
       </div>
     </form>
   );
+}
+
+
+function ApprovalSelector({ disabled, onNotice }: { disabled: boolean; onNotice: ComposerProps['onNotice'] }) {
+  const [mode, setMode] = useState('ask');
+  const [ready, setReady] = useState(false);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => { let live = true; void getSettings().then(s => { if (live) { setMode(String(s.tool_approval_mode ?? 'ask')); setReady(true); } }).catch(() => {}); return () => { live = false; }; }, []);
+  const choices = [
+    { value: 'ask', label: t('Ask for approval'), detail: t('Confirm desktop input and actions that require approval.') },
+    { value: 'auto', label: t('Automatic approval'), detail: t('Allow routine desktop actions; ask when other approval checks require it.') },
+    { value: 'full', label: t('No confirmations'), detail: t('Run enabled tools without approval prompts. Tool and account restrictions still apply.') },
+  ];
+  const choose = async (value: string) => {
+    setSaving(true);
+    try { await saveSettings({ tool_approval_mode: value }); setMode(value); }
+    catch (e) { onNotice((e as Error).message, 'danger'); }
+    finally { setSaving(false); }
+  };
+  return <Popover side="top" className="fs-studio__permission-menu" trigger={<button type="button" className="fs-studio__chip" data-permission={mode} disabled={!ready || disabled || saving}><Shield size={14} />{choices.find(c => c.value === mode)?.label ?? t('Ask for approval')}</button>}>
+    <p>{t('Approval mode for all Faustus chats. Only an administrator can change it.')}</p>
+    <div role="radiogroup" aria-label={t('Tool approvals')}>
+      {choices.map(choice => <button key={choice.value} type="button" role="radio" aria-checked={mode === choice.value} disabled={saving || disabled} onClick={() => void choose(choice.value)}><strong>{choice.label}</strong><span>{choice.detail}</span></button>)}
+    </div>
+  </Popover>;
 }

@@ -378,6 +378,15 @@ def desktop_control_mode() -> str:
     return mode if mode in DESKTOP_CONTROL_MODES else DEFAULT_DESKTOP_CONTROL_MODE
 
 
+def tool_approval_mode() -> str:
+    """Admin UI preference; malformed values always ask."""
+    try:
+        mode = get_setting("tool_approval_mode", "ask")
+        return mode if mode in ("ask", "auto", "full") else "ask"
+    except Exception:
+        return "ask"
+
+
 def tool_requires_per_call_approval(tool_name: Any) -> bool:
     """True when `tool_name` must show an approval card on every call."""
     if not isinstance(tool_name, str) or tool_name not in ALWAYS_APPROVE_TOOLS:
@@ -1260,12 +1269,17 @@ class ToolRunSecurityContext:
             self.external_untrusted_context_seen = True
 
     def decision_for(self, tool_name: Any, content: Any = None) -> ToolGateDecision:
+        mode = tool_approval_mode()
+        # This controls the approval gate only. Tool availability, account,
+        # workspace and execution restrictions are enforced separately.
+        if mode == "full":
+            return ToolGateDecision(True)
         # Per-call approvals come first: neither a task/chat-scope grant nor
         # a clean (no external context) run lets a desktop input action run
         # unconfirmed. The sealed exact-approval path in
         # `src/tool_execution.py` is the only way through, and it is consumed
         # by that one call.
-        if tool_requires_per_call_approval(tool_name):
+        if mode == "ask" and not self.approval_gate_bypassed and tool_requires_per_call_approval(tool_name):
             return ToolGateDecision(
                 False,
                 (

@@ -518,6 +518,31 @@ function OptionsForm({ model, cards, onCancel, onSave }: { model: InstalledModel
   const [fitErr, setFitErr] = useState<string | null>(null);
   const showMain = cards.length >= 2 || main !== '';
   const warn = pinWarning(main === '' ? null : Number(main), model.size, cards);
+  const [preview, setPreview] = useState<VramFit | null>(null);
+  const [previewError, setPreviewError] = useState(false);
+  useEffect(() => {
+    let active = true;
+    const refresh = () => void vramFit(model.name).then(value => {
+      if (active) { setPreview(value); setPreviewError(false); }
+    }).catch(() => { if (active) { setPreview(null); setPreviewError(true); } });
+    refresh();
+    const timer = window.setInterval(refresh, POLL_MS);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [model.name]);
+  const previewCtx = ctx.trim() ? Number(ctx) : preview?.runtimeContext;
+  const canEstimate = gpu === '' && main === '' && Number.isInteger(previewCtx) && Number(previewCtx) >= 512 && preview?.bytesPerToken != null && preview.previewBudget != null && preview.weights > 0;
+  const needed = canEstimate ? preview!.weights + preview!.bytesPerToken! * Number(previewCtx) : null;
+  const excess = needed == null ? null : Math.max(0, needed - preview!.previewBudget!);
+  // Keep the existing per-card reserve and round DOWN to the input's step.
+  // This is independent of the edited context; the user can see the ceiling
+  // before entering a value. Manual placement cannot use a pooled estimate.
+  const maxVramContext = gpu === '' && main === '' && preview?.bytesPerToken != null && preview.bytesPerToken > 0 && preview.previewBudget != null && preview.weights > 0
+    ? Math.max(0, Math.floor(Math.min(
+      (preview.previewBudget - preview.weights) / preview.bytesPerToken,
+      model.context_length || 1048576,
+      1048576,
+    ) / 512) * 512)
+    : null;
 
   const suggest = async () => {
     setFitting(true);
@@ -571,6 +596,29 @@ function OptionsForm({ model, cards, onCancel, onSave }: { model: InstalledModel
         <input className="fs-field" placeholder="5m" value={keep} onChange={(e) => setKeep(e.target.value)} />
       </label>
       {warn && <p className="fs-set__help" data-tone="bad">{warn}</p>}
+      <div className="fs-lm__plan fs-lm__memory-preview" role="status" aria-live="polite" data-fits={excess === 0 || undefined} data-testid="context-memory-preview">
+        <strong>{t('Context memory preview')}</strong>
+        {maxVramContext != null && <p className="fs-set__help">
+          <strong>{maxVramContext >= 512
+            ? t('Estimated maximum in VRAM: {n} tokens.', { n: maxVramContext.toLocaleString(locale()) })
+            : t('No context fits entirely in the available VRAM.')}</strong>
+          {' '}{t('Includes GPU reserve and the model limit. Changes with available memory; not a guarantee against spill.')}
+        </p>}
+        {maxVramContext != null && maxVramContext >= 512 && <Button size="sm" variant="ghost"
+          label={t('Use estimated maximum')}
+          disabled={busy || Number(ctx) === maxVramContext}
+          onClick={() => { setCtx(String(maxVramContext)); setPlan(null); }} />}
+        <p className="fs-set__help">{excess == null
+          ? t(previewError ? 'Memory estimate unavailable. Retry by reopening Options.' : !preview ? 'Checking memory…' : 'Enter a context and use automatic GPU layers and placement to estimate memory.')
+          : excess > 0
+            ? t('RAM required · PCIe spill risk. Estimated overflow: {ram}.', { ram: fmtGb(excess) })
+            : t('Fits in VRAM · no PCIe spill expected.')}</p>
+        {needed != null && <p className="fs-set__help">{t('Estimate: {needed} needed / {available} VRAM available. Actual placement may differ; RAM use can reduce speed.', { needed: fmtGb(needed), available: fmtGb(preview!.previewBudget!) })}</p>}
+        {preview && <p className="fs-set__help">{t('Live Ollama: {state}', { state: t(preview.runtimeSpilling === true ? 'PCIe spill detected' : preview.runtimeSpilling === false ? 'no PCIe spill detected' : 'PCIe spill telemetry unavailable') })}
+          {preview.runtimeContext != null && <> · {t('Loaded context: {ctx}; model RAM: {ram}.', { ctx: fmtCtx(preview.runtimeContext), ram: fmtGb(preview.runtimeRam ?? 0) })}</>}
+        </p>}
+        <p className="fs-set__help">{t('The estimate follows your edits. Live readings describe the loaded model; saving applies the new context on its next request.')}</p>
+      </div>
       {plan && (
         <div className="fs-lm__plan" data-fits={plan.fits || undefined} data-testid="vram-plan">
           <p className="fs-set__help">
