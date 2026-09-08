@@ -23,13 +23,13 @@ if ($Desktop) {
         if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $electronExe)) { throw 'Electron runtime installation failed.' }
     }
     $env:FAUSTUS_PORT=[string]$Port
-    Start-Process -FilePath $electronExe -ArgumentList ('"'+$desktopDir+'"') -WorkingDirectory $PSScriptRoot -WindowStyle Hidden
+    Start-Process -FilePath $electronExe -ArgumentList ('"'+$desktopDir+'"') -WorkingDirectory $PSScriptRoot -WindowStyle Normal
     Write-Host 'Faustus desktop launched. Close its window to stop its own server.'
 } else {
     $output=& $runtimePython (Join-Path $PSScriptRoot 'server_runtime.py') start --port $Port --owner web
     if ($LASTEXITCODE -ne 0) { throw ($output -join "`n") }
     $result=($output -join "`n") | ConvertFrom-Json
     if (-not $result.healthy) { throw 'The managed server is not ready. Check logs/.' }
-    Write-Host "Faustus web: http://127.0.0.1:$Port — Stop-Faustus.bat stops the managed server."
+    Write-Host "Faustus web: http://127.0.0.1:$Port - Stop-Faustus.bat stops the managed server."
     if (-not $NoBrowser) { Start-Process "http://127.0.0.1:$Port/studio" }
 }
