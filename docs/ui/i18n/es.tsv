@@ -5499,3 +5499,15 @@ This is the original evidence. File diffs compare with the current workspace.	Es
 Loading saved evidence…	Cargando evidencia guardada…
 Could not load the evidence. Check your connection and access, then retry.	No se pudo cargar la evidencia. Comprueba tu conexión y acceso e inténtalo de nuevo.
 Checks completed	Comprobaciones realizadas
+{count} options in {groups} groups.	{count} opciones en {groups} grupos.
+Skip memory recall	Sin recuerdos automáticos
+Skip automatic personal-memory recall. Chat history and project context stay available; this is not incognito mode.	Omitir la recuperación automática de recuerdos personales. El historial y el contexto del proyecto siguen disponibles; no es el modo incógnito.
+State integrity	Integridad del estado
+Verify saved state	Comprobar estado guardado
+Restore verified state	Restaurar estado verificado
+Compare this saved view with its verified journal. Repair restores the saved state, not the original files or services.	Compara esta vista guardada con su historial verificado. La reparación restaura el estado guardado, no los archivos ni servicios originales.
+The journal could not be verified. It may be unavailable, damaged or changed. No state was replaced. Check the connection and try again.	No se pudo verificar el historial: puede no estar disponible, estar dañado o haber cambiado. No se ha reemplazado ningún estado. Comprueba la conexión e inténtalo de nuevo.
+Saved state restored from the verified journal.	Estado guardado restaurado desde el historial verificado.
+Saved state matches the verified journal.	El estado guardado coincide con el historial verificado.
+The saved view differs from its journal. You can restore the verified state.	La vista guardada difiere de su historial. Puedes restaurar el estado verificado.
+Verification starts from a checkpoint created during upgrade; older probe history is not reconstructed.	La verificación parte de un punto de control creado durante la actualización; no se reconstruye el historial de observaciones anterior.

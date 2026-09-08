@@ -140,7 +140,7 @@ function ModelsSection({ endpoints, onChanged, say }: { endpoints: ModelEndpoint
     <section className="fs-set__section" aria-labelledby="fs-set-models">
       <header className="fs-set__section-head">
         <div>
-          <h2 id="fs-set-models" className="fs-set__title">Modelos</h2>
+          <h2 id="fs-set-models" className="fs-set__title">{t('Models')}</h2>
           <p className="fs-prose">{t('Connect a cloud provider or a local model server. Choose its models in the chat picker.')}</p>
         </div>
         <div className="fs-set__row-actions">
@@ -741,7 +741,7 @@ function AgentSection({ settings, onSave, say }: { settings: Settings | null; on
           </details>
         );
       })}
-      <SaveBar dirty={Object.keys(changed).length > 0} saving={saving} onSave={() => void save(changed)} note={`${total} opciones en ${schema.groups.length} grupos.`} />
+      <SaveBar dirty={Object.keys(changed).length > 0} saving={saving} onSave={() => void save(changed)} note={t('{count} options in {groups} groups.', {count: total, groups: schema.groups.length})} />
     </section>
   );
 }

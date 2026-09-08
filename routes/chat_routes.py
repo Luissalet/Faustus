@@ -2808,6 +2808,7 @@ def setup_chat_routes(
                     # project options object shared by the rest of the route.
                     _loop_harness_options = dict(_loop_harness_options or {})
                     _loop_harness_options["incognito"] = bool(incognito)
+                    _loop_harness_options["no_memory"] = bool(no_memory)
 
                     from src import chat_team
                     _team = _chat_team

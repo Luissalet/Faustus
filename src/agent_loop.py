@@ -1107,6 +1107,22 @@ def _assemble_prompt(tool_names: set, disabled_tools: set = None, compact: bool 
     if one_liners:
         parts.append("## Additional tools\n" + "\n".join(one_liners))
 
+    # New tools often ship a function schema without a legacy prose section.
+    # Text-only transports need those tools too (notably delegate_agents).
+    # Describe the same selected, permitted schema; never expose a second
+    # inventory or execute schemas as if they were model-authored arguments.
+    for schema in FUNCTION_TOOL_SCHEMAS:
+        function = schema.get("function", {})
+        name = function.get("name")
+        if name in included and name not in TOOL_SECTIONS:
+            parts.insert(1,
+                f"## Tool: {name}\n{function.get('description', '')}\n"
+                f"To call it, emit a fenced block named `{name}` containing a JSON object "
+                "of arguments matching this schema. Wait for Faustus to return the result; "
+                "do not invent a result.\nArgument schema:\n"
+                + json.dumps(function.get("parameters", {}), ensure_ascii=False)
+            )
+
     parts.append(_AGENT_RULES)
     parts.extend(_domain_rules_for_tools(included))
     return "\n\n".join(parts)
@@ -1215,6 +1231,11 @@ def _agent_route_tool_mode(
     headers: Optional[Dict] = None,
 ) -> tuple[bool, bool, bool]:
     """Resolve tool transport behavior for the currently active model route."""
+
+    # An official client is a text transport even when its underlying model
+    # supports function calling. Authorization is still checked by cli_model.
+    if str(endpoint_url or '').lower().startswith('faustus-cli://'):
+        return False, False, False
 
     model_lc = (model or "").lower()
     endpoint_supports: Optional[bool] = None
@@ -2555,6 +2576,7 @@ def _build_system_prompt(
     suppress_local_context: bool = False,
     suppress_skills: bool = False,
     active_email: Optional[Dict[str, str]] = None,
+    suppress_personal_memory: bool = False,
     workspace: Optional[str] = None,
     session_id: Optional[str] = None,
 ) -> List[Dict]:
@@ -3124,7 +3146,7 @@ def _build_system_prompt(
         _legacy_memory_lane = not _context_wiring.enabled()
     except Exception:
         _legacy_memory_lane = True
-    if not suppress_local_context and _legacy_memory_lane:
+    if not suppress_local_context and not suppress_personal_memory and _legacy_memory_lane:
         try:
             from src import memory_engine as _mem_engine
             if _mem_engine.injection_enabled():
@@ -5400,6 +5422,7 @@ async def stream_agent_loop(
             owner=owner,
             suppress_local_context=guide_only,
             suppress_skills=_low_signal_turn,
+            suppress_personal_memory=bool(_hopts.get("incognito") or _hopts.get("no_memory")),
             active_email=active_email,
             workspace=workspace,
             session_id=session_id,
@@ -5442,6 +5465,7 @@ async def stream_agent_loop(
             "mcp_schemas": route_mcp_schemas,
             "relevant_tools": route_tools,
             "is_api_model": is_api,
+            "text_only_transport": str(candidate_url or '').lower().startswith('faustus-cli://'),
             "is_ollama_native": is_native_ollama,
             "ollama_openai_compat": is_ollama_compat,
             "ody_qwen_finetune_model": is_ody,
@@ -5726,6 +5750,10 @@ async def stream_agent_loop(
         return schemas
 
     def _tool_schemas_for_route(route_state):
+        # MCP keyword hints must not override the transport's hard boundary.
+        # MCP descriptions and fenced tool instructions remain in the prompt.
+        if route_state.get("text_only_transport"):
+            return []
         route_mcp_schemas = route_state["mcp_schemas"]
         route_relevant_tools = route_state["relevant_tools"]
         if _force_answer:
@@ -6142,6 +6170,7 @@ async def stream_agent_loop(
             "mcp_schemas": mcp_schemas,
             "relevant_tools": _relevant_tools,
             "is_api_model": _is_api_model,
+            "text_only_transport": str(endpoint_url or '').lower().startswith('faustus-cli://'),
             "is_ollama_native": _is_ollama_native,
             "ollama_openai_compat": _ollama_openai_compat,
             "ody_qwen_finetune_model": _ody_qwen_finetune_model,
@@ -6190,6 +6219,7 @@ async def stream_agent_loop(
                         messages=messages,
                         agent_mode=True,
                         incognito=bool(_hopts.get("incognito")),
+                        no_memory=bool(_hopts.get("no_memory")),
                     ),
                     messages=messages,
                     tool_schemas=all_tool_schemas or (),
@@ -6488,6 +6518,7 @@ async def stream_agent_loop(
                         # forwarding incognito it lands here and becomes a
                         # policy the planner applies before retrieval.
                         incognito=bool(_hopts.get("incognito")),
+                        no_memory=bool(_hopts.get("no_memory")),
                     ),
                     messages=messages,
                     tool_schemas=all_tool_schemas or (),

@@ -3,6 +3,7 @@ import {
   ArrowUp,
   AudioLines,
   Bot,
+  Brain,
   Database,
   EyeOff,
   FileText,
@@ -58,6 +59,8 @@ export interface Knobs {
   bash: boolean;
   plan: boolean;
   rag: boolean;
+  /** Skip automatic personal-memory retrieval, not chat history or project sources. */
+  noMemory?: boolean;
   /** Nobody mode: the conversation is not saved and memory stays closed. */
   incognito: boolean;
   /** Deep Research before the next answer; switches itself off after the turn. */
@@ -533,6 +536,17 @@ export function Composer({
             data-testid="studio-knob-rag"
           >
             <Database size={13} aria-hidden="true" /> {t('Docs')}
+          </button>
+          <button
+            type="button"
+            className="fs-studio__chip"
+            aria-pressed={Boolean(knobs.noMemory || knobs.incognito)}
+            disabled={knobs.incognito}
+            title={t('Skip automatic personal-memory recall. Chat history and project context stay available; this is not incognito mode.')}
+            onClick={() => setKnobs((k) => ({ ...k, noMemory: !k.noMemory }))}
+            data-testid="studio-knob-no-memory"
+          >
+            <Brain size={13} aria-hidden="true" /> {t('Skip memory recall')}
           </button>
           {knobs.mode === 'agent' && (
             <>

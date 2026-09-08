@@ -34,6 +34,43 @@ def test_images_are_rejected_not_silently_discarded():
         client.render_context([{'role': 'user', 'content': [{'type': 'image_url', 'image_url': {'url': 'data:...'}}]}])
 
 
+@pytest.mark.parametrize('provider,model', [('claude', 'client-default'), ('codex', 'gpt-5')])
+def test_official_client_harness_never_sends_native_mcp_schemas(monkeypatch, provider, model):
+    from src import agent_loop as al
+    from tests.test_agent_harness_loop import _patch_common, _collect
+    _patch_common(monkeypatch)
+    original = al._build_system_prompt
+    schema = {'type': 'function', 'function': {'name': 'mcp_browser_test',
+              'description': 'A browser test', 'parameters': {'type': 'object'}}}
+    def with_mcp(*args, **kwargs):
+        messages, _ = original(*args, **kwargs)
+        return messages, [schema]
+    monkeypatch.setattr(al, '_build_system_prompt', with_mcp)
+    requests = []
+    async def capture(candidates, messages, **kwargs):
+        request = await kwargs['candidate_request_factory'](0, *candidates[0])
+        requests.append(request)
+        assert not kwargs.get('tools')
+        assert not request['kwargs'].get('tools')
+        assert any('## Tool: delegate_agents' in str(m.get('content'))
+                   for m in request['messages'])
+        yield 'data: {"delta":"Connection verified."}\n\n'
+        yield 'data: [DONE]\n\n'
+    monkeypatch.setattr(al, 'stream_llm_with_fallback', capture)
+    _collect(al.stream_agent_loop(f'faustus-cli://{provider}/subscription/test', model,
+        [{'role': 'user', 'content': 'A connection test. Do not browse or call MCP tools.'}],
+        max_rounds=1, context_length=128000,
+        relevant_tools={'delegate_agents'}, forced_tools={'delegate_agents'}, owner='qa'))
+    assert requests
+
+
+def test_textual_schema_supplement_obeys_selection_and_denials():
+    from src.agent_loop import _assemble_prompt
+    assert '## Tool: delegate_agents' in _assemble_prompt({'delegate_agents'})
+    assert '## Tool: delegate_agents' not in _assemble_prompt({'delegate_agents'}, {'delegate_agents'})
+    assert '## Tool: delegate_agents' not in _assemble_prompt({'read_file'})
+
+
 def test_context_is_bounded(monkeypatch):
     monkeypatch.setattr(client, 'MAX_CONTEXT_CHARS', 10)
     with pytest.raises(client.ClientModelError, match='input limit'):

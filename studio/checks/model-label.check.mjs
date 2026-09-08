@@ -1,0 +1,18 @@
+import assert from 'node:assert/strict';
+import { build } from 'esbuild';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+const out = join(mkdtempSync(join(tmpdir(), 'faustus-model-label-')), 'label.mjs');
+await build({entryPoints:['studio/src/lib/model-label.ts'], bundle:true, platform:'node', format:'esm', outfile:out});
+const {modelLabel} = await import(pathToFileURL(out));
+const codex = {model:'client-default', endpointId:'a', endpointName:'Codex · subscription'};
+const claude = {...codex, endpointId:'b', endpointName:'Claude Code · subscription'};
+assert.notEqual(modelLabel(codex, [codex, claude]), modelLabel(claude, [codex, claude]));
+assert.equal(modelLabel(codex, []), 'Codex · subscription · client-default');
+const local = {...codex, model:'qwen3.5:9b', endpointName:'Local'};
+assert.equal(modelLabel(local, [local]), 'qwen3.5:9b');
+assert.equal(modelLabel(local, [local, {...local, endpointId:'b'}]), 'Local · qwen3.5:9b');
+assert.equal(modelLabel({...codex, endpointName:''}, []), 'client-default');
+console.log('Model labels: all checks passed');

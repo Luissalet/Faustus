@@ -75,6 +75,8 @@ Project identity is stored independently of the sidebar folder name. An agent ca
 
 The context engine retrieves and budgets relevant material from project sources, history and memory. It tracks provenance, conflicts and compact context capsules instead of trying to place an entire disk in a model's prompt. Persistent storage extends what can be retrieved, **not the model's native context window**.
 
+Use **Skip memory recall** in the composer to suppress automatic personal-memory retrieval for subsequent messages, including live context compilation. Existing chat history and project sources remain available. This does not disable memory tools or saving the chat; use Incognito for its separate privacy behavior.
+
 ### Eleven connected systems
 
 | System | Purpose | Implementation |

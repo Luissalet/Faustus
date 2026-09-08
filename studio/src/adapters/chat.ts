@@ -353,6 +353,8 @@ export interface SendOptions {
   allowBash?: boolean;
   allowWebSearch?: boolean;
   useRag?: boolean;
+  /** Suppress automatic personal-memory retrieval without hiding project context. */
+  noMemory?: boolean;
   /** Deep Research before answering: several rounds of search and reading (`use_research`). */
   useResearch?: boolean;
   workspace?: string;
@@ -810,12 +812,12 @@ export async function* sendTurn(options: SendOptions): AsyncGenerator<ChatEvent>
   }
   if (options.delegateTasks) fd.append('delegate_tasks', JSON.stringify(options.delegateTasks));
   if (options.incognito) fd.append('incognito', 'true');
+  if (options.noMemory || options.incognito || options.compare) fd.set('no_memory', 'true');
   if (options.presetId) fd.append('preset_id', options.presetId);
   if (options.activeDocId) fd.append('active_doc_id', options.activeDocId);
   if (options.compare) {
     fd.append('compare_mode', 'true');
     fd.append('no_documents', 'true');
-    fd.append('no_memory', 'true');
   }
 
   const response = await fetch('/api/chat_stream', {

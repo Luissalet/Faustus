@@ -3,6 +3,7 @@ import {Users,Plus,Trash2,X} from 'lucide-react';
 import {Button,IconButton} from '../../components';
 import {emptyTeam,loadTeam,saveTeam,type ChatTeam as Team,type TeamMember} from '../../adapters/chat-team';
 import type {ModelRoute} from '../../adapters/chat';
+import {modelLabel} from '../../lib/model-label';
 import {t} from '../../i18n';
 
 export default function ChatTeam({sessionId,routes,coordinator,busy,ensureSession,onEnabled}:{sessionId:string|null;routes:ModelRoute[];coordinator:ModelRoute|null;busy:boolean;ensureSession:()=>Promise<string|null>;onEnabled:(enabled:boolean)=>void}) {
@@ -43,7 +44,7 @@ export default function ChatTeam({sessionId,routes,coordinator,busy,ensureSessio
   return <div className="fs-chat-team" ref={anchor}>
     <button type="button" className="fs-studio__chip" aria-expanded={open} onClick={()=>setOpen(v=>!v)}><Users size={15}/>{t(team.enabled?'Orchestrator and team':'Configure team')}{dirty?' •':''}</button>
     {open&&<section className="fs-chat-team__editor" style={position} aria-label={t('Chat team')}>
-      <header className="fs-chat-team__head"><h3>{t('Chat team')}</h3><IconButton icon={X} label={t('Close team settings')} onClick={()=>setOpen(false)}/></header><p>{t('Coordinator')}: <strong>{coordinator?.model || t('Choose a model')}</strong></p>
+      <header className="fs-chat-team__head"><h3>{t('Chat team')}</h3><IconButton icon={X} label={t('Close team settings')} onClick={()=>setOpen(false)}/></header><p>{t('Coordinator')}: <strong>{coordinator ? modelLabel(coordinator, routes) : t('Choose a model')}</strong></p>
       <p>{t('The selected chat model coordinates this team. Changes apply to the next turn; running agents keep their configuration.')}</p>
       {error&&<p role="alert" className="fs-notice" data-tone="danger">{error}</p>}
       {loading?<p role="status">{t('Loading team…')}</p>:<fieldset disabled={saving||busy||loadFailed}>

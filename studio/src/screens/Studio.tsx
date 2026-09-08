@@ -656,6 +656,7 @@ export function StudioScreen() {
           allowBash: (knobs.mode === 'agent' || Boolean(options.delegation) || teamEnabled) && knobs.bash,
           allowWebSearch: knobs.web,
           useRag: knobs.rag,
+          noMemory: Boolean(knobs.noMemory),
           workspace: knobs.mode === 'agent' || options.delegation || teamEnabled ? workspace || undefined : undefined,
           route,
           attachments: options.attachments?.map((a) => a.id),

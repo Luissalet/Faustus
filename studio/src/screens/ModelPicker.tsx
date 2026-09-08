@@ -2,6 +2,7 @@ import { t } from '../i18n';
 import { ChevronDown, Cpu } from 'lucide-react';
 import { lazy, Suspense, useEffect, useState } from 'react';
 import type { ModelRoute } from '../adapters/chat';
+import { modelLabel } from '../lib/model-label';
 
 const ModelPalette = lazy(() => import('./ModelPalette'));
 const ModelConnections = lazy(() => import('./ModelConnections'));
@@ -55,7 +56,7 @@ export function ModelPicker({
         data-testid="studio-model"
       >
         <Cpu size={13} aria-hidden="true" />
-        <span>{current ? current.model : routes.length ? t('Choose model') : t('No models')}</span>
+        <span>{current ? modelLabel(current, routes) : routes.length ? t('Choose model') : t('No models')}</span>
         <ChevronDown size={12} aria-hidden="true" />
       </button>
       {loaded && (

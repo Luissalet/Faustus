@@ -75,6 +75,8 @@ La identidad del proyecto se guarda separada del nombre de su carpeta en la barr
 
 El motor de contexto recupera y distribuye material relevante entre fuentes del proyecto, historial y memoria. Registra procedencia, conflictos y cápsulas compactas en lugar de intentar introducir un disco entero en el prompt. El almacenamiento persistente amplía lo que se puede recuperar, **no la ventana nativa de contexto del modelo**.
 
+Activa **Sin recuerdos automáticos** en el cuadro de mensaje para omitir la recuperación automática de memoria personal en los siguientes mensajes, también al compilar el contexto. El historial existente y las fuentes del proyecto siguen disponibles. No desactiva las herramientas de memoria ni el guardado del chat; Incógnito tiene su propio comportamiento de privacidad.
+
 ### Once sistemas conectados
 
 | Sistema | Para qué sirve | Implementación |
