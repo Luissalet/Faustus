@@ -44,3 +44,9 @@ def test_desktop_tools_are_offered_without_a_workspace(tmp_path):
 def test_a_plain_coding_request_does_not_drag_the_desktop_tools_in(workspace):
     names = tools_sent("Anade a cart.py una funcion apply_tax(total, rate) y su test", workspace)
     assert "desktop_screenshot" not in names and "desktop_click" not in names, names
+
+
+@pytest.mark.parametrize("message", ["Controla mi pantalla y cierra la ventana de chatgpt", "Cierra la ventana de Spotify", "Could you close the window of Notepad?"])
+def test_desktop_control_actions_offer_input_tools(message):
+    names = tools_sent(message, None, settings={"desktop_control_mode": "ask_each"})
+    assert {"desktop_screenshot", "desktop_list_windows", "desktop_focus_window", "desktop_key"} <= set(names)

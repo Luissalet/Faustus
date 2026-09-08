@@ -1,3 +1,5 @@
+import pytest
+
 from src.action_intents import classify_tool_intent, message_needs_tools
 
 
@@ -89,3 +91,31 @@ def test_spanish_project_objective_order_is_unicode_normalization_safe():
     intent = classify_tool_intent("Añade este documento a los objetivos del proyecto")
     assert intent.needs_tools
     assert intent.category == "project"
+
+
+@pytest.mark.parametrize("message", [
+    "Controla mi pantalla y cierra la ventana de chatgpt",
+    "Puedes controlar mi pantalla?",
+    "Cierra la ventana de Spotify",
+    "Por favor, minimiza la ventana de Spotify",
+    "Could you close the window of Notepad?",
+    "Take a screenshot of my desktop",
+    "Mira mi pantalla",
+])
+def test_desktop_action_promotes_chat_to_agent(message):
+    from src.action_intents import classify_tool_intent
+    intent = classify_tool_intent(message)
+    assert intent.needs_tools and intent.category == "desktop"
+
+
+@pytest.mark.parametrize("message", [
+    "Como puedo controlar mi pantalla?",
+    "How do I close the window?",
+    "Explica que significa captura de pantalla",
+    "Escribe un cuento: cierra la ventana de la casa",
+    'Traduce "controla mi pantalla" al ingles',
+    "No cierres la ventana de Spotify",
+])
+def test_desktop_explanations_do_not_request_control(message):
+    from src.action_intents import desktop_action_requested
+    assert not desktop_action_requested(message)

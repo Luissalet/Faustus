@@ -1,4 +1,4 @@
-import { Download, HardDrive, RefreshCw, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, Download, HardDrive, RefreshCw, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, EmptyState, IconButton, Skeleton } from '../../components';
 import { invalidateSettings } from '../../adapters/settings';
@@ -198,7 +198,7 @@ export function LocalModelsSection({ admin, say }: { admin: boolean; say: (t: st
       ) : (
         <>
           {data.error && <p className="fs-notice" data-tone="danger">{data.error}</p>}
-          <VramCard vram={data.vram} loaded={data.loaded} policy={data.placement_policy} admin={admin} onPlacement={(prefer) => void act(() => setPlacement(prefer), prefer < 0 ? t('Placement: auto') : t('Placement: fill GPU {n} first', { n: prefer }))} onRelease={(pid) => void act(() => releaseOrphanRunner(pid), t('Runner released.'))} />
+          <VramCard vram={data.vram} loaded={data.loaded} policy={data.placement_policy} admin={admin} onPlacement={async (order) => { await setPlacement(order); await refresh(true); say(t('GPU priority saved.')); }} onRelease={(pid) => void act(() => releaseOrphanRunner(pid), t('Runner released.'))} />
           {data.disk?.free_bytes != null && <p className="fs-set__help">{t('{free} free of {total} where Ollama keeps its blobs ({path}).', { free: fmtGb(data.disk.free_bytes), total: fmtGb(data.disk.total_bytes), path: data.disk.path ?? '' })}</p>}
 
           <div className="fs-set__card">
@@ -250,7 +250,7 @@ export function LocalModelsSection({ admin, say }: { admin: boolean; say: (t: st
 
 /* ── the card(s) ── */
 
-function VramCard({ vram, loaded, policy, admin, onPlacement, onRelease }: { vram: Vram; loaded: LoadedModel[]; policy?: { prefer: number }; admin: boolean; onPlacement: (prefer: number) => void; onRelease: (pid: number) => void }) {
+function VramCard({ vram, loaded, policy, admin, onPlacement, onRelease }: { vram: Vram; loaded: LoadedModel[]; policy?: { prefer: number; order?: number[] }; admin: boolean; onPlacement: (order: number[]) => Promise<void>; onRelease: (pid: number) => void }) {
   if (!vram?.supported) return <p className="fs-set__help">{t('No VRAM reading for this endpoint.')} {vram?.reason ?? ''}</p>;
   const total = vram.total_bytes ?? 0;
   const runner = vram.held_by_runner_bytes ?? 0;
@@ -268,19 +268,7 @@ function VramCard({ vram, loaded, policy, admin, onPlacement, onRelease }: { vra
           {multi && ` · ${tn(vram.count ?? 0, '{n} GPU', '{n} GPUs')}`}
         </strong>
         <span className="fs-set__help">{t('{used} of {total} used · {free} free', { used: fmtGb(runner + others), total: fmtGb(total), free: fmtGb(free) })}</span>
-        {multi && admin && (
-          <label className="fs-lm__placement">
-            <span className="fs-set__help">{t('Fill first')}</span>
-            <select className="fs-field" value={policy?.prefer ?? -1} onChange={(e) => onPlacement(Number(e.target.value))} title={t('Which card Ollama fills first. A model that fits the chosen card is pinned to it; bigger ones stay Auto and are split.')}>
-              <option value={-1}>{t('Auto — freest card, split when nothing fits one')}</option>
-              {cards.map((g) => (
-                <option key={g.index} value={g.index}>
-                  {t('Fill GPU {n} first — {name} ({gb} GB)', { n: g.index, name: shortGpuName(g.name), gb: Math.round((g.total_bytes ?? 0) / 1073741824) })}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
+        {multi && <GpuPriority cards={cards} policy={policy} admin={admin} onSave={onPlacement} />}
       </div>
       <div className="fs-lm__bar" role="img" aria-label={t('VRAM: {a} models, {b} other, {c} free', { a: fmtGb(runner), b: fmtGb(others), c: fmtGb(free) })}>
         <span className="fs-lm__seg" data-kind="models" style={{ inlineSize: `${pct(runner).toFixed(1)}%` }} title={names ? `${t('Models loaded by Ollama')}: ${names}` : t('Models loaded by Ollama')} />
@@ -337,9 +325,51 @@ function VramCard({ vram, loaded, policy, admin, onPlacement, onRelease }: { vra
           {admin && <Button size="sm" variant="secondary" label={t('Release')} onClick={() => onRelease(o.pid)} title={t('Kill this runner and free its VRAM; the next request loads the model again')} />}
         </div>
       ))}
-      {multi && <p className="fs-set__help">{t('Ollama places each model on the card with the most free memory and splits a model across cards only when it does not fit one; pin a card per model in Options (main_gpu).')}</p>}
+      {multi && <p className="fs-set__help">{t('New models use the first GPU with enough free memory, then the next. Loaded models stay in place. If none fits, Ollama decides how to split or offload. Per-model GPU settings take priority.')}</p>}
     </div>
   );
+}
+
+function GpuPriority({ cards, policy, admin, onSave }: { cards: GpuCard[]; policy?: { prefer: number; order?: number[] }; admin: boolean; onSave: (order: number[]) => Promise<void> }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const saved = policy?.order ?? ((policy?.prefer ?? -1) >= 0 ? [policy!.prefer] : []);
+  const active = saved.length > 0;
+  const order = [...saved.filter((i) => cards.some((g) => g.index === i)), ...cards.map((g) => g.index).filter((i) => !saved.includes(i))];
+  const save = async (next: number[]) => {
+    setBusy(true); setError('');
+    try { await onSave(next); } catch (e) { setError((e as Error).message); }
+    finally { setBusy(false); }
+  };
+  const move = (position: number, delta: number) => {
+    const next = [...order];
+    [next[position], next[position + delta]] = [next[position + delta], next[position]];
+    void save(next);
+  };
+  return <div className="fs-lm__placement" aria-busy={busy}>
+    <label className="fs-lm__priority-mode">
+      <span>{t('GPU priority')}</span>
+      <select className="fs-field" value={active ? 'priority' : 'auto'} disabled={!admin || busy} onChange={(e) => void save(e.target.value === 'auto' ? [] : order)}>
+        <option value="auto">{t('Automatic')}</option>
+        <option value="priority">{t('Custom order')}</option>
+      </select>
+    </label>
+    {active && <ol className="fs-lm__priority-list" aria-label={t('GPU fill order')}>
+      {order.map((index, position) => {
+        const card = cards.find((g) => g.index === index)!;
+        return <li key={index}>
+          <span className="fs-lm__priority-rank">{position + 1}</span>
+          <span className="fs-lm__priority-name">GPU {index} · {shortGpuName(card.name)} <span className="fs-set__help">({fmtGb(card.total_bytes)})</span></span>
+          {admin && <span className="fs-lm__priority-actions">
+            <IconButton icon={ArrowUp} label={t('Move GPU {n} up', { n: index })} disabled={busy || position === 0} onClick={() => move(position, -1)} />
+            <IconButton icon={ArrowDown} label={t('Move GPU {n} down', { n: index })} disabled={busy || position === order.length - 1} onClick={() => move(position, 1)} />
+          </span>}
+        </li>;
+      })}
+    </ol>}
+    {busy && <span role="status" className="fs-set__help">{t('Saving…')}</span>}
+    {error && <p role="alert">{error}</p>}
+  </div>;
 }
 
 /* ── loaded ── */

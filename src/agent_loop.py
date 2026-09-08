@@ -1776,7 +1776,8 @@ def _classify_agent_request(messages: List[Dict], last_user: str) -> Dict[str, o
     # Desktop control (FAUSTUS): seeing / driving the screen of the box the
     # server runs on. ES + EN, phrased so "desktop app" or "a window function"
     # do not match; the ToolIndex keyword hints cover the looser wording.
-    if has(r"\b(screenshots?|screen ?shot|captura de pantalla|capturas de pantalla|pantallazo)\b",
+    from src.action_intents import desktop_action_requested
+    if desktop_action_requested(text) or has(r"\b(screenshots?|screen ?shot|captura de pantalla|capturas de pantalla|pantallazo)\b",
            r"\b(?:my|the|on|en|mi|la) (?:screen|pantalla)\b",
            r"\b(?:what|which|qué|que) (?:windows?|ventanas?) (?:are|is|hay|está)\b",
            r"\b(?:haz clic|click on the|double-?click|right-?click|pulsa el|teclea|escribe en el)\b",

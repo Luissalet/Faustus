@@ -1040,10 +1040,17 @@
 }
 
 .fs-lm__placement {
-  display: inline-flex;
-  align-items: center;
+  display: grid;
   gap: var(--fs-space-2);
+  min-inline-size: 0;
 }
+.fs-lm__priority-mode { display: flex; flex-wrap: wrap; align-items: center; gap: var(--fs-space-2); }
+.fs-lm__priority-list { list-style: none; margin: 0; padding: 0; }
+.fs-lm__priority-list li { display: flex; align-items: center; gap: var(--fs-space-2); padding-block: var(--fs-space-1); border-block-end: 1px solid var(--fs-border); }
+.fs-lm__priority-rank { color: var(--fs-text-3); font-variant-numeric: tabular-nums; }
+.fs-lm__priority-name { flex: 1; min-inline-size: 0; overflow-wrap: anywhere; }
+.fs-lm__priority-actions { display: flex; flex-shrink: 0; }
+
 
 .fs-lm__placement .fs-field {
   inline-size: auto;

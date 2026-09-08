@@ -152,6 +152,21 @@ _TOOL_INTENT_PATTERNS: tuple[Pattern[str], ...] = tuple(
     pattern for _, _, pattern in _ROUTING_PATTERNS
 )
 
+# Desktop requests must reach the agent even from the plain chat composer.
+# Match actions, not explanations, fictional windows or pasted instructions.
+_DESKTOP_PREFIX = r"^\s*(?:(?:please|por favor)[,\s]+)?(?:(?:can|could|would|will) you\s+|(?:puedes|podrias)\s+)?"
+_DESKTOP_PATTERNS = tuple(re.compile(_DESKTOP_PREFIX + pattern, re.I) for pattern in (
+    r"(?:control|see|look at|inspect|capture|controla|controlar|mira|mirar|revisa|revisar|captura|capturar)\s+(?:my|the|mi|la|el)\s+(?:screen|desktop|pantalla|escritorio)\b",
+    r"(?:close|open|minimize|maximize|focus|cierra|cerrar|abre|abrir|minimiza|minimizar|maximiza|maximizar|enfoca|enfocar)\s+(?:my|the|la|una|esta|esa|el)\s+(?:window|ventana|aplicacion)\b",
+    r"(?:take|haz|toma|hacer|tomar)\s+(?:a|una)\s+(?:screenshot|captura de pantalla)\b",
+    r"(?:show|list|dime|muestra|lista)\s+(?:me\s+)?(?:what|which|que)?\s*(?:windows|ventanas)\b",
+))
+
+
+def desktop_action_requested(text: str) -> bool:
+    routing_text = _routing_text(text)
+    return any(pattern.search(routing_text) for pattern in _DESKTOP_PATTERNS)
+
 
 def _routing_text(text: str) -> str:
     """Return a stable comparison form for multilingual routing.
@@ -188,6 +203,8 @@ def classify_tool_intent(text: str) -> ToolIntent:
     routing_text = _routing_text(text)
     if _EXPLANATORY_PREFIX.search(routing_text):
         return ToolIntent(False, reason="explanatory feature question")
+    if desktop_action_requested(routing_text):
+        return ToolIntent(True, category="desktop", reason="explicit desktop action request")
     for category, reason, pattern in _ROUTING_PATTERNS:
         if pattern.search(routing_text):
             return ToolIntent(True, category=category, reason=reason)

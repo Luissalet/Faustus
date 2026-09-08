@@ -1,8 +1,8 @@
 """GPU placement policy (src/gpu_policy.py): fill card N first.
 
 Measured on the two-card box: `main_gpu` pins, and a model too big for the
-pinned card is NOT split — the rest goes to the CPU (54/66 layers, 10 tok/s
-instead of 19–24). `tensor_split` is ignored. So the policy pins only what
+pinned card is NOT split â€” the rest goes to the CPU (54/66 layers, 10 tok/s
+instead of 19â€“24). `tensor_split` is ignored. So the policy pins only what
 fits and leaves the rest to Ollama.
 """
 from __future__ import annotations
@@ -15,8 +15,8 @@ from src import gpu_policy as gp
 
 GIB = 1024 ** 3
 SNAP = {"supported": True, "count": 2, "gpus": [
-    {"index": 0, "name": "NVIDIA GeForce RTX 4070 Ti", "total": 12282 * 1024 ** 2, "used": 0, "free": 0},
-    {"index": 1, "name": "NVIDIA GeForce RTX 5060 Ti", "total": 16311 * 1024 ** 2, "used": 0, "free": 0},
+    {"index": 0, "name": "NVIDIA GeForce RTX 4070 Ti", "total": 12282 * 1024 ** 2, "used": 0, "free": 16311 * 1024 ** 2},
+    {"index": 1, "name": "NVIDIA GeForce RTX 5060 Ti", "total": 16311 * 1024 ** 2, "used": 0, "free": 16311 * 1024 ** 2},
 ]}
 SIZES = {"qwen3.5:9b": int(6.6 * GIB), "qwen3.8:27b-q4_K_M": int(17.0 * GIB), "qwen3.8:27b-q8_0": int(29 * GIB),
          "mistral-small:24b": int(14.0 * GIB)}
@@ -29,6 +29,8 @@ def box(monkeypatch):
     monkeypatch.setattr(gp, "model_sizes", lambda base, timeout=3.0: dict(SIZES))
     state = {"prefer": -1}
     monkeypatch.setattr(gp, "preferred_index", lambda: state["prefer"])
+    monkeypatch.setattr(gp, "priority_order", lambda: [state["prefer"]] if state["prefer"] >= 0 else [])
+    monkeypatch.setattr(gp.httpx, "get", lambda *a, **k: type("Response", (), {"status_code": 200, "json": lambda self: {"models": []}})())
     gp.reset_cache()
     yield state
     gp.reset_cache()
@@ -54,11 +56,11 @@ def test_prefer_pins_what_fits_and_leaves_the_rest_to_ollama(box):
     # 17 GB on a 16 GB card would go to the CPU: no pin, Ollama splits it
     assert gp.preferred_main_gpu("http://127.0.0.1:11434/v1", "qwen3.8:27b-q4_K_M") is None
     assert gp.preferred_main_gpu("http://127.0.0.1:11434/v1", "qwen3.8:27b-q8_0") is None
-    # the 14 GB one: weights fit, context would not → not pinned either
+    # the 14 GB one: weights fit, context would not â†’ not pinned either
     assert gp.preferred_main_gpu("http://127.0.0.1:11434/v1", "mistral-small:24b") is None
-    # a model the server does not list: unknown size → no pin
+    # a model the server does not list: unknown size â†’ no pin
     assert gp.preferred_main_gpu("http://127.0.0.1:11434/v1", "ghost:1b") is None
-    # name forms: bare name → :latest, library prefix
+    # name forms: bare name â†’ :latest, library prefix
     gp.reset_cache()
     assert gp.preferred_main_gpu("http://localhost:11434/api/chat", "library/qwen3.5:9b") == 1
 
@@ -74,13 +76,13 @@ def test_only_the_local_ollama_gets_a_policy(box, monkeypatch):
 
 def test_a_card_that_does_not_exist_pins_nothing(box):
     box["prefer"] = 3
-    assert gp.preferred_main_gpu("http://127.0.0.1:11434/v1", "qwen3.5:9b") is None
+    assert gp.preferred_main_gpu("http://127.0.0.1:11434/v1", "qwen3.5:9b") == 0
 
 
 def test_describe_names_the_card(box):
     box["prefer"] = 1
     d = gp.describe(SNAP["gpus"])
-    assert d == {"prefer": 1, "name": "NVIDIA GeForce RTX 5060 Ti", "mode": "prefer"}
+    assert d == {"prefer": 1, "name": "NVIDIA GeForce RTX 5060 Ti", "mode": "priority", "order": [1, 0]}
     box["prefer"] = -1
     assert gp.describe(SNAP["gpus"])["mode"] == "auto"
 
@@ -106,7 +108,7 @@ def test_model_sizes_reads_api_tags_and_survives_a_dead_server(monkeypatch):
     assert gp.model_sizes("http://127.0.0.1:11435") == {}
 
 
-# ── the hooks: every chat request and the Load button ────────────────────────
+# â”€â”€ the hooks: every chat request and the Load button â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def test_llm_core_load_defaults_carry_the_policy_under_a_per_model_pin(box, monkeypatch):
     from src import llm_core
@@ -185,3 +187,45 @@ console.log(JSON.stringify({
     assert out["auto"] == "", "Auto is not a pin, so there is nothing to warn about"
     assert out["unknownCard"] == "", "a card that is not there cannot be reasoned about"
     assert out["short"] == "RTX 5060 Ti"
+
+
+def test_three_gpu_order_uses_free_memory_and_skips_full_cards(box, monkeypatch):
+    from src import gpu_shared_memory as gsm
+    cards = [{"index": i, "total": 16 * GIB, "free": 16 * GIB} for i in range(3)]
+    monkeypatch.setattr(gsm, "vram_snapshot", lambda: {"supported": True, "gpus": cards})
+    monkeypatch.setattr(gp, "priority_order", lambda: [2, 1, 0])
+    url = "http://127.0.0.1:11434"
+    assert gp.preferred_main_gpu(url, "qwen3.5:9b") == 2
+    cards[2]["free"] = 2 * GIB
+    assert gp.preferred_main_gpu(url, "qwen3.5:9b") == 1
+    cards[1]["free"] = 2 * GIB
+    assert gp.preferred_main_gpu(url, "qwen3.5:9b") == 0
+    cards[0]["free"] = 2 * GIB
+    assert gp.preferred_main_gpu(url, "qwen3.5:9b") is None
+    assert gp.preferred_main_gpu(url, "qwen3.8:27b-q4_K_M") is None
+
+
+def test_resident_model_is_not_repinned(box, monkeypatch):
+    box["prefer"] = 1
+    monkeypatch.setattr(gp.httpx, "get", lambda *a, **k: type("Response", (), {"status_code": 200, "json": lambda self: {"models": [{"name": "qwen3.5:9b"}]}})())
+    assert gp.preferred_main_gpu("http://127.0.0.1:11434", "qwen3.5:9b") is None
+
+
+def test_priority_persistence_and_validation(tmp_path, monkeypatch):
+    from src import settings as settings_mod
+    monkeypatch.setattr(settings_mod, "SETTINGS_FILE", str(tmp_path / "settings.json"))
+    settings_mod._invalidate_caches()
+    try:
+        gp.set_preferred_index(2)
+        assert gp.priority_order() == [2]
+        assert gp.set_priority_order([2, 1, 0]) == [2, 1, 0]
+        assert gp.priority_order() == [2, 1, 0]
+        for bad in ([2, 2], [True], [1.5], [-1], [16], "2,1,0", None):
+            with pytest.raises(ValueError):
+                gp.set_priority_order(bad)
+            assert gp.priority_order() == [2, 1, 0]
+        assert gp.effective_order([2, 1, 0], [{"index": 0}, {"index": 2}, {"index": 3}]) == [2, 0, 3]
+        gp.set_priority_order([])
+        assert gp.priority_order() == []
+    finally:
+        settings_mod._invalidate_caches()

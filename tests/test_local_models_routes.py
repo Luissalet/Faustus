@@ -726,13 +726,14 @@ def test_placement_policy_route_and_the_load_button_follow_it(env, monkeypatch):
     assert client.put("/api/local-models/placement", json={"prefer": 1}, headers=USER).status_code == 403
     r = client.put("/api/local-models/placement", json={"prefer": 1}, headers=ADMIN)
     assert r.status_code == 200, r.text
-    assert r.json() == {"prefer": 1, "name": "NVIDIA GeForce RTX 5060 Ti", "mode": "prefer"}
+    assert r.json() == {"prefer": 1, "name": "NVIDIA GeForce RTX 5060 Ti", "mode": "priority", "order": [1, 0]}
     assert client.get("/api/local-models?endpoint_id=local-ollama", headers=USER).json()["placement_policy"]["prefer"] == 1
-    # a card that does not exist is refused and the policy falls back to Auto
+    # Invalid updates preserve the working policy
     r = client.put("/api/local-models/placement", json={"prefer": 5}, headers=ADMIN)
-    assert r.status_code == 400 and gpu_policy.preferred_index() == -1
+    assert r.status_code == 400 and gpu_policy.preferred_index() == 1
     assert client.put("/api/local-models/placement", json={"prefer": "x"}, headers=ADMIN).status_code == 400
     client.put("/api/local-models/placement", json={"prefer": 1}, headers=ADMIN)
+    monkeypatch.setattr(gpu_policy.httpx, "get", lambda *a, **k: httpx.Response(200, json={"models": []}))
     # Load: the policy's main_gpu rides along for a model that fits card 1
     client.post("/api/local-models/load", json={"endpoint_id": "local-ollama", "name": "qwen3.5:9b"}, headers=ADMIN)
     assert fake.generate[-1][1]["options"] == {"main_gpu": 1}
@@ -745,3 +746,19 @@ def test_placement_policy_route_and_the_load_button_follow_it(env, monkeypatch):
     mlo.set_options("local-ollama", "qwen3.5:9b", {})
     client.post("/api/local-models/load", json={"endpoint_id": "local-ollama", "name": "qwen3.5:9b"}, headers=ADMIN)
     assert "options" not in fake.generate[-1][1]
+
+
+def test_three_gpu_priority_api(env, monkeypatch):
+    from src import gpu_policy
+    client, fake = env
+    cards = [{"index": i, "name": f"GPU {i}", "total": 16 * GIB, "free": 16 * GIB, "used": 0} for i in range(3)]
+    monkeypatch.setattr(lm.gpu_shared_memory, "vram_snapshot", lambda: {"supported": True, "gpus": cards, "count": 3})
+    response = client.put("/api/local-models/placement", json={"order": [2, 1, 0]}, headers=ADMIN)
+    assert response.status_code == 200, response.text
+    assert response.json()["order"] == [2, 1, 0]
+    assert client.get("/api/local-models/placement", headers=USER).json()["order"] == [2, 1, 0]
+    for order in ([1, 1], [3], [True], [1.5], "2,1,0", None):
+        assert client.put("/api/local-models/placement", json={"order": order}, headers=ADMIN).status_code == 400
+        assert gpu_policy.priority_order() == [2, 1, 0]
+    assert client.put("/api/local-models/placement", json={"order": []}, headers=USER).status_code == 403
+    assert client.put("/api/local-models/placement", json={"order": []}, headers=ADMIN).json()["mode"] == "auto"

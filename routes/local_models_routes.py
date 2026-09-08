@@ -933,14 +933,22 @@ def setup_local_models_routes() -> APIRouter:
         require_admin(request)
         body = await _body(request)
         from src import gpu_policy
+        cards = _gpu_list(True)
         try:
-            idx = gpu_policy.set_preferred_index(int(body.get("prefer", -1)))
+            if "order" in body:
+                order = gpu_policy.validate_order(body["order"])
+            elif "prefer" in body:
+                idx = int(body["prefer"])
+                order = gpu_policy.validate_order([] if idx == -1 else [idx])
+            else:
+                raise ValueError("order is required")
+            if order and not cards:
+                raise ValueError("GPU inventory is unavailable; try again")
+            if any(i not in {c["index"] for c in cards} for i in order):
+                raise ValueError("order contains a GPU not present on this machine")
+            gpu_policy.set_priority_order(gpu_policy.effective_order(order, cards))
         except (TypeError, ValueError) as e:
             raise HTTPException(400, str(e) if str(e) else "prefer must be -1 or a GPU index")
-        cards = _gpu_list(True)
-        if idx >= 0 and cards and idx not in {c["index"] for c in cards}:
-            gpu_policy.set_preferred_index(-1)
-            raise HTTPException(400, f"no GPU with index {idx} on this machine")
         return gpu_policy.describe(cards)
 
     @router.get("/{name:path}/options")

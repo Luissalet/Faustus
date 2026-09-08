@@ -11,10 +11,11 @@ on the two-card box (RTX 4070 Ti 12 GB + RTX 5060 Ti 16 GB):
 * `tensor_split` in the request options is ignored: the split ratio of a big
   model is Ollama's (proportional to free memory) and not ours to choose.
 
-The policy is one number, `gpu_placement_prefer`: -1 = Auto (Ollama's own
-choice), N = fill card N first — every model whose weights fit card N with
-room for its context gets `main_gpu = N` unless its Options pin it elsewhere;
-bigger models are left to Ollama (split). Per-model Options always win.
+The policy is an ordered list of GPU indices. New models use the first
+card with enough free VRAM, reserving context headroom. Resident models
+stay with their runner; models that fit nowhere are left to Ollama.
+Per-model Options always win. Legacy single-card preferences migrate to
+that card first followed by the remaining detected cards.
 """
 from __future__ import annotations
 
@@ -29,6 +30,7 @@ import httpx
 logger = logging.getLogger(__name__)
 
 SETTING_KEY = "gpu_placement_prefer"
+ORDER_KEY = "gpu_placement_order"
 RESERVE_BYTES = 800 * 1024 * 1024        # CUDA context etc. (same as the fit advisor)
 # KV cache + compute buffers on top of the weights: a fraction of the card
 # rather than a per-model estimate (the exact KV size needs /api/show; the
@@ -54,8 +56,45 @@ def set_preferred_index(index: int) -> int:
         raise ValueError("gpu index must be -1 (auto) or 0..15")
     settings = load_settings()
     settings[SETTING_KEY] = idx
+    settings.pop(ORDER_KEY, None)
     save_settings(settings)
     return idx
+
+
+def priority_order() -> list[int]:
+    from src.settings import get_setting
+    saved = get_setting(ORDER_KEY, None)
+    if saved is not None:
+        return validate_order(saved)
+    idx = preferred_index()
+    return [idx] if idx >= 0 else []
+
+
+def validate_order(order: Any) -> list[int]:
+    if not isinstance(order, list) or len(order) > 16:
+        raise ValueError("order must be a list of GPU indices")
+    if any(type(i) is not int or not 0 <= i <= 15 for i in order):
+        raise ValueError("GPU indices must be integers between 0 and 15")
+    if len(set(order)) != len(order):
+        raise ValueError("GPU order must not contain duplicates")
+    return list(order)
+
+
+def set_priority_order(order: Any) -> list[int]:
+    from src.settings import load_settings, save_settings
+    order = validate_order(order)
+    settings = load_settings()
+    settings[ORDER_KEY] = order
+    settings[SETTING_KEY] = order[0] if order else -1
+    save_settings(settings)
+    return order
+
+
+def effective_order(order: list[int], gpus: list) -> list[int]:
+    """Keep saved priority; append newly discovered cards, skip absent cards."""
+    available = [int(g["index"]) for g in gpus]
+    return ([i for i in order if i in available] +
+            [i for i in available if i not in order]) if order else []
 
 
 def fits_card(size_bytes: int, card_total_bytes: int, *, reserve: int = RESERVE_BYTES,
@@ -146,13 +185,14 @@ def preferred_main_gpu(url: str, model: str, *, prefer: Optional[int] = None) ->
     """The `main_gpu` the policy adds to a request for `model` at `url`, or
     None: policy off, not the local Ollama, card unknown, model size unknown,
     or the model would not fit the preferred card (then Ollama splits it)."""
-    idx = preferred_index() if prefer is None else int(prefer)
-    if idx < 0:
+    order = priority_order() if prefer is None else ([int(prefer)] if prefer >= 0 else [])
+    if not order:
         return None
     if not _is_local_ollama(url):
         return None
-    total = card_total(idx)
-    if total <= 0:
+    from src import gpu_shared_memory
+    snap = gpu_shared_memory.vram_snapshot()
+    if not snap.get("supported"):
         return None
     base = _base_of(url)
     if not base:
@@ -160,12 +200,33 @@ def preferred_main_gpu(url: str, model: str, *, prefer: Optional[int] = None) ->
     size = _size_for(model_sizes(base), model)
     if size <= 0:
         return None
-    return idx if fits_card(size, total) else None
+    # Do not move a resident model just because its own memory now fills the
+    # first card. Leaving main_gpu unset allows Ollama to reuse its runner.
+    try:
+        response = httpx.get(base + "/api/ps", timeout=2.0)
+        if response.status_code != 200:
+            return None
+        running = {str(m.get("name") or m.get("model") or ""): 1
+                   for m in response.json().get("models", [])}
+        if _size_for(running, model):
+            return None
+    except Exception:
+        return None
+    cards = {int(g["index"]): g for g in snap.get("gpus") or []}
+    for idx in effective_order(order, list(cards.values())):
+        card = cards[idx]
+        total = int(card.get("total") or 0)
+        free = max(0, min(total, int(card.get("free") or 0)))
+        # Reserve context headroom against total capacity, not remaining VRAM.
+        if fits_card(size, total) and size + RESERVE_BYTES + total * HEADROOM_FRACTION <= free:
+            return idx
+    return None
 
 
 def describe(gpus: Optional[list] = None) -> Dict[str, Any]:
     """For the UI: `{prefer, name, mode}`."""
-    idx = preferred_index()
+    order = effective_order(priority_order(), gpus) if gpus is not None else priority_order()
+    idx = order[0] if order else -1
     name = ""
     if idx >= 0 and gpus:
         for g in gpus:
@@ -174,7 +235,7 @@ def describe(gpus: Optional[list] = None) -> Dict[str, Any]:
                     name = str(g.get("name") or "")
             except (TypeError, ValueError):
                 continue
-    return {"prefer": idx, "name": name, "mode": "auto" if idx < 0 else "prefer"}
+    return {"prefer": idx, "order": order, "name": name, "mode": "priority" if order else "auto"}
 
 
 def reset_cache() -> None:

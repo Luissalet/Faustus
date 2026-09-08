@@ -105,7 +105,7 @@ export interface LocalModelsData {
   loaded: LoadedModel[];
   gpus: { index: number; name?: string; total_bytes?: number }[];
   vram: Vram;
-  placement_policy?: { prefer: number; name?: string; mode?: string };
+  placement_policy?: { prefer: number; order?: number[]; name?: string; mode?: string };
   disk?: { path?: string; free_bytes?: number; total_bytes?: number };
   pulls: Pull[];
 }
@@ -212,7 +212,7 @@ export async function saveModelOptions(endpointId: string, name: string, options
   const d = await call<{ options?: Record<string, string | number> }>(`${API}/${encName(name)}/options?endpoint_id=${encodeURIComponent(endpointId)}`, { method: 'PUT', headers: JSON_HEADERS, body: JSON.stringify({ options }) });
   return d.options ?? {};
 }
-export const setPlacement = (prefer: number) => call<unknown>(`${API}/placement`, { method: 'PUT', headers: JSON_HEADERS, body: JSON.stringify({ prefer }) });
+export const setPlacement = (order: number[]) => call<unknown>(`${API}/placement`, { method: 'PUT', headers: JSON_HEADERS, body: JSON.stringify({ order }) });
 export async function setDefaultModel(endpointId: string, name: string): Promise<void> {
   await call('/api/auth/settings', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ default_endpoint_id: endpointId, default_model: name }) });
 }
