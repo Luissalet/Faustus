@@ -931,6 +931,8 @@ Created from the name.	Se crea a partir del nombre.
 Created {when}	Creado {when}
 Creates a calendar event in your words.	Crea un evento del calendario en tus palabras.
 Creating…	Creando…
+Could not create the conversation. Your draft is still here; try again.	No se ha podido crear la conversación. Tu borrador sigue aquí; vuelve a intentarlo.
+Creating the conversation… Your draft is kept until it is ready.	Creando la conversación… Tu borrador se conserva hasta que esté lista.
 Creation date	Fecha de creación
 Critique	Crítica
 Cron	Cron

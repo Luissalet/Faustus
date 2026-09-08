@@ -73,6 +73,7 @@ export interface ComposerProps {
   setDraft: (value: string) => void;
   busy: boolean;
   pending: boolean;
+  preparing?: boolean;
   knobs: Knobs;
   setKnobs: (update: (k: Knobs) => Knobs) => void;
   workspace: string;
@@ -109,6 +110,7 @@ export function Composer({
   setDraft,
   busy,
   pending,
+  preparing = false,
   knobs,
   setKnobs,
   workspace,
@@ -442,6 +444,8 @@ export function Composer({
         </ul>
       )}
 
+      {preparing && <p className="fs-studio__paste-hint" role="status">{t('Creating the conversation… Your draft is kept until it is ready.')}</p>}
+
       <textarea
         ref={textareaRef}
         className="fs-studio__input"
@@ -630,7 +634,7 @@ export function Composer({
           {busy ? (
             <IconButton icon={Square} label={t('Stop')} onClick={onStop} testId="studio-stop" />
           ) : (
-            <button type="submit" className="fs-studio__go" disabled={!canSend} aria-label={t('Send')} data-testid="studio-send">
+            <button type="submit" className="fs-studio__go" disabled={!canSend || preparing} aria-label={t(preparing ? 'Creating…' : 'Send')} data-testid="studio-send">
               <ArrowUp size={18} aria-hidden="true" />
             </button>
           )}

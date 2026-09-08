@@ -219,6 +219,8 @@ export function StudioScreen() {
   const [title, setTitle] = useState('');
   const [draft, setDraft] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const sendingMessage = useRef(false);
+  const [preparingMessage, setPreparingMessage] = useState(false);
   const [busy, setBusy] = useState(false);
   const display = useDisplay();
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -781,6 +783,8 @@ export function StudioScreen() {
         // remembered so it can be deleted when the mode ends.
         const sid = await createSession(knobs.incognito ? 'Incognito' : name.slice(0, 60), route);
         if (knobs.incognito) rememberIncognito(sid);
+        // A slow create must not pull the user back from another conversation.
+        if (visibleSession.current !== sessionId) return null;
         setTitle(knobs.incognito ? t('Incognito') : name.slice(0, 60));
         freshRef.current = sid;
         const next = new URLSearchParams(params);
@@ -788,7 +792,7 @@ export function StudioScreen() {
         setParams(next, { replace: true });
         return sid;
       } catch {
-        say(t('Could not create the conversation. Is the model server configured?'), 'danger');
+        if (visibleSession.current === sessionId) say(t('Could not create the conversation. Your draft is still here; try again.'), 'danger');
         return null;
       }
     },
@@ -1675,7 +1679,7 @@ export function StudioScreen() {
   const send = useCallback(
     async (text: string) => {
       const message = text.trim();
-      if ((!message && attachments.length === 0) || busy) return;
+      if ((!message && attachments.length === 0) || busy || sendingMessage.current) return;
 
       const parsed = message ? parseCommand(message) : null;
       if (parsed) {
@@ -1691,13 +1695,21 @@ export function StudioScreen() {
         return;
       }
 
-      setDraft('');
-      const sent = attachments;
-      setAttachments([]);
-      setNotice(null);
-      const sid = await ensureSession(message || sent.map((a) => a.name).join(', '));
-      if (!sid) return;
-      void run(sid, withImageReferences(message, sent), { attachments: sent });
+      sendingMessage.current = true;
+      setPreparingMessage(true);
+      try {
+        const sent = attachments;
+        const sid = await ensureSession(message || sent.map((a) => a.name).join(', '));
+        if (!sid) return; // Keep the draft and attachments available for retry.
+        setDraft(current => current.trim() === message ? '' : current);
+        const sentIds = new Set(sent.map(item => item.id));
+        setAttachments(list => list.filter(item => !sentIds.has(item.id)));
+        setNotice(null);
+        void run(sid, withImageReferences(message, sent), { attachments: sent });
+      } finally {
+        sendingMessage.current = false;
+        setPreparingMessage(false);
+      }
     },
     [attachments, busy, runCommand, ensureSession, run],
   );
@@ -2074,6 +2086,7 @@ export function StudioScreen() {
           setDraft={setDraft}
           busy={busy}
           pending={pending}
+          preparing={preparingMessage}
           knobs={knobs}
           setKnobs={setKnobs}
           workspace={workspace}
