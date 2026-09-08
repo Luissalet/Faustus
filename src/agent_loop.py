@@ -4197,6 +4197,8 @@ async def stream_agent_loop(
         logger.info("[gate] user-dictated delegation in this turn: %d task(s)",
                     len((run_security.user_delegation.get("tasks") or [])) if isinstance(run_security.user_delegation.get("tasks"), list) else 0)
     _hopts: Dict[str, Any] = dict(harness_options or {})
+    from src.context_budget import parse_turn_input_budget
+    _turn_input_budget = parse_turn_input_budget(_hopts.get("input_token_budget"))
     mcp_mgr = get_mcp_manager()
     prep_timings: Dict[str, float] = {}
     disabled_tools = set(disabled_tools or [])
@@ -5039,7 +5041,7 @@ async def stream_agent_loop(
     # (grep, read_file, ...) that aren't in its schema list. Keep the schemas
     # in lockstep: manage_skills is callable whenever any skill is indexed,
     # and a matched skill's declared requires_toolsets ride along with it.
-    if not guide_only and _relevant_tools is not None and not _low_signal_turn:
+    if not guide_only and _relevant_tools is not None and not _low_signal_turn and not _hopts.get("no_skills"):
         try:
             from services.memory.skills import SkillsManager
             from src.constants import DATA_DIR
@@ -5341,6 +5343,8 @@ async def stream_agent_loop(
             )
             _route_context_lengths[(candidate_url, candidate_model)] = candidate_context
             soft_budget = int(get_setting("agent_input_token_budget", DEFAULT_BUDGET) or 0)
+            if _turn_input_budget is not None:
+                soft_budget = _turn_input_budget
             if soft_budget <= 0:
                 return _without_protection(route_messages)
             before_trim_tokens = estimate_tokens(route_messages)
@@ -5354,7 +5358,7 @@ async def stream_agent_loop(
                 hard_max = DEFAULT_HARD_MAX
             if hard_max <= 0:
                 hard_max = DEFAULT_HARD_MAX
-            budget_is_explicit = _budget_is_explicit(soft_budget)
+            budget_is_explicit = _turn_input_budget is not None or _budget_is_explicit(soft_budget)
             effective_budget = compute_input_token_budget(
                 soft_budget,
                 candidate_context,
@@ -5427,7 +5431,7 @@ async def stream_agent_loop(
             compact=is_api or is_native_ollama or is_ollama_compat,
             owner=owner,
             suppress_local_context=guide_only,
-            suppress_skills=_low_signal_turn,
+            suppress_skills=_low_signal_turn or bool(_hopts.get("no_skills")),
             suppress_personal_memory=bool(_hopts.get("incognito") or _hopts.get("no_memory")),
             active_email=active_email,
             workspace=workspace,
@@ -6229,7 +6233,7 @@ async def stream_agent_loop(
                     ),
                     messages=messages,
                     tool_schemas=all_tool_schemas or (),
-                    context_length=_last_route_context_length or context_length,
+                    context_length=min(_last_route_context_length or context_length or _turn_input_budget, _turn_input_budget) if _turn_input_budget else (_last_route_context_length or context_length),
                     window_known=bool(_last_route_context_length),
                     max_output_tokens=max_tokens,
                     round_index=round_num - 1,
@@ -6528,7 +6532,7 @@ async def stream_agent_loop(
                     ),
                     messages=messages,
                     tool_schemas=all_tool_schemas or (),
-                    context_length=_last_route_context_length or context_length,
+                    context_length=min(_last_route_context_length or context_length or _turn_input_budget, _turn_input_budget) if _turn_input_budget else (_last_route_context_length or context_length),
                     window_known=bool(_last_route_context_length),
                     max_output_tokens=max_tokens,
                     round_index=round_num - 1,

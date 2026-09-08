@@ -1290,6 +1290,12 @@ def setup_chat_routes(
         _set_user_time_from_request(request)
 
         form_data = await request.form()
+        from src.context_budget import parse_turn_input_budget
+        try:
+            turn_input_budget = parse_turn_input_budget(form_data.get("input_token_budget", (body or {}).get("input_token_budget")))
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+        no_skills = str(form_data.get("no_skills", (body or {}).get("no_skills", ""))).lower() == "true"
         message = form_data.get("message") or (body or {}).get("message")
         session = form_data.get("session") or (body or {}).get("session")
         attachments = form_data.get("attachments")
@@ -2809,6 +2815,9 @@ def setup_chat_routes(
                     _loop_harness_options = dict(_loop_harness_options or {})
                     _loop_harness_options["incognito"] = bool(incognito)
                     _loop_harness_options["no_memory"] = bool(no_memory)
+                    _loop_harness_options["no_skills"] = bool(no_skills)
+                    if turn_input_budget is not None:
+                        _loop_harness_options["input_token_budget"] = turn_input_budget
 
                     from src import chat_team
                     _team = _chat_team

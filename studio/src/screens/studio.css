@@ -1210,6 +1210,7 @@ details.fs-studio__step > summary:hover .fs-trace__label {
 .fs-media-recipes label { display: grid; gap: 6px; min-inline-size: 0; }
 .fs-media-recipes input, .fs-media-recipes select { inline-size: 100%; min-block-size: 40px; background: var(--fs-surface-1); color: var(--fs-text-1); border: 1px solid var(--fs-border); border-radius: var(--fs-radius-control); padding: 6px; font: inherit; }
 .fs-media-recipes small, .fs-media-recipes p { overflow-wrap: anywhere; }
+.fs-media-recipes input[type='checkbox'] { inline-size: auto; min-block-size: 0; margin-inline-end: 8px; }
 @media (max-width: 899px) { .fs-media-recipes input, .fs-media-recipes select { min-block-size: 44px; font-size: 16px; } }
 
 .fs-studio__reference-role {

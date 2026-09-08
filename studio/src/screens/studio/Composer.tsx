@@ -35,7 +35,7 @@ import {
   type ReactNode,
   type RefObject,
 } from 'react';
-import { IconButton } from '../../components';
+import { IconButton,Popover } from '../../components';
 import {
   attachmentUrl,
   basename,
@@ -63,6 +63,8 @@ export interface Knobs {
   rag: boolean;
   /** Skip automatic personal-memory retrieval, not chat history or project sources. */
   noMemory?: boolean;
+  noSkills?: boolean;
+  inputTokenBudget?: number;
   /** Nobody mode: the conversation is not saved and memory stays closed. */
   incognito: boolean;
   /** Deep Research before the next answer; switches itself off after the turn. */
@@ -564,6 +566,18 @@ export function Composer({
           </button>
           {knobs.mode === 'agent' && (
             <>
+              <Popover side="top" className="fs-media-recipes" trigger={<button type="button" className="fs-studio__chip" aria-pressed={Boolean(knobs.noSkills||knobs.inputTokenBudget)}><SlidersHorizontal size={13}/>{t('Agent context')}</button>}>
+                <section aria-label={t('Agent context')}>
+                  <h3>{t('Agent context')}</h3>
+                  <label><span><input type="checkbox" checked={Boolean(knobs.noSkills)} onChange={event=>setKnobs(k=>({...k,noSkills:event.target.checked}))}/>{t('Skip automatic skills')}</span></label>
+                  <p>{t('Skips skill suggestions and their automatic tool selection. Explicit tool requests and project instructions remain available.')}</p>
+                  <label>{t('Soft input budget')}<select value={knobs.inputTokenBudget??''} onChange={event=>setKnobs(k=>({...k,inputTokenBudget:event.target.value?Number(event.target.value):undefined}))}>
+                    <option value="">{t('Automatic (model and settings)')}</option>{[4096,8192,16384,32768,65536,131072,200000].map(value=><option key={value} value={value}>{value.toLocaleString()} tokens</option>)}
+                  </select></label>
+                  <p>{t('Applies to the next agent request and its tool rounds. The model window still limits it; token counts are estimates, not billing limits.')}</p>
+                  <p>{t('Use @file for explicit references and Docs for indexed documents. Project context stays attached to the project.')}</p>
+                </section>
+              </Popover>
               <button
                 type="button"
                 className="fs-studio__chip"

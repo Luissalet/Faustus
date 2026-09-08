@@ -1654,6 +1654,13 @@ Identity	Identidad
 If the button does not work: {url}	Si el botón no funciona: {url}
 Image	Imagen
 Image attached	Imagen adjuntada
+Agent context	Contexto del agente
+Skip automatic skills	Omitir skills automáticas
+Soft input budget	Presupuesto orientativo de entrada
+Automatic (model and settings)	Automático (modelo y ajustes)
+Skips skill suggestions and their automatic tool selection. Explicit tool requests and project instructions remain available.	Omite las sugerencias de skills y su selección automática de herramientas. Las peticiones explícitas de herramientas y las instrucciones del proyecto siguen disponibles.
+Applies to the next agent request and its tool rounds. The model window still limits it; token counts are estimates, not billing limits.	Se aplica a la próxima petición al agente y sus rondas de herramientas. Sigue limitado por la ventana del modelo; los tokens son estimaciones, no límites de facturación.
+Use @file for explicit references and Docs for indexed documents. Project context stays attached to the project.	Usa @archivo para referencias explícitas y Docs para documentos indexados. El contexto del proyecto sigue vinculado al proyecto.
 Media recipe	Receta multimedia
 Recipes that could not be loaded	Recetas que no se han podido cargar
 Choose a recipe	Elige una receta

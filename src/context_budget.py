@@ -18,6 +18,18 @@ DEFAULT_BUDGET = 6000
 DEFAULT_HEADROOM = 0.85
 
 
+def parse_turn_input_budget(value):
+    """An optional per-turn soft budget; never mutate the operator's defaults."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool) or not str(value).strip().isdigit():
+        raise ValueError("input_token_budget must be an integer between 4096 and 200000")
+    result = int(value)
+    if not 4096 <= result <= 200_000:
+        raise ValueError("input_token_budget must be an integer between 4096 and 200000")
+    return result
+
+
 def _int_or_zero(value) -> int:
     try:
         return int(value or 0)

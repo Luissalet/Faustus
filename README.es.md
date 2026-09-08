@@ -77,6 +77,8 @@ El motor de contexto recupera y distribuye material relevante entre fuentes del 
 
 Activa **Sin recuerdos automáticos** en el cuadro de mensaje para omitir la recuperación automática de memoria personal en los siguientes mensajes, también al compilar el contexto. El historial existente y las fuentes del proyecto siguen disponibles. No desactiva las herramientas de memoria ni el guardado del chat; Incógnito tiene su propio comportamiento de privacidad.
 
+En modo Agente, **Contexto del agente** también permite omitir las skills automáticas y elegir un presupuesto orientativo de tokens de entrada antes de enviar. Los controles acompañan al turno sin modificar los ajustes globales. El presupuesto es una estimación limitada por la ventana del modelo, no un límite de facturación. Las herramientas explícitas y las instrucciones del proyecto siguen disponibles aunque se omitan las skills automáticas.
+
 ### Once sistemas conectados
 
 | Sistema | Para qué sirve | Implementación |

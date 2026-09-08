@@ -106,7 +106,9 @@ def complete(url, model, messages, headers=None, timeout=120, *, cancel=None):
     ))
     # Never discover the project's CLAUDE.md, plugin settings or instructions.
     # The project context has already been assembled by Faustus above.
-    with tempfile.TemporaryDirectory(prefix='faustus-client-model-') as workspace:
+    # Windows may briefly retain a client/antivirus handle after process exit.
+    # Best-effort cleanup must not turn a completed inference into a connection error.
+    with tempfile.TemporaryDirectory(prefix='faustus-client-model-', ignore_cleanup_errors=True) as workspace:
         result = external_worker.run_task(
             runner, prompt, workspace=workspace, model=None if model == 'client-default' else model,
             timeout_s=min(float(timeout), agent_runners.timeout_s()), billing_mode=mode,

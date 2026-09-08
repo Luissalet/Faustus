@@ -355,6 +355,8 @@ export interface SendOptions {
   useRag?: boolean;
   /** Suppress automatic personal-memory retrieval without hiding project context. */
   noMemory?: boolean;
+  noSkills?: boolean;
+  inputTokenBudget?: number;
   /** Deep Research before answering: several rounds of search and reading (`use_research`). */
   useResearch?: boolean;
   workspace?: string;
@@ -813,6 +815,8 @@ export async function* sendTurn(options: SendOptions): AsyncGenerator<ChatEvent>
   if (options.delegateTasks) fd.append('delegate_tasks', JSON.stringify(options.delegateTasks));
   if (options.incognito) fd.append('incognito', 'true');
   if (options.noMemory || options.incognito || options.compare) fd.set('no_memory', 'true');
+  if (options.noSkills) fd.set('no_skills', 'true');
+  if (options.inputTokenBudget != null) fd.set('input_token_budget', String(options.inputTokenBudget));
   if (options.presetId) fd.append('preset_id', options.presetId);
   if (options.activeDocId) fd.append('active_doc_id', options.activeDocId);
   if (options.compare) {

@@ -97,6 +97,33 @@ def test_complete_reuses_supervisor_and_disables_native_tools(authorized, monkey
     assert client.complete('url', 'client-default', [{'role': 'user', 'content': 'Hi'}]) == 'Hola'
 
 
+def test_completed_answer_survives_a_locked_windows_scratch_file(authorized, monkeypatch):
+    import os
+    if os.name != 'nt':
+        pytest.skip('Windows denies deletion of an open scratch file')
+    handles = []
+    paths = []
+
+    def run(runner, prompt, **kwargs):
+        from pathlib import Path
+        path = Path(kwargs['workspace']) / 'client.lock'
+        handle = path.open('w')
+        handles.append(handle)
+        paths.append(path)
+        return {'ok': True, 'response_text': 'Completed despite a retained handle'}
+
+    monkeypatch.setattr(worker, 'run_task', run)
+    try:
+        assert client.complete('url', 'client-default', [{'role':'user','content':'Test'}]) == 'Completed despite a retained handle'
+    finally:
+        for handle in handles:
+            handle.close()
+        for path in paths:
+            path.unlink(missing_ok=True)
+            if path.parent.exists():
+                path.parent.rmdir()
+
+
 @pytest.mark.parametrize('result', [
     {'ok': False, 'error': 'quota exhausted'},
     {'ok': True, 'response_text': ''},

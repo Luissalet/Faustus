@@ -664,6 +664,8 @@ export function StudioScreen() {
           allowWebSearch: knobs.web,
           useRag: knobs.rag,
           noMemory: Boolean(knobs.noMemory),
+          noSkills: Boolean(knobs.noSkills),
+          inputTokenBudget: knobs.inputTokenBudget,
           workspace: knobs.mode === 'agent' || options.delegation || teamEnabled ? workspace || undefined : undefined,
           route,
           attachments: options.attachments?.map((a) => a.id),

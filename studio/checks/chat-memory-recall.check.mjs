@@ -19,3 +19,8 @@ for (const options of [{}, {noMemory:true}, {incognito:true}, {compare:true}, {n
   assert.equal(body.get('incognito'), options.incognito ? 'true' : null);
 }
 console.log('Memory recall transport: all checks passed');
+for await (const _event of sendTurn({sessionId:'qa',message:'test',mode:'agent',noSkills:true,inputTokenBudget:8192})) {}
+assert.equal(body.get('no_skills'),'true');
+assert.equal(body.get('input_token_budget'),'8192');
+assert.equal(body.get('no_memory'),null);
+console.log('Per-turn skill and input-budget transport: all checks passed');
