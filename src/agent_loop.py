@@ -3363,6 +3363,12 @@ def _build_base_prompt(
     skill_index_block = ""
     if not suppress_local_context and not suppress_skills:
         try:
+            from routes.prefs_routes import _load_for_user as _load_skill_prefs
+            suppress_skills = not (_load_skill_prefs(owner) or {}).get("skills_enabled", True)
+        except Exception:
+            pass  # Match the preference fallback used by relevant-skill retrieval.
+    if not suppress_local_context and not suppress_skills:
+        try:
             from services.memory.skills import SkillsManager
             from src.constants import DATA_DIR
             _sm = SkillsManager(DATA_DIR)

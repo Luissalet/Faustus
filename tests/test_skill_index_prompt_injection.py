@@ -44,6 +44,35 @@ MALICIOUS_INDEX_DESC = (
 )
 
 
+@pytest.mark.parametrize("enabled", [False, True])
+def test_skill_catalogue_respects_owner_toggle_before_reading(monkeypatch, enabled):
+    from src import agent_loop
+    from services.memory.skills import SkillsManager
+
+    prefs = types.ModuleType("routes.prefs_routes")
+    owners = []
+
+    def load(owner):
+        owners.append(owner)
+        return {"skills_enabled": enabled}
+
+    prefs._load_for_user = load
+    monkeypatch.setitem(sys.modules, "routes.prefs_routes", prefs)
+    reads = []
+
+    def index(self, **kwargs):
+        reads.append(kwargs["owner"])
+        return [{"name": "toggle-skill", "description": "Toggle test", "category": "general"}]
+
+    monkeypatch.setattr(SkillsManager, "index_for", index)
+    _, block = agent_loop._build_base_prompt(
+        set(), None, False, relevant_tools={"ask_user"}, owner="toggle-owner",
+    )
+    assert owners == ["toggle-owner"]
+    assert reads == (["toggle-owner"] if enabled else [])
+    assert ("toggle-skill" in block) is enabled
+
+
 def _seed_index_skill(tmp_path: Path) -> Path:
     """Write a skill whose description is malicious, then return the data dir.
 

@@ -8,10 +8,11 @@ import React,{useState} from 'react'; import {createRoot} from 'react-dom/client
 import {ImageGallery} from './studio/src/screens/library/Gallery'; import {DocumentsLibrary} from './studio/src/screens/library/Documents';
 import {setLang} from './studio/src/i18n'; import './studio/src/styles/index.css'; import './studio/src/screens/library.css';
 setLang(new URLSearchParams(location.search).get('lang')==='es'?'es':'en',{persist:false}); document.documentElement.dataset.theme='dark';
-function App(){const [query,setQuery]=useState(''),[tab,setTab]=useState('images'),[notice,setNotice]=useState('');
+function App(){const [query,setQuery]=useState(''),[tab,setTab]=useState('images'),[notice,setNotice]=useState(''),[measurement,setMeasurement]=useState('');
+const measure=()=>{const rows=[...document.querySelectorAll('.fs-lib__item,.fs-gal__card')];const skipped=rows.filter(row=>!row.firstElementChild?.checkVisibility({contentVisibilityAuto:true})).length;setMeasurement(rows.length+' rows; '+skipped+' offscreen subtrees skipped');};
 return <MemoryRouter><main className="fs-app fs-screen"><h1>Library pagination QA</h1><p>Synthetic data · no model calls or real files</p>
 <div className="fs-inline"><button onClick={()=>setTab('images')}>Images</button><button onClick={()=>setTab('docs')}>Documents</button>
-<input className="fs-field" aria-label="Search fixtures" value={query} onChange={e=>setQuery(e.target.value)}/></div><p role="status">{notice}</p>
+<input className="fs-field" aria-label="Search fixtures" value={query} onChange={e=>setQuery(e.target.value)}/><button onClick={measure}>Measure rendered rows</button></div><output aria-label="Rendering measurement">{measurement}</output><p role="status">{notice}</p>
 {tab==='images'?<ImageGallery query={query} say={setNotice}/>:<DocumentsLibrary query={query} say={setNotice}/>}</main></MemoryRouter>}
 createRoot(document.getElementById('root')).render(<App/>);
 `,resolveDir:process.cwd(),loader:'tsx'}, bundle:true, platform:'browser',format:'esm',write:false,outfile:'/app.js',external:['/static/*'],logLevel:'silent'});

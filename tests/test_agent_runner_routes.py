@@ -25,7 +25,9 @@ def client(monkeypatch):
     from fastapi.testclient import TestClient
     from core.middleware import require_admin
     from routes import agent_runner_routes
+    from src import settings
 
+    monkeypatch.setattr(settings, "load_settings", lambda: dict(settings.DEFAULT_SETTINGS))
     monkeypatch.setattr(reg, "help_text", lambda **kw: HELP)
     monkeypatch.setattr(reg.shutil, "which", fake_which)
     reg.reset_cache()

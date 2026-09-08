@@ -22,7 +22,7 @@
      scrolled to. The intrinsic size keeps the scrollbar honest while they
      are skipped, which is the half people forget. */
   content-visibility: auto;
-  contain-intrinsic-size: 260px;
+  contain-intrinsic-size: auto 260px;
   transition:
     border-color var(--fs-duration-fast) var(--fs-ease),
     transform var(--fs-duration-fast) var(--fs-ease);
@@ -543,7 +543,20 @@
   border: 1px solid var(--fs-border);
   border-radius: var(--fs-radius-panel);
   background: var(--fs-surface-1);
+  /* Native rendering virtualization retains Find, keyboard navigation and
+     expanded previews in the DOM. Remember measured heights after scrolling
+     past a row instead of returning to a fixed placeholder every time. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 120px;
   transition: border-color var(--fs-duration-fast) var(--fs-ease), background-color var(--fs-duration-fast) var(--fs-ease);
+}
+
+@media print {
+  .fs-card,
+  .fs-lib__item {
+    content-visibility: visible;
+    contain-intrinsic-size: none;
+  }
 }
 
 .fs-lib__item:hover {

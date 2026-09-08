@@ -74,6 +74,9 @@ def _no_live_help(monkeypatch):
     """Never run `ollama launch --help` from a test: every test that wants the
     live list passes it as `help_source`."""
     monkeypatch.setattr(reg, "help_text", lambda **kw: "")
+    # Unit defaults must not depend on the operator's saved connections.
+    from src import settings
+    monkeypatch.setattr(settings, "load_settings", lambda: dict(settings.DEFAULT_SETTINGS))
     reg.reset_cache()
 
 
