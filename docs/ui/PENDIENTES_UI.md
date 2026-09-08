@@ -9,3 +9,5 @@ Voz, objetivos y separadores del chat se siguen en
 Funciones de interfaz incompletas: [OBJETIVOS_UI.md](OBJETIVOS_UI.md).
 
 Biblioteca comprobada con cien documentos sintéticos: el renderizado diferido nativo evita dibujar 82 subárboles fuera de pantalla (antes, ninguno), mantiene las filas en el DOM y permite seleccionar la fila 99. Las tarjetas de imagen conservan ahora su tamaño medido al desplazarse. El modo de impresión muestra todas las filas.
+
+Resultados: pruebas de exclusión de escrituras fallidas, pendientes y canceladas; persistencia y conflictos del panel correctos. Galería→chat: rechazo probado de URL externas, errores HTTP y contenido que no sea imagen; en Brave una descarga fallida muestra su estado y no crea un adjunto. Protegida la llegada tardía de una imagen cuando el usuario cambia de conversación. TypeScript y compilación correctos.

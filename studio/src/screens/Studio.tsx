@@ -482,11 +482,15 @@ export function StudioScreen() {
     setParams(next, { replace: true });
     void (async () => {
       try {
-        const blob = await (await fetch(imageParam, { credentials: 'same-origin' })).blob();
-        const uploaded = await uploadFiles([new File([blob], name, { type: blob.type || 'image/png' })], sessionId);
+        const {galleryAttachment} = await import('../lib/gallery-attachment');
+        const file = await galleryAttachment(imageParam, name, window.location.origin);
+        if (visibleSession.current !== sessionId) return;
+        const uploaded = await uploadFiles([file], sessionId);
+        if (visibleSession.current !== sessionId) return;
         setAttachments((list) => [...list, ...uploaded]);
         say(t('Image attached'));
       } catch (err) {
+        if (visibleSession.current !== sessionId) return;
         say(err instanceof Error ? err.message : String(err), 'danger');
       }
     })();

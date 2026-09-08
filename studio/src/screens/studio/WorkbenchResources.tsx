@@ -4,18 +4,8 @@ import type {Project} from '../../adapters/projects';
 import type {Turn} from './model';
 import {fileKey,type PanelState,type PanelAction} from './panel';
 import {t} from '../../i18n';
+import {outputFiles} from './output-files';
 
-export function outputFiles(turns:Turn[]):string[] {
-  const paths=new Set<string>();
-  for(const turn of turns)for(const step of turn.steps){
-    if(step.diff?.file)paths.add(step.diff.file);
-    if(/^(write_file|edit_file|create_file|transform_media)$/.test(step.tool)){
-      for(const raw of [step.command,step.output]){try{const data=JSON.parse(raw||'');if(typeof data.path==='string')paths.add(data.path);}catch{/* some tools use line headers */}}
-      if(step.command&&!step.command.trim().startsWith('{')&&step.tool!=='transform_media') paths.add(step.command.split('\n')[0].trim());
-    }
-  }
-  return [...paths].filter(p=>p&&p.length<4096);
-}
 const external=(url:string)=>/^https?:\/\//i.test(url);
 export function WorkbenchResources({kind,state,turns,workspace,project,dispatch}:{kind:'outputs'|'sources';state:PanelState;turns:Turn[];workspace:string;project:Project|null;dispatch:(a:PanelAction)=>void}) {
   const docs=new Map(state.documents.map(d=>[d.id!,d]));

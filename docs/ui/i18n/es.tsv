@@ -1652,6 +1652,9 @@ Identity	Identidad
 If the button does not work: {url}	Si el botón no funciona: {url}
 Image	Imagen
 Image attached	Imagen adjuntada
+Only images from this Faustus instance can be attached from the gallery.	Desde la galería solo puedes adjuntar imágenes de esta instancia de Faustus.
+Could not load the gallery image ({status}).	No se ha podido cargar la imagen de la galería ({status}).
+The gallery did not return an image.	La galería no ha devuelto una imagen.
 Image editor	Editor de imágenes
 Image generation	Generación de imágenes
 Image generation from the chat.	Generación de imágenes desde el chat.
