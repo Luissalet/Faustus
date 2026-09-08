@@ -8,6 +8,7 @@ import {
   Library,
   ListPlus,
   MessageSquare,
+  Maximize2,
   Pencil,
   Play,
   RefreshCw,
@@ -47,6 +48,7 @@ import { relativeTime } from '../../adapters/home';
 import { t, tn } from '../../i18n';
 import { safeExternal } from '../../lib/markdown';
 import { Rich } from '../rich';
+import { Vitals } from '../studio/Vitals';
 import '../research.css';
 
 /**
@@ -305,6 +307,7 @@ export function ResearchScreen() {
   const [query, setQuery] = useState(() => params.get('q') ?? '');
   const [settings, setSettings] = useState<ResearchSettings>(() => ({ ...DEFAULT_SETTINGS, ...readJson<Partial<ResearchSettings>>(SETTINGS_KEY, {}) }));
   const [showSettings, setShowSettings] = useState(false);
+  const [expandedPrompt, setExpandedPrompt] = useState(false);
   const [jobs, setJobs] = useState<Job[]>(() => readJson<Job[]>(QUEUE_KEY, []).filter((j) => j.status === 'queued'));
   const [dismissed, setDismissed] = useState<Set<string>>(() => new Set(readJson<string[]>(DISMISSED_KEY, [])));
   const [recent, setRecent] = useState<ResearchItem[] | null>(null);
@@ -543,7 +546,13 @@ export function ResearchScreen() {
       </header>
 
       <section className="fs-rs__ask" aria-label={t('New research')}>
-        <textarea ref={queryRef} className="fs-rs__query" rows={3} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={submit} placeholder={hint} autoFocus data-testid="research-query" />
+        <div className="fs-rs__prompt-heading">
+          <label htmlFor="research-prompt">{t('Research instructions')}</label>
+          <span className="fs-spacer" />
+          {!expandedPrompt && <Vitals busy={running.length > 0} />}
+          <Button variant="ghost" size="sm" icon={Maximize2} label={t('Expand editor')} onClick={() => setExpandedPrompt(true)} testId="research-expand" />
+        </div>
+        <textarea id="research-prompt" ref={queryRef} className="fs-rs__query" rows={query.length > 1000 ? 10 : 5} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={submit} placeholder={hint} autoFocus data-testid="research-query" />
         <div className="fs-rs__ask-row">
           <button type="button" className="fs-rs__settings-toggle" aria-expanded={showSettings} onClick={() => setShowSettings((s) => !s)}>
             <ChevronDown size={12} aria-hidden="true" data-open={showSettings || undefined} />
@@ -744,12 +753,25 @@ export function ResearchScreen() {
 
       <FitCard say={say} />
 
+      <Dialog open={expandedPrompt} onOpenChange={setExpandedPrompt}
+        title={t('Research instructions')} className="fs-rs__prompt-dialog" testId="research-expanded-editor"
+        description={t('Edit the full prompt. Closing this editor keeps your changes without starting research.')}
+        footer={<>
+          {expandedPrompt && <Vitals busy={running.length > 0} />}
+          <span className="fs-spacer" />
+          <Button variant="primary" label={t('Done')} onClick={() => setExpandedPrompt(false)} />
+        </>}>
+        <textarea className="fs-rs__query fs-rs__expanded-query" aria-label={t('Research instructions')}
+          value={query} onChange={e => setQuery(e.target.value)} placeholder={hint} autoFocus />
+      </Dialog>
+
       {editing && (
         <Dialog
           open
           onOpenChange={(o) => !o && setEditing(null)}
           title={t('Edit the question')}
           testId="research-edit"
+          className="fs-rs__prompt-dialog"
           footer={
             <>
               <Button variant="ghost" size="sm" label={t('Cancel')} onClick={() => setEditing(null)} />
@@ -768,7 +790,7 @@ export function ResearchScreen() {
             </>
           }
         >
-          <textarea className="fs-field fs-rs__edit" rows={4} value={editing.query} onChange={(e) => setEditing({ ...editing, query: e.target.value })} autoFocus />
+          <textarea className="fs-rs__query fs-rs__expanded-query" aria-label={t('Research instructions')} value={editing.query} onChange={(e) => setEditing({ ...editing, query: e.target.value })} autoFocus />
         </Dialog>
       )}
 

@@ -12,6 +12,42 @@
 
 /* ── Ask ── */
 
+.fs-rs__prompt-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fs-space-3);
+  flex-wrap: wrap;
+  color: var(--fs-text-2);
+}
+
+.fs-dialog.fs-rs__prompt-dialog {
+  width: min(1100px, calc(100vw - 32px));
+  max-width: calc(100vw - 32px);
+  height: 88dvh;
+  max-height: calc(100dvh - 32px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--fs-space-3);
+  overflow: hidden;
+}
+
+.fs-rs__prompt-dialog .fs-rs__expanded-query {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: auto;
+  resize: none;
+  line-height: 1.65;
+  font-size: 16px;
+  font-weight: 400;
+}
+
+.fs-rs__prompt-dialog .fs-dialog__actions {
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
 .fs-rs__ask {
   display: grid;
   gap: var(--fs-space-2);

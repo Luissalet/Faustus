@@ -12,6 +12,7 @@ export interface DialogProps {
   children?: ReactNode;
   footer?: ReactNode;
   testId?: string;
+  className?: string;
 }
 
 /**
@@ -27,12 +28,13 @@ export function Dialog({
   children,
   footer,
   testId = 'dialog',
+  className = '',
 }: DialogProps) {
   return (
     <RadixDialog.Root open={open} onOpenChange={onOpenChange}>
       <RadixDialog.Portal container={document.getElementById('fs-overlay-root') ?? undefined}>
         <RadixDialog.Overlay className="fs-overlay-backdrop" />
-        <RadixDialog.Content className="fs-dialog" data-testid={testId}>
+        <RadixDialog.Content className={`fs-dialog ${className}`} data-testid={testId}>
           <div
             style={{
               display: 'flex',
