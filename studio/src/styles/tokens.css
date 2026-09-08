@@ -12,6 +12,9 @@
  */
 
 :root {
+  /* Capture annotations stay recognizable against arbitrary image content. */
+  --fs-annotation-ink: #d00038;
+  --fs-annotation-outline: #ffffff;
   /* ── Surfaces: four-step warm charcoal ladder ── */
   --fs-canvas: #0c0d0f;
   --fs-surface-1: #121418;

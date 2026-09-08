@@ -1161,7 +1161,8 @@ class ScheduledTask(TimestampMixin, Base):
     task_type      = Column(String, default="llm")            # "llm" | "action"
     action         = Column(String, nullable=True)            # builtin action name (for task_type="action")
     schedule       = Column(String, nullable=True)            # "once", "daily", "weekly", "monthly"
-    scheduled_time = Column(String, nullable=True)            # "HH:MM" (24h, stored UTC)
+    scheduled_time = Column(String, nullable=True)            # wall time in timezone; legacy rows use UTC
+    timezone       = Column(String, nullable=True)            # explicit IANA zone; never shifts legacy rows
     scheduled_day  = Column(Integer, nullable=True)           # day-of-week 0=Mon for weekly, day-of-month for monthly
     scheduled_date = Column(DateTime, nullable=True)          # exact datetime for "once"
     trigger_type   = Column(String, default="schedule")       # "schedule" | "event"
@@ -2218,6 +2219,7 @@ def _migrate_add_task_v2_columns():
     """Add cron_expression, then_task_id, webhook_token to scheduled_tasks."""
     new_cols = {
         "cron_expression": "VARCHAR",
+        "timezone": "VARCHAR",
         "then_task_id": "VARCHAR",
         "webhook_token": "VARCHAR",
     }

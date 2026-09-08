@@ -48,6 +48,7 @@ interface Draft {
   trigger: TriggerType;
   schedule: Schedule;
   time: string;
+  timezone: string;
   weekday: number;
   monthday: number;
   date: string;
@@ -82,7 +83,8 @@ function draftFrom(existing: Partial<Automation> | null, taskType: TaskType, tri
     urgentRules: '',
     trigger: (existing?.trigger_type as TriggerType) || trigger,
     schedule: (existing?.schedule as Schedule) || 'daily',
-    time: existing?.scheduled_time ? utcToLocal(existing.scheduled_time) : '09:00',
+    time: existing?.scheduled_time ? existing.timezone?existing.scheduled_time:utcToLocal(existing.scheduled_time) : '09:00',
+    timezone: existing?.timezone || (existing?.schedule==='cron'?'UTC':Intl.DateTimeFormat().resolvedOptions().timeZone) || 'UTC',
     weekday: typeof existing?.scheduled_day === 'number' && existing.schedule === 'weekly' ? existing.scheduled_day : 0,
     monthday: typeof existing?.scheduled_day === 'number' && existing.schedule === 'monthly' ? existing.scheduled_day : 1,
     date: localDateInput(existing?.scheduled_date),
@@ -192,11 +194,12 @@ export function AutomationForm({ existing, seed, taskType = 'llm', trigger = 'sc
     }
     if (d.trigger === 'schedule') {
       body.schedule = d.schedule;
+      body.timezone = d.schedule==='once'?'UTC':d.timezone;
       if (d.schedule === 'cron') {
         if (!d.cron.trim()) return setError(t('Write the cron expression'));
         body.cron_expression = d.cron.trim();
       } else {
-        body.scheduled_time = localToUtc(d.time);
+        body.scheduled_time = d.time;
         if (d.schedule === 'weekly') body.scheduled_day = d.weekday;
         if (d.schedule === 'monthly') body.scheduled_day = d.monthday;
         if (d.schedule === 'once') {
@@ -359,12 +362,13 @@ export function AutomationForm({ existing, seed, taskType = 'llm', trigger = 'sc
                 <input className="fs-field" value={d.cron} onChange={(e) => set('cron', e.target.value)} placeholder="*/30 * * * *" spellCheck={false} />
               </Field>
             ) : (
-              <Field label={t('Time')} hint={t('Your local time.')}>
+              <Field label={t('Time')} hint={t(d.schedule==='once'?'Your local time.':'Wall-clock time in the timezone below.')}>
                 <input className="fs-field" type="time" value={d.time} onChange={(e) => set('time', e.target.value)} data-testid="auto-time" />
               </Field>
             )}
           </div>
         )}
+        {d.trigger === 'schedule' && d.schedule!=='once' && <Field label={t('Time zone')} hint={t('IANA timezone, for example Europe/Madrid. Recurring jobs keep their local time through daylight-saving changes.')}><input className="fs-field" value={d.timezone} onChange={e=>set('timezone',e.target.value)} maxLength={100}/></Field>}
         {d.trigger === 'event' && (
           <div className="fs-au__row">
             <Field label={t('Event')}>

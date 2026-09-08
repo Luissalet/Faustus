@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Optional, Dict, Any
 
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from core.database import SessionLocal, ScheduledTask, TaskRun
 from core.constants import internal_api_base
@@ -19,7 +19,7 @@ from src.task_action_policy import (
     is_admin_only_task_action,
     owner_has_admin_task_privileges,
 )
-from src.task_scheduler import compute_next_run, HOUSEKEEPING_DEFAULTS
+from src.task_scheduler import compute_next_run, HOUSEKEEPING_DEFAULTS, _resolve_task_timezone
 from routes.prefs_routes import _load_for_user, _save_for_user
 
 logger = logging.getLogger(__name__)
@@ -138,7 +138,23 @@ def _maybe_cascade_calendar_event(task) -> None:
         logger.warning(f"task delete: cascade fallback scan failed: {e}")
 
 
-class TaskCreate(BaseModel):
+class TaskTimezone(BaseModel):
+    timezone: Optional[str] = None
+
+    @field_validator("timezone")
+    @classmethod
+    def valid_timezone(cls, value):
+        if not value:
+            return value
+        from zoneinfo import ZoneInfo
+        try:
+            ZoneInfo(value)
+        except (ValueError, KeyError) as exc:
+            raise ValueError("Use a valid IANA timezone") from exc
+        return value
+
+
+class TaskCreate(TaskTimezone):
     name: Optional[str] = None
     prompt: Optional[str] = None
     task_type: str = "llm"                        # "llm" | "action" | "research"
@@ -159,7 +175,7 @@ class TaskCreate(BaseModel):
     character_id: Optional[str] = None             # built-in persona id (PERSONAS) — biases output voice
 
 
-class TaskUpdate(BaseModel):
+class TaskUpdate(TaskTimezone):
     name: Optional[str] = None
     prompt: Optional[str] = None
     task_type: Optional[str] = None
@@ -197,6 +213,7 @@ def _task_to_dict(t: ScheduledTask, include_last_run_result: bool = False) -> di
         "action": t.action,
         "schedule": t.schedule,
         "scheduled_time": t.scheduled_time,
+        "timezone": getattr(t,"timezone",None),
         "scheduled_day": t.scheduled_day,
         "scheduled_date": t.scheduled_date.isoformat() + "Z" if t.scheduled_date else None,
         "cron_expression": t.cron_expression,
@@ -414,6 +431,7 @@ def setup_task_routes(task_scheduler) -> APIRouter:
                             task.scheduled_day,
                             task.scheduled_date,
                             cron_expression=task.cron_expression,
+                            tz_name=_resolve_task_timezone(db,task),
                         )
                     resumed += 1
                 db.commit()
@@ -500,6 +518,7 @@ def setup_task_routes(task_scheduler) -> APIRouter:
                 req.schedule, req.scheduled_time,
                 req.scheduled_day, sched_date,
                 cron_expression=req.cron_expression,
+                tz_name=req.timezone,
             )
 
         # Generate webhook token if needed
@@ -534,6 +553,7 @@ def setup_task_routes(task_scheduler) -> APIRouter:
                 action=req.action,
                 schedule=req.schedule,
                 scheduled_time=req.scheduled_time,
+                timezone=req.timezone,
                 scheduled_day=req.scheduled_day,
                 scheduled_date=sched_date,
                 cron_expression=req.cron_expression,
@@ -719,6 +739,9 @@ def setup_task_routes(task_scheduler) -> APIRouter:
 
             # Recompute next_run if schedule changed
             schedule_changed = False
+            if req.timezone is not None:
+                task.timezone=req.timezone or None
+                schedule_changed=True
             if req.schedule is not None:
                 task.schedule = req.schedule
                 schedule_changed = True
@@ -745,6 +768,7 @@ def setup_task_routes(task_scheduler) -> APIRouter:
                     task.schedule, task.scheduled_time,
                     task.scheduled_day, task.scheduled_date,
                     cron_expression=task.cron_expression,
+                    tz_name=_resolve_task_timezone(db,task),
                 )
 
             db.commit()
@@ -808,6 +832,7 @@ def setup_task_routes(task_scheduler) -> APIRouter:
                     task.schedule, task.scheduled_time,
                     task.scheduled_day, task.scheduled_date,
                     cron_expression=task.cron_expression,
+                    tz_name=_resolve_task_timezone(db,task),
                 )
             db.commit()
             return {"ok": True, "status": "active", "next_run": task.next_run.isoformat() + "Z" if task.next_run else None}
@@ -831,6 +856,7 @@ def setup_task_routes(task_scheduler) -> APIRouter:
             task.name = defs["name"]
             task.schedule = defs["schedule"]
             task.scheduled_time = defs["scheduled_time"]
+            task.timezone = None
             task.scheduled_day = None
             task.scheduled_date = None
             task.cron_expression = defs["cron_expression"]

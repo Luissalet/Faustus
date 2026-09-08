@@ -5,12 +5,15 @@ Actualizado: 08-09-2026. Sólo trabajo vigente; quitar cada entrada al cerrarla.
 ## Comprobaciones pendientes
 
 - **Voz física:** conversación completa con micrófono en español e inglés. No activar grabación ni permisos para cerrar esta casilla sin intervención del usuario.
+- **Validación del bloque creativo/escritorio:** suite completa en ejecución (`logs/checkpoint-creative-full.log`); resolver los fallos que encuentre antes de cerrar el bloque.
 
 Las carencias de backend del índice anterior están implementadas; se ha eliminado ese índice vacío.
 No quedan funciones o ampliaciones acordadas por implementar. Eliminados los índices de UI resueltos; se pueden recuperar del historial Git.
 No contar planes de inspiración o notas de implementación como otra cola de tareas.
 
 ## Última evidencia
+
+- 08-09: lanzadores web del repositorio probados con parada, arranque y reutilización sin duplicado. Ventana Electron real: minimizar, maximizar/restaurar, pantalla completa y cierre comprobados; cierra su backend propio y conserva el servidor web compartido. Barra integrada en temas y disponible también en el acceso. Regresiones de tareas/contexto: **68 correctas**; bloque creativo: **36 correctas**, incluido doblaje real local EN/ES; rutas de vídeo: **3 correctas**; controles de interfaz/escritorio/zonas horarias: **25 correctas**. TypeScript, scripts frontend, compilación y portfolio/CV correctos.
 
 - Clientes oficiales en Brave (08-09, 02:07): Codex y Claude responden con sus sesiones de suscripción; Claude delega a un worker Codex, con resultado registrado, aprobación y cero cambios de archivos. Corregidos esquemas MCP incompatibles y descripciones ausentes de herramientas textuales. Bloque de **234 pruebas correctas**, controles de transporte de memoria y etiquetas de modelo, TypeScript y compilación correctos.
 

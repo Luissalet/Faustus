@@ -303,6 +303,8 @@ def compute_next_run(schedule: str, scheduled_time: str,
 
 def _resolve_task_timezone(db, task) -> str | None:
     """Look up the IANA timezone name for a task via its linked CrewMember, if any."""
+    if isinstance(getattr(task, "timezone", None), str) and task.timezone:
+        return task.timezone
     if not getattr(task, "crew_member_id", None):
         return None
     try:

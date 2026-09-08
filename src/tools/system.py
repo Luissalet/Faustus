@@ -275,7 +275,7 @@ async def do_manage_tasks(content: str, owner: Optional[str] = None) -> Dict:
     """Handle manage_tasks tool calls: CRUD on scheduled tasks."""
     import uuid as _uuid
     from core.database import SessionLocal, ScheduledTask
-    from src.task_scheduler import compute_next_run
+    from src.task_scheduler import compute_next_run, _resolve_task_timezone
 
     try:
         args = _parse_tool_args(content)
@@ -303,9 +303,17 @@ async def do_manage_tasks(content: str, owner: Optional[str] = None) -> Dict:
             "friday": 4, "fri": 4,
             "saturday": 5, "sat": 5,
             "sunday": 6, "sun": 6,
+            "lunes": 0, "martes": 1, "miércoles": 2, "miercoles": 2,
+            "jueves": 3, "viernes": 4, "sábado": 5, "sabado": 5, "domingo": 6,
         }
         if day in days:
             args["scheduled_day"] = days[day]
+    if args.get("timezone"):
+        try:
+            from zoneinfo import ZoneInfo
+            ZoneInfo(args["timezone"])
+        except (TypeError, ValueError, KeyError):
+            return {"error": "Use a valid IANA timezone, such as Europe/Madrid", "exit_code": 1}
     db = SessionLocal()
     try:
         if action == "list":
@@ -345,7 +353,10 @@ async def do_manage_tasks(content: str, owner: Optional[str] = None) -> Dict:
                 next_run = compute_next_run(
                     schedule, args.get("scheduled_time", "09:00"),
                     args.get("scheduled_day"),
+                    tz_name=args.get("timezone"),
                 )
+                if next_run is None:
+                    return {"error": "The schedule is invalid or has no future occurrence. Supply a valid time and weekday/date.", "exit_code": 1}
 
             task_id = str(_uuid.uuid4())
             # Guard each fallback with `or`: args.get("prompt", default) returns
@@ -359,7 +370,8 @@ async def do_manage_tasks(content: str, owner: Optional[str] = None) -> Dict:
                 prompt=args.get("prompt"),
                 task_type=task_type,
                 action=args.get("action_name"),
-                schedule=args.get("schedule") if trigger_type == "schedule" else None,
+                schedule=args.get("schedule", "daily") if trigger_type == "schedule" else None,
+                timezone=args.get("timezone") or None,
                 scheduled_time=args.get("scheduled_time", "09:00") if trigger_type == "schedule" else None,
                 scheduled_day=args.get("scheduled_day"),
                 trigger_type=trigger_type,
@@ -372,7 +384,7 @@ async def do_manage_tasks(content: str, owner: Optional[str] = None) -> Dict:
             )
             db.add(task)
             db.commit()
-            return {"response": f"Created task '{name}' (id: {task_id})", "task_id": task_id, "exit_code": 0}
+            return {"response": f"Created task '{name}' (id: {task_id}). See /automations. Faustus must be running.", "task_id": task_id, "next_run": next_run.isoformat()+"Z" if next_run else None, "timezone": task.timezone or "UTC", "exit_code": 0}
 
         elif action == "edit":
             task_id = args.get("task_id")
@@ -410,7 +422,7 @@ async def do_manage_tasks(content: str, owner: Optional[str] = None) -> Dict:
                 changed.append("trigger_count")
 
             schedule_changed = False
-            for field in ("schedule", "scheduled_time", "scheduled_day"):
+            for field in ("schedule", "scheduled_time", "scheduled_day", "timezone"):
                 if args.get(field) is not None:
                     setattr(task, field, args[field])
                     changed.append(field)
@@ -419,7 +431,11 @@ async def do_manage_tasks(content: str, owner: Optional[str] = None) -> Dict:
             if schedule_changed and (task.trigger_type or "schedule") == "schedule":
                 task.next_run = compute_next_run(
                     task.schedule, task.scheduled_time, task.scheduled_day,
+                    tz_name=_resolve_task_timezone(db, task),
                 )
+                if task.next_run is None:
+                    db.rollback()
+                    return {"error": "The updated schedule has no valid future occurrence", "exit_code": 1}
 
             db.commit()
             return {"response": f"Updated task '{task.name}': {', '.join(changed)}", "exit_code": 0}
@@ -455,6 +471,7 @@ async def do_manage_tasks(content: str, owner: Optional[str] = None) -> Dict:
                 if (task.trigger_type or "schedule") == "schedule":
                     task.next_run = compute_next_run(
                         task.schedule, task.scheduled_time, task.scheduled_day,
+                        tz_name=_resolve_task_timezone(db, task),
                     )
             db.commit()
             return {"response": f"Task '{task.name}' {action}d", "exit_code": 0}

@@ -87,6 +87,10 @@ import { useDisplay } from '../shell/display';
    panel (browser frames, document editor, file viewer) arrive when opened. */
 const WorkspaceDialog = lazy(() => import('./studio/WorkspaceDialog'));
 const SidePanel = lazy(() => import('./studio/SidePanel'));
+import {selectionImage,selectionPrompt} from './studio/FrameSelection';
+import ProjectVisualReferences from './studio/ProjectVisualReferences';
+import StyleLab from './studio/StyleLab';
+import LocalVideo from './studio/LocalVideo';
 const VoicePanel = lazy(() => import('../voice/VoicePanel'));
 
 /* The speech adapter (TTS/STT with browser fallbacks) loads on first use. */
@@ -2117,13 +2121,30 @@ export function StudioScreen() {
           modelPicker={<ModelPicker routes={routes} current={route} onPick={(r) => setRouteId(r.id)} onRefresh={refreshModels} refreshing={refreshingModels} openSignal={modelSignal} />}
           presetChip={<><PresetPicker current={preset} onPick={(p) => setPreset(p ? { id: p.id, name: p.name } : null)} onNotice={say} openSignal={presetSignal} />{!knobs.incognito&&<ChatTeam sessionId={sessionId} routes={routes} coordinator={route} busy={busy} ensureSession={()=>ensureSession(t('Conversation'))} onEnabled={setTeamEnabled}/>}</>}
           lastSent={lastSent}
+          extraControls={<><LocalVideo/><StyleLab key={'style:'+sessionId} model={route?route.model+'@'+route.endpointName:''} onSaved={saved=>setPreset({id:saved.id,name:saved.name})}/>{project&&!knobs.incognito?<ProjectVisualReferences key={sessionId||project.id} projectId={project.id} onUse={async(file,referenceRole)=>{
+            const sid=sessionId;
+            const uploaded=await uploadFiles([file],sid);
+            if(visibleSession.current!==sid)return;
+            if(!uploaded.length)throw new Error(t('The gallery did not return an image.'));
+            setAttachments(items=>[...items,...uploaded.map(item=>({...item,referenceRole}))]);
+          }}/>:null}</>}
           textareaRef={textareaRef}
         />
       </section>
 
       {panel.open && (
         <Suspense fallback={<aside className="fs-panel" aria-busy="true" />}>
-          <SidePanel state={panel} dispatch={panelDispatch} onNotice={say} turns={turns||[]} workspace={workspace} project={project} busy={busy} onRerun={rerunWorker} />
+          <SidePanel state={panel} dispatch={panelDispatch} onNotice={say} turns={turns||[]} workspace={workspace} project={project} busy={busy} onRerun={rerunWorker} onVisualSelection={async selection=>{
+            const sid=sessionId;
+            const file=await selectionImage(selection);
+            if(visibleSession.current!==sid)return;
+            const uploaded=await uploadFiles([file],sid);
+            if(visibleSession.current!==sid)return;
+            if(!uploaded.length)throw new Error(t('Could not prepare the capture.'));
+            setAttachments(items=>[...items,...uploaded]);
+            setDraft(text=>[text.trimEnd(),selectionPrompt(selection)].filter(Boolean).join('\n\n'));
+            say(t('Capture and change request added to your draft.'));
+          }}/>
         </Suspense>
       )}
 

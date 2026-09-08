@@ -8,6 +8,7 @@ import { Rich } from '../rich';
 import { autoOpenEnabled, setAutoOpen, fileKey,docKey,type PanelDraft,type DocState, type PanelAction, type PanelState, type PanelTab } from './panel';
 import {WorkbenchResources} from './WorkbenchResources';
 import SubagentBoard from './SubagentBoard';
+import FrameSelection, {type VisualSelection} from './FrameSelection';
 import type {Turn} from './model';
 import type {Project} from '../../adapters/projects';
 import type {DelegationTask} from '../../adapters/chat';
@@ -26,6 +27,7 @@ export interface SidePanelProps {
   onNotice: (text: string, tone?: 'info' | 'warning' | 'danger') => void;
   turns:Turn[]; workspace:string; project:Project|null; busy:boolean;
   onRerun:(task:DelegationTask)=>void;
+  onVisualSelection?:(selection:VisualSelection)=>Promise<void>;
 }
 
 const TABS: { id: PanelTab; label: string; icon: typeof Globe }[] = [
@@ -39,7 +41,7 @@ const TABS: { id: PanelTab; label: string; icon: typeof Globe }[] = [
 
 /* ── Browser ── */
 
-function BrowserTab({ state, dispatch }: { state: PanelState; dispatch: SidePanelProps['dispatch'] }) {
+function BrowserTab({ state, dispatch, onVisualSelection }: { state: PanelState; dispatch: SidePanelProps['dispatch']; onVisualSelection?:SidePanelProps['onVisualSelection'] }) {
   const [auto, setAuto] = useState(autoOpenEnabled);
   const frame = state.active >= 0 ? state.frames[state.active] : null;
   return (
@@ -71,7 +73,7 @@ function BrowserTab({ state, dispatch }: { state: PanelState; dispatch: SidePane
             <strong>{frame.title}</strong>
             {frame.url && <span title={frame.url}>{frame.url}</span>}
           </p>
-          <img className="fs-panel__frame" src={frame.src} alt={frame.title || t('Browser screen')} />
+          {onVisualSelection&&frame.source==='browser'?<FrameSelection frame={frame} onAdd={onVisualSelection}/>:<img className="fs-panel__frame" src={frame.src} alt={frame.title || t('Browser screen')} />}
         </>
       ) : (
         <p className="fs-studio__hint">{t('What the agent sees when it uses the browser or the desktop appears here.')}</p>
@@ -366,7 +368,7 @@ function FileTab({ file,draft,dispatch, onNotice }: { file: PanelState['file']; 
   );
 }
 
-export default function SidePanel({ state, dispatch, onNotice,turns,workspace,project,busy,onRerun }: SidePanelProps) {
+export default function SidePanel({ state, dispatch, onNotice,turns,workspace,project,busy,onRerun,onVisualSelection }: SidePanelProps) {
   const tabStrip=useRef<HTMLDivElement>(null);
   useEffect(()=>{tabStrip.current?.querySelector('[aria-selected=true]')?.scrollIntoView({block:'nearest',inline:'nearest'});},[state.tab]);
   const tabs=TABS.filter(tab=>tab.id!=='doc'&&tab.id!=='file'||tab.id==='doc'&&state.doc||tab.id==='file'&&state.file);
@@ -405,7 +407,7 @@ export default function SidePanel({ state, dispatch, onNotice,turns,workspace,pr
       <div className="fs-workbench-content" role="tabpanel" id="workbench-content" aria-labelledby={'workbench-tab-'+state.tab}>
       {(state.tab==='outputs'||state.tab==='sources')&&<WorkbenchResources kind={state.tab} state={state} turns={turns} workspace={workspace} project={project} dispatch={dispatch}/>}
       {state.tab==='agents'&&<div className="fs-panel__body"><h3>{t('Agents in this conversation')}</h3>{workers.length?<SubagentBoard workers={workers} live={busy} onRerun={onRerun} onNotice={onNotice}/>:<p>{t('No agents have worked in this conversation yet. Configure a team beside the model picker.')}</p>}</div>}
-      {state.tab === 'browser' && <BrowserTab state={state} dispatch={dispatch} />}
+      {state.tab === 'browser' && <BrowserTab state={state} dispatch={dispatch} onVisualSelection={onVisualSelection} />}
       {state.tab === 'doc' && <DocTab key={state.doc?.id||'streaming'} doc={state.doc} draft={state.doc?state.drafts[docKey(state.doc)]:undefined} dispatch={dispatch} onNotice={onNotice} />}
       {state.tab === 'file' && <FileTab key={state.file?fileKey(state.file):'none'} file={state.file} draft={state.file?state.drafts[fileKey(state.file)]:undefined} dispatch={dispatch} onNotice={onNotice} />}
       </div>

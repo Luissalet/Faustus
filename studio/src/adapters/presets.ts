@@ -51,7 +51,9 @@ export async function saveTemplate(input: { id?: string; name: string; systemPro
   });
   if (!response.ok) throw new Error(`templates responded ${response.status}`);
   const raw = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+  if(raw.success!==true)throw new Error(typeof raw.message==='string'?raw.message:'Template was not saved');
   const t = (raw.template && typeof raw.template === 'object' ? raw.template : raw) as Record<string, unknown>;
+  if(typeof t.id!=='string'||!t.id)throw new Error('Template response has no identifier');
   return { id: String(t.id ?? input.id ?? ''), name: String(t.name ?? input.name), systemPrompt: String(t.system_prompt ?? input.systemPrompt), own: true };
 }
 

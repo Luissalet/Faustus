@@ -13,6 +13,7 @@
 import { StrictMode, Suspense, lazy } from 'react';
 import { createRoot } from 'react-dom/client';
 import { AppShell } from './shell/AppShell';
+import { DesktopBar } from './shell/DesktopBar';
 
 const Gallery = lazy(async () => ({
   default: (await import('./gallery/Gallery')).Gallery,
@@ -47,6 +48,7 @@ export function mount(gallery: boolean): void {
   mounted = true;
   createRoot(mountPoint()).render(
     <StrictMode>
+      <DesktopBar />
       {gallery ? (
         <Suspense fallback={null}>
           <Gallery />

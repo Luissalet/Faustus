@@ -5565,3 +5565,90 @@ Saved state restored from the verified journal.	Estado guardado restaurado desde
 Saved state matches the verified journal.	El estado guardado coincide con el historial verificado.
 The saved view differs from its journal. You can restore the verified state.	La vista guardada difiere de su historial. Puedes restaurar el estado verificado.
 Verification starts from a checkpoint created during upgrade; older probe history is not reconstructed.	La verificación parte de un punto de control creado durante la actualización; no se reconstruye el historial de observaciones anterior.
+Visual change request:	Petición de cambio visual:
+The attached capture marks the target. It is a past observation, not the current page. Inspect the current page and its DOM before editing. Locate the source in the project; do not assume a DOM element identifies a source file.	La captura adjunta marca el objetivo. Es una observación anterior, no la página actual. Inspecciona la página actual y su DOM antes de editar. Localiza el código fuente en el proyecto; no supongas que un elemento del DOM identifica un archivo fuente.
+This capture cannot be attached. Take a new browser capture.	No se puede adjuntar esta captura. Haz una nueva captura del navegador.
+This capture is too large. Take a smaller browser capture.	Esta captura es demasiado grande. Haz una captura del navegador más pequeña.
+Could not prepare the capture.	No se pudo preparar la captura.
+Select the area to change	Seleccionar la zona que quieres cambiar
+Point to a change	Señalar un cambio
+Click the capture or use the arrow keys to mark a target. Nothing is edited or sent automatically.	Haz clic en la captura o usa las flechas para marcar un objetivo. No se edita ni se envía nada automáticamente.
+What should change?	¿Qué quieres cambiar?
+Capture and change request added to your draft.	Captura y petición de cambio añadidas a tu borrador.
+Selection capture:	Captura seleccionada:
+Add between 1 and 80 subtitle segments.	Añade entre 1 y 80 segmentos de subtítulos.
+Add segment	Añadir segmento
+Available	Disponible
+Check segment times and text: ordered, non-overlapping, within 3 minutes.	Revisa los tiempos y el texto: ordenados, sin solapamientos y dentro de 3 minutos.
+Choose a PNG or JPEG image up to 20 MB.	Elige una imagen PNG o JPEG de hasta 20 MB.
+Choose a non-empty MP4, MOV, WebM or MKV up to 64 MB.	Elige un MP4, MOV, WebM o MKV no vacío de hasta 64 MB.
+Compare (2 model responses)	Comparar (2 respuestas del modelo)
+Could not check local video tools.	No se pudieron comprobar las herramientas locales de vídeo.
+Create dubbed MP4 locally	Crear MP4 doblado en local
+Derive style rules	Extraer reglas de estilo
+Editable style rules	Reglas de estilo editables
+Examples must fit within 20,000 characters.	Los ejemplos deben caber en 20.000 caracteres.
+Extract editable style rules from examples, compare two responses, then save as a reusable preset. This does not train model weights.	Extrae reglas de estilo editables a partir de ejemplos, compara dos respuestas y guarda un preset reutilizable. Esto no entrena los pesos del modelo.
+Import TXT or Markdown	Importar TXT o Markdown
+Keep this panel open to receive the result. Maximum processing time: 10 minutes.	Mantén este panel abierto para recibir el resultado. Tiempo máximo de procesamiento: 10 minutos.
+Learn a style	Aprender un estilo
+Local tools:	Herramientas locales:
+Local video	Vídeo local
+Local video processing failed.	El procesamiento local de vídeo ha fallado.
+Narration language	Idioma de la narración
+No image came back	No se recibió ninguna imagen
+No saved visual references yet.	Todavía no hay referencias visuales guardadas.
+Not installed	No instalado
+Offline subtitles and narration for clips up to 3 minutes, 1080p and 64 MB. No cloud calls or automatic model downloads.	Subtítulos y narración sin conexión para clips de hasta 3 minutos, 1080p y 64 MB. Sin llamadas a la nube ni descargas automáticas de modelos.
+PNG or JPEG, up to 20 MB. Removing a reference keeps the original image in the gallery.	PNG o JPEG, hasta 20 MB. Quitar una referencia conserva la imagen original en la galería.
+Recipe	Receta
+Reference attached to your draft.	Referencia adjunta al borrador.
+Reference image	Imagen de referencia
+Reference name	Nombre de la referencia
+Reference role	Función de la referencia
+Remove reference	Quitar referencia
+Remove segment	Quitar segmento
+Save a visual reference	Guardar una referencia visual
+Save and use style	Guardar y usar estilo
+Save named images in this project and attach them to any of its chats. Consistency depends on the selected image model.	Guarda imágenes con nombre en este proyecto y adjúntalas a cualquiera de sus chats. La consistencia depende del modelo de imagen seleccionado.
+Save reference	Guardar referencia
+Segment	Segmento
+Select a model first.	Selecciona primero un modelo.
+Selected model:	Modelo seleccionado:
+Spoken language	Idioma hablado
+Style saved and selected for this chat.	Estilo guardado y seleccionado para este chat.
+System voice	Voz del sistema
+Test prompt	Mensaje de prueba
+That reference name is already used in this project.	Ese nombre de referencia ya se usa en este proyecto.
+The gallery did not return an image identifier.	La galería no devolvió un identificador de imagen.
+The model returned no style rules.	El modelo no devolvió reglas de estilo.
+The style comparison is incomplete.	La comparación de estilo está incompleta.
+The style request failed.	La solicitud de estilo ha fallado.
+The transcript response is invalid.	La respuesta de transcripción no es válida.
+This image is already linked to the project. Its existing name and settings were preserved.	Esta imagen ya está enlazada al proyecto. Se han conservado su nombre y configuración.
+Transcribe locally	Transcribir en local
+Transcribe with existing Whisper weights, then edit or translate the segments yourself. Dubbing uses an installed Windows voice and replaces the original audio; it does not clone voices or synchronize lips.	Transcribe con pesos de Whisper ya instalados y después edita o traduce los segmentos. El doblaje usa una voz instalada de Windows y sustituye el audio original; no clona voces ni sincroniza labios.
+Transcript or translation	Transcripción o traducción
+Use 1–48 letters, numbers, underscores or hyphens for the reference name.	Usa entre 1 y 48 letras, números, guiones bajos o guiones en el nombre.
+Video file	Archivo de vídeo
+Visual reference saved.	Referencia visual guardada.
+Visual references	Referencias visuales
+With style	Con estilo
+Without style	Sin estilo
+Working… Closing this panel keeps your edits and processing continues while this chat stays open.	Trabajando… Cerrar este panel conserva tus cambios y el procesamiento continúa mientras este chat siga abierto.
+Writing examples	Ejemplos de escritura
+Start (seconds)	Inicio (segundos)
+End (seconds)	Fin (segundos)
+Creating local narration and video…	Creando narración y vídeo en local…
+Transcribing locally…	Transcribiendo en local…
+Wall-clock time in the timezone below.	Hora local en la zona horaria indicada abajo.
+Time zone	Zona horaria
+IANA timezone, for example Europe/Madrid. Recurring jobs keep their local time through daylight-saving changes.	Zona horaria IANA, por ejemplo Europe/Madrid. Las tareas recurrentes mantienen su hora local con los cambios de horario de verano e invierno.
+Window controls	Controles de ventana
+Minimize window	Minimizar ventana
+Restore window	Restaurar ventana
+Maximize window	Maximizar ventana
+Exit full screen	Salir de pantalla completa
+Full screen	Pantalla completa
+Close window	Cerrar ventana
+Keep this chat open to receive the result. Maximum processing time: 10 minutes.	Mantén este chat abierto para recibir el resultado. Tiempo máximo de procesamiento: 10 minutos.

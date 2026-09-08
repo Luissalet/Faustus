@@ -1,0 +1,20 @@
+html[data-desktop-window='on'] .fs-shell { inset-block-start: 40px; }
+.fs-desktop-bar {
+  position: fixed; inset: 0 0 auto; z-index: 1000; height: 40px;
+  display: flex; align-items: stretch; user-select: none;
+  background: var(--fs-surface-1); color: var(--fs-text-1);
+  border-block-end: 1px solid var(--fs-border);
+}
+.fs-desktop-bar__drag {
+  -webkit-app-region: drag; flex: 1; min-width: 0;
+  display: flex; align-items: center; padding-inline: 18px;
+  font-size: 13px; font-weight: 600; color: var(--fs-brand);
+}
+.fs-desktop-bar button {
+  -webkit-app-region: no-drag; width: 44px; height: 39px; padding: 0;
+  display: grid; place-items: center; border: 0; border-radius: 0;
+  background: transparent; color: var(--fs-text-1); cursor: pointer;
+}
+.fs-desktop-bar button:hover { background: var(--fs-surface-3); }
+.fs-desktop-bar button:focus-visible { outline-offset: -3px; }
+.fs-desktop-bar .fs-desktop-bar__close:hover { background: var(--fs-danger-solid); color: var(--fs-on-danger-solid); }

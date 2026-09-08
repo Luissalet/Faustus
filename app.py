@@ -800,6 +800,8 @@ app.include_router(setup_context_engine_routes())
 # inputs, and that is the whole surface.
 from routes.media_routes import setup_media_routes
 app.include_router(setup_media_routes())
+from routes.local_video_routes import setup_local_video_routes
+app.include_router(setup_local_video_routes())
 from routes.artifact_routes import setup_artifact_routes
 app.include_router(setup_artifact_routes())
 

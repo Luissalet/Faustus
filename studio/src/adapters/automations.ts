@@ -21,6 +21,7 @@ export interface Automation {
   schedule?: string | null;
   cron_expression?: string | null;
   scheduled_time?: string | null;
+  timezone?: string | null;
   scheduled_day?: number | null;
   scheduled_date?: string | null;
   trigger_type?: string | null;
@@ -82,6 +83,7 @@ export interface TaskInput {
   action?: string;
   schedule?: Schedule;
   scheduled_time?: string;
+  timezone?: string;
   scheduled_day?: number;
   scheduled_date?: string;
   cron_expression?: string;
@@ -421,8 +423,8 @@ export function describeTrigger(task: Automation): string {
     return t('When {event} happens{times}', { event: task.trigger_event.replace(/_/g, ' '), times });
   }
   if (task.trigger_type === 'webhook') return t('When the webhook is called');
-  if (task.schedule === 'cron' && task.cron_expression) return describeCron(task.cron_expression);
-  const time = task.scheduled_time ? utcToLocal(task.scheduled_time) : '';
+  if (task.schedule === 'cron' && task.cron_expression) return describeCron(task.cron_expression)+(task.timezone?` (${task.timezone})`:'');
+  const time = task.scheduled_time ? task.timezone?`${task.scheduled_time} (${task.timezone})`:utcToLocal(task.scheduled_time) : '';
   if (task.schedule === 'daily') return t('Every day at {time}', { time });
   if (task.schedule === 'weekly') return t('Every {day} at {time}', { day: t(DAYS[task.scheduled_day ?? 0] ?? 'Monday'), time });
   if (task.schedule === 'monthly') return t('Day {n} of each month at {time}', { n: task.scheduled_day ?? 1, time });

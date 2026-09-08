@@ -95,6 +95,7 @@ export interface ComposerProps {
   modelPicker: ReactNode;
   /** The preset chip (picker + clear), rendered by the screen. */
   presetChip?: ReactNode;
+  extraControls?: ReactNode;
   /** ↑ on an empty composer brings back the last thing you sent. */
   lastSent?: string;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
@@ -131,6 +132,7 @@ export function Composer({
   onNotice,
   modelPicker,
   presetChip,
+  extraControls,
   lastSent,
   textareaRef,
 }: ComposerProps) {
@@ -499,6 +501,7 @@ export function Composer({
 
         <div className="fs-studio__knobs">
           <MediaRecipes onInsert={text=>setDraft(draft.trim()?`${draft.trimEnd()}\n\n${text}`:text)}/>
+          {extraControls}
           <input
             ref={fileInputRef}
             type="file"

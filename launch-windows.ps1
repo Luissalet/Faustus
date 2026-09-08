@@ -15,7 +15,8 @@
 #>
 param(
     [int]$Port = 7000,
-    [string]$BindHost = "127.0.0.1"
+    [string]$BindHost = "127.0.0.1",
+    [switch]$SetupOnly
 )
 
 $ErrorActionPreference = "Stop"
@@ -163,6 +164,7 @@ if (Test-Path $cudaBase) {
 }
 
 # 7. Start the server (use `python -m uvicorn` - bare `uvicorn` may not be on PATH)
+if ($SetupOnly) { Write-Step "Setup complete. Use a Start-Faustus launcher."; return }
 # -Port only reaches uvicorn as a flag. Everything that builds a URL for this
 # instance - internal_api_base(), companion pairing, the MCP OAuth callback -
 # reads APP_PORT, so set it too or they all assume 7000.

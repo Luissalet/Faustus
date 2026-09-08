@@ -47,6 +47,30 @@ Native installation, Windows/macOS instructions, GPU setup, HTTPS and environmen
 
 ## What you can do
 
+### Windows desktop and web launchers
+
+Launchers live in this repository and resolve paths relative to the checkout:
+
+| Launcher | Action |
+| --- | --- |
+| `Start-Faustus-Desktop.bat` | Open a native Electron window with theme-aware minimize, maximize/restore, full-screen and close controls. |
+| `Start-Faustus.bat` | Start Faustus and open the web interface in your browser. |
+| `Stop-Faustus.bat` | Stop the server managed by these launchers. |
+| `Restart-Faustus.bat` | Restart that server and open the web interface. |
+
+Python and Node.js are required for first-time setup. The launchers prepare missing dependencies, rebuild stale Studio assets and install the pinned desktop runtime when needed. `Start-Faustus.ps1 -NoBrowser` starts web mode without opening a tab; `-Port 7001` selects another port.
+
+Closing the desktop window stops the backend **only if that window started it**. An already-running web server is reused and remains running when the window closes. Process ownership is verified; unrelated Python processes and external model servers are not stopped. Desktop authentication is separate from your browser, so sign in once in the window.
+
+Scheduled work requires a running Faustus server and an awake computer. Use web mode to leave the backend running after closing browser tabs; closing an owning desktop window stops scheduling too. In Agent chat, request a recurrence in English or Spanish, specify a time and time zone, and manage the saved task under **Automations**. Recurring tasks support IANA time zones and daylight-saving changes; existing tasks without a zone retain their UTC behavior.
+
+### Creative tools inside the conversation
+
+- **Point-to-edit:** select a point in a captured browser frame and describe the change. An annotated screenshot and capture provenance are added to the draft, not sent automatically. The agent must inspect the current page and project; screenshot coordinates are not invented source-code mappings.
+- **Project visual references:** save named `@references` as project context links, distinguish subject, style and composition, and explicitly attach them from the picker. Removing a reference link does not delete its gallery image.
+- **Learn a style:** derive editable style rules from TXT/Markdown examples using the selected model, compare baseline and styled answers, then save and select a preset. Comparison makes two model calls using the selected connection.
+- **Local video:** transcribe with an already-installed Whisper model, edit or manually translate timed segments, export SRT/VTT, and render narration using installed Windows English or Spanish voices. No cloud API or automatic model downloads. Inputs are bounded to 64 MB, 3 minutes and 1080p; FFmpeg/FFprobe are required. This is practical local narration, not voice cloning or lip-sync. Original audio is replaced in the narrated export.
+
 ### Chat and a persistent workbench
 
 - Switch between local and API models; connect OpenAI, Claude and Gemini through guided API setup with connection testing.

@@ -47,6 +47,30 @@ Instalación nativa, Windows/macOS, GPU, HTTPS y configuración: [guía de insta
 
 ## Qué puedes hacer
 
+### Lanzadores de escritorio y web para Windows
+
+Los lanzadores están dentro del repositorio y resuelven las rutas desde la carpeta del proyecto:
+
+| Lanzador | Acción |
+| --- | --- |
+| `Start-Faustus-Desktop.bat` | Abrir una ventana Electron con minimizar, maximizar/restaurar, pantalla completa y cierre integrados en el tema. |
+| `Start-Faustus.bat` | Arrancar Faustus y abrir la interfaz web en el navegador. |
+| `Stop-Faustus.bat` | Detener el servidor gestionado por estos lanzadores. |
+| `Restart-Faustus.bat` | Reiniciar ese servidor y abrir la interfaz web. |
+
+La primera instalación necesita Python y Node.js. Los lanzadores preparan las dependencias que falten, reconstruyen Studio cuando cambia e instalan la versión fijada de Electron si es necesario. `Start-Faustus.ps1 -NoBrowser` arranca sin abrir pestañas; `-Port 7001` permite elegir otro puerto.
+
+Cerrar la ventana detiene el backend **sólo si esa ventana lo arrancó**. Si ya había un servidor web, se reutiliza y sigue funcionando al cerrar. Se comprueba la propiedad del proceso; no se detienen otros procesos Python ni servidores de modelos externos. El escritorio tiene su propia sesión: hay que iniciar sesión una vez, independientemente del navegador.
+
+Las tareas programadas necesitan Faustus funcionando y el ordenador despierto. El modo web permite cerrar las pestañas y mantener el backend; cerrar la ventana que arrancó el servidor también detiene la programación. En un chat Agente puedes pedir una recurrencia en español o inglés, indicar hora y zona horaria y gestionar la tarea guardada en **Automatizaciones**. Las recurrencias admiten zonas IANA y cambios de horario de verano; las tareas antiguas sin zona conservan su comportamiento UTC.
+
+### Herramientas creativas dentro del chat
+
+- **Señalar para editar:** marca un punto de una captura del navegador y describe el cambio. Se añaden al borrador la imagen anotada y su procedencia, sin enviar automáticamente. El agente debe inspeccionar la página actual y el proyecto: las coordenadas no se presentan como una ubicación inventada en el código.
+- **Referencias visuales de proyecto:** guarda `@referencias` con nombre como enlaces de contexto, distingue sujeto, estilo y composición, y adjúntalas explícitamente desde el selector. Quitar el enlace no elimina la imagen de la galería.
+- **Aprender un estilo:** extrae reglas editables de ejemplos TXT/Markdown con el modelo elegido, compara respuestas con y sin estilo y guarda un preset. La comparación realiza dos llamadas mediante la conexión seleccionada.
+- **Vídeo local:** transcribe con un modelo Whisper ya instalado, edita o traduce manualmente los segmentos, exporta SRT/VTT y genera narración con las voces de Windows instaladas en español o inglés. Sin APIs ni descargas automáticas de modelos. Admite hasta 64 MB, 3 minutos y 1080p; requiere FFmpeg/FFprobe. Es narración local práctica, no clonación de voz ni sincronización labial. La exportación narrada sustituye el audio original.
+
 ### Chat y panel de trabajo persistente
 
 - Alternar entre modelos locales y APIs; conectar OpenAI, Claude y Gemini con configuración guiada y prueba de conexión.

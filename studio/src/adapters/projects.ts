@@ -522,6 +522,7 @@ export interface AttachInput {
   role?: string;
   retrievalPolicy?: RetrievalPolicy;
   accessMode?: AccessMode;
+  tags?: string[];
 }
 
 export async function attachContextSource(id: string, input: AttachInput): Promise<ContextLink> {
@@ -534,6 +535,7 @@ export async function attachContextSource(id: string, input: AttachInput): Promi
         role: input.role ?? 'reference',
         retrieval_policy: input.retrievalPolicy ?? 'auto',
         access_mode: input.accessMode ?? 'read_only',
+        tags: input.tags ?? [],
       }),
     ),
     'projects/context/attach',

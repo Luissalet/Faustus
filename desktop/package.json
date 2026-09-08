@@ -1,0 +1,9 @@
+{
+  "name": "faustus-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Native desktop window for the local Faustus workstation",
+  "main": "main.cjs",
+  "scripts": {"start": "electron .", "install-runtime": "node node_modules/electron/install.js", "test": "node --test test.cjs"},
+  "devDependencies": {"electron": "44.2.0"}
+}

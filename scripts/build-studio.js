@@ -43,7 +43,7 @@ function newestMtime(dir) {
 function isStale() {
   if (!existsSync(bundlePath)) return true;
   const bundleMtime = statSync(bundlePath).mtimeMs;
-  const srcMtime = newestMtime(studioSrc);
+  const srcMtime = Math.max(newestMtime(studioSrc), ...['vite.config.ts', 'package.json', 'package-lock.json'].map(name => statSync(join(root, name)).mtimeMs));
   return srcMtime > bundleMtime;
 }
 
