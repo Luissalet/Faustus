@@ -1413,9 +1413,9 @@ class DeepResearcher:
                     timeout=180,
                 )
                 if len(expanded.split()) > len(result.split()):
-                    return expanded
+                    result = expanded
 
-            return result
+            return self._tidy_grouped_headings(result, subs)
         except Exception as e:
             logger.error(f"Final report generation failed: {e}")
             return report  # return the evolving report as-is
@@ -1492,8 +1492,35 @@ class DeepResearcher:
                 text = "\n\n".join(f"## {q}\n\n_(This section could not be written: the model did "
                                    f"not answer in time.)_" for q in chunk)
             pieces.append(text)
-        joined = "\n\n".join(pieces)
+        joined = self._tidy_grouped_headings("\n\n".join(pieces), subs)
         return joined if joined.strip() else report
+
+    @staticmethod
+    def _tidy_grouped_headings(text: str, subs: List[str]) -> str:
+        """A grouped section is "Title: a; b; c" in the list; its heading is
+        "## Title". The 10-09 run pasted the whole list into every such
+        heading despite being told not to, so the code takes the colon off.
+        """
+        def grouped(s: str) -> bool:
+            if ": " not in s:
+                return False
+            tail = s.split(":", 1)[1]
+            return ("; " in tail or "→" in tail or "->" in tail or tail.strip().startswith("|")
+                    or tail.count("?") + tail.count("？") >= 2)
+        titles = [s.split(":", 1)[0].strip() for s in subs if grouped(s)]
+        if not titles or not text:
+            return text
+        out: List[str] = []
+        for line in text.split("\n"):
+            m = re.match(r"^(#{1,6})\s+(.+?)\s*$", line)
+            if m:
+                body = m.group(2)
+                for title in titles:
+                    if body.lower().startswith(title.lower() + ":"):
+                        line = f"{m.group(1)} {title}"
+                        break
+            out.append(line)
+        return "\n".join(out)
 
     @staticmethod
     def _tidy_part(text: str, first: bool) -> str:

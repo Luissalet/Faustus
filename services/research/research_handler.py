@@ -13,7 +13,7 @@ class ResearchHandler(SharedResearchHandler):
     """Keep service source lists without maintaining a second research engine."""
 
     def start_research(self, session_id, query, llm_endpoint, llm_model,
-                       max_time=300, llm_headers=None, **options):
+                       max_time=None, llm_headers=None, **options):
         # Preserve the service's legacy sixth positional argument (headers).
         return super().start_research(
             session_id, query, llm_endpoint, llm_model, max_time=max_time,

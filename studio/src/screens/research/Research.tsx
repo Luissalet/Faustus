@@ -596,6 +596,18 @@ export function ResearchScreen() {
               <small>{t('Search → read → reflect cycles. Auto lets the agent stop when it has enough (up to 20).')}</small>
             </label>
             <label className="fs-rs__setting">
+              <span>{t('Time for the rounds')}</span>
+              <select className="fs-field" value={settings.maxMinutes ?? 0} onChange={(e) => setSettings((s) => ({ ...s, maxMinutes: Number(e.target.value) }))} data-testid="research-max-minutes">
+                <option value={0}>{t('Sized for the model')}</option>
+                {[5, 10, 15, 30, 45, 60, 90, 120].map((n) => (
+                  <option key={n} value={n}>
+                    {t('{n} min', { n })}
+                  </option>
+                ))}
+              </select>
+              <small>{t('How long the rounds may run before the report is written. A local 27B needs 4–5 minutes per round; sized for the model gives it up to 60 % of the run\'s wall clock.')}</small>
+            </label>
+            <label className="fs-rs__setting">
               <span>{t('Format')}</span>
               <select className="fs-field" value={settings.category} onChange={(e) => setSettings((s) => ({ ...s, category: e.target.value }))}>
                 {CATEGORIES.map((c) => (

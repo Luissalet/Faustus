@@ -35,6 +35,14 @@ def probe_call(monkeypatch):
         return "hi"
 
     monkeypatch.setattr("src.llm_core.llm_call_async", _call)
+
+    # The pre-flight also asks the VRAM admission gate, which talks to the
+    # Ollama on this machine: with a 27B resident (a research running while
+    # the suite ran, 10-09-2026) it opened a ticket and waited ten minutes
+    # for someone to pick what to unload. Tests do not get to touch VRAM.
+    async def _proceed(*a, **k):
+        return "proceed"
+    monkeypatch.setattr("src.vram_admission.admit", _proceed)
     return seen
 
 

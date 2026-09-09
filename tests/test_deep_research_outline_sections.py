@@ -141,3 +141,28 @@ def test_the_sections_block_explains_grouped_items():
     block = r._sections_block()
     assert "4. Tratamiento: Educación" in block
     assert "ONE section headed" in block
+
+
+
+def test_grouped_headings_lose_their_pasted_lists():
+    """The 10-09 run wrote "## Tratamiento: Educación…; Ejercicio…" and
+    "## Algoritmo clínico: Paciente tras whiplash → …" although told not to."""
+    subs = _dr()._extract_subquestions(WAD_BRIEF)
+    text = (
+        "# Guía\n\n"
+        "## Tratamiento: Educación y explicación al paciente; Ejercicio terapéutico; Terapia manual\n\ntexto\n\n"
+        "## Algoritmo clínico: Paciente tras whiplash → clasificación/gravedad → valoración → tratamiento → retorno a actividad\n\nmás\n\n"
+        "## Tabla final de consulta rápida: | Situación/fase | Qué valorar | Objetivos | Tratamiento |\n\n| a | b |\n\n"
+        "## Me interesa especialmente poder responder a: ¿Qué tengo que valorar?, ¿cómo sé si este paciente necesita derivación?, ¿qué ejercicios le mando?\n\nfin\n\n"
+        "## Síntomas habituales y síntomas asociados: dolor cervical, rigidez\n\nse queda"
+    )
+    tidy = DeepResearcher._tidy_grouped_headings(text, subs)
+    heads = [l for l in tidy.splitlines() if l.startswith("## ")]
+    assert heads == [
+        "## Tratamiento",
+        "## Algoritmo clínico",
+        "## Tabla final de consulta rápida",
+        "## Me interesa especialmente poder responder a",
+        "## Síntomas habituales y síntomas asociados: dolor cervical, rigidez",   # not a group: the user's own colon
+    ]
+    assert "| a | b |" in tidy

@@ -124,6 +124,8 @@ export async function exportFormats(): Promise<string[]> {
 
 export interface ResearchSettings {
   maxRounds: number;
+  /** Minutes the rounds may take before the report is written; 0 = let the server size it for the model. */
+  maxMinutes?: number;
   category: string;
   searchProvider: string;
   endpointId: string;
@@ -166,6 +168,7 @@ async function postJson(path: string, body: unknown): Promise<Record<string, unk
 
 export async function startResearch(query: string, s: ResearchSettings): Promise<string> {
   const body: Record<string, unknown> = { query, max_rounds: s.maxRounds };
+  if (s.maxMinutes && s.maxMinutes > 0) body.max_time = Math.round(s.maxMinutes * 60);
   if (s.category) body.category = s.category;
   if (s.searchProvider) body.search_provider = s.searchProvider;
   if (s.endpointId) body.endpoint_id = s.endpointId;

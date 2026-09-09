@@ -245,7 +245,7 @@ class ResearchHandler:
         query: str,
         llm_endpoint: str,
         llm_model: str,
-        max_time: int = 300,
+        max_time: int = None,
         hard_timeout: int = None,
         llm_headers: dict = None,
         on_complete: callable = None,
@@ -308,6 +308,18 @@ class ResearchHandler:
                         )
                 except Exception:
                     pass
+
+        # How long the rounds may run before the report is written. The old
+        # fixed 300 s suited a cloud model that answers in seconds; a local
+        # 27B needs 4-5 minutes per round, so the screen's runs got one round
+        # and a report from nothing ("Rounds: 2 · URLs Analyzed: 0", 08-09).
+        # Unset → 60 % of the wall clock, so the final report has the rest;
+        # bounded so a remote endpoint keeps a sane bill and a local one gets
+        # its afternoon.
+        if max_time is None:
+            base = hard_timeout if hard_timeout else 3000
+            max_time = _bounded_int(int(base * 0.6), default=900, minimum=300, maximum=7200)
+        max_time = _bounded_int(max_time, default=900, minimum=60, maximum=7200)
 
         # Cancel any existing research for this session
         if session_id in self._active_tasks:

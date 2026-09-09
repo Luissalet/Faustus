@@ -568,7 +568,10 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
         search_provider: Optional[str] = None
         endpoint_id: Optional[str] = None
         model: Optional[str] = None
-        max_time: int = Field(default=300, ge=60, le=1800)
+        # Seconds the rounds may take before the report is written. None →
+        # the handler sizes it for the endpoint: the old fixed 300 s gave a
+        # local 27B one round (each takes 4-5 min) and a report from nothing.
+        max_time: Optional[int] = Field(default=None, ge=60, le=7200)
         extraction_timeout: Optional[int] = Field(default=None, ge=15, le=3600)
         extraction_concurrency: Optional[int] = Field(default=None, ge=1, le=12)
         category: Optional[str] = None

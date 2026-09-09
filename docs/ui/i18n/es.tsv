@@ -5739,3 +5739,7 @@ Test the search now	Probar la búsqueda ahora
 no answer	sin respuesta
 the instance's defaults	los predeterminados de la instancia
 {n} results	{n} resultados
+How long the rounds may run before the report is written. A local 27B needs 4–5 minutes per round; sized for the model gives it up to 60 % of the run's wall clock.	Cuánto pueden durar las rondas antes de escribir el informe. Un 27B local necesita 4–5 minutos por ronda; «según el modelo» le da hasta el 60 % del tiempo total de la ejecución.
+Sized for the model	Según el modelo
+Time for the rounds	Tiempo para las rondas
+{n} min	{n} min
