@@ -1,5 +1,29 @@
 import { t } from '../i18n';
 import { ApiError, asArray, getJson, responseReason } from './api';
+import { vramBlockedFrom, type VramBlocked } from './vramAdmission';
+
+/**
+ * What the model is doing while the turn waits for its first token, from
+ * the heartbeat's `model_state` (the server asks Ollama /api/ps). "Waiting
+ * for the model" with the model loaded read as a hang (Luis, 09-09-2026:
+ * 35 GB in VRAM and PCIe spill at 01:28): the difference between loading
+ * it, reading a long context, and spilling to RAM is the whole story.
+ */
+export function modelStateLabel(raw: unknown): string {
+  if (!raw || typeof raw !== 'object') return '';
+  const s = raw as Record<string, unknown>;
+  if (s.resident === false) return t('Loading the model into memory');
+  if (s.resident !== true) return '';
+  const gb = (n: unknown) => (typeof n === 'number' && n > 0 ? (n / 1073741824).toFixed(1) : '');
+  if (s.spill === true) {
+    const inVram = gb(s.vram_bytes);
+    const total = gb(s.size_bytes);
+    return inVram && total
+      ? t('The model is spilling to RAM ({v} of {s} GB in VRAM) — slow', { v: inVram, s: total })
+      : t('The model is spilling to RAM — slow');
+  }
+  return t('The model is reading the context');
+}
 
 /**
  * Studio talks to the same chat backend the legacy screen does: one
@@ -67,9 +91,33 @@ export interface TurnMetrics {
   contextPercent?: number;
 }
 
+export interface AskOption {
+  label: string;
+  description: string;
+}
+
+/**
+ * Options arrive as `{label, description}` objects from the ask_user tool,
+ * or as bare strings from older history. The live path used to `String()`
+ * them, so the buttons read "[object Object]" (10-09-2026) — the card
+ * "did not ask with options" because its options were unreadable.
+ */
+export function askOptionsFrom(raw: unknown): AskOption[] {
+  return asArray<unknown>(raw)
+    .map((o) => {
+      if (typeof o === 'string') return { label: o.trim(), description: '' };
+      if (o && typeof o === 'object') {
+        const r = o as Record<string, unknown>;
+        return { label: str(r.label ?? r.value ?? r.title).trim(), description: str(r.description).trim() };
+      }
+      return { label: '', description: '' };
+    })
+    .filter((o) => o.label);
+}
+
 export interface AskUser {
   question: string;
-  options: string[];
+  options: AskOption[];
   multi: boolean;
   kind: 'tool_approval' | 'question';
   approvalId?: string;
@@ -188,6 +236,9 @@ export type ChatEvent =
   | { type: 'metrics'; metrics: TurnMetrics }
   | { type: 'sources'; sources: WebSource[] }
   | { type: 'research'; phase: string; round: number; totalSources: number; message: string; startedAt: number; avgDuration: number }
+  /** The VRAM admission gate before the turn's first call (OBJ-1): what it
+   *  is doing, and the ticket to answer while `phase` is `vram_blocked`. */
+  | { type: 'vram'; phase: string; message: string; blocked?: VramBlocked }
   | { type: 'image'; url: string }
   | { type: 'fallback'; answeredBy: string; selected: string }
   | { type: 'terminal'; failed: boolean; message?: string }
@@ -510,9 +561,7 @@ export function toolEventsFrom(meta: Record<string, unknown>): HistoryToolEvent[
       ask: askRaw
         ? {
             question: str(askRaw.question),
-            options: asArray<unknown>(askRaw.options).map((o) =>
-              typeof o === 'string' ? o : str((o as Record<string, unknown>).label ?? (o as Record<string, unknown>).value),
-            ),
+            options: askOptionsFrom(askRaw.options),
             multi: Boolean(askRaw.multi),
             kind: askRaw.kind === 'tool_approval' ? 'tool_approval' : 'question',
             approvalId: str(askRaw.approval_id) || undefined,
@@ -526,7 +575,7 @@ export function toolEventsFrom(meta: Record<string, unknown>): HistoryToolEvent[
 }
 
 /** One raw `data:` payload → zero or one typed events. */
-function decode(raw: Record<string, unknown>, sseEvent: string | null): ChatEvent | null {
+export function decode(raw: Record<string, unknown>, sseEvent: string | null): ChatEvent | null {
   if (sseEvent === 'error') {
     // The server says `text`; older paths say `error` or `message`.
     return {
@@ -612,7 +661,7 @@ function decode(raw: Record<string, unknown>, sseEvent: string | null): ChatEven
         type: 'ask_user',
         ask: {
           question: str(data.question),
-          options: asArray<string>(data.options).map(String),
+          options: askOptionsFrom(data.options),
           multi: Boolean(data.multi),
           kind: data.kind === 'tool_approval' ? 'tool_approval' : 'question',
           approvalId: str(data.approval_id) || undefined,
@@ -644,9 +693,18 @@ function decode(raw: Record<string, unknown>, sseEvent: string | null): ChatEven
         phase: str(data.phase, 'waiting_model'),
         phaseAt: (num(data.phase_since) ?? 0) * 1000,
         tool: str(data.tool),
-        detail: str(data.detail),
+        detail: str(data.detail) || modelStateLabel(data.model_state),
         round: num(data.round) ?? 0,
       };
+    case 'vram_admission': {
+      const phase = str(data.phase);
+      return {
+        type: 'vram',
+        phase,
+        message: str(data.message),
+        blocked: phase === 'vram_blocked' ? (vramBlockedFrom(data) ?? undefined) : undefined,
+      };
+    }
     case 'generated_image':
       return raw.url ? { type: 'image', url: str(raw.url) } : null;
     case 'fallback':

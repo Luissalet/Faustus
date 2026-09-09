@@ -5743,3 +5743,13 @@ How long the rounds may run before the report is written. A local 27B needs 4–
 Sized for the model	Según el modelo
 Time for the rounds	Tiempo para las rondas
 {n} min	{n} min
+Asks you — pick all that apply	Te pregunta — marca todas las que apliquen
+Loading the model into memory	Cargando el modelo en memoria
+Or write your own answer…	O escribe tu propia respuesta…
+Send {n} picked	Enviar {n} marcadas
+The model is reading the context	El modelo está leyendo el contexto
+The model is reading {n} tokens of context	El modelo está leyendo {n} tokens de contexto
+The model is spilling to RAM ({v} of {s} GB in VRAM) — slow	El modelo se está desbordando a RAM ({v} de {s} GB en VRAM): va lento
+The model is spilling to RAM — slow	El modelo se está desbordando a RAM: va lento
+Unloading models to make room	Descargando modelos para hacer sitio
+Waiting for your answer	Esperando tu respuesta

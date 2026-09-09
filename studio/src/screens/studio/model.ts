@@ -14,6 +14,7 @@ import {
   type WebSource,
 } from '../../adapters/chat';
 import type { Attachment } from '../../adapters/composer';
+import type { VramBlocked } from '../../adapters/vramAdmission';
 import { t } from '../../i18n';
 
 /**
@@ -120,6 +121,8 @@ export interface Turn {
   research?: { phase: string; round: number; totalSources: number; message: string; startedAt: number; avgDuration: number; done: boolean };
   /** Decoding speed measured from the stream, while it is still arriving. */
   live?: LiveRate;
+  /** The VRAM gate is waiting for someone to choose what to unload (OBJ-1). */
+  vram?: VramBlocked;
   error?: string;
   edited?: boolean;
   /** The reliability harness: what it checked, and what really happened. */
@@ -492,7 +495,7 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
           : 'waiting';
       const label = phase === 'tool'
         ? [event.tool.replace(/_/g, ' '), event.detail].filter(Boolean).join(' · ')
-        : event.phase === 'research' && event.detail
+        : event.detail
           ? event.detail
           : undefined;
       const next = livePhase(live, now, phase, label);
@@ -501,6 +504,18 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
         rounds: Math.max(turn.rounds, event.round),
         live: { ...next, phaseAt: event.phaseAt > 0 ? event.phaseAt : next.phaseAt },
       };
+    }
+    case 'vram': {
+      // The gate before the first call: the ticket stays on the turn while
+      // it is blocked (Studio shows the dialog), and any later phase —
+      // unloading, a warning, or the turn simply going on — clears it.
+      const blocked = event.phase === 'vram_blocked' ? event.blocked : undefined;
+      const label = event.phase === 'vram_blocked'
+        ? t('No room in VRAM — waiting for you to choose what to unload')
+        : event.phase === 'unloading_model'
+          ? event.message || t('Unloading models to make room')
+          : event.message || undefined;
+      return { ...turn, vram: blocked, live: livePhase(live, now, 'waiting', label) };
     }
     case 'tool_start': {
       const label = stepLabel(event.tool, event.command);

@@ -76,6 +76,7 @@ import { useChatPanel } from './studio/useChatPanel';
 import ChatTeam from './studio/ChatTeam';
 import { SessionsPane } from './studio/SessionsPane';
 import { Transcript, type Decision } from './studio/Transcript';
+import { VramAdmissionDialog } from './VramAdmissionDialog';
 import { Vitals } from './studio/Vitals';
 import './projects.css';
 import './home.css';
@@ -274,6 +275,10 @@ export function StudioScreen() {
   const display = useDisplay();
   const [loadError, setLoadError] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
+  // The VRAM ticket already answered in this screen: its dialog must not
+  // come back while the server is still unloading and the turn's event
+  // keeps saying `vram_blocked`.
+  const [vramAnswered, setVramAnswered] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   // Wide layouts hide the conversations column instead of sliding a drawer
   // (the previous shell's Ctrl+Alt+B); remembered across visits.
@@ -2117,6 +2122,12 @@ export function StudioScreen() {
         </div>
 
         {turns&&<MessageNavigator key={sessionId||'new'} turns={turns} scrollRef={scrollRef} onJump={()=>{pinnedRef.current=false;}}/>}
+        {/* OBJ-1 in the chat: the model of this turn does not fit next to what is loaded. */}
+        <VramAdmissionDialog
+          blocked={turns?.map((tn) => tn.vram).find((v) => v && v.ticket !== vramAnswered) ?? null}
+          onDone={() => setVramAnswered(turns?.map((tn) => tn.vram).find(Boolean)?.ticket ?? null)}
+          say={(text, tone) => say(text, tone === 'warn' ? 'warning' : 'info')}
+        />
         </div>
 
         {notice && (

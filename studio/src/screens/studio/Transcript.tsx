@@ -223,17 +223,82 @@ export function AskCard({
       </div>
     );
   }
+  return <QuestionCard ask={ask} busy={busy} onAnswer={onAnswer} />;
+}
+
+/**
+ * The model's question with its options — the shape of AskUserQuestion:
+ * one click per option when one answer is wanted, a checklist with "Send"
+ * when several may apply (`multi`), and always a line to write your own
+ * answer, because the option the person needs is often the one the model
+ * did not think of (Luis, 10-09-2026: "varias opciones para elegir y una
+ * para que escribas tú, o una checklist").
+ */
+function QuestionCard({ ask, busy, onAnswer }: { ask: AskUser; busy: boolean; onAnswer: (text: string) => void }) {
+  const [picked, setPicked] = useState<string[]>([]);
+  const [own, setOwn] = useState('');
+  const toggle = (label: string) => setPicked((cur) => (cur.includes(label) ? cur.filter((l) => l !== label) : [...cur, label]));
+  const sendOwn = () => {
+    const text = own.trim();
+    if (text) onAnswer(text);
+  };
+  const sendPicked = () => {
+    if (picked.length) onAnswer(picked.join('; '));
+  };
   return (
-    <div className="fs-studio__ask" data-testid="studio-question">
-      <p className="fs-studio__ask-title">{t('Asks you')}</p>
+    <div className="fs-studio__ask" data-testid="studio-question" data-multi={ask.multi || undefined}>
+      <p className="fs-studio__ask-title">{ask.multi ? t('Asks you — pick all that apply') : t('Asks you')}</p>
       <p className="fs-prose">{ask.question}</p>
-      {ask.options.length > 0 && (
-        <div className="fs-studio__ask-actions">
+      {ask.options.length > 0 && !ask.multi && (
+        <div className="fs-studio__ask-options" role="group">
           {ask.options.map((option) => (
-            <Button key={option} label={option} size="sm" disabled={busy} onClick={() => onAnswer(option)} />
+            <button
+              key={option.label}
+              type="button"
+              className="fs-studio__ask-option"
+              disabled={busy}
+              onClick={() => onAnswer(option.label)}
+              data-testid="studio-question-option"
+            >
+              <span className="fs-studio__ask-option-label">{option.label}</span>
+              {option.description && <span className="fs-studio__ask-option-desc">{option.description}</span>}
+            </button>
           ))}
         </div>
       )}
+      {ask.options.length > 0 && ask.multi && (
+        <div className="fs-studio__ask-options" role="group">
+          {ask.options.map((option) => (
+            <label key={option.label} className="fs-studio__ask-option" data-checked={picked.includes(option.label) || undefined}>
+              <input type="checkbox" checked={picked.includes(option.label)} disabled={busy} onChange={() => toggle(option.label)} data-testid="studio-question-check" />
+              <span>
+                <span className="fs-studio__ask-option-label">{option.label}</span>
+                {option.description && <span className="fs-studio__ask-option-desc">{option.description}</span>}
+              </span>
+            </label>
+          ))}
+          <div className="fs-studio__ask-actions">
+            <Button variant="primary" size="sm" icon={Check} label={picked.length ? t('Send {n} picked', { n: picked.length }) : t('Send')} disabled={busy || picked.length === 0} onClick={sendPicked} testId="studio-question-send" />
+          </div>
+        </div>
+      )}
+      <form
+        className="fs-studio__ask-own"
+        onSubmit={(e) => {
+          e.preventDefault();
+          sendOwn();
+        }}
+      >
+        <input
+          className="fs-field"
+          value={own}
+          disabled={busy}
+          placeholder={t('Or write your own answer…')}
+          onChange={(e) => setOwn(e.target.value)}
+          data-testid="studio-question-own"
+        />
+        <Button size="sm" label={t('Answer')} disabled={busy || !own.trim()} onClick={sendOwn} testId="studio-question-own-send" />
+      </form>
     </div>
   );
 }
@@ -693,9 +758,16 @@ function LiveLine({ live, contextTokens }: { live: LiveRate; contextTokens?: num
           // (prefill). On a model spilling to RAM that takes minutes for a
           // long chat, and "waiting" alone reads as a hang — say what it is
           // doing once the wait is long enough to wonder.
-          : secs >= 8 && contextTokens
-            ? t('Waiting for the model — reading {n} tokens of context', { n: contextTokens.toLocaleString() })
-            : t('Waiting for the model');
+          // The server's heartbeat says what the model is really doing when
+          // it knows (loading / reading the context / spilling to RAM / the
+          // VRAM gate); that beats "waiting" every time.
+          : live.label
+            ? contextTokens && live.label === t('The model is reading the context')
+              ? t('The model is reading {n} tokens of context', { n: contextTokens.toLocaleString() })
+              : live.label
+            : secs >= 8 && contextTokens
+              ? t('Waiting for the model — reading {n} tokens of context', { n: contextTokens.toLocaleString() })
+              : t('Waiting for the model');
   return (
     <p className="fs-studio__waiting fs-studio__live" data-phase={live.phase} data-testid="turn-live">
       <span className="fs-studio__pulse" aria-hidden="true" />

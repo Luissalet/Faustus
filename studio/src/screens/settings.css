@@ -94,11 +94,11 @@
 }
 
 .fs-set__search-health[data-tone="bad"] {
-  border-color: color-mix(in srgb, var(--fs-danger, #e06c75) 55%, var(--fs-border));
+  border-color: color-mix(in srgb, var(--fs-danger) 55%, var(--fs-border));
 }
 
 .fs-set__search-health[data-tone="good"] {
-  border-color: color-mix(in srgb, var(--fs-success, #6bbf7a) 45%, var(--fs-border));
+  border-color: color-mix(in srgb, var(--fs-success) 45%, var(--fs-border));
 }
 
 .fs-set__row-between {
@@ -118,7 +118,7 @@
 }
 
 .fs-set__health-list li[data-tone="bad"] {
-  color: var(--fs-danger, #e06c75);
+  color: var(--fs-danger);
 }
 
 /* ── Fields ── */

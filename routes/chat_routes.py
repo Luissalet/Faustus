@@ -79,6 +79,60 @@ logger = logging.getLogger(__name__)
 _active_streams: Dict[str, dict] = {}
 
 
+async def _vram_admission_events(endpoint_url: str, model: str, owner: str,
+                                 outcome: Dict[str, Any]) -> AsyncGenerator[str, None]:
+    """Run the VRAM admission gate for a chat turn and stream what it says.
+
+    Yields `vram_admission` SSE events (phases `vram_blocked` with the ticket
+    and residents, `unloading_model`, `warning`) while src.vram_admission.admit
+    waits for the person's choice; the screen shows the same dialog as
+    research. Remote endpoints and anything that is not a loopback Ollama
+    pass straight through. `outcome["ok"]` is False when the load was
+    cancelled (by the person, or by the timeout with nobody answering) and
+    `outcome["error"]` says so; the gate never raises into the turn.
+    """
+    try:
+        from src.model_context import is_local_endpoint
+        if not is_local_endpoint(endpoint_url):
+            return
+        from src.vram_admission import AdmissionCancelled, admit, ollama_root
+        if not ollama_root(endpoint_url):
+            return
+    except Exception:
+        return
+    queue: asyncio.Queue = asyncio.Queue()
+
+    def _on_progress(event: Dict[str, Any]) -> None:
+        try:
+            queue.put_nowait(dict(event or {}))
+        except Exception:
+            pass
+
+    task = asyncio.create_task(admit(endpoint_url, model, owner=owner or "", on_progress=_on_progress))
+    try:
+        while True:
+            if task.done() and queue.empty():
+                break
+            try:
+                event = await asyncio.wait_for(queue.get(), timeout=0.5)
+            except asyncio.TimeoutError:
+                continue
+            # ASCII-escaped like every other event on this stream: with
+            # ensure_ascii=False the ellipsis in "Unloading …" reached the
+            # screen as "â€¦" (10-09-2026).
+            yield "data: " + json.dumps({"type": "vram_admission", "data": event}) + "\n\n"
+        try:
+            await task
+        except AdmissionCancelled as e:
+            outcome["ok"] = False
+            outcome["error"] = str(e) or f"Loading {model} was cancelled: no room in VRAM."
+        except Exception as e:  # noqa: BLE001 - the gate is advisory, never a reason to lose a turn
+            logger.warning("VRAM admission skipped for %s: %s", model, e)
+    finally:
+        if not task.done():
+            task.cancel()
+
+
 def _stream_failure_status(chunk: str) -> Optional[int]:
     """Extract a provider status without retaining provider-supplied detail."""
 
@@ -2279,6 +2333,22 @@ def setup_chat_routes(
                 _model_info["character_name"] = ctx.preset.character_name
             yield f'data: {json.dumps(_model_info)}\n\n'
 
+            # OBJ-1, the chat side: before the turn's first call, a local model
+            # that does not fit next to what is already resident asks what to
+            # unload — the same gate research and the Load button use
+            # (src/vram_admission). Ollama itself never says no: it spills to
+            # CPU/PCIe and the only symptom is a turn ten times slower, which
+            # is how the two 27Bs ended up stacked on 08-09-2026.
+            if not _is_image_generation_session(sess, owner=_user):
+                _admission = {"ok": True, "error": ""}
+                async for _adm_ev in _vram_admission_events(sess.endpoint_url, sess.model, _user, _admission):
+                    yield _adm_ev
+                if not _admission["ok"]:
+                    yield f'data: {json.dumps({"type": "error", "error": _admission["error"]})}\n\n'
+                    yield "data: [DONE]\n\n"
+                    _active_streams.pop(session, None)
+                    return
+
             _terminal_saved = False
             if _is_image_generation_session(sess, owner=_user):
                 from src.settings import get_setting
@@ -3170,7 +3240,9 @@ def setup_chat_routes(
         except Exception:
             _lane = None
         _run_label = (getattr(sess, "name", "") or "").strip() or " ".join(str(message or "").split())[:60]
-        _detached_run = agent_runs.start(session, _safe_stream(), lane=_lane, label=_run_label[:80])
+        _detached_run = agent_runs.start(session, _safe_stream(), lane=_lane, label=_run_label[:80],
+                                         model=str(getattr(sess, "model", "") or ""),
+                                         endpoint_url=str(getattr(sess, "endpoint_url", "") or ""))
         return StreamingResponse(
             agent_runs.subscribe(session, _detached_run),
             media_type="text/event-stream",

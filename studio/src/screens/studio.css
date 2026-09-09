@@ -720,6 +720,68 @@ details.fs-studio__step > summary:hover .fs-trace__label {
   gap: var(--fs-space-2);
 }
 
+/* The model's options: one row each, label + one-line consequence, like an
+   AskUserQuestion card. Buttons when one answer is wanted, checkboxes for
+   a checklist; the free-text line underneath is always there. */
+.fs-studio__ask-options {
+  display: grid;
+  gap: 6px;
+}
+
+.fs-studio__ask-option {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--fs-space-2);
+  padding: 8px 12px;
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-2);
+  color: var(--fs-text-1);
+  text-align: start;
+  font: inherit;
+  cursor: pointer;
+}
+
+.fs-studio__ask-option:hover:not(:disabled),
+.fs-studio__ask-option[data-checked] {
+  border-color: color-mix(in srgb, var(--fs-accent) 60%, var(--fs-border));
+  background: color-mix(in srgb, var(--fs-accent) 10%, var(--fs-surface-2));
+}
+
+.fs-studio__ask-option:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.fs-studio__ask-option > span {
+  display: grid;
+  gap: 2px;
+}
+
+.fs-studio__ask-option input[type="checkbox"] {
+  margin-block-start: 3px;
+}
+
+.fs-studio__ask-option-label {
+  font-weight: 600;
+}
+
+.fs-studio__ask-option-desc {
+  display: block;
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-3);
+}
+
+.fs-studio__ask-own {
+  display: flex;
+  gap: var(--fs-space-2);
+  align-items: center;
+}
+
+.fs-studio__ask-own .fs-field {
+  flex: 1;
+}
+
 /* A permission already answered: the record of a decision, not a card that
    asks for one. Quiet on purpose — the turn's own answer is the news. */
 .fs-studio__answered {

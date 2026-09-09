@@ -71,7 +71,8 @@ def _outcome_of(status: str) -> Optional[str]:
 class _Run:
     __slots__ = ("buffer", "subscribers", "status", "task", "evict_task", "run_id", "last_key",
                  "lane", "queued_position", "log", "started_at", "label",
-                 "phase", "phase_since", "last_event_at", "round", "tool", "detail")
+                 "phase", "phase_since", "last_event_at", "round", "tool", "detail",
+                 "model", "endpoint_url")
 
     @property
     def outcome(self) -> Optional[str]:
@@ -102,9 +103,68 @@ class _Run:
         self.round: int = 1
         self.tool: Optional[str] = None
         self.detail: str = ""
+        # Which model on which endpoint, so the heartbeat can ask Ollama what
+        # the model is doing while the turn waits for its first token.
+        self.model: str = ""
+        self.endpoint_url: str = ""
 
 
 _RUNS: Dict[str, _Run] = {}
+
+# The last /api/ps answer per Ollama root, so ten idle heartbeats a minute do
+# not become ten HTTP calls; the state changes on the scale of seconds.
+_MODEL_STATE_CACHE: Dict[str, tuple] = {}
+_MODEL_STATE_TTL_S = 4.0
+
+
+async def model_state(run: "_Run") -> Optional[Dict[str, Any]]:
+    """What the run's model is doing right now, from Ollama's /api/ps.
+
+    "Waiting for the model" with the model loaded read as a hang (Luis,
+    09-09-2026: 35 GB in VRAM and PCIe spill at 01:28). The three states
+    that look identical from the browser are different problems: not
+    resident yet (loading, 13-34 s cold), resident and fully on the GPU
+    (reading a long context — prefill), and resident but spilling to RAM
+    (everything is slow and will stay slow). None for remote endpoints,
+    an unknown model, or an Ollama that does not answer.
+    """
+    if not run.model or not run.endpoint_url:
+        return None
+    try:
+        from src.vram_admission import ollama_root
+        root = ollama_root(run.endpoint_url)
+    except Exception:
+        return None
+    if not root:
+        return None
+    now = time.time()
+    cached = _MODEL_STATE_CACHE.get(root)
+    if cached and now - cached[0] < _MODEL_STATE_TTL_S:
+        models = cached[1]
+    else:
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=1.5) as client:
+                r = await client.get(f"{root}/api/ps")
+                r.raise_for_status()
+                models = list((r.json() or {}).get("models") or [])
+        except Exception:
+            return None
+        _MODEL_STATE_CACHE[root] = (now, models)
+    want = str(run.model).strip().lower()
+    for m in models:
+        names = {str(m.get("name") or "").lower(), str(m.get("model") or "").lower()}
+        if want in names or (":" not in want and f"{want}:latest" in names):
+            size = int(m.get("size") or 0)
+            vram = int(m.get("size_vram") or 0)
+            return {
+                "resident": True,
+                "size_bytes": size,
+                "vram_bytes": vram,
+                "spill": bool(size and vram < size * 0.98),
+                "context": int(m.get("context_length") or 0),
+            }
+    return {"resident": False}
 
 # How long a FINISHED run (and its full replay buffer) is retained after the
 # last subscriber disconnects, so a reconnect within the window can still
@@ -368,6 +428,20 @@ def activity_snapshot(session_id: str) -> Optional[Dict[str, Any]]:
         "label": run.label,
         "subscribers": len(run.subscribers),
     }
+
+
+async def _heartbeat_snapshot(session_id: str, run: _Run) -> Dict[str, Any]:
+    """The activity snapshot plus, while the turn waits for its first token,
+    what Ollama says the model is doing (see model_state)."""
+    snapshot = activity_snapshot(session_id) or {}
+    if snapshot.get("phase") in ("waiting_model", "starting"):
+        try:
+            state = await model_state(run)
+        except Exception:  # noqa: BLE001 - observability never breaks the stream
+            state = None
+        if state:
+            snapshot["model_state"] = state
+    return snapshot
 
 
 def activity_details() -> Dict[str, Dict[str, Any]]:
@@ -648,7 +722,8 @@ async def _drain(session_id: str, run: _Run, agen: AsyncGenerator[str, None],
         _schedule_evict(session_id, run)
 
 
-def start(session_id: str, agen: AsyncGenerator[str, None], lane: Optional[str] = None, label: str = "") -> _Run:
+def start(session_id: str, agen: AsyncGenerator[str, None], lane: Optional[str] = None, label: str = "",
+          model: str = "", endpoint_url: str = "") -> _Run:
     """Start a detached run draining `agen` for a session. If a run is already in
     flight for this session (e.g. a rapid double-send), it's cancelled first.
 
@@ -681,6 +756,8 @@ def start(session_id: str, agen: AsyncGenerator[str, None], lane: Optional[str] 
             except Exception as e:      # pragma: no cover - best effort
                 logger.debug("[agent-run] could not orphan the previous log: %s", e)
     run = _Run(lane=lane, label=label)
+    run.model = str(model or "")
+    run.endpoint_url = str(endpoint_url or "")
     _RUNS[session_id] = run
     if persistence_enabled():
         try:
@@ -734,7 +811,7 @@ async def subscribe(
                     heartbeat_idx += 1
                     heartbeat = {
                         "type": "run_activity",
-                        "data": activity_snapshot(session_id) or {},
+                        "data": await _heartbeat_snapshot(session_id, run),
                         "heartbeat": heartbeat_idx,
                     }
                     yield "data: " + json.dumps(heartbeat, ensure_ascii=False) + "\n\n"
