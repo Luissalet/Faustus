@@ -113,6 +113,26 @@ def _same_model(a: str, b: str) -> bool:
     return _canon(a) == _canon(b)
 
 
+# Ollama's default build of a tag is its q4_K_M quantisation, and a pull by
+# its explicit name — `qwen3.8:27b-q4_K_M` — installs the same blobs as
+# `qwen3.8:27b`. The catalogue lists the short tag; Discover showed it as
+# not installed while the explicit one sat in the table (09-09-2026).
+_DEFAULT_BUILD_SUFFIXES = ("-q4_k_m",)
+
+
+def _same_build(catalog_name: str, installed_name: str) -> bool:
+    a, b = str(catalog_name or "").strip().lower(), str(installed_name or "").strip().lower()
+    if not a or not b or ":" not in a or ":" not in b:
+        return False
+    for suffix in _DEFAULT_BUILD_SUFFIXES:
+        s = suffix.lower()
+        if b.endswith(s) and b[: -len(s)] == a:
+            return True
+        if a.endswith(s) and a[: -len(s)] == b:
+            return True
+    return False
+
+
 # ── endpoints ───────────────────────────────────────────────────────────────
 
 def ollama_root(base_url: str) -> str:
@@ -783,7 +803,7 @@ def discover(q: str, vram: Dict[str, Any], installed: List[str]) -> List[Dict[st
                 "gb": tag["gb"],
                 "size_bytes": size,
                 "fit": fit_verdict(size, vram, clean=True),
-                "installed": any(_same_model(name, i) for i in installed),
+                "installed": any(_same_model(name, i) or _same_build(name, i) for i in installed),
             })
         out.append({
             "name": entry["name"],

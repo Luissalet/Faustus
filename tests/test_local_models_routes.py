@@ -765,3 +765,15 @@ def test_three_gpu_priority_api(env, monkeypatch):
         assert gpu_policy.priority_order() == [2, 1, 0]
     assert client.put("/api/local-models/placement", json={"order": []}, headers=USER).status_code == 403
     assert client.put("/api/local-models/placement", json={"order": []}, headers=ADMIN).json()["mode"] == "auto"
+
+
+
+def test_discover_counts_the_explicit_default_build_as_installed():
+    """`qwen3.8:27b-q4_K_M` is the same blobs as the catalogue's `qwen3.8:27b`
+    (q4_K_M is Ollama's default build), yet Discover offered to pull it while
+    it sat in the installed table (09-09-2026)."""
+    assert lm._same_build("qwen3.8:27b", "qwen3.8:27b-q4_K_M")
+    assert lm._same_build("qwen3.8:27b-q4_K_M", "qwen3.8:27b")
+    assert not lm._same_build("qwen3.8:27b", "qwen3.8:27b-q8_0")
+    assert not lm._same_build("qwen3.8:27b", "qwen3.5:27b-q4_K_M")
+    assert not lm._same_build("qwen3.8", "qwen3.8:27b-q4_K_M")
