@@ -1415,11 +1415,16 @@ class DeepResearcher:
             )
             edges = []
             if first:
-                edges.append("Open with a short executive summary for the WHOLE report (all "
-                             f"{len(subs)} sections, not only these).")
+                edges.append("Start with ONE # title for the whole report, then a short executive "
+                             f"summary for the WHOLE report (all {len(subs)} sections, not only these).")
             else:
-                edges.append("Do NOT write an introduction or executive summary — the report "
-                             "already has one. Start directly with the first ## heading below.")
+                edges.append("Do NOT write a # title, an introduction or an executive summary — the "
+                             "report already has them. Start directly with the first ## heading below.")
+            # Part 1 of the 09-09 run titled itself "…: Parte 1" and part 2
+            # kept the list numbers in its headings ("## 7. Factores…") while
+            # part 1 did not. The seams must not show.
+            edges.append("Never write \"Part N\" or mention that the report is written in parts. "
+                         "Headings are the section titles WITHOUT their list numbers.")
             if last:
                 edges.append("End with a conclusion that answers the question directly.")
             else:
@@ -1441,13 +1446,39 @@ class DeepResearcher:
                 logger.error(f"Final report part {idx + 1}/{len(chunks)} failed: {e}")
                 self._failures.append(f"final report part {idx + 1}: {e}")
                 text = ""
-            text = str(text or "").strip()
+            text = self._tidy_part(str(text or ""), first)
             if not text:
                 text = "\n\n".join(f"## {q}\n\n_(This section could not be written: the model did "
                                    f"not answer in time.)_" for q in chunk)
             pieces.append(text)
         joined = "\n\n".join(pieces)
         return joined if joined.strip() else report
+
+    @staticmethod
+    def _tidy_part(text: str, first: bool) -> str:
+        """Hide the seams between parts, whatever the model was told.
+
+        Part 1 of the 09-09 run titled itself "…: Parte 1"; part 2 opened
+        with its own # title and kept the list numbers in its headings
+        ("## 7. Factores…"). Only the first part keeps a # title, no title
+        says which part it is, and no heading carries a list number.
+        """
+        text = text.strip()
+        if not text:
+            return ""
+        lines = text.split("\n")
+        out: List[str] = []
+        seen_title = False
+        for line in lines:
+            if re.match(r"^#\s+\S", line):
+                if not first or seen_title:
+                    continue                      # a later part's title, or a second one
+                seen_title = True
+                line = re.sub(r"\s*[:—–-]?\s*\(?\b(?:parte|part)\s+\d+(?:\s+(?:de|of)\s+\d+)?\)?\s*$",
+                              "", line, flags=re.IGNORECASE).rstrip()
+            line = re.sub(r"^(#{2,6})\s+\d{1,2}[.)]\s+", r"\1 ", line)
+            out.append(line)
+        return "\n".join(out).strip()
 
     # ------------------------------------------------------------------
     # Helpers

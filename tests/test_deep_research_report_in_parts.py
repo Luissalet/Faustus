@@ -39,7 +39,7 @@ def test_many_sections_are_written_in_parts_and_joined():
     # the first opens the report, the last closes it, the middle does neither
     assert "executive summary for the WHOLE report" in prompts[0]
     assert "Do NOT write a conclusion" in prompts[0]
-    assert "Do NOT write an introduction" in prompts[1] and "Do NOT write a conclusion" in prompts[1]
+    assert "Do NOT write a # title, an introduction" in prompts[1] and "Do NOT write a conclusion" in prompts[1]
     assert "End with a conclusion" in prompts[2]
 
 
@@ -83,3 +83,24 @@ def test_progress_names_the_sections_being_written():
     asyncio.run(r._final_report("q", "evolving"))
     msgs = [e["message"] for e in events if e.get("phase") == "writing"]
     assert msgs == ["Writing sections 1-6 of 7 (part 1 of 2)", "Writing sections 7-7 of 7 (part 2 of 2)"]
+
+
+# The seams of the 09-09 run: "…: Parte 1" in the title, a second # title in
+# part 2, list numbers kept in part 2's headings but not part 1's.
+
+def test_the_first_part_keeps_its_title_minus_the_part_label():
+    tidy = DeepResearcher._tidy_part
+    assert tidy("# Guía Clínica de Fisioterapia para WAD: Parte 1\n\n## Qué es", True) == \
+        "# Guía Clínica de Fisioterapia para WAD\n\n## Qué es"
+    assert tidy("# Whiplash Guide (Part 1 of 3)\n\ntext", True) == "# Whiplash Guide\n\ntext"
+
+
+def test_later_parts_lose_their_title_and_every_part_loses_list_numbers():
+    tidy = DeepResearcher._tidy_part
+    assert tidy("# Guía: Parte 2\n\n## 7. Factores pronósticos\n\ntexto\n\n### 7.1 Sub", False) == \
+        "## Factores pronósticos\n\ntexto\n\n### 7.1 Sub"
+    assert tidy("## 12) Movilidad cervical\n\n- a", True) == "## Movilidad cervical\n\n- a"
+
+
+def test_an_empty_part_stays_empty_for_the_placeholder():
+    assert DeepResearcher._tidy_part("   \n", False) == ""
