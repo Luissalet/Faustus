@@ -584,10 +584,52 @@ class DeepResearcher:
     # ------------------------------------------------------------------
     # LLM helper
     # ------------------------------------------------------------------
+    # Generation speed a local model is assumed to sustain when sizing the
+    # wait for a non-streamed call. 8 tok/s is a 27B q4 split over consumer
+    # cards; a setting overrides it per machine.
+    LOCAL_TOKENS_PER_SECOND = 8.0
+    LOCAL_PREFILL_SECONDS = 120.0
+
+    def _is_local(self) -> bool:
+        cached = getattr(self, "_local_endpoint", None)
+        if cached is None:
+            try:
+                from src.model_context import is_local_endpoint
+                cached = bool(is_local_endpoint(self.llm_endpoint))
+            except Exception:
+                cached = False
+            self._local_endpoint = cached
+        return cached
+
+    def _call_budget(self, max_tokens: int, timeout: int) -> int:
+        """How long one model call may take before it counts as dead.
+
+        llm_call_async does not stream, so its read timeout is the WHOLE
+        generation. 60-180 s covers a cloud API; a local 27B produces 8-15
+        tok/s, so the 8192-token synthesis needs 10-15 minutes — with the
+        old 180 s every synthesis and final report on Ollama timed out,
+        retried, timed out again, and the round's findings were thrown away
+        ("Synthesis failed, keeping previous report", 09-09-2026, qwen3.8
+        q4_K_M fully on GPU). For a local endpoint the budget is a prefill
+        allowance plus max_tokens at the configured speed, never below what
+        the caller asked; a remote endpoint keeps the caller's figure.
+        """
+        if not self._is_local():
+            return timeout
+        try:
+            from src.settings import get_setting
+            tps = float(get_setting("research_local_tokens_per_second", self.LOCAL_TOKENS_PER_SECOND))
+        except Exception:
+            tps = self.LOCAL_TOKENS_PER_SECOND
+        tps = min(500.0, max(0.5, tps))
+        budget = self.LOCAL_PREFILL_SECONDS + max(0, int(max_tokens or 0)) / tps
+        return int(min(3600, max(timeout, budget)))
+
     async def _llm(self, messages: List[Dict], temperature: float = 0.3,
                    max_tokens: int = 4096, timeout: int = 60) -> str:
         """Call the LLM asynchronously and strip thinking tags."""
         from src.llm_core import llm_call_async
+        timeout = self._call_budget(max_tokens, timeout)
         response = await llm_call_async(
             url=self.llm_endpoint,
             model=self.llm_model,

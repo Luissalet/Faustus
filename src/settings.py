@@ -631,6 +631,11 @@ DEFAULT_SETTINGS = {
     # How long an unanswered "no room" question waits before the load is
     # cancelled. Silence never loads a model that would not fit.
     "vram_admission_timeout_seconds": 600,
+    # Tokens/s a local model is assumed to sustain when Deep Research sizes
+    # the wait for a non-streamed call (prefill + max_tokens / this). 8 is a
+    # 27B q4 split over consumer cards; raise it for a fast card, lower it
+    # for a model that spills to RAM. src/deep_research.py::_call_budget.
+    "research_local_tokens_per_second": 8,
     # Workers get a lean toolset (no web / memory / skills / background jobs
     # unless the task mentions them): tool schemas were 65 % of a worker's
     # first round on a 9B model.
