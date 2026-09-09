@@ -49,6 +49,7 @@ import { t, tn } from '../../i18n';
 import { safeExternal } from '../../lib/markdown';
 import { Rich } from '../rich';
 import { Vitals } from '../studio/Vitals';
+import { VramAdmissionDialog } from '../VramAdmissionDialog';
 import '../research.css';
 
 /**
@@ -518,6 +519,11 @@ export function ResearchScreen() {
 
   const queued = jobs.filter((j) => j.status === 'queued');
   const running = jobs.filter((j) => j.status === 'running');
+  // A run waiting on "no room in VRAM — unload which?" (OBJ-1). One dialog
+  // at a time; `answered` hides it the instant the click lands, before the
+  // stream catches up and moves the phase on.
+  const [answered, setAnswered] = useState<string | null>(null);
+  const blocked = running.map((j) => j.progress?.vram).find((v) => v && v.ticket !== answered) ?? null;
   const finished = jobs.filter((j) => j.status === 'done' || j.status === 'error' || j.status === 'cancelled');
   const sessionIds = useMemo(() => new Set(jobs.map((j) => j.sessionId).filter(Boolean)), [jobs]);
   const recentOthers = (recent ?? []).filter((r) => !sessionIds.has(r.id) && !dismissed.has(r.id));
@@ -752,6 +758,8 @@ export function ResearchScreen() {
       )}
 
       <FitCard say={say} />
+
+      <VramAdmissionDialog blocked={blocked} onDone={() => setAnswered(blocked?.ticket ?? null)} say={say} />
 
       <Dialog open={expandedPrompt} onOpenChange={setExpandedPrompt}
         title={t('Research instructions')} className="fs-rs__prompt-dialog" testId="research-expanded-editor"

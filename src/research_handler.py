@@ -774,14 +774,21 @@ class ResearchHandler:
 
     @staticmethod
     async def _probe_endpoint(endpoint: str, model: str, headers: dict = None,
-                              progress_callback=None):
+                              progress_callback=None, owner: str = ""):
         """Load the model and wait until it answers — research starts after.
 
         This is a load, not a race: see `_probe_plan` for why the budget is
-        the chat's and not a fixed 15s.
+        the chat's and not a fixed 15s. And before the load, the admission
+        gate: if the model does not fit next to what is resident, the person
+        picks what to unload and the load waits for that (OBJ-1).
         """
         from src.llm_core import llm_call_async
         budget, local = ResearchHandler._probe_plan(endpoint)
+        if local:
+            from src.vram_admission import admit
+            # Raises AdmissionCancelled when nobody makes room: that surfaces
+            # as the run's error, with the reason, instead of a spilled load.
+            await admit(endpoint, model, owner=owner, on_progress=progress_callback)
         if progress_callback:
             # The screen says "loading the model" for as long as this takes,
             # instead of a spinner that gives up.
@@ -881,7 +888,8 @@ class ResearchHandler:
             logger.info(f"Prior: {len(prior_findings or [])} findings, {len(prior_urls or set())} URLs")
 
         # Load the model (and wait for it) before committing to a long run
-        await self._probe_endpoint(llm_endpoint, llm_model, llm_headers, progress_callback)
+        await self._probe_endpoint(llm_endpoint, llm_model, llm_headers, progress_callback,
+                                   owner=str((_task_entry or {}).get("owner") or ""))
         # …and do the same for the search backend. A run that plans, searches
         # seven times and reads nothing because its own SearXNG container was
         # down is not a search failure, it is a dependency nobody started.

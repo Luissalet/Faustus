@@ -727,6 +727,8 @@ function ResearchLine({ research }: { research: NonNullable<Turn['research']> })
   const phase: Record<string, string> = {
     probing: t('probing the model'),
     loading_model: t('loading the model into memory'),
+    vram_blocked: t('no room in VRAM — waiting for you to choose what to unload'),
+    unloading_model: t('unloading models to make room'),
     planning: t('planning'),
     searching: t('searching'),
     reading: t('reading {n} sources', { n: research.totalSources }),

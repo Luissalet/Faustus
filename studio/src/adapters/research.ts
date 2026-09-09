@@ -1,4 +1,5 @@
 import { ApiError, asArray, getJson } from './api';
+import { vramBlockedFrom, type VramBlocked } from './vramAdmission';
 import { t } from '../i18n';
 
 /**
@@ -138,6 +139,8 @@ export interface ResearchProgress {
   totalFindings?: number;
   message?: string;
   status?: string;
+  /** Set while the loader is waiting for someone to free VRAM (`phase: vram_blocked`). */
+  vram?: VramBlocked;
 }
 
 export interface ResearchResult {
@@ -185,6 +188,7 @@ function progressFrom(raw: Record<string, unknown>): ResearchProgress {
     totalFindings: typeof raw.total_findings === 'number' ? raw.total_findings : undefined,
     message: typeof raw.message === 'string' ? raw.message : undefined,
     status: typeof raw.status === 'string' ? raw.status : undefined,
+    vram: vramBlockedFrom(raw),
   };
 }
 
@@ -357,6 +361,10 @@ export function phaseLabel(p: ResearchProgress | null, maxRounds: number): strin
       // A local model that is not resident is read off disk first. This can
       // take minutes for a big one, and the wait is the honest thing to show.
       return t('Loading the model into memory…');
+    case 'vram_blocked':
+      return t('No room in VRAM — waiting for you to choose what to unload');
+    case 'unloading_model':
+      return t('Unloading models to make room…');
     case 'planning':
       return t('Planning the research…');
     case 'searching':

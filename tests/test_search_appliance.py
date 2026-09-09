@@ -1,8 +1,8 @@
-"""The search backend is started, not assumed.
+﻿"""The search backend is started, not assumed.
 
 08-09-2026: a research planned, wrote seven queries and read nothing because
 its own SearXNG container was down. Nothing was broken; nobody had started it.
-These tests pin what the preflight may and may not do — above all that it only
+These tests pin what the preflight may and may not do â€” above all that it only
 ever starts a service this repo itself ships, and never touches a URL that is
 not on this machine.
 """
@@ -101,7 +101,8 @@ def test_it_starts_the_container_and_waits_for_it(monkeypatch, no_settings):
 
     monkeypatch.setattr(appliance, "_reachable", _probe)
     monkeypatch.setattr(appliance, "_run", _run)
-    monkeypatch.setattr(asyncio, "sleep", lambda *_a, **_k: asyncio.sleep(0))
+    _real_sleep = asyncio.sleep
+    monkeypatch.setattr(asyncio, "sleep", lambda *_a, **_k: _real_sleep(0))
 
     events = []
     ready, reason = asyncio.run(
@@ -111,7 +112,7 @@ def test_it_starts_the_container_and_waits_for_it(monkeypatch, no_settings):
     assert (ready, reason) == (True, "")
     assert seen[0][:2] == ("docker", "version")          # is the engine up?
     assert seen[1][:2] == ("docker", "compose")          # then start the service
-    assert seen[1][-3:] == ("up", "-d", "searxng")       # …and only that service
+    assert seen[1][-3:] == ("up", "-d", "searxng")       # â€¦and only that service
     assert [e["phase"] for e in events] == ["starting_search", "starting_search"]
 
 
@@ -127,7 +128,8 @@ def test_a_container_that_never_answers_is_reported_not_raised(monkeypatch, no_s
         return 0, ""
 
     monkeypatch.setattr(appliance, "_run", _run)
-    monkeypatch.setattr(asyncio, "sleep", lambda *_a, **_k: asyncio.sleep(0))
+    _real_sleep = asyncio.sleep
+    monkeypatch.setattr(asyncio, "sleep", lambda *_a, **_k: _real_sleep(0))
 
     ready, reason = asyncio.run(appliance.ensure_backend("searxng"))
     assert ready is False

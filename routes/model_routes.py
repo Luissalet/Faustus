@@ -1400,16 +1400,13 @@ _FIT_MEASURED_HEADROOM_BYTES = 512 * 1024 * 1024
 # free the moment it is evicted. A model nobody has run keeps the weights-only
 # verdict: this table only ever holds numbers measured on this machine, and it
 # is keyed by blob digest because two tags of one blob have one footprint.
-_KV_RATES: Dict[str, Dict[str, float]] = {}
-_KV_RATES_MAX = 64
-
-
-def _remember_kv_rate(key: str, per_token: float, ctx: int) -> None:
-    if not key or per_token <= 0 or ctx <= 0:
-        return
-    if key not in _KV_RATES and len(_KV_RATES) >= _KV_RATES_MAX:
-        _KV_RATES.pop(next(iter(_KV_RATES)), None)
-    _KV_RATES[key] = {"per_token": float(per_token), "ctx": float(ctx)}
+#
+# The table itself lives in src/vram_fit.py since 09-09-2026 (the admission
+# gate reads it too). These are the same objects, not copies: tests that
+# `_KV_RATES.clear()` here clear the one table.
+_KV_RATES: Dict[str, Dict[str, float]] = vram_fit.KV_RATES
+_KV_RATES_MAX = vram_fit.KV_RATES_MAX
+_remember_kv_rate = vram_fit.remember_kv_rate
 
 
 def _fit_state(size_bytes: int, budget_bytes: int, measured: bool = False) -> str:

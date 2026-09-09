@@ -528,6 +528,7 @@ Camera	Cámara
 Cancel	Cancelar
 Cancel / stop	Cancelar / parar
 Cancel selection, crop or transform	Cancelar selección, recorte o transformación
+Cancel the load	Cancelar la carga
 Cancel the render	Cancelar el render
 Cancel this turn	Cancelar este turno
 Cancelled	Cancelado
@@ -1818,6 +1819,7 @@ It used up its turns.	Agotó sus turnos.
 It was already tidy.	Ya estaba limpia.
 It was looked at again.	Se volvió a mirar.
 It was really	En realidad era
+It will spill to CPU and PCIe: much slower, and it can take the machine down if memory runs out.	Se desbordará a CPU y PCIe: mucho más lento, y puede tumbar la máquina si se acaba la memoria.
 Italic (Ctrl+I)	Cursiva (Ctrl+I)
 Item	Elemento
 Its chat	Su conversación
@@ -1942,6 +1944,7 @@ LoRA scale	Escala LoRA
 LoRA scales	Escalas LoRA
 LoRA style	Estilo LoRA
 Load	Cargar
+Load anyway	Cargar igualmente
 Load into VRAM now	Cargar en la VRAM ahora
 Load project	Cargar proyecto
 Loaded context: {ctx}; model RAM: {ram}.	Contexto cargado: {ctx}; RAM del modelo: {ram}.
@@ -2352,6 +2355,8 @@ No research yet	Aún no hay investigaciones
 No resource is claimed.	No hay ningún recurso reclamado.
 No results.	Sin resultados.
 No review loaded. Ask an expert to review a passage (the	No hay ninguna revisión cargada. Pide a un experto que revise un pasaje (la herramienta
+No room in VRAM for {model}	No hay sitio en la VRAM para {model}
+No room in VRAM — waiting for you to choose what to unload	No hay sitio en la VRAM — esperando a que elijas qué descargar
 No rules yet: add one below or let the agent learn from outcomes.	Todavía no hay reglas: añade una abajo o deja que el agente aprenda de los resultados.
 No runs yet.	Aún no hay ejecuciones.
 No saved signatures yet — draw one below.	Aún no hay firmas guardadas: dibuja una abajo.
@@ -2475,6 +2480,7 @@ Nothing researched yet	Todavía no hay investigaciones
 Nothing running	Nada en marcha
 Nothing selected to audit	No hay nada seleccionado que auditar
 Nothing that day.	Nada ese día.
+Nothing ticked.	Nada marcado.
 Nothing to change: the settings already match.	Nada que cambiar: los ajustes ya coinciden.
 Nothing to continue yet	Todavía no hay nada que continuar
 Nothing to draw yet	Aún no hay nada que dibujar
@@ -3398,6 +3404,7 @@ Shell / Python / Files	Terminal / Python / Ficheros
 Shift	Mayús
 Shipped with Faustus. Put a file with the same slug under DATA_DIR/agents to replace it.	Viene con Faustus. Un fichero con el mismo slug en DATA_DIR/agents lo sustituye.
 Short and to the point	Corto y al grano
+Short by {n}.	Faltan {n}.
 Short sentences, warm, signs with a first name…	Frases cortas, cercano, firma con el nombre de pila…
 Shortcut	Atajo
 Shortcuts	Atajos
@@ -3693,6 +3700,7 @@ The agent is using the browser right now	El agente está usando el navegador aho
 The agent wants to do this and is waiting for you. Nothing happens until you decide.	El agente quiere hacer esto y te espera. No pasa nada hasta que decidas.
 The agent's file tools and terminal are confined to this folder.	Las herramientas de ficheros y la terminal del agente quedan confinadas a esta carpeta.
 The always-loaded ration	La ración de carga permanente
+The answer did not reach the server.	La respuesta no ha llegado al servidor.
 The answer the prompt expects; panes get graded against it	La respuesta que espera el prompt; los paneles se puntúan contra ella
 The approval failed	La aprobación falló
 The assistant drafts one when it solves something worth repeating — or write one yourself.	El asistente redacta una cuando resuelve algo que merece repetirse — o escribe una tú.
@@ -3814,6 +3822,7 @@ The model's reasoning, folded under each reply.	El razonamiento del modelo, pleg
 The model's reasoning, if it supports it.	Razonamiento del modelo, si lo soporta.
 The neighbourhood	El vecindario
 The new interface is alive but cannot reach the API. The previous interface keeps working and does not depend on this.	La interfaz nueva está viva pero no alcanza la API. La interfaz anterior sigue funcionando y no depende de esto.
+The new model loads only once the ticked ones are really gone from memory.	El modelo nuevo se carga solo cuando los marcados han salido de verdad de la memoria.
 The new shell already has navigation, routes and keyboard. This screen is migrated in its own ticket, and until then it keeps working exactly as always in the previous interface.	El shell nuevo ya tiene navegación, rutas y teclado. Esta pantalla se migra en su propio ticket, y hasta entonces sigue funcionando exactamente igual que siempre en la interfaz de siempre.
 The next run rebuilds it from scratch.	La próxima ejecución la reconstruye de cero.
 The note is empty: nothing to resolve.	La nota está vacía: no hay nada que resolver.
@@ -4088,7 +4097,12 @@ Unknown tool	Herramienta desconocida
 Unlink	Desvincular
 Unlinked. The source itself was not deleted.	Desvinculado. La fuente en sí no se ha borrado.
 Unload	Descargar de memoria
+Unload and continue	Descargar y continuar
+Unload {name}	Descargar {name}
 Unloaded {name}	{name} descargado de memoria
+Unloading models to make room…	Descargando modelos para hacer sitio…
+Unloading the ticked models frees {n}: enough.	Descargar los marcados libera {n}: suficiente.
+Unloading the ticked models frees {n}: still {m} short.	Descargar los marcados libera {n}: aún faltan {m}.
 Unlock	Desbloquear
 Unnamed	Sin nombre
 Unpin	Desfijar
@@ -4641,6 +4655,7 @@ images	imágenes
 imported	importado
 imported {c} conversations and {m} messages — {created} new, {updated} already here	importadas {c} conversaciones y {m} mensajes: {created} nuevas, {updated} ya estaban
 imports, calls, definitions, tests	imports, llamadas, definiciones, tests
+in VRAM	en VRAM
 in its proof.	en su prueba.
 in parallel	en paralelo
 in progress	en curso
@@ -4740,6 +4755,7 @@ no reason given	sin motivo
 no reasoning	sin razonar
 no resource	ningún recurso
 no room	no cabe
+no room in VRAM — waiting for you to choose what to unload	no hay sitio en la VRAM — esperando a que elijas qué descargar
 no rubric rule named	sin regla de rúbrica
 no signal	sin señal
 no signal {n} s	sin señal {n} s
@@ -4963,6 +4979,7 @@ unknown marker	marcador desconocido
 unknown reason	motivo desconocido
 unknown source	fuente desconocida
 unloading	descargando
+unloading models to make room	descargando modelos para hacer sitio
 unlocked	desbloqueada
 unreachable	no responde
 unreadable	ilegible
@@ -5033,6 +5050,8 @@ yours	tuyo
 {kind} · {n} field(s) · {unknown} never observed	{kind} · {n} campo(s) · {unknown} nunca observados
 {mb} MB · {p}% of its GPU memory	{mb} MB · {p}% de su memoria de GPU
 {model} did not answer; {other} answered instead.	{model} no ha respondido; ha contestado {other}.
+{model} needs at least {need} — its {size} of weights, plus a KV cache that has never been measured on this machine — and there is {free} free next to what is loaded.	{model} necesita al menos {need} — sus {size} de pesos, más una caché KV que nunca se ha medido en esta máquina — y hay {free} libres junto a lo que está cargado.
+{model} needs {need} — {size} of weights plus {kv} of KV cache — and there is {free} free next to what is loaded.	{model} necesita {need} — {size} de pesos más {kv} de caché KV — y hay {free} libres junto a lo que está cargado.
 {name} deleted from the corpus	{name} borrado del corpus
 {name} in the library is replaced with the flattened result. The previous pixels are gone; layers stay only in the draft and in project files.	{name} se sustituye en la biblioteca por el resultado aplanado. Los píxeles anteriores desaparecen; las capas solo quedan en el borrador y en los archivos de proyecto.
 {name} installed	{name} instalado
@@ -5184,8 +5203,10 @@ yours	tuyo
 {n} min ago	hace {n} min
 {n} min left	quedan {n} min
 {n} model	{n} modelo
+{n} model loaded — tick what to unload	{n} modelo cargado — marca cuál descargar
 {n} model(s) allowed	{n} modelo(s) permitido(s)
 {n} models	{n} modelos
+{n} models loaded — tick what to unload	{n} modelos cargados — marca cuáles descargar
 {n} month	{n} mes
 {n} months	{n} meses
 {n} msg	{n} msj
@@ -5265,6 +5286,7 @@ yours	tuyo
 {n} source switched off	{n} fuente apagada
 {n} sources	{n} fuentes
 {n} sources switched off	{n} fuentes apagadas
+{n} spilled to RAM	{n} desbordados a RAM
 {n} sub-agent	{n} sub-agente
 {n} sub-agents	{n} sub-agentes
 {n} superseded decision	{n} decisión superada
@@ -5286,6 +5308,7 @@ yours	tuyo
 {n} token	{n} token
 {n} tokens	{n} tokens
 {n} tokens generated	{n} tokens generados
+{n} tokens of context	{n} tokens de contexto
 {n} tool	{n} herramienta
 {n} tool call	{n} llamada a herramienta
 {n} tool calls	{n} llamadas a herramientas
@@ -5321,6 +5344,8 @@ yours	tuyo
 {size} that every other gauge counts as "other". Ollama restarted without its runners; releasing them is safe — the next request loads the model again.	{size} que el resto de medidores cuentan como «otros». Ollama se reinició sin sus runners; liberarlos es seguro — la siguiente petición vuelve a cargar el modelo.
 {source} · {epistemic} · {at}	{source} · {epistemic} · {at}
 {s} s of model	{s} s de modelo
+{total} of VRAM across {n} GPUs. Ollama would still load it, spilling to the CPU and PCIe: much slower, and with two large models inside the machine can run out of memory.	{total} de VRAM entre {n} GPUs. Ollama lo cargaría igual, desbordando a CPU y PCIe: mucho más lento, y con dos modelos grandes dentro la máquina puede quedarse sin memoria.
+{total} of VRAM. Ollama would still load it, spilling to the CPU and PCIe: much slower, and with two large models inside the machine can run out of memory.	{total} de VRAM. Ollama lo cargaría igual, desbordando a CPU y PCIe: mucho más lento, y con dos modelos grandes dentro la máquina puede quedarse sin memoria.
 {used} of {ceiling}	{used} de {ceiling}
 {used} of {total} used · {free} free	{used} de {total} usados · {free} libres
 {used} of {window} · {pct}% of the window	{used} de {window} · {pct}% de la ventana

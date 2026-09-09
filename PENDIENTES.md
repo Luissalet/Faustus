@@ -6,8 +6,34 @@ Actualizado: 08-09-2026. Sólo trabajo vigente; quitar cada entrada al cerrarla.
 
 - **Voz física:** conversación completa con micrófono en español e inglés. No activar grabación ni permisos para cerrar esta casilla sin intervención del usuario.
 
+- **Un turno se declara correcto sin informe.** `rp-b737ffb10ef7` (08-09, 20:57) registró «IterResearch completed successfully» con 2 rondas y 14 URLs cuando la ronda 2 no había generado ninguna consulta y la síntesis no había producido nada: lo guardado son 8 hallazgos en bruto devueltos como respaldo. Un respaldo no es un informe y no debería salir por la puerta de «correcto». Revisar la rama de `Synthesis produced no report` en `src/deep_research.py`.
+
+- **SearXNG contesta pero no busca.** El contenedor `odysseus-searxng-1` está sano y `/search?format=json` responde, pero con **0 resultados**. Mirar los motores de `SEARXNG_GENERAL_ENGINES` (`bing,mojeek,presearch`) antes de dar el proveedor por bueno.
+
+- **Docker Desktop y el entorno del puente MCP.** Toda la noche del 08-09 se cayó al arrancar con `unable to get 'ProgramData'` cuando lo lanzaba una sesión a través del puente (cuatro vías probadas: directa, con el entorno repuesto, vía `explorer.exe` y como tarea programada interactiva). Lanzado por Luis a las 22:12 arrancó a la primera. El puente entrega un PowerShell **sin `ProgramData` ni `ALLUSERSPROFILE`**; anotado por si vuelve a aparecer con otro programa.
+
+## Lista de Luis, 09-09 de madrugada (por orden de llegada)
+
+1. **Research con Docker levantado → 0 fuentes, «no information».** Reproducir con SearXNG sano y mirar por qué el proveedor devuelve vacío (`SEARXNG_GENERAL_ENGINES=bing,mojeek,presearch`; el sondeo directo a `/search?format=json` dio 0 resultados a las 22:20).
+2. **El Retry de una research no responde bien.**
+3. **El texto del cuadro del chat se pierde al cambiar de chat.** Borrador por chat/proyecto que sobreviva a navegar y volver.
+4. **«Waiting for the model» con el modelo ya cargado**, antes de empezar o a mitad del trabajo (captura: 01:28 esperando, con 35,3/44 GB y *PCIe spill*).
+5. **Descargar modelos sólo llega a Qwen 3.5**; ya existe hasta 3.8. El catálogo de Discover está viejo.
+6. **Cargar un modelo desde Modelos locales no enseña nada** hasta que termina: ni spinner ni estado.
+7. **Un proyecto con el mismo nombre que su carpeta no se deja crear.**
+8. **Personalización de modelos**: editar etiquetas individuales o un cuadro de *additional commands* para Ollama/llama.cpp (`-spec-type`, `draft-mtp`, `-spec-draft-n-max`, `-cache-type-k/-v`, `-np`, `-kv-cache-type-dtype`, `-jinja`…).
+9. **Verificar todo por MCP y por pantalla.**
+
+A comprobar de paso: la pantalla de Modelos locales lista **tres** GPUs (4070 Ti, 5060 Ti, 5060 Ti; 12 + 15,9 + 15,9 = 43,8 GB) y la GPU 1 sale sin lectura («— of 15.9 GB»). O hay tres tarjetas o una 5060 Ti aparece dos veces; en el segundo caso el presupuesto de 40,3 GB está inflado 15 GB.
+
+## Lo que rompió la máquina el 08-09 (regla, no anécdota)
+
+Dos 27B dentro a la vez —`q8_0` residente de una prueba (33 GB, con spill) y `q4_K_M` cargado por una research (17 GB)— más un build de Vite, dos tandas de pytest y siete procesos de Docker Desktop, superaron el **commit limit** de la máquina (147,7 GB = 128 de RAM + 20 de pagefile). La cascada, en orden: `cudaMalloc failed: out of memory` en la ronda 2, `MemoryError` en el servidor, `can't start new thread`, y después ni PowerShell arrancaba (`0xC000012D`, STATUS_COMMITMENT_LIMIT). El escritorio se quedó en negro con una sola ventana de error.
+
+**La regla: nunca dos modelos grandes cargados a la vez, y nada pesado corriendo mientras hay uno dentro.** `ollama ps` antes de cargar, `ollama stop` del anterior. La puerta de admisión que automatiza esto es OBJ-1 en OBJETIVOS.md.
+
 Las carencias de backend del índice anterior están implementadas; se ha eliminado ese índice vacío.
-No quedan funciones o ampliaciones acordadas por implementar. Eliminados los índices de UI resueltos; se pueden recuperar del historial Git.
+Las ampliaciones acordadas viven en OBJETIVOS.md; ahora mismo, OBJ-1 (puerta de admisión de VRAM). Eliminados los índices de UI resueltos; se pueden recuperar del historial Git.
 No contar planes de inspiración o notas de implementación como otra cola de tareas.
 
 ## Última evidencia

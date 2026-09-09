@@ -926,3 +926,77 @@
 .fs-avatar[data-hue='6'] {
   --fs-avatar-hue: var(--fs-aurora-c);
 }
+
+
+/* ── VRAM admission: "no room — unload which?" (screens/VramAdmissionDialog) ── */
+
+.fs-vram {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fs-space-3);
+}
+
+.fs-vram p {
+  margin: 0;
+  max-inline-size: none; /* base.css caps every <p> at 65ch; the dialog is narrower than that */
+}
+
+.fs-vram__h {
+  margin: var(--fs-space-2) 0 0;
+  font-size: var(--fs-text-sm, 0.875rem);
+  font-weight: 600;
+  color: var(--fs-text-1);
+}
+
+.fs-vram__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-md, 8px);
+  overflow: hidden;
+}
+
+.fs-vram__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fs-space-1) var(--fs-space-3);
+  padding: var(--fs-space-2) var(--fs-space-3);
+}
+
+.fs-vram__row + .fs-vram__row {
+  border-block-start: 1px solid var(--fs-border);
+}
+
+.fs-vram__label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  cursor: pointer;
+  min-inline-size: 0;
+}
+
+.fs-vram__name {
+  font-family: var(--fs-font-mono);
+  font-size: var(--fs-text-sm, 0.875rem);
+  overflow-wrap: anywhere;
+}
+
+.fs-vram__meta {
+  color: var(--fs-text-2);
+  font-size: var(--fs-text-xs, 0.8125rem);
+  font-variant-numeric: tabular-nums;
+}
+
+.fs-vram__sum {
+  font-variant-numeric: tabular-nums;
+  color: var(--fs-text-1);
+}
+
+.fs-vram__sum--short {
+  color: var(--fs-warning, var(--fs-text-1));
+}

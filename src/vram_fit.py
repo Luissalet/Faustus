@@ -110,6 +110,26 @@ def kv_bytes_per_token_estimated(model_info: Dict[str, Any]) -> Tuple[Optional[f
     return per_token, note
 
 
+# What a model really costs is weights + the KV cache of the context it loads
+# with, and only the first half is in the file. Learned per blob from `/api/ps`
+# while the model is resident — `(size - file) / context_length` — and kept, so
+# the verdict for a model you have run once stops pretending the context is
+# free the moment it is evicted. Keyed by blob digest because two tags of one
+# blob have one footprint. Lived in routes/model_routes.py until 09-09-2026;
+# the admission gate (src/vram_admission.py) needs it too, and a table of
+# measurements is domain knowledge, not route state.
+KV_RATES: Dict[str, Dict[str, float]] = {}
+KV_RATES_MAX = 64
+
+
+def remember_kv_rate(key: str, per_token: float, ctx: int) -> None:
+    if not key or per_token <= 0 or ctx <= 0:
+        return
+    if key not in KV_RATES and len(KV_RATES) >= KV_RATES_MAX:
+        KV_RATES.pop(next(iter(KV_RATES)), None)
+    KV_RATES[key] = {"per_token": float(per_token), "ctx": float(ctx)}
+
+
 def plan(
     *,
     vram_total_bytes: int,

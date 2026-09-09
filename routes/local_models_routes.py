@@ -921,6 +921,61 @@ def setup_local_models_routes() -> APIRouter:
         is_embedding = bool(body.get("embedding"))
         return await asyncio.to_thread(_set_keep_alive, ep["root"], name, 0, is_embedding)
 
+    # ── VRAM admission (OBJ-1): the "no room — unload which?" question ──────
+    #
+    # The loader (research, chat) publishes a ticket when the model does not
+    # fit next to what is resident and waits; the screen shows the residents;
+    # these routes are the click. You answer your own tickets; an admin
+    # answers anyone's. The unload itself runs in the loader, not here.
+
+    def _is_admin(request: Request, user: str) -> bool:
+        try:
+            auth_mgr = getattr(request.app.state, "auth_manager", None)
+            if auth_mgr is not None and getattr(auth_mgr, "is_admin", None):
+                return bool(auth_mgr.is_admin(user))
+        except Exception:  # noqa: BLE001
+            return False
+        return True  # auth off: everyone is the admin
+
+    def _ticket_for(request: Request, ticket_id: str):
+        from src import vram_admission
+        user = require_user(request)
+        t = vram_admission.get_ticket(ticket_id)
+        if t is None or (t.owner and t.owner != user and not _is_admin(request, user)):
+            raise HTTPException(404, "No such VRAM question")
+        return user, t
+
+    @router.get("/admission")
+    async def api_admission_pending(request: Request):
+        from src import vram_admission
+        user = require_user(request)
+        owner = None if _is_admin(request, user) else user
+        return {"pending": vram_admission.pending(owner=owner)}
+
+    @router.get("/admission/{ticket_id}")
+    async def api_admission_get(ticket_id: str, request: Request):
+        _user, t = _ticket_for(request, ticket_id)
+        return t.public()
+
+    @router.post("/admission/{ticket_id}")
+    async def api_admission_resolve(ticket_id: str, request: Request):
+        """`{"action": "unload"|"proceed"|"cancel", "names": [...]}`."""
+        from src import vram_admission
+        user, t = _ticket_for(request, ticket_id)
+        body = await _body(request)
+        action = str(body.get("action") or "").strip().lower()
+        names = body.get("names") or []
+        if not isinstance(names, list):
+            raise HTTPException(400, "names must be a list")
+        try:
+            ok = vram_admission.resolve(t.id, action=action,
+                                        names=[validate_model_name(n) for n in names], by=user)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        if not ok:
+            raise HTTPException(409, "That question was already answered")
+        return {"ok": True, "ticket": t.id, "action": action, "names": t.decision.get("names", [])}
+
     @router.get("/placement")
     async def api_placement(request: Request):
         """The GPU placement policy: -1 Auto, N = fill card N first."""

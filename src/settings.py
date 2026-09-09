@@ -620,6 +620,17 @@ DEFAULT_SETTINGS = {
     # pinned to a card it does not fit goes to the CPU, so bigger ones stay
     # Auto). src/gpu_policy.py.
     "gpu_placement_prefer": -1,
+    # Before Faustus loads a local model that does not fit next to what is
+    # already resident: "ask" shows the residents and waits for you to pick
+    # which to unload (the new one loads only once they are gone); "auto"
+    # evicts the least useful ones itself (unattended work, workers); "off"
+    # loads regardless — Ollama then spills to CPU/PCIe and says nothing.
+    # src/vram_admission.py. Born the night two 27B models took the machine
+    # down (08-09-2026).
+    "vram_admission": "ask",
+    # How long an unanswered "no room" question waits before the load is
+    # cancelled. Silence never loads a model that would not fit.
+    "vram_admission_timeout_seconds": 600,
     # Workers get a lean toolset (no web / memory / skills / background jobs
     # unless the task mentions them): tool schemas were 65 % of a worker's
     # first round on a 9B model.
