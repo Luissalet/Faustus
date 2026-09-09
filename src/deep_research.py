@@ -1263,7 +1263,11 @@ class DeepResearcher:
             return await self._llm(
                 [{"role": "user", "content": prompt}],
                 temperature=0.3,
-                max_tokens=self.max_report_tokens,
+                # The evolving report is working notes for the final writer,
+                # which gets the whole evidence list again. Rewriting it at
+                # research_max_tokens (16k) every round is what made one
+                # round take 15 minutes on a local 27B (10-09-2026).
+                max_tokens=min(self.max_report_tokens, self.SYNTHESIS_MAX_TOKENS),
                 # Synthesis is a heavy generation call like the final report
                 # (which gets 180s); a slow local model (e.g. a 20B served from
                 # LM Studio) routinely needs >60s for it. The old 60s cap timed
@@ -1315,6 +1319,9 @@ class DeepResearcher:
     # covered 14 of them in 8192 tokens and stopped at "Movilidad cervical".
     # Past this many sections the report is written in parts of this size.
     SECTIONS_PER_PART = 6
+    # Ceiling for one synthesis pass (the evolving report), whatever
+    # research_max_tokens says: that figure is for the final report.
+    SYNTHESIS_MAX_TOKENS = 6144
 
     async def _final_report(self, question: str, report: str) -> str:
         """LLM writes a polished final report, retrying if too short."""

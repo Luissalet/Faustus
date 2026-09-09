@@ -104,3 +104,20 @@ def test_later_parts_lose_their_title_and_every_part_loses_list_numbers():
 
 def test_an_empty_part_stays_empty_for_the_placeholder():
     assert DeepResearcher._tidy_part("   \n", False) == ""
+
+
+def test_synthesis_is_capped_below_the_final_report_budget():
+    """research_max_tokens (16k by default) is for the final report; rewriting
+    the evolving report at that size every round made one round take 15
+    minutes on a local 27B (10-09-2026)."""
+    r = DeepResearcher(llm_endpoint="http://127.0.0.1:11434/v1/chat/completions", llm_model="m",
+                       max_report_tokens=16384)
+    r.report_language = "en"
+    seen = {}
+
+    async def _llm(messages, **k):
+        seen.update(k)
+        return "notes"
+    r._llm = _llm
+    asyncio.run(r._synthesize("q", [{"url": "https://x", "title": "t", "content": "c"}], ""))
+    assert seen["max_tokens"] == DeepResearcher.SYNTHESIS_MAX_TOKENS == 6144
