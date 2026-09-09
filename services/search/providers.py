@@ -3,7 +3,9 @@
 import json
 import logging
 import os
-from typing import List, Optional
+import threading
+import time
+from typing import Any, Dict, List, Optional
 from urllib.parse import urljoin, urlparse, parse_qs
 
 import httpx
@@ -296,6 +298,65 @@ _NEWS_HINTS = ("news", "nyheter", "headlines", "breaking", "latest", "today", "i
 # time, hence it is out.
 _GENERAL_ENGINES = os.environ.get("SEARXNG_GENERAL_ENGINES", "bing,yandex,openalex,mojeek")
 
+# What the last SearXNG call said about its engines: which ones actually put
+# results on the table and which SearXNG reported as unresponsive or
+# suspended. Kept so the question "is the search working?" has a factual
+# answer (GET /api/search/health) instead of a result count — the 09-09 run
+# had "10 results" every time and all ten came from one engine that ignored
+# most of the query.
+ENGINE_HEALTH: Dict[str, Any] = {}
+_ENGINE_HEALTH_LOCK = threading.Lock()
+_LAST_ENGINE_WARNING = ""
+
+
+def _record_engine_health(query: str, requested: str, data: Any) -> None:
+    global _LAST_ENGINE_WARNING
+    if not isinstance(data, dict):
+        return
+    answered: Dict[str, int] = {}
+    for r in data.get("results", []) or []:
+        for eng in (r.get("engines") or []):
+            answered[str(eng)] = answered.get(str(eng), 0) + 1
+    unresponsive = []
+    for item in data.get("unresponsive_engines") or []:
+        try:
+            name, reason = item[0], (item[1] if len(item) > 1 else "")
+        except (TypeError, IndexError, KeyError):
+            continue
+        unresponsive.append({"engine": str(name), "reason": str(reason)})
+    asked = [e.strip() for e in str(requested or "").split(",") if e.strip()]
+    silent = [e for e in asked if e not in answered and not any(u["engine"] == e for u in unresponsive)]
+    snapshot = {
+        "at": time.time(),
+        "query": str(query)[:120],
+        "requested": asked,
+        "answered": answered,
+        "unresponsive": unresponsive,
+        "silent": silent,
+        "results": len(data.get("results", []) or []),
+    }
+    with _ENGINE_HEALTH_LOCK:
+        ENGINE_HEALTH.clear()
+        ENGINE_HEALTH.update(snapshot)
+    # One engine carrying every result is the failure mode that looks like
+    # success. Say so once per change of state, not on every query.
+    if asked and len(answered) <= 1 and (unresponsive or silent):
+        who = next(iter(answered), "nobody")
+        down = ", ".join(f"{u['engine']} ({u['reason']})" for u in unresponsive) or ", ".join(silent)
+        warning = f"SearXNG: only {who} answered; {down}"
+        if warning != _LAST_ENGINE_WARNING:
+            logger.warning(warning)
+            _LAST_ENGINE_WARNING = warning
+    elif _LAST_ENGINE_WARNING and len(answered) > 1:
+        logger.info(f"SearXNG: engines back — {', '.join(sorted(answered))} answered")
+        _LAST_ENGINE_WARNING = ""
+
+
+def searxng_engine_health() -> Dict[str, Any]:
+    """The last SearXNG call's engine report (see ENGINE_HEALTH); {} before any."""
+    with _ENGINE_HEALTH_LOCK:
+        return dict(ENGINE_HEALTH)
+
 
 def searxng_search_api(query: str, count: Optional[int] = None, categories: str = "general",
                        time_filter: Optional[str] = None) -> List[dict]:
@@ -357,6 +418,7 @@ def searxng_search_api(query: str, count: Optional[int] = None, categories: str 
             )
             response.raise_for_status()
             data = response.json()
+            _record_engine_health(query, search_params.get("engines", ""), data)
             return _parse_results(data.get("results", [])), data
 
         active_params = params

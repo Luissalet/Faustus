@@ -65,6 +65,26 @@ def setup_search_routes(config) -> APIRouter:
             logger.error(f"Standalone web search failed: {e}")
             return {"context": "", "sources": [], "error": str(e)}
 
+    @router.get("/api/search/health")
+    async def search_health() -> Dict[str, Any]:
+        """What the last SearXNG call said about its engines.
+
+        A result count is not health: on 09-09-2026 every query "returned 10
+        results" and all ten came from bing, which hands back the same ten
+        pages for any phrasing of a topic. This says who answered, who was
+        suspended and why, and who asked-for engine stayed silent.
+        """
+        from services.search.providers import searxng_engine_health, _GENERAL_ENGINES
+        report = searxng_engine_health()
+        answered = report.get("answered") or {}
+        return {
+            "provider": "searxng",
+            "instance": _get_search_instance(),
+            "configured_engines": [e.strip() for e in (_GENERAL_ENGINES or "").split(",") if e.strip()],
+            "last_call": report or None,
+            "single_engine": bool(report) and len(answered) <= 1 and bool(report.get("unresponsive") or report.get("silent")),
+        }
+
     @router.get("/api/search/providers")
     async def list_search_providers():
         """Return available search providers with config status."""

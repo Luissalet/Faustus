@@ -1027,6 +1027,8 @@ class DeepResearcher:
                 if len(urls_to_fetch) >= self.max_urls_per_round * len(queries):
                     break
 
+        self._warn_if_single_engine()
+
         # A round that found pages but had read them all is not a search
         # outage: it is the engine handing back the same top ten for every
         # phrasing (bing did exactly that for "whiplash", 09-09-2026). Say so
@@ -1062,6 +1064,38 @@ class DeepResearcher:
                 all_findings.append(result)
 
         return all_findings
+
+    def _warn_if_single_engine(self) -> None:
+        """Tell the screen, once per run, when SearXNG is down to one engine.
+
+        Ten results a query looked like a working search on 09-09-2026; all
+        ten came from bing, which returns the same pages for any phrasing, so
+        round two read nothing new. The person deserves to know the search is
+        limping before the report comes out thin.
+        """
+        if getattr(self, "_engine_warned", False):
+            return
+        try:
+            if self._active_search_provider() != "searxng":
+                return
+            from services.search.providers import searxng_engine_health
+            report = searxng_engine_health()
+        except Exception:
+            return
+        answered = report.get("answered") or {}
+        down = list(report.get("unresponsive") or [])
+        silent = list(report.get("silent") or [])
+        if not report or len(answered) > 1 or not (down or silent):
+            return
+        who = next(iter(answered), None)
+        reasons = "; ".join(f"{u.get('engine')}: {u.get('reason') or 'no answer'}" for u in down)
+        if silent:
+            reasons = (reasons + "; " if reasons else "") + "no results from " + ", ".join(silent)
+        msg = (f"Search is running on one engine ({who}) — {reasons}" if who
+               else f"No search engine answered — {reasons}")
+        self._engine_warned = True
+        logger.warning(msg)
+        self._emit(phase="warning", message=msg)
 
     async def _search(self, query: str) -> List[Dict]:
         """Run a search query using the configured research search provider."""
