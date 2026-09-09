@@ -87,6 +87,40 @@
   box-shadow: var(--fs-panel-shadow);
 }
 
+/* ── Search health (which SearXNG engines really answer) ── */
+
+.fs-set__search-health {
+  gap: var(--fs-space-2);
+}
+
+.fs-set__search-health[data-tone="bad"] {
+  border-color: color-mix(in srgb, var(--fs-danger, #e06c75) 55%, var(--fs-border));
+}
+
+.fs-set__search-health[data-tone="good"] {
+  border-color: color-mix(in srgb, var(--fs-success, #6bbf7a) 45%, var(--fs-border));
+}
+
+.fs-set__row-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fs-space-2);
+}
+
+.fs-set__health-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 4px;
+  font-size: var(--fs-label-size);
+}
+
+.fs-set__health-list li[data-tone="bad"] {
+  color: var(--fs-danger, #e06c75);
+}
+
 /* ── Fields ── */
 
 .fs-set__field {

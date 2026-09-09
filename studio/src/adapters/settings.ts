@@ -254,6 +254,61 @@ export async function testEndpoint(baseUrl: string, apiKey: string, signal?: Abo
   return { ok: r.ok && data.ok !== false && !data.error && Boolean(data.online ?? true), models, privateConnectionsSupported: data.private_connections_supported === true, error: typeof data.error === 'string' ? data.error : typeof data.ping_error === 'string' ? data.ping_error : typeof data.detail === 'string' ? data.detail : null };
 }
 
+/**
+ * What the last SearXNG call said about its engines (GET /api/search/health).
+ * A result count is not health: on 09-09-2026 every query "returned 10
+ * results" and all ten came from bing, which hands back the same pages for
+ * any phrasing of a topic while the other engines sat suspended.
+ */
+export interface SearchHealth {
+  instance: string;
+  configuredEngines: string[];
+  singleEngine: boolean;
+  lastCall: null | {
+    at: number;
+    query: string;
+    requested: string[];
+    answered: Record<string, number>;
+    unresponsive: { engine: string; reason: string }[];
+    silent: string[];
+    results: number;
+  };
+}
+
+export async function searchHealth(signal?: AbortSignal): Promise<SearchHealth> {
+  const d = await getJson<Record<string, unknown>>('/api/search/health', signal);
+  const raw = (d.last_call && typeof d.last_call === 'object' ? d.last_call : null) as Record<string, unknown> | null;
+  return {
+    instance: typeof d.instance === 'string' ? d.instance : '',
+    configuredEngines: Array.isArray(d.configured_engines) ? (d.configured_engines as string[]) : [],
+    singleEngine: d.single_engine === true,
+    lastCall: raw
+      ? {
+          at: Number(raw.at) || 0,
+          query: String(raw.query ?? ''),
+          requested: Array.isArray(raw.requested) ? (raw.requested as string[]) : [],
+          answered: (raw.answered && typeof raw.answered === 'object' ? raw.answered : {}) as Record<string, number>,
+          unresponsive: Array.isArray(raw.unresponsive) ? (raw.unresponsive as { engine: string; reason: string }[]) : [],
+          silent: Array.isArray(raw.silent) ? (raw.silent as string[]) : [],
+          results: Number(raw.results) || 0,
+        }
+      : null,
+  };
+}
+
+/** One real query through the configured provider, so the health report has something to say. */
+export async function probeSearch(query: string, provider = 'searxng', signal?: AbortSignal): Promise<{ results: number; error: string | null }> {
+  const r = await fetch('/api/search/query', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ query, provider, count: 10 }),
+    signal,
+  });
+  const data = (await r.json().catch(() => ({}))) as { results?: unknown[]; error?: unknown };
+  return { results: Array.isArray(data.results) ? data.results.length : 0, error: typeof data.error === 'string' && data.error ? data.error : r.ok ? null : `${r.status}` };
+}
+
 /** The combo a key event stands for, in the app's `ctrl+alt+x` spelling. */
 export function comboFromEvent(e: KeyboardEvent): string | null {
   const key = e.key.toLowerCase();

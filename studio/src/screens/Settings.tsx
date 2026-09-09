@@ -34,8 +34,11 @@ import {
   loadSettings,
   refreshEndpointModels,
   saveSettings,
+  probeSearch,
+  searchHealth,
   testEndpoint,
   toggleEndpoint,
+  type SearchHealth,
   type ModelEndpoint,
   type SchemaField,
   type SchemaGroup,
@@ -454,6 +457,76 @@ const PROVIDERS: Opt[] = [
   { value: 'disabled', label: 'Disabled' },
 ];
 
+/**
+ * Which SearXNG engines are really answering. A result count is not health:
+ * on 09-09-2026 every query "returned 10 results" and all ten came from bing,
+ * which hands back the same pages for any phrasing, while the other engines
+ * sat suspended — the research read nothing new and blamed the search.
+ */
+function SearchHealthCard() {
+  const [health, setHealth] = useState<SearchHealth | null>(null);
+  const [error, setError] = useState('');
+  const [probing, setProbing] = useState(false);
+  const refresh = useCallback(async () => {
+    try { setHealth(await searchHealth()); setError(''); } catch (e) { setError((e as Error).message); }
+  }, []);
+  useEffect(() => { void refresh(); }, [refresh]);
+  const probe = async () => {
+    setProbing(true);
+    try {
+      const out = await probeSearch('whiplash associated disorders clinical practice guideline');
+      if (out.error) setError(out.error);
+      await refresh();
+    } finally {
+      setProbing(false);
+    }
+  };
+  const last = health?.lastCall ?? null;
+  const answered = last ? Object.entries(last.answered).sort((a, b) => b[1] - a[1]) : [];
+  const tone = !last ? undefined : health?.singleEngine || answered.length === 0 ? 'bad' : 'good';
+  return (
+    <div className="fs-set__card fs-set__search-health" data-tone={tone} data-testid="search-health">
+      <div className="fs-set__row-between">
+        <h3 className="fs-set__card-title">{t('Search health')}</h3>
+        <Button size="sm" variant="ghost" label={probing ? t('Searching…') : t('Test the search now')} loading={probing} onClick={() => void probe()} />
+      </div>
+      {health && (
+        <p className="fs-set__help">
+          {t('Engines asked for: {list}', { list: health.configuredEngines.join(', ') || t('the instance\'s defaults') })}
+        </p>
+      )}
+      {error && <p className="fs-set__help" data-tone="bad" role="alert">{error}</p>}
+      {!last && !error && <p className="fs-set__help">{t('No search has run since the server started. Test it to see which engines answer.')}</p>}
+      {last && (
+        <ul className="fs-set__health-list">
+          <li>
+            <strong>{t('Answered')}:</strong>{' '}
+            {answered.length ? answered.map(([name, n]) => `${name} (${n})`).join(', ') : t('nobody')}
+            {' '}· {t('{n} results', { n: last.results })}
+          </li>
+          {last.unresponsive.length > 0 && (
+            <li data-tone="bad">
+              <strong>{t('Not answering')}:</strong>{' '}
+              {last.unresponsive.map((u) => `${u.engine} — ${u.reason || t('no answer')}`).join('; ')}
+            </li>
+          )}
+          {last.silent.length > 0 && (
+            <li>
+              <strong>{t('Asked but returned nothing')}:</strong> {last.silent.join(', ')}
+            </li>
+          )}
+          {health?.singleEngine && (
+            <li data-tone="bad">
+              {t('Only one engine is carrying every result. It will hand back the same pages for any phrasing of a topic, so a research run finds nothing new after round one.')}
+            </li>
+          )}
+          <li className="fs-set__help">{t('Last query: “{q}”', { q: last.query })}</li>
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function SearchSection({ settings, onSave, say }: { settings: Settings | null; onSave: (patch: Settings) => Promise<void>; say: (t: string) => void }) {
   const { draft, set, changed, dirty } = useDraft(settings, SEARCH_KEYS);
   const { saving, save } = useSaver(onSave, say);
@@ -480,6 +553,7 @@ function SearchSection({ settings, onSave, say }: { settings: Settings | null; o
           <Text id="surl" value={str(draft.search_url)} onChange={(v) => set('search_url', v)} placeholder="http://localhost:8080" />
         </Field>
       )}
+      {prov === 'searxng' && <SearchHealthCard />}
       {prov === 'firecrawl' && (
         <div className="fs-set__grid2">
           <Field label={t('Firecrawl URL')} htmlFor="fcurl">

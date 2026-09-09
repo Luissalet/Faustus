@@ -5728,3 +5728,14 @@ Unloading {names}, then loading {name}…	Descargando {names} y después cargand
 Unloading {name}…	Descargando {name}…
 Unloading…	Descargando…
 Waiting for the model — reading {n} tokens of context	Esperando al modelo — leyendo {n} tokens de contexto
+Asked but returned nothing	Se le pidió y no devolvió nada
+Engines asked for: {list}	Motores solicitados: {list}
+Last query: “{q}”	Última consulta: «{q}»
+No search has run since the server started. Test it to see which engines answer.	No se ha hecho ninguna búsqueda desde que arrancó el servidor. Pruébala para ver qué motores responden.
+Not answering	Sin responder
+Only one engine is carrying every result. It will hand back the same pages for any phrasing of a topic, so a research run finds nothing new after round one.	Un solo motor está aportando todos los resultados. Devolverá las mismas páginas para cualquier redacción del tema, así que una research no encontrará nada nuevo después de la primera ronda.
+Search health	Salud de la búsqueda
+Test the search now	Probar la búsqueda ahora
+no answer	sin respuesta
+the instance's defaults	los predeterminados de la instancia
+{n} results	{n} resultados
