@@ -38,10 +38,27 @@ def _m(name: str, family: str, vendor: str, blurb: str, caps: List[str],
 # (tag, parameter size, approx GB on disk)
 CATALOG: List[Dict[str, Any]] = [
     # ── Qwen ──
-    _m("qwen3.5", "qwen", "Alibaba",
-       "Qwen 3.5 — current general-purpose family with tool calling and optional thinking.",
+    # Sizes below for 3.8 / 3.5 / coder-next were read off the registry
+    # manifests on 09-09-2026 (registry.ollama.ai/v2/library/<m>/manifests/<tag>);
+    # the library page itself has no listing API, so a family is added here
+    # the day someone notices it is missing — 3.8 was.
+    _m("qwen3.8", "qwen", "Alibaba",
+       "Qwen 3.8 — the current 27B, dense; tool calling and optional thinking. The q8_0 build "
+       "is 28 GB of weights before any context.",
        ["tools", "thinking"],
-       [("2b", "2B", 1.6), ("4b", "4B", 2.9), ("9b", "9B", 6.6), ("27b", "27B", 17.0), ("27b-q8_0", "27B", 29.0)],
+       [("27b", "27B", 16.5), ("27b-q8_0", "27B", 27.9)],
+       default_tag="27b"),
+    _m("qwen3-coder-next", "qwen", "Alibaba",
+       "Agentic coding MoE (80B, ~3B active): repo-scale edits and tool use; needs a big pool "
+       "even at Q4.",
+       ["tools"],
+       [("q4_K_M", "80B-A3B", 48.2), ("q8_0", "80B-A3B", 79.0)],
+       default_tag="q4_K_M"),
+    _m("qwen3.5", "qwen", "Alibaba",
+       "Qwen 3.5 — general-purpose family with tool calling and optional thinking.",
+       ["tools", "thinking"],
+       [("2b", "2B", 2.6), ("4b", "4B", 3.2), ("9b", "9B", 6.1), ("27b", "27B", 16.2), ("35b", "35B", 22.2),
+        ("27b-q8_0", "27B", 27.9), ("122b", "122B", 75.8)],
        default_tag="9b"),
     _m("qwen3", "qwen", "Alibaba",
        "Qwen 3 dense and MoE models; hybrid thinking / non-thinking modes.",

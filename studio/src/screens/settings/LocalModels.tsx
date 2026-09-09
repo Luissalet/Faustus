@@ -34,10 +34,15 @@ import {
   type Pull,
   type Vram,
 } from '../../adapters/localModels';
+import type { AdmissionAction, VramBlocked } from '../../adapters/vramAdmission';
 import { locale, t, tn } from '../../i18n';
+import { VramAdmissionDialog } from '../VramAdmissionDialog';
 import { Select } from './fields';
 
 const POLL_MS = 8000;
+
+/** Thrown inside `act` when the outcome was shown some other way (a dialog). */
+class NoToast extends Error {}
 
 /**
  * Local models: what is installed on the Ollama server, what is resident in
@@ -164,14 +169,50 @@ export function LocalModelsSection({ admin, say }: { admin: boolean; say: (t: st
     }
   };
 
-  const act = async (fn: () => Promise<unknown>, okMsg: string) => {
+  // Load / unload take seconds to minutes (a 27B is read off disk), and the
+  // row used to show nothing at all until it was over — the button looked
+  // dead. `working` names the model whose action is in flight: its button
+  // spins, and the toast says what is happening now, not only afterwards.
+  const [working, setWorking] = useState<string>('');
+  // The "no room in VRAM" question for the Load button (OBJ-1). The server
+  // refused to load behind your back and sent what is resident; the dialog
+  // asks, and the answer is carried out from here — this screen has no
+  // waiting loader on the server the way a research does.
+  const [blocked, setBlocked] = useState<{ model: InstalledModel; blocked: VramBlocked } | null>(null);
+  const act = async (fn: () => Promise<unknown>, okMsg: string, opts?: { name?: string; startMsg?: string }) => {
+    if (opts?.name) setWorking(opts.name);
+    if (opts?.startMsg) say(opts.startMsg);
+    const started = Date.now();
     try {
       await fn();
-      say(okMsg);
+      const secs = Math.round((Date.now() - started) / 1000);
+      say(secs >= 3 ? `${okMsg} · ${secs}s` : okMsg);
       afterChange();
     } catch (e) {
-      say((e as Error).message);
+      if (!(e instanceof NoToast)) say((e as Error).message);
+    } finally {
+      if (opts?.name) setWorking('');
     }
+  };
+  const decideLoad = async (action: AdmissionAction, names: string[]) => {
+    const target = blocked;
+    if (!target) return;
+    if (action === 'cancel') return;
+    const embedding = !!target.model.capabilities?.embedding;
+    await act(async () => {
+      if (action === 'unload') {
+        for (const n of names) {
+          const victim = data?.models.find((x) => x.name === n);
+          await unloadModel(data!.endpoint_id, n, !!victim?.capabilities?.embedding);
+        }
+      }
+      // `force`: the question has been answered, one way or the other.
+      const out = await loadModel(data!.endpoint_id, target.model.name, embedding, true);
+      if ('blocked' in out) throw new Error(t('Still no room after unloading; nothing was loaded.'));
+    }, t('Loaded {name}', { name: target.model.name }), {
+      name: target.model.name,
+      startMsg: action === 'unload' ? t('Unloading {names}, then loading {name}…', { names: names.join(', '), name: target.model.name }) : t('Loading {name} anyway…', { name: target.model.name }),
+    });
   };
 
   if (error && !data) return <EmptyState icon={HardDrive} title={t('Could not read the local models.')} body={error} />;
@@ -216,22 +257,29 @@ export function LocalModelsSection({ admin, say }: { admin: boolean; say: (t: st
               admin={admin}
               optionsFor={optionsFor}
               setOptionsFor={setOptionsFor}
-              onLoad={(m) => void act(() => loadModel(data.endpoint_id, m.name, !!m.capabilities?.embedding), t('Loading {name}…', { name: m.name }))}
-              onUnload={(m) => void act(() => unloadModel(data.endpoint_id, m.name, !!m.capabilities?.embedding), t('Unloaded {name}', { name: m.name }))}
+              working={working}
+              onLoad={(m) => void act(async () => {
+                const out = await loadModel(data.endpoint_id, m.name, !!m.capabilities?.embedding);
+                // No room next to what is resident: the server did not load
+                // it. Ask (the same dialog a research shows), then act.
+                if ('blocked' in out) {
+                  setBlocked({ model: m, blocked: out.blocked });
+                  throw new NoToast();
+                }
+              }, t('Loaded {name}', { name: m.name }), { name: m.name, startMsg: t('Loading {name}…', { name: m.name }) })}
+              onUnload={(m) => void act(() => unloadModel(data.endpoint_id, m.name, !!m.capabilities?.embedding), t('Unloaded {name}', { name: m.name }), { name: m.name, startMsg: t('Unloading {name}…', { name: m.name }) })}
               onDefault={(m) => void act(() => setDefaultModel(data.endpoint_id, m.name), t('{name} is now the default chat model.', { name: m.name }))}
               onDelete={(m) => {
                 if (!window.confirm(t('Delete {name} from this Ollama? The files are removed from disk; pull it again to get it back.', { name: m.name }))) return;
                 void act(() => deleteModel(data.endpoint_id, m.name), t('Deleted {name}', { name: m.name }));
               }}
               onSaveOptions={async (m, opts) => {
-                try {
-                  const saved = await saveModelOptions(data.endpoint_id, m.name, opts);
-                  say(Object.keys(saved).length ? t('Saved options for {name}', { name: m.name }) : t('Cleared options for {name}', { name: m.name }));
-                  setOptionsFor('');
-                  afterChange();
-                } catch (e) {
-                  say((e as Error).message);
-                }
+                // Errors propagate: the form shows them next to the field
+                // that caused them, where a toast would have vanished.
+                const saved = await saveModelOptions(data.endpoint_id, m.name, opts);
+                say(Object.keys(saved).length ? t('Saved options for {name}', { name: m.name }) : t('Cleared options for {name}', { name: m.name }));
+                setOptionsFor('');
+                afterChange();
               }}
             />
           </div>
@@ -244,6 +292,12 @@ export function LocalModelsSection({ admin, say }: { admin: boolean; say: (t: st
           </div>
         </>
       )}
+      <VramAdmissionDialog
+        blocked={blocked?.blocked ?? null}
+        onDone={() => setBlocked(null)}
+        say={(text) => say(text)}
+        onDecide={decideLoad}
+      />
     </section>
   );
 }
@@ -298,7 +352,8 @@ function VramCard({ vram, loaded, policy, admin, onPlacement, onRelease }: { vra
               <strong>
                 GPU {g.index} · {shortGpuName(g.name) || 'GPU'}
               </strong>
-              <span className="fs-set__help">{t('{used} of {total} used · {free} free', { used: fmtGb(used), total: fmtGb(gt), free: fmtGb(gfree) })}</span>
+              {/* `fmtGb(0)` is "—" (unknown); an idle card is not unknown, it is empty. */}
+            <span className="fs-set__help">{t('{used} of {total} used · {free} free', { used: used > 0 ? fmtGb(used) : '0 MB', total: fmtGb(gt), free: fmtGb(gfree) })}</span>
             </div>
             <div className="fs-lm__bar" role="img" aria-label={measured ? `GPU ${g.index}: ${fmtGb(models)} ${t('models')}, ${fmtGb(other)} ${t('other')}, ${fmtGb(gfree)} ${t('free')}` : `GPU ${g.index}: ${fmtGb(used)} ${t('used')}, ${fmtGb(gfree)} ${t('free')}`}>
               {measured ? (
@@ -456,10 +511,15 @@ function optionsSummary(o?: Record<string, string | number>): string {
   if (o.num_gpu != null) bits.push(`gpu ${o.num_gpu}`);
   if (o.main_gpu != null && o.main_gpu !== '') bits.push(`gpu #${o.main_gpu}`);
   if (o.keep_alive != null && o.keep_alive !== '') bits.push(`keep ${o.keep_alive}`);
+  const extra = (o as Record<string, unknown>).extra;
+  if (extra && typeof extra === 'object') {
+    const n = Object.keys(extra as object).length;
+    if (n) bits.push(t('+{n} options', { n }));
+  }
   return bits.join(' · ');
 }
 
-function InstalledTable({ models, cards, admin, optionsFor, setOptionsFor, onLoad, onUnload, onDefault, onDelete, onSaveOptions }: { models: InstalledModel[]; cards: GpuCard[]; admin: boolean; optionsFor: string; setOptionsFor: (n: string) => void; onLoad: (m: InstalledModel) => void; onUnload: (m: InstalledModel) => void; onDefault: (m: InstalledModel) => void; onDelete: (m: InstalledModel) => void; onSaveOptions: (m: InstalledModel, opts: Record<string, string>) => Promise<void> }) {
+function InstalledTable({ models, cards, admin, optionsFor, setOptionsFor, working = '', onLoad, onUnload, onDefault, onDelete, onSaveOptions }: { models: InstalledModel[]; cards: GpuCard[]; admin: boolean; optionsFor: string; setOptionsFor: (n: string) => void; working?: string; onLoad: (m: InstalledModel) => void; onUnload: (m: InstalledModel) => void; onDefault: (m: InstalledModel) => void; onDelete: (m: InstalledModel) => void; onSaveOptions: (m: InstalledModel, opts: Record<string, string>) => Promise<void> }) {
   if (!models.length) return <p className="fs-set__help">{t('No models installed on this endpoint yet — pull one below.')}</p>;
   return (
     <div className="fs-lm__table" role="table">
@@ -491,7 +551,9 @@ function InstalledTable({ models, cards, admin, optionsFor, setOptionsFor, onLoa
             </span>
             <span className="fs-set__help" title={t('Context length the model was trained for (from /api/show)')}>{fmtCtx(m.context_length)}</span>
             <span className="fs-lm__actions">
-              {admin && (m.loaded ? <Button size="sm" variant="ghost" label={t('Unload')} onClick={() => onUnload(m)} /> : <Button size="sm" variant="ghost" label={t('Load')} onClick={() => onLoad(m)} title={t('Load into VRAM now')} />)}
+              {admin && (m.loaded
+                ? <Button size="sm" variant="ghost" label={working === m.name ? t('Unloading…') : t('Unload')} loading={working === m.name} disabled={!!working && working !== m.name} onClick={() => onUnload(m)} />
+                : <Button size="sm" variant="ghost" label={working === m.name ? t('Loading…') : t('Load')} loading={working === m.name} disabled={!!working && working !== m.name} onClick={() => onLoad(m)} title={t('Load into VRAM now')} />)}
               {admin && !m.capabilities?.embedding && <Button size="sm" variant="ghost" label={t('Set default')} onClick={() => onDefault(m)} title={t('Make this the default chat model (Settings → Default AI)')} />}
               {admin && <Button size="sm" variant="ghost" label={t('Options')} onClick={() => setOptionsFor(optionsFor === m.name ? '' : m.name)} title="num_ctx / num_gpu / keep_alive / main_gpu" />}
               {admin && <Button size="sm" variant="danger" label={t('Delete')} onClick={() => onDelete(m)} title={t('Remove the model files from this Ollama')} />}
@@ -510,7 +572,15 @@ function OptionsForm({ model, cards, onCancel, onSave }: { model: InstalledModel
   const [gpu, setGpu] = useState(o.num_gpu == null ? '' : String(o.num_gpu));
   const [main, setMain] = useState(o.main_gpu == null ? '' : String(o.main_gpu));
   const [keep, setKeep] = useState(o.keep_alive == null ? '' : String(o.keep_alive));
+  // Further Ollama `options` by name, as JSON. What Ollama accepts per
+  // request is a fixed list (src/model_load_options.EXTRA_OPTION_KEYS); the
+  // server names it in the error when a key is not on it.
+  const [extra, setExtra] = useState(() => {
+    const block = (o as Record<string, unknown>).extra;
+    return block && typeof block === 'object' && Object.keys(block as object).length ? JSON.stringify(block, null, 1).replace(/\n\s*/g, ' ') : '';
+  });
   const [busy, setBusy] = useState(false);
+  const [saveErr, setSaveErr] = useState<string | null>(null);
   // The advisor: it measures rather than guesses, and fills the two fields
   // that decide whether the model runs on the card or crawls on the CPU.
   const [fitting, setFitting] = useState(false);
@@ -566,7 +636,10 @@ function OptionsForm({ model, cards, onCancel, onSave }: { model: InstalledModel
       onSubmit={(e) => {
         e.preventDefault();
         setBusy(true);
-        void onSave({ num_ctx: ctx.trim(), num_gpu: gpu.trim(), main_gpu: main, keep_alive: keep.trim() }).finally(() => setBusy(false));
+        setSaveErr(null);
+        void onSave({ num_ctx: ctx.trim(), num_gpu: gpu.trim(), main_gpu: main, keep_alive: keep.trim(), extra: extra.trim() })
+          .catch((err) => setSaveErr((err as Error).message))
+          .finally(() => setBusy(false));
       }}
     >
       <label>
@@ -595,7 +668,21 @@ function OptionsForm({ model, cards, onCancel, onSave }: { model: InstalledModel
         keep_alive <span className="fs-set__help">{t('(5m, 1h, -1 = forever)')}</span>
         <input className="fs-field" placeholder="5m" value={keep} onChange={(e) => setKeep(e.target.value)} />
       </label>
+      <label className="fs-lm__options-extra">
+        {t('Other options')} <span className="fs-set__help">{t('(JSON, sent to Ollama with every request)')}</span>
+        <textarea
+          className="fs-field"
+          rows={2}
+          spellCheck={false}
+          placeholder='{"num_batch": 512, "min_p": 0.05, "repeat_penalty": 1.1}'
+          value={extra}
+          onChange={(e) => setExtra(e.target.value)}
+          data-testid="options-extra"
+        />
+        <span className="fs-set__help">{t('Only Ollama request options are accepted (num_batch, num_thread, min_p, top_k, repeat_penalty, seed, stop…). llama-server flags such as --jinja, --spec-* or --cache-type-* are not per-request options; set them where Ollama starts its runner.')}</span>
+      </label>
       {warn && <p className="fs-set__help" data-tone="bad">{warn}</p>}
+      {saveErr && <p className="fs-set__help" data-tone="bad" role="alert" data-testid="options-save-error">{saveErr}</p>}
       <div className="fs-lm__plan fs-lm__memory-preview" role="status" aria-live="polite" data-fits={excess === 0 || undefined} data-testid="context-memory-preview">
         <strong>{t('Context memory preview')}</strong>
         {maxVramContext != null && <p className="fs-set__help">

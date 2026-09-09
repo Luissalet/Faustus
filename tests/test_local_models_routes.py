@@ -659,9 +659,12 @@ def test_catalogue_is_well_formed_and_reasonably_sized():
         assert set(entry["capabilities"]) <= {"vision", "tools", "thinking", "embedding"}
         for t in entry["tags"]:
             assert t["gb"] > 0 and t["params"]
-    for must in ("qwen3.5", "qwen3-coder", "llama3.1", "gemma3", "mistral", "phi4", "deepseek-r1", "nomic-embed-text", "llava"):
+    for must in ("qwen3.8", "qwen3.5", "qwen3-coder-next", "qwen3-coder", "llama3.1", "gemma3", "mistral", "phi4", "deepseek-r1", "nomic-embed-text", "llava"):
         assert must in seen
-    assert catalog.full_name(catalog.CATALOG[0], {"tag": "9b"}) == "qwen3.5:9b"
+    # The newest Qwen leads the catalogue (Luis: "solo llegamos a qwen 3.5
+    # cuando la realidad es que ha salido hasta 3.8").
+    assert catalog.CATALOG[0]["name"] == "qwen3.8"
+    assert catalog.full_name(catalog.CATALOG[0], {"tag": "27b"}) == "qwen3.8:27b"
     assert catalog.full_name({"name": "nomic-embed-text"}, {"tag": "latest"}) == "nomic-embed-text"
 
 

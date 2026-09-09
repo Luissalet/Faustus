@@ -16,10 +16,17 @@ import { t, tn } from '../i18n';
  * The figures are honest about what they are: a footprint we have measured
  * (weights + KV cache) says so; one we have not is a floor, and says so too.
  */
-export function VramAdmissionDialog({ blocked, onDone, say }: {
+export function VramAdmissionDialog({ blocked, onDone, say, onDecide }: {
   blocked: VramBlocked | null;
   onDone: () => void;
   say?: (text: string, tone?: 'ok' | 'warn') => void;
+  /**
+   * Where the answer goes. By default to the loader's ticket
+   * (`/api/local-models/admission/{ticket}`, a run waiting on the server);
+   * the Load button in Settings has no waiting loader and answers by doing
+   * the unloads itself, so it passes its own handler.
+   */
+  onDecide?: (action: AdmissionAction, names: string[]) => Promise<void>;
 }) {
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState<AdmissionAction | null>(null);
@@ -39,7 +46,9 @@ export function VramAdmissionDialog({ blocked, onDone, say }: {
   const decide = async (action: AdmissionAction) => {
     setBusy(action);
     try {
-      await resolveAdmission(blocked.ticket, action, action === 'unload' ? [...picked] : []);
+      const names = action === 'unload' ? [...picked] : [];
+      if (onDecide) await onDecide(action, names);
+      else await resolveAdmission(blocked.ticket, action, names);
       onDone();
     } catch (err) {
       setBusy(null);

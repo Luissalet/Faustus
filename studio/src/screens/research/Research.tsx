@@ -363,7 +363,9 @@ export function ResearchScreen() {
         },
         c.signal,
       ).then(async (status) => {
-        followers.current.delete(job.id);
+        // Only this follower's own entry: a retry may already have put the
+        // new run's controller under the same job id.
+        if (followers.current.get(job.id) === c) followers.current.delete(job.id);
         if (status === 'aborted') return;
         let outcome = status;
         if (outcome !== 'done' && outcome !== 'completed' && outcome !== 'warning' && outcome !== 'cancelled') {
@@ -426,7 +428,13 @@ export function ResearchScreen() {
   }, []);
 
   const launch = async (job: Job) => {
-    patch(job.id, { status: 'running', startedAt: Date.now(), progress: null, error: '' });
+    // A retry keeps the card but must not keep the old run: the follower
+    // effect fires on `running && sessionId`, so a stale sessionId meant it
+    // re-attached to the FINISHED stream, took its final status, and marked
+    // the fresh run "failed" while the server was still working on it.
+    followers.current.get(job.id)?.abort();
+    followers.current.delete(job.id);
+    patch(job.id, { status: 'running', sessionId: null, startedAt: Date.now(), finishedAt: 0, progress: null, error: '', result: null, sourceCount: 0 });
     try {
       const sessionId = await startResearch(job.query, job.settings);
       patch(job.id, { sessionId });

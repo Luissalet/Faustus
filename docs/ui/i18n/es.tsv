@@ -5717,3 +5717,14 @@ Exit full screen	Salir de pantalla completa
 Full screen	Pantalla completa
 Close window	Cerrar ventana
 Keep this chat open to receive the result. Maximum processing time: 10 minutes.	Mantén este chat abierto para recibir el resultado. Tiempo máximo de procesamiento: 10 minutos.
+(JSON, sent to Ollama with every request)	(JSON, se envía a Ollama con cada petición)
++{n} options	+{n} opciones
+Loaded {name}	{name} cargado
+Loading {name} anyway…	Cargando {name} de todos modos…
+Only Ollama request options are accepted (num_batch, num_thread, min_p, top_k, repeat_penalty, seed, stop…). llama-server flags such as --jinja, --spec-* or --cache-type-* are not per-request options; set them where Ollama starts its runner.	Solo se aceptan opciones de petición de Ollama (num_batch, num_thread, min_p, top_k, repeat_penalty, seed, stop…). Los flags de llama-server como --jinja, --spec-* o --cache-type-* no son opciones por petición; configúralos donde Ollama arranca su runner.
+Other options	Otras opciones
+Still no room after unloading; nothing was loaded.	Sigue sin caber tras descargar; no se ha cargado nada.
+Unloading {names}, then loading {name}…	Descargando {names} y después cargando {name}…
+Unloading {name}…	Descargando {name}…
+Unloading…	Descargando…
+Waiting for the model — reading {n} tokens of context	Esperando al modelo — leyendo {n} tokens de contexto

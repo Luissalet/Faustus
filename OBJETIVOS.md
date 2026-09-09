@@ -37,7 +37,24 @@ que `/api/ps` confirme que salieron, y sólo entonces carga el nuevo.
   lleva `loading_model` para «Cargando el modelo en memoria…». La pregunta
   viaja por ahí, no por un segundo sistema de preguntas.
 
-### Lo que hay que escribir
+### Estado (09-09, 23:10)
+
+Hecho y en el commit `02830bba` + el de esta noche: `src/vram_admission.py`
+(`assess`, tickets con espera y caducidad, `admit`, modos `ask`/`auto`/`off`),
+rutas `GET/POST /api/local-models/admission…`, `POST /load` → 409 con el
+veredicto, la puerta en `ResearchHandler._probe_endpoint` y en el botón
+Cargar de Modelos locales, el diálogo `VramAdmissionDialog` (casillas,
+sugerencia pre-marcada, «short by N GB», tres botones). Comprobado en vivo:
+con `q4_K_M` dentro, pedir `q8_0` enseña «short by 12,1 GB»; al descargar el
+`q4` la carga sólo empieza cuando `/api/ps` confirma que salió.
+
+**Falta:** la puerta en el **turno de chat** (`routes/chat` → `llm_core`
+antes de la primera llamada a un modelo no residente). Hoy, si el chat elige
+otro modelo con uno dentro, Ollama decide solo. Misma `admit()`, misma fase
+`vram_blocked` en el stream del turno, mismo diálogo (Transcript ya conoce
+las fases `loading_model`/`vram_blocked`/`unloading_model`).
+
+### Lo que había que escribir (referencia del diseño)
 
 - `src/vram_admission.py`
   - `plan_admission(endpoint, model, ctx) -> {fits, needed, budget, shortfall,

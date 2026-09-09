@@ -1278,8 +1278,16 @@
 }
 
 .fs-lm__options .fs-set__row-end,
-.fs-lm__options > p {
+.fs-lm__options > p,
+.fs-lm__options .fs-lm__options-extra {
   grid-column: 1 / -1;
+}
+
+.fs-lm__options-extra textarea {
+  font-family: var(--fs-font-mono, ui-monospace, monospace);
+  font-size: 0.85em;
+  resize: vertical;
+  min-height: 2.6em;
 }
 
 .fs-lm__pull {

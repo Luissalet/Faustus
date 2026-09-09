@@ -30,7 +30,79 @@ from urllib.parse import urlparse
 logger = logging.getLogger(__name__)
 
 SETTING_KEY = "model_load_options"
-ALLOWED_KEYS = ("num_ctx", "num_gpu", "keep_alive", "main_gpu")
+ALLOWED_KEYS = ("num_ctx", "num_gpu", "keep_alive", "main_gpu", "extra")
+
+# `extra`: further Ollama runtime `options` a person may pin per model, by
+# name, from the Options form (09-09-2026, Luis: "more customisation per
+# model"). Only names Ollama's /api/chat `options` object actually accepts —
+# these are llama.cpp parameters Ollama forwards per request. What is NOT here
+# on purpose: llama-server command-line flags (`-jinja`, `--spec-type`,
+# `--draft-*`, `--cache-type-k/v`, `-np`). Ollama does not take those per
+# request; some exist as server environment (OLLAMA_KV_CACHE_TYPE,
+# OLLAMA_FLASH_ATTENTION, OLLAMA_NUM_PARALLEL) and the rest need a llama.cpp
+# endpoint. Accepting them here and silently dropping them would be the
+# worst of both: a box that looks like it works.
+EXTRA_OPTION_KEYS = frozenset({
+    # generation
+    "num_predict", "num_keep", "temperature", "top_k", "top_p", "min_p", "typical_p",
+    "tfs_z", "repeat_last_n", "repeat_penalty", "presence_penalty", "frequency_penalty",
+    "mirostat", "mirostat_tau", "mirostat_eta", "penalize_newline", "seed", "stop",
+    # load / runtime
+    "num_batch", "num_thread", "numa", "use_mmap", "use_mlock", "low_vram",
+})
+_EXTRA_BOOL_KEYS = frozenset({"numa", "use_mmap", "use_mlock", "low_vram", "penalize_newline"})
+_EXTRA_INT_KEYS = frozenset({"num_predict", "num_keep", "top_k", "repeat_last_n", "mirostat",
+                             "seed", "num_batch", "num_thread"})
+EXTRA_MAX_ITEMS = 24
+
+
+def sanitize_extra(raw: Any) -> Dict[str, Any]:
+    """Validate the `extra` block: known Ollama option names only, typed."""
+    if raw is None or raw == "":
+        return {}
+    if not isinstance(raw, dict):
+        raise ValueError("extra must be an object of Ollama options")
+    if len(raw) > EXTRA_MAX_ITEMS:
+        raise ValueError(f"extra may hold at most {EXTRA_MAX_ITEMS} options")
+    out: Dict[str, Any] = {}
+    for key, value in raw.items():
+        k = str(key).strip()
+        if k not in EXTRA_OPTION_KEYS:
+            raise ValueError(
+                f"'{k}' is not an Ollama request option. Ollama takes: "
+                + ", ".join(sorted(EXTRA_OPTION_KEYS))
+                + ". llama-server flags (-jinja, --spec-*, --cache-type-*) are not per-request in Ollama."
+            )
+        if value is None or (isinstance(value, str) and not value.strip()):
+            continue
+        if k == "stop":
+            items = value if isinstance(value, list) else [value]
+            stops = [str(s) for s in items if str(s).strip()][:8]
+            if stops:
+                out[k] = stops
+        elif k in _EXTRA_BOOL_KEYS:
+            if isinstance(value, bool):
+                out[k] = value
+            else:
+                text = str(value).strip().lower()
+                if text not in ("true", "false", "1", "0", "on", "off", "yes", "no"):
+                    raise ValueError(f"{k} must be true or false")
+                out[k] = text in ("true", "1", "on", "yes")
+        elif k in _EXTRA_INT_KEYS:
+            if isinstance(value, bool):
+                raise ValueError(f"{k} must be an integer")
+            try:
+                out[k] = int(value)
+            except (TypeError, ValueError):
+                raise ValueError(f"{k} must be an integer")
+        else:
+            if isinstance(value, bool):
+                raise ValueError(f"{k} must be a number")
+            try:
+                out[k] = float(value)
+            except (TypeError, ValueError):
+                raise ValueError(f"{k} must be a number")
+    return out
 
 NUM_CTX_MIN, NUM_CTX_MAX = 512, 1_048_576
 NUM_GPU_MIN, NUM_GPU_MAX = 0, 1024
@@ -70,6 +142,18 @@ def sanitize_options(raw: Any) -> Dict[str, Any]:
             continue
         value = raw[key]
         if value is None or (isinstance(value, str) and not value.strip()):
+            continue
+        if key == "extra":
+            # The form sends the block as JSON text; the API may send a dict.
+            if isinstance(value, str):
+                import json as _json
+                try:
+                    value = _json.loads(value)
+                except ValueError:
+                    raise ValueError("extra must be valid JSON, e.g. {\"num_batch\": 512, \"min_p\": 0.05}")
+            cleaned = sanitize_extra(value)
+            if cleaned:
+                out[key] = cleaned
             continue
         if key == "num_ctx":
             try:

@@ -1,4 +1,5 @@
 import { getJson } from './api';
+import { vramBlockedFrom, type VramBlocked } from './vramAdmission';
 import { t } from '../i18n';
 
 /**
@@ -205,7 +206,33 @@ export const cancelPull = (id: string) => call<unknown>(`${API}/pulls/${encodeUR
 export function pullEvents(id: string): EventSource {
   return new EventSource(`${API}/pulls/${encodeURIComponent(id)}/events`);
 }
-export const loadModel = (endpointId: string, name: string, embedding: boolean) => call<unknown>(`${API}/load`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ endpoint_id: endpointId, name, embedding }) });
+/**
+ * Load into VRAM. When the model does not fit next to what is resident the
+ * server answers 409 with the admission assessment instead of loading it
+ * behind your back (OBJ-1); that comes back as `{ blocked }` for the screen
+ * to ask with. `force` is the answer — "load anyway", or "I unloaded, go".
+ */
+export async function loadModel(endpointId: string, name: string, embedding: boolean, force = false): Promise<{ ok: true } | { blocked: VramBlocked }> {
+  const r = await fetch(`${API}/load`, { method: 'POST', credentials: 'same-origin', headers: JSON_HEADERS, body: JSON.stringify({ endpoint_id: endpointId, name, embedding, force }) });
+  const text = await r.text();
+  let data: unknown = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    /* not json */
+  }
+  if (r.status === 409) {
+    const detail = (data as { detail?: { admission?: Record<string, unknown> } }).detail;
+    const blocked = detail?.admission ? vramBlockedFrom({ ...detail.admission, phase: 'vram_blocked', ticket: 'load-button' }) : undefined;
+    if (blocked) return { blocked };
+  }
+  if (!r.ok) {
+    const d = data as { detail?: unknown; error?: string };
+    const detail = d.detail;
+    throw new Error(typeof detail === 'string' ? detail : (detail as { message?: string } | undefined)?.message ?? d.error ?? `HTTP ${r.status}`);
+  }
+  return { ok: true };
+}
 export const unloadModel = (endpointId: string, name: string, embedding: boolean) => call<unknown>(`${API}/unload`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ endpoint_id: endpointId, name, embedding }) });
 export const deleteModel = (endpointId: string, name: string) => call<unknown>(`${API}/${encName(name)}?endpoint_id=${encodeURIComponent(endpointId)}`, { method: 'DELETE' });
 export async function saveModelOptions(endpointId: string, name: string, options: Record<string, string>): Promise<Record<string, string | number>> {

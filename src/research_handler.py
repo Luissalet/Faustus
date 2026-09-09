@@ -967,6 +967,16 @@ class ResearchHandler:
             return self._format_completed_report(query, report, stats, elapsed, researcher)
 
         except Exception as e:
+            from src.deep_research import ResearchFailed
+            if isinstance(e, ResearchFailed):
+                # An empty run that already knows why. Dressing it as a
+                # "Research Failed" document and returning it as the report
+                # is how 0 queries / 0 URLs got logged "completed
+                # successfully" (08-09-2026). It goes up as the run's error,
+                # and the screen shows the reason.
+                logger.error(f"DeepResearcher gathered nothing: {e.reason}"
+                             + (f" — causes: {'; '.join(e.causes[:4])}" if e.causes else ""))
+                raise
             logger.error(f"DeepResearcher failed: {e}", exc_info=True)
             return await self._fallback_research(query, llm_endpoint, llm_model, max_time, str(e))
 

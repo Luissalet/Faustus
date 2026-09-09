@@ -158,6 +158,32 @@ function writeJson(key: string, value: unknown) {
   }
 }
 
+/* The unsent text of each conversation, so it survives a visit elsewhere.
+   One slot per session id; a chat that has no id yet uses `new`. Empty text
+   removes the slot: the store never grows with blank drafts. */
+const DRAFT_PREFIX = 'faustus_studio_draft:';
+
+function draftKeyFor(sessionId: string | null): string {
+  return `${DRAFT_PREFIX}${sessionId ?? 'new'}`;
+}
+
+function readDraftFor(sessionId: string | null): string {
+  try {
+    return localStorage.getItem(draftKeyFor(sessionId)) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+function writeDraftFor(sessionId: string | null, text: string) {
+  try {
+    if (text.trim()) localStorage.setItem(draftKeyFor(sessionId), text);
+    else localStorage.removeItem(draftKeyFor(sessionId));
+  } catch {
+    /* private mode: the draft lives only as long as the screen */
+  }
+}
+
 const SUGGESTIONS = [
   'Explain this repository to me as if I had just joined the team',
   'Search the web for what changed this week on the topic I give you',
@@ -222,7 +248,25 @@ export function StudioScreen() {
   const extrasRef = useRef<{ fork: () => void; tts: () => void }>({ fork: () => undefined, tts: () => undefined });
   const [turns, setTurns] = useState<Turn[] | null>(sessionId ? null : []);
   const [title, setTitle] = useState('');
-  const [draft, setDraft] = useState('');
+  // The draft outlives the screen. Leaving to check something in another chat
+  // or a project and coming back used to hand you an empty box: the route
+  // body remounts per path, and one `useState('')` was all there was. Now the
+  // text is kept per conversation (a fresh chat has its own slot) and comes
+  // back with it; a sent message clears its slot.
+  const [draft, setDraft] = useState(() => readDraftFor(sessionId));
+  const draftSession = useRef<string | null>(sessionId);
+  useEffect(() => {
+    if (draftSession.current === sessionId) return;
+    draftSession.current = sessionId;
+    setDraft(readDraftFor(sessionId));
+  }, [sessionId]);
+  useEffect(() => {
+    // Only once the draft on screen belongs to this session — the swap above
+    // runs in this same commit, and writing the previous chat's text under
+    // the new chat's key would be exactly the mix-up this avoids.
+    if (draftSession.current !== sessionId) return;
+    writeDraftFor(sessionId, draft);
+  }, [draft, sessionId]);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const sendingMessage = useRef(false);
   const [preparingMessage, setPreparingMessage] = useState(false);
@@ -1709,6 +1753,9 @@ export function StudioScreen() {
         const sid = await ensureSession(message || sent.map((a) => a.name).join(', '));
         if (!sid) return; // Keep the draft and attachments available for retry.
         setDraft(current => current.trim() === message ? '' : current);
+        // A fresh chat becomes a session on its first send; the message left
+        // through `new`, so `new` must not offer it again to the next chat.
+        if (!sessionId) writeDraftFor(null, '');
         const sentIds = new Set(sent.map(item => item.id));
         setAttachments(list => list.filter(item => !sentIds.has(item.id)));
         setNotice(null);
@@ -1718,7 +1765,7 @@ export function StudioScreen() {
         setPreparingMessage(false);
       }
     },
-    [attachments, busy, runCommand, ensureSession, run],
+    [attachments, busy, runCommand, ensureSession, run, sessionId],
   );
 
   /* Notas → "Resolver con el agente": sends as soon as a route is known and

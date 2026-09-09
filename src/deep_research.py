@@ -308,6 +308,24 @@ def _enumerated_chunks(body: str) -> List[Tuple[str, bool]]:
 # ---------------------------------------------------------------------------
 # DeepResearcher
 # ---------------------------------------------------------------------------
+class ResearchFailed(RuntimeError):
+    """A run that gathered nothing, with the reason it gathered nothing.
+
+    `research()` used to *return* a string for every empty outcome — "No
+    information could be gathered", a "Search unavailable" note, a plan that
+    fell back to the raw question after the model timed out three times — and
+    the handler took any string as a report. 08-09-2026, 22:13: a 27B model
+    spilling to RAM timed out on every call, zero rounds ran, and the run was
+    logged "completed successfully" with 0 queries and 0 URLs. A failure with
+    its cause attached is the honest result; the handler shows the cause.
+    """
+
+    def __init__(self, reason: str, *, causes: Optional[List[str]] = None):
+        super().__init__(reason)
+        self.reason = reason
+        self.causes = list(causes or [])
+
+
 class DeepResearcher:
     """
     Iterative research engine following the IterResearch pattern.
@@ -357,6 +375,12 @@ class DeepResearcher:
         self._progress = progress_callback
         self._cancelled = False
         self._start_time: float = 0
+        # Every model call that failed this run, in order: what a run that
+        # gathered nothing died of, for `ResearchFailed`.
+        self._failures: List[str] = []
+        # Rounds that got as far as having queries. `round_count` is the loop
+        # index and reads "1" for a run the clock killed before anything ran.
+        self._rounds_started: int = 0
         self.queries_used: Set[str] = set()
         self.urls_fetched: Set[str] = set()
         self.analyzed_urls: List[Dict[str, str]] = []
@@ -452,6 +476,7 @@ class DeepResearcher:
             if not queries:
                 logger.warning(f"Round {round_num}: no queries generated, stopping")
                 break
+            self._rounds_started += 1
 
             self._emit(phase="searching", round=round_num, queries=len(queries),
                        query_preview=queries[0] if queries else "",
@@ -477,10 +502,10 @@ class DeepResearcher:
                     err_detail = getattr(self, '_last_search_error', 'unknown error')
                     self._emit(phase="error", message=f"Search engine unavailable: {err_detail}")
                     if not findings:
-                        return (
-                            f"**Search unavailable** — Web search failed after "
-                            f"{round_num} rounds. Error: {err_detail}\n\n"
-                            "Please check your search provider settings and ensure the service is running."
+                        raise ResearchFailed(
+                            f"Web search returned nothing in {round_num} rounds ({err_detail}). "
+                            "Check the search provider in Settings and that its service is running.",
+                            causes=self._failures + [f"search: {err_detail}"],
                         )
                     break
 
@@ -512,7 +537,7 @@ class DeepResearcher:
                     "finding(s) as a fallback", len(findings)
                 )
                 return self._fallback_report(question, findings)
-            return "No information could be gathered for this question."
+            raise ResearchFailed(self._explain_empty_run(), causes=list(self._failures))
 
         self.evolving_report = report  # preserve pre-synthesis report
         final = await self._final_report(question, report)
@@ -524,6 +549,37 @@ class DeepResearcher:
             f"{elapsed:.1f}s"
         )
         return final
+
+    def _explain_empty_run(self) -> str:
+        """Why a run ended with nothing, in one sentence a person can act on.
+
+        The three ways it happens are told apart by what the log already
+        knows: the model never answered in time (every call timed out and the
+        clock ran out before a round started), the model answered but the
+        search found nothing, or the run was cancelled.
+        """
+        elapsed = time.time() - self._start_time if self._start_time else 0.0
+        timeouts = [f for f in self._failures if "timed out" in f.lower() or "504" in f]
+        if self._cancelled:
+            return "The research was cancelled before it gathered anything."
+        if self._rounds_started == 0:
+            if timeouts:
+                return (
+                    f"The model never answered in time: {len(timeouts)} call(s) timed out "
+                    f"({timeouts[0].split(': ', 1)[-1][:160]}), and the {self.max_time}s budget ran out "
+                    "before a single research round could start. The model is too slow for this "
+                    "context — a smaller quantization, or a shorter context window in its Options, "
+                    "usually fixes it."
+                )
+            if self._failures:
+                return ("No research round could start: " + "; ".join(self._failures[:3])[:400])
+            return (f"No research round could start within {self.max_time}s "
+                    f"({elapsed:.0f}s elapsed) and nothing was gathered.")
+        err = getattr(self, "_last_search_error", "")
+        if err:
+            return f"{self._rounds_started} round(s) searched and read nothing ({err})."
+        return (f"{self._rounds_started} round(s) searched and nothing usable was found "
+                f"for this question.")
 
     # ------------------------------------------------------------------
     # LLM helper
@@ -585,6 +641,7 @@ class DeepResearcher:
             # empty string that used to make every later round search blind.
             reason = f"{type(e).__name__}: {e}"
             logger.warning(f"Research planning failed: {reason}")
+            self._failures.append(f"planning: {reason}")
             fallback = self.subquestions or [str(question).strip()]
             fallback = [q for q in fallback if q] or ["the question as asked"]
             noun = "question" if len(fallback) == 1 else "questions"
@@ -689,6 +746,7 @@ class DeepResearcher:
             return None
         except Exception as e:
             logger.warning(f"Category classification failed: {e}")
+            self._failures.append(f"category: {type(e).__name__}: {e}")
             return None
 
     # ------------------------------------------------------------------
@@ -735,6 +793,7 @@ class DeepResearcher:
             return new_queries
         except Exception as e:
             logger.error(f"Query generation failed: {e}")
+            self._failures.append(f"queries: {type(e).__name__}: {e}")
             self._emit(phase="warning", message=f"Query generation failed: {e}")
             return []
 

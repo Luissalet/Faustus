@@ -632,7 +632,7 @@ function AssistantTurn({
         {turn.ledger && <Ledger ledger={turn.ledger} />}
         {/* The heartbeat, last of all: it sits exactly where the turn's own
             numbers will appear when it finishes. */}
-        {turn.streaming && turn.live && !(turn.research && !turn.research.done) && <LiveLine live={turn.live} />}
+        {turn.streaming && turn.live && !(turn.research && !turn.research.done) && <LiveLine live={turn.live} contextTokens={turn.ledger?.total} />}
         {!turn.streaming && (
           <div className="fs-turn__foot">
             {turn.metrics && (
@@ -671,7 +671,7 @@ function AssistantTurn({
  * so it carries a `~`. The server's own figure lands in the footer when the
  * turn ends, and that one is the number of record.
  */
-function LiveLine({ live }: { live: LiveRate }) {
+function LiveLine({ live, contextTokens }: { live: LiveRate; contextTokens?: number }) {
   const [, tick] = useState(0);
   useEffect(() => {
     const timer = window.setInterval(() => tick((n) => n + 1), 500);
@@ -689,7 +689,13 @@ function LiveLine({ live }: { live: LiveRate }) {
         ? t('Thinking')
         : live.phase === 'writing'
           ? t('Writing')
-          : t('Waiting for the model');
+          // Before the first token the model is reading the whole context
+          // (prefill). On a model spilling to RAM that takes minutes for a
+          // long chat, and "waiting" alone reads as a hang — say what it is
+          // doing once the wait is long enough to wonder.
+          : secs >= 8 && contextTokens
+            ? t('Waiting for the model — reading {n} tokens of context', { n: contextTokens.toLocaleString() })
+            : t('Waiting for the model');
   return (
     <p className="fs-studio__waiting fs-studio__live" data-phase={live.phase} data-testid="turn-live">
       <span className="fs-studio__pulse" aria-hidden="true" />

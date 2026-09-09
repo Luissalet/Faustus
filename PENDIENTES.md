@@ -1,30 +1,32 @@
 # Pendientes de cierre
 
-Actualizado: 08-09-2026. Sólo trabajo vigente; quitar cada entrada al cerrarla.
+Actualizado: 09-09-2026 (23:10). Sólo trabajo vigente; quitar cada entrada al cerrarla.
 
 ## Comprobaciones pendientes
 
 - **Voz física:** conversación completa con micrófono en español e inglés. No activar grabación ni permisos para cerrar esta casilla sin intervención del usuario.
 
-- **Un turno se declara correcto sin informe.** `rp-b737ffb10ef7` (08-09, 20:57) registró «IterResearch completed successfully» con 2 rondas y 14 URLs cuando la ronda 2 no había generado ninguna consulta y la síntesis no había producido nada: lo guardado son 8 hallazgos en bruto devueltos como respaldo. Un respaldo no es un informe y no debería salir por la puerta de «correcto». Revisar la rama de `Synthesis produced no report` en `src/deep_research.py`.
-
-- **SearXNG contesta pero no busca.** El contenedor `odysseus-searxng-1` está sano y `/search?format=json` responde, pero con **0 resultados**. Mirar los motores de `SEARXNG_GENERAL_ENGINES` (`bing,mojeek,presearch`) antes de dar el proveedor por bueno.
-
 - **Docker Desktop y el entorno del puente MCP.** Toda la noche del 08-09 se cayó al arrancar con `unable to get 'ProgramData'` cuando lo lanzaba una sesión a través del puente (cuatro vías probadas: directa, con el entorno repuesto, vía `explorer.exe` y como tarea programada interactiva). Lanzado por Luis a las 22:12 arrancó a la primera. El puente entrega un PowerShell **sin `ProgramData` ni `ALLUSERSPROFILE`**; anotado por si vuelve a aparecer con otro programa.
 
-## Lista de Luis, 09-09 de madrugada (por orden de llegada)
+- **Discover marca «installed» sólo por nombre exacto.** `qwen3.8:27b-q4_K_M` está instalado pero la etiqueta `27b` del catálogo sale con «Pull»; sólo `27b-q8_0` aparece como instalada. Cosmético; la comparación debería tolerar el alias de cuantización por defecto.
 
-1. **Research con Docker levantado → 0 fuentes, «no information».** Reproducir con SearXNG sano y mirar por qué el proveedor devuelve vacío (`SEARXNG_GENERAL_ENGINES=bing,mojeek,presearch`; el sondeo directo a `/search?format=json` dio 0 resultados a las 22:20).
-2. **El Retry de una research no responde bien.**
-3. **El texto del cuadro del chat se pierde al cambiar de chat.** Borrador por chat/proyecto que sobreviva a navegar y volver.
-4. **«Waiting for the model» con el modelo ya cargado**, antes de empezar o a mitad del trabajo (captura: 01:28 esperando, con 35,3/44 GB y *PCIe spill*).
-5. **Descargar modelos sólo llega a Qwen 3.5**; ya existe hasta 3.8. El catálogo de Discover está viejo.
-6. **Cargar un modelo desde Modelos locales no enseña nada** hasta que termina: ni spinner ni estado.
-7. **Un proyecto con el mismo nombre que su carpeta no se deja crear.**
-8. **Personalización de modelos**: editar etiquetas individuales o un cuadro de *additional commands* para Ollama/llama.cpp (`-spec-type`, `draft-mtp`, `-spec-draft-n-max`, `-cache-type-k/-v`, `-np`, `-kv-cache-type-dtype`, `-jinja`…).
-9. **Verificar todo por MCP y por pantalla.**
+- **La puerta de admisión de VRAM aún no cubre el turno de chat.** Cubre research y el botón Cargar de Modelos locales (OBJ-1). Si el chat elige un modelo no residente con otro dentro, Ollama sigue decidiendo por su cuenta. Está en OBJETIVOS.md como ampliación de OBJ-1.
 
-A comprobar de paso: la pantalla de Modelos locales lista **tres** GPUs (4070 Ti, 5060 Ti, 5060 Ti; 12 + 15,9 + 15,9 = 43,8 GB) y la GPU 1 sale sin lectura («— of 15.9 GB»). O hay tres tarjetas o una 5060 Ti aparece dos veces; en el segundo caso el presupuesto de 40,3 GB está inflado 15 GB.
+- **«Waiting for the model» (punto 4 de Luis) no reproducido en vivo.** Con `q4_K_M` residente un turno de chat tardó 2,3 s sin aviso. La línea ahora dice cuántos tokens de contexto está leyendo el modelo tras 8 s, para que un contexto de 131k con spill no parezca un cuelgue; la causa de fondo del caso de Luis (35,3/44 GB con *PCIe spill* a la 01:28) era el `q8_0` derramando a RAM, no un modelo sin cargar.
+
+## Lista de Luis, 09-09 de madrugada (estado a las 23:10)
+
+1. ~~Research con Docker levantado → 0 fuentes.~~ Cerrado. No era la búsqueda: `rp-…` de las 22:13 corrió con `q8_0` a 131k de contexto derramando a RAM, todas las llamadas al modelo caducaron a los 90 s, 0 rondas, y el handler lo registró como «completed successfully». Ahora un run sin rondas ni fuentes es un **fallo con causa** (`ResearchFailed` en `src/deep_research.py`: «el modelo no respondió», «la búsqueda no devolvió nada», «cancelado»). SearXNG devuelve 20 resultados por consulta; el 0 de la noche anterior era el contenedor calentando.
+2. ~~El Retry de una research no responde bien.~~ Cerrado: `launch()` no limpiaba `sessionId` y el seguidor se reenganchaba al stream ya terminado. Ahora aborta el seguidor viejo y parte de cero.
+3. ~~El texto del cuadro del chat se pierde al cambiar de chat.~~ Cerrado: borrador por sesión (y uno para «conversación nueva») en `localStorage`; se vacía al enviar. Comprobado por pantalla: dos chats, dos borradores, cada uno vuelve intacto.
+4. **«Waiting for the model» con el modelo cargado.** Ver Comprobaciones pendientes; mitigado, no reproducido.
+5. ~~Descargar modelos sólo llega a Qwen 3.5.~~ Cerrado: catálogo con `qwen3.8` (27b 16,5 GB; 27b-q8_0 27,9 GB) en cabeza y `qwen3-coder-next` (q4_K_M 48,2 GB; q8_0 79 GB); tamaños de los manifiestos de registry.ollama.ai. Comprobado por pantalla.
+6. ~~Cargar un modelo desde Modelos locales no enseña nada.~~ Cerrado: el botón pasa a «Loading…» con spinner, los demás Cargar se deshabilitan, aviso de inicio y de fin con segundos. Comprobado por pantalla con `qwen3.8:27b-q4_K_M` (solo, según la regla).
+7. ~~Un proyecto con el mismo nombre que su carpeta no se deja crear.~~ Cerrado: sí se dejaba; el mensaje «Folder 'X' already belongs to project 'X'» hacía creer que no. Se refería a la carpeta de chats del panel (que toma el nombre del proyecto). Ahora: «A project called 'X' already exists — open it, or choose another name.» Comprobado por pantalla: creado `Nombreigual` en `…\Nombreigual`; el segundo intento enseña el mensaje nuevo.
+8. ~~Personalización de modelos.~~ Cerrado en lo que Ollama permite: en Opciones de cada modelo hay un cuadro **Other options** (JSON) que se envía como `options` en cada petición (`num_batch`, `num_thread`, `min_p`, `top_k`, `repeat_penalty`, `seed`, `stop`, `use_mmap`, `low_vram`…; lista blanca en `src/model_load_options.EXTRA_OPTION_KEYS`). Los flags de llama-server (`-jinja`, `--spec-*`, `--cache-type-*`, `-np`) **no son opciones por petición en Ollama**: el formulario lo dice y el servidor los rechaza nombrándolos. Comprobado por pantalla: `{"-jinja": true}` → error en línea; `{"num_batch": 512, "min_p": 0.05}` → guardado, «+2 options» en la fila, y vuelve al formulario.
+9. **Verificar todo por MCP y por pantalla.** Hecho para 2, 3, 5, 6, 7 y 8 en la instancia 7001 con el bundle recién compilado. Queda: una research completa de principio a fin con `q4_K_M` solo (la de WAD de Luis) y el flujo del 4.
+
+Las tres GPUs son reales: RTX 4070 Ti (12 GB) + dos RTX 5060 Ti (16 GB) = 43,9 GB. La GPU 1 salía sin lectura por un `—` en lugar de «0 MB» cuando está vacía; corregido.
 
 ## Lo que rompió la máquina el 08-09 (regla, no anécdota)
 
@@ -37,6 +39,8 @@ Las ampliaciones acordadas viven en OBJETIVOS.md; ahora mismo, OBJ-1 (puerta de 
 No contar planes de inspiración o notas de implementación como otra cola de tareas.
 
 ## Última evidencia
+
+- 09-09, 23:05: `pytest` sobre local-models, model_load_options, projects, llm_core (ollama/streaming), deep_research y research_*: **561 correctas**. Nuevas: `tests/test_model_load_options_extra.py` (6), `tests/test_deep_research_empty_run_is_a_failure.py` (3), `tests/test_vram_admission.py` (14), `tests/test_research_model_load.py` (5), `tests/test_search_appliance.py` (7). `tsc` limpio, `scripts/i18n_es.py --check` limpio (5.730 cadenas), `build-studio --force` correcto. Instancia 7001 reiniciada con el bundle nuevo; `ollama ps` vacío al terminar.
 
 - Cierre creativo/escritorio del 08-09: suite completa **13.236 correctas, 81 omitidas, cero fallos** (`logs/checkpoint-creative-full.xml`). Correcciones posteriores: **89 regresiones correctas**; transcripción y narración reales offline EN/ES: **4 correctas**. Adaptaciones de Diogenes: **471 regresiones correctas** (`logs/checkpoint-diogenes-regression.log`). Ventanas principal y secundaria, controles personalizados y propiedad del servidor comprobados en Electron real.
 

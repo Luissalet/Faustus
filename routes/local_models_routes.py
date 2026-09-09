@@ -125,6 +125,16 @@ def ollama_root(base_url: str) -> str:
     return base
 
 
+def vram_admission_root(root: str) -> Optional[str]:
+    """This machine's Ollama, or None: the gate never judges a LAN card by
+    our nvidia-smi (src/vram_admission.ollama_root has the rule)."""
+    try:
+        from src.vram_admission import ollama_root
+        return ollama_root(root)
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _is_same_machine(root: str) -> bool:
     try:
         host = (urlparse(root).hostname or "").lower()
@@ -726,7 +736,12 @@ def _set_keep_alive(root: str, name: str, keep_alive: Any, is_embedding: bool = 
     with the server defaults and the next chat request reloaded it."""
     paths = ["/api/embed", "/api/generate"] if is_embedding else ["/api/generate", "/api/embed"]
     last = ""
-    load_opts = {k: v for k, v in (options or {}).items() if k != "keep_alive" and v not in (None, "")}
+    load_opts = {k: v for k, v in (options or {}).items() if k not in ("keep_alive", "extra") and v not in (None, "")}
+    # The per-model `extra` block is more Ollama `options`, flattened under
+    # the named knobs (which win) — the same order src/llm_core.py applies.
+    extra = (options or {}).get("extra")
+    if isinstance(extra, dict):
+        load_opts = {**extra, **load_opts}
     for path in paths:
         body: Dict[str, Any] = {"model": name, "keep_alive": keep_alive}
         if load_opts and keep_alive not in (0, "0"):
@@ -895,6 +910,22 @@ def setup_local_models_routes() -> APIRouter:
             except ValueError as e:
                 raise HTTPException(400, str(e))
         is_embedding = bool(body.get("embedding"))
+        # The admission gate (OBJ-1), for the button too: a model that does not
+        # fit next to what is resident is not loaded behind your back. The
+        # screen gets the assessment (residents, GB, what is short) and asks;
+        # `force` is the answer "load anyway" or "I unloaded, go".
+        if not body.get("force") and vram_admission_root(ep["root"]):
+            from src import vram_admission
+            try:
+                verdict = await asyncio.to_thread(vram_admission.assess, ep["root"], name)
+            except Exception as e:  # noqa: BLE001
+                logger.debug("load: admission assess failed: %s", e)
+                verdict = {"fits": None}
+            if verdict.get("fits") is False:
+                raise HTTPException(409, {
+                    "message": f"{name} does not fit in VRAM next to what is loaded",
+                    "admission": verdict,
+                })
         saved = dict(mlo.get_options(ep["id"], name))
         if "main_gpu" not in saved:
             # the placement policy (fill card N first) — same rule every chat

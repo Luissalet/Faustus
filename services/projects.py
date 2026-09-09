@@ -372,8 +372,25 @@ class ProjectStore:
             if r.get("id") == exclude_id or not self._owned(r, owner):
                 continue
             if (r.get("folder") or "").strip().casefold() == key:
+                # `folder` here is the sidebar chat folder, which defaults to
+                # the project's name — so this is, in practice, a duplicate
+                # name. The old text ("Folder 'X' already belongs to project
+                # 'X'") read as "you cannot name a project after its
+                # directory", which is not a rule that exists (09-09-2026).
+                other = str(r.get("name") or folder)
+                if r.get("archived"):
+                    raise ProjectError(
+                        f"A project called '{other}' already exists and is archived; its chats "
+                        f"live in the sidebar folder '{folder}'. Restore it from Archived, "
+                        "or choose another name."
+                    )
+                if other.strip().casefold() == name.casefold():
+                    raise ProjectError(
+                        f"A project called '{other}' already exists — open it, or choose another name."
+                    )
                 raise ProjectError(
-                    f"Folder '{folder}' already belongs to project '{r.get('name')}'"
+                    f"The sidebar folder '{folder}' already holds the chats of project '{other}'. "
+                    "Choose another name or folder."
                 )
 
         return {
