@@ -283,7 +283,18 @@ _NEWS_HINTS = ("news", "nyheter", "headlines", "breaking", "latest", "today", "i
 # routinely rate-limited / CAPTCHA-blocked on this instance and return nothing.
 # Pin engines that actually respond so non-news queries get results without any
 # third-party API fallback. Override via SEARXNG_GENERAL_ENGINES.
-_GENERAL_ENGINES = os.environ.get("SEARXNG_GENERAL_ENGINES", "bing,mojeek,presearch")
+#
+# Measured from this machine on 09-09-2026 (query: "whiplash associated
+# disorders classification grades clinical features"): bing 10 results but
+# the SAME ten for every phrasing of a topic (film, IMDb, Mayo Clinic), so a
+# second round found nothing new; yandex 15 and the most relevant (the WAD
+# physiotherapy CPG first); openalex 10 DOIs — the scientific literature a
+# research run is after; mojeek "access denied", presearch a timeout every
+# time, google/duckduckgo/brave/startpage/qwant/yahoo blocked or CAPTCHA.
+# SearXNG suspends an engine that fails, so a dead one costs a request its
+# wait once and then nothing; a slow one (presearch) costs the wait every
+# time, hence it is out.
+_GENERAL_ENGINES = os.environ.get("SEARXNG_GENERAL_ENGINES", "bing,yandex,openalex,mojeek")
 
 
 def searxng_search_api(query: str, count: Optional[int] = None, categories: str = "general",

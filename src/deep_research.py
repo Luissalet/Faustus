@@ -498,6 +498,20 @@ class DeepResearcher:
                 consecutive_empty_rounds += 1
                 logger.info(f"Round {round_num}: no new findings ({consecutive_empty_rounds} consecutive empty)")
                 if consecutive_empty_rounds >= self.max_empty_rounds:
+                    note = getattr(self, "_last_round_note", "")
+                    if note:
+                        # Pages came back; they were all old. Nothing to fix in
+                        # the search settings — the engine has run dry for this
+                        # question. Keep what was found and write it up.
+                        logger.warning(f"Nothing new to read after {self.max_empty_rounds} rounds: {note}")
+                        self._emit(phase="warning", message=f"No new pages to read: {note}")
+                        if not findings:
+                            raise ResearchFailed(
+                                f"The search engine kept returning the same pages ({note}) and none of them "
+                                f"yielded anything usable in {round_num} rounds.",
+                                causes=self._failures + [f"search: {note}"],
+                            )
+                        break
                     logger.warning(f"Search appears to be down — {self.max_empty_rounds} consecutive rounds with no results")
                     err_detail = getattr(self, '_last_search_error', 'unknown error')
                     self._emit(phase="error", message=f"Search engine unavailable: {err_detail}")
@@ -853,6 +867,8 @@ class DeepResearcher:
 
         # Collect URLs to fetch from all search results
         urls_to_fetch = []
+        seen_again = 0
+        returned = 0
         for result in search_results:
             if isinstance(result, Exception):
                 logger.warning(f"Search error: {result}")
@@ -861,6 +877,9 @@ class DeepResearcher:
                 continue
             for r in result:
                 url = r.get("url", "")
+                returned += 1
+                if url and url in self.urls_fetched:
+                    seen_again += 1
                 if url and url not in self.urls_fetched:
                     urls_to_fetch.append(r)
                     self.urls_fetched.add(url)
@@ -870,6 +889,18 @@ class DeepResearcher:
                     })
                 if len(urls_to_fetch) >= self.max_urls_per_round * len(queries):
                     break
+
+        # A round that found pages but had read them all is not a search
+        # outage: it is the engine handing back the same top ten for every
+        # phrasing (bing did exactly that for "whiplash", 09-09-2026). Say so
+        # in the log and in the failure text instead of "search is down".
+        if returned and not urls_to_fetch:
+            self._last_round_note = (
+                f"{returned} result(s) came back and all {seen_again} with a URL had already been read"
+            )
+            logger.info(f"Search returned {returned} result(s), all already read — no new pages this round")
+        else:
+            self._last_round_note = ""
 
         if self._cancelled or self._time_exceeded():
             return all_findings
