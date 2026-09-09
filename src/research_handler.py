@@ -292,6 +292,22 @@ class ResearchHandler:
                     minimum=60,
                     maximum=86400,
                 )
+                # A local 27B writes at 8-15 tok/s: the 09-09 WAD run needed
+                # 22 minutes for four rounds and ONE report call, and a report
+                # written in parts (deep_research.SECTIONS_PER_PART) needs
+                # several. The 1800s that suits a cloud model would cut that
+                # honest work off at the knees, so a local endpoint gets the
+                # cap times research_local_time_multiplier (default 3).
+                try:
+                    from src.model_context import is_local_endpoint
+                    if is_local_endpoint(llm_endpoint):
+                        mult = float(get_setting("research_local_time_multiplier", 3))
+                        hard_timeout = _bounded_int(
+                            int(hard_timeout * min(10.0, max(1.0, mult))),
+                            default=hard_timeout, minimum=60, maximum=86400,
+                        )
+                except Exception:
+                    pass
 
         # Cancel any existing research for this session
         if session_id in self._active_tasks:

@@ -636,6 +636,10 @@ DEFAULT_SETTINGS = {
     # 27B q4 split over consumer cards; raise it for a fast card, lower it
     # for a model that spills to RAM. src/deep_research.py::_call_budget.
     "research_local_tokens_per_second": 8,
+    # The research wall-clock cap (research_run_timeout_seconds) times this
+    # when the model is local: four rounds and one report call took 22 min
+    # on a 27B q4; a report written in parts takes longer still.
+    "research_local_time_multiplier": 3,
     # Workers get a lean toolset (no web / memory / skills / background jobs
     # unless the task mentions them): tool schemas were 65 % of a worker's
     # first round on a 9B model.

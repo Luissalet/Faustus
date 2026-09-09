@@ -1173,8 +1173,17 @@ class DeepResearcher:
     # ------------------------------------------------------------------
     # FINAL REPORT
     # ------------------------------------------------------------------
+    # A report is one generation of max_report_tokens. A question with many
+    # sub-questions (Luis's WAD guide: ~30 bullets) does not fit: the 09-09 run
+    # covered 14 of them in 8192 tokens and stopped at "Movilidad cervical".
+    # Past this many sections the report is written in parts of this size.
+    SECTIONS_PER_PART = 6
+
     async def _final_report(self, question: str, report: str) -> str:
         """LLM writes a polished final report, retrying if too short."""
+        subs = getattr(self, "subquestions", None) or []
+        if len(subs) > self.SECTIONS_PER_PART:
+            return await self._final_report_in_parts(question, report, subs)
         prompt = FINAL_REPORT_PROMPT.format(
             question=question,
             report=report,
@@ -1233,6 +1242,76 @@ class DeepResearcher:
             logger.error(f"Final report generation failed: {e}")
             return report  # return the evolving report as-is
 
+    async def _final_report_in_parts(self, question: str, report: str,
+                                     subs: List[str]) -> str:
+        """The same report, written a few sections per call and joined.
+
+        Every part sees the same numbered evidence, so [n] markers stay
+        consistent across parts. The first part opens with the executive
+        summary, the last closes with the conclusion; the middle ones write
+        only their sections. A part that fails is replaced by its headings
+        and a one-line note, so the reader sees what is missing rather than
+        a report that silently ends early.
+        """
+        size = self.SECTIONS_PER_PART
+        chunks = [subs[i:i + size] for i in range(0, len(subs), size)]
+        sources = self._registered_sources_block()
+        language_line = self._language_line()
+        implication = implication_label(getattr(self, "report_language", "en"))
+        pieces: List[str] = []
+        for idx, chunk in enumerate(chunks):
+            if self._cancelled:
+                break
+            first, last = idx == 0, idx == len(chunks) - 1
+            start = idx * size + 1
+            numbered = "\n".join(f"{start + j}. {q}" for j, q in enumerate(chunk))
+            self._emit(phase="writing",
+                       message=f"Writing sections {start}-{start + len(chunk) - 1} of {len(subs)} "
+                               f"(part {idx + 1} of {len(chunks)})")
+            prompt = FINAL_REPORT_PROMPT.format(
+                question=question,
+                report=report,
+                sections=numbered,
+                sources=sources,
+                language_line=language_line,
+                implication=implication,
+            )
+            edges = []
+            if first:
+                edges.append("Open with a short executive summary for the WHOLE report (all "
+                             f"{len(subs)} sections, not only these).")
+            else:
+                edges.append("Do NOT write an introduction or executive summary — the report "
+                             "already has one. Start directly with the first ## heading below.")
+            if last:
+                edges.append("End with a conclusion that answers the question directly.")
+            else:
+                edges.append("Do NOT write a conclusion — later sections follow this part.")
+            prompt += (
+                f"\n\nThis is part {idx + 1} of {len(chunks)} of ONE report. Write ONLY the "
+                f"{len(chunk)} section(s) listed above, each as a ## heading, in that order, "
+                f"and nothing else. Ignore the word minimum above; give each section the "
+                f"depth it needs. " + " ".join(edges)
+            )
+            try:
+                text = await self._llm(
+                    [{"role": "user", "content": prompt}],
+                    temperature=0.3,
+                    max_tokens=self.max_report_tokens,
+                    timeout=180,
+                )
+            except Exception as e:
+                logger.error(f"Final report part {idx + 1}/{len(chunks)} failed: {e}")
+                self._failures.append(f"final report part {idx + 1}: {e}")
+                text = ""
+            text = str(text or "").strip()
+            if not text:
+                text = "\n\n".join(f"## {q}\n\n_(This section could not be written: the model did "
+                                   f"not answer in time.)_" for q in chunk)
+            pieces.append(text)
+        joined = "\n\n".join(pieces)
+        return joined if joined.strip() else report
+
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
@@ -1258,6 +1337,21 @@ class DeepResearcher:
             text = re.sub(r'\s*```$', '', text)
         return text.strip()
 
+    @staticmethod
+    def _strings_from_object(parsed: Dict) -> List[str]:
+        """Queries handed back as an object instead of an array.
+
+        qwen3.8 answered the query prompt with {"query_1": "...", "query_2":
+        "..."} (09-09-2026, round 4) and the run stopped for "no queries".
+        The first list value wins; failing that, the string values in order.
+        """
+        for value in parsed.values():
+            if isinstance(value, list):
+                items = [str(v) for v in value if str(v).strip()]
+                if items:
+                    return items
+        return [str(v).strip() for v in parsed.values() if isinstance(v, str) and v.strip()]
+
     def _parse_json_array(self, text: str) -> List[str]:
         """Extract a JSON array of strings from LLM output."""
         text = self._strip_code_block(text)
@@ -1265,6 +1359,10 @@ class DeepResearcher:
             parsed = json.loads(text)
             if isinstance(parsed, list):
                 return [str(item) for item in parsed]
+            if isinstance(parsed, dict):
+                from_object = self._strings_from_object(parsed)
+                if from_object:
+                    return from_object
         except json.JSONDecodeError:
             pass
 
@@ -1313,6 +1411,23 @@ class DeepResearcher:
             if complete_items:
                 logger.info(f"Repaired truncated JSON array: recovered {len(complete_items)} items")
                 return complete_items
+
+        # An object wrapped in prose, or a truncated one: take its complete
+        # string values (the keys are query_1, query_2… — noise).
+        obj_start = text.find('{')
+        if obj_start != -1:
+            body = text[obj_start:]
+            try:
+                parsed = json.loads(body)
+                if isinstance(parsed, dict):
+                    from_object = self._strings_from_object(parsed)
+                    if from_object:
+                        return from_object
+            except json.JSONDecodeError:
+                values = re.findall(r'"[^"]*"\s*:\s*"([^"]+)"', body)
+                if values:
+                    logger.info(f"Repaired truncated JSON object: recovered {len(values)} items")
+                    return values
 
         logger.warning(f"Could not parse JSON array from: {text[:200]}")
         return []

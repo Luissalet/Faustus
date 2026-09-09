@@ -52,3 +52,29 @@ def test_code_fenced_array_still_parses():
 
 def test_no_array_returns_empty():
     assert _dr()._parse_json_array("no array here") == []
+
+
+# qwen3.8 answered the query prompt with an object, not an array (09-09-2026,
+# round 4), and the run stopped for "no queries generated".
+
+def test_object_with_numbered_keys_yields_its_values():
+    text = '{\n  "query_1": "NICE guideline whiplash 2025",\n  "query_2": "exercise therapy WAD meta-analysis"\n}'
+    assert _dr()._parse_json_array(text) == [
+        "NICE guideline whiplash 2025",
+        "exercise therapy WAD meta-analysis",
+    ]
+
+
+def test_object_with_a_list_value_yields_the_list():
+    text = '{"queries": ["a", "b", "c"], "note": "three"}'
+    assert _dr()._parse_json_array(text) == ["a", "b", "c"]
+
+
+def test_truncated_object_keeps_the_complete_values():
+    text = '{\n  "query_1": "first complete query",\n  "query_2": "second cut off mid wa'
+    assert _dr()._parse_json_array(text) == ["first complete query"]
+
+
+def test_object_inside_prose_is_found():
+    text = 'Here are the searches:\n{"query_1": "x y z"}\nHope that helps.'
+    assert _dr()._parse_json_array(text) == ["x y z"]
