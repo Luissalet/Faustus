@@ -86,3 +86,44 @@ las fases `loading_model`/`vram_blocked`/`unloading_model`).
   es `OLLAMA_MAX_LOADED_MODELS=1` en el entorno de Ollama: él mismo echa al
   anterior en vez de apilar. Puerta para lo interactivo, variable para lo que
   no pasa por la app.
+
+## OBJ-2 · El agente pregunta con opciones cuando le hace falta decidir
+
+Luis, 10-09-2026: «comprobar que el modelo, cuando le pides implementar cosas
+y lo considera necesario, te pregunta entre opciones (como haces tú con
+AskUserQuestion): varias opciones para elegir y una para que escribas tú, o
+una checklist. Como lo haces tú, vaya.»
+
+### Qué tiene que pasar
+
+- En modo agente, ante una decisión que no puede resolver desde la petición,
+  el código o un valor por defecto razonable, el modelo emite una **pregunta
+  estructurada**, no un párrafo: título corto, la pregunta, 2-4 opciones con
+  una línea de consecuencia cada una, y siempre una opción libre («Otra…»).
+  Variante *multiselección* (checklist) cuando las opciones no se excluyen.
+- La pregunta bloquea el turno hasta que se contesta (como la aprobación de
+  herramientas), se pinta en el transcript como tarjeta con botones, y la
+  respuesta vuelve al modelo como resultado de la herramienta.
+- Si nadie contesta (trabajo desatendido, worker), caduca con la primera
+  opción marcada como recomendada y lo dice en el transcript.
+
+### Lo que ya existe y hay que reusar
+
+- `approval_store` y el flujo de aprobación de herramientas: ya bloquea un
+  turno esperando a la pantalla. Es binario; la pregunta necesita opciones
+  y multiselección, pero el canal SSE y la espera son los mismos.
+- Los tickets de `src/vram_admission.py` (`open_ticket/resolve`, caducidad):
+  el mismo patrón «pregunta con casillas que espera» ya implementado una vez.
+- `VramAdmissionDialog.tsx`: diálogo con casillas y botones que se puede
+  generalizar a «opciones + libre».
+
+### Lo que hay que escribir
+
+- Herramienta integrada `ask_user` (nombre provisional) con esquema
+  `{question, header, options:[{label, description}], multi:false, recommended}`,
+  descrita al modelo con cuándo usarla y cuándo NO (no para lo que tiene
+  valor por defecto obvio; una sola pregunta por turno).
+- Ruta `POST /api/questions/{id}` con la respuesta; fase SSE `question`.
+- Tarjeta en Transcript con radio/checkbox, campo libre y «Responder».
+- Comprobar en vivo con qwen3.8 27B que la USA cuando toca: pedirle algo
+  ambiguo («impleméntame auth») y ver si pregunta o se lanza.
