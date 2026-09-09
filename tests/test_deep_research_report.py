@@ -83,7 +83,8 @@ def test_subquestions_are_capped_and_deduplicated():
     subs = _researcher()._extract_subquestions(question)
     assert len(subs) == 3          # only three distinct questions in there
     long_list = "\n".join(f"{i}. Is option {i} any good?" for i in range(1, 30))
-    assert len(_researcher()._extract_subquestions(long_list)) == 12
+    from src.deep_research import MAX_SUBQUESTIONS
+    assert len(_researcher()._extract_subquestions(long_list)) == MAX_SUBQUESTIONS
 
 
 # The real question, in the shape it was really typed: everything on one line,

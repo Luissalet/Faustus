@@ -259,9 +259,137 @@ _SUBQ_MARKER_RE = re.compile(r"^\s{0,6}(?:\(?\d{1,2}[.)]|[-*\u2022\u2023+]|[a-hA
 # end of a sentence rather than a word — that lookbehind is what keeps "el
 # grupo 1) tuvo menos dolor" from being read as a list.
 _INLINE_ENUM_RE = re.compile(r"(?:^|(?<=[?!.:;\uff1f]))\s*\(?(\d{1,2})[.)]\s+")
-MAX_SUBQUESTIONS = 12
+# 12 used to be the cap, and it silently cut a real outline: Luis's whiplash
+# guide (09-09-2026) has 44 bullets under six headings; the report covered
+# the first twelve and stopped at "Movilidad cervical". Outlines are now
+# grouped by their headings first (_outline_sections), which brings that
+# guide to 15 sections; the cap only backstops a flat list.
+MAX_SUBQUESTIONS = 24
 _MIN_SUBQUESTION_CHARS = 12
-_MAX_SUBQUESTION_CHARS = 300
+# A grouped section carries its heading and every bullet under it.
+_MAX_SUBQUESTION_CHARS = 700
+# A plain line this short, with no sentence punctuation and something listed
+# under it, is a heading in the user's outline ("Tratamiento", "Qué evitar").
+_HEADING_MAX_CHARS = 60
+_HEADING_MAX_WORDS = 7
+# Under a heading, a plain line this long is prose again, not an item.
+_ITEM_MAX_CHARS = 120
+
+
+def _is_outline_heading(line: str) -> bool:
+    s = line.strip()
+    if not s or len(s) > _HEADING_MAX_CHARS or len(s.split()) > _HEADING_MAX_WORDS:
+        return False
+    if _SUBQ_MARKER_RE.match(line) or s.startswith("|"):
+        return False
+    if s[-1] in ":.?!,;" or "?" in s or "¿" in s:
+        return False
+    return True
+
+
+def _is_outline_item(line: str) -> bool:
+    """Something listed under a heading: a bullet, a table row, an arrow
+    chain, or a short plain line. A lead-in ("Para cada fase especifica:")
+    is skipped by the caller; a long plain sentence ends the group."""
+    s = line.strip()
+    if not s:
+        return False
+    if _SUBQ_MARKER_RE.match(line) or s.startswith("|") or "→" in s or "->" in s:
+        return True
+    return len(s) <= _ITEM_MAX_CHARS and s[-1] != ":"
+
+
+def _outline_sections(text: str) -> Optional[List[str]]:
+    """Sections for a prompt written as an outline with headings.
+
+    Returns None when the text has fewer than two headings with something
+    listed under them — then the flat pass applies. Otherwise: top-level
+    bullets are sections of their own, in order; each heading is ONE section
+    whose bullets (and table rows, arrow chains, short lines) follow it as
+    "Heading: a; b; c", so the report gives it one ## and covers a, b and c
+    inside it; a lead-in ending in ":" followed by a line packing two or more
+    questions is one section as well ("Me interesa responder a: ¿…? ¿…?").
+    """
+    lines = [l.rstrip() for l in text.replace("\r\n", "\n").split("\n")]
+    nonblank = [i for i, l in enumerate(lines) if l.strip()]
+    if not nonblank:
+        return None
+
+    def next_nonblank(i: int) -> Optional[str]:
+        for j in range(i + 1, len(lines)):
+            if lines[j].strip():
+                return lines[j]
+        return None
+
+    sections: List[str] = []
+    heading: Optional[str] = None
+    items: List[str] = []
+    groups = 0
+    pending_leadin: Optional[str] = None
+
+    def close_group():
+        nonlocal heading, items, groups
+        if heading is not None:
+            if items:
+                sections.append(f"{heading}: " + "; ".join(items))
+                groups += 1
+            else:
+                sections.append(heading)
+        heading, items = None, []
+
+    def item_text(line: str) -> str:
+        s = _SUBQ_MARKER_RE.sub("", line).strip()
+        return s if s.startswith("|") else s.rstrip(".").strip()
+
+    def top_level(line: str):
+        nonlocal pending_leadin
+        s = line.strip()
+        bulleted = bool(_SUBQ_MARKER_RE.match(line))
+        body = (_SUBQ_MARKER_RE.sub("", line) if bulleted else line).strip()
+        if not bulleted and s.endswith(":"):
+            pending_leadin = s.rstrip(":").strip()
+            return
+        if pending_leadin and not bulleted and s.count("?") + s.count("？") >= 2:
+            sections.append(f"{pending_leadin}: {s}")
+            pending_leadin = None
+            return
+        pending_leadin = None
+        for chunk, enumerated in _enumerated_chunks(body):
+            for piece in _split_on_question_marks(chunk):
+                piece = piece.strip(" \t-–—•*")
+                if len(piece) < _MIN_SUBQUESTION_CHARS:
+                    continue
+                if bulleted or enumerated or piece.endswith("?"):
+                    sections.append(piece)
+
+    for i in nonblank:
+        line = lines[i]
+        s = line.strip()
+        if _is_outline_heading(line):
+            follower = next_nonblank(i)
+            if follower is not None and (_is_outline_item(follower) or follower.strip().endswith(":")):
+                close_group()
+                heading = s
+                continue
+        if heading is not None:
+            if s.endswith(":"):
+                follower = next_nonblank(i)
+                if follower is not None and _is_outline_item(follower) and (
+                        _SUBQ_MARKER_RE.match(follower) or follower.strip().startswith("|")
+                        or "→" in follower or "->" in follower):
+                    continue                  # a lead-in to more items of this group
+                close_group()                 # a lead-in to something else: top level again
+            elif _is_outline_item(line):
+                items.append(item_text(line))
+                continue
+            else:
+                close_group()                 # prose again: back to top level
+        top_level(line)
+    close_group()
+
+    if groups < 2:
+        return None
+    return sections
 
 
 def _split_on_question_marks(text: str) -> List[str]:
@@ -725,6 +853,15 @@ class DeepResearcher:
             text = question if isinstance(question, str) else str(question)
         except Exception:  # noqa: BLE001
             return []
+        # An outline with headings ("Tratamiento", "Qué evitar"…) is grouped
+        # by them first, so a 44-bullet brief becomes ~15 sections instead of
+        # being cut at the cap.
+        try:
+            grouped = _outline_sections(text)
+        except Exception:  # noqa: BLE001
+            grouped = None
+        if grouped:
+            return self._clean_subquestions(grouped)
         found: List[str] = []
         for line in text.splitlines():
             if not line.strip():
@@ -1481,7 +1618,13 @@ class DeepResearcher:
         """
         subs = getattr(self, "subquestions", None) or []
         if subs:
-            return "\n".join(f"{i}. {q}" for i, q in enumerate(subs, 1))
+            block = "\n".join(f"{i}. {q}" for i, q in enumerate(subs, 1))
+            if any(": " in q and "; " in q for q in subs):
+                block += ("\n(An item written as \"Title: a; b; c\" is ONE section headed "
+                          "\"Title\" whose body covers a, b and c in that order — as ### "
+                          "subheadings when they need room. Do not make a; b; c sections "
+                          "of their own and do not put the list in the heading.)")
+            return block
         sections = _CATEGORY_SECTIONS.get(getattr(self, "category", "") or "")
         if sections:
             return ("\n".join(f"{i}. {name}" for i, name in enumerate(sections, 1))
