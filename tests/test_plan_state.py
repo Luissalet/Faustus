@@ -124,3 +124,15 @@ def test_parse_steps_input_returns_none_for_non_matching_shape():
 def test_plan_counts():
     plan = from_markdown("- [x] a\n- [x] b\n- [ ] c")
     assert plan.counts() == (2, 3)
+
+
+def test_a_pending_step_is_never_verified():
+    """Seen live on the 7001: a fresh 12-step plan came back with every
+    pending step `verified: true`, which reads as "already checked". The flag
+    belongs to done steps only, whatever the input claims."""
+    plan = from_markdown("- [ ] write the migration\n- [x] read the schema\n")
+    assert [s.verified for s in plan.steps] == [False, False]
+    step = PlanStep.from_dict({"title": "later", "status": "pending", "verified": True}, order=0)
+    assert step.verified is False
+    done = PlanStep.from_dict({"title": "shipped", "status": "done", "verified": True}, order=1)
+    assert done.verified is True

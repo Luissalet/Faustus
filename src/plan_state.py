@@ -70,10 +70,11 @@ class PlanStep:
     depends_on: List[str] = field(default_factory=list)
     evidence_refs: List[str] = field(default_factory=list)
     notes: str = ""
-    # False only while a step the MODEL marked done awaits real evidence.
-    # Defaults True: a step built from structured input (not parsed off a
-    # freshly-edited checkbox) is trusted unless told otherwise.
-    verified: bool = True
+    # True only for a DONE step whose completion something other than the
+    # model confirmed (evidence, a verifier, a person). A pending or blocked
+    # step is never "verified": the first live plan (12 pending steps, all
+    # `verified: true`, 10-09-2026) read as if the work were already checked.
+    verified: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -93,8 +94,9 @@ class PlanStep:
         if status not in STATUSES:
             status = "pending"
         step_id = str(data.get("id") or "").strip() or stable_step_id(title, order)
-        verified = data.get("verified")
-        verified = True if verified is None else bool(verified)
+        # Only a done step can carry the flag; structured input that says
+        # `verified: true` on a pending step is corrected, not trusted.
+        verified = bool(data.get("verified")) and status == "done"
         depends_on = [str(x).strip() for x in (data.get("depends_on") or []) if str(x).strip()]
         evidence_refs = [str(x).strip() for x in (data.get("evidence_refs") or []) if str(x).strip()]
         notes = str(data.get("notes", "")).strip()
@@ -169,7 +171,7 @@ def from_markdown(text: str, *, revision: int = 1) -> Plan:
         # tool started with, instead of the marker's mere absence quietly
         # meaning "trust it".
         del unverified  # detected only to strip the marker from the title
-        verified = status != "done"
+        verified = False  # nothing parsed off a checklist is confirmed by that checklist
 
         steps.append(PlanStep(id=step_id, title=title, status=status,
                                depends_on=depends_on, verified=verified))
