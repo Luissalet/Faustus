@@ -235,12 +235,20 @@ def collect(result: ExecutionResult, *, source_dir: str,
     return Collected(tuple(made), tuple(skipped), deduped)
 
 
-def persist(artifacts: Iterable[Artifact], *, session_id: str = "") -> Dict[str, int]:
+def persist(artifacts: Iterable[Artifact], *, session_id: str = "",
+           call_id: str = "") -> Dict[str, int]:
     """Persist occurrences while deduplicating only the physical bytes.
 
     Historical rows are copied in background and remain readable meanwhile.
     The historical table remains intact. A repeated event
     is idempotent; reusing its id with different ownership is an error.
+
+    `call_id` is additive and optional: when a caller has one (the tool-call
+    id that produced this artifact), it is folded into `provenance.note` so
+    an artifact can be traced back to the exact call that made it, without
+    widening the `Provenance` contract itself (`note` already exists for
+    free-form text like this). Omitting it reproduces the exact provenance
+    dict every existing caller already gets.
     """
     from src import artifact_identity as identity
     from src.contracts.blob import ArtifactOccurrence, DerivedArtifact
@@ -258,13 +266,19 @@ def persist(artifacts: Iterable[Artifact], *, session_id: str = "") -> Dict[str,
                 'filename': art.preview_filename, 'sha256': sha256_of(preview),
                 'byte_size': os.path.getsize(preview),
             }))
+        art_provenance = art.provenance.to_dict()
+        if call_id:
+            note = str(art_provenance.get('note') or '')
+            tag = f"call_id={call_id}"
+            art_provenance = {**art_provenance,
+                              'note': f"{note} {tag}".strip() if note else tag}
         occurrence = ArtifactOccurrence.parse({
             'id': art.id, 'blob_sha256': art.sha256, 'kind': art.kind,
             'label': art.label, 'owner': art.owner, 'project_id': art.project_id,
             'run_id': art.run_id, 'session_id': session_id,
             'skill_id': art.skill_id, 'skill_version': art.skill_version,
             'created_at': art.created_at, 'partial': art.partial,
-            'provenance': art.provenance.to_dict(), 'retention': art.retention.to_dict(),
+            'provenance': art_provenance, 'retention': art.retention.to_dict(),
         })
         _, made = identity.ensure_occurrence(occurrence)
         created += int(made)

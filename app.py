@@ -54,7 +54,7 @@ from datetime import datetime, timezone
 from typing import Dict, Optional
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, Response
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -1443,8 +1443,14 @@ def _served_studio_info() -> Dict[str, Optional[str]]:
 
 
 @app.get("/api/version")
-async def get_version():
+async def get_version(response: Response):
     from core.constants import APP_VERSION
+    from src import api_version
+    # ARCH-01: stamp the negotiated wire version here too, not just on the
+    # chat SSE responses — a client can probe this cheap, non-streaming
+    # endpoint to learn what the server speaks before ever opening a stream.
+    # Additive header only; the JSON body is unchanged for old clients.
+    response.headers[api_version.API_VERSION_HEADER] = api_version.API_VERSION
     return {
         "version": APP_VERSION,
         "build": _git_build_info(BASE_DIR),

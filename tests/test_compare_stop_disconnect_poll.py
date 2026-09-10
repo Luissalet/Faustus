@@ -24,10 +24,22 @@ normal completed streams, and non-interference with detached chat/agent
 streams that are meant to keep running server-side after a client disconnect.
 """
 import asyncio
+import json
 
 import pytest
 
 from src import agent_runs
+
+
+def _sse_payload(ev: str) -> dict:
+    """Decode a `data: {...}\\n\\n` frame's JSON body, tolerant of the
+    additive observability fields `_publish` stamps on every event (trace_id,
+    step_id, sequence, stream_id, schema_version — OBS-01/QA-09). Comparing
+    decoded payloads instead of raw SSE bytes keeps these assertions meaningful
+    without pinning them to an exact byte layout, per COMUN.md's back-compat
+    rule."""
+    assert ev.startswith("data: ")
+    return json.loads(ev[len("data: "):])
 
 
 # --------------------------------------------------------------------------- #
@@ -207,7 +219,8 @@ async def test_lazy_subscription_stays_bound_to_header_run_after_replacement():
     await second.task
 
     replayed = [event async for event in lazy_body]
-    assert replayed == ['data: {"delta":"first"}\n\n']
+    assert len(replayed) == 1
+    assert _sse_payload(replayed[0])["delta"] == "first"
     assert agent_runs.get_run_id(session_id) == second.run_id
 
 
@@ -332,7 +345,12 @@ async def test_reconnect_replays_pinned_fallback_run_without_restarting_tools():
             release.set()
     await run.task
 
-    assert resumed_events[:2] == [fallback, tool]
+    expected = [
+        {"type": "fallback", "answered_by": "backup", "candidate_index": 1},
+        {"type": "tool_output", "tool": "bash", "output": "ok"},
+    ]
+    for ev, want in zip(resumed_events[:2], expected):
+        assert want.items() <= _sse_payload(ev).items()
     assert resumed_events[-1] == "data: [DONE]\n\n"
     assert tool_executions == 1
     assert agent_runs._RUNS[session_id] is run
@@ -454,10 +472,19 @@ def test_compare_mode_branch_skips_agent_runs_in_source():
     src = (Path(__file__).resolve().parents[1] / "routes" / "chat_routes.py").read_text(encoding="utf-8")
 
     branch_idx = src.index("if compare_mode:")
-    direct_return_idx = src.index("return StreamingResponse(_safe_stream(), media_type=", branch_idx)
-    detach_idx = src.index("agent_runs.start(session, _safe_stream(), lane=_lane, label=_run_label[:80])", branch_idx)
+    # Anchored on the stable prefixes only (not full call text, which grew a
+    # trailing api_version.API_VERSION_HEADER header / extra kwargs since this
+    # test was written — ARCH-01) so a formatting change doesn't make this
+    # test stale without also changing the behavior it pins.
+    direct_return_idx = src.index("return StreamingResponse(", branch_idx)
+    detach_idx = src.index("agent_runs.start(session, _safe_stream()", branch_idx)
 
     assert branch_idx < direct_return_idx < detach_idx, (
         "compare_mode must short-circuit to a direct (non-detached) "
         "StreamingResponse before normal streams are wrapped in agent_runs"
     )
+    # And that direct StreamingResponse really does wrap _safe_stream() itself
+    # (not agent_runs.subscribe(...)) -- the whole point of the branch.
+    between = src[direct_return_idx:detach_idx]
+    assert "_safe_stream()" in between
+    assert "agent_runs.start" not in between and "agent_runs.subscribe" not in between

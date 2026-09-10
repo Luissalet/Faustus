@@ -287,6 +287,41 @@ class Store:
         logger.info("question cancelled: %s (%s)", question_id, reason or "no reason given")
         return {"ok": True, "reason": "cancelled"}
 
+    def list_open(self, *, owner: Any = None, limit: int = 50) -> List[Dict[str, Any]]:
+        """Every question still `open`, most recently opened first — the
+        activity tray's "answer this" queue (ACT-03).
+
+        SEC-06: `owner`, when given, is a positive filter, the same
+        fail-open-for-unowned-rows shape `get()`/`resolve()` already use
+        (`owner=None` — the default — lists every owner's open questions, for
+        a caller that has already decided it wants that; a row opened with no
+        owner at all has nothing to isolate and is never excluded by this
+        filter either).
+
+        Expiry is settled per row before it is reported (same as
+        `resolve()`/`cancel()` already do), so a question sitting past its
+        deadline never shows up in "waiting for an answer" — a listing gets no
+        weaker a guarantee than a single `get()`.
+        """
+        if not self.path.exists():
+            return []
+        limit = max(1, min(int(limit or 50), 200))
+        out: List[Dict[str, Any]] = []
+        with self._db(write=True) as db:  # write: _settle_expiry may UPDATE
+            rows = db.execute(
+                "SELECT * FROM questions WHERE status='open' ORDER BY seq DESC"
+            ).fetchall()
+            for row in rows:
+                row = self._settle_expiry(db, row)
+                if row["status"] != "open":
+                    continue
+                if owner is not None and row["owner"] and _normalized_owner(row["owner"]) != _normalized_owner(owner):
+                    continue
+                out.append(self._decode(row))
+                if len(out) >= limit:
+                    break
+        return out
+
     def expire_stale(self, *, now: Optional[str] = None) -> int:
         """Sweep every open question past its deadline. Idempotent, safe to
         call from a scheduler: an expired question is a fact, not a cleanup."""
@@ -318,3 +353,7 @@ def cancel_question(question_id: str, *, reason: str = "", owner: Any = None) ->
 
 def get_question(question_id: str, *, owner: Any = None) -> Optional[Dict[str, Any]]:
     return Store().get(question_id, owner=owner)
+
+
+def list_open(*, owner: Any = None, limit: int = 50) -> List[Dict[str, Any]]:
+    return Store().list_open(owner=owner, limit=limit)

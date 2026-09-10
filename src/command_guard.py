@@ -785,8 +785,17 @@ def append_receipt(
     rule: str = "",
     action: str = "allowed",
     note: str = "",
+    call_id: str = "",
 ) -> Optional[dict]:
-    """Append one hash-chained decision receipt. Never raises."""
+    """Append one hash-chained decision receipt. Never raises.
+
+    `call_id` is additive and optional: the tool-call id this decision was
+    made for, kept as its own field rather than folded into `note` (which
+    already carries free-form text of its own — a degraded-tier reason, a
+    one-shot bypass marker) so a receipt can be traced back to its call
+    without parsing `note`. Omitting it reproduces the exact record every
+    existing caller already gets.
+    """
     try:
         command_text = str(command or "")
         with _log_lock:
@@ -815,6 +824,8 @@ def append_receipt(
             }
             if note:
                 record["note"] = str(note)[:400]
+            if call_id:
+                record["call_id"] = str(call_id)[:200]
             if rotated:
                 record["rotated_from"] = os.path.basename(path) + ".1"
             record["hash"] = _record_hash(prev_hash, record)

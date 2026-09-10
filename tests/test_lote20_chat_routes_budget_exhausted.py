@@ -150,4 +150,11 @@ async def test_budget_exhausted_event_reaches_the_client():
     finally:
         monkeypatch.undo()
 
-    assert budget_exhausted_chunk in emitted, emitted
+    # Compare decoded payloads, not raw bytes: every event on this stream now
+    # additionally carries the OBS-01/QA-09 observability fields (trace_id,
+    # step_id, sequence, stream_id, schema_version), which is additive and
+    # must not defeat this assertion (COMUN.md back-compat rule).
+    decoded = [json.loads(chunk[len("data: "):]) for chunk in emitted
+               if chunk.startswith("data: ") and not chunk.startswith("data: [DONE]")]
+    expected = json.loads(budget_exhausted_chunk[len("data: "):])
+    assert any(expected.items() <= d.items() for d in decoded), emitted

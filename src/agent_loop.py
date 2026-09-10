@@ -6116,6 +6116,11 @@ async def stream_agent_loop(
         approved = exact_approval.pending
         approved_block = ToolBlock(approved.tool_name, approved.content)
         approved_display = approved.content.strip()
+        # OBS-01: reuse the approval's own id as this tool call's call_id —
+        # it already uniquely names this exact sealed action (src/
+        # tool_approvals.py::PendingToolApproval.approval_id), so there is no
+        # reason to mint a second identifier for the same call.
+        _approved_call_id = approved.approval_id
         approval_matches = exact_approval.matches(
             owner=owner,
             session_id=session_id,
@@ -6134,6 +6139,7 @@ async def stream_agent_loop(
                         "full_command": approved_display,
                         "round": 0,
                         "approved": True,
+                        "call_id": _approved_call_id,
                     }
                 )
                 + "\n\n"
@@ -6184,6 +6190,7 @@ async def stream_agent_loop(
                             "tool": approved.tool_name,
                             "round": 0,
                             "approved": True,
+                            "call_id": _approved_call_id,
                             **progress_event,
                         }
                     )
@@ -6269,6 +6276,7 @@ async def stream_agent_loop(
             "output": _truncate(approved_output),
             "exit_code": approved_result.get("exit_code"),
             "approved": True,
+            "call_id": _approved_call_id,
         }
         for key in (
             "image_url",
@@ -6350,6 +6358,7 @@ async def stream_agent_loop(
             "exit_code": approved_result.get("exit_code"),
             "approved": True,
             "approval_digest": approved.digest[:16],
+            "call_id": _approved_call_id,
         }
         for key in (
             "image_url",
@@ -8240,6 +8249,15 @@ async def stream_agent_loop(
         tool_result_records = []  # aligned structured provenance for next round
         budget_hit = False
         for i, block in enumerate(tool_blocks):
+            # OBS-01: reuse the native/converted tool call's own id when the
+            # provider (or the assembler ahead of it) gave one — converted_calls
+            # is aligned 1:1 with tool_blocks (see _resolve_tool_blocks / the
+            # "ALIGNED with tool_blocks" comment where it's built), so index i
+            # names the same call in both lists. Falls back to the exact
+            # synthetic id _append_tool_results already assigns a call with no
+            # native id, so the two never disagree about what a call is called.
+            _native_tc = converted_calls[i] if i < len(converted_calls) and isinstance(converted_calls[i], dict) else None
+            _call_id = str((_native_tc or {}).get("id") or f"call_{round_num}_{i}")
             # --- Tool budget check ---
             if max_tool_calls > 0 and total_tool_calls >= max_tool_calls:
                 yield f'data: {json.dumps({"type": "budget_exceeded", "limit": max_tool_calls, "used": total_tool_calls})}\n\n'
@@ -8454,7 +8472,7 @@ async def stream_agent_loop(
                     )
             else:
                 yield (
-                    f'data: {json.dumps({"type": "tool_start", "tool": block.tool_type, "command": cmd_display, "full_command": full_command, "round": round_num})}\n\n'
+                    f'data: {json.dumps({"type": "tool_start", "tool": block.tool_type, "command": cmd_display, "full_command": full_command, "round": round_num, "call_id": _call_id})}\n\n'
                 )
                 # Baseline before the first change of the turn.
                 _cp = await _maybe_checkpoint(block.tool_type, block.content)
@@ -8503,7 +8521,7 @@ async def stream_agent_loop(
                         if evt is None:
                             break
                         yield (
-                            f'data: {json.dumps({"type": "tool_progress", "tool": block.tool_type, "round": round_num, **evt})}\n\n'
+                            f'data: {json.dumps({"type": "tool_progress", "tool": block.tool_type, "round": round_num, "call_id": _call_id, **evt})}\n\n'
                         )
                     desc, result = await _tool_task
                 finally:
@@ -8784,7 +8802,7 @@ async def stream_agent_loop(
                 output_text = _truncate(result["error"])
 
             # Emit tool_output (include ui_event data if present)
-            tool_output_data = {"type": "tool_output", "tool": block.tool_type, "command": cmd_display, "output": output_text, "exit_code": result.get("exit_code")}
+            tool_output_data = {"type": "tool_output", "tool": block.tool_type, "command": cmd_display, "output": output_text, "exit_code": result.get("exit_code"), "call_id": _call_id}
             if result.get("blocked"):
                 # A refusal is a different event from a failure, and the client
                 # has no other way to tell them apart: both arrive as exit_code
@@ -9023,6 +9041,11 @@ async def stream_agent_loop(
                 "command": cmd_display,
                 "output": output_text,
                 "exit_code": result.get("exit_code"),
+                # OBS-01: same call_id the live tool_start/tool_progress/
+                # tool_output events carried, so a history reload can still
+                # link this persisted record back to the exact call that
+                # produced it.
+                "call_id": _call_id,
             }
             # CALL-02/CALL-03: persist the same argument-check annotation the
             # live tool_output carried, so a history reload shows it too.

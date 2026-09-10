@@ -1,6 +1,36 @@
 import { t } from '../i18n';
-import { ApiError, asArray, getJson, responseReason } from './api';
+import {
+  ApiError,
+  API_VERSION_HEADER,
+  asArray,
+  CLIENT_API_VERSION,
+  CLIENT_VERSION_HEADER,
+  getJson,
+  responseReason,
+} from './api';
 import { vramBlockedFrom, type VramBlocked } from './vramAdmission';
+
+/**
+ * ARCH-01: the server's version of the last stream this tab saw, once it has
+ * answered at least one `/api/chat_stream` or `/api/chat/resume` — and
+ * whether it disagreed with `CLIENT_API_VERSION`. Read with
+ * `getVersionMismatch()`; a screen wires that up to a toast or banner if and
+ * when it wants to — nothing here paints anything itself. "Once, non-
+ * blocking": the mismatch is recorded, never thrown, and every event this
+ * tab has decoded so far stays on screen exactly as it was.
+ */
+let _versionMismatch: { server: string; client: string } | null = null;
+
+export function getVersionMismatch(): { server: string; client: string } | null {
+  return _versionMismatch;
+}
+
+function checkVersion(response: Response): void {
+  const server = response.headers.get(API_VERSION_HEADER);
+  if (server && server !== CLIENT_API_VERSION) {
+    _versionMismatch = { server, client: CLIENT_API_VERSION };
+  }
+}
 
 /**
  * What the model is doing while the turn waits for its first token, from
@@ -259,8 +289,35 @@ export type ChatEvent =
   | { type: 'vram'; phase: string; message: string; blocked?: VramBlocked }
   | { type: 'image'; url: string }
   | { type: 'fallback'; answeredBy: string; selected: string }
-  | { type: 'terminal'; failed: boolean; message?: string }
-  | { type: 'error'; message: string }
+  | {
+      type: 'terminal';
+      failed: boolean;
+      message?: string;
+      /** OBS-03/ACT-01 passthrough — see the `error` variant below. */
+      errorClass?: string;
+      traceId?: string;
+      stepId?: string;
+      versionMismatch?: boolean;
+    }
+  | {
+      type: 'error';
+      message: string;
+      /** `src/contracts/errors.py`'s taxonomy code (`category.subcode`), for
+       *  `errorTaxonomy.ts`'s `describeError`/`friendlyError` to turn into an
+       *  actionable title instead of raw provider prose. */
+      errorClass?: string;
+      /** OBS-01's per-turn/per-round correlation ids (`agent_runs.py`'s
+       *  `_observability_fields`), already on every event's raw payload —
+       *  forwarded here so a support report can name the exact stream. */
+      traceId?: string;
+      stepId?: string;
+      /** ARCH-01: true when this tab already knows the server disagreed on
+       *  wire version (`getVersionMismatch()`, set from the
+       *  X-Faustus-Api-Version response header) — an error surfacing right
+       *  after that is much more likely "reload the app" than a transient
+       *  network blip. */
+      versionMismatch?: boolean;
+    }
   | { type: 'progress'; todos: Todo[] }
   | {
       type: 'plan';
@@ -287,6 +344,32 @@ function str(value: unknown, fallback = ''): string {
 
 function num(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+/**
+ * OBS-01/OBS-03/ARCH-01 passthrough for the `error`/`terminal` ChatEvent
+ * variants: `error_class` (`src/contracts/errors.py`'s taxonomy),
+ * `trace_id`/`step_id` (`agent_runs.py`'s `_observability_fields`, already
+ * additive on every event's raw payload) and `version_mismatch`. Every one
+ * of these is optional and additive — an older server that has never heard
+ * of them simply omits the keys, `str()`/`=== true` read that as absent, and
+ * the event decodes exactly as it always did (COMUN.md back-compat rule).
+ *
+ * `version_mismatch` is not (yet) a field any backend sends on an event; this
+ * also folds in `getVersionMismatch()` — the mismatch this tab already
+ * detected from the `X-Faustus-Api-Version` response header, reused rather
+ * than duplicated — so the field means something today, and starts also
+ * reading a literal wire value the moment a future server sends one.
+ */
+function errorTraceFields(raw: Record<string, unknown>): {
+  errorClass?: string; traceId?: string; stepId?: string; versionMismatch?: boolean;
+} {
+  return {
+    errorClass: str(raw.error_class) || undefined,
+    traceId: str(raw.trace_id) || undefined,
+    stepId: str(raw.step_id) || undefined,
+    versionMismatch: raw.version_mismatch === true || Boolean(getVersionMismatch()) || undefined,
+  };
 }
 
 export function metricsFrom(meta: Record<string, unknown>): TurnMetrics {
@@ -716,6 +799,7 @@ export function decode(raw: Record<string, unknown>, sseEvent: string | null): C
     return {
       type: 'error',
       message: str(raw.text ?? raw.error ?? raw.message ?? raw.detail, t('Server error')),
+      ...errorTraceFields(raw),
     };
   }
   if (typeof raw.delta === 'string') {
@@ -850,12 +934,24 @@ export function decode(raw: Record<string, unknown>, sseEvent: string | null): C
         string,
         unknown
       >;
-      return { type: 'terminal', failed: true, message: str(failure.message) || undefined };
+      return {
+        type: 'terminal',
+        failed: true,
+        message: str(failure.message) || undefined,
+        // trace_id/step_id/error_class travel on the outer envelope
+        // (agent_runs.py stamps them on every event); error_class itself may
+        // also be nested in `failure` when the terminal event carries its own.
+        ...errorTraceFields({ ...raw, error_class: failure.error_class ?? raw.error_class }),
+      };
     }
     case 'chat_terminal':
       return { type: 'terminal', failed: false };
     case 'error':
-      return { type: 'error', message: str(raw.text ?? raw.error ?? raw.message, t('Server error')) };
+      return {
+        type: 'error',
+        message: str(raw.text ?? raw.error ?? raw.message, t('Server error')),
+        ...errorTraceFields(raw),
+      };
     case 'progress_update':
       return {
         type: 'progress',
@@ -1073,7 +1169,7 @@ export async function* sendTurn(options: SendOptions): AsyncGenerator<ChatEvent>
     response = await fetch('/api/chat_stream', {
       method: 'POST',
       body: fd,
-      headers: timezoneHeaders(),
+      headers: { ...timezoneHeaders(), [CLIENT_VERSION_HEADER]: CLIENT_API_VERSION },
       credentials: 'same-origin',
       signal: options.signal,
     });
@@ -1089,6 +1185,7 @@ export async function* sendTurn(options: SendOptions): AsyncGenerator<ChatEvent>
   // happens to the STREAM from here is a separate question (resumeTurn's
   // job); the send itself is no longer in doubt, so the outbox entry is done.
   if (trackOutbox) clearOutboxFor(options.sessionId);
+  checkVersion(response);
 
   // CALL-07/TASK-04: the server rejects an ask_user answer BEFORE starting a
   // turn — question_store.resolve found it cancelled (superseded by a newer
@@ -1150,18 +1247,32 @@ export function streamFailureMessage(error: unknown): string {
  */
 export async function* resumeTurn(
   sessionId: string,
-  options: { signal?: AbortSignal; onRunId?: (runId: string | null) => void } = {},
+  options: {
+    signal?: AbortSignal;
+    onRunId?: (runId: string | null) => void;
+    /**
+     * QA-09: the last `sequence` this tab already decoded from this run's
+     * stream (see the `sequence` field every event now carries). Passed as
+     * `?cursor=` so the server replays only what's newer instead of the
+     * whole buffer again — omit it for the original full-replay behavior,
+     * unchanged for any caller that doesn't know about cursors yet.
+     */
+    cursor?: number;
+  } = {},
 ): AsyncGenerator<ChatEvent> {
+  const qs = options.cursor != null ? `?cursor=${encodeURIComponent(String(options.cursor))}` : '';
   let response: Response;
   try {
-    response = await fetch(`/api/chat/resume/${encodeURIComponent(sessionId)}`, {
+    response = await fetch(`/api/chat/resume/${encodeURIComponent(sessionId)}${qs}`, {
       credentials: 'same-origin',
       signal: options.signal,
+      headers: { [CLIENT_VERSION_HEADER]: CLIENT_API_VERSION },
     });
   } catch {
     return; // offline or aborted: the history already on screen stands
   }
   if (response.status === 404 || !response.ok || !response.body) return;
+  checkVersion(response);
   options.onRunId?.(response.headers.get(RUN_ID_HEADER));
   yield* streamEvents(response.body);
 }

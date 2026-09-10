@@ -7,6 +7,18 @@
  * (DECISIONES_UI.md, "no duplicar APIs o stores autoritativos").
  */
 
+/**
+ * ARCH-01: the wire version this build speaks, and the header names the
+ * negotiation runs over (src/api_version.py is the server's half — kept in
+ * sync by hand, the same way RUN_ID_HEADER in chat.ts already mirrors
+ * X-Odysseus-Run-Id). Sending it costs nothing against an endpoint that
+ * doesn't look at it; a server that predates this scheme just ignores an
+ * unknown header, exactly like every other additive field in this lot.
+ */
+export const CLIENT_API_VERSION = '2.0';
+export const CLIENT_VERSION_HEADER = 'X-Faustus-Client-Version';
+export const API_VERSION_HEADER = 'X-Faustus-Api-Version';
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -45,7 +57,7 @@ export async function responseReason(response: Response, path: string, fallback?
 export async function getJson<T>(path: string, signal?: AbortSignal): Promise<T> {
   const response = await fetch(path, {
     signal,
-    headers: { Accept: 'application/json' },
+    headers: { Accept: 'application/json', [CLIENT_VERSION_HEADER]: CLIENT_API_VERSION },
     credentials: 'same-origin',
   });
 

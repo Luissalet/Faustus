@@ -30,17 +30,24 @@ def get_task_scheduler():
     return _task_scheduler
 
 
-def fire_event(event_name: str, owner: Optional[str] = None):
+def fire_event(event_name: str, owner: Optional[str] = None, trace_id: Optional[str] = None):
     """Fire an event — increments counters and triggers tasks that hit threshold.
 
     Safe to call from both sync and async contexts.
+
+    `trace_id` (OBS-01, optional and additive): the emitting turn's own
+    identity (agent_runs's `run_id`), when the caller has one, so a log line
+    for a task an event triggered can be correlated back to the chat turn
+    that caused it. No existing caller passes it today — every one keeps
+    firing exactly as before — this only gives a future caller somewhere to
+    put it instead of a second, parallel correlation mechanism.
     """
     try:
         loop = asyncio.get_running_loop()
-        loop.create_task(_handle_event(event_name, owner))
+        loop.create_task(_handle_event(event_name, owner, trace_id))
     except RuntimeError:
         # No running loop — run in a new one (shouldn't happen in FastAPI)
-        asyncio.run(_handle_event(event_name, owner))
+        asyncio.run(_handle_event(event_name, owner, trace_id))
 
 
 def _resolve_event_owner(owner: Optional[str]) -> Optional[str]:
@@ -69,7 +76,7 @@ def _resolve_event_owner(owner: Optional[str]) -> Optional[str]:
     return None
 
 
-async def _handle_event(event_name: str, owner: Optional[str] = None):
+async def _handle_event(event_name: str, owner: Optional[str] = None, trace_id: Optional[str] = None):
     """Process an event: increment counters, fire tasks that hit their threshold."""
     from core.database import SessionLocal, ScheduledTask
 
@@ -105,7 +112,10 @@ async def _handle_event(event_name: str, owner: Optional[str] = None):
                 db.commit()
                 # Fire the task
                 if _task_scheduler:
-                    logger.info(f"Event '{event_name}' triggered task '{task.name}' (every {threshold})")
+                    if trace_id:
+                        logger.info(f"Event '{event_name}' (trace_id={trace_id}) triggered task '{task.name}' (every {threshold})")
+                    else:
+                        logger.info(f"Event '{event_name}' triggered task '{task.name}' (every {threshold})")
                     await _task_scheduler.run_task_now(task.id)
                 else:
                     logger.warning(f"Event triggered task '{task.name}' but no scheduler available")

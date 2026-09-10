@@ -41,6 +41,8 @@ import time
 import uuid
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
+from src import api_version
+
 logger = logging.getLogger(__name__)
 
 
@@ -50,6 +52,60 @@ def _setting(key: str, default: Any) -> Any:
         return get_setting(key, default)
     except Exception:
         return default
+
+
+# ---------------------------------------------------------------------------
+# OBS-02: the eight phases a turn can honestly be in, in the order they occur.
+# ---------------------------------------------------------------------------
+#
+# Every module that has ever reported a run's phase invented its own words
+# for it (this module: starting/queued/waiting_model/tool/thinking/writing/
+# research/awaiting_user/finishing; src/vram_admission.py's admission gate:
+# vram_blocked/unloading_model/warning; src/research_handler.py's model
+# readiness: loading_model/probing). None of those get deleted or renamed —
+# a client reading `phase` today keeps reading exactly the same values
+# (COMUN rule 3) — but nothing outside this module could ask "is this run
+# queued, loading, generating, or waiting on a human" without knowing every
+# subsystem's private vocabulary. `phase_canonical` is that one answer,
+# `phase_raw` is the ad hoc value it was computed from (nothing lost), and
+# `CANONICAL_PHASES` is the closed set `phase_canonical` is ever one of.
+CANONICAL_PHASES = (
+    "queued", "admission", "loading_model", "prefill",
+    "generating", "tool", "verifying", "waiting_human",
+)
+
+#: ad hoc phase string (this module's own, or one an upstream module's
+#: progress payload carries) -> canonical bucket. Unmapped values leave the
+#: previous canonical bucket in place (see `_canonical_phase`) rather than
+#: guessing -- a phase word nothing has classified yet is not evidence the
+#: run moved to a different stage of the turn.
+_PHASE_CANON: Dict[str, str] = {
+    # This module's own vocabulary (_set_phase / _observe_activity).
+    "starting": "admission",
+    "queued": "queued",
+    "waiting_model": "prefill",
+    "thinking": "generating",
+    "writing": "generating",
+    "tool": "tool",
+    "research": "tool",
+    "awaiting_user": "waiting_human",
+    "finishing": "generating",
+    # src/vram_admission.py's admission-gate phases (`vram_admission` SSE
+    # events, routes/chat_routes.py::_vram_admission_events).
+    "vram_blocked": "admission",
+    "unloading_model": "loading_model",
+    # src/research_handler.py's model-readiness phases (`research_progress`
+    # SSE events, when the payload carries its own `phase`).
+    "loading_model": "loading_model",
+    "probing": "loading_model",
+}
+
+
+def _canonical_phase(raw_phase: str, previous: str = "admission") -> str:
+    """The canonical bucket for an ad hoc phase string, or `previous`
+    (sticky) when nothing has classified this word yet. Never raises, never
+    invents a bucket a mapping entry did not vouch for."""
+    return _PHASE_CANON.get(str(raw_phase or ""), previous)
 
 
 def _outcome_of(status: str) -> Optional[str]:
@@ -72,7 +128,17 @@ class _Run:
     __slots__ = ("buffer", "subscribers", "status", "task", "evict_task", "run_id", "last_key",
                  "lane", "queued_position", "log", "started_at", "label",
                  "phase", "phase_since", "last_event_at", "round", "tool", "detail",
-                 "model", "endpoint_url")
+                 "model", "endpoint_url",
+                 # OBS-02: canonical phase vocabulary, additive to `phase`
+                 # (see the CANONICAL_PHASES block above) -- phase_raw is
+                 # ALWAYS the exact ad hoc word a module used, never lost.
+                 "phase_raw", "phase_canonical",
+                 # OBS-02: a completion percentage, but ONLY when a real
+                 # total is known (todowrite's done/total count today --
+                 # see `_observe_activity`'s "progress_update" branch). None
+                 # means exactly that: no measurable total, so nothing is
+                 # shown rather than a number invented from elapsed time.
+                 "percent")
 
     @property
     def outcome(self) -> Optional[str]:
@@ -107,6 +173,10 @@ class _Run:
         # the model is doing while the turn waits for its first token.
         self.model: str = ""
         self.endpoint_url: str = ""
+        # OBS-02
+        self.phase_raw: str = self.phase
+        self.phase_canonical: str = _canonical_phase(self.phase)
+        self.percent: Optional[float] = None
 
 
 _RUNS: Dict[str, _Run] = {}
@@ -305,19 +375,90 @@ class _RunLog:
             self._f = None
 
 
+def _augment_sse_fields(ev: str, fields: Dict[str, Any]) -> str:
+    """Add `fields` into a `data: {...}` SSE frame's JSON object payload,
+    appended AFTER any existing keys, so byte-for-byte prefix checks
+    elsewhere (`_compact_key`'s `_PROGRESS_PREFIX`) keep matching as long as
+    `type` was already the payload's first key -- which every event this
+    module or agent_loop.py emits already puts first.
+
+    Never overrides a key the payload already has: this is strictly
+    additive, so a value agent_loop.py deliberately set (or an old client's
+    own `sequence`-shaped field, however unlikely) is never clobbered.
+
+    Any frame this cannot safely parse as an object payload -- the `[DONE]`
+    sentinel, a non-JSON body, a JSON array/scalar -- passes through
+    unchanged rather than guessing at a shape it is not.
+    """
+    if not fields:
+        return ev
+    event_line = ""
+    rest = ev
+    if ev.startswith("event:"):
+        nl = ev.find("\n")
+        if nl == -1:
+            return ev
+        event_line, rest = ev[: nl + 1], ev[nl + 1 :]
+    if not rest.startswith("data: "):
+        return ev
+    body = rest[len("data: ") :]
+    if body.endswith("\n\n"):
+        body = body[:-2]
+    else:
+        body = body.rstrip("\n")
+    if body.strip() == "[DONE]":
+        return ev
+    try:
+        payload = json.loads(body)
+    except ValueError:
+        return ev
+    if not isinstance(payload, dict):
+        return ev
+    changed = False
+    for k, v in fields.items():
+        if k not in payload:
+            payload[k] = v
+            changed = True
+    if not changed:
+        return ev
+    return event_line + "data: " + json.dumps(payload, ensure_ascii=False) + "\n\n"
+
+
+def _observability_fields(run: _Run, *, sequence: int) -> Dict[str, Any]:
+    """OBS-01/QA-09 fields every SSE event of this run's stream carries,
+    additively: `trace_id` (one per turn -- the run's own opaque identity,
+    already the value handed to the client as X-Odysseus-Run-Id, so nothing
+    new to correlate), `step_id` (one per round, from the round this
+    module's own `_observe_activity` already tracks), `sequence`/`stream_id`
+    (QA-09 replay: a stream IS one detached run, so its run_id doubles as
+    its stream_id -- reusing the identity rather than minting a second one),
+    and `schema_version` (ARCH-01's negotiated wire version)."""
+    return {
+        "trace_id": run.run_id,
+        "step_id": f"{run.run_id}:{run.round}",
+        "sequence": sequence,
+        "stream_id": run.run_id,
+        "schema_version": api_version.API_VERSION,
+    }
+
+
 def _publish(run: _Run, ev: str) -> None:
     """Append one SSE event (or replace the previous progress tick of the same
     tool call) and fan it out to every live subscriber."""
     _observe_activity(run, ev)
     key = _compact_key(ev)
-    replaced = False
-    if key is not None and run.last_key == key and run.buffer:
+    replaced = key is not None and run.last_key == key and bool(run.buffer)
+    # 1-based, growing per stream, and stable across a compacted replace: a
+    # progress tick that overwrites the previous one keeps that tick's own
+    # sequence number, matching what a client de-duping by (stream_id,
+    # sequence) already expects -- the newer content for the same slot.
+    seq = len(run.buffer) if not replaced else len(run.buffer) - 1
+    ev = _augment_sse_fields(ev, _observability_fields(run, sequence=seq + 1))
+    if replaced:
         run.buffer[-1] = ev
-        replaced = True
     else:
         run.buffer.append(ev)
     run.last_key = key
-    seq = len(run.buffer) - 1
     if run.log is not None:
         run.log.event(seq, ev, replaced)
     for q in list(run.subscribers):
@@ -346,6 +487,11 @@ def _set_phase(run: _Run, phase: str, *, tool: Optional[str] = None, detail: Any
     run.last_event_at = now
     run.tool = tool
     run.detail = _brief(detail)
+    # OBS-02: this module's own vocabulary always maps to a canonical bucket
+    # (every value `_set_phase` is ever called with has an entry in
+    # _PHASE_CANON above), computed here so every call site gets it for free.
+    run.phase_raw = phase
+    run.phase_canonical = _canonical_phase(phase, previous=run.phase_canonical)
 
 
 def _observe_activity(run: _Run, ev: str) -> None:
@@ -400,10 +546,42 @@ def _observe_activity(run: _Run, ev: str) -> None:
         data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
         detail = data.get("message") or data.get("phase") or "research"
         _set_phase(run, "research", detail=detail)
+        # OBS-02: src/research_handler.py's own model-readiness phase
+        # (loading_model/probing) is more specific than the "research"
+        # bucket _set_phase just computed from THIS module's vocabulary --
+        # refine the canonical bucket with it when present, without touching
+        # `phase`/`phase_raw` (those stay this module's own value; a wire
+        # consumer reading them today sees nothing new).
+        _raw = data.get("phase")
+        if isinstance(_raw, str) and _raw in _PHASE_CANON:
+            run.phase_canonical = _canonical_phase(_raw, previous=run.phase_canonical)
     elif event_type == "ask_user":
         _set_phase(run, "awaiting_user")
     elif event_type in {"model_info", "fallback"}:
         _set_phase(run, "waiting_model")
+    elif event_type == "vram_admission":
+        # OBS-02: src/vram_admission.py's admission-gate phase
+        # (vram_blocked/unloading_model/warning/...), routed through
+        # routes/chat_routes.py::_vram_admission_events. Refines ONLY the
+        # canonical bucket -- `phase`/`phase_raw` stay whatever this
+        # module's own state machine says, so nothing already reading them
+        # sees a value it has never seen before.
+        data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+        _raw = data.get("phase")
+        if isinstance(_raw, str) and _raw in _PHASE_CANON:
+            run.phase_canonical = _canonical_phase(_raw, previous=run.phase_canonical)
+    elif event_type == "progress_update":
+        # OBS-02: "a % only when there is a measurable total" -- the ONE
+        # total agent_runs can see honestly today is the plan's own
+        # done/total count from `todowrite` (src/agent_loop.py emits this
+        # event with the ledger's annotated todos). No progress_update ever
+        # observed -> `run.percent` stays None -> activity_snapshot omits
+        # the key entirely, never a fabricated number.
+        todos = payload.get("todos")
+        if isinstance(todos, list) and todos:
+            total = len(todos)
+            done = sum(1 for t in todos if isinstance(t, dict) and t.get("status") == "done")
+            run.percent = round(100.0 * done / total, 1)
 
 
 def activity_snapshot(session_id: str) -> Optional[Dict[str, Any]]:
@@ -412,8 +590,11 @@ def activity_snapshot(session_id: str) -> Optional[Dict[str, Any]]:
     if run is None or run.status != "running":
         return None
     now = time.time()
-    return {
+    snapshot = {
         "run_id": run.run_id,
+        # OBS-01: the run IS the stream/trace for one turn -- see _publish's
+        # per-event trace_id, which reuses this same identity.
+        "trace_id": run.run_id,
         "status": run.status,
         "phase": run.phase,
         "phase_since": run.phase_since,
@@ -427,7 +608,18 @@ def activity_snapshot(session_id: str) -> Optional[Dict[str, Any]]:
         "queued_position": run.queued_position,
         "label": run.label,
         "subscribers": len(run.subscribers),
+        # OBS-02: additive. phase_raw duplicates `phase` under the name the
+        # spec asks for (nothing about `phase` itself changes -- see the
+        # CANONICAL_PHASES block); phase_canonical is the new 8-value
+        # vocabulary; percent is present ONLY when a measurable total was
+        # observed (never a fabricated number -- see "progress_update" in
+        # _observe_activity).
+        "phase_raw": run.phase_raw,
+        "phase_canonical": run.phase_canonical,
     }
+    if run.percent is not None:
+        snapshot["percent"] = run.percent
+    return snapshot
 
 
 async def _heartbeat_snapshot(session_id: str, run: _Run) -> Dict[str, Any]:
@@ -772,6 +964,7 @@ def start(session_id: str, agen: AsyncGenerator[str, None], lane: Optional[str] 
 async def subscribe(
     session_id: str,
     expected_run: Optional[_Run] = None,
+    from_sequence: Optional[int] = None,
 ) -> AsyncGenerator[str, None]:
     """Replay the run's buffer from the start, then stream live until it ends.
     Safe to call repeatedly (reconnect) and from multiple clients at once.
@@ -780,6 +973,18 @@ async def subscribe(
     identity was put in its response headers. Without that binding, a rapid
     replacement between response construction and body iteration could replay
     the replacement run under the prior run's identity.
+
+    ``from_sequence`` (QA-09): resume from a cursor instead of replaying the
+    whole buffer — the caller already has every event up to and including
+    that sequence number (1-based; the `sequence` field `_publish` now stamps
+    on every event). Every buffer slot's position already equals its own
+    sequence minus one — compaction replaces a slot in place, it never
+    shifts one — so the cursor maps straight onto a buffer index with no
+    separate lookup. A cursor beyond what the buffer holds is CLAMPED rather
+    than rejected: replay starts as far back as the buffer still goes (the
+    "snapshot+cursor" case the lot description names, for a buffer that has
+    moved on) and then continues live, which is a superset of what was asked
+    for rather than a gap.
     """
     run = expected_run or _RUNS.get(session_id)
     if run is None:
@@ -791,7 +996,7 @@ async def subscribe(
     if run.evict_task and not run.evict_task.done():
         run.evict_task.cancel()
     try:
-        next_seq = 0
+        next_seq = 0 if from_sequence is None else max(0, min(int(from_sequence), len(run.buffer)))
         while next_seq < len(run.buffer):
             yield run.buffer[next_seq]
             next_seq += 1
@@ -813,6 +1018,13 @@ async def subscribe(
                         "type": "run_activity",
                         "data": await _heartbeat_snapshot(session_id, run),
                         "heartbeat": heartbeat_idx,
+                        # OBS-01/ARCH-01: same additive fields _publish stamps
+                        # on every buffered event; a heartbeat is synthesized
+                        # here rather than drained from the buffer, so it
+                        # needs its own copy rather than passing through
+                        # _augment_sse_fields.
+                        "trace_id": run.run_id,
+                        "schema_version": api_version.API_VERSION,
                     }
                     yield "data: " + json.dumps(heartbeat, ensure_ascii=False) + "\n\n"
                     continue

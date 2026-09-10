@@ -48,6 +48,24 @@ def _types(buffer):
     return out
 
 
+def _deltas(buffer):
+    """Decoded `delta` payloads in a run's buffer, tolerant of the additive
+    observability fields `_publish` now stamps on every event (trace_id,
+    step_id, sequence, stream_id, schema_version — OBS-01/QA-09). Parses JSON
+    instead of comparing raw SSE bytes so a new additive key never breaks
+    this assertion, per COMUN.md's back-compat rule."""
+    out = []
+    for ev in buffer:
+        if ev.startswith("data: ") and not ev.startswith("data: [DONE]"):
+            try:
+                d = json.loads(ev[6:])
+            except ValueError:
+                continue
+            if "delta" in d:
+                out.append(d["delta"])
+    return out
+
+
 @pytest.mark.asyncio
 async def test_local_lane_runs_one_at_a_time_and_reports_positions(monkeypatch):
     _settings(monkeypatch, agent_queue_local_concurrency=1)
@@ -71,7 +89,7 @@ async def test_local_lane_runs_one_at_a_time_and_reports_positions(monkeypatch):
         await asyncio.wait_for(r.task, 5)
     assert r1.status == r2.status == r3.status == "done"
     assert _types(r2.buffer)[-2:] == [("queue_status", 0, False), (None, None, None)]
-    assert 'data: {"delta": "three"}\n\n' in r3.buffer
+    assert "three" in _deltas(r3.buffer)
     assert agent_runs.queued_positions() == {}
     snap = agent_runs.queue_snapshot()["local"]
     assert snap["active"] == 0 and snap["waiting"] == []
@@ -93,7 +111,7 @@ async def test_stopping_a_queued_run_leaves_the_queue(monkeypatch):
     gate.set()
     await asyncio.wait_for(r1.task, 5)
     await asyncio.wait_for(r3.task, 5)
-    assert r3.status == "done" and 'data: {"delta": "three"}\n\n' in r3.buffer
+    assert r3.status == "done" and "three" in _deltas(r3.buffer)
 
 
 @pytest.mark.asyncio

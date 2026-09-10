@@ -24,6 +24,7 @@ from src.llm_core import (
 )
 from src.agent_loop import stream_agent_loop, _looks_like_workspace_coding_request
 from src import agent_runs
+from src import api_version
 from src.model_context import estimate_tokens
 from src.context_compactor import (
     apply_compaction_state,
@@ -1412,6 +1413,14 @@ def setup_chat_routes(
     # ------------------------------------------------------------------ #
     @router.post("/api/chat_stream")
     async def chat_stream(request: Request) -> StreamingResponse:
+        # ARCH-01: reject BEFORE any work when a client identifies itself as
+        # older than this server supports, with a message it can act on,
+        # instead of streaming events it cannot parse. A client that sends no
+        # version header at all (every request before this lot, and every
+        # existing test) is treated as compatible — see src/api_version.py.
+        _client_api_version = request.headers.get(api_version.CLIENT_VERSION_HEADER)
+        if not api_version.is_supported(_client_api_version):
+            raise HTTPException(426, api_version.upgrade_required_detail(_client_api_version))
         body = None
         try:
             if request.headers.get("content-type", "").startswith("application/json"):
@@ -3416,7 +3425,10 @@ def setup_chat_routes(
         # the run keeps going and saves the assistant message on completion
         # regardless. Reconnect via /api/chat/resume.
         if compare_mode:
-            return StreamingResponse(_safe_stream(), media_type="text/event-stream")
+            return StreamingResponse(
+                _safe_stream(), media_type="text/event-stream",
+                headers={api_version.API_VERSION_HEADER: api_version.API_VERSION},
+            )
 
         # Task queue: runs on a local endpoint share one lane (one GPU, one
         # generation at a time by default); API endpoints run immediately
@@ -3448,7 +3460,10 @@ def setup_chat_routes(
         return StreamingResponse(
             agent_runs.subscribe(session, _detached_run),
             media_type="text/event-stream",
-            headers={"X-Odysseus-Run-Id": _detached_run.run_id},
+            headers={
+                "X-Odysseus-Run-Id": _detached_run.run_id,
+                api_version.API_VERSION_HEADER: api_version.API_VERSION,
+            },
         )
 
     # ------------------------------------------------------------------ #
@@ -3456,15 +3471,24 @@ def setup_chat_routes(
     # (e.g. after reopening a session whose agent kept running in the background)
     # ------------------------------------------------------------------ #
     @router.get("/api/chat/resume/{session_id}")
-    async def chat_resume(request: Request, session_id: str) -> StreamingResponse:
+    async def chat_resume(
+        request: Request, session_id: str,
+        cursor: Optional[int] = Query(None, ge=0, description="QA-09: last sequence the caller already has; resume replays only what's newer."),
+    ) -> StreamingResponse:
         _verify_session_owner(request, session_id)
+        _client_api_version = request.headers.get(api_version.CLIENT_VERSION_HEADER)
+        if not api_version.is_supported(_client_api_version):
+            raise HTTPException(426, api_version.upgrade_required_detail(_client_api_version))
         _active_run = agent_runs.get_active_run(session_id)
         if _active_run is None:
             raise HTTPException(404, "No active run for this session")
         return StreamingResponse(
-            agent_runs.subscribe(session_id, _active_run),
+            agent_runs.subscribe(session_id, _active_run, from_sequence=cursor),
             media_type="text/event-stream",
-            headers={"X-Odysseus-Run-Id": _active_run.run_id},
+            headers={
+                "X-Odysseus-Run-Id": _active_run.run_id,
+                api_version.API_VERSION_HEADER: api_version.API_VERSION,
+            },
         )
 
     # ------------------------------------------------------------------ #
@@ -3577,6 +3601,40 @@ def setup_chat_routes(
         return {"running": running, "runs": runs, "details": details,
                 "awaiting_approval": awaiting, "queued": queued,
                 "interrupted": interrupted, "workers": workers, "ts": time.time()}
+
+    # ------------------------------------------------------------------ #
+    # GET /api/questions — every `ask_user` question still waiting for an
+    # answer, owner-scoped (ACT-03: the activity tray's "answer this" tray,
+    # studio/src/screens/Activity.tsx). Read-only and additive: nothing here
+    # opens, answers or cancels a question — that stays POST /api/chat with
+    # `question_id` (CALL-07/TASK-04, above), the one path with the
+    # supersede/dedupe/expiry guards question_store.resolve() enforces.
+    # ------------------------------------------------------------------ #
+    @router.get("/api/questions")
+    async def open_questions(request: Request) -> Dict[str, Any]:
+        owner = effective_user(request)
+        from src import question_store
+        try:
+            open_qs = question_store.list_open(owner=owner)
+        except Exception:
+            logger.exception("[ask-user] could not list open questions for owner=%s", owner)
+            open_qs = []
+        return {
+            "questions": [
+                {
+                    "question_id": q["question_id"],
+                    "session": q["session_id"],
+                    "question": q["question"],
+                    "options": q["options"],
+                    "multi": q["multi"],
+                    "expires_at": q["expires_at"],
+                    "revision": q["revision"],
+                    "opened_at": q["opened_at"],
+                }
+                for q in open_qs
+            ],
+            "count": len(open_qs),
+        }
 
     @router.post("/api/chat/interrupted/ack")
     async def chat_interrupted_ack(request: Request) -> Dict[str, Any]:
