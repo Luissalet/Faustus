@@ -162,6 +162,15 @@ async def _push_caldav_event_after_commit(owner: str, uid: str, action: str):
         elif action == "delete":
             from src.caldav_sync import push_event_delete
             result = await push_event_delete(owner, uid)
+        if result and result.get("conflict"):
+            # CONN-04: `writeback_event` already marked the local row
+            # `caldav_sync_pending = "conflict"` (`_persist_writeback_result`)
+            # — logged as a conflict, not raised as a transient failure, so
+            # the `except` below never overwrites that distinct marker with
+            # a plain `action` retry that would just repeat the same clash.
+            logger.warning("CalDAV %s conflict for uid=%s: remote changed since last sync",
+                           action, uid)
+            return
         if result and not result.get("ok") and not result.get("skipped"):
             raise RuntimeError(result.get("error") or result)
     except Exception as e:
@@ -1091,6 +1100,54 @@ def setup_calendar_routes(upload_handler=None) -> APIRouter:
         owner = _require_user(request)
         from src.caldav_sync import sync_caldav_direction
         return await sync_caldav_direction(owner, direction)
+
+    @router.get("/conflicts")
+    async def list_caldav_conflicts(request: Request):
+        """CONN-04: events a push refused to overwrite because the remote
+        changed since our last sync (`caldav_sync_pending == "conflict"`,
+        set by `caldav_writeback._persist_writeback_result`). The local
+        draft this event still holds is the ONLY version kept here — never
+        overwritten and never pushed over the remote — so a person can
+        compare it against the calendar's current remote state (one more
+        `/sync` pull away) before choosing which one wins."""
+        owner = _require_user(request)
+        db = SessionLocal()
+        try:
+            rows = (
+                db.query(CalendarEvent)
+                .join(CalendarCal)
+                .filter(CalendarCal.owner == owner, CalendarEvent.caldav_sync_pending == "conflict")
+                .all()
+            )
+            return {"conflicts": [
+                {"uid": r.uid, "calendar_id": r.calendar_id, "summary": r.summary,
+                 "dtstart": r.dtstart.isoformat() if r.dtstart else None,
+                 "local_updated_at": r.updated_at.isoformat() if getattr(r, "updated_at", None) else None}
+                for r in rows
+            ]}
+        finally:
+            db.close()
+
+    @router.post("/conflicts/{uid}/keep-local")
+    async def resolve_caldav_conflict_keep_local(uid: str, request: Request):
+        """A person chose the local draft. Force the push through once —
+        `known_remote_etag` is dropped so the next `push_event` call has
+        nothing to compare against and proceeds, exactly like pushing a
+        brand-new local edit. The remote's OWN change is overwritten by
+        this call, which is now an explicit, one-time decision instead of
+        the silent default `push_event` refuses to make on its own."""
+        owner = _require_user(request)
+        db = SessionLocal()
+        try:
+            ev = _get_or_404_event(db, uid, owner)
+            ev.remote_etag = None
+            ev.caldav_sync_pending = "update"
+            db.commit()
+        finally:
+            db.close()
+        from src.caldav_sync import push_event_update
+        result = await push_event_update(owner, uid)
+        return {"ok": bool(result.get("ok")), "result": result}
 
 
     @router.delete("/calendars/{cal_id}")

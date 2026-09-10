@@ -552,6 +552,80 @@ class WorkflowStore:
             db.close()
 
 
+    def retry_node(self, run_id: str, node_id: str, definition) -> Dict[str, Any]:
+        """AUTO-03: let a FINISHED, non-effectful node run again — the
+        extraction step the requirement's acceptance line names, not the
+        send it feeds.
+
+        Same mechanism as `reopen_node` (clear the key, go back to
+        `pending`, let the next `advance()` claim a fresh attempt), widened
+        from `paused` to a node whose last attempt already reached
+        `completed`, `failed` or `skipped`. An `EFFECTFUL_TYPES` node
+        (`skill`, `artifact_store`, `deliver` — see `src.contracts.workflow`)
+        is refused outright: it already reached outside the process once,
+        and nothing in this module can tell whether reopening it would do
+        that again. A paused effectful node still retries through
+        `resume`/approval, which is a decision on work that has not
+        happened yet — a different thing from re-running work that has.
+
+        Downstream nodes are never touched here, which is what keeps the
+        acceptance criterion true: a node already `completed` stays out of
+        `ready_nodes` (`TERMINAL_NODE`) regardless of what an upstream node
+        it depends on does next, so retrying the extraction cannot cascade
+        into repeating a `deliver` node that already confirmed.
+        """
+        from core.database import NodeRunRow, SessionLocal
+        from src.contracts.workflow import EFFECTFUL_TYPES
+
+        node = next((n for n in definition.nodes if n.id == node_id), None)
+        if node is None:
+            return {"ok": False, "reason": f"no node {node_id!r} in this run's definition"}
+        if node.type in EFFECTFUL_TYPES:
+            return {"ok": False, "reason": (
+                f"{node.type!r} nodes reach outside the process; retry a paused one "
+                "through resume, not a bare re-run of one that already finished")}
+
+        db = SessionLocal()
+        try:
+            row = (db.query(NodeRunRow)
+                   .filter(NodeRunRow.workflow_run_id == run_id,
+                           NodeRunRow.node_id == node_id)
+                   .order_by(NodeRunRow.attempt.desc()).first())
+            if row is None:
+                return {"ok": False, "reason": "this node has not run yet"}
+            if row.status not in ("completed", "failed", "skipped"):
+                return {"ok": False, "reason": f"node is {row.status!r}, not eligible for retry"}
+            # The key is released, not the row: the same row keeps carrying the
+            # node's history (`reopen_node`'s own reasoning applies unchanged).
+            changed = (db.query(NodeRunRow)
+                       .filter(NodeRunRow.id == row.id, NodeRunRow.status == row.status)
+                       .update({"idempotency_key": None, "status": "pending",
+                               "reason": "", "approval_id": "", "ended_at": None},
+                               synchronize_session=False))
+            if changed:
+                # A person asking to retry a node in a run that already
+                # finished is explicitly asking to reopen that run — the one
+                # case `set_run_status` deliberately refuses on its own
+                # (a LATE, unrequested write must never undo a terminal
+                # status; this one is neither late nor unrequested). Only
+                # flips it from a TERMINAL status: a `running`/`paused` run
+                # (the node could not have been `completed`/`failed` while
+                # still `paused` on this exact node) is left exactly as is.
+                from core.database import WorkflowRunRow
+                from src.contracts.workflow import TERMINAL_WORKFLOW
+                db.query(WorkflowRunRow).filter(
+                    WorkflowRunRow.id == run_id,
+                    WorkflowRunRow.status.in_(TERMINAL_WORKFLOW),
+                ).update({"status": "running", "ended_at": None, "reason": ""},
+                         synchronize_session=False)
+            db.commit()
+            return {"ok": bool(changed)}
+        except Exception:
+            db.rollback()
+            raise
+        finally:
+            db.close()
+
     def release_key(self, run_id: str, node_id: str, attempt: int) -> bool:
         """Let a later attempt claim this node again.
 

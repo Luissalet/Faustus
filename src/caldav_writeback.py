@@ -191,6 +191,28 @@ def push_event(calendars, local_cal_id: str, ev: dict, *, delete: bool = False,
     except Exception:
         existing = None
 
+    # CONN-04: explicit conflict, never last-writer-wins. `known_remote_etag`
+    # is the ETag WE last saw for this event (round-tripped through
+    # `_event_payload`/`CalendarEvent.remote_etag` — never invented here).
+    # A resource with no known etag yet (a brand-new local edit) has nothing
+    # to compare against, so it always proceeds: that is the ordinary "push
+    # for the first time" case, not a conflict. An event known to us but
+    # since deleted upstream (`existing is None`) is not a write conflict
+    # either — the delete path already answers "already absent" for that.
+    known_remote_etag = str((ev or {}).get("remote_etag") or "")
+    if existing is not None and known_remote_etag:
+        current_etag = _resource_etag(existing)
+        if current_etag and current_etag != known_remote_etag:
+            return {
+                "ok": False,
+                "conflict": True,
+                "reason": "remote changed since the last sync",
+                "calendar_url": remote_url,
+                "local": dict(ev),
+                "remote_etag": current_etag,
+                "remote_snapshot": getattr(existing, "data", "") or "",
+            }
+
     if delete:
         if existing is None:
             return {"ok": True, "note": "already absent on remote", "calendar_url": remote_url}
@@ -294,6 +316,17 @@ def _persist_writeback_result(owner: str, calendar_id: str, uid: str, result: di
             if result.get("remote_etag"):
                 event.remote_etag = result.get("remote_etag")
             event.caldav_sync_pending = None
+        elif event and result.get("conflict"):
+            # CONN-04: neither side is applied. The local row keeps the
+            # user's draft exactly as it was (never overwritten with the
+            # remote's content, and never pushed over it either) and is
+            # marked `conflict` rather than `update` so a plain retry loop
+            # (`push_pending_events`) does not quietly resolve it by trying
+            # the same overwrite again — it re-detects the same conflict
+            # every pass until a person (or the next `/sync` pull, which
+            # will bring the remote's current content down for comparison)
+            # resolves it.
+            event.caldav_sync_pending = "conflict"
         db.commit()
     except Exception:
         db.rollback()

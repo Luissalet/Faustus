@@ -223,6 +223,25 @@ def setup_workflows_routes():
             raise HTTPException(status_code=409, detail=result.get("reason"))
         return result
 
+    @router.post("/runs/{run_id}/nodes/{node_id}/retry")
+    async def retry_node(run_id: str, node_id: str, request: Request):
+        """AUTO-03: re-run one finished, non-effectful node — the debugging
+        move a DAG needs (re-extract after fixing the input) without ever
+        repeating a `skill`/`artifact_store`/`deliver` node that already
+        confirmed. See `WorkflowStore.retry_node` for why the two cases are
+        not the same button."""
+        require_admin(request)
+        loaded = store.get_run(run_id)
+        if loaded is None:
+            raise HTTPException(status_code=404, detail=f"no run {run_id}")
+        result = store.retry_node(run_id, node_id, loaded["definition"])
+        if not result.get("ok"):
+            raise HTTPException(status_code=409, detail=result.get("reason"))
+        payload = await _optional_json(request)
+        if payload.get("advance"):
+            result["result"] = await asyncio.to_thread(_engine(store).advance, run_id)
+        return result
+
     @router.post("/runs/{run_id}/cancel")
     async def cancel(run_id: str, request: Request):
         require_admin(request)
