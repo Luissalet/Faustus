@@ -736,6 +736,13 @@ DEFAULT_SETTINGS = {
         "Newsletters, marketing, automated digests, and FYI-only updates are "
         "NOT urgent."
     ),
+    # SEC-04/MOD-05 (QA-29): the shared "does this leave the machine" gate
+    # every auxiliary (reranker, custom embedding lane, compaction
+    # summarizer, ChromaDB) asks before an outbound call — see
+    # src/privacy_policy.py for the three values and what each blocks.
+    # A project row's own "privacy_profile" field overrides this globally-set
+    # default (src.privacy_policy.get_privacy_profile).
+    "privacy_profile": "local_preferred",
     # Keyboard shortcuts (action: key combination)
     "keybinds": {
         "search": "ctrl+k",

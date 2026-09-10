@@ -128,8 +128,15 @@ def _build_custom_client():
     # before falling back to the same FastEmbed client we build below.  A custom
     # lane exists only when the operator explicitly saved or exported an
     # embedding endpoint.
-    if not _load_custom_endpoint().get("url"):
+    endpoint_url = _load_custom_endpoint().get("url")
+    if not endpoint_url:
         return None
+
+    # SEC-04/QA-29: a custom embedding endpoint ships passage text off-box
+    # exactly like a reranker or a remote summarizer, so it consults the same
+    # privacy policy before the network call — not after it fails.
+    from src.privacy_policy import assert_outbound
+    assert_outbound("embeddings", endpoint_url)
 
     client = get_embedding_client()
     if isinstance(client, EmbeddingClient):

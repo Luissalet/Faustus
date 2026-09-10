@@ -85,8 +85,11 @@ did not it carries a **named reason**:
     It answered too slowly to be worth waiting for.
 ``bad_response``
     It answered 200 with something this module cannot use.
+``privacy_blocked``
+    The active privacy profile (`src.privacy_policy`) is ``local_only`` and
+    the reranker endpoint is not local — refused before any network call.
 
-In all four cases the passages come back **in the order they went in**, so a
+In all five cases the passages come back **in the order they went in**, so a
 caller that ignores ``reason`` degrades to exactly the ranking it would have
 had without this module. That is what makes wiring the stage in safe.
 
@@ -114,6 +117,7 @@ __all__ = [
     "REASON_UNREACHABLE",
     "REASON_TIMEOUT",
     "REASON_BAD_RESPONSE",
+    "REASON_PRIVACY_BLOCKED",
     "RERANK_HEAD",
     "MAX_PASSAGE_CHARS",
     "DEFAULT_TIMEOUT",
@@ -126,8 +130,13 @@ REASON_NO_RERANKER = "no_reranker_configured"
 REASON_UNREACHABLE = "endpoint_unreachable"
 REASON_TIMEOUT = "timeout"
 REASON_BAD_RESPONSE = "bad_response"
+#: SEC-04/MOD-05 (QA-29): the active `src.privacy_policy` profile is
+#: `local_only` and the resolved reranker endpoint is not judged local —
+#: `assert_outbound` refused the call before any network attempt was made.
+REASON_PRIVACY_BLOCKED = "privacy_blocked"
 
-REASONS = (REASON_NO_RERANKER, REASON_UNREACHABLE, REASON_TIMEOUT, REASON_BAD_RESPONSE)
+REASONS = (REASON_NO_RERANKER, REASON_UNREACHABLE, REASON_TIMEOUT, REASON_BAD_RESPONSE,
+           REASON_PRIVACY_BLOCKED)
 
 
 def _env_int(name: str, default: int, minimum: int) -> int:
@@ -406,6 +415,18 @@ def rerank(query: Any, passages: Sequence[Any], *, owner: Optional[str] = None,
         # what makes this safe to call on every search on a machine that has
         # never pulled a cross-encoder.
         return _unchanged(items, REASON_NO_RERANKER)
+
+    # SEC-04/MOD-05 (QA-29): the reranker is exactly the auxiliary the
+    # module docstring names as still missing this gate — ask the shared
+    # authority BEFORE opening the HTTP call, same as the embedding lane and
+    # the compaction summarizer already do (src/privacy_policy.py).
+    try:
+        from src.privacy_policy import PrivacyPolicyError, assert_outbound
+        assert_outbound("reranker", route["url"], owner=owner)
+    except PrivacyPolicyError:
+        return _unchanged(items, REASON_PRIVACY_BLOCKED, route.get("model"))
+    except ImportError:  # pragma: no cover - privacy_policy always ships with this repo
+        pass
 
     try:
         head_n = max(1, int(head if head is not None else RERANK_HEAD))

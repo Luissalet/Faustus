@@ -49,6 +49,13 @@ def get_chroma_client():
     host = os.getenv("CHROMADB_HOST", "localhost")
     port = int(os.getenv("CHROMADB_PORT", "8100"))
 
+    # SEC-04/QA-29: ChromaDB holds and searches user content (memory + RAG
+    # vectors); an operator who points CHROMADB_HOST at a remote host is
+    # sending that content off-box just like a reranker or embedding
+    # endpoint would, so the same privacy policy is consulted first.
+    from src.privacy_policy import assert_outbound
+    assert_outbound("chroma", f"{host}:{port}")
+
     if not _port_open(host, port):
         raise RuntimeError(
             f"ChromaDB is not reachable at {host}:{port}. Start the ChromaDB "

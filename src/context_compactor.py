@@ -834,6 +834,20 @@ async def maybe_compact(
         {"role": "user", "content": convo_text},
     ]
 
+    # SEC-04/QA-29: the compaction summarizer ships the older half of the
+    # conversation to whatever endpoint `compact_url` resolves to (the
+    # Utility model, or the session model as a fallback) — under a local-only
+    # privacy profile that must be gated exactly like a reranker or embedding
+    # call, not left to whichever endpoint the user happened to configure.
+    try:
+        from src.privacy_policy import assert_outbound, PrivacyPolicyError
+        assert_outbound("context_compactor", compact_url, owner=owner)
+    except PrivacyPolicyError as e:
+        logger.warning(f"Compaction summary blocked by privacy policy: {e.error_info.message}")
+        return messages, context_length, False
+    except Exception as e:  # noqa: BLE001 - a broken policy check must not break compaction
+        logger.debug(f"privacy_policy check unavailable for compaction ({e}); proceeding")
+
     try:
         summary = await llm_call_async(
             compact_url,

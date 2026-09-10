@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Request
 from core.middleware import require_admin
 from src.auth_helpers import effective_user, get_current_user
 from src.branching_futures import service as branching_service
+from src.branching_futures.narrative_canon import canon_state, discarded_alternatives
 from src.contracts.base import ContractError
 from src.owner_identity import effective_storage_owner
 
@@ -163,6 +164,25 @@ def setup_branching_futures_routes() -> APIRouter:
                 proof_refs=body.get("proof_refs") or [], approved=body.get("approved") is True)}
         except ContractError as exc:
             return _error(exc)
+
+    @router.get("/canon/state")
+    async def canon(request: Request, project_id: str = ""):
+        # WRITE-02/WRITE-04 (QA-47): read-only view of what is confirmed for a
+        # project — promoted branches only. A discarded alternative never
+        # appears here; see `narrative_alternatives` below to inspect it.
+        require_admin(request)
+        if not project_id:
+            raise HTTPException(400, "project_id is required")
+        return {"ok": True, "canon": canon_state(
+            owner=_owner(request), project_id=project_id, svc=branching_service())}
+
+    @router.get("/canon/alternatives")
+    async def narrative_alternatives(request: Request, project_id: str = ""):
+        require_admin(request)
+        if not project_id:
+            raise HTTPException(400, "project_id is required")
+        return {"ok": True, "alternatives": discarded_alternatives(
+            owner=_owner(request), project_id=project_id, svc=branching_service())}
 
     @router.post("/{future_id}/cancel")
     async def cancel(request: Request, future_id: str):

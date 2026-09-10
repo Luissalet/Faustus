@@ -63,6 +63,10 @@ _KNOWN_FIELDS: Tuple[str, ...] = (
     "harness_checks", "checkpoints", "run_tests",
     "project_instructions_enabled", "project_instructions_max_chars",
     "project_instructions_text", "num_ctx", "keep_alive", "temperature",
+    # SEC-04/MOD-05 (QA-29): the src.privacy_policy profile — global setting,
+    # overridable per-project, exactly the two levels
+    # `privacy_policy.get_privacy_profile` itself composes.
+    "privacy_profile",
 )
 
 #: "this level stated nothing" — an object identity, never confused with a
@@ -83,6 +87,7 @@ _GLOBAL_FIELD_SETTINGS: Dict[str, str] = {
     "run_tests": "agent_project_tests",
     "project_instructions_enabled": "agent_project_instructions",
     "project_instructions_max_chars": "agent_project_instructions_max_chars",
+    "privacy_profile": "privacy_profile",
 }
 
 #: Module-level rule blocks whose duplication is exactly the ARCH-03 bug
@@ -289,6 +294,14 @@ def _project_offers(
                 offers["checkpoints"] = (bool(opts["checkpoints"]), path, None)
             if "run_tests" in opts:
                 offers["run_tests"] = (bool(opts["run_tests"]), path, None)
+            # Read directly off the project row, same field
+            # `privacy_policy.get_privacy_profile`/`PROJECT_OVERRIDE_KEY`
+            # reads — not through `agent_options`, which does not carry it.
+            _pp = project.get("privacy_profile")
+            if isinstance(_pp, str) and _pp.strip():
+                from src.privacy_policy import PROFILES as _PRIVACY_PROFILES
+                if _pp.strip() in _PRIVACY_PROFILES:
+                    offers["privacy_profile"] = (_pp.strip(), path, None)
         except Exception as exc:  # noqa: BLE001
             logger.debug("effective_config: project agent_options failed: %s", exc)
     if workspace:
