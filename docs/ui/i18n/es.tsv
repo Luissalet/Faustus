@@ -5830,3 +5830,18 @@ Create alternative	Crear alternativa
 A new, editable job with the same brief — this card is left as is	Un trabajo nuevo y editable con el mismo encargo — esta tarjeta se deja tal cual
 Could not resume.	No se pudo reanudar.
 Retry from scratch	Reintentar desde cero
+Calibrate	Calibrar
+Calibrated {name}	{name} calibrado
+Calibrating…	Calibrando…
+Load the model first — calibration never loads one on its own	Cárgalo primero — la calibración nunca carga un modelo por su cuenta
+Run a brief capability check (under a minute) against the loaded model	Ejecuta una comprobación breve de capacidades (menos de un minuto) contra el modelo cargado
+not tested	sin probar
+tested — failed	probado — fallido
+tested — passed	probado — superado
+Supervised	Supervisado
+Bounded autonomous	Autónomo acotado
+Asks before anything with an external or destructive effect; medium budgets.	Pregunta antes de cualquier efecto externo o destructivo; presupuestos medios.
+Runs without asking except for irreversible effects; higher budgets.	No pregunta salvo por efectos irreversibles; presupuestos más altos.
+Only read tools are offered — nothing changes on disk or anywhere else; low budgets.	Solo se ofrecen herramientas de lectura — nada cambia en disco ni en ningún otro sitio; presupuestos bajos.
+How far this turn may go before it must stop and check in.	Hasta dónde puede llegar este turno antes de tener que detenerse y avisar.
+Autonomy	Autonomía
