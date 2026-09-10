@@ -23,9 +23,16 @@ from tests.test_foreground_model_routing import _RouteRequest, _chat_stream_endp
 
 @pytest.fixture()
 def outbox_dir(tmp_path, monkeypatch):
-    """Every test gets its own chat_outbox.sqlite3, never the real one."""
+    """Every test gets its own chat_outbox.sqlite3, never the real one.
+
+    Also starts from an empty run registry: another test file in the same
+    worker (test_chat_empty_control_message leaves a real run for
+    "session-1" behind) would otherwise make the replay path find a live
+    run that this test never started."""
+    from src import agent_runs
     path = tmp_path / "chat_outbox.sqlite3"
     monkeypatch.setattr(chat_outbox, "default_path", lambda: path)
+    monkeypatch.setattr(agent_runs, "_RUNS", {})
     return path
 
 

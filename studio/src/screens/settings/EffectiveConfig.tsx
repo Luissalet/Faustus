@@ -136,7 +136,7 @@ export function EffectiveConfigSection({ say }: { say: (t: string) => void }) {
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85em' }}>
                 <thead>
-                  <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--fs-border, #444)' }}>
+                  <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--fs-border)' }}>
                     <th style={{ padding: '4px 8px' }}>{t('Field')}</th>
                     <th style={{ padding: '4px 8px' }}>{t('Value')}</th>
                     <th style={{ padding: '4px 8px' }}>{t('Source')}</th>
@@ -145,7 +145,7 @@ export function EffectiveConfigSection({ say }: { say: (t: string) => void }) {
                 </thead>
                 <tbody>
                   {rows.map((r) => (
-                    <tr key={r.field} style={{ borderBottom: '1px solid var(--fs-border, #2a2a2a)' }}>
+                    <tr key={r.field} style={{ borderBottom: '1px solid var(--fs-border)' }}>
                       <td style={{ padding: '4px 8px' }}>{r.field}</td>
                       <td style={{ padding: '4px 8px' }}>{showValue(r.value)}</td>
                       <td style={{ padding: '4px 8px' }}>{r.source ? `${r.source.layer} — ${r.source.path}` : t('(no level stated it)')}</td>
