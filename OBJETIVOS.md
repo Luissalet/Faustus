@@ -48,11 +48,17 @@ sugerencia pre-marcada, «short by N GB», tres botones). Comprobado en vivo:
 con `q4_K_M` dentro, pedir `q8_0` enseña «short by 12,1 GB»; al descargar el
 `q4` la carga sólo empieza cuando `/api/ps` confirma que salió.
 
-**Falta:** la puerta en el **turno de chat** (`routes/chat` → `llm_core`
-antes de la primera llamada a un modelo no residente). Hoy, si el chat elige
-otro modelo con uno dentro, Ollama decide solo. Misma `admit()`, misma fase
-`vram_blocked` en el stream del turno, mismo diálogo (Transcript ya conoce
-las fases `loading_model`/`vram_blocked`/`unloading_model`).
+**Hecho también en el turno de chat** (10-09, commit 59436f6d):
+`routes/chat_routes._vram_admission_events` corre `admit()` antes de la
+primera llamada del turno y emite eventos `vram_admission`; Studio pinta el
+mismo diálogo sobre el turno y la línea en vivo dice «No room in VRAM —
+waiting for you to choose what to unload». Comprobado en vivo: q8_0
+residente, chat con q4_K_M → diálogo → «Unload and continue» → el q8 sale,
+el q4 entra, llega la respuesta. Ajustes › Sistema expone el modo
+(`ask`/`auto`/`off`) y el tiempo de espera. **OBJ-1 cerrado.** Queda como
+cinturón externo `OLLAMA_MAX_LOADED_MODELS=1` para lo que no pasa por
+Faustus, y el aviso rojo en Modelos locales cuando hay dos modelos grandes
+residentes a la vez.
 
 ### Lo que había que escribir (referencia del diseño)
 
@@ -93,6 +99,22 @@ Luis, 10-09-2026: «comprobar que el modelo, cuando le pides implementar cosas
 y lo considera necesario, te pregunta entre opciones (como haces tú con
 AskUserQuestion): varias opciones para elegir y una para que escribas tú, o
 una checklist. Como lo haces tú, vaya.»
+
+### Estado (10-09, 02:00) — CERRADO
+
+La herramienta `ask_user` ya existía (`src/agent_tools/interaction_tools.py`)
+y el modelo la usaba; lo que fallaba era la pantalla: el camino en vivo de
+`studio/src/adapters/chat.ts` hacía `String()` de las opciones (objetos
+`{label, description}`) y cada botón decía «[object Object]». Ahora
+(59436f6d): un botón por opción con su consecuencia debajo, checklist con
+«Enviar» cuando la herramienta dice `multi`, y siempre una línea para
+escribir tu propia respuesta; la descripción de la herramienta dice cuándo
+preguntar (un «impleméntame X» con varios diseños razonables), la
+recomendada primero, y que no invente una opción «Otra». Comprobado en vivo
+con qwen3.8 q4: tres bases de datos con descripción, el clic vuelve como
+siguiente mensaje. Pendiente sólo de observación: que el modelo lo use por
+iniciativa propia con más frecuencia (en la prueba, tras la respuesta hizo
+tres preguntas más en prosa).
 
 ### Qué tiene que pasar
 

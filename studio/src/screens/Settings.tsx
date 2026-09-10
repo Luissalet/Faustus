@@ -651,7 +651,13 @@ function RemindersSection({ settings, onSave, say }: { settings: Settings | null
   );
 }
 
-const SYSTEM_KEYS = ['app_public_url', 'share_defaults_with_users', 'tool_path_extra_roots', 'urgent_email_prompt', 'gpu_placement_prefer', 'model_load_options', 'skill_max_injected', 'skill_autosave_min_confidence'];
+const SYSTEM_KEYS = ['app_public_url', 'share_defaults_with_users', 'tool_path_extra_roots', 'urgent_email_prompt', 'gpu_placement_prefer', 'model_load_options', 'skill_max_injected', 'skill_autosave_min_confidence',
+  'vram_admission', 'vram_admission_timeout_seconds', 'research_local_tokens_per_second', 'research_local_time_multiplier'];
+const VRAM_ADMISSION: Opt[] = [
+  { value: 'ask', label: 'Ask what to unload (recommended)' },
+  { value: 'auto', label: 'Unload the least useful models on its own' },
+  { value: 'off', label: 'Off — load anyway, Ollama spills to CPU/PCIe' },
+];
 
 /* -- General: the interface language -- */
 
@@ -685,6 +691,22 @@ function SystemSection({ settings, onSave, say, admin }: { settings: Settings | 
         </Field>
         <Field label={t('Model load options')} htmlFor="mlo" help={t('Passed as-is to the local server (context, GPU layers…).')}>
           <Text id="mlo" value={typeof draft.model_load_options === 'object' && draft.model_load_options ? JSON.stringify(draft.model_load_options) : str(draft.model_load_options)} onChange={(v) => set('model_load_options', v)} />
+        </Field>
+      </div>
+      <div className="fs-set__grid2">
+        <Field label={t('When a model does not fit in VRAM')} htmlFor="vadm" help={t('Ollama never says no: it loads anyway and spills to the CPU, ten times slower. Two 27B models stacked this way took the machine down on 08-09-2026.')}>
+          <Select id="vadm" value={str(draft.vram_admission, 'ask')} onChange={(v) => set('vram_admission', v)} options={VRAM_ADMISSION.map((o) => ({ ...o, label: t(o.label) }))} />
+        </Field>
+        <Field label={t('Seconds to wait for the answer')} htmlFor="vadmt" help={t('Nobody answers → the load is cancelled, never forced.')}>
+          <Text id="vadmt" type="number" value={str(draft.vram_admission_timeout_seconds, '600')} onChange={(v) => set('vram_admission_timeout_seconds', Number(v) || 600)} />
+        </Field>
+      </div>
+      <div className="fs-set__grid2">
+        <Field label={t('Local model speed for research (tokens/s)')} htmlFor="rtps" help={t('Sizes how long one research call may take: 120 s plus the tokens asked for at this speed. 8 is a 27B q4 on consumer cards.')}>
+          <Text id="rtps" type="number" value={str(draft.research_local_tokens_per_second, '8')} onChange={(v) => set('research_local_tokens_per_second', Number(v) || 8)} />
+        </Field>
+        <Field label={t('Research wall clock × for local models')} htmlFor="rmult" help={t('The research time limit is multiplied by this when the model is local; four rounds and one report took 22 minutes on a 27B.')}>
+          <Text id="rmult" type="number" value={str(draft.research_local_time_multiplier, '3')} onChange={(v) => set('research_local_time_multiplier', Number(v) || 3)} />
         </Field>
       </div>
       <div className="fs-set__grid2">

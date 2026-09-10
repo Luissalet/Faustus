@@ -222,6 +222,21 @@
   color: var(--fs-text-3);
 }
 
+/* What the run warned about, kept on the card after the phase line moved on. */
+.fs-rs__warnings {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 2px;
+  font-size: var(--fs-label-size);
+  color: var(--fs-warning);
+}
+
+.fs-rs__warnings li::before {
+  content: "⚠ ";
+}
+
 .fs-rs__meta--live {
   display: inline-flex;
   align-items: center;

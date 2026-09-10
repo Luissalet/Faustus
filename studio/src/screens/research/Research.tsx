@@ -74,6 +74,10 @@ interface Job {
   result: ResearchResult | null;
   error: string;
   sourceCount: number;
+  /** What the run warned about on the way (one engine answering, a
+   *  synthesis that failed, pages already read…) — kept, because a
+   *  warning that scrolls past in the phase line explains a thin report. */
+  warnings?: string[];
 }
 
 const QUEUE_KEY = 'fs-research-queue';
@@ -117,6 +121,19 @@ const HINTS = [
 ];
 
 /* ── Pieces ── */
+
+/** The run's warnings, kept on the card: a phase line scrolls past, a thin
+ *  report does not explain itself. */
+function JobWarnings({ warnings }: { warnings?: string[] }) {
+  if (!warnings || warnings.length === 0) return null;
+  return (
+    <ul className="fs-rs__warnings" data-testid="research-warnings">
+      {warnings.map((w) => (
+        <li key={w}>{w}</li>
+      ))}
+    </ul>
+  );
+}
 
 function Clock({ from }: { from: number }) {
   const [, tick] = useState(0);
@@ -172,6 +189,7 @@ function ResultCard({ job, formats, onDiscuss, onDelete, onDismiss, say }: { job
             {r?.category ? ` · ${r.category}` : ''}
             {sources.length === 0 && job.sourceCount === 0 ? ` · ${t('nothing could be read: check the search provider')}` : ''}
           </p>
+          <JobWarnings warnings={job.warnings} />
         </div>
         <IconButton icon={X} label={t('Clear from the list')} size="sm" onClick={onDismiss} />
       </header>
@@ -359,6 +377,10 @@ export function ResearchScreen() {
         (p) => {
           if (p.message) lastMessage = p.message;
           resolvedModel = p.model || resolvedModel;
+          if (p.phase === 'warning' && p.message) {
+            const warning = p.message;
+            setJobs((cur) => cur.map((j) => (j.id === job.id && !(j.warnings ?? []).includes(warning) ? { ...j, warnings: [...(j.warnings ?? []), warning] } : j)));
+          }
           patch(job.id, { progress: { ...p, model: resolvedModel } });
         },
         c.signal,
@@ -434,7 +456,7 @@ export function ResearchScreen() {
     // the fresh run "failed" while the server was still working on it.
     followers.current.get(job.id)?.abort();
     followers.current.delete(job.id);
-    patch(job.id, { status: 'running', sessionId: null, startedAt: Date.now(), finishedAt: 0, progress: null, error: '', result: null, sourceCount: 0 });
+    patch(job.id, { status: 'running', sessionId: null, startedAt: Date.now(), finishedAt: 0, progress: null, error: '', result: null, sourceCount: 0, warnings: [] });
     try {
       const sessionId = await startResearch(job.query, job.settings);
       patch(job.id, { sessionId });
@@ -712,6 +734,7 @@ export function ResearchScreen() {
                       {phaseLabel(job.progress, job.settings.maxRounds)} · <Clock from={job.startedAt} />
                     </p>
                     <p className="fs-rs__meta">{t('Model')}: {job.progress?.model || job.settings.model || t('Resolving model…')}</p>
+                    <JobWarnings warnings={job.warnings} />
                   </div>
                   <Button variant="ghost" size="sm" icon={X} label={t('Cancel')} onClick={() => void cancel(job)} />
                 </div>
@@ -739,6 +762,7 @@ export function ResearchScreen() {
                     <div className="fs-rs__job-text">
                       <h3 className="fs-rs__query">{job.query}</h3>
                       <p className="fs-rs__meta">{job.status === 'cancelled' ? t('Cancelled.') : job.error || t('The research failed.')}</p>
+                      <JobWarnings warnings={job.warnings} />
                     </div>
                     <Button variant="secondary" size="sm" icon={RefreshCw} label={t('Retry')} onClick={() => void launch({ ...job, sessionId: null })} />
                     <IconButton icon={Pencil} label={t('Edit and retry')} size="sm" onClick={() => setEditing(job)} />

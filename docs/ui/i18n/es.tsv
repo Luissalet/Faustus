@@ -5753,3 +5753,15 @@ The model is spilling to RAM ({v} of {s} GB in VRAM) — slow	El modelo se está
 The model is spilling to RAM — slow	El modelo se está desbordando a RAM: va lento
 Unloading models to make room	Descargando modelos para hacer sitio
 Waiting for your answer	Esperando tu respuesta
+Local model speed for research (tokens/s)	Velocidad del modelo local para research (tokens/s)
+Nobody answers → the load is cancelled, never forced.	Si nadie responde, la carga se cancela; nunca se fuerza.
+Ollama never says no: it loads anyway and spills to the CPU, ten times slower. Two 27B models stacked this way took the machine down on 08-09-2026.	Ollama nunca dice que no: carga igual y se desborda a la CPU, diez veces más lento. Dos 27B apilados así tiraron la máquina el 08-09-2026.
+Research wall clock × for local models	Multiplicador del tiempo de research en modelos locales
+Seconds to wait for the answer	Segundos de espera para la respuesta
+Sizes how long one research call may take: 120 s plus the tokens asked for at this speed. 8 is a 27B q4 on consumer cards.	Fija cuánto puede durar una llamada de research: 120 s más los tokens pedidos a esta velocidad. 8 es un 27B q4 en tarjetas de consumo.
+The research time limit is multiplied by this when the model is local; four rounds and one report took 22 minutes on a 27B.	El límite de tiempo de la research se multiplica por esto cuando el modelo es local; cuatro rondas y un informe tardaron 22 minutos en un 27B.
+When a model does not fit in VRAM	Cuando un modelo no cabe en VRAM
+Ask what to unload (recommended)	Preguntar qué descargar (recomendado)
+Unload the least useful models on its own	Descargar por su cuenta los modelos menos útiles
+Off — load anyway, Ollama spills to CPU/PCIe	Apagado: carga igual y Ollama se desborda a CPU/PCIe
+{n} large models are loaded at once ({names}). Two 27B models stacked like this exhausted the machine's memory on 08-09-2026 — unload the one you are not using.	Hay {n} modelos grandes cargados a la vez ({names}). Dos 27B apilados así agotaron la memoria de la máquina el 08-09-2026: descarga el que no estés usando.

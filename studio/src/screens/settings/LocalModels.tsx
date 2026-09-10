@@ -446,7 +446,18 @@ function Placement({ m, cards }: { m: LoadedModel; cards: GpuCard[] }) {
 
 function LoadedList({ loaded, cards, admin, onUnload }: { loaded: LoadedModel[]; cards: GpuCard[]; admin: boolean; onUnload: (m: LoadedModel) => void }) {
   if (!loaded.length) return <p className="fs-set__help">{t('Nothing is loaded right now.')}</p>;
+  // Two large models resident at once is how the machine went down on
+  // 08-09-2026 (two 27B against the commit limit). Say it here, where the
+  // person can unload one, rather than in a log nobody reads in time.
+  const big = loaded.filter((m) => (m.size ?? 0) >= 8 * 1073741824);
+  const crowded = big.length >= 2;
   return (
+    <>
+    {crowded && (
+      <p className="fs-notice" data-tone="danger" role="alert" data-testid="vram-crowded">
+        {t('{n} large models are loaded at once ({names}). Two 27B models stacked like this exhausted the machine\'s memory on 08-09-2026 — unload the one you are not using.', { n: big.length, names: big.map((m) => m.name).join(', ') })}
+      </p>
+    )}
     <ul className="fs-lm__loaded">
       {loaded.map((m) => {
         const gpu = m.gpu_pct ?? 0;
@@ -468,6 +479,7 @@ function LoadedList({ loaded, cards, admin, onUnload }: { loaded: LoadedModel[];
         );
       })}
     </ul>
+    </>
   );
 }
 
