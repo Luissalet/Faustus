@@ -33,8 +33,9 @@ from __future__ import annotations
 
 import hashlib
 import re
+import unicodedata
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 STATUSES = ("pending", "done", "blocked")
 
@@ -205,6 +206,78 @@ def to_markdown(plan: Plan) -> str:
         suffix = f" {UNVERIFIED_MARKER}" if (step.status == "done" and not step.verified) else ""
         lines.append(f"{indent}- [{mark}] {title}{suffix}")
     return "\n".join(lines)
+
+
+#: A requirement is "covered" when at least this fraction of its own
+#: significant words also appear in a step's title. Deterministic word
+#: overlap, no model: high enough that two coincidentally-similar sentences
+#: about different things do not match, low enough that a step title that
+#: paraphrases (drops an adjective, reorders) the requirement still does.
+_COVERAGE_OVERLAP_THRESHOLD = 0.5
+_COVERAGE_WORD_RE = re.compile(r"[^\W\d_]+", re.UNICODE)
+_COVERAGE_MIN_WORD_LEN = 3
+
+
+def _fold_accents(word: str) -> str:
+    """"collarín" and "collarin" are the same word to a Spanish brief's
+    author and its plan's author alike — one typed in a hurry, the other by a
+    model that dropped a tilde. Word overlap that cared about the accent
+    would under-cover real Spanish text for a reason that has nothing to do
+    with whether the step actually addresses the requirement."""
+    decomposed = unicodedata.normalize("NFKD", word)
+    return "".join(ch for ch in decomposed if not unicodedata.combining(ch))
+
+
+def _coverage_words(text: str) -> Set[str]:
+    return {_fold_accents(w.lower()) for w in _COVERAGE_WORD_RE.findall(text or "")
+            if len(w) >= _COVERAGE_MIN_WORD_LEN}
+
+
+def coverage(plan: Plan, requirements: Sequence[str]) -> Dict[str, Any]:
+    """PLAN-01: requirement → the plan steps that cover it, plus what nothing
+    covers — so a plan is never accepted as complete just because every step
+    is checked off, when the checklist itself never named half the brief.
+
+    For research, `requirements` is the brief's own bullets — the same list
+    `DeepResearcher._extract_subquestions` turns into report sections
+    (`src/deep_research.py`), so a plan's coverage of the SAME requirements
+    the report will be judged against.
+
+    Matching is deterministic word overlap (no model): a requirement is
+    covered by any step whose title shares at least
+    `_COVERAGE_OVERLAP_THRESHOLD` of the requirement's own significant words.
+    A requirement with fewer than one usable word (blank, punctuation-only)
+    is skipped rather than reported as either covered or uncovered — there is
+    nothing there to check a step against.
+    """
+    step_words = [(step, _coverage_words(step.title)) for step in plan.steps]
+    covered: Dict[str, List[str]] = {}
+    uncovered: List[str] = []
+    considered = 0
+    for requirement in requirements or []:
+        req_text = requirement if isinstance(requirement, str) else str(requirement)
+        req_words = _coverage_words(req_text)
+        if not req_words:
+            continue
+        considered += 1
+        matches = [step.id for step, words in step_words
+                  if words and len(req_words & words) / len(req_words) >= _COVERAGE_OVERLAP_THRESHOLD]
+        if matches:
+            covered[req_text] = matches
+        else:
+            uncovered.append(req_text)
+    return {
+        "covered": covered,
+        "uncovered": uncovered,
+        "total_requirements": considered,
+        "covered_requirements": len(covered),
+        # A plan is complete, for coverage's purposes, only when every
+        # requirement that could be checked found at least one step. An empty
+        # `requirements` list is trivially complete — there was nothing to
+        # cover — which is deliberate: this function judges coverage, not
+        # whether the plan has any steps at all.
+        "complete": not uncovered,
+    }
 
 
 def parse_steps_input(data: Any, *, default_revision: int = 1) -> Optional[Plan]:

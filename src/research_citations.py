@@ -29,10 +29,11 @@ an accusation, and :func:`build_legend` prints it only when it happened.
 
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 # Three outcomes, not a three-point scale. A scale invites the reader to
@@ -48,6 +49,13 @@ VERDICTS = (VERDICT_SUPPORTED, VERDICT_REFUTED, VERDICT_UNCHECKED)
 MAX_TEXT_CHARS = 2_000_000
 MAX_SOURCE_NUMBER = 999
 MAX_SOURCE_URL_CHARS = 8192
+#: "motor que la trajo" (RES-03) — bounded, this is a provider name
+#: ("searxng", "brave", "firecrawl"...), never free text.
+MAX_ENGINE_CHARS = 200
+#: Below this many characters a piece of evidence/summary text is too thin to
+#: trust for content-hash dedup — a two-word snippet from two unrelated pages
+#: would otherwise collide and wrongly merge two real sources.
+MIN_CONTENT_HASH_CHARS = 40
 
 # Query parameters that identify a campaign, not a page. Dropping them is what
 # makes the same article arriving from two different search providers one
@@ -146,20 +154,60 @@ def domain_of(url: Any) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _content_hash(finding: Any) -> str:
+    """SHA-256 of a finding's substantive text (RES-03's ``EvidenceRef`` hash).
+
+    Used for dedup across mirrors and tracking-wrapped URLs that read as the
+    same page under two different addresses — a syndicated article picked up
+    by two search engines with two different query-string wrappers should
+    keep ONE citation number, not two. Empty for anything under
+    ``MIN_CONTENT_HASH_CHARS``: a thin snippet is not enough to trust that two
+    pages are really the same source rather than two short unrelated ones.
+    """
+    if not isinstance(finding, dict):
+        return ""
+    parts = [_as_text(finding.get(k)).strip() for k in ("title", "summary", "evidence")]
+    body = re.sub(r"\s+", " ", "\n".join(p for p in parts if p)).strip().lower()
+    if len(body) < MIN_CONTENT_HASH_CHARS:
+        return ""
+    return hashlib.sha256(body.encode("utf-8")).hexdigest()
+
+
 class SourceRegistry:
-    """Stable 1-based numbers for the pages a research run actually read."""
+    """Stable 1-based numbers for the pages a research run actually read.
+
+    Each entry is the ``EvidenceRef`` this module has always kept — url,
+    title, summary, evidence, domain, ``fetched_at`` — unchanged (existing
+    callers that iterate `entry.keys()` see exactly the same shape as
+    before). RES-03 adds two things ALONGSIDE it, not inside it:
+    :meth:`engine_of` (the search engine that found the source) and
+    :meth:`content_hash_of` / :meth:`duplicate_candidates` (a SHA-256 over
+    the extracted text, for spotting likely mirrors).
+
+    Identity — which findings collapse onto one citation number — is still
+    decided by canonical URL alone, exactly as before. Content hash is
+    DETECTION, not merging: two sources that happen to share a long stretch
+    of identical text (a boilerplate disclaimer, a wire-service paragraph
+    quoted by both) keep their own numbers; the hash only flags the pair as
+    worth a human look, via :meth:`duplicate_candidates`. Auto-merging by
+    hash was tried and reverted — it silently folded together sources whose
+    only similarity was equally-sized filler content.
+    """
 
     def __init__(self) -> None:
         self._entries: List[Dict[str, Any]] = []
         self._by_key: Dict[str, int] = {}
+        self._engine_by_number: Dict[int, str] = {}
+        self._hash_by_number: Dict[int, str] = {}
+        self._numbers_by_hash: Dict[str, List[int]] = {}
 
     def add(self, finding: Any) -> int:
         """Register a finding's URL and return its number.
 
         Returns the number it already had if the URL was seen before, filling
         in any field that was empty then and is populated now (a page first
-        seen as a search hit and later extracted keeps its number and gains its
-        text). Returns ``0`` for a finding with no usable URL — nothing to
+        seen as a search hit and later extracted keeps its number and gains
+        its text). Returns ``0`` for a finding with no usable URL — nothing to
         cite, and ``[0]`` is not a marker this module will ever parse.
         """
         if not isinstance(finding, dict):
@@ -185,6 +233,7 @@ class SourceRegistry:
             for field_name in ("title", "summary", "evidence"):
                 if not entry.get(field_name):
                     entry[field_name] = _as_text(finding.get(field_name)).strip()
+            self._note_engine(existing, finding)
             return existing
         if len(self._entries) >= MAX_SOURCE_NUMBER:
             return 0
@@ -199,7 +248,42 @@ class SourceRegistry:
             "fetched_at": _as_text(finding.get("fetched_at")).strip() or _now(),
         })
         self._by_key[key] = number
+        self._note_engine(number, finding)
+        content_hash = _content_hash(finding)
+        if content_hash:
+            self._hash_by_number[number] = content_hash
+            self._numbers_by_hash.setdefault(content_hash, []).append(number)
         return number
+
+    def _note_engine(self, number: int, finding: Dict[str, Any]) -> None:
+        if self._engine_by_number.get(number):
+            return  # first engine recorded wins, same rule as the text fields
+        engine = _as_text(finding.get("engine")).strip()[:MAX_ENGINE_CHARS]
+        if engine:
+            self._engine_by_number[number] = engine
+
+    def engine_of(self, n: Any) -> str:
+        """The search engine that found source ``n`` (RES-03's ``EvidenceRef``
+        provenance), or "" if none was recorded."""
+        try:
+            index = int(n)
+        except (TypeError, ValueError):
+            return ""
+        return self._engine_by_number.get(index, "")
+
+    def content_hash_of(self, n: Any) -> str:
+        try:
+            index = int(n)
+        except (TypeError, ValueError):
+            return ""
+        return self._hash_by_number.get(index, "")
+
+    def duplicate_candidates(self) -> List[List[int]]:
+        """Groups of source numbers whose extracted text hashes identically —
+        likely the same page reached through different URLs (a mirror, or a
+        tracking-wrapped link two search engines returned differently).
+        Detection only, never merged: see the class docstring."""
+        return [sorted(ns) for ns in self._numbers_by_hash.values() if len(ns) > 1]
 
     def number_for(self, url: Any) -> Optional[int]:
         return self._by_key.get(canonical_url(url))
@@ -227,6 +311,11 @@ class SourceRegistry:
         for entry in self._entries:
             saved = {key: entry[key] for key in ("n", "url", "fetched_at")}
             saved["fetched_at"] = saved["fetched_at"][:128]
+            # RES-03: provenance travels with the snapshot too, so a resumed
+            # run still knows which engine found a source it read before the
+            # restart. Additive field — an OLD snapshot simply lacks it, and
+            # `restore()` below defaults it to "" rather than rejecting.
+            saved["engine"] = self.engine_of(entry["n"])[:MAX_ENGINE_CHARS]
             for key, limit in (("title", 1000), ("summary", 4000), ("evidence", 32000)):
                 value = _as_text(entry.get(key))[:min(limit, remaining)]
                 saved[key] = value
@@ -255,6 +344,11 @@ class SourceRegistry:
                     raise ValueError("invalid citation registry text")
                 if key != "fetched_at":
                     remaining -= len(value)
+            # Absent in an old (pre-RES-03) snapshot — ``.get`` defaults it to
+            # "", not a validation failure, so old snapshots keep restoring.
+            engine = source.get("engine", "")
+            if not isinstance(engine, str) or len(engine) > MAX_ENGINE_CHARS:
+                raise ValueError("invalid citation registry engine")
             if remaining < 0 or registry.number_for(source["url"]) is not None or registry.add(source) != expected:
                 raise ValueError("duplicate or invalid citation registry identity")
         return registry
@@ -321,6 +415,9 @@ def _protected_spans(text: str) -> List[Tuple[int, int]]:
     sources = _sources_section_span(text)
     if sources:
         spans.append(sources)
+    conflicts = _conflicts_section_span(text)
+    if conflicts:
+        spans.append(conflicts)
     spans.sort()
     return spans
 
@@ -710,6 +807,184 @@ def _sources_section(numbers: Iterable[int], registry: SourceRegistry,
             line += f" — {domain}"
         lines.append(line)
     return "\n".join(lines) + "\n"
+
+
+# ---------------------------------------------------------------------------
+# RES-03 — conflicts between sources
+# ---------------------------------------------------------------------------
+#
+# Two sources disagreeing is not an error in the research: it is a finding,
+# and silently picking one figure over the other (or averaging them) would
+# hide it. This is a deterministic heuristic on numbers and entities — no
+# model, no judgement call about which source is right — so it is exactly as
+# reproducible as the rest of this module: the same findings always surface
+# the same disagreements.
+
+_CONFLICT_NUMBER_RE = re.compile(
+    r"(?<![\w.,])\d{1,4}(?:[.,]\d+)?\s?(?:%|kg|mg|g|km|cm|mm|ml|l|h|hrs?|hours?|"
+    r"horas?|days?|d[ií]as?|weeks?|semanas?|months?|meses?|years?|años?|"
+    r"€|\$|usd|eur)?(?![\w.,])",
+    re.IGNORECASE,
+)
+_CONFLICT_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?\n])\s+|\n+")
+_CONFLICT_WORD_RE = re.compile(r"[^\W\d_]+", re.UNICODE)
+_CONFLICT_STOPWORDS = frozenset(
+    "the a an of in on at for to and or is are was were that this these those "
+    "el la los las un una unos unas y de del que en por para con como es son "
+    "era fue fueron sobre según según".split()
+)
+#: A claim signature needs at least this many surviving content words to be
+#: trusted — otherwise two short, unrelated numeric fragments ("3 days" /
+#: "12 days") would collide on an almost-empty key.
+_MIN_CLAIM_WORDS = 3
+
+
+def _numeric_tokens(text: str) -> List[str]:
+    return [m.group(0).strip() for m in _CONFLICT_NUMBER_RE.finditer(text or "")]
+
+
+def _claim_signature(sentence: str) -> Optional[str]:
+    """A deterministic fingerprint for what a numeric sentence is about.
+
+    Built from the sentence's own non-stopword words with every number
+    stripped out first, so two sentences reporting a DIFFERENT figure for the
+    same thing collide on the same key, while two sentences about different
+    things — each with its own number — do not. Word order is discarded
+    (sorted) so minor rephrasing between two sources' prose still matches.
+    """
+    stripped = _CONFLICT_NUMBER_RE.sub(" ", sentence)
+    words = sorted({w.lower() for w in _CONFLICT_WORD_RE.findall(stripped)
+                    if len(w) > 2 and w.lower() not in _CONFLICT_STOPWORDS})
+    if len(words) < _MIN_CLAIM_WORDS:
+        return None
+    return " ".join(words)
+
+
+@dataclass
+class Conflict:
+    """Two (or more) sources whose numbers disagree about what the claim
+    fingerprint says is the same thing. ``entries`` is one row per source
+    number involved: ``(source_n, value, sentence)``."""
+    key: str
+    entries: List[Tuple[int, str, str]] = field(default_factory=list)
+
+
+def find_conflicts(registry: "SourceRegistry",
+                   only_sources: Optional[Set[int]] = None) -> List[Conflict]:
+    """Sources that disagree, by a deterministic heuristic over numbers and
+    entities — never a model. For each source's evidence/summary text, every
+    sentence carrying a number is fingerprinted (:func:`_claim_signature`);
+    when two DIFFERENT sources produce the same fingerprint with a DIFFERENT
+    number, that is a conflict. ``only_sources`` restricts the comparison to
+    the sources actually cited in a report — an unused source's own internal
+    disagreements are not the reader's problem.
+    """
+    # key -> value -> [(source_n, sentence), ...], first occurrence per source
+    buckets: Dict[str, Dict[str, List[Tuple[int, str]]]] = {}
+    for entry in registry.all():
+        n = entry.get("n")
+        if only_sources is not None and n not in only_sources:
+            continue
+        text = f"{entry.get('evidence', '')}\n{entry.get('summary', '')}"
+        for sentence in _CONFLICT_SENTENCE_SPLIT_RE.split(text):
+            sentence = sentence.strip()
+            if not sentence:
+                continue
+            numbers = _numeric_tokens(sentence)
+            if not numbers:
+                continue
+            key = _claim_signature(sentence)
+            if not key:
+                continue
+            for number in dict.fromkeys(numbers):  # de-dup, keep first order
+                buckets.setdefault(key, {}).setdefault(number, []).append((n, sentence))
+
+    conflicts: List[Conflict] = []
+    for key, by_value in buckets.items():
+        if len(by_value) < 2:
+            continue
+        seen_sources: Set[int] = set()
+        rows: List[Tuple[int, str, str]] = []
+        for value, occurrences in by_value.items():
+            for source_n, sentence in occurrences:
+                if source_n not in seen_sources:
+                    rows.append((source_n, value, sentence))
+                    seen_sources.add(source_n)
+                    break  # one representative sentence per source per value
+        if len({r[0] for r in rows}) >= 2:
+            conflicts.append(Conflict(key=key, entries=sorted(rows, key=lambda r: r[0])))
+    conflicts.sort(key=lambda c: c.entries[0][0] if c.entries else 0)
+    return conflicts
+
+
+#: Deliberately NOT prefixed with the sources heading's own words ("Fuentes"
+#: / "Sources" / ...): a caller that does ``report.split(sources_heading)``
+#: to isolate the sources list (as the full-run report test does) must not
+#: have that split land inside this heading instead, because this one
+#: happens to start with the same word.
+_CONFLICTS_HEADINGS = {
+    "es": "## Desacuerdos entre fuentes", "en": "## Disagreements between sources",
+    "fr": "## Désaccords entre les sources", "de": "## Widersprüche zwischen Quellen",
+    "pt": "## Desacordos entre fontes", "it": "## Disaccordi tra le fonti",
+}
+_CONFLICT_SAYS = {
+    "es": "dice", "en": "says", "fr": "dit", "de": "sagt", "pt": "diz", "it": "dice",
+}
+
+
+def conflicts_heading(language: str) -> str:
+    return _CONFLICTS_HEADINGS.get((language or "").lower(), _CONFLICTS_HEADINGS["en"])
+
+
+def _conflicts_section(conflicts: Sequence[Conflict], registry: "SourceRegistry",
+                       language: str) -> str:
+    """«fuentes en desacuerdo: A dice X, B dice Y» — never resolved in
+    silence, never averaged. One bullet per disagreement."""
+    if not conflicts:
+        return ""
+    says = _CONFLICT_SAYS.get((language or "").lower(), _CONFLICT_SAYS["en"])
+    lines = [conflicts_heading(language), ""]
+    for conflict in conflicts:
+        parts = []
+        for source_n, value, _sentence in conflict.entries:
+            entry = registry.source(source_n)
+            label = (entry or {}).get("domain") or (entry or {}).get("title") or f"source {source_n}"
+            parts.append(f"[{source_n}] {label} {says} «{value}»")
+        lines.append("- " + "; ".join(parts) + ".")
+    return "\n".join(lines) + "\n"
+
+
+def _conflicts_section_span(text: str) -> Optional[Tuple[int, int]]:
+    """Span of a generated conflicts section — only if the body under the
+    heading really is the bulleted list this module writes, so a report with
+    its own analysis under a similarly-named heading is never deleted."""
+    span = _section_span(text, tuple(_CONFLICTS_HEADINGS.values()))
+    if not span:
+        return None
+    start, end = span
+    body = text[start:end].splitlines()[1:]
+    for line in body:
+        if line.strip() and not line.strip().startswith("- "):
+            return None
+    return span
+
+
+def _drop_conflicts_section(text: str) -> str:
+    span = _conflicts_section_span(text)
+    if not span:
+        return text
+    return text[:span[0]] + text[span[1]:]
+
+
+def _insert_conflicts_section(text: str, section: str) -> str:
+    """Put the conflicts section right before the sources list, or at the end
+    when there is no sources section to anchor to."""
+    if not section:
+        return text
+    span = _sources_section_span(text)
+    if span:
+        return text[:span[0]].rstrip() + "\n\n" + section + "\n" + text[span[0]:]
+    return text.rstrip() + "\n\n" + section
 
 
 # ---------------------------------------------------------------------------
@@ -1281,16 +1556,24 @@ def finalize_report(report_md: Any, registry: Optional[SourceRegistry] = None,
     produces the same bytes.
     """
     registry = registry if registry is not None else SourceRegistry()
-    text = _drop_legend_section(_as_text(report_md))
+    text = _drop_conflicts_section(_drop_legend_section(_as_text(report_md)))
     repaired, audit = repair_citations(text, registry, language=language)
     checked = check_claims(audit.claims, registry)
     coverage = compute_coverage(audit, checked, registry)
 
     final = _insert_legend(repaired, build_legend(coverage, language))
+    # RES-03: sources actually cited that disagree with each other, never
+    # resolved in silence. Restricted to the sources this report cites — an
+    # ungathered/uncited source's own contradictions are not the reader's
+    # problem.
+    cited_now = {n for n in audit.used if registry.source(n)}
+    conflicts = find_conflicts(registry, only_sources=cited_now) if cited_now else []
+    final = _insert_conflicts_section(final, _conflicts_section(conflicts, registry, language))
     # Re-audit so the spans point into the text we are actually returning. The
-    # legend and the sources list are protected regions, so the counts are the
-    # ones the legend just printed.
+    # legend, the conflicts section and the sources list are protected
+    # regions, so the counts are the ones the legend just printed.
     final_audit = audit_citations(final, registry)
     final_audit.removed = audit.removed
     final_audit.coverage = coverage
+    final_audit.coverage["conflicts"] = len(conflicts)
     return final, final_audit, checked

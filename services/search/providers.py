@@ -399,7 +399,9 @@ def degradation_reason(report: Optional[Mapping[str, Any]]) -> Optional[str]:
 
 def searxng_search_api(query: str, count: Optional[int] = None, categories: str = "general",
                        time_filter: Optional[str] = None) -> List[dict]:
-    """Search using SearXNG JSON API. Returns list of {title, url, snippet}."""
+    """Search using SearXNG JSON API. Returns list of {title, url, snippet},
+    plus `_engine`/`_engines` (RES-03 provenance) when SearXNG's own
+    response named which sub-engine(s) answered."""
     count = count if count is not None else _get_result_count()
     instance = _get_search_instance()
     api_key = ""
@@ -438,15 +440,35 @@ def searxng_search_api(query: str, count: Optional[int] = None, categories: str 
             params["engines"] = _GENERAL_ENGINES
     try:
         def _parse_results(results):
-            return [
-                {
+            parsed = []
+            for r in results[:count]:
+                if not r.get("url"):
+                    continue
+                item = {
                     "title": r.get("title", ""),
                     "url": r.get("url", ""),
                     "snippet": r.get("content", ""),
                 }
-                for r in results[:count]
-                if r.get("url")
-            ]
+                # RES-03: SearXNG is a meta-search aggregator, so its raw
+                # result already names the SPECIFIC sub-engine(s) that
+                # answered (e.g. "bing", or ["bing", "google"] when several
+                # engines deduplicated to the same URL) — richer provenance
+                # than the generic "searxng" provider name. Without this,
+                # `src/deep_research.py::_search`'s `r.setdefault("_engine",
+                # prov)` always falls back to the bare provider name, because
+                # the key it looks for was never set here. `_engine`/
+                # `_engines` (underscore-prefixed) match that existing
+                # convention, not SearXNG's own "engine"/"engines" spelling,
+                # so `_search_and_extract`'s `r.get("_engine")` picks them up
+                # unchanged.
+                engines = [str(e) for e in (r.get("engines") or []) if e]
+                engine = str(r.get("engine") or (engines[0] if engines else "") or "")
+                if engine:
+                    item["_engine"] = engine
+                if engines:
+                    item["_engines"] = engines
+                parsed.append(item)
+            return parsed
 
         def _run(search_params):
             response = httpx.get(

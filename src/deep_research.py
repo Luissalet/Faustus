@@ -22,11 +22,90 @@ from src.research_citations import (
     LANGUAGE_NAMES,
     SourceRegistry,
     detect_language,
+    find_markers,
     finalize_report,
     implication_label,
 )
+from src.contracts.errors import ErrorInfo
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# RES-05 — one typed failure per research stage, with its own recovery policy
+# ---------------------------------------------------------------------------
+#
+# `src.contracts.errors` already closes the vocabulary a failure can be
+# categorized under (OBS-03's ten buckets) and carries it as `ErrorInfo`. This
+# does not duplicate that taxonomy or its exception→category registry — each
+# class below just names ONE research stage (planning, search, extraction,
+# synthesis, writing) under an existing category, so a caller can `except
+# ExtractionStageError` instead of string-matching a log line, and reads
+# `.error_info` for the same `{code, message, retryable, next_action}` shape
+# every other tool_result error carries.
+class ResearchStageError(RuntimeError):
+    """Base for a typed, per-stage research failure. Never raised to end a
+    run by itself — each stage still decides its own recovery (see the
+    class docstrings below); this is the vocabulary that recovery reasons
+    about, not a new way to abort."""
+
+    category: str = "unknown"
+    subcode: str = "internal_error"
+    default_next_action: str = "escalate_to_operator"
+    default_retryable: bool = False
+
+    def __init__(self, message: str, *, stage: str, cause: Optional[BaseException] = None):
+        super().__init__(message)
+        self.stage = stage
+        self.cause = cause
+
+    @property
+    def error_info(self) -> ErrorInfo:
+        return ErrorInfo(code=f"{self.category}.{self.subcode}", message=str(self),
+                         retryable=self.default_retryable, next_action=self.default_next_action)
+
+
+class PlanningStageError(ResearchStageError):
+    """Sub-question / plan extraction failed. Policy: fall back to the flat,
+    non-grouped decomposition (`_extract_subquestions` already does this on
+    any parse exception) — a run never stops here, it plans worse."""
+    category, subcode = "schema", "planning_failed"
+    default_next_action, default_retryable = "retry_with_backoff", True
+
+
+class SearchStageError(ResearchStageError):
+    """One query's search failed. Policy: the round proceeds with whatever
+    other queries returned (`_search_and_extract` gathers with
+    `return_exceptions=True`) — one failed query never empties a round."""
+    category, subcode = "transport", "search_failed"
+    default_next_action, default_retryable = "retry_with_backoff", True
+
+
+class ExtractionStageError(ResearchStageError):
+    """One URL's extraction failed. Policy: skip that URL, keep the rest —
+    `_fetch_and_extract` already isolates each URL behind its own try/except
+    and `_rendered_page_finding` fallback; this never tears down the round."""
+    category, subcode = "transport", "extraction_failed"
+    default_next_action, default_retryable = "skip_url_and_continue", False
+
+
+class SynthesisStageError(ResearchStageError):
+    """The evolving-report synthesis call failed. Policy: the findings that
+    fed it are untouched (`self.findings` lives outside this call) and
+    `_synthesize` retries once at a reduced token budget before falling back
+    to the previous report — a model that timed out at 6144 tokens may still
+    answer at half that."""
+    category, subcode = "timeout", "synthesis_failed"
+    default_next_action, default_retryable = "retry_with_fewer_tokens", True
+
+
+class WritingStageError(ResearchStageError):
+    """One final-report part failed to write. Policy: the N-1 parts already
+    written are kept as-is (`pieces` and their checkpoint), and only part N
+    is retried, once, before falling back to a placeholder for that part —
+    `_final_report_in_parts` never re-writes a part already on disk."""
+    category, subcode = "timeout", "report_part_failed"
+    default_next_action, default_retryable = "retry_part_only", True
 
 
 def current_date_context() -> str:
@@ -265,6 +344,12 @@ _INLINE_ENUM_RE = re.compile(r"(?:^|(?<=[?!.:;\uff1f]))\s*\(?(\d{1,2})[.)]\s+")
 # grouped by their headings first (_outline_sections), which brings that
 # guide to 15 sections; the cap only backstops a flat list.
 MAX_SUBQUESTIONS = 24
+# RES-01 (MAPA_REUTILIZACION.md): "sigue siendo un tope numérico" even after
+# grouping. A grouped section IS one real heading from the user's own
+# outline, not a guessed split point the way a flat bulleted line is, so
+# capping it at the same 24 as an unstructured list would delete whole named
+# sections from a brief that simply has more headings than that.
+MAX_GROUPED_SUBQUESTIONS = 60
 _MIN_SUBQUESTION_CHARS = 12
 # A grouped section carries its heading and every bullet under it.
 _MAX_SUBQUESTION_CHARS = 700
@@ -299,6 +384,35 @@ def _is_outline_item(line: str) -> bool:
     return len(s) <= _ITEM_MAX_CHARS and s[-1] != ":"
 
 
+def _group_chunks(heading: str, items: List[str]) -> List[str]:
+    """Every bullet under one heading, split across as many "Heading: a; b; c"
+    chunks as it takes to keep each one at or under `_MAX_SUBQUESTION_CHARS`.
+
+    `_clean_subquestions` hard-truncates any entry longer than that cap —
+    which, before this function existed, silently dropped the tail of a long
+    list instead of giving it its own section (RES-01: Luis's 44-bullet
+    whiplash guide has headings with more bullets than fit in 700 characters).
+    A single item that alone exceeds the cap is left for that truncation to
+    handle; splitting cannot rescue one oversized bullet, only a long list of
+    normal-sized ones.
+    """
+    budget = _MAX_SUBQUESTION_CHARS
+    chunks: List[str] = []
+    current: List[str] = []
+    label = heading
+    for item in items:
+        candidate = f"{label}: " + "; ".join(current + [item])
+        if current and len(candidate) > budget:
+            chunks.append(f"{label}: " + "; ".join(current))
+            current = [item]
+            label = f"{heading} (cont.)"
+        else:
+            current.append(item)
+    if current:
+        chunks.append(f"{label}: " + "; ".join(current))
+    return chunks
+
+
 def _outline_sections(text: str) -> Optional[List[str]]:
     """Sections for a prompt written as an outline with headings.
 
@@ -331,7 +445,13 @@ def _outline_sections(text: str) -> Optional[List[str]]:
         nonlocal heading, items, groups
         if heading is not None:
             if items:
-                sections.append(f"{heading}: " + "; ".join(items))
+                # RES-01: a heading with enough bullets under it used to be
+                # joined into ONE string and truncated at MAX_SUBQUESTION_CHARS
+                # by `_clean_subquestions` — silently dropping every item past
+                # the cut. `_group_chunks` splits a long list across as many
+                # "Heading (cont.)" entries as it takes instead, so nothing
+                # past the first ~700 characters of bullets is lost.
+                sections.extend(_group_chunks(heading, items))
                 groups += 1
             else:
                 sections.append(heading)
@@ -516,6 +636,10 @@ class DeepResearcher:
         self._rounds_started: int = 0
         self.queries_used: Set[str] = set()
         self.urls_fetched: Set[str] = set()
+        # RES-03: url -> search engine that returned it, so a finding
+        # extracted from it can be tagged with real provenance. Populated in
+        # `_search_and_extract`, read in `_fetch_and_extract`.
+        self._url_engine: Dict[str, str] = {}
         self.analyzed_urls: List[Dict[str, str]] = []
         self.round_count: int = 0
         # Track which search providers actually returned results during the
@@ -895,10 +1019,21 @@ class DeepResearcher:
         # being cut at the cap.
         try:
             grouped = _outline_sections(text)
-        except Exception:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
+            # RES-05: planning's own recovery policy is exactly this fallback
+            # -- the flat, non-grouped decomposition below still runs, so a
+            # plan is never emptied by a parse failure, only made coarser.
+            err = PlanningStageError(str(e), stage="plan", cause=e)
+            logger.debug(f"Outline grouping failed [{err.error_info.code}]: {e}")
             grouped = None
         if grouped:
-            return self._clean_subquestions(grouped)
+            # RES-01 (MAPA_REUTILIZACION.md): grouping already keeps a
+            # 44-bullet brief inside MAX_SUBQUESTIONS, but a brief with MORE
+            # real ## headings than that hit the same numeric ceiling meant
+            # for an unstructured flat list. A grouped section is one heading
+            # the user actually wrote, not a guessed split point, so dropping
+            # one past 24 deletes a whole named section — use the wider cap.
+            return self._clean_subquestions(grouped, limit=MAX_GROUPED_SUBQUESTIONS)
         found: List[str] = []
         for line in text.splitlines():
             if not line.strip():
@@ -917,8 +1052,11 @@ class DeepResearcher:
         return self._clean_subquestions(found)
 
     @staticmethod
-    def _clean_subquestions(items) -> List[str]:
-        """Trim, deduplicate, drop any question that swallows another, cap at 12.
+    def _clean_subquestions(items, *, limit: int = MAX_SUBQUESTIONS) -> List[str]:
+        """Trim, deduplicate, drop any question that swallows another, cap at
+        `limit` (default `MAX_SUBQUESTIONS`, the flat-list backstop; grouped
+        outline sections use the wider `MAX_GROUPED_SUBQUESTIONS` — see
+        `_extract_subquestions`).
 
         The containment rule is the backstop for a question typed as one
         paragraph: however the split goes, an entry that contains another entry
@@ -944,7 +1082,7 @@ class DeepResearcher:
         kept = [text for index, text in enumerate(out)
                 if not any(other != keys[index] and other in keys[index]
                            for other in keys)]
-        return kept[:MAX_SUBQUESTIONS]
+        return kept[:limit]
 
     async def _classify_category(self, question: str) -> Optional[str]:
         """Fast LLM call to classify the research question into a category."""
@@ -1068,6 +1206,13 @@ class DeepResearcher:
                         "url": url,
                         "title": r.get("title", "") or url,
                     })
+                    # RES-03: which engine returned this URL, looked up by
+                    # `_fetch_and_extract` (not passed as a call argument —
+                    # several tests replace that method wholesale with a
+                    # narrower signature, and this keeps their mocks working).
+                    engine = str(r.get("_engine") or "")
+                    if engine:
+                        self._url_engine[url] = engine
                 if len(urls_to_fetch) >= self.max_urls_per_round * len(queries):
                     break
 
@@ -1161,6 +1306,12 @@ class DeepResearcher:
                         logger.info(f"Research search: {prov} returned {len(results)} results")
                         if prov not in self.providers_used:
                             self.providers_used.append(prov)
+                        # RES-03: tag each result with the engine that found
+                        # it, so the EvidenceRef this becomes (if extracted)
+                        # carries real provenance instead of "unknown".
+                        for r in results:
+                            if isinstance(r, dict):
+                                r.setdefault("_engine", prov)
                         return results
                 except Exception as e:
                     raised = True
@@ -1179,7 +1330,12 @@ class DeepResearcher:
                 )
             return []
         except Exception as e:
-            logger.error(f"Search failed for '{query}': {e}")
+            # RES-05: one query's own failure — the round proceeds on
+            # whatever the OTHER queries returned (`_search_and_extract`
+            # gathers with `return_exceptions=True`); this never empties a
+            # round by itself.
+            err = SearchStageError(str(e), stage="search", cause=e)
+            logger.error(f"Search failed for '{query}' [{err.error_info.code}]: {e}")
             self._last_search_error = str(e)
             return []
 
@@ -1199,8 +1355,17 @@ class DeepResearcher:
         return str(provider or "searxng").strip()
 
     async def _fetch_and_extract(self, url: str, question: str,
-                                 title: str) -> Optional[Dict]:
-        """Fetch a URL's content and use LLM to extract relevant info."""
+                                 title: str, engine: str = "") -> Optional[Dict]:
+        """Fetch a URL's content and use LLM to extract relevant info.
+
+        `engine`: the search provider that returned this URL (RES-03) —
+        carried through to every finding this call can return, so
+        `SourceRegistry.add` records it on the `EvidenceRef`. Callers
+        normally leave it unset; it falls back to `self._url_engine[url]`
+        (filled in by `_search_and_extract`), so the internal call site can
+        keep its original 3-argument shape — several existing tests replace
+        this whole method with a narrower mock and must not break."""
+        engine = engine or getattr(self, "_url_engine", {}).get(url, "")
         display = title or url
         self._emit(phase="reading", url=url, title=display,
                    total_sources=len(self.urls_fetched))
@@ -1265,12 +1430,13 @@ class DeepResearcher:
                 parsed["url"] = url
                 parsed["title"] = title or page.get("title", "")
                 parsed["og_image"] = page.get("og_image", "")
+                parsed["engine"] = engine
                 summary = parsed.get("summary")
                 summary = summary.strip() if isinstance(summary, str) else ""
                 evidence = parsed.get("evidence")
                 evidence = evidence.strip() if isinstance(evidence, str) else ""
                 if not summary and not evidence:
-                    return self._rendered_page_finding(url, title, page, content)
+                    return self._rendered_page_finding(url, title, page, content, engine=engine)
                 # An empty `summary` beside real `evidence` is the extractor
                 # skipping a field, not a verdict that the page was useless.
                 # is_low_quality("") is True, so this finding used to be thrown
@@ -1284,7 +1450,7 @@ class DeepResearcher:
                 return parsed
             raw_response = str(response or "").strip()
             if not raw_response:
-                return self._rendered_page_finding(url, title, page, content)
+                return self._rendered_page_finding(url, title, page, content, engine=engine)
             if is_low_quality(raw_response):
                 return None
             # Preserve substantive non-JSON output, never an empty finding.
@@ -1292,16 +1458,24 @@ class DeepResearcher:
                 "url": url,
                 "title": title or page.get("title", ""),
                 "og_image": page.get("og_image", ""),
+                "engine": engine,
                 "rational": "LLM extraction (raw)",
                 "evidence": raw_response[:3000],
                 "summary": raw_response[:500],
             }
         except Exception as e:
-            logger.warning(f"LLM extraction failed for {url}: {e}")
-            return self._rendered_page_finding(url, title, page, content)
+            # RES-05: this URL's own failure — the round keeps whatever the
+            # OTHER URLs yielded (`_search_and_extract` gathers with
+            # `return_exceptions=True`, and this is caught here besides), and
+            # `_rendered_page_finding` still returns the page's own text
+            # rather than losing the fetch entirely.
+            err = ExtractionStageError(str(e), stage="extract", cause=e)
+            logger.warning(f"LLM extraction failed for {url} [{err.error_info.code}]: {e}")
+            return self._rendered_page_finding(url, title, page, content, engine=engine)
 
     @staticmethod
-    def _rendered_page_finding(url: str, title: str, page: Dict, content: str) -> Optional[Dict]:
+    def _rendered_page_finding(url: str, title: str, page: Dict, content: str,
+                               engine: str = "") -> Optional[Dict]:
         """Retain source text after extraction failure, never fabricate a finding.
 
         Adapted from CommanderTurtle/diogenes 87d01f6f (AGPL-3.0-or-later).
@@ -1315,6 +1489,7 @@ class DeepResearcher:
             evidence = evidence[:boundary]
         return {"url": url, "title": title or page.get("title", ""),
                 "og_image": page.get("og_image", ""),
+                "engine": engine,
                 "rational": "Extraction failed; retained original source text, not a verified conclusion.",
                 "evidence": evidence, "summary": evidence[:1200],
                 "extraction_mode": "rendered_page_fallback"}
@@ -1337,6 +1512,7 @@ class DeepResearcher:
             language_line=self._language_line(),
         )
 
+        budget = min(self.max_report_tokens, self.SYNTHESIS_MAX_TOKENS)
         try:
             return await self._llm(
                 [{"role": "user", "content": prompt}],
@@ -1345,7 +1521,7 @@ class DeepResearcher:
                 # which gets the whole evidence list again. Rewriting it at
                 # research_max_tokens (16k) every round is what made one
                 # round take 15 minutes on a local 27B (10-09-2026).
-                max_tokens=min(self.max_report_tokens, self.SYNTHESIS_MAX_TOKENS),
+                max_tokens=budget,
                 # Synthesis is a heavy generation call like the final report
                 # (which gets 180s); a slow local model (e.g. a 20B served from
                 # LM Studio) routinely needs >60s for it. The old 60s cap timed
@@ -1353,9 +1529,25 @@ class DeepResearcher:
                 timeout=180,
             )
         except Exception as e:
-            logger.error(f"Synthesis failed: {e}")
-            self._emit(phase="warning", message="Synthesis failed, keeping previous report")
-            return current_report  # keep the old report on failure
+            err = SynthesisStageError(str(e), stage="synthesize", cause=e)
+            logger.error(f"Synthesis failed [{err.error_info.code}]: {e}")
+            self._note_failure(f"synthesis: {e}")
+            # RES-05: the findings that fed this call live in `self.findings`,
+            # not in this stack frame, so they survive regardless of what
+            # happens next. Retry ONCE at half the token budget before giving
+            # up — a model that timed out writing `budget` tokens may still
+            # answer inside a smaller one.
+            reduced = max(1024, budget // 2)
+            try:
+                return await self._llm(
+                    [{"role": "user", "content": prompt}],
+                    temperature=0.3, max_tokens=reduced, timeout=180,
+                )
+            except Exception as e2:
+                logger.error(f"Synthesis retry at {reduced} tokens failed: {e2}")
+                self._note_failure(f"synthesis retry ({reduced} tokens): {e2}")
+                self._emit(phase="warning", message="Synthesis failed, keeping previous report")
+                return current_report  # keep the old report on failure
 
     # ------------------------------------------------------------------
     # DECIDE
@@ -1465,6 +1657,45 @@ class DeepResearcher:
             logger.error(f"Final report generation failed: {e}")
             return report  # return the evolving report as-is
 
+    #: A "defined term" carried forward between parts is whatever the model
+    #: itself bolded — `**Latigazo cervical**` — the same convention every
+    #: part is already told to use for headings/emphasis, so this reads
+    #: intent the model already expressed rather than guessing at one.
+    _CONTINUITY_TERM_RE = re.compile(r"\*\*([^*\n]{3,80})\*\*")
+    _CONTINUITY_MAX_TERMS = 20
+
+    @classmethod
+    def _continuity_contract(cls, pieces: List[str]) -> str:
+        """RES-04: what part N+1 needs to know about parts 1..N so the report
+        reads as one document instead of N independently-written ones —
+        terminology already established, and how far citation numbers have
+        already gone. Returns "" for the first part (`pieces` empty) or when
+        the parts so far named nothing worth repeating.
+        """
+        if not pieces:
+            return ""
+        joined = "\n\n".join(pieces)
+        terms: List[str] = []
+        seen_terms: Set[str] = set()
+        for m in cls._CONTINUITY_TERM_RE.finditer(joined):
+            term = m.group(1).strip()
+            key = term.lower()
+            if term and key not in seen_terms:
+                seen_terms.add(key)
+                terms.append(term)
+            if len(terms) >= cls._CONTINUITY_MAX_TERMS:
+                break
+        numbers = [n for marker in find_markers(joined) for n in marker.numbers]
+        highest = max(numbers) if numbers else 0
+        lines = ["Continuity with the parts already written — do not break either of these:"]
+        if terms:
+            lines.append("- Reuse these exact terms; never rename or retranslate them: "
+                         + ", ".join(terms) + ".")
+        if highest:
+            lines.append(f"- Citation numbers already used go up to [{highest}]; keep using the "
+                         f"SAME [n] for the SAME source, never restart the numbering at [1].")
+        return "\n".join(lines) if len(lines) > 1 else ""
+
     async def _final_report_in_parts(self, question: str, report: str,
                                      subs: List[str],
                                      prior_parts: Optional[List[str]] = None) -> str:
@@ -1507,6 +1738,13 @@ class DeepResearcher:
                 language_line=language_line,
                 implication=implication,
             )
+            # RES-04: the continuity contract from every part written so far
+            # -- terminology already established and how far citations have
+            # been numbered -- so part 3 does not rename a term part 1 coined,
+            # and no part restarts the [n] numbering at 1.
+            contract = self._continuity_contract(pieces)
+            if contract:
+                prompt += "\n\n" + contract
             edges = []
             if first:
                 edges.append("Start with ONE # title for the whole report, then a short executive "
@@ -1537,9 +1775,25 @@ class DeepResearcher:
                     timeout=180,
                 )
             except Exception as e:
-                logger.error(f"Final report part {idx + 1}/{len(chunks)} failed: {e}")
+                err = WritingStageError(str(e), stage="write_part", cause=e)
+                logger.error(f"Final report part {idx + 1}/{len(chunks)} failed [{err.error_info.code}]: {e}")
                 self._failures.append(f"final report part {idx + 1}: {e}")
                 text = ""
+                # RES-05: retry ONLY this part, once, before falling back to a
+                # placeholder — the N-1 parts already in `pieces` (and already
+                # checkpointed) are never touched by this failure.
+                if not self._cancelled and not self._time_exceeded():
+                    try:
+                        text = await self._llm(
+                            [{"role": "user", "content": prompt}],
+                            temperature=0.3,
+                            max_tokens=self.max_report_tokens,
+                            timeout=180,
+                        )
+                    except Exception as e2:
+                        logger.error(f"Final report part {idx + 1}/{len(chunks)} retry failed: {e2}")
+                        self._failures.append(f"final report part {idx + 1} retry: {e2}")
+                        text = ""
             text = self._tidy_part(str(text or ""), first)
             if not text:
                 text = "\n\n".join(f"## {q}\n\n_(This section could not be written: the model did "
@@ -1615,6 +1869,15 @@ class DeepResearcher:
                 self._progress(kwargs)
             except Exception:
                 pass
+
+    def _note_failure(self, message: str) -> None:
+        """Record a stage failure if this instance has `_failures` to record
+        it in. Some unit tests build a `DeepResearcher` via `__new__` to test
+        one method in isolation without the full `__init__` — this must never
+        raise `AttributeError` on those."""
+        failures = getattr(self, "_failures", None)
+        if failures is not None:
+            failures.append(message)
 
     # ------------------------------------------------------------------
     # Checkpointing — the state a resumed run needs, nothing more
