@@ -763,6 +763,16 @@ class DeepResearcher:
             tps = float(get_setting("research_local_tokens_per_second", self.LOCAL_TOKENS_PER_SECOND))
         except Exception:
             tps = self.LOCAL_TOKENS_PER_SECOND
+        # The speed this model has actually shown (Ollama's own counters,
+        # folded in on every reply) beats the setting; with a third of slack,
+        # because a call that spills mid-run is slower than its average.
+        try:
+            from src.llm_core import local_speed
+            measured = local_speed(self.llm_model)
+        except Exception:
+            measured = None
+        if measured:
+            tps = measured * 0.66
         tps = min(500.0, max(0.5, tps))
         budget = self.LOCAL_PREFILL_SECONDS + max(0, int(max_tokens or 0)) / tps
         return int(min(3600, max(timeout, budget)))

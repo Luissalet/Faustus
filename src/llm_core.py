@@ -69,6 +69,37 @@ def _ollama_rate(count, duration_ns) -> Optional[float]:
     return round(count / (duration_ns / 1_000_000_000), 2)
 
 
+# What each local model really decodes at, learned from Ollama's own
+# counters on every reply. Deep Research sizes the wait for a non-streamed
+# call with it (deep_research._call_budget): a guessed 8 tok/s is right for
+# a 27B q4 on consumer cards and wrong for everything else.
+_LOCAL_SPEED: Dict[str, Dict[str, float]] = {}
+
+
+def remember_local_speed(model: str, count, duration_ns) -> Optional[float]:
+    """Fold one reply's decode speed into the model's running figure."""
+    tps = _ollama_rate(count, duration_ns)
+    if tps is None or not model:
+        return None
+    if count < 16:                       # a 3-token "cinco" measures nothing
+        return None
+    cur = _LOCAL_SPEED.get(model)
+    if cur is None:
+        _LOCAL_SPEED[model] = {"tps": tps, "samples": 1.0}
+    else:
+        # A slow-moving average: one spilling call must not halve the budget
+        # for the rest of the session, one fast one must not shrink it.
+        cur["tps"] = round(cur["tps"] * 0.7 + tps * 0.3, 2)
+        cur["samples"] += 1
+    return _LOCAL_SPEED[model]["tps"]
+
+
+def local_speed(model: str) -> Optional[float]:
+    """The learned decode speed of a local model in tok/s, or None."""
+    cur = _LOCAL_SPEED.get(str(model or ""))
+    return cur["tps"] if cur else None
+
+
 def _normalize_http_status(value) -> Optional[int]:
     """Accept only genuine three-digit integral HTTP status values."""
 
@@ -2680,6 +2711,10 @@ async def llm_call_async(
             logger.info(f"LLM async call to {target_url} succeeded in {duration:.2f}s (attempt {attempt})")
             _clear_host_dead(target_url)
             data = r.json()
+            if provider == "ollama" and isinstance(data, dict):
+                # Deep Research is all non-streamed calls; without this the
+                # learned speed would only ever come from the chat.
+                remember_local_speed(model, data.get("eval_count"), data.get("eval_duration"))
             if isinstance(data, dict) and data.get("error"):
                 provider_error = data["error"]
                 status = _provider_stream_error_status(provider_error, default=400)
@@ -3361,6 +3396,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                                 _gen_tps = _ollama_rate(j.get("eval_count"), j.get("eval_duration"))
                                 if _gen_tps:
                                     normalized_usage["gen_tps"] = _gen_tps
+                                    remember_local_speed(model, j.get("eval_count"), j.get("eval_duration"))
                                 _pre_tps = _ollama_rate(
                                     j.get("prompt_eval_count"), j.get("prompt_eval_duration")
                                 )
