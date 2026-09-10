@@ -129,6 +129,40 @@ export interface DiscoverEntry {
   tags: DiscoverTag[];
 }
 
+/**
+ * The capability manifest (Settings → Local models, "Calibrate") — announced
+ * (from /api/show, refreshed on every GET) vs tested (from a calibration
+ * run, kept until the model is calibrated again), on routes/local_models_routes.py's
+ * /api/models/{name}/capabilities and .../calibrate. Never confuse the two:
+ * `announced.capabilities.vision` is a claim, `tested.vision.ok` is a receipt.
+ */
+export type TestKey = 'tool_calling' | 'vision' | 'json_mode' | 'context_length_effective' | 'streaming_tool_calls' | 'refusal_format';
+export interface CapabilityTestResult {
+  ok: boolean | null;
+  tested_at?: string;
+  evidence?: Record<string, unknown>;
+}
+export interface ModelCapabilityManifest {
+  model: string;
+  endpoint_id: string;
+  stable_model_id?: string;
+  announced?: {
+    capabilities?: { tools?: boolean; vision?: boolean; reasoning?: boolean };
+    limits?: Record<string, number>;
+    family?: string;
+  };
+  tested?: Partial<Record<TestKey, CapabilityTestResult>>;
+  degraded?: string[];
+  updated_at?: string;
+}
+/** Tri-state a chip renders: gray "announced", green "tested ✓", red "failed ✗". */
+export function capChipState(result?: CapabilityTestResult): 'announced' | 'tested' | 'failed' {
+  if (!result) return 'announced';
+  if (result.ok === true) return 'tested';
+  if (result.ok === false) return 'failed';
+  return 'announced';
+}
+
 /* ── formatting (mirrors localModels.js) ── */
 
 export function fmtGb(bytes?: number | null): string {
@@ -240,6 +274,15 @@ export async function saveModelOptions(endpointId: string, name: string, options
   return d.options ?? {};
 }
 export const setPlacement = (order: number[]) => call<unknown>(`${API}/placement`, { method: 'PUT', headers: JSON_HEADERS, body: JSON.stringify({ order }) });
+const MODELS_API = '/api/models';
+/** Announced (always fresh) + tested (from the last calibration, if any). Cheap: reuses the cached /api/show read. */
+export function loadModelCapabilities(endpointId: string, name: string): Promise<ModelCapabilityManifest> {
+  return getJson<ModelCapabilityManifest>(`${MODELS_API}/${encName(name)}/capabilities?endpoint_id=${encodeURIComponent(endpointId)}`);
+}
+/** ~1 minute of short probes against the already-loaded model. 409 if it is not resident — this never loads one. */
+export function calibrateModel(endpointId: string, name: string): Promise<ModelCapabilityManifest> {
+  return call<ModelCapabilityManifest>(`${MODELS_API}/${encName(name)}/calibrate?endpoint_id=${encodeURIComponent(endpointId)}`, { method: 'POST', headers: JSON_HEADERS });
+}
 export async function setDefaultModel(endpointId: string, name: string): Promise<void> {
   await call('/api/auth/settings', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ default_endpoint_id: endpointId, default_model: name }) });
 }

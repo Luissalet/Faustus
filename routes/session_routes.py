@@ -20,6 +20,27 @@ from src.session_actions import is_session_recently_active
 from src.upload_handler import reserve_message_upload_references
 
 
+# QA-28/MOD-06: a mid-task model switch must say what it lost, not silently
+# pretend the new model can do everything the old one could. Only the two
+# capabilities this endpoint's response is contracted to name (spec: "vision,
+# tools nativas…") — extend here, not by inventing a parallel list elsewhere.
+_SWITCH_CAPABILITY_LABELS = {"vision": "vision", "tools": "native tool calling"}
+
+
+def _lost_capabilities_on_switch(previous_manifest: dict, new_manifest: dict) -> list:
+    """Capabilities the PREVIOUS model's manifest announced that the NEW
+    model's manifest does not. Manifest-only (no network probe here — see
+    src/model_calibration.py's module docstring): a model neither side has
+    ever been calibrated/announced for reports nothing lost, honestly,
+    rather than guessing from its name."""
+    previous_caps = (previous_manifest.get("announced") or {}).get("capabilities") or {}
+    new_caps = (new_manifest.get("announced") or {}).get("capabilities") or {}
+    return [
+        label for key, label in _SWITCH_CAPABILITY_LABELS.items()
+        if previous_caps.get(key) and not new_caps.get(key)
+    ]
+
+
 def _sanitize_export_filename(name: str) -> str:
     """Return a conservative filename safe for Content-Disposition."""
     name = name if isinstance(name, str) else ""
@@ -690,6 +711,11 @@ def setup_session_routes(
         if model is not None and endpoint_url is not None:
             user = effective_user(request)
             _reject_raw_endpoint_url_for_non_admin(request, user, endpoint_id, endpoint_url)
+            # QA-28/MOD-06: captured before session.model/endpoint_url are
+            # overwritten below — the "anterior" _lost_capabilities_on_switch
+            # compares against.
+            _previous_model = session.model
+            _previous_endpoint_url = session.endpoint_url
             endpoint_api_key = ""
             endpoint_base_url = ""
             if endpoint_id:
@@ -734,6 +760,38 @@ def setup_session_routes(
                 db.close()
             result["model"] = model
             result["endpoint_url"] = endpoint_url
+            # QA-28/MOD-06: recompute what this session may assume about the
+            # NEW model and say what it lost relative to the old one — a
+            # manifest-store read only, never a live probe (this endpoint has
+            # no business triggering a model load), so a model neither side
+            # has been calibrated/announced for honestly reports nothing
+            # lost instead of a guess from its name.
+            try:
+                from src import model_calibration as mcal
+                from src.llm_core import _detect_provider
+
+                new_key = mcal.manifest_key(
+                    vendor=_detect_provider(endpoint_url) or "",
+                    model_id=model,
+                    endpoint_id=endpoint_id or "",
+                )
+                # No endpoint_id is known for the PREVIOUS route (the session
+                # only ever stored its endpoint_url) — manifest_key falls
+                # back to a global scope for it, which is coarser than the
+                # digest/endpoint-scoped key above but still an honest match
+                # by vendor+model, never a guess.
+                previous_key = mcal.manifest_key(
+                    vendor=_detect_provider(_previous_endpoint_url) or "",
+                    model_id=_previous_model,
+                )
+                new_manifest = mcal.capabilities_for(new_key)
+                previous_manifest = mcal.capabilities_for(previous_key)
+                result["capabilities"] = new_manifest
+                result["lost"] = _lost_capabilities_on_switch(previous_manifest, new_manifest)
+            except Exception:
+                logger.debug("[session] capability recompute on model switch failed", exc_info=True)
+                result["capabilities"] = {}
+                result["lost"] = []
         return result
     
     @router.post("/session/{sid}/inject_messages")

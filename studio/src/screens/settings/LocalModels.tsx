@@ -3,7 +3,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, EmptyState, IconButton, Skeleton } from '../../components';
 import { invalidateSettings } from '../../adapters/settings';
 import {
+  calibrateModel,
   cancelPull,
+  capChipState,
   deleteModel,
   discoverModels,
   fitState,
@@ -11,6 +13,7 @@ import {
   fmtGb,
   loadLocalModels,
   loadModel,
+  loadModelCapabilities,
   pinWarning,
   vramFit,
   type VramFit,
@@ -31,7 +34,9 @@ import {
   type InstalledModel,
   type LoadedModel,
   type LocalModelsData,
+  type ModelCapabilityManifest,
   type Pull,
+  type TestKey,
   type Vram,
 } from '../../adapters/localModels';
 import type { AdmissionAction, VramBlocked } from '../../adapters/vramAdmission';
@@ -174,6 +179,13 @@ export function LocalModelsSection({ admin, say }: { admin: boolean; say: (t: st
   // dead. `working` names the model whose action is in flight: its button
   // spins, and the toast says what is happening now, not only afterwards.
   const [working, setWorking] = useState<string>('');
+  // The capability manifest (announced vs tested) per model name. A ref
+  // holds the cache itself — `capsTick` is the only thing that triggers a
+  // re-render, so a manifest that arrives after the row it belongs to has
+  // scrolled away does not restart the fetch loop below.
+  const caps = useRef<Map<string, ModelCapabilityManifest>>(new Map());
+  const [, setCapsTick] = useState(0);
+  const [calibrating, setCalibrating] = useState<string>('');
   // The "no room in VRAM" question for the Load button (OBJ-1). The server
   // refused to load behind your back and sent what is resident; the dialog
   // asks, and the answer is carried out from here — this screen has no
@@ -214,6 +226,47 @@ export function LocalModelsSection({ admin, say }: { admin: boolean; say: (t: st
       startMsg: action === 'unload' ? t('Unloading {names}, then loading {name}…', { names: names.join(', '), name: target.model.name }) : t('Loading {name} anyway…', { name: target.model.name }),
     });
   };
+
+  // Best-effort: one capability manifest per installed model, fetched once
+  // and cached in `caps` (a fresh /api/show read each time, but the tested
+  // side only changes on Calibrate). A model whose manifest fails to load
+  // just keeps showing announced-only chips — this never blocks the table.
+  useEffect(() => {
+    if (!data) return;
+    let cancelled = false;
+    (async () => {
+      for (const m of data.models) {
+        if (cancelled) return;
+        if (caps.current.has(m.name)) continue;
+        try {
+          const manifest = await loadModelCapabilities(data.endpoint_id, m.name);
+          if (cancelled) return;
+          caps.current.set(m.name, manifest);
+          setCapsTick((n) => n + 1);
+        } catch {
+          /* the row still renders with announced-only chips */
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [data]);
+
+  const handleCalibrate = useCallback(async (m: InstalledModel) => {
+    if (!data) return;
+    setCalibrating(m.name);
+    try {
+      const manifest = await calibrateModel(data.endpoint_id, m.name);
+      caps.current.set(m.name, manifest);
+      setCapsTick((n) => n + 1);
+      say(t('Calibrated {name}', { name: m.name }));
+    } catch (e) {
+      say((e as Error).message);
+    } finally {
+      setCalibrating('');
+    }
+  }, [data, say]);
 
   if (error && !data) return <EmptyState icon={HardDrive} title={t('Could not read the local models.')} body={error} />;
   const ep = data?.endpoints.find((e) => e.id === (data.endpoint_id || endpointId));
@@ -258,6 +311,9 @@ export function LocalModelsSection({ admin, say }: { admin: boolean; say: (t: st
               optionsFor={optionsFor}
               setOptionsFor={setOptionsFor}
               working={working}
+              manifests={caps.current}
+              calibrating={calibrating}
+              onCalibrate={(m) => void handleCalibrate(m)}
               onLoad={(m) => void act(async () => {
                 const out = await loadModel(data.endpoint_id, m.name, !!m.capabilities?.embedding);
                 // No room next to what is resident: the server did not load
@@ -502,17 +558,42 @@ const CAP_LABELS: [keyof Caps, string, string][] = [
   ['thinking', 'think', 'Reasoning / thinking mode'],
   ['embedding', 'embed', 'Embedding model (no chat)'],
 ];
-function CapsChips({ caps }: { caps?: Caps | string[] }) {
+// Only these two chips have a matching calibration probe (Lote 17); the
+// other two (thinking, embedding) stay announced-only chips — nothing here
+// tests reasoning mode or embedding output.
+const CAP_TEST_KEY: Partial<Record<keyof Caps, TestKey>> = { vision: 'vision', tools: 'tool_calling' };
+
+function capsEvidenceTitle(label: string, result?: { ok: boolean | null; tested_at?: string; evidence?: Record<string, unknown> }): string {
+  if (!result) return t(label);
+  const verdict = result.ok === true ? t('tested — passed') : result.ok === false ? t('tested — failed') : t('not tested');
+  const when = result.tested_at ? new Date(result.tested_at).toLocaleString(locale()) : '';
+  let evidence = '';
+  try {
+    evidence = result.evidence ? JSON.stringify(result.evidence).slice(0, 300) : '';
+  } catch {
+    /* evidence is best-effort context for the tooltip, never required */
+  }
+  return [t(label), when ? `${verdict} (${when})` : verdict, evidence].filter(Boolean).join('\n');
+}
+/** Announced (gray) vs probed ✓/✗ (green/red), from a calibration manifest — falls back to announced-only when none has loaded yet. */
+function CapsChips({ caps, manifest }: { caps?: Caps | string[]; manifest?: ModelCapabilityManifest }) {
   const set = new Set(Array.isArray(caps) ? caps : Object.keys(caps ?? {}).filter((k) => (caps as Caps)[k as keyof Caps]));
   const items = CAP_LABELS.filter(([k]) => set.has(k));
   if (!items.length) return <span className="fs-set__help">—</span>;
   return (
     <>
-      {items.map(([k, label, title]) => (
-        <span key={k} className="fs-lm__cap" data-cap={k} title={t(title)}>
-          {label}
-        </span>
-      ))}
+      {items.map(([k, label, title]) => {
+        const testKey = CAP_TEST_KEY[k];
+        const result = testKey ? manifest?.tested?.[testKey] : undefined;
+        const state = capChipState(result);
+        return (
+          <span key={k} className="fs-lm__cap" data-cap={k} data-state={state} title={capsEvidenceTitle(title, result)}>
+            {label}
+            {state === 'tested' && ' ✓'}
+            {state === 'failed' && ' ✗'}
+          </span>
+        );
+      })}
     </>
   );
 }
@@ -531,7 +612,7 @@ function optionsSummary(o?: Record<string, string | number>): string {
   return bits.join(' · ');
 }
 
-function InstalledTable({ models, cards, admin, optionsFor, setOptionsFor, working = '', onLoad, onUnload, onDefault, onDelete, onSaveOptions }: { models: InstalledModel[]; cards: GpuCard[]; admin: boolean; optionsFor: string; setOptionsFor: (n: string) => void; working?: string; onLoad: (m: InstalledModel) => void; onUnload: (m: InstalledModel) => void; onDefault: (m: InstalledModel) => void; onDelete: (m: InstalledModel) => void; onSaveOptions: (m: InstalledModel, opts: Record<string, string>) => Promise<void> }) {
+function InstalledTable({ models, cards, admin, optionsFor, setOptionsFor, working = '', manifests, calibrating = '', onCalibrate, onLoad, onUnload, onDefault, onDelete, onSaveOptions }: { models: InstalledModel[]; cards: GpuCard[]; admin: boolean; optionsFor: string; setOptionsFor: (n: string) => void; working?: string; manifests?: Map<string, ModelCapabilityManifest>; calibrating?: string; onCalibrate: (m: InstalledModel) => void; onLoad: (m: InstalledModel) => void; onUnload: (m: InstalledModel) => void; onDefault: (m: InstalledModel) => void; onDelete: (m: InstalledModel) => void; onSaveOptions: (m: InstalledModel, opts: Record<string, string>) => Promise<void> }) {
   if (!models.length) return <p className="fs-set__help">{t('No models installed on this endpoint yet — pull one below.')}</p>;
   return (
     <div className="fs-lm__table" role="table">
@@ -559,7 +640,7 @@ function InstalledTable({ models, cards, admin, optionsFor, setOptionsFor, worki
             </span>
             <span className="fs-set__help">{[m.quantization, m.parameter_size].filter(Boolean).join(' · ') || '—'}</span>
             <span className="fs-lm__caps">
-              <CapsChips caps={m.capabilities} />
+              <CapsChips caps={m.capabilities} manifest={manifests?.get(m.name)} />
             </span>
             <span className="fs-set__help" title={t('Context length the model was trained for (from /api/show)')}>{fmtCtx(m.context_length)}</span>
             <span className="fs-lm__actions">
@@ -567,6 +648,17 @@ function InstalledTable({ models, cards, admin, optionsFor, setOptionsFor, worki
                 ? <Button size="sm" variant="ghost" label={working === m.name ? t('Unloading…') : t('Unload')} loading={working === m.name} disabled={!!working && working !== m.name} onClick={() => onUnload(m)} />
                 : <Button size="sm" variant="ghost" label={working === m.name ? t('Loading…') : t('Load')} loading={working === m.name} disabled={!!working && working !== m.name} onClick={() => onLoad(m)} title={t('Load into VRAM now')} />)}
               {admin && !m.capabilities?.embedding && <Button size="sm" variant="ghost" label={t('Set default')} onClick={() => onDefault(m)} title={t('Make this the default chat model (Settings → Default AI)')} />}
+              {admin && !m.capabilities?.embedding && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  label={calibrating === m.name ? t('Calibrating…') : t('Calibrate')}
+                  loading={calibrating === m.name}
+                  disabled={!m.loaded || (!!calibrating && calibrating !== m.name) || (!!working && working !== m.name)}
+                  onClick={() => onCalibrate(m)}
+                  title={m.loaded ? t('Run a brief capability check (under a minute) against the loaded model') : t('Load the model first — calibration never loads one on its own')}
+                />
+              )}
               {admin && <Button size="sm" variant="ghost" label={t('Options')} onClick={() => setOptionsFor(optionsFor === m.name ? '' : m.name)} title="num_ctx / num_gpu / keep_alive / main_gpu" />}
               {admin && <Button size="sm" variant="danger" label={t('Delete')} onClick={() => onDelete(m)} title={t('Remove the model files from this Ollama')} />}
             </span>

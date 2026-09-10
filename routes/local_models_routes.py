@@ -21,6 +21,18 @@ servers this install is configured against:
   GET/PUT /api/local-models/{name}/options  per-model num_ctx/num_gpu/keep_alive/main_gpu
   DELETE /api/local-models/{name}           ollama /api/delete
 
+  GET  /api/models/{name}/capabilities      announced (fresh /api/show) + tested
+                                            + degraded manifest (MOD-01/MOD-06)
+  POST /api/models/{name}/calibrate         run the brief probe suite (MOD-02);
+                                            409 if the model is not resident
+
+The capability routes live at /api/models — where routes/model_routes.py
+already answers model metadata — not /api/local-models, even though the code
+is here (Lote 17 file ownership keeps model_routes.py untouched). See
+`setup_local_models_routes`'s `parent` router: a second, prefix-less router
+merged onto the one returned, so app.py's single
+`app.include_router(setup_local_models_routes())` call needs no change.
+
 Reads are for any signed-in user, mutations admin-only. A pull runs in a
 background thread that outlives the browser tab: the SSE stream is a view on
 the job, not the job itself, so closing the tab and reopening Settings
@@ -55,10 +67,14 @@ from core.log_safety import redact_url as _redact_url_for_log
 from core.middleware import require_admin
 from src import gpu_placement, gpu_shared_memory, vram_fit
 from src import local_model_catalog as catalog
+from src import model_calibration as mcal
+from src import model_capabilities as mc
 from src import model_load_options as mlo
 from src.auth_helpers import effective_user, owner_filter, require_user
 from src.endpoint_resolver import normalize_base as _normalize_base
 from src.llm_core import _host_match
+from src.model_capability_readers import base as mcr_base
+from src.model_capability_readers import ollama as ollama_reader
 from src.tls_overrides import llm_verify
 from routes.model_routes import (
     _FIT_RESERVE_BYTES,
@@ -1102,4 +1118,83 @@ def setup_local_models_routes() -> APIRouter:
             pass
         return result
 
-    return router
+    # ── model capability manifest (MOD-01/MOD-02/QA-28) ──────────────────────
+    #
+    # Wires src/model_capability_readers/ollama.py — normalization that
+    # existed only for tests before this — into an actual route, and gives
+    # src/model_calibration.py's manifest store somewhere to be read from and
+    # written to. Mounted at /api/models (see module docstring for why).
+    caps_router = APIRouter(tags=["model-capabilities"])
+
+    def _raw_show(root: str, name: str) -> Dict[str, Any]:
+        r = _post_json(root, "/api/show", {"model": name, "name": name}, _SHOW_TIMEOUT)
+        r.raise_for_status()
+        return r.json() or {}
+
+    def _digest_for(root: str, name: str) -> str:
+        try:
+            for tag in _tags(root):
+                if _same_model(str(tag.get("name") or tag.get("model") or ""), name):
+                    return str(tag.get("digest") or "")
+        except Exception as e:  # noqa: BLE001 — no digest is a fallback key, not a failure
+            logger.debug("capabilities: /api/tags failed for %s: %s", name, e)
+        return ""
+
+    def _resolve_announced(ep: Dict[str, Any], name: str) -> tuple:
+        """The announced half of the manifest, fresh off /api/show, plus the
+        manifest's storage key (digest-keyed when Ollama gave us one)."""
+        try:
+            raw = _raw_show(ep["root"], name)
+        except Exception as e:  # noqa: BLE001 — an unreachable Ollama still gets a manifest key
+            logger.debug("capabilities: /api/show failed for %s: %s", name, e)
+            raw = {}
+        record = ollama_reader.record_from_show_payload(name, raw, endpoint_id=ep["id"], base_url=ep["root"])
+        if record is None:
+            record = mcr_base.ModelCapabilityRecord(
+                vendor=mcr_base.VENDOR_OLLAMA, model_id=name,
+                capability=mc.unknown_capability(source=mc.SOURCE_PROVIDER_READER),
+            )
+        ctx = int((_summarize_show(raw) or {}).get("context_length") or 0)
+        announced = mcal.announced_from_ollama(record, context_length=ctx)
+        digest = _digest_for(ep["root"], name)
+        key = mcal.manifest_key(vendor="ollama", model_id=name, endpoint_id=ep["id"], digest=digest)
+        return announced, key
+
+    @caps_router.get("/api/models/{name:path}/capabilities")
+    async def api_model_capabilities(name: str, request: Request, endpoint_id: Optional[str] = Query(None)):
+        require_user(request)
+        name = validate_model_name(name)
+        ep = _pick_endpoint(endpoint_id, _endpoints_for(request))
+        announced, key = await asyncio.to_thread(_resolve_announced, ep, name)
+        manifest = mcal.save_announced(key, announced)
+        return {"model": name, "endpoint_id": ep["id"], "stable_model_id": key, **manifest}
+
+    @caps_router.post("/api/models/{name:path}/calibrate")
+    async def api_model_calibrate(name: str, request: Request, endpoint_id: Optional[str] = Query(None)):
+        require_admin(request)
+        name = validate_model_name(name)
+        ep = _pick_endpoint(endpoint_id, _endpoints_for(request))
+        announced, key = await asyncio.to_thread(_resolve_announced, ep, name)
+        try:
+            loaded = await asyncio.to_thread(_ps, ep["root"])
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(502, f"Could not reach {ep['name']} to check what is loaded: {e}")
+        loaded_names = [str(m.get("name") or m.get("model") or "") for m in loaded]
+        # VRAM admission rule (src/vram_admission.py): one resident model at a
+        # time, and never loaded behind the user's back. Calibration follows
+        # the same rule from the other side — it never loads one either.
+        if not mcal.is_model_loaded(loaded_names, name, same_model=_same_model):
+            raise HTTPException(409, f"{name} is not loaded — load it first, calibration never loads a model on its own")
+
+        def _run() -> Dict[str, Any]:
+            with _client_factory(mcal.PROBE_TIMEOUT_S) as client:
+                return mcal.run_calibration(client, ep["root"], name, announced=announced)
+
+        tested = await asyncio.to_thread(_run)
+        manifest = mcal.save_tested(key, tested, announced=announced)
+        return {"model": name, "endpoint_id": ep["id"], "stable_model_id": key, **manifest}
+
+    parent = APIRouter()
+    parent.include_router(router)
+    parent.include_router(caps_router)
+    return parent
