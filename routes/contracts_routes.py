@@ -13,8 +13,10 @@ and what was seen, so the response carries `path` separately from `message`
 instead of one prose blob a UI has to regex.
 """
 
+import json
 import logging
 import os
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
 
@@ -24,6 +26,21 @@ from src.contracts import ContractError, SkillManifest
 from src.contracts.base import now_iso
 
 logger = logging.getLogger(__name__)
+
+#: The v2 spec's own JSON Schema files, read fresh off disk rather than
+#: baked into this module — the schema this endpoint answers with and the
+#: schema `src/contracts/task.py`/`tool.py` were written against can never
+#: drift apart when there is only one copy on disk. Repo root the same way
+#: `codex_routes.py` finds `integrations/`: two `.parent`s up from this file.
+_SPEC_V2_SCHEMAS_DIR = Path(__file__).resolve().parent.parent / "docs" / "spec" / "v2" / "schemas"
+
+#: name -> version, for the eight schemas Lote 2 gave code to
+#: (`src/contracts/{tool,task,errors}.py`). Versions are read out of each
+#: file rather than hard-coded twice.
+_SPEC_V2_SCHEMA_NAMES = (
+    "tool_descriptor", "tool_invocation", "tool_result", "evidence_ref",
+    "task_state", "question_request", "approval_request", "event_envelope",
+)
 
 
 def setup_contracts_routes():
@@ -168,5 +185,49 @@ def setup_contracts_routes():
             "note": "valid and not runnable is the deny-by-default state, not a fault: "
                     "a skill that declares no backend may not run anywhere",
         }
+
+    @router.get("/schemas")
+    def list_schemas(request: Request):
+        """The eight spec v2 schemas this package gives code to, by name and
+        version. A discovery step, the same one `/backends` already offers
+        for execution targets: what exists, before fetching the shape of any
+        one of them."""
+        require_admin(request)
+        rows = []
+        for name in _SPEC_V2_SCHEMA_NAMES:
+            schema_path = _SPEC_V2_SCHEMAS_DIR / f"{name}.schema.json"
+            try:
+                body = json.loads(schema_path.read_text(encoding="utf-8"))
+            except OSError:
+                logger.warning("spec v2 schema file missing on disk: %s", schema_path)
+                continue
+            except json.JSONDecodeError:
+                logger.warning("spec v2 schema file is not valid JSON: %s", schema_path)
+                continue
+            rows.append({"name": name, "version": body.get("$id", "").rsplit(":", 1)[-1] or None,
+                        "title": body.get("title", name)})
+        return {"checked_at": now_iso(), "schemas": rows}
+
+    @router.get("/schemas/{name}")
+    def get_schema(name: str, request: Request):
+        """The JSON Schema document itself, byte-identical to the file in
+        `docs/spec/v2/schemas` — no baked-in copy to fall out of sync with
+        it. A name outside the eight this package knows, or a file that
+        went missing since `/schemas` listed it, is a clean 404 rather than
+        a stack trace."""
+        require_admin(request)
+        if name not in _SPEC_V2_SCHEMA_NAMES:
+            raise HTTPException(status_code=404, detail=f"No spec v2 schema named {name!r}")
+        schema_path = _SPEC_V2_SCHEMAS_DIR / f"{name}.schema.json"
+        try:
+            raw = schema_path.read_text(encoding="utf-8")
+        except OSError:
+            raise HTTPException(
+                status_code=404, detail=f"Schema file for {name!r} is missing on disk")
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError as e:
+            raise HTTPException(
+                status_code=500, detail=f"Schema file for {name!r} is not valid JSON: {e}")
 
     return router

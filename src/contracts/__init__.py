@@ -50,6 +50,24 @@ from .changeset import (  # noqa: F401
     CHANGE_SOURCES, CLAIM_KINDS, INTENTS, READ_ONLY_INTENTS,
     ChangeSet, Claim, Command, FileChanges, Verification,
 )
+from .errors import (  # noqa: F401
+    ERROR_CATEGORIES, ERROR_SUBCODES, ErrorInfo, from_exception,
+)
+from .tool import (  # noqa: F401
+    CANCELLATION_MODES, EFFECT_CLASSES, EFFECT_STATES, EVIDENCE_LOCATOR_KINDS,
+    EVIDENCE_RETENTION, EVIDENCE_SOURCE_TYPES, IDEMPOTENCY_MODES,
+    SPEC_V2_SCHEMA_VERSION, TOOL_RESULT_STATUSES,
+    EvidenceLocator, EvidenceRef, RetryPolicy, ToolDescriptor, ToolEffect,
+    ToolInvocation, ToolRef, ToolResult, ToolUncertainty,
+)
+from .task import (  # noqa: F401
+    ACCEPTANCE_STATES, APPROVAL_DECISION_SCOPES, APPROVAL_REQUEST_STATES,
+    EVENT_ENVELOPE_TYPES, EVENT_ENVELOPE_VISIBILITY, PLAN_STEP_STATES,
+    QUESTION_EXPIRY_POLICIES, TASK_STATES, TASK_TERMINAL, TASK_TRANSITIONS,
+    AcceptanceCriterion, ApprovalRequest, Budget, Decision, EventEnvelope,
+    PlanRevision, PlanStep, QuestionOption, QuestionRequest, TaskState,
+    assert_transition,
+)
 
 __all__ = [
     "SCHEMA_VERSION", "ContractError", "fingerprint", "now_iso",
@@ -69,4 +87,16 @@ __all__ = [
     "WORKFLOW_STATUSES", "TERMINAL_NODE", "TERMINAL_WORKFLOW",
     "ChangeSet", "Claim", "Command", "FileChanges", "Verification",
     "INTENTS", "READ_ONLY_INTENTS", "CHANGE_SOURCES", "CLAIM_KINDS",
+    "ErrorInfo", "from_exception", "ERROR_CATEGORIES", "ERROR_SUBCODES",
+    "ToolDescriptor", "ToolInvocation", "ToolResult", "ToolRef", "ToolEffect",
+    "ToolUncertainty", "RetryPolicy", "EvidenceRef", "EvidenceLocator",
+    "SPEC_V2_SCHEMA_VERSION", "EFFECT_CLASSES", "CANCELLATION_MODES",
+    "IDEMPOTENCY_MODES", "TOOL_RESULT_STATUSES", "EFFECT_STATES",
+    "EVIDENCE_SOURCE_TYPES", "EVIDENCE_LOCATOR_KINDS", "EVIDENCE_RETENTION",
+    "TaskState", "PlanStep", "AcceptanceCriterion", "Decision", "Budget",
+    "PlanRevision", "QuestionRequest", "QuestionOption", "ApprovalRequest",
+    "EventEnvelope", "assert_transition", "TASK_STATES", "TASK_TRANSITIONS",
+    "TASK_TERMINAL", "PLAN_STEP_STATES", "ACCEPTANCE_STATES",
+    "QUESTION_EXPIRY_POLICIES", "APPROVAL_REQUEST_STATES",
+    "APPROVAL_DECISION_SCOPES", "EVENT_ENVELOPE_TYPES", "EVENT_ENVELOPE_VISIBILITY",
 ]
