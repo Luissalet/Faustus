@@ -9,6 +9,7 @@ import {
   responseReason,
 } from './api';
 import { vramBlockedFrom, type VramBlocked } from './vramAdmission';
+import type { EvidenceRef } from './evidence';
 
 /**
  * ARCH-01: the server's version of the last stream this tab saw, once it has
@@ -279,6 +280,13 @@ export type ChatEvent =
        *  already worked off the persisted `tool_events[i]` entry). */
       argumentErrors?: { field: string; kind: string; detail: string }[];
       repairs?: { field: string; from: unknown; to: unknown; reason: string }[];
+      /** Lote 50 (BENCH-03 wiring): `EvidenceRef`s the tool call itself
+       *  attached to its result — the wire's `evidence_refs` on a
+       *  `tool_output` event, same `src/contracts/tool.py::EvidenceRef`
+       *  shape `adapters/evidence.ts` already round-trips through
+       *  `/api/evidence/resolve`. Forwarded as-is so a tool card can offer
+       *  "ver evidencia" per ref without a second fetch to discover them. */
+      evidenceRefs?: EvidenceRef[];
     }
   | { type: 'subagent'; payload: SubagentPayload }
   | { type: 'frame'; frame: BrowserFrame }
@@ -604,6 +612,30 @@ function newClientMessageId(): string {
   return `cid_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
+/** UX-07: what ContextPanel.tsx lets a person change for one turn. Every
+ *  field narrows what a normal turn would send — there is no field here that
+ *  can pull in something the global settings would not already offer, only
+ *  ways to leave part of it out or pin a specific source. */
+export interface ContextOverrides {
+  /** `@file` paths (or other manifest source ids) excluded from THIS turn,
+   *  including derived summaries/caches that still contain them — the server
+   *  side of that guarantee lives in the context engine, not here. */
+  excludeSources?: string[];
+  /** Source ids explicitly kept in even if a budget cut would drop them. */
+  pinSources?: string[];
+  excludeProjectMemory?: boolean;
+  excludeSkills?: boolean;
+}
+
+export function hasContextOverrides(overrides: ContextOverrides): boolean {
+  return Boolean(
+    overrides.excludeSources?.length ||
+    overrides.pinSources?.length ||
+    overrides.excludeProjectMemory ||
+    overrides.excludeSkills,
+  );
+}
+
 export interface SendOptions {
   sessionId: string;
   message: string;
@@ -636,6 +668,14 @@ export interface SendOptions {
    *  Omitted (or any other value) behaves exactly as before: the server
    *  defaults to 'supervised'. Only meaningful in agent mode. */
   autonomyPreset?: string;
+  /** UX-07: per-turn context overrides picked in ContextPanel.tsx — pins and
+   *  exclusions the sender wants for THIS turn only, without touching any
+   *  global memory/project/skills setting. Sent as `context_overrides` so a
+   *  server that already understands it (routes/chat_routes.py, outside this
+   *  lot's owned files) can apply and echo it in the context ledger; a server
+   *  that does not yet look at this field ignores an unknown form field, so
+   *  older and newer clients both keep working against it either way. */
+  contextOverrides?: ContextOverrides;
   /** A preset id from /api/presets (system prompt + sampling). */
   presetId?: string;
   /** The document open in the panel, so the model sees what you see. */
@@ -742,6 +782,16 @@ function repairsFrom(raw: unknown): { field: string; from: unknown; to: unknown;
     .map((r) => ({ field: str(r.field), from: r.from, to: r.to, reason: str(r.reason) }))
     .filter((r) => r.field);
   return repairs.length ? repairs : undefined;
+}
+
+/** Lote 50 (BENCH-03 wiring): the wire's `evidence_refs` on a `tool_output`
+ *  event — `EvidenceRef.to_mapping()` shapes, kept as-is (same posture as
+ *  `adapters/evidence.ts`'s own `resolutionFrom`) rather than narrowed, so a
+ *  field this reducer does not read yet is not silently dropped. */
+function evidenceRefsFrom(raw: unknown): EvidenceRef[] | undefined {
+  const refs = asArray<Record<string, unknown>>(raw)
+    .filter((r) => typeof r.evidence_id === 'string' && r.evidence_id) as unknown as EvidenceRef[];
+  return refs.length ? refs : undefined;
 }
 
 /** `harness_summary` data, and the `harness` block history keeps. */
@@ -869,6 +919,7 @@ export function decode(raw: Record<string, unknown>, sseEvent: string | null): C
         screenshot: safeFrameSrc(raw.screenshot) || undefined,
         argumentErrors: argumentErrorsFrom(raw.argument_errors),
         repairs: repairsFrom(raw.repairs),
+        evidenceRefs: evidenceRefsFrom(raw.evidence_refs),
       };
     case 'browser_view': {
       const frame = frameFrom(raw);
@@ -1185,6 +1236,9 @@ export async function* sendTurn(options: SendOptions): AsyncGenerator<ChatEvent>
   if (options.delegateTasks) fd.append('delegate_tasks', JSON.stringify(options.delegateTasks));
   if (options.incognito) fd.append('incognito', 'true');
   if (options.autonomyPreset) fd.append('autonomy_preset', options.autonomyPreset);
+  if (options.contextOverrides && hasContextOverrides(options.contextOverrides)) {
+    fd.append('context_overrides', JSON.stringify(options.contextOverrides));
+  }
   if (options.noMemory || options.incognito || options.compare) fd.set('no_memory', 'true');
   if (options.noSkills) fd.set('no_skills', 'true');
   if (options.inputTokenBudget != null) fd.set('input_token_budget', String(options.inputTokenBudget));

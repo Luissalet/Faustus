@@ -3,6 +3,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { Fragment, lazy, Suspense, useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import { Button, describeError, friendlyError, IconButton } from '../../components';
 import type { AskUser, ContextLedger, DelegationTask } from '../../adapters/chat';
+import type { EvidenceRef } from '../../adapters/evidence';
 import { attachmentUrl, isImage } from '../../adapters/composer';
 import { Rich } from '../rich';
 import { splitMentions } from '../../lib/mentions';
@@ -12,6 +13,38 @@ import { frameBatcher } from '../../lib/frame-batch';
 import { formatMetrics, liveTps, type LiveRate, type PlanStepView, type Step, type Turn } from './model';
 import { t, tn } from '../../i18n';
 import { getDisplay } from '../../shell/display';
+import { nextStreamAnnouncement } from '../../adapters/streamAnnounce';
+
+/**
+ * A11Y-02 — a `polite` live region fed grouped chunks
+ * (`adapters/streamAnnounce.ts::nextStreamAnnouncement`), never the whole
+ * growing message: an assistive tech re-reading the full text on every
+ * delta is exactly the "hundreds of announcements" this requirement rules
+ * out. On the turn's last delta (`active` going false) whatever tail never
+ * made it past the interval gate is flushed once, so the ending of a short
+ * answer is never silently skipped.
+ */
+function useGroupedStreamAnnouncement(text: string, active: boolean): string {
+  const [announcement, setAnnouncement] = useState('');
+  const progress = useRef({ length: 0, at: 0 });
+  const wasActive = useRef(active);
+  useEffect(() => {
+    if (active) {
+      const next = nextStreamAnnouncement(progress.current.length, text, progress.current.at, Date.now());
+      if (next) {
+        progress.current = { length: next.length, at: next.at };
+        setAnnouncement(next.chunk);
+      }
+    } else if (wasActive.current && text.length > progress.current.length) {
+      setAnnouncement(text.slice(progress.current.length));
+      progress.current = { length: 0, at: 0 };
+    } else if (wasActive.current) {
+      progress.current = { length: 0, at: 0 };
+    }
+    wasActive.current = active;
+  }, [text, active]);
+  return announcement;
+}
 
 /**
  * PERF-01/UX-05: paint a fast-changing value at most once per animation
@@ -64,6 +97,9 @@ export interface TranscriptProps {
   /** Side panel hooks: a workspace file, a living document, a worker to re-run. */
   onOpenFile?: (path: string) => void;
   onOpenDoc?: (docId: string) => void;
+  /** Lote 50 (BENCH-03 wiring): open the evidence inspector for one
+   *  `EvidenceRef` a tool call attached to its result (`step.evidenceRefs`). */
+  onOpenEvidence?: (ref: EvidenceRef) => void;
   onRerun?: (task: DelegationTask) => void;
   /** A new conversation with everything up to and including this reply. */
   onFork?: (turn: Turn) => void;
@@ -232,7 +268,7 @@ function ArgumentRepairs({ step }: { step: Step }) {
   );
 }
 
-function ToolRail({ steps, live, onOpenFile, onOpenDoc }: { steps: Step[]; live: boolean; onOpenFile?: (path: string) => void; onOpenDoc?: (docId: string) => void }) {
+function ToolRail({ steps, live, onOpenFile, onOpenDoc, onOpenEvidence }: { steps: Step[]; live: boolean; onOpenFile?: (path: string) => void; onOpenDoc?: (docId: string) => void; onOpenEvidence?: (ref: EvidenceRef) => void }) {
   const [expanded, setExpanded] = useState(false);
   const leadingDone = steps.findIndex((s) => s.state !== 'succeeded');
   const doneCount = leadingDone === -1 ? steps.length : leadingDone;
@@ -293,6 +329,20 @@ function ToolRail({ steps, live, onOpenFile, onOpenDoc }: { steps: Step[]; live:
             ) : null}
             {step.diff ? <DiffLines text={step.diff.text} /> : step.command && step.command !== step.label && <pre className="fs-studio__cmd">{step.command}</pre>}
             {(step.repairs?.length || step.argumentErrors?.length) ? <ArgumentRepairs step={step} /> : null}
+            {onOpenEvidence && step.evidenceRefs?.length ? (
+              <p className="fs-studio__step-links" data-testid="tool-evidence-links">
+                {step.evidenceRefs.map((ref) => (
+                  <button
+                    key={ref.evidence_id}
+                    type="button"
+                    className="fs-link"
+                    onClick={() => onOpenEvidence(ref)}
+                  >
+                    {t('View evidence')}
+                  </button>
+                ))}
+              </p>
+            ) : null}
             {step.output && <pre className="fs-studio__out">{step.output.slice(0, 6000)}</pre>}
             {step.screenshot && <img className="fs-studio__shot" src={step.screenshot} alt={t('Tool screenshot')} loading="lazy" />}
           </details>
@@ -803,6 +853,7 @@ function AssistantTurn({
   onNotice,
   onOpenFile,
   onOpenDoc,
+  onOpenEvidence,
   onRerun,
   onFork,
 }: {
@@ -817,6 +868,7 @@ function AssistantTurn({
   onNotice: TranscriptProps['onNotice'];
   onOpenFile?: TranscriptProps['onOpenFile'];
   onOpenDoc?: TranscriptProps['onOpenDoc'];
+  onOpenEvidence?: TranscriptProps['onOpenEvidence'];
   onRerun?: TranscriptProps['onRerun'];
   onFork?: () => void;
 }) {
@@ -828,6 +880,8 @@ function AssistantTurn({
   // The tool call has already run and is in the rail; its fence is leftovers.
   const fences = useFenceRegex();
   const body = stripExecutedFences(turn.text, fences);
+  // A11Y-02: grouped, not per-token — see useGroupedStreamAnnouncement above.
+  const streamAnnouncement = useGroupedStreamAnnouncement(body, turn.streaming);
   return (
     <article className="fs-turn fs-turn--assistant" data-enter={enter || undefined} data-nav-id={turn.id} data-db-id={turn.dbId} data-streaming={turn.streaming || undefined} data-testid="turn-assistant">
       <span className="fs-turn__node" aria-hidden="true" />
@@ -854,7 +908,7 @@ function AssistantTurn({
         {turn.planSteps && turn.planSteps.length > 0 && (
           <PlanStepsCard steps={turn.planSteps} revision={turn.planRevision} warnings={turn.planWarnings} />
         )}
-        {turn.steps.length > 0 && <ToolRail steps={turn.steps} live={turn.streaming} onOpenFile={onOpenFile} onOpenDoc={onOpenDoc} />}
+        {turn.steps.length > 0 && <ToolRail steps={turn.steps} live={turn.streaming} onOpenFile={onOpenFile} onOpenDoc={onOpenDoc} onOpenEvidence={onOpenEvidence} />}
         {turn.workers.length > 0 && (
           <Suspense fallback={null}>
             <SubagentBoard workers={turn.workers} live={turn.streaming} onRerun={onRerun ?? (() => undefined)} onNotice={onNotice} />
@@ -863,6 +917,7 @@ function AssistantTurn({
         {turn.research && !turn.research.done && turn.streaming && <ResearchLine research={turn.research} />}
         {body && <Rich text={body} onOpenFile={onOpenFile} />}
         {turn.streaming && body && <span className="fs-studio__cursor" aria-hidden="true" />}
+        {turn.streaming && <span className="fs-sr-only" aria-live="polite" data-testid="stream-announcement">{streamAnnouncement}</span>}
         {turn.images.map((url) => (
           <img key={url} className="fs-studio__image" src={url} alt={t('Generated image')} loading="lazy" />
         ))}
@@ -1050,7 +1105,7 @@ const ESTIMATED_TURN_HEIGHT = 180;
  *  means without the two files sharing state. */
 const BOTTOM_THRESHOLD = 80;
 
-export function Transcript({ turns, busy, onApproval, onAnswer, onEdit, onRegenerate, onDelete, onNotice, onOpenFile, onOpenDoc, onRerun, onFork, onQuote }: TranscriptProps) {
+export function Transcript({ turns, busy, onApproval, onAnswer, onEdit, onRegenerate, onDelete, onNotice, onOpenFile, onOpenDoc, onOpenEvidence, onRerun, onFork, onQuote }: TranscriptProps) {
   const quote = useQuoteSelection(onQuote);
 
   // PERF-01/QA-37: Studio.tsx owns the actual scrolling element
@@ -1153,6 +1208,7 @@ export function Transcript({ turns, busy, onApproval, onAnswer, onEdit, onRegene
                 onNotice={onNotice}
                 onOpenFile={onOpenFile}
                 onOpenDoc={onOpenDoc}
+                onOpenEvidence={onOpenEvidence}
                 onRerun={onRerun}
                 onFork={onFork ? () => onFork(turn) : undefined}
               />

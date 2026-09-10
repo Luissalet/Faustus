@@ -856,6 +856,14 @@ app.include_router(setup_search_routes(config))
 from routes.preset_routes import setup_preset_routes
 app.include_router(setup_preset_routes(preset_manager))
 
+# P1 UX-10: reusable prompt templates
+from routes.prompts_routes import setup_prompt_routes
+app.include_router(setup_prompt_routes())
+
+# P1 ACT-02: notification preferences, dedupe and the in-app tray's feed
+from routes.notifications_routes import setup_notification_routes
+app.include_router(setup_notification_routes())
+
 # Diagnostics
 from routes.diagnostics_routes import setup_diagnostics_routes
 app.include_router(setup_diagnostics_routes(rag_manager, rag_available, research_handler, memory_vector))
@@ -914,6 +922,10 @@ app.include_router(setup_gallery_routes())
 # Persisted image-editor drafts (server-backed projects)
 from routes.editor_draft_routes import setup_editor_draft_routes
 app.include_router(setup_editor_draft_routes())
+
+# Evidence inspector (BENCH-03): resolve an EvidenceRef back to its source
+from routes.evidence_routes import setup_evidence_routes
+app.include_router(setup_evidence_routes())
 
 # Scheduled tasks + event bus
 from src.task_scheduler import TaskScheduler
@@ -2056,10 +2068,40 @@ async def _shutdown_event():
     logger.info("Application shutdown complete")
 
 
+def _insecure_bind_warning(bind_host: str, ssl_certfile: Optional[str],
+                            ssl_keyfile: Optional[str]) -> Optional[str]:
+    """Lote 50 wiring: nothing in the `__main__` runner ever refused a
+    non-loopback bind — the deployment docs assume a reverse proxy terminates
+    TLS in front of this process — but a plain HTTP admin/API surface
+    reachable off-box with no TLS anywhere in the picture is exactly the
+    misconfiguration an operator is most likely to hit by accident
+    (APP_BIND=0.0.0.0 to reach it from another machine, forgetting the
+    proxy). Returns the warning text, or None when the bind is loopback or
+    both SSL files are configured — a pure function so it is testable without
+    actually starting uvicorn.
+    """
+    if bind_host in ("127.0.0.1", "::1", "localhost"):
+        return None
+    if ssl_certfile and ssl_keyfile:
+        return None
+    return (
+        f"Binding to {bind_host} without TLS (APP_SSL_CERTFILE/APP_SSL_KEYFILE not set) — "
+        "this process will serve plain HTTP off loopback. Put it behind a TLS-"
+        "terminating reverse proxy, or set APP_SSL_CERTFILE/APP_SSL_KEYFILE."
+    )
+
+
 if __name__ == "__main__":
     import uvicorn
 
     bind_host = os.getenv("APP_BIND", "127.0.0.1")
     bind_port = int(os.getenv("APP_PORT", "7000"))
+    ssl_certfile = os.getenv("APP_SSL_CERTFILE") or None
+    ssl_keyfile = os.getenv("APP_SSL_KEYFILE") or None
 
-    uvicorn.run(app, host=bind_host, port=bind_port, log_level="info")
+    _warning = _insecure_bind_warning(bind_host, ssl_certfile, ssl_keyfile)
+    if _warning:
+        logger.warning(_warning)
+
+    uvicorn.run(app, host=bind_host, port=bind_port, log_level="info",
+                ssl_certfile=ssl_certfile, ssl_keyfile=ssl_keyfile)

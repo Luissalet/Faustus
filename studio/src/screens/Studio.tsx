@@ -24,6 +24,7 @@ import {
 } from '../adapters/chat';
 import { listProjects, type Project } from '../adapters/projects';
 import { createDoc } from '../adapters/documents';
+import type { EvidenceRef } from '../adapters/evidence';
 import {
   attachmentsFromMetadata,
   getRagActive,
@@ -92,6 +93,9 @@ import { useDisplay } from '../shell/display';
    panel (browser frames, document editor, file viewer) arrive when opened. */
 const WorkspaceDialog = lazy(() => import('./studio/WorkspaceDialog'));
 const SidePanel = lazy(() => import('./studio/SidePanel'));
+// Lote 50 (BENCH-03 wiring): only fetched once a tool card's "ver evidencia"
+// button is actually clicked — same rare-on-demand posture as the two above.
+const EvidenceInspector = lazy(() => import('./Evidence'));
 import {selectionImage,selectionPrompt} from './studio/FrameSelection';
 import ProjectVisualReferences from './studio/ProjectVisualReferences';
 import StyleLab from './studio/StyleLab';
@@ -340,6 +344,11 @@ export function StudioScreen() {
   const [modelSignal, setModelSignal] = useState(0);
   const [panel, panelDispatch] = useChatPanel(sessionId,knobs.incognito);
   const [teamEnabled,setTeamEnabled] = useState(false);
+  // Lote 50 (BENCH-03 wiring): the evidence inspector opens as its own
+  // lightweight dialog, independent of `panel`'s file/doc tab state machine
+  // — a tool card's "ver evidencia" is a quick, read-only lookup, not
+  // another side-panel surface competing for the same tab.
+  const [evidenceRef, setEvidenceRef] = useState<EvidenceRef | null>(null);
 
   const controllerRef = useRef<AbortController | null>(null);
   const runEpoch = useRef(0);
@@ -2320,6 +2329,7 @@ export function StudioScreen() {
               onNotice={say}
               onOpenFile={workspace ? (path) => panelDispatch({ type: 'file', workspace, path }) : undefined}
               onOpenDoc={(docId) => panelDispatch({ type: 'doc', doc: { streaming: false, id: docId, title: '', language: '', content: '', version: 0, suggestions: [] } })}
+              onOpenEvidence={setEvidenceRef}
               onRerun={rerunWorker}
               onFork={knobs.incognito ? undefined : (turn) => void forkFrom(turn)}
               onQuote={quote}
@@ -2334,6 +2344,19 @@ export function StudioScreen() {
           onDone={() => setVramAnswered(turns?.map((tn) => tn.vram).find(Boolean)?.ticket ?? null)}
           say={(text, tone) => say(text, tone === 'warn' ? 'warning' : 'info')}
         />
+        {/* BENCH-03 (Lote 50 wiring): a tool card's "ver evidencia" button. */}
+        <Dialog
+          open={evidenceRef !== null}
+          onOpenChange={(open) => { if (!open) setEvidenceRef(null); }}
+          title={t('Evidence')}
+          testId="evidence-dialog"
+        >
+          {evidenceRef && (
+            <Suspense fallback={<Skeleton label={t('Loading evidence')} />}>
+              <EvidenceInspector evidence={evidenceRef} workspace={workspace} />
+            </Suspense>
+          )}
+        </Dialog>
         </div>
 
         {notice && (

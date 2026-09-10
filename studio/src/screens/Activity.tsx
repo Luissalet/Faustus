@@ -7,6 +7,7 @@ import { CACHE_LABELS, clearAutomationCache, runAutomation, stopAutomation } fro
 import { relativeTime } from '../adapters/home';
 import { stopChat } from '../adapters/chat';
 import { createActivityPoller } from '../lib/activity-poller';
+import { emitForNewRuns } from '../shell/notifications';
 import { Rich } from './rich';
 import {ArtifactInfo} from './ArtifactInfo';
 import './projects.css';
@@ -131,6 +132,11 @@ export function ActivityScreen() {
   const detailTitle = useRef<HTMLHeadingElement | null>(null);
   const rowButtons = useRef(new Map<string, HTMLButtonElement>());
   const focusAfterSelection = useRef<'detail' | string | null>(null);
+  // ACT-02: which runs this tab has already reported to the notification
+  // tray (routes/notifications_routes.py dedupes server-side too, so this is
+  // only about not spending a network round trip every 5s poll tick for the
+  // same still-pending approval).
+  const notifiedRuns = useRef(new Set<string>());
 
   const say = useCallback((msg: string) => {
     setNotice(msg);
@@ -151,6 +157,7 @@ export function ActivityScreen() {
       setDegraded(data.degraded);
       setFailed(false);
       setUpdatedAt(Date.now());
+      void emitForNewRuns(data.runs, notifiedRuns.current);
     },
     error: () => setFailed(true),
     refreshing: setRefreshing,

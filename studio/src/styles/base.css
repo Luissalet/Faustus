@@ -100,6 +100,23 @@
   transform: translateY(0);
 }
 
+/* ── High contrast (A11Y-03) ──
+   `prefers-contrast: more` is a real, honoured OS/browser setting (macOS
+   "Increase contrast", Windows high-contrast themes, Firefox/Safari's own
+   toggle) distinct from dark/light — a person can want either theme *and*
+   stronger contrast. Every value here is still a token from tokens.css
+   (never a hardcoded colour), just the borders/focus ring made bolder;
+   the underlying palette (DESIGN.md's AA-checked pairs) is unchanged. */
+@media (prefers-contrast: more) {
+  .fs-app :where(a, button, input, select, textarea, [tabindex]):focus-visible {
+    outline-width: 3px;
+    outline-offset: 3px;
+  }
+  .fs-app {
+    --fs-border: var(--fs-border-strong);
+  }
+}
+
 /* ── Reduced motion ──
    Translation, parallax and loops stop. Opacity fades collapse to zero
    duration rather than disappearing, so state changes stay legible. */

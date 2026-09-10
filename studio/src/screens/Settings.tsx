@@ -1,7 +1,9 @@
 import {
   Bot,
   Check,
+  Copy,
   HardDrive,
+  HelpCircle,
   Layers,
   UserRound,
   Users,
@@ -17,6 +19,7 @@ import {
   Server,
   Settings2,
   Sparkles,
+  Stethoscope,
   Trash2,
   X,
 } from 'lucide-react';
@@ -75,12 +78,17 @@ import { t, tn } from '../i18n';
  * there at their tab.
  */
 
-type SectionKey = 'general' | 'models' | 'local' | 'defaults' | 'voice' | 'search' | 'reminders' | 'integrations' | 'agent' | 'tools' | 'effective_config' | 'shortcuts' | 'account' | 'users' | 'system';
+type SectionKey = 'general' | 'models' | 'local' | 'defaults' | 'voice' | 'search' | 'reminders' | 'integrations' | 'agent' | 'tools' | 'effective_config' | 'shortcuts' | 'account' | 'users' | 'system' | 'health';
 
 const SECTIONS: { key: SectionKey; label: string; icon: typeof Bot; admin?: boolean }[] = [
   { key: 'general', label: 'Appearance', icon: Palette },
   { key: 'models', label: 'Models', icon: Server },
   { key: 'local', label: 'Local models', icon: HardDrive },
+  // SET-04: search, models, MCP, disk, queue and safe-mode in one card,
+  // reusing /api/doctor, /api/safe-mode/status and the search-health probe
+  // that already lived in the Search section — never a second store for the
+  // same fact.
+  { key: 'health', label: 'Health', icon: Stethoscope, admin: true },
   { key: 'defaults', label: 'Default AI', icon: Sparkles },
   { key: 'voice', label: 'Voice', icon: Mic },
   { key: 'search', label: 'Search', icon: Search },
@@ -400,6 +408,10 @@ function DefaultsSection({ settings, endpoints, onSave, say }: { settings: Setti
           <Text id="img-model" value={str(draft.image_model)} onChange={(v) => set('image_model', v)} placeholder={t('image model')} />
           <Select id="img-quality" value={str(draft.image_quality, 'medium')} onChange={(v) => set('image_quality', v)} options={[{ value: 'low', label: t('Low (fast)') }, { value: 'medium', label: t('Medium') }, { value: 'high', label: t('High') }]} />
         </div>
+        {/* SET-06: why image generation might not actually work yet, sourced
+         *  from the same doctor check the Health section reads — never a
+         *  silent grey toggle. */}
+        <WhatsMissing area="media" name="engines" />
       </Field>
       <Field label={t('Teacher')} help={t('A big model that reviews and teaches the small one when needed.')}>
         <div className="fs-set__inline">
@@ -523,6 +535,183 @@ const PROVIDERS: Opt[] = [
  * which hands back the same pages for any phrasing, while the other engines
  * sat suspended — the research read nothing new and blamed the search.
  */
+/* ── SET-04 / SET-06: one shared /api/doctor read, several consumers ──
+ *
+ * `doctor.run()` (src/doctor.py) already answers "what is worth doing about
+ * this machine" per area — model, search, storage, queue/renders, GPU,
+ * plugins/MCP, browser — with a state, a cause (`detail`) and an action
+ * (`fix`). SET-04's health card and SET-06's inline "what's missing" text
+ * are two views of the exact same findings, so both read through this one
+ * cached fetch instead of each polling /api/doctor on its own.
+ */
+export interface DoctorFinding { area: string; name: string; state: string; detail: string; fix: string; facts: Record<string, unknown> }
+export interface DoctorReport { ok: boolean; checked_at: string; worst: string; counts: Record<string, number>; findings: DoctorFinding[]; rendered?: string }
+
+let doctorCache: { at: number; report: Promise<DoctorReport> } | null = null;
+function loadDoctorReport(fresh = false): Promise<DoctorReport> {
+  if (fresh || !doctorCache || Date.now() - doctorCache.at > 15000) {
+    doctorCache = { at: Date.now(), report: getJson<DoctorReport>('/api/doctor?verbose=true') };
+  }
+  return doctorCache.report;
+}
+
+const STATE_RANK: Record<string, number> = { fail: 0, unknown: 1, warn: 2, absent: 3, ok: 4 };
+
+/**
+ * SET-06: "a disabled feature explains whether it's missing a model,
+ * permission, engine or setting, instead of just sitting there as a grey
+ * button." Any section can drop this next to a toggle that depends on a
+ * doctor-checked area; it renders nothing once that area is fine, so it
+ * never becomes a manual nobody reads.
+ */
+function WhatsMissing({ area, name }: { area: string; name?: string }) {
+  const [findings, setFindings] = useState<DoctorFinding[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    void loadDoctorReport().then((r) => { if (live) setFindings(r.findings.filter((f) => f.area === area && (!name || f.name === name))); }).catch(() => { if (live) setFindings([]); });
+    return () => { live = false; };
+  }, [area, name]);
+  const worst = (findings ?? []).filter((f) => f.state !== 'ok').sort((a, b) => STATE_RANK[a.state] - STATE_RANK[b.state])[0];
+  if (!worst) return null;
+  return (
+    <p className="fs-set__help" data-tone={worst.state === 'fail' ? 'bad' : undefined} data-testid="whats-missing">
+      <HelpCircle size={12} aria-hidden="true" style={{ verticalAlign: 'text-bottom' }} />{' '}
+      {worst.detail}{worst.fix ? ` — ${worst.fix}` : ''}
+    </p>
+  );
+}
+
+function HealthSection({ say, onJump }: { say: (t: string) => void; onJump: (key: SectionKey) => void }) {
+  const [report, setReport] = useState<DoctorReport | null>(null);
+  const [safeMode, setSafeMode] = useState<{ active: boolean; reason: string; disabled: string[]; quarantined_mcp_servers: { id?: string; name?: string }[] } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [rep, sm] = await Promise.all([
+        loadDoctorReport(true),
+        getJson<{ active: boolean; reason: string; disabled: string[]; quarantined_mcp_servers: { id?: string; name?: string }[] }>('/api/safe-mode/status'),
+      ]);
+      setReport(rep);
+      setSafeMode(sm);
+    } catch (e) {
+      say((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }, [say]);
+  useEffect(() => { void refresh(); }, [refresh]);
+
+  const byArea = useMemo(() => {
+    const groups = new Map<string, DoctorFinding[]>();
+    for (const f of report?.findings ?? []) {
+      const list = groups.get(f.area) ?? [];
+      list.push(f);
+      groups.set(f.area, list);
+    }
+    return [...groups.entries()].sort(([a, fa], [b, fb]) => {
+      const wa = Math.min(...fa.map((f) => STATE_RANK[f.state] ?? 9));
+      const wb = Math.min(...fb.map((f) => STATE_RANK[f.state] ?? 9));
+      return wa - wb || a.localeCompare(b);
+    });
+  }, [report]);
+
+  const copyDiagnostic = async () => {
+    if (!report) return;
+    try {
+      await navigator.clipboard.writeText(report.rendered ?? JSON.stringify(report, null, 2));
+      say(t('Diagnostic copied'));
+    } catch {
+      say(t('The browser refused the clipboard.'));
+    }
+  };
+
+  const reactivate = async (subsystem?: string, mcpServerId?: string) => {
+    const key = subsystem ?? mcpServerId ?? '';
+    setBusy(key);
+    try {
+      await fetch('/api/safe-mode/reactivate', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(subsystem ? { subsystem } : { mcp_server_id: mcpServerId }) });
+      await refresh();
+      say(t('Reactivated'));
+    } catch (e) {
+      say((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <section className="fs-set__section" aria-labelledby="fs-set-health">
+      <div className="fs-set__row-between">
+        <h2 id="fs-set-health" className="fs-set__title">{t('Health')}</h2>
+        <div className="fs-set__actions">
+          <Button size="sm" variant="ghost" icon={Copy} label={t('Copy sanitized diagnostic')} onClick={() => void copyDiagnostic()} disabled={!report} />
+          <Button size="sm" variant="secondary" icon={RefreshCw} label={t('Recheck')} loading={loading} onClick={() => void refresh()} />
+        </div>
+      </div>
+      <p className="fs-prose">{t('Every area is checked and shown on its own — one thing being down (ComfyUI, say) never reads as the whole application being down, and text chat keeps working regardless.')}</p>
+
+      {safeMode?.active && (
+        <div className="fs-set__card" data-tone="bad">
+          <h3 className="fs-set__card-title">{t('Safe mode is on')}</h3>
+          <p className="fs-set__help">{safeMode.reason}</p>
+          {safeMode.disabled.length > 0 && (
+            <ul className="fs-set__health-list">
+              {safeMode.disabled.map((name) => (
+                <li key={name}>
+                  <strong>{name}</strong>
+                  <Button size="sm" variant="ghost" label={t('Turn back on')} loading={busy === name} onClick={() => void reactivate(name)} />
+                </li>
+              ))}
+            </ul>
+          )}
+          {safeMode.quarantined_mcp_servers.length > 0 && (
+            <ul className="fs-set__health-list">
+              {safeMode.quarantined_mcp_servers.map((s) => (
+                <li key={s.id ?? s.name}>
+                  <strong>{s.name ?? s.id}</strong> ({t('MCP server')})
+                  <Button size="sm" variant="ghost" label={t('Turn back on')} loading={busy === s.id} onClick={() => void reactivate(undefined, s.id)} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {!report && loading && <Skeleton label={t('Checking')} count={4} height="40px" />}
+
+      {byArea.map(([area, findings]) => {
+        const worst = findings.reduce((w, f) => (STATE_RANK[f.state] < STATE_RANK[w.state] ? f : w), findings[0]);
+        const tone = worst.state === 'fail' ? 'bad' : worst.state === 'warn' ? undefined : worst.state === 'ok' ? 'good' : undefined;
+        return (
+          <div key={area} className="fs-set__card" data-tone={tone} data-testid="health-area">
+            <div className="fs-set__row-between">
+              <h3 className="fs-set__card-title">{area}</h3>
+              <span className="fs-set__help">{worst.state}</span>
+            </div>
+            <ul className="fs-set__health-list">
+              {findings.map((f) => (
+                <li key={f.name}>
+                  <strong>{f.name}</strong>: {f.detail}
+                  {f.fix && <span> — {f.fix}</span>}
+                </li>
+              ))}
+            </ul>
+            {area === 'models' && <Button size="sm" variant="ghost" label={t('Open Local models')} onClick={() => onJump('local')} />}
+            {area === 'media' && <Button size="sm" variant="ghost" label={t('Open Default AI')} onClick={() => onJump('defaults')} />}
+          </div>
+        );
+      })}
+
+      <SearchHealthCard />
+      {report && <p className="fs-set__help">{t('Last checked {time}', { time: new Date(report.checked_at).toLocaleTimeString() })}</p>}
+    </section>
+  );
+}
+
 function SearchHealthCard() {
   const [health, setHealth] = useState<SearchHealth | null>(null);
   const [error, setError] = useState('');
@@ -1078,6 +1267,7 @@ export function SettingsScreen() {
           {section === 'account' && <AccountSection say={say} />}
           {section === 'users' && <UsersSection say={say} />}
           {section === 'system' && <SystemSection settings={settings} onSave={onSave} say={say} admin={admin} />}
+          {section === 'health' && <HealthSection say={say} onJump={setSection} />}
         </div>
       </div>
       {notice && <Toast>{notice}</Toast>}

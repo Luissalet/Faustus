@@ -56,6 +56,8 @@ import { clipboardFiles, insertPastedText } from '../../lib/clipboard-attachment
 import {REFERENCE_ROLES} from '../../lib/image-references';
 import {MediaRecipes} from './MediaRecipes';
 import { createAttachmentUploads, type PendingAttachment } from '../../lib/attachment-uploads';
+import type { ContextOverrides } from '../../adapters/chat';
+import { ContextPanel, pruneOverrides } from './ContextPanel';
 
 export type Mode = 'chat' | 'agent';
 
@@ -77,6 +79,10 @@ export interface Knobs {
    *  (src/autonomy_budget.py). Undefined behaves exactly like 'supervised' —
    *  the server's own default when the field is omitted entirely. */
   autonomyPreset?: AutonomyPreset;
+  /** UX-07: per-turn pins/exclusions from ContextPanel, forwarded to
+   *  sendTurn() as `context_overrides` exactly like autonomyPreset travels
+   *  as `autonomy_preset` — never written back to any global setting. */
+  contextOverrides?: ContextOverrides;
 }
 
 export type AutonomyPreset = 'supervised' | 'bounded_autonomous' | 'read_only';
@@ -369,6 +375,18 @@ export function Composer({
     }
   }, [draft, textareaRef]);
 
+  useEffect(() => {
+    // A removed `@file` must not leave a dangling exclusion/pin behind it —
+    // the chip that explained the override is gone, so the override itself
+    // must go too, not linger invisibly into the next send.
+    if (!knobs.contextOverrides) return;
+    const pruned = pruneOverrides(knobs.contextOverrides, draft);
+    const changed = (pruned.excludeSources?.length ?? 0) !== (knobs.contextOverrides.excludeSources?.length ?? 0)
+      || (pruned.pinSources?.length ?? 0) !== (knobs.contextOverrides.pinSources?.length ?? 0);
+    if (changed) setKnobs((k) => ({ ...k, contextOverrides: pruned }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft]);
+
   const genLabel = describeGen(gen);
   const canSend = (draft.trim().length > 0 || attachments.length > 0) && pendingFiles.length === 0;
 
@@ -478,6 +496,13 @@ export function Composer({
           ))}
         </ul>
       )}
+
+      <ContextPanel
+        draft={draft}
+        overrides={knobs.contextOverrides ?? {}}
+        onChange={(next) => setKnobs((k) => ({ ...k, contextOverrides: next }))}
+        tokenBudget={knobs.inputTokenBudget}
+      />
 
       {preparing && <p className="fs-studio__paste-hint" role="status">{t('Creating the conversation… Your draft is kept until it is ready.')}</p>}
 

@@ -13,6 +13,7 @@ import {
   type TurnMetrics,
   type WebSource,
 } from '../../adapters/chat';
+import type { EvidenceRef } from '../../adapters/evidence';
 import type { Attachment } from '../../adapters/composer';
 import type { VramBlocked } from '../../adapters/vramAdmission';
 import { t } from '../../i18n';
@@ -46,6 +47,10 @@ export interface Step {
    *  call ran (`repair_tool_arguments`'s `applied_repairs`) — one entry per
    *  field, so the tool card can show "original → corrección" next to it. */
   repairs?: { field: string; from: unknown; to: unknown; reason: string }[];
+  /** Lote 50 (BENCH-03 wiring): `EvidenceRef`s the tool call attached to its
+   *  result, forwarded from `ChatEvent['tool_output'].evidenceRefs` — lets a
+   *  tool card offer a "ver evidencia" button per ref (`screens/Evidence.tsx`). */
+  evidenceRefs?: EvidenceRef[];
 }
 
 /**
@@ -359,7 +364,7 @@ const n = (v: unknown): number | null => (typeof v === 'number' && Number.isFini
  *  so today this only ever finds something on history restore, where
  *  `restoreFromMetadata` reads the raw persisted event directly; a client
  *  that gains it on the wire needs no further change here. */
-function argumentRepairFields(raw: unknown): { argumentErrors?: Step['argumentErrors']; repairs?: Step['repairs'] } {
+function argumentRepairFields(raw: unknown): { argumentErrors?: Step['argumentErrors']; repairs?: Step['repairs']; evidenceRefs?: Step['evidenceRefs'] } {
   const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
   const errsRaw = Array.isArray(r.argumentErrors) ? r.argumentErrors : Array.isArray(r.argument_errors) ? r.argument_errors : undefined;
   const repsRaw = Array.isArray(r.repairs) ? r.repairs : undefined;
@@ -374,9 +379,14 @@ function argumentRepairFields(raw: unknown): { argumentErrors?: Step['argumentEr
     .filter((rr): rr is Record<string, unknown> => rr !== null)
     .map((rr) => ({ field: s(rr.field), from: rr.from, to: rr.to, reason: s(rr.reason) }))
     .filter((rr) => rr.field);
+  const refsRaw = Array.isArray(r.evidenceRefs) ? r.evidenceRefs : Array.isArray(r.evidence_refs) ? r.evidence_refs : undefined;
+  const evidenceRefs = refsRaw
+    ?.map(obj)
+    .filter((e): e is Record<string, unknown> => e !== null && typeof e.evidence_id === 'string' && Boolean(e.evidence_id));
   return {
     argumentErrors: errors && errors.length ? errors : undefined,
     repairs: repairs && repairs.length ? repairs : undefined,
+    evidenceRefs: evidenceRefs && evidenceRefs.length ? (evidenceRefs as unknown as EvidenceRef[]) : undefined,
   };
 }
 
@@ -689,6 +699,7 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
         argumentErrors: repairFields.argumentErrors ?? (index === -1 ? undefined : turn.steps[index].argumentErrors),
         repairs: repairFields.repairs ?? (index === -1 ? undefined : turn.steps[index].repairs),
         docId: event.docId,
+        evidenceRefs: event.evidenceRefs ?? (index === -1 ? undefined : turn.steps[index].evidenceRefs),
       };
       const steps = turn.steps.slice();
       if (index === -1) steps.push(finished);
@@ -899,6 +910,7 @@ export function restoreFromMetadata(turn: Turn, meta: Record<string, unknown>): 
       docId: ev.docId,
       argumentErrors: repairFields.argumentErrors,
       repairs: repairFields.repairs,
+      evidenceRefs: repairFields.evidenceRefs,
     });
     rounds = Math.max(rounds, ev.round);
     ev.subagents.forEach((sa, i) => workers.push(workerFromPersisted(sa, i)));

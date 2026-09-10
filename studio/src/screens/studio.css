@@ -1995,6 +1995,41 @@ aside.fs-panel {
   word-break: break-word;
 }
 
+/* BENCH-04: the three-way save-conflict view. Same warning colour as the
+   danger tokens elsewhere, but never relies on colour alone — every row
+   also carries its `data-status` text via the column header. */
+.fs-panel__conflict {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fs-space-3);
+  padding: var(--fs-space-3);
+  border-radius: var(--fs-radius-control);
+  border: 1px solid color-mix(in srgb, var(--fs-danger) 40%, var(--fs-border));
+  background: color-mix(in srgb, var(--fs-danger) 6%, var(--fs-surface-1));
+}
+.fs-panel__conflict > p { margin: 0; }
+.fs-panel__conflict-rows {
+  display: flex;
+  flex-direction: column;
+  max-block-size: 40vh;
+  overflow-y: auto;
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  font-family: var(--fs-font-code);
+  font-size: var(--fs-code-size);
+}
+.fs-panel__conflict-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--fs-space-2);
+  padding: 1px var(--fs-space-2);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.fs-panel__conflict-row[data-status='diverged'] { background: color-mix(in srgb, var(--fs-danger) 16%, transparent); }
+.fs-panel__conflict-row[data-status='mine-only'] { background: color-mix(in srgb, var(--fs-info) 12%, transparent); }
+.fs-panel__conflict-row[data-status='theirs-only'] { background: color-mix(in srgb, var(--fs-warning) 12%, transparent); }
+
 .fs-panel__versions {
   list-style: none;
   margin: 0;
@@ -2106,6 +2141,22 @@ aside.fs-panel {
   text-decoration: none;
   color: var(--fs-danger);
 }
+
+/* BENCH-05: the workbench's plan + changes-by-file section (SidePanel.tsx's
+   PlanAndChanges, 'agents' tab). */
+.fs-panel__plan-changes { display: flex; flex-direction: column; gap: var(--fs-space-4); }
+.fs-panel__plan-changes h3 { margin: 0 0 var(--fs-space-2); font-size: var(--fs-text-sm, 0.875rem); }
+.fs-panel__plan-list, .fs-panel__changes-list {
+  list-style: none; margin: 0; padding: 0;
+  display: flex; flex-direction: column; gap: var(--fs-space-1);
+}
+.fs-panel__plan-list li, .fs-panel__changes-list li {
+  display: flex; justify-content: space-between; gap: var(--fs-space-2);
+  padding: var(--fs-space-1) 0; border-block-end: 1px solid var(--fs-border);
+  font-size: var(--fs-code-size);
+}
+.fs-panel__plan-list li[data-status='blocked'] { color: var(--fs-danger); }
+.fs-panel__plan-list li[data-status='done'] { color: var(--fs-text-2); }
 
 .fs-studio__step-links {
   display: flex;

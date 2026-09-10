@@ -4,11 +4,15 @@ import { Link } from 'react-router';
 import { Button, IconButton, Skeleton } from '../../components';
 import { archiveDoc, docPdfUrl, getDoc, listDocVersions, renameDoc, restoreDocVersion, saveDoc, type DocVersion } from '../../adapters/documents';
 import { readWorkspaceFile, saveWorkspaceFile, type WorkspaceFileText } from '../../adapters/workspace';
+import { ApiError } from '../../adapters/api';
+import { threeWayLines, threeWaySummary } from '../../adapters/fileConflict';
 import { Rich } from '../rich';
 import { autoOpenEnabled, setAutoOpen, fileKey,docKey,type PanelDraft,type DocState, type PanelAction, type PanelState, type PanelTab } from './panel';
 import {WorkbenchResources} from './WorkbenchResources';
 import SubagentBoard from './SubagentBoard';
 import FrameSelection, {type VisualSelection} from './FrameSelection';
+import { aggregateFileChanges } from '../../adapters/workbenchChanges';
+import { isInsecureRemoteAccess } from '../../adapters/remoteAccess';
 import type {Turn} from './model';
 import type {Project} from '../../adapters/projects';
 import type {DelegationTask} from '../../adapters/chat';
@@ -311,12 +315,55 @@ function DocTab({ doc, draft, dispatch, onNotice }: { doc: DocState | null; draf
   );
 }
 
+/* ── File save conflict (BENCH-04) ── */
+
+/** What a save collided with: base (what the draft started from), mine
+ * (what was about to be written) and theirs (what is on disk now). Rows
+ * where only one side changed are shown but need no decision; a `diverged`
+ * row is the only kind that actually competes for the same line. Either
+ * resolution keeps a full copy of both sides available until it is picked —
+ * nothing is discarded by opening this view. */
+function ConflictView({ base, mine, theirs, saving, onKeepMine, onTakeTheirs, onCancel }: {
+  base: string; mine: string; theirs: string; saving: boolean;
+  onKeepMine: () => void; onTakeTheirs: () => void; onCancel: () => void;
+}) {
+  const rows = useMemo(() => threeWayLines(base, mine, theirs), [base, mine, theirs]);
+  const summary = useMemo(() => threeWaySummary(rows), [rows]);
+  return (
+    <div className="fs-panel__conflict" role="alert" data-testid="file-conflict">
+      <p>
+        {t('Someone else saved this file first.')}{' '}
+        {summary.diverged > 0
+          ? tn(summary.diverged, '{n} line changed on both sides.', '{n} lines changed on both sides.')
+          : t('The two edits do not touch the same lines.')}
+      </p>
+      <div className="fs-panel__conflict-rows" role="table" aria-label={t('Three-way comparison')}>
+        {rows.map((row, i) => (
+          <div className="fs-panel__conflict-row" role="row" data-status={row.status} key={i}>
+            <span role="cell" aria-label={t('Yours')}>{row.mine ?? ''}</span>
+            <span role="cell" aria-label={t('On disk now')}>{row.theirs ?? ''}</span>
+          </div>
+        ))}
+      </div>
+      <div className="fs-panel__row">
+        <Button size="sm" variant="primary" label={t('Keep mine (overwrite)')} disabled={saving} onClick={onKeepMine} />
+        <Button size="sm" label={t('Take the newer version')} disabled={saving} onClick={onTakeTheirs} />
+        <Button size="sm" label={t('Cancel')} disabled={saving} onClick={onCancel} />
+      </div>
+    </div>
+  );
+}
+
 /* ── File ── */
 
 function FileTab({ file,draft,dispatch, onNotice }: { file: PanelState['file']; draft?:PanelDraft; dispatch:SidePanelProps['dispatch']; onNotice: SidePanelProps['onNotice'] }) {
   const [data, setData] = useState<WorkspaceFileText | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [preview,setPreview]=useState(true),[saving,setSaving]=useState(false),[reload,setReload]=useState(0);
+  // BENCH-04: a 409 (routes/workspace_routes.py — the file's revision moved
+  // under the draft) parks the conflict here instead of discarding either
+  // side; `mine` is exactly what was about to be saved.
+  const [conflict, setConflict] = useState<{ mine: string; theirs: WorkspaceFileText } | null>(null);
   useEffect(() => {
     if (!file) return;
     const controller = new AbortController();
@@ -340,7 +387,26 @@ function FileTab({ file,draft,dispatch, onNotice }: { file: PanelState['file']; 
   const save=async()=>{if(!editable||saving||!data)return;setSaving(true);setError(null);try{
     const saved=await saveWorkspaceFile(file.workspace,file.path,text,draft?.revision||data.revision!);
     setData(saved);dispatch({type:'draft-saved',key:fileKey(file),submitted:{text,base:draft?.base??data.text,revision:draft?.revision??data.revision},base:saved.text,revision:saved.revision});onNotice(t('File saved.'));
-  }catch(e){setError((e as Error).message);}finally{setSaving(false);}};
+  }catch(e){
+    if(e instanceof ApiError && e.status===409){
+      // Never lose the draft: park it in `conflict.mine` and fetch what is
+      // on disk now, so the three-way view has all three sides.
+      try{const theirs=await readWorkspaceFile(file.workspace,file.path);setConflict({mine:text,theirs});}
+      catch(reReadError){setError((reReadError as Error).message);}
+    } else setError((e as Error).message);
+  }finally{setSaving(false);}};
+  const keepMine=async()=>{
+    if(!conflict||saving)return;setSaving(true);setError(null);try{
+      const saved=await saveWorkspaceFile(file.workspace,file.path,conflict.mine,conflict.theirs.revision!);
+      setData(saved);dispatch({type:'draft-saved',key:fileKey(file),submitted:{text:conflict.mine,base:draft?.base??conflict.theirs.text,revision:conflict.theirs.revision},base:saved.text,revision:saved.revision});
+      setConflict(null);onNotice(t('Saved your version over the newer one (v{n}).',{n:saved.revision?.slice(0,7)||''}));
+    }catch(e){setError((e as Error).message);}finally{setSaving(false);}
+  };
+  const takeTheirs=()=>{
+    if(!conflict)return;
+    setData(conflict.theirs);dispatch({type:'draft',key:fileKey(file),draft:null});setConflict(null);
+    onNotice(t('Loaded the newer version; your draft was discarded.'));
+  };
   return (
     <div className="fs-panel__body fs-panel__file">
       <p className="fs-panel__page">
@@ -352,8 +418,9 @@ function FileTab({ file,draft,dispatch, onNotice }: { file: PanelState['file']; 
       {!data && !error && <Skeleton label={t('Reading the file')} count={8} height="16px" />}
       {data?.binary && <p className="fs-studio__hint">{t('It is a binary file.')}</p>}
       {editable&&<div className="fs-panel__row"><Button label={t('Save')} disabled={!draft} loading={saving} onClick={()=>void save()}/><Button label={t(preview?'Edit':'Preview')} onClick={()=>setPreview(v=>!v)}/><Button label={t('Reload file')} disabled={saving} onClick={()=>setReload(n=>n+1)}/>{draft&&<Button label={t('Discard draft')} disabled={saving} onClick={()=>dispatch({type:'draft',key:fileKey(file),draft:null})}/>}</div>}
-      {draft&&data&&draft.base!==data.text&&<p role="status">{t('The file changed outside this editor. Your draft is preserved.')}</p>}
-      {editable&&(preview?<div className="fs-panel__preview"><Rich text={text}/></div>:<textarea className="fs-panel__editor" aria-label={t('File content')} value={text} disabled={saving} onChange={e=>dispatch({type:'draft',key:fileKey(file),draft:{text:e.target.value,base:draft?.base??data!.text,revision:draft?.revision??data!.revision}})}/>)}
+      {draft&&data&&draft.base!==data.text&&!conflict&&<p role="status">{t('The file changed outside this editor. Your draft is preserved.')}</p>}
+      {conflict&&data&&<ConflictView base={draft?.base??data.text} mine={conflict.mine} theirs={conflict.theirs.text} saving={saving} onKeepMine={()=>void keepMine()} onTakeTheirs={takeTheirs} onCancel={()=>setConflict(null)}/>}
+      {editable&&!conflict&&(preview?<div className="fs-panel__preview"><Rich text={text}/></div>:<textarea className="fs-panel__editor" aria-label={t('File content')} value={text} disabled={saving} onChange={e=>dispatch({type:'draft',key:fileKey(file),draft:{text:e.target.value,base:draft?.base??data!.text,revision:draft?.revision??data!.revision}})}/>)}
       {data && !data.binary && !editable && (
         <pre className="fs-panel__code">
           {lines.map((line, i) => (
@@ -363,6 +430,56 @@ function FileTab({ file,draft,dispatch, onNotice }: { file: PanelState['file']; 
             </span>
           ))}
         </pre>
+      )}
+    </div>
+  );
+}
+
+/* ── Plan & changes (BENCH-05) ── */
+
+/** The turn's own plan (`plan_state`'s projection, already carried on
+ * `Turn.planSteps` — TASK-01/CALL-07) and its files touched so far, grouped
+ * by file (`aggregateFileChanges`) instead of one card per tool call. Reads
+ * data the transcript already has; no new backend call. */
+function PlanAndChanges({ turns }: { turns: Turn[] }) {
+  const planTurn = [...turns].reverse().find((turn) => turn.planSteps && turn.planSteps.length > 0);
+  const changeTurn = [...turns].reverse().find((turn) => turn.steps.some((s) => s.diff));
+  const changes = changeTurn ? aggregateFileChanges(changeTurn.steps.filter((s) => s.diff).map((s) => s.diff!)) : [];
+  if (!planTurn && changes.length === 0) return null;
+  return (
+    <div className="fs-panel__body fs-panel__plan-changes">
+      {planTurn?.planSteps && (
+        <section aria-label={t('Plan')}>
+          <h3>{t('Plan')}</h3>
+          <ol className="fs-panel__plan-list">
+            {planTurn.planSteps.map((step) => (
+              <li key={step.id} data-status={step.status}>
+                <span>{step.title}</span>
+                <span className="fs-sa__muted">
+                  {step.status === 'blocked' ? t('blocked') : step.status === 'done' ? t('done') : t('pending')}
+                  {step.verified ? ` · ${t('verified')}` : ''}
+                </span>
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
+      {changes.length > 0 && (
+        <section aria-label={t('Changes')}>
+          <h3>{t('Changes')}</h3>
+          <ul className="fs-panel__changes-list">
+            {changes.map((row) => (
+              <li key={row.file}>
+                <span title={row.file}>{row.file.split(/[\\/]/).pop()}</span>
+                <span className="fs-diff-stat">
+                  {row.newFile && <em>{t('new')}</em>}
+                  {row.added > 0 && <ins>+{row.added}</ins>}
+                  {row.removed > 0 && <del>−{row.removed}</del>}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
     </div>
   );
@@ -399,6 +516,9 @@ export default function SidePanel({ state, dispatch, onNotice,turns,workspace,pr
         </div>
         <IconButton icon={X} label={t('Close the panel')} size="sm" onClick={() => dispatch({ type: 'close' })} />
       </header>
+      {typeof location!=='undefined'&&isInsecureRemoteAccess(location.hostname,location.protocol)&&(
+        <p className="fs-notice" data-tone="warning" role="alert">{t('This page is reachable over plain HTTP from outside this machine — set up HTTPS or a tunnel before using it remotely.')}</p>
+      )}
       <label className="fs-panel__resize">{t('Panel width')}<input type="range" min={320} max={900} step={20} value={state.width} onChange={e=>dispatch({type:'width',width:Number(e.target.value)})}/></label>
       {(state.documents.length>0||state.files.length>0)&&<div className="fs-workbench-open" aria-label={t('Open results')}>
         {state.documents.map(doc=><span key={docKey(doc)}><button type="button" aria-pressed={state.tab==='doc'&&state.doc?.id===doc.id} onClick={()=>dispatch({type:'doc',doc})}>{doc.title||t('Document')}{state.drafts[docKey(doc)]?' •':''}</button><button type="button" aria-label={t('Close {name}',{name:doc.title})} disabled={Boolean(state.drafts[docKey(doc)])} onClick={()=>dispatch({type:'forget',key:docKey(doc)})}><X size={13}/></button></span>)}
@@ -406,7 +526,7 @@ export default function SidePanel({ state, dispatch, onNotice,turns,workspace,pr
       </div>}
       <div className="fs-workbench-content" role="tabpanel" id="workbench-content" aria-labelledby={'workbench-tab-'+state.tab}>
       {(state.tab==='outputs'||state.tab==='sources')&&<WorkbenchResources kind={state.tab} state={state} turns={turns} workspace={workspace} project={project} dispatch={dispatch}/>}
-      {state.tab==='agents'&&<div className="fs-panel__body"><h3>{t('Agents in this conversation')}</h3>{workers.length?<SubagentBoard workers={workers} live={busy} onRerun={onRerun} onNotice={onNotice}/>:<p>{t('No agents have worked in this conversation yet. Configure a team beside the model picker.')}</p>}</div>}
+      {state.tab==='agents'&&<><PlanAndChanges turns={turns}/><div className="fs-panel__body"><h3>{t('Agents in this conversation')}</h3>{workers.length?<SubagentBoard workers={workers} live={busy} onRerun={onRerun} onNotice={onNotice}/>:<p>{t('No agents have worked in this conversation yet. Configure a team beside the model picker.')}</p>}</div></>}
       {state.tab === 'browser' && <BrowserTab state={state} dispatch={dispatch} onVisualSelection={onVisualSelection} />}
       {state.tab === 'doc' && <DocTab key={state.doc?.id||'streaming'} doc={state.doc} draft={state.doc?state.drafts[docKey(state.doc)]:undefined} dispatch={dispatch} onNotice={onNotice} />}
       {state.tab === 'file' && <FileTab key={state.file?fileKey(state.file):'none'} file={state.file} draft={state.file?state.drafts[fileKey(state.file)]:undefined} dispatch={dispatch} onNotice={onNotice} />}
