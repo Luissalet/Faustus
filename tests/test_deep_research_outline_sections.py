@@ -166,3 +166,26 @@ def test_grouped_headings_lose_their_pasted_lists():
         "## Síntomas habituales y síntomas asociados: dolor cervical, rigidez",   # not a group: the user's own colon
     ]
     assert "| a | b |" in tidy
+
+
+
+def test_luis_s_real_whiplash_brief_is_fifteen_sections():
+    """The brief as he typed it (tests/fixtures/wad_brief_es.txt): 8 top-level
+    bullets, six headed groups, and the closing line of seven questions. It
+    used to come out as the first 12 bullets."""
+    from pathlib import Path
+    brief = (Path(__file__).parent / "fixtures" / "wad_brief_es.txt").read_text(encoding="utf-8")
+    subs = _dr()._extract_subquestions(brief)
+    assert len(subs) == 15
+    titles = [s.split(":", 1)[0] for s in subs]
+    assert titles[8:] == [
+        "Tratamiento", "Ejercicio y progresión", "Pronóstico y seguimiento", "Qué evitar",
+        "Algoritmo clínico", "Tabla final de consulta rápida", "Me interesa especialmente poder responder a",
+    ]
+    assert "Movilidad cervical" in subs[8]                      # inside Tratamiento, not cut off
+    assert "Fase aguda" in subs[9] and "Criterios para progresar o reducir la carga" in subs[9]
+    assert "| Situación/fase |" in subs[13]
+    assert subs[14].count("?") == 7
+    # the same with a blank line between every line, as the uploaded file had
+    spaced = "\n\n".join(l for l in brief.splitlines() if l.strip())
+    assert _dr()._extract_subquestions(spaced) == subs

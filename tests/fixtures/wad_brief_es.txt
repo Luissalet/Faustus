@@ -1,0 +1,72 @@
+Soy fisioterapeuta y quiero elaborar una guía práctica, basada en la evidencia y aplicable a consulta, sobre el whiplash o Whiplash-Associated Disorders (WAD).
+El objetivo es saber cómo valorar a estos pacientes, identificar la gravedad y los factores pronósticos, decidir el tratamiento adecuado según la fase y saber cómo progresarlo hasta la recuperación funcional, diferenciando claramente las intervenciones respaldadas por evidencia de las que tienen una utilidad limitada.
+Quiero que abarque:
+- Qué es el whiplash y qué mecanismos/estructuras pueden estar implicados.
+- Clasificación de los WAD y características clínicas de cada grado.
+- Diferencias entre WAD agudo, subagudo y persistente/crónico.
+- Síntomas habituales y síntomas asociados: dolor cervical, rigidez, cefalea, mareo, alteraciones sensoriales, síntomas neurológicos, etc.
+- Lesiones asociadas y diagnóstico diferencial.
+- Valoración fisioterapéutica estructurada: anamnesis, dolor, movilidad cervical, fuerza, control motor, sensibilidad, equilibrio, propiocepción, función y pruebas específicas.
+- Signos de alarma y criterios claros de derivación médica.
+- Factores pronósticos de buena y mala evolución y factores relacionados con la cronificación.
+Tratamiento
+Desarrolla el tratamiento basado en la evidencia:
+- Educación y explicación al paciente.
+- Recomendaciones sobre actividad y reposo.
+- Manejo de cargas.
+- Ejercicio terapéutico.
+- Movilidad cervical.
+- Ejercicios de control motor.
+- Fuerza y resistencia cervical y escapular.
+- Trabajo propioceptivo.
+- Ejercicio general.
+- Terapia manual.
+- Otras técnicas de fisioterapia que puedan tener utilidad.
+- Papel de collarines, calor, electroterapia u otras intervenciones pasivas.
+Para cada intervención quiero saber qué utilidad tiene, cuándo utilizarla, cómo dosificarla y qué calidad tiene la evidencia. Diferencia claramente entre tratamientos recomendados, tratamientos que pueden utilizarse como complemento y tratamientos con evidencia insuficiente o poco favorable.
+Ejercicio y progresión
+Este apartado es especialmente importante.
+Organiza la rehabilitación por fases:
+- Fase aguda.
+- Fase subaguda.
+- Fase de recuperación funcional.
+- WAD persistente/crónico.
+Para cada fase especifica:
+- Objetivos.
+- Ejercicios recomendados.
+- Ejemplos concretos.
+- Dosificación cuando exista evidencia suficiente.
+- Cómo manejar el dolor y otros síntomas durante el ejercicio.
+- Criterios para progresar o reducir la carga.
+- Cómo pasar progresivamente de ejercicios sencillos a fuerza, resistencia y tareas funcionales.
+Explica cómo progresar hacia trabajo, conducción, actividad física y deporte, cuando corresponda.
+Pronóstico y seguimiento
+Proporciona tiempos aproximados de recuperación y explica qué evolución sería esperable en cada fase.
+Explica:
+- Cuándo debería empezar a mejorar el paciente.
+- Qué síntomas pueden persistir inicialmente sin indicar necesariamente una mala evolución.
+- Cuándo considerar que la evolución no es la esperada.
+- Qué hacer si el paciente no mejora.
+- Cuándo reevaluar el diagnóstico.
+- Cuándo derivar.
+Incluye especialmente los factores que aumentan el riesgo de desarrollar WAD persistente o dolor cervical crónico.
+Qué evitar
+Incluye un apartado sobre errores frecuentes:
+- Reposo excesivo.
+- Uso prolongado de collarín.
+- Evitación del movimiento.
+- Tratamiento exclusivamente pasivo.
+- Progresar demasiado rápido.
+- No tener en cuenta mareos, cefaleas u otros síntomas asociados.
+- Tratar únicamente la intensidad del dolor sin valorar función y pronóstico.
+Algoritmo clínico
+Al final crea un algoritmo sencillo de valoración y toma de decisiones:
+Paciente tras whiplash -> clasificación/gravedad -> ¿hay signos de alarma o necesidad de derivación? -> valoración fisioterapéutica -> factores pronósticos -> objetivos iniciales -> tratamiento -> progresión -> reevaluación -> retorno a actividad.
+Tabla final de consulta rápida
+Finaliza con una tabla que permita consultar rápidamente:
+| Situación/fase | Qué valorar | Objetivos | Tratamiento | Ejercicios | Dosificación | Criterios de progresión | ¿Cuándo derivar? |
+Quiero que el documento sea muy práctico para un fisioterapeuta, evitando extenderse demasiado en biomecánica o fisiopatología que no tenga implicaciones clínicas.
+Me interesa especialmente poder responder a:
+¿Qué tengo que valorar?, ¿cómo sé si este paciente necesita derivación?, ¿qué puedo hacer en la primera sesión?, ¿qué ejercicios le mando?, ¿cuándo puedo progresarlos?, ¿qué actividades puede hacer?, ¿cuánto debería tardar en mejorar y qué hago si no evoluciona bien?
+Prioriza guías de práctica clínica, revisiones sistemáticas, metaanálisis y ensayos clínicos relevantes y recientes, sin excluir estudios clásicos fundamentales. Diferencia claramente entre evidencia científica, consenso y práctica clínica habitual.
+Si consideras que existe algún aspecto clínicamente importante que no haya mencionado, añádelo.
