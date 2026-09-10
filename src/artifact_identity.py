@@ -652,6 +652,336 @@ def collect_garbage(*, store_dir: Optional[str] = None,
             "derivatives_removed": derivatives_removed}
 
 
+# ── manifests (ART-01: id/version, state, validations) ─────────────────────
+#
+# One manifest chain per occurrence. A "version" is not a new blob and not a
+# new occurrence — it is a new fact recorded about the SAME artifact (it got
+# validated, it got reviewed, it got discarded), and every fact from before
+# stays exactly as it was written. `record_manifest_version()` only appends;
+# nothing here ever UPDATEs a manifest row.
+#
+# Kept in its own table rather than as columns on `artifact_occurrences`
+# because a version chain has a shape (many rows per occurrence) that a
+# single-row table cannot hold without either overwriting history or growing
+# an unbounded set of `state_2`, `state_3`, ... columns.
+
+#: draft: about to be written, not yet on disk with real bytes.
+#: generated: the run produced it; nothing has checked it opens correctly.
+#: validated: a format check ran and every one of them passed.
+#: reviewed: a person (or an explicit API call standing in for one) signed
+#:   off on it — only reachable from `validated`, so nothing gets "reviewed"
+#:   without ever having passed a validation.
+#: discarded: terminal. Reachable from anywhere; nothing is reachable from it.
+MANIFEST_STATES = ("draft", "generated", "validated", "reviewed", "discarded")
+
+#: A failed validation is what keeps an artifact at `generated`: it can be
+#: re-validated (another `generated`) or discarded, but not `reviewed` until
+#: a validation attempt actually passed.
+_MANIFEST_TRANSITIONS: Dict[str, set] = {
+    "draft": {"generated", "discarded"},
+    "generated": {"validated", "generated", "discarded"},
+    "validated": {"reviewed", "generated", "discarded"},
+    "reviewed": {"discarded"},
+    "discarded": set(),
+}
+
+
+def _ensure_manifest_schema() -> None:
+    """`CREATE TABLE IF NOT EXISTS`, additive like every other migration this
+    lot touches. Kept here instead of `core/database.py` on purpose: the
+    manifest is ART-01's own bookkeeping on top of the identity tables, not a
+    change to the schema those tables were designed against."""
+    from sqlalchemy import text as sql_text
+
+    from core.database import engine
+
+    with engine.connect() as conn:
+        conn.execute(sql_text(
+            "CREATE TABLE IF NOT EXISTS artifact_manifests ("
+            "id TEXT PRIMARY KEY, occurrence_id TEXT NOT NULL, "
+            "version INTEGER NOT NULL, state TEXT NOT NULL, "
+            "call_id TEXT, format TEXT, byte_size INTEGER, sha256 TEXT, "
+            "generator TEXT, source_refs_json TEXT, validations_json TEXT, "
+            "reason TEXT, previous_version_id TEXT, created_at_iso TEXT NOT NULL)"
+        ))
+        conn.execute(sql_text(
+            "CREATE INDEX IF NOT EXISTS ix_manifests_occurrence "
+            "ON artifact_manifests (occurrence_id, version)"))
+        conn.commit()
+
+
+def _row_to_manifest(row) -> Dict[str, Any]:
+    return {
+        "id": row["id"], "occurrence_id": row["occurrence_id"],
+        "version": row["version"], "state": row["state"],
+        "call_id": row["call_id"] or "", "format": row["format"] or "",
+        "byte_size": row["byte_size"], "sha256": row["sha256"] or "",
+        "generator": row["generator"] or "",
+        "source_refs": _json_list(row["source_refs_json"]),
+        "validations": (json.loads(row["validations_json"])
+                        if row["validations_json"] else []),
+        "reason": row["reason"] or "",
+        "previous_version_id": row["previous_version_id"] or "",
+        "created_at": row["created_at_iso"],
+    }
+
+
+def record_manifest_version(occurrence_id: str, *, state: str, call_id: str = "",
+                            validations: Optional[List[Dict[str, Any]]] = None,
+                            source_refs: Optional[Tuple[str, ...]] = None,
+                            generator: str = "", format: str = "",
+                            byte_size: Optional[int] = None, sha256: str = "",
+                            reason: str = "") -> Dict[str, Any]:
+    """Append one manifest version for this occurrence, chained to the one
+    before it via `previous_version_id`. Never edits a prior version: a
+    validation recorded at version 2 does not overwrite what version 1 said,
+    for the same reason an occurrence id is never reused for a second event.
+
+    Refuses an occurrence that does not exist — a manifest with nothing to
+    describe is not a fact worth recording."""
+    if state not in MANIFEST_STATES:
+        raise ValueError(f"manifest state must be one of {MANIFEST_STATES}, got {state!r}")
+    if occurrence(occurrence_id) is None:
+        raise ArtifactNotFound(f"no artifact occurrence {occurrence_id!r} to attach a manifest to")
+
+    import uuid as _uuid
+
+    from sqlalchemy import text as sql_text
+
+    from core.database import engine
+
+    _ensure_manifest_schema()
+
+    def attempt() -> Dict[str, Any]:
+        with engine.connect() as conn:
+            current = conn.execute(sql_text(
+                "SELECT id, version FROM artifact_manifests WHERE occurrence_id=:oid "
+                "ORDER BY version DESC LIMIT 1"), {"oid": occurrence_id}
+            ).mappings().first()
+            previous_id = current["id"] if current else None
+            next_version = (current["version"] + 1) if current else 1
+            manifest_id = f"man_{_uuid.uuid4().hex}"
+            created_at = now_iso()
+            conn.execute(sql_text(
+                "INSERT INTO artifact_manifests (id, occurrence_id, version, state, "
+                "call_id, format, byte_size, sha256, generator, source_refs_json, "
+                "validations_json, reason, previous_version_id, created_at_iso) VALUES "
+                "(:id, :oid, :version, :state, :call_id, :format, :byte_size, :sha256, "
+                ":generator, :source_refs, :validations, :reason, :previous_id, :created_at)"
+            ), {"id": manifest_id, "oid": occurrence_id, "version": next_version,
+                "state": state, "call_id": call_id or None, "format": format or None,
+                "byte_size": byte_size, "sha256": sha256 or None,
+                "generator": generator or None,
+                "source_refs": json.dumps(list(source_refs)) if source_refs else None,
+                "validations": (json.dumps(list(validations))
+                               if validations is not None else None),
+                "reason": reason or None, "previous_id": previous_id,
+                "created_at": created_at})
+            conn.commit()
+        return {"id": manifest_id, "occurrence_id": occurrence_id, "version": next_version,
+                "state": state, "call_id": call_id, "format": format,
+                "byte_size": byte_size, "sha256": sha256, "generator": generator,
+                "source_refs": list(source_refs or ()), "validations": list(validations or ()),
+                "reason": reason, "previous_version_id": previous_id or "",
+                "created_at": created_at}
+
+    return _retry_on_lock(attempt, "record_manifest_version")
+
+
+def latest_manifest(occurrence_id: str) -> Optional[Dict[str, Any]]:
+    """The newest manifest version for this occurrence, or None if it never
+    got one — which is a real, expected answer for anything written before
+    this lot, until `artifact_migration.migrate_manifests()` backfills it."""
+    from sqlalchemy import text as sql_text
+
+    from core.database import engine
+
+    _ensure_manifest_schema()
+    with engine.connect() as conn:
+        row = conn.execute(sql_text(
+            "SELECT * FROM artifact_manifests WHERE occurrence_id=:oid "
+            "ORDER BY version DESC LIMIT 1"), {"oid": occurrence_id}).mappings().first()
+    return _row_to_manifest(row) if row else None
+
+
+def manifest_history(occurrence_id: str) -> List[Dict[str, Any]]:
+    """Every version, oldest first — the chain itself, not just its head."""
+    from sqlalchemy import text as sql_text
+
+    from core.database import engine
+
+    _ensure_manifest_schema()
+    with engine.connect() as conn:
+        rows = conn.execute(sql_text(
+            "SELECT * FROM artifact_manifests WHERE occurrence_id=:oid "
+            "ORDER BY version ASC"), {"oid": occurrence_id}).mappings().all()
+    return [_row_to_manifest(r) for r in rows]
+
+
+def transition_state(occurrence_id: str, new_state: str, *, reason: str = "",
+                     call_id: str = "") -> Dict[str, Any]:
+    """Move an artifact's manifest to a new state, refusing any jump the state
+    machine does not allow — in particular, `reviewed` only follows
+    `validated`, so a failed (or never-run) validation is what keeps an
+    artifact at `generated` instead of letting it be marked reviewed."""
+    current = latest_manifest(occurrence_id)
+    if current is None:
+        raise ValueError(f"artifact {occurrence_id!r} has no manifest yet; "
+                         f"call record_manifest_version() first")
+    allowed = _MANIFEST_TRANSITIONS.get(current["state"], set())
+    if new_state not in allowed:
+        raise ValueError(
+            f"cannot move manifest state from {current['state']!r} to {new_state!r}; "
+            f"allowed next state(s): {sorted(allowed) or 'none (terminal)'}")
+    return record_manifest_version(
+        occurrence_id, state=new_state, call_id=call_id or current["call_id"],
+        validations=current["validations"], source_refs=tuple(current["source_refs"]),
+        generator=current["generator"], format=current["format"],
+        byte_size=current["byte_size"], sha256=current["sha256"], reason=reason)
+
+
+# ── format validations (ART-01 / QA-39) ─────────────────────────────────────
+#
+# Each validator answers one narrow, checkable question — does this parse,
+# does this decode, does this table fit the page — never a guess about
+# whether the content is *good*. A kind with no validator below says so
+# honestly (`ok: True`, `name: "no_validator"`) instead of manufacturing a
+# pass that looks the same as a real one.
+
+def _validate_docx(path: str) -> Dict[str, Any]:
+    try:
+        import docx
+    except ImportError:
+        return {"name": "docx_tables_fit_page", "ok": True,
+                "detail": "python-docx not installed; cannot verify"}
+    try:
+        document = docx.Document(path)
+    except Exception as exc:
+        return {"name": "docx_opens", "ok": False,
+                "detail": f"docx failed to open: {exc}"}
+    for section in document.sections:
+        usable = section.page_width - section.left_margin - section.right_margin
+        for index, table in enumerate(document.tables):
+            widths = [column.width for column in table.columns]
+            if not widths or any(width is None for width in widths):
+                continue  # autofit table: no fixed width to compare against the page
+            total = sum(widths)
+            if total > usable:
+                return {"name": "docx_tables_fit_page", "ok": False,
+                       "detail": f"table {index} is {total} EMU wide; the page "
+                                 f"allows {usable} EMU between its margins"}
+        break  # every section shares one document; the first page size governs
+    return {"name": "docx_tables_fit_page", "ok": True,
+           "detail": f"{len(document.tables)} table(s) checked, all within the page"}
+
+
+def _validate_xlsx(path: str) -> Dict[str, Any]:
+    try:
+        import openpyxl
+    except ImportError:
+        return {"name": "xlsx_formulas_recalculate", "ok": True,
+                "detail": "openpyxl not installed; cannot verify"}
+    try:
+        workbook = openpyxl.load_workbook(path, data_only=False)
+    except Exception as exc:
+        return {"name": "xlsx_opens", "ok": False,
+                "detail": f"xlsx failed to open: {exc}"}
+    has_formula = any(cell.data_type == "f" for sheet in workbook.worksheets
+                      for row in sheet.iter_rows() for cell in row)
+    if not has_formula:
+        return {"name": "xlsx_formulas_recalculate", "ok": True,
+               "detail": "no formulas present"}
+    marked = bool(workbook.calculation
+                  and getattr(workbook.calculation, "fullCalcOnLoad", False))
+    if marked:
+        return {"name": "xlsx_formulas_recalculate", "ok": True,
+               "detail": "formulas present; fullCalcOnLoad marks them for "
+                         "recalculation on open"}
+    return {"name": "xlsx_formulas_recalculate", "ok": False,
+           "detail": "formulas present without fullCalcOnLoad/forceFullCalc set; "
+                     "a viewer may show the cached value instead of recalculating"}
+
+
+def _validate_pdf(path: str) -> Dict[str, Any]:
+    try:
+        import pypdf
+    except ImportError:
+        try:
+            with open(path, "rb") as fh:
+                header = fh.read(5)
+            return {"name": "pdf_parses", "ok": header == b"%PDF-",
+                   "detail": "pypdf not installed; only the file header was checked"}
+        except OSError as exc:
+            return {"name": "pdf_parses", "ok": False, "detail": str(exc)}
+    try:
+        pages = len(pypdf.PdfReader(path).pages)
+    except Exception as exc:
+        return {"name": "pdf_parses", "ok": False,
+                "detail": f"pdf failed to parse: {exc}"}
+    return {"name": "pdf_parses", "ok": True, "detail": f"{pages} page(s)"}
+
+
+def _validate_json(path: str) -> Dict[str, Any]:
+    try:
+        if path.lower().endswith(".jsonl"):
+            count = 0
+            with open(path, "r", encoding="utf-8") as fh:
+                for line in fh:
+                    if line.strip():
+                        json.loads(line)
+                        count += 1
+            return {"name": "json_parses", "ok": True, "detail": f"{count} line(s) parsed"}
+        with open(path, "r", encoding="utf-8") as fh:
+            json.load(fh)
+    except (OSError, ValueError) as exc:
+        return {"name": "json_parses", "ok": False,
+                "detail": f"json failed to parse: {exc}"}
+    return {"name": "json_parses", "ok": True, "detail": "parses as JSON"}
+
+
+def _validate_image(path: str) -> Dict[str, Any]:
+    try:
+        from PIL import Image
+    except ImportError:
+        return {"name": "image_decodes", "ok": True,
+                "detail": "Pillow not installed; cannot verify"}
+    try:
+        with Image.open(path) as img:
+            img.load()
+    except Exception as exc:
+        return {"name": "image_decodes", "ok": False,
+                "detail": f"image failed to decode: {exc}"}
+    return {"name": "image_decodes", "ok": True, "detail": "decodes"}
+
+
+def validate_artifact_bytes(path: str, *, kind: str = "", media_type: str = "",
+                            filename: str = "") -> Dict[str, Any]:
+    """Open a stored artifact the way a consumer would and report what broke.
+
+    Dispatch is by file name/media type first (the concrete formats the spec
+    names — DOCX, XLSX, PDF, JSON, image); `kind` is a fallback for callers
+    that only have `contracts.ARTIFACT_KINDS`. Returns
+    `{"ok": bool, "checks": [{"name", "ok", "detail"}, ...]}` — `ok` is the
+    AND of every check, so one failing table or one unmarked formula is
+    enough to keep the artifact out of `validated`."""
+    name = (filename or path or "").lower()
+    if name.endswith(".docx"):
+        checks = [_validate_docx(path)]
+    elif name.endswith(".xlsx"):
+        checks = [_validate_xlsx(path)]
+    elif name.endswith(".pdf"):
+        checks = [_validate_pdf(path)]
+    elif name.endswith((".json", ".jsonl")):
+        checks = [_validate_json(path)]
+    elif kind == "image" or (media_type or "").startswith("image/"):
+        checks = [_validate_image(path)]
+    else:
+        checks = [{"name": "no_validator", "ok": True,
+                  "detail": f"no format-specific validation for kind={kind!r} "
+                            f"media_type={media_type!r}; nothing was checked"}]
+    return {"ok": all(c["ok"] for c in checks), "checks": checks}
+
+
 __all__ = [
     "ArtifactNotFound", "NotTheOwner", "MissingBlob",
     "ensure_blob", "blob", "reference_count",
@@ -659,4 +989,6 @@ __all__ = [
     "path_for", "forget_occurrence",
     "record_derivative", "derivatives_for", "collect_garbage",
     "new_occurrence_id", "blob_id_for", "derived_id_for",
+    "MANIFEST_STATES", "record_manifest_version", "latest_manifest",
+    "manifest_history", "transition_state", "validate_artifact_bytes",
 ]

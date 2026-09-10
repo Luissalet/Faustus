@@ -93,6 +93,53 @@ def copy_legacy(*, store_dir=None, gallery_dir=None, only_id=None, after_id='', 
     return report
 
 
+def migrate_manifests(*, dry_run: bool = True, limit: int = 200, after_id: str = ''
+                      ) -> dict:
+    """Backfill a version-1 manifest (`state=generated`) for every occurrence
+    that does not have one yet — including the ones `copy_legacy()` already
+    created, since that copy predates the manifest table.
+
+    `dry_run=True` by default, matching the batch's rule: nothing is written,
+    only counted, until a caller explicitly asks for the real pass. Idempotent
+    either way — an occurrence with a manifest already is skipped, so running
+    this repeatedly (or resuming with `after_id`) never appends a second
+    version-1. Deliberately does not re-validate the file: a bulk pass over a
+    large store opening every DOCX/XLSX/PDF would be exactly the intensive
+    load the batch's rules ask this lot to avoid. A backfilled manifest starts
+    at `generated`; call `artifact_identity.validate_artifact_bytes()` and
+    `transition_state()` per artifact afterwards to promote it.
+    """
+    from core.database import ArtifactOccurrenceRow, BlobRow, SessionLocal
+    from src import artifact_identity as identity
+
+    if type(limit) is not int or not 1 <= limit <= 500:
+        raise ValueError('manifest migration batch limit must be between 1 and 500')
+    report = {'created': 0, 'already_there': 0, 'would_create': 0, 'next_cursor': None}
+    with SessionLocal() as db:
+        query = db.query(ArtifactOccurrenceRow)
+        if after_id:
+            query = query.filter(ArtifactOccurrenceRow.id > after_id)
+        rows = query.order_by(ArtifactOccurrenceRow.id).limit(limit).all()
+        if len(rows) == limit:
+            report['next_cursor'] = rows[-1].id
+        for row in rows:
+            if identity.latest_manifest(row.id) is not None:
+                report['already_there'] += 1
+                continue
+            if dry_run:
+                report['would_create'] += 1
+                continue
+            blob_row = db.query(BlobRow).filter(BlobRow.sha256 == row.blob_sha256).first()
+            identity.record_manifest_version(
+                row.id, state='generated',
+                format=(blob_row.media_type if blob_row else '') or row.kind,
+                byte_size=(blob_row.byte_size if blob_row else None),
+                sha256=row.blob_sha256, generator=row.backend or row.skill_id or '',
+                reason='backfilled from an existing occurrence without file re-validation')
+            report['created'] += 1
+    return report
+
+
 async def startup_copy():
     """Bounded, restartable additive copy; failed rows retry at next startup.
 

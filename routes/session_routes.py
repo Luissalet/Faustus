@@ -1136,11 +1136,52 @@ def setup_session_routes(
             raise HTTPException(500, f"Could not export this conversation as {fmt}: {e}")
 
         out_name = result.filename or requested or f"conversation_{sid}.{fmt}"
+        # Lot 36 / QA-39: route the export bytes through the same
+        # collect()+persist() pipeline every other producer of a durable
+        # output uses (see src/workflows/artifacts.py::save for the pattern
+        # this mirrors), so a chat export gets a real artifact manifest and
+        # content-address instead of being a file the download response
+        # invents and nobody else can ever look up again. This is *additive*
+        # provenance-keeping, not part of the download contract: any failure
+        # here (disk full, artifact store down, …) must never turn a working
+        # export into a 500, so it is best-effort and swallowed.
+        try:
+            _record_export_artifact(sid, result, out_name, effective_user(request))
+        except Exception:
+            logger.exception("Could not record artifact manifest for session %s export", sid)
         return Response(
             content=result.content,
             media_type=result.media_type or "application/octet-stream",
             headers={"Content-Disposition": _content_disposition(out_name)},
         )
+
+    def _record_export_artifact(sid: str, result, out_name: str, owner: str) -> None:
+        """Best-effort artifact-store recording for a session export.
+
+        Split out from `export_session` so the try/except there stays a
+        one-liner and this stays independently testable."""
+        import tempfile
+        from pathlib import Path
+        from src import artifact_store
+        from src.contracts import ExecutionResult
+
+        content = result.content
+        if isinstance(content, str):
+            content = content.encode("utf-8")
+        run_id = "export-" + uuid.uuid4().hex
+        with tempfile.TemporaryDirectory(prefix="faustus-session-export-") as tmp:
+            Path(tmp, out_name).write_bytes(content)
+            execution = ExecutionResult.parse({
+                "run_id": run_id, "backend": "session_export", "status": "completed",
+                "artifact_filenames": [out_name],
+            })
+            collected = artifact_store.collect(
+                execution, source_dir=tmp, owner=owner or "", project_id="",
+                skill_id="chat.export", skill_version="1.0.0",
+                provenance={"note": f"session export of {sid}"},
+            )
+            if collected.artifacts:
+                artifact_store.persist(collected.artifacts, session_id=sid)
 
     @router.get("/sessions/export")
     def export_sessions_batch(

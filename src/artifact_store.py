@@ -100,6 +100,44 @@ def sha256_of(path: str) -> str:
     return digest.hexdigest()
 
 
+def _mark_xlsx_formulas_for_recalculation(path: str) -> bool:
+    """Best-effort fix for a freshly produced workbook, applied here — before
+    it is hashed and published — and nowhere else.
+
+    A formula cell without `fullCalcOnLoad` set shows a viewer's last cached
+    value instead of recomputing it on open (QA-39). Mutating a *published*
+    blob to fix this would be wrong: blobs are immutable and content-addressed,
+    so changing one after publication silently invalidates its own hash. This
+    runs only on the run's own file in `source_dir`, before `collect()` ever
+    reads or records a hash for it, which is the one place a rewrite is free.
+
+    Returns whether anything was changed; never raises — a workbook this
+    cannot open is `collect()`'s problem, not this helper's, and it is caught
+    unchanged a few lines later by the normal hash/publish path."""
+    if not path.lower().endswith(".xlsx"):
+        return False
+    try:
+        import openpyxl
+        from openpyxl.workbook.properties import CalcProperties
+    except ImportError:
+        return False
+    try:
+        workbook = openpyxl.load_workbook(path, data_only=False)
+        has_formula = any(cell.data_type == "f" for sheet in workbook.worksheets
+                          for row in sheet.iter_rows() for cell in row)
+        if not has_formula:
+            return False
+        if workbook.calculation and getattr(workbook.calculation, "fullCalcOnLoad", False):
+            return False
+        workbook.calculation = CalcProperties(fullCalcOnLoad=True)
+        workbook.save(path)
+        return True
+    except Exception:
+        logger.debug("could not inspect/mark xlsx formulas for recalculation on %s",
+                     path, exc_info=True)
+        return False
+
+
 def _stored_name(digest: str, original: str) -> str:
     ext = original.rsplit(".", 1)[-1].lower() if "." in original else ""
     ext = "".join(c for c in ext if c.isalnum())[:12]
@@ -194,6 +232,9 @@ def collect(result: ExecutionResult, *, source_dir: str,
         if os.path.islink(src) or os.path.commonpath([os.path.realpath(source_dir), os.path.realpath(src)]) != os.path.realpath(source_dir):
             skipped.append({'name': name, 'reason': 'source_is_not_a_regular_workspace_file'})
             continue
+        # Still the run's own uncommitted file at this point, never a
+        # published blob: safe to rewrite in place before it is hashed.
+        _mark_xlsx_formulas_for_recalculation(src)
         before = os.stat(src)
         size = os.path.getsize(src)
         if size > max_bytes:
@@ -283,7 +324,50 @@ def persist(artifacts: Iterable[Artifact], *, session_id: str = "",
         _, made = identity.ensure_occurrence(occurrence)
         created += int(made)
         existing += int(not made)
+        if made:
+            _record_manifest_for(occurrence.id, art, call_id=call_id)
     return {'created': created, 'already_there': existing}
+
+
+def _record_manifest_for(occurrence_id: str, art: Artifact, *, call_id: str = "") -> None:
+    """Give a freshly recorded occurrence its first manifest version (ART-01).
+
+    Runs a format validation when the artifact's bytes are still on disk and
+    the format has a check (`identity.validate_artifact_bytes()`); when every
+    check passes the manifest moves straight to `validated`, and when one
+    fails it stays at `generated` — the state distinguishes "the run produced
+    this" from "this was checked and is fine" without the caller asking twice.
+
+    Best-effort and never fatal: the occurrence itself is already committed by
+    the time this runs, and a manifest bookkeeping failure must not undo that.
+    """
+    from src import artifact_identity as identity
+
+    try:
+        validations = None
+        try:
+            file_path = path_of(art.filename)
+        except ValueError:
+            file_path = ""
+        if file_path and os.path.isfile(file_path):
+            result = identity.validate_artifact_bytes(
+                file_path, kind=art.kind, media_type=art.media_type,
+                filename=art.label or art.filename)
+            validations = result['checks']
+        identity.record_manifest_version(
+            occurrence_id, state='generated', call_id=call_id,
+            validations=validations, format=art.media_type or art.kind,
+            byte_size=art.byte_size, sha256=art.sha256,
+            generator=art.provenance.backend or art.skill_id or '')
+        ran_a_real_check = validations is not None and any(
+            check['name'] != 'no_validator' for check in validations)
+        if ran_a_real_check and all(check['ok'] for check in validations):
+            identity.transition_state(
+                occurrence_id, 'validated', call_id=call_id,
+                reason='automatic format validation passed on collection')
+    except Exception:
+        logger.exception('artifact manifest recording failed for %s; the '
+                         'occurrence itself was already recorded', occurrence_id)
 
 
 def path_of(artifact_filename: str, *, store_dir: Optional[str] = None) -> str:

@@ -48,6 +48,27 @@ def _process(data: bytes, suffix: str, payload: dict):
         return target.read_bytes()
 
 
+def setup_media_capabilities_router():
+    """`GET /api/media/capabilities` (MEDIA-01) — a manifest of what multimodal
+    backends are actually installed, each behind a real probe and dated.
+
+    A separate router, not a `/capabilities` path added under the existing
+    `/api/media/local-video` prefix: this one is the whole-system manifest
+    (ffmpeg, ComfyUI, STT, TTS), while `.../local-video/capabilities` above
+    stays exactly what it was — the narrower answer for the local-video tool
+    specifically. `setup_local_video_routes()` returns both combined so the
+    single `app.include_router(setup_local_video_routes())` call in `app.py`
+    keeps working unchanged."""
+    router = APIRouter(prefix="/api/media", tags=["media"], dependencies=[Depends(require_admin)])
+
+    @router.get("/capabilities")
+    def media_capabilities():
+        from src.media_capabilities import capabilities_manifest
+        return capabilities_manifest()
+
+    return router
+
+
 def setup_local_video_routes():
     router = APIRouter(prefix="/api/media/local-video", tags=["media"], dependencies=[Depends(require_admin)])
     limiter = anyio.CapacityLimiter(1)
@@ -80,4 +101,12 @@ def setup_local_video_routes():
         if mode == "transcribe":
             return result
         return Response(result, media_type="video/mp4", headers={"Content-Disposition": 'attachment; filename="localized.mp4"', "Cache-Control": "no-store"})
-    return router
+
+    # Combined so app.py's one `include_router(setup_local_video_routes())`
+    # call keeps registering everything this file owns, including the
+    # `/api/media/capabilities` router added above (MEDIA-01) — additive
+    # only, every existing `/api/media/local-video/...` route is unchanged.
+    combined = APIRouter()
+    combined.include_router(setup_media_capabilities_router())
+    combined.include_router(router)
+    return combined

@@ -54,6 +54,32 @@ def setup_artifact_routes():
     def metadata(request: Request, artifact_id: str):
         return {'ok': True, 'artifact': _metadata(owned(request, artifact_id))}
 
+    @router.get('/{artifact_id}/manifest')
+    def manifest_history(request: Request, artifact_id: str):
+        """The full version chain (ART-01): what state each pass left it in
+        and why, oldest first. Empty for anything written before this lot
+        migrated it — `src.artifact_migration.migrate_manifests()` backfills
+        that, not this endpoint."""
+        row = owned(request, artifact_id)
+        from src import artifact_identity as identity
+        return {'ok': True, 'artifact_id': row.id,
+               'manifest': identity.manifest_history(row.id)}
+
+    @router.post('/{artifact_id}/review')
+    def mark_reviewed(request: Request, artifact_id: str):
+        """Human sign-off. Only reachable from `validated`: an artifact whose
+        format check never ran, or failed, cannot be marked reviewed by
+        calling this — the state machine in `artifact_identity` refuses the
+        jump and this reports why instead of forcing it through."""
+        row = owned(request, artifact_id)
+        from src import artifact_identity as identity
+        try:
+            updated = identity.transition_state(row.id, 'reviewed',
+                                                reason='marked reviewed via API')
+        except ValueError as exc:
+            raise HTTPException(409, str(exc))
+        return {'ok': True, 'manifest': updated}
+
     @router.get('/{artifact_id}/download')
     def download(request: Request, artifact_id: str):
         row = owned(request, artifact_id)
