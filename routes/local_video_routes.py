@@ -14,6 +14,7 @@ from fastapi.responses import Response
 from core.middleware import require_admin
 from src.upload_limits import read_upload_limited
 from services.local_video import DEMUXERS, validate_segments, MAX_DURATION
+from src import media_subtitles
 
 
 def _process(data: bytes, suffix: str, payload: dict):
@@ -78,6 +79,24 @@ def setup_local_video_routes():
         return {"ffmpeg": bool(shutil.which("ffmpeg") and shutil.which("ffprobe")),
                 "whisper": find_spec("faster_whisper") is not None, "system_voice": os.name == "nt",
                 "cloud": False, "downloads": False, "max_seconds": MAX_DURATION}
+
+    # MEDIA-05 — SRT/VTT export. A DIFFERENT path shape than "/{mode}" below
+    # (two segments, not one) so it can never be shadowed by that catch-all;
+    # order would not save it since FastAPI matches route-by-route in
+    # registration order and "/{mode}" is a single-segment pattern.
+    @router.post("/subtitles/export")
+    async def export_subtitles(payload: dict):
+        fmt = str(payload.get("format") or "srt")
+        try:
+            rows = validate_segments(payload.get("segments") or [], MAX_DURATION)
+            out = media_subtitles.export(rows, fmt)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        # Text only — no video or audio file is read or written by this
+        # route, so "changing subtitles" here cannot touch the source media.
+        return Response(out["text"], media_type=out["media_type"],
+                        headers={"Content-Disposition": f'attachment; filename="{out["filename"]}"',
+                                 "Cache-Control": "no-store"})
 
     @router.post("/{mode}")
     async def process(mode: str, file: UploadFile = File(...), language: str = Form("auto"), segments: str = Form("[]", max_length=100000)):

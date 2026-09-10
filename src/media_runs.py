@@ -75,6 +75,24 @@ def _backend(url: str = "", *, client_id: str = "") -> ComfyUIBackend:
     return ComfyUIBackend(url, client_id=client_id or DEFAULT_CLIENT_ID)
 
 
+def _consent_gate(workflow: "workflows.MediaWorkflow",
+                  inputs: Optional[Mapping[str, Any]]) -> Optional[Dict[str, Any]]:
+    """MEDIA-06: a refusal if this recipe clones an identity nobody has
+    consented to, else `None`. Templates that do not declare
+    `requires_consent` are unaffected — see `media_workflows.MediaWorkflow`."""
+    if not workflow.requires_consent:
+        return None
+    from src import media_consent
+    subject = str((inputs or {}).get(workflow.consent_subject_input) or "").strip()
+    if subject and media_consent.has_consent(subject):
+        return None
+    return {"ok": False, "reason": "consent_required",
+            "detail": f"{workflow.id} clones a voice or likeness; record consent for "
+                      f"the subject named in inputs.{workflow.consent_subject_input} "
+                      "with src.media_consent.register() before this can render",
+            "consent_subject_input": workflow.consent_subject_input}
+
+
 def _iso_ago(seconds: int) -> str:
     """`now_iso()` as of N seconds ago, for comparing against `created_at`.
 
@@ -106,6 +124,23 @@ def plan(workflow_id: str, inputs: Optional[Mapping[str, Any]] = None, *,
                           + (f"; there is {', '.join(known)}" if known else
                              ", and none are installed"),
                 "broken_templates": catalogue["broken"]}
+
+    # MEDIA-02: a template that parses is not thereby reviewed. This has to
+    # run before rendering rather than after: the point is to refuse a
+    # recipe whose graph calls a node nobody has looked at, not to render it
+    # and refuse the picture.
+    review = workflows.review_status(workflow)
+    if not review["reviewed"]:
+        return {"ok": False, "reason": "needs_review", "new_nodes": review["new_nodes"],
+                "detail": f"{workflow.id} {workflow.version} introduces node type(s) "
+                          f"not yet reviewed: {', '.join(review['new_nodes']) or 'unknown'}; "
+                          "add it to config/media_workflows/reviews/approved_recipes.json "
+                          "once a human has looked at it",
+                "workflow": workflow.to_dict()}
+
+    consent_refusal = _consent_gate(workflow, inputs)
+    if consent_refusal is not None:
+        return {**consent_refusal, "workflow": workflow.to_dict()}
 
     try:
         rendered = workflows.render(workflow, inputs)
@@ -190,6 +225,25 @@ def start(workflow_id: str, inputs: Optional[Mapping[str, Any]] = None, *,
     workflow = workflows.load(workflow_id, version)
     if workflow is None:
         return {"ok": False, "reason": "no_such_workflow", "detail": workflow_id}
+
+    # MEDIA-02 — same gate as plan(), enforced again here rather than trusted
+    # from an earlier plan() call: nothing stops the template file changing
+    # on disk between the two, and start() is the point a job actually
+    # reaches a GPU.
+    review = workflows.review_status(workflow)
+    if not review["reviewed"]:
+        return {"ok": False, "reason": "needs_review", "new_nodes": review["new_nodes"],
+                "detail": f"{workflow.id} {workflow.version} introduces node type(s) "
+                          f"not yet reviewed: {', '.join(review['new_nodes']) or 'unknown'}; "
+                          "add it to config/media_workflows/reviews/approved_recipes.json "
+                          "once a human has looked at it"}
+
+    # MEDIA-06 — same reasoning: a clone with no consent on file must never
+    # queue, and start() is the moment closest to it actually happening.
+    consent_refusal = _consent_gate(workflow, inputs)
+    if consent_refusal is not None:
+        return consent_refusal
+
     try:
         rendered = workflows.render(workflow, inputs)
     except TemplateError as e:
@@ -641,6 +695,114 @@ def _inputs_digest(values: Mapping[str, Any]) -> str:
     same digest; one that changed a single word does not."""
     from src.contracts.base import fingerprint
     return fingerprint([(k, values[k]) for k in sorted(values)])
+
+
+# ── MEDIA-04: failure classification for retry-by-class ────────────────────
+#
+# `core/database.py` (outside this lot's file list) has no `retry_of` or
+# `attempt` column, so a retry cannot be PERSISTENTLY linked to the run it
+# replaces, or counted against a max-attempts budget that survives a
+# restart — that needs a schema change (named in this lot's final report,
+# with the exact column to add). What needs no schema change at all is
+# telling a transient failure from a permanent one, and never retrying
+# blind: `retry()` always re-checks the run's CURRENT status through
+# `poll()` first — the same discipline `cancel()` already applies — so a
+# timeout arriving after the run actually finished discovers that instead
+# of starting a second job on the same GPU (MEDIA-04's acceptance
+# criterion, already true of `poll()`/`reconcile_run()` on their own).
+
+#: A refusal the engine spoke before ever queuing (a missing model, a
+#: rejected graph) will not become true by asking again — see
+#: `REFUSED_BEFORE_QUEUE` and where `start()` writes these into `reason`.
+_PERMANENT_PREFIXES = tuple(f"{r}:" for r in REFUSED_BEFORE_QUEUE)
+
+#: Wording `reconcile_run()`/`_poll()` actually write for an outcome that
+#: never reached a GPU, or that this process merely lost contact with —
+#: exactly the class retrying is FOR.
+_TRANSIENT_MARKERS = ("engine unavailable", "never reached the queue",
+                      "carries no client id", "could not collect render outputs")
+
+#: Statuses that are not a finished failure at all — retrying one of these
+#: would race whatever is already in flight rather than replace it.
+_IN_PROGRESS_STATUSES = frozenset(
+    {"queued", "running", "submitted"} | set(UNSETTLED_SUBMIT))
+
+
+def classify_failure(run: Mapping[str, Any]) -> str:
+    """One label for one run, from its `status` and `reason` alone — no
+    engine call, so a caller (a route, a UI retry button) can decide what to
+    offer without paying for a probe just to describe a row that already
+    settled:
+
+    * `"not_retryable"` — finished on purpose (`completed`, `cancelled`);
+    * `"in_progress"` — not failed yet; retrying now would race it;
+    * `"permanent"` — the engine read the graph and refused it; asking
+      again with the same recipe changes nothing;
+    * `"transient"` — never actually reached a GPU, or contact with the
+      engine was merely lost; safe to resubmit;
+    * `"ambiguous"` — the engine forgot the job (a restart) — it may have
+      completed silently, so resubmitting COULD duplicate real work;
+    * `"unclassified"` — a failure whose reason matches none of the above;
+      treated as not safe to auto-retry rather than guessed at.
+    """
+    status = run.get("status")
+    if status in ("completed", "cancelled"):
+        return "not_retryable"
+    if status in _IN_PROGRESS_STATUSES:
+        return "in_progress"
+    if status == "unknown":
+        return "ambiguous"
+    if status != "failed":
+        return "unclassified"
+    reason = (run.get("reason") or "").strip().lower()
+    if reason.startswith(_PERMANENT_PREFIXES):
+        return "permanent"
+    if any(marker in reason for marker in _TRANSIENT_MARKERS):
+        return "transient"
+    return "unclassified"
+
+
+def retry(run_id: str, *, owner: str = "") -> Dict[str, Any]:
+    """Re-submit a TRANSIENTLY failed run as a brand new one — same
+    workflow, same version, same resolved values (seed included, so a retry
+    reproduces the same picture rather than rolling a new one) — after
+    confirming, right now, that it is actually safe to.
+
+    Deliberately not a resend of the same row: `media_runs` has no column to
+    mark one run as superseding another (see the module docstring), so the
+    honest shape is two independent rows plus this function's own answer
+    naming which run it started because the first one failed.
+    """
+    current = poll(run_id, collect=False)
+    if not current.get("ok"):
+        return {"ok": False, "reason": "not_found", "run_id": run_id}
+    if owner and (current.get("owner") or "") != owner:
+        return {"ok": False, "reason": "not_found", "run_id": run_id}
+    verdict = classify_failure(current)
+    if verdict != "transient":
+        return {"ok": False, "reason": f"not_retryable_{verdict}", "run_id": run_id,
+                "status": current.get("status"),
+                "detail": f"media run {run_id} is {current.get('status')} "
+                          f"({verdict}); retry() only resubmits a run classified "
+                          "transient — call poll() to see its current state"}
+    workflow = workflows.load(current["workflow"], current.get("version") or "")
+    if workflow is None:
+        # The template that made this run has since been removed or renamed
+        # — nothing to resubmit against.
+        return {"ok": False, "reason": "no_such_workflow", "run_id": run_id,
+                "detail": current["workflow"]}
+    # `values` on the row is the FULL resolved set, computed fields (width,
+    # steps...) included; only the declared INPUTS may be handed back to
+    # start(), same as any other caller — the computed ones are derived
+    # again from those, deterministically, by the same lookup tables.
+    declared = {i.name for i in workflow.inputs}
+    inputs = {k: v for k, v in (current.get("values") or {}).items() if k in declared}
+    started = start(current["workflow"], inputs,
+                    version=current.get("version") or "",
+                    owner=current.get("owner") or owner,
+                    project_id=current.get("project_id") or "",
+                    session_id=current.get("session_id") or "")
+    return {**started, "retry_of": run_id}
 
 
 def cancel(run_id: str) -> Dict[str, Any]:

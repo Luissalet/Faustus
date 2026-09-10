@@ -91,6 +91,42 @@ def _extract_exif(content: bytes) -> dict:
     return result
 
 
+# ---- MEDIA-06: metadata minimization ----
+
+def strip_location_exif(content: bytes) -> bytes:
+    """The same bytes, minus GPS EXIF — for MEDIA-06's "borrar ubicación EXIF
+    opcional": a private photo shared or exported should not carry the
+    coordinates it was taken at unless the owner asked to keep them.
+
+    Copies every OTHER EXIF tag across untouched (camera make/model, the
+    date taken) — this removes ONE sensitive field, it does not strip
+    provenance the acceptance criteria elsewhere ask us to keep. Pixel data
+    is re-encoded losslessly for PNG/WebP and at PIL's default JPEG quality
+    otherwise; a caller who wants byte-identical output when there is no GPS
+    tag to remove should skip calling this rather than rely on it being a
+    no-op re-encode.
+
+    Never raises: a file this cannot parse (a video, a corrupt image, a
+    format with no EXIF concept) is returned unchanged rather than blocking
+    an export over a field that was never going to be there.
+    """
+    GPS_TAG = 0x8825  # 34853 — the pointer tag that carries the GPS IFD
+    try:
+        from io import BytesIO
+        from PIL import Image
+        img = Image.open(BytesIO(content))
+        exif = img.getexif()
+        if GPS_TAG not in exif:
+            return content  # nothing to remove; do not silently re-encode
+        del exif[GPS_TAG]
+        out = BytesIO()
+        img.save(out, format=img.format or "PNG", exif=exif)
+        return out.getvalue()
+    except Exception as e:
+        logger.warning(f"GPS EXIF redaction skipped, returning original bytes: {e}")
+        return content
+
+
 # ---- Helpers ----
 
 def _image_to_dict(img: GalleryImage, session_name: str = None) -> Dict[str, Any]:

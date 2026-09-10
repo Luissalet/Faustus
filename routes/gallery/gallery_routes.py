@@ -25,6 +25,7 @@ from src.optional_deps import patch_realesrgan_torchvision_compat
 
 from routes.gallery.gallery_helpers import (
     GalleryPatch, _extract_exif, _image_to_dict, _owner_filter, _human_size,
+    strip_location_exif,
 )
 
 logger = logging.getLogger(__name__)
@@ -1002,6 +1003,10 @@ def setup_gallery_routes() -> APIRouter:
         ids = data.get("ids") or []
         if not ids:
             raise HTTPException(400, "No images specified")
+        # MEDIA-06 — "borrar ubicación EXIF opcional": off by default so every
+        # existing caller (and every test of this endpoint) keeps getting
+        # byte-identical files; a caller that asks gets GPS-stripped copies.
+        redact_location = bool(data.get("redact_location", False))
         db = SessionLocal()
         try:
             imgs = db.query(GalleryImage).filter(
@@ -1029,7 +1034,10 @@ def setup_gallery_routes() -> APIRouter:
                         name = f"{base}-{i}{ext}"
                         i += 1
                     used.add(name)
-                    zf.write(src, arcname=name)
+                    if redact_location:
+                        zf.writestr(name, strip_location_exif(src.read_bytes()))
+                    else:
+                        zf.write(src, arcname=name)
             if not used:
                 raise HTTPException(404, "No image files found on disk")
             from fastapi import Response

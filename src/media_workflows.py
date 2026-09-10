@@ -47,6 +47,13 @@ logger = logging.getLogger(__name__)
 WORKFLOWS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                              "config", "media_workflows")
 
+#: MEDIA-02 — the review registry: every fingerprint a human has actually
+#: signed off on, and the executable node types (`class_type`) that
+#: fingerprint's graph used. A SUBDIRECTORY of `WORKFLOWS_DIR`, on purpose:
+#: `catalogue()` only reads `*.json` directly inside `WORKFLOWS_DIR`, so this
+#: file is never mistaken for a template and reported as a broken one.
+REVIEW_REGISTRY_PATH = os.path.join(WORKFLOWS_DIR, "reviews", "approved_recipes.json")
+
 #: Input types a template may declare. Closed, like everything else here.
 INPUT_TYPES = ("text", "enum", "integer", "number", "boolean", "seed", "artifact")
 
@@ -133,6 +140,13 @@ class MediaWorkflow:
     outputs: Mapping[str, str] = field(default_factory=dict)
     graph: Mapping[str, Any] = field(default_factory=dict)
     source: str = ""
+    #: MEDIA-06 — declared by the template, not inferred: a recipe that
+    #: clones a real voice or face says so explicitly, and names which
+    #: declared input carries the identity of the person being cloned.
+    #: Every shipped template defaults to `False`, so this adds a capability
+    #: without gating anything that exists today.
+    requires_consent: bool = False
+    consent_subject_input: str = ""
 
     def input(self, name: str) -> Optional[InputSpec]:
         return next((i for i in self.inputs if i.name == name), None)
@@ -148,6 +162,8 @@ class MediaWorkflow:
             "outputs": dict(self.outputs),
             "fingerprint": self.fingerprint(),
             "source": os.path.basename(self.source),
+            "requires_consent": self.requires_consent,
+            "consent_subject_input": self.consent_subject_input,
         }
         if with_graph:
             out["graph"] = dict(self.graph)
@@ -164,6 +180,8 @@ class MediaWorkflow:
             ("inputs", [i.to_dict() for i in self.inputs]),
             ("computed", dict(self.computed)),
             ("graph", dict(self.graph)),
+            ("requires_consent", self.requires_consent),
+            ("consent_subject_input", self.consent_subject_input),
         ])
 
 
@@ -234,7 +252,16 @@ def parse(raw: Any, *, source: str = "") -> MediaWorkflow:
     if not isinstance(computed, Mapping):
         raise TemplateError(f"{path}.computed", "expected an object", got=computed)
 
+    requires_consent = bool(raw.get("requires_consent", False))
+    consent_subject_input = str(raw.get("consent_subject_input") or "")
     known = {i.name for i in inputs}
+    if requires_consent and consent_subject_input not in known:
+        raise TemplateError(
+            f"{path}.consent_subject_input",
+            "a template that requires_consent has to name which declared "
+            "input carries the subject's identity, so the gate knows whose "
+            "consent to check for",
+            got=consent_subject_input)
     for name, rule in computed.items():
         if not isinstance(rule, Mapping) or "from" not in rule or "map" not in rule:
             raise TemplateError(f"{path}.computed.{name}",
@@ -253,6 +280,7 @@ def parse(raw: Any, *, source: str = "") -> MediaWorkflow:
         requires_nodes=tuple(str(n) for n in (raw.get("requires_nodes") or ())),
         outputs=dict(raw.get("outputs") or {}),
         graph=dict(raw["graph"]), source=source,
+        requires_consent=requires_consent, consent_subject_input=consent_subject_input,
     )
     _check_placeholders(workflow)
     return workflow
@@ -465,6 +493,95 @@ def render(workflow: MediaWorkflow,
         "fingerprint": workflow.fingerprint(),
         "models": [m.to_dict() for m in workflow.models],
     }
+
+
+# ── MEDIA-02: review, separate from "does it parse" ───────────────────────
+#
+# A template that parses is well-formed; it is not thereby reviewed. Node
+# review is a security question — an executable node this Faustus has never
+# seen can read files, write files or run arbitrary code on the render
+# machine — and a template file living in a code-reviewed directory answers
+# "was this file's TEXT reviewed", not "does this render actually only
+# invoke nodes somebody looked at". `review_status()` answers the second
+# question against `REVIEW_REGISTRY_PATH`, a second file that only a human
+# editing it (also code review) can extend.
+
+def graph_node_types(workflow: MediaWorkflow) -> frozenset:
+    """Every `class_type` this template's graph actually invokes.
+
+    Derived from `graph` itself rather than trusted from `requires_nodes`:
+    the latter is metadata an author writes by hand and can drift from what
+    the graph really calls, which is exactly the gap a node review closes."""
+    return frozenset(_node_types_in(workflow.graph))
+
+
+def _node_types_in(node: Any) -> set:
+    found = set()
+    if isinstance(node, Mapping):
+        class_type = node.get("class_type")
+        if isinstance(class_type, str) and class_type:
+            found.add(class_type)
+        for value in node.values():
+            found |= _node_types_in(value)
+    elif isinstance(node, (list, tuple)):
+        for value in node:
+            found |= _node_types_in(value)
+    return found
+
+
+def load_review_registry(path: Optional[str] = None) -> Dict[str, Any]:
+    """The reviewed-fingerprints file, or `{}` if none exists yet.
+
+    A missing or unreadable registry is not an error here — it means every
+    template is unreviewed, which `review_status()` reports honestly rather
+    than this function crashing the caller that only wanted a manifest."""
+    target = path or REVIEW_REGISTRY_PATH
+    if not os.path.isfile(target):
+        return {}
+    try:
+        with open(target, "r", encoding="utf-8") as fh:
+            raw = json.load(fh)
+    except (OSError, ValueError) as e:
+        logger.warning("media review registry %s could not be read: %s", target, e)
+        return {}
+    return {k: v for k, v in raw.items() if not k.startswith("_") and isinstance(v, Mapping)}
+
+
+def review_status(workflow: MediaWorkflow, *,
+                  registry: Optional[Mapping[str, Any]] = None,
+                  registry_path: Optional[str] = None) -> Dict[str, Any]:
+    """Has a human actually signed off on the nodes this render would run?
+
+    Three outcomes:
+
+    * the exact fingerprint is in the registry — reviewed, nothing to say;
+    * the fingerprint changed but every node type the new graph calls was
+      already reviewed for this id (a prompt tweak, a default changed) —
+      still reviewed, because no new executable surface was introduced;
+    * the graph calls a node type nobody reviewed for this id — NOT
+      reviewed, and `new_nodes` names exactly what has to be looked at.
+
+    An id absent from the registry entirely is the third case with every one
+    of its nodes counted as new — a template nobody has ever reviewed does
+    not get the benefit of the doubt.
+    """
+    table = dict(registry) if registry is not None else load_review_registry(registry_path)
+    entries = list((table.get(workflow.id) or {}).get("approved") or [])
+    node_types = graph_node_types(workflow)
+
+    fingerprint = workflow.fingerprint()
+    if any(str(e.get("fingerprint")) == fingerprint for e in entries):
+        return {"reviewed": True, "reason": "", "new_nodes": []}
+
+    reviewed_nodes: set = set()
+    for e in entries:
+        reviewed_nodes |= {str(n) for n in (e.get("node_types") or ())}
+    new_nodes = sorted(node_types - reviewed_nodes)
+    if entries and not new_nodes:
+        return {"reviewed": True, "reason": "", "new_nodes": []}
+
+    reason = "no_review_record" if not entries else "new_nodes_introduced"
+    return {"reviewed": False, "reason": reason, "new_nodes": new_nodes or sorted(node_types)}
 
 
 def _substitute(node: Any, values: Mapping[str, Any]) -> Any:

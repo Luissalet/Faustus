@@ -1,0 +1,51 @@
+{
+  "_comment": "MEDIA-02 review registry. One key per workflow id, listing every fingerprint a human has actually reviewed and the executable node types (class_type) that fingerprint's graph uses. src/media_workflows.review_status() compares a loaded template against this file: an exact fingerprint match is approved outright, and a changed template is still approved as long as it introduces no class_type outside the union already reviewed for that id. A template that introduces a genuinely new executable node is refused (reason 'needs_review') by src/media_runs.plan()/start() until a reviewer adds an entry here — which is itself a code-reviewed change to this file, the same authority config/media_workflows/*.json already has. Regenerate an id's node_types by loading the template and calling media_workflows.graph_node_types(workflow); do not hand-edit the fingerprint.",
+  "image.product": {
+    "approved": [
+      {
+        "version": "1.0.0",
+        "fingerprint": "79554fd20d94ace91f149e85d86644a2846d6ebd20819b791e6806dbe6e1b9f0",
+        "node_types": ["CLIPTextEncode", "CheckpointLoaderSimple", "EmptyLatentImage", "KSampler", "SaveImage", "VAEDecode"],
+        "approved_by": "baseline-audit-lote51",
+        "approved_at": "2026-09-10T00:00:00Z",
+        "note": "Seeded from the shipped template at the time the MEDIA-02 review gate was introduced."
+      }
+    ]
+  },
+  "image.quick-draft": {
+    "approved": [
+      {
+        "version": "1.0.0",
+        "fingerprint": "d8ca7b9e3c848972bcec8d5e508a2adff19f3b247850b13fc8900474081c5ecd",
+        "node_types": ["CLIPTextEncode", "CheckpointLoaderSimple", "EmptyLatentImage", "KSampler", "SaveImage", "VAEDecode"],
+        "approved_by": "baseline-audit-lote51",
+        "approved_at": "2026-09-10T00:00:00Z",
+        "note": "Seeded from the shipped template at the time the MEDIA-02 review gate was introduced."
+      }
+    ]
+  },
+  "image.reference-edit": {
+    "approved": [
+      {
+        "version": "1.0.0",
+        "fingerprint": "5b8a4ce477754f0b113010109f82623899ce03d0fb98b851382869e818b5dc9e",
+        "node_types": ["CLIPTextEncode", "CheckpointLoaderSimple", "KSampler", "LoadImage", "SaveImage", "VAEDecode", "VAEEncode"],
+        "approved_by": "baseline-audit-lote51",
+        "approved_at": "2026-09-10T00:00:00Z",
+        "note": "Seeded from the shipped template at the time the MEDIA-02 review gate was introduced."
+      }
+    ]
+  },
+  "video.short-form": {
+    "approved": [
+      {
+        "version": "1.0.0",
+        "fingerprint": "b649fab3fa156619485e3823ec8fe562003780cf980200cfdb8be211e485bce7",
+        "node_types": ["CreateVideo", "ImageOnlyCheckpointLoader", "KSampler", "LoadImage", "SVD_img2vid_Conditioning", "SaveVideo", "VAEDecode", "VideoLinearCFGGuidance"],
+        "approved_by": "baseline-audit-lote51",
+        "approved_at": "2026-09-10T00:00:00Z",
+        "note": "Seeded from the shipped template at the time the MEDIA-02 review gate was introduced."
+      }
+    ]
+  }
+}
