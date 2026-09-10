@@ -4199,6 +4199,7 @@ export const es: Record<string, string> = {
   "The server accepted the refusal and echoed your reason back, but the record still holds this improvement as `{status}`. Nothing has been stored, so it can come back next round.": "El servidor aceptó el rechazo y devolvió tu motivo, pero el registro sigue guardando esta mejora como «{status}». No se ha almacenado nada, así que puede volver en la siguiente ronda.",
   "The server did not answer /api/auth/settings.": "El servidor no ha contestado a /api/auth/settings.",
   "The server responded {status}": "El servidor ha respondido {status}",
+  "The server restarted while this research was running. Retry starts it again.": "El servidor se reinició mientras esta investigación estaba en marcha. Reintentar la vuelve a empezar.",
   "The server returned no attachment. Retry the upload.": "El servidor no devolvió ningún adjunto. Reintenta la subida.",
   "The server stopped building at its node budget{limit} — this is a partial graph, not the whole workspace.": "El servidor paró al llegar a su presupuesto de nodos{limit}: esto es un grafo parcial, no todo el espacio de trabajo.",
   "The server will not bind `{path}` as a working folder. If Faustus runs in Docker, use the path inside the container.": "El servidor no acepta `{path}` como carpeta de trabajo. Si Faustus corre en Docker, usa la ruta de dentro del contenedor.",

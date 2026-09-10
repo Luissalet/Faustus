@@ -27,6 +27,7 @@ import {
   CATEGORIES,
   deleteResearch,
   discussResearch,
+  dismissResearch,
   exportFormats,
   exportUrl,
   followResearch,
@@ -409,7 +410,10 @@ export function ResearchScreen() {
             patch(job.id, { status: 'error', finishedAt: Date.now(), error: (err as Error).message || t('The report could not be read.') });
           }
         } else if (outcome === 'cancelled') patch(job.id, { status: 'cancelled', finishedAt: Date.now() });
-        else patch(job.id, { status: 'error', finishedAt: Date.now(), error: lastMessage || t('The research failed.') });
+        else if (outcome === 'interrupted') {
+          void dismissResearch(job.sessionId as string);
+          patch(job.id, { status: 'error', finishedAt: Date.now(), error: t('The server restarted while this research was running. Retry starts it again.') });
+        } else patch(job.id, { status: 'error', finishedAt: Date.now(), error: lastMessage || t('The research failed.') });
         loadResearchLibrary({ limit: 8 }).then((r) => setRecent(r.items)).catch(() => undefined);
       });
     },
@@ -425,7 +429,15 @@ export function ResearchScreen() {
           const known = new Set(cur.map((j) => j.sessionId));
           const adopted: Job[] = active
             .filter((a) => !known.has(a.id))
-            .map((a) => ({ id: uid(), sessionId: a.id, query: a.query, settings: { ...DEFAULT_SETTINGS }, status: 'running', progress: a.progress, startedAt: a.startedAt ? a.startedAt * 1000 : Date.now(), finishedAt: 0, result: null, error: '', sourceCount: 0 }));
+            .map((a) => {
+              const startedAt = a.startedAt ? a.startedAt * 1000 : Date.now();
+              const base: Job = { id: uid(), sessionId: a.id, query: a.query, settings: { ...DEFAULT_SETTINGS }, status: 'running', progress: a.progress, startedAt, finishedAt: 0, result: null, error: '', sourceCount: 0 };
+              if (a.status !== 'interrupted') return base;
+              // A restart killed it: show the card as failed, with Retry, and
+              // tell the server it has been seen so it is not shown twice.
+              void dismissResearch(a.id);
+              return { ...base, status: 'error', finishedAt: Date.now(), error: t('The server restarted while this research was running. Retry starts it again.') };
+            });
           return adopted.length ? [...adopted, ...cur] : cur;
         });
       })

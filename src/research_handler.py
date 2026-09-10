@@ -70,6 +70,124 @@ class ResearchHandler:
         self._active_tasks: Dict[str, dict] = {}
         self._initialize_legacy_engine()
         RESEARCH_DATA_DIR.mkdir(parents=True, exist_ok=True)
+        try:
+            n = self.recover_interrupted()
+            if n:
+                logger.warning("Research: %d run(s) were interrupted by a restart", n)
+        except Exception:
+            logger.debug("recover_interrupted failed", exc_info=True)
+
+    # ------------------------------------------------------------------
+    # Restart survival
+    # ------------------------------------------------------------------
+    # A run lives in `_active_tasks`, so a server restart used to erase it
+    # without a trace: the screen's card said "The research failed." with
+    # the last round message under it, and a reloaded screen showed nothing
+    # at all (10-09-2026). A small marker JSON now goes to disk when a run
+    # starts, and the next start-up turns every marker still "running" into
+    # "interrupted", which /api/research/active reports so the screen can
+    # show the card with a Retry.
+
+    INTERRUPTED_MESSAGE = (
+        "The server restarted while this research was running. "
+        "Nothing was saved; retry starts it again."
+    )
+
+    def _write_marker(self, session_id: str, entry: dict, *, error: str = "") -> None:
+        """Persist the bare state of a run that has no report (yet)."""
+        try:
+            path = _research_json_path(session_id)
+            if path is None:
+                return
+            if path.exists():
+                try:
+                    current = json.loads(path.read_text(encoding="utf-8"))
+                except Exception:
+                    current = {}
+                # Never trample a saved report with a marker.
+                if current.get("result"):
+                    return
+            data = {
+                "marker": True,
+                "query": entry.get("query", ""),
+                "status": entry.get("status", "running"),
+                "error": error or entry.get("error", ""),
+                "model": (entry.get("progress") or {}).get("model", ""),
+                "category": entry.get("category"),
+                "started_at": entry.get("started_at", 0),
+                "owner": entry.get("owner", ""),
+            }
+            from core.atomic_io import atomic_write_json
+            atomic_write_json(str(path), data, private=True)
+        except Exception:
+            logger.debug("research marker write failed", exc_info=True)
+
+    def recover_interrupted(self) -> int:
+        """Mark every run that was still running at the last shutdown."""
+        count = 0
+        for p in RESEARCH_DATA_DIR.glob("*.json"):
+            try:
+                data = json.loads(p.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            if not data.get("marker") or data.get("status") != "running":
+                continue
+            if p.stem in self._active_tasks:
+                continue
+            data["status"] = "interrupted"
+            data["error"] = self.INTERRUPTED_MESSAGE
+            data["interrupted_at"] = time.time()
+            try:
+                from core.atomic_io import atomic_write_json
+                atomic_write_json(str(p), data, private=True)
+                count += 1
+            except Exception:
+                logger.debug("marker update failed for %s", p, exc_info=True)
+        return count
+
+    def list_interrupted(self, owner: str) -> list:
+        """Interrupted runs of `owner` that the screen has not dismissed."""
+        out = []
+        for p in RESEARCH_DATA_DIR.glob("*.json"):
+            try:
+                data = json.loads(p.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            if not data.get("marker") or data.get("status") != "interrupted":
+                continue
+            if data.get("owner", "") != owner or data.get("dismissed"):
+                continue
+            out.append({
+                "session_id": p.stem,
+                "query": data.get("query", ""),
+                "status": "interrupted",
+                "error": data.get("error") or self.INTERRUPTED_MESSAGE,
+                "progress": {"phase": "error", "message": data.get("error") or self.INTERRUPTED_MESSAGE,
+                             "model": data.get("model", "")},
+                "started_at": data.get("started_at", 0),
+                "category": data.get("category"),
+            })
+        out.sort(key=lambda x: x.get("started_at") or 0)
+        return out
+
+    def dismiss_interrupted(self, session_id: str, owner: str) -> bool:
+        """Forget an interrupted run once the screen has shown it."""
+        path = _research_json_path(session_id)
+        if path is None or not path.exists():
+            return False
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return False
+        if not data.get("marker") or data.get("owner", "") != owner or data.get("result"):
+            return False
+        try:
+            path.unlink()
+        except OSError:
+            data["dismissed"] = True
+            from core.atomic_io import atomic_write_json
+            atomic_write_json(str(path), data, private=True)
+        return True
 
     def _initialize_legacy_engine(self):
         """Initialize the legacy research engine as a fallback."""
@@ -343,6 +461,7 @@ class ResearchHandler:
             "owner": owner or "",
         }
         self._active_tasks[session_id] = entry
+        self._write_marker(session_id, entry)
 
         def on_progress(event):
             entry["progress"] = {**event, "model": llm_model}
@@ -416,6 +535,7 @@ class ResearchHandler:
                     # asked for the real one and got a 404. It lives in
                     # `error`, which is what the stream's final event carries.
                     entry["error"] = f"Research timed out after {hard_timeout}s. The model may be too slow for deep research."
+                    self._write_marker(session_id, entry)
                 on_progress({"phase": "error", "message": f"Research timed out after {hard_timeout}s"})
             except asyncio.CancelledError:
                 entry["status"] = "cancelled"
@@ -442,6 +562,7 @@ class ResearchHandler:
                 else:
                     entry["error"] = str(e)
                     entry["status"] = "error"
+                    self._write_marker(session_id, entry)
                     # Without this the reason never left the server: the
                     # timeout branch announced itself, this one went silent and
                     # the screen fell back to a bare "The research failed."
@@ -481,12 +602,16 @@ class ResearchHandler:
                 data = json.loads(path.read_text(encoding="utf-8"))
                 if data.get("consumed"):
                     return None
-                return {
+                out = {
                     "status": data.get("status", "done"),
                     "progress": {},
                     "query": data.get("query", ""),
                     "started_at": data.get("started_at", 0),
                 }
+                if data.get("marker") and data.get("error"):
+                    out["error"] = data["error"]
+                    out["progress"] = {"phase": "error", "message": data["error"]}
+                return out
             except Exception:
                 pass
         return None
@@ -505,6 +630,7 @@ class ResearchHandler:
         if task and not task.done():
             task.cancel()
         entry["status"] = "cancelled"
+        self._write_marker(session_id, entry)
         return True
 
     def get_result(self, session_id: str) -> Optional[str]:

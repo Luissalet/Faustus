@@ -5768,3 +5768,4 @@ Off — load anyway, Ollama spills to CPU/PCIe	Apagado: carga igual y Ollama se 
 Load anyway (dangerous)	Cargar igual (peligroso)
 Loading anyway would put {spill} in system RAM ({free} of {total} free).	Cargar igual pondría {spill} en la RAM del sistema ({free} de {total} libres).
 Loading anyway would put {spill} in system RAM, and only {free} of {total} is free: that is the shape of the crash of 08-09-2026. Unload something instead.	Cargar igual pondría {spill} en la RAM del sistema, y solo hay {free} de {total} libres: es la forma exacta de la caída del 08-09-2026. Descarga algo en su lugar.
+The server restarted while this research was running. Retry starts it again.	El servidor se reinició mientras esta investigación estaba en marcha. Reintentar la vuelve a empezar.

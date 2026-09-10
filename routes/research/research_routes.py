@@ -301,7 +301,20 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
                     "progress": entry.get("progress", {}),
                     "started_at": entry.get("started_at", 0),
                 })
+        # Runs a restart killed: the screen shows them as failed cards with
+        # a Retry, then dismisses them (see research_handler.list_interrupted).
+        try:
+            active.extend(research_handler.list_interrupted(user))
+        except Exception:
+            logger.debug("list_interrupted failed", exc_info=True)
         return {"active": active}
+
+    @router.post("/api/research/{session_id}/dismiss")
+    async def research_dismiss(session_id: str, request: Request):
+        """Forget an interrupted run (marker only; never a saved report)."""
+        user = _require_user(request)
+        _validate_session_id(session_id)
+        return {"ok": bool(research_handler.dismiss_interrupted(session_id, user))}
 
     @router.get("/api/research/status/{session_id}")
     async def research_status(session_id: str, request: Request):
@@ -413,6 +426,10 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
                     continue
                 # Archived view shows ONLY archived reports; default hides them.
                 if bool(d.get("archived")) != archived:
+                    continue
+                # A marker (a run that started, failed or was interrupted
+                # without a report) is not a library entry.
+                if d.get("marker") and not d.get("result"):
                     continue
                 query = d.get("query", "")
                 if search and search.lower() not in query.lower():

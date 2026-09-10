@@ -200,6 +200,9 @@ export interface ActiveResearch {
   query: string;
   progress: ResearchProgress;
   startedAt: number;
+  /** "running", or "interrupted" for a run a server restart killed. */
+  status: string;
+  error: string;
 }
 
 export async function activeResearch(signal?: AbortSignal): Promise<ActiveResearch[]> {
@@ -209,8 +212,22 @@ export async function activeResearch(signal?: AbortSignal): Promise<ActiveResear
     query: String(a.query ?? ''),
     progress: progressFrom((a.progress && typeof a.progress === 'object' ? a.progress : {}) as Record<string, unknown>),
     startedAt: Number(a.started_at) || 0,
+    status: String(a.status ?? 'running'),
+    error: typeof a.error === 'string' ? a.error : '',
   }));
 }
+
+/** Forget an interrupted run once its card has been shown. */
+export async function dismissResearch(id: string): Promise<void> {
+  try {
+    await post(`/api/research/${encodeURIComponent(id)}/dismiss`);
+  } catch {
+    /* the marker stays; it is dismissed on the next visit */
+  }
+}
+
+/** A short outage (the server restarting) is not a failed research. */
+const POLL_NETWORK_RETRIES = 20;
 
 export async function researchStatus(id: string, signal?: AbortSignal): Promise<{ status: string; progress: ResearchProgress }> {
   const raw = await getJson<Record<string, unknown>>(`/api/research/status/${encodeURIComponent(id)}`, signal);
@@ -237,13 +254,18 @@ export function followResearch(id: string, onProgress: (p: ResearchProgress) => 
       source = null;
     }
     const poll = async () => {
+      let outages = 0;
       while (!settled && !signal?.aborted) {
         try {
           const s = await researchStatus(id, signal);
+          outages = 0;
           onProgress(s.progress);
           if (s.status && s.status !== 'running') return finish(s.status);
-        } catch {
-          return finish('error');
+        } catch (err) {
+          if (signal?.aborted) return finish('aborted');
+          // A 404 is an answer (the run is gone); a network error is the
+          // server being away, which a restart explains for a minute or so.
+          if (err instanceof ApiError || ++outages > POLL_NETWORK_RETRIES) return finish('error');
         }
         await new Promise((r) => window.setTimeout(r, 3000));
       }
