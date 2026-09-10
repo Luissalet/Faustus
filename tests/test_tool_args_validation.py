@@ -140,3 +140,39 @@ def test_repair_never_touches_a_field_with_no_fixable_error():
 def test_argument_error_str_is_field_prefixed():
     err = ArgumentError("quality", "wrong_type", "expected integer, saw str ('90')", "90")
     assert str(err) == "quality: expected integer, saw str ('90')"
+
+
+def test_boolean_strings_are_repaired_the_way_local_models_send_them():
+    """`"ignore_case": "true"` is what a local model writes for a boolean;
+    refusing it in strict mode would block a call every tool accepted before
+    the validator existed. Only the exact words true/false qualify."""
+    from src.tool_schemas import repair_tool_arguments, validate_tool_arguments
+
+    args = {"pattern": "x", "ignore_case": "TRUE", "max_results": "5"}
+    errors = validate_tool_arguments("grep", args)
+    assert {e.field for e in errors} == {"ignore_case", "max_results"}
+    repaired, applied = repair_tool_arguments("grep", args, errors)
+    assert repaired["ignore_case"] is True and repaired["max_results"] == 5
+    assert {a["field"] for a in applied} == {"ignore_case", "max_results"}
+    assert validate_tool_arguments("grep", repaired) == []
+
+    # "yes" is not a boolean spelling; it stays an error.
+    errors = validate_tool_arguments("grep", {"pattern": "x", "ignore_case": "yes"})
+    repaired, applied = repair_tool_arguments("grep", {"pattern": "x", "ignore_case": "yes"}, errors)
+    assert applied == [] and repaired["ignore_case"] == "yes"
+
+
+def test_enum_case_is_repaired_but_a_different_word_is_not():
+    from src.tool_schemas import repair_tool_arguments, validate_tool_arguments
+
+    args = {"query": "x", "time_filter": "Week"}
+    errors = validate_tool_arguments("web_search", args)
+    assert [e.field for e in errors] == ["time_filter"]
+    repaired, applied = repair_tool_arguments("web_search", args, errors)
+    assert repaired["time_filter"] == "week" and len(applied) == 1
+    assert validate_tool_arguments("web_search", repaired) == []
+
+    args = {"query": "x", "time_filter": "century"}
+    errors = validate_tool_arguments("web_search", args)
+    repaired, applied = repair_tool_arguments("web_search", args, errors)
+    assert applied == [] and repaired["time_filter"] == "century"

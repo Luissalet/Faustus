@@ -2210,11 +2210,13 @@ def repair_tool_arguments(
     tool_name: str, args: Dict[str, Any], errors: List[ArgumentError]
 ) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
     """Bounded repair (CALL-03): fix only the *form* of a value the schema
-    already accepts, never its meaning. Today that means exactly one thing —
-    a number sent as a string that is an exact textual representation of
-    that number ("90" -> 90 for an integer field, "1.5" -> 1.5 for a number
-    field) — because that is the only ambiguity that is unambiguously safe
-    to resolve without guessing intent.
+    already accepts, never its meaning. That means exactly two things: a
+    number sent as a string that is an exact textual representation of that
+    number ("90" -> 90 for an integer field, "1.5" -> 1.5 for a number
+    field), and a boolean sent as the strings "true"/"false" (any case) for
+    a boolean field. Both are shapes local models emit routinely
+    (`"ignore_case": "true"`), and both are unambiguous; refusing them in
+    strict mode would block calls that every tool used to accept.
 
     Never: adds a missing required field, drops or renames a key, changes
     which tool is being called, or touches a value flagged as a path/scope
@@ -2236,12 +2238,27 @@ def repair_tool_arguments(
 
     properties = schema.get("properties") or {}
     path_fields = PATH_ARGUMENT_FIELDS.get(tool_name, frozenset())
-    fixable_kinds = {"wrong_type"}
+    fixable_kinds = {"wrong_type", "enum"}
     for err in errors:
         if err.kind not in fixable_kinds or err.field in path_fields:
             continue
         prop_schema = properties.get(err.field)
         if prop_schema is None or err.field not in repaired:
+            continue
+        if err.kind == "enum":
+            # `"Week"` for an enum that says "week": the same word, one
+            # spelling. Only an exact case-insensitive match of ONE member
+            # qualifies; anything else is a different value and stays wrong.
+            value = repaired[err.field]
+            members = prop_schema.get("enum") or []
+            if isinstance(value, str):
+                hits = [m for m in members if isinstance(m, str) and m.lower() == value.strip().lower()]
+                if len(hits) == 1 and hits[0] != value:
+                    repaired[err.field] = hits[0]
+                    applied.append({
+                        "field": err.field, "from": value, "to": hits[0],
+                        "reason": "enum member matched case-insensitively",
+                    })
             continue
         expected_types = prop_schema.get("type")
         if isinstance(expected_types, str):
@@ -2253,7 +2270,11 @@ def repair_tool_arguments(
             continue
         stripped = value.strip()
         new_value = None
-        if "integer" in expected_types:
+        reason = "numeric string coerced to the schema's declared number type"
+        if "boolean" in expected_types and stripped.lower() in ("true", "false"):
+            new_value = stripped.lower() == "true"
+            reason = "boolean string coerced to the schema's declared boolean type"
+        if new_value is None and "integer" in expected_types:
             try:
                 candidate = int(stripped)
             except ValueError:
@@ -2276,7 +2297,7 @@ def repair_tool_arguments(
                 "field": err.field,
                 "from": value,
                 "to": new_value,
-                "reason": "numeric string coerced to the schema's declared number type",
+                "reason": reason,
             })
 
     return repaired, applied
