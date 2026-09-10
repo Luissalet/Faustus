@@ -44,12 +44,12 @@ fichero que lo toque.
 | ID | Prio. | Título | Qué haría falta |
 |---|---|---|---|
 | TASK-05 | P1 | Steering y cambios del usuario | Encolar instrucciones durante ejecución y aplicarlas en puntos seguros; invalidar pasos afectados por una nueva restricción. |
-| PERF-05 | P1 | Transferencias y adjuntos grandes | Streaming con cuotas, reanudación, hashes incrementales, thumbnails fuera de ruta crítica. |
-| OPS-04 | P1 | Portabilidad de proyectos y conocimiento | Export/import versionado de chats/fuentes/memorias/skills/artefactos con referencias relativas; secretos excluidos por defecto. |
-| OPS-06 | P1 | APIs y cliente extensibles | OpenAPI versionado, SDK ligero, eventos documentados; compatibilidad hacia atrás, migraciones de configuración, deprecaciones anunciadas. |
-| OPS-07 | P1 | Higiene y costes operativos | Rotación de logs, cuotas de blobs, retención de runs, detección de huérfanos y jobs pendientes; no borrar lo referenciado. |
-| EVAL-02 | P1 | Ablaciones y coste comparable | Ejecutar mínimo→contexto→verificador→memoria→subagentes cambiando una dimensión; presupuestos y repeticiones con seeds. |
-| EVAL-06 | P1 | Promoción controlada de capacidades | Matriz por tupla modelo/backend/plantilla: no probado/experimental/compatible/recomendado; cambiar de estado solo con evidencia vigente. |
+
+Nota (Lote 55): PERF-05, OPS-04, OPS-06, OPS-07, EVAL-02 y EVAL-06 salieron
+de esta tabla porque ya tienen fila propia en las secciones de lote de más
+abajo (Lote 52 y Lote 53) — quedaban aquí solo por el arrastre documentado
+arriba, no porque siguieran ausentes. TASK-05 es el único ID de los 29
+originales sin ninguna fila de cierre en todo este fichero.
 
 ## Lote 48 — Web, escritorio, ejecución e investigación P1
 

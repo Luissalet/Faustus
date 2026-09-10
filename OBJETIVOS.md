@@ -221,3 +221,36 @@ rama aparte sólo si algo puede dejar la app rota.
    `tool_capabilities`, `tool_schemas` y `TOOL_TAGS`).
 6. EVAL-05: convertir QA-01…48 en regresiones permanentes conforme se cierren.
 
+### Estado (10-09, tras el Lote 55) — las ocho olas de P1 cerradas
+
+M1 sigue abierto tal cual queda arriba (nada de esta lista se tocó en el
+Lote 55). Lo que sí cerró es la otra pata de OBJ-3: los 87 requisitos P1/P2/
+LAB que el paquete de Luis proponía además de los 100 P0, repartidos en ocho
+olas de lotes (`docs/spec/v2/MAPA_P1.md`, una tabla por lote) que fueron
+auditando y, donde hacía falta, construyendo cada área — contexto/memoria,
+planificación/herramientas, artefactos/edición, UX/ajustes/actividad,
+workbench/accesibilidad, media/voz, hardware/observabilidad/operación,
+conectores/automatizaciones/escritura/evaluación — hasta que el Lote 55
+integró lo que quedaba suelto (dos routers escritos y nunca montados en
+`app.py`, una cola nueva para ACT-05) y auditó los ocho IDs que ningún lote
+había tocado desde el Lote 50. El recuento real, cruzado 1:1 contra
+`docs/spec/v2/backlog.json` (no contra lo que cada lote decía haber hecho):
+**84 de 84** P1/P2/LAB tienen fila (74 existente, 9 parcial, 1 ausente —
+`backlog.json` declaraba 87 pero tres no correspondían a ningún ID real, un
+desajuste que venía arrastrándose sin recontar desde el Lote 50). De los P0
+originales, el último recuento completo (Lote 29, ola 4) fue 100 de 100
+clasificados (70 parcial, 23 existente, 6 ausente, 1 no verificable); las
+olas 5 y 6 (lotes 30-44) cerraron huecos fila a fila sin volver a sumar el
+total, así que esa cifra global es la última fiable — `MAPA_REUTILIZACION.md`
+sigue siendo la fuente fila a fila más reciente. De los 48 escenarios QA:
+44 verde (regresión permanente en `tests/qa/`), 3 `xfail` (mecanismo
+documentado como no construido), 1 manual (voz física, exige micrófono
+real). Lo que sigue genuinamente abierto tras las ocho olas: **TASK-05**
+(steering que invalide pasos de un plan en curso, sin ningún caller);
+el proceso Playwright por sesión que WEB-03 dejó anotado como
+arquitectónico; los tres huecos intermitentes de QA-44 (dialog/diff a
+200 %, Escape) sin investigar a fondo; y los nueve IDs "parcial" que
+`MAPA_P1.md` detalla uno a uno (primitiva real sin el último cableado a un
+caller de producción, o con menos alcance que el título del ID). Ver
+PENDIENTES.md › «Spec v2 · P1» para la lista completa con evidencia.
+
