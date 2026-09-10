@@ -31,6 +31,8 @@ from services.projects import (
     ProjectError,
     get_store,
 )
+from src.project_identity import ProjectIdentityError
+from src import project_identity
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +64,14 @@ class ProjectUpdateRequest(BaseModel):
 
 class MemoryWriteRequest(BaseModel):
     content: str = Field("", max_length=MAX_MEMORY_FILE)
+
+
+class RelocateRequest(BaseModel):
+    """IDX-01: "The folder has moved…" — a new absolute path, nothing else.
+    ``src.project_identity.relocate`` refuses one that does not exist rather
+    than pointing the project at nothing (see that function's docstring)."""
+
+    new_path: str = Field(..., min_length=1, max_length=4096)
 
 
 class ContextSourceRef(BaseModel):
@@ -911,5 +921,38 @@ def setup_project_routes() -> APIRouter:
         _get_or_404(project_id, effective_user(request))
         from src import project_audit
         return {"success": project_audit.clear(project_id)}
+
+    # ------------------------------------------------------------------
+    # IDX-01 UI: "The folder has moved…"
+    # ------------------------------------------------------------------
+
+    @router.post("/{project_id}/relocate")
+    def relocate_project(
+        project_id: str,
+        payload: RelocateRequest,
+        request: Request,
+        _admin: None = Depends(require_admin),
+    ) -> Dict[str, Any]:
+        """Point this project at a new folder on disk, explicitly — the
+        action behind Projects' "The folder has moved…", not the same thing
+        as editing the `workspace` field in Settings: this REFUSES a path
+        that is not there (`ProjectIdentityError`, answered as 400, never a
+        silent point-at-nothing) and writes/refreshes the destination's
+        `.faustus/project.json` marker so the folder itself corroborates the
+        move. Identity (`project_id`), memories and relations are untouched —
+        `src.project_identity.relocate` reuses `ProjectStore.update()` for
+        the workspace change itself, the SAME path QA-48 already covers."""
+        owner = effective_user(request)
+        _get_or_404(project_id, owner)
+        try:
+            result = project_identity.relocate(project_id, payload.new_path, owner=owner)
+        except ProjectIdentityError as e:
+            raise HTTPException(400, str(e))
+        return {
+            "project": result["project"],
+            "old_workspace": result["old_workspace"],
+            "old_path_missing": result["old_path_missing"],
+            "marker_conflict": result["marker_conflict"],
+        }
 
     return router

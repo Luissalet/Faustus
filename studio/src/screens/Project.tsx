@@ -66,6 +66,58 @@ type TabId = (typeof TABS)[number]['id'];
 
 const FORMAT_LABEL: Record<string, string> = { md: 'Markdown', txt: 'Plain text', json: 'JSON', html: 'HTML', pdf: 'PDF', docx: 'Word (.docx)' };
 
+/* ── IDX-01: "The folder has moved…" ──
+ *
+ * Distinct from editing `workspace` in Settings (a plain field patch, which
+ * never checks the path exists and never writes the destination's identity
+ * marker): this calls the dedicated `POST /api/projects/{id}/relocate`
+ * route, wired to `src.project_identity.relocate` — refuses an absent
+ * path, and the folder itself corroborates the move afterwards. Identity,
+ * memories and relations are keyed by `project_id`, untouched by this.
+ */
+
+interface RelocateResult {
+  project: Project;
+  old_workspace: string;
+  old_path_missing: boolean;
+  marker_conflict: boolean;
+}
+
+async function relocateProject(id: string, newPath: string): Promise<RelocateResult> {
+  const r = await fetch(`/api/projects/${encodeURIComponent(id)}/relocate`, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ new_path: newPath }),
+  });
+  const text = await r.text();
+  let data: unknown = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    /* not json */
+  }
+  if (!r.ok) {
+    const d = data as { detail?: unknown };
+    throw new Error(typeof d.detail === 'string' ? d.detail : `HTTP ${r.status}`);
+  }
+  return data as RelocateResult;
+}
+
+/** What actually happened, in one sentence — pure so it is testable on its
+ * own (studio/checks/l43-project-relocate.check.mjs), the same pattern this
+ * file's own `describeRefresh()` uses for a context link's refresh. */
+export function relocateResultMessage(result: RelocateResult): string {
+  const bits: string[] = [t('The folder is now {path}.', { path: result.project.workspace ?? '' })];
+  if (result.old_path_missing) {
+    bits.push(t('The previous folder was already gone — memories and relations moved with the project, not the path.'));
+  }
+  if (result.marker_conflict) {
+    bits.push(t('The new folder already carried another project’s marker; this project claimed it.'));
+  }
+  return bits.join(' ');
+}
+
 /* ── Context sources ──
  *
  * The list under a project stopped being "paths the agent may edit" and became
@@ -460,6 +512,10 @@ export function ProjectScreen() {
   const [busy, setBusy] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<'delete' | { chat: string } | null>(null);
   const [rootInput, setRootInput] = useState<string | null>(null);
+  const [relocating, setRelocating] = useState(false);
+  const [relocatePath, setRelocatePath] = useState('');
+  const [relocateBusy, setRelocateBusy] = useState(false);
+  const [relocateErr, setRelocateErr] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const noticeTimer = useRef<number | null>(null);
 
@@ -566,6 +622,23 @@ export function ProjectScreen() {
   };
 
   const flags = useMemo(() => (project ? AGENT_FLAGS.map((f) => ({ ...f, on: flagOn(project, f.key) })) : []), [project]);
+
+  const doRelocate = async () => {
+    if (!project || !relocatePath.trim()) return;
+    setRelocateBusy(true);
+    setRelocateErr(null);
+    try {
+      const result = await relocateProject(project.id, relocatePath.trim());
+      setProject(result.project);
+      say(relocateResultMessage(result));
+      setRelocating(false);
+      setRelocatePath('');
+    } catch (e) {
+      setRelocateErr((e as Error).message);
+    } finally {
+      setRelocateBusy(false);
+    }
+  };
 
   const start = async () => {
     if (!project) return;
@@ -681,6 +754,15 @@ export function ProjectScreen() {
         </div>
         <div className="fs-pj__head-actions">
           <Button variant="ghost" size="sm" icon={project.pinned ? PinOff : Pin} label={project.pinned ? t('Unpin') : t('Pin')} loading={busy === 'pin'} onClick={() => void patch('pin', { pinned: !project.pinned }, project.pinned ? t('Unpinned') : t('Pinned'))} testId="project-pin" />
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={FolderOpen}
+            label={t('The folder has moved…')}
+            title={t('Point this project at a new folder — refuses one that does not exist, and keeps its memories and relations.')}
+            onClick={() => { setRelocatePath(project.workspace ?? ''); setRelocateErr(null); setRelocating(true); }}
+            testId="project-relocate"
+          />
           <Menu
             trigger={<Button variant="ghost" size="sm" icon={Download} label={t('Export chats')} title={t('Every chat in this project as one .zip')} />}
             items={EXPORT_FORMATS.map((f) => ({
@@ -1001,6 +1083,43 @@ export function ProjectScreen() {
           }
         >
           <p className="fs-prose">{t('This cannot be undone.')}</p>
+        </Dialog>
+      )}
+
+      {relocating && (
+        <Dialog
+          open
+          onOpenChange={(o) => !o && setRelocating(false)}
+          title={t('The folder has moved…')}
+          testId="project-relocate-dialog"
+          footer={
+            <>
+              <Button variant="ghost" size="sm" label={t('Cancel')} onClick={() => setRelocating(false)} />
+              <Button
+                variant="primary"
+                size="sm"
+                label={t('Update folder')}
+                loading={relocateBusy}
+                disabled={!relocatePath.trim()}
+                onClick={() => void doRelocate()}
+                testId="project-relocate-confirm"
+              />
+            </>
+          }
+        >
+          <p className="fs-prose">{t('The chats, memories and objectives stay linked to this project — only where its files live on disk changes. The new folder must already exist.')}</p>
+          <label className="fs-field-label">
+            {t('New folder path')}
+            <input
+              className="fs-field"
+              value={relocatePath}
+              onChange={(e) => setRelocatePath(e.target.value)}
+              placeholder={project.workspace ?? ''}
+              data-testid="project-relocate-path"
+              autoFocus
+            />
+          </label>
+          {relocateErr && <p className="fs-set__help" data-tone="bad" role="alert">{relocateErr}</p>}
         </Dialog>
       )}
 

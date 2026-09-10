@@ -49,6 +49,169 @@ const POLL_MS = 8000;
 /** Thrown inside `act` when the outcome was shown some other way (a dialog). */
 class NoToast extends Error {}
 
+/* ── MOD-04: per-model options with scope (global / project / session) ──
+ *
+ * The adapter (studio/src/adapters/localModels.ts) is a foreign file this
+ * lote does not touch, so the three new endpoints
+ * (routes/local_models_routes.py's /options/scoped and /options/effective)
+ * are called directly here, mirroring that adapter's own `call()`/`encName`
+ * helpers rather than adding a second, differently-shaped client. */
+
+type LoadScope = 'project' | 'session';
+
+interface EffectiveOptions {
+  endpoint_id: string;
+  model: string;
+  options: Record<string, string | number>;
+  origin: Record<string, { scope: string; path: string }>;
+  overridden: Record<string, { scope: string; value: string | number; path: string }[]>;
+}
+
+const encNameLocal = (name: string) => name.split('/').map(encodeURIComponent).join('/');
+
+async function callLocalModels<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const r = await fetch(path, { credentials: 'same-origin', ...init });
+  const text = await r.text();
+  let data: unknown = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    /* not json */
+  }
+  if (!r.ok) {
+    const d = data as { detail?: unknown; error?: string };
+    throw new Error(typeof d.detail === 'string' ? d.detail : d.error ?? `HTTP ${r.status}`);
+  }
+  return data as T;
+}
+
+function getScopedOptions(endpointId: string, name: string, scope: LoadScope, scopeId: string) {
+  const q = `scope=${scope}&scope_id=${encodeURIComponent(scopeId)}&endpoint_id=${encodeURIComponent(endpointId)}`;
+  return callLocalModels<{ options: Record<string, string | number> }>(`/api/local-models/${encNameLocal(name)}/options/scoped?${q}`);
+}
+
+function putScopedOptions(endpointId: string, name: string, scope: LoadScope, scopeId: string, options: Record<string, string>) {
+  const q = `scope=${scope}&scope_id=${encodeURIComponent(scopeId)}&endpoint_id=${encodeURIComponent(endpointId)}`;
+  return callLocalModels<{ options: Record<string, string | number> }>(`/api/local-models/${encNameLocal(name)}/options/scoped?${q}`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ options }),
+  });
+}
+
+function getEffectiveOptions(endpointId: string, name: string, sessionId: string, projectId: string) {
+  const params = new URLSearchParams({ endpoint_id: endpointId });
+  if (sessionId) params.set('session_id', sessionId);
+  if (projectId) params.set('project_id', projectId);
+  return callLocalModels<EffectiveOptions>(`/api/local-models/${encNameLocal(name)}/options/effective?${params.toString()}`);
+}
+
+const SCOPE_LABEL: Record<string, string> = { session: 'Session', project: 'Project', global: 'Global default' };
+
+/**
+ * MOD-04's "quien manda" — a per-model panel where an admin can set a
+ * project- or session-scoped override on top of the global default above,
+ * and see which scope currently wins each field (session > project >
+ * global), reusing `src/model_load_options.py::resolve_with_origin` through
+ * the new `/options/effective` route rather than recomputing precedence
+ * here.
+ */
+function ScopedOverridePanel({ endpointId, model }: { endpointId: string; model: InstalledModel }) {
+  const [scope, setScope] = useState<LoadScope>('project');
+  const [scopeId, setScopeId] = useState('');
+  const [ctx, setCtx] = useState('');
+  const [keep, setKeep] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [saved, setSaved] = useState<Record<string, string | number> | null>(null);
+  const [effective, setEffective] = useState<EffectiveOptions | null>(null);
+
+  const load = useCallback(async () => {
+    if (!scopeId.trim()) { setSaved(null); return; }
+    setErr(null);
+    try {
+      const d = await getScopedOptions(endpointId, model.name, scope, scopeId.trim());
+      setSaved(d.options);
+      setCtx(d.options.num_ctx == null ? '' : String(d.options.num_ctx));
+      setKeep(d.options.keep_alive == null ? '' : String(d.options.keep_alive));
+      const eff = await getEffectiveOptions(
+        endpointId, model.name,
+        scope === 'session' ? scopeId.trim() : '',
+        scope === 'project' ? scopeId.trim() : '',
+      );
+      setEffective(eff);
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  }, [endpointId, model.name, scope, scopeId]);
+
+  const save = async () => {
+    if (!scopeId.trim()) { setErr(t('Enter a project or session id first.')); return; }
+    setBusy(true);
+    setErr(null);
+    try {
+      const d = await putScopedOptions(endpointId, model.name, scope, scopeId.trim(), { num_ctx: ctx.trim(), keep_alive: keep.trim() });
+      setSaved(d.options);
+      await load();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const clear = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      await putScopedOptions(endpointId, model.name, scope, scopeId.trim(), {});
+      setCtx('');
+      setKeep('');
+      await load();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="fs-lm__scoped" data-testid="scoped-options-panel">
+      <strong>{t('Override for one project or session')}</strong>
+      <p className="fs-set__help">{t('Wins over the global default above for that project or session only — nothing else changes.')}</p>
+      <div className="fs-set__row">
+        <select className="fs-field" value={scope} onChange={(e) => { setScope(e.target.value as LoadScope); setSaved(null); setEffective(null); }}>
+          <option value="project">{t('Project')}</option>
+          <option value="session">{t('Session')}</option>
+        </select>
+        <input
+          className="fs-field"
+          placeholder={scope === 'project' ? t('project id') : t('session id')}
+          value={scopeId}
+          onChange={(e) => setScopeId(e.target.value)}
+          onBlur={() => void load()}
+          data-testid="scoped-options-id"
+        />
+        <input className="fs-field" type="number" min={512} max={1048576} step={512} placeholder="num_ctx" value={ctx} onChange={(e) => setCtx(e.target.value)} />
+        <input className="fs-field" placeholder="keep_alive" value={keep} onChange={(e) => setKeep(e.target.value)} />
+        <Button size="sm" variant="ghost" label={t('Save override')} loading={busy} onClick={() => void save()} disabled={!scopeId.trim()} />
+        {saved && Object.keys(saved).length > 0 && <Button size="sm" variant="ghost" label={t('Clear')} onClick={() => void clear()} disabled={busy} />}
+      </div>
+      {err && <p className="fs-set__help" data-tone="bad" role="alert">{err}</p>}
+      {effective && (
+        <ul className="fs-set__help" data-testid="scoped-options-origin">
+          {Object.entries(effective.origin).map(([field, o]) => (
+            <li key={field}>
+              <strong>{field}</strong>: {String(effective.options[field])} — {t('set by {scope}', { scope: t(SCOPE_LABEL[o.scope] ?? o.scope) })}
+              {(effective.overridden[field] ?? []).length > 0 && (
+                <> ({t('over')} {(effective.overridden[field] ?? []).map((x) => `${t(SCOPE_LABEL[x.scope] ?? x.scope)}: ${x.value}`).join(', ')})</>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 /**
  * Local models: what is installed on the Ollama server, what is resident in
  * VRAM right now, whether each model fits the card(s), pulls with live
@@ -313,6 +476,7 @@ export function LocalModelsSection({ admin, say }: { admin: boolean; say: (t: st
               working={working}
               manifests={caps.current}
               calibrating={calibrating}
+              endpointId={data.endpoint_id}
               onCalibrate={(m) => void handleCalibrate(m)}
               onLoad={(m) => void act(async () => {
                 const out = await loadModel(data.endpoint_id, m.name, !!m.capabilities?.embedding);
@@ -500,7 +664,15 @@ function Placement({ m, cards }: { m: LoadedModel; cards: GpuCard[] }) {
   return <span className="fs-lm__place" data-kind="split" title={t('Bigger than any one card: Ollama split the weights across {n} GPUs.', { n: parts.length })}>{t('split')} {parts.map((x) => `#${x.index}${x.bytes != null ? ` ${fmtGb(x.bytes)}` : ''}`).join(' + ')}</span>;
 }
 
-function LoadedList({ loaded, cards, admin, onUnload }: { loaded: LoadedModel[]; cards: GpuCard[]; admin: boolean; onUnload: (m: LoadedModel) => void }) {
+/** HW-02: the two fields collect_local_models now sends alongside every
+ * loaded row — declared here rather than in the (foreign) adapter file,
+ * since LoadedModel there does not carry them yet. */
+type LoadedModelHw02 = LoadedModel & {
+  gpu_ram_split_text?: string;
+  kv?: { state: 'measured' | 'unknown'; bytes_per_token?: number; context_length?: number; total_bytes?: number };
+};
+
+function LoadedList({ loaded, cards, admin, onUnload }: { loaded: LoadedModelHw02[]; cards: GpuCard[]; admin: boolean; onUnload: (m: LoadedModel) => void }) {
   if (!loaded.length) return <p className="fs-set__help">{t('Nothing is loaded right now.')}</p>;
   // Two large models resident at once is how the machine went down on
   // 08-09-2026 (two 27B against the commit limit). Say it here, where the
@@ -526,6 +698,14 @@ function LoadedList({ loaded, cards, admin, onUnload }: { loaded: LoadedModel[];
               <Placement m={m} cards={cards} />
               <span className="fs-lm__split" data-spill={spill || undefined} title={spill ? t('{n} of the weights are in system RAM — expect PCIe paging and a fraction of the speed.', { n: fmtGb(m.size_cpu) }) : undefined}>
                 {spill ? `${gpu}% GPU · ${100 - gpu}% CPU` : '100% GPU'}
+              </span>
+              {/* HW-02: the split and the KV verdict said explicitly, not
+                  only as a percentage or a hover title. */}
+              {m.gpu_ram_split_text && <span className="fs-set__help" data-testid="hw02-split-text">{m.gpu_ram_split_text}</span>}
+              <span className="fs-set__help" data-testid="hw02-kv" title={t('The bytes-per-token cost of the context cache, measured from this exact resident model — never a guess when unknown.')}>
+                {m.kv?.state === 'measured'
+                  ? t('kv: {gb} for {ctx} tokens', { gb: fmtGb(m.kv.total_bytes ?? 0), ctx: fmtCtx(m.kv.context_length ?? 0) })
+                  : t('kv: unknown')}
               </span>
               {m.context_length ? <span className="fs-set__help">ctx {fmtCtx(m.context_length)}</span> : null}
               {untilText(m.expires_at) && <span className="fs-set__help" title={m.expires_at ?? undefined}>{untilText(m.expires_at)}</span>}
@@ -612,7 +792,7 @@ function optionsSummary(o?: Record<string, string | number>): string {
   return bits.join(' · ');
 }
 
-function InstalledTable({ models, cards, admin, optionsFor, setOptionsFor, working = '', manifests, calibrating = '', onCalibrate, onLoad, onUnload, onDefault, onDelete, onSaveOptions }: { models: InstalledModel[]; cards: GpuCard[]; admin: boolean; optionsFor: string; setOptionsFor: (n: string) => void; working?: string; manifests?: Map<string, ModelCapabilityManifest>; calibrating?: string; onCalibrate: (m: InstalledModel) => void; onLoad: (m: InstalledModel) => void; onUnload: (m: InstalledModel) => void; onDefault: (m: InstalledModel) => void; onDelete: (m: InstalledModel) => void; onSaveOptions: (m: InstalledModel, opts: Record<string, string>) => Promise<void> }) {
+function InstalledTable({ models, cards, admin, optionsFor, setOptionsFor, working = '', manifests, calibrating = '', endpointId = '', onCalibrate, onLoad, onUnload, onDefault, onDelete, onSaveOptions }: { models: InstalledModel[]; cards: GpuCard[]; admin: boolean; optionsFor: string; setOptionsFor: (n: string) => void; working?: string; manifests?: Map<string, ModelCapabilityManifest>; calibrating?: string; endpointId?: string; onCalibrate: (m: InstalledModel) => void; onLoad: (m: InstalledModel) => void; onUnload: (m: InstalledModel) => void; onDefault: (m: InstalledModel) => void; onDelete: (m: InstalledModel) => void; onSaveOptions: (m: InstalledModel, opts: Record<string, string>) => Promise<void> }) {
   if (!models.length) return <p className="fs-set__help">{t('No models installed on this endpoint yet — pull one below.')}</p>;
   return (
     <div className="fs-lm__table" role="table">
@@ -662,7 +842,7 @@ function InstalledTable({ models, cards, admin, optionsFor, setOptionsFor, worki
               {admin && <Button size="sm" variant="ghost" label={t('Options')} onClick={() => setOptionsFor(optionsFor === m.name ? '' : m.name)} title="num_ctx / num_gpu / keep_alive / main_gpu" />}
               {admin && <Button size="sm" variant="danger" label={t('Delete')} onClick={() => onDelete(m)} title={t('Remove the model files from this Ollama')} />}
             </span>
-            {optionsFor === m.name && <OptionsForm model={m} cards={cards} onCancel={() => setOptionsFor('')} onSave={(opts) => onSaveOptions(m, opts)} />}
+            {optionsFor === m.name && <OptionsForm model={m} cards={cards} endpointId={endpointId} onCancel={() => setOptionsFor('')} onSave={(opts) => onSaveOptions(m, opts)} />}
           </div>
         );
       })}
@@ -670,7 +850,7 @@ function InstalledTable({ models, cards, admin, optionsFor, setOptionsFor, worki
   );
 }
 
-function OptionsForm({ model, cards, onCancel, onSave }: { model: InstalledModel; cards: GpuCard[]; onCancel: () => void; onSave: (opts: Record<string, string>) => Promise<void> }) {
+function OptionsForm({ model, cards, endpointId = '', onCancel, onSave }: { model: InstalledModel; cards: GpuCard[]; endpointId?: string; onCancel: () => void; onSave: (opts: Record<string, string>) => Promise<void> }) {
   const o = model.options ?? {};
   const [ctx, setCtx] = useState(o.num_ctx == null ? '' : String(o.num_ctx));
   const [gpu, setGpu] = useState(o.num_gpu == null ? '' : String(o.num_gpu));
@@ -833,6 +1013,7 @@ function OptionsForm({ model, cards, onCancel, onSave }: { model: InstalledModel
         <Button size="sm" variant="ghost" label={t('Cancel')} onClick={onCancel} />
         <Button size="sm" variant="primary" label={t('Save')} loading={busy} type="submit" />
       </div>
+      {endpointId && <ScopedOverridePanel endpointId={endpointId} model={model} />}
     </form>
   );
 }

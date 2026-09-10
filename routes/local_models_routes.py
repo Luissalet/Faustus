@@ -422,6 +422,40 @@ def fit_verdict(size_bytes: int, vram: Dict[str, Any], *, clean: bool = False) -
     }
 
 
+def kv_verdict(size: int, ctx: int, file_size_bytes: int) -> Dict[str, Any]:
+    """HW-02: the KV-cache verdict for one RESIDENT model — "measured" (from
+    `/api/ps`'s own numbers, via `vram_fit.kv_bytes_per_token_measured`, the
+    exact function routes/model_routes.py already uses for the chat Vitals
+    surface) or an honest ``{"state": "unknown"}``, never a guess. The data
+    this needs (a real on-disk file size and the context the model actually
+    loaded with) either exists in this response already or it does not —
+    this never recomputes vram_fit's own arithmetic, only calls it."""
+    if not file_size_bytes or not ctx:
+        return {"state": "unknown"}
+    rate = vram_fit.kv_bytes_per_token_measured(size, file_size_bytes, ctx)
+    if not rate:
+        return {"state": "unknown"}
+    return {
+        "state": "measured",
+        "bytes_per_token": rate,
+        "context_length": ctx,
+        "total_bytes": int(rate * ctx),
+    }
+
+
+def gpu_ram_split_text(size_vram: int, size_cpu: int) -> str:
+    """HW-02: say explicitly, in one sentence, where a resident model's bytes
+    sit right now — "X GB in GPU, Y GB spilled to RAM" — from the SAME
+    ``size_vram``/``size_cpu`` figures this module already computes off
+    Ollama's own ``/api/ps`` reading (gpu_placement/vram_fit), never a second
+    measurement of its own."""
+    gpu_gb = max(0, int(size_vram)) / (1024 ** 3)
+    cpu_gb = max(0, int(size_cpu)) / (1024 ** 3)
+    if cpu_gb <= 0:
+        return f"{gpu_gb:.1f} GB in GPU"
+    return f"{gpu_gb:.1f} GB in GPU, {cpu_gb:.1f} GB spilled to RAM"
+
+
 def collect_local_models(ep: Dict[str, Any]) -> Dict[str, Any]:
     root = ep["root"]
     same = bool(ep.get("same_machine"))
@@ -454,6 +488,13 @@ def collect_local_models(ep: Dict[str, Any]) -> Dict[str, Any]:
         snap = gpu_shared_memory.vram_snapshot()
         placements = gpu_placement.placement(root, running, snap.get("gpus") if snap.get("supported") else [])
 
+    # On-disk (weights-only) size per installed tag, keyed by name — HW-02
+    # needs it alongside `/api/ps`'s resident (weights+KV) size to measure
+    # the KV cache the same way vram_fit already does for chat Vitals.
+    tag_file_sizes: Dict[str, int] = {
+        str(t.get("name") or t.get("model") or ""): int(t.get("size") or 0) for t in tags
+    }
+
     loaded_by_name: Dict[str, Dict[str, Any]] = {}
     held = 0
     for m in running:
@@ -463,11 +504,14 @@ def collect_local_models(ep: Dict[str, Any]) -> Dict[str, Any]:
         held += vram_bytes
         details = m.get("details") or {}
         where = placements.get(name) or {}
+        ctx = int(m.get("context_length") or 0)
+        file_size = next((v for k, v in tag_file_sizes.items() if v and _same_model(k, name)), 0)
+        size_cpu = max(0, size - vram_bytes)
         row = {
             "name": name,
             "size": size,
             "size_vram": vram_bytes,
-            "size_cpu": max(0, size - vram_bytes),
+            "size_cpu": size_cpu,
             "gpu_pct": round(100.0 * vram_bytes / size) if size else 0,
             "expires_at": m.get("expires_at"),
             "context_length": m.get("context_length"),
@@ -477,6 +521,10 @@ def collect_local_models(ep: Dict[str, Any]) -> Dict[str, Any]:
             "gpus": list(where.get("gpus") or []),
             "placement": where.get("placement") or ("cpu" if not vram_bytes else "unknown"),
             "per_gpu": [dict(p) for p in (where.get("per_gpu") or [])],
+            # HW-02: explicit split text + kv verdict, both surfaced (never
+            # recomputed) from data this endpoint already gathers.
+            "gpu_ram_split_text": gpu_ram_split_text(vram_bytes, size_cpu),
+            "kv": kv_verdict(size, ctx, file_size),
         }
         out["loaded"].append(row)
         if name:
@@ -1106,6 +1154,72 @@ def setup_local_models_routes() -> APIRouter:
         except ValueError as e:
             raise HTTPException(400, str(e))
         return {"ok": True, "endpoint_id": ep["id"], "name": name, "options": saved}
+
+    # ── MOD-04: scoped (project/session) load options + effective resolve ──
+    #
+    # Additive on top of the two routes above: those two keep answering the
+    # GLOBAL scope exactly as before (nothing about them changed). These
+    # three expose src/model_load_options.py's new project/session ladder —
+    # save, read and "who wins" — without touching the global routes' shape.
+
+    def _validate_scope(scope: str, scope_id: str) -> None:
+        if scope not in (mlo.SCOPE_PROJECT, mlo.SCOPE_SESSION):
+            raise HTTPException(400, f"scope must be one of 'project'/'session' (got {scope!r})")
+        if not str(scope_id or "").strip():
+            raise HTTPException(400, "scope_id is required for a project/session scope")
+
+    @router.get("/{name:path}/options/scoped")
+    async def api_get_scoped_options(
+        request: Request, name: str, scope: str = Query(...), scope_id: str = Query(...),
+        endpoint_id: Optional[str] = Query(None),
+    ):
+        require_user(request)
+        name = validate_model_name(name)
+        _validate_scope(scope, scope_id)
+        ep = _pick_endpoint(endpoint_id, _endpoints_for(request))
+        return {
+            "endpoint_id": ep["id"], "name": name, "scope": scope, "scope_id": scope_id,
+            "options": mlo.get_scoped_options(ep["id"], name, scope, scope_id),
+        }
+
+    @router.put("/{name:path}/options/scoped")
+    async def api_put_scoped_options(
+        request: Request, name: str, scope: str = Query(...), scope_id: str = Query(...),
+        endpoint_id: Optional[str] = Query(None),
+    ):
+        require_admin(request)
+        name = validate_model_name(name)
+        _validate_scope(scope, scope_id)
+        body = await _body(request)
+        ep = _pick_endpoint(endpoint_id or body.get("endpoint_id"), _endpoints_for(request))
+        raw = body.get("options", body)
+        if isinstance(raw, dict):
+            raw = {k: v for k, v in raw.items() if k not in ("endpoint_id", "scope", "scope_id")}
+        try:
+            saved = mlo.set_scoped_options(ep["id"], name, scope, scope_id, raw)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        return {
+            "ok": True, "endpoint_id": ep["id"], "name": name, "scope": scope, "scope_id": scope_id,
+            "options": saved,
+        }
+
+    @router.get("/{name:path}/options/effective")
+    async def api_get_effective_options(
+        request: Request, name: str, endpoint_id: Optional[str] = Query(None),
+        project_id: Optional[str] = Query(None), session_id: Optional[str] = Query(None),
+    ):
+        """MOD-04's "quien manda": the resolved value per field plus, for
+        every field with more than one opinion, which scope won and what the
+        others offered — session > project > global."""
+        require_user(request)
+        name = validate_model_name(name)
+        ep = _pick_endpoint(endpoint_id, _endpoints_for(request))
+        resolved = mlo.resolve_with_origin(
+            ep["root"], name, session_id=session_id, project_id=project_id, endpoint_id=ep["id"],
+        )
+        resolved["endpoint_id"] = ep["id"]
+        return resolved
 
     @router.delete("/{name:path}")
     async def api_delete(request: Request, name: str, endpoint_id: Optional[str] = Query(None)):

@@ -5891,6 +5891,7 @@ Effective settings — what is actually in force, and why — live in the main S
 Everything checked is working.	Todo lo comprobado funciona.
 MCP servers quarantined after repeated failures at startup:	Servidores MCP puestos en cuarentena tras fallos repetidos al iniciar:
 NOT verified: {problems}	NO verificado: {problems}
+({n} consecutive failed connection attempts)	({n} intentos de conexión fallidos consecutivos)
 No snapshots yet.	Todavía no hay copias de seguridad.
 Not active. Core, external MCP servers, plugins, skills and scheduled tasks are all normal.	No está activo. El núcleo, los servidores MCP externos, los plugins, las skills y las tareas programadas funcionan con normalidad.
 Re-check	Volver a comprobar
@@ -5914,3 +5915,37 @@ Faustus is ready	Faustus está listo
 Go to Home	Ir a Inicio
 One thing left before Faustus is ready	Falta una cosa para que Faustus esté listo
 Open Diagnostics	Abrir Diagnóstico
+(missing)	(ausente)
+Argument error	Error de argumento
+New messages	Mensajes nuevos
+{from} → {to} (auto-corrected)	{from} → {to} (corregido automáticamente)
+Diff	Diff
+Override for one project or session	Excepción para un proyecto o sesión concretos
+Wins over the global default above for that project or session only — nothing else changes.	Prevalece sobre el valor global de arriba solo para ese proyecto o sesión — nada más cambia.
+Enter a project or session id first.	Indica primero un id de proyecto o sesión.
+project id	id de proyecto
+session id	id de sesión
+Save override	Guardar excepción
+set by {scope}	fijado por {scope}
+over	sobre
+Global default	Valor global
+kv: {gb} for {ctx} tokens	kv: {gb} para {ctx} tokens
+kv: unknown	kv: desconocido
+The bytes-per-token cost of the context cache, measured from this exact resident model — never a guess when unknown.	El coste en bytes por token de la caché de contexto, medido en este mismo modelo residente — nunca una estimación cuando se desconoce.
+connected, but struggling	conectado, pero con dificultades
+reconnecting…	reconectando…
+new permissions pending approval	nuevos permisos pendientes de aprobación
+List tools (paginated)	Listar herramientas (paginado)
+Loading tools	Cargando herramientas
+Load more	Cargar más
+This server does not report more pages — this is everything it listed.	Este servidor no indica más páginas — esto es todo lo que ha listado.
+{name} asked for a new permission it did not have before and is quarantined until approved.	{name} ha solicitado un permiso nuevo que antes no tenía y está en cuarentena hasta que se apruebe.
+Approved.	Aprobado.
+The folder has moved…	La carpeta se ha movido…
+Point this project at a new folder — refuses one that does not exist, and keeps its memories and relations.	Apunta este proyecto a una carpeta nueva — rechaza una que no exista, y conserva sus memorias y relaciones.
+New folder path	Ruta de la nueva carpeta
+Update folder	Actualizar carpeta
+The chats, memories and objectives stay linked to this project — only where its files live on disk changes. The new folder must already exist.	Los chats, memorias y objetivos siguen vinculados a este proyecto — solo cambia dónde viven sus ficheros en disco. La nueva carpeta debe existir ya.
+The folder is now {path}.	La carpeta ahora es {path}.
+The previous folder was already gone — memories and relations moved with the project, not the path.	La carpeta anterior ya no existía — las memorias y relaciones se movieron con el proyecto, no con la ruta.
+The new folder already carried another project’s marker; this project claimed it.	La nueva carpeta ya tenía el marcador de otro proyecto; este proyecto lo ha reclamado.

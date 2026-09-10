@@ -6,7 +6,7 @@ import uuid
 import urllib.parse
 import html
 from pathlib import Path
-from fastapi import APIRouter, Form, HTTPException, Request
+from fastapi import APIRouter, Form, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse, HTMLResponse
 import logging
 import httpx
@@ -24,6 +24,7 @@ from src.mcp_manager import (
     server_inherits_env,
     stderr_log_path,
 )
+from src import extension_manifest
 
 logger = logging.getLogger(__name__)
 
@@ -170,6 +171,10 @@ def setup_mcp_routes(mcp_manager: McpManager):
                     "inherit_env": server_inherits_env(srv),
                     "env_mode": "inherited" if server_inherits_env(srv) else "minimal",
                     "stderr_log": stderr_log_path(srv.id) if srv.transport == "stdio" else "",
+                    # TOOL-04: a pending permission diff, if this server's
+                    # manifest has one — read-only here, approved via
+                    # POST /servers/{id}/manifest/approve.
+                    "manifest_pending_approval": extension_manifest.is_quarantined_for_permissions(srv.id),
                 })
             return result
         finally:
@@ -750,6 +755,73 @@ def setup_mcp_routes(mcp_manager: McpManager):
             return HTMLResponse(_oauth_result_page("Error", str(e)), status_code=500)
         finally:
             db.close()
+
+    # ── TOOL-03: cursor-paginated tools/list ─────────────────────────────
+    #
+    # Additive next to the existing `/servers/{id}/tools` (which serves the
+    # cached, connect-time snapshot with enabled/disabled state) — this one
+    # goes live to the session, cursor by cursor, for a server whose full
+    # listing the cache never fit.
+
+    @router.get("/servers/{server_id}/tools/page")
+    async def list_server_tools_page(server_id: str, request: Request, cursor: str = Query("")):
+        require_admin(request)
+        return await mcp_manager.list_tools_page(server_id, cursor or None)
+
+    # ── TOOL-04: per-server extension manifest ───────────────────────────
+    #
+    # Version, command hash and DECLARED permissions per installed MCP
+    # server/plugin (src/extension_manifest.py, new this lote). An update
+    # that asks for a permission the stored manifest did not have quarantines
+    # the server (reusing the same `disabled_tools` gate
+    # src/safe_mode.py's MCP quarantine already uses) until explicitly
+    # approved here.
+
+    @router.get("/servers/{server_id}/manifest")
+    def get_server_manifest(server_id: str, request: Request):
+        require_admin(request)
+        manifest = extension_manifest.get_manifest(server_id)
+        return {"server_id": server_id, "manifest": manifest, "installed": manifest is not None}
+
+    @router.post("/servers/{server_id}/manifest")
+    async def record_server_manifest(server_id: str, request: Request):
+        """Record (or update) this server's manifest from what is actually
+        configured for it — the caller declares name/version/dependencies/
+        permissions; command+args are read off the stored `McpServer` row
+        when the body does not override them, so the hash reflects what will
+        really run."""
+        require_admin(request)
+        body = await request.json()
+        db = SessionLocal()
+        try:
+            srv = db.query(McpServer).filter(McpServer.id == server_id).first()
+            if not srv:
+                raise HTTPException(404, "Server not found")
+            command = str(body.get("command") or srv.command or "")
+            args = body.get("args")
+            if args is None:
+                args = json.loads(srv.args) if srv.args else []
+            name = str(body.get("name") or srv.name or server_id)
+        finally:
+            db.close()
+        result = extension_manifest.record_install_or_update(
+            server_id, name=name, version=str(body.get("version") or ""),
+            command=command, args=args, dependencies=body.get("dependencies") or [],
+            permissions=body.get("permissions") or {},
+        )
+        return result
+
+    @router.post("/servers/{server_id}/manifest/approve")
+    def approve_server_manifest(server_id: str, request: Request):
+        """Explicit admin acceptance of a permission diff a manifest update
+        flagged — lifts the quarantine :func:`extension_manifest.record_install_or_update`
+        placed for exactly this reason."""
+        require_admin(request)
+        try:
+            manifest = extension_manifest.approve_new_permissions(server_id)
+        except ValueError as e:
+            raise HTTPException(404, str(e))
+        return {"server_id": server_id, "manifest": manifest}
 
     return router
 

@@ -358,39 +358,248 @@ def is_declared_ollama_host(url: str) -> bool:
         return False
 
 
-def resolve_for_request(url: str, model: str) -> Dict[str, Any]:
+def _global_options_for_netloc(url: str, model: str) -> Dict[str, Any]:
+    """The pre-MOD-04 lookup, kept exactly as it was: the first saved GLOBAL
+    entry (this module's original, unscoped table) whose model matches and
+    whose endpoint resolves to ``url``'s host:port. Used both directly by
+    :func:`resolve_for_request` (backward compat) and as the weakest rung of
+    the MOD-04 scope ladder in :func:`resolve_with_origin`."""
+    table = all_options()
+    if not table:
+        return {}
+    model = str(model or "").strip()
+    candidates = [
+        (split_key(key)[0], opts)
+        for key, opts in table.items()
+        if _model_matches(split_key(key)[1], model)
+    ]
+    if not candidates:
+        return {}
+    want = _netloc_key(url)
+    if not want:
+        return {}
+    bases: Optional[Dict[str, str]] = None
+    for ep_id, opts in candidates:
+        if ep_id == DEFAULT_ENDPOINT_ID:
+            base = _default_ollama_base()
+        else:
+            if bases is None:
+                bases = _endpoint_bases()
+            base = bases.get(ep_id, "")
+        if base and _netloc_key(base) == want:
+            return dict(opts)
+    return {}
+
+
+def resolve_for_request(url: str, model: str, *, session_id: Optional[str] = None,
+                         project_id: Optional[str] = None) -> Dict[str, Any]:
     """The saved defaults that apply to a request for ``model`` at ``url``.
 
     Empty when nothing is saved for this model, when the saved entry belongs
     to an endpoint on another host, or when anything at all goes wrong — a
     missing default is never worth failing a chat over.
+
+    ``session_id``/``project_id`` are optional (MOD-04): when given, a
+    per-field session or project override (see :func:`set_scoped_options`)
+    wins over the global entry this function has always returned — the same
+    session > project > global ladder :func:`resolve_with_origin` documents,
+    collapsed here into a flat dict for ``src/llm_core.py``'s existing
+    two-argument call, which keeps working unchanged.
     """
     try:
-        table = all_options()
-        if not table:
-            return {}
-        model = str(model or "").strip()
-        candidates = [
-            (split_key(key)[0], opts)
-            for key, opts in table.items()
-            if _model_matches(split_key(key)[1], model)
-        ]
-        if not candidates:
-            return {}
-        want = _netloc_key(url)
-        if not want:
-            return {}
-        bases: Optional[Dict[str, str]] = None
-        for ep_id, opts in candidates:
-            if ep_id == DEFAULT_ENDPOINT_ID:
-                base = _default_ollama_base()
-            else:
-                if bases is None:
-                    bases = _endpoint_bases()
-                base = bases.get(ep_id, "")
-            if base and _netloc_key(base) == want:
-                return dict(opts)
-        return {}
+        if not session_id and not project_id:
+            return _global_options_for_netloc(url, model)
+        resolved = resolve_with_origin(
+            url, model, session_id=session_id, project_id=project_id,
+        )
+        return dict(resolved.get("options") or {})
     except Exception as e:  # noqa: BLE001
         logger.debug("model_load_options: resolve failed: %s", e)
         return {}
+
+
+# ── MOD-04: scope (global / project / session) and precedence ──────────────
+#
+# The table above (`SETTING_KEY`, flat "endpoint|model" -> options) stays
+# untouched — it IS the global scope, byte for byte, so every existing
+# reader (`all_options`, `options_for_endpoint`, `declared_ollama_netlocs`,
+# and `src/effective_config.py::_model_layer_offers`, a foreign file this
+# lote does not touch) keeps seeing exactly what it always has. Project and
+# session overrides live in a second settings key under the SAME authority
+# (`src/settings.py` — rule 4 asks to reuse authorities, not to avoid a
+# second *key* in the one store every other per-model/per-turn knob already
+# uses); nothing here removes or reinterprets a global entry.
+SCOPE_GLOBAL = "global"
+SCOPE_PROJECT = "project"
+SCOPE_SESSION = "session"
+SCOPES: Tuple[str, ...] = (SCOPE_GLOBAL, SCOPE_PROJECT, SCOPE_SESSION)
+
+#: Strongest first — session overrides project overrides the global default,
+#: mirroring `src/effective_config.py`'s own "turn > ... > global" ladder
+#: (that module's model layer is one rung of a bigger ladder; this is the
+#: same shape one level down, for the field this module itself owns).
+SCOPE_PRECEDENCE: Tuple[str, ...] = (SCOPE_SESSION, SCOPE_PROJECT, SCOPE_GLOBAL)
+
+SCOPED_SETTING_KEY = "model_load_options_scoped"
+
+
+def _scoped_storage_key(endpoint_id: str, model: str, scope: str, scope_id: str) -> str:
+    if scope not in (SCOPE_PROJECT, SCOPE_SESSION):
+        raise ValueError(f"scope must be one of {SCOPE_PROJECT!r}/{SCOPE_SESSION!r}")
+    scope_id = str(scope_id or "").strip()
+    if not scope_id:
+        raise ValueError(f"scope_id is required for scope={scope!r}")
+    return f"{option_key(endpoint_id, model)}::{scope}:{scope_id}"
+
+
+def all_scoped_options() -> Dict[str, Dict[str, Any]]:
+    """Every saved project/session override, keyed by its storage key. Same
+    "never raise, drop what does not sanitize" contract as :func:`all_options`."""
+    try:
+        from src.settings import get_setting
+        raw = get_setting(SCOPED_SETTING_KEY, {})
+    except Exception:
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    out: Dict[str, Dict[str, Any]] = {}
+    for key, value in raw.items():
+        if not isinstance(value, dict) or "::" not in str(key):
+            continue
+        try:
+            clean = sanitize_options(value)
+        except ValueError:
+            continue
+        if clean:
+            out[str(key)] = clean
+    return out
+
+
+def get_scoped_options(endpoint_id: str, model: str, scope: str, scope_id: str) -> Dict[str, Any]:
+    key = _scoped_storage_key(endpoint_id, model, scope, scope_id)
+    return dict(all_scoped_options().get(key, {}))
+
+
+def set_scoped_options(endpoint_id: str, model: str, scope: str, scope_id: str,
+                        options: Any) -> Dict[str, Any]:
+    """Persist (or clear, for an empty object) one project/session override."""
+    from src.settings import load_settings, save_settings
+    key = _scoped_storage_key(endpoint_id, model, scope, scope_id)
+    clean = sanitize_options(options)
+    settings = dict(load_settings())
+    table = settings.get(SCOPED_SETTING_KEY)
+    table = dict(table) if isinstance(table, dict) else {}
+    if clean:
+        table[key] = clean
+    else:
+        table.pop(key, None)
+    settings[SCOPED_SETTING_KEY] = table
+    save_settings(settings)
+    return clean
+
+
+def _layer_options(endpoint_id: str, model: str, scope: str,
+                    scope_id: str) -> Tuple[Dict[str, Any], str]:
+    """One scope's options plus the storage path they came from ("origin")."""
+    if scope == SCOPE_GLOBAL:
+        return dict(get_options(endpoint_id, model)), f"model_load_options:{option_key(endpoint_id, model)}"
+    if not scope_id:
+        return {}, ""
+    try:
+        key = _scoped_storage_key(endpoint_id, model, scope, scope_id)
+    except ValueError:
+        return {}, ""
+    return dict(get_scoped_options(endpoint_id, model, scope, scope_id)), f"{SCOPED_SETTING_KEY}:{key}"
+
+
+def _endpoint_id_for_netloc(url: str) -> str:
+    """Which configured endpoint id ``url`` belongs to — the synthetic
+    :data:`DEFAULT_ENDPOINT_ID` for "the Ollama this machine runs", the id of
+    a configured :class:`ModelEndpoint` row, or ``""`` when neither matches.
+    Used to key a project/session override even when no GLOBAL entry has
+    ever been saved for this model (a scoped-only override still resolves)."""
+    want = _netloc_key(url)
+    if not want:
+        return ""
+    # A configured endpoint that happens to sit at the same host:port as
+    # "the Ollama this machine runs" wins the id — it is the one an admin
+    # actually named in Settings › Local models, so it is the one under
+    # which a scoped override would have been saved.
+    for ep_id, base in (_endpoint_bases() or {}).items():
+        if _netloc_key(base) == want:
+            return ep_id
+    if want == _netloc_key(_default_ollama_base()):
+        return DEFAULT_ENDPOINT_ID
+    return ""
+
+
+def resolve_with_origin(url: str, model: str, *, session_id: Optional[str] = None,
+                         project_id: Optional[str] = None,
+                         endpoint_id: Optional[str] = None) -> Dict[str, Any]:
+    """The MOD-04 answer: effective per-model load options resolved
+    session -> project -> global, field by field, with provenance —
+    "quien manda" for the Local models UI. Shaped like a small, self-contained
+    echo of `src.effective_config`'s `EffectiveValue`/`overridden` (that
+    module is not imported: it has no endpoint URL to resolve the global
+    layer against, and reusing its dataclasses here would need touching a
+    file this lote does not own — see the report's "Cambios necesarios en
+    ficheros ajenos" for the follow-up that would let it read this ladder
+    too).
+
+    Returns ``{"endpoint_id", "model", "options": {field: value, ...},
+    "origin": {field: {"scope", "path"}}, "overridden": {field: [{"scope",
+    "value", "path"}, ...]}}``. Never raises: any failure degrades to "no
+    scoped opinion", the same promise every other function in this module
+    makes.
+    """
+    # A caller that already resolved which endpoint it means (every route in
+    # this lote does — it just picked the endpoint to talk to) should say so
+    # directly rather than have this module re-derive it from `url` through
+    # a second, possibly differently-sourced endpoint table: the two agree
+    # in production (both read `core.database.ModelEndpoint`), but nothing
+    # here should DEPEND on them staying in lockstep when the caller already
+    # knows the answer.
+    if endpoint_id:
+        endpoint_id = str(endpoint_id)
+    else:
+        try:
+            endpoint_id = _endpoint_id_for_netloc(url)
+        except Exception as e:  # noqa: BLE001
+            logger.debug("model_load_options: resolve_with_origin endpoint lookup failed: %s", e)
+            endpoint_id = ""
+
+    layers: Dict[str, Tuple[Dict[str, Any], str]] = {}
+    try:
+        layers[SCOPE_GLOBAL] = _layer_options(endpoint_id, model, SCOPE_GLOBAL, "")
+        if project_id:
+            layers[SCOPE_PROJECT] = _layer_options(endpoint_id, model, SCOPE_PROJECT, str(project_id))
+        if session_id:
+            layers[SCOPE_SESSION] = _layer_options(endpoint_id, model, SCOPE_SESSION, str(session_id))
+    except Exception as e:  # noqa: BLE001
+        logger.debug("model_load_options: resolve_with_origin layer read failed: %s", e)
+
+    fields = sorted({f for opts, _ in layers.values() for f in opts})
+    options: Dict[str, Any] = {}
+    origin: Dict[str, Dict[str, str]] = {}
+    overridden: Dict[str, List[Dict[str, Any]]] = {}
+    for field_name in fields:
+        winner_scope = ""
+        for scope in SCOPE_PRECEDENCE:
+            opts, path = layers.get(scope, ({}, ""))
+            if field_name not in opts:
+                continue
+            if not winner_scope:
+                winner_scope = scope
+                options[field_name] = opts[field_name]
+                origin[field_name] = {"scope": scope, "path": path}
+                continue
+            overridden.setdefault(field_name, []).append(
+                {"scope": scope, "value": opts[field_name], "path": path}
+            )
+    return {
+        "endpoint_id": endpoint_id,
+        "model": str(model or "").strip(),
+        "options": options,
+        "origin": origin,
+        "overridden": overridden,
+    }

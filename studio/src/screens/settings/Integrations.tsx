@@ -1,4 +1,4 @@
-import { Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { Plus, RefreshCw, ShieldAlert, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Button, IconButton, Skeleton } from '../../components';
 import {
@@ -38,6 +38,106 @@ import { ContactsPanel, EmailForm, McpPanel } from './IntegrationsMore';
  * routes; the list is the only thing they share.
  */
 
+/** TOOL-04: the field routes/mcp/mcp_routes.py's server list now carries
+ * alongside every MCP row — declared here rather than in the (foreign)
+ * adapter, whose `McpServer` type does not have it yet. */
+type McpServerManifest = McpServer & { manifest_pending_approval?: boolean };
+
+const MCP_STATUS_LABEL: Record<string, string> = {
+  degraded: 'connected, but struggling',
+  probing: 'reconnecting…',
+};
+
+async function callMcp<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const r = await fetch(path, { credentials: 'same-origin', ...init });
+  const text = await r.text();
+  let data: unknown = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    /* not json */
+  }
+  if (!r.ok) {
+    const d = data as { detail?: unknown };
+    throw new Error(typeof d.detail === 'string' ? d.detail : `HTTP ${r.status}`);
+  }
+  return data as T;
+}
+
+const approveMcpManifest = (serverId: string) => callMcp<unknown>(`/api/mcp/servers/${encodeURIComponent(serverId)}/manifest/approve`, { method: 'POST' });
+
+interface McpToolPage {
+  tools: { name: string; description?: string }[];
+  next_cursor: string | null;
+  paginated: boolean;
+}
+const getMcpToolsPage = (serverId: string, cursor?: string) =>
+  callMcp<McpToolPage>(`/api/mcp/servers/${encodeURIComponent(serverId)}/tools/page${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`);
+
+/**
+ * TOOL-03: a live, cursor-paginated read of one server's tools — distinct
+ * from the cached list `McpPanel` (studio/src/screens/settings/IntegrationsMore.tsx,
+ * a foreign file) already shows, and useful for a server whose full listing
+ * is larger than what got cached at connect time.
+ */
+function McpToolsPage({ serverId }: { serverId: string }) {
+  const [tools, setTools] = useState<{ name: string; description?: string }[]>([]);
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [paginated, setPaginated] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [started, setStarted] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const loadFirst = async () => {
+    setStarted(true);
+    setLoading(true);
+    setErr(null);
+    try {
+      const page = await getMcpToolsPage(serverId);
+      setTools(page.tools);
+      setCursor(page.next_cursor);
+      setPaginated(page.paginated);
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadMore = async () => {
+    if (!cursor) return;
+    setLoading(true);
+    setErr(null);
+    try {
+      const page = await getMcpToolsPage(serverId, cursor);
+      setTools((prev) => [...prev, ...page.tools]);
+      setCursor(page.next_cursor);
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!started) {
+    return <Button size="sm" variant="ghost" label={t('List tools (paginated)')} onClick={() => void loadFirst()} />;
+  }
+  return (
+    <div className="fs-intg__mcp-tools" data-testid="mcp-tools-page">
+      {loading && !tools.length ? <Skeleton label={t('Loading tools')} height="20px" /> : (
+        <ul className="fs-set__help">
+          {tools.map((tool) => <li key={tool.name}>{tool.name}</li>)}
+        </ul>
+      )}
+      {err && <p className="fs-set__help" data-tone="bad" role="alert">{err}</p>}
+      {cursor && <Button size="sm" variant="ghost" label={loading ? t('Loading…') : t('Load more')} loading={loading} onClick={() => void loadMore()} />}
+      {started && !cursor && !loading && !paginated && tools.length > 0 && (
+        <p className="fs-set__help">{t('This server does not report more pages — this is everything it listed.')}</p>
+      )}
+    </div>
+  );
+}
+
 export interface Item {
   kind: IntegrationKind;
   id: string;
@@ -68,8 +168,18 @@ async function fetchAll(): Promise<Item[]> {
   const cardUrl = cardCfg.url ?? cardCfg.carddav_url;
   if (cardUrl) items.push({ kind: 'carddav', id: '__carddav__', name: t('Contacts (CardDAV)'), detail: cardUrl, enabled: true, data: cardCfg });
   for (const a of mail) items.push({ kind: 'email', id: a.id, name: a.name + (a.is_default ? ` (${t('default')})` : ''), detail: [a.from_address || a.imap_user, a.imap_host].filter(Boolean).join(' — '), enabled: a.enabled !== false, data: a });
-  for (const s of mcp) {
-    const detail = s.needs_oauth ? t('needs authorisation') : s.status === 'connected' ? t('{a}/{b} tools', { a: s.enabled_tool_count, b: s.tool_count }) : s.status === 'error' ? t('error') : t('disconnected');
+  for (const s of mcp as McpServerManifest[]) {
+    // TOOL-03: `degraded`/`probing` read out loud rather than falling into
+    // the same "disconnected" bucket every OTHER unrecognised status did
+    // before this lote.
+    const statusText = s.needs_oauth
+      ? t('needs authorisation')
+      : s.status === 'connected' ? t('{a}/{b} tools', { a: s.enabled_tool_count, b: s.tool_count })
+      : s.status === 'error' ? t('error')
+      : s.status === 'degraded' ? t(MCP_STATUS_LABEL.degraded)
+      : s.status === 'probing' ? t(MCP_STATUS_LABEL.probing)
+      : t('disconnected');
+    const detail = s.manifest_pending_approval ? `${statusText} · ${t('new permissions pending approval')}` : statusText;
     items.push({ kind: 'mcp', id: s.id, name: s.name || 'MCP', detail, enabled: s.is_enabled !== false, data: s });
   }
   for (const tok of tokens) {
@@ -161,19 +271,37 @@ export function IntegrationsSection({ say }: { say: (t: string) => void }) {
         <p className="fs-set__help">{t('Nothing connected yet. Add one above.')}</p>
       ) : (
         <ul className="fs-intg">
-          {items.map((item) => (
-            <li key={`${item.kind}-${item.id}`} className="fs-intg__row" data-testid={`intg-${item.kind}`}>
-              <button type="button" className="fs-intg__main" onClick={() => setEditing({ kind: item.kind, id: item.id })} title={t('Open')}>
-                <span className="fs-intg__kind">{t(KIND_LABEL[item.kind])}</span>
-                <span className="fs-intg__text">
-                  <strong>{item.name}</strong>
-                  <span className="fs-set__help">{item.detail}</span>
-                </span>
-                <span className="fs-intg__dot" data-on={item.enabled || undefined} aria-label={item.enabled ? t('Enabled') : t('Disabled')} />
-              </button>
-              <IconButton icon={Trash2} label={t('Remove {name}', { name: item.name })} size="sm" onClick={() => void remove(item)} />
+          {items.map((item) => {
+            const mcp = item.kind === 'mcp' ? (item.data as McpServerManifest) : null;
+            return (
+            <li key={`${item.kind}-${item.id}`} className="fs-intg__row" data-testid={`intg-${item.kind}`} style={(mcp?.manifest_pending_approval || (item.kind === 'mcp' && mcp?.status === 'connected')) ? { display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: '4px' } : undefined}>
+              <div className="fs-intg__row-main" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                <button type="button" className="fs-intg__main" onClick={() => setEditing({ kind: item.kind, id: item.id })} title={t('Open')}>
+                  <span className="fs-intg__kind">{t(KIND_LABEL[item.kind])}</span>
+                  <span className="fs-intg__text">
+                    <strong>{item.name}</strong>
+                    <span className="fs-set__help">{item.detail}</span>
+                  </span>
+                  <span className="fs-intg__dot" data-on={item.enabled || undefined} aria-label={item.enabled ? t('Enabled') : t('Disabled')} />
+                </button>
+                <IconButton icon={Trash2} label={t('Remove {name}', { name: item.name })} size="sm" onClick={() => void remove(item)} />
+              </div>
+              {mcp?.manifest_pending_approval && (
+                <div className="fs-notice" data-tone="warn" role="alert" data-testid="mcp-manifest-quarantine">
+                  <ShieldAlert size={14} aria-hidden="true" />
+                  {t('{name} asked for a new permission it did not have before and is quarantined until approved.', { name: item.name })}
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    label={t('Approve')}
+                    onClick={() => void approveMcpManifest(item.id).then(() => reload()).then(() => say(t('Approved.'))).catch((e) => say((e as Error).message))}
+                  />
+                </div>
+              )}
+              {item.kind === 'mcp' && mcp?.status === 'connected' && <McpToolsPage serverId={item.id} />}
             </li>
-          ))}
+            );
+          })}
         </ul>
       )}
     </section>
