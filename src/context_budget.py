@@ -204,9 +204,12 @@ def budget_for(
     ``reserve_tools``, ``tools_reserve_source``, ``input_budget`` (never 0 or
     negative when ``context_length`` ends up positive, which it always does —
     see below), ``modality``, ``modality_unit_cost`` (an int, or ``None``; see
-    ``modality_unit_cost()``), ``modality_source``, ``provider``, and
+    ``modality_unit_cost()``), ``modality_source``, ``provider``,
     ``warnings`` (plain-English notes for every place a number had to be
-    estimated instead of measured).
+    estimated instead of measured), and ``estimated`` — a plain bool, True
+    whenever ``input_budget`` rests on any non-measured number, so a caller
+    (a log line, a UI) never has to infer "was this real?" from parsing
+    ``context_source``/``warnings`` itself.
     """
     manifest = model_manifest if isinstance(model_manifest, Mapping) else {}
     context_length = _int_or_zero(manifest.get("context_length"))
@@ -258,6 +261,23 @@ def budget_for(
 
     unit_cost, modality_source = modality_unit_cost(provider, modality)
 
+    # CTX-01: a single explicit boolean a caller can branch on without
+    # parsing `context_source`/`tools_reserve_source`/`warnings` prose — the
+    # acceptance's "no se comunica una cifra estimada como conteo exacto"
+    # needs a literal flag, not a string a UI would have to pattern-match.
+    # True whenever ANY input to `input_budget` was not a live-measured
+    # number: the context window came from a model-card default rather than
+    # the endpoint itself, the tool-schema reserve is a guessed fraction of
+    # the window rather than a measured schema size, or (when a non-text
+    # modality was asked about) its per-unit cost is a published flat figure
+    # rather than one computed from this specific attachment's real size.
+    modality_normalized = (modality or "text").strip().lower()
+    estimated = (
+        context_source != "measured"
+        or tools_reserve_source == "estimated"
+        or (modality_normalized != "text" and unit_cost is not None)
+    )
+
     return {
         "context_length": context_length,
         "context_source": context_source,
@@ -265,9 +285,10 @@ def budget_for(
         "reserve_tools": reserve_tools,
         "tools_reserve_source": tools_reserve_source,
         "input_budget": input_budget,
-        "modality": (modality or "text").strip().lower(),
+        "modality": modality_normalized,
         "modality_unit_cost": unit_cost,
         "modality_source": modality_source,
         "provider": provider or "unknown",
         "warnings": warnings,
+        "estimated": bool(estimated),
     }

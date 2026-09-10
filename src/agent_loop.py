@@ -1361,6 +1361,68 @@ def recompute_capabilities_on_model_switch(
     }
 
 
+def _drop_foreign_opaque_tool_extras(messages: List[Dict], new_endpoint_url: str) -> List[Dict]:
+    """MOD-06: an assistant `tool_calls` entry can carry a provider-opaque
+    replay token — today only Gemini's `thought_signature`, stashed as
+    `extra_content` by `_append_tool_results` because "Gemini 3 requires the
+    opaque thought_signature it returned with each function call to be
+    echoed back on the follow-up turn, or the next request 400s". That
+    token means nothing to any OTHER provider; `src/llm_core.py::
+    _ollama_normalize_messages` already drops it before a native-Ollama
+    request for exactly this reason ("dropped — it is meaningless to Ollama
+    and only matters when the conversation is replayed to Gemini"), but a
+    mid-task fallback to a non-Ollama, non-Google candidate (OpenAI,
+    Anthropic, a third-party gateway) went through untouched — the new
+    provider would see a `tool_calls` entry with a field its own schema
+    never defined. This is the same fix, generalised to "not Google", at
+    the one other place a different provider starts reading this history:
+    an intra-call fallback (MOD-06's "bloques opacos no se reinterpretan" —
+    an opaque block meant for one specific model is never handed to a
+    different one as if it still meant something there).
+
+    Returns a NEW list when anything needed stripping; `messages` itself,
+    and every dict inside it, is left untouched either way — a LATER round
+    that falls back back to Gemini still finds the ORIGINAL message with
+    its `extra_content` intact wherever this function was never asked to
+    filter it, so nothing here is a destructive, one-way loss of the token,
+    only keeping it from leaking to a provider it was never for.
+    """
+    if _is_google_endpoint(new_endpoint_url):
+        return messages  # the one provider this token is actually for
+    out: List[Dict] = []
+    changed = False
+    for msg in messages:
+        tool_calls = msg.get("tool_calls") if isinstance(msg, dict) else None
+        if not tool_calls or not any(
+            isinstance(tc, dict) and tc.get("extra_content") for tc in tool_calls
+        ):
+            out.append(msg)
+            continue
+        changed = True
+        new_msg = dict(msg)
+        new_msg["tool_calls"] = [
+            ({k: v for k, v in tc.items() if k != "extra_content"} if isinstance(tc, dict) else tc)
+            for tc in tool_calls
+        ]
+        out.append(new_msg)
+    return out if changed else messages
+
+
+def _is_google_endpoint(endpoint_url: str) -> bool:
+    """True only for the actual Gemini API host. NOT `llm_core._detect_
+    provider` — that function has no Google branch at all and falls through
+    to its generic "openai" default for a googleapis.com URL, which would
+    make this always False and strip the token even on a same-provider
+    Gemini-to-Gemini fallback. `_host_match(url, "googleapis.com")` is the
+    same check `llm_core._provider_label` already uses to display "Google"
+    for this exact host, reused here for the same host, not re-derived."""
+    try:
+        from src.llm_core import _host_match
+        return _host_match(endpoint_url, "googleapis.com")
+    except Exception:  # noqa: BLE001 - never block a fallback on this check
+        return False
+
+
 # Admin tool keywords — if the last user message contains any of these, include admin tools
 _ADMIN_KEYWORDS = [
     "session", "sessions", "chat", "chats", "conversation", "conversations",
@@ -4241,6 +4303,44 @@ def _plan_coverage_gap(plan_update: Optional[Dict[str, Any]], instruction: str) 
     return list(result.get("uncovered") or [])
 
 
+def _apply_steer_to_plan_update(
+    plan_update: Optional[Dict[str, Any]], steer_texts: List[str]
+) -> Tuple[Optional[Dict[str, Any]], List[str]]:
+    """TASK-05: `steer_texts` are the messages just drained this round
+    (`agent_runs.take_steers` for the main session turn, `pending_steers`
+    for a delegate worker). Rebuilds the structured `Plan` behind this
+    turn's latest `plan_update` payload the same way `_plan_coverage_gap`
+    does, then runs each steer through `plan_state.apply_steer` in order so
+    a PENDING step any of them contradicts ends up `needs_review` before the
+    caller's next round can act on it unchanged.
+
+    Returns `(plan_update, [])` — the payload passed in, untouched — when
+    there is no plan yet, no steer text, or nothing any steer actually
+    touches; a malformed `plan_update` degrades the same way, never the
+    reason a turn fails. Otherwise returns a REFRESHED payload (same shape
+    `update_plan` itself returns: `plan`/`steps`/`revision`/`warnings`) plus
+    the ids of every step marked, so the caller only re-emits a
+    `plan_update` event when something changed."""
+    if not isinstance(plan_update, dict) or not steer_texts:
+        return plan_update, []
+    try:
+        plan = plan_state.parse_steps_input(plan_update) or plan_state.from_markdown(
+            str(plan_update.get("plan") or ""))
+    except Exception:  # noqa: BLE001 - a steer must never break the turn
+        return plan_update, []
+    if not plan.steps:
+        return plan_update, []
+    affected: List[str] = []
+    for text in steer_texts:
+        plan, ids = plan_state.apply_steer(plan, text)
+        affected.extend(i for i in ids if i not in affected)
+    if not affected:
+        return plan_update, []
+    new_payload: Dict[str, Any] = {"plan": plan_state.to_markdown(plan)}
+    new_payload.update(plan.to_dict())
+    return new_payload, affected
+
+
 def _build_actions_snapshot(tool_events: list, limit: int = 8000) -> str:
     """Compact record of what the agent actually did this turn, for the
     verifier to judge against. One block per tool execution: the command and
@@ -5815,12 +5915,22 @@ async def _stream_agent_loop_body(
                         _itemised_input_budget = _real_budget.get("input_budget")
                         if isinstance(_itemised_input_budget, int) and _itemised_input_budget > 0:
                             if _itemised_input_budget < effective_budget:
+                                # CTX-01: `estimated` is a literal bool, not a
+                                # log-message adjective — True here means the
+                                # tightened number itself rests on a
+                                # non-measured input (e.g. context_source
+                                # "known_default", or a tools reserve that is
+                                # a guessed fraction rather than a real
+                                # schema size), so it is never reported as an
+                                # exact count when it is not one.
                                 logger.info(
                                     "[agent] explicit budget for route model=%s "
-                                    "tightened by itemised reserves: %s -> %s",
+                                    "tightened by itemised reserves: %s -> %s "
+                                    "(estimated=%s)",
                                     candidate_model,
                                     effective_budget,
                                     _itemised_input_budget,
+                                    bool(_real_budget.get("estimated")),
                                 )
                             effective_budget = min(effective_budget, _itemised_input_budget)
                 except Exception as e:
@@ -6718,6 +6828,7 @@ async def _stream_agent_loop_body(
             except Exception as _steer_err:
                 logger.debug("[steer] queue read failed: %s", _steer_err)
                 _steers = []
+            _steer_texts_this_round: List[str] = []
             for _steer in _steers:
                 _steer_text = str((_steer or {}).get("text") or "").strip() if isinstance(_steer, dict) else str(_steer or "").strip()
                 if not _steer_text:
@@ -6730,6 +6841,20 @@ async def _stream_agent_loop_body(
                     f"it refines your task; follow it from now on] {_steer_text}")})
                 yield "data: " + json.dumps({"type": "steer", "round": round_num,
                                              "text": _steer_text[:300], "source": _steer_src}) + "\n\n"
+                _steer_texts_this_round.append(_steer_text)
+            # TASK-05: whatever a steer just contradicted among this turn's
+            # own PENDING plan steps is marked `needs_review` right here —
+            # the safe point between rounds — so the round about to run
+            # (its tool calls, a file write among them) cannot act on a step
+            # the correction just invalidated as if nothing had changed.
+            if _steer_texts_this_round and _latest_plan_update:
+                _latest_plan_update, _steer_affected_ids = _apply_steer_to_plan_update(
+                    _latest_plan_update, _steer_texts_this_round)
+                if _steer_affected_ids:
+                    logger.info("[steer] marked %d plan step(s) needs_review: %s",
+                                len(_steer_affected_ids), _steer_affected_ids)
+                    yield "data: " + json.dumps({"type": "plan_update",
+                                                 "data": _latest_plan_update}) + "\n\n"
         # UX-04: pause, checked at the same safe point as steering — between
         # rounds, never mid tool call. Ends the turn exactly like an
         # ask_user question does (break, no result fed back), so a resumed
@@ -7358,11 +7483,22 @@ async def _stream_agent_loop_body(
                                 )
                             answering_state = _candidate_request_states.get(candidate_index)
                             if answering_state is None:
+                                # MOD-06: a Gemini-only opaque replay token
+                                # (`extra_content`/thought_signature) on an
+                                # earlier native tool call must not be handed
+                                # to a different provider as if it meant
+                                # something there — see
+                                # `_drop_foreign_opaque_tool_extras`. Every
+                                # OTHER part of this turn's state (evidence,
+                                # the live plan, attachments) is already just
+                                # `messages` itself, which this call already
+                                # passes through unabridged — nothing else to
+                                # reconstruct.
                                 answering_state = await _build_route_request_state(
                                     endpoint_url,
                                     model,
                                     headers,
-                                    messages,
+                                    _drop_foreign_opaque_tool_extras(messages, endpoint_url),
                                 )
                                 answering_state["request_messages"] = _trim_route_request_messages(
                                     endpoint_url,

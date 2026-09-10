@@ -98,7 +98,25 @@ _PHASE_CANON: Dict[str, str] = {
     # SSE events, when the payload carries its own `phase`).
     "loading_model": "loading_model",
     "probing": "loading_model",
+    # This module's own word for genuine post-tool verification work (see
+    # `_HARNESS_VERIFICATION_STATUSES` / `_observe_activity`'s `harness_check`
+    # branch below) — self-mapped, same pattern as "tool": "tool" above.
+    "verifying": "verifying",
 }
+
+#: `harness_check` (src/agent_loop.py's reliability harness) statuses that
+#: are actual verification work — static analysis, a test run, an
+#: independent reviewer model, or a claims check — as opposed to a status
+#: that is really "make the model continue" (checkpoint/auto_continue/
+#: think_cutoff/rejected/empty_round/unknown_tool/required_action/
+#: target_substituted). Only these move the phase; everything else leaves
+#: it exactly where it was — a harness nudge is not evidence the turn moved
+#: to a new stage, and treating it as one would be exactly the kind of
+#: invented signal OBS-02 exists to stop.
+_HARNESS_VERIFICATION_STATUSES = frozenset({
+    "static_analysis", "syntax_error", "tests_running", "tests_failed",
+    "review_running", "review_issues", "verified", "unverified",
+})
 
 
 def _canonical_phase(raw_phase: str, previous: str = "admission") -> str:
@@ -596,6 +614,14 @@ def _observe_activity(run: _Run, ev: str) -> None:
             total = len(todos)
             done = sum(1 for t in todos if isinstance(t, dict) and t.get("status") == "done")
             run.percent = round(100.0 * done / total, 1)
+    elif event_type == "harness_check":
+        # OBS-02: the eighth canonical phase. `_HARNESS_VERIFICATION_STATUSES`
+        # is the closed set of statuses that are real verification; anything
+        # else (checkpoint, auto_continue, ...) is a harness nudge, not a
+        # new stage, so the phase is left untouched for those.
+        status = str(payload.get("status") or "")
+        if status in _HARNESS_VERIFICATION_STATUSES:
+            _set_phase(run, "verifying", detail=status)
 
 
 def activity_snapshot(session_id: str) -> Optional[Dict[str, Any]]:
@@ -1380,6 +1406,201 @@ def _partial_from_events(events: List[str]) -> Dict[str, Any]:
         elif d.get("type") == "message_saved":
             saved = True
     return {"text": "".join(text_parts), "tool_events": tool_events[:60], "metrics": metrics, "saved": saved}
+
+
+# ---------------------------------------------------------------------------
+# OBS-01: reconstruct everything one tool call produced, from the one id all
+# three stores already carry.
+# ---------------------------------------------------------------------------
+#
+# `_observability_fields` above already stamps every SSE event of a run with
+# `trace_id`/`step_id`; `src/agent_loop.py` already puts the call's own
+# `call_id` (the provider's native id, or the `call_{round}_{index}`
+# fallback — see tests/test_obs_call_id.py) on its tool_start/tool_progress/
+# tool_output events; `src/artifact_store.py::persist` and
+# `src/command_guard.py::append_receipt` now take the SAME `call_id` and
+# fold it into an artifact's manifest row and a command_guard receipt
+# respectively (both additive, optional — neither call site is in this
+# lot's file list). What was still missing is the one function that walks
+# from a `call_id` back out to all three: today that meant grepping the
+# event stream, the artifact manifest table, and the receipts log by hand,
+# in three different formats, in three different files. `trace_for_call`
+# is that function; wiring it behind an HTTP route (if the caller wants one)
+# is integration's job, not this module's — see the lot report.
+
+#: Bound on how many persisted run logs a session-less lookup scans, so one
+#: call to `trace_for_call` can never become unbounded disk work on an
+#: instance with years of `data/runs/*.jsonl` history. Ordered by mtime
+#: (newest first) before the cap is applied, so a recent call_id is found
+#: long before an ancient one would be missed.
+_TRACE_SCAN_MAX_FILES = 200
+
+
+def _trace_log_paths(session_id: Optional[str]) -> List[str]:
+    if session_id:
+        path = _log_path(session_id)
+        return [path] if os.path.isfile(path) else []
+    d = _runs_dir()
+    try:
+        names = [n for n in os.listdir(d) if n.endswith(".jsonl")]
+    except OSError:
+        return []
+
+    def _mtime(name: str) -> float:
+        try:
+            return os.path.getmtime(os.path.join(d, name))
+        except OSError:
+            return 0.0
+
+    names.sort(key=_mtime, reverse=True)
+    return [os.path.join(d, n) for n in names[:_TRACE_SCAN_MAX_FILES]]
+
+
+def _receipt_for_call_id(call_id: str) -> Optional[Dict[str, Any]]:
+    """The command_guard decision receipt for this call, or None — never a
+    fabricated "allowed"/"blocked" guess when the log does not have it.
+    Mirrors `command_guard.tail_receipts()`'s own read-only file scan (only
+    the live log, not a rotated `.1`; a call_id old enough to have rotated
+    out is a real "not found", not a bug in this function)."""
+    try:
+        from src import command_guard
+        match: Optional[Dict[str, Any]] = None
+        with open(command_guard._log_path(), "r", encoding="utf-8") as fh:
+            for line in fh:
+                if call_id not in line:
+                    continue
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    record = json.loads(line)
+                except (ValueError, TypeError):
+                    continue
+                if isinstance(record, dict) and str(record.get("call_id") or "") == call_id:
+                    match = record  # keep scanning; the last (most recent) wins
+        return match
+    except OSError:
+        return None
+    except Exception:  # noqa: BLE001 - a trace lookup must never raise
+        logger.debug("[trace_for_call] receipt lookup failed for %s", call_id, exc_info=True)
+        return None
+
+
+def _artifacts_for_call_id(call_id: str) -> List[Dict[str, Any]]:
+    """Every artifact manifest row this call produced (ART-01's
+    `artifact_manifests` table, `src/artifact_identity.py`), enriched with
+    the occurrence's own label/kind/owner when that occurrence can still be
+    resolved. An empty list is a real, expected answer — most calls never
+    produce an artifact at all — not a failure."""
+    try:
+        from sqlalchemy import text as sql_text
+        from core.database import engine
+        with engine.connect() as conn:
+            rows = conn.execute(sql_text(
+                "SELECT id, occurrence_id, version, state, format, byte_size, "
+                "sha256, generator, created_at_iso FROM artifact_manifests "
+                "WHERE call_id=:cid ORDER BY created_at_iso"
+            ), {"cid": call_id}).mappings().all()
+    except Exception:
+        # Covers both "the table does not exist yet" (no artifact has ever
+        # been manifested on this instance) and a transient DB error -- OBS-01
+        # must never break a trace lookup for a call that simply made none.
+        return []
+    out: List[Dict[str, Any]] = []
+    for row in rows:
+        entry: Dict[str, Any] = {
+            "occurrence_id": row["occurrence_id"], "manifest_id": row["id"],
+            "version": row["version"], "state": row["state"],
+            "format": row["format"] or "", "byte_size": row["byte_size"],
+            "sha256": row["sha256"] or "", "generator": row["generator"] or "",
+            "created_at": row["created_at_iso"],
+        }
+        try:
+            from src import artifact_identity
+            occ = artifact_identity.occurrence(row["occurrence_id"])
+            if occ is not None:
+                entry["label"] = occ.label
+                entry["kind"] = occ.kind
+                entry["owner"] = occ.owner
+        except Exception:  # noqa: BLE001 - the manifest row alone is still useful
+            logger.debug("[trace_for_call] occurrence lookup failed for %s",
+                        row["occurrence_id"], exc_info=True)
+        out.append(entry)
+    return out
+
+
+def trace_for_call(call_id: str, *, session_id: Optional[str] = None) -> Dict[str, Any]:
+    """OBS-01: reconstruct everything ONE tool call produced, keyed by the
+    `call_id` its event, its artifact (if any) and its command_guard receipt
+    (if any) all already carry.
+
+    `session_id` narrows the event search to one session's persisted run log
+    (`data/runs/<session_id>.jsonl`, plus that session's live in-memory
+    buffer if a run is still going); omitted, every currently-live run and
+    every persisted run log under `_runs_dir()` is scanned, newest first,
+    bounded by `_TRACE_SCAN_MAX_FILES`. A `call_id` this function cannot
+    find anywhere in that window is reported as not found — never guessed
+    at from a partial match, never a fabricated result.
+
+    Returns a plain dict, never raises:
+    - ``call_id``: the id looked up.
+    - ``events``: the raw event payloads (dicts, already carrying
+      ``trace_id``/``step_id`` per `_observability_fields`) that named this
+      call_id, in the order they were produced — typically
+      ``tool_start`` -> zero or more ``tool_progress`` -> ``tool_output``.
+    - ``artifacts``: see `_artifacts_for_call_id`.
+    - ``receipt``: see `_receipt_for_call_id`, or ``None``.
+    - ``found``: True iff at least ONE of the three turned up something —
+      so a caller can tell "nothing ever happened under this id" apart from
+      "the event is here but the artifact/receipt legitimately isn't".
+    """
+    call_id = str(call_id or "").strip()
+    if not call_id:
+        return {"call_id": "", "events": [], "artifacts": [], "receipt": None, "found": False}
+
+    events: List[Dict[str, Any]] = []
+    seen_raw: set = set()
+
+    def _collect(raw_events) -> None:
+        for ev in raw_events or []:
+            if not isinstance(ev, str) or not ev.startswith("data: ") or call_id not in ev:
+                continue
+            if ev in seen_raw:
+                continue
+            try:
+                payload = json.loads(ev[6:])
+            except (ValueError, TypeError):
+                continue
+            if not isinstance(payload, dict) or str(payload.get("call_id") or "") != call_id:
+                continue
+            seen_raw.add(ev)
+            events.append(payload)
+
+    # Live, still-buffered runs first -- the freshest state for a call that
+    # just happened and has not been persisted (or persistence is off).
+    if session_id:
+        _run = _RUNS.get(session_id)
+        if _run is not None:
+            _collect(_run.buffer)
+    else:
+        for _run in list(_RUNS.values()):
+            _collect(_run.buffer)
+
+    # Persisted logs -- what survives after a run ends or the process
+    # restarts; also covers a session whose run already finished.
+    for path in _trace_log_paths(session_id):
+        _collect(_read_log(path).get("events"))
+
+    receipt = _receipt_for_call_id(call_id)
+    artifacts = _artifacts_for_call_id(call_id)
+
+    return {
+        "call_id": call_id,
+        "events": events,
+        "artifacts": artifacts,
+        "receipt": receipt,
+        "found": bool(events or artifacts or receipt),
+    }
 
 
 def recover_interrupted_runs(session_manager=None) -> List[Dict[str, Any]]:

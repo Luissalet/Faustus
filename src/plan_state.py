@@ -34,14 +34,23 @@ from __future__ import annotations
 import hashlib
 import re
 import unicodedata
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
-STATUSES = ("pending", "done", "blocked")
+#: TASK-05: `needs_review` is a step the tool/model itself never set — only
+#: `apply_steer` (below) does, when a mid-turn correction lands on a step
+#: that is still `pending`. It renders unchecked (like `pending`) so an old
+#: client that only understands checkboxes shows nothing misleading; what it
+#: adds is that the NEXT round must not treat the step as settled.
+STATUSES = ("pending", "done", "blocked", "needs_review")
 
 #: Marks a `[x]` step whose `verified` flag is False, so `to_markdown` never
 #: silently drops it — an old renderer just sees a checked box with a comment.
 UNVERIFIED_MARKER = "<!-- unverified -->"
+#: Marks a step `apply_steer` moved to `needs_review` — round-trips through
+#: markdown the same way `UNVERIFIED_MARKER` does, so re-parsing a plan that
+#: was rendered after a steer does not quietly drop the flag back to `pending`.
+NEEDS_REVIEW_MARKER = "<!-- needs_review -->"
 _BLOCKED_PREFIX = "[blocked]"
 
 _CHECKBOX_RE = re.compile(
@@ -149,6 +158,11 @@ def from_markdown(text: str, *, revision: int = 1) -> Plan:
             unverified = True
             title = title[: -len(UNVERIFIED_MARKER)].rstrip()
 
+        needs_review = False
+        if title.endswith(NEEDS_REVIEW_MARKER):
+            needs_review = True
+            title = title[: -len(NEEDS_REVIEW_MARKER)].rstrip()
+
         blocked = title.lower().startswith(_BLOCKED_PREFIX)
         if blocked:
             title = title[len(_BLOCKED_PREFIX):].strip()
@@ -157,7 +171,14 @@ def from_markdown(text: str, *, revision: int = 1) -> Plan:
             warnings.append(f"line {lineno}: checklist item has no text")
             continue
 
-        status = "blocked" if blocked else ("done" if mark == "x" else "pending")
+        if blocked:
+            status = "blocked"
+        elif mark == "x":
+            status = "done"
+        elif needs_review:
+            status = "needs_review"
+        else:
+            status = "pending"
         step_id = stable_step_id(title, order)
 
         while stack and stack[-1][0] >= indent:
@@ -203,7 +224,12 @@ def to_markdown(plan: Plan) -> str:
         mark = "x" if step.status == "done" else " "
         indent = "  " * depth(step, frozenset())
         title = f"{_BLOCKED_PREFIX} {step.title}" if step.status == "blocked" else step.title
-        suffix = f" {UNVERIFIED_MARKER}" if (step.status == "done" and not step.verified) else ""
+        if step.status == "done" and not step.verified:
+            suffix = f" {UNVERIFIED_MARKER}"
+        elif step.status == "needs_review":
+            suffix = f" {NEEDS_REVIEW_MARKER}"
+        else:
+            suffix = ""
         lines.append(f"{indent}- [{mark}] {title}{suffix}")
     return "\n".join(lines)
 
@@ -278,6 +304,56 @@ def coverage(plan: Plan, requirements: Sequence[str]) -> Dict[str, Any]:
         # whether the plan has any steps at all.
         "complete": not uncovered,
     }
+
+
+#: TASK-05: how much of a PENDING step's own title has to show up in a
+#: steer's words before the steer counts as contradicting/affecting it.
+#: Reuses `coverage()`'s exact overlap idea (deterministic word overlap, no
+#: model) so a correction about one part of the plan does not blanket-mark
+#: every unrelated pending step — only the ones the correction actually
+#: talks about.
+_STEER_OVERLAP_THRESHOLD = _COVERAGE_OVERLAP_THRESHOLD
+
+
+def apply_steer(plan: Plan, steer_text: str) -> Tuple[Plan, List[str]]:
+    """TASK-05: a steer (`agent_runs.take_steers` / `queue_steer`) arrives
+    mid-turn while some plan steps are still `pending`. Left alone, the next
+    round would act on those steps — write a file, for instance — as if the
+    plan still stood exactly as last written, even though the user (or a
+    supervisor) just corrected it. This marks every PENDING step the steer's
+    own words overlap as `needs_review`, so `update_plan` has to look at it
+    again — tick it done, revise it, or drop it — before it is trusted.
+
+    Returns a NEW `Plan` (steps and the input `plan` are never mutated in
+    place — anything else still holding the old `Plan`/`PlanStep` objects,
+    such as an already-yielded `plan_update` payload, is unaffected) plus the
+    ids of the steps it touched, so a caller only re-emits a `plan_update`
+    event when something actually changed. `done` and `blocked` steps are
+    left exactly as they are: a correction that lands after a step is
+    already finished is a new instruction for what comes next, not grounds
+    to reopen settled work (TASK-02/RES-05 own resuming finished units).
+    """
+    steer_words = _coverage_words(steer_text)
+    if not steer_words or not plan.steps:
+        return plan, []
+    affected: List[str] = []
+    new_steps: List[PlanStep] = []
+    note = f"steer: {steer_text.strip()[:200]}" if steer_text.strip() else "steer"
+    for step in plan.steps:
+        if step.status != "pending":
+            new_steps.append(step)
+            continue
+        step_words = _coverage_words(step.title)
+        overlap = (len(steer_words & step_words) / len(step_words)) if step_words else 0.0
+        if overlap < _STEER_OVERLAP_THRESHOLD:
+            new_steps.append(step)
+            continue
+        notes = f"{step.notes}\n{note}".strip() if step.notes else note
+        new_steps.append(replace(step, status="needs_review", notes=notes))
+        affected.append(step.id)
+    if not affected:
+        return plan, []
+    return Plan(steps=new_steps, revision=plan.revision + 1, warnings=list(plan.warnings)), affected
 
 
 def parse_steps_input(data: Any, *, default_revision: int = 1) -> Optional[Plan]:
