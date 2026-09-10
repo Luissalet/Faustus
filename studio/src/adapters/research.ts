@@ -203,6 +203,8 @@ export interface ActiveResearch {
   /** "running", or "interrupted" for a run a server restart killed. */
   status: string;
   error: string;
+  /** The category the run was started with, so a Retry keeps it. */
+  category: string;
 }
 
 export async function activeResearch(signal?: AbortSignal): Promise<ActiveResearch[]> {
@@ -214,6 +216,7 @@ export async function activeResearch(signal?: AbortSignal): Promise<ActiveResear
     startedAt: Number(a.started_at) || 0,
     status: String(a.status ?? 'running'),
     error: typeof a.error === 'string' ? a.error : '',
+    category: typeof a.category === 'string' ? a.category : '',
   }));
 }
 

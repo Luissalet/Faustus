@@ -56,12 +56,13 @@ assert.ok(plan.length > 0 && plan.length < 30, `gave up after ${30 - plan.length
 // 4. /api/research/active carries interrupted runs with their reason
 plan = [[200, { active: [
   { session_id: 'rp-run', query: 'a', status: 'running', progress: { phase: 'searching' }, started_at: 10 },
-  { session_id: 'rp-lost', query: 'b', status: 'interrupted', error: 'The server restarted while this research was running.', progress: { phase: 'error', message: 'x' }, started_at: 5 },
+  { session_id: 'rp-lost', query: 'b', status: 'interrupted', error: 'The server restarted while this research was running.', progress: { phase: 'error', message: 'x' }, started_at: 5, category: 'health' },
 ] }]];
 const active = await research.activeResearch();
 assert.deepEqual(active.map((a) => [a.id, a.status]), [['rp-run', 'running'], ['rp-lost', 'interrupted']]);
 assert.match(active[1].error, /restarted/);
 assert.equal(active[0].error, '');
+assert.deepEqual(active.map((a) => a.category), ['', 'health']);
 
 // 5. dismiss posts, and never throws when the server says no
 plan = [[404, { detail: 'nope' }]];

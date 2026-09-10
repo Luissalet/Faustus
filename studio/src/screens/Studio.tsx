@@ -11,6 +11,7 @@ import {
   loadHistory,
   metricsFrom,
   resumeTurn,
+  streamFailureMessage,
   sendTurn,
   stopChat,
   type ChatSession,
@@ -749,7 +750,7 @@ export function StudioScreen() {
         }
       } catch (error) {
         if (!controller.signal.aborted && controllerRef.current === controller) {
-          patchLast((t) => apply(t, { type: 'error', message: (error as Error).message }));
+          patchLast((t) => apply(t, { type: 'error', message: streamFailureMessage(error) }));
           patchLast((t) => apply(t, { type: 'done' }));
         }
       } finally {

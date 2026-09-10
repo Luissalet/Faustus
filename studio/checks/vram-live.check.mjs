@@ -55,4 +55,11 @@ const unloading = model.apply(blocked, { type: 'vram', phase: 'unloading_model',
 assert.equal(unloading.vram, undefined);
 assert.equal(unloading.live.label, 'Unloading y…');
 
+// the wire breaking is named as such, the model's own error is passed through
+assert.match(chat.streamFailureMessage(new TypeError('Failed to fetch')), /connection to the server dropped/);
+assert.match(chat.streamFailureMessage(new Error('NetworkError when attempting to fetch resource.')), /connection to the server dropped/);
+assert.match(chat.streamFailureMessage(new Error('net::ERR_CONNECTION_RESET')), /connection to the server dropped/);
+assert.equal(chat.streamFailureMessage(new Error('Model qwen3 not found')), 'Model qwen3 not found');
+assert.equal(chat.streamFailureMessage(undefined), 'The turn ended with an error.');
+
 console.log('ok vram-live');

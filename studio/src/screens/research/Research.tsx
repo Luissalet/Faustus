@@ -431,7 +431,7 @@ export function ResearchScreen() {
             .filter((a) => !known.has(a.id))
             .map((a) => {
               const startedAt = a.startedAt ? a.startedAt * 1000 : Date.now();
-              const base: Job = { id: uid(), sessionId: a.id, query: a.query, settings: { ...DEFAULT_SETTINGS }, status: 'running', progress: a.progress, startedAt, finishedAt: 0, result: null, error: '', sourceCount: 0 };
+              const base: Job = { id: uid(), sessionId: a.id, query: a.query, settings: { ...DEFAULT_SETTINGS, category: a.category }, status: 'running', progress: a.progress, startedAt, finishedAt: 0, result: null, error: '', sourceCount: 0 };
               if (a.status !== 'interrupted') return base;
               // A restart killed it: show the card as failed, with Retry, and
               // tell the server it has been seen so it is not shown twice.

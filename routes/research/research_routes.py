@@ -300,6 +300,7 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
                     "status": "running",
                     "progress": entry.get("progress", {}),
                     "started_at": entry.get("started_at", 0),
+                    "category": entry.get("category"),
                 })
         # Runs a restart killed: the screen shows them as failed cards with
         # a Retry, then dismisses them (see research_handler.list_interrupted).

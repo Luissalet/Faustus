@@ -902,6 +902,22 @@ export async function* sendTurn(options: SendOptions): AsyncGenerator<ChatEvent>
 }
 
 /**
+ * What the turn says when the wire broke, not the model.
+ *
+ * A server restart mid-turn (10-09-2026) ended the bubble with the browser's
+ * own words - "Failed to fetch", "network error", "NetworkError when
+ * attempting to fetch resource." - which name nothing the user can do. The
+ * text that was streamed stays on screen; only the reason changes.
+ */
+export function streamFailureMessage(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error ?? '');
+  const wire = error instanceof TypeError
+    || /failed to fetch|network ?error|load failed|connection (was )?(reset|closed|refused|lost)|ERR_(CONNECTION|NETWORK|EMPTY)|socket hang up|aborted by the server/i.test(raw);
+  if (wire) return t('The connection to the server dropped mid-turn. What arrived is kept; if the server restarted, send the message again.');
+  return raw || t('The turn ended with an error.');
+}
+
+/**
  * Reconnects to a run that is still going server-side.
  *
  * A turn does not belong to the tab that started it: the server keeps the
