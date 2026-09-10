@@ -1,6 +1,6 @@
 # Pendientes de cierre
 
-Actualizado: 10-09-2026 (03:00). Sólo trabajo vigente; quitar cada entrada al cerrarla.
+Actualizado: 10-09-2026 (09:30). Sólo trabajo vigente; quitar cada entrada al cerrarla.
 
 ## Comprobaciones pendientes
 
@@ -44,7 +44,39 @@ Las carencias de backend del índice anterior están implementadas; se ha elimin
 Las ampliaciones acordadas viven en OBJETIVOS.md; ahora mismo, OBJ-1 (puerta de admisión de VRAM). Eliminados los índices de UI resueltos; se pueden recuperar del historial Git.
 No contar planes de inspiración o notas de implementación como otra cola de tareas.
 
+## Spec v2 · M1 (rama `feat/spec-v2-m1`)
+
+- **Fusionar a master** cuando Luis lo vea: suite entera en Windows **13.517
+  correctas, 7 fallos**, todos preexistentes (docker, marca, compare_stop,
+  workspace_confine, suite_collects, tls_overrides, doblaje real con la GPU
+  ocupada); en la nube 13.571 correctas y los mismos 9 preexistentes.
+- `FAUSTUS_TOOL_ARG_VALIDATION` nace en `strict`. Si un modelo local empieza
+  a ver «INVALID ARGUMENTS» donde antes la herramienta se apañaba, bajar a
+  `warn` y anotar la forma que envía para añadirla a la reparación.
+- El `ask_user` de historial y el de vivo comparten datos, pero `Studio.tsx`
+  aún no manda `revision` de la pregunta (el store la acepta): pendiente para
+  «revisar en el sitio».
+- `question_store` y `chat_outbox` son SQLite propios en `DATA_DIR`; entran
+  en el backup por defecto, sin credenciales. Purga: 24 h terminadas / 12 h
+  aceptadas (outbox).
+- `qwen3.5:9b` ya no está en Ollama (404 al usarlo) pero sigue en la lista
+  del selector como modelo por defecto de sesiones viejas: el selector
+  debería marcar «no instalado».
+
 ## Última evidencia
+
+- 10-09, 09:30 (spec v2, M1): en el 7001 con `qwen3.8:27b-q4_K_M`, sesión
+  nueva en modo Agente: «Impleméntame un sistema de notificaciones…» → tarjeta
+  ask_user con checklist y `question_id`/ids de opción persistidos; la
+  respuesta desde la tarjeta salió con `question_id`+`option_ids`; reenviar
+  la misma respuesta → **409 already_answered** sin persistir nada; una
+  pregunta inexistente → **409 not_found**. Doble POST simultáneo con el mismo
+  `client_message_id` → un solo mensaje de usuario, el segundo con
+  `X-Faustus-Idempotent-Replay: 1`. `update_plan` de 12 pasos → tarjeta
+  «Plan steps (0/12) · rev 1» igual en vivo y tras recargar, títulos
+  renderizados. Diagnóstico: «Version 1.0.3 · build ae30141 · Studio servido:
+  6cb8f18857», y ese hash es el `?v=` real del HTML servido. `tsc` limpio,
+  i18n `--check` limpio (5.785 cadenas), bundle recompilado.
 
 - 10-09, 02:50: bloque agent_loop/harness/deep_research/research_*/studio_*/vram/chat_vram/agent_runs/local_models/model_load/search_*: **1.270 correctas** (`pytest_final2.txt`, 4:37 min). Nuevas: `test_research_restart_survival.py` (7), `test_studio_research_restart_js.py` (2, con `studio/checks/research-restart.check.mjs`), `test_agent_asks_before_a_new_system.py` (3), `test_workspace_coding_request_spanish.py` (13). `tsc` limpio, i18n `--check` limpio (5.773 cadenas), bundle recompilado, 7001 reiniciado con todo, `ollama ps` vacío al terminar.
 

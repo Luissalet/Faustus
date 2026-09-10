@@ -159,3 +159,65 @@ edición de una línea fue `read_file` → `write_file` sin pregunta.
 - Tarjeta en Transcript con radio/checkbox, campo libre y «Responder».
 - Comprobar en vivo con qwen3.8 27B que la USA cuando toca: pedirle algo
   ambiguo («impleméntame auth») y ver si pregunta o se lanza.
+
+## OBJ-3 · La spec v2: hacer de Faustus el harness definitivo para modelos abiertos
+
+Luis, 10-09-2026: entregó `Faustus_Paquete_Completo.zip` (187 requisitos, 192
+contratos de herramienta, 48 escenarios QA, 8 JSON Schemas) con tres reglas:
+**no se pierde ninguna capacidad, se extiende, reorganiza y mejora**; todo
+se verifica por MCP y por pantalla, no sólo con tests; commits graduales y
+rama aparte sólo si algo puede dejar la app rota.
+
+### Estado (10-09, 09:30) — M0 cerrado, M1 abierto
+
+- **M0.** El paquete entero está en `docs/spec/v2/` (validador incluido:
+  `python docs/spec/v2/validate_examples.py`, necesita `jsonschema[format]`).
+  El mapa BASE-01 (`docs/spec/v2/MAPA_REUTILIZACION.md`) clasifica los 100 P0
+  contra el código real: 18 existentes, 73 parciales, 8 ausentes, 1 no
+  verificable leyendo. Es el punto de partida de cualquier lote: se leen las
+  filas del área antes de abrir un módulo nuevo.
+- **M1, primer incremento vertical (rama `feat/spec-v2-m1`, 13 commits,
+  verificado en vivo en el 7001):**
+  - ARCH-01/CALL-05/OBS-03: `src/contracts/{task,tool,errors}.py` con la
+    máquina de estados de §04, `ToolResult` con los siete estados de §34.5 y
+    la taxonomía cerrada de errores; `GET /api/contracts/schemas[/{name}]`
+    sirve los schemas del paquete. Los 8 ejemplos válidos parsean y los 12
+    negativos se rechazan señalando el campo.
+  - CALL-01/02/03: `src/tool_call_assembler.py` (UTF-8 partido en mitad de
+    «ñ», JSON partido, ids intercalados, claves duplicadas, límites) sustituye
+    al dict por índice de `llm_core` con las mismas tramas SSE;
+    `validate_tool_arguments`/`repair_tool_arguments` y su enganche en
+    `agent_loop` (`FAUSTUS_TOOL_ARG_VALIDATION=strict|warn|off`): tipo, enum y
+    ruta fuera de alcance paran la llamada con error localizado; `"true"`,
+    `"5"` y `"Week"` se reparan; campo desconocido o requisito ausente sólo
+    avisan; la puerta de política va ANTES para no enseñar el schema de lo
+    que no se puede ejecutar.
+  - TASK-01: `update_plan` ya no corta a 8.192; `src/plan_state.py` da pasos
+    con id, estado, dependencias y `verified` (sólo un paso hecho puede
+    estarlo). `plan_update` se persiste en `tool_events` (antes no) y Studio
+    pinta la tarjeta de pasos igual en vivo y desde historial (QA-38).
+  - CALL-07/TASK-04: `ask_user` emite `question_id` e ids de opción;
+    `src/question_store.py` rechaza respuesta tardía, obsoleta o duplicada y
+    nunca lee el silencio como sí (QA-13/14). La respuesta desde la tarjeta
+    viaja con `question_id`+`option_ids`; una obsoleta devuelve 409 sin
+    persistir nada.
+  - UX-02/TASK-03: `client_message_id` + `src/chat_outbox.py`: dos POST con
+    el mismo id → un solo mensaje de usuario y una sola ejecución, el segundo
+    reengancha con `X-Faustus-Idempotent-Replay: 1` (QA-08). Studio guarda el
+    id en un outbox y reintenta con el MISMO id tras una recarga sin acuse.
+  - BASE-01 (UI): `/api/version` dice build (sha+fecha) y el bundle de Studio
+    realmente servido (el `?v=` de `studio.js`); tarjeta en Diagnóstico.
+
+### Qué queda de M1 y qué abre M2 (orden propuesto)
+
+1. CALL-06: reintentos por clase con `outcome_unknown` y conciliación, no
+   optimismo (`src/llm_core.py` 2673-2823 hoy reintenta sin jitter).
+2. TASK-02: reanudar una research por unidades confirmadas (hoy sólo
+   «interrupted» + Reintentar desde cero).
+3. ARCH-03: compilador de configuración efectiva con origen y hash;
+   `_AGENT_RULES` sigue definido dos veces en `agent_loop.py`.
+4. OBS-01: `trace_id`/`step_id` de extremo a extremo (hoy sólo `run_id`).
+5. TOOL-01: registro único versionado de herramientas (hoy repartido en
+   `tool_capabilities`, `tool_schemas` y `TOOL_TAGS`).
+6. EVAL-05: convertir QA-01…48 en regresiones permanentes conforme se cierren.
+
