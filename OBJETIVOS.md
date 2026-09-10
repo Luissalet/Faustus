@@ -100,7 +100,7 @@ y lo considera necesario, te pregunta entre opciones (como haces tú con
 AskUserQuestion): varias opciones para elegir y una para que escribas tú, o
 una checklist. Como lo haces tú, vaya.»
 
-### Estado (10-09, 02:00) — CERRADO
+### Estado (10-09, 02:45) — CERRADO
 
 La herramienta `ask_user` ya existía (`src/agent_tools/interaction_tools.py`)
 y el modelo la usaba; lo que fallaba era la pantalla: el camino en vivo de
@@ -112,9 +112,19 @@ escribir tu propia respuesta; la descripción de la herramienta dice cuándo
 preguntar (un «impleméntame X» con varios diseños razonables), la
 recomendada primero, y que no invente una opción «Otra». Comprobado en vivo
 con qwen3.8 q4: tres bases de datos con descripción, el clic vuelve como
-siguiente mensaje. Pendiente sólo de observación: que el modelo lo use por
-iniciativa propia con más frecuencia (en la prueba, tras la respuesta hizo
-tres preguntas más en prosa).
+siguiente mensaje.
+
+**Iniciativa propia, observada y corregida (10-09, 02:45; 573607c0).** Con
+la descripción de la herramienta como única guía, «Impleméntame en este
+proyecto un sistema para guardar las preferencias de cada usuario» fue
+directo a `preferences.py` (JSON + CLI) sin preguntar. La regla vive ahora
+en las Base rules efectivas y en el bloque «Workspace coding mode»: un
+sistema nuevo con varios diseños razonables se decide con `ask_user`
+**antes** del primer fichero; una edición pequeña se hace sin preguntar.
+Misma petición después: «¿Cómo quieres que sea el sistema de preferencias
+de usuario?» — «Python + JSON (recomendado)», «Node.js + JSON», «Python +
+SQLite» — sin escribir nada; «Python» produjo `user_preferences.py`; y una
+edición de una línea fue `read_file` → `write_file` sin pregunta.
 
 ### Qué tiene que pasar
 

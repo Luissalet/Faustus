@@ -1,16 +1,12 @@
 # Pendientes de cierre
 
-Actualizado: 10-09-2026 (02:10). Sólo trabajo vigente; quitar cada entrada al cerrarla.
+Actualizado: 10-09-2026 (03:00). Sólo trabajo vigente; quitar cada entrada al cerrarla.
 
 ## Comprobaciones pendientes
 
 - **Voz física:** conversación completa con micrófono en español e inglés. No activar grabación ni permisos para cerrar esta casilla sin intervención del usuario.
 
 - **Docker Desktop y el entorno del puente MCP.** Toda la noche del 08-09 se cayó al arrancar con `unable to get 'ProgramData'` cuando lo lanzaba una sesión a través del puente (cuatro vías probadas: directa, con el entorno repuesto, vía `explorer.exe` y como tarea programada interactiva). Lanzado por Luis a las 22:12 arrancó a la primera. El puente entrega un PowerShell **sin `ProgramData` ni `ALLUSERSPROFILE`**; anotado por si vuelve a aparecer con otro programa.
-
-- **Discover marca «installed» sólo por nombre exacto.** `qwen3.8:27b-q4_K_M` está instalado pero la etiqueta `27b` del catálogo sale con «Pull»; sólo `27b-q8_0` aparece como instalada. Cosmético; la comparación debería tolerar el alias de cuantización por defecto.
-
-- **Que el modelo use `ask_user` por iniciativa propia.** La tarjeta y la herramienta funcionan (OBJ-2); falta observar en uso real si un «impleméntame X» ambiguo dispara la pregunta o el modelo tira por la calle de en medio. Si no, tocar la política del agente (`agent_harness` ya lo sugiere en dos sitios).
 
 - **`OLLAMA_MAX_LOADED_MODELS=1` en el entorno de Ollama** para lo que no pasa por Faustus (`ollama run` en una terminal). No es código nuestro: es una variable en el servicio de Ollama de la máquina de Luis.
 
@@ -34,6 +30,10 @@ Las tres GPUs son reales: RTX 4070 Ti (12 GB) + dos RTX 5060 Ti (16 GB) = 43,9 G
 
 12. **(10-09, 02:00) Segunda tanda de QoL/fiabilidad**: puerta de VRAM en el turno de chat (OBJ-1 cerrado, comprobado en vivo); modo y tiempo de la puerta y los dos ajustes de research local en Ajustes › Sistema; las advertencias de una research (un solo motor, síntesis fallida, páginas ya leídas) se quedan en la tarjeta en vez de pasar por la línea de fase y perderse; aviso rojo en Modelos locales › Cargados cuando hay dos modelos grandes (≥8 GB) residentes a la vez; «Esperando tu permiso» en el resumen de turno de una pregunta ya dice «Esperando tu respuesta».
 
+13. **(10-09, 02:45) El agente pregunta antes de construir — comprobado en vivo y corregido.** Prueba real en la 7001 con `qwen3.8:27b-q4_K_M` y un workspace: «Impleméntame en este proyecto un sistema para guardar las preferencias de cada usuario» → el modelo leyó los cinco ficheros y escribió `preferences.py` (JSON + CLI) sin preguntar nada. La descripción de la herramienta no basta con un modelo local. Ahora las **Base rules** (las efectivas: `src/agent_loop.py` define `_AGENT_RULES` dos veces y la segunda es la que llega al modelo) y el bloque «Workspace coding mode» dicen que un sistema nuevo con varios diseños razonables (dónde viven los datos, lenguaje/framework, dónde va, alcance) se decide con `ask_user` **antes** de escribir nada; una edición pequeña se hace sin preguntar. Repetida la misma petición: «¿Cómo quieres que sea el sistema de preferencias de usuario?» con «Python + JSON (recomendado)», «Node.js + JSON», «Python + SQLite», ningún fichero escrito; «Python» como respuesta produjo `user_preferences.py`; y «Cambia el contenido de saludo.txt para que diga: hola de nuevo» fue `read_file` → `write_file` sin pregunta (573607c0). De paso: esa frase se clasificaba como *low-signal* (`.txt` no contaba como objetivo y «impleméntame» —acento + pronombre— no casaba con ningún verbo), así que el suelo de herramientas de escritura no se enviaba y el turno dependía de que el RAG trajera `write_file` por casualidad; corregidos los verbos con acento/enclítico y las extensiones `.txt/.csv/.tsv/.xml/.svg/.log`.
+
+14. **(10-09, 02:30) Una research sobrevive al reinicio del servidor** (19030635, 486b4a10). Antes vivía sólo en memoria: tras un reinicio la tarjeta decía «La investigación ha fallado» bajo el último mensaje de ronda y una pantalla recargada no la mostraba. Ahora un marcador JSON registra la ejecución desde el primer segundo (running / cancelled / error, sin pisar nunca un informe guardado ni salir en la biblioteca); al arrancar, todo marcador «running» pasa a **interrupted**, `/api/research/active` los lista con su categoría y la pantalla los adopta como tarjeta fallida con **Reintentar** («El servidor se reinició mientras esta investigación estaba en marcha. Reintentar la vuelve a empezar»), y los descarta en el servidor (`POST /api/research/{id}/dismiss`). El seguidor aguanta un corte de red de hasta 60 s (20 × 3 s) en vez de rendirse al primer error. Comprobado en vivo: research arrancada, servidor matado a los 4 s y reiniciado → `active` = interrupted, `status` con la razón, biblioteca sin el marcador, dismiss → vacío, `ollama ps` vacío. También: `assess()` de la puerta de VRAM responde con un solo `/api/ps` cuando el modelo ya está dentro (2b1c7fc5), y el turno de chat dice «Se perdió la conexión con el servidor a mitad del turno…» en vez del «Failed to fetch» del navegador.
+
 ## Lo que rompió la máquina el 08-09 (regla, no anécdota)
 
 Dos 27B dentro a la vez —`q8_0` residente de una prueba (33 GB, con spill) y `q4_K_M` cargado por una research (17 GB)— más un build de Vite, dos tandas de pytest y siete procesos de Docker Desktop, superaron el **commit limit** de la máquina (147,7 GB = 128 de RAM + 20 de pagefile). La cascada, en orden: `cudaMalloc failed: out of memory` en la ronda 2, `MemoryError` en el servidor, `can't start new thread`, y después ni PowerShell arrancaba (`0xC000012D`, STATUS_COMMITMENT_LIMIT). El escritorio se quedó en negro con una sola ventana de error.
@@ -45,6 +45,8 @@ Las ampliaciones acordadas viven en OBJETIVOS.md; ahora mismo, OBJ-1 (puerta de 
 No contar planes de inspiración o notas de implementación como otra cola de tareas.
 
 ## Última evidencia
+
+- 10-09, 02:50: bloque agent_loop/harness/deep_research/research_*/studio_*/vram/chat_vram/agent_runs/local_models/model_load/search_*: **1.270 correctas** (`pytest_final2.txt`, 4:37 min). Nuevas: `test_research_restart_survival.py` (7), `test_studio_research_restart_js.py` (2, con `studio/checks/research-restart.check.mjs`), `test_agent_asks_before_a_new_system.py` (3), `test_workspace_coding_request_spanish.py` (13). `tsc` limpio, i18n `--check` limpio (5.773 cadenas), bundle recompilado, 7001 reiniciado con todo, `ollama ps` vacío al terminar.
 
 - 10-09, 02:00: `tests/test_chat_vram_gate.py` (8), `test_studio_ask_user_options_js.py` (3), `test_studio_vram_live_js.py` (2) nuevos; bloque agent_runs/chat/ask_user/studio: **76 correctas**; guards **11**. `tsc` limpio, i18n `--check` limpio (5.767 cadenas).
 
