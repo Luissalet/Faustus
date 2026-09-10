@@ -1426,15 +1426,20 @@ _WORKSPACE_CODE_ACTION_RE = re.compile(
     # `anade`/`anadir` (no tilde) as well as `añade`/`añadir`: typing Spanish
     # without accents is normal, and the reported incident opened with "Anade
     # a cart.py ..." — which matched no action verb at all.
-    r"añad[ea]|añadir|anad[ea]|anadir|agreg[ao]|agregar|cre[ao]|crear|implement[ao]|implementar|"
-    r"arregl[ao]|arreglar|corrig[eo]|corregir|modific[ao]|modificar|cambi[ao]|cambiar|"
-    r"elimin[ao]|eliminar|borr[ao]|borrar|quit[ao]|quitar|actualiz[ao]|actualizar|"
-    r"refactoriz[ao]|refactorizar|muev[eo]|mover|renombr[ao]|renombrar|revis[ao]|revisar|"
-    r"le[eo]|leer|busc[ao]|buscar|ejecut[ao]|ejecutar|prueb[ao]|probar|compil[ao]|compilar|"
-    r"instal[ao]|instalar|escrib[eo]|escribir|programa|desarroll[ao]|desarrollar|"
-    r"integr[ao]|integrar|conect[ao]|conectar|repar[ao]|reparar|soluciona|solucionar|"
-    r"depur[ao]|depurar|mejor[ao]|mejorar|optimiz[ao]|optimizar|ajust[ao]|ajustar|"
-    r"pon(?:er|le|e)|mete|meter|haz|hacer)\b",
+    # Imperatives with an enclitic pronoun carry a written accent on the stem
+    # and a tail - "Impleméntame", "cámbialo", "añádele", "arréglalo", "ponlo"
+    # (10-09-2026: "Impleméntame en este proyecto..." only entered code mode
+    # because "guardar" appeared later in the sentence). The stressed vowel
+    # accepts both spellings and the tail is optional.
+    r"(?:a[ñn][aá]d[ea]|añadir|anadir|agr[eé]g[ao]|agregar|cr[eé][ao]|crear|impl[eé]m[eé]nt[ao]|implementar|"
+    r"arr[eé]gl[ao]|arreglar|corr[ií]g[eo]|corregir|modif[ií]c[ao]|modificar|c[aá]mbi[ao]|cambiar|"
+    r"elim[ií]n[ao]|eliminar|b[oó]rr[ao]|borrar|qu[ií]t[ao]|quitar|actual[ií]z[ao]|actualizar|"
+    r"refactor[ií]z[ao]|refactorizar|mu[eé]v[eo]|mover|ren[oó]mbr[ao]|renombrar|rev[ií]s[ao]|revisar|"
+    r"l[eé][eo]|leer|b[uú]sc[ao]|buscar|ejec[uú]t[ao]|ejecutar|pru[eé]b[ao]|probar|comp[ií]l[ao]|compilar|"
+    r"inst[aá]l[ao]|instalar|escr[ií]b[eo]|escribir|programa|desarr[oó]ll[ao]|desarrollar|"
+    r"int[eé]gr[ao]|integrar|con[eé]ct[ao]|conectar|rep[aá]r[ao]|reparar|soluciona|solucionar|"
+    r"dep[uú]r[ao]|depurar|mej[oó]r[ao]|mejorar|optim[ií]z[ao]|optimizar|aj[uú]st[ao]|ajustar|"
+    r"p[oó]n(?:er|le|e)?|m[eé]te|meter|h[aá]z|hacer)(?:me|te|nos|se|l[oae]s?)?)\b",
     re.IGNORECASE,
 )
 _WORKSPACE_CODE_TARGET_RE = re.compile(
@@ -1461,7 +1466,7 @@ _WORKSPACE_CODE_TARGET_RE = re.compile(
     r"|(?:\b[\w.-]+\.(?:py|pyi|js|mjs|cjs|jsx|ts|tsx|vue|svelte|go|rs|rb|php|"
     r"java|kt|kts|swift|scala|c|h|cc|cpp|hpp|cs|sh|bash|zsh|ps1|sql|html|htm|"
     r"css|scss|sass|less|json|jsonc|ya?ml|toml|ini|cfg|conf|env|lock|gradle|"
-    r"mk|cmake|md|rst)\b)",
+    r"mk|cmake|md|rst|txt|csv|tsv|xml|svg|log)\b)",
     re.IGNORECASE,
 )
 _EXPLICIT_WORKSPACE_REFERENCE_RE = re.compile(
