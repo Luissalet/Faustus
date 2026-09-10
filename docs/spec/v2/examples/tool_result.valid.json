@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0",
+  "call_id": "call_patch_01",
+  "attempt_id": "attempt_01",
+  "status": "conflict",
+  "output": null,
+  "evidence_refs": [],
+  "effects": [],
+  "error": {
+    "code": "BASE_REVISION_MISMATCH",
+    "message": "El archivo cambió después de leerlo.",
+    "retryable": false,
+    "next_action": "read_current_and_reconcile"
+  },
+  "uncertainty": null
+}

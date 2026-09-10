@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0",
+  "event_id": "ev_0012",
+  "stream_id": "stream_demo",
+  "sequence": 12,
+  "task_id": "task_demo",
+  "run_id": "run_demo_02",
+  "type": "tool.result",
+  "timestamp": "2026-09-10T05:00:00Z",
+  "visibility": "user",
+  "payload": {
+    "call_id": "call_patch_01",
+    "status": "conflict",
+    "result_ref": "artifact:result_01"
+  }
+}

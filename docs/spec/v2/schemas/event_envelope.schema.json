@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:faustus:proposal:event_envelope:1.0",
+  "title": "event_envelope (propuesta v1)",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "event_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9_.:-]+$"
+    },
+    "stream_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9_.:-]+$"
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9_.:-]+$"
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9_.:-]+$"
+    },
+    "type": {
+      "enum": [
+        "task.state_changed",
+        "run.phase",
+        "model.delta",
+        "tool.started",
+        "tool.result",
+        "question.opened",
+        "question.resolved",
+        "approval.opened",
+        "approval.resolved",
+        "artifact.ready",
+        "checkpoint.created",
+        "warning",
+        "run.terminal"
+      ]
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "visibility": {
+      "enum": [
+        "user",
+        "diagnostic"
+      ]
+    },
+    "payload": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "schema_version",
+    "event_id",
+    "stream_id",
+    "sequence",
+    "task_id",
+    "run_id",
+    "type",
+    "timestamp",
+    "visibility",
+    "payload"
+  ]
+}

@@ -1,0 +1,51 @@
+{
+  "schema_version": "1.0",
+  "task_id": "task_demo",
+  "owner_id": "owner_demo",
+  "project_id": "project_demo",
+  "request_ref": "message:request_01",
+  "revision": 3,
+  "state": "running",
+  "constraints": [
+    "No modificar archivos ajenos al workspace."
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "criterion_01",
+      "description": "Guardar y recuperar preferencias del usuario.",
+      "state": "pending",
+      "evidence_refs": []
+    }
+  ],
+  "plan_steps": [
+    {
+      "id": "step_01",
+      "title": "Inspeccionar almacenamiento actual",
+      "state": "done",
+      "depends_on": [],
+      "evidence_refs": [
+        "evi_file_01"
+      ]
+    },
+    {
+      "id": "step_02",
+      "title": "Elegir diseño",
+      "state": "active",
+      "depends_on": [
+        "step_01"
+      ],
+      "evidence_refs": []
+    }
+  ],
+  "decisions": [],
+  "evidence_refs": [
+    "evi_file_01"
+  ],
+  "budget": {
+    "max_tool_calls": 30,
+    "used_tool_calls": 2,
+    "max_output_tokens": 12000,
+    "remote_cost_limit": 0
+  },
+  "active_run_id": "run_demo_02"
+}

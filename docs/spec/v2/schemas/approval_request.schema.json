@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:faustus:proposal:approval_request:1.0",
+  "title": "approval_request (propuesta v1)",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "request_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9_.:-]+$"
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9_.:-]+$"
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9_.:-]+$"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "call_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9_.:-]+$"
+    },
+    "tool_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "payload_digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "resource_refs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 512
+      },
+      "maxItems": 100
+    },
+    "effect_preview": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 8000
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "state": {
+      "enum": [
+        "pending",
+        "approved",
+        "denied",
+        "expired",
+        "invalidated"
+      ]
+    },
+    "decision_scope": {
+      "enum": [
+        "once",
+        "task_bounded",
+        "policy_bounded"
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "request_id",
+    "task_id",
+    "run_id",
+    "revision",
+    "call_id",
+    "tool_name",
+    "payload_digest",
+    "resource_refs",
+    "effect_preview",
+    "expires_at",
+    "state",
+    "decision_scope"
+  ]
+}

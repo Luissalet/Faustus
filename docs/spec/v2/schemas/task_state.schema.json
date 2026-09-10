@@ -1,0 +1,281 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:faustus:proposal:task_state:1.0",
+  "title": "task_state (propuesta v1)",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9_.:-]+$"
+    },
+    "owner_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9_.:-]+$"
+    },
+    "project_id": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_.:-]+$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "request_ref": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "state": {
+      "enum": [
+        "draft",
+        "ready",
+        "running",
+        "waiting_user",
+        "waiting_approval",
+        "waiting_resource",
+        "paused",
+        "interrupted",
+        "blocked",
+        "verifying",
+        "succeeded",
+        "partial",
+        "failed",
+        "cancelled"
+      ]
+    },
+    "constraints": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 512
+      },
+      "maxItems": 500
+    },
+    "acceptance_criteria": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_.:-]+$"
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000
+          },
+          "state": {
+            "enum": [
+              "pending",
+              "proven",
+              "unmet",
+              "not_checked",
+              "not_applicable"
+            ]
+          },
+          "evidence_refs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_.:-]+$"
+            },
+            "maxItems": 100
+          }
+        },
+        "required": [
+          "id",
+          "description",
+          "state",
+          "evidence_refs"
+        ]
+      },
+      "maxItems": 500
+    },
+    "plan_steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_.:-]+$"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "state": {
+            "enum": [
+              "pending",
+              "active",
+              "done",
+              "blocked",
+              "skipped"
+            ]
+          },
+          "depends_on": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_.:-]+$"
+            },
+            "maxItems": 100
+          },
+          "evidence_refs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_.:-]+$"
+            },
+            "maxItems": 100
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "state",
+          "depends_on",
+          "evidence_refs"
+        ]
+      },
+      "maxItems": 1000
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_.:-]+$"
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "source_ref": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        },
+        "required": [
+          "id",
+          "summary",
+          "source_ref"
+        ]
+      },
+      "maxItems": 500
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "pattern": "^[A-Za-z0-9_.:-]+$"
+      },
+      "maxItems": 1000
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_tool_calls": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "used_tool_calls": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_output_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "remote_cost_limit": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "max_tool_calls",
+        "used_tool_calls",
+        "max_output_tokens",
+        "remote_cost_limit"
+      ]
+    },
+    "active_run_id": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_.:-]+$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "task_id",
+    "owner_id",
+    "project_id",
+    "request_ref",
+    "revision",
+    "state",
+    "constraints",
+    "acceptance_criteria",
+    "plan_steps",
+    "decisions",
+    "evidence_refs",
+    "budget",
+    "active_run_id"
+  ]
+}

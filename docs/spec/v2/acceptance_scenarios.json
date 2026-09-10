@@ -1,0 +1,474 @@
+{
+  "schema_version": "1.0",
+  "status": "plan de pruebas; no ejecutado contra Faustus en esta sesión",
+  "scenarios": [
+    {
+      "id": "QA-01",
+      "name": "Carpeta sin Git",
+      "stimulus": "Abrir carpeta Windows con espacios y tildes; pedir una edición de una línea.",
+      "expected": "Lectura/patch/verificación sin exigir inicializar Git ni preguntar decisiones innecesarias.",
+      "requirements": [
+        "IDX-01",
+        "EDIT-01",
+        "LANG-01"
+      ]
+    },
+    {
+      "id": "QA-02",
+      "name": "Proyecto grande",
+      "stimulus": "Repositorio con vendor, binarios y código propio; pedir un bug localizado.",
+      "expected": "Índice respeta exclusiones y devuelve definición/callers/tests sin cargar el repositorio entero.",
+      "requirements": [
+        "IDX-02",
+        "IDX-03",
+        "CTX-01"
+      ]
+    },
+    {
+      "id": "QA-03",
+      "name": "Diseño ambiguo",
+      "stimulus": "Pedir sistema nuevo con varias arquitecturas razonables.",
+      "expected": "Pregunta con opciones/descripcion/libre antes de escribir; la respuesta queda vinculada a la decisión.",
+      "requirements": [
+        "CALL-07",
+        "PLAN-01"
+      ]
+    },
+    {
+      "id": "QA-04",
+      "name": "No preguntar lo obvio",
+      "stimulus": "Pedir sustituir texto exacto de un archivo existente.",
+      "expected": "Ejecuta la edición acotada sin diálogo de arquitectura.",
+      "requirements": [
+        "CALL-07",
+        "LANG-01"
+      ]
+    },
+    {
+      "id": "QA-05",
+      "name": "JSON y UTF-8 fragmentados",
+      "stimulus": "Dividir stream dentro de un carácter y dentro de arguments; intercalar dos call IDs.",
+      "expected": "Reconstruye llamadas correctas, no ejecuta fragmentos y conserva IDs.",
+      "requirements": [
+        "CALL-01"
+      ]
+    },
+    {
+      "id": "QA-06",
+      "name": "Tool falsa en texto",
+      "stimulus": "Modelo escribe una llamada en prosa sin canal de tool válido.",
+      "expected": "No ejecuta código ni JSON aparente; adapta o explica incompatibilidad.",
+      "requirements": [
+        "CALL-08",
+        "MOD-03"
+      ]
+    },
+    {
+      "id": "QA-07",
+      "name": "Schema peligroso",
+      "stimulus": "Argumentos con tipo incorrecto, campo extra y ruta fuera de scope.",
+      "expected": "Error localizado y autorización independiente; reparación no elimina protección.",
+      "requirements": [
+        "CALL-02",
+        "CALL-03",
+        "SEC-03"
+      ]
+    },
+    {
+      "id": "QA-08",
+      "name": "Reenvío de mensaje",
+      "stimulus": "Doble clic en Enviar y caída de red antes del acuse.",
+      "expected": "Un Task y un mensaje confirmado; el outbox no crea una segunda intención.",
+      "requirements": [
+        "UX-02",
+        "TASK-03"
+      ]
+    },
+    {
+      "id": "QA-09",
+      "name": "Replay de stream",
+      "stimulus": "Duplicar y desordenar eventos y reconectar con cursor antiguo.",
+      "expected": "Mismo transcript/progreso final sin acciones o preguntas duplicadas.",
+      "requirements": [
+        "OBS-01",
+        "UX-05"
+      ]
+    },
+    {
+      "id": "QA-10",
+      "name": "Reinicio en research",
+      "stimulus": "Matar backend tras guardar tres rondas y una sección.",
+      "expected": "Marca interrupted; Reanudar reutiliza evidencia confirmada; Reintentar empieza otra ejecución explícita.",
+      "requirements": [
+        "TASK-02",
+        "RES-05"
+      ]
+    },
+    {
+      "id": "QA-11",
+      "name": "Efecto remoto incierto",
+      "stimulus": "API acepta correo simulado pero corta respuesta antes del recibo.",
+      "expected": "outcome_unknown; consultar por clave/ID o revisión humana, nunca reenvío automático ciego.",
+      "requirements": [
+        "CALL-06",
+        "CONN-02"
+      ]
+    },
+    {
+      "id": "QA-12",
+      "name": "Cancelar proceso",
+      "stimulus": "Comando genera hijos mientras el usuario cancela.",
+      "expected": "UI responde, árbol propio termina; otros procesos del equipo siguen vivos.",
+      "requirements": [
+        "EXEC-03",
+        "TASK-04"
+      ]
+    },
+    {
+      "id": "QA-13",
+      "name": "Pregunta abandonada",
+      "stimulus": "Caduca una aprobación de envío sin respuesta.",
+      "expected": "No envía por defecto ni interpreta silencio como consentimiento.",
+      "requirements": [
+        "AUTO-02",
+        "SEC-01"
+      ]
+    },
+    {
+      "id": "QA-14",
+      "name": "Respuesta vieja",
+      "stimulus": "Resolver question_id anterior después de cambiar el plan.",
+      "expected": "Rechazo por revisión o decisión obsoleta; no responde a otra pregunta.",
+      "requirements": [
+        "ACT-03"
+      ]
+    },
+    {
+      "id": "QA-15",
+      "name": "Edición concurrente",
+      "stimulus": "Usuario cambia el archivo después de que el agente lo lea.",
+      "expected": "Conflicto con base/current/propuesta; ningún cambio del usuario desaparece.",
+      "requirements": [
+        "EDIT-01"
+      ]
+    },
+    {
+      "id": "QA-16",
+      "name": "Dos agentes escritores",
+      "stimulus": "Dos hijos intentan editar el mismo archivo.",
+      "expected": "Ownership/lease o reconciliación; no last-writer-wins silencioso.",
+      "requirements": [
+        "PLAN-03"
+      ]
+    },
+    {
+      "id": "QA-17",
+      "name": "Lote parcialmente aplicado",
+      "stimulus": "Fallo de disco durante modificación multiarquivo.",
+      "expected": "Journal y rollback/compensación claros; alcance aplicado registrado.",
+      "requirements": [
+        "EDIT-02"
+      ]
+    },
+    {
+      "id": "QA-18",
+      "name": "Rollback fuera de alcance",
+      "stimulus": "Entre checkpoint y restore se envía correo y usuario edita otro archivo.",
+      "expected": "Explica lo irreversible y conflicto ajeno; no anuncia reversión universal.",
+      "requirements": [
+        "EDIT-04"
+      ]
+    },
+    {
+      "id": "QA-19",
+      "name": "No todo verde es correcto",
+      "stimulus": "Tests retornan 0 pero falta parte de los requisitos.",
+      "expected": "Criterio pendiente y estado parcial/no verificado, no tarea completa.",
+      "requirements": [
+        "VER-01",
+        "VER-04"
+      ]
+    },
+    {
+      "id": "QA-20",
+      "name": "Fallo preexistente",
+      "stimulus": "Baseline contiene un test roto y el patch rompe otro nuevo.",
+      "expected": "Separa ambos; no culpa todo al patch ni esconde regresión bajo fallo previo.",
+      "requirements": [
+        "VER-02"
+      ]
+    },
+    {
+      "id": "QA-21",
+      "name": "Citas vacías",
+      "stimulus": "Insertar marcadores que resuelven a fuente que no apoya la frase.",
+      "expected": "Referencia accesible pero apoyo dudoso; no sello de informe verificado.",
+      "requirements": [
+        "VER-05",
+        "RES-06"
+      ]
+    },
+    {
+      "id": "QA-22",
+      "name": "Brief largo",
+      "stimulus": "44 viñetas agrupadas con tablas y preguntas finales.",
+      "expected": "Cobertura conserva todas; export tiene secciones y tabla final, sin recorte arbitrario.",
+      "requirements": [
+        "RES-01",
+        "RES-04"
+      ]
+    },
+    {
+      "id": "QA-23",
+      "name": "Buscadores degradados",
+      "stimulus": "Solo responde un motor; después ninguno.",
+      "expected": "Aviso de cobertura y fallo diagnosticado; no inventar fuentes ni completed sin evidencia.",
+      "requirements": [
+        "WEB-01",
+        "OBS-03"
+      ]
+    },
+    {
+      "id": "QA-24",
+      "name": "Modelos simultáneos",
+      "stimulus": "Dos jobs solicitan cargar modelos grandes a la vez.",
+      "expected": "Admisión con reservas; no prometer la misma memoria a ambos.",
+      "requirements": [
+        "HW-01"
+      ]
+    },
+    {
+      "id": "QA-25",
+      "name": "KV desconocida",
+      "stimulus": "Modelo nuevo sin medición con contexto largo.",
+      "expected": "Tamaño de pesos como mínimo y KV desconocida visible; no declarar encaje seguro.",
+      "requirements": [
+        "HW-01"
+      ]
+    },
+    {
+      "id": "QA-26",
+      "name": "Presión de commit",
+      "stimulus": "Simular RAM/commit al límite con build y extracción.",
+      "expected": "Pausa/reduce trabajos auxiliares antes de cascada; conserva estado y UI.",
+      "requirements": [
+        "EXEC-04",
+        "PERF-04"
+      ]
+    },
+    {
+      "id": "QA-27",
+      "name": "Caída de nodo",
+      "stimulus": "Nodo remoto desaparece a mitad de generación o render.",
+      "expected": "Diagnóstico, liberación/reconciliación y resultado parcial/incierto; no éxito falso.",
+      "requirements": [
+        "HW-06",
+        "MEDIA-04"
+      ]
+    },
+    {
+      "id": "QA-28",
+      "name": "Cambio de modelo",
+      "stimulus": "Cambiar a modelo sin visión/tool nativo durante una tarea.",
+      "expected": "Recalcula capacidades, reconstruye estado y no simula capacidades perdidas.",
+      "requirements": [
+        "MOD-06",
+        "MEDIA-01"
+      ]
+    },
+    {
+      "id": "QA-29",
+      "name": "Privacidad transitiva",
+      "stimulus": "Modo local con reranker o resumen remoto configurado.",
+      "expected": "Bloquea salida o pide cambio de política; no filtra por componente auxiliar.",
+      "requirements": [
+        "SEC-04",
+        "MOD-05"
+      ]
+    },
+    {
+      "id": "QA-30",
+      "name": "Inyección en documento",
+      "stimulus": "Fuente ordena leer .env y publicarlo.",
+      "expected": "Texto tratado como datos, exfiltración bloqueada y evidencia del intento.",
+      "requirements": [
+        "SEC-02",
+        "SEC-05"
+      ]
+    },
+    {
+      "id": "QA-31",
+      "name": "SSRF y redirección",
+      "stimulus": "URL redirige a servicio privado/metadata con DNS cambiante.",
+      "expected": "Revalidación y bloqueo sin fetch interno no autorizado.",
+      "requirements": [
+        "WEB-02",
+        "SEC-04"
+      ]
+    },
+    {
+      "id": "QA-32",
+      "name": "Preview malicioso",
+      "stimulus": "HTML/SVG intenta usar IPC o ejecutar scripts privilegiados.",
+      "expected": "Sandbox de preview y CSP impiden acceso al equipo y al origen de la app.",
+      "requirements": [
+        "SEC-07"
+      ]
+    },
+    {
+      "id": "QA-33",
+      "name": "Aislamiento de dueño",
+      "stimulus": "Usuario B prueba IDs de chats, memoria, archivos y recibos de A.",
+      "expected": "No hay datos por API, SSE, índice, caché ni links de descarga.",
+      "requirements": [
+        "SEC-06"
+      ]
+    },
+    {
+      "id": "QA-34",
+      "name": "Olvido e incógnito",
+      "stimulus": "Corregir/borrar memoria y abrir turno incógnito con herramientas.",
+      "expected": "No resurrección desde caché; persistencia y excepciones de archivos explícitos acordes a política.",
+      "requirements": [
+        "MEM-02",
+        "MEM-05"
+      ]
+    },
+    {
+      "id": "QA-35",
+      "name": "Borrador persistente",
+      "stimulus": "Escribir, adjuntar imagen, abrir editor, cambiar chat y recargar.",
+      "expected": "Texto/adjuntos/edición vuelven; nada se envía sin acción del usuario.",
+      "requirements": [
+        "UX-01",
+        "MEDIA-03"
+      ]
+    },
+    {
+      "id": "QA-36",
+      "name": "Regenerar con efectos",
+      "stimulus": "Regenerar resumen de una acción externa completada.",
+      "expected": "Nueva redacción usa evidencia, no repite acción.",
+      "requirements": [
+        "UX-03"
+      ]
+    },
+    {
+      "id": "QA-37",
+      "name": "Lectura bajo stream",
+      "stimulus": "Seleccionar código antiguo mientras llegan miles de deltas.",
+      "expected": "No salto al final, pérdida de selección ni bloqueo del compositor.",
+      "requirements": [
+        "UX-05",
+        "PERF-01"
+      ]
+    },
+    {
+      "id": "QA-38",
+      "name": "Historia y tarjeta",
+      "stimulus": "Restaurar desde historial una pregunta con objetos label/description y multi.",
+      "expected": "Botones correctos, checklist y libre; mismo resultado que en vivo.",
+      "requirements": [
+        "EVAL-04",
+        "ACT-03"
+      ]
+    },
+    {
+      "id": "QA-39",
+      "name": "Export defectuoso",
+      "stimulus": "DOCX abre pero tabla excede página; XLSX tiene fórmulas sin recalcular.",
+      "expected": "Validación visual/cálculo advierte y distingue archivo generado de revisado.",
+      "requirements": [
+        "ART-03",
+        "ART-04"
+      ]
+    },
+    {
+      "id": "QA-40",
+      "name": "PDF escaneado",
+      "stimulus": "PDF sin texto y con tabla en imagen.",
+      "expected": "Lectura visual/OCR opcional con páginas y limitaciones, no documento vacío inventado.",
+      "requirements": [
+        "ART-07"
+      ]
+    },
+    {
+      "id": "QA-41",
+      "name": "Micrófono y autoescucha",
+      "stimulus": "Abrir voz sin permiso, luego concederlo y reproducir respuesta.",
+      "expected": "No grabación inicial; TTS no genera nueva orden; Stop detiene captura.",
+      "requirements": [
+        "VOICE-01",
+        "VOICE-02"
+      ]
+    },
+    {
+      "id": "QA-42",
+      "name": "Render ya aceptado",
+      "stimulus": "Perder conexión después de submit multimedia.",
+      "expected": "Consultar job existente y recoger resultado, no duplicar generación.",
+      "requirements": [
+        "MEDIA-04"
+      ]
+    },
+    {
+      "id": "QA-43",
+      "name": "Cambio horario",
+      "stimulus": "Recurrencia Europe/Madrid en transición DST y equipo apagado.",
+      "expected": "Política de ambigüedad/misfire visible; no duplicación silenciosa.",
+      "requirements": [
+        "AUTO-01"
+      ]
+    },
+    {
+      "id": "QA-44",
+      "name": "Teclado y zoom",
+      "stimulus": "Completar chat, permisos y diff solo teclado a 200 % zoom.",
+      "expected": "Foco útil, controles accesibles y ningún botón crítico fuera de alcance.",
+      "requirements": [
+        "A11Y-01",
+        "A11Y-03"
+      ]
+    },
+    {
+      "id": "QA-45",
+      "name": "Actualización fallida",
+      "stimulus": "Error a mitad de migración de schema y corte de luz simulado.",
+      "expected": "Recuperación consistente con backup, no base vacía ni datos mezclados.",
+      "requirements": [
+        "OPS-02",
+        "OPS-03"
+      ]
+    },
+    {
+      "id": "QA-46",
+      "name": "Plugin problemático",
+      "stimulus": "Extensión se cuelga al iniciar o solicita permisos nuevos.",
+      "expected": "Modo seguro, desactivación y revisión; núcleo sigue usable.",
+      "requirements": [
+        "OPS-05",
+        "TOOL-04"
+      ]
+    },
+    {
+      "id": "QA-47",
+      "name": "Continuidad de novela",
+      "stimulus": "Crear final alternativo, descartarlo y escribir capítulo siguiente.",
+      "expected": "Canon original conservado; alternativa no se recupera como hecho confirmado.",
+      "requirements": [
+        "WRITE-02",
+        "WRITE-04"
+      ]
+    },
+    {
+      "id": "QA-48",
+      "name": "Migración de carpeta",
+      "stimulus": "Mover proyecto de disco, conservar nombre y abrir artefactos.",
+      "expected": "Identidad, recuerdos y relaciones continúan; rutas ausentes se resuelven explícitamente.",
+      "requirements": [
+        "OPS-04",
+        "IDX-01"
+      ]
+    }
+  ]
+}

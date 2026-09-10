@@ -1,0 +1,25 @@
+{
+  "schema_version": "1.0",
+  "question_id": "question_01",
+  "task_id": "task_demo",
+  "run_id": "run_demo_02",
+  "revision": 1,
+  "question": "¿Dónde deben persistirse las preferencias?",
+  "options": [
+    {
+      "id": "json",
+      "label": "Archivo JSON",
+      "description": "Sin servidor; apropiado para un perfil local."
+    },
+    {
+      "id": "sqlite",
+      "label": "SQLite",
+      "description": "Transacciones y consultas locales."
+    }
+  ],
+  "multi": false,
+  "allow_free_text": true,
+  "recommended_option_id": "json",
+  "expiry_policy": "block",
+  "expires_at": null
+}

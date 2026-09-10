@@ -1,0 +1,1734 @@
+{
+  "schema_version": "1.0",
+  "note": "Contratos lógicos propuestos, no inventario de herramientas ya implementadas.",
+  "tools": [
+    {
+      "name": "util.calculate",
+      "family": "33.01 · Utilidades deterministas",
+      "contract_summary": "Expresión permitida y unidades → resultado, precisión y expresión normalizada.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Usarlas antes que pedir al LLM aritmética, fechas o transformaciones mecánicas. Límites de tamaño y CPU incluso en regex o parsing."
+    },
+    {
+      "name": "util.datetime",
+      "family": "33.01 · Utilidades deterministas",
+      "contract_summary": "Fecha, zona IANA y operación → instante/fecha con DST y ambigüedades resueltas.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Usarlas antes que pedir al LLM aritmética, fechas o transformaciones mecánicas. Límites de tamaño y CPU incluso en regex o parsing."
+    },
+    {
+      "name": "util.convert_units",
+      "family": "33.01 · Utilidades deterministas",
+      "contract_summary": "Valor, unidad origen/destino → conversión con dimensiones comprobadas.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Usarlas antes que pedir al LLM aritmética, fechas o transformaciones mecánicas. Límites de tamaño y CPU incluso en regex o parsing."
+    },
+    {
+      "name": "util.validate_data",
+      "family": "33.01 · Utilidades deterministas",
+      "contract_summary": "Texto/objeto y schema → errores por ruta, sin reparar significado automáticamente.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Usarlas antes que pedir al LLM aritmética, fechas o transformaciones mecánicas. Límites de tamaño y CPU incluso en regex o parsing."
+    },
+    {
+      "name": "util.transform_text",
+      "family": "33.01 · Utilidades deterministas",
+      "contract_summary": "Operación acotada sobre texto → resultado y diff; regex con timeout.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Usarlas antes que pedir al LLM aritmética, fechas o transformaciones mecánicas. Límites de tamaño y CPU incluso en regex o parsing."
+    },
+    {
+      "name": "util.diff",
+      "family": "33.01 · Utilidades deterministas",
+      "contract_summary": "Dos versiones → diff estructurado y estadísticas con límites.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Usarlas antes que pedir al LLM aritmética, fechas o transformaciones mecánicas. Límites de tamaño y CPU incluso en regex o parsing."
+    },
+    {
+      "name": "util.hash",
+      "family": "33.01 · Utilidades deterministas",
+      "contract_summary": "Bytes o referencia autorizada → digest y algoritmo, no lectura de rutas arbitrarias.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Usarlas antes que pedir al LLM aritmética, fechas o transformaciones mecánicas. Límites de tamaño y CPU incluso en regex o parsing."
+    },
+    {
+      "name": "workspace.list",
+      "family": "33.02 · Workspace y filesystem",
+      "contract_summary": "Ámbito autorizado → proyectos, raíces e identidades estables.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Versiones, límites de raíces y conflictos siempre activos. Borrar por defecto significa papelera o eliminación recuperable; saltarse recuperación requiere una política distinta."
+    },
+    {
+      "name": "fs.list",
+      "family": "33.02 · Workspace y filesystem",
+      "contract_summary": "Directorio, filtros y cursor → entradas paginadas, tipos y tamaños.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Versiones, límites de raíces y conflictos siempre activos. Borrar por defecto significa papelera o eliminación recuperable; saltarse recuperación requiere una política distinta."
+    },
+    {
+      "name": "fs.stat",
+      "family": "33.02 · Workspace y filesystem",
+      "contract_summary": "Ruta → tipo, tamaño, timestamps y versión/hash cuando se calcula.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Versiones, límites de raíces y conflictos siempre activos. Borrar por defecto significa papelera o eliminación recuperable; saltarse recuperación requiere una política distinta."
+    },
+    {
+      "name": "fs.read",
+      "family": "33.02 · Workspace y filesystem",
+      "contract_summary": "Ruta/versión y rango → contenido limitado con líneas y EvidenceRef.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Versiones, límites de raíces y conflictos siempre activos. Borrar por defecto significa papelera o eliminación recuperable; saltarse recuperación requiere una política distinta."
+    },
+    {
+      "name": "fs.search",
+      "family": "33.02 · Workspace y filesystem",
+      "contract_summary": "Raíces, literal/regex y filtros → coincidencias con rangos y cursor.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Versiones, límites de raíces y conflictos siempre activos. Borrar por defecto significa papelera o eliminación recuperable; saltarse recuperación requiere una política distinta."
+    },
+    {
+      "name": "fs.write",
+      "family": "33.02 · Workspace y filesystem",
+      "contract_summary": "Ruta, contenido y base_revision → versión nueva, diff y recibo.",
+      "effect_class": "Escribir",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Versiones, límites de raíces y conflictos siempre activos. Borrar por defecto significa papelera o eliminación recuperable; saltarse recuperación requiere una política distinta."
+    },
+    {
+      "name": "fs.apply_patch",
+      "family": "33.02 · Workspace y filesystem",
+      "contract_summary": "Patch y hashes base → cambios aplicados o conflictos sin adivinación.",
+      "effect_class": "Escribir",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Versiones, límites de raíces y conflictos siempre activos. Borrar por defecto significa papelera o eliminación recuperable; saltarse recuperación requiere una política distinta."
+    },
+    {
+      "name": "fs.mkdir",
+      "family": "33.02 · Workspace y filesystem",
+      "contract_summary": "Ruta y precondiciones → directorio creado o ya existente compatible.",
+      "effect_class": "Escribir",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Versiones, límites de raíces y conflictos siempre activos. Borrar por defecto significa papelera o eliminación recuperable; saltarse recuperación requiere una política distinta."
+    },
+    {
+      "name": "fs.move",
+      "family": "33.02 · Workspace y filesystem",
+      "contract_summary": "Origen/destino/versiones → movimiento verificable sin sobrescribir ajenos.",
+      "effect_class": "Escribir",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Versiones, límites de raíces y conflictos siempre activos. Borrar por defecto significa papelera o eliminación recuperable; saltarse recuperación requiere una política distinta."
+    },
+    {
+      "name": "fs.copy",
+      "family": "33.02 · Workspace y filesystem",
+      "contract_summary": "Origen/destino → copia validada, política explícita de colisiones.",
+      "effect_class": "Escribir",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Versiones, límites de raíces y conflictos siempre activos. Borrar por defecto significa papelera o eliminación recuperable; saltarse recuperación requiere una política distinta."
+    },
+    {
+      "name": "fs.trash",
+      "family": "33.02 · Workspace y filesystem",
+      "contract_summary": "Lista exacta/versiones → elementos recuperables y token de restauración.",
+      "effect_class": "Escribir",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Versiones, límites de raíces y conflictos siempre activos. Borrar por defecto significa papelera o eliminación recuperable; saltarse recuperación requiere una política distinta."
+    },
+    {
+      "name": "fs.restore",
+      "family": "33.02 · Workspace y filesystem",
+      "contract_summary": "Token y destino → restauración o conflicto con datos posteriores.",
+      "effect_class": "Escribir",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Versiones, límites de raíces y conflictos siempre activos. Borrar por defecto significa papelera o eliminación recuperable; saltarse recuperación requiere una política distinta."
+    },
+    {
+      "name": "code.map",
+      "family": "33.03 · Código, símbolos y proyecto",
+      "contract_summary": "Raíz y profundidad → mapa de módulos, entrypoints y cobertura del índice.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Fallback léxico visible cuando no hay parser/LSP; no simular referencias semánticas. Lectura del Git del usuario independiente del sistema de snapshots."
+    },
+    {
+      "name": "code.symbols",
+      "family": "33.03 · Código, símbolos y proyecto",
+      "contract_summary": "Archivo/lenguaje → símbolos, rangos y versión de parser.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Fallback léxico visible cuando no hay parser/LSP; no simular referencias semánticas. Lectura del Git del usuario independiente del sistema de snapshots."
+    },
+    {
+      "name": "code.definition",
+      "family": "33.03 · Código, símbolos y proyecto",
+      "contract_summary": "Símbolo/posición → definición exacta o candidatos inciertos.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Fallback léxico visible cuando no hay parser/LSP; no simular referencias semánticas. Lectura del Git del usuario independiente del sistema de snapshots."
+    },
+    {
+      "name": "code.references",
+      "family": "33.03 · Código, símbolos y proyecto",
+      "contract_summary": "Símbolo → referencias indexadas con cobertura y versión.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Fallback léxico visible cuando no hay parser/LSP; no simular referencias semánticas. Lectura del Git del usuario independiente del sistema de snapshots."
+    },
+    {
+      "name": "code.diagnostics",
+      "family": "33.03 · Código, símbolos y proyecto",
+      "contract_summary": "Archivos → errores de parser/LSP y procedencia del diagnóstico.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Fallback léxico visible cuando no hay parser/LSP; no simular referencias semánticas. Lectura del Git del usuario independiente del sistema de snapshots."
+    },
+    {
+      "name": "code.impact",
+      "family": "33.03 · Código, símbolos y proyecto",
+      "contract_summary": "Diff/símbolos → dependencias y pruebas posiblemente afectadas.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Fallback léxico visible cuando no hay parser/LSP; no simular referencias semánticas. Lectura del Git del usuario independiente del sistema de snapshots."
+    },
+    {
+      "name": "code.rename",
+      "family": "33.03 · Código, símbolos y proyecto",
+      "contract_summary": "Símbolo, nuevo nombre y base → patch semántico revisable.",
+      "effect_class": "Escribir",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Fallback léxico visible cuando no hay parser/LSP; no simular referencias semánticas. Lectura del Git del usuario independiente del sistema de snapshots."
+    },
+    {
+      "name": "project.commands",
+      "family": "33.03 · Código, símbolos y proyecto",
+      "contract_summary": "Proyecto → build/test/lint detectados, origen y estado comprobado.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Fallback léxico visible cuando no hay parser/LSP; no simular referencias semánticas. Lectura del Git del usuario independiente del sistema de snapshots."
+    },
+    {
+      "name": "process.start",
+      "family": "33.04 · Ejecución, pruebas y depuración",
+      "contract_summary": "Argv/cwd/perfil → job_id, PID propio y canales de salida.",
+      "effect_class": "Ejecutar",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Cada job identifica host, entorno, proceso y recursos. No ejecutar código arbitrario en el proceso web de Faustus."
+    },
+    {
+      "name": "process.status",
+      "family": "33.04 · Ejecución, pruebas y depuración",
+      "contract_summary": "Job → estado, uso de recursos y última actividad.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Cada job identifica host, entorno, proceso y recursos. No ejecutar código arbitrario en el proceso web de Faustus."
+    },
+    {
+      "name": "process.logs",
+      "family": "33.04 · Ejecución, pruebas y depuración",
+      "contract_summary": "Job/cursor/filtro → stdout/stderr acotados y referencia completa.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Cada job identifica host, entorno, proceso y recursos. No ejecutar código arbitrario en el proceso web de Faustus."
+    },
+    {
+      "name": "process.input",
+      "family": "33.04 · Ejecución, pruebas y depuración",
+      "contract_summary": "Job y texto → entrada entregada, solo a sesión autorizada.",
+      "effect_class": "Ejecutar",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Cada job identifica host, entorno, proceso y recursos. No ejecutar código arbitrario en el proceso web de Faustus."
+    },
+    {
+      "name": "process.stop",
+      "family": "33.04 · Ejecución, pruebas y depuración",
+      "contract_summary": "Job y política → resultado de terminación y efectos pendientes.",
+      "effect_class": "Control",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Cada job identifica host, entorno, proceso y recursos. No ejecutar código arbitrario en el proceso web de Faustus."
+    },
+    {
+      "name": "exec.python",
+      "family": "33.04 · Ejecución, pruebas y depuración",
+      "contract_summary": "Script/entradas/perfil → salida, artefactos y límites consumidos.",
+      "effect_class": "Ejecutar",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Cada job identifica host, entorno, proceso y recursos. No ejecutar código arbitrario en el proceso web de Faustus."
+    },
+    {
+      "name": "exec.shell",
+      "family": "33.04 · Ejecución, pruebas y depuración",
+      "contract_summary": "Comando/perfil → ejecución aislada con riesgo mayor declarado.",
+      "effect_class": "Ejecutar",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Cada job identifica host, entorno, proceso y recursos. No ejecutar código arbitrario en el proceso web de Faustus."
+    },
+    {
+      "name": "test.run",
+      "family": "33.04 · Ejecución, pruebas y depuración",
+      "contract_summary": "Suite/filtro/proyecto → pruebas ejecutadas, fallos y logs.",
+      "effect_class": "Ejecutar",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Cada job identifica host, entorno, proceso y recursos. No ejecutar código arbitrario en el proceso web de Faustus."
+    },
+    {
+      "name": "build.run",
+      "family": "33.04 · Ejecución, pruebas y depuración",
+      "contract_summary": "Receta de build → resultado, versiones y artefactos de compilación.",
+      "effect_class": "Ejecutar",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Cada job identifica host, entorno, proceso y recursos. No ejecutar código arbitrario en el proceso web de Faustus."
+    },
+    {
+      "name": "debug.inspect",
+      "family": "33.04 · Ejecución, pruebas y depuración",
+      "contract_summary": "Proceso permitido/operación → stack, breakpoints o variables saneadas.",
+      "effect_class": "Ejecutar",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Cada job identifica host, entorno, proceso y recursos. No ejecutar código arbitrario en el proceso web de Faustus."
+    },
+    {
+      "name": "git.status",
+      "family": "33.05 · Git y gestión de cambios",
+      "contract_summary": "Repo → branch, staged/unstaged, untracked y conflictos.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "No hacer reset/clean/force-push implícitos. Los remotos son efectos externos; los worktrees pertenecen a tareas y nunca sustituyen el checkout del usuario sin aprobación."
+    },
+    {
+      "name": "git.diff",
+      "family": "33.05 · Git y gestión de cambios",
+      "contract_summary": "Revisiones/rutas → diff versionado y estadísticas.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "No hacer reset/clean/force-push implícitos. Los remotos son efectos externos; los worktrees pertenecen a tareas y nunca sustituyen el checkout del usuario sin aprobación."
+    },
+    {
+      "name": "git.log",
+      "family": "33.05 · Git y gestión de cambios",
+      "contract_summary": "Filtro/cursor → commits e información de cambios.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "No hacer reset/clean/force-push implícitos. Los remotos son efectos externos; los worktrees pertenecen a tareas y nunca sustituyen el checkout del usuario sin aprobación."
+    },
+    {
+      "name": "git.show",
+      "family": "33.05 · Git y gestión de cambios",
+      "contract_summary": "Commit/path → contenido exacto con referencia.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "No hacer reset/clean/force-push implícitos. Los remotos son efectos externos; los worktrees pertenecen a tareas y nunca sustituyen el checkout del usuario sin aprobación."
+    },
+    {
+      "name": "git.worktree_create",
+      "family": "33.05 · Git y gestión de cambios",
+      "contract_summary": "Base/destino → workspace aislado y ownership de tarea.",
+      "effect_class": "Escribir",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "No hacer reset/clean/force-push implícitos. Los remotos son efectos externos; los worktrees pertenecen a tareas y nunca sustituyen el checkout del usuario sin aprobación."
+    },
+    {
+      "name": "git.commit",
+      "family": "33.05 · Git y gestión de cambios",
+      "contract_summary": "Cambios exactos y mensaje → commit local tras comprobar diff.",
+      "effect_class": "Escribir",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "No hacer reset/clean/force-push implícitos. Los remotos son efectos externos; los worktrees pertenecen a tareas y nunca sustituyen el checkout del usuario sin aprobación."
+    },
+    {
+      "name": "git.merge",
+      "family": "33.05 · Git y gestión de cambios",
+      "contract_summary": "Ramas/versiones → merge o conflictos, nunca resolverlos a ciegas.",
+      "effect_class": "Escribir",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "No hacer reset/clean/force-push implícitos. Los remotos son efectos externos; los worktrees pertenecen a tareas y nunca sustituyen el checkout del usuario sin aprobación."
+    },
+    {
+      "name": "git.push",
+      "family": "33.05 · Git y gestión de cambios",
+      "contract_summary": "Remote/branch/commit → publicación con precondiciones y aprobación.",
+      "effect_class": "Externo",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "No hacer reset/clean/force-push implícitos. Los remotos son efectos externos; los worktrees pertenecen a tareas y nunca sustituyen el checkout del usuario sin aprobación."
+    },
+    {
+      "name": "changes.checkpoint",
+      "family": "33.05 · Git y gestión de cambios",
+      "contract_summary": "Ámbito y motivo → snapshot y cobertura de restauración.",
+      "effect_class": "Control",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "No hacer reset/clean/force-push implícitos. Los remotos son efectos externos; los worktrees pertenecen a tareas y nunca sustituyen el checkout del usuario sin aprobación."
+    },
+    {
+      "name": "changes.restore",
+      "family": "33.05 · Git y gestión de cambios",
+      "contract_summary": "Checkpoint y opciones → preview/ejecución y cambios no recuperables.",
+      "effect_class": "Escribir",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "No hacer reset/clean/force-push implícitos. Los remotos son efectos externos; los worktrees pertenecen a tareas y nunca sustituyen el checkout del usuario sin aprobación."
+    },
+    {
+      "name": "context.search",
+      "family": "33.06 · Recuperación, memoria y conocimiento",
+      "contract_summary": "Consulta/ámbito/tipo → resultados híbridos y puntuación explicable.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "La memoria automática y la memoria explícitamente consultada obedecen ámbitos y opt-outs. Todo resultado conserva procedencia."
+    },
+    {
+      "name": "context.resolve",
+      "family": "33.06 · Recuperación, memoria y conocimiento",
+      "contract_summary": "EvidenceRef/rango → contenido original exacto o causa de ausencia.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "La memoria automática y la memoria explícitamente consultada obedecen ámbitos y opt-outs. Todo resultado conserva procedencia."
+    },
+    {
+      "name": "context.explain",
+      "family": "33.06 · Recuperación, memoria y conocimiento",
+      "contract_summary": "Turno → manifest de contexto, fuentes y motivos de inclusión.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "La memoria automática y la memoria explícitamente consultada obedecen ámbitos y opt-outs. Todo resultado conserva procedencia."
+    },
+    {
+      "name": "project.link_source",
+      "family": "33.06 · Recuperación, memoria y conocimiento",
+      "contract_summary": "Fuente/proyecto → enlace persistente sin duplicar o borrar origen.",
+      "effect_class": "Escribir",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "La memoria automática y la memoria explícitamente consultada obedecen ámbitos y opt-outs. Todo resultado conserva procedencia."
+    },
+    {
+      "name": "memory.search",
+      "family": "33.06 · Recuperación, memoria y conocimiento",
+      "contract_summary": "Consulta/scope → recuerdos relevantes con fecha y evidencia.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "La memoria automática y la memoria explícitamente consultada obedecen ámbitos y opt-outs. Todo resultado conserva procedencia."
+    },
+    {
+      "name": "memory.propose",
+      "family": "33.06 · Recuperación, memoria y conocimiento",
+      "contract_summary": "Hecho/ámbito/evidencia → candidato, no verdad global confirmada.",
+      "effect_class": "Escribir",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "La memoria automática y la memoria explícitamente consultada obedecen ámbitos y opt-outs. Todo resultado conserva procedencia."
+    },
+    {
+      "name": "memory.correct",
+      "family": "33.06 · Recuperación, memoria y conocimiento",
+      "contract_summary": "ID/versión/corrección → revisión y supersesión trazable.",
+      "effect_class": "Escribir",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "La memoria automática y la memoria explícitamente consultada obedecen ámbitos y opt-outs. Todo resultado conserva procedencia."
+    },
+    {
+      "name": "memory.forget",
+      "family": "33.06 · Recuperación, memoria y conocimiento",
+      "contract_summary": "IDs/ámbito → tombstones, invalidación y límites de borrado explicados.",
+      "effect_class": "Escribir",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "La memoria automática y la memoria explícitamente consultada obedecen ámbitos y opt-outs. Todo resultado conserva procedencia."
+    },
+    {
+      "name": "knowledge.reindex",
+      "family": "33.06 · Recuperación, memoria y conocimiento",
+      "contract_summary": "Raíz/alcance → job incremental bajo presupuesto.",
+      "effect_class": "Ejecutar",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "La memoria automática y la memoria explícitamente consultada obedecen ámbitos y opt-outs. Todo resultado conserva procedencia."
+    },
+    {
+      "name": "task.get",
+      "family": "33.07 · Estado, interacción y agentes",
+      "contract_summary": "TaskID → estado canónico y criterios.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "El modelo puede proponer pasos, no declararse verificado ni concederse permisos. Todas las decisiones se vinculan al run y a su revisión."
+    },
+    {
+      "name": "task.update_plan",
+      "family": "33.07 · Estado, interacción y agentes",
+      "contract_summary": "Revisión/operaciones → plan nuevo o conflicto; pasos con IDs.",
+      "effect_class": "Control",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "El modelo puede proponer pasos, no declararse verificado ni concederse permisos. Todas las decisiones se vinculan al run y a su revisión."
+    },
+    {
+      "name": "task.add_evidence",
+      "family": "33.07 · Estado, interacción y agentes",
+      "contract_summary": "Criterio/EvidenceRef → vínculo validado, no sello de éxito.",
+      "effect_class": "Control",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "El modelo puede proponer pasos, no declararse verificado ni concederse permisos. Todas las decisiones se vinculan al run y a su revisión."
+    },
+    {
+      "name": "interaction.ask_user",
+      "family": "33.07 · Estado, interacción y agentes",
+      "contract_summary": "Pregunta/opciones/contexto → question_id y resolución durable.",
+      "effect_class": "Control",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "El modelo puede proponer pasos, no declararse verificado ni concederse permisos. Todas las decisiones se vinculan al run y a su revisión."
+    },
+    {
+      "name": "interaction.request_approval",
+      "family": "33.07 · Estado, interacción y agentes",
+      "contract_summary": "Acción exacta/efectos → aprobación humana acotada o denegación.",
+      "effect_class": "Control",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "El modelo puede proponer pasos, no declararse verificado ni concederse permisos. Todas las decisiones se vinculan al run y a su revisión."
+    },
+    {
+      "name": "agent.delegate",
+      "family": "33.07 · Estado, interacción y agentes",
+      "contract_summary": "Objetivo/contexto/herramientas/budget → subrun acotado.",
+      "effect_class": "Control",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "El modelo puede proponer pasos, no declararse verificado ni concederse permisos. Todas las decisiones se vinculan al run y a su revisión."
+    },
+    {
+      "name": "agent.status",
+      "family": "33.07 · Estado, interacción y agentes",
+      "contract_summary": "Subrun → progreso, resultados y bloqueos.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "El modelo puede proponer pasos, no declararse verificado ni concederse permisos. Todas las decisiones se vinculan al run y a su revisión."
+    },
+    {
+      "name": "agent.message",
+      "family": "33.07 · Estado, interacción y agentes",
+      "contract_summary": "Subrun/revisión/mensaje → instrucción recibida en punto seguro.",
+      "effect_class": "Control",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "El modelo puede proponer pasos, no declararse verificado ni concederse permisos. Todas las decisiones se vinculan al run y a su revisión."
+    },
+    {
+      "name": "agent.cancel",
+      "family": "33.07 · Estado, interacción y agentes",
+      "contract_summary": "Subrun → cancelación y estado material final.",
+      "effect_class": "Control",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "El modelo puede proponer pasos, no declararse verificado ni concederse permisos. Todas las decisiones se vinculan al run y a su revisión."
+    },
+    {
+      "name": "task.pause",
+      "family": "33.07 · Estado, interacción y agentes",
+      "contract_summary": "TaskID/motivo → checkpoint y estado pausado cuando sea seguro.",
+      "effect_class": "Control",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "El modelo puede proponer pasos, no declararse verificado ni concederse permisos. Todas las decisiones se vinculan al run y a su revisión."
+    },
+    {
+      "name": "web.search",
+      "family": "33.08 · Web e investigación",
+      "contract_summary": "Consulta/filtros → resultados con fuente y cobertura de motores.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Fetch no es navegador autenticado. Conservar fecha, URL original y final, extracción y evidencia; respetar restricciones de acceso."
+    },
+    {
+      "name": "web.fetch",
+      "family": "33.08 · Web e investigación",
+      "contract_summary": "URL/política → documento obtenido con límites y redirecciones seguras.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Fetch no es navegador autenticado. Conservar fecha, URL original y final, extracción y evidencia; respetar restricciones de acceso."
+    },
+    {
+      "name": "web.extract",
+      "family": "33.08 · Web e investigación",
+      "contract_summary": "Documento/rango → texto, tablas, enlaces y evidencia.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Fetch no es navegador autenticado. Conservar fecha, URL original y final, extracción y evidencia; respetar restricciones de acceso."
+    },
+    {
+      "name": "web.find",
+      "family": "33.08 · Web e investigación",
+      "contract_summary": "Documento/patrón → ocurrencias y fragmentos.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Fetch no es navegador autenticado. Conservar fecha, URL original y final, extracción y evidencia; respetar restricciones de acceso."
+    },
+    {
+      "name": "web.download",
+      "family": "33.08 · Web e investigación",
+      "contract_summary": "URL/destino permitido → archivo con MIME, tamaño y hash.",
+      "effect_class": "Externo",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Fetch no es navegador autenticado. Conservar fecha, URL original y final, extracción y evidencia; respetar restricciones de acceso."
+    },
+    {
+      "name": "research.plan",
+      "family": "33.08 · Web e investigación",
+      "contract_summary": "Brief/criterios → árbol de cobertura y consultas propuestas.",
+      "effect_class": "Control",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Fetch no es navegador autenticado. Conservar fecha, URL original y final, extracción y evidencia; respetar restricciones de acceso."
+    },
+    {
+      "name": "research.run",
+      "family": "33.08 · Web e investigación",
+      "contract_summary": "Plan/budget → job con fuentes, etapas y cancelación.",
+      "effect_class": "Ejecutar",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Fetch no es navegador autenticado. Conservar fecha, URL original y final, extracción y evidencia; respetar restricciones de acceso."
+    },
+    {
+      "name": "research.sources",
+      "family": "33.08 · Web e investigación",
+      "contract_summary": "Run/filtros → biblioteca de fuentes y conflictos.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Fetch no es navegador autenticado. Conservar fecha, URL original y final, extracción y evidencia; respetar restricciones de acceso."
+    },
+    {
+      "name": "citation.check",
+      "family": "33.08 · Web e investigación",
+      "contract_summary": "Afirmación/referencias → resolución y apoyo observado o incierto.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Fetch no es navegador autenticado. Conservar fecha, URL original y final, extracción y evidencia; respetar restricciones de acceso."
+    },
+    {
+      "name": "browser.open",
+      "family": "33.09 · Navegador",
+      "contract_summary": "URL/perfil → sesión/página y navegación confirmada.",
+      "effect_class": "Externo",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Sesión aislada con identidad de página y snapshot. Enviar formularios, adjuntar archivos o actuar sobre cuentas requiere política de efectos."
+    },
+    {
+      "name": "browser.snapshot",
+      "family": "33.09 · Navegador",
+      "contract_summary": "Página → DOM/accesibilidad y snapshot_id.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Sesión aislada con identidad de página y snapshot. Enviar formularios, adjuntar archivos o actuar sobre cuentas requiere política de efectos."
+    },
+    {
+      "name": "browser.screenshot",
+      "family": "33.09 · Navegador",
+      "contract_summary": "Página/región → imagen con escala, viewport y timestamp.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Sesión aislada con identidad de página y snapshot. Enviar formularios, adjuntar archivos o actuar sobre cuentas requiere política de efectos."
+    },
+    {
+      "name": "browser.click",
+      "family": "33.09 · Navegador",
+      "contract_summary": "Snapshot/elemento → acción y postestado; no coordenadas huérfanas.",
+      "effect_class": "Externo",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Sesión aislada con identidad de página y snapshot. Enviar formularios, adjuntar archivos o actuar sobre cuentas requiere política de efectos."
+    },
+    {
+      "name": "browser.type",
+      "family": "33.09 · Navegador",
+      "contract_summary": "Elemento/texto → valor aplicado con secretos por canal seguro.",
+      "effect_class": "Externo",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Sesión aislada con identidad de página y snapshot. Enviar formularios, adjuntar archivos o actuar sobre cuentas requiere política de efectos."
+    },
+    {
+      "name": "browser.select",
+      "family": "33.09 · Navegador",
+      "contract_summary": "Elemento/opción → selección confirmada.",
+      "effect_class": "Externo",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Sesión aislada con identidad de página y snapshot. Enviar formularios, adjuntar archivos o actuar sobre cuentas requiere política de efectos."
+    },
+    {
+      "name": "browser.scroll",
+      "family": "33.09 · Navegador",
+      "contract_summary": "Página/región/delta → nuevo viewport y snapshot invalidado.",
+      "effect_class": "Control",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Sesión aislada con identidad de página y snapshot. Enviar formularios, adjuntar archivos o actuar sobre cuentas requiere política de efectos."
+    },
+    {
+      "name": "browser.wait",
+      "family": "33.09 · Navegador",
+      "contract_summary": "Condición/budget → cumplida o timeout diagnosticado.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Sesión aislada con identidad de página y snapshot. Enviar formularios, adjuntar archivos o actuar sobre cuentas requiere política de efectos."
+    },
+    {
+      "name": "browser.upload",
+      "family": "33.09 · Navegador",
+      "contract_summary": "Elemento/ArtifactRef → carga del archivo aprobado únicamente.",
+      "effect_class": "Externo",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Sesión aislada con identidad de página y snapshot. Enviar formularios, adjuntar archivos o actuar sobre cuentas requiere política de efectos."
+    },
+    {
+      "name": "browser.downloads",
+      "family": "33.09 · Navegador",
+      "contract_summary": "Sesión/cursor → descargas, estado y referencias autorizadas.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Sesión aislada con identidad de página y snapshot. Enviar formularios, adjuntar archivos o actuar sobre cuentas requiere política de efectos."
+    },
+    {
+      "name": "browser.inspect_errors",
+      "family": "33.09 · Navegador",
+      "contract_summary": "Página → errores consola/red saneados, sin tokens de sesión.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Sesión aislada con identidad de página y snapshot. Enviar formularios, adjuntar archivos o actuar sobre cuentas requiere política de efectos."
+    },
+    {
+      "name": "browser.close",
+      "family": "33.09 · Navegador",
+      "contract_summary": "Página/sesión → cierre sin afectar navegador personal.",
+      "effect_class": "Control",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Sesión aislada con identidad de página y snapshot. Enviar formularios, adjuntar archivos o actuar sobre cuentas requiere política de efectos."
+    },
+    {
+      "name": "desktop.windows",
+      "family": "33.10 · Escritorio y apps locales",
+      "contract_summary": "Apps permitidas → ventanas y capacidades accesibles.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Módulo opcional, nunca permiso implícito de accesibilidad global. Priorizar selectores accesibles y acciones verificadas."
+    },
+    {
+      "name": "desktop.capture",
+      "family": "33.10 · Escritorio y apps locales",
+      "contract_summary": "Ventana/región autorizada → captura y referencia de escala.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Módulo opcional, nunca permiso implícito de accesibilidad global. Priorizar selectores accesibles y acciones verificadas."
+    },
+    {
+      "name": "desktop.inspect",
+      "family": "33.10 · Escritorio y apps locales",
+      "contract_summary": "Ventana → árbol accesible y controles.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Módulo opcional, nunca permiso implícito de accesibilidad global. Priorizar selectores accesibles y acciones verificadas."
+    },
+    {
+      "name": "desktop.action",
+      "family": "33.10 · Escritorio y apps locales",
+      "contract_summary": "Control/operación → postestado; pausa si cambia foco o destino.",
+      "effect_class": "Externo",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Módulo opcional, nunca permiso implícito de accesibilidad global. Priorizar selectores accesibles y acciones verificadas."
+    },
+    {
+      "name": "desktop.input",
+      "family": "33.10 · Escritorio y apps locales",
+      "contract_summary": "Ventana/texto o tecla → entrada verificada, sin captura de credenciales.",
+      "effect_class": "Externo",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Módulo opcional, nunca permiso implícito de accesibilidad global. Priorizar selectores accesibles y acciones verificadas."
+    },
+    {
+      "name": "desktop.handoff",
+      "family": "33.10 · Escritorio y apps locales",
+      "contract_summary": "Sesión/motivo → control devuelto al usuario y automatización pausada.",
+      "effect_class": "Control",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Módulo opcional, nunca permiso implícito de accesibilidad global. Priorizar selectores accesibles y acciones verificadas."
+    },
+    {
+      "name": "document.read",
+      "family": "33.11 · Documentos, PDF y presentaciones",
+      "contract_summary": "Archivo/rango → estructura, contenido y referencias.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Formatos y capacidades se detectan en el motor de artefactos. Render y verificación visual separados del éxito de escritura."
+    },
+    {
+      "name": "document.create",
+      "family": "33.11 · Documentos, PDF y presentaciones",
+      "contract_summary": "Schema/plantilla/contenido → documento editable con manifest.",
+      "effect_class": "Escribir",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Formatos y capacidades se detectan en el motor de artefactos. Render y verificación visual separados del éxito de escritura."
+    },
+    {
+      "name": "document.edit",
+      "family": "33.11 · Documentos, PDF y presentaciones",
+      "contract_summary": "Documento/base/operaciones → versión nueva y diff semántico.",
+      "effect_class": "Escribir",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Formatos y capacidades se detectan en el motor de artefactos. Render y verificación visual separados del éxito de escritura."
+    },
+    {
+      "name": "document.render",
+      "family": "33.11 · Documentos, PDF y presentaciones",
+      "contract_summary": "Artefacto/opciones → páginas renderizadas y errores.",
+      "effect_class": "Ejecutar",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Formatos y capacidades se detectan en el motor de artefactos. Render y verificación visual separados del éxito de escritura."
+    },
+    {
+      "name": "document.export",
+      "family": "33.11 · Documentos, PDF y presentaciones",
+      "contract_summary": "Artefacto/formato → archivo validado o pérdidas declaradas.",
+      "effect_class": "Ejecutar",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Formatos y capacidades se detectan en el motor de artefactos. Render y verificación visual separados del éxito de escritura."
+    },
+    {
+      "name": "pdf.pages",
+      "family": "33.11 · Documentos, PDF y presentaciones",
+      "contract_summary": "PDF/rango → texto y imágenes por página con evidencia.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Formatos y capacidades se detectan en el motor de artefactos. Render y verificación visual separados del éxito de escritura."
+    },
+    {
+      "name": "pdf.extract_tables",
+      "family": "33.11 · Documentos, PDF y presentaciones",
+      "contract_summary": "PDF/páginas → tablas con celdas y referencia visual.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Formatos y capacidades se detectan en el motor de artefactos. Render y verificación visual separados del éxito de escritura."
+    },
+    {
+      "name": "pdf.ocr",
+      "family": "33.11 · Documentos, PDF y presentaciones",
+      "contract_summary": "Páginas seleccionadas/idioma → texto derivado y confianza/limitaciones.",
+      "effect_class": "Ejecutar",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Formatos y capacidades se detectan en el motor de artefactos. Render y verificación visual separados del éxito de escritura."
+    },
+    {
+      "name": "slides.create",
+      "family": "33.11 · Documentos, PDF y presentaciones",
+      "contract_summary": "Esquema/plantilla → presentación editable con notas.",
+      "effect_class": "Escribir",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Formatos y capacidades se detectan en el motor de artefactos. Render y verificación visual separados del éxito de escritura."
+    },
+    {
+      "name": "slides.edit",
+      "family": "33.11 · Documentos, PDF y presentaciones",
+      "contract_summary": "SlideID/base/operaciones → cambios y render para revisar.",
+      "effect_class": "Escribir",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Formatos y capacidades se detectan en el motor de artefactos. Render y verificación visual separados del éxito de escritura."
+    },
+    {
+      "name": "sheet.inspect",
+      "family": "33.12 · Hojas de cálculo, SQL y análisis",
+      "contract_summary": "Libro/hojas → dimensiones, tipos, fórmulas y estilos.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "La ejecución tiene acceso solo al dataset/DB seleccionado. Exportar CSV seguro no implica modificar valores internos silenciosamente."
+    },
+    {
+      "name": "sheet.read",
+      "family": "33.12 · Hojas de cálculo, SQL y análisis",
+      "contract_summary": "Libro/rango → valores, fórmulas y formatos explícitos.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "La ejecución tiene acceso solo al dataset/DB seleccionado. Exportar CSV seguro no implica modificar valores internos silenciosamente."
+    },
+    {
+      "name": "sheet.update",
+      "family": "33.12 · Hojas de cálculo, SQL y análisis",
+      "contract_summary": "Libro/base/rango/valores → cambios con validación.",
+      "effect_class": "Escribir",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "La ejecución tiene acceso solo al dataset/DB seleccionado. Exportar CSV seguro no implica modificar valores internos silenciosamente."
+    },
+    {
+      "name": "sheet.recalculate",
+      "family": "33.12 · Hojas de cálculo, SQL y análisis",
+      "contract_summary": "Libro/motor → resultados y funciones no soportadas.",
+      "effect_class": "Ejecutar",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "La ejecución tiene acceso solo al dataset/DB seleccionado. Exportar CSV seguro no implica modificar valores internos silenciosamente."
+    },
+    {
+      "name": "data.profile",
+      "family": "33.12 · Hojas de cálculo, SQL y análisis",
+      "contract_summary": "Dataset → esquema, nulos, distribución y problemas de calidad.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "La ejecución tiene acceso solo al dataset/DB seleccionado. Exportar CSV seguro no implica modificar valores internos silenciosamente."
+    },
+    {
+      "name": "data.query",
+      "family": "33.12 · Hojas de cálculo, SQL y análisis",
+      "contract_summary": "Dataset/consulta → filas limitadas y plan/coste cuando disponible.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "La ejecución tiene acceso solo al dataset/DB seleccionado. Exportar CSV seguro no implica modificar valores internos silenciosamente."
+    },
+    {
+      "name": "db.schema",
+      "family": "33.12 · Hojas de cálculo, SQL y análisis",
+      "contract_summary": "Conexión autorizada → tablas/columnas sin extraer todos los datos.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "La ejecución tiene acceso solo al dataset/DB seleccionado. Exportar CSV seguro no implica modificar valores internos silenciosamente."
+    },
+    {
+      "name": "db.query_readonly",
+      "family": "33.12 · Hojas de cálculo, SQL y análisis",
+      "contract_summary": "Conexión/SQL/budget → resultados con límites y transacción de lectura.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "La ejecución tiene acceso solo al dataset/DB seleccionado. Exportar CSV seguro no implica modificar valores internos silenciosamente."
+    },
+    {
+      "name": "db.execute_change",
+      "family": "33.12 · Hojas de cálculo, SQL y análisis",
+      "contract_summary": "Plan SQL exacto/aprobación → cambio, filas afectadas y recibo.",
+      "effect_class": "Externo",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "La ejecución tiene acceso solo al dataset/DB seleccionado. Exportar CSV seguro no implica modificar valores internos silenciosamente."
+    },
+    {
+      "name": "chart.create",
+      "family": "33.12 · Hojas de cálculo, SQL y análisis",
+      "contract_summary": "Datos/especificación → gráfico, datos fuente y texto alternativo.",
+      "effect_class": "Escribir",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "La ejecución tiene acceso solo al dataset/DB seleccionado. Exportar CSV seguro no implica modificar valores internos silenciosamente."
+    },
+    {
+      "name": "writing.outline",
+      "family": "33.13 · Escritura y bibliotecas creativas",
+      "contract_summary": "Brief/objetivos → estructura editable y pendientes.",
+      "effect_class": "Control",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Son servicios/skills especializados sobre los artefactos y memoria existentes, no ejecutores paralelos fuera de permisos."
+    },
+    {
+      "name": "writing.revise",
+      "family": "33.13 · Escritura y bibliotecas creativas",
+      "contract_summary": "Fragmento/base/intención → propuesta de cambios, original intacto.",
+      "effect_class": "Control",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Son servicios/skills especializados sobre los artefactos y memoria existentes, no ejecutores paralelos fuera de permisos."
+    },
+    {
+      "name": "writing.compare",
+      "family": "33.13 · Escritura y bibliotecas creativas",
+      "contract_summary": "Versiones/criterios → diferencias y valoración explícitamente interpretativa.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Son servicios/skills especializados sobre los artefactos y memoria existentes, no ejecutores paralelos fuera de permisos."
+    },
+    {
+      "name": "canon.search",
+      "family": "33.13 · Escritura y bibliotecas creativas",
+      "contract_summary": "Proyecto/entidades → hechos canónicos con capítulo/fuente.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Son servicios/skills especializados sobre los artefactos y memoria existentes, no ejecutores paralelos fuera de permisos."
+    },
+    {
+      "name": "canon.propose",
+      "family": "33.13 · Escritura y bibliotecas creativas",
+      "contract_summary": "Hecho/fuente/ámbito → candidato a canon revisable.",
+      "effect_class": "Escribir",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Son servicios/skills especializados sobre los artefactos y memoria existentes, no ejecutores paralelos fuera de permisos."
+    },
+    {
+      "name": "style.extract",
+      "family": "33.13 · Escritura y bibliotecas creativas",
+      "contract_summary": "Ejemplos autorizados → reglas editables y limitaciones.",
+      "effect_class": "Ejecutar",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Son servicios/skills especializados sobre los artefactos y memoria existentes, no ejecutores paralelos fuera de permisos."
+    },
+    {
+      "name": "style.evaluate",
+      "family": "33.13 · Escritura y bibliotecas creativas",
+      "contract_summary": "Preset/textos de prueba → variantes comparables y coste.",
+      "effect_class": "Ejecutar",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Son servicios/skills especializados sobre los artefactos y memoria existentes, no ejecutores paralelos fuera de permisos."
+    },
+    {
+      "name": "media.inspect",
+      "family": "33.14 · Imagen y generación multimedia",
+      "contract_summary": "ArtifactRef → formato, dimensiones/duración, pistas y metadatos.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Preflight de receta y memoria; guardar original, motor, versiones y semilla. La generación puede ser no determinista incluso con semilla, según backend."
+    },
+    {
+      "name": "image.generate",
+      "family": "33.14 · Imagen y generación multimedia",
+      "contract_summary": "Brief/receta/params → job y resultados con procedencia.",
+      "effect_class": "Ejecutar",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Preflight de receta y memoria; guardar original, motor, versiones y semilla. La generación puede ser no determinista incluso con semilla, según backend."
+    },
+    {
+      "name": "image.edit",
+      "family": "33.14 · Imagen y generación multimedia",
+      "contract_summary": "Original/máscara/params → resultado no destructivo y proyecto editable.",
+      "effect_class": "Ejecutar",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Preflight de receta y memoria; guardar original, motor, versiones y semilla. La generación puede ser no determinista incluso con semilla, según backend."
+    },
+    {
+      "name": "image.transform",
+      "family": "33.14 · Imagen y generación multimedia",
+      "contract_summary": "Imagen/operación → resize/crop/convert con parámetros exactos.",
+      "effect_class": "Ejecutar",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Preflight de receta y memoria; guardar original, motor, versiones y semilla. La generación puede ser no determinista incluso con semilla, según backend."
+    },
+    {
+      "name": "media.recipes",
+      "family": "33.14 · Imagen y generación multimedia",
+      "contract_summary": "Capacidad/motor → workflows instalados y requisitos.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Preflight de receta y memoria; guardar original, motor, versiones y semilla. La generación puede ser no determinista incluso con semilla, según backend."
+    },
+    {
+      "name": "media.preflight",
+      "family": "33.14 · Imagen y generación multimedia",
+      "contract_summary": "Receta/entradas → recursos, compatibilidad y faltantes.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Preflight de receta y memoria; guardar original, motor, versiones y semilla. La generación puede ser no determinista incluso con semilla, según backend."
+    },
+    {
+      "name": "media.submit",
+      "family": "33.14 · Imagen y generación multimedia",
+      "contract_summary": "Receta aprobada → job externo único y recibo de aceptación.",
+      "effect_class": "Ejecutar",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Preflight de receta y memoria; guardar original, motor, versiones y semilla. La generación puede ser no determinista incluso con semilla, según backend."
+    },
+    {
+      "name": "media.job_status",
+      "family": "33.14 · Imagen y generación multimedia",
+      "contract_summary": "Job → estado y artefactos reconciliados.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Preflight de receta y memoria; guardar original, motor, versiones y semilla. La generación puede ser no determinista incluso con semilla, según backend."
+    },
+    {
+      "name": "media.cancel",
+      "family": "33.14 · Imagen y generación multimedia",
+      "contract_summary": "Job → cancelación posible o resultado ya ejecutado.",
+      "effect_class": "Control",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Preflight de receta y memoria; guardar original, motor, versiones y semilla. La generación puede ser no determinista incluso con semilla, según backend."
+    },
+    {
+      "name": "audio.transcribe",
+      "family": "33.15 · Audio, vídeo y voz",
+      "contract_summary": "Archivo/idioma/motor → segmentos temporales editables.",
+      "effect_class": "Ejecutar",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "El usuario concede captura de micrófono explícitamente. Identidades vocales y material personal no se transfieren ni entrenan por defecto."
+    },
+    {
+      "name": "audio.synthesize",
+      "family": "33.15 · Audio, vídeo y voz",
+      "contract_summary": "Texto/voz autorizada → audio y parámetros.",
+      "effect_class": "Ejecutar",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "El usuario concede captura de micrófono explícitamente. Identidades vocales y material personal no se transfieren ni entrenan por defecto."
+    },
+    {
+      "name": "audio.extract",
+      "family": "33.15 · Audio, vídeo y voz",
+      "contract_summary": "Vídeo/pista → archivo de audio con procedencia.",
+      "effect_class": "Ejecutar",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "El usuario concede captura de micrófono explícitamente. Identidades vocales y material personal no se transfieren ni entrenan por defecto."
+    },
+    {
+      "name": "video.frames",
+      "family": "33.15 · Audio, vídeo y voz",
+      "contract_summary": "Archivo/timestamps → frames referenciados y resolución.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "El usuario concede captura de micrófono explícitamente. Identidades vocales y material personal no se transfieren ni entrenan por defecto."
+    },
+    {
+      "name": "video.edit",
+      "family": "33.15 · Audio, vídeo y voz",
+      "contract_summary": "Timeline/operaciones → export no destructivo y manifest.",
+      "effect_class": "Ejecutar",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "El usuario concede captura de micrófono explícitamente. Identidades vocales y material personal no se transfieren ni entrenan por defecto."
+    },
+    {
+      "name": "subtitle.export",
+      "family": "33.15 · Audio, vídeo y voz",
+      "contract_summary": "Segmentos/formato → SRT/VTT validado.",
+      "effect_class": "Escribir",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "El usuario concede captura de micrófono explícitamente. Identidades vocales y material personal no se transfieren ni entrenan por defecto."
+    },
+    {
+      "name": "voice.start",
+      "family": "33.15 · Audio, vídeo y voz",
+      "contract_summary": "Permiso/dispositivo/modo → sesión de captura visible.",
+      "effect_class": "Sensible",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "El usuario concede captura de micrófono explícitamente. Identidades vocales y material personal no se transfieren ni entrenan por defecto."
+    },
+    {
+      "name": "voice.stop",
+      "family": "33.15 · Audio, vídeo y voz",
+      "contract_summary": "Sesión → captura detenida y buffers tratados según política.",
+      "effect_class": "Control",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "El usuario concede captura de micrófono explícitamente. Identidades vocales y material personal no se transfieren ni entrenan por defecto."
+    },
+    {
+      "name": "contacts.search",
+      "family": "33.16 · Correo, contactos y calendarios",
+      "contract_summary": "Nombre/dominio/ámbito → candidatos con IDs y origen.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Destinatarios y ámbitos exactos; herramientas de lectura independientes de escritura y envío. El conector debe permitir consultar estado tras un timeout."
+    },
+    {
+      "name": "contacts.get",
+      "family": "33.16 · Correo, contactos y calendarios",
+      "contract_summary": "ContactID → campos autorizados y vigencia.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Destinatarios y ámbitos exactos; herramientas de lectura independientes de escritura y envío. El conector debe permitir consultar estado tras un timeout."
+    },
+    {
+      "name": "mail.search",
+      "family": "33.16 · Correo, contactos y calendarios",
+      "contract_summary": "Consulta/cuenta/cursor → mensajes y fragmentos limitados.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Destinatarios y ámbitos exactos; herramientas de lectura independientes de escritura y envío. El conector debe permitir consultar estado tras un timeout."
+    },
+    {
+      "name": "mail.read",
+      "family": "33.16 · Correo, contactos y calendarios",
+      "contract_summary": "MessageID → cuerpo/adjuntos autorizados y referencias.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Destinatarios y ámbitos exactos; herramientas de lectura independientes de escritura y envío. El conector debe permitir consultar estado tras un timeout."
+    },
+    {
+      "name": "mail.draft",
+      "family": "33.16 · Correo, contactos y calendarios",
+      "contract_summary": "Destinatarios/asunto/cuerpo → borrador guardado, no enviado.",
+      "effect_class": "Escribir",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Destinatarios y ámbitos exactos; herramientas de lectura independientes de escritura y envío. El conector debe permitir consultar estado tras un timeout."
+    },
+    {
+      "name": "mail.send",
+      "family": "33.16 · Correo, contactos y calendarios",
+      "contract_summary": "DraftID/revisión/aprobación → recibo o outcome_unknown reconciliable.",
+      "effect_class": "Externo",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Destinatarios y ámbitos exactos; herramientas de lectura independientes de escritura y envío. El conector debe permitir consultar estado tras un timeout."
+    },
+    {
+      "name": "mail.organize",
+      "family": "33.16 · Correo, contactos y calendarios",
+      "contract_summary": "IDs/etiquetas/archivo/papelera → cambios explícitos reversibles donde se pueda.",
+      "effect_class": "Externo",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Destinatarios y ámbitos exactos; herramientas de lectura independientes de escritura y envío. El conector debe permitir consultar estado tras un timeout."
+    },
+    {
+      "name": "calendar.list",
+      "family": "33.16 · Correo, contactos y calendarios",
+      "contract_summary": "Calendario/rango/zona → eventos y recurrencias.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Destinatarios y ámbitos exactos; herramientas de lectura independientes de escritura y envío. El conector debe permitir consultar estado tras un timeout."
+    },
+    {
+      "name": "calendar.freebusy",
+      "family": "33.16 · Correo, contactos y calendarios",
+      "contract_summary": "Participantes/rango → disponibilidad, no detalles ajenos.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Destinatarios y ámbitos exactos; herramientas de lectura independientes de escritura y envío. El conector debe permitir consultar estado tras un timeout."
+    },
+    {
+      "name": "calendar.create",
+      "family": "33.16 · Correo, contactos y calendarios",
+      "contract_summary": "Calendario/horario/IANA/asistentes → evento e invitaciones especificadas.",
+      "effect_class": "Externo",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Destinatarios y ámbitos exactos; herramientas de lectura independientes de escritura y envío. El conector debe permitir consultar estado tras un timeout."
+    },
+    {
+      "name": "calendar.update",
+      "family": "33.16 · Correo, contactos y calendarios",
+      "contract_summary": "EventID/revisión/alcance recurrencia → modificación confirmada.",
+      "effect_class": "Externo",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Destinatarios y ámbitos exactos; herramientas de lectura independientes de escritura y envío. El conector debe permitir consultar estado tras un timeout."
+    },
+    {
+      "name": "calendar.cancel",
+      "family": "33.16 · Correo, contactos y calendarios",
+      "contract_summary": "EventID/alcance/aprobación → cancelación y notificaciones resultantes.",
+      "effect_class": "Externo",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Destinatarios y ámbitos exactos; herramientas de lectura independientes de escritura y envío. El conector debe permitir consultar estado tras un timeout."
+    },
+    {
+      "name": "remote_files.search",
+      "family": "33.17 · Servicios externos, tickets y colaboración",
+      "contract_summary": "Conector/consulta → recursos autorizados y versión.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Adaptadores proveedores sobre contratos limitados, no una herramienta HTTP con permisos universales. Si la API no permite reconciliar, conservar incertidumbre."
+    },
+    {
+      "name": "remote_files.read",
+      "family": "33.17 · Servicios externos, tickets y colaboración",
+      "contract_summary": "ResourceID → contenido con EvidenceRef y permisos.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Adaptadores proveedores sobre contratos limitados, no una herramienta HTTP con permisos universales. Si la API no permite reconciliar, conservar incertidumbre."
+    },
+    {
+      "name": "remote_files.update",
+      "family": "33.17 · Servicios externos, tickets y colaboración",
+      "contract_summary": "ID/revisión/payload aprobado → versión nueva o conflicto.",
+      "effect_class": "Externo",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Adaptadores proveedores sobre contratos limitados, no una herramienta HTTP con permisos universales. Si la API no permite reconciliar, conservar incertidumbre."
+    },
+    {
+      "name": "issue.search",
+      "family": "33.17 · Servicios externos, tickets y colaboración",
+      "contract_summary": "Proyecto/consulta → tickets/PRs y estado.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Adaptadores proveedores sobre contratos limitados, no una herramienta HTTP con permisos universales. Si la API no permite reconciliar, conservar incertidumbre."
+    },
+    {
+      "name": "issue.create",
+      "family": "33.17 · Servicios externos, tickets y colaboración",
+      "contract_summary": "Proyecto/título/cuerpo → ticket remoto con recibo.",
+      "effect_class": "Externo",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Adaptadores proveedores sobre contratos limitados, no una herramienta HTTP con permisos universales. Si la API no permite reconciliar, conservar incertidumbre."
+    },
+    {
+      "name": "issue.comment",
+      "family": "33.17 · Servicios externos, tickets y colaboración",
+      "contract_summary": "ID/texto exacto → comentario y URL de evidencia.",
+      "effect_class": "Externo",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Adaptadores proveedores sobre contratos limitados, no una herramienta HTTP con permisos universales. Si la API no permite reconciliar, conservar incertidumbre."
+    },
+    {
+      "name": "pull_request.create",
+      "family": "33.17 · Servicios externos, tickets y colaboración",
+      "contract_summary": "Repo/base/head/diff aprobado → PR y comprobaciones.",
+      "effect_class": "Externo",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Adaptadores proveedores sobre contratos limitados, no una herramienta HTTP con permisos universales. Si la API no permite reconciliar, conservar incertidumbre."
+    },
+    {
+      "name": "connector.request",
+      "family": "33.17 · Servicios externos, tickets y colaboración",
+      "contract_summary": "Operación OpenAPI registrada y schema → resultado limitado, no URL arbitraria.",
+      "effect_class": "Externo",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Adaptadores proveedores sobre contratos limitados, no una herramienta HTTP con permisos universales. Si la API no permite reconciliar, conservar incertidumbre."
+    },
+    {
+      "name": "automation.create",
+      "family": "33.18 · Automatizaciones y workflows",
+      "contract_summary": "Recurrencia/IANA/acción/política → tarea guardada y próximas ocurrencias.",
+      "effect_class": "Escribir",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Crear una programación no amplía permisos. El backend puede ofrecer estas capacidades, pero se explicita la necesidad de estar operativo."
+    },
+    {
+      "name": "automation.list",
+      "family": "33.18 · Automatizaciones y workflows",
+      "contract_summary": "Ámbito/filtros → programaciones y estado.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Crear una programación no amplía permisos. El backend puede ofrecer estas capacidades, pero se explicita la necesidad de estar operativo."
+    },
+    {
+      "name": "automation.update",
+      "family": "33.18 · Automatizaciones y workflows",
+      "contract_summary": "ID/revisión/cambios → calendario nuevo y explicación de diferencias.",
+      "effect_class": "Escribir",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Crear una programación no amplía permisos. El backend puede ofrecer estas capacidades, pero se explicita la necesidad de estar operativo."
+    },
+    {
+      "name": "automation.pause",
+      "family": "33.18 · Automatizaciones y workflows",
+      "contract_summary": "ID → nuevas ocurrencias pausadas, jobs activos explícitos.",
+      "effect_class": "Control",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Crear una programación no amplía permisos. El backend puede ofrecer estas capacidades, pero se explicita la necesidad de estar operativo."
+    },
+    {
+      "name": "automation.run_now",
+      "family": "33.18 · Automatizaciones y workflows",
+      "contract_summary": "ID/aprobaciones → ocurrencia manual independiente.",
+      "effect_class": "Ejecutar",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Crear una programación no amplía permisos. El backend puede ofrecer estas capacidades, pero se explicita la necesidad de estar operativo."
+    },
+    {
+      "name": "workflow.validate",
+      "family": "33.18 · Automatizaciones y workflows",
+      "contract_summary": "DAG/entradas → dependencias, permisos y errores.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Crear una programación no amplía permisos. El backend puede ofrecer estas capacidades, pero se explicita la necesidad de estar operativo."
+    },
+    {
+      "name": "workflow.run",
+      "family": "33.18 · Automatizaciones y workflows",
+      "contract_summary": "WorkflowID/revisión/budget → run durable con pasos.",
+      "effect_class": "Ejecutar",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Crear una programación no amplía permisos. El backend puede ofrecer estas capacidades, pero se explicita la necesidad de estar operativo."
+    },
+    {
+      "name": "workflow.resume",
+      "family": "33.18 · Automatizaciones y workflows",
+      "contract_summary": "RunID/checkpoint → continuación de unidades confirmadas.",
+      "effect_class": "Control",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Crear una programación no amplía permisos. El backend puede ofrecer estas capacidades, pero se explicita la necesidad de estar operativo."
+    },
+    {
+      "name": "model.list",
+      "family": "33.19 · Modelos, hardware y backend",
+      "contract_summary": "Backend/filtros → instalado, residente, capacidades y versiones.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Las operaciones de administración no se exponen a cualquier agente por defecto. Cargar, descargar o benchmarkear modelos consume recursos reales."
+    },
+    {
+      "name": "model.capabilities",
+      "family": "33.19 · Modelos, hardware y backend",
+      "contract_summary": "Modelo/tupla → soporte declarado, observado y no probado.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Las operaciones de administración no se exponen a cualquier agente por defecto. Cargar, descargar o benchmarkear modelos consume recursos reales."
+    },
+    {
+      "name": "model.fit",
+      "family": "33.19 · Modelos, hardware y backend",
+      "contract_summary": "Modelo/contexto/topología → estimación con incertidumbre y presupuesto.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Las operaciones de administración no se exponen a cualquier agente por defecto. Cargar, descargar o benchmarkear modelos consume recursos reales."
+    },
+    {
+      "name": "model.load",
+      "family": "33.19 · Modelos, hardware y backend",
+      "contract_summary": "Perfil/ticket de admisión → carga con progreso y recursos reservados.",
+      "effect_class": "Ejecutar",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Las operaciones de administración no se exponen a cualquier agente por defecto. Cargar, descargar o benchmarkear modelos consume recursos reales."
+    },
+    {
+      "name": "model.unload",
+      "family": "33.19 · Modelos, hardware y backend",
+      "contract_summary": "Residencia/job_scope → liberación confirmada o modelo en uso.",
+      "effect_class": "Control",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Las operaciones de administración no se exponen a cualquier agente por defecto. Cargar, descargar o benchmarkear modelos consume recursos reales."
+    },
+    {
+      "name": "model.download",
+      "family": "33.19 · Modelos, hardware y backend",
+      "contract_summary": "Fuente/revisión/licencia/destino → job reanudable aprobado.",
+      "effect_class": "Ejecutar",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Las operaciones de administración no se exponen a cualquier agente por defecto. Cargar, descargar o benchmarkear modelos consume recursos reales."
+    },
+    {
+      "name": "model.calibrate",
+      "family": "33.19 · Modelos, hardware y backend",
+      "contract_summary": "Perfil/suite/budget → métricas y compatibilidad medida.",
+      "effect_class": "Ejecutar",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Las operaciones de administración no se exponen a cualquier agente por defecto. Cargar, descargar o benchmarkear modelos consume recursos reales."
+    },
+    {
+      "name": "hardware.status",
+      "family": "33.19 · Modelos, hardware y backend",
+      "contract_summary": "Nodos autorizados → memoria, GPU, procesos propios y salud.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Las operaciones de administración no se exponen a cualquier agente por defecto. Cargar, descargar o benchmarkear modelos consume recursos reales."
+    },
+    {
+      "name": "backend.health",
+      "family": "33.19 · Modelos, hardware y backend",
+      "contract_summary": "Endpoint → estado, capacidades y diagnósticos no destructivos.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Las operaciones de administración no se exponen a cualquier agente por defecto. Cargar, descargar o benchmarkear modelos consume recursos reales."
+    },
+    {
+      "name": "artifact.list",
+      "family": "33.20 · Artefactos, evidencias y administración",
+      "contract_summary": "Ámbito/filtros/cursor → resultados y versiones.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Acceso por propietario, proyecto y permiso. Exportar y compartir son acciones diferentes."
+    },
+    {
+      "name": "artifact.get",
+      "family": "33.20 · Artefactos, evidencias y administración",
+      "contract_summary": "ID/versión → metadatos, preview o bytes autorizados.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Acceso por propietario, proyecto y permiso. Exportar y compartir son acciones diferentes."
+    },
+    {
+      "name": "artifact.export",
+      "family": "33.20 · Artefactos, evidencias y administración",
+      "contract_summary": "IDs/formato/destino → paquete validado sin secretos por defecto.",
+      "effect_class": "Escribir",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Acceso por propietario, proyecto y permiso. Exportar y compartir son acciones diferentes."
+    },
+    {
+      "name": "artifact.link",
+      "family": "33.20 · Artefactos, evidencias y administración",
+      "contract_summary": "ArtifactID/proyecto/chat → relación, sin cambiar ownership.",
+      "effect_class": "Escribir",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Acceso por propietario, proyecto y permiso. Exportar y compartir son acciones diferentes."
+    },
+    {
+      "name": "evidence.read",
+      "family": "33.20 · Artefactos, evidencias y administración",
+      "contract_summary": "ReceiptID/rango → recibo original inmutable y ámbito.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Acceso por propietario, proyecto y permiso. Exportar y compartir son acciones diferentes."
+    },
+    {
+      "name": "verification.run",
+      "family": "33.20 · Artefactos, evidencias y administración",
+      "contract_summary": "Criterios/artefactos/perfil → pruebas y veredicto por criterio.",
+      "effect_class": "Ejecutar",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Acceso por propietario, proyecto y permiso. Exportar y compartir son acciones diferentes."
+    },
+    {
+      "name": "diagnostic.collect",
+      "family": "33.20 · Artefactos, evidencias y administración",
+      "contract_summary": "Selección/permiso → paquete saneado y manifest revisable.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Acceso por propietario, proyecto y permiso. Exportar y compartir son acciones diferentes."
+    },
+    {
+      "name": "backup.create",
+      "family": "33.20 · Artefactos, evidencias y administración",
+      "contract_summary": "Ámbito/destino → snapshot consistente y verificado.",
+      "effect_class": "Ejecutar",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Acceso por propietario, proyecto y permiso. Exportar y compartir son acciones diferentes."
+    },
+    {
+      "name": "backup.restore",
+      "family": "33.20 · Artefactos, evidencias y administración",
+      "contract_summary": "Snapshot/preview/aprobación → restauración con plan de recuperación.",
+      "effect_class": "Escribir",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Acceso por propietario, proyecto y permiso. Exportar y compartir son acciones diferentes."
+    },
+    {
+      "name": "tools.search",
+      "family": "33.21 · Extensiones, skills y descubrimiento",
+      "contract_summary": "Intención/capacidades → descriptores permitidos y schemas bajo demanda.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Descubrimiento dinámico basado en permisos y relevancia. Instalar código, conectarse a un servidor o ampliar permisos requiere una aprobación separada del uso ordinario."
+    },
+    {
+      "name": "tools.describe",
+      "family": "33.21 · Extensiones, skills y descubrimiento",
+      "contract_summary": "ToolID/versión → contrato efectivo, riesgos y ejemplos.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Descubrimiento dinámico basado en permisos y relevancia. Instalar código, conectarse a un servidor o ampliar permisos requiere una aprobación separada del uso ordinario."
+    },
+    {
+      "name": "mcp.resources",
+      "family": "33.21 · Extensiones, skills y descubrimiento",
+      "contract_summary": "Servidor/consulta → recursos permitidos; lectura no implica ejecutar prompts.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Descubrimiento dinámico basado en permisos y relevancia. Instalar código, conectarse a un servidor o ampliar permisos requiere una aprobación separada del uso ordinario."
+    },
+    {
+      "name": "mcp.read_resource",
+      "family": "33.21 · Extensiones, skills y descubrimiento",
+      "contract_summary": "URI reconocida → contenido tipado con procedencia.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Descubrimiento dinámico basado en permisos y relevancia. Instalar código, conectarse a un servidor o ampliar permisos requiere una aprobación separada del uso ordinario."
+    },
+    {
+      "name": "skills.search",
+      "family": "33.21 · Extensiones, skills y descubrimiento",
+      "contract_summary": "Intención/ámbito → procedimientos compatibles y revisados.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Descubrimiento dinámico basado en permisos y relevancia. Instalar código, conectarse a un servidor o ampliar permisos requiere una aprobación separada del uso ordinario."
+    },
+    {
+      "name": "skills.inspect",
+      "family": "33.21 · Extensiones, skills y descubrimiento",
+      "contract_summary": "SkillID/versión → pasos, código, permisos y verificaciones.",
+      "effect_class": "Leer",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Descubrimiento dinámico basado en permisos y relevancia. Instalar código, conectarse a un servidor o ampliar permisos requiere una aprobación separada del uso ordinario."
+    },
+    {
+      "name": "skills.run",
+      "family": "33.21 · Extensiones, skills y descubrimiento",
+      "contract_summary": "SkillID/entradas/budget → workflow sujeto a los mismos permisos.",
+      "effect_class": "Ejecutar",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Descubrimiento dinámico basado en permisos y relevancia. Instalar código, conectarse a un servidor o ampliar permisos requiere una aprobación separada del uso ordinario."
+    },
+    {
+      "name": "extension.install",
+      "family": "33.21 · Extensiones, skills y descubrimiento",
+      "contract_summary": "Origen/version/hash/permisos → cuarentena y revisión antes de activar.",
+      "effect_class": "Sensible",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Descubrimiento dinámico basado en permisos y relevancia. Instalar código, conectarse a un servidor o ampliar permisos requiere una aprobación separada del uso ordinario."
+    },
+    {
+      "name": "extension.disable",
+      "family": "33.21 · Extensiones, skills y descubrimiento",
+      "contract_summary": "ExtensionID → desactivación y resolución de jobs dependientes.",
+      "effect_class": "Control",
+      "status": "contrato lógico propuesto; mapear a implementación existente",
+      "common_contract": "ToolDescriptor / ToolInvocation / ToolResult v1",
+      "policy": "Descubrimiento dinámico basado en permisos y relevancia. Instalar código, conectarse a un servidor o ampliar permisos requiere una aprobación separada del uso ordinario."
+    }
+  ]
+}

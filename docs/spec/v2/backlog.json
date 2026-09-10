@@ -1,0 +1,2466 @@
+{
+  "schema_version": "1.0",
+  "baseline_commit": "b824057edf40a6fa20caec9c1f77b9e6a9d75bad",
+  "requirements": [
+    {
+      "id": "BASE-01",
+      "title": "Mapa de reutilización antes de tocar código",
+      "priority": "P0",
+      "backend": "Inventariar rutas, stores, componentes, workers y tests por cada requisito; marcar existente, parcial, ausente o no verificable.",
+      "frontend": "Mostrar la versión de aplicación y build realmente servidos en Diagnóstico.",
+      "acceptance": "Entregar mapa con rutas verificadas y una ejecución base reproducible; ningún requisito se cierra solo por nombre de módulo.",
+      "depends_on": [],
+      "existing_anchor": "README.es.md; OBJETIVOS.md; PENDIENTES.md",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "BASE-02",
+      "title": "Una autoridad por estado",
+      "priority": "P0",
+      "backend": "Definir qué store manda sobre tareas, permisos, memoria, cambios y modelos; las demás vistas son proyecciones versionadas.",
+      "frontend": "Recargar o cambiar de cliente reconstruye exactamente el estado confirmado.",
+      "acceptance": "Producir el mismo resultado desde eventos, API e historial; detectar y reparar proyecciones divergentes.",
+      "depends_on": [
+        "BASE-01"
+      ],
+      "existing_anchor": "src/changeset_store.py; services/review_state.py",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "BASE-03",
+      "title": "Build limpio y diagnóstico de instalación",
+      "priority": "P0",
+      "backend": "Verificar manifiestos, lockfiles, assets, versiones de Python/Node y launcher; no depender de archivos locales no registrados sin un paso explícito de generación.",
+      "frontend": "Asistente de arranque muestra el componente ausente y una reparación acotada.",
+      "acceptance": "Una máquina de prueba prepara y abre Faustus siguiendo documentación sin copiar archivos de la instalación personal.",
+      "depends_on": [
+        "BASE-01"
+      ],
+      "existing_anchor": "studio/; Start-Faustus.ps1",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "ARCH-01",
+      "title": "API y eventos versionados",
+      "priority": "P0",
+      "backend": "Contratos tipados para turno, evento, herramienta y artefacto; negociación de versión y errores de incompatibilidad explícitos.",
+      "frontend": "Avisar cuando frontend y backend no coinciden; no mostrar payloads desconocidos como éxito.",
+      "acceptance": "Un cliente antiguo falla de forma comprensible ante un evento nuevo obligatorio; compatibilidad probada para versiones soportadas.",
+      "depends_on": [
+        "BASE-02"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "ARCH-02",
+      "title": "Separar cliente y proceso propietario",
+      "priority": "P0",
+      "backend": "La desconexión del cliente no mata una tarea durable; registrar quién arrancó y quién puede detener cada proceso.",
+      "frontend": "Cerrar pestaña, cerrar ventana y detener servidor son acciones distintas y describen sus consecuencias.",
+      "acceptance": "Cerrar un cliente no detiene Ollama ni procesos ajenos; reabrir recupera el trabajo permitido.",
+      "depends_on": [
+        "BASE-02"
+      ],
+      "existing_anchor": "README.es.md: lanzadores",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "ARCH-03",
+      "title": "Configuración efectiva explicable",
+      "priority": "P0",
+      "backend": "Resolver precedencia global/proyecto/rol/modelo/turno en un único compilador; producir hash y origen de cada valor.",
+      "frontend": "Inspector «qué instrucciones y opciones se están aplicando» con secretos ocultos.",
+      "acceptance": "Una regla duplicada o incompatible aparece como conflicto; no gana silenciosamente por orden accidental de definición.",
+      "depends_on": [
+        "BASE-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "TASK-01",
+      "title": "Estado estructurado y plan no truncable",
+      "priority": "P0",
+      "backend": "Pasos con IDs, dependencias, estado y evidence_refs; historial de revisiones y compatibilidad con update_plan actual.",
+      "frontend": "Plan editable y plegable con criterios sin resolver, sin confundir una casilla marcada por el modelo con verificación.",
+      "acceptance": "Un plan de más de 8.192 caracteres conserva todos sus pasos; el último requisito sigue pendiente hasta obtener evidencia.",
+      "depends_on": [
+        "ARCH-01"
+      ],
+      "existing_anchor": "src/agent_tools/interaction_tools.py",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "TASK-02",
+      "title": "Reanudación por unidades confirmadas",
+      "priority": "P0",
+      "backend": "Persistir rondas, fuentes, pasos y efectos confirmados; reconstruir desde checkpoint y conciliar operaciones en vuelo.",
+      "frontend": "Diferenciar Reanudar, Reintentar desde cero y Crear alternativa; explicar qué se conserva.",
+      "acceptance": "Forzar reinicio entre dos rondas de research y continuar sin repetir las completadas ni perder citas.",
+      "depends_on": [
+        "BASE-02"
+      ],
+      "existing_anchor": "src/deep_research.py; PENDIENTES.md §14",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "TASK-03",
+      "title": "Diario transaccional e idempotencia",
+      "priority": "P0",
+      "backend": "Registrar intención antes de ejecutar, resultado después y claves de operación; usar patrón outbox donde aplique.",
+      "frontend": "Mostrar «resultado incierto, comprobando» en vez de un falso error terminal.",
+      "acceptance": "Reenviar la misma petición tras una pérdida de respuesta no crea dos tareas ni duplica un envío.",
+      "depends_on": [
+        "ARCH-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "TASK-04",
+      "title": "Pausa, cancelación y decisiones durables",
+      "priority": "P0",
+      "backend": "Cancelación propagada a subagentes y procesos con política de limpieza; preguntas identificadas y respuestas asociadas por versión.",
+      "frontend": "Stop generación, Pausar tarea y Cancelar trabajo tienen etiquetas y efectos distintos.",
+      "acceptance": "Una respuesta tardía a una pregunta cancelada no despierta el turno; un hijo no continúa escribiendo después de revocar su tarea.",
+      "depends_on": [
+        "TASK-03"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "TASK-05",
+      "title": "Steering y cambios del usuario",
+      "priority": "P1",
+      "backend": "Encolar instrucciones durante ejecución y aplicarlas en puntos seguros; invalidar pasos afectados por una nueva restricción.",
+      "frontend": "Permitir «cambia de enfoque» sin destruir el borrador; mostrar cuándo la instrucción entró en vigor.",
+      "acceptance": "La corrección del usuario durante un test queda en el estado antes del siguiente cambio de archivos.",
+      "depends_on": [
+        "TASK-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "TASK-06",
+      "title": "Presupuesto de autonomía",
+      "priority": "P0",
+      "backend": "Límites separados de llamadas, tokens, tiempo activo, memoria, gasto remoto y subagentes; pausas humanas no consumen timeout de inferencia.",
+      "frontend": "Presets supervisado, autónomo acotado y solo lectura con presupuesto visible.",
+      "acceptance": "Al agotar un presupuesto se guarda un checkpoint útil; no se borra el trabajo ni se amplían permisos para terminar.",
+      "depends_on": [
+        "TASK-04"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "MOD-01",
+      "title": "Manifiesto de capacidades comprobadas",
+      "priority": "P0",
+      "backend": "Registrar texto, visión, audio, herramientas, JSON/schema, streaming, cancelación, ventana y controles de razonamiento como soportado, no soportado o desconocido.",
+      "frontend": "Badges explican si la capacidad fue anunciada o probada y cuándo; no deducir visión por el nombre.",
+      "acceptance": "Un modelo de texto no recibe imágenes perdidas silenciosamente: se ofrece adaptador de visión autorizado o se informa del límite.",
+      "depends_on": [
+        "ARCH-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "MOD-02",
+      "title": "Calibración breve y suite ampliada",
+      "priority": "P0",
+      "backend": "Fixtures sin efectos externos para JSON, selección de herramienta, resultados múltiples, argumentos españoles, recuperación y contexto; guardar resultados por combinación exacta.",
+      "frontend": "Botón Probar capacidades con coste previsto; informe por dimensión, no nota de inteligencia única.",
+      "acceptance": "Una plantilla incorrecta reduce la calificación y desactiva autonomía riesgosa hasta resolverla.",
+      "depends_on": [
+        "MOD-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "MOD-03",
+      "title": "Normalización de mensajes y stream",
+      "priority": "P0",
+      "backend": "Separar texto, llamadas, resultados, rechazos, finalización y bloques opacos del proveedor; preservar IDs y orden causal.",
+      "frontend": "Nunca mostrar JSON interno como respuesta normal ni animar bloques que no son texto del usuario.",
+      "acceptance": "Reproducir streams fragmentados, finish_reason ausente, múltiples llamadas y reconexiones sin duplicar contenido.",
+      "depends_on": [
+        "ARCH-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "MOD-04",
+      "title": "Opciones con ámbito y precedencia",
+      "priority": "P0",
+      "backend": "Distinguir flags de proceso, opciones de carga y parámetros por petición; validar cada uno en su adaptador.",
+      "frontend": "Campos incompatibles deshabilitados con motivo; ver los valores efectivos y restaurar un preset.",
+      "acceptance": "Un flag de llama-server no se envía como opción Ollama; un cambio que exige recarga pide permiso y muestra impacto.",
+      "depends_on": [
+        "ARCH-03"
+      ],
+      "existing_anchor": "src/model_load_options.py",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "MOD-05",
+      "title": "Router medido y privacidad transitiva",
+      "priority": "P1",
+      "backend": "Routing por capacidad, calidad observada, latencia, residencia y política; todos los auxiliares heredan restricciones de datos.",
+      "frontend": "Fijar modelo por tarea/rol y ver cada escalado; nunca pasar a una API de pago silenciosamente.",
+      "acceptance": "Un fallo de autenticación del runner no dispara gasto API; local-only bloquea también resumidores remotos.",
+      "depends_on": [
+        "MOD-02"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "MOD-06",
+      "title": "Degradación y compatibilidad portable",
+      "priority": "P0",
+      "backend": "Fallback de herramientas nativas a formato restringido solo tras calibración; conversión explícita de contexto al cambiar de familia.",
+      "frontend": "Mantener el hilo y explicar funciones temporalmente no disponibles.",
+      "acceptance": "Cambiar modelo conserva evidencias y tareas; no interpreta bloques opacos antiguos como texto ejecutable ni borra adjuntos.",
+      "depends_on": [
+        "MOD-03"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "CALL-01",
+      "title": "Assembler incremental seguro",
+      "priority": "P0",
+      "backend": "Acumular deltas por call_id/index; decodificar UTF-8 y escapes; exigir mensaje completo, límites de bytes/profundidad y JSON sin claves duplicadas.",
+      "frontend": "Mostrar «preparando llamada» sin ejecutar fragmentos; permitir cancelar antes de autorizar.",
+      "acceptance": "Cortar un stream a mitad de una ruta o un número produce cero efectos; chunks reordenados o duplicados se detectan.",
+      "depends_on": [
+        "MOD-03"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "CALL-02",
+      "title": "Validación sintáctica, semántica y contextual",
+      "priority": "P0",
+      "backend": "Schema, tipos estrictos, enums, rangos, referencias, propietario y precondiciones; no coercionar «false» a verdadero ni inventar parámetros faltantes.",
+      "frontend": "Error junto al argumento problemático con opción de corregir o volver al modelo.",
+      "acceptance": "Una ruta inválida, una cuenta ajena o un archivo obsoleto se rechazan antes de iniciar procesos.",
+      "depends_on": [
+        "CALL-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "CALL-03",
+      "title": "Reparación limitada sin cambiar intención",
+      "priority": "P0",
+      "backend": "Permitir reparar formato con la misma herramienta y sin ampliar destinos/permisos; máximo acotado, luego pedir una llamada nueva.",
+      "frontend": "Distinguir llamada original, corrección y acción finalmente autorizada.",
+      "acceptance": "Texto citado que contiene tool_call no se ejecuta; una reparación no sustituye read_file por shell.",
+      "depends_on": [
+        "CALL-02"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "CALL-04",
+      "title": "Paralelismo según efectos",
+      "priority": "P0",
+      "backend": "Agrupar lecturas independientes; serializar escrituras sobre recursos compartidos; bloquear por archivo/entidad con versión esperada.",
+      "frontend": "Agrupar actividad concurrente sin ocultar una aprobación pendiente.",
+      "acceptance": "Dos herramientas que modifican el mismo archivo no pisan cambios; lecturas sin dependencia sí pueden solaparse.",
+      "depends_on": [
+        "TASK-03"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "CALL-05",
+      "title": "Resultado tipado y continuación correcta",
+      "priority": "P0",
+      "backend": "Retornar status, datos, evidence_refs, side_effects y error; preservar asociación con la llamada aunque termine fuera de orden.",
+      "frontend": "Tarjeta compacta con resultado, duración y enlace a evidencia completa.",
+      "acceptance": "Un éxito de transporte con error funcional no marca el paso hecho; toda llamada tiene exactamente un resultado lógico terminal.",
+      "depends_on": [
+        "CALL-02"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "CALL-06",
+      "title": "Reintentos por clase, no por optimismo",
+      "priority": "P0",
+      "backend": "Backoff con jitter y Retry-After; solo repetir lecturas o escrituras idempotentes; conciliar outcome_unknown antes de reintentar.",
+      "frontend": "Explicar «servidor saturado» frente a «acción quizá completada» y ofrecer comprobación.",
+      "acceptance": "Simular envío completado seguido de timeout: no se envía otra vez sin reconciliar.",
+      "depends_on": [
+        "TASK-03"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "CALL-07",
+      "title": "Interacción humana tipada",
+      "priority": "P0",
+      "backend": "Generalizar ask_user con question_id, opciones estables, multiselección, respuesta libre y estado persistido, manteniendo aliases.",
+      "frontend": "Opciones con consecuencia, recomendación y caja libre; nunca [object Object]; una elección no exige reconstruir la pregunta.",
+      "acceptance": "Recarga, timeout, doble clic y respuesta desde otro cliente no generan decisiones contradictorias.",
+      "depends_on": [
+        "TASK-04"
+      ],
+      "existing_anchor": "src/agent_tools/interaction_tools.py",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "CALL-08",
+      "title": "Garantía de no actuar por texto",
+      "priority": "P0",
+      "backend": "Solo ejecutar salidas del canal/protocolo autorizado; desactivar recuperación heurística de comandos desde prosa, documentos o razonamiento.",
+      "frontend": "Marcar sugerencias como sugerencias; Ejecutar requiere convertirlas a una acción revisable.",
+      "acceptance": "Un README malicioso con un bloque de herramienta no dispara ninguna operación.",
+      "depends_on": [
+        "CALL-02"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "TOOL-01",
+      "title": "Registro único de herramientas",
+      "priority": "P0",
+      "backend": "Un ToolDescriptor versionado define schema, ámbitos, riesgo, idempotencia, timeout, salida y compatibilidad; aliases preservan nombres actuales.",
+      "frontend": "Catálogo con búsqueda, favoritos, estado, permisos y prueba segura.",
+      "acceptance": "La misma herramienta tiene igual contrato en chat, workflow, subagente y MCP; no existe un atajo sin validación.",
+      "depends_on": [
+        "BASE-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "TOOL-02",
+      "title": "Descubrimiento bajo demanda",
+      "priority": "P1",
+      "backend": "Ranking híbrido de herramientas por intención/capacidad y un mínimo determinista por tarea; límites al número de esquemas visibles.",
+      "frontend": "El usuario puede fijar o excluir herramientas por proyecto y ver por qué se eligieron.",
+      "acceptance": "Una petición española de editar .txt mantiene acceso a lectura/escritura aunque falle el ranking semántico.",
+      "depends_on": [
+        "TOOL-01"
+      ],
+      "existing_anchor": "PENDIENTES.md §13",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "TOOL-03",
+      "title": "Ciclo de vida MCP",
+      "priority": "P0",
+      "backend": "Negociación de capacidades y versión, stdio/HTTP según soporte, autenticación, reconexión, cancelación y paginación; cambios de catálogo invalidan cachés.",
+      "frontend": "Conexión Probando/Lista/Degradada/Auth requerida con registro sanitizado.",
+      "acceptance": "Una caída o revocación no deja un turno colgado; las herramientas revocadas desaparecen antes de la siguiente acción.",
+      "depends_on": [
+        "CALL-06"
+      ],
+      "existing_anchor": "MCP existente de Faustus",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "TOOL-04",
+      "title": "Permisos de extensión y cuarentena",
+      "priority": "P0",
+      "backend": "Manifiesto con versión, hash, dependencias, acceso a red/archivos/secretos y proceso aislado; actualización no amplía permisos automáticamente.",
+      "frontend": "Instalar muestra procedencia y diferencias de permisos; desactivar o revertir en un clic.",
+      "acceptance": "Un plugin intenta leer credenciales fuera de su ámbito y el broker lo bloquea aunque el modelo lo solicite.",
+      "depends_on": [
+        "TOOL-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "TOOL-05",
+      "title": "Elicitación, sampling y recursos con límites",
+      "priority": "P1",
+      "backend": "Mapear funciones MCP avanzadas solo si se negocian; sampling consume presupuesto; roots orienta al servidor pero no reemplaza el sandbox.",
+      "frontend": "Preguntas del conector muestran qué servicio pregunta y qué datos recibirá.",
+      "acceptance": "Un servidor no puede recursar indefinidamente pidiendo modelos ni reutilizar una autorización de otro destino.",
+      "depends_on": [
+        "TOOL-03"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "TOOL-06",
+      "title": "Skills evaluables, no instrucciones privilegiadas",
+      "priority": "P1",
+      "backend": "Procedimientos con entradas, evidencias de éxito, versiones, dependencias y pruebas; promoción desde Enséñame requiere revisión.",
+      "frontend": "Editor con historial, simulación, permisos y activar por proyecto; ninguna skill se convierte en regla global por sorpresa.",
+      "acceptance": "Una skill obsoleta falla antes de mutar datos y ofrece la versión previa; su contenido no eleva privilegios.",
+      "depends_on": [
+        "TOOL-04"
+      ],
+      "existing_anchor": "routes/teach_mode_routes.py",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "CTX-01",
+      "title": "Presupuesto real por modelo y modalidad",
+      "priority": "P0",
+      "backend": "Usar tokenizer correcto cuando esté disponible; reservar salida y overhead; marcar estimaciones para imágenes/audio o tokenizer desconocido.",
+      "frontend": "Medidor separa instrucciones, historial, memoria, archivos, herramientas y margen.",
+      "acceptance": "Un adjunto grande no desplaza la petición ni los criterios; no se comunica una cifra estimada como conteo exacto.",
+      "depends_on": [
+        "MOD-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "CTX-02",
+      "title": "Compresión con integridad semántica",
+      "priority": "P0",
+      "backend": "Preservar requisitos, negativos, decisiones y referencias; comprobar esquema/resumen contra el estado canónico y registrar lo omitido.",
+      "frontend": "Ver resumen, recuperar fuente y fijar fragmentos que no deben comprimirse.",
+      "acceptance": "Un resumen nunca transforma «no cambiar API» en «cambiar API»; al no poder conservarlo, retiene el texto original.",
+      "depends_on": [
+        "TASK-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "CTX-03",
+      "title": "Ventana de trabajo y evidencia exacta",
+      "priority": "P0",
+      "backend": "Rangos y versiones de fuentes; lectura paginada, búsqueda dentro de output y carga incremental; deduplicar tokens sin perder procedencia.",
+      "frontend": "Inspección de qué se incluyó, por qué y qué quedó fuera.",
+      "acceptance": "El modelo puede volver al fragmento exacto que fundamenta un resumen aunque cambie la ventana activa.",
+      "depends_on": [
+        "CTX-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "CTX-04",
+      "title": "Cache correcto y reindexación",
+      "priority": "P1",
+      "backend": "Claves por modelo/tokenizer/plantilla/política/usuario/versión de fuente; invalidación cuando cambia cualquiera.",
+      "frontend": "Mostrar índices desactualizados y permitir reconstruir sin borrar documentos.",
+      "acceptance": "Editar un archivo o revocar su acceso invalida recuperaciones y prefijos dependientes; no hay fuga entre proyectos.",
+      "depends_on": [
+        "CTX-03"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "CTX-05",
+      "title": "Recuperación selectiva con control del usuario",
+      "priority": "P1",
+      "backend": "Ámbitos de sesión, proyecto y memoria global separados; exclusiones por archivo/carpeta y fuentes explícitas prioritarias.",
+      "frontend": "Acciones «usar este fragmento», «no usar esta fuente» y «sin memoria automática» con alcance visible.",
+      "acceptance": "Excluir una memoria no borra el archivo fuente ni se aplica por error al historial completo.",
+      "depends_on": [
+        "CTX-03"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "CTX-06",
+      "title": "Salud del contexto sin otro LLM obligatorio",
+      "priority": "P1",
+      "backend": "Medir repetición, contradicciones con restricciones y lecturas sin progreso mediante reglas; usar evaluación adicional solo cuando aporte valor.",
+      "frontend": "Aviso accionable: contexto saturado, evidencia obsoleta o plan perdido; botón reconstruir tarea.",
+      "acceptance": "Recuperar una tarea tras compactación manteniendo objetivo, restricciones, cambios y siguiente acción correctos.",
+      "depends_on": [
+        "TASK-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "IDX-01",
+      "title": "Identidad de carpetas y fuentes",
+      "priority": "P0",
+      "backend": "Workspace IDs estables, rutas canonizadas, tratamiento de mayúsculas, unidades y enlaces; separar proyecto de carpeta de chats.",
+      "frontend": "Selector nativo, recientes y reubicar carpeta; indicar inexistente/desconectada sin perder el proyecto.",
+      "acceptance": "Renombrar una carpeta no duplica memorias ni convierte un path de Windows en una ruta remota inválida.",
+      "depends_on": [
+        "BASE-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "IDX-02",
+      "title": "Índice incremental y análisis de código",
+      "priority": "P1",
+      "backend": "Símbolos y referencias con parsers/LSP donde proceda; watch con debounce, ignorados, cancelación y límites de archivos.",
+      "frontend": "Progreso por fases y exclusiones editables; mostrar último índice confirmado.",
+      "acceptance": "Cambiar una función actualiza referencias y tests candidatos sin reembebir todo el workspace.",
+      "depends_on": [
+        "IDX-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "IDX-03",
+      "title": "Recuperación híbrida medible",
+      "priority": "P1",
+      "backend": "Combinar literal, BM25/semántica, símbolos y vecindad; reranking opcional, top-k adaptativo y recuperación de evidencia negativa.",
+      "frontend": "Resultados con fragmento, origen y razón de relevancia; abrir definición y llamadores.",
+      "acceptance": "Suite con nombres raros, español y código encuentra el archivo correcto aunque la similitud semántica falle.",
+      "depends_on": [
+        "IDX-02"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "IDX-04",
+      "title": "Ingestión robusta de archivos",
+      "priority": "P0",
+      "backend": "Detectar MIME, encoding, archivos dañados, cifrados y grandes; extraer texto nativo antes de OCR; conservar estructura y errores por archivo.",
+      "frontend": "Adjunto Subiendo/Extrayendo/Listo/Parcial/Error con reintento individual y preview.",
+      "acceptance": "Un PDF escaneado no figura como leído si solo se extrajo una portada; un archivo fallido no bloquea los demás.",
+      "depends_on": [
+        "IDX-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "IDX-05",
+      "title": "Referencias multimodales exactas",
+      "priority": "P1",
+      "backend": "EvidenceRef admite página, celda, símbolo, bbox y rango temporal con hash de versión; capturas derivadas conservan origen.",
+      "frontend": "Saltar de una cita al párrafo, celda o segundo correspondiente.",
+      "acceptance": "Un gráfico o tabla no se resume desde texto ausente sin visualizarlo o declarar limitación.",
+      "depends_on": [
+        "IDX-04"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "IDX-06",
+      "title": "Grandes colecciones sin secuestrar el PC",
+      "priority": "P1",
+      "backend": "Colas con prioridad baja, límites RAM/CPU, pausar al inferir, deduplicación por contenido y limpieza de índices huérfanos.",
+      "frontend": "Panel de almacenamiento con tamaño de originales, derivados e índices separados.",
+      "acceptance": "Indexar una carpeta extensa no bloquea escribir en el chat ni provoca carga involuntaria de otro LLM grande.",
+      "depends_on": [
+        "IDX-02"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "MEM-01",
+      "title": "Tipos, alcance, vigencia y procedencia",
+      "priority": "P0",
+      "backend": "Cada entrada tiene autor/origen, owner, proyecto, fecha, validez, sensibilidad y estado confirmado/inferido/obsoleto.",
+      "frontend": "Memoria consultable y editable con «por qué lo recuerda»; distinguir recuerdo explícito de inferencia.",
+      "acceptance": "Una hipótesis refutada no vuelve como hecho en un chat nuevo ni contamina otro proyecto.",
+      "depends_on": [
+        "CTX-05"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "MEM-02",
+      "title": "Corrección, olvido y borrado propagado",
+      "priority": "P0",
+      "backend": "Tombstones y eliminación de índices/caches derivados según política; evitar resurrección desde consolidaciones o imports.",
+      "frontend": "Olvidar explica qué borra y qué permanece en archivos originales o copias de seguridad.",
+      "acceptance": "Borrar un recuerdo y reconstruir el índice no lo restaura; copias retenidas tienen política explícita.",
+      "depends_on": [
+        "MEM-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "MEM-03",
+      "title": "Memoria de fallos con promoción controlada",
+      "priority": "P1",
+      "backend": "Registrar clase de incidente y evidencia; proponer regla correctiva tras validación, con caducidad y prueba de no regresión.",
+      "frontend": "Panel «problema recurrente → regla propuesta → pruebas → activación».",
+      "acceptance": "Un fallo aislado no produce una prohibición global que empeore otras tareas.",
+      "depends_on": [
+        "MEM-01"
+      ],
+      "existing_anchor": "src/immune_system/",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "MEM-04",
+      "title": "Continuidad de proyecto y decisiones",
+      "priority": "P1",
+      "backend": "Registrar decisión, alternativas descartadas y alcance; invalidarla cuando cambia su premisa sin borrar su historia.",
+      "frontend": "Timeline de decisiones vinculada a artefactos y cambios.",
+      "acceptance": "Cambiar de modelo conserva el motivo de una elección técnica sin arrastrar todo el transcript.",
+      "depends_on": [
+        "MEM-01"
+      ],
+      "existing_anchor": "src/project_context/",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "MEM-05",
+      "title": "Incógnito de extremo a extremo",
+      "priority": "P0",
+      "backend": "Excluir persistencia automática de mensajes, memorias, evidencias y telemetría de contenido; aislar temporales y su limpieza.",
+      "frontend": "Explicar qué sí puede persistir por acción explícita, como un archivo creado por el usuario.",
+      "acceptance": "Terminar una sesión incógnita no deja contenido en títulos, búsqueda, embeddings ni logs de depuración.",
+      "depends_on": [
+        "MEM-02"
+      ],
+      "existing_anchor": "src/changeset_store.py",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "PLAN-01",
+      "title": "Plan progresivo y cobertura de requisitos",
+      "priority": "P0",
+      "backend": "Extraer requisitos sin aplanar encabezados; mapear pasos a criterios; revisar tras reconocimiento y evidencia nueva.",
+      "frontend": "Plan corto por defecto, expandible hasta cada obligación original.",
+      "acceptance": "Un brief de muchas secciones conserva todas, incluidas las últimas; ninguna desaparece por top-k o límite fijo.",
+      "depends_on": [
+        "TASK-01"
+      ],
+      "existing_anchor": "src/deep_research.py",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "PLAN-02",
+      "title": "Delegación con contrato y presupuesto",
+      "priority": "P1",
+      "backend": "Objetivo acotado, entradas, salidas, herramientas y evidencias requeridas; profundidad y número de hijos limitados.",
+      "frontend": "Árbol de subtareas con estado, modelo, permisos, consumo y cancelar rama.",
+      "acceptance": "Un hijo devuelve partial cuando no cumple su encargo; no se declara éxito por haber producido texto.",
+      "depends_on": [
+        "TASK-06"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "PLAN-03",
+      "title": "Propiedad de recursos y reconciliación",
+      "priority": "P0",
+      "backend": "Asignar dueño de archivos o copias aisladas; integrar cambios con verificación de versiones y conflictos.",
+      "frontend": "Ver qué agente modifica cada archivo; resolver conflictos antes de aplicar.",
+      "acceptance": "Dos especialistas no pisan el mismo componente y un worker muerto libera sus leases de forma segura.",
+      "depends_on": [
+        "CALL-04"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "PLAN-04",
+      "title": "Consejo con evidencia, no voto ciego",
+      "priority": "P1",
+      "backend": "Opiniones iniciales independientes; comparar hipótesis y pruebas; único ejecutor autorizado para efectos.",
+      "frontend": "Mostrar desacuerdos y evidencias decisivas, no unanimidad teatral.",
+      "acceptance": "Tres modelos que repiten la misma afirmación sin fuente no sustituyen una comprobación.",
+      "depends_on": [
+        "PLAN-02"
+      ],
+      "existing_anchor": "src/council/",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "PLAN-05",
+      "title": "Explorar alternativas sin contaminar el mundo real",
+      "priority": "P1",
+      "backend": "Namespaces de simulación separados de estado real; ramas aisladas y presupuesto; fusión solo tras revisión.",
+      "frontend": "Etiquetas claras Simulado/Aplicado; comparar cambios antes de aceptar una rama.",
+      "acceptance": "State Mirror y recuerdos confirmados no reciben resultados de una rama descartada.",
+      "depends_on": [
+        "PLAN-03"
+      ],
+      "existing_anchor": "src/branching_futures/",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "PLAN-06",
+      "title": "Finalización ambiciosa pero acotada",
+      "priority": "P1",
+      "backend": "Completion Engine propone trabajo adicional con coste y relación al objetivo; no altera automáticamente el alcance.",
+      "frontend": "Separar solicitado, necesario para completarlo y mejora opcional.",
+      "acceptance": "Arreglar un bug no deriva en refactorizar todo el proyecto ni añadir dependencias no aprobadas.",
+      "depends_on": [
+        "PLAN-01"
+      ],
+      "existing_anchor": "src/completion_engine/",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "VER-01",
+      "title": "Criterios con estados explícitos",
+      "priority": "P0",
+      "backend": "Cada criterio queda demostrado, incumplido, no comprobado o no aplicable con razón; conservar evidencia y versión del resultado.",
+      "frontend": "Resumen final con alcance comprobado, limitaciones y enlaces; prohibir el check verde total si quedan criterios críticos sin probar.",
+      "acceptance": "Una tarea con herramientas exitosas pero tests no ejecutados se presenta como no verificada.",
+      "depends_on": [
+        "TASK-01"
+      ],
+      "existing_anchor": "src/changeset_store.py",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "VER-02",
+      "title": "Verificadores deterministas y baseline",
+      "priority": "P0",
+      "backend": "Descubrir comandos desde el proyecto; registrar fallos previos; ejecutar pruebas específicas y ampliar cuando cambia el riesgo.",
+      "frontend": "Panel separa regresión nueva, fallo preexistente y comprobación inconclusa.",
+      "acceptance": "Un proyecto ya roto no atribuye todo al último cambio ni usa fallos antiguos para ignorar una regresión nueva.",
+      "depends_on": [
+        "IDX-02"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "VER-03",
+      "title": "Revisión independiente estructurada",
+      "priority": "P1",
+      "backend": "Revisor recibe objetivo, diff y evidencia, no la conclusión persuasiva del autor; hallazgos con severidad y reproducción.",
+      "frontend": "Aceptar/rechazar hallazgos y volver al fragmento; límite visible a rondas de reparación.",
+      "acceptance": "Un revisor sin pruebas no bloquea indefinidamente por preferencias de estilo ni altera requisitos originales.",
+      "depends_on": [
+        "VER-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "VER-04",
+      "title": "Prueba de resultado material",
+      "priority": "P0",
+      "backend": "Leer después de escribir, comprobar artefacto y snapshot exacto; no asumir que HTTP 200 o exit_code 0 demuestra toda la tarea.",
+      "frontend": "Distinguir Generado, Guardado, Abre correctamente, Revisado y Verificado.",
+      "acceptance": "Un DOCX corrupto, descarga incompleta o export vacío falla antes de mostrar un enlace de éxito.",
+      "depends_on": [
+        "VER-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "VER-05",
+      "title": "Provenance y citas comprobables",
+      "priority": "P0",
+      "backend": "Verificar que cada cita resuelve a una fuente obtenida; evaluar apoyo semántico aparte de la mera existencia del marcador.",
+      "frontend": "Abrir extracto original y mostrar fuente inaccesible o respaldo dudoso.",
+      "acceptance": "Un informe con muchos marcadores pero referencias que no apoyan la frase no obtiene etiqueta de investigación verificada.",
+      "depends_on": [
+        "IDX-05"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "VER-06",
+      "title": "Aprobación humana no es prueba automática",
+      "priority": "P0",
+      "backend": "Mantener estado de revisión del usuario separado de tests/veredictos automáticos; firma temporal del diff aprobado.",
+      "frontend": "Aceptar cambios y Verificado son acciones/etiquetas distintas.",
+      "acceptance": "Aceptar manualmente no convierte tests fallidos en exitosos; cambiar el diff invalida aprobación de la versión anterior.",
+      "depends_on": [
+        "VER-01"
+      ],
+      "existing_anchor": "services/review_state.py",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "EDIT-01",
+      "title": "Edición sobre versión conocida",
+      "priority": "P0",
+      "backend": "Cada patch lleva hash/base_revision; validar anclas únicas y diff antes de aplicar; escrituras atómicas donde el sistema de archivos lo permita.",
+      "frontend": "Mostrar conflicto con edición del usuario y comparar base, propuesta y actual, sin sobrescribir en silencio.",
+      "acceptance": "Modificar el archivo desde un editor externo entre lectura y escritura provoca conflicto recuperable, no pérdida de trabajo.",
+      "depends_on": [
+        "VER-04"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "EDIT-02",
+      "title": "Lotes multiarquivo recuperables",
+      "priority": "P0",
+      "backend": "Preparar y validar todo el lote; journal de aplicación y compensación si no hay atomicidad real entre archivos; checkpoints antes de cambios de riesgo.",
+      "frontend": "Previsualizar el lote completo, excluir cambios opcionales y explicar dependencias entre archivos.",
+      "acceptance": "Un fallo en el tercer archivo conserva evidencia y permite restaurar lo aplicado; nunca anuncia atomicidad que el filesystem no ofrece.",
+      "depends_on": [
+        "EDIT-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "EDIT-03",
+      "title": "Preservación del contenido",
+      "priority": "P0",
+      "backend": "Mantener encoding, BOM, finales de línea, permisos y formatos; evitar reescrituras completas y formateos ajenos al alcance.",
+      "frontend": "Diff legible que distingue cambios funcionales de formato; vista de binarios y archivos grandes.",
+      "acceptance": "Editar una línea en un fichero CRLF o UTF-8 con BOM no reescribe miles de líneas ni destruye caracteres.",
+      "depends_on": [
+        "EDIT-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "EDIT-04",
+      "title": "Cobertura real del checkpoint",
+      "priority": "P0",
+      "backend": "Registrar raíces, exclusiones, binarios, tamaño, versiones y efectos no restaurables; observar cambios por shell y subagentes cuando sea viable.",
+      "frontend": "Panel Qué se restaurará / Qué no; preview obligatorio si hay cambios posteriores del usuario.",
+      "acceptance": "Restaurar no borra cambios ajenos sin confirmación ni afirma revertir operaciones externas.",
+      "depends_on": [
+        "TASK-02"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "EDIT-05",
+      "title": "Historial y limpieza segura",
+      "priority": "P1",
+      "backend": "Retención por tamaño, edad y puntos fijados; cuotas para snapshots y deduplicación; limpieza transaccional y referencias protegidas.",
+      "frontend": "Línea temporal con etiquetas, ramas, comparación y espacio recuperable antes de purgar.",
+      "acceptance": "GC no elimina objetos referidos por un checkpoint fijado, un informe guardado o una tarea pausada.",
+      "depends_on": [
+        "EDIT-04"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "EDIT-06",
+      "title": "Refactorización asistida por estructura",
+      "priority": "P1",
+      "backend": "Preferir operaciones AST/LSP para renombrados soportados; verificar referencias y tests, con fallback a patch revisable.",
+      "frontend": "Vista de impacto con símbolos, llamadas y pruebas relevantes.",
+      "acceptance": "Renombrar una función no cambia cadenas y documentación no relacionadas por sustitución global accidental.",
+      "depends_on": [
+        "IDX-02",
+        "VER-02"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "EXEC-01",
+      "title": "Entorno explícito y reproducible",
+      "priority": "P0",
+      "backend": "Cada ejecución fija cwd, shell, host, usuario efectivo y lista segura de variables; diagnóstico de dependencias y rutas.",
+      "frontend": "Mostrar dónde se ejecutará: Windows, WSL, contenedor o remoto; abrir terminal equivalente para inspección.",
+      "acceptance": "Una ruta D:\\Proyecto no se entrega literalmente a un shell Linux; faltas de entorno se reportan antes de acciones dependientes.",
+      "depends_on": [
+        "TOOL-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "EXEC-02",
+      "title": "Comandos y argumentos seguros",
+      "priority": "P0",
+      "backend": "Usar argv en herramientas tipadas, escapar solo al entrar en un shell real; no confiar en listas negras de palabras para contener código arbitrario.",
+      "frontend": "Preview del comando efectivo y su ámbito; secretos enmascarados.",
+      "acceptance": "Espacios, comillas, Unicode, globbing y rutas con & no cambian el significado de un argumento ni habilitan otro comando.",
+      "depends_on": [
+        "CALL-02"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "EXEC-03",
+      "title": "Procesos controlables",
+      "priority": "P0",
+      "backend": "Identidad de proceso con tiempo de inicio y árbol de hijos; límites, captura incremental de salida, manejo de prompts y terminación escalonada.",
+      "frontend": "Terminal acoplable, buscar/copiar logs, enviar entrada explícita, detener un proceso o toda la tarea.",
+      "acceptance": "Cancelar mata solo el árbol propiedad de Faustus; no todos los Python, Node, Docker u Ollama de la máquina.",
+      "depends_on": [
+        "TASK-04"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "EXEC-04",
+      "title": "Construcción y pruebas con presupuesto",
+      "priority": "P0",
+      "backend": "Cola de jobs pesados, límites de memoria/concurrencia y prioridades; no lanzar builds, tests y modelos grandes sin admisión conjunta.",
+      "frontend": "Avisar de conflictos entre tareas y ofrecer ejecutar secuencialmente.",
+      "acceptance": "Una research local no compite con varias suites de tests y otro modelo hasta agotar el commit de Windows.",
+      "depends_on": [
+        "TASK-06"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "EXEC-05",
+      "title": "Instalar dependencias con control",
+      "priority": "P1",
+      "backend": "Detectar gestores/lockfiles; planificar cambios y descarga; aprobación para red, postinstall y elevación; preferir entorno aislado.",
+      "frontend": "Mostrar paquete, origen, versión, motivo y archivos que cambiarán; no pedir aprobación repetida para el mismo plan inalterado.",
+      "acceptance": "Un paquete sugerido por texto no confiable no se instala sin validar origen y permiso; no modificar globalmente el sistema por defecto.",
+      "depends_on": [
+        "EXEC-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "EXEC-06",
+      "title": "Scripts reutilizables y ejecución remota",
+      "priority": "P1",
+      "backend": "Recetas versionadas con entradas tipadas y salida verificable; SSH con fingerprint validado, secretos fuera del prompt y límites por destino.",
+      "frontend": "Perfil de ejecución reutilizable y prueba de conexión no destructiva; advertencia al cambiar host.",
+      "acceptance": "Un hostname similar no hereda confianza de otro; una receta no puede cambiar silenciosamente de equipo.",
+      "depends_on": [
+        "TOOL-04"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "WEB-01",
+      "title": "Búsqueda con salud y diversidad",
+      "priority": "P0",
+      "backend": "Consultar motores configurados con cuotas, deduplicación y diagnósticos; preservar errores, fuente y fecha; no mezclar cero resultados con timeout.",
+      "frontend": "Estado de motores, filtro de fecha/dominio y aviso de cobertura parcial; reusar Salud de la búsqueda.",
+      "acceptance": "Si solo responde un motor, el informe lo dice; si todos fallan no inventa resultados ni acaba como éxito.",
+      "depends_on": [
+        "VER-05"
+      ],
+      "existing_anchor": "GET /api/search/health",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "WEB-02",
+      "title": "Lectura web acotada y segura",
+      "priority": "P0",
+      "backend": "Fetch con límites de bytes/tiempo, MIME y redirecciones; bloquear SSRF incluyendo IP privada tras resolver DNS; extracción conserva URL y fragmentos.",
+      "frontend": "Vista original/extracto, advertencias de acceso, páginas duplicadas y contenido desactualizado.",
+      "acceptance": "Una URL pública que redirige al metadata endpoint o localhost se bloquea salvo conector local explícitamente autorizado.",
+      "depends_on": [
+        "CALL-02"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "WEB-03",
+      "title": "Sesiones de navegador aisladas",
+      "priority": "P0",
+      "backend": "Perfiles por propietario/proyecto; cookies cifradas o gestionadas por navegador; sesiones efímeras opcionales y permisos por origen.",
+      "frontend": "Ver navegador activo y tomar el control; login, CAPTCHA y segundo factor a cargo del usuario.",
+      "acceptance": "Un proyecto no ve la sesión autenticada de otro; cerrar una tarea no borra la sesión del navegador personal del usuario.",
+      "depends_on": [
+        "TASK-04"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "WEB-04",
+      "title": "Acciones con precondición y readback",
+      "priority": "P0",
+      "backend": "Resolver elemento sobre snapshot vigente; comprobar URL, accesibilidad y estado antes de clic/type/submit; validar resultado posterior.",
+      "frontend": "Resaltar elemento objetivo y estado antes/después; aprobaciones contextualizadas para envíos o cambios relevantes.",
+      "acceptance": "Un layout desplazado no produce un clic ciego en Eliminar; una navegación invalida coordenadas y selectores obsoletos.",
+      "depends_on": [
+        "VER-04"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "WEB-05",
+      "title": "Capturas como evidencia accionable",
+      "priority": "P1",
+      "backend": "Guardar resolución, escala, viewport, timestamp y página; punto de edición es una referencia visual, no un enlace inventado a una línea de código.",
+      "frontend": "Anotar recuadro/punto, adjuntarlo sin enviar y regresar al proyecto o elemento observado.",
+      "acceptance": "Una captura anterior nunca se usa como mapa exacto de una página nueva sin volver a inspeccionarla.",
+      "depends_on": [
+        "IDX-05"
+      ],
+      "existing_anchor": "Señalar para editar",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "WEB-06",
+      "title": "Navegación y extracción complejas",
+      "priority": "P1",
+      "backend": "Paginación, descargas y formularios con límites; adjuntos a sandbox, comprobar hash/tamaño; no evadir accesos restringidos.",
+      "frontend": "Progreso por página/descarga y posibilidad de seleccionar campos; revisar destino y archivo antes de subirlo.",
+      "acceptance": "Un resultado descargado a medias no aparece como completo ni una selección de archivo expone toda la carpeta.",
+      "depends_on": [
+        "WEB-02"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "DESK-01",
+      "title": "Control visible del escritorio",
+      "priority": "P2",
+      "backend": "Puente por OS con permisos específicos para captura, accesibilidad, teclado y ratón; lista de apps/ventanas permitidas, parada inmediata.",
+      "frontend": "Indicador permanente de control, vista de acción próxima y atajo de emergencia no dependiente del modelo.",
+      "acceptance": "Mover el foco a una app no autorizada pausa la automatización; no escribir contraseñas ni activar cámara/micrófono por inferencia.",
+      "depends_on": [
+        "WEB-04"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "DESK-02",
+      "title": "Verificación de interfaces",
+      "priority": "P1",
+      "backend": "Ejecutar journeys en navegador de pruebas: DOM, consola, red, screenshots y accesibilidad; fixtures controladas antes de la instancia real.",
+      "frontend": "Resultado reproducible con paso fallido y captura; no dar por comprobada una UI solo por compilar TypeScript.",
+      "acceptance": "El caso de botones [object Object] falla en test de render/journey aunque el backend devuelva HTTP 200.",
+      "depends_on": [
+        "VER-02"
+      ],
+      "existing_anchor": "studio/checks",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "RES-01",
+      "title": "Brief jerárquico sin recorte silencioso",
+      "priority": "P0",
+      "backend": "Parsear encabezados, subpreguntas, tablas solicitadas y restricciones en un árbol; asignar cobertura y evidencias por nodo sin cortar por número arbitrario.",
+      "frontend": "Esquema editable con pendientes, cubiertos e insuficientemente documentados.",
+      "acceptance": "Un encargo con 44 viñetas conserva todas y produce un mapa de cobertura, aunque el informe se redacte en partes.",
+      "depends_on": [
+        "PLAN-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "RES-02",
+      "title": "Búsqueda iterativa con parada razonada",
+      "priority": "P1",
+      "backend": "Planificar consultas variadas; medir novedad, duplicados y cobertura; parar por presupuesto, saturación o falta de acceso, no solo por vueltas.",
+      "frontend": "Mostrar qué falta investigar y por qué se detiene; permitir añadir fuentes o acotar un apartado.",
+      "acceptance": "Diez URLs repetidas no cuentan como diez fuentes nuevas; repetir una consulta sin aportar evidencia dispara cambio de estrategia.",
+      "depends_on": [
+        "WEB-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "RES-03",
+      "title": "Registro de fuentes y conflictos",
+      "priority": "P0",
+      "backend": "Guardar autor/organismo, título, URL/DOI cuando exista, fecha de publicación y consulta, extractos, versión y estado de acceso; distinguir primarias y secundarias.",
+      "frontend": "Biblioteca de fuentes agrupable; marcar fuentes débiles, desactualizadas o contradictorias sin ocultarlas.",
+      "acceptance": "Una opinión no se etiqueta como ensayo o consenso; dos fuentes que discrepan aparecen en el análisis.",
+      "depends_on": [
+        "VER-05"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "RES-04",
+      "title": "Redacción segmentada consistente",
+      "priority": "P0",
+      "backend": "Redactar por secciones con IDs estables de evidencia, glosario y esquema compartido; ensamblar y comprobar huecos, repeticiones y referencias rotas.",
+      "frontend": "Vista del informe vivo con secciones completas/pendientes, sin perder la última versión válida.",
+      "acceptance": "Agotar salida en una sección no elimina el resto del encargo ni sobrescribe un informe útil con texto vacío.",
+      "depends_on": [
+        "RES-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "RES-05",
+      "title": "Recuperación real por etapas",
+      "priority": "P0",
+      "backend": "Checkpoint de consultas, páginas obtenidas, extractos, síntesis y secciones confirmadas; revalidar fuentes cuando cambian.",
+      "frontend": "Reanudar desde última etapa o empezar una nueva ejecución; elegir sin confundir ambas acciones.",
+      "acceptance": "Matar y reiniciar el backend tras tres rondas conserva sus evidencias y no vuelve a gastar toda la inferencia en ellas.",
+      "depends_on": [
+        "TASK-02"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "RES-06",
+      "title": "Calidad de evidencia configurable",
+      "priority": "P1",
+      "backend": "Perfiles general, técnico, académico y clínico con fuentes y verificaciones apropiadas; separar grado de respaldo de simple número de citas.",
+      "frontend": "Etiquetas de incertidumbre y tabla de afirmaciones con su apoyo; export de bibliografía cuando hay metadatos.",
+      "acceptance": "El porcentaje de frases citadas nunca se usa por sí solo para declarar correcto un informe clínico o técnico.",
+      "depends_on": [
+        "RES-03"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "ART-01",
+      "title": "Pipeline de artefactos durable",
+      "priority": "P0",
+      "backend": "Estados preparando/generando/validando/listo/parcial/fallido; escritura temporal, commit y checksum; manifest con procedencia y límites.",
+      "frontend": "Previsualización, abrir en app externa, revelar en carpeta, copiar referencia y descarga; no mostrar listo antes de finalizar.",
+      "acceptance": "Cerrar el chat no pierde una exportación; una descarga interrumpida se reintenta sin crear archivos corruptos o duplicados.",
+      "depends_on": [
+        "VER-04"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "ART-02",
+      "title": "Edición de documentos real",
+      "priority": "P1",
+      "backend": "Leer y modificar DOCX/ODT/Markdown/HTML con estructura, estilos, tablas, referencias y preservación de contenido no tocado; capacidades por formato.",
+      "frontend": "Editor documento y modo cambios; advertir elementos no preservables antes de convertir.",
+      "acceptance": "Una edición de un párrafo no elimina comentarios, imágenes o numeración sin mostrarlo y permitir cancelación.",
+      "depends_on": [
+        "ART-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "ART-03",
+      "title": "Exportar y revisar visualmente",
+      "priority": "P1",
+      "backend": "Export DOCX/PDF/HTML/Markdown con plantillas versionadas, TOC, fuentes locales y validación de apertura; render para inspección de páginas.",
+      "frontend": "Vista de páginas con cortes, tablas y alertas de desbordamiento; descargar original editable y versión de lectura.",
+      "acceptance": "Un documento que abre pero tiene texto fuera de página o tablas cortadas no pasa control visual automáticamente.",
+      "depends_on": [
+        "ART-02"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "ART-04",
+      "title": "Hojas de cálculo fiables",
+      "priority": "P1",
+      "backend": "Importar CSV/TSV/XLSX preservando tipos, fechas, fórmulas y formatos; operaciones sobre rangos, validación y motor de cálculo declarado.",
+      "frontend": "Tabla editable con preview de cambios, fórmulas visibles y unidades; aviso cuando resultados cacheados no se han recalculado.",
+      "acceptance": "No convertir IDs a notación científica ni fechas ambiguas sin revisión; bloquear inyección de fórmulas al exportar texto no confiable.",
+      "depends_on": [
+        "ART-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "ART-05",
+      "title": "Datos y análisis reproducibles",
+      "priority": "P1",
+      "backend": "Python/SQL aislado con dataset versionado y scripts guardados; conexiones DB solo lectura por defecto, timeout y límite de filas.",
+      "frontend": "Notebook ligero o panel de consultas con muestra, esquema y gráfico; ver cómo se obtuvo cada resultado.",
+      "acceptance": "Una afirmación numérica enlaza a datos y cálculo; una consulta no autorizada de escritura se rechaza aunque el modelo la llame análisis.",
+      "depends_on": [
+        "EXEC-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "ART-06",
+      "title": "Presentaciones y gráficos",
+      "priority": "P2",
+      "backend": "Generar diapositivas editables y gráficos con datos fuente, notas y validación visual; diseño consistente, no una captura por slide.",
+      "frontend": "Vista de diapositivas, selección de layout y ajuste de densidad; accesibilidad con textos alternativos.",
+      "acceptance": "Los gráficos conservan ejes, unidades y datos; exportar no aplana todo a imágenes salvo elección explícita.",
+      "depends_on": [
+        "ART-03",
+        "ART-05"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "ART-07",
+      "title": "PDFs y archivos complejos",
+      "priority": "P1",
+      "backend": "Extraer texto/tablas/figuras con referencias de página; OCR opcional solo cuando haga falta; conversiones con presupuesto de tamaño y páginas.",
+      "frontend": "Seleccionar páginas, comparar extracción y original; advertencias cuando la capa de texto no coincide visualmente.",
+      "acceptance": "Un PDF escaneado no se clasifica como vacío; OCR fallido se declara, sin inventar contenido.",
+      "depends_on": [
+        "IDX-04"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "ART-08",
+      "title": "Biblioteca universal de resultados",
+      "priority": "P1",
+      "backend": "Índice de artefactos por proyecto, conversación, tipo y versión; deduplicar bytes sin mezclar permisos ni procedencia.",
+      "frontend": "Galería/lista, búsqueda, etiquetas, favoritos, recientes, relaciones fuente→resultado y versiones.",
+      "acceptance": "Borrar un enlace de contexto no borra el archivo original compartido con otro entregable sin explicarlo.",
+      "depends_on": [
+        "ART-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "WRITE-01",
+      "title": "Edición localizada con intención",
+      "priority": "P1",
+      "backend": "Separar corregir, reescribir, resumir, desarrollar y criticar; conservar fragmentos protegidos y registrar cambios de significado.",
+      "frontend": "Seleccionar un párrafo y pedir variantes lado a lado, aceptar por cambio y deshacer sin perder el original.",
+      "acceptance": "Una corrección ortográfica no cambia la voz del narrador ni elimina una ironía deliberada por normalización automática.",
+      "depends_on": [
+        "ART-02"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "WRITE-02",
+      "title": "Canon y continuidad",
+      "priority": "P1",
+      "backend": "Memoria de personajes, lugares, cronología, relaciones y hechos con fuente/capítulo; distinguir canon, borrador y alternativa.",
+      "frontend": "Panel de continuidad con contradicciones y referencias, no reescritura automática de la historia.",
+      "acceptance": "Un final alternativo descartado no pasa a ser canon del siguiente capítulo.",
+      "depends_on": [
+        "MEM-01",
+        "PLAN-05"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "WRITE-03",
+      "title": "Estilo editable y no invasivo",
+      "priority": "P1",
+      "backend": "Reusar aprendizaje de estilo existente; versionar reglas con ejemplos, prohibiciones y ámbito; evaluación A/B sobre texto de prueba.",
+      "frontend": "Activar estilo por proyecto o encargo, ajustar intensidad y ver reglas efectivas.",
+      "acceptance": "Una regla de novela no contamina correos profesionales; desactivar estilo realmente lo retira del contexto siguiente.",
+      "depends_on": [
+        "ARCH-03"
+      ],
+      "existing_anchor": "Aprender un estilo",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "WRITE-04",
+      "title": "Sesiones largas y alternativas",
+      "priority": "P1",
+      "backend": "Esquemas y capítulos con referencias estables, objetivos de escena y resúmenes con fuente; ramas editoriales independientes.",
+      "frontend": "Modo foco, objetivos de extensión flexibles, notas al margen y comparación de versiones.",
+      "acceptance": "Editar una escena no obliga a reenviar el manuscrito completo ni pierde notas al cambiar de conversación.",
+      "depends_on": [
+        "CTX-02",
+        "ART-08"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "WRITE-05",
+      "title": "Integración sin duplicación",
+      "priority": "P2",
+      "backend": "Adaptador de proyecto para importar/exportar manifiestos, capítulos, entidades y recursos de Writer’s Hoard; resolver conflictos y versiones.",
+      "frontend": "Abrir el mismo artefacto en su aplicación de origen y mostrar qué lado tiene cambios nuevos.",
+      "acceptance": "Una sincronización bidireccional no sobrescribe ediciones concurrentes ni requiere que el proyecto sea un repositorio Git.",
+      "depends_on": [
+        "IDX-01",
+        "EDIT-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "MEDIA-01",
+      "title": "Capacidades multimodales comprobadas",
+      "priority": "P0",
+      "backend": "Detectar tipos de entrada/salida, límites, encoder y motor requerido; rechazar o adaptar con consentimiento cuando falta visión/audio.",
+      "frontend": "El selector explica qué verá realmente el modelo: imagen, transcripción o descripción derivada.",
+      "acceptance": "Enviar una imagen a un modelo textual no produce una respuesta que finja haberla visto; se ofrece un flujo compatible.",
+      "depends_on": [
+        "MOD-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "MEDIA-02",
+      "title": "Recetas versionadas y verificadas",
+      "priority": "P1",
+      "backend": "Mantener workflows ComfyUI aprobados con hash, nodos requeridos, licencias y entradas tipadas; preflight antes de cargar modelos.",
+      "frontend": "Formulario de parámetros, preview del coste de recursos y explicación de modelos faltantes sin descarga automática.",
+      "acceptance": "Una receta actualizada que introduce nodos ejecutables nuevos vuelve a requerir revisión.",
+      "depends_on": [
+        "TOOL-04"
+      ],
+      "existing_anchor": "config/media_workflows/",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "MEDIA-03",
+      "title": "Edición no destructiva de imágenes",
+      "priority": "P1",
+      "backend": "Capas, máscaras y referencia original; guardar proyecto de edición además de resultado plano; coordenadas y color/alpha preservados.",
+      "frontend": "Inpainting/outpainting, recorte, transformación y comparación antes/después; enviar al chat solo por acción explícita.",
+      "acceptance": "Salir del editor conserva máscaras y borrador; un resultado PNG no sustituye el original sin confirmación.",
+      "depends_on": [
+        "ART-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "MEDIA-04",
+      "title": "Colas de render y recuperación",
+      "priority": "P1",
+      "backend": "Jobs con IDs externos, estados y reconciliación; descargar resultados con integridad; no duplicar render tras perder una conexión.",
+      "frontend": "Galería con progreso real, fallos y reintento por descarga o por generación claramente distintos.",
+      "acceptance": "Un timeout después de aceptar el job consulta su estado antes de crear otro que consume VRAM.",
+      "depends_on": [
+        "CALL-06",
+        "ART-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "MEDIA-05",
+      "title": "Audio y vídeo editables",
+      "priority": "P2",
+      "backend": "Transcripción con timestamps, separación de pistas, cortes, subtítulos y export SRT/VTT; transformación con FFmpeg acotada.",
+      "frontend": "Línea temporal, corregir transcripción, preescucha y seleccionar pista; límites del motor visibles.",
+      "acceptance": "Cambiar subtítulos no reemplaza accidentalmente el audio original; una exportación incompleta conserva el material fuente.",
+      "depends_on": [
+        "ART-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "VOICE-01",
+      "title": "Voz útil con control del usuario",
+      "priority": "P1",
+      "backend": "Estados permiso/escuchando/transcribiendo/pensando/hablando; push-to-talk por defecto, detección de silencio y cancelación.",
+      "frontend": "Indicador permanente del micrófono, transcripción editable y detener respuesta hablada sin cancelar todo el chat.",
+      "acceptance": "No solicitar permisos ni grabar al abrir una pantalla; retirar permiso detiene captura inmediatamente.",
+      "depends_on": [
+        "TASK-04"
+      ],
+      "existing_anchor": "Voz Jarvis",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "VOICE-02",
+      "title": "Interrupción y confirmación por voz",
+      "priority": "P2",
+      "backend": "Barge-in con separación de audio generado y capturado, evitar autoescucha; confirmar efectos sensibles por canal visual o mecanismo inequívoco.",
+      "frontend": "Elegir voz, velocidad y dispositivo; fallback textual si no hay micrófono, TTS o permisos.",
+      "acceptance": "La propia voz de Faustus no dispara otra orden; transcripción dudosa de Borrar no inicia una operación destructiva.",
+      "depends_on": [
+        "VOICE-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "MEDIA-06",
+      "title": "Procedencia y consentimiento",
+      "priority": "P1",
+      "backend": "Guardar modelo/versión, licencia conocida, semilla, receta y hashes; identificar contenidos sintéticos cuando corresponda; minimizar metadatos sensibles al compartir.",
+      "frontend": "Ficha de procedencia y aviso de datos que se envían a motores remotos; borrar ubicación EXIF opcional.",
+      "acceptance": "Una imagen privada no sale a un proveedor remoto por fallback silencioso de un motor local.",
+      "depends_on": [
+        "MEM-05",
+        "MOD-05"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "CONN-01",
+      "title": "Centro de conexiones con ámbitos",
+      "priority": "P1",
+      "backend": "Credenciales en vault del sistema o almacén cifrado, tokens limitados, rotación/revocación y aislamiento por propietario.",
+      "frontend": "Conectar, probar, ver permisos efectivos y desconectar; mostrar solo capacidades realmente disponibles.",
+      "acceptance": "Desconectar revoca acceso operativo y evita que un worker reutilice credenciales cacheadas fuera de política.",
+      "depends_on": [
+        "TOOL-04"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "CONN-02",
+      "title": "Leer, preparar y ejecutar separados",
+      "priority": "P0",
+      "backend": "Herramientas de búsqueda/lectura distintas de redactar, guardar borrador, enviar y borrar; plan de efecto con destinatarios y payload exacto.",
+      "frontend": "Revisar destinatarios, adjuntos, calendario/zona horaria y alcance antes de confirmar; recordar aprobación solo dentro de límites fijados.",
+      "acceptance": "Generar un correo no lo envía; aprobar un borrador no autoriza cambiar destinatario o adjuntar otro archivo.",
+      "depends_on": [
+        "CALL-02",
+        "VER-06"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "CONN-03",
+      "title": "Identidades y nombres ambiguos",
+      "priority": "P0",
+      "backend": "Resolver personas, proyectos y recursos con IDs estables y datos visibles; no escoger al azar entre coincidencias.",
+      "frontend": "Tarjetas de selección con nombre, dirección/dominio y origen; opción de introducir uno nuevo explícitamente.",
+      "acceptance": "Dos contactos llamados Ana no reciben un envío hasta resolver quién es la destinataria.",
+      "depends_on": [
+        "CALL-07"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "CONN-04",
+      "title": "Sincronización y conflictos",
+      "priority": "P1",
+      "backend": "ETag/revisión/updated_at, webhooks verificados o polling incremental; tokens de sincronía por ámbito y reconciliación tras desconexión.",
+      "frontend": "Indicar cache local, última sincronización y cambios remotos; resolver conflictos antes de sobrescribir.",
+      "acceptance": "Una nota modificada en el móvil no se pisa con el borrador local antiguo tras volver la red.",
+      "depends_on": [
+        "EDIT-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "AUTO-01",
+      "title": "Scheduler durable y correcto en el tiempo",
+      "priority": "P1",
+      "backend": "Recurrencias con IANA, DST, política de misfire y zona por tarea; jobs persistentes con lease y deduplicación por ocurrencia.",
+      "frontend": "Calendario de próximas ejecuciones, pausar/reanudar, ejecutar ahora y editar una o todas; indicar que requiere equipo/backend disponible.",
+      "acceptance": "Cambio horario Europe/Madrid no duplica un envío ni pierde silenciosamente una tarea; al despertar se aplica la política elegida.",
+      "depends_on": [
+        "TASK-03"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "AUTO-02",
+      "title": "Automatización con presupuesto y permisos",
+      "priority": "P0",
+      "backend": "Snapshot de permisos, recursos y conectores para ejecución desatendida; acciones no autorizadas pasan a esperando aprobación o bloqueada.",
+      "frontend": "Bandeja de trabajos que necesitan intervención; política explícita para ausencia del usuario.",
+      "acceptance": "Caducar una pregunta nunca equivale a aprobar un envío, borrar archivos o habilitar una API de pago.",
+      "depends_on": [
+        "CONN-02"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "AUTO-03",
+      "title": "Flujos visibles y depurables",
+      "priority": "P2",
+      "backend": "DAG de pasos con entradas/salidas, condiciones, reintentos, cron/webhook y simulación; secretos por referencia, no incrustados.",
+      "frontend": "Editor simple de recetas y vista avanzada del flujo; probar con datos sintéticos sin ejecutar efectos reales.",
+      "acceptance": "Reejecutar un paso de extracción no repite automáticamente el envío que ya se confirmó en otro paso.",
+      "depends_on": [
+        "TASK-02",
+        "CALL-06"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "SEC-01",
+      "title": "Autorización independiente del modelo",
+      "priority": "P0",
+      "backend": "Evaluar usuario, proyecto, recurso, operación, riesgo, origen y permiso vigente; denegar por defecto lo no declarado.",
+      "frontend": "Permitir una vez, durante esta tarea o por política acotada; vista de concesiones activas y revocación inmediata.",
+      "acceptance": "Un modelo o documento que diga tengo permiso no obtiene acceso fuera de la política.",
+      "depends_on": [
+        "TOOL-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "SEC-02",
+      "title": "Datos no confiables no son instrucciones",
+      "priority": "P0",
+      "backend": "Marcar procedencia de resultados externos; impedir que documentos redefinan herramientas, destinos, secretos o reglas del sistema.",
+      "frontend": "Advertir instrucciones sospechosas con contexto, sin convertir cada página normal en una alarma.",
+      "acceptance": "Un README que pide leer claves privadas y enviarlas a un dominio no causa ninguna acción, aunque la tarea sea construir el proyecto.",
+      "depends_on": [
+        "CTX-03",
+        "SEC-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "SEC-03",
+      "title": "Sandbox real y rutas seguras",
+      "priority": "P0",
+      "backend": "Resolver canonical paths, symlinks/junctions y TOCTOU; restricciones OS/contenedor para código arbitrario, no solo checks en Python.",
+      "frontend": "Ver carpetas permitidas y distinguir Lectura/Escritura/Ejecución; advertir cuando no hay aislamiento fuerte disponible.",
+      "acceptance": "Un symlink dentro del proyecto no da acceso a una carpeta externa; un script no puede saltarse una sandbox anunciada como activa.",
+      "depends_on": [
+        "EXEC-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "SEC-04",
+      "title": "Red y egress controlados",
+      "priority": "P0",
+      "backend": "Lista de destinos por herramienta/conector; bloquear SSRF, metadata y endpoints internos no autorizados; redirecciones y DNS revalidados.",
+      "frontend": "Ver qué servicio recibe datos; perfil totalmente local que bloquea la salida de inferencia y servicios auxiliares remotos.",
+      "acceptance": "Local-only cubre embeddings, OCR, reranker, telemetría y fallback, no solo la llamada al LLM principal.",
+      "depends_on": [
+        "MOD-05",
+        "WEB-02"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "SEC-05",
+      "title": "Secretos y datos sensibles",
+      "priority": "P0",
+      "backend": "Redactar secretos en trazas; credenciales por referencia opaca y acceso efímero; no indexar .env, llaves o perfiles sensibles por defecto.",
+      "frontend": "Mostrar categorías excluidas y compartir un diagnóstico saneado con preview.",
+      "acceptance": "Un crash dump o export de conversación no incluye API keys, cookies o tokens de acceso.",
+      "depends_on": [
+        "CONN-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "SEC-06",
+      "title": "Aislamiento de propietarios y recursos",
+      "priority": "P0",
+      "backend": "Authorization en cada API, búsqueda, índice, WebSocket/SSE y descarga; IDs opacos no sustituyen el control de acceso.",
+      "frontend": "Estado claro de usuario/proyecto; no mostrar resultados que luego sean rechazados por pertenecer a otro dueño.",
+      "acceptance": "Pruebas IDOR entre dos propietarios cubren archivos, memorias, recibos, renders, preguntas, eventos y caches.",
+      "depends_on": [
+        "MEM-01",
+        "ART-08"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "SEC-07",
+      "title": "Electron y contenido activo",
+      "priority": "P0",
+      "backend": "Context isolation, sandbox, nodeIntegration desactivado para contenido no confiable, CSP y puente IPC mínimo validado; navegación controlada.",
+      "frontend": "HTML/SVG/Markdown y previews externos en contenedor seguro; enlaces externos no ejecutan comandos locales.",
+      "acceptance": "Un artefacto HTML malicioso no llama al filesystem ni al IPC privilegiado desde su preview.",
+      "depends_on": [
+        "ART-03"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "SEC-08",
+      "title": "Políticas proporcionales y auditables",
+      "priority": "P1",
+      "backend": "Perfiles lectura, edición local, agente supervisado y automatización acotada; export de auditoría con eventos firmados cuando el despliegue lo requiera.",
+      "frontend": "Resumen comprensible de cambios de riesgo; evitar fatiga de confirmaciones para lecturas ya autorizadas.",
+      "acceptance": "Una actualización de plugin con más permisos invalida el consentimiento anterior sin bloquear herramientas no afectadas.",
+      "depends_on": [
+        "SEC-01",
+        "TOOL-04"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "HW-01",
+      "title": "Admisión global y por dispositivo",
+      "priority": "P0",
+      "backend": "Extender vram_admission/vram_fit con reservas atómicas por job, VRAM por GPU, KV, buffers, RAM/commit y uso externo observado; estimaciones con intervalo y procedencia.",
+      "frontend": "Memoria libre/reservada/usada, peso estimado o medido y margen; diálogo de liberar modelos existente como autoridad única.",
+      "acceptance": "Dos cargas simultáneas no reciben el mismo presupuesto libre; un modelo nuevo con KV desconocida se etiqueta como estimación mínima.",
+      "depends_on": [
+        "TASK-06"
+      ],
+      "existing_anchor": "src/vram_admission.py; src/vram_fit.py",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "HW-02",
+      "title": "Offload y degradación transparentes",
+      "priority": "P0",
+      "backend": "Detectar carga CPU/GPU y spill cuando el backend lo expone; no reducir contexto o cuantización silenciosamente; confirmar tradeoff.",
+      "frontend": "Explicar lento por carga, prefill, spill, cola o red; seleccionar menor contexto, otro modelo o liberar recursos.",
+      "acceptance": "El usuario no ve simplemente Esperando al modelo mientras se desborda a RAM durante minutos.",
+      "depends_on": [
+        "HW-01",
+        "MOD-04"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "HW-03",
+      "title": "Residencia y concurrencia inteligentes",
+      "priority": "P1",
+      "backend": "Política LRU con pins y coste de recarga; cola por dispositivo; evitar precargas especulativas sin presupuesto; no cargar siempre tres modelos para roles simples.",
+      "frontend": "Fijar modelo residente y ver qué trabajo lo usa; modo solo un modelo grande y modo prioridad interactiva.",
+      "acceptance": "Una conversación rápida no descarga un modelo en pleno trabajo ni vuelve a cargarlo constantemente por un router indeciso.",
+      "depends_on": [
+        "HW-01",
+        "MOD-05"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "HW-04",
+      "title": "Catálogo y descargas fiables",
+      "priority": "P1",
+      "backend": "Metadatos por revisión/digest, licencia y cuantización; descargas reanudables con hash, espacio temporal y final, límites de red y eliminación segura.",
+      "frontend": "Progreso por bytes, pausar/reanudar, cancelar y limpiar parciales; comparar tamaño de descarga con huella de ejecución.",
+      "acceptance": "Una descarga cortada retoma datos válidos; un cambio de tag no reutiliza un perfil calibrado de otro digest.",
+      "depends_on": [
+        "MOD-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "HW-05",
+      "title": "Perfiles de hardware medidos",
+      "priority": "P1",
+      "backend": "Benchmark opt-in por modelo/backend/topología: TTFT, prefill, decode, contexto, memoria y concurrencia; límites térmicos y de potencia si están disponibles.",
+      "frontend": "Perfiles trabajar/jugar/renderizar/local intensivo con reservas; advertir mediciones ausentes sin fabricar tokens/s.",
+      "acceptance": "Elegir un modelo no lanza automáticamente pruebas pesadas que bloqueen el escritorio.",
+      "depends_on": [
+        "MOD-02"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "HW-06",
+      "title": "Nodos remotos como servicio controlado",
+      "priority": "P2",
+      "backend": "Registrar endpoint, identidad, versión, capacidades, seguridad y salud; tolerar desconexión y operaciones desconocidas; separar administración del nodo de inferencia.",
+      "frontend": "Mapa lógico del hardware, modelo servido y degradación; conexión segura sin exponer RPC arbitrario a Internet.",
+      "acceptance": "Un nodo perdido no convierte una tarea en éxito ni deja recursos reservados para siempre.",
+      "depends_on": [
+        "HW-01",
+        "CALL-06"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "HW-07",
+      "title": "Spark + PC + eGPU: laboratorio",
+      "priority": "LAB",
+      "backend": "Prototipo opt-in con backend compatible; medir reparto de capas, KV, enlaces, carga y latencia; no afirmar RDMA, pooling o failover transparente sin probarlos.",
+      "frontend": "Etiqueta Experimental y reporte de configuración reproducible; fallback a servicio independiente o trabajo secuencial.",
+      "acceptance": "Solo se declara soportada una combinación que supera carga, generación, cancelación, caída de nodo y recuperación en esa configuración.",
+      "depends_on": [
+        "HW-06"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "OBS-01",
+      "title": "Eventos coherentes de extremo a extremo",
+      "priority": "P0",
+      "backend": "Propagar task_id, run_id, step_id, call_id y trace_id; eventos secuenciales persistidos con versiones; separar logs de usuario y diagnósticos sensibles.",
+      "frontend": "Timeline único de acciones, evidencia, cambios y preguntas; filtrar sin perder contexto.",
+      "acceptance": "Una herramienta, su progreso, el artefacto y el recibo final se pueden enlazar sin buscar manualmente por texto.",
+      "depends_on": [
+        "ARCH-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "OBS-02",
+      "title": "Fases reales y métricas honestas",
+      "priority": "P0",
+      "backend": "Distinguir cola, admisión, carga, prefill, generación, herramienta, verificación y espera humana; heartbeat no equivale a avance.",
+      "frontend": "Tiempo transcurrido, fase y última actividad; porcentaje solo cuando hay total medible; estado Desconocido cuando falta telemetría.",
+      "acceptance": "Un spinner con latidos no presenta 90 % inventado ni promete un tiempo sin base.",
+      "depends_on": [
+        "HW-02"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "OBS-03",
+      "title": "Taxonomía de errores accionable",
+      "priority": "P0",
+      "backend": "Códigos estables para capacidad, schema, permiso, recurso, transporte, timeout, cancelación, conflicto, verificación y resultado desconocido; cause chain segura.",
+      "frontend": "Explicar qué falló, qué se conserva y acción útil: reintentar, reanudar, cambiar recurso, revisar permiso o abrir diagnóstico.",
+      "acceptance": "OOM no se reporta como fallo de búsqueda; perder SSE no se interpreta inmediatamente como caída de la inferencia.",
+      "depends_on": [
+        "CALL-05"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "OBS-04",
+      "title": "Reproducción y soporte local",
+      "priority": "P1",
+      "backend": "Export de configuración efectiva, versiones, traza saneada y fixtures con consentimiento; modo diagnóstico sin contenido personal por defecto.",
+      "frontend": "Botón Copiar diagnóstico y paquete seleccionable; preview de datos antes de compartir.",
+      "acceptance": "El desarrollador puede reproducir un parser fallido sin recibir conversaciones, archivos o credenciales no seleccionados.",
+      "depends_on": [
+        "SEC-05"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "OBS-05",
+      "title": "Calidad y rendimiento por perfil",
+      "priority": "P1",
+      "backend": "Métricas de éxito, intervención humana, loops, tiempo, recursos y coste externo vinculadas a modelo+harness; no comparar workloads distintos como iguales.",
+      "frontend": "Panel de tendencias y regresiones con muestras y limitaciones; restablecer telemetría local.",
+      "acceptance": "Una mejora de tokens/s no se presenta como mejora de calidad si aumenta errores o tiempo total de la tarea.",
+      "depends_on": [
+        "MOD-02"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "UX-01",
+      "title": "Borradores que no se pierden",
+      "priority": "P0",
+      "backend": "Persistir borrador por conversación/nuevo chat con revisión, adjuntos y selecciones; límites y limpieza de datos; no sincronizar un secreto accidental sin permiso.",
+      "frontend": "Cambiar de chat, cerrar panel o abrir editor no vacía el texto; indicador Guardado localmente y recuperación tras crash.",
+      "acceptance": "Recargar durante un borrador largo restaura texto, adjuntos preparados y ubicación lógica sin enviarlo.",
+      "depends_on": [
+        "MEM-05"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "UX-02",
+      "title": "Envío sin duplicados ni pérdidas",
+      "priority": "P0",
+      "backend": "client_message_id idempotente y outbox local hasta confirmación; adjuntos subidos antes de enviar; ordenar mensajes concurrentes.",
+      "frontend": "Estados preparado/enviando/enviado/error, deshacer antes de aceptar y reintentar sin copiar el texto otra vez.",
+      "acceptance": "Doble clic o reconexión no crea dos tareas; Enter durante composición IME no envía antes de tiempo.",
+      "depends_on": [
+        "TASK-03"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "UX-03",
+      "title": "Editar, regenerar y ramificar",
+      "priority": "P1",
+      "backend": "Árbol de conversación con mensajes/versiones; regenerar crea alternativa, no borra historial ni repite herramientas externas por defecto.",
+      "frontend": "Comparar respuestas, navegar ramas, continuar desde un punto y distinguir Repetir texto de Reejecutar acciones.",
+      "acceptance": "Regenerar una respuesta que informó de un correo enviado no envía ese correo de nuevo.",
+      "depends_on": [
+        "CALL-06"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "UX-04",
+      "title": "Steering, cola y cancelación separados",
+      "priority": "P0",
+      "backend": "Modelar instrucción para ejecución actual, mensaje en cola y nueva tarea; cancelación independiente de borrar conversación.",
+      "frontend": "Botones Dirigir tarea, Enviar después y Detener; texto de consecuencias sin menús ambiguos.",
+      "acceptance": "Un mensaje añadido mientras trabaja llega al destino escogido y no altera inadvertidamente otra tarea.",
+      "depends_on": [
+        "TASK-04",
+        "TASK-05"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "UX-05",
+      "title": "Lectura agradable durante streaming",
+      "priority": "P0",
+      "backend": "Render incremental seguro, unir bloques sin romper Markdown; conservar selección, posición y anclas; no reconstruir todo el transcript por token.",
+      "frontend": "Auto-scroll solo cuando el lector está abajo; botón de nuevos mensajes, saltos entre usuario/respuesta/herramienta y búsqueda.",
+      "acceptance": "Seleccionar/copiar un párrafo anterior no hace saltar al final ni pierde la selección al llegar tokens.",
+      "depends_on": [
+        "OBS-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "UX-06",
+      "title": "Compositor rico pero rápido",
+      "priority": "P1",
+      "backend": "Adjuntos con MIME, tamaños, dedupe y estado; menciones de archivos/símbolos/fuentes/skills; comandos descubiertos y parámetros válidos.",
+      "frontend": "Pegar capturas, arrastrar archivos, preview y quitar; @ selector y / comandos; templates personales sin enviar automáticamente.",
+      "acceptance": "Pegar un archivo grande no congela la UI; un adjunto incompatible muestra la razón antes de gastar inferencia.",
+      "depends_on": [
+        "MEDIA-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "UX-07",
+      "title": "Control de contexto por turno",
+      "priority": "P1",
+      "backend": "Seleccionar memoria, proyecto, archivos y skills sin modificar globales; guardar manifest de contexto realmente usado.",
+      "frontend": "Chips visibles y panel qué se enviará, especialmente en remoto; pin/excluir fuentes y ver el presupuesto.",
+      "acceptance": "Excluir un archivo impide su recuperación automática en ese turno, incluidos resúmenes o caches derivados que aún lo contengan.",
+      "depends_on": [
+        "CTX-01",
+        "CTX-05"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "UX-08",
+      "title": "Respuestas y errores útiles",
+      "priority": "P0",
+      "backend": "Estructurar resultado final, fuentes, artefactos y pendientes desde evidencia; no ocultar advertencias al terminar.",
+      "frontend": "Copiar respuesta o código, abrir fuentes, descargar archivos y recuperar mensajes fallidos; errores inline persistentes además de notificaciones.",
+      "acceptance": "El usuario puede leer la causa y reanudar aunque haya desaparecido el toast de error.",
+      "depends_on": [
+        "VER-01",
+        "OBS-03"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "UX-09",
+      "title": "Acciones personales sin fricción",
+      "priority": "P1",
+      "backend": "Persistir favoritos, pins, tags, carpetas, archivo, búsqueda global y preferencias por proyecto; operaciones masivas reversibles cuando sea posible.",
+      "frontend": "Renombrar, mover, duplicar, archivar, exportar y restaurar chats; mostrar fecha local y modelo realmente usado por turno.",
+      "acceptance": "Mover un chat no cambia en silencio los permisos o memorias aplicados a sus mensajes históricos.",
+      "depends_on": [
+        "IDX-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "UX-10",
+      "title": "Prompts y conversaciones reutilizables",
+      "priority": "P2",
+      "backend": "Biblioteca de plantillas con variables tipadas, versiones, ejemplos y ámbito; importar/exportar sin credenciales ni referencias rotas.",
+      "frontend": "Guardar selección como plantilla, favoritos, comparaciones de variantes y búsqueda por intención.",
+      "acceptance": "Una plantilla con ruta antigua solicita resolverla en el proyecto nuevo en lugar de escribir en el anterior.",
+      "depends_on": [
+        "TOOL-06"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "BENCH-01",
+      "title": "Espacio de trabajo persistente",
+      "priority": "P1",
+      "backend": "Estado de paneles, pestañas, dimensiones y artefacto activo por proyecto; IDs estables independientes de navegación.",
+      "frontend": "Chat junto a editor/diff/fuentes/browser/actividad; dividir, acoplar y volver al layout anterior.",
+      "acceptance": "Abrir una fuente o imagen no cierra el diff con cambios sin guardar ni pierde el borrador.",
+      "depends_on": [
+        "UX-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "BENCH-02",
+      "title": "Revisión de cambios de verdad",
+      "priority": "P0",
+      "backend": "Diff por hunk y archivo con relaciones, base y versión actual; decisiones humanas persistidas; detectar cambios después de revisar.",
+      "frontend": "Aceptar/rechazar total o parcial con explicación de dependencias; abrir archivo en editor externo y checkpoint de retorno.",
+      "acceptance": "Aceptar un hunk no aplica otro oculto; una edición externa invalida solo las aprobaciones afectadas.",
+      "depends_on": [
+        "EDIT-01",
+        "VER-06"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "BENCH-03",
+      "title": "Inspector de evidencia",
+      "priority": "P1",
+      "backend": "Resolver EvidenceRef a bytes/versión/rango exactos; indicar obsolescencia o ausencia sin sustituir la fuente silenciosamente.",
+      "frontend": "Cita → extracto → fuente original; comparar evidencia capturada con estado actual.",
+      "acceptance": "Si un archivo cambió desde la verificación, el inspector no muestra su versión nueva como si fuera la prueba original.",
+      "depends_on": [
+        "IDX-05"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "BENCH-04",
+      "title": "Editor con conflictos y guardado fiable",
+      "priority": "P1",
+      "backend": "Autoguardado versionado, detección de conflictos, archivos grandes paginados y rutas autorizadas; no mezclar estado de vista con contenido.",
+      "frontend": "Buscar/reemplazar, ir a línea/símbolo, vista previa y undo/redo local; avisar antes de cerrar cambios no guardados.",
+      "acceptance": "Reabrir el mismo archivo desde otra pestaña comparte estado o resuelve conflicto, no crea dos versiones que se pisan.",
+      "depends_on": [
+        "EDIT-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "BENCH-05",
+      "title": "Plan, cambios y actividad legibles",
+      "priority": "P1",
+      "backend": "Proyectar un único TaskState en plan y progreso; agrupar llamadas relacionadas, child runs y evidencias sin duplicar contadores.",
+      "frontend": "Resumen siempre visible: objetivo, paso, bloqueo y siguiente acción; detalles técnicos expandibles.",
+      "acceptance": "El plan no dice terminado mientras la verificación está en curso ni vuelve atrás por un evento antiguo del stream.",
+      "depends_on": [
+        "TASK-01",
+        "OBS-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "BENCH-06",
+      "title": "Canvas y previews seguros",
+      "priority": "P2",
+      "backend": "Previews aislados para HTML, gráficos, diagramas y pequeños prototipos; capacidades explícitas de red/ejecución.",
+      "frontend": "Editar artefacto y ver cambios, consola aislada, compartir export estático y abrir fuentes.",
+      "acceptance": "Un prototipo puede fallar sin bloquear el chat ni acceder al entorno privilegiado de Electron.",
+      "depends_on": [
+        "SEC-07",
+        "ART-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "SET-01",
+      "title": "Primera ejecución sin callejones",
+      "priority": "P0",
+      "backend": "Detectar backend, directorios, permisos, puertos y dependencias con pruebas no destructivas; configuración inicial incremental.",
+      "frontend": "Recorrido mínimo: abrir proyecto, conectar modelo, probar chat y una herramienta segura; saltar módulos no necesarios.",
+      "acceptance": "Un usuario con Ollama operativo llega a una conversación sin instalar ComfyUI, Docker, voz ni bases externas que no usará.",
+      "depends_on": [
+        "MOD-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "SET-02",
+      "title": "Selector de modelos informativo",
+      "priority": "P1",
+      "backend": "Unificar alias/digest, capacidades, perfil medido, conexión y residencia; separar descargado de cargado y compatible de recomendado.",
+      "frontend": "Buscar por uso, tamaño y modalidad; comparar variantes, contexto útil estimado y motivo de incompatibilidad.",
+      "acceptance": "Dos tags del mismo digest no aparecen como dos descargas independientes ni como instalado/no instalado contradictorios.",
+      "depends_on": [
+        "HW-04"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "SET-03",
+      "title": "Ajustes efectivos y explicables",
+      "priority": "P0",
+      "backend": "Resolver global→proyecto→agente→turno con precedencia definida; validación al guardar y mostrar origen efectivo; reset por bloque.",
+      "frontend": "Búsqueda en ajustes, simple/avanzado, help contextual, copiar perfil y ver diferencias respecto a defaults.",
+      "acceptance": "Cambiar temperatura del turno no altera globales; un flag no soportado produce error explícito en el control correspondiente.",
+      "depends_on": [
+        "ARCH-03",
+        "MOD-04"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "SET-04",
+      "title": "Salud desde un solo sitio",
+      "priority": "P1",
+      "backend": "Checks livianos de modelo, búsqueda, almacenamiento, cola, espacio, GPU y plugins; circuit breakers independientes.",
+      "frontend": "Panel de salud con última prueba, causa, impacto y acción; copiar diagnóstico saneado.",
+      "acceptance": "Caer ComfyUI no muestra toda la aplicación como caída ni impide usar chat textual.",
+      "depends_on": [
+        "OBS-03"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "SET-05",
+      "title": "Cambio de proveedor consciente",
+      "priority": "P0",
+      "backend": "Antes de remoto, calcular categorías de datos a transmitir y confirmar política; mantener credenciales separadas por backend.",
+      "frontend": "Indicador Local/Remoto por llamada y aviso si cambia durante una tarea; coste desconocido mostrado como desconocido.",
+      "acceptance": "Un fallo de autenticación de una suscripción no habilita una API facturable ni cambia de modelo a escondidas.",
+      "depends_on": [
+        "MOD-05",
+        "SEC-04"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "SET-06",
+      "title": "Ayuda situada, no manual obligatorio",
+      "priority": "P1",
+      "backend": "Documentación local versionada y buscable, ejemplos por capacidad, diagnóstico que enlaza al ajuste concreto.",
+      "frontend": "Tour opcional, tooltips útiles, accesos a atajos, Qué falta para usar esto y Restablecer esta pantalla.",
+      "acceptance": "Una función deshabilitada explica si falta modelo, permiso, motor o configuración, en vez de quedarse como botón gris sin motivo.",
+      "depends_on": [
+        "SET-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "ACT-01",
+      "title": "Centro de actividad unificado",
+      "priority": "P0",
+      "backend": "Indexar runs de chat, research, automatizaciones, renders y workers con estados comunes y enlaces al origen.",
+      "frontend": "Filtros Activos/Esperando/Completados/Con problemas; agrupar por tarea y permitir abrir resultados sin encontrar primero el chat.",
+      "acceptance": "Un render terminado con su conversación cerrada sigue visible y descargable con su procedencia.",
+      "depends_on": [
+        "OBS-01",
+        "ART-08"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "ACT-02",
+      "title": "Notificaciones útiles y configurables",
+      "priority": "P1",
+      "backend": "Eventos de finalización, bloqueo y fallo con dedupe; preferencias por canal y horas de silencio, sin incluir datos sensibles en pantalla bloqueada.",
+      "frontend": "Notificaciones de escritorio opcionales y bandeja interna persistente; clic abre el paso exacto.",
+      "acceptance": "Una reconexión no vuelve a notificar veinte veces el mismo permiso pendiente.",
+      "depends_on": [
+        "ACT-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "ACT-03",
+      "title": "Permisos y preguntas en una bandeja",
+      "priority": "P0",
+      "backend": "Solicitudes durables con scope, fecha, expiración y revisión del payload; invalidarlas si cambia el plan aprobado.",
+      "frontend": "Responder desde tarjeta, detalle de tarea o bandeja; teclado y móvil; mostrar consecuencias y alternativa libre.",
+      "acceptance": "Una pregunta restaurada tras reinicio acepta una sola resolución y no aplica respuesta a una nueva pregunta parecida.",
+      "depends_on": [
+        "CALL-07",
+        "SEC-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "ACT-04",
+      "title": "Cierre de ventana sin sorpresas",
+      "priority": "P0",
+      "backend": "Registrar propiedad de backend y jobs; separar ocultar UI, minimizar a bandeja y apagar servicio; checkpoint/cancelación ordenada cuando corresponda.",
+      "frontend": "Diálogo solo si cerrar detiene trabajo; opción mantener backend con estado claro, según plataforma y modo instalados.",
+      "acceptance": "Cerrar una ventana que reutiliza servidor no lo mata; apagar un backend propio advierte qué tareas interrumpe.",
+      "depends_on": [
+        "ARCH-02"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "ACT-05",
+      "title": "Vista de colas y prioridades",
+      "priority": "P1",
+      "backend": "Colas justas con prioridad interactiva, límites por proyecto y envejecimiento para evitar inanición; evitar prioridades que rompen locks.",
+      "frontend": "Mover tareas pendientes, pausar grupo y ver qué recurso bloquea; no prometer posición fija si hay prioridades.",
+      "acceptance": "Un trabajo de fondo largo no bloquea indefinidamente una consulta corta cuando hay capacidad independiente.",
+      "depends_on": [
+        "HW-03"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "ACT-06",
+      "title": "Estados de pantalla completos",
+      "priority": "P0",
+      "backend": "Toda proyección maneja datos vacíos, parciales, cargando, offline, error, permiso denegado y versión incompatible.",
+      "frontend": "Mensajes específicos, retry contextual y contenido ya disponible conservado; skeleton solo donde aún falta información.",
+      "acceptance": "Fallar un panel secundario no vacía todo el workspace ni muestra No hay datos para un error de autorización.",
+      "depends_on": [
+        "OBS-03"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "A11Y-01",
+      "title": "Todo por teclado",
+      "priority": "P0",
+      "backend": "Orden de foco estable, semántica nativa y roles apropiados; focus trap solo en modal real, restauración al cerrar.",
+      "frontend": "Atajos descubribles y remapeables, Ctrl+K, navegar chat/paneles, responder opciones y aprobar/rechazar sin ratón.",
+      "acceptance": "Completar una tarea de chat, revisar diff y responder pregunta usando solo teclado sin quedar atrapado.",
+      "depends_on": [
+        "ACT-03"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "A11Y-02",
+      "title": "Lectores de pantalla y streaming",
+      "priority": "P1",
+      "backend": "Etiquetar iconos, controles y tablas; anuncios de progreso agrupados, no cada token; diferenciar contenido nuevo y cambios de estado.",
+      "frontend": "Modo lector, descripciones de adjuntos y resúmenes de tablas; no usar solo color para comunicar estado.",
+      "acceptance": "Un stream largo no produce cientos de anuncios ni impide escuchar el botón Detener.",
+      "depends_on": [
+        "UX-05"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "A11Y-03",
+      "title": "Densidad, contraste y movimiento",
+      "priority": "P1",
+      "backend": "Usar tokens existentes, medición automatizada de pares de contraste y pruebas manuales; respetar zoom y prefers-reduced-motion.",
+      "frontend": "Temas oscuro/claro, tamaño de letra, densidad y fuente accesible; foco visible y zonas táctiles amplias.",
+      "acceptance": "A 200 % de zoom no desaparecen botones críticos ni se recorta el texto de una aprobación.",
+      "depends_on": [
+        "BENCH-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "A11Y-04",
+      "title": "Móvil y acceso remoto seguro",
+      "priority": "P2",
+      "backend": "Cliente responsive con reconexión, uploads acotados y autenticación; acceso remoto solo mediante configuración segura, no exposición automática del puerto.",
+      "frontend": "Composer con teclado virtual, paneles como hojas, botones táctiles y bandeja de aprobaciones; distinguir host donde se ejecuta.",
+      "acceptance": "Al pasar a segundo plano y volver se recupera el estado sin reenviar el mensaje ni perder el borrador.",
+      "depends_on": [
+        "UX-01",
+        "SEC-06"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "LANG-01",
+      "title": "Español e inglés de extremo a extremo",
+      "priority": "P0",
+      "backend": "Localización de controles, errores, fases y fechas; preservar idioma solicitado en herramientas y síntesis; tests con tildes, enclíticos y rutas Unicode.",
+      "frontend": "Opciones descriptivas, números y fechas según locale sin cambiar IDs/valores de API; mensajes humanos, no excepciones crudas.",
+      "acceptance": "Impleméntame y créame activan la capacidad correcta; un error de backend aparece traducido con diagnóstico técnico desplegable.",
+      "depends_on": [
+        "TOOL-02"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "LANG-02",
+      "title": "Búsqueda y edición multilingües",
+      "priority": "P1",
+      "backend": "Normalización Unicode para búsqueda con correspondencia a posición original; detección de idioma por contenido cuando aporta valor.",
+      "frontend": "Buscar sin tilde opcional, glosarios de proyecto y preservar términos técnicos al traducir.",
+      "acceptance": "Una búsqueda normalizada no modifica nombres de archivo ni desplaza los rangos del diff.",
+      "depends_on": [
+        "IDX-03"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "PERF-01",
+      "title": "Frontend incremental",
+      "priority": "P1",
+      "backend": "Virtualizar listas cuando compense, memoizar bloques terminados, cargar editores/galerías bajo demanda y limitar logs en memoria.",
+      "frontend": "Navegar miles de mensajes sin saltos ni congelación; indicador cuando se carga historial adicional.",
+      "acceptance": "Perf trace con conversación larga conserva interacción, selección y búsqueda; no vuelve a parsear todo el Markdown por token.",
+      "depends_on": [
+        "UX-05"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "PERF-02",
+      "title": "Backend sin bloqueos accidentales",
+      "priority": "P0",
+      "backend": "I/O pesado y cómputo fuera del event loop; workers acotados, backpressure y pools con límites; no multiplicar procesos por pestaña.",
+      "frontend": "La UI sigue recibiendo estado/cancelación durante extracción, render o escritura de evidencias.",
+      "acceptance": "Procesar un PDF grande no impide responder a healthcheck o cancelar otra tarea.",
+      "depends_on": [
+        "EXEC-04"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "PERF-03",
+      "title": "Cache con semántica correcta",
+      "priority": "P1",
+      "backend": "Cache de prefijos cuando backend lo soporte, retrieval y herramientas read-only; claves por permisos/versiones/params, invalidación y cuotas.",
+      "frontend": "Señalar respuesta cacheada cuando importa; controles de recalcular y liberar caché.",
+      "acceptance": "Cambiar permiso, contenido o plantilla invalida entradas afectadas; no servir datos de otro usuario por similitud de consulta.",
+      "depends_on": [
+        "CTX-04"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "PERF-04",
+      "title": "Control de recursos de extremo a extremo",
+      "priority": "P0",
+      "backend": "Medir memoria de proceso, disco temporal, descriptores, threads, GPU y modelos; límites de sesiones y jobs; degradación parcial.",
+      "frontend": "Avisos anticipados de espacio/commit; liberar recursos propios y poner trabajos en cola antes de que caiga Windows.",
+      "acceptance": "Prueba de presión reduce trabajo auxiliar sin corromper estado ni matar procesos ajenos.",
+      "depends_on": [
+        "HW-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "PERF-05",
+      "title": "Transferencias y adjuntos grandes",
+      "priority": "P1",
+      "backend": "Uploads/downloads por streaming con cuotas, reanudación cuando proceda, hashes incrementales y thumbnails fuera de ruta crítica.",
+      "frontend": "Progreso/cancelar de cada archivo y uso de espacio; no cargar vídeo completo como base64 en el estado del chat.",
+      "acceptance": "Un archivo de tamaño límite no multiplica varias veces la RAM por copias innecesarias ni bloquea el compositor.",
+      "depends_on": [
+        "ART-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "OPS-01",
+      "title": "Instalación reproducible y modular",
+      "priority": "P0",
+      "backend": "Versiones/lockfiles comprobados, comandos de instalación por plataforma y componentes opcionales detectables; healthcheck mínimo.",
+      "frontend": "Asistente de reparar entorno con preview de acciones; distinguir falta de dependencia de fallo del modelo.",
+      "acceptance": "Una instalación limpia documentada arranca el núcleo sin depender de archivos no versionados del PC de desarrollo.",
+      "depends_on": [
+        "BASE-03"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "OPS-02",
+      "title": "Actualización sin destruir trabajo",
+      "priority": "P0",
+      "backend": "Preflight de versión, backup de config/datos, migraciones transaccionales, modo mantenimiento y rollback compatible; no reiniciar durante efectos críticos.",
+      "frontend": "Notas de cambios y permisos nuevos; descargar actualización separada de aplicarla; posponer cuando hay tareas activas.",
+      "acceptance": "Una migración fallida restaura el estado o abre modo de recuperación sin sobrescribir la base con un esquema vacío.",
+      "depends_on": [
+        "TASK-02"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "OPS-03",
+      "title": "Backups consistentes y restauración probada",
+      "priority": "P0",
+      "backend": "Snapshot consistente de SQLite y objetos referenciados; manifest, checksums, claves separadas y prueba periódica de restauración en sandbox.",
+      "frontend": "Elegir destino/frecuencia, ver última copia comprobada, explorar contenido y restaurar selectivamente.",
+      "acceptance": "Una copia que existe pero no puede abrirse no aparece como backup válido; no copiar solo el archivo SQLite ignorando su WAL activo.",
+      "depends_on": [
+        "ART-08"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "OPS-04",
+      "title": "Portabilidad de proyectos y conocimiento",
+      "priority": "P1",
+      "backend": "Export/import versionado de chats, fuentes, memorias, skills y artefactos con referencias relativas; secretos excluidos por defecto.",
+      "frontend": "Preview de conflictos, resolver raíces locales y escoger qué importar; migración desde formatos conocidos con informe de pérdidas.",
+      "acceptance": "Mover un proyecto a otro disco mantiene identidad y enlaces; referencias irrecuperables se muestran, no se descartan silenciosamente.",
+      "depends_on": [
+        "IDX-01",
+        "MEM-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "OPS-05",
+      "title": "Modo seguro y recuperación",
+      "priority": "P0",
+      "backend": "Arranque sin plugins, precargas ni tareas automáticas si hay crash repetido; diagnósticos y herramientas de reparar sin borrar datos.",
+      "frontend": "Pantalla de recuperación con abrir logs, desactivar extensión problemática y volver a versión anterior cuando sea seguro.",
+      "acceptance": "Un plugin corrupto no impide abrir la aplicación para desactivarlo ni provoca un bucle de reinicios y cargas GPU.",
+      "depends_on": [
+        "TOOL-04"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "OPS-06",
+      "title": "APIs y cliente extensibles",
+      "priority": "P1",
+      "backend": "OpenAPI versionado, SDK ligero y eventos documentados; compatibilidad hacia atrás controlada, migraciones de configuración y deprecaciones anunciadas.",
+      "frontend": "Panel de API local con permisos, tokens y ejemplos seguros; desactivado para exposición remota por defecto.",
+      "acceptance": "Un cliente antiguo recibe error de versión legible o adaptación, no un fallo ambiguo después de ejecutar media acción.",
+      "depends_on": [
+        "ARCH-01",
+        "SEC-06"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "OPS-07",
+      "title": "Higiene y costes operativos",
+      "priority": "P1",
+      "backend": "Rotación de logs, cuotas de blobs, retención de runs, detección de huérfanos y jobs pendientes; no borrar lo referenciado.",
+      "frontend": "Panel de almacenamiento por proyecto/modelos/cache/backups y limpieza con preview.",
+      "acceptance": "Liberar caché no elimina evidencias fijadas ni modelos que siguen en uso; factura remota desconocida no se estima como cero.",
+      "depends_on": [
+        "EDIT-05",
+        "OBS-05"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "EVAL-01",
+      "title": "Suite de tareas representativas",
+      "priority": "P0",
+      "backend": "Fixtures de bugs, features, refactors, investigación, redacción, documentos, datos, preguntas, memoria y acciones externas simuladas; criterios verificables.",
+      "frontend": "Laboratorio con resultados por tarea y perfil, baseline y evidencia de fallos.",
+      "acceptance": "El mismo benchmark se repite tras cambiar parser, prompt, router, contexto o frontend y detecta regresiones.",
+      "depends_on": [
+        "VER-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "EVAL-02",
+      "title": "Ablaciones y coste comparable",
+      "priority": "P1",
+      "backend": "Ejecutar mínimo→contexto→verificador→memoria→subagentes, cambiando una dimensión; presupuestos y varias repeticiones con seeds cuando existan.",
+      "frontend": "Comparar éxito, p50/p95 de latencia, tokens, recursos e intervención; mostrar tamaño de muestra e incertidumbre.",
+      "acceptance": "Añadir dos agentes no se declara mejora si solo gasta cinco veces más para resolver las mismas tareas.",
+      "depends_on": [
+        "EVAL-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "EVAL-03",
+      "title": "Caos y protocolos adversos",
+      "priority": "P0",
+      "backend": "Simular deltas partidos, eventos duplicados, OOM, timeout, caída de worker, disco lleno, proceso muerto, expiración de auth y errores de herramientas.",
+      "frontend": "Ver qué se conservó, qué se reanudó y qué quedó incierto; botón reproducir fixture sin tocar servicios reales.",
+      "acceptance": "Ningún fallo inyectado convierte una acción incierta en éxito ni duplica un efecto externo.",
+      "depends_on": [
+        "TASK-03",
+        "CALL-06"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "EVAL-04",
+      "title": "Pruebas frontend reales",
+      "priority": "P0",
+      "backend": "Unitarias de adapters/componentes y journeys browser con backend simulado y después real; capturas, accesibilidad y estados de reconexión.",
+      "frontend": "Galería de estados y evidencia de prueba por pantalla; no considerar un mock de API como integración final.",
+      "acceptance": "Una tarjeta funciona en vivo, recarga, historial importado y stream reconectado con el mismo contrato.",
+      "depends_on": [
+        "DESK-02"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "EVAL-05",
+      "title": "Regresiones históricas permanentes",
+      "priority": "P0",
+      "backend": "Convertir cada incidente corregido del proyecto en fixture: false success, corte de outline, borradores, tool selection ES, VRAM y pérdida de red.",
+      "frontend": "Vincular bug, prueba y release sin volver a listar el fallo corregido como pendiente.",
+      "acceptance": "Un cambio en prompts que deja de preguntar ante diseño ambiguo falla CI y no pasa por mejorar otros tests.",
+      "depends_on": [
+        "BASE-01"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    },
+    {
+      "id": "EVAL-06",
+      "title": "Promoción controlada de capacidades",
+      "priority": "P1",
+      "backend": "Matriz por tupla modelo/backend/plantilla: no probado, experimental, compatible y recomendado; pasar de estado solo con evidencia vigente.",
+      "frontend": "Badges explicados y botón de ejecutar calibración ligera; advertencia al cambiar versión.",
+      "acceptance": "Un modelo textual no hereda soporte de visión de otro con nombre parecido ni un parser antiguo conserva sello compatible tras romperse.",
+      "depends_on": [
+        "MOD-02"
+      ],
+      "existing_anchor": "",
+      "status": "propuesto: auditar antes de implementar"
+    }
+  ]
+}

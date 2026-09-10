@@ -1,0 +1,210 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:faustus:proposal:tool_result:1.0",
+  "title": "tool_result (propuesta v1)",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "call_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9_.:-]+$"
+    },
+    "attempt_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9_.:-]+$"
+    },
+    "status": {
+      "enum": [
+        "succeeded",
+        "failed",
+        "cancelled",
+        "conflict",
+        "denied",
+        "outcome_unknown",
+        "partial"
+      ]
+    },
+    "output": {},
+    "evidence_refs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "pattern": "^[A-Za-z0-9_.:-]+$"
+      },
+      "maxItems": 1000
+    },
+    "effects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "resource_ref": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "operation": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "state": {
+            "enum": [
+              "confirmed",
+              "partial",
+              "unknown"
+            ]
+          }
+        },
+        "required": [
+          "resource_ref",
+          "operation",
+          "state"
+        ]
+      },
+      "maxItems": 1000
+    },
+    "error": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_.:-]+$"
+            },
+            "message": {
+              "type": "string",
+              "maxLength": 4000
+            },
+            "retryable": {
+              "type": "boolean"
+            },
+            "next_action": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            }
+          },
+          "required": [
+            "code",
+            "message",
+            "retryable",
+            "next_action"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "uncertainty": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "reconcile_action": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            }
+          },
+          "required": [
+            "reason",
+            "reconcile_action"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "call_id",
+    "attempt_id",
+    "status",
+    "output",
+    "evidence_refs",
+    "effects",
+    "error",
+    "uncertainty"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "succeeded"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "error": {
+            "type": "null"
+          },
+          "uncertainty": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "outcome_unknown"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "uncertainty": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "enum": [
+              "failed",
+              "conflict",
+              "denied"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "error": {
+            "type": "object"
+          }
+        }
+      }
+    }
+  ]
+}

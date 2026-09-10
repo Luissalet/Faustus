@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0",
+  "evidence_id": "evi_test_01",
+  "owner_id": "owner_demo",
+  "project_id": "project_demo",
+  "source_type": "test",
+  "source_ref": "artifact:test_log_01",
+  "source_revision": "run_test_01",
+  "content_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "captured_at": "2026-09-10T05:00:00Z",
+  "locator": {
+    "kind": "lines",
+    "value": "1-32"
+  },
+  "derived_from": [],
+  "retention": "project"
+}

@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:faustus:proposal:tool_descriptor:1.0",
+  "title": "tool_descriptor (propuesta v1)",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$"
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4000
+    },
+    "input_schema": {
+      "type": "object"
+    },
+    "output_schema": {
+      "type": "object"
+    },
+    "effect_class": {
+      "enum": [
+        "read",
+        "write",
+        "execute",
+        "external",
+        "sensitive",
+        "control"
+      ]
+    },
+    "required_scopes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 512
+      },
+      "maxItems": 32
+    },
+    "timeout_ms": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 86400000
+    },
+    "cancellation": {
+      "enum": [
+        "cooperative",
+        "best_effort",
+        "not_supported"
+      ]
+    },
+    "idempotency": {
+      "enum": [
+        "safe_read",
+        "local_transaction",
+        "provider_key",
+        "reconcile_before_retry",
+        "not_supported"
+      ]
+    },
+    "retry_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_attempts": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10
+        },
+        "initial_delay_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 600000
+        },
+        "retry_on": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "maxItems": 32
+        }
+      },
+      "required": [
+        "max_attempts",
+        "initial_delay_ms",
+        "retry_on"
+      ]
+    },
+    "max_output_bytes": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10000000
+    },
+    "executor": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    }
+  },
+  "required": [
+    "schema_version",
+    "name",
+    "version",
+    "description",
+    "input_schema",
+    "output_schema",
+    "effect_class",
+    "required_scopes",
+    "timeout_ms",
+    "cancellation",
+    "idempotency",
+    "retry_policy",
+    "max_output_bytes",
+    "executor"
+  ]
+}

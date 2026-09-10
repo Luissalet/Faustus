@@ -1,0 +1,50 @@
+{
+  "schema_version": "1.0",
+  "name": "fs.apply_patch",
+  "version": "1.0.0",
+  "description": "Aplica un patch sobre una versión conocida dentro del workspace autorizado.",
+  "input_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "path": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 512
+      },
+      "patch_ref": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 512
+      },
+      "base_revision": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 512
+      }
+    },
+    "required": [
+      "path",
+      "patch_ref",
+      "base_revision"
+    ]
+  },
+  "output_schema": {
+    "type": "object"
+  },
+  "effect_class": "write",
+  "required_scopes": [
+    "workspace:read",
+    "workspace:write"
+  ],
+  "timeout_ms": 30000,
+  "cancellation": "cooperative",
+  "idempotency": "local_transaction",
+  "retry_policy": {
+    "max_attempts": 1,
+    "initial_delay_ms": 0,
+    "retry_on": []
+  },
+  "max_output_bytes": 64000,
+  "executor": "workspace_patch_executor"
+}

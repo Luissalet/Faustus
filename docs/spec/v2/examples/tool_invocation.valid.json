@@ -1,0 +1,18 @@
+{
+  "schema_version": "1.0",
+  "call_id": "call_patch_01",
+  "attempt_id": "attempt_01",
+  "task_id": "task_demo",
+  "run_id": "run_demo_02",
+  "tool": {
+    "name": "fs.apply_patch",
+    "version": "1.0.0"
+  },
+  "arguments": {
+    "path": "src/preferences.py",
+    "patch_ref": "artifact:patch_01",
+    "base_revision": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "idempotency_key": "task_demo:step_04:patch_01",
+  "authorization_ref": "grant_workspace_edit_01"
+}

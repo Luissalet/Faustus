@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:faustus:proposal:evidence_ref:1.0",
+  "title": "evidence_ref (propuesta v1)",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "evidence_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9_.:-]+$"
+    },
+    "owner_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9_.:-]+$"
+    },
+    "project_id": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_.:-]+$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "source_type": {
+      "enum": [
+        "file",
+        "web",
+        "tool",
+        "artifact",
+        "test",
+        "receipt",
+        "memory",
+        "media"
+      ]
+    },
+    "source_ref": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "source_revision": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "content_sha256": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "captured_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "locator": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "lines",
+            "page",
+            "cells",
+            "time",
+            "byte_range",
+            "whole"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ]
+    },
+    "derived_from": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "pattern": "^[A-Za-z0-9_.:-]+$"
+      },
+      "maxItems": 100
+    },
+    "retention": {
+      "enum": [
+        "ephemeral",
+        "task",
+        "project",
+        "pinned"
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "evidence_id",
+    "owner_id",
+    "project_id",
+    "source_type",
+    "source_ref",
+    "source_revision",
+    "content_sha256",
+    "captured_at",
+    "locator",
+    "derived_from",
+    "retention"
+  ]
+}

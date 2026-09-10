@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:faustus:proposal:question_request:1.0",
+  "title": "question_request (propuesta v1)",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "question_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9_.:-]+$"
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9_.:-]+$"
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9_.:-]+$"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "question": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4000
+    },
+    "options": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_.:-]+$"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 1000
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "description"
+        ]
+      },
+      "maxItems": 6,
+      "minItems": 2
+    },
+    "multi": {
+      "type": "boolean"
+    },
+    "allow_free_text": {
+      "type": "boolean"
+    },
+    "recommended_option_id": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_.:-]+$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "expiry_policy": {
+      "enum": [
+        "wait",
+        "block",
+        "use_preapproved_non_sensitive_default"
+      ]
+    },
+    "expires_at": {
+      "anyOf": [
+        {
+          "type": "string",
+          "format": "date-time"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "question_id",
+    "task_id",
+    "run_id",
+    "revision",
+    "question",
+    "options",
+    "multi",
+    "allow_free_text",
+    "recommended_option_id",
+    "expiry_policy",
+    "expires_at"
+  ]
+}

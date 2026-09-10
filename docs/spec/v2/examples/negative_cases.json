@@ -1,0 +1,330 @@
+[
+  {
+    "schema": "tool_invocation",
+    "reason": "ID de llamada ausente",
+    "instance": {
+      "schema_version": "1.0",
+      "attempt_id": "attempt_01",
+      "task_id": "task_demo",
+      "run_id": "run_demo_02",
+      "tool": {
+        "name": "fs.apply_patch",
+        "version": "1.0.0"
+      },
+      "arguments": {
+        "path": "src/preferences.py",
+        "patch_ref": "artifact:patch_01",
+        "base_revision": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "idempotency_key": "task_demo:step_04:patch_01",
+      "authorization_ref": "grant_workspace_edit_01"
+    }
+  },
+  {
+    "schema": "tool_invocation",
+    "reason": "Campo inesperado en sobre",
+    "instance": {
+      "schema_version": "1.0",
+      "call_id": "call_patch_01",
+      "attempt_id": "attempt_01",
+      "task_id": "task_demo",
+      "run_id": "run_demo_02",
+      "tool": {
+        "name": "fs.apply_patch",
+        "version": "1.0.0"
+      },
+      "arguments": {
+        "path": "src/preferences.py",
+        "patch_ref": "artifact:patch_01",
+        "base_revision": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "idempotency_key": "task_demo:step_04:patch_01",
+      "authorization_ref": "grant_workspace_edit_01",
+      "grant_admin": true
+    }
+  },
+  {
+    "schema": "tool_result",
+    "reason": "Éxito con error contradictorio",
+    "instance": {
+      "schema_version": "1.0",
+      "call_id": "call_patch_01",
+      "attempt_id": "attempt_01",
+      "status": "succeeded",
+      "output": null,
+      "evidence_refs": [],
+      "effects": [],
+      "error": {
+        "code": "BASE_REVISION_MISMATCH",
+        "message": "El archivo cambió después de leerlo.",
+        "retryable": false,
+        "next_action": "read_current_and_reconcile"
+      },
+      "uncertainty": null
+    }
+  },
+  {
+    "schema": "tool_result",
+    "reason": "Resultado desconocido sin explicación",
+    "instance": {
+      "schema_version": "1.0",
+      "call_id": "call_patch_01",
+      "attempt_id": "attempt_01",
+      "status": "outcome_unknown",
+      "output": null,
+      "evidence_refs": [],
+      "effects": [],
+      "error": {
+        "code": "BASE_REVISION_MISMATCH",
+        "message": "El archivo cambió después de leerlo.",
+        "retryable": false,
+        "next_action": "read_current_and_reconcile"
+      },
+      "uncertainty": null
+    }
+  },
+  {
+    "schema": "event_envelope",
+    "reason": "Secuencia negativa",
+    "instance": {
+      "schema_version": "1.0",
+      "event_id": "ev_0012",
+      "stream_id": "stream_demo",
+      "sequence": -1,
+      "task_id": "task_demo",
+      "run_id": "run_demo_02",
+      "type": "tool.result",
+      "timestamp": "2026-09-10T05:00:00Z",
+      "visibility": "user",
+      "payload": {
+        "call_id": "call_patch_01",
+        "status": "conflict",
+        "result_ref": "artifact:result_01"
+      }
+    }
+  },
+  {
+    "schema": "event_envelope",
+    "reason": "Fecha no válida",
+    "instance": {
+      "schema_version": "1.0",
+      "event_id": "ev_0012",
+      "stream_id": "stream_demo",
+      "sequence": 12,
+      "task_id": "task_demo",
+      "run_id": "run_demo_02",
+      "type": "tool.result",
+      "timestamp": "ayer",
+      "visibility": "user",
+      "payload": {
+        "call_id": "call_patch_01",
+        "status": "conflict",
+        "result_ref": "artifact:result_01"
+      }
+    }
+  },
+  {
+    "schema": "approval_request",
+    "reason": "Digest no válido",
+    "instance": {
+      "schema_version": "1.0",
+      "request_id": "approval_01",
+      "task_id": "task_demo",
+      "run_id": "run_demo_02",
+      "revision": 1,
+      "call_id": "call_mail_01",
+      "tool_name": "mail.send",
+      "payload_digest": "abc",
+      "resource_refs": [
+        "draft:demo_01"
+      ],
+      "effect_preview": "Enviar el borrador demo_01 a la dirección de prueba aprobada. No es un envío real.",
+      "expires_at": "2026-09-10T07:00:00Z",
+      "state": "pending",
+      "decision_scope": "once"
+    }
+  },
+  {
+    "schema": "question_request",
+    "reason": "multi como string no se convierte a booleano",
+    "instance": {
+      "schema_version": "1.0",
+      "question_id": "question_01",
+      "task_id": "task_demo",
+      "run_id": "run_demo_02",
+      "revision": 1,
+      "question": "¿Dónde deben persistirse las preferencias?",
+      "options": [
+        {
+          "id": "json",
+          "label": "Archivo JSON",
+          "description": "Sin servidor; apropiado para un perfil local."
+        },
+        {
+          "id": "sqlite",
+          "label": "SQLite",
+          "description": "Transacciones y consultas locales."
+        }
+      ],
+      "multi": "false",
+      "allow_free_text": true,
+      "recommended_option_id": "json",
+      "expiry_policy": "block",
+      "expires_at": null
+    }
+  },
+  {
+    "schema": "question_request",
+    "reason": "Solo una opción cuando el contrato requiere dos",
+    "instance": {
+      "schema_version": "1.0",
+      "question_id": "question_01",
+      "task_id": "task_demo",
+      "run_id": "run_demo_02",
+      "revision": 1,
+      "question": "¿Dónde deben persistirse las preferencias?",
+      "options": [
+        {
+          "id": "json",
+          "label": "Archivo JSON",
+          "description": "Sin servidor; apropiado para un perfil local."
+        }
+      ],
+      "multi": false,
+      "allow_free_text": true,
+      "recommended_option_id": "json",
+      "expiry_policy": "block",
+      "expires_at": null
+    }
+  },
+  {
+    "schema": "task_state",
+    "reason": "Estado inventado por el modelo",
+    "instance": {
+      "schema_version": "1.0",
+      "task_id": "task_demo",
+      "owner_id": "owner_demo",
+      "project_id": "project_demo",
+      "request_ref": "message:request_01",
+      "revision": 3,
+      "state": "magically_verified",
+      "constraints": [
+        "No modificar archivos ajenos al workspace."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "criterion_01",
+          "description": "Guardar y recuperar preferencias del usuario.",
+          "state": "pending",
+          "evidence_refs": []
+        }
+      ],
+      "plan_steps": [
+        {
+          "id": "step_01",
+          "title": "Inspeccionar almacenamiento actual",
+          "state": "done",
+          "depends_on": [],
+          "evidence_refs": [
+            "evi_file_01"
+          ]
+        },
+        {
+          "id": "step_02",
+          "title": "Elegir diseño",
+          "state": "active",
+          "depends_on": [
+            "step_01"
+          ],
+          "evidence_refs": []
+        }
+      ],
+      "decisions": [],
+      "evidence_refs": [
+        "evi_file_01"
+      ],
+      "budget": {
+        "max_tool_calls": 30,
+        "used_tool_calls": 2,
+        "max_output_tokens": 12000,
+        "remote_cost_limit": 0
+      },
+      "active_run_id": "run_demo_02"
+    }
+  },
+  {
+    "schema": "tool_descriptor",
+    "reason": "Timeout sin límite positivo",
+    "instance": {
+      "schema_version": "1.0",
+      "name": "fs.apply_patch",
+      "version": "1.0.0",
+      "description": "Aplica un patch sobre una versión conocida dentro del workspace autorizado.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "patch_ref": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "base_revision": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        },
+        "required": [
+          "path",
+          "patch_ref",
+          "base_revision"
+        ]
+      },
+      "output_schema": {
+        "type": "object"
+      },
+      "effect_class": "write",
+      "required_scopes": [
+        "workspace:read",
+        "workspace:write"
+      ],
+      "timeout_ms": 0,
+      "cancellation": "cooperative",
+      "idempotency": "local_transaction",
+      "retry_policy": {
+        "max_attempts": 1,
+        "initial_delay_ms": 0,
+        "retry_on": []
+      },
+      "max_output_bytes": 64000,
+      "executor": "workspace_patch_executor"
+    }
+  },
+  {
+    "schema": "evidence_ref",
+    "reason": "Hash incorrecto",
+    "instance": {
+      "schema_version": "1.0",
+      "evidence_id": "evi_test_01",
+      "owner_id": "owner_demo",
+      "project_id": "project_demo",
+      "source_type": "test",
+      "source_ref": "artifact:test_log_01",
+      "source_revision": "run_test_01",
+      "content_sha256": "not-a-hash",
+      "captured_at": "2026-09-10T05:00:00Z",
+      "locator": {
+        "kind": "lines",
+        "value": "1-32"
+      },
+      "derived_from": [],
+      "retention": "project"
+    }
+  }
+]
