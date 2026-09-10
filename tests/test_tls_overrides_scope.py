@@ -43,6 +43,11 @@ ALLOWED_CALLERS = frozenset({
     # the same Ollama endpoints model_routes probes — an Ollama behind a TLS
     # reverse proxy with a private CA needs the same bundle here as there.
     "routes/local_models_routes.py",
+    # VRAM admission control (L27) probes the same local Ollama endpoints
+    # model_routes/local_models_routes talk to (its own /api/ps poll before
+    # admitting a load) — the identical private-CA-behind-a-reverse-proxy
+    # case, so it needs the same bundle.
+    "src/vram_admission.py",
 })
 
 

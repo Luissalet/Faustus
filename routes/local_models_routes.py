@@ -957,6 +957,18 @@ def setup_local_models_routes() -> APIRouter:
             except Exception as e:  # noqa: BLE001
                 logger.debug("load: admission assess failed: %s", e)
                 verdict = {"fits": None}
+            # HW-01: this button is a second, independent door into the same
+            # gate `vram_admission.admit()` guards for chat/research loads —
+            # reserve the same way, so a click here and a concurrent chat
+            # load of another large model cannot both be told "fits" for the
+            # same bytes. Reservation is released once assess() next sees
+            # `name` resident (own or another caller's check) or it expires.
+            if verdict.get("fits") is True and not verdict.get("already_resident"):
+                need = int(verdict.get("need_bytes") or verdict.get("footprint_bytes") or 0)
+                budget = int(verdict.get("budget_alongside_bytes") or 0)
+                if need > 0 and vram_admission.try_reserve(ep["root"], name, need, budget) is None:
+                    verdict = dict(verdict, fits=False,
+                                   reason="another load just reserved this VRAM")
             if verdict.get("fits") is False:
                 raise HTTPException(409, {
                     "message": f"{name} does not fit in VRAM next to what is loaded",

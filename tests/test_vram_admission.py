@@ -18,11 +18,19 @@ EP = ROOT + "/v1/chat/completions"
 
 @pytest.fixture(autouse=True)
 def clean_tables():
+    # HW-01 reservations are a new, separate global (src/vram_admission.py):
+    # a "fits, go ahead" admit() now reserves the room until assess() sees the
+    # model resident or the reservation's TTL passes (see
+    # release_reservations_for_model). No test here loads anything for real,
+    # so nothing ever reports resident, and a reservation left behind by one
+    # test would eat into the next test's budget — hence clearing it here too.
     vram_fit.KV_RATES.clear()
     va._PENDING.clear()
+    va._RESERVATIONS.clear()
     yield
     vram_fit.KV_RATES.clear()
     va._PENDING.clear()
+    va._RESERVATIONS.clear()
 
 
 def _card(total_gb: float, used_gb: float):
@@ -137,12 +145,22 @@ def blocked(monkeypatch):
 
 
 async def _answer_later(action, names=None, by="luis"):
-    """The click, arriving while admit() is waiting."""
-    for _ in range(50):
-        await asyncio.sleep(0)
+    """The click, arriving while admit() is waiting.
+
+    Polled on a real wall-clock deadline, not a fixed count of event-loop
+    turns: the previous ``for _ in range(50): await asyncio.sleep(0)`` assumed
+    admit() reaches the ask branch within 50 scheduling opportunities, which
+    is not guaranteed once it awaits a real ``asyncio.to_thread()`` round trip
+    (assess() runs in a worker thread) — exactly why it flaked under load.
+    Same shape as ``unload_and_wait``'s own real-time deadline loop just below
+    in src/vram_admission.py, not a new pattern for this codebase.
+    """
+    deadline = asyncio.get_event_loop().time() + 5.0
+    while asyncio.get_event_loop().time() < deadline:
         if va._PENDING:
             tid = next(iter(va._PENDING))
             return va.resolve(tid, action=action, names=names, by=by)
+        await asyncio.sleep(0.01)
     raise AssertionError("admit() never asked")
 
 

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -39,6 +40,110 @@ HEADROOM_MEASURED = 512 * 1024 * 1024
 HEADROOM_WEIGHTS_ONLY = 1536 * 1024 * 1024
 # After an unload, how long we give Ollama to actually drop the runner.
 UNLOAD_WAIT_SECONDS = 120
+
+
+# ── Reservations (HW-01) ─────────────────────────────────────────────────────
+#
+# `assess()` answers "does it fit right now" from a fresh /api/ps + nvidia-smi
+# reading. Two jobs asking that question a few milliseconds apart both read
+# the same free memory and both get "yes" — neither has loaded anything yet,
+# so nothing on the card contradicts either of them. That is exactly the
+# 08-09-2026 failure: two 27B models, each individually fine, admitted within
+# the same instant. `reserve()`/`try_reserve()` close that window: a
+# reservation is bytes provisionally taken out of a budget the instant a job
+# is told "proceed", released the moment `assess()` next sees the model
+# actually resident (the cheap /api/ps check it already does on every call —
+# no extra polling needed) or after `ttl` seconds, whichever comes first, so a
+# job that crashes before loading does not starve the budget forever.
+#
+# Keyed per `(root, device)` — `device=None` is the whole pool, an explicit
+# GPU index reserves against that card alone — so a caller that knows which
+# card a model will land on (src/gpu_placement.py) can reserve narrower than
+# the pool. `assess()`/`admit()` reserve at the pool level, matching the
+# budget they already compute at that granularity.
+RESERVATION_TTL_SECONDS = 180.0
+
+_RES_LOCK = threading.Lock()
+_RESERVATIONS: Dict[str, Dict[str, Any]] = {}
+
+
+def _reservation_key(root: str, device: Optional[int]) -> str:
+    return f"{root}|{'pool' if device is None else f'gpu{device}'}"
+
+
+def _expire_reservations_locked(now: float) -> None:
+    dead = [rid for rid, r in _RESERVATIONS.items() if now - r["created"] > r["ttl"]]
+    for rid in dead:
+        stale = _RESERVATIONS.pop(rid, None)
+        if stale:
+            logger.info("vram admission: reservation %s for %s expired after %.0fs unclaimed",
+                        rid, stale["model"], stale["ttl"])
+
+
+def reserved_bytes(root: str, *, device: Optional[int] = None) -> int:
+    """Bytes currently set aside against `root`'s pool (or one GPU of it)."""
+    key = _reservation_key(root, device)
+    with _RES_LOCK:
+        _expire_reservations_locked(time.time())
+        return sum(r["bytes"] for r in _RESERVATIONS.values() if r["key"] == key)
+
+
+def try_reserve(root: str, model: str, bytes_needed: int, budget_bytes: int, *,
+                device: Optional[int] = None, ttl: float = RESERVATION_TTL_SECONDS) -> Optional[str]:
+    """Atomic test-and-set: reserve `bytes_needed` against `budget_bytes` only
+    if what is already reserved leaves room for it. Returns the reservation id
+    on success, None when another reservation already claims that room — the
+    caller then treats this exactly like "does not fit" instead of racing
+    whoever got there first for the same memory.
+
+    The read (what is already reserved) and the write (adding this one) happen
+    under one lock, which is the whole fix for QA-24: `assess()` alone can
+    only ever report a snapshot, and two snapshots taken microseconds apart
+    can both be true at the moment they were taken.
+    """
+    key = _reservation_key(root, device)
+    now = time.time()
+    with _RES_LOCK:
+        _expire_reservations_locked(now)
+        already = sum(r["bytes"] for r in _RESERVATIONS.values() if r["key"] == key)
+        if already + max(0, int(bytes_needed)) > max(0, int(budget_bytes)):
+            return None
+        rid = f"rsv-{uuid.uuid4().hex[:12]}"
+        _RESERVATIONS[rid] = {"key": key, "root": root, "model": model,
+                              "bytes": max(0, int(bytes_needed)), "device": device,
+                              "created": now, "ttl": float(ttl)}
+        return rid
+
+
+def release_reservation(reservation_id: Optional[str]) -> None:
+    if not reservation_id:
+        return
+    with _RES_LOCK:
+        _RESERVATIONS.pop(reservation_id, None)
+
+
+def _release_for_model_locked(root: str, model: str) -> None:
+    want = str(model).strip().lower()
+    dead = [rid for rid, r in _RESERVATIONS.items()
+            if r["root"] == root and str(r["model"]).strip().lower() == want]
+    for rid in dead:
+        _RESERVATIONS.pop(rid, None)
+
+
+def release_reservations_for_model(root: str, model: str) -> None:
+    """The model is confirmed resident (or gone): its reservation, if any, no
+    longer protects anything real and would only shrink the budget for the
+    next job. Safe to call even when there is nothing to release."""
+    with _RES_LOCK:
+        _release_for_model_locked(root, model)
+
+
+def reservations_snapshot() -> List[Dict[str, Any]]:
+    """For diagnostics/tests: every reservation currently held, expired ones
+    already swept."""
+    with _RES_LOCK:
+        _expire_reservations_locked(time.time())
+        return [dict(r, id=rid) for rid, r in _RESERVATIONS.items()]
 
 
 # â”€â”€ Where the model would load â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -119,6 +224,12 @@ def assess(root: str, model: str) -> Dict[str, Any]:
             if want in names or (":" not in want and f"{want}:latest" in names):
                 out["fits"] = True
                 out["already_resident"] = True
+                # It is really in VRAM now: whatever it reserved to get there
+                # no longer protects anything and would only starve the next
+                # job's budget. This is the "or caduca" clause's twin: release
+                # the instant residency is observed, TTL only for the case
+                # where this call never comes (the load crashed first).
+                release_reservations_for_model(root, model)
                 return out
     except Exception:  # noqa: BLE001 - fall through to the full reading, which reports it
         pass
@@ -173,6 +284,7 @@ def assess(root: str, model: str) -> Dict[str, Any]:
     if any(r["name"] == model or r["key"] == digests.get(model) for r in residents):
         out["fits"] = True
         out["already_resident"] = True
+        release_reservations_for_model(root, model)
         return out
 
     size = sizes.get(model) or 0
@@ -188,6 +300,12 @@ def assess(root: str, model: str) -> Dict[str, Any]:
                                   placements=placements)
     # `budget_bytes` treats what the runner holds as free. Alongside, it is not.
     budget_alongside = max(0, int(block["budget_bytes"]) - held)
+    # Nor is what another job has reserved (HW-01): it has not loaded yet
+    # either, so /api/ps says nothing about it, but the room is already
+    # spoken for. Without this, two assess() calls a moment apart both see
+    # the full budget and both say "fits" for memory that only exists once.
+    reserved = reserved_bytes(root)
+    budget_alongside = max(0, budget_alongside - reserved)
 
     rate = vram_fit.KV_RATES.get(digests.get(model) or model) or {}
     kv_ctx = int(rate.get("ctx") or 0)
@@ -205,6 +323,7 @@ def assess(root: str, model: str) -> Dict[str, Any]:
         "footprint_bytes": footprint, "headroom_bytes": headroom, "need_bytes": need,
         "budget_alongside_bytes": budget_alongside,
         "budget_if_unloaded_bytes": int(block["budget_bytes"]),
+        "reserved_bytes": reserved,
         "held_by_runner_bytes": held, "others_bytes": others,
         "vram_total_bytes": total, "gpu_count": int(block.get("count") or 1),
         "gpu_name": str(block.get("name") or ""),
@@ -396,8 +515,24 @@ async def admit(endpoint_url: str, model: str, *, owner: str = "",
         return "proceed"
 
     a = await asyncio.to_thread(assess, root, model)
-    if a.get("fits") is not False:
-        return "proceed"  # fits, already resident, or unknowable
+    if a.get("fits") is None or a.get("already_resident"):
+        return "proceed"  # unknowable, or already using the memory it would ask for
+    if a.get("fits") is True:
+        need = int(a.get("need_bytes") or a.get("footprint_bytes") or 0)
+        budget = int(a.get("budget_alongside_bytes") or 0)
+        if need <= 0:
+            return "proceed"  # nothing to reserve for (e.g. a zero-footprint reading)
+        reservation_id = try_reserve(root, model, need, budget)
+        if reservation_id is not None:
+            # Held until assess() next sees `model` resident or RESERVATION_TTL_SECONDS
+            # passes (release_reservations_for_model / _expire_reservations_locked).
+            return "proceed"
+        # QA-24: this read of "it fits" was true a moment ago; another admit()
+        # reserved the room in between. Treat it exactly like "does not fit"
+        # instead of both of us loading into the same free bytes.
+        a = dict(a)
+        a["fits"] = False
+        a["reason"] = a.get("reason") or f"{model} would fit, but another load just reserved that room"
     logger.info("vram admission: %s needs %.1f GB, %.1f GB free alongside %d resident â€” %s",
                 model, a["need_bytes"] / 2**30, a["budget_alongside_bytes"] / 2**30,
                 len(a["residents"]), mode)

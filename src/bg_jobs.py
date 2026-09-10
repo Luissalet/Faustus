@@ -82,16 +82,30 @@ def _pid_alive(pid: Optional[int]) -> bool:
     return pid_alive(pid)
 
 
-def launch(command: str, session_id: str, cwd: Optional[str] = None,
-           max_runtime_s: int = DEFAULT_MAX_RUNTIME_S) -> Dict[str, Any]:
-    """Launch `command` detached. Returns the job record (status='running').
+def _is_paused_for_resource_pressure() -> bool:
+    """Whether the RAM/commit-pressure guard (src/bg_monitor.py, PERF-04) says
+    auxiliary work should stand down right now.
 
-    Output + the final exit code are written to files so status survives a
-    server restart. The process is put in its own session (setsid) so it
-    outlives the request/stream that started it.
+    Imported lazily and defensively: `src/bg_monitor.py` already imports this
+    module at top level (it drains bg_jobs' own follow-up queue), so importing
+    it back here at module scope would be circular. Any failure to read the
+    guard (psutil missing, bg_monitor not yet initialized) is "not pressured"
+    -- ignorance of memory pressure must never be the reason a `#!bg` command
+    silently never runs.
     """
-    _JOBS_DIR.mkdir(parents=True, exist_ok=True)
-    job_id = uuid.uuid4().hex[:12]
+    try:
+        from src import bg_monitor
+        return bool(bg_monitor.is_paused_for_resource_pressure())
+    except Exception:
+        return False
+
+
+def _spawn_process(job_id: str, command: str, cwd: Optional[str]) -> Dict[str, Any]:
+    """Actually start `command` detached and return the process-related record
+    fields (status='running'). Split out of `launch()` so a job queued for RAM
+    pressure (see `launch()` / `refresh()`) can be started later by the exact
+    same path once pressure clears, instead of a second, divergent copy of the
+    spawn logic."""
     log_path = _JOBS_DIR / f"{job_id}.log"
     exit_path = _JOBS_DIR / f"{job_id}.exit"
 
@@ -159,10 +173,7 @@ def launch(command: str, session_id: str, cwd: Optional[str] = None,
     # this record is stored under. None for the creation time means psutil was
     # not importable at spawn, and `_kill_job` will then refuse to signal rather
     # than guess: see src/process_ownership.terminate_tree.
-    rec = {
-        "id": job_id,
-        "session_id": session_id,
-        "command": command,
+    return {
         "status": "running",       # running | done | failed
         "pid": proc.pid,
         "pid_created_at": process_ownership.creation_time(proc.pid),
@@ -170,11 +181,48 @@ def launch(command: str, session_id: str, cwd: Optional[str] = None,
         "started_at": time.time(),
         "ended_at": None,
         "exit_code": None,
-        "max_runtime_s": max_runtime_s,
-        "followed_up": False,       # has the agent been re-invoked with the result?
         "log_path": str(log_path),
         "exit_path": str(exit_path),
     }
+
+
+def launch(command: str, session_id: str, cwd: Optional[str] = None,
+           max_runtime_s: int = DEFAULT_MAX_RUNTIME_S) -> Dict[str, Any]:
+    """Launch `command` detached. Returns the job record.
+
+    Ordinarily `status='running'`: output + the final exit code are written to
+    files so status survives a server restart, and the process is put in its
+    own session (setsid) so it outlives the request/stream that started it.
+
+    Under RAM/commit pressure (PERF-04, `src/bg_monitor.py`) the job is
+    queued instead (`status='queued'`, nothing spawned yet) rather than
+    discarded or run into an already-stressed box: `refresh()` starts it on a
+    later poll once `bg_monitor.is_paused_for_resource_pressure()` clears, so
+    the command still runs — just later, the same way a follow-up the monitor
+    couldn't deliver this tick is simply retried next tick.
+    """
+    _JOBS_DIR.mkdir(parents=True, exist_ok=True)
+    job_id = uuid.uuid4().hex[:12]
+    rec: Dict[str, Any] = {
+        "id": job_id,
+        "session_id": session_id,
+        "command": command,
+        "max_runtime_s": max_runtime_s,
+        "followed_up": False,       # has the agent been re-invoked with the result?
+    }
+    if _is_paused_for_resource_pressure():
+        rec.update({
+            "status": "queued",
+            "pid": None, "pid_created_at": None, "pgid": None,
+            "started_at": None, "ended_at": None, "exit_code": None,
+            "log_path": None, "exit_path": None,
+            "cwd": cwd,
+            "queued_for_pressure": True,
+        })
+        logger.info("bg job %s: queued for RAM pressure instead of launched: %s",
+                    job_id, command[:80])
+    else:
+        rec.update(_spawn_process(job_id, command, cwd))
     jobs = _load()
     jobs[job_id] = rec
     _save(jobs)
@@ -212,10 +260,21 @@ def _prune(jobs: Dict[str, Dict[str, Any]], now: float) -> bool:
 
 def refresh() -> Dict[str, Dict[str, Any]]:
     """Reconcile every running job against disk. Marks done/failed (incl.
-    timeout). Idempotent — safe to call from a poll loop. Returns the store."""
+    timeout); starts any job still queued for RAM pressure once the guard
+    clears. Idempotent — safe to call from a poll loop (bg_monitor's tick
+    already calls this indirectly via `pending_followups()`, and every status
+    read — `get`/`list_for_session` — calls it directly, so a queued job does
+    not need a poll loop of its own). Returns the store."""
     jobs = _load()
     changed = False
     now = time.time()
+    if not _is_paused_for_resource_pressure():
+        for rec in jobs.values():
+            if rec.get("status") != "queued":
+                continue
+            rec.update(_spawn_process(rec["id"], rec.get("command", ""), rec.get("cwd")))
+            changed = True
+            logger.info("bg job %s: RAM pressure cleared, launching now", rec.get("id"))
     for rec in jobs.values():
         if rec.get("status") != "running":
             continue
@@ -341,6 +400,21 @@ def kill(job_id: str) -> Optional[Dict[str, Any]]:
         # not claim the process is gone, because it is very likely still there.
         rec["killed"] = bool(outcome.signalled)
         rec["followed_up"] = True
+        _save(jobs)
+        return rec
+    if rec.get("status") == "queued":
+        # Nothing was ever spawned (still parked for RAM pressure, see
+        # launch()/refresh()) — there is no process tree to signal, just the
+        # queue slot to drop. Distinguishing this from "already finished" below
+        # matters: `process_ownership.describe(None)` would otherwise read as
+        # if a real process had already exited on its own.
+        rec = dict(rec)
+        rec["status"] = "failed"
+        rec["exit_code"] = -1
+        rec["ended_at"] = time.time()
+        rec["killed"] = True
+        rec["followed_up"] = True
+        jobs[job_id] = rec
         _save(jobs)
         return rec
     # Reached only after refresh() has reconciled this record against disk, so

@@ -14,6 +14,7 @@ import asyncio
 import json
 import logging
 import time
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from src import bg_jobs
 from src.prompt_security import untrusted_context_message
@@ -25,6 +26,113 @@ POLL_INTERVAL_S = 5
 # The follow-up agent run is allowed a few rounds to actually continue the task
 # (e.g. after `pip install` finishes, run the transcription).
 _FOLLOWUP_MAX_ROUNDS = 12
+
+
+# ── RAM/commit pressure guard (PERF-04) ─────────────────────────────────────
+#
+# 08-09-2026 the box did not run out of VRAM first, it ran out of *commit*
+# memory: two 27B models spilling into system RAM while an embeddings pass
+# and a research run kept drawing on it too. Nothing watched that number, so
+# nothing backed off before the cascade. This adds a watcher: `ram_pressure()`
+# reads free/total RAM through an injectable reader (a test supplies a fake
+# one — no psutil, no real host state needed), and the follow-up loop below
+# consults it every tick before starting an auxiliary continuation, exactly
+# the way it already consults `_accepting` during shutdown.
+#
+# State is conserved for free: a job skipped for pressure keeps
+# `followed_up=False` in bg_jobs' own store, the same flag a shutdown-
+# interrupted job leaves set, so the next tick (once pressure clears) simply
+# picks it up rather than losing it. `_paused_jobs` additionally remembers
+# *which* jobs are parked and since when, so a status view can show it rather
+# than the pause being invisible.
+
+RAM_PRESSURE_HIGH = 0.90   # fraction of total RAM in use: stop starting new auxiliary work
+RAM_PRESSURE_LOW = 0.80    # fraction: safe to resume (hysteresis — see is_paused_for_resource_pressure)
+
+MemoryReader = Callable[[], Tuple[Optional[int], Optional[int]]]
+
+
+def _default_memory_reader() -> Tuple[Optional[int], Optional[int]]:
+    """(available_bytes, total_bytes) from psutil. Optional dependency: a box
+    without it reads as "unknown", never as "critical" (see ram_pressure)."""
+    import psutil
+    vm = psutil.virtual_memory()
+    return int(vm.available), int(vm.total)
+
+
+_memory_reader: MemoryReader = _default_memory_reader
+_paused_for_pressure = False
+_paused_jobs: Dict[str, Dict[str, Any]] = {}
+
+
+def set_memory_reader(reader: Optional[MemoryReader]) -> None:
+    """Test hook: inject a fake `() -> (available_bytes, total_bytes)` reader.
+    Pass None to restore the real psutil-backed one."""
+    global _memory_reader
+    _memory_reader = reader or _default_memory_reader
+
+
+def ram_pressure() -> Dict[str, Any]:
+    """One reading of system memory pressure. `used_fraction` is None when the
+    reader fails or reports no total — that is "unknown", and `critical` is
+    always False for it: ignorance is never a reason to pause every auxiliary
+    job in the system."""
+    try:
+        available, total = _memory_reader()
+    except Exception as e:  # noqa: BLE001
+        logger.debug("bg-monitor: memory reader failed: %s", e)
+        return {"available_bytes": None, "total_bytes": None, "used_fraction": None, "critical": False}
+    if not total:
+        return {"available_bytes": available, "total_bytes": total, "used_fraction": None, "critical": False}
+    used_fraction = max(0.0, 1.0 - (float(available or 0) / float(total)))
+    return {"available_bytes": available, "total_bytes": total, "used_fraction": used_fraction,
+            "critical": used_fraction >= RAM_PRESSURE_HIGH}
+
+
+def is_paused_for_resource_pressure() -> bool:
+    """True while auxiliary work should stand down for RAM/commit pressure.
+
+    Hysteresis, not a bare threshold: once tripped at `RAM_PRESSURE_HIGH` it
+    stays tripped until usage falls back under `RAM_PRESSURE_LOW`, so a
+    reading bouncing around one number does not pause and resume the same job
+    every five-second tick."""
+    global _paused_for_pressure
+    frac = ram_pressure()["used_fraction"]
+    if frac is None:
+        return _paused_for_pressure  # unknown: hold the last known state, don't guess
+    if frac >= RAM_PRESSURE_HIGH:
+        _paused_for_pressure = True
+    elif frac <= RAM_PRESSURE_LOW:
+        _paused_for_pressure = False
+    return _paused_for_pressure
+
+
+def pressure_state() -> Dict[str, Any]:
+    """The guard's own snapshot — current reading, whether it is paused, and
+    which auxiliary jobs are parked because of it. For a status endpoint or
+    the Vitals dialog; not consumed anywhere in this lot's own routes."""
+    state = ram_pressure()
+    state["paused"] = is_paused_for_resource_pressure()
+    state["paused_jobs"] = list(_paused_jobs.values())
+    return state
+
+
+def note_paused(job_id: str, kind: str = "") -> None:
+    """Record that `job_id` (an auxiliary job — a background continuation
+    here; embeddings/audit/research callers elsewhere can reuse the same
+    predicate, see the lot report) was skipped this tick for RAM pressure."""
+    if job_id not in _paused_jobs:
+        logger.info("bg-monitor: pausing auxiliary job %s (%s) for RAM pressure", job_id, kind or "job")
+    _paused_jobs[job_id] = {"job_id": job_id, "kind": kind, "paused_at": time.time()}
+
+
+def note_resumed(job_id: str) -> None:
+    if _paused_jobs.pop(job_id, None) is not None:
+        logger.info("bg-monitor: resuming auxiliary job %s — RAM pressure cleared", job_id)
+
+
+def paused_job_ids() -> List[str]:
+    return list(_paused_jobs.keys())
 
 # Shutdown contract (B-013). A tick re-invokes the agent, which appends to a
 # session and calls save_sessions(); one that starts after the process has begun
@@ -184,12 +292,24 @@ async def _run_followup(rec: dict) -> bool:
 async def _loop(stop):
     while not stop.is_set():
         try:
+            pressured = is_paused_for_resource_pressure()
             for rec in bg_jobs.pending_followups():
                 if not _accepting:
                     # Shutdown began mid-tick. The remaining jobs keep
                     # followed_up=False, so the next boot picks them up rather
                     # than losing them: that flag is the whole retry contract.
                     break
+                if pressured:
+                    # RAM/commit pressure (PERF-04): pause this continuation
+                    # BEFORE it starts a new agent round (more tool calls, more
+                    # subprocess/embedding work) rather than after the box is
+                    # already tight. followed_up stays False — the exact same
+                    # conservation the shutdown branch above relies on — so
+                    # this job resumes on its own once pressure clears instead
+                    # of being lost.
+                    note_paused(rec["id"], kind="bg_job_followup")
+                    continue
+                note_resumed(rec["id"])
                 try:
                     if await _run_followup(rec):
                         bg_jobs.mark_followed_up(rec["id"])
