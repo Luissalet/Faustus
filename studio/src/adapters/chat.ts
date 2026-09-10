@@ -94,6 +94,11 @@ export interface TurnMetrics {
 export interface AskOption {
   label: string;
   description: string;
+  /** Stable id (AskUserTool's `_stable_option_id`) — present from any
+   *  question opened after CALL-07/TASK-04, absent from older history.
+   *  Lets an answer be sent as `option_ids` instead of matching label text
+   *  back to the choice it came from. */
+  id?: string;
 }
 
 /**
@@ -108,7 +113,12 @@ export function askOptionsFrom(raw: unknown): AskOption[] {
       if (typeof o === 'string') return { label: o.trim(), description: '' };
       if (o && typeof o === 'object') {
         const r = o as Record<string, unknown>;
-        return { label: str(r.label ?? r.value ?? r.title).trim(), description: str(r.description).trim() };
+        const id = str(r.id).trim();
+        return {
+          label: str(r.label ?? r.value ?? r.title).trim(),
+          description: str(r.description).trim(),
+          ...(id ? { id } : {}),
+        };
       }
       return { label: '', description: '' };
     })
@@ -121,6 +131,14 @@ export interface AskUser {
   multi: boolean;
   kind: 'tool_approval' | 'question';
   approvalId?: string;
+  /** CALL-07/TASK-04: the question's stable id in `src/question_store.py`,
+   *  minted when it was opened. Present for a 'question' kind ask_user;
+   *  absent for the 'tool_approval' kind (that flow has its own
+   *  `approvalId` gate) and for pre-existing history rows. Round-tripped
+   *  back to `/api/chat_stream` as `question_id` when the user answers, so
+   *  the server can check the answer against the exact question it opened
+   *  instead of "whichever question is currently open for this session". */
+  questionId?: string;
 }
 
 export interface WebSource {
@@ -244,7 +262,20 @@ export type ChatEvent =
   | { type: 'terminal'; failed: boolean; message?: string }
   | { type: 'error'; message: string }
   | { type: 'progress'; todos: Todo[] }
-  | { type: 'plan'; plan: string }
+  | {
+      type: 'plan';
+      plan: string;
+      /** TASK-01: the same structured checklist history restore already
+       *  reads off the persisted tool event (model.ts's `planUpdateFromMeta`)
+       *  — raw here (a screen maps it through `planStepFromRaw`, same as
+       *  that path, so live and history render the plan the same way)
+       *  rather than typed, since the shape belongs to `src/plan_state.py`,
+       *  not this adapter. Undefined when the server hasn't sent it (an
+       *  older build, or a plain markdown-only update). */
+      steps?: unknown[];
+      revision?: number;
+      warnings?: string[];
+    }
   | { type: 'check'; check: HarnessCheck }
   | { type: 'summary'; summary: HarnessSummary }
   | { type: 'context'; percent?: number; tokens?: number; window?: number; ledger?: ContextLedger }
@@ -522,6 +553,14 @@ export interface SendOptions {
    *  unacknowledged send from `pendingOutboxFor` MUST pass its id back here;
    *  a fresh one would start a second turn instead of reconnecting to it. */
   clientMessageId?: string;
+  /** CALL-07/TASK-04: answering a specific ask_user question — AskUser.questionId
+   *  from the card being answered. The server checks it against the question
+   *  it actually opened before the turn starts; absent, this send behaves
+   *  exactly like a plain message (todo como hoy). */
+  questionId?: string;
+  /** The stable `AskOption.id`s the user picked, alongside `questionId`.
+   *  Omitted (or empty) for a free-text answer. */
+  optionIds?: string[];
 }
 
 export interface DelegationTask {
@@ -655,6 +694,7 @@ export function toolEventsFrom(meta: Record<string, unknown>): HistoryToolEvent[
             multi: Boolean(askRaw.multi),
             kind: askRaw.kind === 'tool_approval' ? 'tool_approval' : 'question',
             approvalId: str(askRaw.approval_id) || undefined,
+            questionId: str(askRaw.question_id) || undefined,
           }
         : undefined,
       askResolved: Boolean(askRaw?.resolved) || Boolean(ev.approved),
@@ -755,6 +795,7 @@ export function decode(raw: Record<string, unknown>, sseEvent: string | null): C
           multi: Boolean(data.multi),
           kind: data.kind === 'tool_approval' ? 'tool_approval' : 'question',
           approvalId: str(data.approval_id) || undefined,
+          questionId: str(data.question_id) || undefined,
         },
       };
     case 'metrics':
@@ -821,7 +862,13 @@ export function decode(raw: Record<string, unknown>, sseEvent: string | null): C
         })),
       };
     case 'plan_update':
-      return { type: 'plan', plan: str(data.plan) };
+      return {
+        type: 'plan',
+        plan: str(data.plan),
+        steps: Array.isArray(data.steps) ? data.steps : undefined,
+        revision: num(data.revision),
+        warnings: asArray<unknown>(data.warnings).map(String).filter(Boolean),
+      };
     case 'harness_check':
       return {
         type: 'check',
@@ -932,6 +979,29 @@ async function* streamEvents(body: ReadableStream<Uint8Array>): AsyncGenerator<C
 }
 
 /**
+ * CALL-07/TASK-04: localizes the `reason` the server gives for refusing an
+ * ask_user answer (src/question_store.py's resolve outcomes), for the
+ * `question_not_resolved` 409 from `/api/chat_stream`. Unknown reasons fall
+ * back to a generic message rather than showing the raw server string.
+ */
+function questionRejectionMessage(reason: string): string {
+  switch (reason) {
+    case 'cancelled':
+      return t('This question was replaced by a newer one — it can no longer be answered.');
+    case 'stale_revision':
+      return t('The plan changed since this question was asked — please answer the latest one.');
+    case 'already_answered':
+      return t('This question was already answered.');
+    case 'expired':
+      return t('This question has expired — please continue in a new turn.');
+    case 'not_found':
+      return t('This question no longer exists.');
+    default:
+      return t('This question can no longer be answered.');
+  }
+}
+
+/**
  * Sends one turn and yields typed events until the server says [DONE].
  * The caller keeps an AbortController: aborting the fetch closes the
  * stream on our side, and `stopChat` tells the server to stop generating.
@@ -989,6 +1059,8 @@ export async function* sendTurn(options: SendOptions): AsyncGenerator<ChatEvent>
     fd.append('compare_mode', 'true');
     fd.append('no_documents', 'true');
   }
+  if (options.questionId) fd.append('question_id', options.questionId);
+  if (options.optionIds?.length) fd.append('option_ids', JSON.stringify(options.optionIds));
 
   let response: Response;
   try {
@@ -1011,6 +1083,27 @@ export async function* sendTurn(options: SendOptions): AsyncGenerator<ChatEvent>
   // happens to the STREAM from here is a separate question (resumeTurn's
   // job); the send itself is no longer in doubt, so the outbox entry is done.
   if (trackOutbox) clearOutboxFor(options.sessionId);
+
+  // CALL-07/TASK-04: the server rejects an ask_user answer BEFORE starting a
+  // turn — question_store.resolve found it cancelled (superseded by a newer
+  // question), a stale revision, already answered, expired, or unknown. The
+  // generic responseReason() below reads `detail`/`message`, not this
+  // endpoint's `{error: 'question_not_resolved', reason, question_id}` body,
+  // so it's handled here first with a localized reason instead of falling
+  // through to a generic "responded 409".
+  if (response.status === 409) {
+    let payload: { error?: unknown; reason?: unknown } | null = null;
+    try {
+      payload = (await response.clone().json()) as { error?: unknown; reason?: unknown };
+    } catch {
+      payload = null;
+    }
+    if (payload && payload.error === 'question_not_resolved') {
+      yield { type: 'error', message: questionRejectionMessage(String(payload.reason ?? '')) };
+      yield { type: 'done' };
+      return;
+    }
+  }
 
   if (!response.ok || !response.body) {
     yield { type: 'error', message: await responseReason(response, '/api/chat_stream') };

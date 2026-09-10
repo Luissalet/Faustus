@@ -46,4 +46,16 @@ assert.equal(ev.ask.multi, true);
 assert.deepEqual(ev.ask.options, [{ label: 'A', description: 'a' }, { label: 'B', description: 'b' }]);
 assert.equal(ev.ask.kind, 'question');
 
+// CALL-07/TASK-04: an option's stable `id` (when the server sends one)
+// round-trips through both paths, alongside `questionId` on the ask itself —
+// Transcript.tsx's QuestionCard needs these to answer a *specific* question.
+const optsWithId = askOptionsFrom([{ label: 'A', description: 'a', id: 'opt-1' }]);
+assert.deepEqual(optsWithId, [{ label: 'A', description: 'a', id: 'opt-1' }]);
+const [evWithId] = toolEventsFrom({ tool_events: [{ tool: 'ask_user', round: 1, ask_user: {
+  question: 'Which?', question_id: 'q-1',
+  options: [{ label: 'A', description: 'a', id: 'opt-1' }],
+} }] });
+assert.equal(evWithId.ask.questionId, 'q-1');
+assert.deepEqual(evWithId.ask.options, [{ label: 'A', description: 'a', id: 'opt-1' }]);
+
 console.log('ok ask-user-options');

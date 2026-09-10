@@ -5775,3 +5775,11 @@ Marked done — not yet verified	Marcado como hecho — aún sin verificar
 Plan steps	Pasos del plan
 Some lines could not be parsed as steps.	Algunas líneas no se pudieron interpretar como pasos.
 This message's outcome is uncertain — checking…	El resultado de este mensaje es incierto: comprobando…
+Version {v} · build {sha} ({date}) · Studio served: {served}	Versión {v} · build {sha} ({date}) · Studio servido: {served}
+Version {v}	Versión {v}
+This question was replaced by a newer one — it can no longer be answered.	Esta pregunta fue sustituida por una más reciente — ya no se puede responder.
+The plan changed since this question was asked — please answer the latest one.	El plan cambió desde que se hizo esta pregunta — responde a la más reciente.
+This question was already answered.	Esta pregunta ya fue respondida.
+This question has expired — please continue in a new turn.	Esta pregunta ha expirado — continúa en un nuevo turno.
+This question no longer exists.	Esta pregunta ya no existe.
+This question can no longer be answered.	Esta pregunta ya no se puede responder.

@@ -42,12 +42,11 @@ export interface Step {
 
 /**
  * One structured plan step (TASK-01), as the backend's `plan_state.Plan`
- * serializes it inside `plan_update.steps`. `chat.ts`'s live SSE mapping
- * (`case 'plan_update'`) does not carry these fields through yet — today
- * they only reach the frontend via history restore, which reads the raw
- * persisted `tool_events` entry directly (see `planUpdateFromMeta` below)
- * rather than going through `ChatEvent`. A turn still in progress therefore
- * shows the plain `plan` markdown only, same as before this existed.
+ * serializes it inside `plan_update.steps`. Since CALL-07/TASK-04, `chat.ts`'s
+ * live SSE mapping (`case 'plan_update'`) carries these fields through too,
+ * so a turn still in progress renders the same structured card as a turn
+ * restored from history (which reads the raw persisted `tool_events` entry
+ * directly — see `planUpdateFromMeta` below).
  */
 export interface PlanStepView {
   id: string;
@@ -149,8 +148,9 @@ export interface Turn {
   summary?: HarnessSummary;
   todos?: Todo[];
   plan?: string;
-  /** The same plan, structured (TASK-01) — set on history restore today;
-   *  see `PlanStepView`'s doc comment for why live turns don't have it yet. */
+  /** The same plan, structured (TASK-01) — set on history restore and, since
+   *  CALL-07/TASK-04, on a live `plan_update` too (see `apply()`'s `'plan'`
+   *  case and chat.ts's `decode()`). */
   planSteps?: PlanStepView[];
   planRevision?: number;
   planWarnings?: string[];
@@ -639,8 +639,23 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
       return { ...turn, error: event.message };
     case 'progress':
       return { ...turn, todos: event.todos };
-    case 'plan':
-      return { ...turn, plan: event.plan };
+    case 'plan': {
+      // CALL-07/TASK-04 glue: the live SSE `plan_update` decode (chat.ts)
+      // now carries `steps`/`revision`/`warnings` the same way a restored
+      // history turn does (planUpdateFromMeta below) — reuse the same
+      // per-step parser so a plan card looks identical whether it arrived
+      // live or via history restore.
+      const steps = event.steps
+        ? event.steps.map(planStepFromRaw).filter((x): x is PlanStepView => x !== null)
+        : undefined;
+      return {
+        ...turn,
+        plan: event.plan,
+        planSteps: steps ?? turn.planSteps,
+        planRevision: event.revision ?? turn.planRevision,
+        planWarnings: event.warnings ?? turn.planWarnings,
+      };
+    }
     case 'check':
       return { ...turn, checks: [...turn.checks, event.check] };
     case 'summary':

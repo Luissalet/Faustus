@@ -26,7 +26,10 @@ export interface TranscriptProps {
   turns: Turn[];
   busy: boolean;
   onApproval: (turn: Turn, decision: Decision) => void;
-  onAnswer: (text: string) => void;
+  /** CALL-07/TASK-04: `optionIds` are the stable `AskOption.id`s the user
+   *  picked (Studio.tsx pairs these with `turn.ask?.questionId` to answer a
+   *  specific question); absent for a free-text answer. */
+  onAnswer: (turn: Turn, text: string, optionIds?: string[]) => void;
   /** Save the user's edit; with `regenerate` the reply is redone from it. */
   onEdit: (turn: Turn, text: string, regenerate: boolean) => void;
   onRegenerate: (turn: Turn) => void;
@@ -208,7 +211,7 @@ export function AskCard({
   ask: AskUser;
   busy: boolean;
   onApproval: (decision: Decision) => void;
-  onAnswer: (text: string) => void;
+  onAnswer: (text: string, optionIds?: string[]) => void;
 }) {
   if (ask.kind === 'tool_approval') {
     return (
@@ -234,7 +237,7 @@ export function AskCard({
  * did not think of (Luis, 10-09-2026: "varias opciones para elegir y una
  * para que escribas tú, o una checklist").
  */
-function QuestionCard({ ask, busy, onAnswer }: { ask: AskUser; busy: boolean; onAnswer: (text: string) => void }) {
+function QuestionCard({ ask, busy, onAnswer }: { ask: AskUser; busy: boolean; onAnswer: (text: string, optionIds?: string[]) => void }) {
   const [picked, setPicked] = useState<string[]>([]);
   const [own, setOwn] = useState('');
   const toggle = (label: string) => setPicked((cur) => (cur.includes(label) ? cur.filter((l) => l !== label) : [...cur, label]));
@@ -243,7 +246,12 @@ function QuestionCard({ ask, busy, onAnswer }: { ask: AskUser; busy: boolean; on
     if (text) onAnswer(text);
   };
   const sendPicked = () => {
-    if (picked.length) onAnswer(picked.join('; '));
+    if (!picked.length) return;
+    const pickedIds = ask.options
+      .filter((o) => picked.includes(o.label))
+      .map((o) => o.id)
+      .filter((id): id is string => Boolean(id));
+    onAnswer(picked.join('; '), pickedIds.length ? pickedIds : undefined);
   };
   return (
     <div className="fs-studio__ask" data-testid="studio-question" data-multi={ask.multi || undefined}>
@@ -257,7 +265,7 @@ function QuestionCard({ ask, busy, onAnswer }: { ask: AskUser; busy: boolean; on
               type="button"
               className="fs-studio__ask-option"
               disabled={busy}
-              onClick={() => onAnswer(option.label)}
+              onClick={() => onAnswer(option.label, option.id ? [option.id] : undefined)}
               data-testid="studio-question-option"
             >
               <span className="fs-studio__ask-option-label">{option.label}</span>
@@ -653,7 +661,7 @@ function AssistantTurn({
   turn: Turn;
   busy: boolean;
   onApproval: (decision: Decision) => void;
-  onAnswer: (text: string) => void;
+  onAnswer: (text: string, optionIds?: string[]) => void;
   onRegenerate: () => void;
   onDelete: () => void;
   onNotice: TranscriptProps['onNotice'];
@@ -892,7 +900,7 @@ export function Transcript({ turns, busy, onApproval, onAnswer, onEdit, onRegene
             turn={turn}
             busy={busy}
             onApproval={(decision) => onApproval(turn, decision)}
-            onAnswer={onAnswer}
+            onAnswer={(text, optionIds) => onAnswer(turn, text, optionIds)}
             onRegenerate={() => {
               // Regenerating a reply means redoing it from the user turn before it.
               for (let i = index - 1; i >= 0; i--) {

@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Dict, Any, AsyncGenerator, List, Optional
 
 from fastapi import APIRouter, Request, HTTPException, Form, Query
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import ValidationError
 
 from core.models import ChatMessage
@@ -503,6 +503,25 @@ def _resolve_request_workspace(request, raw_value) -> tuple:
     from src.tool_execution import vet_workspace
     workspace = vet_workspace(requested) or ""
     return workspace, (requested if not workspace else "")
+
+
+def _parse_option_ids(raw) -> List[str]:
+    """`option_ids` form field: the stable `id`s (AskOption.id, adapters/
+    chat.ts) of the ask_user options the user picked, as a JSON array
+    (FormData carries it as a string; a JSON body may already hand over a
+    real list). Free-text answers send none — `[]` here, never an error,
+    same convention as `_parse_delegate_tasks`'s "malformed = absent"."""
+    if isinstance(raw, list):
+        return [str(x).strip() for x in raw if str(x).strip()]
+    if not raw:
+        return []
+    try:
+        data = json.loads(raw) if isinstance(raw, str) else raw
+    except (TypeError, ValueError):
+        return []
+    if not isinstance(data, list):
+        return []
+    return [str(x).strip() for x in data if str(x).strip()]
 
 
 def _parse_delegate_tasks(raw) -> Optional[Dict[str, Any]]:
@@ -1885,6 +1904,44 @@ def setup_chat_routes(
             owner=owner,
             allowed_models=_allowed_models_for_request(request),
         )
+
+        # CALL-07 / TASK-04: an answer to a specific ask_user question. Studio
+        # sends `question_id` (AskUser.questionId, minted when the question
+        # was opened — src/agent_loop.py's `question_store.open_question`
+        # call) and `option_ids` for a picked option (absent for free text).
+        # question_store.resolve checks this against what it actually knows
+        # about that question — cancelled (superseded by a newer question),
+        # a stale revision, or already answered — BEFORE anything below
+        # persists the message or starts the turn; a rejection short-circuits
+        # here with none of that having happened. Skipped for a tool-approval
+        # continuation, which is a different single-use gate entirely.
+        # Absent question_id: behaves exactly as before this existed.
+        question_id = str(
+            form_data.get("question_id") or (body or {}).get("question_id") or ""
+        ).strip()
+        if question_id and not tool_approval_id:
+            option_ids = _parse_option_ids(
+                form_data.get("option_ids") or (body or {}).get("option_ids")
+            )
+            answer: Dict[str, Any] = {"text": message if isinstance(message, str) else ""}
+            if option_ids:
+                answer["option_ids"] = option_ids
+            from src import question_store
+            resolution = question_store.resolve_question(question_id, answer)
+            if not resolution.get("ok"):
+                logger.info(
+                    "[ask-user] question_id=%s rejected: reason=%s detail=%r",
+                    question_id, resolution.get("reason"), resolution.get("detail"),
+                )
+                return JSONResponse(
+                    status_code=409,
+                    content={
+                        "error": "question_not_resolved",
+                        "reason": resolution.get("reason", "unknown"),
+                        "question_id": question_id,
+                        "detail": resolution.get("detail", ""),
+                    },
+                )
 
         # client_message_id (UX-02/TASK-03): a duplicate POST for a turn
         # already accepted must reconnect to it instead of starting a second

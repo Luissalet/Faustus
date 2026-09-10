@@ -688,7 +688,15 @@ export function StudioScreen() {
     async (
       sid: string,
       message: string,
-      options: { approval?: { id: string; decision: Decision }; attachments?: Attachment[]; delegation?: Delegation } = {},
+      options: {
+        approval?: { id: string; decision: Decision };
+        attachments?: Attachment[];
+        delegation?: Delegation;
+        /** CALL-07/TASK-04: answering a specific ask_user question — paired
+         *  with `optionIds` (the picked `AskOption.id`s, absent for free text). */
+        questionId?: string;
+        optionIds?: string[];
+      } = {},
     ) => {
       const controller = new AbortController();
       runEpoch.current++;
@@ -727,6 +735,8 @@ export function StudioScreen() {
           attachments: options.attachments?.map((a) => a.id),
           genOverrides: Object.keys(gen).length ? (gen as Record<string, number | boolean>) : undefined,
           approval: options.approval,
+          questionId: options.questionId,
+          optionIds: options.optionIds,
           delegateTasks: options.delegation,
           incognito: knobs.incognito,
           presetId: preset?.id,
@@ -2183,7 +2193,15 @@ export function StudioScreen() {
               onApproval={(turn, decision) => {
                 if (sessionId && turn.ask?.approvalId) void run(sessionId, '', { approval: { id: turn.ask.approvalId, decision } });
               }}
-              onAnswer={(text) => void send(text)}
+              onAnswer={(turn, text, optionIds) => {
+                // CALL-07/TASK-04: answers a specific ask_user question — like
+                // onApproval above, this calls run() directly rather than
+                // send() (which manages the composer draft); a question
+                // answer never touches `draft`, so a 409 rejection (shown as
+                // an error bubble via sendTurn's questionRejectionMessage)
+                // leaves whatever the user was mid-typing untouched.
+                if (sessionId) void run(sessionId, text, { questionId: turn.ask?.questionId, optionIds });
+              }}
               onEdit={onEdit}
               onRegenerate={(turn) => void regenerateFrom(turn)}
               onDelete={onDelete}
