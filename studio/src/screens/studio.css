@@ -3383,6 +3383,16 @@ aside.fs-panel {
 .fs-studio__add-options > .fs-studio__chip,
 .fs-studio__add-options > .fs-icon-btn { justify-content: flex-start; inline-size: 100%; min-block-size: 36px; border-radius: var(--fs-radius-control); }
 .fs-studio__model-control { margin-inline-start: auto; min-inline-size: 0; }
+/* The autonomy preset chip (TASK-06) made the bar 22px too wide at the
+   default stage width and Send wrapped to a second line under the "+"
+   (seen live on the 7001). The model control is the elastic element: it
+   may shrink to its truncated label; the chips and Send never wrap
+   before it does. */
+@media (min-width: 601px) {
+  .fs-studio__bar > .fs-studio__model-control { flex: 1 1 96px; max-inline-size: 240px; }
+  .fs-studio__bar > .fs-studio__chip, .fs-studio__bar > .fs-studio__seg, .fs-studio__bar > .fs-studio__send, .fs-studio__bar > .fs-studio__mic { flex-shrink: 0; }
+  .fs-studio__model-control .fs-studio__chip--model span { max-inline-size: 14ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
 .fs-popover.fs-studio__permission-menu { max-inline-size: calc(100vw - 24px); inline-size: min(380px, calc(100vw - 24px)); }
 .fs-studio__permission-menu p { color: var(--fs-text-2); margin-block: 0 var(--fs-space-2); }
 .fs-studio__permission-menu [role="radiogroup"] { display: grid; gap: var(--fs-space-1); }
