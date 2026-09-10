@@ -540,6 +540,11 @@ export interface SendOptions {
   delegateTasks?: Delegation;
   /** Nobody mode: nothing is persisted and memory tools stay closed. */
   incognito?: boolean;
+  /** TASK-06: 'supervised' | 'bounded_autonomous' | 'read_only' — how far this
+   *  turn may go before it must stop and check in (src/autonomy_budget.py).
+   *  Omitted (or any other value) behaves exactly as before: the server
+   *  defaults to 'supervised'. Only meaningful in agent mode. */
+  autonomyPreset?: string;
   /** A preset id from /api/presets (system prompt + sampling). */
   presetId?: string;
   /** The document open in the panel, so the model sees what you see. */
@@ -1050,6 +1055,7 @@ export async function* sendTurn(options: SendOptions): AsyncGenerator<ChatEvent>
   }
   if (options.delegateTasks) fd.append('delegate_tasks', JSON.stringify(options.delegateTasks));
   if (options.incognito) fd.append('incognito', 'true');
+  if (options.autonomyPreset) fd.append('autonomy_preset', options.autonomyPreset);
   if (options.noMemory || options.incognito || options.compare) fd.set('no_memory', 'true');
   if (options.noSkills) fd.set('no_skills', 'true');
   if (options.inputTokenBudget != null) fd.set('input_token_budget', String(options.inputTokenBudget));

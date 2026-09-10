@@ -275,7 +275,7 @@ def aggregate(entries: Iterable[Dict[str, Any]], *, only_workspace: bool = False
             "tests_ran": len(tests_ran),
             "review_ok_rate": _rate(len([e for e in reviewed if e.get("review") == "ok"]), len(reviewed)),
             "reviewed": len(reviewed),
-            "stalls": len([e for e in items if e.get("stop_reason") in ("rounds_exhausted", "intent_nudge_exhausted", "loop_breaker", "budget_exceeded")]),
+            "stalls": len([e for e in items if e.get("stop_reason") in ("rounds_exhausted", "intent_nudge_exhausted", "loop_breaker", "budget_exceeded", "budget_exhausted")]),
             "cancelled": cancelled,
             "avg_tok_s": round(sum(float(e.get("tok_s") or 0) for e in items if e.get("tok_s")) / max(1, len([e for e in items if e.get("tok_s")])), 1) if any(e.get("tok_s") for e in items) else None,
             "last_ts": max(int(e.get("ts") or 0) for e in items),

@@ -9,6 +9,7 @@ import {
   EyeOff,
   FileText,
   FolderOpen,
+  Gauge,
   Globe,
   Telescope,
   ListTodo,
@@ -72,7 +73,13 @@ export interface Knobs {
   incognito: boolean;
   /** Deep Research before the next answer; switches itself off after the turn. */
   research: boolean;
+  /** TASK-06: how far one agent turn may go before it must stop and check in
+   *  (src/autonomy_budget.py). Undefined behaves exactly like 'supervised' —
+   *  the server's own default when the field is omitted entirely. */
+  autonomyPreset?: AutonomyPreset;
 }
+
+export type AutonomyPreset = 'supervised' | 'bounded_autonomous' | 'read_only';
 
 export interface ComposerProps {
   draft: string;
@@ -642,6 +649,12 @@ export function Composer({
             <Bot size={13} aria-hidden="true" /> {t('Agent')}
           </button>
         </div>
+        {knobs.mode === 'agent' && (
+          <AutonomyPresetSelector
+            preset={knobs.autonomyPreset ?? 'supervised'}
+            onPick={(value) => setKnobs((k) => ({ ...k, autonomyPreset: value }))}
+          />
+        )}
         <ApprovalSelector disabled={busy} onNotice={onNotice} />
         <div className="fs-studio__model-control">{modelPicker}</div>
           <span className="fs-studio__mic" data-recording={dictation ? true : undefined}>
@@ -669,6 +682,51 @@ export function Composer({
   );
 }
 
+
+// TASK-06: per-turn autonomy budget preset (src/autonomy_budget.py). Unlike
+// ApprovalSelector this is NOT a saved setting — it travels with this one
+// turn via `Knobs.autonomyPreset` / `SendOptions.autonomyPreset`, exactly
+// like `plan`/`bash` above, so switching it never affects another chat.
+export const AUTONOMY_PRESET_CHOICES: { value: AutonomyPreset; label: string; detail: string }[] = [
+  { value: 'supervised', label: t('Supervised'),
+    detail: t('Asks before anything with an external or destructive effect; medium budgets.') },
+  { value: 'bounded_autonomous', label: t('Bounded autonomous'),
+    detail: t('Runs without asking except for irreversible effects; higher budgets.') },
+  { value: 'read_only', label: t('Read only'),
+    detail: t('Only read tools are offered — nothing changes on disk or anywhere else; low budgets.') },
+];
+
+function AutonomyPresetSelector({ preset, onPick }: { preset: AutonomyPreset; onPick: (value: AutonomyPreset) => void }) {
+  const current = AUTONOMY_PRESET_CHOICES.find((c) => c.value === preset) ?? AUTONOMY_PRESET_CHOICES[0];
+  return (
+    <Popover
+      side="top"
+      className="fs-studio__permission-menu"
+      trigger={
+        <button type="button" className="fs-studio__chip" data-autonomy={preset} data-testid="studio-autonomy-preset">
+          <Gauge size={14} aria-hidden="true" /> {current.label}
+        </button>
+      }
+    >
+      <p>{t('How far this turn may go before it must stop and check in.')}</p>
+      <div role="radiogroup" aria-label={t('Autonomy')}>
+        {AUTONOMY_PRESET_CHOICES.map((choice) => (
+          <button
+            key={choice.value}
+            type="button"
+            role="radio"
+            aria-checked={preset === choice.value}
+            onClick={() => onPick(choice.value)}
+            data-testid={`studio-autonomy-preset-${choice.value}`}
+          >
+            <strong>{choice.label}</strong>
+            <span>{choice.detail}</span>
+          </button>
+        ))}
+      </div>
+    </Popover>
+  );
+}
 
 function ApprovalSelector({ disabled, onNotice }: { disabled: boolean; onNotice: ComposerProps['onNotice'] }) {
   const [mode, setMode] = useState('ask');

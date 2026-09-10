@@ -53,7 +53,7 @@ _CANCELLED_STATES = frozenset({
 _SUCCESS_STATES = frozenset({"done", "complete", "complete_unverified", "ok", "success", "passed"})
 _EXPECTED_STATES = frozenset({
     "timeout", "timed_out", "stalled", "blocked", "refused", "awaiting_user", "partial",
-    "rounds_exhausted", "budget_exceeded", "loop_breaker", "intent_nudge_exhausted",
+    "rounds_exhausted", "budget_exceeded", "budget_exhausted", "loop_breaker", "intent_nudge_exhausted",
 })
 _PANIC_STATES = frozenset({"crashed", "panic"})
 

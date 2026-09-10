@@ -542,6 +542,16 @@ DEFAULT_SETTINGS = {
     # delegate again. Registered here so the ceiling is visible in Settings:
     # a limit nobody can see is one nobody knows they are relying on.
     "agent_subagent_depth": 1,
+    # TASK-06: the four autonomy-budget ceilings (src/autonomy_budget.py)
+    # that had no settings-backed value yet and rode on fixed module
+    # constants instead — registered here the same way agent_subagent_depth
+    # was, so a person can see and change them before they run out mid-turn.
+    # `resolve_budget` still treats 0 as "unlimited" (the shared convention)
+    # and multiplies whatever is set here by the chosen preset.
+    "agent_autonomy_max_active_seconds": 900,
+    "agent_autonomy_max_subagents": 4,
+    "agent_autonomy_max_remote_spend": 20_000,
+    "agent_autonomy_max_memory_mb": 2048,
     # Model the workers run on ("" = the coordinator's). Two different models
     # generate at the same time on Ollama; two requests to one model queue on
     # its single slot — pin the worker model to the other card (Local models →

@@ -739,6 +739,7 @@ export function StudioScreen() {
           optionIds: options.optionIds,
           delegateTasks: options.delegation,
           incognito: knobs.incognito,
+          autonomyPreset: knobs.autonomyPreset,
           presetId: preset?.id,
           activeDocId: panel.doc && !panel.doc.streaming ? panel.doc.id ?? undefined : undefined,
           onRunId: (id) => {

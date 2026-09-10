@@ -28,9 +28,12 @@ from src.model_context import estimate_tokens
 from src.context_compactor import (
     apply_compaction_state,
     apply_compaction_state_for_session,
+    compact_with_integrity,
     maybe_compact,
+    COMPACT_THRESHOLD,
 )
 from src.settings import get_setting
+from src import autonomy_budget
 from src.prompt_security import untrusted_context_message
 from src.chat_helpers import is_vision_model, model_supports_vision
 from src.tool_security import (
@@ -626,6 +629,8 @@ DENIAL_ORIGIN_PREFLIGHT = "tool_preflight"
 DENIAL_ORIGIN_AVAILABILITY = "runtime_availability"
 DENIAL_ORIGIN_ODY_NO_TOOL = "odysseus_no_tool_clamp"
 DENIAL_ORIGIN_FEATURE_DISABLED = "feature_disabled"
+# TASK-06: the `read_only` autonomy preset — see src/autonomy_budget.py.
+DENIAL_ORIGIN_AUTONOMY_READ_ONLY = "autonomy_read_only"
 
 
 def _denial_for_tool(
@@ -4334,6 +4339,7 @@ async def stream_agent_loop(
     security_gate_bypass: bool = False,
     harness_options: Optional[Dict[str, Any]] = None,
     pending_user_messages: Optional[Callable[[], List[Dict[str, Any]]]] = None,
+    autonomy_preset: Optional[str] = None,
 ) -> AsyncGenerator[str, None]:
     """Streaming agent loop generator.
 
@@ -4345,6 +4351,13 @@ async def stream_agent_loop(
     round; each ``{"text", "source"}`` it returns is appended as a ``user``
     message before the model is called and announced with a ``steer`` event.
     This is how a delegate_agents worker is steered mid-task.
+    ``autonomy_preset`` (TASK-06, optional): ``"supervised"`` (default),
+    ``"bounded_autonomous"`` or ``"read_only"`` — see ``src/autonomy_budget.py``.
+    Resolves a six-dimension :class:`~src.autonomy_budget.Budget` for this
+    turn; ``read_only`` additionally removes every tool whose effects are not
+    read-only from what is offered AND executable this turn. Reaching any
+    dimension ends the turn with a ``budget_exhausted`` event and a
+    checkpoint, same as running out of rounds.
     ``harness_options`` (all optional, mostly project-level knobs resolved by
     the route): ``checkpoints`` (bool, default True — shadow snapshot before
     the first change), ``test_command`` (str, overrides test detection),
@@ -4427,6 +4440,42 @@ async def stream_agent_loop(
         # MCP tools are namespaced dynamically, so hide all MCP schemas for
         # public/non-admin users rather than trying to enumerate every tool.
         mcp_mgr = None
+
+    # TASK-06: autonomy budget for this turn (src/autonomy_budget.py). Every
+    # preset gets a Budget; only `read_only` additionally narrows what is
+    # offered. That narrowing happens HERE — before both the tool schema
+    # list and the execution gate are built from `disabled_tools` — so
+    # offered == executable stays true for it exactly like it does for
+    # WORKSPACE_TOOL_FLOOR below (see
+    # tests/test_agent_loop_offer_execute_coherence.py).
+    _autonomy_preset = autonomy_budget.normalize_preset(autonomy_preset)
+    _autonomy_budget = autonomy_budget.resolve_budget(_autonomy_preset, get_setting=get_setting)
+    _budget_ledger = autonomy_budget.Ledger()
+    # The tool-call dimension is merged into the pre-existing
+    # `max_tool_calls`/`total_tool_calls` mechanism below (one counter, not
+    # two) — see `Budget.without_tool_calls`.
+    _round_loop_budget = _autonomy_budget.without_tool_calls()
+    if _autonomy_budget.max_tool_calls:
+        max_tool_calls = (
+            _autonomy_budget.max_tool_calls if max_tool_calls <= 0
+            else min(max_tool_calls, _autonomy_budget.max_tool_calls)
+        )
+    if _autonomy_preset == "read_only":
+        _read_only_candidates: Set[str] = set()
+        for _schema in FUNCTION_TOOL_SCHEMAS:
+            _fn_name = (_schema.get("function") or {}).get("name")
+            if _fn_name:
+                _read_only_candidates.add(_fn_name)
+        if mcp_mgr is not None:
+            try:
+                _read_only_candidates.update(
+                    t["qualified_name"] for t in mcp_mgr.get_all_tools() if t.get("qualified_name")
+                )
+            except Exception as _mcp_ro_err:  # noqa: BLE001
+                logger.debug("[autonomy] could not enumerate MCP tools for read_only: %s", _mcp_ro_err)
+        _autonomy_ro_disabled = autonomy_budget.read_only_disabled_names(_read_only_candidates)
+        disabled_tools.update(_autonomy_ro_disabled)
+        _note_denials(_autonomy_ro_disabled, DENIAL_ORIGIN_AUTONOMY_READ_ONLY)
 
     # Experimental subsystems are dark until their explicit settings are on.
     # Keeping a disabled tool in the model's schema costs context and invites
@@ -5588,16 +5637,46 @@ async def stream_agent_loop(
         compacted_source = list(source_messages)
         was_compacted = False
         if defer_context_shaping or fallbacks:
-            compacted_source, _candidate_context, was_compacted = await maybe_compact(
-                None,
-                candidate_url,
-                candidate_model,
-                compacted_source,
-                candidate_headers,
-                owner=owner,
-                persist=False,
-                compaction_state=compaction_state,
-            )
+            # CTX-02 (lote 18 integration): try the deterministic,
+            # identifier-preserving fold first — gated on the SAME
+            # threshold maybe_compact itself checks below (get_context_length
+            # / estimate_tokens / COMPACT_THRESHOLD), so a turn nowhere near
+            # its budget is completely unaffected either way. compact_with_
+            # integrity only folds OLDER turns (never the last user message,
+            # a pasted code block, an ask_user answer, or the most recent
+            # keep_recent turns), so it can legitimately be a no-op (few
+            # turns, everything protected) even once the threshold is
+            # crossed — maybe_compact's lossier LLM summary remains the
+            # fallback for exactly that case, and for any error here.
+            try:
+                from src.model_context import get_context_length
+                _ctx_len_for_compaction = get_context_length(candidate_url, candidate_model)
+                _pct_for_compaction = (
+                    (estimate_tokens(compacted_source) / _ctx_len_for_compaction)
+                    if _ctx_len_for_compaction else 0
+                )
+                if _pct_for_compaction >= COMPACT_THRESHOLD:
+                    _integrity_messages, _integrity_evidence = compact_with_integrity(
+                        compacted_source,
+                        owner_id=owner or "system",
+                        session_id=session_id or "",
+                    )
+                    if _integrity_evidence:
+                        compacted_source = _integrity_messages
+                        was_compacted = True
+            except Exception:
+                pass
+            if not was_compacted:
+                compacted_source, _candidate_context, was_compacted = await maybe_compact(
+                    None,
+                    candidate_url,
+                    candidate_model,
+                    compacted_source,
+                    candidate_headers,
+                    owner=owner,
+                    persist=False,
+                    compaction_state=compaction_state,
+                )
         (
             is_ody,
             doc_mode,
@@ -5823,6 +5902,35 @@ async def stream_agent_loop(
     _HARNESS_MAX_REJECTIONS = 2
     _HARNESS_MAX_LENGTH_CONTINUES = 2
     _ledger = _harness.TurnLedger(workspace, _last_user)
+    # TASK-06: latest update_plan payload seen this turn, for the
+    # autonomy-budget checkpoint (src/autonomy_budget.py::build_checkpoint) —
+    # a plain read of what update_plan already returns, no plan handling of
+    # its own.
+    _latest_plan_update = None
+
+    def _budget_exhausted_event(exhaustion: "autonomy_budget.Exhausted") -> str:
+        """One `budget_exhausted` SSE frame: the dimension that ran out, and
+        a checkpoint (plan, touched files, a short account) built from what
+        the turn's own ledgers already know — no work discarded, no wider
+        permission granted to what resumes next."""
+        _checkpoint = autonomy_budget.build_checkpoint(
+            plan_update=_latest_plan_update,
+            touched_files=_ledger.mutated_paths(),
+            note=(
+                f"Stopped on the {exhaustion.kind} budget "
+                f"({exhaustion.used:g}/{exhaustion.limit:g}) after "
+                f"{len(_ledger.events)} tool call(s) touching "
+                f"{len(_ledger.mutated_paths())} file(s) this turn."
+            ),
+        )
+        return "data: " + json.dumps({
+            "type": "budget_exhausted",
+            "kind": exhaustion.kind,
+            "used": exhaustion.used,
+            "limit": exhaustion.limit,
+            "checkpoint": _checkpoint,
+        }) + "\n\n"
+
     _harness_final_note = ""
     _todo_nudged = False
     _round_finish_reason = None
@@ -6323,6 +6431,17 @@ async def stream_agent_loop(
     round_num = 0
     while True:
         round_num += 1
+        # TASK-06: autonomy budget, checked at the top of every round — before
+        # spending a model call on a round the turn is not allowed to have.
+        # `total_tool_calls` is not in `_round_loop_budget` (merged into the
+        # legacy `max_tool_calls` check below instead), so this never
+        # double-reports that dimension.
+        _budget_exhaustion = _budget_ledger.check(_round_loop_budget)
+        if _budget_exhaustion is not None:
+            logger.info("[agent] autonomy budget exhausted at round start: %s", _budget_exhaustion.as_dict())
+            _ledger.stop_reason = "budget_exhausted"
+            yield _budget_exhausted_event(_budget_exhaustion)
+            break
         if round_num > _rounds_budget:
             if _auto_cycles_left > 0:
                 _auto_cycles_left -= 1
@@ -8124,11 +8243,38 @@ async def stream_agent_loop(
             # --- Tool budget check ---
             if max_tool_calls > 0 and total_tool_calls >= max_tool_calls:
                 yield f'data: {json.dumps({"type": "budget_exceeded", "limit": max_tool_calls, "used": total_tool_calls})}\n\n'
+                # TASK-06: same event the legacy check above always emitted
+                # (unchanged, for any client still reading only that one),
+                # plus the richer autonomy-budget event with a checkpoint —
+                # tool_calls is one of the budget's own dimensions too, just
+                # enforced through this pre-existing counter instead of a
+                # second one (see Budget.without_tool_calls).
+                yield _budget_exhausted_event(autonomy_budget.Exhausted(
+                    kind="tool_calls", used=total_tool_calls, limit=max_tool_calls,
+                ))
                 budget_hit = True
+                # Kept EXACTLY as before this change — src/tool_outcome.py,
+                # src/scorecard.py, routes/chat_routes.py and
+                # src/agent_tools/subagent_tools.py all classify a turn by
+                # this literal string; the new `budget_exhausted` event above
+                # is additive, not a replacement for it.
                 _ledger.stop_reason = "budget_exceeded"
                 break
 
+            # TASK-06: autonomy budget, checked before every tool call —
+            # tokens/active_seconds/subagents/remote_spend accumulated from
+            # rounds completed so far (see the round-loop check above for
+            # why sub-round granularity isn't needed here).
+            _budget_exhaustion = _budget_ledger.check(_round_loop_budget)
+            if _budget_exhaustion is not None:
+                logger.info("[agent] autonomy budget exhausted before tool call: %s", _budget_exhaustion.as_dict())
+                yield _budget_exhausted_event(_budget_exhaustion)
+                budget_hit = True
+                _ledger.stop_reason = "budget_exhausted"
+                break
+
             total_tool_calls += 1
+            _budget_ledger.add_tool_call()
             # Build a short display string for the frontend tool bubble.
             # Document tools show a brief summary instead of dumping full content.
             is_doc_tool = block.tool_type in ("create_document", "update_document", "edit_document", "suggest_document")
@@ -8593,6 +8739,7 @@ async def stream_agent_loop(
                 yield (
                     f'data: {json.dumps({"type": "plan_update", "data": result["plan_update"]})}\n\n'
                 )
+                _latest_plan_update = result["plan_update"]
 
             # Build output for frontend tool bubble.
             # Document tools get a short summary — content goes to the editor panel.
@@ -8898,6 +9045,10 @@ async def stream_agent_loop(
             # board can be rebuilt from history on reload.
             if isinstance(result.get("subagents"), list):
                 tool_event["subagents"] = _compact_subagent_reports(result["subagents"])
+                # TASK-06: charge the autonomy budget's subagent dimension —
+                # read-only observation of a count the tool result already
+                # carries, no delegate_agents behaviour touched.
+                _budget_ledger.add_subagents(len(result["subagents"]))
             if _pending_ask_user_event:
                 # Persist the structured question with the tool event.  On a
                 # reload, chatRenderer can restore the card; a later user
@@ -8981,6 +9132,24 @@ async def stream_agent_loop(
                 # An approval card is a turn boundary.  Never execute a later
                 # model-supplied call from the same batch after this request.
                 break
+
+        # TASK-06: charge this round's active time, tokens and (on a
+        # cost-tracked endpoint) remote spend to the autonomy-budget ledger —
+        # once, after this round's model call AND its tools have both run,
+        # so `active_seconds` reflects real inference+tool work. A round that
+        # `continue`d earlier (an empty-round nudge, the loop breaker) never
+        # reaches this line and so never charges it — the ledger only ever
+        # grows from work that actually happened.
+        if usage_buckets and usage_buckets[-1].get("round") == round_num:
+            _round_usage_bucket = usage_buckets[-1]
+            _round_in = int(_round_usage_bucket.get("input_tokens") or 0)
+            _round_out = int(_round_usage_bucket.get("output_tokens") or 0)
+            _budget_ledger.add_tokens(_round_in + _round_out)
+            _budget_ledger.add_remote_spend(autonomy_budget.remote_spend_units(
+                endpoint_cost_tracked=_round_usage_bucket.get("endpoint_cost_tracked"),
+                input_tokens=_round_in, output_tokens=_round_out,
+            ))
+        _budget_ledger.add_active_seconds(time.time() - _round_start)
 
         # If budget was hit, stop the loop
         if budget_hit:

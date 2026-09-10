@@ -1463,6 +1463,13 @@ def setup_chat_routes(
         search_context = form_data.get("search_context")  # pre-fetched web search results (compare mode)
         compare_mode = str(form_data.get("compare_mode") or (body or {}).get("compare_mode") or "").lower() == "true"
         incognito = str(form_data.get("incognito") or (body or {}).get("incognito") or "").lower() == "true"
+        # TASK-06: which autonomy preset (supervised/bounded_autonomous/
+        # read_only) this turn runs under — see src/autonomy_budget.py, which
+        # also owns validating/defaulting the value; this route only reads it
+        # off the request and forwards it.
+        autonomy_preset = str(
+            form_data.get("autonomy_preset") or (body or {}).get("autonomy_preset") or ""
+        ).strip().lower()
         plan_mode = str(form_data.get("plan_mode") or (body or {}).get("plan_mode") or "").lower() == "true"
         chat_mode = str(form_data.get("mode") or (body or {}).get("mode") or "").lower()  # 'chat' or 'agent'
         tool_approval_id = (
@@ -1911,10 +1918,13 @@ def setup_chat_routes(
         # call) and `option_ids` for a picked option (absent for free text).
         # question_store.resolve checks this against what it actually knows
         # about that question — cancelled (superseded by a newer question),
-        # a stale revision, or already answered — BEFORE anything below
-        # persists the message or starts the turn; a rejection short-circuits
-        # here with none of that having happened. Skipped for a tool-approval
-        # continuation, which is a different single-use gate entirely.
+        # a stale revision, already answered, or (SEC-06) opened for a
+        # DIFFERENT owner, reported as `not_found` so a leaked question_id
+        # cannot confirm another owner's question exists — BEFORE anything
+        # below persists the message or starts the turn; a rejection
+        # short-circuits here with none of that having happened. Skipped for
+        # a tool-approval continuation, which is a different single-use gate
+        # entirely.
         # Absent question_id: behaves exactly as before this existed.
         question_id = str(
             form_data.get("question_id") or (body or {}).get("question_id") or ""
@@ -1927,7 +1937,7 @@ def setup_chat_routes(
             if option_ids:
                 answer["option_ids"] = option_ids
             from src import question_store
-            resolution = question_store.resolve_question(question_id, answer)
+            resolution = question_store.resolve_question(question_id, answer, owner=owner)
             if not resolution.get("ok"):
                 logger.info(
                     "[ask-user] question_id=%s rejected: reason=%s detail=%r",
@@ -3090,6 +3100,7 @@ def setup_chat_routes(
                         temperature_explicit=_temperature_explicit,
                         gen_overrides=_gen_overrides or None,
                         harness_options=_loop_harness_options or None,
+                        autonomy_preset=autonomy_preset or None,
                     ):
                         if chunk.startswith("data: ") and not chunk.startswith("data: [DONE]"):
                             try:
@@ -3123,6 +3134,7 @@ def setup_chat_routes(
                                     "doc_stream_open", "doc_stream_delta",
                                     "doc_update", "doc_suggestions", "ui_control",
                                     "rounds_exhausted", "budget_exceeded",
+                                    "budget_exhausted",
                                     "loop_breaker_triggered",
                                     "intent_nudge_exhausted",
                                     "ask_user",

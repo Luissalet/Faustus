@@ -152,6 +152,24 @@ GROUPS: list[dict[str, Any]] = [
             _bool("agent_email_confirm", "Confirm agent emails",
                   "send_email / reply_to_email stage a draft for your approval in the chat instead of "
                   "sending right away."),
+            _int("agent_autonomy_max_active_seconds", "Autonomy budget: active time (s)",
+                 "TASK-06 ceiling on time actually spent working (model inference + tool execution, "
+                 "never idle) in one autonomy-preset turn before it must stop and check in. Scaled by "
+                 "the chosen preset (supervised/bounded_autonomous/read_only). 0 = unlimited.",
+                 0, 36_000),
+            _int("agent_autonomy_max_subagents", "Autonomy budget: sub-agents",
+                 "TASK-06 ceiling on workers one autonomy-preset turn may start. Scaled by the chosen "
+                 "preset. 0 = unlimited.",
+                 0, 100),
+            _int("agent_autonomy_max_remote_spend", "Autonomy budget: remote spend",
+                 "TASK-06 ceiling (in the same units the run's cost estimate uses) on paid-endpoint "
+                 "spend for one autonomy-preset turn. Scaled by the chosen preset. 0 = unlimited.",
+                 0, 1_000_000),
+            _int("agent_autonomy_max_memory_mb", "Autonomy budget: memory (MB)",
+                 "TASK-06 informative ceiling for one autonomy-preset turn; this process has no "
+                 "per-turn memory measurement today, so it is carried but never trips. Scaled by the "
+                 "chosen preset. 0 = unlimited.",
+                 0, 65_536),
         ],
     ),
     _group(
