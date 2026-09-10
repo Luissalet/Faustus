@@ -45,6 +45,232 @@ LEASE_SECONDS = 900
 #: How often a running task pushes its own lease forward.
 LEASE_HEARTBEAT_SECONDS = 60
 
+
+# ── AUTO-01/QA-43: explicit DST ambiguity and misfire policy ───────────────
+#
+# `compute_next_run` converts a local wall-clock time to a UTC instant via
+# `zoneinfo`. Two moments a year, that mapping is not one-to-one, and doing
+# the conversion without saying what happens THEN is exactly the gap QA-43's
+# scenario names: a recurrence at 02:30 Europe/Madrid on the spring-forward
+# day (2026-03-29) is a wall-clock time that never happens; on the
+# fall-back day (2026-10-25) it happens twice, one hour apart, at two
+# different UTC instants. Silently picking one is a choice already, just an
+# undeclared one.
+#
+#   skip        — do not fire for this occurrence; advance to the next one.
+#   run_once    — fire exactly once (the earlier UTC instant, `fold=0`, for
+#                 an ambiguous time; the instant right after the jump for a
+#                 nonexistent one). The default: it is what a plain "run at
+#                 02:30 every day" reasonably means when 02:30 is unclear
+#                 once a year, and it changes nothing for the other 364 days.
+#   run_all     — fire for EVERY valid UTC instant the wall-clock names: one
+#                 for a nonexistent time (there is only one to pick), two
+#                 for an ambiguous one (`fold=0` then `fold=1`, an hour
+#                 apart) — see `_dst_resolve`'s docstring for how the second
+#                 occurrence of a `run_all` pair gets scheduled.
+DST_AMBIGUITY_POLICIES = ("skip", "run_once", "run_all")
+DEFAULT_DST_AMBIGUITY_POLICY = "run_once"
+
+#: What a recurrence that was due while nothing was watching (the machine
+#: was off, the scheduler was down) does once it comes back:
+#:   fire_immediately — the historical behavior: an overdue task is pushed to
+#:                       fire shortly after startup, same as any other catch-up.
+#:   skip             — the missed occurrence is abandoned; `next_run` moves
+#:                       straight to the next FUTURE occurrence instead, so a
+#:                       task that was due three times while the team was
+#:                       offline for three hours runs zero times for that gap,
+#:                       not three (and not once late, either).
+MISFIRE_POLICIES = ("fire_immediately", "skip")
+DEFAULT_MISFIRE_POLICY = "fire_immediately"
+
+
+def _dst_resolve(local_naive: datetime, tz, policy: str):
+    """One wall-clock reading in `tz`, resolved under `policy` (PEP 495).
+
+    Returns `(status, resolved)`: `status` is `"normal"`, `"nonexistent"`
+    (a spring-forward gap) or `"ambiguous"` (a fall-back repeat); `resolved`
+    is the tz-aware instant to use, or `None` when `policy` says this
+    occurrence should not fire at all (`"skip"`) — the caller advances to
+    the next cycle and resolves again.
+
+    `run_all`'s SECOND occurrence is not returned here: this function answers
+    for one wall-clock reading, and the pair is exactly one Python
+    `timedelta` apart in UTC (`off0 - off1`, i.e. the DST jump size) — the
+    caller (`compute_next_run`'s `dst_ambiguity_policy="run_all"` path)
+    schedules it by re-resolving `local_naive` with `fold=1` once the
+    `fold=0` occurrence has been consumed; `_task_scheduler_run_all_pending`
+    in the task-policy store is where a live `ScheduledTask` remembers that a
+    second occurrence is still owed after the first one fires.
+    """
+    # Whether `off0 != off1` alone does NOT distinguish a gap from a repeat
+    # (both have two different offsets to choose from) — only the round-trip
+    # does: converting the fold=0 reading through UTC and back to `tz` gives
+    # back the SAME wall clock for a normal or an ambiguous time (the
+    # instant is real either way), and a DIFFERENT one for a gap (fold=0
+    # extrapolates the pre-transition offset onto a moment that, examined by
+    # its real UTC instant, actually falls after the transition).
+    dt0 = local_naive.replace(tzinfo=tz, fold=0)
+    dt1 = local_naive.replace(tzinfo=tz, fold=1)
+    back0 = dt0.astimezone(timezone.utc).astimezone(tz)
+    is_gap = (back0.year, back0.month, back0.day, back0.hour, back0.minute) != \
+             (local_naive.year, local_naive.month, local_naive.day,
+              local_naive.hour, local_naive.minute)
+    if is_gap:
+        if policy == "skip":
+            return "nonexistent", None
+        # No valid local reading exists. `dt0` is still a well-defined
+        # absolute instant, and — because it extrapolates the offset from
+        # BEFORE the jump — it lands exactly the gap's width past the jump
+        # once displayed back in real local time (02:30 CET *is* 03:30
+        # CEST): the earliest honest answer to "when did 02:30 arrive".
+        return "nonexistent", dt0
+    if dt0.utcoffset() == dt1.utcoffset():
+        return "normal", dt0
+    if policy == "skip":
+        return "ambiguous", None
+    # run_once and run_all both start at fold=0, the earlier of the two —
+    # `_maybe_queue_run_all_followup` is what asks for fold=1 afterwards.
+    return "ambiguous", dt0
+
+
+def _advance_past_dst(candidate: datetime, tz, policy: str, step) -> datetime:
+    """`candidate`, or the next `step(candidate)` that resolves under
+    `policy`. Bounded at 4 tries — real DST transitions are one hour wide, so
+    even a schedule finer than that resolves within a couple of cycles; a
+    definition that somehow never resolves gets its raw (unresolved)
+    candidate back rather than an infinite loop."""
+    for _ in range(4):
+        _status, resolved = _dst_resolve(candidate.replace(tzinfo=None), tz, policy)
+        if resolved is not None:
+            return resolved
+        candidate = step(candidate)
+    return candidate
+
+
+# ── AUTO-02: per-task budget + permissions, declared at creation ───────────
+#
+# `ScheduledTask` (core/database.py) has no column for these — adding one is
+# a migration outside this batch's file list. A dedicated SQLite table is the
+# same pattern `routes/email_helpers.py` already uses for `scheduled_emails`:
+# this module owns its schema and does not require a change to
+# `core/database.py` to exist. `routes/task_routes.py` (ajeno) is where a
+# person would eventually set these at creation time through the API — see
+# the batch report's "Cambios necesarios en ficheros ajenos" for the exact
+# two-line wiring; `set_task_policy`/`get_task_policy` below are the whole
+# public surface such a route would call.
+import sqlite3 as _sqlite3
+from src.autonomy_budget import DEFAULT_PRESET as _DEFAULT_BUDGET_PRESET, PRESETS as _BUDGET_PRESETS
+from src.constants import DATA_DIR as _TASK_POLICY_DATA_DIR
+
+_TASK_POLICY_DB = os.path.join(_TASK_POLICY_DATA_DIR, "task_policies.db")
+
+
+def _policy_connect():
+    conn = _sqlite3.connect(_TASK_POLICY_DB, timeout=30)
+    conn.row_factory = _sqlite3.Row
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS task_policies (
+            task_id TEXT PRIMARY KEY,
+            dst_ambiguity_policy TEXT,
+            misfire_policy TEXT,
+            budget_preset TEXT,
+            permissions_json TEXT,
+            run_all_pending_at TEXT,
+            updated_at TEXT
+        )
+    """)
+    conn.commit()
+    return conn
+
+
+def set_task_policy(task_id: str, *, dst_ambiguity_policy: str | None = None,
+                    misfire_policy: str | None = None, budget_preset: str | None = None,
+                    permissions: list[str] | None = None) -> dict:
+    """Declare (or update) one task's budget and permission set.
+
+    Every execution of this task is bound to what is declared HERE — the
+    agent loop's tool offer is clamped to `permissions` (never widened) and
+    checked against `budget_preset`'s `autonomy_budget.Budget` every pass
+    (never exceeded); see `TaskScheduler._execute_llm_task`.
+    """
+    if dst_ambiguity_policy is not None and dst_ambiguity_policy not in DST_AMBIGUITY_POLICIES:
+        raise ValueError(f"dst_ambiguity_policy must be one of {DST_AMBIGUITY_POLICIES}")
+    if misfire_policy is not None and misfire_policy not in MISFIRE_POLICIES:
+        raise ValueError(f"misfire_policy must be one of {MISFIRE_POLICIES}")
+    if budget_preset is not None and budget_preset not in _BUDGET_PRESETS:
+        raise ValueError(f"budget_preset must be one of {_BUDGET_PRESETS}")
+    current = get_task_policy(task_id)
+    merged = {
+        "dst_ambiguity_policy": dst_ambiguity_policy if dst_ambiguity_policy is not None else current["dst_ambiguity_policy"],
+        "misfire_policy": misfire_policy if misfire_policy is not None else current["misfire_policy"],
+        "budget_preset": budget_preset if budget_preset is not None else current["budget_preset"],
+        "permissions": list(permissions) if permissions is not None else current["permissions"],
+    }
+    conn = _policy_connect()
+    try:
+        conn.execute(
+            "INSERT INTO task_policies (task_id, dst_ambiguity_policy, misfire_policy, "
+            "budget_preset, permissions_json, updated_at) VALUES (?,?,?,?,?,?) "
+            "ON CONFLICT(task_id) DO UPDATE SET dst_ambiguity_policy=excluded.dst_ambiguity_policy, "
+            "misfire_policy=excluded.misfire_policy, budget_preset=excluded.budget_preset, "
+            "permissions_json=excluded.permissions_json, updated_at=excluded.updated_at",
+            (task_id, merged["dst_ambiguity_policy"], merged["misfire_policy"],
+             merged["budget_preset"], json.dumps(merged["permissions"]), _utcnow().isoformat()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return merged
+
+
+def get_task_policy(task_id: str) -> dict:
+    """A task's declared policy, defaulted so an undeclared task behaves
+    exactly as it always did (`fire_immediately`, `run_once`, no permission
+    restriction beyond what admin/global settings already impose, and the
+    `supervised` budget preset — see `src/autonomy_budget.py`)."""
+    conn = _policy_connect()
+    try:
+        row = conn.execute("SELECT * FROM task_policies WHERE task_id = ?", (task_id,)).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        return {"dst_ambiguity_policy": DEFAULT_DST_AMBIGUITY_POLICY,
+                "misfire_policy": DEFAULT_MISFIRE_POLICY,
+                "budget_preset": _DEFAULT_BUDGET_PRESET, "permissions": None}
+    return {
+        "dst_ambiguity_policy": row["dst_ambiguity_policy"] or DEFAULT_DST_AMBIGUITY_POLICY,
+        "misfire_policy": row["misfire_policy"] or DEFAULT_MISFIRE_POLICY,
+        "budget_preset": row["budget_preset"] or _DEFAULT_BUDGET_PRESET,
+        "permissions": json.loads(row["permissions_json"]) if row["permissions_json"] else None,
+    }
+
+
+def _set_run_all_pending(task_id: str, when_iso: str | None) -> None:
+    """Remember (or clear) that a `run_all` task still owes its second,
+    `fold=1` occurrence of one ambiguous wall-clock. Read by
+    `TaskScheduler._next_moment_after`."""
+    conn = _policy_connect()
+    try:
+        conn.execute(
+            "INSERT INTO task_policies (task_id, run_all_pending_at, updated_at) VALUES (?,?,?) "
+            "ON CONFLICT(task_id) DO UPDATE SET run_all_pending_at=excluded.run_all_pending_at, "
+            "updated_at=excluded.updated_at",
+            (task_id, when_iso, _utcnow().isoformat()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _get_run_all_pending(task_id: str) -> str | None:
+    conn = _policy_connect()
+    try:
+        row = conn.execute("SELECT run_all_pending_at FROM task_policies WHERE task_id = ?",
+                           (task_id,)).fetchone()
+    finally:
+        conn.close()
+    return row["run_all_pending_at"] if row and row["run_all_pending_at"] else None
+
 #: The three honest answers to "what if this occurrence runs twice?".
 #:
 #: at_most_once      -- repeating it is worse than skipping it, so a lease that
@@ -192,7 +418,8 @@ def compute_next_run(schedule: str, scheduled_time: str,
                      scheduled_date: datetime = None,
                      after: datetime = None,
                      cron_expression: str = None,
-                     tz_name: str = None) -> datetime | None:
+                     tz_name: str = None,
+                     dst_ambiguity_policy: str = DEFAULT_DST_AMBIGUITY_POLICY) -> datetime | None:
     """Compute the next run datetime (stored as naive UTC) based on schedule type.
 
     If `tz_name` is provided (IANA zone, e.g. "America/New_York"), `scheduled_time` /
@@ -200,7 +427,19 @@ def compute_next_run(schedule: str, scheduled_time: str,
     the result is converted to naive UTC for DB storage. If `tz_name` is None,
     the legacy behavior (`scheduled_time` interpreted as naive-UTC wall clock)
     is preserved so existing tasks don't shift.
+
+    `dst_ambiguity_policy` (QA-43, one of `DST_AMBIGUITY_POLICIES`) says what
+    to do when the computed wall-clock instant falls in a DST gap or repeat:
+    see the constant's docstring. Defaults to `run_once`, which changes
+    nothing on the 363 days a year this never applies and gives an explicit,
+    tested answer on the two it does — this function no longer resolves that
+    silently through whatever `zoneinfo` does by default. `run_all`'s SECOND
+    occurrence is not returned by this call; see
+    `TaskScheduler._next_moment_after` for how a task configured `run_all`
+    gets the follow-up scheduled.
     """
+    if dst_ambiguity_policy not in DST_AMBIGUITY_POLICIES:
+        dst_ambiguity_policy = DEFAULT_DST_AMBIGUITY_POLICY
     try:
         from zoneinfo import ZoneInfo
     except ImportError:
@@ -236,6 +475,13 @@ def compute_next_run(schedule: str, scheduled_time: str,
             nxt = cron.get_next(datetime)
             if tz is not None and nxt.tzinfo is None:
                 nxt = nxt.replace(tzinfo=tz)
+            if tz is not None:
+                def _cron_step(_prev):
+                    stepped = cron.get_next(datetime)
+                    if stepped.tzinfo is None:
+                        stepped = stepped.replace(tzinfo=tz)
+                    return stepped
+                nxt = _advance_past_dst(nxt, tz, dst_ambiguity_policy, _cron_step)
             return _to_utc_naive(nxt) if tz is not None else nxt
         except Exception as e:
             logger.warning(f"Invalid cron expression '{cron_expression}': {e}")
@@ -266,6 +512,9 @@ def compute_next_run(schedule: str, scheduled_time: str,
         candidate = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
         if candidate <= now:
             candidate += timedelta(days=1)
+        if tz is not None:
+            candidate = _advance_past_dst(candidate, tz, dst_ambiguity_policy,
+                                          lambda d: d + timedelta(days=1))
         return _to_utc_naive(candidate) if tz is not None else candidate
 
     if schedule == "weekly":
@@ -275,6 +524,9 @@ def compute_next_run(schedule: str, scheduled_time: str,
         if days_ahead < 0 or (days_ahead == 0 and candidate <= now):
             days_ahead += 7
         candidate += timedelta(days=days_ahead)
+        if tz is not None:
+            candidate = _advance_past_dst(candidate, tz, dst_ambiguity_policy,
+                                          lambda d: d + timedelta(days=7))
         return _to_utc_naive(candidate) if tz is not None else candidate
 
     if schedule == "monthly":
@@ -302,6 +554,19 @@ def compute_next_run(schedule: str, scheduled_time: str,
                 else:
                     last = next_month.replace(month=next_month.month + 1, day=1) - timedelta(days=1)
                 candidate = last.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if tz is not None:
+            def _monthly_step(d: datetime) -> datetime:
+                base = d.replace(day=1) + timedelta(days=32)
+                nm = base.replace(day=1)
+                try:
+                    return nm.replace(day=day, hour=hour, minute=minute, second=0, microsecond=0)
+                except ValueError:
+                    if nm.month == 12:
+                        last2 = nm.replace(year=nm.year + 1, month=1, day=1) - timedelta(days=1)
+                    else:
+                        last2 = nm.replace(month=nm.month + 1, day=1) - timedelta(days=1)
+                    return last2.replace(hour=hour, minute=minute, second=0, microsecond=0)
+            candidate = _advance_past_dst(candidate, tz, dst_ambiguity_policy, _monthly_step)
         return _to_utc_naive(candidate) if tz is not None else candidate
 
     return None
@@ -702,17 +967,56 @@ class TaskScheduler:
             db.close()
 
     def _next_moment_after(self, db, task, after: datetime):
-        """The task's next scheduled moment, or None when it has no more."""
+        """The task's next scheduled moment, or None when it has no more.
+
+        AUTO-01/QA-43: reads the task's own `dst_ambiguity_policy` (default
+        `run_once`, back-compatible with every task that never declared one)
+        instead of the module default, and — for `run_all` — first checks
+        whether a second, `fold=1` occurrence of an ambiguous wall-clock is
+        still owed from the LAST call before computing a fresh cycle.
+        """
+        policy = get_task_policy(task.id)
+        pending = _get_run_all_pending(task.id)
+        if pending:
+            _set_run_all_pending(task.id, None)
+            try:
+                return datetime.fromisoformat(pending)
+            except Exception:
+                logger.debug("bad run_all_pending_at for %s: %r", task.id, pending)
         try:
-            return compute_next_run(
+            tz_name = _resolve_task_timezone(db, task)
+            next_run = compute_next_run(
                 task.schedule, task.scheduled_time, task.scheduled_day,
                 task.scheduled_date, after=after,
                 cron_expression=task.cron_expression,
-                tz_name=_resolve_task_timezone(db, task),
+                tz_name=tz_name, dst_ambiguity_policy=policy["dst_ambiguity_policy"],
             )
+            if next_run is not None and policy["dst_ambiguity_policy"] == "run_all" and tz_name:
+                self._maybe_queue_run_all_followup(task.id, next_run, tz_name)
+            return next_run
         except Exception:
             logger.debug("could not compute the next moment for %s", task.id, exc_info=True)
             return None
+
+    def _maybe_queue_run_all_followup(self, task_id: str, next_run_utc_naive: datetime,
+                                      tz_name: str) -> None:
+        """If `next_run` landed on an ambiguous wall clock under `run_all`,
+        remember the SECOND (`fold=1`) UTC instant so the very next call to
+        `_next_moment_after` returns the repeat instead of jumping straight
+        to the following cycle."""
+        try:
+            from zoneinfo import ZoneInfo
+            tz = ZoneInfo(tz_name)
+            local = next_run_utc_naive.replace(tzinfo=timezone.utc).astimezone(tz)
+            status, _resolved = _dst_resolve(local.replace(tzinfo=None), tz, "run_once")
+            if status != "ambiguous":
+                return
+            dt1 = local.replace(tzinfo=tz, fold=1)
+            followup_utc = dt1.astimezone(timezone.utc).replace(tzinfo=None)
+            if followup_utc > next_run_utc_naive:
+                _set_run_all_pending(task_id, followup_utc.isoformat())
+        except Exception:
+            logger.debug("could not evaluate run_all follow-up for %s", task_id, exc_info=True)
 
     def _set_run_progress(self, run_id: str, message: str):
         """Persist short live progress text for Activity while a run is active."""
@@ -840,9 +1144,15 @@ class TaskScheduler:
             logger.warning(f"Could not recover expired task leases on startup: {e}")
 
         # Advance next_run for active tasks whose next_run is already in the
-        # past. Without this, a restart hits _check_due_tasks() with an empty
-        # in-process _executing set, and the same overdue task fires once per
-        # poll until it completes.
+        # past — this is the misfire moment QA-43 names: the machine (or the
+        # scheduler) was off across one or more due occurrences. What happens
+        # next is per-task policy (AUTO-01), defaulted to the historical
+        # behavior so an undeclared task changes nothing: `fire_immediately`
+        # pushes it to fire shortly after startup, same as before this
+        # existed; `skip` abandons the missed occurrence(s) entirely and
+        # advances straight to the next FUTURE one, so a task due three times
+        # in a three-hour outage runs zero times for that gap, not three and
+        # not late.
         try:
             from core.database import SessionLocal as _SL, ScheduledTask as _ST
             db = _SL()
@@ -853,13 +1163,27 @@ class TaskScheduler:
                     _ST.next_run.isnot(None),
                     _ST.next_run < now,
                 ).all()
+                fired_soon = skipped = 0
                 if overdue:
                     for t in overdue:
-                        t.next_run = now + timedelta(seconds=60)
+                        policy = get_task_policy(t.id)
+                        if policy["misfire_policy"] == "skip":
+                            missed_at = t.next_run
+                            t.next_run = self._next_moment_after(db, t, after=now)
+                            skipped += 1
+                            logger.info(
+                                "Task %s (%s) misfired at %s while nothing was watching; "
+                                "misfire_policy=skip abandons it, next_run=%s",
+                                t.id, t.name, missed_at, t.next_run,
+                            )
+                        else:
+                            t.next_run = now + timedelta(seconds=60)
+                            fired_soon += 1
                     db.commit()
                     logger.info(
-                        "Pushed next_run forward by 60s for %d overdue active tasks on startup",
-                        len(overdue),
+                        "Startup misfire sweep: %d overdue task(s) pushed to fire soon, "
+                        "%d skipped to their next future occurrence",
+                        fired_soon, skipped,
                     )
             finally:
                 db.close()
@@ -1362,13 +1686,7 @@ class TaskScheduler:
                 if foreground_cancel.get("hit"):
                     task.next_run = _utcnow() + timedelta(minutes=15)
                 elif (task.trigger_type or "schedule") == "schedule":
-                    task.next_run = compute_next_run(
-                        task.schedule, task.scheduled_time,
-                        task.scheduled_day, task.scheduled_date,
-                        after=_utcnow(),
-                        cron_expression=task.cron_expression,
-                        tz_name=_resolve_task_timezone(db, task),
-                    )
+                    task.next_run = self._next_moment_after(db, task, after=_utcnow())
                 else:
                     task.next_run = None
                 db.commit()
@@ -1385,13 +1703,7 @@ class TaskScheduler:
                 run.finished_at = _utcnow()
                 task.last_run = _utcnow()
                 if (task.trigger_type or "schedule") == "schedule":
-                    task.next_run = compute_next_run(
-                        task.schedule, task.scheduled_time,
-                        task.scheduled_day, task.scheduled_date,
-                        after=_utcnow(),
-                        cron_expression=task.cron_expression,
-                        tz_name=_resolve_task_timezone(db, task),
-                    )
+                    task.next_run = self._next_moment_after(db, task, after=_utcnow())
                 else:
                     task.next_run = None
                 db.commit()
@@ -1413,13 +1725,7 @@ class TaskScheduler:
 
             # Compute next run only for schedule-triggered tasks
             if (task.trigger_type or "schedule") == "schedule":
-                task.next_run = compute_next_run(
-                    task.schedule, task.scheduled_time,
-                    task.scheduled_day, task.scheduled_date,
-                    after=_utcnow(),
-                    cron_expression=task.cron_expression,
-                    tz_name=_resolve_task_timezone(db, task),
-                )
+                task.next_run = self._next_moment_after(db, task, after=_utcnow())
                 if task.next_run is None and task.schedule == "once":
                     task.status = "completed"
             else:
@@ -2006,6 +2312,25 @@ class TaskScheduler:
                     disabled_tools |= all_tools - set(enabled)
             except Exception:
                 pass
+        # AUTO-02: this task's own declared permission set, if any, is a
+        # CEILING — folded into `disabled_tools` (never used to add back a
+        # tool the crew/global settings above already removed), so the
+        # offered set can only shrink from here, never grow past what was
+        # declared when the task was created.
+        # `getattr` (not `task.id`): some callers, including several
+        # pre-existing tests, build a task-like stand-in without an `id`
+        # attribute at all — a task with no id can't have a declared policy
+        # to enforce, so this must degrade to "undeclared" rather than
+        # raise and break every one of those callers.
+        _task_policy_for_tools = get_task_policy(getattr(task, "id", "") or "")
+        _declared_permissions = _task_policy_for_tools.get("permissions")
+        if _declared_permissions is not None:
+            try:
+                from src.tool_index import BUILTIN_TOOL_DESCRIPTIONS
+                all_tools = set(BUILTIN_TOOL_DESCRIPTIONS.keys())
+                disabled_tools |= all_tools - set(_declared_permissions)
+            except Exception:
+                pass
         try:
             from src.settings import get_setting
             _global_disabled = get_setting("disabled_tools", [])
@@ -2289,6 +2614,24 @@ class TaskScheduler:
         full_text = ""
         tool_results = []
         approval_pause = None
+        budget_exhausted = None  # set to an Exhausted() if the ledger trips
+
+        # AUTO-02: this task's own budget and permission set, declared (or
+        # defaulted) via `set_task_policy`/`get_task_policy` — never widened
+        # by this run, and checked every event, not just at the boundaries
+        # `max_steps`/`max_rounds` already enforce.
+        from src.autonomy_budget import resolve_budget, Ledger, build_checkpoint
+        # `getattr` — see the identical note in `_execute_llm_task`: a task
+        # stand-in with no `id` has no policy to enforce, not a crash.
+        _task_id_for_policy = getattr(task, "id", "") or ""
+        task_policy = get_task_policy(_task_id_for_policy)
+        try:
+            from src.settings import get_setting as _get_setting
+        except Exception:
+            _get_setting = None
+        budget = resolve_budget(task_policy["budget_preset"], get_setting=_get_setting)
+        ledger = Ledger()
+        _loop_started = time.monotonic()
 
         # Honor per-task max_steps (defense against runaway agent loops).
         # Falls back to 20 if not set — the historical default.
@@ -2308,7 +2651,7 @@ class TaskScheduler:
             )[1:]
         except Exception:
             _task_fallbacks = []
-        async for event_str in stream_agent_loop(
+        agen = stream_agent_loop(
             endpoint_url=endpoint_url,
             model=model,
             messages=messages,
@@ -2320,50 +2663,89 @@ class TaskScheduler:
             relevant_tools=relevant_tools,
             fallbacks=_task_fallbacks,
             workload="background",
-        ):
-            if event_str.startswith("data: ") and not event_str.startswith("data: [DONE]"):
-                try:
-                    data = json.loads(event_str[6:])
-                    # Capture text from all event types, not just delta
-                    if "delta" in data:
-                        if data.get("thinking"):
-                            continue
-                        full_text += data["delta"]
-                    elif data.get("type") == "tool_output":
-                        # Tool results — capture summary so we have SOMETHING even
-                        # if the model never produces a final text response
-                        tool_summary = data.get("stdout") or data.get("output") or data.get("result") or ""
-                        if isinstance(tool_summary, str) and tool_summary.strip():
-                            tool_results.append(f"[{data.get('tool', '?')}] {tool_summary[:500]}")
-                        approval = data.get("ask_user")
-                        if (
-                            isinstance(approval, dict)
-                            and approval.get("kind") == "tool_approval"
-                        ):
-                            approval_pause = {
-                                "tool": data.get("tool") or "tool",
-                                "approval_id": approval.get("approval_id"),
-                            }
-                            # Scheduled tasks have no interactive surface that
-                            # can safely resume a one-use grant. Retire the
-                            # record immediately instead of leaving it pending
-                            # and report an explicit manual-action boundary.
-                            try:
-                                from src.tool_approvals import tool_approval_store
-                                tool_approval_store.consume(
-                                    approval_pause["approval_id"],
-                                    decision="deny",
-                                    owner=task.owner,
-                                    session_id=session_id,
-                                )
-                            except Exception:
-                                logger.debug(
-                                    "Could not retire scheduled-task approval",
-                                    exc_info=True,
-                                )
-                            break
-                except (json.JSONDecodeError, KeyError):
-                    pass
+        )
+        try:
+            async for event_str in agen:
+                if event_str.startswith("data: ") and not event_str.startswith("data: [DONE]"):
+                    try:
+                        data = json.loads(event_str[6:])
+                        # Capture text from all event types, not just delta
+                        if "delta" in data:
+                            if data.get("thinking"):
+                                continue
+                            full_text += data["delta"]
+                        elif data.get("type") == "tool_output":
+                            # Tool results — capture summary so we have SOMETHING even
+                            # if the model never produces a final text response
+                            tool_summary = data.get("stdout") or data.get("output") or data.get("result") or ""
+                            if isinstance(tool_summary, str) and tool_summary.strip():
+                                tool_results.append(f"[{data.get('tool', '?')}] {tool_summary[:500]}")
+                            ledger.add_tool_call(1)
+                            approval = data.get("ask_user")
+                            if (
+                                isinstance(approval, dict)
+                                and approval.get("kind") == "tool_approval"
+                            ):
+                                approval_pause = {
+                                    "tool": data.get("tool") or "tool",
+                                    "approval_id": approval.get("approval_id"),
+                                }
+                                # Scheduled tasks have no interactive surface that
+                                # can safely resume a one-use grant. Retire the
+                                # record immediately instead of leaving it pending
+                                # and report an explicit manual-action boundary.
+                                try:
+                                    from src.tool_approvals import tool_approval_store
+                                    tool_approval_store.consume(
+                                        approval_pause["approval_id"],
+                                        decision="deny",
+                                        owner=task.owner,
+                                        session_id=session_id,
+                                    )
+                                except Exception:
+                                    logger.debug(
+                                        "Could not retire scheduled-task approval",
+                                        exc_info=True,
+                                    )
+                                break
+                    except (json.JSONDecodeError, KeyError):
+                        pass
+                ledger.add_active_seconds(max(0.0, time.monotonic() - _loop_started)
+                                          - ledger.active_seconds)
+                budget_exhausted = ledger.check(budget)
+                if budget_exhausted is not None:
+                    logger.warning(
+                        "Task '%s' hit its %s budget (%s used of %s, preset=%s); "
+                        "stopping mid-turn with a checkpoint rather than exceeding it",
+                        task.name, budget_exhausted.kind, budget_exhausted.used,
+                        budget_exhausted.limit, task_policy["budget_preset"],
+                    )
+                    break
+        finally:
+            if budget_exhausted is not None:
+                await agen.aclose()
+
+        if budget_exhausted is not None:
+            checkpoint = build_checkpoint(
+                touched_files=[],
+                note=f"stopped after exceeding its {budget_exhausted.kind} budget "
+                     f"({budget_exhausted.used} >= {budget_exhausted.limit}, "
+                     f"preset={task_policy['budget_preset']})",
+            )
+            self.add_notification(
+                task.name, "budget_exhausted", task_id=_task_id_for_policy, owner=task.owner,
+                body=f"Stopped: {budget_exhausted.kind} budget reached "
+                     f"({budget_exhausted.used}/{budget_exhausted.limit}). "
+                     f"A checkpoint of what it did so far is saved on this run.",
+            )
+            summary = "\n".join(tool_results[-5:]) if tool_results else "(no tool output captured yet)"
+            return (
+                f"[budget_exhausted:{budget_exhausted.kind}] This task stopped after reaching its "
+                f"{budget_exhausted.kind} budget ({budget_exhausted.used}/{budget_exhausted.limit}, "
+                f"preset={task_policy['budget_preset']}) instead of running past it. "
+                f"Checkpoint: {json.dumps(checkpoint, ensure_ascii=False)}\n"
+                f"Progress so far:\n{summary}"
+            )
 
         if approval_pause is not None:
             return (

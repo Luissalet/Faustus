@@ -740,6 +740,28 @@ def _delete_contact(uid: str) -> bool:
 
 # ── Routes ──
 
+def _identity_match_score(query: str, name: str) -> float:
+    """How well `name` matches a search for `query`, in [0, 1] (CONN-03).
+
+    Same rule `routes/email_routes.py::_identity_match_score` uses: an exact
+    match wins outright (1.0); a query that is one whole token of the name
+    ("Ana" against "Ana García") is 0.75 — the case where two different
+    contacts sharing a first name tie for best match; anything else that
+    merely contains the query is 0.5.
+    """
+    q = (query or "").strip().lower()
+    n = (name or "").strip().lower()
+    if not q or not n:
+        return 0.0
+    if q == n:
+        return 1.0
+    if q in n.split():
+        return 0.75
+    if q in n:
+        return 0.5
+    return 0.0
+
+
 def setup_contacts_routes():
     router = APIRouter(prefix="/api/contacts", tags=["contacts"])
 
@@ -751,21 +773,43 @@ def setup_contacts_routes():
 
     @router.get("/search")
     async def search_contacts(q: str = Query(""), _admin: str = Depends(require_admin)):
-        """Search contacts by name or email. Returns up to 10 matches."""
+        """Search contacts by name or email. Returns up to 10 matches.
+
+        CONN-03: `results` is unchanged for existing callers. `ambiguous`/
+        `reason`/`candidates` are additive — set when more than one contact
+        with a DIFFERENT email ties for the best name match, so a caller
+        that resolves an identity automatically (rather than showing a
+        person a picker) can tell "a match" from "a guess among several".
+        """
         contacts = _fetch_contacts()
         if not q:
             return {"results": []}
         q_lower = q.lower()
         results = []
+        scores: dict[str, float] = {}
         for c in contacts:
-            if q_lower in c["name"].lower():
-                results.append(c)
+            hit = q_lower in c["name"].lower()
+            if not hit:
+                for em in c["emails"]:
+                    if q_lower in em.lower():
+                        hit = True
+                        break
+            if not hit:
                 continue
-            for em in c["emails"]:
-                if q_lower in em.lower():
-                    results.append(c)
-                    break
-        return {"results": results[:10]}
+            results.append(c)
+            key = (c.get("emails") or [c.get("uid") or c["name"]])[0]
+            score = _identity_match_score(q, c["name"])
+            if score > scores.get(key, 0.0):
+                scores[key] = score
+        top = max(scores.values()) if scores else 0.0
+        tied_at_top = [key for key, s in scores.items() if s == top and top > 0]
+        ambiguous = len(tied_at_top) > 1
+        out = {"results": results[:10], "ambiguous": ambiguous}
+        if ambiguous:
+            out["reason"] = "ambiguous_identity"
+            by_key = {(c.get("emails") or [c.get("uid") or c["name"]])[0]: c for c in results}
+            out["candidates"] = [by_key[k] for k in tied_at_top if k in by_key]
+        return out
 
     @router.post("/add")
     async def add_contact(data: dict, _admin: str = Depends(require_admin)):

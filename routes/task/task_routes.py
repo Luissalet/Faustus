@@ -19,7 +19,7 @@ from src.task_action_policy import (
     is_admin_only_task_action,
     owner_has_admin_task_privileges,
 )
-from src.task_scheduler import compute_next_run, HOUSEKEEPING_DEFAULTS, _resolve_task_timezone
+from src.task_scheduler import compute_next_run, HOUSEKEEPING_DEFAULTS, _resolve_task_timezone, set_task_policy
 from routes.prefs_routes import _load_for_user, _save_for_user
 
 logger = logging.getLogger(__name__)
@@ -173,6 +173,15 @@ class TaskCreate(TaskTimezone):
     then_task_id: Optional[str] = None            # chain: run this task after success
     notifications_enabled: Optional[bool] = None  # None lets action-specific defaults apply
     character_id: Optional[str] = None             # built-in persona id (PERSONAS) — biases output voice
+    # L33/lot-36: the policy `src.task_scheduler.set_task_policy` already
+    # enforces on every run (DST behavior, misfire behavior, autonomy budget,
+    # tool permission clamp) — optional here, same as everywhere else in this
+    # model: an old client that never sends them creates a task with no
+    # declared policy, exactly as it always did.
+    dst_ambiguity_policy: Optional[str] = None     # "skip" | "run_once" | "run_all"
+    misfire_policy: Optional[str] = None           # "fire_immediately" | "skip"
+    budget_preset: Optional[str] = None            # src.autonomy_budget.PRESETS key
+    permissions: Optional[list[str]] = None        # tool allowlist clamp for every run
 
 
 class TaskUpdate(TaskTimezone):
@@ -493,6 +502,18 @@ def setup_task_routes(task_scheduler) -> APIRouter:
             raise HTTPException(400, "Event name is required for event-triggered tasks")
         if req.trigger_type == "event" and not req.trigger_count:
             raise HTTPException(400, "Trigger count is required for event-triggered tasks")
+        # L33/lot-36: fail fast on an invalid policy value BEFORE the task row
+        # exists, same as every other 400 above — set_task_policy validates
+        # this too, but only after the task is already created, which would
+        # leave an orphaned policy-less task behind on a typo.
+        from src.task_scheduler import DST_AMBIGUITY_POLICIES, MISFIRE_POLICIES
+        from src.autonomy_budget import PRESETS as _BUDGET_PRESETS
+        if req.dst_ambiguity_policy is not None and req.dst_ambiguity_policy not in DST_AMBIGUITY_POLICIES:
+            raise HTTPException(400, f"dst_ambiguity_policy must be one of {DST_AMBIGUITY_POLICIES}")
+        if req.misfire_policy is not None and req.misfire_policy not in MISFIRE_POLICIES:
+            raise HTTPException(400, f"misfire_policy must be one of {MISFIRE_POLICIES}")
+        if req.budget_preset is not None and req.budget_preset not in _BUDGET_PRESETS:
+            raise HTTPException(400, f"budget_preset must be one of {list(_BUDGET_PRESETS)}")
 
         # Auto-generate name
         name = req.name
@@ -574,7 +595,24 @@ def setup_task_routes(task_scheduler) -> APIRouter:
             db.add(task)
             db.commit()
             db.refresh(task)
-            return _task_to_dict(task)
+            result = _task_to_dict(task)
+            # L33/lot-36: declare the policy `TaskScheduler._execute_llm_task`
+            # enforces on every run, same authority `PATCH .../policy` (if a
+            # future lot adds one) would write to — only when the caller
+            # actually opined about it, so a client that sends none of these
+            # (every client before this lot) creates a task with no declared
+            # policy, exactly as before.
+            if any(v is not None for v in (
+                req.dst_ambiguity_policy, req.misfire_policy, req.budget_preset, req.permissions,
+            )):
+                result["policy"] = set_task_policy(
+                    task_id,
+                    dst_ambiguity_policy=req.dst_ambiguity_policy,
+                    misfire_policy=req.misfire_policy,
+                    budget_preset=req.budget_preset,
+                    permissions=req.permissions,
+                )
+            return result
         finally:
             db.close()
 

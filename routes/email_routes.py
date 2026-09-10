@@ -1513,6 +1513,30 @@ def _sanitize_email_html(raw: str) -> str:
     return f"<html><body>{inner}</body></html>"
 
 
+def _identity_match_score(query: str, name: str) -> float:
+    """How well `name` matches a search for `query`, in [0, 1] (CONN-03).
+
+    Exact (case-insensitive) match is 1.0 and wins outright. A query that is
+    one whole token of the name ("Ana" against "Ana García") is 0.75 — the
+    common case of searching a first name, and exactly where two different
+    people can tie. Any other substring match is 0.5. Used only to decide
+    whether more than one candidate is plausible enough that returning the
+    top one silently would be a guess rather than a match — not to rank a
+    picker a person reviews themselves, where every match is shown anyway.
+    """
+    q = (query or "").strip().lower()
+    n = (name or "").strip().lower()
+    if not q or not n:
+        return 0.0
+    if q == n:
+        return 1.0
+    if q in n.split():
+        return 0.75
+    if q in n:
+        return 0.5
+    return 0.0
+
+
 def setup_email_routes():
     _start_poller()
     router = APIRouter(prefix="/api/email", tags=["email"])
@@ -4492,10 +4516,19 @@ def setup_email_routes():
 
     @router.get("/resolve-contact")
     async def resolve_contact(name: str = Query(..., description="Name to search for"), owner: str = Depends(require_owner)):
-        """Search Sent folder for a contact by name. Returns matching email addresses."""
+        """Search Sent folder for a contact by name. Returns matching email addresses.
+
+        CONN-03: `contacts` and `query` are unchanged for existing callers.
+        `ambiguous`/`reason` are additive — when more than one distinct
+        address ties for the best name match, a caller acting on this (an
+        agent sending mail, not a person choosing from a picker) must NOT
+        pick `contacts[0]` silently; it should ask the user or fail with
+        `ambiguous_identity`, listing the tied candidates.
+        """
         try:
             with _imap(owner=owner) as conn:
                 matches = {}
+                scores: dict[str, float] = {}
                 for folder in ["Sent", "INBOX", "Drafts"]:
                     try:
                         st, _ = conn.select(_q(folder), readonly=True)
@@ -4526,6 +4559,9 @@ def setup_email_routes():
                                                 display = part.split("<")[0].strip().strip('"') or addr
                                                 if addr not in matches:
                                                     matches[addr] = display
+                                                score = _identity_match_score(name, display)
+                                                if score > scores.get(addr, 0.0):
+                                                    scores[addr] = score
                             except Exception:
                                 continue
                     except Exception:
@@ -4533,7 +4569,15 @@ def setup_email_routes():
                     if len(matches) >= 10:
                         break
                 results = [{"email": addr, "name": display} for addr, display in matches.items()]
-                return {"contacts": results[:10], "query": name}
+                top = max(scores.values()) if scores else 0.0
+                tied_at_top = [addr for addr, s in scores.items() if s == top and top > 0]
+                ambiguous = len(tied_at_top) > 1
+                out = {"contacts": results[:10], "query": name, "ambiguous": ambiguous}
+                if ambiguous:
+                    out["reason"] = "ambiguous_identity"
+                    out["candidates"] = [{"email": a, "name": matches[a], "score": scores[a]}
+                                         for a in tied_at_top]
+                return out
         except Exception as e:
             logger.error(f"resolve_contact {name!r} failed: {e}")
             return {"contacts": [], "error": "Mail operation failed"}
@@ -4741,6 +4785,168 @@ def setup_email_routes():
             "account_id": cfg.get("account_id") or req.account_id,
             "message": f"Email queued for {req.to}",
         }
+
+    # ── CONN-02: read / prepare / execute as three distinct steps ──────────
+    #
+    # `/send` above stays exactly as it was — an agent's own draft-then-click
+    # flow, and every existing caller (Studio's Compose, scheduled tasks that
+    # already went through an `agent_draft` approval) keeps working unchanged.
+    # These three routes are the SEPARATE path CONN-02 asks for: `prepare`
+    # only builds the payload and opens an `ApprovalRequest` (nothing sent),
+    # `execute` may only run once that approval is granted and the payload is
+    # byte-identical to what was shown, and `reconcile` is the only way out of
+    # `uncertain` — by asking the mailbox itself for the Message-ID, never by
+    # resending. See `src/connector_outbox.py` for the shared mechanism.
+    #
+    # Scope of this first cut: no attachments (compose-upload tokens have
+    # their own claim/cleanup lifecycle that a `prepared` row surviving a
+    # process restart would need to account for separately — see the
+    # Limitaciones section of the batch report) and no auto-mark-answered.
+    @router.post("/send/prepare")
+    async def prepare_send_email(req: SendEmailRequest, owner: str = Depends(require_owner)):
+        """CONN-02 step 1: build the payload and open the approval. No effect."""
+        import src.connector_outbox as connector_outbox
+
+        if req.account_id:
+            _assert_owns_account(req.account_id, owner)
+        if req.attachments:
+            return {"ok": False, "reason": "attachments_not_supported",
+                    "detail": "prepare/execute does not carry attachments yet; use /send"}
+        try:
+            cfg = _resolve_send_config(req.account_id, owner=owner)
+        except Exception as e:
+            return {"ok": False, "reason": "not_configured", "detail": str(e) or
+                     "No SMTP-capable email account configured"}
+
+        to = _normalize_addr_field(req.to or "")
+        cc = _normalize_addr_field(req.cc or "")
+        bcc = _normalize_addr_field(req.bcc or "")
+        recipients = _envelope_recipients(to, cc, bcc)
+        if not recipients:
+            return {"ok": False, "reason": "no_recipients"}
+        message_id = email.utils.make_msgid(domain="odysseus.local")
+        payload = {
+            "to": to, "cc": cc, "bcc": bcc, "subject": req.subject, "body": req.body,
+            "body_html": req.body_html, "in_reply_to": req.in_reply_to,
+            "references": req.references, "odysseus_kind": req.odysseus_kind,
+            "account_id": cfg.get("account_id") or req.account_id,
+            "message_id": message_id,
+        }
+        preview = f"To: {to}" + (f", Cc: {cc}" if cc else "") + f"\nSubject: {req.subject}\n\n{(req.body or '')[:500]}"
+        result = connector_outbox.prepare(
+            connector="email", action="send", owner=owner, payload=payload,
+            recipients=recipients, preview=preview,
+        )
+        return result
+
+    def _deliver_prepared_email(payload: dict, *, owner: str) -> dict:
+        """The `run()` callable CONN-02's `execute` calls. Builds the exact
+        message that was previewed and sends it, telling a definite refusal
+        (`ConnectorEffectUncertain` NOT raised) apart from a connection that
+        died after the SMTP conversation may already have committed."""
+        import src.connector_outbox as connector_outbox
+
+        cfg = _resolve_send_config(payload.get("account_id"), owner=owner)
+        outer = MIMEMultipart("alternative")
+        outer["From"] = email.utils.formataddr((cfg.get("display_name") or "", cfg["from_address"]))
+        outer["To"] = payload["to"]
+        if payload.get("cc"):
+            outer["Cc"] = payload["cc"]
+        outer["Subject"] = payload["subject"]
+        outer["Date"] = utcnow_naive().strftime("%a, %d %b %Y %H:%M:%S +0000")
+        outer["Message-ID"] = payload["message_id"]
+        if payload.get("in_reply_to"):
+            outer["In-Reply-To"] = payload["in_reply_to"]
+        if payload.get("references"):
+            outer["References"] = payload["references"]
+        if payload.get("odysseus_kind"):
+            _apply_odysseus_headers(outer, payload["odysseus_kind"])
+        outer.attach(MIMEText(payload["body"], "plain", "utf-8"))
+        html_part = (_sanitize_email_html(payload["body_html"]) if payload.get("body_html") else None) \
+            or _md_to_email_html(payload["body"])
+        outer.attach(MIMEText(html_part, "html", "utf-8"))
+
+        recipients = _envelope_recipients(payload["to"], payload.get("cc") or "", payload.get("bcc") or "")
+        try:
+            _send_smtp_message(cfg, cfg["from_address"], recipients, outer.as_string())
+        except (smtplib.SMTPRecipientsRefused, smtplib.SMTPSenderRefused,
+                smtplib.SMTPHeloError, smtplib.SMTPAuthenticationError,
+                smtplib.SMTPDataError, smtplib.SMTPNotSupportedError) as e:
+            # The server was reached and it refused — a definite failure.
+            raise RuntimeError(f"send refused: {e}") from e
+        except smtplib.SMTPException as e:
+            # Reached the server but lost the conversation somewhere that
+            # cannot rule out DATA having already been accepted.
+            raise connector_outbox.ConnectorEffectUncertain(str(e)) from e
+        except (OSError, TimeoutError) as e:
+            raise connector_outbox.ConnectorEffectUncertain(str(e)) from e
+
+        try:
+            with _imap(cfg.get("account_id") or payload.get("account_id"), owner=owner) as imap:
+                sent_folder = _detect_sent_folder(imap)
+                imap.append(sent_folder, "\\Seen", None, outer.as_bytes())
+        except Exception as e:
+            logger.warning("prepared-send %s: sent, but could not append to Sent: %s",
+                           payload["message_id"], e)
+        return {"ok": True, "external_ref": payload["message_id"]}
+
+    @router.post("/send/execute/{outbox_id}")
+    async def execute_prepared_email(outbox_id: str, background_tasks: BackgroundTasks,
+                                      owner: str = Depends(require_owner)):
+        """CONN-02 step 3: run the effect. Refuses a changed payload, a spent
+        or missing approval, and — always — a row already `uncertain`."""
+        import src.connector_outbox as connector_outbox
+
+        result = await asyncio.to_thread(
+            connector_outbox.execute, outbox_id, owner=owner,
+            run=lambda payload: _deliver_prepared_email(payload, owner=owner),
+        )
+        return result
+
+    @router.post("/send/reconcile/{outbox_id}")
+    async def reconcile_prepared_email(outbox_id: str, owner: str = Depends(require_owner)):
+        """CONN-02 / QA-11: settle an `uncertain` row by asking the mailbox
+        for the Message-ID this attempt used — never by resending."""
+        import src.connector_outbox as connector_outbox
+
+        def _find(payload: dict):
+            mid = (payload.get("message_id") or "").strip()
+            if not mid:
+                return {"found": False}
+            try:
+                with _imap(payload.get("account_id"), owner=owner) as imap:
+                    sent_folder = _detect_sent_folder(imap)
+                    st, _sel = imap.select(_q(sent_folder), readonly=True)
+                    if st != "OK":
+                        return None  # mailbox unreachable right now — stay uncertain
+                    mid_q = mid.strip().lstrip("<").rstrip(">").replace('"', '\\"')
+                    st2, data = imap.uid("SEARCH", None, f'HEADER Message-ID "{mid_q}"')
+                    if st2 != "OK":
+                        return None
+                    if data and data[0]:
+                        return {"found": True, "external_ref": mid}
+                    return {"found": False}
+            except Exception as e:
+                logger.warning("reconcile %s: mailbox unreachable: %s", outbox_id, e)
+                return None
+
+        result = await asyncio.to_thread(
+            connector_outbox.reconcile, outbox_id, owner=owner, find=_find,
+        )
+        return result
+
+    @router.get("/send/outbox/{outbox_id}")
+    async def get_prepared_email(outbox_id: str, owner: str = Depends(require_owner)):
+        import src.connector_outbox as connector_outbox
+        record = connector_outbox.get(outbox_id, owner=owner)
+        if record is None:
+            return {"ok": False, "reason": "not_found"}
+        return {"ok": True, **record}
+
+    @router.delete("/send/outbox/{outbox_id}")
+    async def cancel_prepared_email(outbox_id: str, owner: str = Depends(require_owner)):
+        import src.connector_outbox as connector_outbox
+        return connector_outbox.cancel(outbox_id, owner=owner)
 
     @router.post("/draft")
     async def save_draft(req: SendEmailRequest, owner: str = Depends(require_owner)):

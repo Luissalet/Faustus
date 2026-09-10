@@ -198,8 +198,22 @@ class WorkflowEngine:
             runnable, blocked = ready_nodes(definition, states)
             if not runnable:
                 return self._settle(run_id, definition, states, blocked, ran)
+            next_node = runnable[0]
+
+            budget_stop = self._check_budget(run_id, definition)
+            if budget_stop is not None:
+                return budget_stop
+
+            denial = self._check_permission(run_id, next_node)
+            if denial is not None:
+                ran.append(denial)
+                terminal = self._terminal_result(run_id, ran)
+                if terminal:
+                    return terminal
+                continue
+
             try:
-                outcome = self._run_node(run_id, definition, runnable[0], states,
+                outcome = self._run_node(run_id, definition, next_node, states,
                                          inputs=run.inputs, owner=run.owner, project_id=run.project_id)
             except LostClaim:
                 return {'ok': True, 'reason': 'claim_lost', 'run_id': run_id,
@@ -230,6 +244,70 @@ class WorkflowEngine:
                 "status": "running", "ran": ran,
                 "detail": f"stopped after {max_nodes} nodes in one pass; call advance() again"}
 
+
+    def _check_budget(self, run_id: str, definition: WorkflowDefinition) -> Optional[Dict[str, Any]]:
+        """AUTO-02: this run's own declared budget, checked before every
+        node — never after the fact. `usage_so_far` is computed from the
+        durable `node_runs` table (no extra storage: a ledger that survived
+        only in memory would forget everything on a restart, which is
+        exactly the failure this whole file exists to avoid), so the check
+        is correct even for a run resumed by a different worker.
+
+        On exhaustion the run is PAUSED, not failed: `paused` is already a
+        first-class state a person or a later pass can act on, so the
+        "checkpoint" AUTO-02 asks for is simply the run's own durable node
+        history, and `self._emit` is the existing notification path — no new
+        mechanism for either."""
+        from src.autonomy_budget import resolve_budget, Ledger
+
+        policy = self.store.get_policy(run_id)
+        budget = resolve_budget(policy["budget_preset"])
+        usage = self.store.usage_so_far(run_id)
+        ledger = Ledger(tool_calls=int(usage["tool_calls"]), active_seconds=usage["active_seconds"])
+        exhausted = ledger.check(budget)
+        if exhausted is None:
+            return None
+        reason = (f"budget_exhausted: {exhausted.kind} reached ({exhausted.used} >= "
+                 f"{exhausted.limit}, preset={policy['budget_preset']}); stopped before "
+                 f"the next node rather than exceeding it")
+        if not self.store.set_run_status(run_id, "paused", reason=reason):
+            return self._terminal_result(run_id, [])
+        self._emit("workflow.budget_exhausted", run_id=run_id, workflow=definition.id,
+                   kind=exhausted.kind, used=exhausted.used, limit=exhausted.limit,
+                   preset=policy["budget_preset"])
+        return {"ok": True, "reason": "budget_exhausted", "run_id": run_id,
+                "status": "paused", "ran": [], "budget": exhausted.as_dict()}
+
+    def _check_permission(self, run_id: str, node: WorkflowNode) -> Optional[Dict[str, Any]]:
+        """AUTO-02: refuse a node outside this run's declared permissions —
+        immediately and without a retry, since a policy violation is not a
+        transient failure a later attempt could plausibly clear. `None`
+        means the node may run; a dict means it was refused and `advance`
+        should record it and keep going (a later, permitted node may still
+        be runnable)."""
+        policy = self.store.get_policy(run_id)
+        allowed = policy["permissions"]
+        if allowed is None:
+            return None                        # nothing declared: no restriction
+        allowed_set = set(allowed)
+        action = str((node.config or {}).get("action") or "")
+        if node.type in allowed_set or (action and action in allowed_set):
+            return None
+        reason = (f"policy_permission_denied: this run's declared permissions do not "
+                 f"include node type {node.type!r}" + (f" or action {action!r}" if action else ""))
+        worker_id = uuid.uuid4().hex
+        claim = self.store.start_node(run_id, node, attempt=1, worker_id=worker_id)
+        if not claim.get("claimed"):
+            # Already has a row (a prior denial on this run, or another pass
+            # racing this one) — nothing new to report; `advance` moves on.
+            return {"node_id": node.id, "status": claim.get("status", "failed"),
+                    "reason": "already_attempted", "retryable": False}
+        if not self.store.finish_node(run_id, node.id, status="failed", reason=reason,
+                                      worker_id=worker_id):
+            return None
+        self._emit("workflow.node", run_id=run_id, node=node.id, type=node.type,
+                   attempt=1, status="failed", reason=reason)
+        return {"node_id": node.id, "status": "failed", "reason": reason, "retryable": False}
 
     def _run_node(self, run_id: str, definition: WorkflowDefinition,
                   node: WorkflowNode, states: Mapping[str, NodeRun],

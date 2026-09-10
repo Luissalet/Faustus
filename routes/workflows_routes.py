@@ -99,13 +99,30 @@ def setup_workflows_routes():
                                         auth_is_disabled=middleware.auth_disabled())
         if not owner:
             raise HTTPException(400, 'A workflow needs an owner for its outputs and approval requests')
+        # AUTO-02/lot-36: `WorkflowStore.create_run` already accepts and
+        # stores `budget_preset`/`permissions` (see its own docstring — the
+        # `__policy__` reserved inputs key, enforced by `WorkflowEngine.
+        # advance`); this route just never forwarded them. Optional, same as
+        # every other field on this payload — a caller that sends neither
+        # (every caller before this lot) starts a run with no declared
+        # policy, exactly as before.
+        budget_preset = str(payload.get("budget_preset") or "")
+        if budget_preset:
+            from src.autonomy_budget import PRESETS as _WORKFLOW_BUDGET_PRESETS
+            if budget_preset not in _WORKFLOW_BUDGET_PRESETS:
+                raise HTTPException(400, f"budget_preset must be one of {list(_WORKFLOW_BUDGET_PRESETS)}")
+        permissions = payload.get("permissions")
+        if permissions is not None and not isinstance(permissions, list):
+            raise HTTPException(400, "permissions must be a list of strings")
         created = store.create_run(
             definition,
             owner=owner,
             project_id=str(payload.get("project_id") or ""),
             trigger=str(payload.get("trigger") or "manual"),
             inputs=payload.get("inputs") or {},
-            dedupe_key=str(payload.get("dedupe_key") or ""))
+            dedupe_key=str(payload.get("dedupe_key") or ""),
+            budget_preset=budget_preset,
+            permissions=permissions)
         if payload.get("advance"):
             created["result"] = await asyncio.to_thread(_engine(store).advance, created["run_id"])
         return created

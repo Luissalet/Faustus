@@ -133,12 +133,31 @@ class WorkflowStore:
     def create_run(self, definition: WorkflowDefinition, *, owner: str = "",
                    project_id: str = "", trigger: str = "manual",
                    inputs: Optional[Mapping[str, Any]] = None,
-                   dedupe_key: str = "") -> Dict[str, Any]:
+                   dedupe_key: str = "",
+                   budget_preset: str = "", permissions: Optional[Any] = None) -> Dict[str, Any]:
         """Open a run. With a `dedupe_key`, a second call for the same real
         event loses on the unique index and returns the run that already
-        exists — which is how a redelivered webhook stops being two runs."""
+        exists — which is how a redelivered webhook stops being two runs.
+
+        AUTO-02: `budget_preset` (one of `src.autonomy_budget.PRESETS`) and
+        `permissions` (a list of node TYPES or `config['action']` values this
+        run may execute — `None` means "whatever the definition's own nodes
+        already are", never wider) are declared HERE, at creation, and never
+        change for this run. There is no column for them on `WorkflowRunRow`
+        (core/database.py is outside this batch's file list) — they live
+        under the reserved `__policy__` key of the run's own `inputs`, which
+        is already a freeform JSON blob every run has. `WorkflowStore.get_policy`
+        reads them back; `WorkflowEngine.advance` is what enforces them."""
         from core.database import SessionLocal, WorkflowRunRow
         from sqlalchemy.exc import IntegrityError
+
+        merged_inputs = dict(inputs or {})
+        if budget_preset or permissions is not None:
+            merged_inputs["__policy__"] = {
+                "budget_preset": budget_preset or "",
+                "permissions": list(permissions) if permissions is not None else None,
+            }
+        inputs = merged_inputs
 
         db = SessionLocal()
         try:
@@ -223,6 +242,56 @@ class WorkflowStore:
             }
         finally:
             db.close()
+
+    def get_policy(self, run_id: str) -> Dict[str, Any]:
+        """This run's AUTO-02 budget/permissions, defaulted so a run created
+        before this existed — or without either argument — behaves exactly
+        as it always did: the `supervised` preset, and no permission
+        restriction beyond what the definition's own nodes already are."""
+        from src.autonomy_budget import DEFAULT_PRESET, PRESETS
+
+        loaded = self.get_run(run_id)
+        raw = ((loaded["run"].inputs if loaded else {}) or {}).get("__policy__") or {}
+        preset = raw.get("budget_preset") or DEFAULT_PRESET
+        if preset not in PRESETS:
+            preset = DEFAULT_PRESET
+        permissions = raw.get("permissions")
+        return {"budget_preset": preset,
+                "permissions": list(permissions) if isinstance(permissions, list) else None}
+
+    def usage_so_far(self, run_id: str) -> Dict[str, float]:
+        """Tool-call count and active seconds spent by this run's EFFECTFUL
+        nodes, computed from `node_runs` — durable state this table already
+        keeps, so the AUTO-02 ledger needs no storage of its own and survives
+        a restart exactly as well as the run itself does."""
+        from src.contracts.workflow import EFFECTFUL_TYPES, TERMINAL_NODE
+
+        loaded = self.get_run(run_id)
+        if loaded is None:
+            return {"tool_calls": 0, "active_seconds": 0.0}
+        types = self._node_types_public(loaded["definition"])
+        states = self.node_runs(run_id)
+        tool_calls = 0
+        active_seconds = 0.0
+        for node_id, run in states.items():
+            if run.status not in TERMINAL_NODE:
+                continue
+            if types.get(node_id) not in EFFECTFUL_TYPES:
+                continue
+            tool_calls += 1
+            if run.started_at and run.ended_at:
+                try:
+                    from datetime import datetime as _dt
+                    start = _dt.fromisoformat(run.started_at.replace("Z", "+00:00"))
+                    end = _dt.fromisoformat(run.ended_at.replace("Z", "+00:00"))
+                    active_seconds += max(0.0, (end - start).total_seconds())
+                except Exception:
+                    pass
+        return {"tool_calls": tool_calls, "active_seconds": active_seconds}
+
+    @staticmethod
+    def _node_types_public(definition: WorkflowDefinition) -> Dict[str, str]:
+        return {n.id: n.type for n in definition.nodes}
 
     def set_run_status(self, run_id: str, status: str, *, reason: str = "") -> bool:
         from core.database import SessionLocal, WorkflowRunRow
