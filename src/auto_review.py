@@ -42,7 +42,7 @@ import re
 import subprocess
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -61,13 +61,73 @@ def _setting(key: str, default: Any) -> Any:
         return default
 
 
-def resolve_reviewer(model: str, project_override: Optional[str] = None) -> Optional[str]:
-    """The model to review with, or None when auto-review is off."""
+def _distinct_reviewer(writer_model: str, available_models: Sequence[str]) -> Optional[str]:
+    """VER-03: "not the same model that wrote it, if there is another" — a
+    case-/whitespace-insensitive name comparison, the same standard a model
+    identity check elsewhere in this repo uses for a bare model name (no
+    endpoint, no owner) with no identity helper of its own to defer to.
+    Returns the first candidate that differs from the writer, in the
+    caller's own order — this function does not rank models, only excludes
+    the one that would make the review not independent."""
+    writer_norm = str(writer_model or "").strip().lower()
+    for candidate in available_models or ():
+        cand_norm = str(candidate or "").strip().lower()
+        if cand_norm and cand_norm != writer_norm:
+            return candidate
+    return None
+
+
+def available_models_for_review(owner: Optional[str]) -> List[str]:
+    """VER-03 (Lote 50 wiring): a cheap, DB-only candidate list for
+    `resolve_reviewer`'s `available_models` — every model id any of the
+    owner's enabled endpoints has last reported (`ModelEndpoint.cached_models`,
+    the same column `routes/model_routes.py` reads to avoid a live probe on
+    every list). This never touches the network: a stale or empty cache just
+    means "same" still falls back to `model` itself, exactly like before this
+    function existed. Never raises — any failure returns ``[]``.
+    """
+    try:
+        from core.database import ModelEndpoint, SessionLocal
+        with SessionLocal() as db:
+            rows = db.query(ModelEndpoint).filter(ModelEndpoint.is_enabled == True).all()  # noqa: E712
+            ids: List[str] = []
+            for ep in rows:
+                if ep.owner and owner and ep.owner != owner:
+                    continue
+                if ep.owner and not owner:
+                    continue
+                try:
+                    cached = json.loads(ep.cached_models or "[]")
+                except (TypeError, ValueError):
+                    continue
+                for m in cached:
+                    if isinstance(m, str) and m and m not in ids:
+                        ids.append(m)
+            return ids
+    except Exception:
+        logger.debug("[auto_review] available_models_for_review failed", exc_info=True)
+        return []
+
+
+def resolve_reviewer(model: str, project_override: Optional[str] = None, *,
+                      available_models: Optional[Sequence[str]] = None) -> Optional[str]:
+    """The model to review with, or None when auto-review is off.
+
+    `available_models`, when a caller passes one, lets a "same model"
+    setting still produce an INDEPENDENT reviewer when another model is
+    actually available (VER-03) — omitted (the default), this returns
+    exactly what it always has: `model` itself for "same"/truthy settings,
+    so every existing caller keeps today's behaviour unchanged.
+    """
     raw = (project_override or "").strip() or str(_setting("agent_auto_review", "off") or "off").strip()
     low = raw.lower()
     if low in ("", "off", "false", "0", "none", "no"):
         return None
     if low in ("same", "self", "true", "1", "on", "yes"):
+        if available_models:
+            distinct = _distinct_reviewer(model, available_models)
+            if distinct:
+                return distinct
         return model
     return raw
 

@@ -14,7 +14,7 @@ import asyncio
 import time
 from collections import deque
 from contextlib import contextmanager
-from typing import Any, Deque, Dict, List, Optional, Set, TextIO, Tuple
+from typing import Any, Callable, Deque, Dict, List, Optional, Set, TextIO, Tuple
 from src.database import McpServer, SessionLocal
 from src import safe_mode
 
@@ -482,6 +482,223 @@ def mcp_tool_is_readonly(tool: Dict) -> bool:
     return name.startswith(_MCP_READONLY_VERBS)
 
 
+# ── TOOL-05: elicitation, sampling and resources under limits ──────────────
+#
+# The MCP spec lets a SERVER call back into the client for three things: ask
+# the model to sample text, ask the user a question, or read the client's
+# declared filesystem roots. `mcp.ClientSession`'s own default for all three
+# (when no callback is supplied — which is what every `ClientSession(...)`
+# call in this file did before this) is `ErrorData("... not supported")`
+# (mcp/client/session.py) — safe, but it also means Faustus had never
+# actually negotiated any of them. The callbacks below are not "turn
+# everything on"; each is metered the same way a tool call already is:
+#
+# * Sampling burns a PER-SERVER, per-window quota (`_SamplingQuota`) that a
+#   busy server cannot inflate by being busy, and — the concrete acceptance
+#   case — one server's remaining budget can never lend to another's: the
+#   quota is keyed by `server_id` alone, so nothing here has a notion of a
+#   shared or global allowance to reuse. Faustus has no per-connection
+#   owner/turn/model context reachable from inside an MCP callback yet, so an
+#   in-quota request is still refused, but for a distinct, auditable reason
+#   ("metered, not yet wired to a model") instead of the SDK's generic
+#   "not supported" — a real completion path can replace only that one
+#   `return` later without touching the quota bookkeeping.
+# * Elicitation is real: it opens a question through `question_store` — the
+#   one authority this repo already has for a pending question (AskUserTool,
+#   src/agent_tools/interaction_tools.py); TOOL-05 adds no second store — with
+#   a hard timeout and a per-server outstanding-request cap, so a broken or
+#   hostile server cannot pile up unanswered questions.
+# * `list_roots_callback` returns the bound workspace as one advisory root
+#   and nothing else: it orients the server, and grants nothing — every tool
+#   call the server goes on to make is still checked by the same sandbox as
+#   before (src/tool_execution.py), which this module does not touch.
+
+#: Sampling: N calls per server per rolling window, unless the setting below
+#: overrides it. Small on purpose — sampling is not yet connected to a real
+#: model, so this bounds log noise and quota bookkeeping, not spend.
+_SAMPLING_MAX_CALLS_DEFAULT = 20
+_SAMPLING_WINDOW_S_DEFAULT = 600.0
+#: Elicitation: how long a server's question may stay unanswered, how many a
+#: single server may have open at once, and the largest prompt forwarded to
+#: the user — all three cap what an MCP server can make Faustus's own
+#: question queue do.
+_ELICIT_TIMEOUT_S_DEFAULT = 180.0
+_ELICIT_POLL_INTERVAL_S = 1.0
+_ELICIT_MAX_OUTSTANDING_PER_SERVER = 3
+_ELICIT_MAX_MESSAGE_CHARS = 4000
+
+
+def _mcp_setting(key: str, default: Any) -> Any:
+    try:
+        from src.settings import get_setting
+        return get_setting(key, default)
+    except Exception:  # noqa: BLE001 - a setting read never breaks a connection
+        return default
+
+
+class _SamplingQuota:
+    """A rolling per-server allowance, never shared across servers: `consume`
+    for one `server_id` can only ever spend that server's own count, which is
+    what stops one destination's authorization from paying for another's
+    sampling requests (TOOL-05 acceptance)."""
+
+    def __init__(self) -> None:
+        self._calls: Dict[str, Deque[float]] = {}
+
+    def consume(self, server_id: str, *, max_calls: int, window_s: float) -> Optional[str]:
+        """None when the call is allowed (and recorded against this server's
+        own window); otherwise the reason to refuse with."""
+        now = time.time()
+        window = self._calls.setdefault(server_id, deque())
+        while window and now - window[0] > window_s:
+            window.popleft()
+        if len(window) >= max_calls:
+            return f"sampling quota exceeded for this server ({max_calls} calls / {window_s:g}s)"
+        window.append(now)
+        return None
+
+
+#: Module-level: one quota table for the process, keyed by server_id — a
+#: fresh `McpManager()` (tests construct one per case) still shares it, which
+#: is correct: the resource being metered is "how often has THIS server_id
+#: asked", not "how many McpManager instances exist".
+_sampling_quota = _SamplingQuota()
+#: server_id -> count of elicitation questions currently open for it.
+_elicit_outstanding: Dict[str, int] = {}
+
+
+def make_sampling_callback(server_id: str) -> Callable[[Any, Any], Any]:
+    """TOOL-05 sampling callback: metered, and refused in-quota with a
+    distinct reason (see module docstring above) until a real model path is
+    wired to it."""
+
+    async def _sampling_callback(context, params):  # noqa: ANN001 - mcp SDK types
+        from mcp import types as _mcp_types
+        max_calls = int(_mcp_setting("mcp_sampling_max_calls", _SAMPLING_MAX_CALLS_DEFAULT)
+                        or _SAMPLING_MAX_CALLS_DEFAULT)
+        window_s = float(_mcp_setting("mcp_sampling_window_s", _SAMPLING_WINDOW_S_DEFAULT)
+                         or _SAMPLING_WINDOW_S_DEFAULT)
+        denial = _sampling_quota.consume(server_id, max_calls=max_calls, window_s=window_s)
+        if denial:
+            logger.warning("[mcp:%s] sampling refused: %s", server_id, denial)
+            return _mcp_types.ErrorData(code=_mcp_types.INVALID_REQUEST, message=denial)
+        return _mcp_types.ErrorData(
+            code=_mcp_types.INVALID_REQUEST,
+            message="sampling is metered but not yet connected to a model for this server",
+        )
+
+    return _sampling_callback
+
+
+def make_elicitation_callback(server_id: str) -> Callable[[Any, Any], Any]:
+    """TOOL-05 elicitation callback: a real round trip through
+    `question_store`, bounded by a per-server outstanding cap, a message size
+    cap and a hard timeout — never an unbounded wait on a person who may
+    never see the question."""
+
+    async def _elicitation_callback(context, params):  # noqa: ANN001 - mcp SDK types
+        from mcp import types as _mcp_types
+        from src import question_store
+
+        max_outstanding = int(_mcp_setting(
+            "mcp_elicitation_max_outstanding", _ELICIT_MAX_OUTSTANDING_PER_SERVER)
+            or _ELICIT_MAX_OUTSTANDING_PER_SERVER)
+        if _elicit_outstanding.get(server_id, 0) >= max_outstanding:
+            return _mcp_types.ErrorData(
+                code=_mcp_types.INVALID_REQUEST,
+                message=f"too many outstanding elicitation requests for this server (max {max_outstanding})",
+            )
+        message = str(getattr(params, "message", "") or "").strip()[:_ELICIT_MAX_MESSAGE_CHARS]
+        if not message:
+            return _mcp_types.ErrorData(code=_mcp_types.INVALID_PARAMS,
+                                        message="elicitation requires a non-empty message")
+        timeout_s = float(_mcp_setting("mcp_elicitation_timeout_s", _ELICIT_TIMEOUT_S_DEFAULT)
+                          or _ELICIT_TIMEOUT_S_DEFAULT)
+        # A synthetic, clearly-labelled session: an MCP connection is
+        # process-wide, not tied to one chat turn, so there is no real chat
+        # session to attach this to. `owner=""` is the same "nothing to
+        # isolate" shape `question_store.get` already documents for a
+        # pre-SEC-06 or no-auth row.
+        session_id = f"mcp:{server_id}"
+        _elicit_outstanding[server_id] = _elicit_outstanding.get(server_id, 0) + 1
+        question_id = ""
+        try:
+            opened = question_store.open_question(
+                message, session_id=session_id, owner="",
+                allow_free_text=True, ttl_seconds=int(timeout_s), supersede_open=False,
+            )
+            question_id = opened.get("question_id", "")
+            deadline = time.time() + timeout_s
+            while time.time() < deadline:
+                row = question_store.get_question(question_id)
+                if row is None:
+                    break
+                status = row.get("status")
+                if status == "answered":
+                    answer = row.get("answer")
+                    content = answer if isinstance(answer, dict) else {"value": answer}
+                    return _mcp_types.ElicitResult(action="accept", content=content)
+                if status in ("cancelled", "expired"):
+                    return _mcp_types.ElicitResult(action="decline")
+                await asyncio.sleep(_ELICIT_POLL_INTERVAL_S)
+            logger.info("[mcp:%s] elicitation %s timed out after %gs", server_id, question_id, timeout_s)
+            try:
+                question_store.cancel_question(question_id, reason="mcp_elicitation_timeout")
+            except Exception:  # noqa: BLE001 - timeout path never raises into the server
+                pass
+            return _mcp_types.ElicitResult(action="cancel")
+        finally:
+            _elicit_outstanding[server_id] = max(0, _elicit_outstanding.get(server_id, 1) - 1)
+
+    return _elicitation_callback
+
+
+def make_list_roots_callback(server_id: str) -> Callable[[Any], Any]:
+    """TOOL-05 roots callback: the bound workspace, advisory only. `roots`
+    orients a server about where the user's work lives; it grants nothing —
+    every tool call the server makes afterwards is still checked by
+    `src.tool_execution`'s sandbox exactly as before this callback existed."""
+
+    async def _list_roots_callback(context):  # noqa: ANN001 - mcp SDK types
+        from mcp import types as _mcp_types
+        try:
+            from src.tool_execution import get_active_workspace
+            workspace = get_active_workspace() or ""
+        except Exception:  # noqa: BLE001 - no active turn, no roots to offer
+            workspace = ""
+        if not workspace:
+            return _mcp_types.ListRootsResult(roots=[])
+        try:
+            uri = "file://" + os.path.abspath(workspace).replace(os.sep, "/")
+            return _mcp_types.ListRootsResult(
+                roots=[_mcp_types.Root(uri=uri, name=os.path.basename(workspace) or workspace)])
+        except Exception:  # noqa: BLE001 - a malformed path is no roots, not a crash
+            logger.debug("[mcp:%s] list_roots: could not build a root URI", server_id, exc_info=True)
+            return _mcp_types.ListRootsResult(roots=[])
+
+    return _list_roots_callback
+
+
+def _open_client_session(client_session_cls: Any, read_stream: Any, write_stream: Any,
+                          server_id: str) -> Any:
+    """`ClientSession(read_stream, write_stream, ...)` with the TOOL-05
+    callbacks, falling back to the plain two-argument call when the target
+    does not accept them — a test double built before those callbacks
+    existed (several already exist under `tests/`, stubbing `mcp.
+    ClientSession` with a plain ``lambda r, w: FakeSession()``), or a future
+    SDK version that renames a parameter, must still connect exactly as it
+    did before this function existed rather than raising `TypeError`."""
+    try:
+        return client_session_cls(
+            read_stream, write_stream,
+            sampling_callback=make_sampling_callback(server_id),
+            elicitation_callback=make_elicitation_callback(server_id),
+            list_roots_callback=make_list_roots_callback(server_id),
+        )
+    except TypeError:
+        return client_session_cls(read_stream, write_stream)
+
+
 class McpManager:
     """Manages MCP server connections and tool routing."""
 
@@ -630,7 +847,8 @@ class McpManager:
                 else:
                     transport = await stack.enter_async_context(stdio_client(server_params))
                 read_stream, write_stream = transport
-                session = await stack.enter_async_context(ClientSession(read_stream, write_stream))
+                session = await stack.enter_async_context(
+                    _open_client_session(ClientSession, read_stream, write_stream, server_id))
                 await session.initialize()
                 tools_result = await session.list_tools()
             except BaseException as exc:  # noqa: BLE001 - report to the waiter, then bail
@@ -737,7 +955,8 @@ class McpManager:
             try:
                 transport = await stack.enter_async_context(sse_client(url))
                 read_stream, write_stream = transport
-                session = await stack.enter_async_context(ClientSession(read_stream, write_stream))
+                session = await stack.enter_async_context(
+                    _open_client_session(ClientSession, read_stream, write_stream, server_id))
 
                 await session.initialize()
                 tools_result = await session.list_tools()
@@ -829,7 +1048,8 @@ class McpManager:
             stack = AsyncExitStack()
             transport = await stack.enter_async_context(streamablehttp_client(url, auth=provider))
             read_stream, write_stream, _get_session_id = transport
-            session = await stack.enter_async_context(ClientSession(read_stream, write_stream))
+            session = await stack.enter_async_context(
+                _open_client_session(ClientSession, read_stream, write_stream, server_id))
             await session.initialize()
 
             tools_result = await session.list_tools()

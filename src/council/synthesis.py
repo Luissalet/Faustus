@@ -45,10 +45,19 @@ __all__ = [
     "convergence",
     "contributions",
     "status_of",
+    "evidence_weighted_support",
     "STATUSES",
     "PROVED_VERDICT",
     "MATERIAL_SEVERITIES",
+    "NO_EVIDENCE_WEIGHT",
 ]
+
+#: PLAN-04 — how much a supporter's vote counts when their own message on the
+#: decision cites no evidence. Not zero: silence is not proof the supporter
+#: is wrong, and a policy that discarded unsupported votes entirely could not
+#: represent "everyone agreed but nobody checked" at all — which is exactly
+#: the state `unanimous_without_evidence` below exists to name instead.
+NO_EVIDENCE_WEIGHT = 0.5
 
 #: The five states a close may report (plan 3.4).
 STATUSES = ("decided", "verified", "unverified", "blocked", "disputed")
@@ -108,7 +117,7 @@ def _row(value: Any) -> Dict[str, Any]:
             logger.debug("council synthesis: to_dict failed for %r", type(value), exc_info=True)
     out: Dict[str, Any] = {}
     for field in ("id", "author_id", "author_kind", "message_type", "content", "display_name",
-                  "roles", "participant_id", "task_id", "created_at"):
+                  "roles", "participant_id", "task_id", "created_at", "decision_id", "metadata"):
         if hasattr(value, field):
             out[field] = getattr(value, field)
     return out
@@ -263,6 +272,82 @@ def contributions(messages: Any, participants: Any) -> List[Dict[str, Any]]:
     for pid in known:
         entry(pid)
     return sorted(stats.values(), key=lambda r: (-r["messages"], r["participant_id"]))
+
+
+# --- PLAN-04: evidence, not headcount --------------------------------------
+
+def _message_evidence_refs(message: Mapping[str, Any]) -> Tuple[str, ...]:
+    """A message's own evidence citations. Read from `metadata.evidence_refs`
+    -- the same open dict every `CouncilMessage` already carries (contracts.py
+    §3.2), never a new field on the frozen contract -- so a message written
+    before this function existed simply has none, not an error. A caller that
+    wants a vote to *count* as evidenced writes to this key; nothing else in
+    the council package reads or writes it, so there is nothing to migrate."""
+    meta = message.get("metadata")
+    if not isinstance(meta, Mapping):
+        return ()
+    refs = meta.get("evidence_refs") or ()
+    if isinstance(refs, str):
+        refs = [refs]
+    if not isinstance(refs, (list, tuple)):
+        return ()
+    return tuple(_text(r) for r in refs if _text(r))
+
+
+def evidence_weighted_support(decision: Any, messages: Any) -> Dict[str, Any]:
+    """PLAN-04: a decision's `supporters` tally, weighted by whether each
+    supporter's OWN most recent message on this decision actually cites
+    evidence -- never a bare headcount.
+
+    Plan §1.9.3's rule that a room does not substitute agreement for a check
+    means a decision's `supporters` list must never be read as "N independent
+    confirmations" when it is really "N restatements of the same unsourced
+    claim". This is where that distinction becomes a number: every supporter
+    who cited nothing counts for `NO_EVIDENCE_WEIGHT` of a vote instead of a
+    whole one, and `unanimous_without_evidence` is True exactly when the room
+    "agreed" but not one voice pointed at anything -- the literal case this
+    requirement's acceptance test names ("three models repeat the same claim,
+    no source, and that does not substitute for a check").
+
+    Reads only the room's own messages and the decision's own `supporters` --
+    no model call, no new store, matching the rest of this module (module
+    docstring: "It calls no model").
+    """
+    dec = _row(decision)
+    supporters = [s for s in (dec.get("supporters") or ()) if _text(s)]
+    decision_id = _text(dec.get("id"))
+    latest_by_author: Dict[str, Dict[str, Any]] = {}
+    for message in _rows(messages):
+        if _text(message.get("decision_id")) != decision_id:
+            continue
+        author = _text(message.get("author_id"))
+        if not author:
+            continue
+        # Messages arrive in the order the ledger recorded them; the last one
+        # from a given author on this decision is that supporter's current
+        # word, so a later, evidence-free restatement cannot be padded out by
+        # an earlier message that happened to cite something.
+        latest_by_author[author] = message
+    rows: List[Dict[str, Any]] = []
+    for supporter_id in supporters:
+        message = latest_by_author.get(supporter_id)
+        refs = _message_evidence_refs(message) if message is not None else ()
+        has_evidence = bool(refs)
+        rows.append({
+            "id": supporter_id,
+            "has_evidence": has_evidence,
+            "evidence_refs": list(refs),
+            "weight": 1.0 if has_evidence else NO_EVIDENCE_WEIGHT,
+        })
+    weighted = sum(r["weight"] for r in rows)
+    return {
+        "decision_id": decision_id,
+        "supporters": rows,
+        "raw_count": len(rows),
+        "weighted_count": round(weighted, 2),
+        "with_evidence": sum(1 for r in rows if r["has_evidence"]),
+        "unanimous_without_evidence": bool(rows) and all(not r["has_evidence"] for r in rows),
+    }
 
 
 # --- convergence ----------------------------------------------------------
@@ -482,6 +567,15 @@ def build(ledger: Any, *, messages: Sequence[Any] = (), participants: Sequence[A
     session_id = _text(snapshot.get("session_id")) or _text(getattr(ledger, "session_id", ""))
     status = status_of(ledger, proof=proof)
     decisions = [_decision_row(d) for d in _live_decisions(snapshot)]
+    # PLAN-04 (Lote 50 wiring): the close is where "consensus reached" is
+    # actually declared (`_result_line`/`status_of` below read `decisions`
+    # as-is), so this is the one place `evidence_weighted_support` must run
+    # for that declaration to ever reflect it — an additive `evidence_support`
+    # key on each row, never a change to the existing decision fields a
+    # caller may already read.
+    message_rows = _rows(messages)
+    for row in decisions:
+        row["evidence_support"] = evidence_weighted_support(row, message_rows)
     changes = _changes(snapshot)
     open_objections = [_objection_row(o) for o in _rows(snapshot.get("open_objections"))]
     summary = CouncilSummary(

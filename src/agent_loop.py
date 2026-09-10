@@ -36,6 +36,7 @@ from src.context_compactor import (
 )
 from src.settings import get_setting
 from src import autonomy_budget
+from src import plan_state
 from src.prompt_security import untrusted_context_message
 from src.chat_helpers import is_vision_model, model_supports_vision
 from src.tool_security import (
@@ -4182,6 +4183,63 @@ _VERIFIER_MAX_ROUNDS = 2  # cap re-verify cycles per turn — never loop forever
 #: engine's own reasoning; this is the loop's own floor under it.
 _CE_MAX_ROUNDS = 2
 
+#: PLAN-06 — "ambitious but bounded" closing check. A turn that declared a
+#: plan this round (`update_plan`) is never closed just because the model
+#: stopped calling tools: `_plan_coverage_gap` below asks `plan_state.coverage`
+#: whether the plan's own steps still miss part of what the user actually
+#: asked, and the loop sends it back ONCE — never in a loop — naming only the
+#: user's own uncovered words, nothing invented. A turn that never wrote a
+#: plan is completely unaffected: the gate only exists once a plan exists.
+_PLAN_COVERAGE_MAX_ROUNDS = 1
+
+#: Splits on blank lines / bullets / numbering first (each item is its own
+#: requirement); a message with none of those is one requirement, whole —
+#: not sentence-split, so short instructions ("fix the login bug") stay a
+#: single candidate instead of being shredded into words that would spuriously
+#: fail `plan_state.coverage`'s overlap threshold.
+_REQUIREMENT_LINE_RE = re.compile(r"^\s*(?:[-*•]|\d+[.)])\s+(.*\S)\s*$")
+
+
+def _split_requirements(instruction: str, *, max_items: int = 12) -> List[str]:
+    """Best-effort split of one user instruction into the requirements
+    `plan_state.coverage` checks the plan against. Never raises; an
+    instruction with no bullet/numbered lines comes back as a single
+    requirement (itself), so coverage degrades to "does any step address the
+    request at all" rather than inventing structure that was never there."""
+    lines = [m.group(1).strip() for line in (instruction or "").splitlines()
+             if (m := _REQUIREMENT_LINE_RE.match(line))]
+    items = lines if len(lines) >= 2 else ([instruction.strip()] if (instruction or "").strip() else [])
+    return items[:max_items]
+
+
+def _plan_coverage_gap(plan_update: Optional[Dict[str, Any]], instruction: str) -> List[str]:
+    """PLAN-06: the requirements of `instruction` that this turn's own latest
+    plan does not cover, per `plan_state.coverage` (PLAN-01) — reused, not
+    reimplemented. Returns [] (no gap, or nothing to check) whenever there is
+    no plan at all, or every requirement matched some step (done or not —
+    coverage is about whether a step EXISTS for it, which is exactly the
+    case a plan whose steps are all `done` but that never accounted for part
+    of the request needs caught). This never blocks a turn a plan-free
+    instruction would have closed exactly as before: with no `update_plan`
+    call this turn, `plan_update` is None and the gate never runs."""
+    if not isinstance(plan_update, dict):
+        return []
+    try:
+        plan = plan_state.parse_steps_input(plan_update) or plan_state.from_markdown(
+            str(plan_update.get("plan") or ""))
+    except Exception:  # noqa: BLE001 - a malformed plan never blocks the turn
+        return []
+    if not plan.steps:
+        return []  # an empty plan is not this gate's business either
+    requirements = _split_requirements(instruction)
+    if not requirements:
+        return []
+    try:
+        result = plan_state.coverage(plan, requirements)
+    except Exception:  # noqa: BLE001 - never the reason a turn fails
+        return []
+    return list(result.get("uncovered") or [])
+
 
 def _build_actions_snapshot(tool_events: list, limit: int = 8000) -> str:
     """Compact record of what the agent actually did this turn, for the
@@ -5983,6 +6041,11 @@ async def _stream_agent_loop_body(
     # whether ENOUGH was done. One shared counter would let either spend the
     # other's allowance and neither would be able to say so.
     _ce_completion_rounds = 0
+    # PLAN-06: how many times this turn was sent back for its OWN plan's
+    # uncovered steps. Counted apart from `_ce_completion_rounds` for the same
+    # reason: the completion engine asks whether enough was done overall, this
+    # asks only whether the plan the model itself wrote was actually finished.
+    _plan_coverage_rounds = 0
     real_input_tokens = 0   # Accumulated real usage from API
     real_output_tokens = 0
     last_round_input_tokens = 0  # Last round's input tokens (for context % peak)
@@ -6209,6 +6272,7 @@ async def _stream_agent_loop_body(
         from src import auto_review as _auto_review
         _reviewer_model = _auto_review.resolve_reviewer(
             model, _hopts.get("review_model") or str(get_setting("agent_auto_review", "off") or "off"),
+            available_models=_auto_review.available_models_for_review(owner),
         ) if (_harness_enabled and workspace) else None
     except Exception:
         _reviewer_model = None
@@ -8382,6 +8446,37 @@ async def _stream_agent_loop_body(
                             + "\n\nDo these now with tools, then finish. This "
                             "changes how far you go and grants you no tool, no "
                             "path and no permission you did not already have."
+                        ),
+                    })
+                    continue
+            # PLAN-06: "ambitious but bounded" closing check. Only runs when a
+            # plan exists for this turn (byte-identical behaviour for any turn
+            # that never called `update_plan`) and the completion engine above
+            # did not already decide to keep going, so the two gates never
+            # both extend the same round.
+            if _latest_plan_update and not (isinstance(_ce_decision, dict) and _ce_decision.get("ok")
+                                             and _ce_decision.get("continue_with")):
+                _plan_gap = _plan_coverage_gap(_latest_plan_update, _last_user or "")
+                if _plan_gap and _plan_coverage_rounds < _PLAN_COVERAGE_MAX_ROUNDS:
+                    _plan_coverage_rounds += 1
+                    _ledger.stop_reason = "plan_coverage_incomplete"
+                    yield (
+                        "data: "
+                        + json.dumps({
+                            "type": "plan_coverage_gap",
+                            "uncovered": _plan_gap,
+                            "round": round_num,
+                        })
+                        + "\n\n"
+                    )
+                    messages.append({
+                        "role": "system",
+                        "content": (
+                            "Your own plan for this turn still has unfinished steps, and it does "
+                            "not yet cover part of what was asked:\n- " + "\n- ".join(_plan_gap)
+                            + "\n\nFinish those with tools, then call `update_plan` again and stop. "
+                            "This is only what you already planned to do — do not widen scope, "
+                            "refactor unrelated code or add anything not already requested."
                         ),
                     })
                     continue

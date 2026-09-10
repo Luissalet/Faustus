@@ -17,6 +17,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from services.memory.skills import SkillsManager
+from src import skill_governance
 from src.auth_helpers import get_current_user
 from src.prompt_security import untrusted_context_message
 from core.middleware import require_admin
@@ -84,6 +85,11 @@ class SkillUpdateRequest(BaseModel):
     version: Optional[str] = None
     confidence: Optional[float] = None
     body_extra: Optional[str] = None
+    # TOOL-06: explicit review flag for a promotion out of a Teach-Mode-style
+    # origin (skill_governance.validate_promotion) — never inferred, so a
+    # caller that omits it is treated as unreviewed, same as before this
+    # field existed for any update that isn't a promotion.
+    reviewed: Optional[bool] = None
     # Old shape
     title: Optional[str] = None
     problem: Optional[str] = None
@@ -1865,6 +1871,22 @@ def setup_skills_routes(skills_manager: SkillsManager) -> APIRouter:
         updates = body.model_dump(exclude_none=True)
         if not updates:
             return {"ok": True}
+
+        # TOOL-06 (Lote 50 wiring): an obsolete/deprecated/superseded skill
+        # refuses any mutating update before it touches anything, and a
+        # promotion to a published-like status from a Teach-Mode-style
+        # origin requires an explicit `reviewed=True` from the caller.
+        gate = skill_governance.gate_mutating_use(match, action="apply")
+        if not gate["allowed"]:
+            raise HTTPException(409, gate["reason"])
+        target_status = updates.get("status")
+        reviewed = updates.pop("reviewed", None)
+        if target_status:
+            promotion = skill_governance.validate_promotion(
+                match, target_status=target_status, reviewed=bool(reviewed))
+            if not promotion["ok"]:
+                raise HTTPException(409, promotion["reason"])
+
         ok = skills_manager.update_skill(match.get("name"), updates, owner=user)
         if not ok:
             raise HTTPException(404, "Skill not found")

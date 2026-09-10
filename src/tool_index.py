@@ -568,6 +568,19 @@ class ToolIndex:
         re.I,
     )
 
+    # TOOL-02: bilingual, structural (no keyword list to keep in sync across
+    # languages) — an edit/read/write verb, EN or ES, anywhere in the query.
+    _FILE_EDIT_RE = re.compile(
+        r"\b(?:edit|editar|edita|editame|modify|modificar|modifica|change|cambiar|cambia|"
+        r"write|escribe|escribir|read|lee|leer|open|abre|abrir|create|crea|crear|"
+        r"fix|arregla|arreglar|update|actualiza|actualizar|save|guarda|guardar)\b",
+        re.I,
+    )
+    #: A bare file extension token (`.txt`, `.py`, `archivo.md`...). Deliberately
+    #: not anchored to a filename shape beyond the dot+letters: the acceptance
+    #: case is exactly "a file with this extension", not a specific path.
+    _FILE_EXT_RE = re.compile(r"\.[A-Za-z]{1,6}\b")
+
     # Keyword hints: if the query mentions these words, force-include the tools.
     _KEYWORD_HINTS = {
         # NOTE: "tell" was removed from this set. It fired on any "tell me ..."
@@ -786,6 +799,16 @@ class ToolIndex:
         # the agent can actually create the cron job instead of fumbling.
         if self._SCHEDULE_RE.search(ql):
             base.add("manage_tasks")
+        # TOOL-02: deterministic minimum for on-disk file work. Semantic
+        # retrieval is best-effort (embedder down, cold cache, a degraded
+        # lane — see this module's own docstring); a request that plainly
+        # names a file — an extension token, ES or EN edit/read verb — must
+        # keep `read_file`/`write_file` reachable regardless of whether
+        # ranking found them, the same way `_WEB_RE`/`_SCHEDULE_RE` above are
+        # unconditional. Bilingual because the acceptance case for this is a
+        # Spanish request ("editar un archivo .txt").
+        if self._FILE_EDIT_RE.search(ql) and self._FILE_EXT_RE.search(ql):
+            base.update({"read_file", "write_file"})
         # URL/site requests need web tools even when embedding retrieval is
         # stubbed/unavailable. Keep this structural, not always-on, so trivial
         # prompts do not drag web schemas into the agent context.

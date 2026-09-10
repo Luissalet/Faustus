@@ -365,7 +365,13 @@ class Skill:
     platforms: List[str] = field(default_factory=list)
     requires_toolsets: List[str] = field(default_factory=list)
     fallback_for_toolsets: List[str] = field(default_factory=list)
-    status: str = "draft"                              # draft | published
+    status: str = "draft"                              # draft | published |
+                                                         # obsolete | deprecated |
+                                                         # superseded (src.skill_governance
+                                                         # OBSOLETE_STATUSES — get_relevant_skills
+                                                         # already excludes anything outside
+                                                         # published/draft, so these three are
+                                                         # invisible to retrieval by construction)
     confidence: float = 0.8
     source: str = "learned"
     teacher_model: Optional[str] = None

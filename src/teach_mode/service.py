@@ -8,6 +8,7 @@ import re
 import uuid
 from typing import Any, Dict, List, Mapping, Optional
 
+from src import skill_governance
 from src.contracts.base import fingerprint, now_iso
 from src.teach_mode import contracts
 from src.teach_mode import persistence
@@ -317,6 +318,17 @@ class TeachService:
             procedure["last_evidence"] = proof
         installed_skill = None
         if target == "installed":
+            # TOOL-06 (Lote 50 wiring): the promotion this transition performs
+            # — a demonstrated procedure becoming a published SKILL.md other
+            # projects can pick up — is exactly what skill_governance's review
+            # gate exists for. `reviewed=True` is not a rubber stamp: the FSM
+            # above already refused this call unless `procedure.status ==
+            # "approved"`, i.e. an operator already ran the "approve"
+            # transition, so the review this asserts already happened.
+            promotion = skill_governance.validate_promotion(
+                {"source": "teach_mode"}, target_status="published", reviewed=True)
+            if not promotion["ok"]:
+                raise contracts.TeachError("procedure", promotion["reason"])
             # Do the real registry write first.  The procedure is not allowed
             # to claim installation when no published SKILL.md exists.
             installed_skill = self._install_skill(owner, procedure)

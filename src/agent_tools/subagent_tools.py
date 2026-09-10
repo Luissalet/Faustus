@@ -672,6 +672,44 @@ def _resume_handle(raw: Any) -> Optional[Dict[str, str]]:
     return None
 
 
+_CRITERION_FILE_RE = re.compile(r"[\w./\\-]+\.[A-Za-z0-9]{1,8}")
+
+
+def verify_criteria(criteria: List[str], *, mutations: Any, tool_calls: int,
+                     error: Optional[str]) -> Dict[str, Any]:
+    """PLAN-02: does THIS run's own evidence back each acceptance criterion in
+    its delegation contract — never its own prose. Deterministic and cheap on
+    purpose, matching the rest of this module's evidence-over-narrative rule
+    (module docstring): a run that made zero tool calls has produced nothing
+    but text, so every stated criterion is unmet regardless of how confident
+    its `final_text` sounds; a criterion naming a specific file is unmet
+    unless that file is among the paths this run actually mutated.
+
+    Returns ``{"criteria": [{"text","met","reason"}...], "unmet": [...],
+    "complete": bool}``. Never raises — an unparseable criterion is simply
+    dropped, never turned into a false failure.
+    """
+    norm_mutations = {str(p).strip().lower() for p in (mutations or []) if str(p).strip()}
+    rows: List[Dict[str, Any]] = []
+    for raw in criteria or []:
+        text = str(raw or "").strip()
+        if not text:
+            continue
+        met, reason = True, "the run made tool calls with recorded effect"
+        if error:
+            met, reason = False, f"run ended in error: {_short(error, 180)}"
+        elif tool_calls <= 0:
+            met, reason = False, "no tool call was made — text alone is not evidence"
+        else:
+            named = [f.lower() for f in _CRITERION_FILE_RE.findall(text)]
+            missing = [f for f in named if not any(f in m or m in f for m in norm_mutations)]
+            if named and missing:
+                met, reason = False, f"criterion names {missing[0]!r} but it was never mutated"
+        rows.append({"text": text[:300], "met": met, "reason": reason})
+    unmet = [r["text"] for r in rows if not r["met"]]
+    return {"criteria": rows, "unmet": unmet, "complete": not unmet}
+
+
 def parse_delegation_args(content: str, *, workspace: Optional[str] = None) -> Dict[str, Any]:
     """Accept {"tasks":[{"name","instruction"}...], "parallel": bool,
     "max_rounds": int} — or, leniently, a plain list of instruction strings.
@@ -775,6 +813,17 @@ def parse_delegation_args(content: str, *, workspace: Optional[str] = None) -> D
                 if isinstance(_value, (list, tuple)) and _value:
                     row[_key] = [str(part).strip()[:120] for part in _value
                                  if str(part).strip()][:40]
+            # PLAN-02: acceptance criteria the CALLER can check the child's own
+            # evidence against (see `verify_criteria` below) — the "criteria"
+            # half of the delegation contract, alongside the existing "files"
+            # scope and the run's own timeout/round budget. Optional and
+            # additive: a task with no `criteria` is verified exactly as
+            # before (stop_reason alone decides `done`/`error`/...).
+            _criteria = t.get("criteria") or t.get("success_criteria") or t.get("acceptance")
+            if isinstance(_criteria, str):
+                _criteria = [_criteria]
+            if isinstance(_criteria, (list, tuple)) and _criteria:
+                row["criteria"] = [str(c).strip()[:300] for c in _criteria if str(c).strip()][:20]
         # `agent` and `resume` are carried ONLY when the caller named one —
         # the discipline `runner` already keeps in src/dispatch.py. A task with
         # neither key must produce the dict this parser produced before they
@@ -872,6 +921,10 @@ class SubagentRun:
         self.instruction = task["instruction"]
         self.model_override = task.get("model") or ""
         self.files: List[str] = list(task.get("files") or [])
+        #: PLAN-02: the delegation contract's acceptance criteria, if the
+        #: caller stated any (see `parse_delegation_args`). Checked against
+        #: this run's OWN evidence in `report()`, never against its prose.
+        self.criteria: List[str] = list(task.get("criteria") or [])
         self.role = role
         self.task_spec: Dict[str, Any] = {
             key: task[key] for key in (
@@ -1018,10 +1071,25 @@ class SubagentRun:
 
     def report(self) -> Dict[str, Any]:
         outcome = self.outcome()
+        status = "error" if self.error else ("done" if self.stop_reason in ("complete",) else self.stop_reason)
+        criteria_check: Optional[Dict[str, Any]] = None
+        if self.criteria:
+            criteria_check = verify_criteria(
+                self.criteria, mutations=self.mutations, tool_calls=self.tool_calls, error=self.error,
+            )
+            # PLAN-02 acceptance: a child that stopped as "complete" but whose
+            # own evidence does not back every stated criterion reports
+            # `partial`, never `done` — the parent's verification, not the
+            # child's self-report, decides success.
+            if status == "done" and not criteria_check["complete"]:
+                status = "partial"
+                if outcome == "success":
+                    outcome = "expected_error"
         return {
             "id": self.id, "name": self.name, "session_id": self.session_id,
-            "status": "error" if self.error else ("done" if self.stop_reason in ("complete",) else self.stop_reason),
+            "status": status,
             **({"outcome": outcome} if outcome else {}),
+            **({"criteria_check": criteria_check} if criteria_check is not None else {}),
             "stop_reason": self.stop_reason, "error": self.error,
             "tool_calls": self.tool_calls, "failed_calls": self.failed_calls,
             "mutations": self.mutations, "rejections": self.rejections, "rounds": self.rounds,
