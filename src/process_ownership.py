@@ -35,6 +35,22 @@ exist yet. psutil is load-bearing for that walk; that is the price. Without it,
 a caller that still holds a live process object may fall back to the old
 unconditional spelling (it has other evidence), and a caller holding nothing
 but a pid read back from disk (src/bg_jobs.py) refuses to signal at all.
+
+ARCH-02 (``can_stop``) answers a narrower, later question: "we" (Faustus, the
+application) may hold the process object and clear this whole ownership check
+-- but the request to stop it came from one *client* of several that can
+issue one (the web UI, the desktop shell, a given chat session), and a shared
+resource one of them started -- Ollama, or the server process itself, via
+``server_runtime.py``'s own ``--owner web|desktop`` -- is not any single
+client's to tear down just because that client is closing. ``note_started``'s
+new ``owner=`` tag records which actor asked for the spawn (empty string
+when nobody cared to say, which is every call site that predates ARCH-02);
+``can_stop`` then adds one more veto on top of ``check()``'s: a process
+tagged with an owner may only be stopped by that same owner, no matter which
+client is asking or whether that client's own process object also considers
+it "ours" to kill. A process nobody tagged keeps today's behaviour exactly --
+``check()``'s verdict is the only word on it -- so every caller that never
+passes ``owner=`` sees no change at all.
 """
 
 from __future__ import annotations
@@ -64,6 +80,15 @@ _CREATE_TIME_SLACK_S = 1.0
 # pid -> (creation time when we spawned it, the command, for the refusal text)
 _started: Dict[int, Tuple[Optional[float], str]] = {}
 _lock = threading.Lock()
+
+# pid -> the actor that asked for the spawn ("web", "desktop", "session:<id>",
+# ...). Deliberately a SEPARATE dict from `_started` rather than a third tuple
+# element: `check()` unpacks `_started`'s value as a strict 2-tuple
+# (`spawned_at, _command = record`), so widening that tuple would break every
+# existing record and every existing caller silently. A pid absent here has
+# no recorded owner at all -- not the same as an empty-string owner, which
+# means "someone tagged it as nobody's" -- see `owner_of`/`can_stop`.
+_owners: Dict[int, str] = {}
 
 
 @dataclass(frozen=True)
@@ -147,13 +172,22 @@ def process_group_id(pid: Optional[int]) -> Optional[int]:
         return None
 
 
-def note_started(proc: Any, command: str = "") -> None:
-    """Record that this application spawned `proc`. Best effort, never raises."""
+def note_started(proc: Any, command: str = "", owner: str = "") -> None:
+    """Record that this application spawned `proc`. Best effort, never raises.
+
+    `owner` is who asked for it -- "web", "desktop", "session:<id>" -- and is
+    optional on purpose: every call site written before ARCH-02 omits it, and
+    an unset owner means `can_stop` defers entirely to `check()`, exactly the
+    behaviour those call sites already had. Only a caller that wants the new
+    per-actor veto needs to start passing it.
+    """
     pid = _pid_of(proc)
     if pid is None:
         return
     with _lock:
         _started[pid] = (_create_time(pid), str(command or "")[:200])
+        if owner:
+            _owners[pid] = str(owner)[:200]
 
 
 def forget(proc_or_pid: Any) -> None:
@@ -163,6 +197,18 @@ def forget(proc_or_pid: Any) -> None:
         return
     with _lock:
         _started.pop(pid, None)
+        _owners.pop(pid, None)
+
+
+def owner_of(proc_or_pid: Any) -> str:
+    """The actor `note_started(..., owner=...)` recorded for this pid, or ``""``
+    when none was ever tagged (either it predates ARCH-02, or the caller did
+    not pass `owner=`)."""
+    pid = proc_or_pid if isinstance(proc_or_pid, int) else _pid_of(proc_or_pid)
+    if pid is None:
+        return ""
+    with _lock:
+        return _owners.get(pid, "")
 
 
 def spawn_creation_time(pid: Optional[int]) -> Optional[float]:
@@ -218,6 +264,34 @@ def check(proc: Any) -> Ownership:
                 "(its creation time no longer matches)",
             )
     return Ownership(True, pid, "", "")
+
+
+def can_stop(proc_or_pid: Any, actor: str) -> Ownership:
+    """Whether `actor` specifically -- not just "Faustus" in general -- may
+    stop this process.
+
+    Runs `check()` first: none of its refusals (bare pid, already exited,
+    recycled pid) are softened here, they are only ever added to. What this
+    adds is the per-actor tag `note_started(..., owner=...)` records: a
+    process nobody tagged (`owner_of` returns "") stops here and defers to
+    `check()`'s verdict alone -- unchanged behaviour for every caller that
+    predates ARCH-02, and for shared infrastructure nobody claimed. A process
+    someone DID tag may only be stopped by that same `actor`; a web client
+    closing must not be able to tear down a process desktop started, or one
+    a *different* chat session's turn is still using, even though the
+    process object itself is, by `check()`'s narrower question, still ours.
+    """
+    verdict = check(proc_or_pid)
+    if not verdict.owned:
+        return verdict
+    owner = owner_of(proc_or_pid)
+    if owner and owner != actor:
+        return Ownership(
+            False, verdict.pid, "not_your_process",
+            f"{describe(verdict.pid)} was started by {owner!r}, not {actor!r}; "
+            "closing this client does not stop work another owner started",
+        )
+    return verdict
 
 
 @dataclass(frozen=True)

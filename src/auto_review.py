@@ -15,17 +15,34 @@ round (`agent_auto_review_fix_round`).
 
 Never raises: any failure yields a result with an "error" field and the turn
 goes on.
+
+BENCH-02 (`review_gate`, below `fix_message`) is a second, stricter question
+than everything above: not "what does a model reviewing the diff think of
+it", but "does this ChangeSet even have the evidence a review is allowed to
+rely on at all". A `ChangeSet` (`src/contracts/changeset.py`) can be built
+with `files.source="none"` (no diff was ever taken) or with verification that
+never ran — the contract itself permits both, on purpose, because plenty of
+turns legitimately have neither. What it must never be allowed to do is come
+out the far end marked *reviewed*: an approval stamped on a ChangeSet with no
+diff is a rubber stamp wearing a review's clothes, and that is a worse state
+than no review at all because it looks the same in a log. `review_gate` is
+the one place that stamp is allowed to be produced, and it refuses to unless
+the ChangeSet already carries a real diff and a real before/after test
+verdict — never a parallel store of its own, always the same `FileChanges`/
+`Verification` the ChangeSet already validated at construction (hard rule 4).
 """
 from __future__ import annotations
 
 import asyncio
+import fnmatch
 import json
 import logging
 import os
 import re
 import subprocess
 import time
-from typing import Any, Dict, Iterable, List, Optional
+from dataclasses import dataclass
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -443,3 +460,143 @@ def compact(review: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     keys = ("model", "verdict", "summary", "findings", "duration_s", "diff_chars", "truncated", "source", "error",
             "ungrounded", "disputed")
     return {k: review.get(k) for k in keys if k in review}
+
+
+# ---------------------------------------------------------------------------
+# BENCH-02 — a real review gate for a ChangeSet
+# ---------------------------------------------------------------------------
+
+def verification_from_run_verifier(result: Optional[Mapping[str, Any]]) -> Any:
+    """Turn `src.verification.run_verifier`'s dict (lot 23's VER-02: a
+    before/after test comparison against a checkpoint baseline) into the
+    `Verification` `src.contracts.changeset.ChangeSet` already validates and
+    carries — so a caller that just ran the real verifier does not have to
+    hand-translate field names to satisfy `review_gate` below, and there is
+    never a second "did the tests pass" object competing with the
+    ChangeSet's own.
+
+    `run_verifier`'s `new_failures` (failures the checkpoint baseline did not
+    have) becomes `Verification.failures`; a run whose only failures were
+    already failing before this turn (`preexisting` non-empty, no
+    `new_failures`) sets `pre_existing_only`, matching what `evidence_gaps`
+    already does with that flag.
+    """
+    from src.contracts.changeset import Verification
+
+    data = dict(result or {})
+    ran = bool(data.get("ran"))
+    ok = data.get("ok")
+    if ok is not None:
+        ok = bool(ok) if ran else None  # the contract refuses ok set without ran
+    new_failures = [str(f) for f in (data.get("new_failures") or [])]
+    preexisting = [str(f) for f in (data.get("preexisting") or [])]
+    pre_existing_only = bool(ran and ok is False and preexisting and not new_failures)
+    return Verification(
+        mode=str(data.get("kind") or "tests")[:32] or "tests",
+        ran=ran, ok=ok,
+        inconclusive=bool(data.get("inconclusive")),
+        pre_existing_only=pre_existing_only,
+        command=str(data.get("command") or "")[:500],
+        summary=str(data.get("summary") or "")[:1000],
+        failures=tuple(new_failures[:200]),
+    )
+
+
+def _in_declared_scope(path: str, scope: Tuple[str, ...]) -> bool:
+    """Is `path` covered by one entry of a declared scope?
+
+    An entry matches as a glob (`src/state_mirror/*`), as an exact path, or
+    as a directory prefix (`tests/eval` covers `tests/eval/harness.py`) — the
+    same three spellings a lot's own PROPIOS list is written in, so a scope
+    can be copied out of a lot file verbatim rather than re-encoded as regex."""
+    norm = str(path).replace("\\", "/").lstrip("/")
+    for raw in scope:
+        pat = str(raw).replace("\\", "/").strip().rstrip("/")
+        if not pat:
+            continue
+        if norm == pat or fnmatch.fnmatch(norm, pat):
+            return True
+        if norm.startswith(pat + "/"):
+            return True
+    return False
+
+
+def scope_violations(changeset: Any, declared_scope: Iterable[str] = ()) -> Tuple[str, ...]:
+    """Changed files `declared_scope` does not cover, worst case first.
+
+    Empty whenever there is nothing to accuse a turn WITH: no scope was
+    declared, or (same reasoning as `ChangeSet.unsupported_claims`) the
+    change list itself is not exact — a truncated or mtime-derived list
+    cannot be used to prove a file was touched, only to suggest it."""
+    scope = tuple(s for s in (declared_scope or ()) if s)
+    if not scope or not changeset.files.exact:
+        return ()
+    return tuple(p for p in changeset.files.paths if not _in_declared_scope(p, scope))
+
+
+@dataclass(frozen=True)
+class ReviewGateResult:
+    """Whether this ChangeSet may be marked reviewed, and — when not — every
+    reason it cannot be, not just the first one found."""
+
+    approved: bool
+    blocking: Tuple[str, ...] = ()
+    out_of_scope: Tuple[str, ...] = ()
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"approved": self.approved, "blocking": list(self.blocking),
+                "out_of_scope": list(self.out_of_scope)}
+
+
+def review_gate(changeset: Any, *, declared_scope: Iterable[str] = ()) -> ReviewGateResult:
+    """BENCH-02: may `changeset` be approved as reviewed?
+
+    Three things are required, all read off the ChangeSet's own validated
+    fields, never recomputed or stored again here:
+
+    1. A real diff. `changeset.files.exact` (true only when the change list
+       came from a checkpoint and was not truncated — `FileChanges.exact`)
+       must hold. A ChangeSet built with no diff at all (`files.source ==
+       "none"`, the default) fails this outright — the lot's own requirement
+       ("un ChangeSet sin diff no se puede aprobar como revisado").
+    2. A real before/after test verdict. `changeset.verification.ran` must be
+       true and `.ok` must not be `None` — a verifier that never ran, or ran
+       and reached no verdict (`run_verifier`'s own `inconclusive`), blocks
+       approval exactly like a missing diff does. Whether the tests PASSED is
+       not asked here: a reviewed ChangeSet may still say "tests fail, and
+       here is why" — `.ok is False` alone is not blocking, only `ran=False`
+       or `ok=None` is. That distinction is `Verification`'s own (`ok` is
+       three-valued so "not verified" is never confused with "passed").
+    3. Nothing touched outside `declared_scope`, when one was given
+       (`scope_violations`, above). A ChangeSet that changed a file nobody
+       declared in scope is not approved silently; it is refused and named.
+
+    Never raises, and never mutates `changeset` — a caller that wants the
+    refusal recorded writes `.blocking`/`.to_dict()` into wherever it persists
+    review metadata itself (e.g. `ChangeSet.review`), the same "hold the
+    result, do not become a second store of it" rule `detect_divergence` and
+    `repair` (BASE-02, `src/state_mirror/divergence.py`) already follow.
+    """
+    blocking: List[str] = []
+    if not changeset.files.exact:
+        blocking.append(
+            f"no exact diff: files.source={changeset.files.source!r}"
+            + (" (truncated)" if changeset.files.truncated else "")
+            + " — only an untruncated checkpoint diff counts as real evidence"
+        )
+    v = changeset.verification
+    if not v.ran:
+        blocking.append("no before/after test run was recorded (verification.ran is False)")
+    elif v.ok is None:
+        blocking.append(
+            "the test run did not reach a verdict (verification.ok is None): "
+            + (v.summary or "no summary given")
+        )
+    out_of_scope = scope_violations(changeset, declared_scope)
+    if out_of_scope:
+        blocking.append(
+            f"{len(out_of_scope)} file(s) changed outside the declared scope: "
+            + ", ".join(out_of_scope[:8])
+        )
+    return ReviewGateResult(approved=not blocking, blocking=tuple(blocking),
+                            out_of_scope=out_of_scope)
