@@ -5783,3 +5783,50 @@ This question was already answered.	Esta pregunta ya fue respondida.
 This question has expired — please continue in a new turn.	Esta pregunta ha expirado — continúa en un nuevo turno.
 This question no longer exists.	Esta pregunta ya no existe.
 This question can no longer be answered.	Esta pregunta ya no se puede responder.
+Tool catalog	Catálogo de herramientas
+Every tool the agent can be offered, with its schema, effects, timeout and MCP status in one place. Try arguments below without running anything.	Todas las herramientas que se le pueden ofrecer al agente, con su esquema, efectos, tiempo límite y estado MCP en un solo sitio. Prueba argumentos abajo sin ejecutar nada.
+Search tools…	Buscar herramientas…
+All effects	Todos los efectos
+All executors	Todos los ejecutores
+No tools match.	Ninguna herramienta coincide.
+No description.	Sin descripción.
+This account cannot see the tool catalog.	Esta cuenta no puede ver el catálogo de herramientas.
+Try arguments	Probar argumentos
+Favorite	Favorita
+Checks your arguments against the schema and shows what would be rejected or auto-corrected. Nothing runs.	Comprueba tus argumentos contra el esquema y muestra qué se rechazaría o corregiría automáticamente. No se ejecuta nada.
+Could not load this tool.	No se pudo cargar esta herramienta.
+This tool publishes no JSON schema — enter raw JSON arguments.	Esta herramienta no publica un esquema JSON: introduce los argumentos como JSON en bruto.
+Arguments (JSON)	Argumentos (JSON)
+unset	sin definir
+Auto-corrected to	Corregido automáticamente a
+Valid arguments.	Argumentos válidos.
+Rejected by the schema.	Rechazado por el esquema.
+no schema to check	sin esquema que comprobar
+Could not run the dry-run check.	No se pudo ejecutar la comprobación en seco.
+(no level stated it)	(ningún nivel lo indicó)
+(unset)	(sin definir)
+Conflicts	Conflictos
+Effective config	Configuración efectiva
+Field	Campo
+Hash	Hash
+Model (optional)	Modelo (opcional)
+Narrows the project/role/model layers to that chat.	Acota las capas de proyecto/rol/modelo a ese chat.
+Overridden	Sobrescrito
+Project id (optional)	ID de proyecto (opcional)
+Prompt blocks for the next turn	Bloques del prompt para el siguiente turno
+Recompute	Recalcular
+Resolved values	Valores resueltos
+Session id (optional)	ID de sesión (opcional)
+Stable fingerprint of the resolved values below — changes when any value changes, not when they are only reordered.	Huella estable de los valores resueltos de abajo: cambia si cambia algún valor, no si solo se reordenan.
+Used to look up per-model load options.	Se usa para buscar las opciones de carga por modelo.
+Value	Valor
+What actually governs a turn, resolved global -> project -> role/preset -> model -> turn. Every value below names the level that won and what every weaker level wanted instead.	Lo que realmente rige un turno, resuelto global -> proyecto -> rol/preset -> modelo -> turno. Cada valor de abajo indica el nivel que ganó y lo que cada nivel más débil pedía en su lugar.
+leave empty for the global view	déjalo vacío para la vista global
+{n} chars	{n} caracteres
+{n} report part	{n} parte del informe
+{n} report parts	{n} partes del informe
+Keeps {rounds}, {sources} and {parts}	Conserva {rounds}, {sources} y {parts}
+Create alternative	Crear alternativa
+A new, editable job with the same brief — this card is left as is	Un trabajo nuevo y editable con el mismo encargo — esta tarjeta se deja tal cual
+Could not resume.	No se pudo reanudar.
+Retry from scratch	Reintentar desde cero
