@@ -148,7 +148,9 @@ async def test_a_three_hour_machine_outage_never_replays_the_missed_occurrences_
     try:
         from src.task_scheduler import TaskScheduler
 
-        now = datetime.now().replace(microsecond=0)
+        # The scheduler stores naive UTC (`_utcnow()`); a local `now` is two
+        # hours ahead on Luis's machine and made the assertion lie there.
+        now = datetime.utcnow().replace(microsecond=0)
         task_id = "qa-43-misfire-skip-task"
         set_task_policy(task_id, misfire_policy="skip")
         db = db_mod.SessionLocal()

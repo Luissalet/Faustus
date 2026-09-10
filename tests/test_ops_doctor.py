@@ -5,6 +5,7 @@ helper that must never point at a dead end.
 from __future__ import annotations
 
 import json
+import os
 
 import pytest
 
@@ -82,6 +83,7 @@ def test_repair_rejects_anything_not_allowlisted():
         doctor.repair("rm -rf /")
 
 
+@pytest.mark.skipif(os.name == "nt", reason="the fake npm shim is a POSIX script; on Windows the real npm.cmd ran")
 def test_repair_runs_the_allowlisted_npm_ci_in_the_declared_directory(tmp_path, monkeypatch):
     """Proves `repair()` actually invokes a real subprocess scoped to the repo
     root, using a stub `npm` on PATH rather than mocking `subprocess` itself —

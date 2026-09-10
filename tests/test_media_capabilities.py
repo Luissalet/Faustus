@@ -74,7 +74,10 @@ def test_ffmpeg_probe_reports_a_hung_binary_as_not_installed(monkeypatch):
     assert "did not answer" in result["detail"]
 
 
-def test_stt_probe_is_false_when_faster_whisper_is_not_installed():
+def test_stt_probe_is_false_when_faster_whisper_is_not_installed(monkeypatch):
+    # Luis's venv has faster_whisper for real: the probe must be asked about
+    # a world without it, not the world the test happens to run in.
+    monkeypatch.setattr(caps, "_importable", lambda module: False)
     result = caps.probe_stt()
     assert result["installed"] is False
     assert "faster_whisper" in result["detail"]
