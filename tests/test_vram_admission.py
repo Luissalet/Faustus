@@ -230,3 +230,24 @@ def test_resolve_only_accepts_resident_names_and_known_actions(blocked):
     assert va.resolve(t.id, action="unload", names=[Q8["name"], "not-loaded:latest"]) is True
     assert t.decision["names"] == [Q8["name"]]                           # the stray name is dropped
     assert va.resolve(t.id, action="cancel") is False                     # answered once only
+
+
+
+def test_load_anyway_is_judged_against_free_ram_too(monkeypatch):
+    """"Load anyway" puts the shortfall in system RAM. With little RAM free
+    that is the 08-09 crash; the dialog is told so and the button turns red."""
+    import types
+    _ollama(monkeypatch, tags=[Q8, Q4],
+            ps=[{"name": Q8["name"], "digest": "d-q8", "size": 33 * GIB,
+                 "size_vram": 26 * GIB, "context_length": 65536}],
+            vram=_card(28, 27))
+    fake_psutil = types.SimpleNamespace(virtual_memory=lambda: types.SimpleNamespace(available=12 * GIB, total=128 * GIB))
+    monkeypatch.setitem(__import__("sys").modules, "psutil", fake_psutil)
+    a = va.assess(ROOT, Q4["name"])
+    assert a["ram_available_bytes"] == 12 * GIB
+    assert a["spill_if_forced_bytes"] == a["shortfall_bytes"]
+    assert a["forced_load_dangerous"] is True          # 16.5+ GB into 12 GB free
+
+    fake_psutil.virtual_memory = lambda: types.SimpleNamespace(available=100 * GIB, total=128 * GIB)
+    a = va.assess(ROOT, Q4["name"])
+    assert a["forced_load_dangerous"] is False

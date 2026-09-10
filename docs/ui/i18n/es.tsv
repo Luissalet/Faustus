@@ -5765,3 +5765,6 @@ Ask what to unload (recommended)	Preguntar qué descargar (recomendado)
 Unload the least useful models on its own	Descargar por su cuenta los modelos menos útiles
 Off — load anyway, Ollama spills to CPU/PCIe	Apagado: carga igual y Ollama se desborda a CPU/PCIe
 {n} large models are loaded at once ({names}). Two 27B models stacked like this exhausted the machine's memory on 08-09-2026 — unload the one you are not using.	Hay {n} modelos grandes cargados a la vez ({names}). Dos 27B apilados así agotaron la memoria de la máquina el 08-09-2026: descarga el que no estés usando.
+Load anyway (dangerous)	Cargar igual (peligroso)
+Loading anyway would put {spill} in system RAM ({free} of {total} free).	Cargar igual pondría {spill} en la RAM del sistema ({free} de {total} libres).
+Loading anyway would put {spill} in system RAM, and only {free} of {total} is free: that is the shape of the crash of 08-09-2026. Unload something instead.	Cargar igual pondría {spill} en la RAM del sistema, y solo hay {free} de {total} libres: es la forma exacta de la caída del 08-09-2026. Descarga algo en su lugar.

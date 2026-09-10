@@ -32,6 +32,13 @@ export interface VramBlocked {
   residents: VramResident[];
   suggestion: string[];
   suggestionEnough: boolean;
+  /** What "load anyway" means for system RAM: the shortfall spills there.
+   *  Absent when the server could not read memory (no psutil). */
+  ramAvailableBytes?: number;
+  ramTotalBytes?: number;
+  /** The spill would take more than three quarters of the free RAM — the
+   *  shape of the 08-09-2026 crash. */
+  forcedLoadDangerous?: boolean;
 }
 
 export type AdmissionAction = 'unload' | 'proceed' | 'cancel';
@@ -65,6 +72,9 @@ export function vramBlockedFrom(raw: Record<string, unknown>): VramBlocked | und
     })).filter((r) => r.name),
     suggestion: asArray<unknown>(raw, 'suggestion').map(String),
     suggestionEnough: raw.suggestion_enough === true,
+    ramAvailableBytes: num(raw.ram_available_bytes) || undefined,
+    ramTotalBytes: num(raw.ram_total_bytes) || undefined,
+    forcedLoadDangerous: raw.forced_load_dangerous === true,
   };
 }
 

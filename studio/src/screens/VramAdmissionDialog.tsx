@@ -66,7 +66,7 @@ export function VramAdmissionDialog({ blocked, onDone, say, onDecide }: {
         <>
           <Button variant="ghost" size="sm" label={t('Cancel the load')} disabled={busy !== null} onClick={() => void decide('cancel')} />
           <span className="fs-spacer" />
-          <Button variant="secondary" size="sm" label={t('Load anyway')} loading={busy === 'proceed'} disabled={busy !== null && busy !== 'proceed'} title={t('It will spill to CPU and PCIe: much slower, and it can take the machine down if memory runs out.')} onClick={() => void decide('proceed')} />
+          <Button variant={blocked.forcedLoadDangerous ? 'danger' : 'secondary'} size="sm" label={blocked.forcedLoadDangerous ? t('Load anyway (dangerous)') : t('Load anyway')} loading={busy === 'proceed'} disabled={busy !== null && busy !== 'proceed'} title={t('It will spill to CPU and PCIe: much slower, and it can take the machine down if memory runs out.')} onClick={() => void decide('proceed')} />
           <Button variant="primary" size="sm" label={t('Unload and continue')} loading={busy === 'unload'} disabled={picked.size === 0 || (busy !== null && busy !== 'unload')} testId="vram-admission-unload" onClick={() => void decide('unload')} />
         </>
       }
@@ -88,6 +88,13 @@ export function VramAdmissionDialog({ blocked, onDone, say, onDecide }: {
             ? t('{total} of VRAM across {n} GPUs. Ollama would still load it, spilling to the CPU and PCIe: much slower, and with two large models inside the machine can run out of memory.', { total: fmtGb(blocked.vramTotalBytes), n: blocked.gpuCount })
             : t('{total} of VRAM. Ollama would still load it, spilling to the CPU and PCIe: much slower, and with two large models inside the machine can run out of memory.', { total: fmtGb(blocked.vramTotalBytes) })}
         </p>
+        {blocked.ramAvailableBytes != null && (
+          <p className="fs-muted" data-tone={blocked.forcedLoadDangerous ? 'bad' : undefined} data-testid="vram-admission-ram">
+            {blocked.forcedLoadDangerous
+              ? t('Loading anyway would put {spill} in system RAM, and only {free} of {total} is free: that is the shape of the crash of 08-09-2026. Unload something instead.', { spill: fmtGb(blocked.shortfallBytes), free: fmtGb(blocked.ramAvailableBytes), total: fmtGb(blocked.ramTotalBytes ?? 0) })
+              : t('Loading anyway would put {spill} in system RAM ({free} of {total} free).', { spill: fmtGb(blocked.shortfallBytes), free: fmtGb(blocked.ramAvailableBytes), total: fmtGb(blocked.ramTotalBytes ?? 0) })}
+          </p>
+        )}
         <h3 className="fs-vram__h">{tn(blocked.residents.length, '{n} model loaded — tick what to unload', '{n} models loaded — tick what to unload')}</h3>
         <ul className="fs-vram__list" data-testid="vram-admission-residents">
           {blocked.residents.map((r) => (

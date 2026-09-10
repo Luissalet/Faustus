@@ -197,6 +197,21 @@ def assess(root: str, model: str) -> Dict[str, Any]:
         "shortfall_bytes": shortfall,
     })
     if shortfall:
+        # "Load anyway" means the shortfall lands in system RAM. On 08-09-2026
+        # that is exactly what ran the machine out of commit memory, so the
+        # dialog is told how much RAM is really free for it and whether the
+        # spill would eat it. psutil is optional; without it we say nothing.
+        try:
+            import psutil
+            vm = psutil.virtual_memory()
+            ram_available = int(vm.available)
+            out["ram_available_bytes"] = ram_available
+            out["ram_total_bytes"] = int(vm.total)
+            out["spill_if_forced_bytes"] = shortfall
+            # Leave the OS and everything else a quarter of what is free.
+            out["forced_load_dangerous"] = shortfall > ram_available * 0.75
+        except Exception:  # noqa: BLE001
+            pass
         # Smallest set of residents, biggest first, that frees the shortfall.
         # Biggest first is not a preference, it is arithmetic: one 33 GB model
         # gone beats three small ones and leaves the small ones for later.
