@@ -628,7 +628,11 @@ function PlanStepsCard({ steps, revision, warnings }: { steps: PlanStepView[]; r
             style={{ display: 'flex', alignItems: 'baseline', gap: 6, paddingLeft: step.dependsOn.length ? 16 : 0 }}
           >
             <span aria-hidden="true">{step.status === 'done' ? '☑' : step.status === 'blocked' ? '⛔' : '☐'}</span>
-            <span style={{ textDecoration: step.status === 'done' ? 'line-through' : undefined }}>{step.title}</span>
+            {/* The title is the model's own markdown (`**1. Schema**`, backticks);
+                render it, don't print the asterisks. Seen live on the 7001. */}
+            <span className="fs-studio__plan-step" style={{ textDecoration: step.status === 'done' ? 'line-through' : undefined }}>
+              <Rich text={step.title} />
+            </span>
             {step.status === 'done' && !step.verified && (
               <span style={{ opacity: 0.7, fontSize: '0.85em' }}>{t('Marked done — not yet verified')}</span>
             )}

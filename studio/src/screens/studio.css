@@ -3264,3 +3264,11 @@ aside.fs-panel {
 :root .fs-popover.fs-studio__add-menu,
 :root .fs-popover.fs-studio__permission-menu { background: var(--fs-surface-2); backdrop-filter: none; }
 .fs-studio__bar > .fs-studio__send { display: flex; align-items: center; margin-inline-start: 0; }
+
+/* A plan step title is one line of inline markdown inside a flex row: the
+   paragraph the renderer wraps it in must not add block margins. */
+.fs-studio__plan-step .fs-rich,
+.fs-studio__plan-step .fs-rich p {
+  display: inline;
+  margin: 0;
+}
