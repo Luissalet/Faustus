@@ -251,7 +251,7 @@ async def test_stale_revision_question_id_is_rejected_with_409(monkeypatch, ques
     # A route-level revision isn't sent by today's Studio; this exercises
     # question_store's own stale-revision path directly to prove the 409
     # branch above surfaces whatever reason resolve_question() returns.
-    def _stale_resolve(question_id, answer, *, revision=None):
+    def _stale_resolve(question_id, answer, *, revision=None, owner=None):
         return question_store.Store().resolve(question_id, answer, revision=999)
 
     monkeypatch.setattr(question_store, "resolve_question", _stale_resolve)

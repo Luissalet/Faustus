@@ -58,6 +58,12 @@ def _now() -> str:
     return now_iso()
 
 
+def _normalized_owner(owner: Any) -> str:
+    """Same normalization as `src.tool_approvals._normalized_owner`: an
+    owner comparison must not depend on case or incidental whitespace."""
+    return str(owner or "").strip().casefold()
+
+
 def _expires(ttl_seconds: Optional[int]) -> Optional[str]:
     if ttl_seconds is None:
         return None
@@ -181,12 +187,27 @@ class Store:
         logger.info("question opened: %s (session=%s, %d options)", qid, session_id, len(opts))
         return self._decode(row)
 
-    def get(self, question_id: str) -> Optional[Dict[str, Any]]:
+    def get(self, question_id: str, *, owner: Any = None) -> Optional[Dict[str, Any]]:
+        """SEC-06: when `owner` is given, a question opened for a DIFFERENT
+        owner is reported exactly as if it did not exist — the same
+        fail-closed shape `src.tool_approvals.PendingApprovalStore.consume`
+        uses, so a leaked `question_id` (a log line, a shared screenshot, a
+        support ticket) cannot be used to read another owner's open question.
+        `owner=None` (the default) skips the check entirely: a caller that
+        never passes it — single-user/no-auth mode, or code written before
+        this check existed — behaves exactly as before. A question opened
+        with no owner at all (`owner=""`, e.g. a pre-SEC-06 row, or a flow
+        with no authenticated user) has nothing to isolate and is never
+        gated by this check either."""
         if not self.path.exists():
             return None
         with self._db() as db:
             row = db.execute("SELECT * FROM questions WHERE id=?", (question_id,)).fetchone()
-            return self._decode(row) if row is not None else None
+            if row is None:
+                return None
+            if owner is not None and row["owner"] and _normalized_owner(row["owner"]) != _normalized_owner(owner):
+                return None
+            return self._decode(row)
 
     def _settle_expiry(self, db: sqlite3.Connection, row: sqlite3.Row) -> sqlite3.Row:
         """A question past its deadline is `expired`, not silently treated as
@@ -199,13 +220,21 @@ class Store:
         return row
 
     def resolve(self, question_id: str, answer: Any, *,
-                revision: Optional[int] = None) -> Dict[str, Any]:
+                revision: Optional[int] = None, owner: Any = None) -> Dict[str, Any]:
         """Record the user's answer. Never interprets missing input as
         consent (QA-13): there is no default answer here, only what is
-        explicitly passed as `answer`."""
+        explicitly passed as `answer`.
+
+        SEC-06: `owner`, when given, must match the question's — checked
+        first and reported as `not_found` on mismatch (never `cancelled` /
+        `stale_revision` / anything that would confirm a question with this
+        id exists for someone else). `owner=None` skips the check, same
+        back-compat contract as `get`."""
         with self._db(write=True) as db:
             row = db.execute("SELECT * FROM questions WHERE id=?", (question_id,)).fetchone()
             if row is None:
+                return {"ok": False, "reason": "not_found", "detail": question_id}
+            if owner is not None and row["owner"] and _normalized_owner(row["owner"]) != _normalized_owner(owner):
                 return {"ok": False, "reason": "not_found", "detail": question_id}
             row = self._settle_expiry(db, row)
             if row["status"] == "cancelled":
@@ -237,10 +266,14 @@ class Store:
         logger.info("question answered: %s", question_id)
         return {"ok": True, "reason": "answered", "question": self._decode(updated)}
 
-    def cancel(self, question_id: str, *, reason: str = "") -> Dict[str, Any]:
+    def cancel(self, question_id: str, *, reason: str = "", owner: Any = None) -> Dict[str, Any]:
+        """SEC-06: same owner gate as `resolve` — a mismatch reads as
+        `not_found`, `owner=None` skips the check."""
         with self._db(write=True) as db:
             row = db.execute("SELECT * FROM questions WHERE id=?", (question_id,)).fetchone()
             if row is None:
+                return {"ok": False, "reason": "not_found", "detail": question_id}
+            if owner is not None and row["owner"] and _normalized_owner(row["owner"]) != _normalized_owner(owner):
                 return {"ok": False, "reason": "not_found", "detail": question_id}
             if row["status"] != "open":
                 return {"ok": False, "reason": f"already_{row['status']}",
@@ -274,13 +307,14 @@ def open_question(question: str, *, session_id: str, owner: str = "", **kwargs) 
     return Store().open(question, session_id=session_id, owner=owner, **kwargs)
 
 
-def resolve_question(question_id: str, answer: Any, *, revision: Optional[int] = None) -> Dict[str, Any]:
-    return Store().resolve(question_id, answer, revision=revision)
+def resolve_question(question_id: str, answer: Any, *, revision: Optional[int] = None,
+                      owner: Any = None) -> Dict[str, Any]:
+    return Store().resolve(question_id, answer, revision=revision, owner=owner)
 
 
-def cancel_question(question_id: str, *, reason: str = "") -> Dict[str, Any]:
-    return Store().cancel(question_id, reason=reason)
+def cancel_question(question_id: str, *, reason: str = "", owner: Any = None) -> Dict[str, Any]:
+    return Store().cancel(question_id, reason=reason, owner=owner)
 
 
-def get_question(question_id: str) -> Optional[Dict[str, Any]]:
-    return Store().get(question_id)
+def get_question(question_id: str, *, owner: Any = None) -> Optional[Dict[str, Any]]:
+    return Store().get(question_id, owner=owner)

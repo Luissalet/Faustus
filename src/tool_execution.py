@@ -90,6 +90,32 @@ _SENSITIVE_FILE_PATTERNS: tuple[str, ...] = (
     "known_hosts",
 )
 
+# SEC-03: Windows reserved device names. On Windows these are refused by the
+# filesystem itself for *any* component of a path (not just the final
+# segment) whether or not an extension follows — "CON", "con.txt" and
+# "logs\\NUL\\out.log" all name a device, never a regular file or directory.
+# A model-controlled path that names one is worth rejecting on every platform
+# this process runs on: a write meant for a real file that silently lands on
+# a device (or errors in a way the model then "fixes" by retrying with a
+# slightly different name) is the kind of surprising, hard-to-audit behavior
+# this resolver exists to prevent — and a workspace synced onto a Windows
+# host later would hit the OS-level refusal anyway.
+_WINDOWS_RESERVED_NAMES_CF: frozenset[str] = frozenset(
+    {"con", "prn", "aux", "nul"}
+    | {f"com{n}" for n in range(1, 10)}
+    | {f"lpt{n}" for n in range(1, 10)}
+)
+
+
+def _is_windows_reserved_name(component: str) -> bool:
+    """Whether *component* (one path segment, no separators) names a Windows
+    reserved device — matched on the stem before the first ``.``, the same
+    way Windows itself treats ``CON.txt`` as the ``CON`` device, and
+    case-insensitively for the same reason ``_is_sensitive_path`` folds case.
+    """
+    stem = component.split(".", 1)[0]
+    return stem.casefold() in _WINDOWS_RESERVED_NAMES_CF
+
 # Case-folded views used for matching. On a case-insensitive filesystem
 # (Windows, default macOS) ".SSH/AUTHORIZED_KEYS" and ".env" resolve to the
 # same protected files as their lowercase forms, so the deny-list has to fold
@@ -101,8 +127,9 @@ _SENSITIVE_FILE_PATTERNS_CF: frozenset[str] = frozenset(p.casefold() for p in _S
 
 
 def _is_sensitive_path(resolved: str) -> bool:
-    """Return True if *resolved* falls under a sensitive directory or
-    matches a sensitive filename — regardless of what root it sits under.
+    """Return True if *resolved* falls under a sensitive directory, matches a
+    sensitive filename, or (SEC-03) names a Windows reserved device in any
+    component — regardless of what root it sits under.
 
     Matching is case-insensitive: on Windows / default macOS a case-variant
     name (``.SSH``, ``AUTHORIZED_KEYS``, ``Id_Rsa``) points at the same file as
@@ -115,6 +142,13 @@ def _is_sensitive_path(resolved: str) -> bool:
     # Check if any path component is a sensitive directory.
     for part in parts:
         if part in _SENSITIVE_BASENAMES_CF:
+            return True
+
+    # SEC-03: a reserved device name in ANY component (not just the
+    # filename) is rejected — "CON\\out.log" resolves through the device,
+    # not a directory named CON, on the one platform where it matters.
+    for part in parts:
+        if part and _is_windows_reserved_name(part):
             return True
 
     # Check filename against known sensitive files.
