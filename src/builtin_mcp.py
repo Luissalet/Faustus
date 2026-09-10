@@ -374,7 +374,13 @@ async def connect_builtin_npx_server(mcp_manager, server_id: str, *, owner_id=No
     if not cfg:
         return False
     npx_path = _find_npx()
-    args, env = _npx_server_launch(server_id, owner_id=owner_id, task_id=task_id)
+    # Only name the session when there is one: tests (and older overrides)
+    # replace _npx_server_launch with a one-argument fake, and the global
+    # profile path must stay byte-identical to what it was.
+    if owner_id is not None or task_id is not None:
+        args, env = _npx_server_launch(server_id, owner_id=owner_id, task_id=task_id)
+    else:
+        args, env = _npx_server_launch(server_id)
     logger.info(f"Starting NPX server: {cfg['name']} ({npx_path} {' '.join(args)})")
     ok = await mcp_manager.connect_server(
         server_id=server_id,

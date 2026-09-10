@@ -11,8 +11,8 @@
   block-size: 15px;
   padding-inline: 3px;
   border-radius: 999px;
-  background: var(--fs-danger, #dc2626);
-  color: #fff;
+  background: var(--fs-danger-solid);
+  color: var(--fs-on-danger-solid);
   font-size: 10px;
   line-height: 15px;
   text-align: center;
@@ -39,7 +39,7 @@
   font-size: 12px;
   background: none;
   border: none;
-  color: var(--fs-accent, #4f7cff);
+  color: var(--fs-brand);
   cursor: pointer;
   padding: 2px 4px;
 }
@@ -80,7 +80,7 @@
 }
 
 .fs-notif-tray__row:hover {
-  background: var(--fs-hover, rgba(127, 127, 127, 0.12));
+  background: var(--fs-surface-3);
 }
 
 .fs-notif-tray__row[data-unread] .fs-notif-tray__row-title {
