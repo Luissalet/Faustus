@@ -178,6 +178,36 @@ def get_manifest(key: str, *, data_dir: Optional[str] = None) -> Dict[str, Any]:
 # it synchronously while it recomputes what the session can still do.
 capabilities_for = get_manifest
 
+# QA-28 / MOD-06: the capabilities this module is contracted to name on a
+# model switch (spec: "vision, tools nativas…") — extend here, not by
+# inventing a parallel list elsewhere. Mirrors
+# routes/session_routes.py::_SWITCH_CAPABILITY_LABELS (that route's own
+# between-turn `PATCH /session/{sid}` predates this shared function and
+# still carries its own copy — see this lot's report for the one-line
+# change that lets it delegate here instead of keeping two).
+SWITCH_CAPABILITY_LABELS: Dict[str, str] = {"vision": "vision", "tools": "native tool calling"}
+
+
+def diff(previous_manifest: Mapping[str, Any], new_manifest: Mapping[str, Any]) -> List[str]:
+    """Capabilities the PREVIOUS model's manifest announced that the NEW
+    model's manifest does not — what a mid-task (QA-28) or between-turn
+    (MOD-06) model switch may have just taken away.
+
+    Manifest-only, like every other read in this module: no network probe,
+    so a model neither side has ever been calibrated/announced for reports
+    nothing lost, honestly, rather than guessing from its name. Both
+    arguments are the shape `capabilities_for`/`get_manifest` already
+    returns (``{"announced": {"capabilities": {...}}, ...}``), so this
+    composes directly with it: ``diff(capabilities_for(old_key),
+    capabilities_for(new_key))``.
+    """
+    previous_caps = (dict(previous_manifest or {}).get("announced") or {}).get("capabilities") or {}
+    new_caps = (dict(new_manifest or {}).get("announced") or {}).get("capabilities") or {}
+    return [
+        label for key, label in SWITCH_CAPABILITY_LABELS.items()
+        if previous_caps.get(key) and not new_caps.get(key)
+    ]
+
 
 def compute_degraded(announced: Mapping[str, Any], tested: Mapping[str, Any]) -> List[str]:
     """MOD-06: what the rest of the system falls back to, spelled out. Some

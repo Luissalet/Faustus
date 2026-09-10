@@ -18,8 +18,21 @@ against the actual built Studio bundle (`static/studio/`) through:
 
 A screenshot is written to `--out-dir` (default `logs/ui_smoke/`) after each
 step, and a `result.json` next to them records what happened — this script
-is meant to be *read*, not just exit-coded, because step 3 currently fails
-for a real reason explained below.
+is meant to be *read*, not just exit-coded, given its own history below.
+
+FIXED (lote 40): step 3's `direct_low_signal` routing gap — see
+`docs/spec/v2/EVAL_ESTADO.md`'s former "Hallazgo NUEVO" section (lote 36).
+A short agent-mode message with no tool-relevant domain took
+`src/agent_loop.py::stream_agent_loop`'s low-signal fast path (0 rounds, no
+tool schemas at all), which streamed a model's ` ```ask_user``` ` fence as
+literal text instead of recognizing it — `[data-testid="studio-question"]`
+never appeared because nothing ever parsed the fence into a card. That path
+now offers and parses `ask_user`/`update_plan` too (ALWAYS_AVAILABLE, UI-only,
+no effect — CALL-08 still keeps every OTHER fence there as inert text); see
+`tests/test_l40_ui_smoke_ask_user_direct_low_signal.py` for a browser-free
+reproduction of this exact step 3 script through the real route. Step 3's
+own message and script below did not need to change — the message already
+carried the right intent, only the routing was blind to what came back.
 
 FIXED (integration lot 36): `chat_stream`'s `owner = effective_user(request)`
 used to be the *raw* `request.state.current_user`, which is never populated
@@ -188,7 +201,12 @@ def run_live(out_dir: Path, *, headless: bool = True, timeout_s: float = 90.0) -
             except Exception as e:  # noqa: BLE001 — this step is allowed to fail; report, don't crash the run
                 detail = f"{type(e).__name__}: {e}"
             steps.append({"step": "send_message_and_question_card", "ok": q_ok,
-                         "detail": detail or "the question card never appeared",
+                         # A fallback string ONLY when the step actually failed with
+                         # no detail captured — reporting it on a green run (lote 40
+                         # bug: the fallback used to fire unconditionally whenever
+                         # `detail` was still "", success included) is exactly the
+                         # kind of result.json a person stops trusting.
+                         "detail": detail or ("" if q_ok else "the question card never appeared"),
                          "screenshot": snap(page, "after_send")})
 
             # 4. Settings › Effective config, Tools, System (Diagnóstico/Doctor).

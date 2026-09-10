@@ -9,6 +9,8 @@ The LLM decides when to use tools by writing fenced code blocks.
 import asyncio
 import collections
 import difflib
+import functools
+import inspect
 import json
 import re
 import time
@@ -1306,6 +1308,57 @@ def _agent_route_tool_mode(
     else:
         is_api_model = any(host in endpoint_url for host in _API_HOSTS) or model_supports_tools
     return is_api_model, is_ollama_native, ollama_openai_compat
+
+
+def recompute_capabilities_on_model_switch(
+    *,
+    previous_model: str,
+    previous_endpoint_url: str,
+    new_model: str,
+    new_endpoint_url: str,
+    previous_endpoint_id: str = "",
+    new_endpoint_id: str = "",
+) -> Dict[str, Any]:
+    """QA-28 / MOD-06: what this task may still assume once the model
+    actually answering it changes mid-task (a foreground fallback — see the
+    `"fallback"` branch below — or the caller starting the next round/turn
+    of an active plan against a different model).
+
+    A manifest-only read, same posture as
+    `routes/session_routes.py`'s between-turn `PATCH /session/{sid}`
+    (`_lost_capabilities_on_switch`, MAPA_REUTILIZACION MOD-06): never a
+    live probe (this function has no business loading a model), and a model
+    neither side has been announced/calibrated for honestly reports nothing
+    lost rather than guessing from its name — the old
+    `_agent_route_tool_mode` keyword heuristic this replaces for capability
+    tracking, kept only for the native-vs-fenced *transport* decision it was
+    always meant for.
+
+    Returns ``{"capabilities": <new manifest>, "lost": [...]}`` — `lost` is
+    the empty list, not a missing key, when nothing is known to have gone
+    away, so a caller never needs an extra membership check before reading
+    it.
+    """
+    from src import model_calibration as mcal
+    from src.llm_core import _detect_provider
+
+    previous_key = mcal.manifest_key(
+        vendor=_detect_provider(previous_endpoint_url) or "",
+        model_id=previous_model,
+        endpoint_id=previous_endpoint_id,
+    )
+    new_key = mcal.manifest_key(
+        vendor=_detect_provider(new_endpoint_url) or "",
+        model_id=new_model,
+        endpoint_id=new_endpoint_id,
+    )
+    previous_manifest = mcal.capabilities_for(previous_key)
+    new_manifest = mcal.capabilities_for(new_key)
+    return {
+        "capabilities": new_manifest,
+        "lost": mcal.diff(previous_manifest, new_manifest),
+    }
+
 
 # Admin tool keywords — if the last user message contains any of these, include admin tools
 _ADMIN_KEYWORDS = [
@@ -4285,7 +4338,7 @@ from src.desktop_control_session import desktop_control_run
 
 
 @desktop_control_run
-async def stream_agent_loop(
+async def _stream_agent_loop_body(
     endpoint_url: str,
     model: str,
     messages: List[Dict],
@@ -4886,6 +4939,75 @@ async def stream_agent_loop(
             )
             return
 
+        # QA-04/QA-28/QA-36/UX-03/MOD-06 lot 40, EVAL_ESTADO.md "Hallazgo
+        # NUEVO": `ask_user`/`update_plan` are the two ALWAYS_AVAILABLE tools
+        # (src/tool_index.py) and are pure UI markers with no subprocess/
+        # filesystem effect (see their docstrings in
+        # src/agent_tools/interaction_tools.py) — so this low-signal fast
+        # path offers and parses them too instead of streaming a valid
+        # ask_user fence as literal, unactioned text. CALL-08 still governs:
+        # any OTHER fence in this path is never executed, only these two
+        # named, effect-free tools are — it stays plain display text exactly
+        # like before this change.
+        _direct_tool_events: List[Dict] = []
+        _direct_ask_user_payload = None
+        for _di, _dblock in enumerate(parse_tool_blocks(direct_response)):
+            if _dblock.tool_type not in ("ask_user", "update_plan"):
+                continue
+            from src.agent_tools.interaction_tools import AskUserTool, UpdatePlanTool
+            _dtool = AskUserTool() if _dblock.tool_type == "ask_user" else UpdatePlanTool()
+            _ddesc, _dresult = await _dtool.execute(_dblock.content, None)
+            if _dresult.get("error"):
+                continue  # invalid args: leave the fence as inert text, as before
+            _devent = {
+                "round": 1,
+                "model": direct_actual_model,
+                "endpoint_id": direct_actual_endpoint_id,
+                "endpoint_label": direct_actual_endpoint_label,
+                "tool": _dblock.tool_type,
+                "desc": _ddesc,
+                "command": _dblock.content,
+                "output": _dresult.get("output", ""),
+                "exit_code": _dresult.get("exit_code"),
+                "call_id": f"call_direct_{_di}",
+            }
+            if "ask_user" in _dresult:
+                _direct_ask_user_payload = _dresult["ask_user"]
+                _devent["ask_user"] = _direct_ask_user_payload
+                # CALL-07/TASK-04: register durably, same authority the
+                # round-based path uses, so the open-questions tray and a
+                # history reload see this question too.
+                try:
+                    from src import question_store
+                    question_store.open_question(
+                        _direct_ask_user_payload.get("question", ""),
+                        session_id=session_id, owner=owner or "",
+                        options=_direct_ask_user_payload.get("options") or [],
+                        multi=bool(_direct_ask_user_payload.get("multi")),
+                        allow_free_text=bool(
+                            _direct_ask_user_payload.get("allow_free_text", True)
+                        ),
+                        question_id=_direct_ask_user_payload.get("question_id"),
+                    )
+                except Exception as _dq_err:  # noqa: BLE001 - never cost the turn
+                    logger.debug(
+                        "[agent] direct-path question_store.open skipped: %s", _dq_err
+                    )
+            if "plan_update" in _dresult:
+                _devent["plan_update"] = _dresult["plan_update"]
+                yield (
+                    f'data: {json.dumps({"type": "plan_update", "data": _dresult["plan_update"]})}\n\n'
+                )
+            _direct_tool_events.append(_devent)
+            if _direct_ask_user_payload is not None:
+                # A valid ask_user ends the turn here too — nothing after it
+                # in this same response gets a chance to run.
+                break
+        if _direct_ask_user_payload is not None:
+            yield (
+                f'data: {json.dumps({"type": "ask_user", "data": _direct_ask_user_payload})}\n\n'
+            )
+
         duration = time.time() - direct_start
         direct_usage = _usage_bucket(
             round_num=1,
@@ -4917,12 +5039,14 @@ async def stream_agent_loop(
             "total_time": round(duration, 2),
             "response_time": round(duration, 2),
             "agent_rounds": 0,
-            "tool_calls": 0,
+            "tool_calls": len(_direct_tool_events),
             "direct_low_signal": True,
             **_usage_bucket_summary([direct_usage]),
         }
         if isinstance(direct_actual_endpoint_cost_tracked, bool):
             metrics["endpoint_cost_tracked"] = direct_actual_endpoint_cost_tracked
+        if _direct_tool_events:
+            metrics["tool_events"] = _direct_tool_events
         yield f"data: {json.dumps({'type': 'metrics', 'data': metrics})}\n\n"
         yield "data: [DONE]\n\n"
         return
@@ -5601,6 +5725,52 @@ async def stream_agent_loop(
                 budget_is_explicit,
                 hard_max=hard_max,
             )
+            if budget_is_explicit:
+                # CTX-01: an explicit cap close to the model's whole window
+                # (compute_input_token_budget's `min(configured, context_length)`
+                # branch) can still leave less room than the request actually
+                # needs once the response and the tool schemas are reserved —
+                # the cap was never wrong, it just didn't know about those two
+                # costs. budget_for() does (docs/spec/v2 CTX-01's itemised
+                # budget), so tighten (never widen) the user's explicit choice
+                # with it. Gated on `budget_is_explicit` so the AUTO path
+                # (headroom-scaled, already tuned) is untouched — the earlier
+                # lote-20 attempt broke because it replaced compute_input_
+                # token_budget outright instead of layering on top of it, and
+                # in doing so silently dropped the user's explicit cap; see
+                # docs/spec/v2/MAPA_REUTILIZACION.md's CTX-01 row.
+                try:
+                    from src.context_budget import budget_for as _budget_for
+                    # budget_context_for_model's own contract (src/model_context.py)
+                    # is "the proven window, or 0" -- so a positive candidate_context
+                    # IS the known-window signal; no second lookup is made here to
+                    # get it (would re-probe the endpoint agent_loop already asked).
+                    _manifest = {
+                        "context_length": candidate_context,
+                        "context_known": candidate_context > 0,
+                        "context_measured": False,
+                    }
+                    _real_budget = _budget_for(
+                        _manifest, "text", response_reserve=reserve_tokens,
+                    )
+                    if _real_budget.get("context_source") != "unknown":
+                        _itemised_input_budget = _real_budget.get("input_budget")
+                        if isinstance(_itemised_input_budget, int) and _itemised_input_budget > 0:
+                            if _itemised_input_budget < effective_budget:
+                                logger.info(
+                                    "[agent] explicit budget for route model=%s "
+                                    "tightened by itemised reserves: %s -> %s",
+                                    candidate_model,
+                                    effective_budget,
+                                    _itemised_input_budget,
+                                )
+                            effective_budget = min(effective_budget, _itemised_input_budget)
+                except Exception as e:
+                    logger.warning(
+                        "[agent] CTX-01 itemised budget skipped for route model=%s: %s",
+                        candidate_model,
+                        e,
+                    )
             trimmed_messages = trim_for_context(
                 route_messages,
                 effective_budget,
@@ -7082,7 +7252,46 @@ async def stream_agent_loop(
                                 if candidate_index < len(_candidate_route_descriptors)
                                 else {}
                             )
+                            # QA-28/MOD-06: the task's tool transport and image
+                            # handling below already adapt to whichever model
+                            # answers this round (`answering_state["is_api_model"]`,
+                            # `_resolve_tool_blocks`'s own native-vs-fenced read
+                            # per round, `_render_tool_result_content`'s
+                            # `vision_capable` check) — what was missing was
+                            # telling the client a mid-task switch may have
+                            # taken something away, instead of it silently
+                            # noticing (or not) from behavior alone.
+                            _model_before_fallback, _endpoint_url_before_fallback = model, endpoint_url
                             endpoint_url, model, headers = _pinned_fallback_candidate
+                            try:
+                                _cap_switch = recompute_capabilities_on_model_switch(
+                                    previous_model=_model_before_fallback,
+                                    previous_endpoint_url=_endpoint_url_before_fallback,
+                                    new_model=model,
+                                    new_endpoint_url=endpoint_url,
+                                    previous_endpoint_id=str(requested_endpoint_id or ""),
+                                    new_endpoint_id=str(
+                                        (_pinned_fallback_route or {}).get("endpoint_id") or ""
+                                    ),
+                                )
+                            except Exception as _cap_err:
+                                logger.debug(
+                                    "[agent] capability recompute on fallback skipped: %s",
+                                    _cap_err,
+                                )
+                                _cap_switch = None
+                            if _cap_switch and _cap_switch.get("lost"):
+                                yield (
+                                    "data: " + json.dumps({
+                                        "type": "capabilities_changed",
+                                        "round": round_num,
+                                        "data": {
+                                            "from_model": _model_before_fallback,
+                                            "to_model": model,
+                                            **_cap_switch,
+                                        },
+                                    }) + "\n\n"
+                                )
                             answering_state = _candidate_request_states.get(candidate_index)
                             if answering_state is None:
                                 answering_state = await _build_route_request_state(
@@ -9627,3 +9836,65 @@ async def stream_agent_loop(
             logger.warning(f"teacher escalation hook failed: {_esc_err}", exc_info=True)
 
     yield "data: [DONE]\n\n"
+
+
+#: Same as `functools.WRAPPER_ASSIGNMENTS` minus `__doc__` — `__wrapped__`
+#: (always set by `functools.wraps`, regardless of `assigned`) is what
+#: `inspect.signature` follows to recover the real parameter list; `__doc__`
+#: is deliberately NOT copied so the wrapper keeps its own explanation below
+#: instead of `_stream_agent_loop_body`'s docstring shadowing it.
+_WRAP_ASSIGNMENTS = tuple(a for a in functools.WRAPPER_ASSIGNMENTS if a != "__doc__")
+
+
+@functools.wraps(_stream_agent_loop_body, assigned=_WRAP_ASSIGNMENTS)
+async def stream_agent_loop(*args, **kwargs) -> AsyncGenerator[str, None]:
+    """Thin wrapper over `_stream_agent_loop_body` — same signature (`@wraps`
+    forwards `__wrapped__`, so `inspect.signature(stream_agent_loop)` still
+    resolves every real parameter, `pending_pause`/`pending_user_messages`
+    included, exactly as callers and tests already introspect it), same
+    events — that adds exactly one thing (Lote 44/L42): closing this run's
+    WEB-03 per-task browser session, if one was ever opened, once the run
+    ends for ANY reason.
+
+    `try/finally` around the delegated generator, with an EXPLICIT
+    `await gen.aclose()` first, covers all three endings the lote asks for:
+    the run completes (success, `gen` already exhausted — `aclose()` on a
+    finished generator is a no-op), an exception propagates out of it
+    (error, `gen` already terminated — same no-op), and the consumer stops
+    iterating early — `routes/chat_routes.py`'s Stop/disconnect path calls
+    `.aclose()` on the generator it holds, which resumes THIS wrapper with
+    `GeneratorExit` at whatever `yield chunk` was in flight. Explicitly
+    closing `gen` there (rather than just letting it become unreferenced)
+    matters: an `async for` does not itself propagate a `GeneratorExit` it
+    receives into the iterable it was looping over, so without this line the
+    inner generator's own cleanup (e.g. cancelling its in-flight tool task —
+    `tests/test_tool_task_cancelled_on_disconnect.py`) would only run
+    whenever the garbage collector got to it, not synchronously — this line
+    is what keeps that synchronous.
+
+    `src/mcp_manager.py`'s `close_browser_session_for_task` (Lote 42)
+    already existed with no caller inside a real run; this is that caller.
+    Lazy import and its own broad `except` so a close-side failure can never
+    mask the run's real outcome or turn a clean turn into an error.
+
+    A rename-and-wrap instead of editing the ~5,500-line body directly keeps
+    this lote's change to exactly the one behavior its file list scopes
+    agent_loop.py to ("SOLO cerrar la sesión de navegador al terminar el
+    run") rather than reindenting a function this lote does not otherwise
+    own.
+    """
+    bound = inspect.signature(_stream_agent_loop_body).bind(*args, **kwargs)
+    bound.apply_defaults()
+    owner = bound.arguments.get("owner")
+    session_id = bound.arguments.get("session_id")
+    gen = _stream_agent_loop_body(*args, **kwargs)
+    try:
+        async for chunk in gen:
+            yield chunk
+    finally:
+        await gen.aclose()
+        try:
+            from src.builtin_mcp import close_browser_session_for_task
+            close_browser_session_for_task(owner, session_id)
+        except Exception:  # noqa: BLE001 - never let cleanup mask the run's real outcome
+            logger.debug("stream_agent_loop: browser session close failed", exc_info=True)

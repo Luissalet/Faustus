@@ -3180,6 +3180,14 @@ def setup_chat_routes(
                                     "context_packet",
                                     # multi-agent delegation
                                     "subagent_event",
+                                    # MOD-06/QA-28 (Lote 40): a mid-task fallback
+                                    # switched to a model that does not announce
+                                    # every capability the previous one did
+                                    # (src/agent_loop.py's `_cap_switch` block).
+                                    # Without this entry the event was computed
+                                    # and yielded by the loop but silently
+                                    # dropped right here, never reaching the UI.
+                                    "capabilities_changed",
                                 ):
                                     if data.get("type") == "agent_step":
                                         _event_round = data.get("round", 1)
@@ -3595,6 +3603,146 @@ def setup_chat_routes(
             "what_ran_before": what_ran_before,
             "cleanup": cleanup,
         }
+
+    # ------------------------------------------------------------------ #
+    # POST /api/chat/regenerate/{sid} — QA-36/UX-03: redo the session's last
+    # assistant answer from the evidence it already gathered (its tool_events'
+    # results/receipts, reinjected as context) instead of re-running the
+    # round — a turn with an effectful tool call (an email sent, a file
+    # written) must never repeat that action just because the user wanted a
+    # better-written summary of it. Reads may still happen (retrieval offers
+    # the same read tools the original turn could reach); every tool this
+    # install cannot prove is read-only is refused for the run, the same
+    # `disabled_tools` authority every other turn's tool policy already goes
+    # through — not a second enforcement mechanism.
+    # ------------------------------------------------------------------ #
+    @router.post("/api/chat/regenerate/{sid}")
+    async def regenerate_chat_response(request: Request, sid: str) -> StreamingResponse:
+        _verify_session_owner(request, sid)
+        owner = effective_user(request)
+        try:
+            sess = session_manager.get_session(sid)
+        except KeyError:
+            raise HTTPException(404, f"Session '{sid}' not found")
+
+        history = list(sess.history or [])
+        if not history or history[-1].role != "assistant":
+            raise HTTPException(400, "No assistant response to regenerate for this session.")
+        last_msg = history[-1]
+        trigger_idx = len(history) - 2
+        while trigger_idx >= 0 and history[trigger_idx].role != "user":
+            trigger_idx -= 1
+        if trigger_idx < 0:
+            raise HTTPException(400, "No prior user turn to regenerate a response for.")
+        trigger_msg = history[trigger_idx]
+
+        last_meta = last_msg.metadata or {}
+        tool_events = [dict(ev) for ev in (last_meta.get("tool_events") or []) if isinstance(ev, dict)]
+        regenerated_from = last_meta.get("_db_id") or f"{sid}:{len(history) - 1}"
+
+        from src.tool_capabilities import capabilities_for_action, ToolEffect
+        _read_only_effects = frozenset({
+            ToolEffect.READ_PUBLIC, ToolEffect.READ_WORKSPACE, ToolEffect.READ_PRIVATE,
+        })
+        effectful_names: List[str] = []
+        evidence_lines: List[str] = []
+        for ev in tool_events:
+            name = str(ev.get("tool") or "").strip()
+            if not name:
+                continue
+            try:
+                caps = capabilities_for_action(name, ev.get("command") or "")
+                is_read_only = bool(caps.known) and bool(caps.effects) and caps.effects <= _read_only_effects
+            except Exception:
+                is_read_only = False
+            if not is_read_only and name not in effectful_names:
+                effectful_names.append(name)
+            desc = str(ev.get("desc") or name)
+            output = str(ev.get("output") or "").strip()[:800]
+            evidence_lines.append(f"- {desc}: {output}" if output else f"- {desc}")
+
+        # Block every tool this install cannot prove read-only, application-
+        # wide for this one call — not just the ones the prior turn happened
+        # to use. Regenerating is a rewrite of what already happened, never
+        # a fresh chance at a NEW effect either. Reuses the same read-only
+        # allowlist plan mode already trusts (src/tool_security.py) rather
+        # than inventing a second one.
+        from src.tool_policy import known_tool_names
+        from src.tool_security import PLAN_MODE_READONLY_TOOLS
+        _always_allowed = {"ask_user", "update_plan"} | set(PLAN_MODE_READONLY_TOOLS)
+        disabled_for_regenerate = {
+            name for name in known_tool_names() if name not in _always_allowed
+        }
+        disabled_for_regenerate.update(effectful_names)
+
+        if tool_events:
+            note_lines = [
+                "## Regenerating a previous answer (UX-03/QA-36)",
+                "This redoes your last answer to the SAME request below. The "
+                "following external actions were already performed last time — "
+                "they are done; do not call them again:",
+                *(f"- {n}" for n in (effectful_names or ["(none of last time's tool calls had an effect)"])),
+                "",
+                "Evidence already gathered last time — reuse it; you may re-read "
+                "for accuracy, but do not repeat anything above:",
+                *(evidence_lines or ["- (no recorded tool evidence)"]),
+                "",
+                "Write a corrected or better answer to the user's request below "
+                "using this evidence.",
+            ]
+        else:
+            note_lines = [
+                "## Regenerating a previous answer (UX-03/QA-36)",
+                "This redoes your last answer to the SAME request below — no "
+                "prior tool evidence was recorded for it.",
+            ]
+        evidence_note = "\n".join(note_lines)
+
+        # Same "slash-command replies never reach the model" filter
+        # `Session.get_context_messages` applies, scoped to the slice up to
+        # and including the trigger turn (that method's own index would not
+        # line up with `history`'s once a filtered message sits before it).
+        messages = [
+            {"role": m.role, "content": m.content}
+            for m in history[:trigger_idx + 1]
+            if (m.metadata or {}).get("source") != "slash"
+        ]
+        messages.append({"role": "system", "content": evidence_note})
+
+        async def _stream():
+            full_response = ""
+            last_metrics: Dict[str, Any] = {}
+            async for chunk in stream_agent_loop(
+                sess.endpoint_url,
+                sess.model,
+                messages,
+                headers=sess.headers,
+                session_id=sid,
+                owner=owner,
+                disabled_tools=disabled_for_regenerate,
+            ):
+                if chunk.startswith("data: ") and not chunk.startswith("data: [DONE]"):
+                    try:
+                        data = json.loads(chunk[6:])
+                    except json.JSONDecodeError:
+                        data = None
+                    if isinstance(data, dict):
+                        if "delta" in data and not data.get("thinking"):
+                            full_response += data["delta"]
+                        elif data.get("type") in ("metrics", "agent_terminal"):
+                            last_metrics = data.get("data") or {}
+                yield chunk
+            if full_response.strip() or last_metrics.get("tool_events"):
+                metrics_to_save = dict(last_metrics)
+                metrics_to_save["regenerated_from"] = regenerated_from
+                saved_id = save_assistant_response(
+                    sess, session_manager, sid,
+                    full_response.strip() or "Done.", metrics_to_save,
+                )
+                if saved_id:
+                    yield f'data: {json.dumps({"type": "message_saved", "id": saved_id})}\n\n'
+
+        return StreamingResponse(_stream(), media_type="text/event-stream")
 
     # ------------------------------------------------------------------ #
     # POST /api/chat/pause/{session_id} — UX-04: stop the current generation

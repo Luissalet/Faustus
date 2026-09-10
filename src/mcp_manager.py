@@ -11,8 +11,10 @@ import os
 import re
 import stat
 import asyncio
+import time
+from collections import deque
 from contextlib import contextmanager
-from typing import Any, Dict, List, Optional, Set, TextIO, Tuple
+from typing import Any, Deque, Dict, List, Optional, Set, TextIO, Tuple
 from src.database import McpServer, SessionLocal
 from src import safe_mode
 
@@ -504,6 +506,12 @@ class McpManager:
         self._reconnect_locks: Dict[str, Any] = {}
         # Tracking updates to tools/connections for RAG indexing / prompt cache
         self._generation = 0
+        # TOOL-03: recent tool-call outcomes per server — (timestamp, ok,
+        # duration_seconds), bounded so a chatty server cannot grow this
+        # without limit. Read by `_honest_status` to say "degraded" (still
+        # connected, but recent errors or slow calls) instead of leaving a
+        # struggling server looking identical to a healthy one.
+        self._call_outcomes: Dict[str, Deque[Tuple[float, bool, float]]] = {}
 
     async def connect_server(
         self,
@@ -994,6 +1002,11 @@ class McpManager:
         # A built-in whose owner task already finished has no live process
         # behind the session: skip the doomed call and go straight to reconnect.
         dead = self.is_builtin(server_id) and not self._stdio_owner_alive(server_id)
+        # TOOL-03: wall-clock around the call(s), recorded against server_id
+        # regardless of which branch below returns — `_degraded_reason` reads
+        # this history to tell "connected and fine" from "connected but
+        # struggling" without anyone having to watch the logs for it.
+        call_started = time.time()
         try:
             if dead:
                 raise ConnectionError(f"MCP server process for {server_id} has exited")
@@ -1016,16 +1029,21 @@ class McpManager:
                             raise
                         except Exception as e2:
                             logger.error(f"MCP tool call failed after reconnect: {qualified_name}: {e2}")
+                            self._record_call_outcome(server_id, False, time.time() - call_started)
                             return {"error": str(e2), "exit_code": 1}
                     else:
+                        self._record_call_outcome(server_id, False, time.time() - call_started)
                         return {"error": f"Reconnected but no session for {server_id}", "exit_code": 1}
                 else:
                     logger.error(f"MCP reconnect failed for {server_id}")
+                    self._record_call_outcome(server_id, False, time.time() - call_started)
                     return {"error": f"MCP server crashed and reconnect failed: {server_id}", "exit_code": 1}
             else:
                 logger.error(f"MCP tool call failed: {qualified_name}: {e}")
+                self._record_call_outcome(server_id, False, time.time() - call_started)
                 return {"error": str(e), "exit_code": 1}
 
+        self._record_call_outcome(server_id, True, time.time() - call_started)
         if server_id == BROWSER_MCP_SERVER_ID:
             result = self._postprocess_browser_result(tool_name, result)
         return result
@@ -1133,12 +1151,32 @@ class McpManager:
         lock = self._reconnect_locks.setdefault(server_id, asyncio.Lock())
         async with lock:
             name = self._connections.get(server_id, {}).get("name", server_id)
+            # TOOL-03: "probing" while the reconnect is in flight — distinct
+            # from the stale "connected"/"error" a status read mid-reconnect
+            # would otherwise see (disconnect_server below removes the entry
+            # entirely for a moment, which would read as plain "disconnected").
+            self._connections[server_id] = {"status": "probing", "name": name}
             # Clean up old connection
             await self.disconnect_server(server_id)
 
             try:
                 if server_id in _BUILTIN_NPX_SERVERS:
                     name = _BUILTIN_NPX_SERVERS[server_id]["name"]
+                    # TODO(WEB-03): this crash-reconnect path restarts the
+                    # single SHARED builtin server (McpManager is a
+                    # process-wide singleton with no owner_id/task_id of its
+                    # own here — the crash it is recovering from is not
+                    # scoped to any one run) so there is nothing real to pass
+                    # yet. `owner_id`/`task_id` stay their default `None`,
+                    # which `connect_builtin_npx_server`/`_npx_server_launch`
+                    # already treat as "the existing shared profile" (see
+                    # their own docstrings). The day a per-session browser
+                    # PROCESS exists (one playwright MCP child per task
+                    # rather than the one global server this loop manages),
+                    # its launch call is the one that should carry
+                    # owner_id/task_id through to here — not this reconnect
+                    # loop, which by construction only ever recovers the
+                    # shared one.
                     ok = await connect_builtin_npx_server(self, server_id)
                 else:
                     script_rel, name = _BUILTIN_SERVERS[server_id]
@@ -1232,6 +1270,42 @@ class McpManager:
                 })
         return result
 
+    async def list_tools_page(self, server_id: str, cursor: Optional[str] = None) -> Dict[str, Any]:
+        """TOOL-03: one page of ``tools/list`` for ``server_id``, live off the
+        session — a cursor-paginated read straight from the MCP server, not
+        the cached ``self._tools`` snapshot ``get_all_tools`` serves (a
+        server whose live listing is larger than what connect-time cached is
+        exactly the case this exists for).
+
+        Returns ``{"tools": [...], "next_cursor": str | None, "paginated":
+        bool}``. ``paginated`` is False when this server's `tools_result`
+        carried no ``nextCursor`` at all on a request with no cursor — some
+        servers do not implement pagination, and the caller should stop
+        asking rather than loop on an always-``None`` cursor. Never raises:
+        "not connected" / "no such server" comes back as a normal-shaped
+        empty page with ``error`` set, the same convention
+        :meth:`execute_tool` uses for its own failures."""
+        session = self._sessions.get(server_id)
+        if not session:
+            return {"tools": [], "next_cursor": None, "paginated": False, "error": f"MCP server not connected: {server_id}"}
+        try:
+            result = await session.list_tools(cursor=cursor) if cursor else await session.list_tools()
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"MCP list_tools page failed for {server_id}: {e}")
+            return {"tools": [], "next_cursor": None, "paginated": False, "error": str(e)}
+        tools = [
+            {
+                "name": tool.name,
+                "description": tool.description or "",
+                "input_schema": tool.inputSchema if hasattr(tool, "inputSchema") else {},
+            }
+            for tool in result.tools
+        ]
+        next_cursor = getattr(result, "nextCursor", None)
+        return {"tools": tools, "next_cursor": next_cursor, "paginated": bool(cursor) or next_cursor is not None}
+
     def browser_tool_names(self) -> Set[str]:
         """Qualified names of every tool the connected browser server exposes
         (policy-disabled ones included — callers deny by prefix)."""
@@ -1274,6 +1348,47 @@ class McpManager:
             "email",
         }
 
+    # TOOL-03: degraded — connected, but struggling. Two independent signals,
+    # either enough on its own: recent tool-call errors, or calls that are
+    # taking noticeably long. Neither number is precise science; they exist
+    # to turn "looks exactly like a healthy server" into "something is off
+    # here", which is the whole gap this state closes.
+    _DEGRADED_ERROR_WINDOW_S = 300.0
+    _DEGRADED_ERROR_THRESHOLD = 3
+    _DEGRADED_LATENCY_THRESHOLD_S = 8.0
+    _DEGRADED_LATENCY_SAMPLES = 3
+    _CALL_OUTCOMES_MAX = 50
+
+    def _record_call_outcome(self, server_id: str, ok: bool, duration_s: float) -> None:
+        """Append one tool-call outcome for ``server_id``, bounded so a busy
+        server's history cannot grow without limit. Best-effort: bookkeeping
+        for a status label must never be why a tool call fails."""
+        try:
+            dq = self._call_outcomes.setdefault(server_id, deque(maxlen=self._CALL_OUTCOMES_MAX))
+            dq.append((time.time(), bool(ok), max(0.0, float(duration_s))))
+        except Exception as e:  # noqa: BLE001
+            logger.debug("mcp_manager: could not record call outcome for %s: %s", server_id, e)
+
+    def _degraded_reason(self, server_id: str) -> Optional[str]:
+        """Why a CONNECTED server should read as "degraded" right now, or
+        ``None`` when it should not. Read-only, never mutates state."""
+        dq = self._call_outcomes.get(server_id)
+        if not dq:
+            return None
+        cutoff = time.time() - self._DEGRADED_ERROR_WINDOW_S
+        recent = [o for o in dq if o[0] >= cutoff]
+        if not recent:
+            return None
+        errors = sum(1 for _, ok, _ in recent if not ok)
+        if errors >= self._DEGRADED_ERROR_THRESHOLD:
+            return f"{errors} failed tool calls in the last {int(self._DEGRADED_ERROR_WINDOW_S // 60)} minutes"
+        latencies = [d for _, ok, d in recent[-self._DEGRADED_LATENCY_SAMPLES:] if ok]
+        if len(latencies) >= self._DEGRADED_LATENCY_SAMPLES:
+            avg = sum(latencies) / len(latencies)
+            if avg >= self._DEGRADED_LATENCY_THRESHOLD_S:
+                return f"the last {len(latencies)} calls averaged {avg:.1f}s"
+        return None
+
     def _honest_status(self, server_id: str, conn: Dict) -> Dict:
         """A stdio server whose owner task has finished has no process behind
         it any more; report that instead of the stale "connected".
@@ -1281,13 +1396,23 @@ class McpManager:
         A dead stdio server is exactly the case where the reason exists and
         nobody can see it, so the last lines it printed ride along with the
         error (FAUSTUS). Read only on this path — a healthy server costs
-        nothing."""
+        nothing.
+
+        TOOL-03: a CONNECTED server with a recent run of errors or slow calls
+        reads as "degraded" instead — distinct from both "connected" (nothing
+        wrong) and "error" (nothing there), so the UI does not have to choose
+        between overstating health and crying wolf on the first transient
+        failure."""
         if conn.get("status") == "connected" and not self._stdio_owner_alive(server_id):
             message = "server process exited (will reconnect on next call)"
             tail = read_stderr_tail(server_id)
             if tail:
                 message = f"{message}\n\nLast output from the server:\n{tail}"
             return {**conn, "status": "error", "error": message}
+        if conn.get("status") == "connected":
+            reason = self._degraded_reason(server_id)
+            if reason:
+                return {**conn, "status": "degraded", "degraded_reason": reason}
         return conn
 
     def get_server_status(self, server_id: str) -> Dict:

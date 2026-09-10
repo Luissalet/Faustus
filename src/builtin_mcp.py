@@ -237,13 +237,35 @@ def _set_caps(args: list[str], want_vision: bool) -> list[str]:
     return out
 
 
-def _browser_mcp_args(args: list[str], settings=None) -> list[str]:
+def _session_profile_dir(owner_id, task_id) -> str:
+    """The WEB-03 per-owner/per-task profile directory for `(owner_id, task_id)`.
+
+    Delegates entirely to `src.browser_sessions` (the WEB-03 authority for
+    session lifecycle/policy -- see its module docstring) rather than
+    re-deriving a profile path here: `open_session` is idempotent, so calling
+    it again for an already-open session just returns the same directory
+    instead of a second parallel notion of "the session's profile".
+    """
+    from src.browser_sessions import open_session
+    return open_session(owner_id, task_id).profile_dir
+
+
+def _browser_mcp_args(args: list[str], settings=None, *, owner_id=None, task_id=None) -> list[str]:
     """Return Playwright MCP args for the built-in browser.
 
     Settings (src/settings.py) decide headless / vision caps / profile /
     CDP endpoint; the legacy env overrides ODYSSEUS_BROWSER_EXECUTABLE,
     ODYSSEUS_BROWSER_ISOLATED and ODYSSEUS_BROWSER_NO_SANDBOX still win when
     they are set explicitly. Flags already present in `args` are respected.
+
+    ``owner_id``/``task_id`` (WEB-03, lote 42): when BOTH are given (and the
+    session isn't attaching over CDP or explicitly isolated), the launch uses
+    `src.browser_sessions.open_session`'s per-(owner, task) profile directory
+    instead of the single directory `_browser_profile_dir()` returns -- so a
+    caller that knows which task is asking gets that task's own cookies/login
+    state, isolated from every other owner and task. A caller that does not
+    pass them (every call site today -- see the report) keeps getting the one
+    shared persistent profile exactly as before: no capability lost, rule 3.
     """
     cfg = _browser_settings(settings)
     out = list(args or [])
@@ -284,6 +306,8 @@ def _browser_mcp_args(args: list[str], settings=None) -> list[str]:
     if "--isolated" not in out and "--user-data-dir" not in out:
         if isolated:
             out.append("--isolated")
+        elif owner_id and task_id:
+            out.extend(["--user-data-dir", _session_profile_dir(owner_id, task_id)])
         else:
             out.extend(["--user-data-dir", _browser_profile_dir()])
 
@@ -310,12 +334,17 @@ def _browser_env(base_dir: str) -> dict[str, str]:
     }
 
 
-def _npx_server_launch(server_id: str) -> tuple[list[str], dict | None]:
-    """(args, env) for one NPX built-in, with browser settings applied."""
+def _npx_server_launch(server_id: str, *, owner_id=None, task_id=None) -> tuple[list[str], dict | None]:
+    """(args, env) for one NPX built-in, with browser settings applied.
+
+    ``owner_id``/``task_id`` pass straight through to `_browser_mcp_args`
+    (see its docstring, WEB-03) -- ``None`` (the default, and every current
+    caller) keeps the existing single shared profile.
+    """
     cfg = _BUILTIN_NPX_SERVERS[server_id]
     base_dir = get_app_root()
     if server_id == BROWSER_SERVER_ID:
-        args = _browser_mcp_args(cfg["args"])
+        args = _browser_mcp_args(cfg["args"], owner_id=owner_id, task_id=task_id)
         if "--user-data-dir" in args:
             try:
                 os.makedirs(args[args.index("--user-data-dir") + 1], exist_ok=True)
@@ -325,18 +354,27 @@ def _npx_server_launch(server_id: str) -> tuple[list[str], dict | None]:
     return list(cfg["args"]), None
 
 
-async def connect_builtin_npx_server(mcp_manager, server_id: str) -> bool:
+async def connect_builtin_npx_server(mcp_manager, server_id: str, *, owner_id=None, task_id=None) -> bool:
     """Start (or restart after a crash) one NPX built-in and register it.
 
     Shared by startup, the crash-reconnect path in McpManager and
     `restart_builtin_browser`. Records the argv the server was launched with
     on the connection so a later settings change can be detected.
+
+    ``owner_id``/``task_id`` (WEB-03): forwarded to `_npx_server_launch` so a
+    future per-session launch (spawning a dedicated browser MCP process for
+    one task, rather than reusing the single global one) has an entrypoint
+    that already resolves the right profile directory. Today's one call site
+    (`src/mcp_manager.py`'s startup/reconnect loop) does not pass them, so the
+    global shared profile remains the fallback for every existing caller --
+    see the report for the exact call-site change a per-session PROCESS still
+    needs.
     """
     cfg = _BUILTIN_NPX_SERVERS.get(server_id)
     if not cfg:
         return False
     npx_path = _find_npx()
-    args, env = _npx_server_launch(server_id)
+    args, env = _npx_server_launch(server_id, owner_id=owner_id, task_id=task_id)
     logger.info(f"Starting NPX server: {cfg['name']} ({npx_path} {' '.join(args)})")
     ok = await mcp_manager.connect_server(
         server_id=server_id,
@@ -368,6 +406,20 @@ async def restart_builtin_browser(mcp_manager) -> bool:
     except Exception as e:  # pragma: no cover - best effort teardown
         logger.warning(f"Browser MCP teardown before restart failed: {e}")
     return await connect_builtin_npx_server(mcp_manager, BROWSER_SERVER_ID)
+
+
+def close_browser_session_for_task(owner_id, task_id) -> bool:
+    """Close the WEB-03 per-task browser session, if one was open.
+
+    A thin delegate to `src.browser_sessions.close_session` (True iff a
+    session for `(owner_id, task_id)` was actually open) -- the caller this
+    lote could not reach is the point where an agent run ends (`src/agent_
+    loop.py`, out of this lote's file scope beyond `_trim_route_request_
+    messages`; see the report), so this is the hook that call needs, not a
+    second close implementation.
+    """
+    from src.browser_sessions import close_session
+    return close_session(owner_id, task_id)
 
 
 def browser_launch_is_stale(mcp_manager) -> bool:

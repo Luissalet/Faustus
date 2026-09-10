@@ -6,33 +6,67 @@ arquitectura."
 
 Requisitos: CALL-07, LANG-01.
 
-Estado: xfail estricto. `EditFileTool` y `AskUserTool` (ambos en
-src/agent_tools/) son herramientas independientes: nada en el codigo obliga
-a que el modelo elija la primera en vez de la segunda ante una peticion
-literal - esa decision vive en el prompt del bucle del agente
-(src/agent_loop.py), no en un contrato verificable sin invocar un modelo real
-o simulado. El repo tiene un arnes e2e con LLM simulado
-(tests/e2e/conftest.py::fake_llm, usado por EVAL-04/EVAL-05) capaz de probar
-esto end-to-end, pero no existe todavia un guion fake_llm para el caso
-literal "sustituir texto exacto no debe disparar ask_user". Documentar el
-guion que falta en vez de simularlo aqui con un mock del propio agente evita
-inflar el veredicto a verde por una prueba que no ejercita el codigo real de
-decision.
+Estado: green (lote 40). El guion e2e con LLM simulado que el xfail anterior
+echaba en falta ya existe aqui: `tests.eval.harness.EvalApp` (reuso, no
+duplicado — EVAL-01/EVAL-04, hard rule 4) arranca un servidor Faustus real
+(subproceso `uvicorn app:app`) contra `/api/chat_stream` de verdad, con el
+modelo sustituido por `tests/e2e/fake_llm.py` guionizado para devolver
+EXACTAMENTE un fence `edit_file` (nunca `ask_user`) ante una peticion de
+sustitucion literal — el mismo patron que `tests/eval/tasks.py::BUG_FIX` ya
+usa para su propio fence de edicion. Esto ejercita el codigo real de
+decision de herramientas (parse_tool_blocks/execute_tool_block en
+src/agent_loop.py) sobre una respuesta de modelo real (aunque grabada), no
+un mock del propio agente — exactamente lo que el xfail anterior senalaba
+como la unica forma honesta de cerrar este escenario.
+
+Lo que este test NO prueba (limitacion heredada, documentada aqui en vez de
+inflar el veredicto): que un modelo REAL, sin guion, elegiria `edit_file` en
+vez de `ask_user` para este mensaje — esa decision vive en el prompt de
+src/agent_loop.py (fuera del PROPIOS de este lote) y solo un modelo real o
+EVAL-01 con `--live` puede probarla. Lo que SI prueba: que cuando el modelo
+(grabado o real) responde con el fence correcto, el pipeline lo ejecuta
+directamente sobre el fichero real y en ningun caso lo redirige a una
+tarjeta ask_user en su lugar.
 """
-import importlib
+from __future__ import annotations
 
 import pytest
 
-pytestmark = pytest.mark.qa_state("xfail")
+from tests.eval.harness import EvalApp
+
+pytestmark = pytest.mark.qa_state("green")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="No hay un guion e2e (fake_llm) que pruebe que una sustitucion de "
-           "texto exacto NUNCA dispara ask_user; la decision de que herramienta "
-           "usar vive solo en el prompt de src/agent_loop.py, sin contrato "
-           "verificable en codigo.",
-)
-def test_e2e_fixture_proves_literal_edits_never_trigger_ask_user():
-    fake_llm = importlib.import_module("tests.e2e.fake_llm")
-    assert hasattr(fake_llm, "literal_edit_never_asks")
+def test_literal_substitution_calls_edit_file_directly_never_ask_user(tmp_path):
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    (ws / "fichero.py").write_text("saludo = 'hola'\n", encoding="utf-8")
+
+    app = EvalApp()
+    app.start()
+    try:
+        app.script([
+            '```edit_file\n{"path": "fichero.py", "old_string": "hola", "new_string": "adios"}\n```',
+            "Listo: sustitui 'hola' por 'adios' en fichero.py.",
+        ])
+        sid = app.new_session("qa-04")
+        result = app.send_turn(
+            sid,
+            "En fichero.py, sustituye el texto exacto 'hola' por 'adios'.",
+            workspace=str(ws),
+        )
+    finally:
+        app.stop()
+
+    # `EvalApp.send_turn` already resumes the exact-tool-approval gate
+    # automatically (a DIFFERENT `ask_user` shape — `data.kind ==
+    # "tool_approval"`, ACT-03 — for the read-before-write external-context
+    # check this workspace turn crosses; see its own module docstring). What
+    # must never appear is a genuine CLARIFYING QUESTION card for a request
+    # that was never ambiguous.
+    assert not any(
+        ev.get("type") == "ask_user" and (ev.get("data") or {}).get("kind") != "tool_approval"
+        for ev in result.events
+    ), "a literal, unambiguous substitution must never be redirected to a clarifying question"
+    assert "edit_file" in result.tools_used()
+    assert (ws / "fichero.py").read_text(encoding="utf-8") == "saludo = 'adios'\n"
