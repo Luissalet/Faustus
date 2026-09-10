@@ -480,6 +480,7 @@ class DeepResearcher:
         max_empty_rounds: int = 2,
         synthesis_window: int = 10,
         progress_callback: Optional[Callable] = None,
+        checkpoint_callback: Optional[Callable] = None,
         search_provider: Optional[str] = None,
         category: Optional[str] = None,
     ):
@@ -501,6 +502,10 @@ class DeepResearcher:
         self.max_empty_rounds = max_empty_rounds
         self.synthesis_window = synthesis_window
         self._progress = progress_callback
+        # Called with a resumable snapshot at round and report-part
+        # boundaries — never mid-unit-of-work. See `_checkpoint` and the
+        # resume flow in ResearchHandler.start_research.
+        self._checkpoint_cb = checkpoint_callback
         self._cancelled = False
         self._start_time: float = 0
         # Every model call that failed this run, in order: what a run that
@@ -543,6 +548,8 @@ class DeepResearcher:
         prior_findings: Optional[List[Dict]] = None,
         prior_urls: Optional[Set[str]] = None,
         prior_citations: Optional[Dict] = None,
+        prior_queries: Optional[Set[str]] = None,
+        prior_report_parts: Optional[List[str]] = None,
     ) -> str:
         """Run iterative research and return a final report.
 
@@ -551,6 +558,10 @@ class DeepResearcher:
             prior_report: Previous report to continue from (for follow-up research).
             prior_findings: Previous findings to build on.
             prior_urls: URLs already visited (won't be re-fetched).
+            prior_queries: Queries already issued (won't be re-asked this run).
+            prior_report_parts: Final-report parts already written by an
+                earlier attempt on this same question — reused verbatim
+                instead of regenerated (see `_final_report_in_parts`).
         """
         self._start_time = time.time()
         self.report_language = detect_language(question)
@@ -584,6 +595,8 @@ class DeepResearcher:
 
         if prior_urls:
             self.urls_fetched.update(prior_urls)
+        if prior_queries:
+            self.queries_used.update(prior_queries)
         self.findings = findings  # expose for handler
         consecutive_empty_rounds = 0
 
@@ -658,6 +671,14 @@ class DeepResearcher:
                            total_findings=len(findings))
                 report = await self._synthesize(question, findings, report)
 
+            # CHECKPOINT: this round's work is confirmed (queries issued, pages
+            # read, findings synthesized) — persist it so a restart resumes
+            # from here instead of from nothing. Every round reaches this
+            # point exactly once; a round that fails or times out earlier
+            # leaves the previous round's checkpoint as the resume point.
+            self.findings = findings
+            self._checkpoint(findings=findings, report=report)
+
             # DECIDE
             if round_num >= self.min_rounds:
                 should_stop = await self._should_stop(question, report, round_num)
@@ -682,7 +703,13 @@ class DeepResearcher:
             raise ResearchFailed(self._explain_empty_run(), causes=list(self._failures))
 
         self.evolving_report = report  # preserve pre-synthesis report
-        final = await self._final_report(question, report)
+        # Keep the old two-argument call when there is nothing to resume:
+        # existing callers/tests that stub `_final_report(question, report)`
+        # must keep working unchanged (see COMUN rule 3).
+        if prior_report_parts:
+            final = await self._final_report(question, report, prior_parts=prior_report_parts)
+        else:
+            final = await self._final_report(question, report)
         final = self._finalize_citations(final)
         elapsed = time.time() - self._start_time
         logger.info(
@@ -957,7 +984,14 @@ class DeepResearcher:
     # ------------------------------------------------------------------
     async def _generate_queries(self, question: str, report: str,
                                 round_num: int) -> List[str]:
-        if round_num == 1:
+        # `round_num` restarts at 1 for every call to `research()`, including
+        # a continuation (chat follow-up, or a resumed run) that inherits
+        # `report` from earlier rounds this process never saw. Round 1 of
+        # such a run is not a blank slate — telling the model otherwise, and
+        # asking it for the same broad opening queries a fresh run would get,
+        # is how a resumed run re-issued queries already excluded by
+        # `queries_used` and came back with zero new ones for its first round.
+        if round_num == 1 and not report:
             num_queries = 4
             round_instruction = (
                 "This is the first round — generate broad, diverse queries "
@@ -1367,11 +1401,12 @@ class DeepResearcher:
     # research_max_tokens says: that figure is for the final report.
     SYNTHESIS_MAX_TOKENS = 6144
 
-    async def _final_report(self, question: str, report: str) -> str:
+    async def _final_report(self, question: str, report: str,
+                            prior_parts: Optional[List[str]] = None) -> str:
         """LLM writes a polished final report, retrying if too short."""
         subs = getattr(self, "subquestions", None) or []
         if len(subs) > self.SECTIONS_PER_PART:
-            return await self._final_report_in_parts(question, report, subs)
+            return await self._final_report_in_parts(question, report, subs, prior_parts=prior_parts)
         prompt = FINAL_REPORT_PROMPT.format(
             question=question,
             report=report,
@@ -1431,7 +1466,8 @@ class DeepResearcher:
             return report  # return the evolving report as-is
 
     async def _final_report_in_parts(self, question: str, report: str,
-                                     subs: List[str]) -> str:
+                                     subs: List[str],
+                                     prior_parts: Optional[List[str]] = None) -> str:
         """The same report, written a few sections per call and joined.
 
         Every part sees the same numbered evidence, so [n] markers stay
@@ -1440,14 +1476,21 @@ class DeepResearcher:
         only their sections. A part that fails is replaced by its headings
         and a one-line note, so the reader sees what is missing rather than
         a report that silently ends early.
+
+        `prior_parts`: parts an earlier, interrupted attempt at this same
+        question already wrote (from its checkpoint). They are trusted
+        verbatim — a resumed run does not re-spend an LLM call on a part
+        that is already on disk.
         """
         size = self.SECTIONS_PER_PART
         chunks = [subs[i:i + size] for i in range(0, len(subs), size)]
         sources = self._registered_sources_block()
         language_line = self._language_line()
         implication = implication_label(getattr(self, "report_language", "en"))
-        pieces: List[str] = []
+        pieces: List[str] = list(prior_parts or [])
         for idx, chunk in enumerate(chunks):
+            if idx < len(pieces):
+                continue  # already written before the restart — reuse as-is
             if self._cancelled:
                 break
             first, last = idx == 0, idx == len(chunks) - 1
@@ -1502,6 +1545,10 @@ class DeepResearcher:
                 text = "\n\n".join(f"## {q}\n\n_(This section could not be written: the model did "
                                    f"not answer in time.)_" for q in chunk)
             pieces.append(text)
+            # CHECKPOINT: this part is confirmed and joined pieces are valid
+            # up to here — a restart mid-report resumes at the next part
+            # instead of rewriting everything already on disk.
+            self._checkpoint(report=report, report_parts=list(pieces))
         joined = self._tidy_grouped_headings("\n\n".join(pieces), subs)
         return joined if joined.strip() else report
 
@@ -1568,6 +1615,52 @@ class DeepResearcher:
                 self._progress(kwargs)
             except Exception:
                 pass
+
+    # ------------------------------------------------------------------
+    # Checkpointing — the state a resumed run needs, nothing more
+    # ------------------------------------------------------------------
+    # A round or report part is a confirmed unit of work; the checkpoint
+    # taken right after it is what `_write_checkpoint` in ResearchHandler
+    # persists to the marker JSON. Persistence is the caller's job — a
+    # failure in the callback must never interrupt the research loop.
+
+    @staticmethod
+    def _trim_findings_for_checkpoint(findings: List[Dict]) -> List[Dict]:
+        """Just enough per finding to resume with: url, title, extract, no
+        raw HTML and no page cache. Citations live separately in `sources`
+        (the SourceRegistry snapshot), which is the authoritative numbering."""
+        out: List[Dict] = []
+        for f in findings:
+            if not isinstance(f, dict):
+                continue
+            out.append({
+                "url": str(f.get("url") or "")[:2048],
+                "title": str(f.get("title") or "")[:500],
+                "summary": str(f.get("summary") or "")[:2000],
+                "evidence": str(f.get("evidence") or "")[:6000],
+            })
+        return out
+
+    def _checkpoint(self, *, findings: Optional[List[Dict]] = None,
+                    report: Optional[str] = None,
+                    report_parts: Optional[List[str]] = None) -> None:
+        """Hand the caller a resumable snapshot of the run so far."""
+        if not self._checkpoint_cb:
+            return
+        try:
+            data = {
+                "rounds_done": self.round_count,
+                "findings": self._trim_findings_for_checkpoint(
+                    findings if findings is not None else self.findings),
+                "queries_done": sorted(self.queries_used),
+                "report_parts": list(report_parts) if report_parts is not None else [],
+                "evolving_report": str(report if report is not None else self.evolving_report or ""),
+                "sources": self.citations.snapshot(),
+                "updated_at": time.time(),
+            }
+            self._checkpoint_cb(data)
+        except Exception:
+            logger.debug("checkpoint callback failed", exc_info=True)
 
     def _time_exceeded(self) -> bool:
         return (time.time() - self._start_time) > self.max_time

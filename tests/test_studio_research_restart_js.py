@@ -26,7 +26,10 @@ def test_the_follower_rides_out_a_restart_and_reads_interrupted():
 def test_the_screen_shows_interrupted_runs_as_failed_cards_with_retry():
     screen = (ROOT / "studio/src/screens/research/Research.tsx").read_text(encoding="utf-8")
     assert "a.status !== 'interrupted'" in screen
-    assert screen.count("void dismissResearch(") == 2
+    # Two on the no-checkpoint paths (follower and adoption), and two more
+    # since TASK-02: Retry from scratch and Dismiss give a checkpoint up
+    # and must say so, or the marker offers Resume again on reload.
+    assert screen.count("void dismissResearch(") == 4
     assert "The server restarted while this research was running. Retry starts it again." in screen
     route = (ROOT / "routes/research/research_routes.py").read_text(encoding="utf-8")
     assert "research_handler.list_interrupted(user)" in route

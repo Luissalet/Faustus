@@ -36,8 +36,10 @@ import {
   reportUrl,
   researchFit,
   researchResult,
+  resumeResearch,
   searchProviders,
   startResearch,
+  type ResearchCheckpoint,
   type ResearchFit,
   type ResearchItem,
   type ResearchProgress,
@@ -61,7 +63,7 @@ import '../research.css';
  * do with it). The library keeps every report; this is the workbench.
  */
 
-type JobStatus = 'queued' | 'running' | 'done' | 'error' | 'cancelled';
+type JobStatus = 'queued' | 'running' | 'done' | 'error' | 'cancelled' | 'interrupted';
 
 interface Job {
   id: string;
@@ -79,6 +81,11 @@ interface Job {
    *  synthesis that failed, pages already read…) — kept, because a
    *  warning that scrolls past in the phase line explains a thin report. */
   warnings?: string[];
+  /** Set only when status is 'interrupted' AND the marker has a checkpoint
+   *  to resume from — an interrupted run with nothing confirmed yet has no
+   *  Resume button, same as before this existed (see `follow` and the
+   *  active-research adoption effect). */
+  checkpoint?: ResearchCheckpoint;
 }
 
 const QUEUE_KEY = 'fs-research-queue';
@@ -106,6 +113,15 @@ function writeJson(key: string, value: unknown) {
 
 function uid(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/** The Resume button's one-line explainer: what the checkpoint kept. */
+function checkpointLine(cp: ResearchCheckpoint): string {
+  return t('Keeps {rounds}, {sources} and {parts}', {
+    rounds: tn(cp.roundsDone, '{n} round', '{n} rounds'),
+    sources: tn(cp.sources, '{n} source', '{n} sources'),
+    parts: tn(cp.reportParts, '{n} report part', '{n} report parts'),
+  });
 }
 
 function elapsed(from: number, to: number): string {
@@ -411,8 +427,20 @@ export function ResearchScreen() {
           }
         } else if (outcome === 'cancelled') patch(job.id, { status: 'cancelled', finishedAt: Date.now() });
         else if (outcome === 'interrupted') {
-          void dismissResearch(job.sessionId as string);
-          patch(job.id, { status: 'error', finishedAt: Date.now(), error: t('The server restarted while this research was running. Retry starts it again.') });
+          // A checkpoint survives the restart: offer Resume instead of
+          // silently discarding it. /api/research/active is the source of
+          // truth for that — ask it again rather than growing this stream's
+          // own event shape.
+          const checkpoint = await activeResearch()
+            .then((active) => active.find((a) => a.id === job.sessionId)?.checkpoint)
+            .catch(() => undefined);
+          if (checkpoint) {
+            patch(job.id, { status: 'interrupted', finishedAt: Date.now(), checkpoint,
+              error: t('The server restarted while this research was running. Retry starts it again.') });
+          } else {
+            void dismissResearch(job.sessionId as string);
+            patch(job.id, { status: 'error', finishedAt: Date.now(), error: t('The server restarted while this research was running. Retry starts it again.') });
+          }
         } else patch(job.id, { status: 'error', finishedAt: Date.now(), error: lastMessage || t('The research failed.') });
         loadResearchLibrary({ limit: 8 }).then((r) => setRecent(r.items)).catch(() => undefined);
       });
@@ -433,8 +461,16 @@ export function ResearchScreen() {
               const startedAt = a.startedAt ? a.startedAt * 1000 : Date.now();
               const base: Job = { id: uid(), sessionId: a.id, query: a.query, settings: { ...DEFAULT_SETTINGS, category: a.category }, status: 'running', progress: a.progress, startedAt, finishedAt: 0, result: null, error: '', sourceCount: 0 };
               if (a.status !== 'interrupted') return base;
-              // A restart killed it: show the card as failed, with Retry, and
-              // tell the server it has been seen so it is not shown twice.
+              if (a.checkpoint) {
+                // A checkpoint survives the restart: offer Resume instead of
+                // discarding it. The marker stays until Resume, Retry from
+                // scratch, or a manual dismiss deals with it.
+                return { ...base, status: 'interrupted', finishedAt: Date.now(), checkpoint: a.checkpoint,
+                  error: t('The server restarted while this research was running. Retry starts it again.') };
+              }
+              // A restart killed it with nothing confirmed yet: show the card
+              // as failed, with Retry, and tell the server it has been seen
+              // so it is not shown twice.
               void dismissResearch(a.id);
               return { ...base, status: 'error', finishedAt: Date.now(), error: t('The server restarted while this research was running. Retry starts it again.') };
             });
@@ -477,7 +513,31 @@ export function ResearchScreen() {
     }
   };
 
+  /** Resume: a NEW run seeded with the checkpoint's rounds/sources/report
+   *  parts. The server dismisses the old marker once the new one is
+   *  running, so — unlike Retry from scratch — this card's job just takes
+   *  over the new session id. */
+  const resume = async (job: Job) => {
+    if (!job.sessionId) return;
+    followers.current.get(job.id)?.abort();
+    followers.current.delete(job.id);
+    patch(job.id, { status: 'running', sessionId: null, startedAt: Date.now(), finishedAt: 0, progress: null, error: '', result: null, sourceCount: 0, warnings: [], checkpoint: undefined });
+    try {
+      const out = await resumeResearch(job.sessionId);
+      patch(job.id, { sessionId: out.sessionId });
+    } catch (err) {
+      patch(job.id, { status: 'error', finishedAt: Date.now(), error: (err as Error).message || t('Could not resume.') });
+    }
+  };
+
   const makeJob = (q: string): Job => ({ id: uid(), sessionId: null, query: q, settings: { ...settings }, status: 'queued', progress: null, startedAt: 0, finishedAt: 0, result: null, error: '', sourceCount: 0 });
+
+  /** Create alternative: a fresh, editable job with the interrupted run's
+   *  brief — queued, not started — leaving the interrupted card untouched
+   *  so Resume is still there if the alternative isn't wanted after all. */
+  const createAlternative = (job: Job) => {
+    setJobs((cur) => [...cur, makeJob(job.query)]);
+  };
 
   const addToQueue = () => {
     const q = query.trim();
@@ -566,7 +626,7 @@ export function ResearchScreen() {
   // stream catches up and moves the phase on.
   const [answered, setAnswered] = useState<string | null>(null);
   const blocked = running.map((j) => j.progress?.vram).find((v) => v && v.ticket !== answered) ?? null;
-  const finished = jobs.filter((j) => j.status === 'done' || j.status === 'error' || j.status === 'cancelled');
+  const finished = jobs.filter((j) => j.status === 'done' || j.status === 'error' || j.status === 'cancelled' || j.status === 'interrupted');
   const sessionIds = useMemo(() => new Set(jobs.map((j) => j.sessionId).filter(Boolean)), [jobs]);
   const recentOthers = (recent ?? []).filter((r) => !sessionIds.has(r.id) && !dismissed.has(r.id));
   const endpoint = endpoints.find((e) => e.id === settings.endpointId);
@@ -767,6 +827,28 @@ export function ResearchScreen() {
               job.status === 'done' ? (
                 <li key={job.id}>
                   <ResultCard job={job} formats={formats} onDiscuss={() => void discuss(job.sessionId as string)} onDelete={() => setConfirmDelete(job)} onDismiss={() => remove(job)} say={say} />
+                </li>
+              ) : job.status === 'interrupted' ? (
+                <li key={job.id} className="fs-rs__job" data-status="interrupted" data-testid="research-interrupted">
+                  <div className="fs-rs__job-head">
+                    <div className="fs-rs__job-text">
+                      <h3 className="fs-rs__query">{job.query}</h3>
+                      <p className="fs-rs__meta">{job.error || t('The research failed.')}</p>
+                      {job.checkpoint && <p className="fs-rs__meta" data-testid="research-checkpoint-summary">{checkpointLine(job.checkpoint)}</p>}
+                      <JobWarnings warnings={job.warnings} />
+                    </div>
+                  </div>
+                  <div className="fs-rs__job-head">
+                    <span className="fs-spacer" />
+                    {job.checkpoint && <Button variant="primary" size="sm" icon={RefreshCw} label={t('Resume')} onClick={() => void resume(job)} testId="research-resume" />}
+                    {/* Retry from scratch and Dismiss both give the checkpoint up:
+                        tell the server, or the interrupted marker (and the
+                        Resume it offers) comes back on the next reload. */}
+                    <Button variant="secondary" size="sm" icon={RefreshCw} label={t('Retry from scratch')} onClick={() => { if (job.checkpoint && job.sessionId) void dismissResearch(job.sessionId); void launch({ ...job, sessionId: null }); }} />
+                    <Button variant="ghost" size="sm" icon={ListPlus} label={t('Create alternative')} onClick={() => createAlternative(job)} title={t('A new, editable job with the same brief — this card is left as is')} />
+                    <IconButton icon={Pencil} label={t('Edit and retry')} size="sm" onClick={() => setEditing(job)} />
+                    <IconButton icon={X} label={t('Dismiss')} size="sm" onClick={() => { if (job.checkpoint && job.sessionId) void dismissResearch(job.sessionId); remove(job); }} />
+                  </div>
                 </li>
               ) : (
                 <li key={job.id} className="fs-rs__job" data-status={job.status} data-testid={`research-${job.status}`}>

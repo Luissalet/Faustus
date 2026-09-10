@@ -21,6 +21,7 @@ from src.endpoint_resolver import resolve_endpoint
 from src.auth_helpers import _auth_disabled, get_current_user
 from src.owner_identity import REQUEST_SENTINEL_OWNERS
 from src.constants import DEEP_RESEARCH_DIR
+from src.research_handler import _bounded_int
 
 _SESSION_ID_RE = re.compile(r"^[a-zA-Z0-9-]{1,128}$")
 
@@ -348,8 +349,14 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
             raise HTTPException(404, "No research result available")
         sources = research_handler.get_sources(session_id) or []
         raw_findings = research_handler.get_raw_findings(session_id) or []
+        # Read before clear_result() drops the in-memory entry.
+        entry = research_handler._active_tasks.get(session_id) or {}
+        out = {"result": result, "sources": sources, "raw_findings": raw_findings}
+        if entry.get("resumed_from"):
+            out["resumed_from"] = entry["resumed_from"]
+            out["resumed_kept"] = entry.get("resumed_kept")
         research_handler.clear_result(session_id)
-        return {"result": result, "sources": sources, "raw_findings": raw_findings}
+        return out
 
     def _assert_owns_research(session_id: str, user: str) -> None:
         """404-not-403 ownership gate for a research session's on-disk JSON.
@@ -681,6 +688,119 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
         )
         return {"session_id": session_id, "status": "running", "query": body.query}
 
+    def _resolve_default_endpoint(user: str, model: Optional[str] = None) -> tuple:
+        """The same endpoint-selection waterfall as /api/research/start's
+        no-`endpoint_id` branch (research → utility → default → chat → the
+        caller's own first enabled endpoint), factored out for /resume so a
+        resumed run picks a model the same way a fresh one would."""
+        ep_url, ep_model, ep_headers = resolve_endpoint("research", owner=user)
+        if not ep_url:
+            ep_url, ep_model, ep_headers = resolve_endpoint("utility", owner=user)
+        if not ep_url:
+            ep_url, ep_model, ep_headers = resolve_endpoint("default", owner=user)
+        if not ep_url:
+            ep_url, ep_model, ep_headers = resolve_endpoint("chat", owner=user)
+        if not ep_url:
+            from src.database import SessionLocal
+            db = SessionLocal()
+            try:
+                ep = _owned_enabled_endpoint(db, user)
+                if ep:
+                    resolved = _resolve_endpoint_runtime(ep, owner=user)
+                    if resolved:
+                        ep_url, ep_model, ep_headers = resolved
+            finally:
+                db.close()
+        if not ep_url:
+            raise HTTPException(400, "No endpoints configured. Add one in Settings first.")
+        if model:
+            ep_model = model
+        return ep_url, ep_model, ep_headers
+
+    @router.post("/api/research/{session_id}/resume")
+    async def research_resume(session_id: str, request: Request):
+        """Resume an interrupted run from its last confirmed checkpoint.
+
+        Starts a NEW session (same convention as Retry: a fresh session_id,
+        never a second writer for the old one) seeded with the checkpoint's
+        findings, sources, excluded queries and already-written report parts,
+        and with `max_rounds` reduced by the rounds already done — so the
+        resumed run does not repeat work the interrupted one already paid
+        for. 409 when the marker carries no checkpoint (nothing confirmed
+        was saved yet); the screen then offers only Retry-from-scratch.
+        """
+        user = _require_user(request)
+        _validate_session_id(session_id)
+        path = _require_research_path(session_id)
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            raise HTTPException(404, "Research not found")
+        # SECURITY: 404 (not 403) so ownership isn't revealed by the status code.
+        if data.get("owner") != user:
+            raise HTTPException(404, "Research not found")
+        checkpoint = data.get("checkpoint")
+        if not isinstance(checkpoint, dict) or not checkpoint.get("rounds_done"):
+            raise HTTPException(409, "No checkpoint to resume from yet — retry from scratch instead")
+
+        findings = checkpoint.get("findings")
+        findings = [f for f in findings if isinstance(f, dict)] if isinstance(findings, list) else []
+        sources_snapshot = checkpoint.get("sources")
+        prior_citations = None
+        if isinstance(sources_snapshot, dict):
+            try:
+                # Validate before committing to a run: a damaged snapshot is
+                # not permission to renumber citations silently.
+                from src.research_citations import SourceRegistry
+                SourceRegistry.restore(sources_snapshot)
+                prior_citations = sources_snapshot
+            except Exception:
+                logger.warning("research_resume: dropping unrestorable citation snapshot for %s", session_id)
+        prior_urls = {f["url"] for f in findings if f.get("url")}
+        report_parts = checkpoint.get("report_parts")
+        report_parts = [p for p in report_parts if isinstance(p, str)] if isinstance(report_parts, list) else []
+
+        rounds_done = int(checkpoint.get("rounds_done") or 0)
+        requested_max_rounds = _bounded_int(data.get("max_rounds"), default=20, minimum=1, maximum=20)
+        remaining_rounds = max(1, min(20, requested_max_rounds - rounds_done))
+
+        ep_url, ep_model, ep_headers = _resolve_default_endpoint(user, model=data.get("model") or None)
+
+        new_session_id = f"rp-{uuid.uuid4().hex[:12]}"
+        kept = {"rounds_done": rounds_done, "sources": len(findings), "report_parts": len(report_parts)}
+        research_handler.start_research(
+            session_id=new_session_id,
+            query=data.get("query", ""),
+            llm_endpoint=ep_url,
+            llm_model=ep_model,
+            llm_headers=ep_headers,
+            max_rounds=remaining_rounds,
+            category=data.get("category") or None,
+            owner=user,
+            prior_report=checkpoint.get("evolving_report") or "",
+            prior_findings=findings,
+            prior_urls=prior_urls,
+            prior_citations=prior_citations,
+            prior_queries=set(checkpoint.get("queries_done") or []),
+            prior_report_parts=report_parts,
+            resumed_from=session_id,
+            resumed_kept=kept,
+        )
+        # The interrupted card's job is done — its checkpoint has been handed
+        # to the new run. Best-effort: a failed dismiss just leaves the old
+        # marker to be swept up on the next restart like any other.
+        try:
+            research_handler.dismiss_interrupted(session_id, user)
+        except Exception:
+            logger.debug("dismiss_interrupted after resume failed for %s", session_id, exc_info=True)
+        return {
+            "session_id": new_session_id,
+            "status": "running",
+            "query": data.get("query", ""),
+            "resumed_from": session_id,
+            "resumed_kept": kept,
+        }
+
     @router.get("/api/research/stream/{session_id}")
     async def research_stream(session_id: str, request: Request):
         """SSE stream of research progress events."""
@@ -726,16 +846,25 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
             p = owned_disk_path
             if p is not None:
                 d = json.loads(p.read_text(encoding="utf-8"))
-                return {
+                out = {
                     "result": d.get("result", ""),
                     "sources": d.get("sources", []),
                     "raw_findings": d.get("raw_findings", []),
                     "category": d.get("category") or "",
                 }
+                if d.get("resumed_from"):
+                    out["resumed_from"] = d["resumed_from"]
+                    out["resumed_kept"] = d.get("resumed_kept")
+                return out
             raise HTTPException(404, "No research result available")
         sources = research_handler.get_sources(session_id) or []
         raw_findings = research_handler.get_raw_findings(session_id) or []
-        return {"result": result, "sources": sources, "raw_findings": raw_findings, "category": ""}
+        out = {"result": result, "sources": sources, "raw_findings": raw_findings, "category": ""}
+        entry = research_handler._active_tasks.get(session_id) or {}
+        if entry.get("resumed_from"):
+            out["resumed_from"] = entry["resumed_from"]
+            out["resumed_kept"] = entry.get("resumed_kept")
+        return out
 
     @router.post("/api/research/spinoff/{session_id}")
     async def research_spinoff(session_id: str, request: Request):

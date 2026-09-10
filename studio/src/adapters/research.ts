@@ -150,6 +150,10 @@ export interface ResearchResult {
   sources: ResearchSource[];
   findings: string[];
   category: string;
+  /** Set when this run was launched by Resume — the interrupted run it
+   *  picked up from, and what it kept from that run's checkpoint. */
+  resumedFrom?: string;
+  resumedKept?: ResearchCheckpoint;
 }
 
 async function postJson(path: string, body: unknown): Promise<Record<string, unknown>> {
@@ -195,6 +199,16 @@ function progressFrom(raw: Record<string, unknown>): ResearchProgress {
   };
 }
 
+/** What an interrupted run's marker has confirmed so far — round loop's
+ *  findings and any final-report parts already written. Only ever the
+ *  counts (the checkpoint itself, findings included, is server-side only —
+ *  /resume reads it directly from the marker). */
+export interface ResearchCheckpoint {
+  roundsDone: number;
+  sources: number;
+  reportParts: number;
+}
+
 export interface ActiveResearch {
   id: string;
   query: string;
@@ -205,6 +219,15 @@ export interface ActiveResearch {
   error: string;
   /** The category the run was started with, so a Retry keeps it. */
   category: string;
+  /** Set only for an interrupted run that has something to resume from —
+   *  the screen offers "Resume" only then. */
+  checkpoint?: ResearchCheckpoint;
+}
+
+function checkpointFrom(raw: unknown): ResearchCheckpoint | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const c = raw as Record<string, unknown>;
+  return { roundsDone: Number(c.rounds_done) || 0, sources: Number(c.sources) || 0, reportParts: Number(c.report_parts) || 0 };
 }
 
 export async function activeResearch(signal?: AbortSignal): Promise<ActiveResearch[]> {
@@ -217,6 +240,7 @@ export async function activeResearch(signal?: AbortSignal): Promise<ActiveResear
     status: String(a.status ?? 'running'),
     error: typeof a.error === 'string' ? a.error : '',
     category: typeof a.category === 'string' ? a.category : '',
+    checkpoint: checkpointFrom(a.checkpoint),
   }));
 }
 
@@ -227,6 +251,26 @@ export async function dismissResearch(id: string): Promise<void> {
   } catch {
     /* the marker stays; it is dismissed on the next visit */
   }
+}
+
+export interface ResumedResearch {
+  sessionId: string;
+  query: string;
+  resumedFrom: string;
+  resumedKept: ResearchCheckpoint;
+}
+
+/** Resume an interrupted run from its last confirmed checkpoint: a NEW
+ *  session seeded with the rounds/sources/report parts already done.
+ *  Throws (ApiError, 409) when the marker carries no checkpoint yet. */
+export async function resumeResearch(id: string): Promise<ResumedResearch> {
+  const out = await post(`/api/research/${encodeURIComponent(id)}/resume`);
+  return {
+    sessionId: String(out.session_id ?? ''),
+    query: String(out.query ?? ''),
+    resumedFrom: String(out.resumed_from ?? ''),
+    resumedKept: checkpointFrom(out.resumed_kept) ?? { roundsDone: 0, sources: 0, reportParts: 0 },
+  };
 }
 
 /** A short outage (the server restarting) is not a failed research. */
@@ -306,11 +350,14 @@ export function followResearch(id: string, onProgress: (p: ResearchProgress) => 
 }
 
 function resultFrom(raw: Record<string, unknown>): ResearchResult {
+  const resumedFrom = typeof raw.resumed_from === 'string' && raw.resumed_from ? raw.resumed_from : undefined;
   return {
     result: String(raw.result ?? ''),
     sources: asArray<Record<string, unknown>>(raw, 'sources').map((s) => ({ title: String(s.title ?? s.url ?? ''), url: typeof s.url === 'string' ? s.url : '' })),
     findings: asArray<unknown>(raw, 'raw_findings').map((f) => (typeof f === 'string' ? f : String((f as { text?: unknown })?.text ?? ''))).filter(Boolean),
     category: String(raw.category ?? ''),
+    resumedFrom,
+    resumedKept: resumedFrom ? checkpointFrom(raw.resumed_kept) : undefined,
   };
 }
 

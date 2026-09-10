@@ -99,6 +99,7 @@ class ResearchHandler:
             path = _research_json_path(session_id)
             if path is None:
                 return
+            current = {}
             if path.exists():
                 try:
                     current = json.loads(path.read_text(encoding="utf-8"))
@@ -116,11 +117,49 @@ class ResearchHandler:
                 "category": entry.get("category"),
                 "started_at": entry.get("started_at", 0),
                 "owner": entry.get("owner", ""),
+                "max_rounds": entry.get("max_rounds") or 0,
             }
+            # A checkpoint (rounds/findings/report parts confirmed so far) is
+            # written separately by `_write_checkpoint`, at round and report
+            # boundaries rather than on every status change. This coarser,
+            # more frequent write must not erase it — losing the checkpoint
+            # here is exactly what would happen on the timeout/error branches
+            # of `start_research`, the two paths a run most needs it to
+            # survive.
+            if current.get("checkpoint"):
+                data["checkpoint"] = current["checkpoint"]
             from core.atomic_io import atomic_write_json
             atomic_write_json(str(path), data, private=True)
         except Exception:
             logger.debug("research marker write failed", exc_info=True)
+
+    def _write_checkpoint(self, session_id: str, checkpoint: dict) -> None:
+        """Merge a resumable snapshot into the run's marker JSON.
+
+        Called from `DeepResearcher`'s checkpoint callback at round and
+        report-part boundaries. Merges into whatever is on disk instead of
+        replacing it, so it and `_write_marker` never race each other's
+        fields away — and it never fires after a report is already saved.
+        """
+        try:
+            path = _research_json_path(session_id)
+            if path is None:
+                return
+            current = {}
+            if path.exists():
+                try:
+                    current = json.loads(path.read_text(encoding="utf-8"))
+                except Exception:
+                    current = {}
+            if current.get("result"):
+                return  # never trample a saved report
+            if not current.get("marker"):
+                return  # nothing to attach a checkpoint to (run not started yet)
+            current["checkpoint"] = checkpoint
+            from core.atomic_io import atomic_write_json
+            atomic_write_json(str(path), current, private=True)
+        except Exception:
+            logger.debug("research checkpoint write failed", exc_info=True)
 
     def recover_interrupted(self) -> int:
         """Mark every run that was still running at the last shutdown."""
@@ -157,7 +196,7 @@ class ResearchHandler:
                 continue
             if data.get("owner", "") != owner or data.get("dismissed"):
                 continue
-            out.append({
+            item = {
                 "session_id": p.stem,
                 "query": data.get("query", ""),
                 "status": "interrupted",
@@ -166,9 +205,35 @@ class ResearchHandler:
                              "model": data.get("model", "")},
                 "started_at": data.get("started_at", 0),
                 "category": data.get("category"),
-            })
+            }
+            # Resume is only ever offered when there is something to resume
+            # from — the screen decides the third button purely on whether
+            # this key is present, never by re-deriving it from the raw
+            # checkpoint (see `_checkpoint_summary`).
+            summary = self._checkpoint_summary(data.get("checkpoint"))
+            if summary:
+                item["checkpoint"] = summary
+            out.append(item)
         out.sort(key=lambda x: x.get("started_at") or 0)
         return out
+
+    @staticmethod
+    def _checkpoint_summary(checkpoint) -> Optional[dict]:
+        """Counts for the "Resume" button's one-line summary — never the raw
+        checkpoint (findings/evolving_report can be large and are only ever
+        needed server-side, by /resume itself)."""
+        if not isinstance(checkpoint, dict):
+            return None
+        findings = checkpoint.get("findings")
+        report_parts = checkpoint.get("report_parts")
+        rounds_done = checkpoint.get("rounds_done")
+        if not isinstance(rounds_done, int) or rounds_done <= 0:
+            return None
+        return {
+            "rounds_done": rounds_done,
+            "sources": len(findings) if isinstance(findings, list) else 0,
+            "report_parts": len(report_parts) if isinstance(report_parts, list) else 0,
+        }
 
     def dismiss_interrupted(self, session_id: str, owner: str) -> bool:
         """Forget an interrupted run once the screen has shown it."""
@@ -377,11 +442,19 @@ class ResearchHandler:
         extraction_concurrency: int = None,
         owner: str = "",
         prior_citations: dict = None,
+        prior_queries: set = None,
+        prior_report_parts: list = None,
+        resumed_from: str = None,
+        resumed_kept: dict = None,
     ) -> dict:
         """Start research as a background task. Returns task info dict.
 
         max_rounds is the safety cap; the AI's _should_stop decision (after
         min_rounds) terminates the loop earlier in normal operation.
+
+        `resumed_from`/`resumed_kept` are informational only (a checkpoint
+        resume passing the originating session_id and what it kept) —
+        stamped onto the saved result so the run's origin is not lost.
         """
         if _research_json_path(session_id) is None:
             raise ValueError("Invalid research session_id")
@@ -459,12 +532,20 @@ class ResearchHandler:
             "category": category,
             # SECURITY: track ownership so all reads / saves can filter by user.
             "owner": owner or "",
+            # The cap this run was asked to honor — a resume of this run
+            # (if it too gets interrupted) needs it to subtract rounds_done.
+            "max_rounds": max_rounds,
+            "resumed_from": resumed_from,
+            "resumed_kept": resumed_kept,
         }
         self._active_tasks[session_id] = entry
         self._write_marker(session_id, entry)
 
         def on_progress(event):
             entry["progress"] = {**event, "model": llm_model}
+
+        def on_checkpoint(checkpoint: dict):
+            self._write_checkpoint(session_id, checkpoint)
 
         _completed = False
 
@@ -491,11 +572,14 @@ class ResearchHandler:
                         prior_findings=prior_findings,
                         prior_urls=prior_urls,
                         prior_citations=prior_citations,
+                        prior_queries=prior_queries,
+                        prior_report_parts=prior_report_parts,
                         max_rounds=max_rounds,
                         search_provider=search_provider,
                         category=category,
                         extraction_timeout=extraction_timeout,
                         extraction_concurrency=extraction_concurrency,
+                        checkpoint_callback=on_checkpoint,
                     ),
                     timeout=hard_timeout,
                 )
@@ -805,6 +889,11 @@ class ResearchHandler:
                 # SECURITY: stamp owner so route handlers can filter by user.
                 "owner": entry.get("owner", ""),
             }
+            # A run resumed from a checkpoint says so and what it kept — the
+            # honest record of where its findings actually came from.
+            if entry.get("resumed_from"):
+                data["resumed_from"] = entry["resumed_from"]
+                data["resumed_kept"] = entry.get("resumed_kept")
             from core.atomic_io import atomic_write_json
             atomic_write_json(str(path), data, private=True)
             logger.info(f"Research result saved to {path}")
@@ -1011,6 +1100,9 @@ class ResearchHandler:
         extraction_timeout: int = None,
         extraction_concurrency: int = None,
         prior_citations: dict = None,
+        prior_queries: set = None,
+        prior_report_parts: list = None,
+        checkpoint_callback=None,
     ) -> str:
         """
         Run iterative deep research using the LLM-in-the-loop DeepResearcher.
@@ -1092,6 +1184,7 @@ class ResearchHandler:
                 query_timeout=_query_timeout,
                 extraction_concurrency=_extraction_concurrency,
                 progress_callback=progress_callback,
+                checkpoint_callback=checkpoint_callback,
                 search_provider=search_provider,
                 category=category,
             )
@@ -1105,6 +1198,8 @@ class ResearchHandler:
                 prior_findings=prior_findings,
                 prior_urls=prior_urls,
                 prior_citations=prior_citations,
+                prior_queries=prior_queries,
+                prior_report_parts=prior_report_parts,
             )
             elapsed = time.time() - start_time
 
