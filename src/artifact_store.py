@@ -370,6 +370,56 @@ def _record_manifest_for(occurrence_id: str, art: Artifact, *, call_id: str = ""
                          'occurrence itself was already recorded', occurrence_id)
 
 
+def analysis_provenance(*, script_text: str, input_paths: Iterable[str] = (),
+                        engine: str = "", recipe: str = "",
+                        source_artifact_ids: Iterable[str] = ()) -> Dict[str, Any]:
+    """ART-05 (datos y análisis reproducibles): the provenance dict for a
+    saved script + its input data, so `collect(..., provenance=...)` records
+    "this number comes from this exact script and this exact data" as
+    something checkable, not a caption.
+
+    Deliberately reuses the `Provenance` contract's existing fields
+    (src/contracts/artifact.py) rather than inventing a parallel schema for
+    analyses (COMUN.md rule 4): `recipe_fingerprint` already means "the
+    recipe file had not been edited underneath that name" — that is exactly
+    what hashing the analysis script means here — and `inputs_digest`
+    already means "fingerprint of inputs, never the inputs", which is
+    exactly "the data this used, hashed, not copied". `source_artifact_ids`
+    lets the input data itself be a prior artifact, making the chain walkable
+    the same way any other artifact lineage is.
+
+    Sandboxed execution, read-only DB access and timeouts (ART-05's other
+    half) belong to EXEC-01's authority, not this module; this function only
+    records what ran, once EXEC-01 (or any other reproducible-analysis
+    caller) has actually run it.
+    """
+    script_hash = hashlib.sha256((script_text or "").encode("utf-8")).hexdigest()
+    input_hashes = []
+    unreadable = []
+    for p in input_paths:
+        try:
+            input_hashes.append(sha256_of(p))
+        except OSError:
+            unreadable.append(p)
+    inputs_digest = None
+    if input_hashes:
+        inputs_digest = hashlib.sha256(
+            "\n".join(sorted(input_hashes)).encode("utf-8")).hexdigest()
+    note = f"reproducible analysis: script sha256={script_hash}"
+    if inputs_digest:
+        note += f"; inputs sha256={inputs_digest} ({len(input_hashes)} file(s))"
+    if unreadable:
+        note += f"; {len(unreadable)} input path(s) unreadable at record time"
+    return {
+        "backend": engine or None,
+        "recipe": recipe or None,
+        "recipe_fingerprint": script_hash,
+        "inputs_digest": inputs_digest,
+        "source_artifact_ids": tuple(source_artifact_ids),
+        "note": note,
+    }
+
+
 def path_of(artifact_filename: str, *, store_dir: Optional[str] = None) -> str:
     """Resolve a stored name to a path, refusing anything that is not a bare
     name inside the store. The contract already rejects a path in `filename`;

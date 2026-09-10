@@ -5,10 +5,196 @@ Reusable document actions callable from both REST routes and the task scheduler.
 """
 
 import logging
+import os
 import re
 from datetime import datetime, timezone
+from typing import Any, Dict, List, Sequence
 
 logger = logging.getLogger(__name__)
+
+#: Points of slack before a glyph or table edge counts as "outside the page"
+#: (ART-03). A hairline over the mediabox from font hinting/kerning rounding
+#: is not what this check exists to catch — a whole word or column sitting
+#: past the margin is.
+_OVERFLOW_TOLERANCE_PT = 1.0
+
+
+class DocumentActionError(ValueError):
+    pass
+
+
+def detect_page_overflow(pdf_path: str, *, tolerance: float = _OVERFLOW_TOLERANCE_PT) -> Dict[str, Any]:
+    """ART-03: "un documento que abre pero tiene texto fuera de página o
+    tablas cortadas no pasa control visual automáticamente."
+
+    A PDF can open cleanly (pypdf/pdfplumber parse it, page count is sane)
+    and still be visually broken — a long unwrapped line or an over-wide
+    table pushed past the page's own mediabox. Opening successfully says
+    nothing about that; this reads each page's actual character and table
+    bounding boxes and compares them against the page's own dimensions.
+
+    Returns ``{"pages": n, "overflow_pages": [...], "table_cut_pages": [...],
+    "passes_visual_check": bool}`` — ``passes_visual_check`` is the gate a
+    caller uses to withhold automatic pass/export approval; it is never True
+    just because pypdf could parse the bytes.
+    """
+    try:
+        import pdfplumber
+    except ImportError as exc:
+        raise DocumentActionError("pdfplumber is not installed") from exc
+
+    overflow_pages: List[Dict[str, Any]] = []
+    table_cut_pages: List[Dict[str, Any]] = []
+    try:
+        with pdfplumber.open(pdf_path) as pdf:
+            page_count = len(pdf.pages)
+            for index, page in enumerate(pdf.pages):
+                page_no = index + 1
+                width, height = float(page.width), float(page.height)
+
+                worst_char = None
+                for char in page.chars:
+                    over_right = char["x1"] - width
+                    over_bottom = char["bottom"] - height
+                    over_left = -char["x0"]
+                    over_top = -char["top"]
+                    worst = max(over_right, over_bottom, over_left, over_top)
+                    if worst > tolerance and (worst_char is None or worst > worst_char["overflow_pt"]):
+                        worst_char = {
+                            "text": char.get("text", ""), "overflow_pt": round(worst, 1),
+                            "bbox": [round(char["x0"], 1), round(char["top"], 1),
+                                    round(char["x1"], 1), round(char["bottom"], 1)],
+                        }
+                if worst_char is not None:
+                    overflow_pages.append({
+                        "page": page_no, "reason": "text_outside_page",
+                        "page_size": [round(width, 1), round(height, 1)],
+                        "detail": worst_char,
+                    })
+
+                try:
+                    tables = page.find_tables()
+                except Exception:
+                    tables = []
+                for t_idx, table in enumerate(tables):
+                    x0, top, x1, bottom = table.bbox
+                    over_right = x1 - width
+                    over_bottom = bottom - height
+                    worst = max(over_right, over_bottom)
+                    if worst > tolerance:
+                        table_cut_pages.append({
+                            "page": page_no, "reason": "table_cut",
+                            "table_index": t_idx,
+                            "page_size": [round(width, 1), round(height, 1)],
+                            "table_bbox": [round(x0, 1), round(top, 1), round(x1, 1), round(bottom, 1)],
+                            "overflow_pt": round(worst, 1),
+                        })
+    except DocumentActionError:
+        raise
+    except Exception as exc:
+        raise DocumentActionError(f"could not open PDF for visual check: {exc}") from exc
+
+    return {
+        "pages": page_count,
+        "overflow_pages": overflow_pages,
+        "table_cut_pages": table_cut_pages,
+        "passes_visual_check": not overflow_pages and not table_cut_pages,
+    }
+
+
+# ── ART-07: PDFs and complex files — split/merge with declared budgets ────
+#
+# "conversiones con presupuesto de tamaño y páginas": both operations refuse
+# BEFORE writing anything (or, for split, before creating any output file)
+# once a call would exceed its stated budget, rather than silently producing
+# a huge merged file or thousands of one-page splits. Uses `pypdf`, already a
+# dependency (see src/document_processor.py, src/pdf_forms.py) — no new one.
+
+_DEFAULT_MAX_SPLIT_FILES = 200
+_DEFAULT_MAX_MERGE_PAGES = 2000
+_DEFAULT_MAX_MERGE_BYTES = 200 * 1024 * 1024
+
+
+def split_pdf(input_path: str, output_dir: str, *, pages_per_file: int = 1,
+             max_files: int = _DEFAULT_MAX_SPLIT_FILES) -> Dict[str, Any]:
+    """Split `input_path` into consecutive `pages_per_file`-page PDFs under
+    `output_dir`. Refuses up front (creates nothing) when the resulting file
+    count would exceed `max_files` — the page/size budget ART-07 asks for."""
+    try:
+        from pypdf import PdfReader, PdfWriter
+    except ImportError as exc:
+        raise DocumentActionError("pypdf is not installed") from exc
+    if pages_per_file < 1:
+        raise DocumentActionError("pages_per_file must be at least 1")
+
+    try:
+        reader = PdfReader(input_path)
+    except Exception as exc:
+        raise DocumentActionError(f"could not open PDF: {exc}") from exc
+    total_pages = len(reader.pages)
+    n_files = max(1, -(-total_pages // pages_per_file))  # ceil div
+    if n_files > max_files:
+        raise DocumentActionError(
+            f"splitting {total_pages} page(s) at {pages_per_file}/file would "
+            f"produce {n_files} files, over the budget of {max_files}")
+
+    os.makedirs(output_dir, exist_ok=True)
+    outputs: List[Dict[str, Any]] = []
+    for i in range(n_files):
+        start = i * pages_per_file
+        end = min(start + pages_per_file, total_pages)
+        writer = PdfWriter()
+        for p in range(start, end):
+            writer.add_page(reader.pages[p])
+        out_path = os.path.join(output_dir, f"part_{i + 1:03d}.pdf")
+        with open(out_path, "wb") as fh:
+            writer.write(fh)
+        outputs.append({"path": out_path, "first_page": start + 1, "last_page": end})
+    return {"input_pages": total_pages, "outputs": outputs}
+
+
+def merge_pdfs(input_paths: Sequence[str], output_path: str, *,
+               max_total_pages: int = _DEFAULT_MAX_MERGE_PAGES,
+               max_total_bytes: int = _DEFAULT_MAX_MERGE_BYTES) -> Dict[str, Any]:
+    """Concatenate `input_paths` in order into `output_path`. Refuses before
+    writing anything when the inputs' combined byte size exceeds
+    `max_total_bytes`, and refuses before the output is written when the
+    combined page count exceeds `max_total_pages` — in both cases nothing
+    lands on disk at `output_path`."""
+    try:
+        from pypdf import PdfReader, PdfWriter
+    except ImportError as exc:
+        raise DocumentActionError("pypdf is not installed") from exc
+    if not input_paths:
+        raise DocumentActionError("no input PDFs given")
+
+    total_bytes_in = 0
+    for p in input_paths:
+        try:
+            total_bytes_in += os.path.getsize(p)
+        except OSError as exc:
+            raise DocumentActionError(f"could not read {p}: {exc}") from exc
+    if total_bytes_in > max_total_bytes:
+        raise DocumentActionError(
+            f"input PDFs total {total_bytes_in} bytes, over the budget of {max_total_bytes}")
+
+    writer = PdfWriter()
+    total_pages = 0
+    for p in input_paths:
+        try:
+            reader = PdfReader(p)
+        except Exception as exc:
+            raise DocumentActionError(f"could not open {p}: {exc}") from exc
+        total_pages += len(reader.pages)
+        if total_pages > max_total_pages:
+            raise DocumentActionError(
+                f"merging {p} would bring the total past {max_total_pages} pages")
+        for page in reader.pages:
+            writer.add_page(page)
+
+    with open(output_path, "wb") as fh:
+        writer.write(fh)
+    return {"output_path": output_path, "pages": total_pages, "input_count": len(input_paths)}
 
 
 _JUNK_TITLES = {
@@ -195,3 +381,86 @@ async def run_document_tidy(owner: str) -> str:
         return f"Removed {deleted} of {len(docs)}: {preview}{extra} · {kept} kept"
     finally:
         db.close()
+
+
+# ── ART-02: warn before a lossy DOCX -> markdown conversion ───────────────
+#
+# The editor stores every document as markdown text (`Document.current_content`
+# — see routes/document/document_routes.py), so opening a DOCX for editing
+# today means converting it once on import. That conversion cannot carry a
+# comment, a tracked change, or a numbering definition through to markdown —
+# none of those have a markdown representation — and it silently drops them.
+# `analyze_docx_preservation` is the check ART-02 asks for: run it BEFORE the
+# conversion and show the caller exactly what would be lost, so a user can
+# cancel instead of losing a reviewer's comments without ever being told.
+def analyze_docx_preservation(path: str) -> Dict[str, Any]:
+    """What a markdown round-trip of this DOCX cannot preserve.
+
+    Returns ``{"paragraph_count", "image_count", "has_comments",
+    "has_tracked_changes", "numbered_paragraph_count",
+    "not_preservable_on_markdown_conversion": [...],
+    "safe_to_convert_silently": bool}``. ``safe_to_convert_silently`` is
+    False the moment ANY of comments/tracked-changes/numbering/images is
+    present — the caller's cue to show the warning and let the user cancel,
+    per ART-02's acceptance criterion, rather than converting first and
+    explaining later.
+    """
+    import zipfile
+
+    try:
+        import docx
+    except ImportError as exc:
+        raise DocumentActionError("python-docx is not installed") from exc
+
+    try:
+        document = docx.Document(path)
+    except Exception as exc:
+        raise DocumentActionError(f"could not open DOCX: {exc}") from exc
+
+    has_comments = False
+    has_tracked_changes = False
+    numbered_paragraphs = 0
+    try:
+        with zipfile.ZipFile(path) as zf:
+            names = zf.namelist()
+            has_comments = "word/comments.xml" in names
+            if "word/document.xml" in names:
+                xml = zf.read("word/document.xml").decode("utf-8", "ignore")
+                has_tracked_changes = bool(re.search(r"<w:(ins|del)[ >]", xml))
+                # Direct (inline) numbering: <w:numPr> in the paragraph itself.
+                numbered_paragraphs = len(re.findall(r"<w:numPr[ >]", xml))
+    except zipfile.BadZipFile as exc:
+        raise DocumentActionError(f"not a valid DOCX (zip) file: {exc}") from exc
+
+    # Numbering applied via a list PARAGRAPH STYLE (e.g. Word's built-in
+    # "List Number"/"List Bullet") carries no <w:numPr> in the paragraph
+    # itself — the numId lives in the style definition in styles.xml
+    # instead. Direct-numPr detection alone misses this common case, so any
+    # paragraph using a list-shaped style also counts.
+    for paragraph in document.paragraphs:
+        style = getattr(paragraph, "style", None)
+        name = (getattr(style, "name", "") or "").lower()
+        if "list" in name and ("number" in name or "bullet" in name):
+            numbered_paragraphs += 1
+
+    image_count = len(document.inline_shapes)
+
+    lost: List[str] = []
+    if has_comments:
+        lost.append("comments")
+    if has_tracked_changes:
+        lost.append("tracked_changes")
+    if numbered_paragraphs:
+        lost.append("numbering")
+    if image_count:
+        lost.append("images")
+
+    return {
+        "paragraph_count": len(document.paragraphs),
+        "image_count": image_count,
+        "has_comments": has_comments,
+        "has_tracked_changes": has_tracked_changes,
+        "numbered_paragraph_count": numbered_paragraphs,
+        "not_preservable_on_markdown_conversion": lost,
+        "safe_to_convert_silently": not lost,
+    }

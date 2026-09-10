@@ -1,15 +1,19 @@
 import asyncio
 import hashlib
 import json
+import logging
 import os
 import re
 import difflib
 import fnmatch
 import shutil
+import time
 from typing import Optional, Dict, Any, Tuple, List
 
 from src import read_plan
 from src.constants import MAX_READ_CHARS, MAX_DIFF_LINES, MAX_OUTPUT_CHARS
+
+logger = logging.getLogger(__name__)
 
 _CODENAV_SKIP_DIRS = frozenset({
     ".git", ".hg", ".svn", "node_modules", "venv", ".venv", "__pycache__",
@@ -271,6 +275,14 @@ class EditFileTool:
         diff = _unified_diff(original, updated_text, path)
         if diff:
             result["diff"] = diff
+        # EDIT-05: best-effort history entry — never affects this result.
+        try:
+            record_edit_history(path, tool="edit_file",
+                                pre_revision=sha256_revision(original.encode("utf-8")),
+                                post_revision=new_revision,
+                                pre_bytes=original.encode("utf-8"))
+        except Exception:
+            logger.debug("[edit_history] hook failed for edit_file on %s", path, exc_info=True)
         return result
 
 class ReadFileTool:
@@ -440,6 +452,17 @@ class WriteFileTool:
             result["unverified_base"] = True
         if diff:
             result["diff"] = diff
+        # EDIT-05: best-effort history entry — never affects this result. An
+        # empty old_content is ambiguous (new file vs. pre-existing empty
+        # file); skip the snapshot rather than guess, but still log the write.
+        try:
+            record_edit_history(
+                path, tool="write_file",
+                pre_revision=sha256_revision(old_content.encode("utf-8")) if old_content else None,
+                post_revision=status_or_revision,
+                pre_bytes=old_content.encode("utf-8") if old_content else None)
+        except Exception:
+            logger.debug("[edit_history] hook failed for write_file on %s", path, exc_info=True)
         return result
 
 class ApplyPatchTool:
@@ -980,3 +1003,181 @@ class GetWorkspaceTool:
                       "resolve paths from the user or use absolute paths.",
             "exit_code": 0,
         }
+
+
+# ── EDIT-05: per-file edit history and safe, registered-only cleanup ──────
+#
+# Two separate guarantees, kept structurally simple on purpose:
+#
+# * **History with point-in-time restore.** Every successful EditFileTool /
+#   WriteFileTool write appends one entry (best-effort — a recording failure
+#   must never fail the edit it describes, same posture as
+#   `artifact_store._record_manifest_for`) to a hidden JSONL sidecar next to
+#   the file, plus a content-addressed snapshot of the bytes it overwrote.
+#   `restore_edit_history()` re-verifies a snapshot's hash before writing it
+#   back, so a corrupted or hand-edited sidecar can never silently restore
+#   the wrong bytes.
+# * **Cleanup that cannot reach a user's file.** `cleanup_temp_files()` does
+#   not scan a directory and guess what looks disposable — it only ever acts
+#   on paths a caller explicitly registered with `mark_temp_file()`. A path
+#   nobody registered is invisible to it, by construction, not by a filename
+#   heuristic that could misfire on a user's own "scratch.tmp". Removal is
+#   always a move into a timestamped trash directory (never `os.remove`), so
+#   a bad cleanup call is recoverable via `restore_trashed_files()`.
+_EDIT_HISTORY_DIRNAME = ".faustus_edit_history"
+_TEMP_TRASH_DIRNAME = ".faustus_temp_trash"
+_TEMP_REGISTRY_FILENAME = "_temp_registry.json"
+
+
+def _history_sidecar_dir(path: str) -> str:
+    return os.path.join(os.path.dirname(os.path.abspath(path)), _EDIT_HISTORY_DIRNAME)
+
+
+def _history_sidecar_path(path: str) -> str:
+    return os.path.join(_history_sidecar_dir(path), os.path.basename(path) + ".jsonl")
+
+
+def record_edit_history(path: str, *, tool: str, pre_revision: Optional[str],
+                        post_revision: Optional[str], pre_bytes: Optional[bytes]) -> None:
+    """Append one history entry for a write to `path`. Best-effort: logs and
+    returns on any OS error rather than raising, so a full disk or a
+    permissions quirk on the sidecar directory never turns a successful edit
+    into a failed tool call."""
+    try:
+        sidecar_dir = _history_sidecar_dir(path)
+        os.makedirs(sidecar_dir, exist_ok=True)
+        entry: Dict[str, Any] = {
+            "ts": time.time(), "tool": tool,
+            "pre_revision": pre_revision, "post_revision": post_revision,
+        }
+        if pre_bytes is not None and pre_revision:
+            snapshot_name = pre_revision.replace("sha256:", "") + ".snapshot"
+            snapshot_path = os.path.join(sidecar_dir, snapshot_name)
+            if not os.path.exists(snapshot_path):
+                with open(snapshot_path, "wb") as fh:
+                    fh.write(pre_bytes)
+            entry["pre_snapshot"] = snapshot_name
+        with open(_history_sidecar_path(path), "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except OSError:
+        logger.warning("[edit_history] could not record history for %s", path, exc_info=True)
+
+
+def list_edit_history(path: str, *, limit: int = 50) -> List[Dict[str, Any]]:
+    """Oldest-first up to the sidecar's whole log, returning only the most
+    recent `limit` entries — the timeline EDIT-05's frontend renders."""
+    sidecar = _history_sidecar_path(path)
+    if not os.path.isfile(sidecar):
+        return []
+    out: List[Dict[str, Any]] = []
+    with open(sidecar, "r", encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                out.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+    return out[-limit:] if limit else out
+
+
+def restore_edit_history(path: str, *, pre_revision: str) -> Dict[str, Any]:
+    """Point-in-time restore: write back the snapshot recorded for
+    `pre_revision`. Refuses (rather than guessing) when no matching snapshot
+    exists, or when the snapshot's bytes no longer hash to the revision they
+    were recorded under — a tampered or corrupted sidecar must not be able to
+    silently restore something other than what it claims."""
+    for entry in reversed(list_edit_history(path, limit=0)):
+        if entry.get("pre_revision") != pre_revision or not entry.get("pre_snapshot"):
+            continue
+        snapshot_path = os.path.join(_history_sidecar_dir(path), entry["pre_snapshot"])
+        if not os.path.isfile(snapshot_path):
+            return {"restored": False, "reason": "snapshot file is missing"}
+        with open(snapshot_path, "rb") as fh:
+            data = fh.read()
+        if sha256_revision(data) != pre_revision:
+            return {"restored": False, "reason": "snapshot bytes no longer match the recorded revision"}
+        with open(path, "wb") as fh:
+            fh.write(data)
+        return {"restored": True, "revision": pre_revision, "bytes": len(data)}
+    return {"restored": False, "reason": "no snapshot recorded for that revision"}
+
+
+def _temp_registry_path(workspace_root: str) -> str:
+    return os.path.join(workspace_root, _EDIT_HISTORY_DIRNAME, _TEMP_REGISTRY_FILENAME)
+
+
+def _read_registry(workspace_root: str) -> List[str]:
+    reg_path = _temp_registry_path(workspace_root)
+    if not os.path.isfile(reg_path):
+        return []
+    try:
+        with open(reg_path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        return [str(p) for p in data] if isinstance(data, list) else []
+    except (OSError, json.JSONDecodeError):
+        return []
+
+
+def _write_registry(workspace_root: str, paths: List[str]) -> None:
+    reg_path = _temp_registry_path(workspace_root)
+    os.makedirs(os.path.dirname(reg_path), exist_ok=True)
+    with open(reg_path, "w", encoding="utf-8") as fh:
+        json.dump(paths, fh)
+
+
+def mark_temp_file(workspace_root: str, path: str) -> None:
+    """Register `path` (a file this agent itself created) as safe-to-clean
+    temp output. `cleanup_temp_files` iterates this registry and nothing
+    else — a path that was never marked here is structurally unreachable by
+    cleanup, which is what keeps a user's own file out of its path."""
+    rel = os.path.relpath(os.path.abspath(path), os.path.abspath(workspace_root))
+    current = _read_registry(workspace_root)
+    if rel not in current:
+        current.append(rel)
+        _write_registry(workspace_root, current)
+
+
+def cleanup_temp_files(workspace_root: str) -> Dict[str, Any]:
+    """Move every REGISTERED temp file into a fresh timestamped trash
+    directory (never a hard delete) and clear the registry. Returns what
+    moved, what was already gone, and the trash directory so a caller can
+    offer `restore_trashed_files` immediately."""
+    registry = _read_registry(workspace_root)
+    if not registry:
+        return {"moved": [], "missing": [], "trash_dir": None}
+    trash_dir = os.path.join(workspace_root, _TEMP_TRASH_DIRNAME, str(int(time.time() * 1000)))
+    moved: List[Dict[str, str]] = []
+    missing: List[str] = []
+    for rel in registry:
+        abs_path = os.path.join(workspace_root, rel)
+        if not os.path.isfile(abs_path):
+            missing.append(rel)
+            continue
+        os.makedirs(trash_dir, exist_ok=True)
+        dest = os.path.join(trash_dir, rel.replace(os.sep, "__").replace("/", "__"))
+        shutil.move(abs_path, dest)
+        moved.append({"path": rel, "trashed_to": dest})
+    _write_registry(workspace_root, [])
+    return {"moved": moved, "missing": missing, "trash_dir": trash_dir if moved else None}
+
+
+def restore_trashed_files(trash_dir: str, workspace_root: str) -> Dict[str, Any]:
+    """Undo one `cleanup_temp_files` batch: move every file back from
+    `trash_dir` to its original registered relative path (encoded in the
+    trashed filename by `cleanup_temp_files`)."""
+    if not os.path.isdir(trash_dir):
+        return {"restored": [], "reason": "trash_dir does not exist"}
+    restored: List[str] = []
+    for name in os.listdir(trash_dir):
+        rel = name.replace("__", os.sep)
+        dest = os.path.join(workspace_root, rel)
+        os.makedirs(os.path.dirname(dest) or workspace_root, exist_ok=True)
+        shutil.move(os.path.join(trash_dir, name), dest)
+        restored.append(rel)
+    try:
+        os.rmdir(trash_dir)
+    except OSError:
+        pass
+    return {"restored": restored}

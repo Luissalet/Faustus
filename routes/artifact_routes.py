@@ -32,14 +32,24 @@ def setup_artifact_routes():
     router = APIRouter(prefix='/api/artifacts', tags=['artifacts'])
 
     @router.get('')
-    def list_artifacts(request: Request, project_id: str = '', limit: int = 80):
+    def list_artifacts(request: Request, project_id: str = '', session_id: str = '',
+                       kind: str = '', q: str = '', since: str = '', until: str = '',
+                       limit: int = 80):
+        """ART-08: the Library's one search surface across every artifact
+        kind — ``kind``/``session_id``/``q``/``since``/``until`` are optional
+        facets on top of the original ``project_id``+``limit`` call."""
         owner = _owner(request)
         if not 1 <= limit <= 200:
             raise HTTPException(400, 'limit must be between 1 and 200')
         from core.database import SessionLocal
-        with SessionLocal() as db:
-            return {'ok': True, 'artifacts': [_metadata(row) for row in artifact_catalog.recent(
-                db, owner=owner, project_id=project_id, limit=limit)]}
+        try:
+            with SessionLocal() as db:
+                rows = artifact_catalog.recent(
+                    db, owner=owner, project_id=project_id, session_id=session_id,
+                    kind=kind, q=q, since=since, until=until, limit=limit)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+        return {'ok': True, 'artifacts': [_metadata(row) for row in rows]}
 
     def owned(request, artifact_id):
         owner = _owner(request)
@@ -79,6 +89,43 @@ def setup_artifact_routes():
         except ValueError as exc:
             raise HTTPException(409, str(exc))
         return {'ok': True, 'manifest': updated}
+
+    @router.get('/{artifact_id}/provenance')
+    def provenance(request: Request, artifact_id: str):
+        """ART-05: what produced this artifact, so a numeric claim can link
+        back to the exact script and input bytes instead of being taken on
+        faith — `recipe_fingerprint`/`inputs_digest` are the hashes
+        `src.artifact_store.analysis_provenance()` computed when this was
+        collected; `source_artifact_ids` lets an input itself be a prior
+        artifact, so the chain is walkable via this same endpoint."""
+        import json as _json
+        row = owned(request, artifact_id)
+        try:
+            source_ids = _json.loads(row.source_artifact_ids) if getattr(row, 'source_artifact_ids', None) else []
+        except (TypeError, ValueError):
+            source_ids = []
+        return {'ok': True, 'artifact_id': row.id,
+               'provenance': {
+                   'backend': getattr(row, 'backend', None),
+                   'recipe': getattr(row, 'recipe', None),
+                   'recipe_fingerprint': getattr(row, 'recipe_fingerprint', None),
+                   'inputs_digest': getattr(row, 'inputs_digest', None),
+                   'source_artifact_ids': source_ids,
+                   'note': getattr(row, 'provenance_note', '') or '',
+               }}
+
+    @router.delete('/{artifact_id}')
+    def forget(request: Request, artifact_id: str):
+        """ART-08: remove this owner's context link to an artifact without
+        touching bytes another occurrence (this owner's or anyone else's)
+        still shares — src.artifact_identity.forget_occurrence() already
+        keeps that promise; this only exposes it, scoped to the caller's own
+        occurrence via the same `owned()` ownership check every other route
+        here uses."""
+        row = owned(request, artifact_id)
+        from src import artifact_identity as identity
+        result = identity.forget_occurrence(row.id)
+        return {'ok': bool(result.get('removed')), 'references_left': result.get('references_left', 0)}
 
     @router.get('/{artifact_id}/download')
     def download(request: Request, artifact_id: str):

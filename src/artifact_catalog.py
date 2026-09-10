@@ -3,7 +3,17 @@
 Occurrences are authoritative. Historical rows remain readable until their
 insert-only copy succeeds, without writes or file hashing on a read request.
 The caller must scope/authorize before reading file contents.
+
+ART-08 (Biblioteca universal de resultados): ``search()`` is the same
+current+historical union ``recent()`` already does, narrowed by the facets the
+Library UI needs — type, date range, conversation (session) and a text term —
+so every artifact kind indexed here (whatever a run collected via
+``artifact_store.collect()``) is findable the same way, instead of a second
+parallel index per artifact type. ``recent()`` keeps its original signature
+and behaviour; the filters are additive keyword-only arguments so the one
+existing caller (routes/artifact_routes.py) is unaffected until it opts in.
 """
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 
@@ -28,17 +38,59 @@ def get(db, artifact_id):
     return db.get(ArtifactRow, artifact_id)
 
 
-def recent(db, *, owner='', project_id='', limit=200):
+def _parse_date_bound(value, *, label):
+    """Accept an ISO-8601 date/datetime string; ``None``/empty means unbounded.
+
+    Raises ``ValueError`` on garbage input rather than silently dropping the
+    filter — a typo in a date should not quietly return the unfiltered set.
+    """
+    if not value:
+        return None
+    text = str(value).strip()
+    if text.endswith('Z'):
+        text = text[:-1] + '+00:00'
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError as exc:
+        raise ValueError(f"{label} must be an ISO-8601 date/datetime: {value!r}") from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def recent(db, *, owner='', project_id='', session_id='', kind='', q='',
+          since='', until='', limit=200):
+    """Every artifact this owner can see, current occurrences plus historical
+    rows not yet migrated, newest first.
+
+    ``session_id``/``kind``/``q`` (substring, case-insensitive, matched
+    against the label) and ``since``/``until`` (inclusive ISO-8601 bounds) are
+    additive facets for the Library search (ART-08); omitting all of them
+    reproduces the exact result the original two-argument callers got.
+    """
     from core.database import ArtifactRow as Old, ArtifactOccurrenceRow as Occ, BlobRow, ArtifactTombstoneRow as Gone
     limit = max(1, min(int(limit), 200))
+    since_dt = _parse_date_bound(since, label='since')
+    until_dt = _parse_date_bound(until, label='until')
     current = db.query(Occ, BlobRow).join(BlobRow, BlobRow.sha256 == Occ.blob_sha256)
     old = db.query(Old).filter(~Old.id.in_(
         db.query(Occ.legacy_artifact_id).filter(Occ.legacy_artifact_id.isnot(None))),
         ~Old.id.in_(db.query(Gone.legacy_artifact_id).filter(Gone.legacy_artifact_id.isnot(None))))
-    for name, value in (('owner', owner), ('project_id', project_id)):
+    for name, value in (('owner', owner), ('project_id', project_id),
+                        ('session_id', session_id), ('kind', kind)):
         if value:
             current = current.filter(getattr(Occ, name) == value)
             old = old.filter(getattr(Old, name) == value)
+    if q:
+        term = f'%{q}%'
+        current = current.filter(Occ.label.ilike(term))
+        old = old.filter(Old.label.ilike(term))
+    if since_dt is not None:
+        current = current.filter(Occ.created_at_iso >= since_dt.isoformat())
+        old = old.filter(Old.created_at >= since_dt.replace(tzinfo=None))
+    if until_dt is not None:
+        current = current.filter(Occ.created_at_iso <= until_dt.isoformat())
+        old = old.filter(Old.created_at <= until_dt.replace(tzinfo=None))
     rows = [_project(*pair) for pair in current.order_by(
         Occ.created_at_iso.desc(), Occ.id.desc()).limit(limit).all()]
     rows.extend(old.order_by(Old.created_at.desc(), Old.id.desc()).limit(limit).all())

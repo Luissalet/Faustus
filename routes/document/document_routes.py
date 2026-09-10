@@ -1209,6 +1209,145 @@ def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
         finally:
             db.close()
 
+    # ---- POST /api/documents/analyze-docx — ART-02, warn before converting ----
+    @router.post("/api/documents/analyze-docx")
+    async def analyze_docx(request: Request, file: UploadFile = File(...)) -> Dict[str, Any]:
+        """Scan an uploaded DOCX for elements a markdown round-trip cannot
+        preserve (comments, tracked changes, numbering, images) WITHOUT
+        importing or converting it — the frontend shows this report and lets
+        the user cancel before any conversion happens (ART-02)."""
+        import tempfile
+        from src.document_actions import analyze_docx_preservation, DocumentActionError
+
+        from src.auth_helpers import require_privilege
+        require_privilege(request, "can_use_documents")
+
+        with tempfile.NamedTemporaryFile(suffix=".docx") as tmp:
+            tmp.write(await file.read())
+            tmp.flush()
+            try:
+                report = analyze_docx_preservation(tmp.name)
+            except DocumentActionError as exc:
+                raise HTTPException(400, str(exc))
+        return report
+
+    # ---- POST /api/documents/pdf/split — ART-07, budgeted split ----
+    @router.post("/api/documents/pdf/split")
+    async def pdf_split(
+        request: Request,
+        file: UploadFile = File(...),
+        pages_per_file: int = Form(1),
+    ):
+        """Split an uploaded PDF into `pages_per_file`-page parts and return
+        them as one zip — see src.document_actions.split_pdf for the budget
+        that keeps this from exploding into thousands of files."""
+        import io
+        import os
+        import tempfile
+        import zipfile
+        from fastapi import Response
+        from src.document_actions import split_pdf, DocumentActionError
+
+        from src.auth_helpers import require_privilege
+        require_privilege(request, "can_use_documents")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            src_path = os.path.join(tmp, "input.pdf")
+            with open(src_path, "wb") as fh:
+                fh.write(await file.read())
+            out_dir = os.path.join(tmp, "out")
+            try:
+                report = split_pdf(src_path, out_dir, pages_per_file=pages_per_file)
+            except DocumentActionError as exc:
+                raise HTTPException(400, str(exc))
+
+            buf = io.BytesIO()
+            with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+                for entry in report["outputs"]:
+                    zf.write(entry["path"], arcname=os.path.basename(entry["path"]))
+            return Response(
+                content=buf.getvalue(), media_type="application/zip",
+                headers={"Content-Disposition": 'attachment; filename="split.zip"',
+                        "X-Input-Pages": str(report["input_pages"]),
+                        "X-Output-Files": str(len(report["outputs"]))},
+            )
+
+    # ---- POST /api/documents/pdf/merge — ART-07, budgeted merge ----
+    @router.post("/api/documents/pdf/merge")
+    async def pdf_merge(request: Request, files: List[UploadFile] = File(...)):
+        """Merge 2+ uploaded PDFs in order — see
+        src.document_actions.merge_pdfs for the size/page budgets that refuse
+        before anything is written rather than producing an unusable file."""
+        import os
+        import tempfile
+        from fastapi.responses import FileResponse
+        from starlette.background import BackgroundTask
+        from src.document_actions import merge_pdfs, DocumentActionError
+
+        from src.auth_helpers import require_privilege
+        require_privilege(request, "can_use_documents")
+
+        if len(files) < 2:
+            raise HTTPException(400, "at least 2 PDFs are required to merge")
+
+        tmp_dir = tempfile.mkdtemp()
+        input_paths = []
+        for idx, uploaded in enumerate(files):
+            p = os.path.join(tmp_dir, f"in_{idx:03d}.pdf")
+            with open(p, "wb") as fh:
+                fh.write(await uploaded.read())
+            input_paths.append(p)
+        out_path = os.path.join(tmp_dir, "merged.pdf")
+        try:
+            report = merge_pdfs(input_paths, out_path)
+        except DocumentActionError as exc:
+            import shutil
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+            raise HTTPException(400, str(exc))
+
+        def _cleanup():
+            import shutil
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+        return FileResponse(
+            out_path, media_type="application/pdf", filename="merged.pdf",
+            headers={"X-Output-Pages": str(report["pages"])},
+            background=BackgroundTask(_cleanup),
+        )
+
+    # ---- GET /api/document/{doc_id}/visual-check ----
+    @router.get("/api/document/{doc_id}/visual-check")
+    async def visual_check(doc_id: str, request: Request) -> Dict[str, Any]:
+        """ART-03: opening successfully is not a visual pass. Reads the
+        source PDF's own character and table bounding boxes against each
+        page's dimensions and reports text pushed past the margin or a table
+        cut off at the edge — see src.document_actions.detect_page_overflow.
+        """
+        from src.pdf_form_doc import find_source_upload_id
+        from src.document_actions import detect_page_overflow, DocumentActionError
+
+        user = get_current_user(request)
+        db = SessionLocal()
+        try:
+            doc = db.query(Document).filter(Document.id == doc_id).first()
+            if not doc:
+                raise HTTPException(404, "Document not found")
+            _verify_doc_owner(db, doc, user)
+            upload_id = find_source_upload_id(doc.current_content or "")
+            if not upload_id:
+                raise HTTPException(400, "Document is not linked to a source PDF")
+            pdf_path = _locate_current_user_upload(request, upload_id, user)
+            if not pdf_path:
+                raise HTTPException(404, "Source PDF not found")
+        finally:
+            db.close()
+
+        try:
+            report = detect_page_overflow(pdf_path)
+        except DocumentActionError as exc:
+            raise HTTPException(503, str(exc))
+        return {"doc_id": doc_id, **report}
+
     # ---- GET /api/document/{doc_id}/page/{n}.png ----
     @router.get("/api/document/{doc_id}/page/{page_no}.png")
     async def render_page_png(doc_id: str, page_no: int, request: Request):
