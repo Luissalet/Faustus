@@ -147,6 +147,10 @@ interface SafeModeStatus {
   reason: string;
   disabled: Record<string, boolean>;
   quarantined_mcp_servers: string[];
+  /** OPS-05 (lote 42): `src/safe_mode.py::status()` already returned this --
+   *  the "why" for a quarantined server was in the API response the whole
+   *  time, just never in this interface or rendered below. */
+  mcp_fail_counts: Record<string, number>;
   core_available: boolean;
 }
 
@@ -217,7 +221,12 @@ function SafeModeCard({ say }: { say: (t: string) => void }) {
               <ul className="fs-wipe">
                 {status.quarantined_mcp_servers.map((id) => (
                   <li key={id} className="fs-wipe__row">
-                    <span>{id}</span>
+                    <span>
+                      {id}{' '}
+                      <span className="fs-set__help">
+                        {t('({n} consecutive failed connection attempts)', { n: status.mcp_fail_counts?.[id] ?? '?' })}
+                      </span>
+                    </span>
                     <Button size="sm" variant="secondary" loading={busy === id} disabled={busy !== null}
                             label={t('Reactivate')} onClick={() => reactivateServer(id)} />
                   </li>

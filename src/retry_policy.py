@@ -253,6 +253,18 @@ def error_class_for(*, status: Optional[int] = None,
             return "resource.not_found"
         if status == 413:
             return "schema.invalid_upload"
+        # L44/L42 integration: these three used to fall into the generic
+        # `schema.contract_violation` bucket here and get refined locally by
+        # `core/exceptions.py::http_error_class` (a status this function
+        # cannot name unambiguously enough on its own, per that module's own
+        # docstring at the time). Naming them here instead removes that
+        # second table for the same three statuses (COMUN.md rule 4).
+        if status == 409:
+            return "conflict.concurrent_write"
+        if status == 408:
+            return "timeout.request"
+        if status == 499:
+            return "cancelled.client"
         return "schema.contract_violation"
     if exc is not None:
         names = _exc_class_names(exc)

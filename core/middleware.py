@@ -1,6 +1,7 @@
 # src/middleware.py
 # Shared middleware, decorators, and request helpers
 
+import json
 import os
 import secrets
 from collections.abc import Mapping
@@ -10,6 +11,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 from starlette.routing import get_route_path
 
+from core.exceptions import http_error_class
 from src.owner_identity import INTERNAL_TOOL_USER, auth_disabled
 
 
@@ -177,4 +179,48 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
                 "frame-src 'self'; "
                 "frame-ancestors 'none'"
             )
+        return await _with_error_class(response)
+
+
+async def _with_error_class(response: Response) -> Response:
+    """OBS-03: every HTTP error response carries `error_class` next to
+    whatever it already returns -- `detail` (FastAPI/Starlette's default
+    `HTTPException` handler, and every framework-level 404/405/422 no
+    per-exception handler ever runs for), or the `error`/`message` shape
+    app.py's four legacy `@app.exception_handler(...)` functions build by
+    hand. Neither of those call sites is touched (rule 2: `app.py` is not
+    owned by this lote) -- this wraps them from the outside instead, in the
+    ONE middleware app.py already mounts on every response
+    (`SecurityHeadersMiddleware`), so no new mount point is needed either.
+
+    Status codes and every existing body field are left exactly as they
+    were: only a new `error_class` key is added, and only when the body
+    doesn't already have one. Anything that is not a JSON error body --
+    success responses, and in particular any STREAMING response (chat SSE
+    is 200 OK at the HTTP layer) -- is returned untouched without ever
+    touching `response.body_iterator`, so a streamed reply is never
+    buffered into memory here.
+    """
+    if response.status_code < 400:
         return response
+    content_type = response.headers.get("content-type", "")
+    if "application/json" not in content_type:
+        return response
+    body_iterator = getattr(response, "body_iterator", None)
+    if body_iterator is None:
+        return response
+    raw = b"".join([chunk async for chunk in body_iterator])
+    headers = dict(response.headers)
+    headers.pop("content-length", None)
+    try:
+        payload = json.loads(raw)
+    except (ValueError, TypeError):
+        # Not a JSON object this can extend -- put the body back unchanged
+        # rather than silently dropping it.
+        return Response(content=raw, status_code=response.status_code,
+                         headers=headers, media_type=content_type)
+    if isinstance(payload, dict) and "error_class" not in payload:
+        payload["error_class"] = http_error_class(response.status_code)
+    new_body = json.dumps(payload).encode("utf-8")
+    return Response(content=new_body, status_code=response.status_code,
+                     headers=headers, media_type="application/json")
