@@ -1,6 +1,6 @@
 import { Check, ChevronDown, Copy, FileText, GitFork, Pencil, Quote, RefreshCw, Telescope, Trash2, Volume2, VolumeX, X } from 'lucide-react';
 import { Fragment, lazy, Suspense, useEffect, useRef, useState } from 'react';
-import { Button, IconButton } from '../../components';
+import { Button, describeError, friendlyError, IconButton } from '../../components';
 import type { AskUser, ContextLedger, DelegationTask } from '../../adapters/chat';
 import { attachmentUrl, isImage } from '../../adapters/composer';
 import { Rich } from '../rich';
@@ -743,11 +743,24 @@ function AssistantTurn({
             {turn.note}
           </p>
         )}
-        {turn.error && (
-          <p className="fs-notice" data-tone="danger">
-            {turn.error}
-          </p>
-        )}
+        {turn.error && (() => {
+          // UX-08: the taxonomy (`src/contracts/errors.py`, mirrored client-side
+          // in errorTaxonomy.ts) instead of raw provider prose — same pattern as
+          // Activity.tsx's task-failure card. `turn.errorClass` is authoritative
+          // when a decoded event carried it (OBS-03); `friendlyError` also sniffs
+          // a JSON-blob `turn.error` for the same field, so a turn from before
+          // that plumbing still gets a useful title + action instead of nothing.
+          const friendly = turn.errorClass
+            ? { ...describeError(turn.errorClass), message: turn.error }
+            : friendlyError(turn.error);
+          return (
+            <p className="fs-notice" data-tone="danger">
+              {friendly.category
+                ? t('{title}: {message} — {action}', { title: friendly.title, message: friendly.message, action: friendly.action })
+                : friendly.message}
+            </p>
+          );
+        })()}
         {turn.ledger && <Ledger ledger={turn.ledger} />}
         {/* The heartbeat, last of all: it sits exactly where the turn's own
             numbers will appear when it finishes. */}

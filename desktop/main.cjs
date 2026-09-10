@@ -18,6 +18,35 @@ const runtime=async(args)=>{
   const result=JSON.parse(stdout.trim());if(result.error)throw new Error(result.error);return result;
 };
 const windowState=window=>({maximized:window.isMaximized(),fullscreen:window.isFullScreen()});
+// ACT-04: closing the app window is not the same thing as stopping the
+// server, and the two must never be conflated silently. `ownedToken` is only
+// set when THIS instance started the server (see server_runtime.py 'start'
+// and src/process_ownership.py: a process is only ours to stop if we hold
+// the object that started it) - so it is exactly the fact the confirmation
+// needs: whether closing the window also ends the turn running server-side,
+// or leaves it running for whoever else is attached. Skipped for: secondary
+// (non-main) windows, which never own the server and whose close cannot
+// trigger shutdown(); the splash screen's own cancel button, which the
+// splash text already documents as "closes to cancel starting up"; and the
+// automated smoke test, which has no dialog to click.
+async function closeConfirmed(target,senderUrl){
+  if(target!==mainWindow||senderUrl===splash||process.argv.includes('--smoke-test'))return true;
+  const owned=!!ownedToken;
+  const {response}=await dialog.showMessageBox(target,{
+    type:owned?'warning':'question',
+    title:'Faustus',
+    message:owned
+      ?'Close window and stop the server? / ¿Cerrar la ventana y detener el servidor?'
+      :'Close window? / ¿Cerrar la ventana?',
+    detail:owned
+      ?'This window started its own local server. Closing it stops that server, and any turn still running on it stops too. / Esta ventana inició su propio servidor local. Cerrarla lo detiene, y cualquier turno que siga en marcha en él se detiene también.'
+      :'This window uses a server shared with other Faustus windows. Closing it does not stop that server: the turn keeps running there. / Esta ventana usa un servidor compartido con otras ventanas de Faustus. Cerrarla no lo detiene: el turno sigue en el servidor.',
+    buttons:owned?['Cancel / Cancelar','Close and stop / Cerrar y detener']:['Cancel / Cancelar','Close / Cerrar'],
+    defaultId:owned?0:1,
+    cancelId:0,
+  });
+  return response===1;
+}
 function secureWindow(window){
   for(const event of ['maximize','unmaximize','enter-full-screen','leave-full-screen'])window.on(event,()=>window.webContents.send('faustus:window-state',windowState(window)));
   window.webContents.setWindowOpenHandler(({url})=>{
@@ -54,13 +83,14 @@ else{
       if(response.response===0)allowed.add(permission);callback(response.response===0);
     });
     mainWindow=new BrowserWindow({title:'Faustus',frame:false,width:1400,height:920,minWidth:390,minHeight:600,show:true,autoHideMenuBar:true,backgroundColor:'#17191d',webPreferences:{preload:join(__dirname,'preload.cjs'),nodeIntegration:false,contextIsolation:true,sandbox:true,webSecurity:true}});
-    ipcMain.handle('faustus:window',(event,action)=>{
+    ipcMain.handle('faustus:window',async(event,action)=>{
       const target=BrowserWindow.fromWebContents(event.sender);
       if(!target||event.senderFrame!==target.webContents.mainFrame||!(localNavigation(event.senderFrame.url,origin)||(target===mainWindow&&event.senderFrame.url===splash&&action==='close')))throw new Error('Untrusted window');
       if(!['state','minimize','maximize','fullscreen','close'].includes(action))throw new Error('Unknown window action');
       if(action==='minimize')target.minimize();
       if(action==='maximize'){if(target.isFullScreen())target.setFullScreen(false);if(target.isMaximized())target.unmaximize();else target.maximize();}
       if(action==='fullscreen')target.setFullScreen(!target.isFullScreen());
+      if(action==='close'&&!(await closeConfirmed(target,event.senderFrame.url)))return windowState(target);
       const state=windowState(target);
       if(action==='close')setImmediate(()=>{if(!target.isDestroyed())target.close();});
       return state;

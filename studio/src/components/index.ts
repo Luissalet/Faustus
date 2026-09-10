@@ -14,3 +14,10 @@ export {
   type TraceStep,
 } from './ExecutionTrace';
 export { Toast } from './Toast';
+export {
+  describeError,
+  friendlyError,
+  ERROR_CATEGORIES,
+  type ErrorCategory,
+  type ErrorDescription,
+} from './errorTaxonomy';

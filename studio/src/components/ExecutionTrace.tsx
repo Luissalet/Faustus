@@ -1,6 +1,7 @@
 import { ChevronDown } from 'lucide-react';
 import { useState } from 'react';
 import type { RunStatus } from './StatusBadge';
+import { tn } from '../i18n';
 
 export interface TraceStep {
   id: string;
@@ -53,7 +54,7 @@ export function ExecutionTrace({
         >
           <span aria-hidden="true" />
           <span>
-            <ChevronDown size={13} aria-hidden="true" /> {doneCount} pasos completados
+            <ChevronDown size={13} aria-hidden="true" /> {tn(doneCount, '{n} step completed', '{n} steps completed')}
           </span>
         </button>
       )}

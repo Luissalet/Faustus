@@ -1,6 +1,6 @@
 import type { RunStatus } from '../components';
 import { ApiError, asArray, getJson } from './api';
-import { chatActivity, createSession, listModels, listSessions, type ChatActivity, type ChatSession, type RunActivityDetail } from './chat';
+import { chatActivity, createSession, listModels, listSessions, sendTurn, type AskOption, type ChatActivity, type ChatSession, type RunActivityDetail } from './chat';
 import { sessionActivity } from '../lib/activity';
 import { t } from '../i18n';
 
@@ -52,9 +52,23 @@ export interface RenderDetail {
   record: Record<string, unknown>;
 }
 
+/** ACT-03: an `ask_user` question still waiting for an answer
+ *  (`src/question_store.py`'s `list_open`, GET /api/questions) —
+ *  the activity tray's own copy of what `AskUser` (chat.ts) carries on the
+ *  live card, so "answer" here can drive the exact same path. */
+export interface QuestionDetail {
+  questionId: string;
+  session: string;
+  question: string;
+  options: AskOption[];
+  multi: boolean;
+  expiresAt: string | null;
+  revision: number;
+}
+
 export interface ActivityRun {
   id: string;
-  kind: 'task' | 'render' | 'approval' | 'chat' | 'workflow';
+  kind: 'task' | 'render' | 'approval' | 'chat' | 'workflow' | 'question';
   title: string;
   detail?: string;
   status: RunStatus;
@@ -72,6 +86,7 @@ export interface ActivityRun {
   render?: RenderDetail;
   chat?: { sessionId: string; runId: string; model: string; progress?: RunActivityDetail };
   workflow?: WorkflowDetail;
+  question?: QuestionDetail;
 }
 
 export interface WorkflowStep {
@@ -218,6 +233,17 @@ interface RawApproval {
   tool?: string;
 }
 
+interface RawQuestion {
+  question_id?: string;
+  session?: string;
+  question?: string;
+  options?: Array<{ label?: string; description?: string; id?: string }>;
+  multi?: boolean;
+  expires_at?: string | null;
+  revision?: number;
+  opened_at?: string | null;
+}
+
 const str = (v: unknown) => (typeof v === 'string' ? v : '');
 
 function taskFrom(item: RawTaskRun): ActivityRun {
@@ -279,6 +305,30 @@ function approvalFrom(item: RawApproval, index: number): ActivityRun {
       owner: str(item.owner),
       expiresAt: item.expires_at ?? null,
       usesLeft: typeof item.uses_left === 'number' ? item.uses_left : 1,
+    },
+  };
+}
+
+function questionFrom(item: RawQuestion): ActivityRun {
+  const id = str(item.question_id);
+  const options: AskOption[] = asArray<{ label?: string; description?: string; id?: string }>(item.options)
+    .map((o) => ({ label: str(o.label), description: str(o.description), id: str(o.id) || undefined }))
+    .filter((o) => o.label);
+  return {
+    id,
+    kind: 'question',
+    title: str(item.question) || t('Question awaiting an answer'),
+    status: 'waiting',
+    startedAt: item.opened_at ?? null,
+    repeats: 1,
+    question: {
+      questionId: id,
+      session: str(item.session),
+      question: str(item.question),
+      options,
+      multi: Boolean(item.multi),
+      expiresAt: item.expires_at ?? null,
+      revision: typeof item.revision === 'number' ? item.revision : 1,
     },
   };
 }
@@ -351,7 +401,7 @@ export function retainUnavailableRuns(previous: ActivityRun[], feed: ActivityFee
 export async function loadActivity(signal?: AbortSignal): Promise<ActivityFeed> {
   const degraded: string[] = [];
   const unavailableKinds: ActivityRun['kind'][] = [];
-  const [tasks, media, approvals, conversations, workflows] = await Promise.all([
+  const [tasks, media, approvals, questions, conversations, workflows] = await Promise.all([
     getJson<unknown>('/api/tasks/runs/recent?limit=120', signal).catch(() => {
       degraded.push(t('task runs'));
       unavailableKinds.push('task');
@@ -366,6 +416,11 @@ export async function loadActivity(signal?: AbortSignal): Promise<ActivityFeed> 
       degraded.push(t('approvals'));
       unavailableKinds.push('approval');
       return { pending: [] };
+    }),
+    getJson<unknown>('/api/questions', signal).catch(() => {
+      degraded.push(t('questions'));
+      unavailableKinds.push('question');
+      return { questions: [] };
     }),
     chatActivity(signal).then(async (activity) => {
       if (!activity.running.length && !activity.awaiting.length && !Object.keys(activity.queued).length) return [];
@@ -391,7 +446,7 @@ export async function loadActivity(signal?: AbortSignal): Promise<ActivityFeed> 
   signal?.throwIfAborted();
   // Empty and unavailable are different states. Keep the last good snapshot
   // in the screen when all sources are unavailable.
-  if (unavailableKinds.length === 5) {
+  if (unavailableKinds.length === 6) {
     throw new ApiError(t('Could not read the activity'), 503);
   }
 
@@ -399,6 +454,7 @@ export async function loadActivity(signal?: AbortSignal): Promise<ActivityFeed> 
     ...(conversations ?? []),
     ...workflows,
     ...asArray<RawApproval>(approvals, 'pending').map(approvalFrom),
+    ...asArray<RawQuestion>(questions, 'questions').map(questionFrom),
     ...stack(asArray<RawTaskRun>(tasks, 'runs').map(taskFrom)),
     ...asArray<RawMediaRun>(media, 'runs').map(renderFrom),
   ];
@@ -447,6 +503,31 @@ export async function decideApproval(approvalId: string, granted: boolean, reaso
   const r = await ok(await post(`/api/approvals/${encodeURIComponent(approvalId)}/${granted ? 'grant' : 'deny'}`, { reason }), 'approvals');
   const data = (await r.json()) as { ok?: boolean; detail?: string; reason?: string };
   if (data.ok === false) throw new ApiError(data.detail || data.reason || t('The decision was not recorded'), 409);
+}
+
+/**
+ * ACT-03: answers an open question from the activity tray, through the
+ * exact same path the live `AskCard` uses — `sendTurn` with `questionId`/
+ * `optionIds` (Studio.tsx's `onAnswer`) — rather than a second resolution
+ * route. `question_store.resolve()`'s dedupe/stale-revision/cancelled/
+ * expired guards (CALL-07/TASK-04) apply identically either way, and a
+ * rejection (409) surfaces as the same localized `ApiError` the card would
+ * show. The tray does not render a transcript, so this drains the turn to
+ * completion rather than yielding events; the caller re-fetches the feed
+ * afterwards — the question simply stops being `open` once it is answered,
+ * same as any other activity state change.
+ */
+export async function answerQuestion(question: QuestionDetail, text: string, optionIds?: string[]): Promise<void> {
+  for await (const _event of sendTurn({
+    sessionId: question.session,
+    message: text,
+    mode: 'agent',
+    questionId: question.questionId,
+    optionIds,
+  })) {
+    /* draining is the point: the server-side effect (the answer recorded,
+       the turn resumed) has already happened by the time this yields. */
+  }
 }
 
 export async function cancelRender(runId: string): Promise<void> {

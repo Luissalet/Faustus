@@ -1,8 +1,8 @@
 import { Activity as ActivityIcon, Check, CircleStop, Copy, Download, ExternalLink, FileText, MessageSquare, Play, RefreshCw, Search, Trash2, Workflow, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
-import { Button, EmptyState, Skeleton, StatusBadge, Toast, type RunStatus } from '../components';
-import { artifactLinks, cancelRender, changeWorkflow, decideApproval, duration, loadActivity, normaliseStatus, openRunInChat, reportUrl, retainUnavailableRuns, type ActivityRun, type ArtifactLink } from '../adapters/activity';
+import { Button, EmptyState, friendlyError, Skeleton, StatusBadge, Toast, type RunStatus } from '../components';
+import { answerQuestion, artifactLinks, cancelRender, changeWorkflow, decideApproval, duration, loadActivity, normaliseStatus, openRunInChat, reportUrl, retainUnavailableRuns, type ActivityRun, type ArtifactLink, type QuestionDetail } from '../adapters/activity';
 import { CACHE_LABELS, clearAutomationCache, runAutomation, stopAutomation } from '../adapters/automations';
 import { relativeTime } from '../adapters/home';
 import { stopChat } from '../adapters/chat';
@@ -30,7 +30,7 @@ const FILTERS: { id: string; label: string; match: (run: ActivityRun) => boolean
   { id: 'fallido', label: 'Failed', match: (run) => run.status === 'failed' },
 ];
 
-type Kind = 'all' | 'task' | 'render' | 'approval' | 'notification' | 'chat' | 'workflow';
+type Kind = 'all' | 'task' | 'render' | 'approval' | 'notification' | 'chat' | 'workflow' | 'question';
 
 function DetailRow({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -38,6 +38,79 @@ function DetailRow({ label, children }: { label: string; children: ReactNode }) 
       <dt>{label}</dt>
       <dd>{children}</dd>
     </div>
+  );
+}
+
+/**
+ * ACT-03: answers an open `ask_user` question straight from the tray —
+ * one click per option, a checklist with "Send" when several may apply
+ * (`multi`), and always a line for a free-text answer, the same three ways
+ * `QuestionCard` (Transcript.tsx) offers on the live card. Deliberately its
+ * own small local `picked`/`own` state (mirroring `QuestionCard`'s), reset
+ * per question by the `key={questionId}` the caller passes — answering one
+ * question must never leave the next one pre-filled with the last one's pick.
+ */
+function QuestionAnswerPanel({
+  question, busy, onAnswer,
+}: {
+  question: QuestionDetail;
+  busy: boolean;
+  onAnswer: (text: string, optionIds?: string[]) => void;
+}) {
+  const [picked, setPicked] = useState<string[]>([]);
+  const [own, setOwn] = useState('');
+  const toggle = (label: string) => setPicked((cur) => (cur.includes(label) ? cur.filter((l) => l !== label) : [...cur, label]));
+  const sendPicked = () => {
+    if (!picked.length) return;
+    const ids = question.options.filter((o) => picked.includes(o.label)).map((o) => o.id).filter((id): id is string => Boolean(id));
+    onAnswer(picked.join('; '), ids.length ? ids : undefined);
+  };
+  const sendOwn = () => {
+    const text = own.trim();
+    if (text) onAnswer(text);
+  };
+  return (
+    <>
+      <p className="fs-act__ask">{question.multi ? t('The agent is waiting for you — pick all that apply.') : t('The agent is waiting for you.')}</p>
+      <p className="fs-prose">{question.question}</p>
+      {question.expiresAt && <p className="fs-act__hint">{t('Expires {time}', { time: relativeTime(question.expiresAt) })}</p>}
+      {question.options.length > 0 && !question.multi && (
+        <div className="fs-act__actions" role="group" data-testid="activity-question-options">
+          {question.options.map((option) => (
+            <Button
+              key={option.label}
+              size="sm"
+              label={option.description ? `${option.label} — ${option.description}` : option.label}
+              disabled={busy}
+              onClick={() => onAnswer(option.label, option.id ? [option.id] : undefined)}
+              testId="activity-question-option"
+            />
+          ))}
+        </div>
+      )}
+      {question.options.length > 0 && question.multi && (
+        <>
+          <div className="fs-act__actions" role="group" data-testid="activity-question-options">
+            {question.options.map((option) => (
+              <label key={option.label} className="fs-act__field" data-testid="activity-question-check">
+                <input type="checkbox" checked={picked.includes(option.label)} disabled={busy} onChange={() => toggle(option.label)} />
+                <span>{option.description ? `${option.label} — ${option.description}` : option.label}</span>
+              </label>
+            ))}
+          </div>
+          <div className="fs-act__actions">
+            <Button variant="primary" size="sm" icon={Check} label={picked.length ? t('Send {n} picked', { n: picked.length }) : t('Send')} disabled={busy || picked.length === 0} onClick={sendPicked} testId="activity-question-send" />
+          </div>
+        </>
+      )}
+      <label className="fs-act__field">
+        <span>{t('Or write your own answer')}</span>
+        <input className="fs-field" value={own} disabled={busy} onChange={(e) => setOwn(e.target.value)} data-testid="activity-question-own" />
+      </label>
+      <div className="fs-act__actions">
+        <Button size="sm" label={t('Answer')} disabled={busy || !own.trim()} onClick={sendOwn} testId="activity-question-own-send" />
+      </div>
+    </>
   );
 }
 
@@ -110,7 +183,7 @@ export function ActivityScreen() {
   }, [runs, filter, kind, query]);
 
   const counts = useMemo(() => {
-    const c = { all: 0, task: 0, render: 0, approval: 0, notification: 0, chat: 0, workflow: 0 };
+    const c = { all: 0, task: 0, render: 0, approval: 0, notification: 0, chat: 0, workflow: 0, question: 0 };
     for (const run of runs ?? []) {
       if (run.kind === 'task' && run.task?.outputTarget === 'notification') c.notification++;
       else {
@@ -166,7 +239,7 @@ export function ActivityScreen() {
   if (failed && !runs) {
     return (
       <div className="fs-screen fs-act" data-testid="activity">
-        <EmptyState icon={ActivityIcon} title={t('Could not read the activity')} body={t('None of the subsystems responded.')} primaryAction={{ label: t('Retry'), onClick: () => void reload() }} />
+        <EmptyState tone="error" icon={ActivityIcon} title={t('Could not read the activity')} body={t('None of the subsystems responded.')} primaryAction={{ label: t('Retry'), onClick: () => void reload() }} />
       </div>
     );
   }
@@ -223,6 +296,7 @@ export function ActivityScreen() {
           {(
             [
               ['all', t('All'), counts.all],
+              ['question', t('Questions'), counts.question],
               ['chat', t('Conversations'), counts.chat],
               ['task', t('Tasks'), counts.task],
               ['render', t('Renders'), counts.render],
@@ -248,6 +322,7 @@ export function ActivityScreen() {
             <EmptyState
               icon={ActivityIcon}
               headingLevel={3}
+              tone={degraded.length > 0 || failed ? 'error' : 'empty'}
               title={degraded.length > 0 || failed ? t('Some activity is unavailable') : filterId === 'todo' && kind === 'all' && !query ? t('Nothing has run yet') : t('Nothing in this state')}
               body={degraded.length > 0 || failed ? t('The unavailable sources may contain work. Refresh to check again.') : filterId === 'todo' && kind === 'all' && !query ? t('When a task, a render or an agent does something, it will appear here with its state and how long it took.') : t('Try another filter: the one you chose has nothing right now.')}
             />
@@ -387,6 +462,17 @@ export function ActivityScreen() {
                 </>
               )}
 
+              {current.kind === 'question' && current.question && (
+                <QuestionAnswerPanel
+                  key={current.question.questionId}
+                  question={current.question}
+                  busy={currentStale || !!busy}
+                  onAnswer={(text, optionIds) =>
+                    void act('answer', () => answerQuestion(current.question!, text, optionIds).then(() => open(null)), t('Answered'))
+                  }
+                />
+              )}
+
               {current.kind === 'task' && current.task && (
                 <>
                   <div className="fs-act__actions">
@@ -432,11 +518,20 @@ export function ActivityScreen() {
                     <DetailRow label={t('Delivered')}>{current.task.outputTarget}</DetailRow>
                     {current.task.action && <DetailRow label={t('Action')}>{current.task.action.replace(/_/g, ' ')}</DetailRow>}
                   </dl>
-                  {current.task.error && (
-                    <p className="fs-act__error" role="alert">
-                      {current.task.error}
-                    </p>
-                  )}
+                  {current.task.error && (() => {
+                    // UX-08: `current.task.error` is sometimes the literal
+                    // §34.5 error object / `_stream_error_chunk` payload
+                    // stored as the failure reason — not raw text, so it
+                    // must never reach the screen as an unparsed JSON blob.
+                    const friendly = friendlyError(current.task!.error);
+                    return (
+                      <p className="fs-act__error" role="alert">
+                        {friendly.category
+                          ? t('{title}: {message} — {action}', { title: friendly.title, message: friendly.message, action: friendly.action })
+                          : friendly.message}
+                      </p>
+                    );
+                  })()}
                   {current.task.result ? (
                     <div className="fs-act__result" data-testid="activity-result">
                       <Rich text={current.task.result} />

@@ -187,6 +187,43 @@ function writeDraftFor(sessionId: string | null, text: string) {
   }
 }
 
+/* QA-35 (UX-01/MEDIA-03): the composer's already-uploaded-but-unsent
+   attachments, same "one slot per session, empty removes the slot" shape as
+   the draft text above — a reload used to bring the text back but drop the
+   pictures/files you had already attached to it, which read as data loss
+   (docs/spec/v2/MAPA_REUTILIZACION.md's UX-01 gap). Only the small
+   {id, name, mime, size, ...} record is kept: the bytes already live on the
+   server under `id` (uploadFiles already POSTed them), so this is exactly as
+   cheap as the text draft, not a second copy of the file. */
+const ATTACHMENTS_PREFIX = 'faustus_studio_draft_attachments:';
+
+function attachmentsKeyFor(sessionId: string | null): string {
+  return `${ATTACHMENTS_PREFIX}${sessionId ?? 'new'}`;
+}
+
+function readAttachmentsFor(sessionId: string | null): Attachment[] {
+  try {
+    const raw = localStorage.getItem(attachmentsKeyFor(sessionId));
+    const parsed = raw ? (JSON.parse(raw) as unknown) : [];
+    return Array.isArray(parsed) ? parsed.filter((a): a is Attachment => Boolean(a && typeof a === 'object' && typeof (a as Attachment).id === 'string')) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** `incognito` must be passed explicitly (not read from anywhere) so a
+ *  caller can never forget it — Nobody mode's whole point is that nothing
+ *  about the conversation, attachments included, outlives the tab. */
+function writeAttachmentsFor(sessionId: string | null, attachments: Attachment[], incognito: boolean) {
+  try {
+    if (incognito) return;
+    if (attachments.length) localStorage.setItem(attachmentsKeyFor(sessionId), JSON.stringify(attachments));
+    else localStorage.removeItem(attachmentsKeyFor(sessionId));
+  } catch {
+    /* private mode: attachments live only as long as the screen */
+  }
+}
+
 const SUGGESTIONS = [
   'Explain this repository to me as if I had just joined the team',
   'Search the web for what changed this week on the topic I give you',
@@ -270,7 +307,16 @@ export function StudioScreen() {
     if (draftSession.current !== sessionId) return;
     writeDraftFor(sessionId, draft);
   }, [draft, sessionId]);
-  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [attachments, setAttachments] = useState<Attachment[]>(() => readAttachmentsFor(sessionId));
+  useEffect(() => {
+    // Same session-boundary guard as the draft-text effect above: only write
+    // once the attachments on screen actually belong to this session (the
+    // restore in the history-load effect runs in the same commit as the
+    // sessionId change), so a fast switch never writes chat A's pending
+    // files under chat B's key.
+    if (draftSession.current !== sessionId) return;
+    writeAttachmentsFor(sessionId, attachments, knobs.incognito);
+  }, [attachments, sessionId, knobs.incognito]);
   const sendingMessage = useRef(false);
   const [preparingMessage, setPreparingMessage] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -493,7 +539,10 @@ export function StudioScreen() {
     setBusy(false);
     setLoadError(null);
     setNotice(null);
-    setAttachments([]);
+    // QA-35: restore this session's pending attachments (mirrors the draft
+    // text restore below) instead of unconditionally blanking them — a
+    // switch away and back must not silently drop what was already attached.
+    setAttachments(readAttachmentsFor(sessionId));
     if (!sessionId) {
       setTurns([]);
       setTitle('');

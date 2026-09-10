@@ -142,6 +142,28 @@ export interface Turn {
   /** The VRAM gate is waiting for someone to choose what to unload (OBJ-1). */
   vram?: VramBlocked;
   error?: string;
+  /** OBS-03 dotted taxonomy code for `error` (`src/contracts/errors.py`'s
+   *  `ERROR_CATEGORIES`, e.g. `transport.llm_service_error`) — lets a
+   *  screen show the right action (retry, resume, change model, ask for
+   *  permission) instead of the raw provider message. Read defensively
+   *  (see `errorTraceFields` below): the backend has sent `error_class` on
+   *  every `event: error` SSE chunk since CALL-06 (`llm_core.py`'s
+   *  `_stream_error_chunk`), but `adapters/chat.ts`'s `ChatEvent` union
+   *  does not carry it through yet, so this stays undefined until that is
+   *  extended — a client on an older build simply never sets it. */
+  errorClass?: string;
+  /** Correlates this turn with the unified activity timeline (ACT-01) and
+   *  with server logs, once a backend sends one. Same fallback story as
+   *  `errorClass`. */
+  traceId?: string;
+  /** The step within the run this trace/error belongs to, when the server
+   *  narrows it that far. Same fallback story as `errorClass`. */
+  stepId?: string;
+  /** ACT-06: this turn was restored from a state that no longer matches
+   *  what the server holds now (a stale approval, a plan re-planned after
+   *  it was displayed) — the "incompatible version" screen state, not a
+   *  network failure. Same fallback story as `errorClass`. */
+  versionMismatch?: boolean;
   edited?: boolean;
   /** The reliability harness: what it checked, and what really happened. */
   checks: HarnessCheck[];
@@ -249,6 +271,33 @@ export function liveToken(live: LiveRate, now: number, thinking: boolean): LiveR
 export function livePhase(live: LiveRate, now: number, phase: LiveRate['phase'], label?: string): LiveRate {
   const same = live.phase === phase && live.label === label;
   return { ...live, lastAt: now, phase, label, phaseAt: same ? live.phaseAt : now };
+}
+
+/** Reads `trace_id`/`step_id`/`error_class`/`version_mismatch` off any raw
+ *  event-shaped object, without requiring `ChatEvent` to declare them.
+ *
+ *  These fields already travel over the wire on `event: error` SSE chunks
+ *  (`llm_core.py`'s `_stream_error_chunk`/`_stream_status_error_chunk`) and
+ *  are exactly what OBS-03/ACT-01 need client-side, but `adapters/chat.ts`'s
+ *  `decode()` does not forward them onto `ChatEvent` yet (a separate lote
+ *  owns that file). Reading them here as an optional passthrough, rather
+ *  than waiting for the type to widen, means the day `decode()` is extended
+ *  to forward them this starts populating `Turn.errorClass` etc. with no
+ *  further change on this side — "consume it if it is there; fall back to
+ *  what is already on the turn if it is not". */
+function errorTraceFields(event: unknown): {
+  errorClass?: string; traceId?: string; stepId?: string; versionMismatch?: boolean;
+} {
+  const raw = (event && typeof event === 'object' ? event : {}) as Record<string, unknown>;
+  const str = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
+  // chat.ts decodes these to camelCase; a raw SSE frame (history restore,
+  // an older adapter) still carries snake_case. Read both.
+  return {
+    errorClass: str(raw.errorClass) ?? str(raw.error_class),
+    traceId: str(raw.traceId) ?? str(raw.trace_id),
+    stepId: str(raw.stepId) ?? str(raw.step_id),
+    versionMismatch: raw.versionMismatch === true || raw.version_mismatch === true ? true : undefined,
+  };
 }
 
 let counter = 0;
@@ -633,10 +682,27 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
         ...turn,
         note: t('{model} did not answer; {other} answered instead.', { model: event.selected || t('The chosen model'), other: event.answeredBy }),
       };
-    case 'terminal':
-      return event.failed ? { ...turn, error: event.message ?? t('The model has failed.') } : turn;
-    case 'error':
-      return { ...turn, error: event.message };
+    case 'terminal': {
+      if (!event.failed) return turn;
+      const fields = errorTraceFields(event);
+      return {
+        ...turn, error: event.message ?? t('The model has failed.'),
+        errorClass: fields.errorClass ?? turn.errorClass,
+        traceId: fields.traceId ?? turn.traceId,
+        stepId: fields.stepId ?? turn.stepId,
+        versionMismatch: fields.versionMismatch ?? turn.versionMismatch,
+      };
+    }
+    case 'error': {
+      const fields = errorTraceFields(event);
+      return {
+        ...turn, error: event.message,
+        errorClass: fields.errorClass ?? turn.errorClass,
+        traceId: fields.traceId ?? turn.traceId,
+        stepId: fields.stepId ?? turn.stepId,
+        versionMismatch: fields.versionMismatch ?? turn.versionMismatch,
+      };
+    }
     case 'progress':
       return { ...turn, todos: event.todos };
     case 'plan': {
