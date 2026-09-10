@@ -13,7 +13,7 @@ import json
 import re
 import time
 import logging
-from typing import Any, AsyncGenerator, Callable, List, Dict, NamedTuple, Optional, Set
+from typing import Any, AsyncGenerator, Callable, List, Dict, NamedTuple, Optional, Set, Tuple
 from urllib.parse import urlparse
 
 from src.llm_core import (
@@ -353,53 +353,6 @@ You are an AI assistant with tool access. You can run shell commands, execute Py
 read/write files, create and edit documents, generate images, manage memories, and more. \
 To use a tool, write a fenced code block with the tool name as the language tag. \
 The block executes automatically and you see the output."""
-
-_AGENT_RULES = """\
-## Rules
-- Only use tools when needed. Don't search for things you already know.
-- For web lookup/search/latest/current requests, use `web_search` or `web_fetch`. Do NOT use `bash`, `python`, `curl`, `requests`, or scraping code for web lookup unless web tools are disabled or already failed.
-- If `web_search` is listed in this prompt, web search is available. Do NOT tell the user search/web tools are unavailable.
-- These exact tags execute automatically. For showing code examples, use ```shell, ```sh, ```py, etc. instead.
-- Multiple tool blocks per response OK. 60s timeout per tool, 10K char output limit.
-- Code/content >15 lines → ```create_document (NOT in chat). Short snippets OK in chat.
-- Long-form or structured writing is a document by default when the user asks to write/create/make/generate it and the answer would be more than a short paragraph. Use create_document instead of dumping the full content in chat.
-- Editing an existing document: ALWAYS use ```edit_document with FIND/REPLACE blocks. Do NOT rewrite the whole document with ```update_document unless genuinely changing more than half of it.
-- BIAS TOWARD ACTION on edit requests. If the user says "edit out X", "remove the Y paragraph", "change Z" — JUST DO IT with your best interpretation. Don't ask for clarification on minor ambiguity. The user can undo or re-prompt if wrong.
-- AFTER A TOOL SUCCEEDS, do not second-guess. The success message ("Document edited: v2, 1 edit") means it worked. Reply in ONE short sentence confirming what was done. No re-checking, no replaying the diff in your head, no validation theater.
-- AFTER A TOOL FAILS (timeout, error, "Unknown action", "not found"), DO NOT GO SILENT. The user expects a follow-up: either retry with a fix (e.g. correct args, longer-running form, run `tail -f /tmp/foo.log` to see progress, split into smaller steps), OR explicitly tell them "this didn't work, want me to try X instead?". A failed tool is not a stopping condition — only a successful one is.
-- YOU DECLARE WHEN THE JOB IS DONE — not a timer. Keep taking concrete steps while the task still needs them; you have plenty of rounds, so don't rush to quit just because you've made a few calls. There are exactly three ways to end a turn: (1) DONE — before you declare it, sanity-check that every concrete thing the user asked for actually exists or succeeded (file written, edit applied, command exited clean); then stop calling tools and write the final answer (that IS your "done" signal); (2) BLOCKED — you genuinely can't proceed (a capability is missing, permission denied, or data you can't obtain), so say plainly what's blocking you, in a sentence or two, and stop; (3) keep going with the single most useful next step. The only wrong moves are trailing off mid-task without one of these, and repeating a call you already ran.
-- Calendar: call `manage_calendar` with `action=list_calendars` FIRST before create/update/delete operations.
-- BULK email actions ("delete all those", "mark all as read", "archive these", "delete all spam", "mark these 19 read") → use the `bulk_email` tool ONCE with either the exact `uids` list from the latest `list_emails` result or `all_unread: true`. NEVER just say you deleted/archived/marked messages unless a delete/archive/mark/bulk email tool call succeeded. NEVER loop mark_email_read / archive_email / delete_email one message at a time — that floods the context and can blow the token budget. One bulk_email call handles the whole set.
-- Email UIDs are the values after `UID:` in tool output, not list row numbers. For example, row `1.` with `UID: 90186` must use `"90186"`, never `"1"`.
-- "Last/latest/newest email" means call `list_emails` with `max_results: 1`, `unread_only: false`, and the right `account`, then read the UID returned by that tool if full content is needed. NEVER use a table row number like "#18" as an email UID.
-- Plain "list/show/check my inbox/emails" means latest inbox mail, including read messages. Do not set `unread_only: true` unless the user explicitly asks for unread/needs attention.
-- Multiple email accounts: if tool output says "Other accounts" or the user asks "my Gmail?", "other inbox?", "work mail?", "custom domain mail?", or names any mailbox/account, DO NOT answer from memory. Call `list_email_accounts` if needed, then call `list_emails`/`read_email`/`bulk_email` with the exact `account` value for that mailbox. Account names are user-defined labels; if the user typo-matches a known account, use the closest listed account instead of claiming it does not exist. NEVER use `app_api` or `/api/email/accounts` to discover email accounts; that route is owner-filtered in tool context and can falsely return empty.
-- User identity facts/preferences ("my name is <name>", "I live in <place>", "I prefer concise replies", "call me <name>") → use `manage_memory` with action=add. NEVER use `manage_contact` for facts about the user unless the user explicitly says to create/update a contact and provides contact details such as an email or phone.
-- "Create/add/write a note" / "notes" / "todos" / "remind me to X at <time>" → use `manage_notes`. Do NOT store notes in `manage_memory`; memory is for persistent facts/preferences about the user, not note content. For reminders, include a `due_date`; for todos, use `note_type=checklist` when appropriate.
-- "Do X every morning / daily / on a schedule" or "cada lunes / todos los lunes / cada día" → CREATE A SCHEDULED TASK with `manage_tasks`, action=create; do not substitute a one-off action. Ask for a missing time and use the user's known or explicit IANA timezone (never infer it from their language). News searches can use task_type=research. Only claim creation after the tool confirms it, include the returned task ID and a link to [Automations](/automations), and explain that the server and computer must remain running. A sample run may follow creation, not replace it.
-
-## UI conventions
-- When you reference an entity by ID in your reply, render it as a STANDARD markdown link with a hash-prefixed anchor. The frontend converts these into clickable jump buttons:
-  - Sessions / chats: `[Name](#session-<id>)`
-  - Documents: `[Title](#document-<id>)`
-  - Notes: `[Title](#note-<id>)`
-  - Gallery images: `[Caption](#image-<id>)`
-  - Emails (use the UID from list_emails/read_email output): `[Subject](#email-<uid>)`
-  - Calendar events (use the uid from manage_calendar): `[Summary](#event-<uid>)` — opens the calendar on that day
-  - Tasks: `[Task name](#task-<id>)`
-  - Skills: `[skill-name](#skill-<name>)`
-  - Research jobs: `[Topic](#research-<session_id>)`
-- The format is `[link text](#kind-<id>)` — text in square brackets, anchor in parens. NOT `[name] [#kind-id]` and NOT `[#kind-id]`. That's plain text and the user can't click it.
-- Use this inside lists, tables, prose — anywhere. Tables: `| Name | Open |` rows like `| Big Chat | [open](#session-abc123) |` work fine.
-- Examples:
-  - After `create_session` returns id `89effa28`: "Created [New Chat](#session-89effa28) — click to switch."
-  - Listing five sessions:
-    ```
-    1. [Big Chat](#session-abc123) — 2h ago
-    2. [Code Review](#session-def456) — 5h ago
-    3. [Note Taking](#session-ghi789) — 1d ago
-    ```
-"""
 
 _API_AGENT_RULES = """\
 ## Rules
@@ -760,6 +713,24 @@ def _domain_rules_for_tools(tool_names: set) -> list[str]:
         rules.append(_LINK_RULES)
     return rules
 
+
+def _domain_rule_names_for_tools(tool_names: set) -> list[str]:
+    """The domain names `_domain_rules_for_tools` would pull a block from, in
+    the same order — for attributing each block to a name in `record_blocks`
+    without changing that function's existing (and tested) return shape.
+
+    ARCH-03 (effective config, FAUSTUS): kept as a second, tiny function
+    instead of changing `_domain_rules_for_tools` to return pairs, because the
+    latter is read elsewhere as a bare list of strings (tests/test_tool_rag_
+    contacts_domain.py among them) and widening its contract would be exactly
+    the kind of silent breakage this lote exists to stop introducing.
+    """
+    names = set(tool_names or set())
+    out = [domain for domain, domain_tools in _DOMAIN_TOOL_MAP.items() if names & domain_tools]
+    if names & {"create_session", "list_sessions", "manage_session", "manage_documents", "manage_notes", "manage_calendar", "manage_tasks", "manage_skills", "manage_research"}:
+        out.append("links")
+    return out
+
 # Each tool section is keyed by tool name(s) it covers.
 # Sections with multiple tools use a tuple key.
 TOOL_SECTIONS = {
@@ -1066,27 +1037,50 @@ def _compact_tool_line(name: str, section: str) -> str:
     return f"- `{name}` — " + lines[0][:160]
 
 
-def _assemble_prompt(tool_names: set, disabled_tools: set = None, compact: bool = False) -> str:
-    """Build the system prompt with only the specified tools included."""
+def _assemble_prompt(tool_names: set, disabled_tools: set = None, compact: bool = False,
+                      record_blocks: Optional[list] = None) -> str:
+    """Build the system prompt with only the specified tools included.
+
+    ``record_blocks``, when the caller passes a list, gets one ``{"kind",
+    "name", "chars", "text"}`` dict appended per section actually spliced into
+    the prompt, in the order they were appended — ARCH-03 (effective config):
+    "what entered the prompt and where from" needs an origin per block, and
+    the alternative (re-deriving that list from the joined string afterwards)
+    would be a second, lossier copy of exactly this loop. ``None`` (the
+    default) costs one `is not None` check per section and changes nothing
+    else — every existing caller keeps returning a bare string.
+    """
     disabled = disabled_tools or set()
     included = tool_names - disabled
+
+    def _record(kind: str, name: str, text: str) -> None:
+        if record_blocks is not None:
+            record_blocks.append({"kind": kind, "name": name, "chars": len(text or ""), "text": text or ""})
 
     if compact:
         tool_lines = []
         for name, _default_section in TOOL_SECTIONS.items():
             if name in included:
                 tool_lines.append(f"- `{name}`")
+        _tools_block = "## Available tools\n" + ("\n".join(tool_lines) if tool_lines else "none")
         parts = [
             "You are an AI assistant with native tool/function calling. "
             "Only the tool schemas provided by the API are available for this turn. "
             "Use native tool calls when action is needed; do not write tool syntax or tool instructions in chat.",
-            "## Available tools\n" + ("\n".join(tool_lines) if tool_lines else "none"),
+            _tools_block,
             _API_AGENT_RULES,
         ]
-        parts.extend(_domain_rules_for_tools(included))
+        _record("preamble", "_AGENT_PREAMBLE_COMPACT", parts[0])
+        _record("tool_index", "available_tools", _tools_block)
+        _record("rules", "_API_AGENT_RULES", _API_AGENT_RULES)
+        _domain_texts = _domain_rules_for_tools(included)
+        parts.extend(_domain_texts)
+        for _domain, _text in zip(_domain_rule_names_for_tools(included), _domain_texts):
+            _record("domain_rules", _domain, _text)
         return "\n\n".join(parts)
 
     parts = [_AGENT_PREAMBLE]
+    _record("preamble", "_AGENT_PREAMBLE", _AGENT_PREAMBLE)
 
     # Collect full-block tool sections (with examples)
     full_blocks = []
@@ -1099,15 +1093,20 @@ def _assemble_prompt(tool_names: set, disabled_tools: set = None, compact: bool 
         section = _section_text(name, _default_section)
         if section.startswith("```") or section.startswith("-"):
             if section.startswith("- "):
-                one_liners.append(section)
+                one_liners.append((name, section))
             else:
-                full_blocks.append(section)
+                full_blocks.append((name, section))
 
     if full_blocks:
-        parts.append("\n\n".join(full_blocks))
+        parts.append("\n\n".join(text for _name, text in full_blocks))
+        for _name, _text in full_blocks:
+            _record("tool", _name, _text)
 
     if one_liners:
-        parts.append("## Additional tools\n" + "\n".join(one_liners))
+        _one_liner_block = "## Additional tools\n" + "\n".join(text for _name, text in one_liners)
+        parts.append(_one_liner_block)
+        for _name, _text in one_liners:
+            _record("tool_brief", _name, _text)
 
     # New tools often ship a function schema without a legacy prose section.
     # Text-only transports need those tools too (notably delegate_agents).
@@ -1117,16 +1116,22 @@ def _assemble_prompt(tool_names: set, disabled_tools: set = None, compact: bool 
         function = schema.get("function", {})
         name = function.get("name")
         if name in included and name not in TOOL_SECTIONS:
-            parts.insert(1,
+            _schema_block = (
                 f"## Tool: {name}\n{function.get('description', '')}\n"
                 f"To call it, emit a fenced block named `{name}` containing a JSON object "
                 "of arguments matching this schema. Wait for Faustus to return the result; "
                 "do not invent a result.\nArgument schema:\n"
                 + json.dumps(function.get("parameters", {}), ensure_ascii=False)
             )
+            parts.insert(1, _schema_block)
+            _record("tool_schema", name, _schema_block)
 
     parts.append(_AGENT_RULES)
-    parts.extend(_domain_rules_for_tools(included))
+    _record("rules", "_AGENT_RULES", _AGENT_RULES)
+    _domain_texts = _domain_rules_for_tools(included)
+    parts.extend(_domain_texts)
+    for _domain, _text in zip(_domain_rule_names_for_tools(included), _domain_texts):
+        _record("domain_rules", _domain, _text)
     return "\n\n".join(parts)
 
 
@@ -3318,11 +3323,19 @@ def _build_base_prompt(
     owner: Optional[str] = None,
     suppress_local_context: bool = False,
     suppress_skills: bool = False,
+    record_blocks: Optional[list] = None,
 ):
     """Build the agent prompt with only relevant tools included.
 
     If relevant_tools is provided (from RAG retrieval), only those tools
     are shown with full descriptions. Otherwise falls back to full prompt.
+
+    ``record_blocks`` (ARCH-03, effective config): passed straight through to
+    `_assemble_prompt`. Its presence also skips the ``AGENT_SYSTEM_PROMPT``
+    shortcut below — that constant was assembled once at import time with no
+    list to record into, so a caller asking for the block origins gets a
+    fresh, recorded build instead of the cached string with nothing to show
+    for it. Omitting it (the default) reproduces today's caching exactly.
     """
     from src.tool_index import ALWAYS_AVAILABLE
 
@@ -3341,7 +3354,7 @@ def _build_base_prompt(
         tool_names = set(relevant_tools) | {"ask_user", "update_plan"}
         if needs_admin:
             tool_names |= _ADMIN_TOOLS
-        agent_prompt = _assemble_prompt(tool_names, disabled, compact=compact)
+        agent_prompt = _assemble_prompt(tool_names, disabled, compact=compact, record_blocks=record_blocks)
     else:
         # Fallback: full prompt (RAG unavailable)
         agent_prompt = AGENT_SYSTEM_PROMPT
@@ -3352,10 +3365,17 @@ def _build_base_prompt(
                 "chat_with_model", "ask_teacher", "list_models",
             }
             agent_prompt = _assemble_prompt(
-                set(TOOL_SECTIONS.keys()) - mgmt_tools, disabled, compact=compact
+                set(TOOL_SECTIONS.keys()) - mgmt_tools, disabled, compact=compact,
+                record_blocks=record_blocks,
             )
         elif compact:
-            agent_prompt = _assemble_prompt(set(TOOL_SECTIONS.keys()), disabled, compact=True)
+            agent_prompt = _assemble_prompt(set(TOOL_SECTIONS.keys()), disabled, compact=True,
+                                            record_blocks=record_blocks)
+        elif record_blocks is not None:
+            # needs_admin and not compact: the branch above would otherwise
+            # hand back the pre-built AGENT_SYSTEM_PROMPT with nothing recorded.
+            agent_prompt = _assemble_prompt(set(TOOL_SECTIONS.keys()), disabled, compact=False,
+                                            record_blocks=record_blocks)
 
     # Inject the Level-0 skill index — one line per skill so the agent
     # knows what canonical procedures exist. Includes published skills
@@ -3406,6 +3426,29 @@ def _build_base_prompt(
 
     return agent_prompt, skill_index_block
 
+
+def base_prompt_with_origin(
+    disabled_tools=None, needs_admin: bool = False, relevant_tools=None,
+    compact: bool = False, owner: Optional[str] = None,
+) -> Tuple[str, List[Dict[str, Any]]]:
+    """The real tool-section prompt `_build_base_prompt` assembles for a turn,
+    plus which named block put each part of it there.
+
+    ARCH-03 (effective config): `routes/config_routes.py` and
+    `src/effective_config.py` need "what would enter the next turn's prompt
+    and where from" without a second copy of the assembly logic — so this
+    calls the same `_build_base_prompt` -> `_assemble_prompt` machinery every
+    real turn uses, with a list for it to record into, and returns the block
+    manifest alongside the text. The skill-index block is intentionally left
+    out: it is per-viewer and user-editable (see the SECURITY note above),
+    not a stable "what would the system prompt contain" answer.
+    """
+    blocks: List[Dict[str, Any]] = []
+    prompt, _skill_index = _build_base_prompt(
+        disabled_tools, None, needs_admin, relevant_tools=relevant_tools,
+        compact=compact, owner=owner, record_blocks=blocks,
+    )
+    return prompt, blocks
 
 
 #: FAUSTUS_TOOL_ARG_VALIDATION: 'strict' (default) blocks execution on an

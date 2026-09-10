@@ -772,6 +772,17 @@ app.include_router(setup_skills_routes(skills_manager))
 from routes.contracts_routes import setup_contracts_routes
 app.include_router(setup_contracts_routes())
 
+# ARCH-03: the effective configuration explainer (global -> project ->
+# role/preset -> model -> turn), and the prompt-blocks preview built off the
+# same assembly a real turn uses. Read-only, like the contracts routes above.
+from routes.config_routes import setup_config_routes
+app.include_router(setup_config_routes())
+
+# TOOL-01: the one catalogue of everything the agent can be offered, and a
+# dry-run that validates arguments without ever executing.
+from routes.tool_registry_routes import setup_tool_registry_routes
+app.include_router(setup_tool_registry_routes())
+
 # Approval cards. Reading and requesting are admin (the tool layer opens
 # them); granting and denying are require_human, which the agent's loopback
 # token does not open.

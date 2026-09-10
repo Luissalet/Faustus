@@ -2,6 +2,7 @@ import {
   Bot,
   Check,
   HardDrive,
+  Layers,
   UserRound,
   Users,
   Wrench,
@@ -53,6 +54,7 @@ import { AccountSection } from './settings/Account';
 import { UsersSection } from './settings/Users';
 import { ToolsSection } from './settings/Tools';
 import { SystemExtras } from './settings/SystemExtras';
+import { EffectiveConfigSection } from './settings/EffectiveConfig';
 import { IntegrationsSection } from './settings/Integrations';
 import { LocalModelsSection } from './settings/LocalModels';
 import { AppearanceSection } from './settings/Appearance';
@@ -72,7 +74,7 @@ import { t, tn } from '../i18n';
  * there at their tab.
  */
 
-type SectionKey = 'general' | 'models' | 'local' | 'defaults' | 'voice' | 'search' | 'reminders' | 'integrations' | 'agent' | 'tools' | 'shortcuts' | 'account' | 'users' | 'system';
+type SectionKey = 'general' | 'models' | 'local' | 'defaults' | 'voice' | 'search' | 'reminders' | 'integrations' | 'agent' | 'tools' | 'effective_config' | 'shortcuts' | 'account' | 'users' | 'system';
 
 const SECTIONS: { key: SectionKey; label: string; icon: typeof Bot; admin?: boolean }[] = [
   { key: 'general', label: 'Appearance', icon: Palette },
@@ -85,6 +87,9 @@ const SECTIONS: { key: SectionKey; label: string; icon: typeof Bot; admin?: bool
   { key: 'integrations', label: 'Integrations', icon: Plug },
   { key: 'agent', label: 'Agent', icon: Bot },
   { key: 'tools', label: 'Tools', icon: Wrench, admin: true },
+  // ARCH-03: what actually governs a turn — global -> project -> role/preset ->
+  // model -> turn — with sources, overrides and conflicts (src/effective_config.py).
+  { key: 'effective_config', label: 'Effective config', icon: Layers, admin: true },
   { key: 'shortcuts', label: 'Shortcuts', icon: Keyboard },
   { key: 'account', label: 'Account', icon: UserRound },
   { key: 'users', label: 'Users', icon: Users, admin: true },
@@ -1013,6 +1018,7 @@ export function SettingsScreen() {
           {section === 'agent' && <AgentSection settings={settings} onSave={onSave} say={say} />}
           {section === 'integrations' && <IntegrationsSection say={say} />}
           {section === 'tools' && <ToolsSection say={say} />}
+          {section === 'effective_config' && <EffectiveConfigSection say={say} />}
           {section === 'shortcuts' && <ShortcutsSection settings={settings} onSave={onSave} say={say} />}
           {section === 'account' && <AccountSection say={say} />}
           {section === 'users' && <UsersSection say={say} />}
