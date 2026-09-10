@@ -24,6 +24,7 @@ from .web_tools import WebSearchTool, WebFetchTool
 from .filesystem_tools import ReadFileTool, WriteFileTool, EditFileTool, ApplyPatchTool, LsTool, GlobTool, GrepTool, GetWorkspaceTool
 from .coding_tools import TodoWriteTool
 from .subagent_tools import DelegateAgentsTool
+from .code_tools import FindSymbolTool, CallersTool, TestsForTool
 from .document_tools import CreateDocumentTool, UpdateDocumentTool, EditDocumentTool, SuggestDocumentTool, ManageDocumentTool
 from .interaction_tools import AskUserTool, UpdatePlanTool
 from .model_interaction_tools import ChatWithModelTool, AskTeacherTool, ListModelsTool
@@ -54,6 +55,9 @@ TOOL_HANDLERS = {
     "ls": LsTool().execute,
     "glob": GlobTool().execute,
     "grep": GrepTool().execute,
+    "find_symbol": FindSymbolTool().execute,
+    "callers": CallersTool().execute,
+    "tests_for": TestsForTool().execute,
     "create_document": CreateDocumentTool().execute,
     "update_document": UpdateDocumentTool().execute,
     "edit_document": EditDocumentTool().execute,
@@ -88,7 +92,8 @@ PYTHON_TIMEOUT = 30
 TOOL_TAGS = {"bash", "python", "web_search", "web_fetch", "read_file", "inspect_media", "write_file", "edit_file",
              "plan_media_transform", "transform_media",
              "apply_patch", "todowrite", "delegate_agents",
-             "grep", "glob", "ls", "get_workspace", "manage_bg_jobs",
+             "grep", "glob", "ls", "find_symbol", "callers", "tests_for",
+             "get_workspace", "manage_bg_jobs",
              "create_document", "update_document", "edit_document",
              "search_chats", "search_project_chats", "project_context",
              # Mutating half of the project's context links: attach/detach a

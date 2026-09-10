@@ -125,6 +125,15 @@ _register(
     result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
 )
 _register(
+    # find_symbol/callers/tests_for (Lote 38, IDX-02/IDX-03) only read what
+    # `src.code_index` has already indexed from the workspace — same class as
+    # grep/glob/ls: a workspace-scoped reader whose result quotes source text
+    # an attacker could have planted in the repo.
+    {"find_symbol", "callers", "tests_for"},
+    ToolEffect.READ_WORKSPACE,
+    result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
+)
+_register(
     {"web_search"},
     ToolEffect.BROKERED_NETWORK_READ,
     result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,

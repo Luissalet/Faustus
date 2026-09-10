@@ -806,6 +806,10 @@ app.include_router(setup_workflows_routes())
 from routes.context_engine_routes import setup_context_engine_routes
 app.include_router(setup_context_engine_routes())
 
+# find_symbol/callers/tests_for HTTP surface (Lote 38, IDX-02/IDX-03).
+from routes.code_index_routes import setup_code_index_routes
+app.include_router(setup_code_index_routes())
+
 # Media renders on a separate engine. There is deliberately no endpoint that
 # takes a graph: a caller picks an approved template and fills its declared
 # inputs, and that is the whole surface.

@@ -213,6 +213,56 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "find_symbol",
+            "description": "Find where a symbol (class/function/method/constant) is DEFINED, using the incremental code index (IDX-02) instead of reading files one at a time. Respects .gitignore/.faustusignore and skips vendor/build/binary files, so it works on a large repository without loading it whole. PREFER this over grep for 'where is X defined' questions.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Symbol name: a bare name ('refresh') or a dotted qualname ('Session.refresh_oauth_token')"},
+                    "path": {"type": "string", "description": "Workspace/project root to search (optional; defaults to the project root)"},
+                    "project_id": {"type": "string", "description": "Optional project scope, when more than one project shares a workspace"},
+                    "kind": {"type": "string", "description": "Optional: restrict to one kind (class/function/method/constant)"}
+                },
+                "required": ["name"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "callers",
+            "description": "Find lexical callers of a symbol - every place its bare name appears immediately followed by '(' - with file and line, using the incremental code index (IDX-02/IDX-03). PREFER this over grep for 'who calls X' questions on an indexed workspace.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Symbol name to find callers of"},
+                    "path": {"type": "string", "description": "Workspace/project root to search (optional; defaults to the project root)"},
+                    "project_id": {"type": "string", "description": "Optional project scope"},
+                    "limit": {"type": "integer", "description": "Max callers to return (optional, default 200)"}
+                },
+                "required": ["name"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "tests_for",
+            "description": "Find candidate test files for a symbol or a file path, by convention (test_<module>, tests/**/test_* that names the module in its own filename, or mentions the symbol) using the incremental code index (IDX-02/IDX-03/QA-02).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "symbol_or_path": {"type": "string", "description": "A symbol name or a file path to find tests for"},
+                    "path": {"type": "string", "description": "Workspace/project root to search (optional; defaults to the project root)"},
+                    "project_id": {"type": "string", "description": "Optional project scope"}
+                },
+                "required": ["symbol_or_path"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "get_workspace",
             "description": "Return the absolute path of the active workspace folder the user is working in. File tools are confined to it; the shell starts there but is not sandboxed. Call this first when the user refers to 'the project'/'the code'/'this folder' without a path, instead of asking them. Takes no arguments.",
             "parameters": {"type": "object", "properties": {}, "required": []}
@@ -1887,6 +1937,8 @@ def function_call_to_tool_block(name: str, arguments: str) -> Optional[ToolBlock
             content = args.get("path", "")
     elif tool_type in ("grep", "glob", "ls", "inspect_media", "plan_media_transform", "transform_media"):
         content = json.dumps(args) if args else "{}"
+    elif tool_type in ("find_symbol", "callers", "tests_for"):
+        content = json.dumps(args) if args else "{}"
     elif tool_type == "get_workspace":
         content = ""
     elif tool_type == "write_file":
@@ -2088,6 +2140,9 @@ PATH_ARGUMENT_FIELDS = {
     "grep": {"path"},
     "glob": {"path"},
     "ls": {"path"},
+    "find_symbol": {"path"},
+    "callers": {"path"},
+    "tests_for": {"path"},
 }
 
 _JSON_SCALAR_TYPES = {
