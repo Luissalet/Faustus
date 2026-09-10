@@ -9,7 +9,7 @@ prueba contra el codigo real. **xfail**: el mecanismo no existe todavia
 hardware/navegador real (microfono, zoom interactivo) y no puede ejecutarse en
 pytest; el test esta `skip` con los pasos manuales documentados.
 
-Resumen: **30 verde**, **16 xfail**, **2 manual** — 48 de 48.
+Resumen: **32 verde**, **14 xfail**, **2 manual** — 48 de 48.
 
 | ID | Estado | Test | Que falta |
 |---|---|---|---|
@@ -51,14 +51,14 @@ Resumen: **30 verde**, **16 xfail**, **2 manual** — 48 de 48.
 | QA-36 | xfail | test_qa_36_regenerar_con_efectos.py | Endpoint de regenerar dedicado que no repita efectos externos (UX-03) |
 | QA-37 | xfail | test_qa_37_lectura_bajo_stream.py | Virtualizacion de listas largas en Studio (PERF-01) |
 | QA-38 | verde | test_qa_38_historia_y_tarjeta.py | — |
-| QA-39 | xfail | test_qa_39_export_defectuoso.py | Validacion visual/calculo tras exportar DOCX/XLSX, estado generado vs revisado (ART-03/ART-04) |
+| QA-39 | verde | test_qa_39_export_defectuoso.py, test_l36_session_export_artifact_manifest.py | Cerrado de punta a punta (lote 36): `artifact_identity.validate_artifact_bytes()` sigue detectando tabla DOCX que excede pagina y formulas XLSX sin `fullCalcOnLoad`, y ahora `routes/session_routes.py::export_session` tambien enruta cada export por `artifact_store.collect()`/`persist()` (best-effort, nunca bloquea la descarga), asi que el DOCX/XLSX exportado hereda manifiesto y esa validacion en vez de servirse como bytes sueltos |
 | QA-40 | verde | test_qa_40_pdf_escaneado.py | — |
 | QA-41 | manual | test_qa_41_microfono_y_autoescucha.py | Microfono/altavoz reales; permisos de navegador interactivos |
 | QA-42 | verde | test_qa_42_render_ya_aceptado.py | — |
-| QA-43 | xfail | test_qa_43_cambio_horario.py | Politica explicita de ambiguedad DST / misfire (AUTO-01) |
+| QA-43 | verde | test_qa_43_cambio_horario.py | — |
 | QA-44 | manual | test_qa_44_teclado_y_zoom.py | Navegador real a 200% de zoom, navegacion solo teclado |
-| QA-45 | xfail | test_qa_45_actualizacion_fallida.py | Backup antes de migrar schema + rollback transaccional (OPS-02) |
-| QA-46 | xfail | test_qa_46_plugin_problematico.py | Modo seguro / desactivacion automatica de un MCP que se cuelga (OPS-05) |
+| QA-45 | verde | test_qa_45_actualizacion_fallida.py | — |
+| QA-46 | verde | test_qa_46_plugin_problematico.py | — |
 | QA-47 | xfail | test_qa_47_continuidad_de_novela.py | Distincion canon vs alternativa descartada (WRITE-02/WRITE-04) |
 | QA-48 | verde | test_qa_48_migracion_de_carpeta.py | — |
 

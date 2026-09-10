@@ -2,10 +2,12 @@
 
 Covers: the precedence walk (turn beats model beats role/preset beats project
 beats global), same-level conflict detection (a duplicate instructions file,
-and the `_AGENT_RULES`-shaped duplicate assignment this lote fixed), secret
-masking, hash stability under reordering and sensitivity to a real change,
-the `/prompt` route matching the real prompt assembly in `src/agent_loop.py`,
-and the guard that keeps `_AGENT_RULES` defined exactly once.
+and the `_AGENT_RULES`/`_AGENT_PREAMBLE`/`_API_AGENT_RULES`-shaped duplicate
+assignments, all three fixed as of lot 36), secret masking, hash stability
+under reordering and sensitivity to a real change, the `/prompt` route
+matching the real prompt assembly in `src/agent_loop.py`, and the two guards
+(named-list + fully generalised AST scan) that keep every module-level `_*`
+name in `src/agent_loop.py` defined exactly once.
 """
 from __future__ import annotations
 
@@ -99,17 +101,58 @@ def test_conflict_detected_for_duplicate_instructions_files(tmp_path, monkeypatc
     assert cfg.values["project_instructions_text"].value.startswith("# repo rules")
 
 
-def test_agent_rules_duplication_conflicts_reports_known_remaining_duplicates():
-    """`_AGENT_PREAMBLE` and `_API_AGENT_RULES` are still assigned twice in
-    src/agent_loop.py (out of this lote's assigned scope — see the final
-    report); the generalised detector must name them. `_AGENT_RULES` itself
-    must NOT appear — that one this lote fixed."""
+def test_agent_rules_duplication_conflicts_reports_none_now_fixed():
+    """All three named rule blocks are fixed as of the lot-36 integration
+    (see that lot's final report): `_AGENT_RULES` was already fixed before;
+    `_AGENT_PREAMBLE` and `_API_AGENT_RULES` are now each assigned exactly
+    once at module scope in src/agent_loop.py too, so the named-list
+    detector has nothing left to report."""
     conflicts = ec.agent_rules_duplication_conflicts()
     names = {c["field"] for c in conflicts}
-    assert "_AGENT_RULES" not in names
-    assert "_AGENT_PREAMBLE" in names or "_API_AGENT_RULES" in names
+    assert not names & {"_AGENT_RULES", "_AGENT_PREAMBLE", "_API_AGENT_RULES"}
     for c in conflicts:
         assert len(c["candidates"]) >= 2
+
+
+def test_no_module_level_name_is_assigned_twice_in_agent_loop():
+    """Generalised guard (lot 36): `agent_rules_duplication_conflicts()`
+    only ever watches the fixed list of names in `ec._DUP_RULE_NAMES` — it
+    would stay silent about a FOURTH `_something = ...` assigned twice
+    tomorrow, exactly the blind spot that let `_AGENT_PREAMBLE`/
+    `_API_AGENT_RULES` go unnoticed for a while after `_AGENT_RULES` alone
+    was fixed. This scans every direct module-level assignment target in
+    src/agent_loop.py itself (not routed through `ec`'s curated list) and
+    fails for ANY `_`-prefixed name assigned more than once at that level —
+    so a future duplicate of any shape trips a test even if nobody
+    remembers to add its name to `_DUP_RULE_NAMES`.
+
+    Deliberately module-scope-only (`tree.body`, not a full walk): a name
+    reassigned inside a function, or inside a top-level `try/except`
+    fallback (e.g. `try: X = a\nexcept ImportError: X = b`), is ordinary
+    Python control flow, not the silent same-level precedence bug this
+    guards against."""
+    import ast
+    import inspect
+    from src import agent_loop
+
+    source = inspect.getsource(agent_loop)
+    tree = ast.parse(source)
+    lines_by_name: dict[str, list[int]] = {}
+    for node in tree.body:
+        targets = []
+        if isinstance(node, ast.Assign):
+            targets = [t for t in node.targets if isinstance(t, ast.Name)]
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            targets = [node.target]
+        for target in targets:
+            if target.id.startswith("_"):
+                lines_by_name.setdefault(target.id, []).append(node.lineno)
+
+    duplicated = {name: lines for name, lines in lines_by_name.items() if len(lines) > 1}
+    assert duplicated == {}, (
+        "module-level name(s) assigned more than once in src/agent_loop.py "
+        f"(the last assignment wins in silence): {duplicated}"
+    )
 
 
 # ── 3. secrets masked ──────────────────────────────────────────────────

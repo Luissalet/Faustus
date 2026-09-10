@@ -5871,3 +5871,45 @@ Questions	Preguntas
 The agent is waiting for you — pick all that apply.	El agente te espera — marca todas las que apliquen.
 The agent is waiting for you.	El agente te espera.
 questions	preguntas
+Stop generation	Parar la generación
+Ends the current reply; the turn stays paused and you can continue it.	Termina la respuesta actual; el turno queda en pausa y puedes continuarlo.
+Ends the turn for good and stops any sub-agents it started.	Termina el turno de forma definitiva y detiene los subagentes que haya iniciado.
+Cancel all work	Cancelar todo el trabajo
+Cancels the task and this chat’s background jobs too.	Cancela la tarea y también los trabajos en segundo plano de este chat.
+Tell it something while it keeps working…	Dile algo mientras sigue trabajando…
+Send once this turn is done…	Se enviará cuando termine este turno…
+Direct it…	Dirigir…
+Add an instruction it picks up before its next step.	Añade una instrucción que aplicará antes de su próximo paso.
+Send after	Enviar después
+Queues a message for once this turn finishes.	Encola un mensaje para cuando termine este turno.
+I could not deliver that — nothing is running right now.	No pude entregarlo — no hay nada en marcha ahora mismo.
+Queued — it will be sent once this turn finishes.	En cola — se enviará cuando termine este turno.
+I could not queue that — nothing is running right now.	No pude encolarlo — no hay nada en marcha ahora mismo.
+ACTIVE — {reason}. Chat, files and settings still work normally.	ACTIVO — {reason}. El chat, los archivos y los ajustes siguen funcionando con normalidad.
+Doctor	Diagnóstico
+Effective settings — what is actually in force, and why — live in the main Settings screen.	Los ajustes efectivos — qué está realmente en vigor, y por qué — están en la pantalla principal de Ajustes.
+Everything checked is working.	Todo lo comprobado funciona.
+MCP servers quarantined after repeated failures at startup:	Servidores MCP puestos en cuarentena tras fallos repetidos al iniciar:
+NOT verified: {problems}	NO verificado: {problems}
+No snapshots yet.	Todavía no hay copias de seguridad.
+Not active. Core, external MCP servers, plugins, skills and scheduled tasks are all normal.	No está activo. El núcleo, los servidores MCP externos, los plugins, las skills y las tareas programadas funcionan con normalidad.
+Re-check	Volver a comprobar
+Reactivate	Reactivar
+Reactivated.	Reactivado.
+Repair	Reparar
+Repair did not succeed: {why}	La reparación no tuvo éxito: {why}
+Repair finished.	Reparación terminada.
+Safe mode	Modo seguro
+Setup & settings	Configuración y ajustes
+Turn back on	Volver a activar
+Verified: the latest snapshot opens, restores and its row counts match the backup-time manifest.	Verificado: la última copia de seguridad abre, restaura y sus recuentos de filas coinciden con el manifiesto tomado al hacer la copia.
+Verify the latest snapshot restores	Verificar que la última copia restaura
+What this machine can actually do, asked rather than assumed — the same report as `python -m src.doctor`.	Lo que esta máquina puede hacer de verdad, preguntado en vez de asumido — el mismo informe que `python -m src.doctor`.
+held back	retenido
+An admin account, a model provider and the data folder are all in place. Start a chat, or open Diagnostics for the full picture.	Ya hay una cuenta de administrador, un proveedor de modelos y la carpeta de datos. Empieza un chat, o abre Diagnóstico para ver el panorama completo.
+Checking what is set up	Comprobando qué está configurado
+Could not check what is set up yet	No se pudo comprobar todavía qué está configurado
+Faustus is ready	Faustus está listo
+Go to Home	Ir a Inicio
+One thing left before Faustus is ready	Falta una cosa para que Faustus esté listo
+Open Diagnostics	Abrir Diagnóstico
