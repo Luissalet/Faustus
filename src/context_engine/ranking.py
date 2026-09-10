@@ -305,6 +305,20 @@ def validate(candidate: ContextCandidate, request: ContextRequest, *,
         return ValidationResult(False, "quarantined", "the source is quarantined")
 
     policy = request.policy
+    # CTX-05: an explicit per-turn/per-project "don't use this source"
+    # (`policy.excluded_refs`/`excluded_prefixes`) — a user preference, not an
+    # authorisation failure, and never a reason to touch the file itself.
+    # `explicit_refs` (the user's "use this fragment" for THIS turn) wins over
+    # a standing exclusion: asking for something by name is a stronger signal
+    # than a folder-level default set earlier.
+    if ref not in request.explicit_refs:
+        if ref in policy.excluded_refs:
+            return ValidationResult(False, "user_excluded",
+                                    "excluded by the user for this request's scope")
+        for prefix in policy.excluded_prefixes:
+            if prefix and ref.startswith(prefix):
+                return ValidationResult(False, "user_excluded",
+                                        f"under excluded path {prefix!r}")
     if not policy.allow_personal_memory and candidate.source_type in PERSONAL_SOURCE_TYPES:
         return ValidationResult(False, "policy", "personal memory is off for this request")
     if not policy.allow_project_sources and candidate.source_type in PROJECT_SOURCE_TYPES:

@@ -1132,3 +1132,145 @@ export async function runMaintenance(workspace: string, projectId: string): Prom
     due: strList(body.due),
   };
 }
+
+// ── CTX-06: health + reconstruct-task ───────────────────────────────────────
+
+export interface ContextHealthFlag {
+  level: string;
+  key: string;
+  text: string;
+}
+
+export interface ContextHealth {
+  flags: ContextHealthFlag[];
+  saturated: boolean;
+  needsRebuild: boolean;
+  duplicateRatio: number;
+  toolOutputRatio: number;
+  staleEvidenceCount: number;
+}
+
+function healthFrom(raw: unknown): ContextHealth {
+  const data = obj(raw);
+  const dup = obj(data.duplicate);
+  const stale = obj(data.stale_evidence);
+  return {
+    flags: asArray<unknown>(data.flags).map((value) => {
+      const row = obj(value);
+      return { level: str(row.level), key: str(row.key), text: str(row.text) };
+    }),
+    saturated: data.saturated === true,
+    needsRebuild: data.needs_rebuild === true,
+    duplicateRatio: num(dup.ratio),
+    toolOutputRatio: num(data.tool_output_ratio),
+    staleEvidenceCount: num(stale.stale_count),
+  };
+}
+
+/** One deterministic report over a message list already in hand — no model
+ * call (`src/context_health.py`). */
+export async function loadContextHealth(
+  messages: Array<Record<string, unknown>>,
+  opts: { contextLength?: number; model?: string } = {},
+): Promise<ContextHealth> {
+  const body = await send(`${BASE}/health`, 'POST', {
+    messages,
+    context_length: opts.contextLength,
+    model: opts.model,
+  });
+  return healthFrom(body);
+}
+
+export interface ReconstructedTask {
+  goal: string;
+  constraints: string[];
+  changes: string[];
+  nextAction: string;
+}
+
+/** The "reconstruir tarea" button: goal/constraints/changes/next_action read
+ * back from whatever survived compaction. */
+export async function reconstructTask(messages: Array<Record<string, unknown>>): Promise<ReconstructedTask> {
+  const body = await send(`${BASE}/reconstruct-task`, 'POST', { messages });
+  const task = obj(body.task);
+  return {
+    goal: str(task.goal),
+    constraints: strList(task.constraints),
+    changes: strList(task.changes),
+    nextAction: str(task.next_action),
+  };
+}
+
+// ── PERF-03: cache control ──────────────────────────────────────────────────
+
+/** "Liberar cache" / "recalcular" for this owner's project scope. */
+export async function invalidateContextCache(projectId: string): Promise<number> {
+  const body = await send(`${BASE}/cache/invalidate`, 'POST', { project_id: projectId });
+  return num(body.dropped);
+}
+
+// ── CTX-05: user-controlled retrieval scope ─────────────────────────────────
+
+export type SelectionKind = 'exclude' | 'exclude_prefix' | 'pin';
+
+export interface SelectionControl {
+  ref: string;
+  projectId: string;
+  sessionId: string;
+}
+
+export interface SelectionControls {
+  exclude: SelectionControl[];
+  exclude_prefix: SelectionControl[];
+  pin: SelectionControl[];
+}
+
+function controlListFrom(raw: unknown): SelectionControl[] {
+  return asArray<unknown>(raw).map((value) => {
+    const row = obj(value);
+    return { ref: str(row.ref), projectId: str(row.project_id), sessionId: str(row.session_id) };
+  });
+}
+
+export async function loadSelectionControls(
+  projectId: string,
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<SelectionControls> {
+  const data = await getJson<unknown>(
+    `${BASE}/selection${query({ project_id: projectId, session_id: sessionId })}`,
+    signal,
+  );
+  const controls = obj(obj(data).controls);
+  return {
+    exclude: controlListFrom(controls.exclude),
+    exclude_prefix: controlListFrom(controls.exclude_prefix),
+    pin: controlListFrom(controls.pin),
+  };
+}
+
+export async function setSelectionControl(
+  kind: SelectionKind,
+  ref: string,
+  opts: { projectId?: string; sessionId?: string } = {},
+): Promise<void> {
+  await send(`${BASE}/selection`, 'POST', {
+    kind,
+    ref,
+    project_id: opts.projectId,
+    session_id: opts.sessionId,
+  });
+}
+
+export async function unsetSelectionControl(
+  kind: SelectionKind,
+  ref: string,
+  opts: { projectId?: string; sessionId?: string } = {},
+): Promise<void> {
+  await send(`${BASE}/selection`, 'DELETE', {
+    kind,
+    ref,
+    project_id: opts.projectId,
+    session_id: opts.sessionId,
+  });
+}

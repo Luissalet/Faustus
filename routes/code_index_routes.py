@@ -64,7 +64,10 @@ def setup_code_index_routes():
         if not isinstance(payload, dict):
             payload = {}
         workspace = str(payload.get("path") or payload.get("workspace") or "")
-        result = code_index.refresh(
+        # Lote 50: this hop used to call the synchronous `refresh()` inline
+        # inside an `async def` handler — exactly the event-loop-blocking
+        # case IDX-06's `refresh_async` (src/code_index.py) exists to avoid.
+        result = await code_index.refresh_async(
             workspace, project_id=project_id, full=bool(payload.get("full") or False))
         return {"ok": True, "project_id": project_id, "refresh": result}
 

@@ -265,3 +265,162 @@ export async function previewPack(query = ''): Promise<{ text: string; chars: nu
   const data = await getJson<{ pack?: string; chars?: number; budget?: number; degraded?: boolean }>(`/api/memory-engine/pack?query=${encodeURIComponent(query)}`);
   return { text: data.pack ?? '', chars: data.chars ?? 0, budget: data.budget ?? 0, degraded: Boolean(data.degraded) };
 }
+
+/* ── MEM-03: failure memory, controlled promotion ─────────────────────────
+ * A candidate is a `LearnedRule`-shaped item (`type="anti_pattern"`,
+ * `status="deprecated"` until promoted) — see `src/memory_failures.py`.
+ * Reads its own fields off `provenance` rather than duplicating the whole
+ * `LearnedRule` shape, since a candidate is never shown in the rules list
+ * (different default status) and needs different fields (occurrences,
+ * test_ref) that plain rules don't have. */
+
+export interface FailureCandidate {
+  id: string;
+  text: string;
+  status: string;
+  project: string;
+  severity: string;
+  occurrences: number;
+  testRef: string;
+  updatedAt: string;
+}
+
+function failureCandidateFrom(raw: Record<string, unknown>): FailureCandidate {
+  const prov = (raw.provenance ?? {}) as Record<string, unknown>;
+  return {
+    id: String(raw.id ?? ''),
+    text: typeof raw.text === 'string' ? raw.text : '',
+    status: typeof raw.status === 'string' ? raw.status : '',
+    project: typeof raw.project === 'string' ? raw.project : '',
+    severity: typeof prov.severity === 'string' && prov.severity ? prov.severity : 'medium',
+    occurrences: Number.isFinite(Number(prov.occurrences)) ? Number(prov.occurrences) : 0,
+    testRef: typeof prov.test_ref === 'string' ? prov.test_ref : '',
+    updatedAt: typeof raw.updated_at === 'string' ? raw.updated_at : '',
+  };
+}
+
+export interface RegisterFailureResult {
+  outcome: 'registered' | 'promoted';
+  occurrences: number;
+  blockedReason: string;
+  item: FailureCandidate;
+}
+
+export async function registerFailure(
+  signature: string,
+  summary: string,
+  opts: { project?: string; severity?: string; evidenceRef?: string; sessionId?: string; testRef?: string; confirm?: boolean } = {},
+): Promise<RegisterFailureResult> {
+  const response = await ok(
+    await fetch('/api/memory-engine/failures', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        signature,
+        summary,
+        project: opts.project || undefined,
+        severity: opts.severity || undefined,
+        evidence_ref: opts.evidenceRef || undefined,
+        session_id: opts.sessionId || undefined,
+        test_ref: opts.testRef || undefined,
+        confirm: opts.confirm ?? false,
+      }),
+    }),
+    'memory-engine/failures',
+  );
+  const data = (await response.json()) as { outcome?: string; occurrences?: number; blocked_reason?: string; item?: Record<string, unknown> };
+  return {
+    outcome: data.outcome === 'promoted' ? 'promoted' : 'registered',
+    occurrences: data.occurrences ?? 0,
+    blockedReason: typeof data.blocked_reason === 'string' ? data.blocked_reason : '',
+    item: failureCandidateFrom(data.item ?? {}),
+  };
+}
+
+export async function listFailureCandidates(project?: string, signal?: AbortSignal): Promise<FailureCandidate[]> {
+  const qs = project ? `?project=${encodeURIComponent(project)}` : '';
+  const data = await getJson<{ candidates?: Record<string, unknown>[] }>(`/api/memory-engine/failures${qs}`, signal);
+  return (data.candidates ?? []).map(failureCandidateFrom);
+}
+
+/* ── MEM-04: project/decision continuity ──────────────────────────────── */
+
+export interface Decision {
+  id: string;
+  text: string;
+  status: string;
+  project: string;
+  scope: string;
+  alternatives: string[];
+  artifactRefs: string[];
+  invalidated: boolean;
+  invalidatedReason: string;
+  supersededBy: string;
+  createdAt: string;
+}
+
+function decisionFrom(raw: Record<string, unknown>): Decision {
+  const prov = (raw.provenance ?? {}) as Record<string, unknown>;
+  const strList = (v: unknown) => (Array.isArray(v) ? v.map((x) => String(x)) : []);
+  return {
+    id: String(raw.id ?? ''),
+    text: typeof raw.text === 'string' ? raw.text : '',
+    status: typeof raw.status === 'string' ? raw.status : '',
+    project: typeof raw.project === 'string' ? raw.project : '',
+    scope: typeof prov.decision_scope === 'string' && prov.decision_scope ? prov.decision_scope : 'project',
+    alternatives: strList(prov.alternatives_discarded),
+    artifactRefs: strList(prov.artifact_refs),
+    invalidated: Boolean(prov.invalidated),
+    invalidatedReason: typeof prov.invalidated_reason === 'string' ? prov.invalidated_reason : '',
+    supersededBy: typeof prov.superseded_by === 'string' ? prov.superseded_by : '',
+    createdAt: typeof raw.created_at === 'string' ? raw.created_at : '',
+  };
+}
+
+export async function recordDecision(
+  text: string,
+  opts: { project?: string; alternatives?: string[]; scope?: string; artifactRefs?: string[]; sessionId?: string } = {},
+): Promise<Decision> {
+  const response = await ok(
+    await fetch('/api/memory-engine/decisions', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text,
+        project: opts.project || undefined,
+        alternatives: opts.alternatives,
+        scope: opts.scope || undefined,
+        artifact_refs: opts.artifactRefs,
+        session_id: opts.sessionId || undefined,
+      }),
+    }),
+    'memory-engine/decisions',
+  );
+  const data = (await response.json()) as { decision?: Record<string, unknown> };
+  return decisionFrom(data.decision ?? {});
+}
+
+export async function listDecisions(project?: string, includeInvalidated = false, signal?: AbortSignal): Promise<Decision[]> {
+  const params = new URLSearchParams();
+  if (project) params.set('project', project);
+  if (includeInvalidated) params.set('include_invalidated', 'true');
+  const qs = params.toString();
+  const data = await getJson<{ decisions?: Record<string, unknown>[] }>(`/api/memory-engine/decisions${qs ? `?${qs}` : ''}`, signal);
+  return (data.decisions ?? []).map(decisionFrom);
+}
+
+export async function invalidateDecision(id: string, reason: string, supersededBy?: string): Promise<Decision> {
+  const response = await ok(
+    await fetch(`/api/memory-engine/decisions/${encodeURIComponent(id)}/invalidate`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason, superseded_by: supersededBy || undefined }),
+    }),
+    'memory-engine/decisions/invalidate',
+  );
+  const data = (await response.json()) as { decision?: Record<string, unknown> };
+  return decisionFrom(data.decision ?? {});
+}

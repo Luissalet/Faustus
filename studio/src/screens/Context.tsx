@@ -33,6 +33,7 @@ import {
   detachBlock,
   engineMode,
   formatBytes,
+  invalidateContextCache,
   loadBlockAudit,
   loadBlocks,
   loadCodeIndexStatus,
@@ -41,14 +42,17 @@ import {
   loadFindings,
   loadManifest,
   loadPackets,
+  loadSelectionControls,
   oldestPacket,
   refreshBlocker,
   refreshCodeIndex,
   runMaintenance,
   searchCode,
   sendExperienceFeedback,
+  setSelectionControl,
   supersedeChain,
   symbolRef,
+  unsetSelectionControl,
   updateBlock,
   verdictReading,
   type Block,
@@ -61,6 +65,7 @@ import {
   type PacketRow,
   type RefreshBlock,
   type RefreshReport,
+  type SelectionControls,
 } from '../adapters/context';
 import { locale, t, tn } from '../i18n';
 import './projects.css';
@@ -255,6 +260,26 @@ function Overview({ projectId, workspace, mode }: { projectId: string; workspace
   const [ran, setRan] = useState<MaintenanceRun[] | null>(null);
   const [ranError, setRanError] = useState<unknown>(null);
 
+  // PERF-03: "liberar caché" — the working set is process-wide, so clearing
+  // it here is exactly what the diagnostics Stat above just measured.
+  const [clearingCache, setClearingCache] = useState(false);
+  const [clearedCache, setClearedCache] = useState<number | null>(null);
+  const [clearCacheError, setClearCacheError] = useState<unknown>(null);
+
+  async function clearCache() {
+    setClearingCache(true);
+    setClearCacheError(null);
+    try {
+      const dropped = await invalidateContextCache(projectId);
+      setClearedCache(dropped);
+      diagnostics.reload();
+    } catch (failure) {
+      setClearCacheError(failure);
+    } finally {
+      setClearingCache(false);
+    }
+  }
+
   const data = diagnostics.data;
   const oldest = useMemo(() => oldestPacket(ledger.data ?? [], PACKET_PAGE), [ledger.data]);
   const stale = index.data ? codeIndexStale(index.data) : false;
@@ -318,6 +343,7 @@ function Overview({ projectId, workspace, mode }: { projectId: string; workspace
               : t('{entries} entries · {evictions} evicted', { entries: cache.entries, evictions: cache.evictions })
           }
           tone={cache.error ? 'warning' : undefined}
+          testId="context-cache-hit-rate"
         />
         <Stat
           label={t('Oldest packet kept')}
@@ -469,6 +495,30 @@ function Overview({ projectId, workspace, mode }: { projectId: string; workspace
         </div>
       </Panel>
 
+      <Panel
+        title={t('Cache')}
+        actions={
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={RefreshCw}
+            label={t('Free the cache')}
+            loading={clearingCache}
+            onClick={() => void clearCache()}
+            testId="context-clear-cache"
+          />
+        }
+      >
+        <Problem error={clearCacheError} what={t('The cache could not be cleared')} />
+        <p className="fs-muted fs-ctx__lede">
+          {clearedCache === null
+            ? t('Forgets every cached retrieval/response entry for this project — a permission, content or template change already invalidates the affected entries on its own; use this to force a recompute regardless.')
+            : tn(clearedCache, '{n} cached entry was forgotten.', '{n} cached entries were forgotten.')}
+        </p>
+      </Panel>
+
+      <SelectionPanel projectId={projectId} />
+
       <Dialog
         open={confirming}
         onOpenChange={setConfirming}
@@ -498,6 +548,131 @@ function Overview({ projectId, workspace, mode }: { projectId: string; workspace
         )}
       </Dialog>
     </div>
+  );
+}
+
+/* ── CTX-05: user-controlled retrieval scope ─────────────────────────────── */
+
+/**
+ * "No usar esta fuente" / "usar este fragmento", at project scope — never
+ * deletes anything it names, only whether retrieval offers it (see
+ * `src/context_selection.py`). Session-scoped controls are set from the
+ * chat's own composer (a different, foreign screen); this panel is the
+ * project-wide default a person manages from Settings-shaped context.
+ */
+function SelectionPanel({ projectId }: { projectId: string }) {
+  const controls = useRemote(`selection:${projectId}`, (signal) => loadSelectionControls(projectId, '', signal));
+  const [ref, setRef] = useState('');
+  const [kind, setKind] = useState<'exclude' | 'exclude_prefix' | 'pin'>('exclude');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+
+  async function add() {
+    const clean = ref.trim();
+    if (!clean) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await setSelectionControl(kind, clean, { projectId });
+      setRef('');
+      controls.reload();
+    } catch (failure) {
+      setError(failure);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove(removeKind: 'exclude' | 'exclude_prefix' | 'pin', removeRef: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      await unsetSelectionControl(removeKind, removeRef, { projectId });
+      controls.reload();
+    } catch (failure) {
+      setError(failure);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const data: SelectionControls = controls.data ?? { exclude: [], exclude_prefix: [], pin: [] };
+  const rows: Array<{ kind: 'exclude' | 'exclude_prefix' | 'pin'; ref: string }> = [
+    ...data.exclude.map((c) => ({ kind: 'exclude' as const, ref: c.ref })),
+    ...data.exclude_prefix.map((c) => ({ kind: 'exclude_prefix' as const, ref: c.ref })),
+    ...data.pin.map((c) => ({ kind: 'pin' as const, ref: c.ref })),
+  ];
+
+  return (
+    <Panel title={t('Selective recall')}>
+      <p className="fs-muted fs-ctx__lede">
+        {t('Exclude a file or folder from retrieval, or pin one to always be offered — for this project. Never deletes the source itself.')}
+      </p>
+      <Problem error={error} what={t('The control could not be saved')} />
+      <div className="fs-ctx__form">
+        <label className="fs-ctx__label">
+          <span>{t('Kind')}</span>
+          <select className="fs-field" value={kind} onChange={(e) => setKind(e.target.value as typeof kind)}>
+            <option value="exclude">{t('Exclude a source')}</option>
+            <option value="exclude_prefix">{t('Exclude a folder')}</option>
+            <option value="pin">{t('Pin a source')}</option>
+          </select>
+        </label>
+        <label className="fs-ctx__label">
+          <span>{t('Reference')}</span>
+          <input
+            className="fs-field"
+            value={ref}
+            onChange={(e) => setRef(e.target.value)}
+            placeholder={t('e.g. file:src/app.py')}
+          />
+        </label>
+        <label className="fs-ctx__label">
+          <span>&nbsp;</span>
+          <Button variant="secondary" size="sm" icon={Plus} label={t('Add')} loading={busy} onClick={() => void add()} testId="context-selection-add" />
+        </label>
+      </div>
+      <div className="fs-ctx__table-wrap">
+        <table className="fs-ctx__table">
+          <thead>
+            <tr>
+              <th>{t('Kind')}</th>
+              <th>{t('Reference')}</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={`${row.kind}:${row.ref}`}>
+                <td>
+                  {row.kind === 'exclude' && t('Excluded source')}
+                  {row.kind === 'exclude_prefix' && t('Excluded folder')}
+                  {row.kind === 'pin' && t('Pinned source')}
+                </td>
+                <td>
+                  <code>{row.ref}</code>
+                </td>
+                <td>
+                  <IconButton
+                    icon={Trash2}
+                    label={t('Remove')}
+                    size="sm"
+                    onClick={() => void remove(row.kind, row.ref)}
+                  />
+                </td>
+              </tr>
+            ))}
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={3} className="fs-ctx__empty-cell">
+                  {t('Nothing is excluded or pinned for this project.')}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </Panel>
   );
 }
 

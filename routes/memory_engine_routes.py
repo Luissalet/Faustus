@@ -23,7 +23,7 @@ would be given, so robot mode sends it as it stands.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
@@ -72,6 +72,33 @@ class ForgetBody(BaseModel):
 class CorrectBody(BaseModel):
     text: str
     reason: Optional[str] = None
+
+
+class FailureBody(BaseModel):
+    """MEM-03: one occurrence of a failure."""
+    signature: str
+    summary: str
+    project: Optional[str] = None
+    severity: Optional[str] = "medium"
+    evidence_ref: Optional[str] = None
+    session_id: Optional[str] = None
+    test_ref: Optional[str] = None
+    confirm: Optional[bool] = False
+
+
+class DecisionBody(BaseModel):
+    """MEM-04: one technical decision."""
+    text: str
+    project: Optional[str] = None
+    alternatives: Optional[List[str]] = None
+    scope: Optional[str] = "project"
+    artifact_refs: Optional[List[str]] = None
+    session_id: Optional[str] = None
+
+
+class InvalidateDecisionBody(BaseModel):
+    reason: str
+    superseded_by: Optional[str] = None
 
 
 def _owner(request: Request) -> str:
@@ -240,5 +267,86 @@ def setup_memory_engine_routes() -> APIRouter:
         if robot.wants(request):
             return await robot.reply(request, payload)
         return payload()
+
+    # ── MEM-03: failure memory, controlled promotion ────────────────────────
+
+    @router.post("/failures")
+    async def register_failure(request: Request, body: FailureBody,
+                               _admin: None = Depends(require_admin)) -> Dict[str, Any]:
+        """One occurrence of a failure. Promotes to an active anti-pattern
+        ONLY when both a regression-test reference is attached and the
+        incident has repeated (or an explicit `confirm` is passed) — see
+        `src.memory_failures.register_failure`."""
+        from src import memory_failures
+
+        result = memory_failures.register_failure(
+            body.signature, body.summary, owner=_owner(request),
+            project=str(body.project or ""), severity=body.severity or "medium",
+            evidence_ref=str(body.evidence_ref or ""),
+            session_id=str(body.session_id or ""),
+            test_ref=str(body.test_ref or ""), confirm=bool(body.confirm))
+        return {"status": "success", **result}
+
+    @router.get("/failures")
+    async def list_failure_candidates(request: Request, project: Optional[str] = None,
+                                      _admin: None = Depends(require_admin)) -> Dict[str, Any]:
+        """The "problema recurrente -> regla propuesta -> pruebas -> activacion"
+        panel's data: every candidate still short of promotion."""
+        from src import memory_failures
+
+        candidates = memory_failures.list_candidates(owner=_owner(request),
+                                                      project=str(project or ""))
+        return {"status": "success", "candidates": candidates}
+
+    @router.post("/failures/sweep")
+    async def sweep_expired_failures(request: Request, project: Optional[str] = None,
+                                     _admin: None = Depends(require_admin)) -> Dict[str, Any]:
+        """Demote (never delete) a promoted anti-pattern whose caducidad
+        window passed without reconfirmation."""
+        from src import memory_failures
+
+        result = memory_failures.sweep_expired(owner=_owner(request),
+                                                project=str(project or "") or None)
+        return {"status": "success", **result}
+
+    # ── MEM-04: project continuity and decisions ────────────────────────────
+
+    @router.post("/decisions")
+    async def create_decision(request: Request, body: DecisionBody,
+                              _admin: None = Depends(require_admin)) -> Dict[str, Any]:
+        from src import memory_decisions
+
+        item = memory_decisions.record_decision(
+            body.text, owner=_owner(request), project=str(body.project or ""),
+            alternatives=body.alternatives or [], scope=body.scope or "project",
+            artifact_refs=body.artifact_refs or [], session_id=str(body.session_id or ""))
+        return {"status": "success", "decision": item}
+
+    @router.get("/decisions")
+    async def list_decisions(request: Request, project: Optional[str] = None,
+                             include_invalidated: bool = False,
+                             _admin: None = Depends(require_admin)) -> Dict[str, Any]:
+        """The decision timeline for a project — current truth by default,
+        `include_invalidated=true` for the full history a "linked to
+        artifacts and changes" panel needs."""
+        from src import memory_decisions
+
+        rows = memory_decisions.list_decisions(owner=_owner(request),
+                                                project=str(project or ""),
+                                                include_invalidated=include_invalidated)
+        return {"status": "success", "decisions": rows}
+
+    @router.post("/decisions/{decision_id}/invalidate")
+    async def invalidate_decision(decision_id: str, body: InvalidateDecisionBody,
+                                  _admin: None = Depends(require_admin)) -> Dict[str, Any]:
+        """Its premise changed. The row stays (rule 3) — see
+        `src.memory_decisions.invalidate_decision`."""
+        from src import memory_decisions
+
+        item = memory_decisions.invalidate_decision(
+            decision_id, body.reason, superseded_by=str(body.superseded_by or ""))
+        if item is None:
+            raise HTTPException(status_code=404, detail="no such decision")
+        return {"status": "success", "decision": item}
 
     return router

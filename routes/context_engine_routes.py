@@ -877,4 +877,107 @@ def setup_context_engine_routes():
             out["code_index"] = code_index.status(workspace, project_id=project_id)
         return out
 
+    # ── CTX-06: health without another LLM ──────────────────────────────────
+
+    @router.post("/health")
+    async def context_health(request: Request):
+        """The three deterministic signals over a message list a caller
+        already has in hand (the transcript about to be — or just — sent):
+        repetition, stale evidence, tool-output ratio, and one actionable
+        flag list. See `src/context_health.py` for what is and is not
+        measured this way."""
+        require_admin(request)
+        payload = await _json_body(request)
+        messages = payload.get("messages") or []
+        if not isinstance(messages, list):
+            raise HTTPException(status_code=400, detail="messages must be a list")
+        from src import context_health
+
+        report = context_health.health(
+            [m for m in messages if isinstance(m, Mapping)],
+            payload.get("tool_schemas") or (),
+            context_length=_whole(payload.get("context_length")),
+            model=str(payload.get("model") or ""))
+        return {"ok": True, **report}
+
+    @router.post("/reconstruct-task")
+    async def reconstruct_task(request: Request):
+        """The "reconstruir tarea" button: goal / constraints / changes /
+        next_action, read back from whatever survived compaction. Never
+        regenerates anything — see `src/context_health.reconstruct_task`."""
+        require_admin(request)
+        payload = await _json_body(request)
+        messages = payload.get("messages") or []
+        if not isinstance(messages, list):
+            raise HTTPException(status_code=400, detail="messages must be a list")
+        from src import context_health
+
+        task = context_health.reconstruct_task([m for m in messages if isinstance(m, Mapping)])
+        return {"ok": True, "task": task}
+
+    # ── PERF-03: cache control ──────────────────────────────────────────────
+
+    @router.post("/cache/invalidate")
+    async def invalidate_cache(request: Request):
+        """"Liberar cache" / "recalcular": forget this owner's entries (or one
+        `scope`/`prefix` of them). Never touches any other owner's scope —
+        `WorkingSet.invalidate` already refuses to guess one from an empty
+        argument (see `src/context_engine/cache.py`)."""
+        require_admin(request)
+        payload = await _json_body(request)
+        owner = _owner(request)
+        scope = str(payload.get("scope") or "") or f"{owner}|" + str(payload.get("project_id") or "")
+        prefix = str(payload.get("prefix") or "")
+        dropped = _cache().working_set().invalidate(scope, prefix=prefix)
+        return {"ok": True, "scope": scope, "prefix": prefix, "dropped": dropped}
+
+    # ── CTX-05: user-controlled retrieval scope ─────────────────────────────
+
+    @router.get("/selection")
+    def list_selection(request: Request, project_id: str = "", session_id: str = ""):
+        """Every exclude/exclude_prefix/pin control in play for this owner at
+        this project/session scope, broadest to narrowest — see
+        `src/context_selection.list_controls`."""
+        from src import context_selection as selection
+
+        owner = _owner(request)
+        return {"ok": True, "owner": owner,
+                "controls": selection.list_controls(owner, project_id=project_id,
+                                                     session_id=session_id)}
+
+    @router.post("/selection")
+    async def set_selection(request: Request):
+        """"No usar esta fuente" / "usar este fragmento". Never deletes or
+        even reads the named source — only whether retrieval offers it."""
+        require_admin(request)
+        payload = await _json_body(request)
+        from src import context_selection as selection
+
+        try:
+            record = selection.set_control(
+                _owner(request), str(payload.get("kind") or ""),
+                str(payload.get("ref") or ""),
+                project_id=str(payload.get("project_id") or ""),
+                session_id=str(payload.get("session_id") or ""))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {"ok": True, "control": record}
+
+    @router.delete("/selection")
+    async def unset_selection(request: Request):
+        """Undo one control — "sin memoria automatica" stays a session-level
+        `no_memory` flag on the chat request itself (unchanged, see
+        `context_engine/wiring.py::build_request`); this only ever removes an
+        exclude/pin row, never a memory or a file."""
+        require_admin(request)
+        payload = await _json_body(request)
+        from src import context_selection as selection
+
+        removed = selection.unset_control(
+            _owner(request), str(payload.get("kind") or ""),
+            str(payload.get("ref") or ""),
+            project_id=str(payload.get("project_id") or ""),
+            session_id=str(payload.get("session_id") or ""))
+        return {"ok": True, "removed": removed}
+
     return router

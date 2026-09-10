@@ -64,6 +64,7 @@ monorepo's directory tree is never held in memory at once — only the
 from __future__ import annotations
 
 import ast
+import asyncio
 import fnmatch
 import hashlib
 import logging
@@ -460,6 +461,34 @@ def _drop_file(conn: sqlite3.Connection, workspace: str, project_id: str, rel: s
                  (workspace, project_id, rel))
 
 
+def _copy_indexed_by_hash(conn: sqlite3.Connection, workspace: str, project_id: str,
+                          rel: str, file_hash: str, indexed_at: str) -> bool:
+    """IDX-06 dedup by content: if some OTHER path in this workspace already
+    has this exact hash indexed (a vendored copy, a duplicated fixture —
+    `iter_candidates` does not dedupe by content, only `refresh` does), copy
+    its symbols/refs onto `rel` instead of paying `_extract` twice for
+    identical bytes. Returns whether a twin was found."""
+    twin = conn.execute(
+        "SELECT path, language FROM ci_files WHERE workspace = ? AND project_id = ? "
+        "AND file_hash = ? AND path != ? LIMIT 1",
+        (workspace, project_id, file_hash, rel)).fetchone()
+    if twin is None:
+        return False
+    lang = twin["language"]
+    symbol_rows = conn.execute(
+        "SELECT name, qualname, kind, start_line, end_line FROM ci_symbols "
+        "WHERE workspace = ? AND project_id = ? AND path = ?",
+        (workspace, project_id, twin["path"])).fetchall()
+    ref_rows = conn.execute(
+        "SELECT name, line FROM ci_refs WHERE workspace = ? AND project_id = ? AND path = ?",
+        (workspace, project_id, twin["path"])).fetchall()
+    defs = [(r["name"], r["qualname"], r["kind"], r["start_line"], r["end_line"])
+            for r in symbol_rows]
+    refs = [(r["name"], r["line"]) for r in ref_rows]
+    _write_file(conn, workspace, project_id, rel, file_hash, lang, defs, refs, indexed_at)
+    return True
+
+
 def _write_file(conn: sqlite3.Connection, workspace: str, project_id: str, rel: str,
                 file_hash: str, lang: str, defs: Sequence[_Definition],
                 refs: Sequence[Tuple[str, int]], indexed_at: str) -> None:
@@ -487,25 +516,70 @@ def _write_file(conn: sqlite3.Connection, workspace: str, project_id: str, rel: 
 
 # ── the public surface ──────────────────────────────────────────────────────
 
+#: IDX-06: how often (in files processed) `refresh` re-checks resource
+#: pressure. Checking every file would make the syscall/lock inside
+#: `bg_monitor.ram_pressure()` a per-file cost; checking only once at the
+#: start would let a walk that TURNS the box hot midway run to completion
+#: anyway. 25 is the same order of magnitude as `DEFAULT_BUDGET_FILES` is
+#: small multiples of, so a pressure trip is noticed within a fraction of one
+#: `refresh()` call, not only on the next one.
+PRESSURE_CHECK_EVERY = 25
+
+
+def _pressure_paused() -> bool:
+    """IDX-06: reuse the SAME hysteresis guard PERF-04 already wired into
+    `src/bg_jobs.py` — a second threshold here would mean a box could be
+    "not too hot to index" and "too hot to run a background job" at once,
+    which is not a distinction a user asking why their fan is loud can use."""
+    try:
+        from src import bg_monitor
+        return bool(bg_monitor.is_paused_for_resource_pressure())
+    except Exception:  # noqa: BLE001 - an unreadable monitor never blocks indexing
+        return False
+
+
 def refresh(workspace: str, *, project_id: str = "", full: bool = False,
-           budget_files: int = DEFAULT_BUDGET_FILES) -> Dict[str, Any]:
+           budget_files: int = DEFAULT_BUDGET_FILES,
+           pause_on_pressure: bool = True) -> Dict[str, Any]:
     """Bring the index up to date and say what that cost.
 
     Incremental unless `full`: a file whose hash matches the one already
-    stored is neither opened nor reparsed. Returns
-    `{"scanned", "reindexed", "removed", "symbols", "refs", "elapsed_ms",
-    "truncated"}`. Never raises — a store error is logged and answered with
-    zeros, the same degrade-not-break contract `context_engine` modules use
-    on the turn path."""
+    stored is neither opened nor reparsed. A file whose hash matches some
+    OTHER already-indexed file in this workspace (a vendored duplicate) is
+    recorded from that twin's rows instead of being parsed a second time
+    (IDX-06's "deduplicacion por contenido", `_copy_indexed_by_hash`).
+
+    IDX-06: `pause_on_pressure` (default on) checks
+    `bg_monitor.is_paused_for_resource_pressure()` before starting and every
+    `PRESSURE_CHECK_EVERY` files; a trip stops the scan where it is — the
+    same way a truncated budget does, so nothing already written is lost and
+    the next call resumes from the files not yet seen — and the response
+    carries `"paused": true` so a caller (a background scheduler) knows to
+    retry rather than conclude the workspace is small enough to have
+    finished. Returns `{"scanned", "reindexed", "removed", "deduped",
+    "symbols", "refs", "elapsed_ms", "truncated", "paused"}`. Never raises —
+    a store error is logged and answered with zeros, the same
+    degrade-not-break contract `context_engine` modules use on the turn
+    path."""
     started = time.time()
-    out: Dict[str, Any] = {"scanned": 0, "reindexed": 0, "removed": 0,
-                           "symbols": 0, "refs": 0, "elapsed_ms": 0, "truncated": False}
+    out: Dict[str, Any] = {"scanned": 0, "reindexed": 0, "removed": 0, "deduped": 0,
+                           "symbols": 0, "refs": 0, "elapsed_ms": 0,
+                           "truncated": False, "paused": False}
     root = _norm_workspace(workspace)
     if not root or not os.path.isdir(root):
         out["elapsed_ms"] = int((time.time() - started) * 1000)
         return out
     scope = _text(project_id, limit=128)
     budget = max(1, int(budget_files or DEFAULT_BUDGET_FILES))
+
+    if pause_on_pressure and _pressure_paused():
+        # Never even walks the tree under pressure: `iter_candidates` itself
+        # is `os.stat`-heavy on a large collection, and "indexing a large
+        # folder must not fight the chat for CPU/IO" (IDX-06's acceptance
+        # text) means not doing THAT work either, not only skipping the parse.
+        out["paused"] = True
+        out["elapsed_ms"] = int((time.time() - started) * 1000)
+        return out
 
     candidates: List[str] = []
     truncated = False
@@ -515,16 +589,21 @@ def refresh(workspace: str, *, project_id: str = "", full: bool = False,
             truncated = True
             break
     out["scanned"] = len(candidates)
-    out["truncated"] = truncated
     indexed_at = now_iso()
 
+    paused = False
     try:
         with store.db() as conn:
             known = {row["path"]: row["file_hash"] for row in conn.execute(
                 "SELECT path, file_hash FROM ci_files WHERE workspace = ? AND project_id = ?",
                 (root, scope))}
             seen: Set[str] = set()
-            for rel in candidates:
+            for i, rel in enumerate(candidates):
+                if (pause_on_pressure and i and i % PRESSURE_CHECK_EVERY == 0
+                        and _pressure_paused()):
+                    paused = True
+                    truncated = True  # the walk did not finish; same guard as a budget cut
+                    break
                 abs_path = os.path.join(root, *rel.split("/"))
                 source = _read_hashed(abs_path)
                 if source is None:
@@ -535,6 +614,10 @@ def refresh(workspace: str, *, project_id: str = "", full: bool = False,
                 seen.add(rel)
                 text, file_hash = source
                 if not full and known.get(rel) == file_hash:
+                    continue
+                if _copy_indexed_by_hash(conn, root, scope, rel, file_hash, indexed_at):
+                    out["deduped"] += 1
+                    out["reindexed"] += 1
                     continue
                 lang = lang_for_path(rel)
                 defs, refs = _extract(text, lang)
@@ -555,7 +638,60 @@ def refresh(workspace: str, *, project_id: str = "", full: bool = False,
                 (root, scope)).fetchone()["n"])
     except (store.ContextStoreError, sqlite3.Error) as exc:
         logger.warning("code_index.refresh(%s) failed: %s", root, exc)
+    out["truncated"] = truncated
+    out["paused"] = paused
     out["elapsed_ms"] = int((time.time() - started) * 1000)
+    return out
+
+
+async def refresh_async(workspace: str, *, project_id: str = "", full: bool = False,
+                        budget_files: int = DEFAULT_BUDGET_FILES,
+                        pause_on_pressure: bool = True) -> Dict[str, Any]:
+    """IDX-06: `refresh()` off the event loop.
+
+    `refresh()` itself is synchronous, blocking, disk-bound work — exactly
+    what "indexar una carpeta extensa no bloquea escribir en el chat" rules
+    out running inline inside an `async def` request handler. This is the
+    hop a route should await instead of calling `refresh()` directly (see
+    the report's "Cambios necesarios en ficheros ajenos": the existing
+    `POST /api/code-index/{project_id}/reindex` in `routes/code_index_routes.py`,
+    a file outside this lote's PROPIOS, still calls the sync function)."""
+    return await asyncio.to_thread(
+        refresh, workspace, project_id=project_id, full=full,
+        budget_files=budget_files, pause_on_pressure=pause_on_pressure)
+
+
+def cleanup_orphaned_workspaces() -> Dict[str, Any]:
+    """IDX-06 "limpieza de indices huerfanos": drop every `(workspace,
+    project_id)`'s rows where `workspace` no longer exists as a directory at
+    all — a project deleted or moved without ever calling `refresh()` there
+    again leaves its index behind forever otherwise, unbounded, in a store
+    every other `context_engine` module also pays to keep in RAM/on disk.
+    Never touches a workspace that still exists, however stale its content
+    (that is `refresh()`'s job, not this one's). Returns
+    `{"workspaces_removed", "files_removed"}`."""
+    out = {"workspaces_removed": 0, "files_removed": 0}
+    try:
+        with store.db() as conn:
+            pairs = conn.execute(
+                "SELECT DISTINCT workspace, project_id FROM ci_files").fetchall()
+            for row in pairs:
+                workspace, project_id = row["workspace"], row["project_id"]
+                if workspace and os.path.isdir(workspace):
+                    continue
+                count = conn.execute(
+                    "SELECT COUNT(*) AS n FROM ci_files WHERE workspace = ? AND project_id = ?",
+                    (workspace, project_id)).fetchone()["n"]
+                conn.execute("DELETE FROM ci_symbols WHERE workspace = ? AND project_id = ?",
+                            (workspace, project_id))
+                conn.execute("DELETE FROM ci_refs WHERE workspace = ? AND project_id = ?",
+                            (workspace, project_id))
+                conn.execute("DELETE FROM ci_files WHERE workspace = ? AND project_id = ?",
+                            (workspace, project_id))
+                out["workspaces_removed"] += 1
+                out["files_removed"] += int(count or 0)
+    except (store.ContextStoreError, sqlite3.Error) as exc:
+        logger.warning("code_index.cleanup_orphaned_workspaces failed: %s", exc)
     return out
 
 

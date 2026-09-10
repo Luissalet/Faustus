@@ -221,6 +221,27 @@ def build_request(*, owner: str, session_id: str, model: str,
     private = bool(incognito) or bool(no_memory)
     wanted_phase = str(phase or "act")
     wanted_consumer = str(consumer or "agent")
+
+    # CTX-05: pick up whatever the user pinned/excluded for this owner at
+    # global, project and session scope (`src/context_selection.py`).  A
+    # store outage degrades to "nothing excluded, nothing pinned" — the same
+    # posture every other optional signal in this function takes — rather
+    # than failing the turn over a user-preference lookup.
+    excluded_refs: Tuple[str, ...] = ()
+    excluded_prefixes: Tuple[str, ...] = ()
+    pinned_refs: Tuple[str, ...] = ()
+    try:
+        from src.context_selection import policy_overrides
+
+        overrides = policy_overrides(str(owner or ""), project_id=str(project_id or ""),
+                                     session_id=str(session_id or ""))
+        excluded_refs = overrides["excluded_refs"]
+        excluded_prefixes = overrides["excluded_prefixes"]
+        pinned_refs = overrides["pinned_refs"]
+    except Exception:  # noqa: BLE001 - rule 2: never end a turn over this
+        logger.debug("context engine could not read selection controls for %s",
+                     owner, exc_info=True)
+
     return ContextRequest(
         request_id=new_id("ctxreq"),
         actor=ContextActor(
@@ -241,7 +262,10 @@ def build_request(*, owner: str, session_id: str, model: str,
             phase=wanted_phase if wanted_phase in TASK_PHASES else "act",
             query=last_user_text(messages)[:MAX_QUERY_CHARS],
         ),
-        policy=ContextPolicy(allow_personal_memory=not private),
+        policy=ContextPolicy(allow_personal_memory=not private,
+                             excluded_refs=excluded_refs,
+                             excluded_prefixes=excluded_prefixes),
+        explicit_refs=pinned_refs,
         consumer=wanted_consumer if wanted_consumer in CONSUMERS else "agent",
         created_at=now_iso(),
     )

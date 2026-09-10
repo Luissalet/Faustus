@@ -1,15 +1,17 @@
 # src/document_processor.py
 """Document processing: PDF/OCR extraction, text file handling, image VL analysis, user content building."""
 
+import hashlib
 import os
 import logging
 import mimetypes
 import base64
 import tempfile
 from itertools import islice
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from src.llm_core import llm_call
+from src.contracts.tool import EvidenceLocator, EvidenceRef
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +118,41 @@ def _process_text_file(path: str) -> str:
         return result
 
 
-def _process_pdf(path: str, owner: str | None = None) -> str:
+def _now_iso() -> str:
+    from src.contracts.base import now_iso
+    return now_iso()
+
+
+def pdf_page_evidence_ref(path: str, page_num: int, page_text: str, *,
+                          owner_id: str = "system", project_id: str | None = None,
+                          derived_from: tuple = ()) -> EvidenceRef:
+    """IDX-05: an ``EvidenceRef`` pointing at exactly one PDF page, so a
+    citation can jump to the page a claim came from instead of "somewhere in
+    this file". ``content_sha256`` hashes the extracted text of THAT page —
+    the same "hash exactly what was read, not the whole document" contract
+    ``context_ledger.evidence_for_read`` already uses for a file window — so
+    a later re-extraction that changes only page 3 does not invalidate the
+    evidence captured for page 1.
+
+    ``derived_from`` links a vision-derived capture (an image inside the
+    page, read by the VL model) back to the page's own evidence id — IDX-05's
+    "capturas derivadas conservan origen" requirement — without this module
+    needing a second identity scheme for "this text came from that picture".
+    """
+    digest = hashlib.sha256((page_text or "").encode("utf-8", "replace")).hexdigest()
+    evidence_id = "evi_pdf_" + hashlib.sha256(
+        f"{path}:{page_num}:{digest}".encode("utf-8", "replace")).hexdigest()[:24]
+    return EvidenceRef(
+        evidence_id=evidence_id, owner_id=owner_id or "system", project_id=project_id,
+        source_type="file", source_ref=str(path), source_revision=digest[:16],
+        content_sha256=digest, captured_at=_now_iso(),
+        locator=EvidenceLocator(kind="page", value=str(int(page_num))),
+        derived_from=tuple(derived_from), retention="task",
+    )
+
+
+def _process_pdf(path: str, owner: str | None = None,
+                 evidence_out: Optional[List[EvidenceRef]] = None) -> str:
     """Bounded PDF preview, not complete corpus ingestion or exhaustive OCR.
 
     Stop work before producing text we would discard. The original uploaded
@@ -203,9 +239,15 @@ def _process_pdf(path: str, owner: str | None = None) -> str:
                 limits.add('pages')
                 break
             page_text = (page.extract_text() or "").strip()
+            page_evidence_id = ""
             if page_text:
                 pdf_text += f"\n\n[Page {page_num + 1} text]:\n{page_text}"
                 text_pages += 1
+                if evidence_out is not None:
+                    page_ref = pdf_page_evidence_ref(path, page_num + 1, page_text,
+                                                     owner_id=owner or "system")
+                    page_evidence_id = page_ref.evidence_id
+                    evidence_out.append(page_ref)
 
             if len(pdf_text) >= MAX_PDF_INLINE_CHARS:
                 limits.add('text')
@@ -235,6 +277,14 @@ def _process_pdf(path: str, owner: str | None = None) -> str:
                             if ocr_text and "unavailable" not in ocr_text.lower():
                                 pdf_text += f"\n\n[Page {page_num + 1} image {img_index + 1} text]: {ocr_text}"
                                 used_vision = True
+                                if evidence_out is not None:
+                                    # IDX-05: a vision-derived capture keeps
+                                    # its origin — linked to the page's own
+                                    # evidence rather than standing alone.
+                                    derived_from = (page_evidence_id,) if page_evidence_id else ()
+                                    evidence_out.append(pdf_page_evidence_ref(
+                                        path, page_num + 1, ocr_text, owner_id=owner or "system",
+                                        derived_from=derived_from))
                         finally:
                             try:
                                 os.unlink(temp_img_path)

@@ -138,6 +138,10 @@ OMISSION_REASONS: Tuple[str, ...] = (
     "quarantined",
     "unavailable",
     "policy",
+    # CTX-05: the user said "don't use this source" (or its folder) for this
+    # request's scope — a preference, not an authorisation failure, and
+    # never a deletion of the source itself (see `ContextPolicy.excluded_refs`).
+    "user_excluded",
 )
 
 RETRIEVAL_LANES: Tuple[str, ...] = (
@@ -369,9 +373,18 @@ class ContextPolicy:
     allow_semantic_lane: bool = True
     minimum_freshness_s: Optional[int] = None
     max_items_per_source: int = 8
+    #: CTX-05: refs and folder/prefix strings the user excluded FOR THIS
+    #: REQUEST's scope — "no usar esta fuente".  Matched against
+    #: `ContextCandidate.source_ref`; never touches the file on disk and never
+    #: reaches past the scope this policy was built for (a session-scoped
+    #: request never inherits a project-scoped exclusion silently — the
+    #: caller that builds the policy is the one that decides which list a
+    #: given exclusion belongs in; see `src/context_selection.py`).
+    excluded_refs: Tuple[str, ...] = ()
+    excluded_prefixes: Tuple[str, ...] = ()
     _KEYS = ("context_profile_id", "token_budget", "allow_personal_memory",
              "allow_project_sources", "allow_semantic_lane", "minimum_freshness_s",
-             "max_items_per_source")
+             "max_items_per_source", "excluded_refs", "excluded_prefixes")
 
     @classmethod
     def parse(cls, raw: Any, path: str = "policy") -> "ContextPolicy":
@@ -387,6 +400,9 @@ class ContextPolicy:
             minimum_freshness_s=whole(data, "minimum_freshness_s", path, default=None, minimum=0),
             max_items_per_source=whole(data, "max_items_per_source", path,
                                        default=8, minimum=1, maximum=200) or 8,
+            excluded_refs=text_list(data, "excluded_refs", path, max_items=256, max_len=2048),
+            excluded_prefixes=text_list(data, "excluded_prefixes", path,
+                                        max_items=128, max_len=1024),
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -398,6 +414,8 @@ class ContextPolicy:
             "allow_semantic_lane": self.allow_semantic_lane,
             "minimum_freshness_s": self.minimum_freshness_s,
             "max_items_per_source": self.max_items_per_source,
+            "excluded_refs": list(self.excluded_refs),
+            "excluded_prefixes": list(self.excluded_prefixes),
         }
 
 

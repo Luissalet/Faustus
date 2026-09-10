@@ -34,16 +34,23 @@ import {
   extractFromSession,
   getPref,
   importFromFile,
+  invalidateDecision,
+  listDecisions,
+  listFailureCandidates,
   listMemories,
   listRules,
   MEMORY_CATEGORIES,
   pinMemory,
   previewPack,
+  recordDecision,
+  registerFailure,
   RULE_LEVELS,
   ruleFeedback,
   setPref,
   updateMemory,
   type CuratorReport,
+  type Decision,
+  type FailureCandidate,
   type ImportSuggestion,
   type LearnedRule,
   type Memory,
@@ -465,6 +472,228 @@ function LearnedRules({ say }: { say: (text: string) => void }) {
   );
 }
 
+/* ── MEM-03: failure candidates — "recurring problem → proposed rule →
+ * tests → activation", the panel that makes `src/memory_failures.py`'s
+ * promotion gates legible: nothing here becomes a standing anti-pattern
+ * without a regression test and either repetition or an explicit confirm. */
+
+function FailureCandidates({ say }: { say: (text: string) => void }) {
+  const [items, setItems] = useState<FailureCandidate[] | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
+  const [signature, setSignature] = useState('');
+  const [summary, setSummary] = useState('');
+  const [testRef, setTestRef] = useState('');
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const load = useCallback((signal?: AbortSignal) => {
+    listFailureCandidates(undefined, signal)
+      .then((rows) => {
+        setItems(rows);
+        setFailed(null);
+      })
+      .catch((err: unknown) => {
+        if ((err as { name?: string })?.name === 'AbortError') return;
+        setItems([]);
+        setFailed(t('Could not read the failure candidates.'));
+      });
+  }, []);
+
+  useEffect(() => {
+    const c = new AbortController();
+    load(c.signal);
+    return () => c.abort();
+  }, [load]);
+
+  const register = async () => {
+    const sig = signature.trim();
+    const sum = summary.trim();
+    if (!sig || !sum) return;
+    setBusy('add');
+    try {
+      const result = await registerFailure(sig, sum, { testRef: testRef.trim() || undefined });
+      say(result.outcome === 'promoted' ? t('Promoted to an active anti-pattern.') : result.blockedReason || t('Recorded.'));
+      setSignature('');
+      setSummary('');
+      setTestRef('');
+      load();
+    } catch {
+      say(t('Could not register the failure.'));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const all = items ?? [];
+
+  return (
+    <section className="fs-rules" aria-labelledby="fs-failures-title" data-testid="failure-candidates">
+      <header className="fs-rules__head">
+        <div>
+          <h2 id="fs-failures-title" className="fs-rules__title">
+            {t('Failure candidates')} <span className="fs-rules__count">{all.length}</span>
+          </h2>
+          <p className="fs-prose">
+            {t('One bad run never becomes a global rule on its own: it needs a regression test, and either it repeats or you confirm it explicitly.')}
+          </p>
+        </div>
+      </header>
+
+      {failed && <p className="fs-rules__error">{failed}</p>}
+      {!items && !failed && <Skeleton label={t('Loading failure candidates')} count={2} height="48px" />}
+      {items && !failed && all.length === 0 && <p className="fs-rules__empty">{t('No pending failure candidates.')}</p>}
+      {all.length > 0 && (
+        <div className="fs-rules__list">
+          {all.map((c) => (
+            <article key={c.id} className="fs-rule" data-status={c.status} data-testid="failure-candidate-row">
+              <div className="fs-rule__main">
+                <span className="fs-rule__text">{c.text}</span>
+              </div>
+              <div className="fs-rule__meta">
+                <span className="fs-rule__chip">{tn(c.occurrences, '{n} occurrence', '{n} occurrences')}</span>
+                <span className="fs-rule__chip">{c.severity}</span>
+                <span className="fs-rule__chip">{c.testRef ? t('test attached') : t('needs a test')}</span>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+
+      <form
+        className="fs-rules__add"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void register();
+        }}
+      >
+        <input type="text" className="fs-field" placeholder={t('Signature — what failed')} value={signature} onChange={(e) => setSignature(e.target.value)} />
+        <input type="text" className="fs-field" placeholder={t('Summary')} value={summary} onChange={(e) => setSummary(e.target.value)} />
+        <input type="text" className="fs-field" placeholder={t('Regression test reference (optional)')} value={testRef} onChange={(e) => setTestRef(e.target.value)} />
+        <Button type="submit" variant="secondary" size="sm" icon={Plus} label={t('Register')} disabled={!signature.trim() || !summary.trim()} loading={busy === 'add'} testId="failure-register" />
+      </form>
+    </section>
+  );
+}
+
+/* ── MEM-04: decision timeline — why a technical choice was made, and what
+ * it discarded, linked to the artifacts it touched. Invalidating keeps the
+ * row (rule 3): a changed premise is recorded, never erased. */
+
+function DecisionTimeline({ say }: { say: (text: string) => void }) {
+  const [decisions, setDecisions] = useState<Decision[] | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState<string | null>(null);
+  const [includeInvalidated, setIncludeInvalidated] = useState(false);
+
+  const load = useCallback(
+    (signal?: AbortSignal) => {
+      listDecisions(undefined, includeInvalidated, signal)
+        .then((rows) => {
+          setDecisions(rows);
+          setFailed(null);
+        })
+        .catch((err: unknown) => {
+          if ((err as { name?: string })?.name === 'AbortError') return;
+          setDecisions([]);
+          setFailed(t('Could not read the decisions.'));
+        });
+    },
+    [includeInvalidated],
+  );
+
+  useEffect(() => {
+    const c = new AbortController();
+    load(c.signal);
+    return () => c.abort();
+  }, [load]);
+
+  const add = async () => {
+    const value = text.trim();
+    if (!value) return;
+    setBusy('add');
+    try {
+      await recordDecision(value);
+      setText('');
+      load();
+    } catch {
+      say(t('Could not record the decision.'));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const invalidate = async (id: string) => {
+    const reason = window.prompt(t('Why is this decision no longer valid?'));
+    if (!reason || !reason.trim()) return;
+    setBusy(id);
+    try {
+      await invalidateDecision(id, reason.trim());
+      load();
+    } catch {
+      say(t('Could not invalidate the decision.'));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const all = decisions ?? [];
+
+  return (
+    <section className="fs-rules" aria-labelledby="fs-decisions-title" data-testid="decision-timeline">
+      <header className="fs-rules__head">
+        <div>
+          <h2 id="fs-decisions-title" className="fs-rules__title">
+            {t('Decisions')} <span className="fs-rules__count">{all.length}</span>
+          </h2>
+          <p className="fs-prose">{t('Why a technical choice was made, and what it discarded — outlives the session or model that made it.')}</p>
+        </div>
+        <div className="fs-rules__tools">
+          <button type="button" className="fs-chip" data-on={includeInvalidated || undefined} onClick={() => setIncludeInvalidated((v) => !v)}>
+            {t('Show invalidated')}
+          </button>
+        </div>
+      </header>
+
+      {failed && <p className="fs-rules__error">{failed}</p>}
+      {!decisions && !failed && <Skeleton label={t('Loading decisions')} count={2} height="48px" />}
+      {decisions && !failed && all.length === 0 && <p className="fs-rules__empty">{t('No decisions recorded yet.')}</p>}
+      {all.length > 0 && (
+        <div className="fs-rules__list">
+          {all.map((d) => (
+            <article key={d.id} className="fs-rule" data-status={d.status} data-testid="decision-row">
+              <div className="fs-rule__main">
+                <span className="fs-rule__text">{d.text}</span>
+              </div>
+              <div className="fs-rule__meta">
+                {d.alternatives.length > 0 && <span className="fs-rule__chip">{tn(d.alternatives.length, '{n} alternative discarded', '{n} alternatives discarded')}</span>}
+                {d.artifactRefs.length > 0 && <span className="fs-rule__chip">{tn(d.artifactRefs.length, '{n} artifact', '{n} artifacts')}</span>}
+                {d.invalidated ? (
+                  <span className="fs-rule__harm">{t('invalidated')}{d.supersededBy ? ` → ${d.supersededBy}` : ''}</span>
+                ) : (
+                  <span className="fs-rule__actions">
+                    <IconButton icon={X} label={t('Invalidate')} size="sm" onClick={() => void invalidate(d.id)} />
+                  </span>
+                )}
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+
+      <form
+        className="fs-rules__add"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void add();
+        }}
+      >
+        <input type="text" className="fs-field" placeholder={t('Record a technical decision and why…')} value={text} onChange={(e) => setText(e.target.value)} />
+        <Button type="submit" variant="secondary" size="sm" icon={Plus} label={t('Record')} disabled={!text.trim()} loading={busy === 'add'} testId="decision-record" />
+      </form>
+    </section>
+  );
+}
+
 /* ── Screen ── */
 
 export function MemoryScreen() {
@@ -876,6 +1105,10 @@ export function MemoryScreen() {
       )}
 
       <LearnedRules say={say} />
+
+      <FailureCandidates say={say} />
+
+      <DecisionTimeline say={say} />
 
       {suggestions && <SuggestionsDialog title={suggestions.title} items={suggestions.items} onClose={() => setSuggestions(null)} onSave={saveSuggestions} />}
 

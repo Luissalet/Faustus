@@ -41,6 +41,8 @@ raising would turn a new event into an outage.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import threading
 import time
@@ -72,10 +74,15 @@ PREFIX_REQUEST = "request:"
 PREFIX_BLOCKS = "blocks:"
 PREFIX_STATE = "state:"
 PREFIX_TOOLS = "tools:"
+#: PERF-03 — a read-only tool/retrieval answer cached under a
+#: :func:`compose_cache_key` composite key, so it can be forgotten by the same
+#: events that already forget candidates without a caller inventing a seventh
+#: prefix per feature.
+PREFIX_RESPONSE = "response:"
 
 KEY_PREFIXES: Tuple[str, ...] = (
     PREFIX_CANDIDATES, PREFIX_PLAN, PREFIX_PACKET, PREFIX_REQUEST,
-    PREFIX_BLOCKS, PREFIX_STATE, PREFIX_TOOLS,
+    PREFIX_BLOCKS, PREFIX_STATE, PREFIX_TOOLS, PREFIX_RESPONSE,
 )
 
 
@@ -351,7 +358,14 @@ EVENT_PREFIXES: Dict[str, Tuple[str, ...]] = {
     # compiled against.
     "voice_turn_committed": (PREFIX_CANDIDATES, PREFIX_PACKET),
     # A delta is new recoverable evidence for the project.
-    "semantic_delta_created": (PREFIX_CANDIDATES,),
+    "semantic_delta_created": (PREFIX_CANDIDATES, PREFIX_RESPONSE),
+    # CTX-04/PERF-03: a source's content or access changed (edit, revoke, or a
+    # reindex that produced a new hash).  Whatever a response cache computed
+    # against the old bytes is now a claim about a revision that moved — the
+    # same rule §1.7 already applies to `project_context_updated`, named
+    # explicitly here because a source version can change without the wider
+    # "project context" event firing (a single file, not the whole project).
+    "source_version_changed": (PREFIX_CANDIDATES, PREFIX_RESPONSE, PREFIX_PACKET),
 }
 
 #: Events whose payload names a whole install rather than one owner: their
@@ -412,11 +426,70 @@ def on_event(name: str, payload: Mapping[str, Any]) -> int:
         return 0
 
 
+# ── CTX-04/PERF-03: a cache key across every dimension that makes a cached
+# answer wrong when it changes ──────────────────────────────────────────────
+#
+# The backlog names six: model, tokenizer, prompt/template version, policy
+# version, user, and source version.  Before this there was no single place
+# that composed all six — a caller that remembered five of them would ship a
+# cache that reused yesterday's answer for a model swap or a permission
+# change, which is exactly the leak PERF-03's acceptance criterion rules out
+# ("cambiar permiso, contenido o plantilla invalida entradas afectadas").
+# `scope` (owner|project|council|branch, from `scope_of`) still carries WHO is
+# asking — this key is what they asked for and with what, and the two are
+# concatenated by `WorkingSet` itself, never by a caller free to drop one.
+
+
+def compose_cache_key(*, model: str = "", tokenizer: str = "",
+                      template_version: str = "", policy_version: str = "",
+                      user: str = "", source_version: str = "",
+                      params: Optional[Mapping[str, Any]] = None) -> str:
+    """One stable key from the six dimensions the backlog names, plus any
+    caller-specific `params` (e.g. a tool's arguments) folded in as sorted
+    JSON so two equivalent-but-differently-ordered dicts hit the same entry.
+
+    A hash, not the concatenation itself: the six fields are free text (a
+    template id, a username) and could otherwise collide across the `SEP`
+    boundary WorkingSet already reserves for scope/key — hashing sidesteps
+    that instead of asking six more callers to remember a second separator.
+    """
+    parts = [str(model or ""), str(tokenizer or ""), str(template_version or ""),
+             str(policy_version or ""), str(user or ""), str(source_version or "")]
+    if params:
+        try:
+            parts.append(json.dumps(params, sort_keys=True, default=str))
+        except (TypeError, ValueError):
+            parts.append(repr(params))
+    raw = "\x1e".join(parts)
+    return PREFIX_RESPONSE + hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def cached_or_compute(scope: str, key: str, compute: Callable[[], Any], *,
+                      cost_bytes: int = 0,
+                      ttl_s: Optional[float] = None) -> Tuple[Any, bool]:
+    """`(value, was_cached)`.  A miss calls `compute()` and stores the result
+    under this exact `(scope, key)` — normally `key` is a
+    :func:`compose_cache_key` result, so a permission, content or template
+    change is a different key rather than a stale hit.
+
+    `compute()` is called outside any lock and its exceptions propagate
+    unchanged: a cache must never turn a real failure into a manufactured
+    success, and must never turn one into a silent empty value either.
+    """
+    cache = working_set()
+    hit = cache.get(scope, key)
+    if hit is not None:
+        return hit, True
+    value = compute()
+    cache.put(scope, key, value, cost_bytes=cost_bytes, ttl_s=ttl_s)
+    return value, False
+
+
 __all__ = [
     "SEP", "DEFAULT_MAX_ENTRIES", "DEFAULT_MAX_BYTES", "DEFAULT_TTL_S",
     "PREFIX_CANDIDATES", "PREFIX_PLAN", "PREFIX_PACKET", "PREFIX_REQUEST",
-    "PREFIX_BLOCKS", "PREFIX_STATE", "PREFIX_TOOLS", "KEY_PREFIXES",
-    "EVENT_PREFIXES", "GLOBAL_EVENTS",
+    "PREFIX_BLOCKS", "PREFIX_STATE", "PREFIX_TOOLS", "PREFIX_RESPONSE",
+    "KEY_PREFIXES", "EVENT_PREFIXES", "GLOBAL_EVENTS",
     "CacheStats", "WorkingSet", "working_set", "reset_working_set",
-    "scope_of", "on_event",
+    "scope_of", "on_event", "compose_cache_key", "cached_or_compute",
 ]
