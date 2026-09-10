@@ -8,7 +8,7 @@ for the "why", this file for "what a client integrator does with it".
 
 | Header | Direction | Meaning |
 | --- | --- | --- |
-| `X-Faustus-Api-Version` | server → client | The server's current `API_VERSION` (e.g. `2.0`). Sent on `/api/version` and on chat responses. |
+| `X-Faustus-Api-Version` | server → client | The server's current `API_VERSION` (e.g. `2.0`). Sent on every `/api/*` response — `core/middleware.py`'s `SecurityHeadersMiddleware` stamps it centrally (Lote 61), so no individual route has to remember to; the pre-existing per-route stamps on chat responses and `/api/version` are now redundant but harmless. |
 | `X-Faustus-Client-Version` | client → server | Optional. A client that sends this identifies its own wire-protocol understanding. Omitting it (every client shipped before this scheme existed) is always treated as compatible. |
 
 ## Compatibility rule
@@ -19,13 +19,18 @@ for the "why", this file for "what a client integrator does with it".
 - **Header sent, version >= `MIN_CLIENT_VERSION`** → request proceeds
   normally. If the version is below the server's current `API_VERSION`, a
   soft adaptation notice is available via
-  `api_version.client_adaptation_notice()` (surfaced by whichever route
-  wires it in) — the request still succeeds.
+  `api_version.client_adaptation_notice()` — surfaced today on
+  `GET /api/version`'s `client_adaptation_notice` field — the request still
+  succeeds.
 - **Header sent, version < `MIN_CLIENT_VERSION`** → `426 Upgrade Required`
   with a message naming both the client's version and the server's floor
-  (`api_version.upgrade_required_detail()`). This is the one case this
-  scheme exists to give a legible error for, instead of a client parsing a
-  stream shape it does not understand and failing ambiguously mid-response.
+  (`api_version.upgrade_required_detail()`). Enforced centrally in
+  `core/middleware.py::SecurityHeadersMiddleware` for EVERY `/api/*`
+  endpoint (Lote 61) — not just chat — except the two discovery endpoints a
+  rejected client still has to be able to reach: `/api/version` and
+  `/api/health`. This is the one case this scheme exists to give a legible
+  error for, instead of a client parsing a stream shape it does not
+  understand and failing ambiguously mid-response.
 
 ## Additive vs. breaking
 
@@ -39,8 +44,7 @@ new event type a client must not silently skip.
 ## OpenAPI
 
 `api_version.openapi_version_extension()` returns the `x-api-version`,
-`x-min-client-version` and `x-deprecations` fields meant to be merged into
-the generated OpenAPI document's `info` object. As of this lot the function
-exists and is tested; wiring it into `app.py`'s actual `app.openapi()`
-override is a one-line addition to a file this lot does not own — see the
-lot's final report for the exact change.
+`x-min-client-version`, `x-api-version-header`, `x-client-version-header`
+and `x-deprecations` fields, merged into the generated OpenAPI document's
+`info` object by `app.py`'s `app.openapi` override (Lote 61) — visible at
+`GET /openapi.json`.

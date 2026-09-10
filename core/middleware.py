@@ -12,7 +12,16 @@ from starlette.responses import Response
 from starlette.routing import get_route_path
 
 from core.exceptions import http_error_class
+from src import api_version
 from src.owner_identity import INTERNAL_TOOL_USER, auth_disabled
+
+
+#: ARCH-01: routes a version-too-old client must still be able to reach even
+#: while rejected everywhere else -- the version-discovery endpoint itself
+#: (a client has to be ABLE to ask "what do you speak" before it can decide
+#: whether it is compatible) and the health probe (infrastructure, not the
+#: chat wire protocol this negotiation exists for).
+_VERSION_GATE_EXEMPT_PATHS = frozenset({"/api/version", "/api/health"})
 
 
 # Per-process token that lets the in-app tool layer hit admin-gated
@@ -120,8 +129,42 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         nonce = secrets.token_hex(16)
         request.state.csp_nonce = nonce
 
+        route_path = get_application_route_path(request.scope)
+        is_api_route = route_path.startswith("/api/")
+
+        # ARCH-01: a client that IDENTIFIES itself as older than the server's
+        # floor gets a comprehensible 426 on EVERY /api/* endpoint, not just
+        # chat SSE (routes/chat_routes.py's own checks predate this and stay
+        # in place -- harmless, since this gate now answers first). A client
+        # that sends no version header at all (every request before this
+        # scheme existed) is unaffected: `is_supported(None)` is True.
+        if (
+            is_api_route
+            and route_path not in _VERSION_GATE_EXEMPT_PATHS
+            and not is_cors_preflight(request.method, request.headers)
+        ):
+            client_version = request.headers.get(api_version.CLIENT_VERSION_HEADER)
+            if not api_version.is_supported(client_version):
+                from starlette.responses import JSONResponse
+                rejection = JSONResponse(
+                    status_code=426,
+                    content={
+                        "detail": api_version.upgrade_required_detail(client_version),
+                        "error_class": http_error_class(426),
+                    },
+                )
+                rejection.headers[api_version.API_VERSION_HEADER] = api_version.API_VERSION
+                return rejection
+
         response = await call_next(request)
         path = request.url.path
+
+        # ARCH-01: stamp the negotiated wire version on every /api/* response
+        # -- additive header only, so a client that has never heard of this
+        # scheme (no request header, every client before this lot) parses
+        # exactly what it did before.
+        if is_api_route:
+            response.headers[api_version.API_VERSION_HEADER] = api_version.API_VERSION
 
         # Tool render endpoints
         is_tool_render = path.startswith("/api/tools/") and path.endswith("/render")

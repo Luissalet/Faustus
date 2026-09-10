@@ -294,7 +294,9 @@ def _stream_set(session_id: str, **fields) -> None:
     rec.update(fields)
 
 
-async def _idempotent_replay_stream(session_id: str) -> AsyncGenerator[str, None]:
+async def _idempotent_replay_stream(
+    session_id: str, *, owner: str = "", client_message_id: str = "",
+) -> AsyncGenerator[str, None]:
     """What a duplicate `/api/chat_stream` POST (same `client_message_id`) is
     answered with, instead of starting a second turn.
 
@@ -304,15 +306,43 @@ async def _idempotent_replay_stream(session_id: str) -> AsyncGenerator[str, None
     this kind of reconnect; see `_schedule_evict` in src/agent_runs.py). So
     reusing it here IS "reenganchar al stream vivo" for a live run and "return
     the final result" for one that just settled, with no separate case to
-    get wrong. Nothing comes back at all once the run has aged out of that
-    grace window — the turn's own POST already saved the assistant message,
-    so a bare `[DONE]` is enough: the caller's history is already correct.
+    get wrong.
+
+    Nothing comes back from `subscribe` once the run has aged out of that
+    grace window (or never existed on THIS process — a restart). That is
+    usually fine: the turn's own POST already saved the assistant message,
+    so a bare `[DONE]` is enough, the caller's history is already correct.
+    But "usually" is not "always" — the chat_outbox row for
+    `client_message_id` (UX-02/TASK-03) is checked FRESH at this point,
+    right when the fallback actually runs, not snapshotted back when this
+    replay started (a snapshot would be stale by the time a slow first
+    request finally finishes, wrongly calling a completed turn uncertain).
+    A row still `accepted`/`running` here means the first attempt never
+    reached `mark_finished` at all — most often a process restart mid-turn —
+    so the outcome is genuinely UNKNOWN rather than done, and gets one
+    explicit event naming that honestly ("checking") before the `[DONE]`,
+    instead of letting a bare `[DONE]` stand in for a finished turn.
     """
     replayed = False
     async for chunk in agent_runs.subscribe(session_id):
         replayed = True
         yield chunk
     if not replayed:
+        row = (
+            chat_outbox.get(owner=owner, session_id=session_id,
+                             client_message_id=client_message_id)
+            if client_message_id else None
+        )
+        if row is not None and row["status"] in ("accepted", "running"):
+            yield "data: " + json.dumps({
+                "type": "uncertain",
+                "status": "checking",
+                "detail": (
+                    "the previous attempt for this message left no live "
+                    "stream to reconnect to and never recorded a result; "
+                    "its outcome is not yet known"
+                ),
+            }) + "\n\n"
         yield "data: [DONE]\n\n"
 
 
@@ -523,6 +553,22 @@ def _parse_option_ids(raw) -> List[str]:
     if not isinstance(data, list):
         return []
     return [str(x).strip() for x in data if str(x).strip()]
+
+
+def _parse_question_revision(raw) -> Optional[int]:
+    """`revision` form/body field for an ask_user answer (CALL-07/TASK-04
+    live revision check): the revision the client last SAW when it rendered
+    the question (AskUser.revision, `GET /api/questions`'s `revision` field).
+    Absent/malformed is None -- `question_store.resolve_question` already
+    treats `revision=None` as "don't check", the exact behavior every
+    caller had before this field existed, so an old client that never sends
+    it is completely unaffected."""
+    if raw is None or raw == "":
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
 
 
 def _parse_delegate_tasks(raw) -> Optional[Dict[str, Any]]:
@@ -1259,9 +1305,17 @@ def setup_chat_routes(
                     return {**existing["result"], "idempotent_replay": True}
                 # Still open (accepted/running, or finished with nothing kept
                 # to replay verbatim): say so rather than fake a terminal
-                # error or silently redo the turn.
+                # error or silently redo the turn. `uncertain` (UX-02/
+                # TASK-03) is set only for accepted/running -- the first
+                # attempt's outcome is not yet known, mirroring the state
+                # name `src/connector_outbox.py` uses for the same situation
+                # on the remote-effect side. A terminal row with no kept
+                # result (too large, or dropped defensively) is NOT
+                # uncertain: the outcome itself is known, only its body
+                # was not retained.
                 return {
                     "idempotent_replay": True, "status": existing["status"],
+                    "uncertain": existing["status"] in ("accepted", "running"),
                     "response": (existing.get("result") or {}).get("response", ""),
                 }
             # Registered BEFORE the turn does anything — the "intent" half of
@@ -1957,8 +2011,22 @@ def setup_chat_routes(
             answer: Dict[str, Any] = {"text": message if isinstance(message, str) else ""}
             if option_ids:
                 answer["option_ids"] = option_ids
+            # PENDIENTES.md M1 / this lote: `revision` names the question
+            # version the client rendered (question_store bumps it on every
+            # cancel-and-reopen, e.g. a superseding question). Sending the
+            # one the client last saw lets `resolve_question` reject a stale
+            # answer with 409 `stale_revision` instead of quietly resolving
+            # a question the user is no longer actually looking at. Absent
+            # (no client sends it yet) is unchanged behavior -- see
+            # `_parse_question_revision`.
+            revision = _parse_question_revision(
+                form_data.get("revision") if form_data.get("revision") is not None
+                else (body or {}).get("revision")
+            )
             from src import question_store
-            resolution = question_store.resolve_question(question_id, answer, owner=owner)
+            resolution = question_store.resolve_question(
+                question_id, answer, revision=revision, owner=owner,
+            )
             if not resolution.get("ok"):
                 logger.info(
                     "[ask-user] question_id=%s rejected: reason=%s detail=%r",
@@ -1988,7 +2056,9 @@ def setup_chat_routes(
                 if _replay_run_id:
                     _replay_headers["X-Odysseus-Run-Id"] = _replay_run_id
                 return StreamingResponse(
-                    _idempotent_replay_stream(session),
+                    _idempotent_replay_stream(
+                        session, owner=owner, client_message_id=client_message_id,
+                    ),
                     media_type="text/event-stream",
                     headers=_replay_headers,
                 )

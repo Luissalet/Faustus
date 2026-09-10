@@ -139,6 +139,33 @@ app = FastAPI(
     version="1.0.0",
 )
 
+
+# ========= OPENAPI VERSION EXTENSION (OPS-06) =========
+# `src.api_version.openapi_version_extension()` has existed since the lot
+# that built it (`src/api_version.py`, tests/test_p1_ops_ops06_api_version.py)
+# but nothing ever merged it into the document FastAPI serves at
+# `/openapi.json` — this is that one-line wiring, cached the same way
+# FastAPI's own `.openapi()` caches (`app.openapi_schema`), so it costs
+# nothing beyond the first call. `get_openapi(...)` still builds the base
+# document; this only adds `x-*` fields to `info`, so every existing
+# consumer of the schema keeps working exactly as before.
+def _openapi_with_version_extension():
+    if app.openapi_schema:
+        return app.openapi_schema
+    from fastapi.openapi.utils import get_openapi
+    from src import api_version as _api_version
+
+    schema = get_openapi(
+        title=app.title, version=app.version, description=app.description,
+        routes=app.routes,
+    )
+    schema.setdefault("info", {}).update(_api_version.openapi_version_extension())
+    app.openapi_schema = schema
+    return app.openapi_schema
+
+
+app.openapi = _openapi_with_version_extension
+
 # ========= BACKGROUND TASK OWNERSHIP =========
 # B-013. Everything this process starts in the background — the startup loops,
 # the background-job monitor, the per-request foreground-gate nudges — is
@@ -810,6 +837,11 @@ app.include_router(setup_context_engine_routes())
 from routes.code_index_routes import setup_code_index_routes
 app.include_router(setup_code_index_routes())
 
+# OBS-01: the HTTP door onto `src.agent_runs.trace_for_call` — reconstruct
+# a call_id's events/artifact/receipt without importing the module directly.
+from routes.observability_routes import setup_observability_routes
+app.include_router(setup_observability_routes())
+
 # Media renders on a separate engine. There is deliberately no endpoint that
 # takes a graph: a caller picks an approved template and fills its declared
 # inputs, and that is the whole surface.
@@ -1476,18 +1508,33 @@ def _served_studio_info() -> Dict[str, Optional[str]]:
 
 
 @app.get("/api/version")
-async def get_version(response: Response):
+async def get_version(request: Request, response: Response):
     from core.constants import APP_VERSION
     from src import api_version
     # ARCH-01: stamp the negotiated wire version here too, not just on the
     # chat SSE responses — a client can probe this cheap, non-streaming
     # endpoint to learn what the server speaks before ever opening a stream.
     # Additive header only; the JSON body is unchanged for old clients.
+    # (core/middleware.py's SecurityHeadersMiddleware now stamps this same
+    # header on every /api/* response too; setting it again here is
+    # idempotent and keeps this route correct standalone, e.g. in a test
+    # that calls it directly without the middleware stack.)
     response.headers[api_version.API_VERSION_HEADER] = api_version.API_VERSION
+    # OPS-06: a client that identifies itself (X-Faustus-Client-Version) as
+    # supported but older than the server's current API_VERSION gets a soft,
+    # actionable notice here — "adaptación, no un fallo ambiguo" — instead of
+    # silence until some later request breaks on a shape it doesn't expect.
+    # None for a client with no declared version, on the current version, or
+    # already below the floor (that case gets 426, not a notice pretending
+    # it will just work).
+    notice = api_version.client_adaptation_notice(
+        request.headers.get(api_version.CLIENT_VERSION_HEADER)
+    )
     return {
         "version": APP_VERSION,
         "build": _git_build_info(BASE_DIR),
         "served_studio": _served_studio_info(),
+        "client_adaptation_notice": notice,
     }
 
 @app.get("/api/health")
