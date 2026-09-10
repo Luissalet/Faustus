@@ -874,6 +874,23 @@ async def maybe_compact(
         "content": f"[Conversation summary — earlier messages were compacted]\n{summary}",
     }
 
+    # CTX-02: same log compact_with_integrity writes to, for the LLM-summary
+    # fallback path — a session that never crosses the deterministic path
+    # (few protected turns, or an error there) still leaves a record of what
+    # got folded.
+    try:
+        from src.context_engine import compaction_pins
+        session_id_for_log = getattr(session, "id", None)
+        if session_id_for_log is None and isinstance(session, dict):
+            session_id_for_log = session.get("id")
+        compaction_pins.record_event(
+            owner or "", str(session_id_for_log or ""), kind="llm_summary",
+            marker_text=summary, folded_count=len(older),
+            tokens_before=used, tokens_after=0,
+        )
+    except Exception:  # noqa: BLE001 - the log is diagnostic, never load-bearing
+        logger.debug("maybe_compact: could not record compaction event", exc_info=True)
+
     # Post-compaction reminder (project objectives + standing instructions):
     # the summary is lossy and the plan is the first thing it loses. Never
     # allowed to break compaction — the helper returns None on any failure.
@@ -1224,12 +1241,27 @@ def compact_with_integrity(
     protected_idx = set(range(max(0, len(convo) - keep_recent), len(convo)))
     if last_user_idx is not None:
         protected_idx.add(last_user_idx)
+    # CTX-02: fragments the user explicitly pinned are never folded, on top of
+    # the rules above. Looked up by session_id alone — no change anywhere a
+    # pin gets set is needed for this to take effect, since every caller of
+    # compact_with_integrity already passes session_id.
+    try:
+        from src.context_engine import compaction_pins
+        pinned = compaction_pins.pinned_fingerprints(owner_id, session_id)
+    except Exception:  # noqa: BLE001 - pins are never load-bearing
+        pinned = set()
+    pinned_skipped = 0
     for i, msg in enumerate(convo):
         if not isinstance(msg, dict):
             protected_idx.add(i)  # never fold a malformed entry silently
             continue
         if _has_pasted_code_block(msg) or _is_ask_user_decision(convo, i):
             protected_idx.add(i)
+            continue
+        if pinned and _row_fingerprint(msg.get("role"), msg.get("content")) in pinned:
+            if i not in protected_idx:
+                protected_idx.add(i)
+                pinned_skipped += 1
 
     older_idx = [i for i in range(len(convo)) if i not in protected_idx]
     if not older_idx:
@@ -1286,6 +1318,21 @@ def compact_with_integrity(
             "evidence_refs": [evidence_mapping],
         },
     }
+
+    # CTX-02: leave a record a route can read back later — "what did
+    # compaction do to this session, most recently" — without the caller
+    # (agent_loop.py) having to do anything beyond the compact_with_integrity
+    # call it already makes.
+    try:
+        from src.context_engine import compaction_pins
+        compaction_pins.record_event(
+            owner_id, session_id, kind="integrity", marker_text=marker_text,
+            folded_count=len(older), tokens_before=tokens_before,
+            tokens_after=tokens_after, evidence_refs=[evidence_mapping],
+            pinned_skipped=pinned_skipped,
+        )
+    except Exception:  # noqa: BLE001 - the log is diagnostic, never load-bearing
+        logger.debug("compact_with_integrity: could not record compaction event", exc_info=True)
 
     new_convo: List[Dict[str, Any]] = []
     inserted = False

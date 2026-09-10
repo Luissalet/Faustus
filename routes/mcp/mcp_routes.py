@@ -21,6 +21,7 @@ from src.mcp_manager import (
     McpManager,
     new_server_inherits_env,
     read_stderr_tail,
+    server_declared_permissions,
     server_inherits_env,
     stderr_log_path,
 )
@@ -122,6 +123,69 @@ def _mcp_oauth_redirect_uri() -> str:
     return REDIRECT_URI
 
 
+def _apply_extension_governance(
+    server_id: str, *, name: str, transport: str, command: str,
+    args, env, inherits: bool, declared_permissions=None,
+) -> dict:
+    """TOOL-04 + SEC-08: the one real hook, called from every place in this
+    router that installs or changes an MCP server's configuration (currently
+    `add_server` — install — and `set_env_mode` — the one existing route that
+    changes a server's access to secrets after install), where a manifest is
+    actually recorded and a permission decision is actually evaluated.
+
+    Before this lote both `src.extension_manifest.record_install_or_update`
+    and `src.security_policy.evaluate`/`ConsentStore` existed but nothing in
+    the real create/update flow ever called them — a manifest only got
+    written through the separate manual `POST /servers/{id}/manifest` route
+    (still there, unchanged, for a caller that wants to declare something
+    this flow could not infer). This closes that gap without adding a THIRD
+    permission vocabulary: declared permissions stay `{"network", "files",
+    "secrets"}` (`extension_manifest`), mapped onto `ToolEffect` only at the
+    `security_policy` boundary via `effects_for_declared_permissions`.
+
+    `declared_permissions` un-declared (`None`) falls back to
+    `extension_manifest.suggested_permissions` from the server's own
+    transport/command/args/env — an admin who never filled in the (still
+    optional) permissions form is not left with an empty manifest. `secrets`
+    is always forced True when `inherits` is True: a server that gets the
+    whole process environment can read every provider key and the internal
+    token in it, which IS the "secrets" permission regardless of what else
+    was declared.
+
+    Returns `{"manifest", "diff", "quarantined", "declared_permissions",
+    "policy_decision"}`.
+    """
+    from src import security_policy
+
+    args = list(args or [])
+    env = dict(env or {})
+    permissions = dict(declared_permissions) if declared_permissions else extension_manifest.suggested_permissions(
+        transport=transport, command=command or "", args=args, env=env,
+    )
+    permissions = {k: bool(permissions.get(k)) for k in extension_manifest.PERMISSION_KEYS}
+    if inherits:
+        permissions["secrets"] = True
+
+    prior = extension_manifest.get_manifest(server_id)
+    result = extension_manifest.record_install_or_update(
+        server_id, name=name, command=command or "", args=args,
+        dependencies=[], permissions=permissions,
+    )
+
+    effect_set = security_policy.effects_for_declared_permissions(permissions)
+    if prior is None or not result.get("quarantined"):
+        # A fresh install has nothing to have escalated FROM (extension_manifest
+        # never quarantines one either — see its own module docstring); an
+        # update that added no new permission needs no fresh approval. Either
+        # way today's declared permissions are the consented baseline.
+        security_policy.consent_store.grant(server_id, "*", effect_set)
+    decision = security_policy.evaluate(
+        list(effect_set), plugin_id=server_id, tool_name="*",
+        consents=security_policy.consent_store,
+    )
+    return {**result, "declared_permissions": permissions, "policy_decision": decision.to_dict()}
+
+
 def setup_mcp_routes(mcp_manager: McpManager):
     """Setup MCP routes with the provided manager."""
 
@@ -175,6 +239,10 @@ def setup_mcp_routes(mcp_manager: McpManager):
                     # manifest has one — read-only here, approved via
                     # POST /servers/{id}/manifest/approve.
                     "manifest_pending_approval": extension_manifest.is_quarantined_for_permissions(srv.id),
+                    # TOOL-04 / SEC-08: what this server's row itself carries
+                    # as declared permissions (None for a server no
+                    # install/update hook has ever run for yet).
+                    "declared_permissions": server_declared_permissions(srv),
                 })
             return result
         finally:
@@ -192,6 +260,7 @@ def setup_mcp_routes(mcp_manager: McpManager):
         oauth_file: str = Form(None),
         oauth_config: str = Form(None),
         inherit_env: str = Form(None),
+        declared_permissions: str = Form(None),
     ):
         """Add a new MCP server config and attempt connection. Admin-only:
         registering a stdio server is equivalent to executing arbitrary
@@ -202,6 +271,15 @@ def setup_mcp_routes(mcp_manager: McpManager):
         variables and its own declared env, not every provider API key in the
         app. Servers added before this existed keep the full environment; only
         NEW ones start minimal.
+
+        `declared_permissions` (TOOL-04 / SEC-08): optional JSON
+        `{"network", "files", "secrets"}` — the caller's own declaration.
+        Omitted, it falls back to `extension_manifest.suggested_permissions`
+        heuristics off the transport/command/args/env actually configured.
+        Either way this install is recorded through
+        `extension_manifest.record_install_or_update` and evaluated through
+        `security_policy` automatically — no separate manual call needed for
+        the common case (see `_apply_extension_governance`).
         """
         require_admin(request)
         server_id = str(uuid.uuid4())[:8]
@@ -229,6 +307,20 @@ def setup_mcp_routes(mcp_manager: McpManager):
             parsed_env = {}
         if not isinstance(parsed_env, dict):
             parsed_env = {}
+        parsed_declared_permissions = None
+        # `isinstance(..., str)`, not a bare truthiness check: a handler
+        # called directly (bypassing FastAPI's own Form parsing — several
+        # tests in this repo call these functions straight, per COMUN.md
+        # rule 7 / test_mcp_routes_env_mode.py's own docstring) leaves an
+        # unpassed Form(...) parameter holding the `fastapi.params.Form`
+        # sentinel object itself, which is truthy but not JSON.
+        if isinstance(declared_permissions, str) and declared_permissions.strip():
+            try:
+                candidate = json.loads(declared_permissions)
+                if isinstance(candidate, dict):
+                    parsed_declared_permissions = candidate
+            except json.JSONDecodeError:
+                pass
 
         # Parse OAuth config
         parsed_oauth_config = None
@@ -303,6 +395,24 @@ def setup_mcp_routes(mcp_manager: McpManager):
         finally:
             db.close()
 
+        # TOOL-04 / SEC-08: the automatic install hook — records this
+        # server's manifest and evaluates its declared permissions through
+        # security_policy, then persists what was actually declared (or
+        # inferred) back onto the row so `list_servers`/DB reads see it.
+        governance = _apply_extension_governance(
+            server_id, name=name, transport=transport, command=command,
+            args=parsed_args, env=parsed_env, inherits=inherits,
+            declared_permissions=parsed_declared_permissions,
+        )
+        db = SessionLocal()
+        try:
+            srv = db.query(McpServer).filter(McpServer.id == server_id).first()
+            if srv is not None:
+                srv.declared_permissions = json.dumps(governance["declared_permissions"])
+                db.commit()
+        finally:
+            db.close()
+
         # Check if OAuth token already exists — skip connection attempt if not
         needs_oauth = False
         if parsed_oauth_config:
@@ -336,6 +446,14 @@ def setup_mcp_routes(mcp_manager: McpManager):
             "inherit_env": inherits,
             "env_mode": "inherited" if inherits else "minimal",
             "stderr_log": stderr_log_path(server_id) if transport == "stdio" else "",
+            # TOOL-04: the permission diff computed for this install — always
+            # {"added": [...whatever was declared...], "removed": []} for a
+            # fresh install (nothing existed to diff against), but "added" is
+            # exactly what the UI should show the admin before they trust it.
+            "declared_permissions": governance["declared_permissions"],
+            "manifest_diff": governance["diff"],
+            "manifest_quarantined": governance["quarantined"],
+            "policy_decision": governance["policy_decision"],
         }
 
     @router.post("/servers/{server_id}/reconnect")
@@ -456,6 +574,10 @@ def setup_mcp_routes(mcp_manager: McpManager):
             args = json.loads(srv.args) if srv.args else []
             env = json.loads(srv.env) if srv.env else {}
             url, enabled = srv.url, bool(srv.is_enabled)
+            try:
+                prior_declared = json.loads(srv.declared_permissions) if srv.declared_permissions else None
+            except (TypeError, ValueError):
+                prior_declared = None
         finally:
             db.close()
 
@@ -467,6 +589,27 @@ def setup_mcp_routes(mcp_manager: McpManager):
                 args=args, env=env, url=url, inherit_env=inherits,
             )
         status = mcp_manager.get_server_status(server_id)
+
+        # TOOL-04 / SEC-08: the automatic UPDATE hook. Switching a server to
+        # the full environment is a real permission escalation — it starts
+        # reading every provider key and the internal token, i.e. the
+        # `secrets` permission — so it is re-evaluated through the same
+        # manifest + policy path an install goes through, on the server's
+        # previously declared permissions (network/files carried over, only
+        # `secrets` follows `inherits`).
+        governance = _apply_extension_governance(
+            server_id, name=name, transport=transport, command=command,
+            args=args, env=env, inherits=inherits, declared_permissions=prior_declared,
+        )
+        db = SessionLocal()
+        try:
+            srv = db.query(McpServer).filter(McpServer.id == server_id).first()
+            if srv is not None:
+                srv.declared_permissions = json.dumps(governance["declared_permissions"])
+                db.commit()
+        finally:
+            db.close()
+
         return {
             "id": server_id,
             "inherit_env": inherits,
@@ -475,6 +618,10 @@ def setup_mcp_routes(mcp_manager: McpManager):
             "status": status.get("status", "disconnected"),
             "error": status.get("error"),
             "stderr_log": stderr_log_path(server_id) if transport == "stdio" else "",
+            "declared_permissions": governance["declared_permissions"],
+            "manifest_diff": governance["diff"],
+            "manifest_quarantined": governance["quarantined"],
+            "policy_decision": governance["policy_decision"],
         }
 
     @router.get("/servers/{server_id}/stderr")
@@ -815,12 +962,17 @@ def setup_mcp_routes(mcp_manager: McpManager):
     def approve_server_manifest(server_id: str, request: Request):
         """Explicit admin acceptance of a permission diff a manifest update
         flagged — lifts the quarantine :func:`extension_manifest.record_install_or_update`
-        placed for exactly this reason."""
+        placed for exactly this reason, and (SEC-08) grants fresh consent for
+        the now-approved permission set so :func:`security_policy.evaluate`
+        stops reporting this server's tools as unconsented."""
         require_admin(request)
         try:
             manifest = extension_manifest.approve_new_permissions(server_id)
         except ValueError as e:
             raise HTTPException(404, str(e))
+        from src import security_policy
+        effect_set = security_policy.effects_for_declared_permissions(manifest.get("permissions"))
+        security_policy.consent_store.grant(server_id, "*", effect_set)
         return {"server_id": server_id, "manifest": manifest}
 
     return router

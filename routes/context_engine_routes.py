@@ -36,6 +36,7 @@ Three rules run through every handler here, each one a specific failure:
 """
 
 import logging
+import re
 from typing import Any, Dict, Mapping, Optional
 
 from fastapi import APIRouter, HTTPException, Request
@@ -684,8 +685,11 @@ def setup_context_engine_routes():
     @router.get("/code-index/search")
     def code_index_search(request: Request, query: str = "", workspace: str = "",
                           project_id: str = "", k: int = 12, kinds: str = ""):
-        """Symbols that match, most likely first. Lexical on purpose: this is
-        the lane that has to keep working when the embedding store is down."""
+        """Symbols that match, most likely first (IDX-03): lexical (BM25) +
+        symbol identity + a model-free embedding lane, fused and reranked —
+        degrading cleanly to name/path/text scoring alone when nothing can
+        be vectorised. Each hit carries its own `tier`/`lanes` so a caller
+        can tell how far the ranking had to degrade without a second call."""
         wanted = [s.strip() for s in str(kinds or "").split(",") if s.strip()]
         hits = code_index.search(query, workspace=workspace, project_id=project_id,
                                  k=_limit(k, 12), kinds=wanted)
@@ -979,5 +983,161 @@ def setup_context_engine_routes():
             project_id=str(payload.get("project_id") or ""),
             session_id=str(payload.get("session_id") or ""))
         return {"ok": True, "removed": removed}
+
+    # ── CTX-03: reopening a citation and searching inside a big read ───────
+
+    @router.post("/sources/fetch")
+    async def fetch_source_fragment(request: Request):
+        """The exact fragment a summary or manifest row cited, reopened live.
+
+        A manifest row (`GET /packets/{id}/manifest`) or a compaction marker
+        only ever carries a `source_ref` — the module docstring is explicit
+        that no route here returns a packet's *compiled* text. This is not
+        that: it reopens the one source the ref names — the file, memory row
+        or symbol it points at — through whichever adapter owns that prefix
+        (`context_engine.candidates.fetch_ref`), so the model can go back to
+        what a summary was actually built from even after the active window
+        moved on. A ref nothing can resolve (the file moved, the memory was
+        deleted, no source claims the prefix) is a clean `retained: false`,
+        not an error — provenance that cannot be reopened is a normal outcome
+        the caller has to handle, not a bug."""
+        require_admin(request)
+        payload = await _json_body(request)
+        source_ref = str(payload.get("source_ref") or "").strip()
+        if not source_ref:
+            raise HTTPException(status_code=400, detail="source_ref is required")
+        owner = _owner(request)
+        try:
+            ctx_request = _context_request(payload, owner)
+        except REFUSALS as exc:
+            return _refused(exc)
+        from src.context_engine import candidates as _candidates
+
+        retrieval = _candidates.RetrievalRequest(request=ctx_request,
+                                                 explicit_refs=(source_ref,))
+        candidate = await _candidates.fetch_ref(source_ref, retrieval)
+        if candidate is None:
+            return {"ok": True, "source_ref": source_ref, "retained": False,
+                    "candidate": None}
+        if candidate.owner and not _mine(candidate.owner, owner):
+            # The ref resolved, but to something scoped to another owner —
+            # answered exactly like a missing packet: no distinction between
+            # "gone" and "not yours" is given to the caller.
+            return {"ok": True, "source_ref": source_ref, "retained": False,
+                    "candidate": None}
+        return {"ok": True, "source_ref": source_ref, "retained": True,
+                "candidate": {
+                    "source_type": candidate.source_type,
+                    "source_ref": candidate.source_ref,
+                    "title": candidate.title,
+                    "body": candidate.body,
+                    "source_revision": candidate.source_revision,
+                    "observed_at": candidate.observed_at,
+                    "degraded": candidate.degraded,
+                }}
+
+    @router.post("/read/search")
+    async def search_read_output(request: Request):
+        """"Buscar dentro del output" of a big read — CTX-03's other gap.
+
+        `src/read_plan.py` answers an un-ranged read of an oversized file with
+        a symbol index and the head, plus the literal call to read any other
+        range. What it never offered is *finding* the range worth reading:
+        a model that knows the name it wants (a string, an error message, a
+        rare identifier) had no way to locate it except guessing offsets. This
+        streams the file — never loading more than one pass of it into memory
+        — and returns matches with line numbers and a few lines of context,
+        budgeted like every other read-plan output so a large hit count does
+        not blow the caller's window."""
+        require_admin(request)
+        payload = await _json_body(request)
+        path = str(payload.get("path") or "").strip()
+        query = str(payload.get("query") or "")
+        if not path or not query:
+            raise HTTPException(status_code=400, detail="path and query are required")
+        from src import read_plan
+
+        try:
+            result = read_plan.search_in_file(
+                path, query,
+                window_tokens=_whole(payload.get("window_tokens")),
+                regex=bool(payload.get("regex") or False),
+                case_sensitive=bool(payload.get("case_sensitive") or False),
+                context_lines=max(0, min(10, _whole(payload.get("context_lines"), 2))),
+            )
+        except OSError as exc:
+            raise HTTPException(status_code=404, detail=f"Cannot read {path}: {exc}")
+        except re.error as exc:
+            raise HTTPException(status_code=400, detail=f"Bad regex: {exc}")
+        return {"ok": True, **result}
+
+    # ── CTX-02: pinned fragments and the compaction log ─────────────────────
+
+    @router.get("/compaction/pins")
+    def list_compaction_pins(request: Request, session_id: str = ""):
+        """Every fragment this owner pinned against compaction for one
+        session — fragments `compact_with_integrity` will fold into every
+        other message but these, no matter which turn triggers it."""
+        if not session_id:
+            raise HTTPException(status_code=400, detail="session_id is required")
+        from src.context_engine import compaction_pins
+
+        return {"ok": True, "session_id": session_id,
+                "pins": compaction_pins.list_pins(_owner(request), session_id)}
+
+    @router.post("/compaction/pins")
+    async def pin_compaction_fragment(request: Request):
+        """Pin one message so compaction never folds it away.
+
+        `fingerprint` is `context_compactor._row_fingerprint(role, content)`
+        of the message to protect — the same identity compaction already uses
+        to map a compacted prompt row back to its transcript row, so pinning
+        needs no new id threaded through the message shape. A caller that has
+        the message itself may pass `role`/`content` instead and the
+        fingerprint is computed here."""
+        require_admin(request)
+        payload = await _json_body(request)
+        session_id = str(payload.get("session_id") or "").strip()
+        if not session_id:
+            raise HTTPException(status_code=400, detail="session_id is required")
+        fingerprint = str(payload.get("fingerprint") or "").strip()
+        if not fingerprint and "content" in payload:
+            from src.context_compactor import _row_fingerprint
+
+            fingerprint = _row_fingerprint(payload.get("role") or "user",
+                                           payload.get("content"))
+        if not fingerprint:
+            raise HTTPException(status_code=400,
+                               detail="fingerprint (or role+content) is required")
+        from src.context_engine import compaction_pins
+
+        try:
+            pin = compaction_pins.pin_fragment(_owner(request), session_id, fingerprint,
+                                               excerpt=str(payload.get("excerpt") or ""))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {"ok": True, "pin": pin}
+
+    @router.delete("/compaction/pins/{fingerprint}")
+    async def unpin_compaction_fragment(fingerprint: str, request: Request,
+                                        session_id: str = ""):
+        require_admin(request)
+        if not session_id:
+            raise HTTPException(status_code=400, detail="session_id is required")
+        from src.context_engine import compaction_pins
+
+        removed = compaction_pins.unpin_fragment(_owner(request), session_id, fingerprint)
+        return {"ok": True, "removed": removed}
+
+    @router.get("/compaction/{session_id}")
+    def get_last_compaction(session_id: str, request: Request):
+        """What compaction did to this session, most recently — the marker
+        text, how many messages it folded, how many a pin rescued, and the
+        EvidenceRefs at the untouched originals. `None` means compaction has
+        never run for this session (not an error)."""
+        from src.context_engine import compaction_pins
+
+        event = compaction_pins.last_event(_owner(request), session_id)
+        return {"ok": True, "session_id": session_id, "event": event}
 
     return router

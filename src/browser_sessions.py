@@ -20,9 +20,16 @@ which lives under a completely different path this module never touches
 (the WEB-03 acceptance criterion "cerrar una tarea no borra la sesión del
 navegador personal del usuario").
 
-Wiring this into the live Playwright MCP launch (``src/builtin_mcp.py``) is
+``src/builtin_mcp.py::connect_session_browser``/``disconnect_session_browser``
+(lote 63) wire this into the live Playwright MCP launch: a session's own
+browser MCP subprocess is registered under its own ``McpManager`` connection
+id (``session_browser_server_id``), distinct from the single shared
+``BROWSER_SERVER_ID`` every non-session caller still uses — so two sessions'
+browser processes, not just their on-disk profiles, are isolated from each
+other. Calling THOSE functions at the right point in a turn (a browser tool
+call that knows its ``owner_id``/``task_id``, and a task's end) is still
 outside this lote's file ownership; see the final report for the exact
-integration point.
+integration points that remain.
 """
 
 from __future__ import annotations

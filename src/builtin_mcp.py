@@ -414,7 +414,7 @@ async def restart_builtin_browser(mcp_manager) -> bool:
     return await connect_builtin_npx_server(mcp_manager, BROWSER_SERVER_ID)
 
 
-def close_browser_session_for_task(owner_id, task_id) -> bool:
+def close_browser_session_for_task(owner_id, task_id, *, delete_profile: bool = True) -> bool:
     """Close the WEB-03 per-task browser session, if one was open.
 
     A thin delegate to `src.browser_sessions.close_session` (True iff a
@@ -423,9 +423,107 @@ def close_browser_session_for_task(owner_id, task_id) -> bool:
     loop.py`, out of this lote's file scope beyond `_trim_route_request_
     messages`; see the report), so this is the hook that call needs, not a
     second close implementation.
+
+    `delete_profile=False` closes the session bookkeeping (so a later
+    `open_session` for the same task starts fresh) without deleting the
+    per-task profile directory on disk -- `disconnect_session_browser` below
+    uses that when only tearing down the live subprocess.
     """
     from src.browser_sessions import close_session
-    return close_session(owner_id, task_id)
+    return close_session(owner_id, task_id, delete_profile=delete_profile)
+
+
+def session_browser_server_id(owner_id, task_id) -> str:
+    """The `McpManager` connection id for one (owner, task)'s OWN browser MCP
+    subprocess -- distinct from the single shared `BROWSER_SERVER_ID`, so
+    `connect_session_browser` below can register more than one live browser
+    connection on the same manager at once, each its own npx child process
+    with its own `--user-data-dir` (`src.browser_sessions._profile_dir_for`).
+
+    Hashed the same way `browser_sessions._safe_component` hashes a raw id
+    into a profile directory segment: this id ends up in `McpManager`
+    dictionaries and the MCP stderr log filename
+    (`src.mcp_manager.stderr_log_path`), so it gets the same "no raw id, no
+    path tricks" treatment rather than a second, weaker sanitiser."""
+    from src.browser_sessions import _safe_component
+    return f"{BROWSER_SERVER_ID}:{_safe_component(owner_id)}:{_safe_component(task_id)}"
+
+
+async def connect_session_browser(
+    mcp_manager, owner_id, task_id, *,
+    allow_downloads: bool = False, allow_logins: bool = False,
+) -> "tuple[bool, str]":
+    """WEB-03: connect a browser MCP subprocess isolated to ONE (owner,
+    task) -- the acceptance case this lote closes ("a project must not see
+    another project's authenticated session; closing a task must not delete
+    the user's personal browser session").
+
+    Before this, `_browser_mcp_args`/`_npx_server_launch` already computed a
+    per-session `--user-data-dir` when given `owner_id`/`task_id` (lote 42),
+    but every real caller connected under the single shared
+    `BROWSER_SERVER_ID` -- so two sessions calling in "isolated" launch args
+    would still collide on the SAME McpManager connection entry (last one to
+    connect wins the live subprocess). This registers the connection under
+    `session_browser_server_id(owner_id, task_id)` instead: a distinct
+    dedicated child process and profile directory per session, able to
+    coexist with the shared browser AND with every other session's browser
+    on the same manager.
+
+    Opens (or resumes) the session's `src.browser_sessions` bookkeeping
+    first, so the profile directory `_npx_server_launch` resolves and the
+    policy (`allow_downloads`/`allow_logins`) this session declared are the
+    same object `disconnect_session_browser`/`src.browser_sessions.
+    policy_allows` read later. Returns `(connected, server_id)` -- the
+    caller (out of this lote's file scope; see the report for the exact
+    integration point) needs the id to route that session's browser tool
+    calls (`mcp__<server_id>__*`) and to disconnect the right connection.
+    """
+    from src.browser_sessions import open_session
+
+    open_session(owner_id, task_id, allow_downloads=allow_downloads, allow_logins=allow_logins)
+    server_id = session_browser_server_id(owner_id, task_id)
+    cfg = _BUILTIN_NPX_SERVERS[BROWSER_SERVER_ID]
+    npx_path = _find_npx()
+    args, env = _npx_server_launch(BROWSER_SERVER_ID, owner_id=owner_id, task_id=task_id)
+    logger.info(f"Starting session browser MCP for task {task_id!r}: {npx_path} {' '.join(args)}")
+    ok = await mcp_manager.connect_server(
+        server_id=server_id,
+        name=f"{cfg['name']} (session)",
+        transport="stdio",
+        command=npx_path,
+        args=args,
+        env=env,
+    )
+    setter = getattr(mcp_manager, "set_connection_meta", None)
+    if callable(setter):
+        setter(server_id, launch_args=list(args), owner_id=str(owner_id or ""), task_id=str(task_id or ""))
+    if ok:
+        logger.info(f"Session browser MCP connected: {server_id}")
+    else:
+        logger.warning(f"Session browser MCP failed to connect: {server_id}")
+    return ok, server_id
+
+
+async def disconnect_session_browser(mcp_manager, owner_id, task_id, *, delete_profile: bool = True) -> bool:
+    """WEB-03: tear down ONE session's browser MCP connection.
+
+    Disconnects only `session_browser_server_id(owner_id, task_id)` -- never
+    `BROWSER_SERVER_ID`, the single shared connection every other caller
+    still uses -- and then closes the `src.browser_sessions` bookkeeping for
+    that same key. `delete_profile` (default True, "a task ending cleans up
+    after itself") removes that task's own per-session profile directory;
+    it can never reach `_browser_profile_dir()`'s directory, which lives
+    under a completely different, unrelated path this function never
+    references -- the WEB-03 "closing a task does not delete the user's
+    personal browser session" acceptance case, true by construction rather
+    than by a check that could be skipped or forgotten.
+    """
+    server_id = session_browser_server_id(owner_id, task_id)
+    try:
+        await mcp_manager.disconnect_server(server_id)
+    except Exception as e:  # noqa: BLE001 - best-effort teardown, mirrors restart_builtin_browser
+        logger.warning(f"Session browser MCP teardown failed for {server_id}: {e}")
+    return close_browser_session_for_task(owner_id, task_id, delete_profile=delete_profile)
 
 
 def browser_launch_is_stale(mcp_manager) -> bool:

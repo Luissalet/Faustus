@@ -1005,6 +1005,19 @@ class McpServer(TimestampMixin, Base):
     # regression the user cannot debug. New servers are created with False by
     # the code that adds them, driven by `agent_mcp_min_env`.
     inherit_env = Column(Boolean, default=True, nullable=True)
+    # SEC-08 / TOOL-04: the permissions the admin DECLARED for this server at
+    # install/update time — JSON {"network": bool, "files": bool, "secrets":
+    # bool}, the same vocabulary `src/extension_manifest.py` already stores
+    # in its own settings-backed manifest table. This column is the row-level
+    # copy that lets a caller read a server's current declared permissions
+    # straight off the DB row (routes/mcp/mcp_routes.py, list_servers) without
+    # a second settings read, and gives `src/security_policy.py::evaluate`/
+    # `ConsentStore` a durable, per-server value to key consent checks on.
+    # NULL for every server configured before this column existed — read as
+    # "nothing declared yet", not as "no permissions" (see
+    # `src/mcp_manager.py::server_declared_permissions` — same "row missing
+    # the column" caution as `inherit_env` above).
+    declared_permissions = Column(Text, nullable=True)
 
 
 class Comparison(TimestampMixin, Base):
@@ -2215,6 +2228,28 @@ def _migrate_add_mcp_inherit_env_column():
         logging.getLogger(__name__).warning(f"inherit_env migration: {e}")
 
 
+def _migrate_add_mcp_declared_permissions_column():
+    """Add declared_permissions to mcp_servers (SEC-08 / TOOL-04).
+
+    NULL for every row that predates this column — `server_declared_permissions()`
+    in src/mcp_manager.py reads that as "nothing declared yet" and falls back
+    to a heuristic suggestion, exactly the same non-destructive shape
+    `_migrate_add_mcp_inherit_env_column` above uses for `inherit_env`: no
+    working server changes behaviour because a migration ran."""
+    try:
+        with engine.connect() as conn:
+            cols = [r[1] for r in conn.execute(text("PRAGMA table_info(mcp_servers)"))]
+            if not cols:
+                return
+            if "declared_permissions" not in cols:
+                conn.execute(text("ALTER TABLE mcp_servers ADD COLUMN declared_permissions TEXT"))
+                conn.commit()
+                logging.getLogger(__name__).info(
+                    "Added declared_permissions column to mcp_servers")
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"declared_permissions migration: {e}")
+
+
 def _migrate_add_task_v2_columns():
     """Add cron_expression, then_task_id, webhook_token to scheduled_tasks."""
     new_cols = {
@@ -2856,6 +2891,7 @@ def _formal_migration_steps() -> "list[tuple[str, object]]":
         ("add_disabled_tools", _migrate_add_disabled_tools),
         ("add_mcp_oauth_tokens_column", _migrate_add_mcp_oauth_tokens_column),
         ("add_mcp_inherit_env_column", _migrate_add_mcp_inherit_env_column),
+        ("add_mcp_declared_permissions_column", _migrate_add_mcp_declared_permissions_column),
         ("add_task_v2_columns", _migrate_add_task_v2_columns),
         ("add_notifications_enabled", _migrate_add_notifications_enabled),
         ("drop_ping_notes_tasks", _migrate_drop_ping_notes_tasks),

@@ -540,7 +540,8 @@ def _pressure_paused() -> bool:
 
 def refresh(workspace: str, *, project_id: str = "", full: bool = False,
            budget_files: int = DEFAULT_BUDGET_FILES,
-           pause_on_pressure: bool = True) -> Dict[str, Any]:
+           pause_on_pressure: bool = True,
+           paths: Optional[Sequence[str]] = None) -> Dict[str, Any]:
     """Bring the index up to date and say what that cost.
 
     Incremental unless `full`: a file whose hash matches the one already
@@ -548,6 +549,18 @@ def refresh(workspace: str, *, project_id: str = "", full: bool = False,
     OTHER already-indexed file in this workspace (a vendored duplicate) is
     recorded from that twin's rows instead of being parsed a second time
     (IDX-06's "deduplicacion por contenido", `_copy_indexed_by_hash`).
+
+    `paths` (IDX-02, targeted refresh): when given, skips the workspace walk
+    entirely and processes only these paths (workspace-relative or
+    absolute), still subject to `BINARY_EXTS`/`MAX_FILE_BYTES` the normal
+    way. This is what lets "change one function" cost exactly that file's
+    parse rather than a directory walk — the property IDX-02's acceptance
+    text names directly ("actualiza referencias... sin reembeber todo el
+    workspace"). `.gitignore`/`.faustusignore` are not re-applied here: a
+    caller that names a path explicitly (an editor save hook, an agent that
+    just wrote a file) already knows it wants that exact file indexed. A
+    path outside the workspace is silently skipped, the same
+    degrade-not-break contract as the rest of this function.
 
     IDX-06: `pause_on_pressure` (default on) checks
     `bg_monitor.is_paused_for_resource_pressure()` before starting and every
@@ -581,13 +594,33 @@ def refresh(workspace: str, *, project_id: str = "", full: bool = False,
         out["elapsed_ms"] = int((time.time() - started) * 1000)
         return out
 
+    targeted = paths is not None
     candidates: List[str] = []
     truncated = False
-    for rel in iter_candidates(root):
-        candidates.append(rel)
-        if len(candidates) >= budget:
+    if targeted:
+        seen_rel: Set[str] = set()
+        for raw in paths or ():
+            raw = _text(raw, limit=2048)
+            if not raw:
+                continue
+            abs_candidate = raw if os.path.isabs(raw) else os.path.join(
+                root, *raw.replace("\\", "/").split("/"))
+            rel = _rel(root, abs_candidate)
+            if not rel or rel in seen_rel:
+                continue
+            if os.path.splitext(rel)[1].lower() in BINARY_EXTS:
+                continue
+            seen_rel.add(rel)
+            candidates.append(rel)
+        if len(candidates) > budget:
+            candidates = candidates[:budget]
             truncated = True
-            break
+    else:
+        for rel in iter_candidates(root):
+            candidates.append(rel)
+            if len(candidates) >= budget:
+                truncated = True
+                break
     out["scanned"] = len(candidates)
     indexed_at = now_iso()
 
@@ -623,9 +656,11 @@ def refresh(workspace: str, *, project_id: str = "", full: bool = False,
                 defs, refs = _extract(text, lang)
                 _write_file(conn, root, scope, rel, file_hash, lang, defs, refs, indexed_at)
                 out["reindexed"] += 1
-            if not truncated:
-                # A truncated walk never looked at the rest of the tree, so
-                # only a complete one may conclude a known file is gone.
+            if not truncated and not targeted:
+                # A truncated walk never looked at the rest of the tree, and
+                # a targeted (`paths=`) call never looked at the tree AT ALL
+                # — either way only a complete workspace walk may conclude a
+                # known file is gone.
                 for rel in list(known):
                     if rel not in seen:
                         _drop_file(conn, root, scope, rel)
@@ -646,19 +681,20 @@ def refresh(workspace: str, *, project_id: str = "", full: bool = False,
 
 async def refresh_async(workspace: str, *, project_id: str = "", full: bool = False,
                         budget_files: int = DEFAULT_BUDGET_FILES,
-                        pause_on_pressure: bool = True) -> Dict[str, Any]:
+                        pause_on_pressure: bool = True,
+                        paths: Optional[Sequence[str]] = None) -> Dict[str, Any]:
     """IDX-06: `refresh()` off the event loop.
 
     `refresh()` itself is synchronous, blocking, disk-bound work — exactly
     what "indexar una carpeta extensa no bloquea escribir en el chat" rules
     out running inline inside an `async def` request handler. This is the
-    hop a route should await instead of calling `refresh()` directly (see
-    the report's "Cambios necesarios en ficheros ajenos": the existing
-    `POST /api/code-index/{project_id}/reindex` in `routes/code_index_routes.py`,
-    a file outside this lote's PROPIOS, still calls the sync function)."""
+    hop a route should await instead of calling `refresh()` directly.
+    `paths` (IDX-02) is forwarded straight through to `refresh()` — see its
+    own docstring: naming the file(s) that changed skips the workspace walk
+    entirely instead of paying for a full-tree reindex."""
     return await asyncio.to_thread(
         refresh, workspace, project_id=project_id, full=full,
-        budget_files=budget_files, pause_on_pressure=pause_on_pressure)
+        budget_files=budget_files, pause_on_pressure=pause_on_pressure, paths=paths)
 
 
 def cleanup_orphaned_workspaces() -> Dict[str, Any]:
@@ -881,6 +917,6 @@ def tests_for(symbol_or_path: str, *, workspace: str = "", project_id: str = "")
 __all__ = [
     "IGNORE_FILENAME", "MAX_FILE_BYTES", "DEFAULT_BUDGET_FILES",
     "DEFAULT_EXCLUDED_DIRS", "BINARY_EXTS",
-    "iter_candidates", "refresh", "status",
+    "iter_candidates", "refresh", "refresh_async", "status",
     "find_definition", "find_callers", "tests_for",
 ]

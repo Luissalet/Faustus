@@ -732,6 +732,121 @@ class _StreamingPinnedTransport(_PinnedTransport):
         )
 
 
+# ---------------------------------------------------------------------------
+# WEB-02: signals on a read result — duplicate content, stale content
+# ---------------------------------------------------------------------------
+# The SSRF/redirect/size guarding above answers "was this safe to fetch".
+# These two are the other half the backlog asks for: "was this worth
+# fetching" — a page that repeats content the run already has under a
+# different URL, or a page whose own HTTP headers say it has not changed in
+# years. Both are pure functions of data the caller already has (a body's
+# text, a response's headers) so a UI or a research loop can call them
+# without this module knowing anything about sessions or research runs.
+
+#: Past this, a page is flagged stale even with no other signal to weigh it
+#: against — two years is long enough that "still true" needs re-checking
+#: for anything time-sensitive, short enough that a reference page (a spec,
+#: an RFC) legitimately this old is still just one flag among many a caller
+#: can choose to ignore.
+STALE_AFTER_DAYS = 730
+
+_HTTP_DATE_FORMATS = (
+    "%a, %d %b %Y %H:%M:%S %Z",   # RFC 7231 (the only one a compliant server sends)
+    "%A, %d-%b-%y %H:%M:%S %Z",   # RFC 850 (obsolete but still seen)
+    "%a %b %d %H:%M:%S %Y",       # asctime (ditto)
+)
+
+
+def _parse_http_date(value: "str | None"):
+    if not value:
+        return None
+    from datetime import datetime, timezone
+
+    raw = str(value).strip()
+    for fmt in _HTTP_DATE_FORMATS:
+        try:
+            parsed = datetime.strptime(raw, fmt)
+        except ValueError:
+            continue
+        return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed
+    return None
+
+
+def staleness_from_headers(
+    headers,
+    *,
+    now=None,
+    stale_after_days: int = STALE_AFTER_DAYS,
+) -> "dict | None":
+    """A staleness signal from one response's headers, or `None` when the
+    response carries nothing to judge it by.
+
+    Prefers `Last-Modified` (when the server states it, it is telling the
+    truth about the resource, not about a cache) and falls back to `Date`
+    minus `Age` (a CDN's own "how long have I been holding this" number) when
+    `Last-Modified` is absent. Returns
+    `{"stale": bool, "age_days": float, "basis": "last-modified"|"age"}` —
+    never raises, and an unparseable/missing date is `None`, not a false
+    "fresh".
+    """
+    try:
+        get = headers.get if hasattr(headers, "get") else (lambda k: None)
+        from datetime import datetime, timedelta, timezone
+
+        clock = now or datetime.now(timezone.utc)
+        if clock.tzinfo is None:
+            clock = clock.replace(tzinfo=timezone.utc)
+
+        last_modified = _parse_http_date(get("last-modified") or get("Last-Modified"))
+        if last_modified is not None:
+            age_days = max(0.0, (clock - last_modified).total_seconds() / 86400.0)
+            return {"stale": age_days > stale_after_days, "age_days": round(age_days, 1),
+                    "basis": "last-modified"}
+
+        date_header = _parse_http_date(get("date") or get("Date"))
+        age_header = get("age") or get("Age")
+        if date_header is not None and age_header is not None:
+            try:
+                age_seconds = float(str(age_header).strip())
+            except (TypeError, ValueError):
+                return None
+            effective = date_header - timedelta(seconds=age_seconds)
+            age_days = max(0.0, (clock - effective).total_seconds() / 86400.0)
+            return {"stale": age_days > stale_after_days, "age_days": round(age_days, 1),
+                    "basis": "age"}
+    except Exception:  # noqa: BLE001 - a staleness signal is never load-bearing
+        return None
+    return None
+
+
+def content_fingerprint(text: "str | bytes") -> str:
+    """A stable identity for page content, independent of the URL it came
+    from — two different URLs serving the same bytes fingerprint the same.
+
+    Whitespace is collapsed first: a syndicated copy that differs only by
+    reflow (different line wrapping, trailing spaces) must still match —
+    that is precisely the "duplicate page under a different URL" case this
+    exists to catch, not only byte-identical mirrors.
+    """
+    import hashlib
+    import re as _re
+
+    if isinstance(text, bytes):
+        text = text.decode("utf-8", errors="replace")
+    normalized = _re.sub(r"\s+", " ", str(text or "")).strip().lower()
+    return hashlib.sha256(normalized.encode("utf-8", "replace")).hexdigest()
+
+
+def find_duplicate(text: "str | bytes", seen: "dict[str, str]") -> "str | None":
+    """The URL already recorded under this content's fingerprint in `seen`,
+    or `None` when it is new content. Never mutates `seen` — recording a new
+    fingerprint is the caller's decision (it knows the current URL to store),
+    this only ever answers the lookup."""
+    if not text:
+        return None
+    return seen.get(content_fingerprint(text))
+
+
 def fetch(
     url: str,
     *,

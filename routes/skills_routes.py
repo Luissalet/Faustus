@@ -1830,6 +1830,22 @@ def setup_skills_routes(skills_manager: SkillsManager) -> APIRouter:
         sk.name = match.get("name")
         if not sk.owner:
             sk.owner = match.get("owner") or user
+
+        # TOOL-06 (Lote 63 wiring): a raw markdown save is as much a mutation
+        # as the structured PUT below — an obsolete/deprecated/superseded
+        # skill must refuse it before anything is written, and a status
+        # change embedded in the pasted frontmatter still counts as a
+        # promotion (a caller cannot skip `validate_promotion` just by
+        # editing the YAML directly instead of calling PUT with `status`).
+        gate = skill_governance.gate_mutating_use(match, action="apply")
+        if not gate["allowed"]:
+            raise HTTPException(409, gate["reason"])
+        if sk.status != match.get("status"):
+            promotion = skill_governance.validate_promotion(
+                match, target_status=sk.status, reviewed=bool(body.get("reviewed")))
+            if not promotion["ok"]:
+                raise HTTPException(409, promotion["reason"])
+
         ok = skills_manager.update_skill(match.get("name"), {
             "name": sk.name,
             "description": sk.description,

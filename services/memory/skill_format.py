@@ -51,7 +51,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -353,6 +353,19 @@ def emit_body(sections: Dict[str, Any]) -> str:
 # ---------------------------------------------------------------------------
 # Skill record
 # ---------------------------------------------------------------------------
+
+#: TOOL-06: the full vocabulary `Skill.status` may hold. `draft`/`published`
+#: are the two branching code already knew about (`SkillsManager.index_for`,
+#: `SkillsManager.get_relevant_skills`); `obsolete`/`deprecated`/`superseded`
+#: (`src.skill_governance.OBSOLETE_STATUSES`, the same three names, so this
+#: module and skill_governance can never quietly disagree about the
+#: vocabulary) mark a skill retired for a reason no longer worth
+#: re-deriving. Both retrieval paths above already exclude anything outside
+#: `{"published", "draft"}` by construction, so a skill in any of the three
+#: retired statuses is invisible to retrieval without this module having to
+#: special-case them — this constant documents that closed set in one place
+#: rather than leaving it implicit in a frontmatter comment.
+STATUSES: Tuple[str, ...] = ("draft", "published", "obsolete", "deprecated", "superseded")
 
 
 @dataclass

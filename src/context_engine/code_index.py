@@ -59,6 +59,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
+from src import two_tier_search
 from src.index_walk import is_indexable_file, prune_index_dirs
 from src.repo_map import lang_for_path, symbol_lines
 
@@ -1111,13 +1112,33 @@ _SEARCH_ROWS = 2000
 
 
 def search(query: str, *, workspace: str = "", project_id: str = "", k: int = 12,
-           kinds: Sequence[str] = (), now: Optional[datetime] = None) -> List[Dict[str, Any]]:
+           kinds: Sequence[str] = (), now: Optional[datetime] = None,
+           embedder: Any = None, reranker: Any = None) -> List[Dict[str, Any]]:
     """Symbols that match, most likely first.  Never raises.
 
-    Lexical and deliberately so: this is the lane that has to work when the
-    embedding store is missing, and an exact identifier is the query people
-    actually type.  Each hit is the symbol's `to_dict()` plus `score` and the
-    component `scores`, so the manifest can explain the choice later."""
+    The candidate ROWS still come from a literal-token prefilter (below) —
+    this is the lane that has to work when nothing can be vectorised, and an
+    unusual or Spanish identifier that shares no synonym with anything an
+    embedder has seen still shares its own literal spelling with the query,
+    which is what keeps "found even when semantic similarity fails" (IDX-03's
+    acceptance text) true by construction, not by hoping the fusion below
+    compensates for a candidate that a pure semantic search would have missed
+    fetching at all.
+
+    IDX-03: what happens to those SAME candidate rows is now a fusion, not a
+    single hand-weighted score. The name/path/text/freshness scoring below
+    (unchanged — still what a caller sees as each hit's `score`/`scores`,
+    still the "symbol identity" half) is combined by Reciprocal Rank Fusion
+    with `src.two_tier_search`'s own BM25-lite + model-free hash-embedding
+    ranking over the same rows (`_tokens`'s identifier-aware split feeds
+    both, so "calcular envio" reaches `calcular_descuento_envio` the same
+    way "refresh token" already reached `refresh_oauth_token`), and a
+    caller's real `embedder`/`reranker` — a cross-encoder, when one is
+    configured — layers on top of that exactly the way `two_tier_search`
+    itself defines those stages. Each hit gains `"tier"`/`"lanes"` recording
+    how far that second lane degraded; everything else about the return
+    shape — `to_dict()` plus `score`/`scores` — is unchanged, so
+    `as_candidates` and every other caller keep working untouched."""
     tokens = _tokens(query)
     wanted = tuple(kind for kind in (kinds or ()) if kind in SYMBOL_KINDS)
     where, params = _scope(workspace, project_id)
@@ -1142,9 +1163,12 @@ def search(query: str, *, workspace: str = "", project_id: str = "", k: int = 12
         return []
 
     raw = _text(query, limit=512).lower()
-    hits: List[Tuple[float, Dict[str, Any]]] = []
+    lexical: Dict[str, float] = {}
+    by_id: Dict[str, Dict[str, Any]] = {}
+    corpus: List[Dict[str, Any]] = []
     for row in rows:
         symbol = Symbol.parse(row)
+        symbol_id = symbol.id or symbol.source_ref()
         name = symbol.name().lower()
         if raw and (raw == symbol.qualname.lower() or raw == name):
             name_score = 1.0
@@ -1162,13 +1186,58 @@ def search(query: str, *, workspace: str = "", project_id: str = "", k: int = 12
                       + W_TEXT * text_score + W_FRESHNESS * freshness, 6)
         if total <= 0.0:
             continue
-        hits.append((total, {**symbol.to_dict(), "score": total, "scores": scores}))
-    hits.sort(key=lambda item: (-item[0], item[1]["path"], item[1]["start_line"]))
+        lexical[symbol_id] = total
+        by_id[symbol_id] = {**symbol.to_dict(), "score": total, "scores": scores}
+        words = sorted(_tokens(symbol.qualname) | _tokens(symbol.path)
+                       | _tokens(f"{symbol.signature} {symbol.summary}"))
+        corpus.append({"id": symbol_id,
+                       "text": f"{symbol.qualname} {symbol.path} " + " ".join(words)})
+
+    if not lexical:
+        return []
+
+    lexical_ranked = sorted(
+        lexical, key=lambda sid: (-lexical[sid], by_id[sid]["path"], by_id[sid]["start_line"]))
+
+    fused_scores: Dict[str, float] = lexical
+    tier_by_id: Dict[str, str] = {}
+    lanes_by_id: Dict[str, List[str]] = {}
+    fused = two_tier_search.search(
+        corpus, query, k=min(len(corpus), max(int(k or 12) * 4, 40)),
+        embedder=embedder, reranker=reranker)
+    hybrid_ranked = [str(hit["id"]) for hit in fused.get("hits") or [] if hit.get("id") in by_id]
+    if hybrid_ranked:
+        # Weighted so agreement between the two lanes wins, but the
+        # existing symbol-identity scorer (which already knows an EXACT
+        # qualname match is worth more than token overlap) is not diluted
+        # to an equal vote against a lane that has no idea what a "symbol"
+        # is.
+        fused_scores = two_tier_search.rrf(lexical_ranked, hybrid_ranked, weights=(1.2, 1.0))
+        lanes = list(fused.get("lanes") or [])
+        for hit in fused.get("hits") or []:
+            sid = str(hit.get("id"))
+            if sid in by_id:
+                tier_by_id[sid] = str(hit.get("tier") or "")
+                lanes_by_id[sid] = lanes
+
+    ordered = sorted(fused_scores, key=lambda sid: (
+        -fused_scores[sid], by_id.get(sid, {}).get("path", ""),
+        by_id.get(sid, {}).get("start_line", 0)))
     try:
         limit = int(k)
     except (TypeError, ValueError):
         limit = 12
-    return [hit for _, hit in hits[:max(0, limit)]]
+    hits: List[Dict[str, Any]] = []
+    for sid in ordered[:max(0, limit)]:
+        data = by_id.get(sid)
+        if data is None:
+            continue
+        hit = dict(data)
+        if sid in tier_by_id:
+            hit["tier"] = tier_by_id[sid]
+            hit["lanes"] = list(lanes_by_id.get(sid, ()))
+        hits.append(hit)
+    return hits
 
 
 def symbols_in(path: str, *, workspace: str = "", project_id: str = "") -> List[Symbol]:

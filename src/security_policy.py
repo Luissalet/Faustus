@@ -45,6 +45,8 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
+import logging
 import os
 import time
 from collections import deque
@@ -54,11 +56,14 @@ from typing import Any, Deque, Dict, FrozenSet, List, Mapping, Optional, Sequenc
 from src import autonomy_budget
 from src.tool_capabilities import ToolEffect
 
+logger = logging.getLogger(__name__)
+
 __all__ = [
     "PROFILES", "PROFILE_CONSEQUENCE", "ALWAYS_APPROVAL_EFFECTS",
     "DEFAULT_PROFILE", "normalize_profile", "PolicyDecision", "evaluate",
-    "audit_log", "export_audit", "clear_audit_log",
+    "audit_log", "export_audit", "clear_audit_log", "audit_log_path",
     "ConsentRecord", "ConsentStore", "consent_store", "permission_fingerprint",
+    "effects_for_declared_permissions",
 ]
 
 # ── profiles: risk tiers built from the existing effect vocabulary ─────────
@@ -155,11 +160,88 @@ class PolicyDecision:
 
 #: Bounded so a chatty caller cannot grow this without limit — the same
 #: shape `src.mcp_manager._call_outcomes` already uses for a per-server
-#: outcome trail. In-process only: a deployment that needs the audit trail
-#: to survive a restart persists `export_audit()`'s own output, which this
-#: module does not do for it (see the module docstring's own scope note).
+#: outcome trail. Still the fast, in-process read path for `audit_log()`;
+#: SEC-08 asked for the trail to survive a restart, so every append below
+#: also goes to disk (`_persist_audit_record`) and the deque is reseeded from
+#: that file at import time (`_load_persisted_audit`) — a process crash or
+#: restart does not start the trail over at empty.
 _AUDIT_MAX = 2000
 _audit: Deque[PolicyDecision] = deque(maxlen=_AUDIT_MAX)
+
+try:  # pragma: no cover - constants always import in the app
+    from src.constants import DATA_DIR as _DEFAULT_AUDIT_DIR
+except Exception:  # noqa: BLE001 - standalone use (tests, tooling)
+    _DEFAULT_AUDIT_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
+
+#: Module-level so tests can point it at a disposable directory (the pattern
+#: `src/mcp_manager.py::DATA_DIR` already uses for its own per-server logs).
+AUDIT_DATA_DIR = _DEFAULT_AUDIT_DIR
+_AUDIT_LOG_FILENAME = "sec08_policy_audit.jsonl"
+
+
+def audit_log_path() -> str:
+    """`AUDIT_DATA_DIR/security_audit/sec08_policy_audit.jsonl` — one JSON
+    record per line, append-only. Reassembled from `AUDIT_DATA_DIR` on every
+    call (not cached) so a test's `monkeypatch.setattr(sp, "AUDIT_DATA_DIR",
+    ...)` takes effect on the next write/read, same as `mcp_log_dir()` does
+    for `src.mcp_manager.DATA_DIR`."""
+    return os.path.join(AUDIT_DATA_DIR, "security_audit", _AUDIT_LOG_FILENAME)
+
+
+def _persist_audit_record(record: Mapping[str, Any]) -> None:
+    """Append one decision to disk. Best-effort: a logging failure must never
+    turn a policy decision into an exception — the same "bookkeeping is never
+    worth breaking the caller" rule `mcp_manager._record_call_outcome` follows."""
+    try:
+        path = audit_log_path()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(dict(record), separators=(",", ":")) + "\n")
+    except Exception as e:  # noqa: BLE001
+        logger.debug("security_policy: could not persist audit record: %s", e)
+
+
+def _decision_from_record(record: Mapping[str, Any]) -> Optional[PolicyDecision]:
+    try:
+        return PolicyDecision(
+            allowed=bool(record["allowed"]),
+            requires_approval=bool(record["requires_approval"]),
+            profile=str(record["profile"]),
+            effects=tuple(record.get("effects") or ()),
+            reason=str(record.get("reason") or ""),
+            plugin_id=str(record.get("plugin_id") or ""),
+            tool_name=str(record.get("tool_name") or ""),
+            decided_at=float(record.get("decided_at") or time.time()),
+        )
+    except Exception as e:  # noqa: BLE001 - a malformed line is skipped, not fatal
+        logger.debug("security_policy: could not parse a persisted audit record: %s", e)
+        return None
+
+
+def _load_persisted_audit() -> None:
+    """Seed the in-process deque from disk at import time — a restarted
+    process should not read as having no audit history when one was already
+    recorded. Best-effort, bounded to `_AUDIT_MAX` like everything else the
+    deque holds; never raises."""
+    try:
+        path = audit_log_path()
+        if not os.path.exists(path):
+            return
+        with open(path, "r", encoding="utf-8") as fh:
+            lines = fh.readlines()[-_AUDIT_MAX:]
+    except Exception as e:  # noqa: BLE001
+        logger.debug("security_policy: could not read persisted audit log: %s", e)
+        return
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            decision = _decision_from_record(json.loads(line))
+        except Exception:
+            decision = None
+        if decision is not None:
+            _audit.append(decision)
 
 
 def audit_log(*, limit: int = 200) -> List[Dict[str, Any]]:
@@ -170,8 +252,18 @@ def audit_log(*, limit: int = 200) -> List[Dict[str, Any]]:
 
 
 def clear_audit_log() -> None:
-    """Test/ops-only reset — never called from `evaluate()` itself."""
+    """Test/ops-only reset — never called from `evaluate()` itself. Clears
+    both the in-process deque and the file it is backed by, so a test that
+    resets the trail sees an empty one on both the next read AND the next
+    process restart, not a deque that is empty while the file it reseeds from
+    still holds the old records."""
     _audit.clear()
+    try:
+        path = audit_log_path()
+        if os.path.exists(path):
+            os.remove(path)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("security_policy: could not clear persisted audit log: %s", e)
 
 
 def _signing_key() -> Optional[bytes]:
@@ -228,6 +320,7 @@ def evaluate(effects: Sequence[ToolEffect], *, profile: Any = DEFAULT_PROFILE,
                    f"{sorted(e.value for e in out_of_profile)}",
         )
         _audit.append(decision)
+        _persist_audit_record(decision.to_dict())
         return decision
 
     store = consents if consents is not None else consent_store
@@ -240,6 +333,7 @@ def evaluate(effects: Sequence[ToolEffect], *, profile: Any = DEFAULT_PROFILE,
                 reason=check["reason"],
             )
             _audit.append(decision)
+            _persist_audit_record(decision.to_dict())
             return decision
 
     needs_approval = bool(effect_set & ALWAYS_APPROVAL_EFFECTS)
@@ -252,6 +346,7 @@ def evaluate(effects: Sequence[ToolEffect], *, profile: Any = DEFAULT_PROFILE,
         ),
     )
     _audit.append(decision)
+    _persist_audit_record(decision.to_dict())
     return decision
 
 
@@ -346,3 +441,41 @@ class ConsentStore:
 #: of them: this mirrors `src.mcp_manager._sampling_quota`'s "one table per
 #: process" choice) use this; tests construct their own `ConsentStore()`.
 consent_store = ConsentStore()
+
+
+# ── bridging TOOL-04's declared-permission vocabulary onto effects ─────────
+
+#: `src.extension_manifest.PERMISSION_KEYS` ("network", "files", "secrets")
+#: is the vocabulary an MCP server's admin actually declares — coarser than
+#: `ToolEffect`, and rightly so (nobody installing a third-party MCP server
+#: states a `ToolEffect` list). This maps it onto the SAME effect vocabulary
+#: `evaluate()`/`ConsentStore` already speak, so an MCP server's declared
+#: permissions can be run through this module's one real decision function
+#: instead of growing a second, parallel one (rule 4).
+_DECLARED_PERMISSION_EFFECTS: Mapping[str, FrozenSet[ToolEffect]] = {
+    "network": frozenset({ToolEffect.NETWORK_EGRESS}),
+    "files": frozenset({ToolEffect.READ_WORKSPACE, ToolEffect.WRITE_WORKSPACE}),
+    # A server that receives credential-bearing env vars (FAUSTUS's
+    # `inherit_env`) can READ private material through them; it is not
+    # thereby granted a WRITE_PRIVATE effect, which is reserved for a tool
+    # that explicitly writes somewhere private (e.g. a password manager).
+    "secrets": frozenset({ToolEffect.READ_PRIVATE}),
+}
+
+
+def effects_for_declared_permissions(permissions: Optional[Mapping[str, Any]]) -> FrozenSet[ToolEffect]:
+    """The `ToolEffect` set implied by a `{"network", "files", "secrets"}`
+    declared-permission dict — never raises; an unknown key or falsy value
+    contributes nothing."""
+    permissions = permissions or {}
+    effects: set = set()
+    for key, mapped in _DECLARED_PERMISSION_EFFECTS.items():
+        if permissions.get(key):
+            effects |= mapped
+    return frozenset(effects)
+
+
+# Seed the in-process audit trail from disk once, at import time, so a
+# restarted process does not read as having zero history (SEC-08: persist
+# the audit log to disk instead of an in-memory-only deque).
+_load_persisted_audit()

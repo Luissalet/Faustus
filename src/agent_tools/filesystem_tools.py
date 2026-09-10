@@ -434,6 +434,18 @@ class WriteFileTool:
                 # a new file is written exactly as the model produced it (no
                 # platform translation), so the diff shows content changes only.
                 written_lf = body.replace("\r\n", "\n")
+                # EDIT-03: same treatment as crlf just above — a full
+                # overwrite of a file that had a UTF-8 BOM keeps it, unless
+                # the caller's own content already starts with one. `old`
+                # carries the BOM as an ordinary leading U+FEFF character
+                # (encoding="utf-8" never strips it — see _read_text_lf), so
+                # this is the one place that character gets silently dropped
+                # today: edit_file/apply_patch never touch it (their edits
+                # are partial replacements elsewhere in the text), but
+                # write_file replaces the whole body with what the model
+                # produced, which never retypes an invisible character.
+                if old.startswith("\ufeff") and not written_lf.startswith("\ufeff"):
+                    written_lf = "\ufeff" + written_lf
                 _write_text_lf(path, written_lf, crlf)
                 written = written_lf.replace("\n", "\r\n") if crlf else written_lf
                 return old, len(body), sha256_revision(written.encode("utf-8"))

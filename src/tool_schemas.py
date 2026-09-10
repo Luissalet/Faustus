@@ -2358,9 +2358,9 @@ class ArgumentError:
 
     `field` is the argument's JSON path (currently always a bare top-level
     key — see the module note on nesting). `kind` is one of "unknown_field",
-    "wrong_type", "enum", "path_scope", "missing_required". `detail` is a
-    human-readable "what was seen" message; `seen` carries the raw offending
-    value for a caller that wants to render it itself.
+    "wrong_type", "enum", "range", "path_scope", "missing_required". `detail`
+    is a human-readable "what was seen" message; `seen` carries the raw
+    offending value for a caller that wants to render it itself.
     """
 
     field: str
@@ -2375,7 +2375,9 @@ class ArgumentError:
 def validate_tool_arguments(tool_name: str, args: Any) -> List[ArgumentError]:
     """Validate a fully-parsed tool-call `arguments` object against its
     schema in FUNCTION_TOOL_SCHEMAS. Checks (CALL-02): wrong type, unknown
-    field, enum value out of range, and — for fields FUNCTION_TOOL_SCHEMAS
+    field, enum value out of range, a numeric/string/array value outside its
+    schema's `minimum`/`maximum`/`minLength`/`maxLength`/`minItems`/
+    `maxItems` (see `_range_violation`), and — for fields FUNCTION_TOOL_SCHEMAS
     marks in PATH_ARGUMENT_FIELDS as path-scoped — a `..` traversal or an
     absolute path. Does not execute or resolve anything; a pure, read-only
     check usable regardless of how `args` was produced (native function
@@ -2416,10 +2418,52 @@ def validate_tool_arguments(tool_name: str, args: Any) -> List[ArgumentError]:
         if enum is not None and value not in enum:
             errors.append(ArgumentError(key, "enum", f"{value!r} is not one of {enum}", value))
 
+        range_error = _range_violation(key, value, prop_schema)
+        if range_error is not None:
+            errors.append(range_error)
+
         if key in path_fields and _path_out_of_scope(value):
             errors.append(ArgumentError(key, "path_scope", f"{value!r} escapes the allowed scope (.. or absolute)", value))
 
     return errors
+
+
+def _range_violation(key: str, value: Any, prop_schema: dict) -> Optional["ArgumentError"]:
+    """CALL-02: the "rangos" half of a strict-types-and-ranges validator —
+    `minimum`/`maximum` (numbers), `minLength`/`maxLength` (strings) and
+    `minItems`/`maxItems` (arrays), all already declared on several schemas
+    (e.g. `quality`'s 1-100, `line_count`'s 1-500) but never actually
+    enforced here before now: a call with `quality: 9999` passed this
+    validator clean and only failed once the tool itself rejected it, or
+    silently clamped. `bool` is excluded from the numeric check the same way
+    `_type_matches` excludes it from "integer"/"number" — a boolean is never
+    a meaningful magnitude to bound. Deliberately not offered to
+    `repair_tool_arguments`: clamping a value into range changes what the
+    caller asked for, which is exactly what bounded repair (CALL-03) must
+    never do.
+    """
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        minimum = prop_schema.get("minimum")
+        maximum = prop_schema.get("maximum")
+        if minimum is not None and value < minimum:
+            return ArgumentError(key, "range", f"{value!r} is below the minimum {minimum!r}", value)
+        if maximum is not None and value > maximum:
+            return ArgumentError(key, "range", f"{value!r} is above the maximum {maximum!r}", value)
+    elif isinstance(value, str):
+        min_len = prop_schema.get("minLength")
+        max_len = prop_schema.get("maxLength")
+        if min_len is not None and len(value) < min_len:
+            return ArgumentError(key, "range", f"length {len(value)} is below minLength {min_len!r}", value)
+        if max_len is not None and len(value) > max_len:
+            return ArgumentError(key, "range", f"length {len(value)} is above maxLength {max_len!r}", value)
+    elif isinstance(value, list):
+        min_items = prop_schema.get("minItems")
+        max_items = prop_schema.get("maxItems")
+        if min_items is not None and len(value) < min_items:
+            return ArgumentError(key, "range", f"{len(value)} item(s) is below minItems {min_items!r}", value)
+        if max_items is not None and len(value) > max_items:
+            return ArgumentError(key, "range", f"{len(value)} item(s) is above maxItems {max_items!r}", value)
+    return None
 
 
 def repair_tool_arguments(

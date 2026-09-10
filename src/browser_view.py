@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any, Mapping, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from src.tool_capabilities import BROWSER_MCP_PREFIX
 
@@ -130,6 +130,99 @@ def parse_page_info(text: Any) -> Tuple[str, str]:
         _clean(url_m.group(1), _MAX_URL) if url_m else "",
         _clean(title_m.group(1), _MAX_TITLE) if title_m else "",
     )
+
+
+def _strip_list_marker(line: str) -> str:
+    """Drop a leading tree dash (``- ``) or numbered-list marker (``1. ``,
+    ``2) ``) — both appear in real snapshot text depending on which
+    ``@playwright/mcp`` build (or relay) produced it, and neither carries
+    information the element parser below needs."""
+    return re.sub(r'^\s*(?:[-*•]|\d{1,4}[.)])\s*', '', line)
+
+
+_ELEMENT_REF_RE = re.compile(r'ref[:=]\s*["\']?([A-Za-z0-9_-]+)', re.IGNORECASE)
+_ELEMENT_NAME_QUOTED_RE = re.compile(r'"([^"]*)"')
+# The role is whatever comes before the name/attributes/colon/ref start —
+# letters and spaces only (an ARIA role is never anything else: "list item",
+# "menu item", "radio group"...), so this stops at the first character that
+# can only belong to a name, a bracket/paren attribute list, a trailing
+# colon, or a bare `ref=`/`ref:` with no colon before it at all (Format B's
+# "banner ref=e2", which has no name to separate the role from).
+_ELEMENT_ROLE_RE = re.compile(r'^([A-Za-z][A-Za-z ]*?)(?=\s*(?:"|\[|\(|:|\bref[:=]|$))',
+                              re.IGNORECASE)
+
+
+def parse_snapshot_elements(text: Any) -> List[Dict[str, str]]:
+    """Every ``{ref, role, name}`` this module can find in one `browser_
+    snapshot` result, independent of which of the two real
+    ``@playwright/mcp`` shapes produced the text (WEB-04).
+
+    Format A — the current aria-snapshot tree, one indented line per node,
+    the ref among a trailing run of bracketed attributes::
+
+        - button "Delete item" [ref=e7] [cursor=pointer]
+
+    Format B — a flat, non-indented relay format (an older server build, or
+    an MCP bridge that re-renders the tree as a numbered list) with the ref
+    in parentheses and the name after a colon instead of in quotes::
+
+        5. button: Delete item (ref=e7)
+
+    Only a line that actually carries a ``ref=``/``ref:`` token becomes an
+    element — a line with none (page URL/title headers, prose) is silently
+    skipped rather than guessed at. Never raises: a line neither shape can
+    parse is skipped, not fatal to the rest of the snapshot.
+    """
+    if not isinstance(text, str) or not text:
+        return []
+    out = []
+    for raw_line in text.splitlines():
+        line = _strip_list_marker(raw_line.strip())
+        if not line:
+            continue
+        ref_m = _ELEMENT_REF_RE.search(line)
+        if not ref_m:
+            continue
+        ref = ref_m.group(1)
+        name_m = _ELEMENT_NAME_QUOTED_RE.search(line)
+        name = name_m.group(1) if name_m else ""
+        role_m = _ELEMENT_ROLE_RE.match(line)
+        role = role_m.group(1).strip() if role_m else ""
+        if not name and ":" in line:
+            # Format B's "role: name (ref=...)" — the name has no quotes,
+            # it is whatever sits between the colon and the ref/attribute
+            # tail that follows it.
+            after = line.split(":", 1)[1]
+            after = re.sub(r'\(?\s*ref[:=].*', '', after, flags=re.IGNORECASE)
+            after = re.sub(r'\[.*', '', after)
+            name = after.strip().strip('"').rstrip(")")
+        out.append({"ref": ref, "role": role, "name": name})
+    return out
+
+
+def element_present(ref: Any, snapshot_text: Any) -> bool:
+    """Is `ref` still an element in this FRESH snapshot — checked by exact
+    ref identity, not by whether the string happens to appear somewhere in
+    the text.
+
+    That distinction is WEB-04's whole point: a snapshot whose old ``ref=e1``
+    is gone but a NEW, unrelated ``ref=e10`` exists would satisfy a bare
+    substring check (``"e1" in text``) — the check this replaces — and would
+    then let a stale reference through as "still present". Exact-match
+    parsing via `parse_snapshot_elements` catches exactly that case.
+
+    Falls back to the old substring check only when NOTHING in the snapshot
+    parses as an element at all (an unrecognized third shape, or truncated
+    text) — refusing every action outright on a shape the parser has never
+    seen would cost more than the precision this function exists to add.
+    """
+    ref = str(ref or "").strip()
+    if not ref:
+        return True
+    elements = parse_snapshot_elements(snapshot_text)
+    if elements:
+        return any(e["ref"] == ref for e in elements)
+    return ref in str(snapshot_text or "")
 
 
 def parse_tabs_current(text: Any) -> Tuple[str, str]:

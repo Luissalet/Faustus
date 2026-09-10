@@ -334,6 +334,21 @@ CATEGORY_PROMPTS = {name: text + _CATEGORY_CITATION_RULE
 # the user's own outline, so it counts as a sub-question even without a "?".
 _SUBQ_MARKER_RE = re.compile(r"^\s{0,6}(?:\(?\d{1,2}[.)]|[-*\u2022\u2023+]|[a-hA-H][.)])\s+")
 
+# RES-01 coverage map: content words dropped from the overlap signal because
+# they are grammatical scaffolding in either language, not topic content \u2014
+# keeping them would make almost every finding "match" almost every node.
+_COVERAGE_STOPWORDS = frozenset({
+    "what", "how", "why", "does", "do", "which", "that", "this", "with", "from",
+    "have", "has", "been", "being", "about", "into", "over", "under", "when",
+    "where", "who", "whom", "will", "would", "could", "should", "there", "their",
+    "them", "than", "then", "also", "such", "each", "some", "more", "most",
+    "many", "much", "only", "very", "well", "used", "using", "based",
+    "para", "como", "esta", "este", "estos", "estas", "pero", "donde", "cuando",
+    "cual", "cuales", "cuanto", "cuanta", "cuantos", "cuantas", "sobre", "entre",
+    "desde", "hasta", "tiene", "tienen", "puede", "pueden", "debe", "deben",
+    "segun", "otros", "otras", "tambien", "porque", "muy", "mas", "menos",
+})
+
 # The same outline typed on one line: "...posmenopausicas? 1) Que evidencia
 # hay? 2) Cuanto tiempo?". Digits only, and only where the marker follows the
 # end of a sentence rather than a word — that lookbehind is what keeps "el
@@ -825,6 +840,12 @@ class DeepResearcher:
         # extracted from it can be tagged with real provenance. Populated in
         # `_search_and_extract`, read in `_fetch_and_extract`.
         self._url_engine: Dict[str, str] = {}
+        # WEB-02: content fingerprint -> the first URL seen with it. Catches
+        # the SAME content syndicated/mirrored under a DIFFERENT url, which
+        # `urls_fetched` (keyed by url) cannot — a finding whose fingerprint
+        # is already here is stamped `duplicate_of` instead of silently
+        # padding the report with a second copy of the same source.
+        self._content_seen: Dict[str, str] = {}
         self.analyzed_urls: List[Dict[str, str]] = []
         self.round_count: int = 0
         # Track which search providers actually returned results during the
@@ -902,6 +923,7 @@ class DeepResearcher:
         # first keeps their numbers below the ones this run hands out.
         for finding in findings:
             self.citations.add(finding)
+            self._seed_content_seen(finding)
 
         # PLAN: Analyze the question and create a research strategy
         if not prior_report:
@@ -1017,9 +1039,13 @@ class DeepResearcher:
 
             # SYNTHESIZE
             if findings:
+                # RES-01: the coverage map as of this round's evidence — the
+                # last emit each round makes, so a poller sees it survive
+                # until the next round's own update replaces it.
                 self._emit(phase="analyzing", round=round_num,
                            total_sources=len(self.urls_fetched),
-                           total_findings=len(findings))
+                           total_findings=len(findings),
+                           coverage=self._coverage_snapshot(findings))
                 report = await self._synthesize(question, findings, report)
 
             # CHECKPOINT: this round's work is confirmed (queries issued, pages
@@ -1329,6 +1355,78 @@ class DeepResearcher:
                            for other in keys)]
         return kept[:limit]
 
+    # ------------------------------------------------------------------
+    # RES-01: per-node coverage of the schema (self.subquestions)
+    # ------------------------------------------------------------------
+    # `_extract_subquestions`/`_outline_sections` already guarantee every
+    # bullet of a 44-item brief survives into `self.subquestions` — this is
+    # the other half the schema needs: for each of those nodes, whether
+    # findings gathered so far actually address it. Deterministic and
+    # LLM-free on purpose, same as `compact_with_integrity` in CTX-02: a
+    # coverage map that itself needed a model call would be one more thing
+    # that can silently go wrong on the path the user is trying to audit.
+
+    _COVERAGE_MIN_TOKEN_LEN = 4
+    #: Below this, a node with matching findings is "insufficient" rather
+    #: than "covered" — one source touching a topic is not the same as the
+    #: topic being answered, and the whole point of a coverage map is to
+    #: surface exactly that difference before the report is written.
+    COVERAGE_MIN_SOURCES = 2
+
+    @staticmethod
+    def _coverage_tokens(text: str) -> Set[str]:
+        """Lowercased content words (Spanish/English), stopwords and short
+        tokens dropped. Not a real tokenizer — a cheap, deterministic
+        overlap signal is the point, not linguistic precision."""
+        words = re.findall(r"[^\W\d_]{%d,}" % DeepResearcher._COVERAGE_MIN_TOKEN_LEN,
+                           (text or "").lower(), re.UNICODE)
+        return {w for w in words if w not in _COVERAGE_STOPWORDS}
+
+    def _coverage_snapshot(self, findings: Optional[List[Dict]] = None) -> List[Dict[str, Any]]:
+        """One row per `self.subquestions` entry: pending/covered/insufficient.
+
+        - ``pending``: no finding gathered so far shares any content word
+          with the node — nothing has touched it yet.
+        - ``insufficient``: exactly one distinct source touches it — a
+          single unconfirmed mention, not enough to call the node answered.
+        - ``covered``: at least `COVERAGE_MIN_SOURCES` distinct sources touch
+          it (by URL, so two mentions of the same page still count once).
+
+        Never raises: a malformed finding or an empty schema degrades to an
+        empty or all-``pending`` list rather than breaking the round loop
+        that calls this on every `_emit`.
+        """
+        subs = getattr(self, "subquestions", None) or []
+        if not subs:
+            return []
+        pool = findings if findings is not None else getattr(self, "findings", None) or []
+        finding_tokens: List[Tuple[str, Set[str]]] = []
+        for f in pool:
+            if not isinstance(f, dict):
+                continue
+            url = str(f.get("url") or "")
+            text = " ".join(str(f.get(key) or "") for key in ("title", "summary", "evidence"))
+            finding_tokens.append((url, self._coverage_tokens(text)))
+
+        out: List[Dict[str, Any]] = []
+        for i, question in enumerate(subs):
+            q_tokens = self._coverage_tokens(question)
+            # Findings with no URL still count once each (an unaddressed
+            # source is rare but must not silently vanish from the count) —
+            # keyed by URL when present, by object identity otherwise.
+            matched = {(url or id(tokens)) for url, tokens in finding_tokens
+                      if q_tokens and (q_tokens & tokens)}
+            distinct = len(matched)
+            if distinct == 0:
+                status = "pending"
+            elif distinct < self.COVERAGE_MIN_SOURCES:
+                status = "insufficient"
+            else:
+                status = "covered"
+            out.append({"index": i, "question": question, "status": status,
+                        "matched_sources": distinct})
+        return out
+
     async def _classify_category(self, question: str) -> Optional[str]:
         """Fast LLM call to classify the research question into a category."""
         valid = ", ".join(CATEGORY_PROMPTS.keys())
@@ -1508,9 +1606,46 @@ class DeepResearcher:
                 logger.warning(f"Extraction error: {result}")
                 continue
             if result:
+                self._stamp_duplicate(result)
                 all_findings.append(result)
 
         return all_findings
+
+    def _seed_content_seen(self, finding: Dict) -> None:
+        """Register a finding's content fingerprint without marking IT a
+        duplicate — used once, for findings a continuation already carries
+        (see `research()`), so a page from before a restart is not flagged
+        against itself when its URL is re-encountered."""
+        try:
+            from src.outbound_fetch import content_fingerprint
+
+            text = str(finding.get("evidence") or finding.get("summary") or "")
+            url = str(finding.get("url") or "")
+            if text and url:
+                self._content_seen.setdefault(content_fingerprint(text), url)
+        except Exception:  # noqa: BLE001 - dedup is never load-bearing
+            logger.debug("content_seen seeding failed", exc_info=True)
+
+    def _stamp_duplicate(self, finding: Dict) -> None:
+        """WEB-02: mark `finding["duplicate_of"]` when its content already
+        arrived this run under a different URL. Mutates in place (findings
+        are freshly-built dicts at this call site, never shared) and never
+        raises — a fingerprinting failure costs the signal, not the finding.
+        """
+        try:
+            from src.outbound_fetch import content_fingerprint, find_duplicate
+
+            text = str(finding.get("evidence") or finding.get("summary") or "")
+            url = str(finding.get("url") or "")
+            if not text or not url:
+                return
+            earlier = find_duplicate(text, self._content_seen)
+            if earlier and earlier != url:
+                finding["duplicate_of"] = earlier
+            else:
+                self._content_seen.setdefault(content_fingerprint(text), url)
+        except Exception:  # noqa: BLE001 - dedup is never load-bearing
+            logger.debug("duplicate stamping failed for %s", finding.get("url"), exc_info=True)
 
     def _warn_if_single_engine(self) -> None:
         """Tell the screen, once per run, when SearXNG is down to one engine.

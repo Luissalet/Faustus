@@ -12,8 +12,9 @@ import json
 import logging
 import re
 import time
+import uuid
 from pathlib import Path
-from typing import Optional, Dict
+from typing import Any, Callable, Optional, Dict
 
 from src.research_utils import strip_thinking, is_low_quality
 from src.constants import DEEP_RESEARCH_DIR
@@ -233,6 +234,133 @@ class ResearchHandler:
             "rounds_done": rounds_done,
             "sources": len(findings) if isinstance(findings, list) else 0,
             "report_parts": len(report_parts) if isinstance(report_parts, list) else 0,
+        }
+
+    # ------------------------------------------------------------------
+    # TASK-02 / RES-05 / QA-10: resume by confirmed units, not from scratch
+    # ------------------------------------------------------------------
+    # `recover_interrupted` above only ever marks a run `interrupted` — it
+    # does not itself continue anything. This is the other half: given an
+    # interrupted session's marker, replay ONLY what its checkpoint proves
+    # was confirmed (rounds already run, sources already fetched, queries
+    # already asked, report parts already written) into a fresh run whose
+    # `max_rounds` is cut down by the rounds already paid for. That is the
+    # entire difference between "Reanudar" and "Reintentar": a retry starts
+    # the same query with empty history and burns every round again; this
+    # burns only the rounds the interrupted run had not reached yet.
+    #
+    # Previously this logic lived only inline in the `/resume` HTTP route
+    # (`routes/research/research_routes.py`), which is why QA-10 stayed
+    # xfail — nothing on `ResearchHandler` itself did the resuming, only the
+    # route. Moved here so the capability is a method of the class that
+    # already owns every other piece of restart survival, and the route
+    # becomes a thin caller (HTTP concerns: auth, endpoint resolution, status
+    # codes) instead of holding the resume logic itself.
+
+    class NoCheckpointError(ValueError):
+        """The marker exists but has no usable checkpoint to resume from."""
+
+    def resume_interrupted(
+        self,
+        session_id: str,
+        owner: str,
+        *,
+        resolve_endpoint: "Callable[[Optional[str]], Any]",
+        new_session_id: Optional[str] = None,
+    ) -> dict:
+        """Start a new run seeded from `session_id`'s last confirmed checkpoint.
+
+        Raises `FileNotFoundError` when there is no such session (or it is
+        not `owner`'s — the same 404-not-403 answer the route already gave,
+        so ownership is never revealed by which error comes back) and
+        `ResearchHandler.NoCheckpointError` when the marker carries no
+        checkpoint with at least one confirmed round. Both are the exact
+        conditions the HTTP route already checked; this only moves where the
+        checking happens.
+
+        `resolve_endpoint(model_hint) -> (url, model, headers)` is called
+        ONLY after the checkpoint has been validated — resolving an endpoint
+        can itself fail (no endpoint configured) or be expensive, and a
+        marker with no checkpoint must 409 without ever paying for that,
+        exactly as it did before this validation lived here.
+        """
+        path = _research_json_path(session_id)
+        if path is None or not path.exists():
+            raise FileNotFoundError(session_id)
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            raise FileNotFoundError(session_id) from exc
+        if data.get("owner") != owner:
+            raise FileNotFoundError(session_id)
+        checkpoint = data.get("checkpoint")
+        if not isinstance(checkpoint, dict) or not checkpoint.get("rounds_done"):
+            raise self.NoCheckpointError(
+                "no checkpoint to resume from yet — retry from scratch instead")
+
+        llm_endpoint, llm_model, llm_headers = resolve_endpoint(data.get("model") or None)
+
+        findings = checkpoint.get("findings")
+        findings = ([f for f in findings if isinstance(f, dict)]
+                    if isinstance(findings, list) else [])
+        sources_snapshot = checkpoint.get("sources")
+        prior_citations: Optional[dict] = None
+        if isinstance(sources_snapshot, dict):
+            try:
+                # Validate before committing to a run: a damaged snapshot is
+                # not permission to renumber citations silently.
+                from src.research_citations import SourceRegistry
+                SourceRegistry.restore(sources_snapshot)
+                prior_citations = sources_snapshot
+            except Exception:
+                logger.warning(
+                    "resume_interrupted: dropping unrestorable citation snapshot for %s",
+                    session_id)
+        prior_urls = {f["url"] for f in findings if f.get("url")}
+        report_parts = checkpoint.get("report_parts")
+        report_parts = ([p for p in report_parts if isinstance(p, str)]
+                        if isinstance(report_parts, list) else [])
+
+        rounds_done = int(checkpoint.get("rounds_done") or 0)
+        requested_max_rounds = _bounded_int(data.get("max_rounds"), default=20,
+                                            minimum=1, maximum=20)
+        remaining_rounds = max(1, min(20, requested_max_rounds - rounds_done))
+
+        target_session_id = new_session_id or f"rp-{uuid.uuid4().hex[:12]}"
+        kept = {"rounds_done": rounds_done, "sources": len(findings),
+                "report_parts": len(report_parts)}
+        self.start_research(
+            session_id=target_session_id,
+            query=data.get("query", ""),
+            llm_endpoint=llm_endpoint,
+            llm_model=llm_model,
+            llm_headers=llm_headers,
+            max_rounds=remaining_rounds,
+            category=data.get("category") or None,
+            owner=owner,
+            prior_report=checkpoint.get("evolving_report") or "",
+            prior_findings=findings,
+            prior_urls=prior_urls,
+            prior_citations=prior_citations,
+            prior_queries=set(checkpoint.get("queries_done") or []),
+            prior_report_parts=report_parts,
+            resumed_from=session_id,
+            resumed_kept=kept,
+        )
+        # The interrupted card's job is done — its checkpoint has been handed
+        # to the new run. Best-effort: a failed dismiss just leaves the old
+        # marker to be swept up on the next restart like any other.
+        try:
+            self.dismiss_interrupted(session_id, owner)
+        except Exception:
+            logger.debug("dismiss_interrupted after resume failed for %s", session_id,
+                        exc_info=True)
+        return {
+            "session_id": target_session_id,
+            "status": "running",
+            "query": data.get("query", ""),
+            "resumed_from": session_id,
+            "resumed_kept": kept,
         }
 
     def dismiss_interrupted(self, session_id: str, owner: str) -> bool:

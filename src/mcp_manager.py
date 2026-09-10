@@ -146,6 +146,20 @@ def _browser_tool_denied(tool_name: str, denied: Set[str]) -> bool:
     return "*" in denied or tool_name in denied
 
 
+def _is_browser_connection(server_id: str) -> bool:
+    """True for the single shared browser server id (`BROWSER_MCP_SERVER_ID`)
+    AND for any WEB-03 per-session browser connection
+    `src.builtin_mcp.connect_session_browser`/`session_browser_server_id`
+    registers (`f"{BROWSER_MCP_SERVER_ID}:<hash>:<hash>"`) — so the admin's
+    browser policy (the off switch, the code-execution opt-in) and the
+    snapshot-size budget govern every browser connection this manager holds,
+    not only the one literal shared id. `ensure_builtin_browser_current`
+    (which restarts the SHARED connection specifically) is deliberately NOT
+    gated by this — a session-scoped call must never restart another
+    session's or the shared browser's process."""
+    return server_id == BROWSER_MCP_SERVER_ID or server_id.startswith(BROWSER_MCP_SERVER_ID + ":")
+
+
 @contextmanager
 def _suppress_all():
     """Swallow teardown errors (never a cancellation) on best-effort paths."""
@@ -355,6 +369,29 @@ def server_inherits_env(srv: Any) -> bool:
     if value is None:
         return True
     return bool(value)
+
+
+def server_declared_permissions(srv: Any) -> Optional[Dict[str, bool]]:
+    """Read a DB row's `declared_permissions` (SEC-08 / TOOL-04), or ``None``
+    when nothing has been declared for it yet — a server configured before
+    the column existed, or one no install/update flow has run through
+    :func:`src.extension_manifest.record_install_or_update` for. Never
+    raises: a detached ORM object or malformed JSON reads the same as
+    "nothing declared"."""
+    try:
+        raw = getattr(srv, "declared_permissions", None)
+    except Exception:  # noqa: BLE001 - a detached/odd ORM object
+        return None
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    from src.extension_manifest import PERMISSION_KEYS
+    return {k: bool(data.get(k)) for k in PERMISSION_KEYS}
 
 
 def new_server_inherits_env() -> bool:
@@ -567,10 +604,74 @@ _sampling_quota = _SamplingQuota()
 _elicit_outstanding: Dict[str, int] = {}
 
 
+#: TOOL-05 (Lote 63): how long a refused sampling request stays visible in
+#: `question_store` as an informational notice — see `_record_sampling_refusal`.
+_SAMPLING_NOTICE_TTL_S_DEFAULT = 300.0
+#: Cap on the "what data it would have received" preview forwarded into the
+#: notice — server-declared content is untrusted, same reasoning
+#: `_sanitize_schema_token`/`_MCP_HINT_MAX` already apply to a tool schema.
+_SAMPLING_PREVIEW_MAX_CHARS = 400
+
+
+def _sampling_request_preview(params: Any) -> str:
+    """A short, sanitized preview of what a sampling request would have sent
+    to a model — the "qué datos recibirá" half of the TOOL-05 acceptance.
+    Never raises: a params shape this SDK version does not carry, or a test
+    double that passes `None`, reads as an empty preview rather than an
+    exception on the refusal path."""
+    try:
+        messages = getattr(params, "messages", None) or []
+        parts = []
+        for message in list(messages)[:4]:
+            content = getattr(message, "content", None)
+            text = getattr(content, "text", None) if content is not None else None
+            if text:
+                parts.append(str(text))
+        preview = " | ".join(parts) if parts else "(no message text)"
+    except Exception:  # noqa: BLE001 - a preview is never worth failing the refusal
+        preview = "(preview unavailable)"
+    return _sanitize_schema_token(preview, limit=_SAMPLING_PREVIEW_MAX_CHARS)
+
+
+def _record_sampling_refusal(server_id: str, params: Any, reason: str) -> None:
+    """TOOL-05: a refused sampling request becomes a VISIBLE, auditable
+    `question_store` entry — "qué servicio pregunta y qué datos recibirá" —
+    instead of only a log line nobody sees.
+
+    Fire-and-forget, unlike `make_elicitation_callback`'s real round trip:
+    this never awaits an answer and never blocks the refusal itself, so a
+    server that keeps asking gets refused just as fast as before this
+    existed; the notice is purely informational (`allow_free_text=False`,
+    one "Dismiss" option) and expires on its own after
+    `mcp_sampling_notice_ttl_s`. Keyed by `session_id=f"mcp:{server_id}"` —
+    the SAME per-server isolation `_SamplingQuota`/`make_elicitation_callback`
+    already use — so recording one server's refusal can never read as, or be
+    confused with, another server's own notice (the "no reuse of another
+    destination's authorization" half of the acceptance). A logging failure
+    here must never turn an already-decided refusal into an exception."""
+    try:
+        from src import question_store
+        preview = _sampling_request_preview(params)
+        message = (
+            f"MCP server {server_id!r} asked to sample the model and was refused ({reason}). "
+            f"Data it would have received: {preview}"
+        )[:_ELICIT_MAX_MESSAGE_CHARS]
+        ttl_s = float(_mcp_setting("mcp_sampling_notice_ttl_s", _SAMPLING_NOTICE_TTL_S_DEFAULT)
+                      or _SAMPLING_NOTICE_TTL_S_DEFAULT)
+        question_store.open_question(
+            message, session_id=f"mcp:{server_id}", owner="",
+            options=[{"label": "Dismiss", "value": "dismiss"}],
+            allow_free_text=False, ttl_seconds=max(1, int(ttl_s)), supersede_open=False,
+        )
+    except Exception as e:  # noqa: BLE001 - never let bookkeeping break a refusal
+        logger.debug("[mcp:%s] could not record sampling refusal as a question: %s", server_id, e)
+
+
 def make_sampling_callback(server_id: str) -> Callable[[Any, Any], Any]:
     """TOOL-05 sampling callback: metered, and refused in-quota with a
     distinct reason (see module docstring above) until a real model path is
-    wired to it."""
+    wired to it. Every refusal is also recorded via
+    `_record_sampling_refusal` (TOOL-05, lote 63)."""
 
     async def _sampling_callback(context, params):  # noqa: ANN001 - mcp SDK types
         from mcp import types as _mcp_types
@@ -581,11 +682,11 @@ def make_sampling_callback(server_id: str) -> Callable[[Any, Any], Any]:
         denial = _sampling_quota.consume(server_id, max_calls=max_calls, window_s=window_s)
         if denial:
             logger.warning("[mcp:%s] sampling refused: %s", server_id, denial)
+            _record_sampling_refusal(server_id, params, denial)
             return _mcp_types.ErrorData(code=_mcp_types.INVALID_REQUEST, message=denial)
-        return _mcp_types.ErrorData(
-            code=_mcp_types.INVALID_REQUEST,
-            message="sampling is metered but not yet connected to a model for this server",
-        )
+        reason = "sampling is metered but not yet connected to a model for this server"
+        _record_sampling_refusal(server_id, params, reason)
+        return _mcp_types.ErrorData(code=_mcp_types.INVALID_REQUEST, message=reason)
 
     return _sampling_callback
 
@@ -729,6 +830,11 @@ class McpManager:
         # connected, but recent errors or slow calls) instead of leaving a
         # struggling server looking identical to a healthy one.
         self._call_outcomes: Dict[str, Deque[Tuple[float, bool, float]]] = {}
+        # TOOL-03: per-server overrides of the degradation thresholds below,
+        # set via `set_degraded_threshold`. Absent for every server that
+        # never called it — those keep reading the class defaults exactly as
+        # before this dict existed.
+        self._degraded_overrides: Dict[str, Dict[str, float]] = {}
 
     async def connect_server(
         self,
@@ -1189,9 +1295,12 @@ class McpManager:
         server_id = parts[1]
         tool_name = parts[2]
 
-        if server_id == BROWSER_MCP_SERVER_ID:
+        if _is_browser_connection(server_id):
             # Dispatch-side half of the offered-then-executable invariant: the
-            # same predicate that hid the tool from the schemas refuses it here.
+            # same predicate that hid the tool from the schemas refuses it
+            # here — for the shared browser AND for any WEB-03 per-session
+            # one, so switching the browser off in Settings actually turns
+            # every browser connection off, not just the shared one.
             denied = builtin_browser_policy_disabled()
             if _browser_tool_denied(tool_name, denied):
                 if "*" in denied:
@@ -1209,9 +1318,12 @@ class McpManager:
                     "blocked": True,
                     "policy": "browser_policy",
                 }
-            # A settings change (profile / headless / caps / CDP) applies on
-            # the next browser call instead of waiting for an app restart.
-            await self.ensure_builtin_browser_current()
+            if server_id == BROWSER_MCP_SERVER_ID:
+                # A settings change (profile / headless / caps / CDP) applies
+                # on the next browser call instead of waiting for an app
+                # restart — only for the SHARED connection: a session-scoped
+                # call must never restart another session's dedicated process.
+                await self.ensure_builtin_browser_current()
 
         session = self._sessions.get(server_id)
         if not session:
@@ -1264,7 +1376,7 @@ class McpManager:
                 return {"error": str(e), "exit_code": 1}
 
         self._record_call_outcome(server_id, True, time.time() - call_started)
-        if server_id == BROWSER_MCP_SERVER_ID:
+        if _is_browser_connection(server_id):
             result = self._postprocess_browser_result(tool_name, result)
         return result
 
@@ -1589,23 +1701,87 @@ class McpManager:
         except Exception as e:  # noqa: BLE001
             logger.debug("mcp_manager: could not record call outcome for %s: %s", server_id, e)
 
+    def degraded_threshold_for(self, server_id: str) -> Dict[str, float]:
+        """TOOL-03: the effective degradation thresholds for `server_id` —
+        the class defaults above, overridden per-server by (in increasing
+        priority) the persisted `mcp_degraded_thresholds` setting (keyed by
+        server_id, survives a restart) and then any in-process override set
+        via `set_degraded_threshold` on this manager. A server nobody ever
+        configured reads exactly the class defaults, unchanged from before
+        this method existed."""
+        out: Dict[str, float] = {
+            "error_window_s": self._DEGRADED_ERROR_WINDOW_S,
+            "error_threshold": self._DEGRADED_ERROR_THRESHOLD,
+            "latency_threshold_s": self._DEGRADED_LATENCY_THRESHOLD_S,
+            "latency_samples": self._DEGRADED_LATENCY_SAMPLES,
+        }
+        try:
+            persisted = _mcp_setting("mcp_degraded_thresholds", {}) or {}
+            per_server = persisted.get(server_id) if isinstance(persisted, dict) else None
+            if isinstance(per_server, dict):
+                for key in out:
+                    if per_server.get(key) is not None:
+                        out[key] = per_server[key]
+        except Exception as e:  # noqa: BLE001 - a bad setting never breaks status
+            logger.debug("mcp_manager: could not read degraded threshold setting for %s: %s", server_id, e)
+        override = self._degraded_overrides.get(server_id)
+        if override:
+            for key, value in override.items():
+                if value is not None:
+                    out[key] = value
+        return out
+
+    #: The threshold keys `set_degraded_threshold`/`degraded_threshold_for`
+    #: accept — anything else is silently ignored rather than raising, the
+    #: same tolerant shape `set_connection_meta` already has for bookkeeping.
+    _DEGRADED_THRESHOLD_KEYS = frozenset({
+        "error_window_s", "error_threshold", "latency_threshold_s", "latency_samples",
+    })
+
+    def set_degraded_threshold(
+        self, server_id: str, *,
+        error_window_s: Optional[float] = None,
+        error_threshold: Optional[float] = None,
+        latency_threshold_s: Optional[float] = None,
+        latency_samples: Optional[float] = None,
+    ) -> Dict[str, float]:
+        """TOOL-03: override one server's degradation thresholds for this
+        process. Only the keyword arguments actually passed are changed;
+        omitted ones keep whatever this server already had (class default or
+        an earlier override). Returns the resulting effective thresholds."""
+        entry = self._degraded_overrides.setdefault(server_id, {})
+        for key, value in (
+            ("error_window_s", error_window_s),
+            ("error_threshold", error_threshold),
+            ("latency_threshold_s", latency_threshold_s),
+            ("latency_samples", latency_samples),
+        ):
+            if value is not None:
+                entry[key] = float(value)
+        return self.degraded_threshold_for(server_id)
+
     def _degraded_reason(self, server_id: str) -> Optional[str]:
         """Why a CONNECTED server should read as "degraded" right now, or
         ``None`` when it should not. Read-only, never mutates state."""
         dq = self._call_outcomes.get(server_id)
         if not dq:
             return None
-        cutoff = time.time() - self._DEGRADED_ERROR_WINDOW_S
+        thresholds = self.degraded_threshold_for(server_id)
+        error_window_s = float(thresholds["error_window_s"])
+        error_threshold = thresholds["error_threshold"]
+        latency_threshold_s = float(thresholds["latency_threshold_s"])
+        latency_samples = max(1, int(thresholds["latency_samples"]))
+        cutoff = time.time() - error_window_s
         recent = [o for o in dq if o[0] >= cutoff]
         if not recent:
             return None
         errors = sum(1 for _, ok, _ in recent if not ok)
-        if errors >= self._DEGRADED_ERROR_THRESHOLD:
-            return f"{errors} failed tool calls in the last {int(self._DEGRADED_ERROR_WINDOW_S // 60)} minutes"
-        latencies = [d for _, ok, d in recent[-self._DEGRADED_LATENCY_SAMPLES:] if ok]
-        if len(latencies) >= self._DEGRADED_LATENCY_SAMPLES:
+        if errors >= error_threshold:
+            return f"{errors} failed tool calls in the last {int(error_window_s // 60)} minutes"
+        latencies = [d for _, ok, d in recent[-latency_samples:] if ok]
+        if len(latencies) >= latency_samples:
             avg = sum(latencies) / len(latencies)
-            if avg >= self._DEGRADED_LATENCY_THRESHOLD_S:
+            if avg >= latency_threshold_s:
                 return f"the last {len(latencies)} calls averaged {avg:.1f}s"
         return None
 

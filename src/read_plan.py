@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from typing import Any, Dict, List, NamedTuple, Optional, Tuple
 
 from src.constants import MAX_READ_CHARS
@@ -286,6 +287,136 @@ def plan(abs_path: str,
     output, head_lines = _render(display, size, total_lines, budget, head, symbols)
     return Plan(abs_path, display, size, total_lines, budget, window,
                 True, symbols, head_lines, output)
+
+
+# ── CTX-03: search inside a large read's output ─────────────────────────────
+#
+# `plan()` tells a model what is IN an oversized file (an index, the head).
+# It never told a model WHERE in it something is — a rare identifier, an
+# error string, a name that does not appear in the symbol index at all
+# (a string literal, a comment, a config key). Guessing an offset for that is
+# how a 9B model burns rounds re-reading the same file. This is the other
+# half: a streaming search that never holds the whole file in memory, with
+# the same budget discipline as `plan()` — a match list, cut at a whole
+# match, never mid-line.
+
+#: Matches shown before the budget or the count starts trimming them.
+DEFAULT_MAX_MATCHES = 40
+#: Lines of context kept around each match by default.
+DEFAULT_CONTEXT_LINES = 2
+#: Read in chunks this large while scanning; large enough to be fast, small
+#: enough that a multi-GB file is still a stream and not a `.read()`.
+_SEARCH_CHUNK_LINES = 20_000
+
+
+class SearchMatch(NamedTuple):
+    line: int                 # 1-based line number of the match itself
+    text: str                 # the matched line, verbatim
+    context_before: List[str]
+    context_after: List[str]
+
+
+def search_in_file(abs_path: str,
+                    query: str,
+                    *,
+                    window_tokens: int = 0,
+                    regex: bool = False,
+                    case_sensitive: bool = False,
+                    context_lines: int = DEFAULT_CONTEXT_LINES,
+                    max_matches: int = DEFAULT_MAX_MATCHES,
+                    fraction: Optional[float] = None) -> Dict[str, Any]:
+    """Find `query` inside `abs_path` without reading it all into memory.
+
+    `query` is a plain substring unless `regex=True`. Streams the file one
+    chunk of lines at a time, keeping only the trailing `context_lines` lines
+    as a lookback buffer — memory use stays O(context_lines), not O(file
+    size). OSError propagates exactly like `open()` would (missing file,
+    permission denied): the caller decides how that surfaces, this module
+    never swallows it.
+
+    Returns a dict ready to hand back over HTTP or to a tool result:
+    `{"path", "query", "total_matches", "shown", "truncated", "matches": [...]}`
+    where `matches` is capped at `max_matches` AND at the model's read budget
+    (whichever is smaller) — a query that hits 10,000 times must not blow the
+    caller's context window just because `max_matches` said 40 was fine.
+    """
+    if not query:
+        return {"path": abs_path, "query": query, "total_matches": 0,
+                "shown": 0, "truncated": False, "matches": []}
+    budget = budget_chars(window_tokens, fraction)
+    flags = 0 if case_sensitive else re.IGNORECASE
+    if regex:
+        pattern = re.compile(query, flags)
+        finder = pattern.search
+    else:
+        needle = query if case_sensitive else query.lower()
+
+        def finder(line: str, _needle=needle, _cs=case_sensitive):
+            return (needle in line) if _cs else (needle in line.lower())
+
+    ctx_n = max(0, int(context_lines or 0))
+    cap = max(1, int(max_matches or DEFAULT_MAX_MATCHES))
+
+    matches: List[SearchMatch] = []
+    total = 0
+    used_chars = 0
+    over_budget = False
+    stopped_early = False
+    lookback: List[str] = []
+    pending_after: List[SearchMatch] = []  # matches still collecting context_after
+
+    def _flush_after(new_line: Optional[str]) -> None:
+        for m in list(pending_after):
+            if new_line is not None and len(m.context_after) < ctx_n:
+                m.context_after.append(new_line)
+            if new_line is None or len(m.context_after) >= ctx_n:
+                pending_after.remove(m)
+
+    with open(abs_path, "r", encoding="utf-8", errors="replace") as f:
+        line_no = 0
+        for raw_line in f:
+            line_no += 1
+            line = raw_line[:-1] if raw_line.endswith("\n") else raw_line
+            _flush_after(line)
+            if finder(line):
+                total += 1
+                if len(matches) < cap and not over_budget:
+                    match = SearchMatch(line_no, line, list(lookback), [])
+                    cost = len(line) + sum(len(c) for c in match.context_before) + 40
+                    if used_chars + cost > budget and matches:
+                        over_budget = True
+                    else:
+                        used_chars += cost
+                        matches.append(match)
+                        if ctx_n:
+                            pending_after.append(match)
+            if ctx_n:
+                lookback.append(line)
+                if len(lookback) > ctx_n:
+                    lookback.pop(0)
+            if not ctx_n and len(matches) >= cap and over_budget:
+                # With no trailing context to collect, nothing past this line
+                # can change the answer once both caps are already hit.
+                stopped_early = True
+                break
+        _flush_after(None)
+
+    truncated = total > len(matches) or over_budget or stopped_early
+    return {
+        "path": abs_path,
+        "query": query,
+        "regex": bool(regex),
+        # None when the scan stopped before reaching the end of the file —
+        # an exact count would be a number this call never actually verified.
+        "total_matches": None if stopped_early else total,
+        "shown": len(matches),
+        "truncated": truncated,
+        "matches": [
+            {"line": m.line, "text": m.text,
+             "context_before": m.context_before, "context_after": m.context_after}
+            for m in matches
+        ],
+    }
 
 
 def _call_example(display: str, offset: int) -> str:

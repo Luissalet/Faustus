@@ -1174,6 +1174,33 @@ async def execute_tool_block(
                 else None
             ),
         )
+        # CALL-05: normalize the tool's own ad hoc result dict into the
+        # typed ToolResult contract (src/tool_result.py), at THIS single
+        # execution point — every caller (chat, workflow, subagent, MCP)
+        # already funnels through execute_tool_block, so this is the one
+        # place the classification needs to happen for all of them, without
+        # any of the ~40 files under src/agent_tools/ changing what they
+        # return. Best-effort and read-only: never raises, never touches
+        # `output` — a transport-successful call whose dict carries a
+        # functional error (`error` set, or a non-zero `exit_code`) is
+        # logged as `status="failed"` here, never as done, even though
+        # nothing downstream of this function reads `_typed_result` yet (the
+        # natural next consumer — folding this into a run's own done/error
+        # state — lives in src/agent_runs.py, outside this lote's files).
+        try:
+            from src.tool_result import normalize_tool_result
+            _typed_result = normalize_tool_result(output[1] if len(output) > 1 else None)
+            if _typed_result.status != "succeeded":
+                logger.debug(
+                    "tool_result normalized: tool=%s status=%s%s",
+                    getattr(block, "tool_type", None), _typed_result.status,
+                    f" error={_typed_result.error.message}" if _typed_result.error else "",
+                )
+        except Exception:
+            logger.debug(
+                "normalize_tool_result failed for tool=%s",
+                getattr(block, "tool_type", None), exc_info=True,
+            )
         if isinstance(security_context, ToolRunSecurityContext):
             security_context.observe_tool_result(
                 getattr(block, "tool_type", None),

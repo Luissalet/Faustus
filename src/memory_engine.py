@@ -110,6 +110,26 @@ TYPES: Tuple[str, ...] = ("preference", "fact", "procedure", "decision", "anti_p
 SCOPE_GLOBAL = "global"
 TOMBSTONE_TABLE = "tombstones"
 
+# MEM-01: how sensitive the CONTENT is, independent of trust/status/type.
+# "normal" packs like anything else; "sensitive" is personal data the user
+# stated about themselves or someone else (packed, but a caller assembling a
+# prompt for a less-trusted destination — a shared workflow, an exported
+# report — has an explicit field to filter on instead of guessing from text);
+# "secret" is a credential or token-shaped fact and is never included by
+# `pack()`/`pack_detail()` regardless of caller, the same way a `SecretInBlock`
+# refusal in `context_engine/blocks.py` keeps one out of a compiled packet.
+SENSITIVITY_LEVELS: Tuple[str, ...] = ("normal", "sensitive", "secret")
+
+# MEM-01: confirmed/inferred/obsolete, computed from the existing `status` +
+# `trust_class` columns rather than stored as a fourth lifecycle field. The
+# two are answering different questions — `status` is "is this item still in
+# the working set" (active/deprecated/anti_pattern) and MUST keep exactly
+# that vocabulary (the Curator, `is_valid_now`, `scoped_items` and every
+# existing row all key off it) — `confidence_state` is "how sure are we this
+# is true", which the backlog's own three words describe better than
+# reusing `status` for both would. See `confidence_state()` below.
+CONFIDENCE_STATES: Tuple[str, ...] = ("confirmed", "inferred", "obsolete")
+
 # Feedback events decay with their own half-life, independent of the item's.
 FEEDBACK_HALF_LIFE_DAYS = 90.0
 # One harmful event cancels four helpful ones.
@@ -319,6 +339,7 @@ _COLUMNS = (
     "confidence", "status", "maturity", "evidence", "helpful", "harmful",
     "inverted_from", "created_at", "updated_at", "last_accessed", "access_count",
     "type", "scope", "session_id", "valid_from", "valid_until", "provenance",
+    "sensitivity",
 )
 
 _TOMBSTONE_COLUMNS = (
@@ -341,6 +362,7 @@ _MEM01_MIGRATIONS: Tuple[Tuple[str, str, Optional[str]], ...] = (
      "UPDATE items SET valid_from = created_at WHERE valid_from = ''"),
     ("valid_until", "TEXT NOT NULL DEFAULT ''", None),
     ("provenance", "TEXT NOT NULL DEFAULT '{}'", None),
+    ("sensitivity", "TEXT NOT NULL DEFAULT 'normal'", None),
 )
 
 
@@ -474,6 +496,7 @@ def public_item(item: Dict[str, Any], now: Optional[datetime] = None) -> Dict[st
     out["helpful_count"] = len(item.get("helpful") or [])
     out["harmful_count"] = len(item.get("harmful") or [])
     out["distinct_helpful_refs"] = distinct_refs(item.get("helpful"))
+    out["confidence_state"] = confidence_state(item)
     return out
 
 
@@ -513,6 +536,39 @@ def _valid_status(value: Any) -> str:
     if status not in STATUSES:
         raise MemoryEngineError(f"status must be one of {', '.join(STATUSES)}")
     return status
+
+
+def _valid_sensitivity(value: Any, default: str = "normal") -> str:
+    sensitivity = str(value or "").strip().lower()
+    if not sensitivity:
+        return default
+    if sensitivity not in SENSITIVITY_LEVELS:
+        raise MemoryEngineError(
+            f"sensitivity must be one of {', '.join(SENSITIVITY_LEVELS)}")
+    return sensitivity
+
+
+def confidence_state(item: Dict[str, Any]) -> str:
+    """MEM-01: confirmed/inferred/obsolete for one item, computed — never
+    stored, so it can never drift out of sync with the `status`/`trust_class`
+    it is derived from.
+
+    - ``obsolete``: the lifecycle already says so (``status == "deprecated"``)
+      — a rule the Curator (or a human) retired stays obsolete no matter who
+      originally asserted it.
+    - ``confirmed``: still active/anti_pattern AND asserted at the highest
+      trust class a human statement gets (``human_explicit``) — the backlog's
+      own example, "a hypothesis a human confirmed", maps onto exactly the
+      trust class `add_item` already gives a human-written memory.
+    - ``inferred``: everything else still in the working set — an agent's own
+      assertion or validation, or an imported row, that nobody has confirmed.
+    """
+    status = str(item.get("status") or "")
+    if status == "deprecated":
+        return "obsolete"
+    if str(item.get("trust_class") or "") == "human_explicit":
+        return "confirmed"
+    return "inferred"
 
 
 def _valid_type(value: Any, default: str) -> str:
@@ -668,6 +724,7 @@ def add_item(
     valid_from: Any = None,
     valid_until: Any = None,
     provenance: Any = None,
+    sensitivity: Any = "normal",
     respect_tombstones: bool = True,
     now: Optional[datetime] = None,
 ) -> Dict[str, Any]:
@@ -684,6 +741,7 @@ def add_item(
     level = _valid_level(level)
     trust_class = _valid_trust_class(trust_class)
     status = _valid_status(status)
+    sensitivity = _valid_sensitivity(sensitivity)
     maturity = str(maturity or "candidate").strip().lower()
     if maturity not in MATURITIES:
         raise MemoryEngineError(f"maturity must be one of {', '.join(MATURITIES)}")
@@ -736,6 +794,7 @@ def add_item(
         "valid_from": _iso(parse_iso(valid_from)) if parse_iso(valid_from) else stamp,
         "valid_until": _iso(parse_iso(valid_until)) if parse_iso(valid_until) else "",
         "provenance": prov,
+        "sensitivity": sensitivity,
     }
     save_item(item)
     _index(item["id"], clean)
@@ -757,6 +816,7 @@ def save_item(item: Dict[str, Any]) -> Dict[str, Any]:
     row.setdefault("session_id", "")
     row.setdefault("valid_from", "")
     row.setdefault("valid_until", "")
+    row.setdefault("sensitivity", "normal")
     values = [row.get(column) for column in _COLUMNS]
     placeholders = ", ".join("?" for _ in _COLUMNS)
     with _db() as conn:
@@ -1176,6 +1236,11 @@ def search(
     # this is what keeps a refuted hypothesis from coming back as a fact
     # (list_items/the dashboard still shows it; this is the recall path).
     items = [item for item in items if is_valid_now(item, now)]
+    # MEM-01: a "secret" item (a credential or token-shaped fact) is never
+    # surfaced through retrieval — it stays visible in list_items()/the
+    # dashboard (the human who owns it can still see and delete it), but it
+    # never reaches a model prompt through search() or pack_detail() below.
+    items = [item for item in items if item.get("sensitivity") != "secret"]
     if levels:
         wanted_levels = {str(level) for level in levels}
         items = [item for item in items if item.get("level") in wanted_levels]
@@ -1249,6 +1314,7 @@ def pack_detail(
 
     everything = scoped_items(owner, project, ("active", "anti_pattern"))
     everything = [item for item in everything if is_valid_now(item, now)]
+    everything = [item for item in everything if item.get("sensitivity") != "secret"]
     by_id = {item["id"]: item for item in everything}
 
     rules = [public_item(item, now) for item in everything
