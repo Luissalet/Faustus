@@ -116,6 +116,12 @@ def record_intent(*, owner: str, session_id: str, client_message_id: str) -> Dic
     accepted rows, and the loser gets back the winner's row with
     `created=False` instead of an error.
     """
+    # Defense in depth: `owner` is a NOT NULL column. A caller that forwards
+    # a raw `request.state.current_user` (None under AUTH_ENABLED=false,
+    # unlike require_user()'s "" fallback) must not crash the INSERT with an
+    # IntegrityError that then looks like a lost race in the except-clause
+    # below and re-raises unhandled.
+    owner = str(owner or "")
     _maybe_purge()
     path = default_path()
     stamp = _now()
@@ -142,6 +148,7 @@ def record_intent(*, owner: str, session_id: str, client_message_id: str) -> Dic
 
 
 def get(*, owner: str, session_id: str, client_message_id: str) -> Optional[Dict[str, Any]]:
+    owner = str(owner or "")  # same None->"" normalization as record_intent
     path = default_path()
     if not path.exists():
         return None
@@ -156,6 +163,7 @@ def get(*, owner: str, session_id: str, client_message_id: str) -> Optional[Dict
 def mark_running(*, owner: str, session_id: str, client_message_id: str, run_id: str) -> bool:
     """Name the run once one exists. Never moves a row backward out of a
     terminal state — a slow update racing a fast finish must not resurrect it."""
+    owner = str(owner or "")
     path = default_path()
     stamp = _now()
     with _db(path, write=True) as conn:
@@ -175,6 +183,7 @@ def mark_finished(*, owner: str, session_id: str, client_message_id: str, status
     is the "result after" half of TASK-03's "intent before, result after"."""
     if status not in ("finished", "failed"):
         raise ValueError(f"mark_finished needs a terminal status, got {status!r}")
+    owner = str(owner or "")
     encoded = None
     if result is not None:
         try:

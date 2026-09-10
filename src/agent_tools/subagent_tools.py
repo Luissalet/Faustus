@@ -429,6 +429,22 @@ def stop_worker(child_session_id: str, reason: str = "stopped") -> bool:
     return True
 
 
+def stop_workers_of_parent(parent_session_id: str, reason: str = "task_cancelled") -> List[str]:
+    """TASK-04: propagate a `scope=task`/`work` cancellation of the COORDINATOR
+    turn to every worker it delegated. Returns the child session ids actually
+    stopped (a worker that had already finished is silently skipped, same as
+    `stop_worker`'s own False return)."""
+    if not parent_session_id:
+        return []
+    stopped: List[str] = []
+    for child_sid, run in list(_WORKER_RUNS.items()):
+        if run.parent_session_id != parent_session_id:
+            continue
+        if stop_worker(child_sid, reason=reason):
+            stopped.append(child_sid)
+    return stopped
+
+
 def active_worker_ids() -> List[str]:
     return [sid for sid, t in _ACTIVE_WORKERS.items() if not t.done()]
 

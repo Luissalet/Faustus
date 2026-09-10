@@ -138,7 +138,17 @@ class _Run:
                  # see `_observe_activity`'s "progress_update" branch). None
                  # means exactly that: no measurable total, so nothing is
                  # shown rather than a number invented from elapsed time.
-                 "percent")
+                 "percent",
+                 # UX-04: pause/steer/queue for the MAIN session turn (the
+                 # subagent equivalents are src/agent_tools/subagent_tools.py's
+                 # own _WORKER_RUNS — deliberately separate stores, same shape).
+                 # `pause_requested` is consumed once by stream_agent_loop's
+                 # `pending_pause` at the next safe point. `steer_queue` is
+                 # drained the same way via `pending_user_messages` and applied
+                 # to the CURRENT turn. `send_after_queue` is NOT applied to the
+                 # live turn; it is delivered as a new chat turn once this one
+                 # ends (drained by the route layer via take_send_after).
+                 "pause_requested", "steer_queue", "send_after_queue")
 
     @property
     def outcome(self) -> Optional[str]:
@@ -177,6 +187,10 @@ class _Run:
         self.phase_raw: str = self.phase
         self.phase_canonical: str = _canonical_phase(self.phase)
         self.percent: Optional[float] = None
+        # UX-04
+        self.pause_requested: bool = False
+        self.steer_queue: list = []
+        self.send_after_queue: list = []
 
 
 _RUNS: Dict[str, _Run] = {}
@@ -864,10 +878,20 @@ async def _drain(session_id: str, run: _Run, agen: AsyncGenerator[str, None],
         if lane is not None:
             await lane.acquire(run)
             acquired = lane.limit > 0
+        _ended_paused = False
         async for ev in agen:
             _publish(run, ev)
+            # UX-04: stream_agent_loop's `pending_pause` break emits exactly
+            # this event right before ending the generator normally -- same
+            # shape as every other typed SSE event this loop already checks
+            # by substring (see _observe_activity below), so a plain
+            # generator "done" is told apart from "paused at a safe point,
+            # resumable" without agent_runs reaching into the loop's
+            # internals.
+            if '"type": "paused"' in ev:
+                _ended_paused = True
         if run.status == "running":
-            run.status = "done"
+            run.status = "waiting_user" if _ended_paused else "done"
     except asyncio.CancelledError:
         run.status = "stopped"
         # Let the wrapped generator's own CancelledError handler run (it saves
@@ -1064,6 +1088,128 @@ def stop(session_id: str, expected_run_id: Optional[str] = None) -> bool:
     return False
 
 
+# ---------------------------------------------------------------------------
+# UX-04 -- pause, steer and "send after" for the MAIN session turn.
+#
+# Fail-closed the same way `stop()` does: `expected_run_id`, when given, must
+# match the CURRENT run or nothing happens -- a stale tab must not pause/steer
+# a run that already replaced its own. Unlike `stop()`, a bare call with no id
+# is accepted here (the pause/steer/queue buttons only ever show while a
+# specific run is on screen, so the caller has an id; callers that don't care
+# which run -- tests, an internal trigger -- can omit it deliberately).
+# ---------------------------------------------------------------------------
+
+def request_pause(session_id: str, expected_run_id: Optional[str] = None) -> bool:
+    """Ask a running turn to stop at its next safe point (see
+    ``stream_agent_loop``'s ``pending_pause``) instead of finishing every
+    round. Returns False when there is nothing running to pause."""
+    run = _RUNS.get(session_id)
+    if run is None or run.status != "running":
+        return False
+    if expected_run_id and run.run_id != expected_run_id:
+        return False
+    run.pause_requested = True
+    return True
+
+
+def take_pause_request(session_id: str) -> bool:
+    """Consume (and clear) a pending pause. Called once per round by the
+    loop's `pending_pause` callable; clearing it here means a turn resumed
+    after a pause does not immediately repause itself."""
+    run = _RUNS.get(session_id)
+    if run is None or not run.pause_requested:
+        return False
+    run.pause_requested = False
+    return True
+
+
+def queue_steer(session_id: str, text: str, source: str = "user",
+                 expected_run_id: Optional[str] = None) -> bool:
+    """Queue an instruction that is injected as a user message at the turn's
+    next safe point (mirrors `subagent_tools.steer_worker`, for the main
+    session run instead of a delegated worker)."""
+    text = " ".join(str(text or "").split()).strip()
+    if not text:
+        return False
+    run = _RUNS.get(session_id)
+    if run is None or run.status != "running":
+        return False
+    if expected_run_id and run.run_id != expected_run_id:
+        return False
+    run.steer_queue.append({
+        "text": text[:4000],
+        "source": "supervisor" if source == "supervisor" else "user",
+    })
+    return True
+
+
+def take_steers(session_id: str) -> List[Dict[str, str]]:
+    """Drain the steer queue -- what `pending_user_messages` hands the loop
+    at its next safe point. Mirrors `subagent_tools.pending_steers`."""
+    run = _RUNS.get(session_id)
+    if run is None:
+        return []
+    out, run.steer_queue = list(run.steer_queue), []
+    return out
+
+
+def queue_send_after(session_id: str, text: str, source: str = "user",
+                      expected_run_id: Optional[str] = None) -> bool:
+    """Queue a message for delivery as a NEW turn once this one ends ("send
+    after" / "Enviar despues") -- unlike `queue_steer`, this is never injected
+    into the live turn, so it cannot alter work already in flight."""
+    text = " ".join(str(text or "").split()).strip()
+    if not text:
+        return False
+    run = _RUNS.get(session_id)
+    if run is None or run.status != "running":
+        return False
+    if expected_run_id and run.run_id != expected_run_id:
+        return False
+    run.send_after_queue.append({
+        "text": text[:4000],
+        "source": "supervisor" if source == "supervisor" else "user",
+    })
+    return True
+
+
+def take_send_after(session_id: str) -> List[Dict[str, str]]:
+    """Drain the "send after" queue. Called by the route layer once a run has
+    ended, to actually deliver the queued message as the next chat turn."""
+    run = _RUNS.get(session_id)
+    if run is None:
+        return []
+    out, run.send_after_queue = list(run.send_after_queue), []
+    return out
+
+
+def pending_send_after_count(session_id: str) -> int:
+    run = _RUNS.get(session_id)
+    return len(run.send_after_queue) if run is not None else 0
+
+
+def tools_ran(session_id: str, run: Optional[_Run] = None) -> List[str]:
+    """TASK-04: the tool names a run's buffer shows a `tool_start` for so
+    far -- `what_ran_before` on a cancellation response. Reads the replay
+    buffer already kept for reconnects; adds nothing new to persist."""
+    r = run or _RUNS.get(session_id)
+    if r is None:
+        return []
+    names: List[str] = []
+    for ev in r.buffer:
+        idx = ev.find('"type": "tool_start"')
+        if idx == -1:
+            continue
+        try:
+            payload = json.loads(ev.split("data: ", 1)[1])
+        except Exception:
+            continue
+        tool = payload.get("tool")
+        if tool:
+            names.append(str(tool))
+    return names
+
+
 def _cancel_anywhere(task: "asyncio.Task") -> bool:
     """Cancel `task` from whatever thread we are on.
 
@@ -1228,7 +1374,8 @@ def recover_interrupted_runs(session_manager=None) -> List[Dict[str, Any]]:
         path = os.path.join(d, name)
         info = _read_log(path)
         status = info.get("status")
-        if status in ("done", "stopped", "error", "interrupted", "unreadable", None) and status != "running":
+        if status in ("done", "stopped", "error", "interrupted", "unreadable",
+                      "waiting_user", None) and status != "running":
             try:
                 if now - os.path.getmtime(path) > keep_h * 3600:
                     os.remove(path)

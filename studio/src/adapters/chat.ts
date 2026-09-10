@@ -1352,23 +1352,94 @@ export async function chatActivity(signal?: AbortSignal): Promise<ChatActivity> 
   };
 }
 
+/** TASK-04: the three things Stop can mean — see routes/chat_routes.py's
+ *  POST /api/chat/stop docstring for exactly what each one tears down. */
+export type StopScope = 'generation' | 'task' | 'work';
+
 /**
  * Asks the server to cancel a run. `runId` comes from `sendTurn`'s callback
  * or from `chatActivity().runs`; without it the server fails closed on
  * purpose (a stale tab must not cancel the run another tab just started),
  * so a Stop with no id is a Stop that does nothing.
+ *
+ * `scope` omitted is the original, unscoped Stop (cancel the turn outright) —
+ * every caller from before TASK-04 keeps this exact behavior. Passing a
+ * scope switches to the new three-way contract: `'generation'` pauses
+ * (resumable), `'task'`/`'work'` cancel for real and additionally propagate
+ * to sub-agents (and, for `'work'`, this session's background jobs).
  */
-export async function stopChat(sessionId: string, runId?: string | null): Promise<boolean> {
+export async function stopChat(
+  sessionId: string,
+  runId?: string | null,
+  scope?: StopScope,
+): Promise<boolean> {
   try {
     const response = await fetch(`/api/chat/stop/${encodeURIComponent(sessionId)}`, {
       method: 'POST',
       credentials: 'same-origin',
-      headers: runId ? { [RUN_ID_HEADER]: runId } : undefined,
+      headers: {
+        ...(runId ? { [RUN_ID_HEADER]: runId } : undefined),
+        ...(scope ? { 'Content-Type': 'application/json' } : undefined),
+      },
+      body: scope ? JSON.stringify({ scope }) : undefined,
     });
-    const body = (await response.json()) as { stopped?: unknown };
-    return Boolean(body.stopped);
+    const body = (await response.json()) as { stopped?: unknown; paused?: unknown };
+    // scope="generation" answers with `paused`, not `stopped` (see
+    // routes/chat_routes.py's chat_stop) — read whichever field this
+    // response actually carries rather than assuming `stopped`.
+    return Boolean(scope === 'generation' ? body.paused : body.stopped);
   } catch {
     /* the abort already closed our side; the server will notice */
+    return false;
+  }
+}
+
+/**
+ * UX-04: stop the current generation only, leaving the turn `waiting_user`
+ * (resumable by the next ordinary send) — equivalent to
+ * `stopChat(sessionId, runId, 'generation')`, kept as its own named call for
+ * the Composer's Pause action.
+ */
+export async function pauseChat(sessionId: string, runId?: string | null): Promise<boolean> {
+  try {
+    const response = await fetch(`/api/chat/pause/${encodeURIComponent(sessionId)}`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: runId ? { [RUN_ID_HEADER]: runId } : undefined,
+    });
+    const body = (await response.json()) as { paused?: unknown };
+    return Boolean(body.paused);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * UX-04: send an instruction to the LIVE turn. `mode: 'steer'` (default) is
+ * injected as a user message at the turn's next safe point; `mode: 'queue'`
+ * ("Enviar después") is held and delivered as a new turn once this one ends,
+ * never altering the work already in flight.
+ */
+export async function steerChat(
+  sessionId: string,
+  text: string,
+  options: { runId?: string | null; mode?: 'steer' | 'queue' } = {},
+): Promise<boolean> {
+  const { runId, mode = 'steer' } = options;
+  try {
+    const response = await fetch(`/api/chat/steer/${encodeURIComponent(sessionId)}`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(runId ? { [RUN_ID_HEADER]: runId } : undefined),
+      },
+      body: JSON.stringify({ text, mode }),
+    });
+    if (!response.ok) return false;
+    const body = (await response.json()) as { ok?: unknown };
+    return Boolean(body.ok);
+  } catch {
     return false;
   }
 }

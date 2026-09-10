@@ -10,8 +10,10 @@ import {
   listSessions,
   loadHistory,
   metricsFrom,
+  pauseChat,
   pendingOutboxFor,
   resumeTurn,
+  steerChat,
   streamFailureMessage,
   sendTurn,
   stopChat,
@@ -1947,6 +1949,66 @@ export function StudioScreen() {
     setBusy(false);
   }, [sessionId, patchLast, say]);
 
+  // TASK-04/UX-04: the Stop menu's harsher scopes ("Cancel task"/"Cancel all
+  // work") and the softer "Stop generation" (also what Escape now sends —
+  // see Composer.tsx). Same local bookkeeping as the original `stop` above;
+  // only which server scope is asked for differs.
+  const stopScoped = useCallback((scope: 'generation' | 'task' | 'work') => {
+    controllerRef.current?.abort();
+    controllerRef.current = null;
+    const runId = runIdRef.current;
+    runIdRef.current = null;
+    if (sessionId) {
+      void stopChat(sessionId, runId, scope).then((ok) => {
+        refreshActivity();
+        if (!ok) say(t('I could not stop it: it is finishing on the server. It will save what it has.'), 'warning');
+      });
+    }
+    patchLast((t) => apply(t, { type: 'done' }));
+    setBusy(false);
+  }, [sessionId, patchLast, say]);
+
+  const pauseGeneration = useCallback(() => {
+    controllerRef.current?.abort();
+    controllerRef.current = null;
+    const runId = runIdRef.current;
+    runIdRef.current = null;
+    if (sessionId) {
+      void pauseChat(sessionId, runId).then((ok) => {
+        refreshActivity();
+        if (!ok) say(t('I could not stop it: it is finishing on the server. It will save what it has.'), 'warning');
+      });
+    }
+    patchLast((t) => apply(t, { type: 'done' }));
+    setBusy(false);
+  }, [sessionId, patchLast, say]);
+
+  const cancelTask = useCallback(() => stopScoped('task'), [stopScoped]);
+  const cancelWork = useCallback(() => stopScoped('work'), [stopScoped]);
+
+  // "Dirigir…" — injected into the live turn at its next safe point; does
+  // NOT stop or replace the current stream.
+  const steerLive = useCallback((text: string) => {
+    if (!sessionId) return;
+    void steerChat(sessionId, text, { runId: runIdRef.current, mode: 'steer' }).then((ok) => {
+      if (!ok) say(t('I could not deliver that — nothing is running right now.'), 'warning');
+    });
+  }, [sessionId, say]);
+
+  // "Enviar después" — held server-side, delivered as a new turn once this
+  // one ends; never touches the live turn.
+  const queueSend = useCallback((text: string) => {
+    if (!sessionId) return;
+    void steerChat(sessionId, text, { runId: runIdRef.current, mode: 'queue' }).then((ok) => {
+      say(
+        ok
+          ? t('Queued — it will be sent once this turn finishes.')
+          : t('I could not queue that — nothing is running right now.'),
+        ok ? 'info' : 'warning',
+      );
+    });
+  }, [sessionId, say]);
+
   /* ── Message actions ── */
   const regenerateFrom = useCallback(
     async (turn: Turn, text?: string) => {
@@ -2312,6 +2374,11 @@ export function StudioScreen() {
           sessionId={sessionId}
           onSend={(text) => void send(text)}
           onStop={stop}
+          onPauseGeneration={pauseGeneration}
+          onCancelTask={cancelTask}
+          onCancelWork={cancelWork}
+          onSteer={steerLive}
+          onQueueSend={queueSend}
           onVoice={() => {
             if (voiceSession) { setVoiceSession(null); return; }
             void ensureSession(t('Voice conversation')).then(sid => {

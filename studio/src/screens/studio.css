@@ -3263,6 +3263,18 @@ aside.fs-panel {
 
 :root .fs-popover.fs-studio__add-menu,
 :root .fs-popover.fs-studio__permission-menu { background: var(--fs-surface-2); backdrop-filter: none; }
+
+/* TASK-04/UX-04: the busy-state Stop menu — three scopes (each with a
+   consequence line) plus the "Direct it…"/"Send after" note composer. */
+.fs-popover.fs-studio__stop-menu { max-inline-size: calc(100vw - 24px); inline-size: min(340px, calc(100vw - 24px)); background: var(--fs-surface-2); backdrop-filter: none; }
+.fs-studio__stop-menu [role="menu"] { display: grid; gap: var(--fs-space-1); }
+.fs-studio__stop-menu [role="menuitem"] { display: grid; gap: 2px; text-align: start; padding: var(--fs-space-2); border: 1px solid transparent; border-radius: var(--fs-radius-control); background: transparent; color: var(--fs-text-1); cursor: pointer; }
+.fs-studio__stop-menu [role="menuitem"] span { color: var(--fs-text-2); font-size: var(--fs-label); }
+.fs-studio__stop-menu [role="menuitem"]:hover { background: var(--fs-surface-3); }
+.fs-studio__stop-menu-note { margin-block-start: var(--fs-space-2); padding-block-start: var(--fs-space-2); border-block-start: 1px solid var(--fs-border); display: grid; gap: var(--fs-space-1); }
+.fs-studio__stop-menu-note textarea { resize: vertical; min-block-size: 44px; }
+.fs-studio__stop-menu-note-actions { display: flex; justify-content: flex-end; gap: var(--fs-space-1); }
+@media (max-width: 600px) { .fs-studio__stop-menu [role="menuitem"] { min-block-size: 44px; } }
 .fs-studio__bar > .fs-studio__send { display: flex; align-items: center; margin-inline-start: 0; }
 
 /* A plan step title is one line of inline markdown inside a flex row: the

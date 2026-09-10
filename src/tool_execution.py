@@ -506,6 +506,75 @@ def _parse_qualified_mcp_args(tool: str, content: str) -> tuple[Dict, Optional[s
     return parsed, None
 
 
+# ---------------------------------------------------------------------------
+# WEB-04 (L24/L29): precondition + readback for builtin-browser MCP actions
+# ---------------------------------------------------------------------------
+# src/browser_actions.py was already built (an earlier lot) for exactly this
+# wiring — its own docstring says as much and defers the wiring to whichever
+# lot owns this file. `is_browser_action`/`BROWSER_VIEW_ACTIONS` (src/
+# browser_view.py) is reused rather than a second, slightly-different
+# click/type/navigate/select/press list (rule 4 of COMUN.md): it is already
+# the authoritative "does this builtin-browser tool change what the page
+# shows" answer in this codebase, one `after_browser_action` (agent_loop.py)
+# already keys its own screenshot-after-an-action decision on.
+from src.browser_view import BROWSER_MCP_PREFIX, is_browser_action, parse_page_info
+
+_BROWSER_SNAPSHOT_TOOL = BROWSER_MCP_PREFIX + "browser_snapshot"
+
+
+def _browser_result_text(result: Any) -> str:
+    """The same three keys src/browser_view.py's own (private) `_result_text`
+    reads — kept as a local copy rather than importing a name that file does
+    not export, since browser_view.py is outside this lot's PROPIOS."""
+    if not isinstance(result, dict):
+        return ""
+    for key in ("stdout", "output", "stderr"):
+        value = result.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return ""
+
+
+async def _run_browser_action_with_precondition(mcp: Any, tool: str, args: Dict[str, Any]) -> Dict[str, Any]:
+    """Wrap one page-mutating builtin-browser MCP call in `src.browser_actions
+    .run_with_precondition`: a FRESH `browser_snapshot` right before the call,
+    checked against whatever the model told us to expect, and a fresh
+    post-action readback attached either way (WEB-04's own acceptance
+    criterion — "a shifted layout must not produce a blind click").
+
+    Two optional args the model may pass double as the precondition:
+      * `ref` — Playwright's own element handle from a PRIOR snapshot. When
+        present, it must still appear in the FRESH snapshot's text, or the
+        action is refused instead of clicking/typing into whatever is now at
+        that stale reference.
+      * `expected_url` — additive: no real `@playwright/mcp` tool defines
+        this field, so an ordinary call that never names it behaves exactly
+        as before (never checked, always forwarded verbatim). Stripped
+        before the real call either way, so an unrecognized extra key never
+        reaches the actual MCP server.
+    """
+    from src import browser_actions
+
+    precondition = browser_actions.ActionPrecondition(
+        expected_url=str(args.get("expected_url") or ""),
+        require_element=str(args.get("ref") or ""),
+    )
+    forward_args = {k: v for k, v in args.items() if k != "expected_url"}
+
+    async def _snapshot() -> Dict[str, Any]:
+        snap = await mcp.call_tool(_BROWSER_SNAPSHOT_TOOL, {})
+        text = _browser_result_text(snap)
+        url, title = parse_page_info(text)
+        return {"url": url, "title": title, "text": text}
+
+    async def _act() -> Any:
+        return await mcp.call_tool(tool, forward_args)
+
+    return await browser_actions.run_with_precondition(
+        tool, precondition=precondition, snapshot_fn=_snapshot, act_fn=_act,
+    )
+
+
 def _parse_generate_image(content: str) -> Dict:
     lines = content.strip().split("\n")
     args = {"prompt": lines[0].strip() if lines else ""}
@@ -1713,7 +1782,10 @@ async def _execute_tool_block_impl(
                 if tool.startswith("mcp__email__") and owner:
                     args = dict(args)
                     args[_EMAIL_MCP_OWNER_ARG] = owner
-                result = await mcp.call_tool(tool, args)
+                if is_browser_action(tool):
+                    result = await _run_browser_action_with_precondition(mcp, tool, args)
+                else:
+                    result = await mcp.call_tool(tool, args)
         else:
             desc = f"mcp: {tool}"
             result = {"error": "MCP manager not available", "exit_code": 1}

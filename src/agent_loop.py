@@ -45,6 +45,7 @@ from src.tool_security import (
 from src.tool_policy import GUIDE_ONLY_DIRECTIVE, WEB_TOOL_NAMES, ToolPolicy
 from src.tool_capabilities import (
     ResultIntegrity,
+    ToolEffect,
     ToolRunSecurityContext,
     blocked_tool_result,
     capabilities_for_action,
@@ -80,6 +81,49 @@ from src.agent_tools import (
 logger = logging.getLogger(__name__)
 
 _BROWSER_MCP_PREFIX = "mcp__builtin_browser__"
+
+# CALL-04: the only tool effects allowed into a concurrent read batch. Any
+# other effect (write, execute, network egress, destructive, admin, user
+# interaction) — or a tool `capabilities_for_action` cannot classify — keeps
+# the tool strictly serial, same as before this change.
+_PARALLEL_SAFE_READ_EFFECTS = frozenset({
+    ToolEffect.READ_PUBLIC, ToolEffect.READ_WORKSPACE, ToolEffect.READ_PRIVATE,
+})
+
+
+def _is_parallel_safe_read(tool_type: str, content: str) -> bool:
+    """True only for a tool call whose declared effects are ALL reads.
+    Fails closed (serial) on anything `capabilities_for_action` cannot prove,
+    same posture as the security gate it borrows from."""
+    try:
+        caps = capabilities_for_action(tool_type, content)
+    except Exception:
+        return False
+    if not caps.known or not caps.effects:
+        return False
+    return caps.effects <= _PARALLEL_SAFE_READ_EFFECTS
+
+
+def _read_resource_key(block: "ToolBlock") -> str:
+    """Best-effort identity of what a read targets, so two calls that name the
+    SAME resource (e.g. read_file on the same path twice) never land in the
+    same concurrent batch — CALL-04 only groups reads on distinct resources,
+    even though two overlapping reads would not race each other either way."""
+    content = block.content or ""
+    try:
+        data = json.loads(content)
+    except Exception:
+        return content.strip()[:200]
+    if isinstance(data, dict):
+        for key in ("path", "file", "file_path", "filepath", "url", "note_id",
+                    "id", "session_id", "query"):
+            if data.get(key):
+                return f"{key}:{data[key]}"
+        try:
+            return json.dumps(data, sort_keys=True)[:200]
+        except Exception:
+            return content.strip()[:200]
+    return str(data)[:200]
 
 
 # A browser turn always has to open a page, so a retrieval hit on one of these
@@ -351,77 +395,18 @@ def _load_mcp_disabled_map() -> Dict[str, set]:
 
 # System prompt that tells the LLM about available tools.
 # Always injected — the LLM decides whether to use them.
-_AGENT_PREAMBLE = """\
-You are an AI assistant with tool access. You can run shell commands, execute Python, search the web, \
-read/write files, create and edit documents, generate images, manage memories, and more. \
-To use a tool, write a fenced code block with the tool name as the language tag. \
-The block executes automatically and you see the output."""
-
-_API_AGENT_RULES = """\
-## Rules
-- Prefer native tool/function calling when tools are needed.
-- Only call tools when they materially help answer the request.
-- You MUST use tools to take action — do not describe what you would do. Act, don't narrate.
-- For web lookup/search/latest/current requests, call `web_search` or `web_fetch`. Do NOT use shell, Python, curl, requests, or scraping code for web lookup unless web tools are unavailable or already failed.
-- If `web_search` is listed in this prompt, web search is available. Do NOT tell the user search/web tools are unavailable.
-- Keep answers concise unless the user asks for depth.
-- For long code or content, use document tools instead of pasting large blocks into chat.
-- Long-form or structured writing is a document by default when the user asks to write/create/make/generate it and the answer would be more than a short paragraph. Call create_document instead of dumping the full content in chat.
-- Editing an existing document: ALWAYS use `edit_document` with find/replace. Only use `update_document` for genuine full rewrites (>50% changed) — do NOT echo the entire file back for small edits.
-- If the active editor document is an email draft/compose window, treat that open email as the target for "write this", "write the email", "reply with...", "make it say...", "draft this", and similar requests. Do NOT create another document, search/list/manage documents, or open a different reply unless the user explicitly asks. Edit the open email draft with `edit_document` or `update_document`; preserve To/Cc/Bcc/Subject/In-Reply-To/References/X-* header lines unless the user asks to change them.
-- "Give suggestions / feedback / review / how can I improve this / what would make it better" about the OPEN document → call `suggest_document`, do NOT write a prose list of ideas in chat. It creates inline accept/reject bubbles on the doc. Give concrete `find`/`replace`/`reason` items. To suggest an ADDITION (e.g. "add a bow to the SVG", a new section), set `find` to a short existing anchor snippet and `replace` to that same snippet PLUS the new content. Only answer in prose when no document is open, or the request is purely conceptual with no concrete change to propose.
-- BIAS TOWARD ACTION on edit requests. If the user says "edit out X", "remove the Y paragraph", "change Z" — call the edit tool with your best interpretation. Don't ask for clarification on minor ambiguity. The user can undo.
-- AFTER A TOOL SUCCEEDS, do not second-guess. A success response means it worked. Reply in ONE short sentence confirming what was done. No verification thinking, no re-analyzing — move on.
-- AFTER A TOOL FAILS, DO NOT GO SILENT. The user expects a follow-up: retry with a fix, run a diagnostic (`tail`, `ls`, `which`), or explicitly tell them what didn't work and what you'll try next. Failure is not a stopping condition.
-- YOU DECLARE WHEN THE JOB IS DONE — not a timer. Keep taking concrete steps while the task still needs them; don't quit early just because you've made a few calls. Three ways to end a turn: (1) DONE — before declaring it, verify every concrete deliverable the user asked for actually exists or succeeded; then stop calling tools and write the final answer (that IS your "done" signal); (2) BLOCKED — you can't proceed (missing capability, permission denied, unobtainable data), so state plainly what's blocking you and stop; (3) keep going with the single most useful next step. Never trail off mid-task without (1) or (2), and never repeat a call you already ran.
-- Calendar: call `manage_calendar` with `action=list_calendars` FIRST before create/update/delete operations.
-- "Create/add/write a note" / "notes" / "todos" / "remind me to X at <time>" → use `manage_notes`. Do NOT store notes in `manage_memory`; memory is for persistent facts/preferences about the user, not note content. For reminders, include a `due_date`; for todos, use `note_type=checklist` when appropriate. `manage_tasks` is for RECURRING background AI jobs, NOT for one-off user reminders.
-- "Disable/turn off/enable/turn on <tool>" (shell, search, research, browser, documents, incognito, etc.) → call `ui_control` with `toggle <name> <on|off>`. Aliases accepted: shell→bash, search→web, deepresearch→research, documents→document_editor. NEVER record this as a memory — the user wants the toggle flipped, not a note about preferring it.
-- "Research X" / "do research on X" / "look into Y" / "deep dive on Z" → call `trigger_research` with `topic`. This starts a live job that appears in the Deep Research sidebar (streams progress + final report). **Do NOT use `web_search` for these** — saw the agent do a plain web_search for "do research on X" when the user wanted the deep-research job. "research X" is a deep-research request, not a quick lookup. (web_search is only for a single quick fact mid-task.) Do NOT POST /api/research/start via app_api either — blocked. After starting, tell the user it's running in the Deep Research sidebar. Only if the user explicitly wants it inline/quick should you fall back to web_search.
-- "Open/show <panel>" (documents, library, gallery, email, inbox, sessions, brain/memories, skills, settings, notes, cookbook) → call `ui_control` with `open_panel <name>`. Panel aliases: library/doc/docs/document→documents, images→gallery, mail/inbox/emails→email, chats/history→sessions, memory/memories→brain, preferences→settings, models/serve/serving→cookbook. CRITICAL: "open memory/memories/brain" / "open skills" / "open notes" / "open documents" / "open cookbook" means OPEN THE PANEL — call `ui_control`, NOT a manage/list tool. The "manage_*" tools list contents in chat; `ui_control open_panel` opens the visual modal the user is asking for.
-- "Write/draft a reply saying X" for an open/read email → call `ui_control` with `action="open_email_reply"`, the email `uid`/`folder`, `mode="reply"`, and `body` containing the drafted reply. This opens the same email compose document as clicking Reply and DOES NOT send. Do NOT call `reply_to_email` unless the user explicitly says to send immediately.
-- "Open/start a reply", "open a reply to <sender>", "draft a reply window" with no requested body → find/read the email if needed, then call `ui_control` with `open_email_reply <uid> <folder> reply`.
-- Bulk email actions ("delete all those", "archive these", "mark all read") require a real email tool call. Use `bulk_email` once with UIDs from the latest `list_emails` result and the same `account`; never claim success without the tool result.
-- Email UIDs are the values after `UID:` in tool output, not list row numbers. For example, row `1.` with `UID: 90186` must use `"90186"`, never `"1"`.
-- "Last/latest/newest email" means call `list_emails` with `max_results: 1`, `unread_only: false`, and the right `account`, then read the UID returned by that tool if full content is needed. NEVER use a table row number like "#18" as an email UID.
-- Plain "list/show/check my inbox/emails" means latest inbox mail, including read messages. Do not set `unread_only: true` unless the user explicitly asks for unread/needs attention.
-- Multiple email accounts: if tool output says "Other accounts" or the user asks "my Gmail?", "other inbox?", "work mail?", "custom domain mail?", or names any mailbox/account, DO NOT answer from memory or infer it is the same inbox. Call `list_email_accounts` if needed, then call `list_emails`/`read_email`/`bulk_email` with the exact `account` value for that mailbox. Account names are user-defined labels; if the user typo-matches a known account, use the closest listed account instead of claiming it does not exist. NEVER use `app_api` or `/api/email/accounts` to discover email accounts; that route is owner-filtered in tool context and can falsely return empty.
-- User identity facts/preferences ("my name is <name>", "I live in <place>", "I prefer concise replies", "call me <name>") → use `manage_memory` with action=add. NEVER use `manage_contact` for facts about the user unless the user explicitly says to create/update a contact and provides contact details such as an email or phone.
-- You are running INSIDE Faustus — there is no OpenWebUI, ChatGPT, or external chat backend to query. All chats/sessions live in THIS app and are accessed via `list_sessions` (or `manage_session` with `action=list`), and deleted via `manage_session` with `action=delete`. Do NOT shell out to find sqlite files, curl localhost:8080, or grep for routers — those don't exist here. If `list_sessions` returns rows, that IS the source of truth.
-- After `list_sessions`, preserve the returned `[Chat title](#session-<id>)` links in your user-facing reply. Do not rewrite chat lists as plain tables with non-clickable titles.
-- "Cookbook" = the LLM-serving subsystem (NOT chat sessions, NOT a recipe app). Routing:
-  • "What's running" / "what's serving" / "show my cookbook" / "is anything up" → **first action MUST be `list_served_models` (no args)**. The tool is ALWAYS available. Do not run `ps aux`, do not `curl localhost:8000`, do not `which vllm`. Even if you don't remember seeing the tool listed, it IS available — call it. The output IS the source of truth (it tracks diffusion models, vLLM, SGLang, llama.cpp, Ollama, etc. — anything spawned via the cookbook, including remote hosts that `ps aux` here can't see).
-  • "What's downloading" / "show downloads" → `list_downloads` (always available).
-  • "What models do I have" → `list_cached_models` (always available).
-  • "Kill / stop / shut down" → `stop_served_model` (or `cancel_download`) with the session_id from the list.
-  • Searching for a model → `search_hf_models`.
-  • Downloading or serving a model → these run on a SERVER. If the user names one ("on gpu-box", "on the gpu box") pass `host=`. If they DON'T name one, the tool defaults to the cookbook's currently-selected server (NOT localhost). When there are multiple servers and it's genuinely ambiguous which they mean, call `list_cookbook_servers` and ask. Only download to localhost when the user explicitly says "locally" / "on this machine" (pass `local=true`).
-  • Image/inpainting/diffusion serve requests ("serve inpaint", "SDXL inpainting", "image model") → use `serve_model` with a built-in image command. Apple/MLX image repos use `python3 scripts/mlx_image_server.py --model <repo> --port 8100`; non-MLX Diffusers repos use `python3 scripts/diffusion_server.py --model <repo> --port 8100`. Do NOT use `mlx_lm.server` for image models, do NOT invent modules like `diffusers_api_server`, and do NOT use bash/ssh/pip directly. The Cookbook route copies the server script to remote hosts and registers the image endpoint.
-  • Launching a saved preset explicitly ("run my preset", "start the saved SD 3.5 preset", "use the existing preset") → `list_serve_presets`, then `serve_preset {name: "..."}`. Do NOT fabricate a tmux command — the user already saved working ones from the UI. Only fall back to raw `serve_model` if no preset matches and the autonomous launch tool is not appropriate.
-  • Launching a model the user names ("serve minimax m2.7 on gpu-box") with NO preset → `serve_model {repo_id, cmd, host}`. The cookbook route OWNS tmux session creation AND state-file registration AND UI live-refresh — bypassing it produces an orphan the UI can never see. After launching, call `list_served_models` to verify readiness. If it reports a diagnosis and suggested adjusted command, retry with `serve_model` using that command instead of asking the user to debug raw tmux logs.
-  • Adopting an already-running tmux session (someone or a prior bash launch started a server, but it's not in the cookbook) → `adopt_served_model {host, tmux_session, model, port}`. This registers it in cookbook_state.json AND adds it as a chat endpoint so the user can pick it in the model dropdown. Use this whenever you find a running server that the cookbook doesn't know about.
-  • After ANY successful serve (preset or raw or adopted), the cookbook's serve flow auto-adds the model as an endpoint. If for some reason it didn't (e.g. the launch was external), call `adopt_served_model` to fix both at once, or `manage_endpoints` with action=add to register the URL manually.
-  **Anti-pattern (CRITICAL — saw the agent do this and it produced an orphan session invisible to the UI):** `ssh <host> 'tmux new-session ... vllm serve ...'` via bash. THIS IS WRONG even when it "works". The launch must go through `serve_model` so the cookbook route creates the tmux session AND writes the task to cookbook_state.json. If the user asks for a launch and you reach for bash/ssh/tmux, STOP — call `serve_model` instead. Bash launches don't show up in the Cookbook UI, can't be `stop_served_model`'d, and don't survive a UI refresh.
-  Anti-pattern (DO NOT do this — saw it twice): "I don't see list_served_models in my tool list, let me try bash ps aux." → wrong. The tool IS available. Just call it.
-  Anti-pattern: POSTing to `/api/cookbook/state` via `app_api` — that overwrites the whole state file (presets and all). Blocked. Use serve_preset / serve_model / stop_served_model.
-
-## UI conventions
-- When referencing an entity by ID, render it as a STANDARD markdown link with a hash-prefixed anchor — the frontend renders these as clickable jump buttons:
-  - Sessions / chats: `[Name](#session-<id>)`
-  - Documents: `[Title](#document-<id>)`
-  - Notes: `[Title](#note-<id>)`
-  - Gallery images: `[Caption](#image-<id>)`
-  - Emails (use the UID from list_emails/read_email output): `[Subject](#email-<uid>)`
-  - Calendar events (use the uid from manage_calendar): `[Summary](#event-<uid>)` — opens the calendar on that day
-  - Tasks: `[Task name](#task-<id>)`
-  - Skills: `[skill-name](#skill-<name>)`
-  - Research jobs: `[Topic](#research-<session_id>)`
-- The format is `[link text](#kind-<id>)` — text in square brackets, anchor in parens. NOT `[name] [#kind-id]` and NOT `[#kind-id]`. That's plain text and the user can't click it.
-- Use this inside lists, tables, prose — anywhere. Tables: `| Big Chat | [open](#session-abc123) |` works.
-- Examples:
-  - After `create_session` returns id `89effa28`: "Created [New Chat](#session-89effa28) — click to switch."
-  - Listing sessions: "1. [Big Chat](#session-abc123) — 2h ago, 2. [Code Review](#session-def456) — 5h ago\""""
-
+#
+# ARCH-03 (integration lot 36): `_AGENT_PREAMBLE` and `_API_AGENT_RULES` used
+# to be assigned TWICE each at module scope — the exact "accidental order of
+# definition" conflict src/effective_config.py's inspector exists to catch,
+# applied to this very module. The first assignment of each was dead code
+# (silently shadowed the moment Python finished importing the module, so it
+# never once reached a real prompt); this keeps only the text that was
+# actually LIVE — the second assignment of each — so the source now says
+# what the prompt has always actually been, with nothing lost from current
+# behavior. `agent_rules_duplication_conflicts()` in src/effective_config.py
+# (out of this lot's PROPIOS — not touched) needs no change: with each name
+# assigned once, its own hit-count check stops reporting them on its own.
 _AGENT_PREAMBLE = """\
 You are an AI assistant with tool access. Only the tools listed below are available for this turn.
 To use a tool, write a fenced code block with the tool name as the language tag. The block executes automatically and you see the output."""
@@ -4340,6 +4325,7 @@ async def stream_agent_loop(
     harness_options: Optional[Dict[str, Any]] = None,
     pending_user_messages: Optional[Callable[[], List[Dict[str, Any]]]] = None,
     autonomy_preset: Optional[str] = None,
+    pending_pause: Optional[Callable[[], bool]] = None,
 ) -> AsyncGenerator[str, None]:
     """Streaming agent loop generator.
 
@@ -4351,6 +4337,14 @@ async def stream_agent_loop(
     round; each ``{"text", "source"}`` it returns is appended as a ``user``
     message before the model is called and announced with a ``steer`` event.
     This is how a delegate_agents worker is steered mid-task.
+    ``pending_pause`` (UX-04, optional, sync): checked right after
+    ``pending_user_messages`` at the same safe point (top of a round, between
+    rounds — never mid tool call or mid write). Returning True ends the turn
+    right there with a ``paused`` event and ``stop_reason == "paused"``, the
+    same way an ``ask_user`` question ends it with ``awaiting_user`` — nothing
+    is fed back, no new round starts. Resuming is an ordinary next chat
+    request; the harness that owns this callable is what marks the run
+    resumable.
     ``autonomy_preset`` (TASK-06, optional): ``"supervised"`` (default),
     ``"bounded_autonomous"`` or ``"read_only"`` — see ``src/autonomy_budget.py``.
     Resolves a six-dimension :class:`~src.autonomy_budget.Budget` for this
@@ -6502,6 +6496,21 @@ async def stream_agent_loop(
                     f"it refines your task; follow it from now on] {_steer_text}")})
                 yield "data: " + json.dumps({"type": "steer", "round": round_num,
                                              "text": _steer_text[:300], "source": _steer_src}) + "\n\n"
+        # UX-04: pause, checked at the same safe point as steering — between
+        # rounds, never mid tool call. Ends the turn exactly like an
+        # ask_user question does (break, no result fed back), so a resumed
+        # turn is just the next ordinary chat request.
+        if pending_pause is not None:
+            try:
+                _pause_now = bool(pending_pause())
+            except Exception as _pause_err:
+                logger.debug("[pause] check failed: %s", _pause_err)
+                _pause_now = False
+            if _pause_now:
+                _ledger.stop_reason = "paused"
+                logger.info("[agent] round %s: pause requested at safe point", round_num)
+                yield "data: " + json.dumps({"type": "paused", "round": round_num}) + "\n\n"
+                break
         if round_num > 1 or _approved_result_injected:
             _refresh_language(messages, _reply_language_hint)
         round_response = ""
@@ -8248,6 +8257,78 @@ async def stream_agent_loop(
         tool_result_texts = []  # plain text for native tool role messages
         tool_result_records = []  # aligned structured provenance for next round
         budget_hit = False
+
+        # CALL-04: run a PREFIX of consecutive, side-effect-free reads on
+        # distinct resources concurrently (asyncio.gather), same result each
+        # index would have gotten serially. Stops the group at the first
+        # write/execute/denied/approval-required/duplicate-resource call, so
+        # nothing ever overlaps a mutation — the loop below still walks every
+        # index in order and just serves a prefetched result where one landed
+        # instead of running execute_tool_block a second time, so ordering
+        # and every other per-tool code path (approval, checkpoint, ledger,
+        # SSE events) are unaffected.
+        _prefetched: Dict[int, Tuple[str, Dict[str, Any]]] = {}
+        try:
+            _parallel_cap = int(get_setting("agent_parallel_read_group_size", 4) or 0)
+        except (TypeError, ValueError):
+            _parallel_cap = 4
+        if _parallel_cap > 1 and len(tool_blocks) > 1:
+            _group_idx: List[int] = []
+            _seen_keys: Set[str] = set()
+            for _pi, _pblock in enumerate(tool_blocks):
+                if len(_group_idx) >= _parallel_cap:
+                    break
+                if max_tool_calls > 0 and (total_tool_calls + len(_group_idx)) >= max_tool_calls:
+                    break
+                if not _is_parallel_safe_read(_pblock.tool_type, _pblock.content):
+                    break
+                if _denial_for_tool(
+                    _pblock.tool_type, tool_policy=tool_policy,
+                    disabled_tools=disabled_tools, preflight_pruned=_preflight_pruned,
+                    denial_origin=_denial_origin,
+                ) is not None:
+                    break
+                _pmeta = _arg_validation.get(id(_pblock))
+                if _pmeta and _pmeta.get("blocked"):
+                    break
+                try:
+                    if not run_security.decision_for(_pblock.tool_type, _pblock.content).allowed:
+                        break
+                except Exception:
+                    break
+                _pkey = _read_resource_key(_pblock)
+                if _pkey in _seen_keys:
+                    break
+                _seen_keys.add(_pkey)
+                _group_idx.append(_pi)
+            if len(_group_idx) >= 2:
+                async def _run_prefetched(idx: int):
+                    _blk = tool_blocks[idx]
+                    return idx, await execute_tool_block(
+                        _blk,
+                        session_id=session_id,
+                        disabled_tools=disabled_tools,
+                        tool_policy=tool_policy,
+                        owner=owner,
+                        progress_cb=None,
+                        workspace=workspace,
+                        workspace_roots=workspace_roots,
+                        security_context=run_security,
+                        turn_options={
+                            "gen_overrides": gen_overrides,
+                            "harness_options": _hopts,
+                            "run_id": str(_hopts.get("run_id") or session_id or ""),
+                            "turn_id": _context_turn_id,
+                        },
+                    )
+                logger.info(
+                    "[agent] round %s: %d independent read(s) run in parallel: %s",
+                    round_num, len(_group_idx),
+                    [tool_blocks[j].tool_type for j in _group_idx],
+                )
+                for _idx, _res in await asyncio.gather(*(_run_prefetched(j) for j in _group_idx)):
+                    _prefetched[_idx] = _res
+
         for i, block in enumerate(tool_blocks):
             # OBS-01: reuse the native/converted tool call's own id when the
             # provider (or the assembler ahead of it) gave one — converted_calls
@@ -8480,64 +8561,71 @@ async def stream_agent_loop(
                     yield "data: " + json.dumps({"type": "harness_check", "status": "checkpoint", "round": round_num,
                                                  "sha": _cp.get("sha"), "created": _cp.get("created"), "ms": _cp.get("ms")}) + "\n\n"
 
-                # Streaming progress for long-running tools (bash, python).
-                # The bash/python branches inside _direct_fallback emit
-                # periodic {elapsed_s, tail} payloads via this callback;
-                # we forward each one as a `tool_progress` SSE event so
-                # the UI can render live elapsed-time + tail-of-output.
-                _progress_q: asyncio.Queue = asyncio.Queue()
-                async def _push_progress(payload):
-                    await _progress_q.put(payload)
+                if i in _prefetched:
+                    # CALL-04: this index already ran, concurrently with the
+                    # other reads in its group, above — same call, same
+                    # result it would have gotten here; just no per-tool
+                    # progress stream for it (reads don't emit one anyway).
+                    desc, result = _prefetched.pop(i)
+                else:
+                    # Streaming progress for long-running tools (bash, python).
+                    # The bash/python branches inside _direct_fallback emit
+                    # periodic {elapsed_s, tail} payloads via this callback;
+                    # we forward each one as a `tool_progress` SSE event so
+                    # the UI can render live elapsed-time + tail-of-output.
+                    _progress_q: asyncio.Queue = asyncio.Queue()
+                    async def _push_progress(payload):
+                        await _progress_q.put(payload)
 
-                async def _run_tool():
-                    try:
-                        return await execute_tool_block(
-                            block,
-                            session_id=session_id,
-                            disabled_tools=disabled_tools,
-                            tool_policy=tool_policy,
-                            owner=owner,
-                            progress_cb=_push_progress,
-                            workspace=workspace,
-                            workspace_roots=workspace_roots,
-                            security_context=run_security,
-                            turn_options={
-                                "gen_overrides": gen_overrides,
-                                "harness_options": _hopts,
-                                "run_id": str(_hopts.get("run_id") or session_id or ""),
-                                "turn_id": _context_turn_id,
-                            },
-                        )
-                    finally:
-                        # Sentinel so the drainer knows to stop.
-                        await _progress_q.put(None)
-
-                _tool_task = asyncio.create_task(_run_tool())
-                try:
-                    # Drain progress events as they arrive — block until the
-                    # next event OR the tool finishes (sentinel = None).
-                    while True:
-                        evt = await _progress_q.get()
-                        if evt is None:
-                            break
-                        yield (
-                            f'data: {json.dumps({"type": "tool_progress", "tool": block.tool_type, "round": round_num, "call_id": _call_id, **evt})}\n\n'
-                        )
-                    desc, result = await _tool_task
-                finally:
-                    # If the SSE client disconnects (or this generator is
-                    # otherwise closed) while we're awaiting a progress event
-                    # above, GeneratorExit is thrown in right here and the
-                    # `await _tool_task` on the line above never runs — the
-                    # task (and any subprocess execute_tool_block spawned for
-                    # bash/python tools) would otherwise keep running
-                    # orphaned with nothing left to await or cancel it.
-                    if not _tool_task.done():
-                        _tool_task.cancel()
+                    async def _run_tool():
                         try:
-                            await _tool_task
-                        except (asyncio.CancelledError, Exception):
-                            pass
+                            return await execute_tool_block(
+                                block,
+                                session_id=session_id,
+                                disabled_tools=disabled_tools,
+                                tool_policy=tool_policy,
+                                owner=owner,
+                                progress_cb=_push_progress,
+                                workspace=workspace,
+                                workspace_roots=workspace_roots,
+                                security_context=run_security,
+                                turn_options={
+                                    "gen_overrides": gen_overrides,
+                                    "harness_options": _hopts,
+                                    "run_id": str(_hopts.get("run_id") or session_id or ""),
+                                    "turn_id": _context_turn_id,
+                                },
+                            )
+                        finally:
+                            # Sentinel so the drainer knows to stop.
+                            await _progress_q.put(None)
+
+                    _tool_task = asyncio.create_task(_run_tool())
+                    try:
+                        # Drain progress events as they arrive — block until the
+                        # next event OR the tool finishes (sentinel = None).
+                        while True:
+                            evt = await _progress_q.get()
+                            if evt is None:
+                                break
+                            yield (
+                                f'data: {json.dumps({"type": "tool_progress", "tool": block.tool_type, "round": round_num, "call_id": _call_id, **evt})}\n\n'
+                            )
+                        desc, result = await _tool_task
+                    finally:
+                        # If the SSE client disconnects (or this generator is
+                        # otherwise closed) while we're awaiting a progress event
+                        # above, GeneratorExit is thrown in right here and the
+                        # `await _tool_task` on the line above never runs — the
+                        # task (and any subprocess execute_tool_block spawned for
+                        # bash/python tools) would otherwise keep running
+                        # orphaned with nothing left to await or cancel it.
+                        if not _tool_task.done():
+                            _tool_task.cancel()
+                            try:
+                                await _tool_task
+                            except (asyncio.CancelledError, Exception):
+                                pass
 
             # CALL-02/CALL-03: annotate the result with whatever the argument
             # check found — even when it did not block execution (a repaired

@@ -99,6 +99,14 @@ export interface ComposerProps {
   sessionId: string | null;
   onSend: (text: string) => void;
   onStop: () => void;
+  /** UX-04: the three Stop scopes and the two ways to add to a live turn
+   *  without cancelling it. Optional — a caller that omits them gets the
+   *  plain Stop button exactly as before (see the `busy` branch below). */
+  onPauseGeneration?: () => void;
+  onCancelTask?: () => void;
+  onCancelWork?: () => void;
+  onSteer?: (text: string) => void;
+  onQueueSend?: (text: string) => void;
   onVoice?: () => void;
   voiceActive?: boolean;
   onNotice: (text: string, tone?: 'info' | 'warning' | 'danger') => void;
@@ -137,6 +145,11 @@ export function Composer({
   sessionId,
   onSend,
   onStop,
+  onPauseGeneration,
+  onCancelTask,
+  onCancelWork,
+  onSteer,
+  onQueueSend,
   onVoice,
   voiceActive,
   onNotice,
@@ -336,7 +349,10 @@ export function Composer({
       });
       return;
     }
-    if (event.key === 'Escape' && busy) onStop();
+    // UX-04: the shortcut now names the least destructive action — stop the
+    // generation, leave the turn resumable — same key as always; the harsher
+    // "cancel the task"/"cancel all work" scopes only live in the Stop menu.
+    if (event.key === 'Escape' && busy) (onPauseGeneration ?? onStop)();
   };
 
   useEffect(() => {
@@ -670,7 +686,14 @@ export function Composer({
         <div className="fs-studio__send">
           {onVoice && <IconButton icon={AudioLines} label={t(voiceActive ? 'Close voice mode' : 'Talk to Faustus')} onClick={onVoice} testId="studio-voice" />}
           {busy ? (
-            <IconButton icon={Square} label={t('Stop')} onClick={onStop} testId="studio-stop" />
+            <StopMenu
+              onStop={onStop}
+              onPauseGeneration={onPauseGeneration}
+              onCancelTask={onCancelTask}
+              onCancelWork={onCancelWork}
+              onSteer={onSteer}
+              onQueueSend={onQueueSend}
+            />
           ) : (
             <button type="submit" className="fs-studio__go" disabled={!canSend || preparing} aria-label={t(preparing ? 'Creating…' : 'Send')} data-testid="studio-send">
               <ArrowUp size={18} aria-hidden="true" />
@@ -724,6 +747,99 @@ function AutonomyPresetSelector({ preset, onPick }: { preset: AutonomyPreset; on
           </button>
         ))}
       </div>
+    </Popover>
+  );
+}
+
+/**
+ * TASK-04/UX-04: the busy-state Stop button becomes a menu — three scopes,
+ * each with a one-line consequence, plus "Dirigir…" (steer the live turn)
+ * and "Enviar después" (queue for once it ends, never touching the live
+ * turn). Any of the five callbacks being undefined only removes that one
+ * row, so a caller that still passes just `onStop` gets a menu with a
+ * single, familiar action rather than a crash.
+ */
+function StopMenu({
+  onStop,
+  onPauseGeneration,
+  onCancelTask,
+  onCancelWork,
+  onSteer,
+  onQueueSend,
+}: {
+  onStop: () => void;
+  onPauseGeneration?: () => void;
+  onCancelTask?: () => void;
+  onCancelWork?: () => void;
+  onSteer?: (text: string) => void;
+  onQueueSend?: (text: string) => void;
+}) {
+  const [note, setNote] = useState('');
+  const [noteMode, setNoteMode] = useState<'steer' | 'queue' | null>(null);
+  const submitNote = () => {
+    const text = note.trim();
+    if (!text || !noteMode) return;
+    if (noteMode === 'steer') onSteer?.(text);
+    else onQueueSend?.(text);
+    setNote('');
+    setNoteMode(null);
+  };
+  return (
+    <Popover
+      side="top"
+      className="fs-studio__stop-menu"
+      testId="studio-stop-menu"
+      trigger={<IconButton icon={Square} label={t('Stop')} testId="studio-stop" />}
+    >
+      <div role="menu" aria-label={t('Stop')}>
+        <button type="button" role="menuitem" onClick={() => (onPauseGeneration ?? onStop)()}>
+          <strong>{t('Stop generation')}</strong>
+          <span>{t('Ends the current reply; the turn stays paused and you can continue it.')}</span>
+        </button>
+        <button type="button" role="menuitem" onClick={() => (onCancelTask ?? onStop)()}>
+          <strong>{t('Cancel task')}</strong>
+          <span>{t('Ends the turn for good and stops any sub-agents it started.')}</span>
+        </button>
+        <button type="button" role="menuitem" onClick={() => (onCancelWork ?? onStop)()}>
+          <strong>{t('Cancel all work')}</strong>
+          <span>{t('Cancels the task and this chat’s background jobs too.')}</span>
+        </button>
+      </div>
+      {(onSteer || onQueueSend) && (
+        <div className="fs-studio__stop-menu-note">
+          {noteMode ? (
+            <>
+              <textarea
+                autoFocus
+                rows={2}
+                value={note}
+                onChange={(event) => setNote(event.target.value)}
+                placeholder={noteMode === 'steer' ? t('Tell it something while it keeps working…') : t('Send once this turn is done…')}
+                data-testid="studio-stop-menu-note"
+              />
+              <div className="fs-studio__stop-menu-note-actions">
+                <button type="button" onClick={() => setNoteMode(null)}>{t('Cancel')}</button>
+                <button type="button" onClick={submitNote} disabled={!note.trim()}>{t('Send')}</button>
+              </div>
+            </>
+          ) : (
+            <>
+              {onSteer && (
+                <button type="button" role="menuitem" onClick={() => setNoteMode('steer')}>
+                  <strong>{t('Direct it…')}</strong>
+                  <span>{t('Add an instruction it picks up before its next step.')}</span>
+                </button>
+              )}
+              {onQueueSend && (
+                <button type="button" role="menuitem" onClick={() => setNoteMode('queue')}>
+                  <strong>{t('Send after')}</strong>
+                  <span>{t('Queues a message for once this turn finishes.')}</span>
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      )}
     </Popover>
   );
 }

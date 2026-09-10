@@ -1207,7 +1207,13 @@ def setup_chat_routes(
             sess = session_manager.get_session(session)
         except KeyError:
             raise HTTPException(404, f"Session '{session}' not found")
-        owner = effective_user(request)
+        # BUG (integration lot 36): effective_user() returns the raw
+        # request.state.current_user, which auth middleware never sets when
+        # AUTH_ENABLED=false — unlike require_user(), which explicitly falls
+        # back to "" for that mode. Normalize here the same way require_user
+        # does, so a None owner never reaches chat_outbox (NOT NULL column)
+        # or any other owner-keyed store below.
+        owner = effective_user(request) or ""
         if _clear_orphaned_session_endpoint(sess, owner=owner):
             raise HTTPException(400, "Selected model endpoint was removed. Pick another model in Settings.")
 
@@ -1645,7 +1651,13 @@ def setup_chat_routes(
             # but BEFORE loading. Prevents cross-user session hijack.
             _verify_session_owner(request, session)
             sess = session_manager.get_session(session)
-            owner = effective_user(request)
+            # BUG (integration lot 36): normalize None -> "" the same way
+            # require_user() does (AUTH_ENABLED=false never populates
+            # request.state.current_user). Without this, a Studio send that
+            # carries client_message_id (every real browser turn does) calls
+            # chat_outbox.record_intent(owner=None, ...) and violates the
+            # outbox table's NOT NULL column with a plain 500.
+            owner = effective_user(request) or ""
             # Resolve JSON/default session IDs and check ownership BEFORE reading
             # the pinned roster. A newly opened UI may send before its team GET.
             from src import chat_team
@@ -3110,6 +3122,11 @@ def setup_chat_routes(
                         gen_overrides=_gen_overrides or None,
                         harness_options=_loop_harness_options or None,
                         autonomy_preset=autonomy_preset or None,
+                        # UX-04: main-session pause/steer, drained from the
+                        # SAME run this turn registers under `session` in
+                        # agent_runs (see chat_pause / chat_steer below).
+                        pending_user_messages=lambda: agent_runs.take_steers(session),
+                        pending_pause=lambda: agent_runs.take_pause_request(session),
                     ):
                         if chunk.startswith("data: ") and not chunk.startswith("data: [DONE]"):
                             try:
@@ -3494,13 +3511,143 @@ def setup_chat_routes(
     # ------------------------------------------------------------------ #
     # POST /api/chat/stop — cancel a detached run (Stop button). Closing the SSE
     # no longer stops it (it's detached), so the Stop button must call this.
+    #
+    # TASK-04/QA-12: an optional JSON body {"scope": "generation"|"task"|"work"}
+    # picks which of three DIFFERENT things Stop does. No body (or a scope this
+    # endpoint does not recognise) is the ORIGINAL contract, byte for byte —
+    # every caller from before this scope existed keeps working exactly as it
+    # did:
+    #   - "generation": stop the current generation only; the turn is left
+    #     `waiting_user` (paused), resumable by the next ordinary chat request.
+    #   - "task": cancel the whole turn — the run's asyncio task (which already
+    #     tears down whatever subprocess it is running, see
+    #     src/agent_tools/subprocess_tools.py's CancelledError handler) AND every
+    #     delegate_agents worker it started. Never touches a process Faustus did
+    #     not start (src/process_ownership.py decides that, not this route).
+    #   - "work": "task", plus this session's own background (#!bg) jobs.
     # ------------------------------------------------------------------ #
     @router.post("/api/chat/stop/{session_id}")
     async def chat_stop(request: Request, session_id: str) -> Dict[str, Any]:
         _verify_session_owner(request, session_id)
         _expected_run_id = request.headers.get("X-Odysseus-Run-Id")
+        try:
+            _stop_body = await request.json()
+        except Exception:
+            _stop_body = None
+        _scope = (
+            str(_stop_body.get("scope") or "").strip().lower()
+            if isinstance(_stop_body, dict) else ""
+        )
+        if _scope not in ("generation", "task", "work"):
+            stopped = agent_runs.stop(session_id, _expected_run_id)
+            return {"stopped": stopped}
+
+        if _scope == "generation":
+            paused = agent_runs.request_pause(session_id, _expected_run_id)
+            return {"scope": "generation", "stopped": False, "paused": paused}
+
+        # "task" / "work": a real cancellation. Read what already ran off the
+        # run's own replay buffer BEFORE tearing it down, so the answer
+        # reflects the turn as the user actually saw it, not what survives
+        # the cancel.
+        what_ran_before = agent_runs.tools_ran(session_id)
         stopped = agent_runs.stop(session_id, _expected_run_id)
-        return {"stopped": stopped}
+        from src.agent_tools.subagent_tools import stop_workers_of_parent
+        subagents_stopped = stop_workers_of_parent(session_id, reason="task_cancelled")
+        # TASK-04 acceptance: "a late answer to a cancelled turn's question
+        # must not wake anything". A cancelled TURN does not by itself
+        # cancel a question it asked — question_store has no run/session
+        # cancellation hook of its own — so an ask_user this turn is still
+        # sitting `open` unless something closes it here. `list_open` is
+        # owner-scoped, not session-scoped, so the session match is filtered
+        # in Python; question_store.py itself is untouched (see report).
+        _owner = effective_user(request)
+        cancelled_questions: List[str] = []
+        try:
+            from src import question_store
+            for _q in question_store.list_open(owner=_owner):
+                if _q.get("session_id") != session_id:
+                    continue
+                _outcome = question_store.cancel_question(
+                    str(_q.get("question_id") or ""), reason="task_cancelled", owner=_owner,
+                )
+                if _outcome.get("ok"):
+                    cancelled_questions.append(str(_q.get("question_id")))
+        except Exception:
+            logger.debug("[chat-stop] could not cancel open questions for %s", session_id, exc_info=True)
+        cleanup: Dict[str, Any] = {
+            "own_process_tree": (
+                "turn task cancelled — kills the currently-running subprocess "
+                "tree, if any, and never signals a process Faustus did not start"
+            ),
+            "subagents_stopped": subagents_stopped,
+            "questions_cancelled": cancelled_questions,
+        }
+        if _scope == "work":
+            from src import bg_jobs
+            cleanup["bg_jobs_cancelled"] = [
+                str(rec.get("id")) for rec in bg_jobs.cancel_for_session(session_id)
+            ]
+        return {
+            "scope": _scope,
+            "stopped": stopped,
+            "cancelled_at": time.time(),
+            "what_ran_before": what_ran_before,
+            "cleanup": cleanup,
+        }
+
+    # ------------------------------------------------------------------ #
+    # POST /api/chat/pause/{session_id} — UX-04: stop the current generation
+    # at the next safe point (between tool rounds, never mid write) and leave
+    # the turn resumable. Equivalent to POST .../stop with {"scope":
+    # "generation"}; kept as its own verb because that is what the Composer's
+    # Pause button and its consequence line name.
+    # ------------------------------------------------------------------ #
+    @router.post("/api/chat/pause/{session_id}")
+    async def chat_pause(request: Request, session_id: str) -> Dict[str, Any]:
+        _verify_session_owner(request, session_id)
+        _expected_run_id = request.headers.get("X-Odysseus-Run-Id")
+        paused = agent_runs.request_pause(session_id, _expected_run_id)
+        return {"paused": paused}
+
+    # ------------------------------------------------------------------ #
+    # POST /api/chat/steer/{session_id} — UX-04: send an instruction to the
+    # LIVE turn of the main session (delegate_agents workers already have
+    # their own /api/chat/subagent/steer above). Body: {"text": "...",
+    # "mode": "steer" | "queue"}; "steer" (default) is injected as a user
+    # message at the turn's next safe point (a `steer` SSE event marks when).
+    # "queue" ("Enviar despues") is NEVER injected into the live turn — it is
+    # held and delivered as a new chat request once this one ends, so it can
+    # never alter work already in flight. 404 when nothing is running for
+    # this session, 400 for an empty text.
+    # ------------------------------------------------------------------ #
+    @router.post("/api/chat/steer/{session_id}")
+    async def chat_steer(request: Request, session_id: str) -> Dict[str, Any]:
+        _verify_session_owner(request, session_id)
+        try:
+            _steer_body = await request.json()
+        except Exception:
+            _steer_body = None
+        _text = (
+            str(_steer_body.get("text") or "").strip()
+            if isinstance(_steer_body, dict) else ""
+        )
+        if not _text:
+            raise HTTPException(400, "A non-empty 'text' is required")
+        _mode = (
+            str(_steer_body.get("mode") or "steer").strip().lower()
+            if isinstance(_steer_body, dict) else "steer"
+        )
+        _expected_run_id = request.headers.get("X-Odysseus-Run-Id")
+        if _mode == "queue":
+            ok = agent_runs.queue_send_after(session_id, _text[:4000],
+                                              expected_run_id=_expected_run_id)
+        else:
+            ok = agent_runs.queue_steer(session_id, _text[:4000],
+                                         expected_run_id=_expected_run_id)
+        if not ok:
+            raise HTTPException(404, "No active run for this session")
+        return {"ok": True, "mode": "queue" if _mode == "queue" else "steer"}
 
     # ------------------------------------------------------------------ #
     # POST /api/chat/subagent/stop/{child_session_id} — stop ONE worker of a

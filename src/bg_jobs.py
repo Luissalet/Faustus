@@ -430,6 +430,25 @@ def kill(job_id: str) -> Optional[Dict[str, Any]]:
     return rec
 
 
+def cancel_for_session(session_id: str) -> List[Dict[str, Any]]:
+    """TASK-04 `scope=work`: kill every still-running/queued bg job launched
+    by `session_id`'s bash tool. Delegates one job at a time to `kill()` so
+    ownership stays proven per-process (see `_kill_job`) rather than any kind
+    of session-wide signal; a job already finished is left untouched (`kill()`
+    reports it, never resignals it). Returns the updated record of each job
+    that was still live, in the shape `kill()` already returns."""
+    if not session_id:
+        return []
+    touched: List[Dict[str, Any]] = []
+    for rec in list_for_session(session_id):
+        if rec.get("status") not in ("running", "queued"):
+            continue
+        updated = kill(str(rec.get("id") or ""))
+        if updated is not None:
+            touched.append(updated)
+    return touched
+
+
 def result_text(rec: Dict[str, Any]) -> str:
     """Human/agent-readable summary of a finished job, for the follow-up."""
     out = _read_output(rec)
