@@ -40,6 +40,7 @@ Gate.  The five CONTROL tools are ``ALWAYS_APPROVE_TOOLS``
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -841,6 +842,35 @@ def _primary_monitor_centre(backend: DesktopBackend) -> Tuple[int, int]:
     return screen_w // 2, screen_h // 2
 
 
+def _foreground_window_title(backend: DesktopBackend) -> Optional[str]:
+    """The title of whichever window is currently in the foreground, or
+    ``None`` when it cannot be determined -- used only by the DESK-01
+    allowlist check, which fails open on ``None`` (see
+    `desktop_control_session.check_focus_authorized`)."""
+    try:
+        windows = backend.list_windows()
+    except Exception:  # noqa: BLE001 - best effort; the caller fails open
+        return None
+    for window in windows:
+        if window.get("foreground"):
+            return window.get("title")
+    return None
+
+
+def _screen_hash(backend: DesktopBackend) -> str:
+    """sha256 of a full-screen capture, for the DESK-01 audit trail's
+    before/after fields. Best effort: any capture failure yields "" rather
+    than interrupting the action it is only observing."""
+    try:
+        width, height = backend.screen_size()
+        image = backend.grab((0, 0, width, height))
+        if image is None:
+            return ""
+        return hashlib.sha256(image.tobytes()).hexdigest()
+    except Exception:  # noqa: BLE001 - audit capture must never break the action
+        return ""
+
+
 def _check_on_screen(backend: DesktopBackend, x: int, y: int) -> None:
     try:
         monitors = backend.list_monitors()
@@ -898,9 +928,28 @@ class DesktopTool:
             # Approval and progress UI can steal focus between tools. Reacquire
             # the observed handle after approval, immediately before SendInput.
             backend.focus_target(target)
+
+        # DESK-01: both opt-in (see src/desktop_control_session.py) -- a
+        # session with no allowlist/audit configured takes neither branch, so
+        # this changes nothing for the default, unconfigured case.
+        from src.desktop_control_session import audit_enabled, check_focus_authorized, get_allowlist
+        is_control_action = self.name in DESKTOP_CONTROL_TOOLS and self.name != "desktop_focus_window"
+        if is_control_action:
+            allowlist = get_allowlist(session)
+            if allowlist:
+                reason = check_focus_authorized(_foreground_window_title(backend), allowlist)
+                if reason:
+                    raise DesktopError(reason)
+        audit_active = self.name in DESKTOP_CONTROL_TOOLS and audit_enabled(session)
+        before_hash = _screen_hash(backend) if audit_active else ""
+
         result = handler(args, backend)
         if self.name == "desktop_focus_window" and result[1].get("window"):
             _focused_targets[session] = dict(result[1]["window"])
+
+        if audit_active:
+            from src.desktop_control_session import record_action
+            record_action(session, self.name, before_hash=before_hash, after_hash=_screen_hash(backend))
         return result
 
     # -- desktop_screenshot --

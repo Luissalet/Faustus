@@ -10,14 +10,18 @@ Extracted from agent_tools.py.
 import asyncio
 import collections
 import contextvars
+import hashlib
 import json
 import logging
 import os
 import pathlib
 import re
+import shlex
 import sys
+import threading
 import time
-from typing import Any, Awaitable, Callable, Dict, Optional, Tuple
+from dataclasses import dataclass
+from typing import Any, Awaitable, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 
 
@@ -1901,3 +1905,504 @@ def format_tool_result(description: str, result: Dict) -> str:
             pass
 
     return "\n".join(parts)
+
+
+# =============================================================================
+# EXEC-05 — install dependencies with control
+# =============================================================================
+#
+# ``docs/spec/v2/backlog.json`` (EXEC-05): a package manager/lockfile must be
+# detected before anything runs; a plan (what would change, why, which files)
+# needs explicit approval before it touches disk; the same UNCHANGED plan
+# must not ask for approval twice; and installation is always scoped to the
+# project -- never the system interpreter, never `npm install -g`. Nothing in
+# the repo does any of this today (`docs/spec/v2/MAPA_REUTILIZACION.md` has no
+# row for it because P1 requirements were out of that audit's scope; a repo
+# grep for "pip install"/"npm install" inside `src/`/`services/` at this
+# lote's start returned nothing).
+#
+# Every function below is plain data in, plain data out, with the actual
+# subprocess call behind an INJECTABLE `runner` (default: a real
+# `asyncio.create_subprocess_exec`) -- the same shape
+# `src/browser_actions.run_with_precondition` uses for its snapshot/act
+# split, so a test drives the whole plan -> approve -> execute flow with a
+# fake runner and no real pip/npm/network.
+
+_PACKAGE_MANAGER_LOCKFILES: Dict[str, str] = {
+    "yarn": "yarn.lock",
+    "pnpm": "pnpm-lock.yaml",
+    "npm": "package-lock.json",
+    "pip": "requirements.txt",
+}
+
+# Syntax checks only -- these exist to reject shell metacharacters, URLs and
+# local paths a scraped/quoted "install this" suggestion might carry, not to
+# vouch for a package's trustworthiness (that is what the approval step is
+# for). A `==version`/`@version` pin is allowed since it is the normal way to
+# ask for a specific release.
+_PIP_PACKAGE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,213}(==[A-Za-z0-9][A-Za-z0-9._-]*)?$")
+_NPM_PACKAGE_RE = re.compile(r"^(@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]{0,213}(@[A-Za-z0-9._^~<>=-]+)?$")
+_DISALLOWED_SPEC_CHARS = frozenset(";|&$`\n\r<> \t")
+
+
+def detect_package_manager(project_root: str) -> Optional[str]:
+    """Which manager owns `project_root`, told apart by its LOCKFILE (npm,
+    yarn and pnpm all share ``package.json``, so the manifest alone cannot
+    distinguish them). Falls back to the bare manifest (no lockfile
+    committed yet) before giving up."""
+    for manager in ("yarn", "pnpm", "npm"):
+        if os.path.isfile(os.path.join(project_root, _PACKAGE_MANAGER_LOCKFILES[manager])):
+            return manager
+    if os.path.isfile(os.path.join(project_root, "package.json")):
+        return "npm"
+    if os.path.isfile(os.path.join(project_root, "requirements.txt")) or \
+            os.path.isfile(os.path.join(project_root, "pyproject.toml")):
+        return "pip"
+    return None
+
+
+def validate_package_name(manager: str, name: str) -> Optional[str]:
+    """``None`` when `name` is a well-formed package spec for `manager`;
+    otherwise the reason it is refused. EXEC-05's acceptance criterion:
+    "a package suggested by untrusted text is not installed without
+    validating its origin and permission" -- this is the origin-validation
+    half (well-formed registry name, not a URL/path/shell fragment); the
+    permission half is `plan_already_approved`/`execute_dependency_install`
+    below."""
+    spec = (name or "").strip()
+    if not spec:
+        return "empty package name"
+    if any(ch in spec for ch in _DISALLOWED_SPEC_CHARS):
+        return f"{name!r} contains characters not allowed in a package spec"
+    if spec.startswith(("http://", "https://", "git+", "git@", "file:", "/", "./", "../")):
+        return f"{name!r} looks like a URL or local path, not a registry package name"
+    if manager == "pip":
+        if not _PIP_PACKAGE_RE.match(spec):
+            return f"{name!r} is not a well-formed pip package spec"
+    elif manager in ("npm", "yarn", "pnpm"):
+        if not _NPM_PACKAGE_RE.match(spec):
+            return f"{name!r} is not a well-formed npm package spec"
+    else:
+        return f"unknown package manager {manager!r}"
+    return None
+
+
+@dataclass(frozen=True)
+class DependencyInstallPlan:
+    """What EXEC-05's frontend must show before anything runs: package,
+    origin (manager), and which file changes (the lockfile) -- never
+    executed directly, only through `execute_dependency_install`."""
+
+    manager: str
+    project_root: str
+    packages: Tuple[str, ...]
+    lockfile: str
+    plan_hash: str
+
+    def to_mapping(self) -> Dict[str, Any]:
+        return {
+            "manager": self.manager,
+            "project_root": self.project_root,
+            "packages": list(self.packages),
+            "lockfile": self.lockfile,
+            "plan_hash": self.plan_hash,
+            "scope": "project (never installed globally)",
+        }
+
+
+def plan_dependency_install(project_root: str, packages: Sequence[str]) -> DependencyInstallPlan:
+    """Detect the manager, validate every package name, and hash the result
+    -- raises :class:`ValueError` (never runs anything) when the project has
+    no recognizable manager or a package name fails validation."""
+    manager = detect_package_manager(project_root)
+    if not manager:
+        raise ValueError(f"no recognizable package manager under {project_root!r} (no lockfile or manifest found)")
+    cleaned: List[str] = []
+    for package in packages:
+        error = validate_package_name(manager, package)
+        if error:
+            raise ValueError(f"refusing to plan install: {error}")
+        cleaned.append(str(package).strip())
+    if not cleaned:
+        raise ValueError("no packages given")
+    # Order-independent: the same set of packages is the same plan regardless
+    # of the order they were requested in, so re-requesting it in a different
+    # order still hits the "already approved" cache below.
+    plan_hash = hashlib.sha256(f"{manager}:{sorted(set(cleaned))}".encode("utf-8")).hexdigest()[:16]
+    return DependencyInstallPlan(
+        manager=manager,
+        project_root=project_root,
+        packages=tuple(cleaned),
+        lockfile=_PACKAGE_MANAGER_LOCKFILES[manager],
+        plan_hash=plan_hash,
+    )
+
+
+_INSTALL_APPROVAL_LOCK = threading.Lock()
+_APPROVED_INSTALL_PLANS: Dict[str, set] = {}
+
+
+def plan_already_approved(owner: str, plan_hash: str) -> bool:
+    with _INSTALL_APPROVAL_LOCK:
+        return plan_hash in _APPROVED_INSTALL_PLANS.get(owner or "", set())
+
+
+def record_plan_approval(owner: str, plan_hash: str) -> None:
+    """EXEC-05 frontend requirement: "no pedir aprobación repetida para el
+    mismo plan inalterado" -- an owner who approved THIS exact plan_hash
+    once does not have to approve it again; a plan that changes (a package
+    added/removed) hashes differently and asks again."""
+    with _INSTALL_APPROVAL_LOCK:
+        _APPROVED_INSTALL_PLANS.setdefault(owner or "", set()).add(plan_hash)
+
+
+def reset_install_approvals() -> None:
+    """Test hook."""
+    with _INSTALL_APPROVAL_LOCK:
+        _APPROVED_INSTALL_PLANS.clear()
+
+
+@dataclass(frozen=True)
+class CommandOutcome:
+    """The result of running one argv (a dependency install, or an
+    EXEC-06 saved-script/remote run) -- shared shape so a caller formats
+    either the same way."""
+
+    ok: bool
+    command: Tuple[str, ...]
+    stdout: str
+    stderr: str
+    returncode: int
+
+    def to_mapping(self) -> Dict[str, Any]:
+        return {
+            "ok": self.ok,
+            "command": list(self.command),
+            "stdout": self.stdout,
+            "stderr": self.stderr,
+            "returncode": self.returncode,
+        }
+
+
+RunnerFn = Callable[[Tuple[str, ...], str], Awaitable[Tuple[int, str, str]]]
+
+
+async def _default_runner(command: Tuple[str, ...], cwd: str) -> Tuple[int, str, str]:
+    proc = await asyncio.create_subprocess_exec(
+        *command, cwd=cwd or None,
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+    )
+    stdout_b, stderr_b = await proc.communicate()
+    return proc.returncode or 0, stdout_b.decode("utf-8", "replace"), stderr_b.decode("utf-8", "replace")
+
+
+def _install_command(plan: DependencyInstallPlan) -> Tuple[str, ...]:
+    """Always scoped to `plan.project_root` -- EXEC-05: "preferir entorno
+    aislado" / "no modificar globalmente el sistema por defecto". `pip`
+    prefers an active virtualenv (`VIRTUAL_ENV`) and otherwise installs into
+    a project-local directory rather than ever falling back to a bare
+    `pip install` against the system interpreter."""
+    if plan.manager == "pip":
+        venv = os.environ.get("VIRTUAL_ENV")
+        if venv:
+            pip_bin = os.path.join(venv, "Scripts", "pip.exe") if os.name == "nt" else os.path.join(venv, "bin", "pip")
+            return (pip_bin, "install", *plan.packages)
+        target = os.path.join(plan.project_root, ".faustus-deps")
+        return (sys.executable, "-m", "pip", "install", "--target", target, *plan.packages)
+    if plan.manager == "npm":
+        return ("npm", "install", "--prefix", plan.project_root, *plan.packages)
+    if plan.manager == "yarn":
+        return ("yarn", "--cwd", plan.project_root, "add", *plan.packages)
+    if plan.manager == "pnpm":
+        return ("pnpm", "--dir", plan.project_root, "add", *plan.packages)
+    raise ValueError(f"unknown package manager {plan.manager!r}")
+
+
+async def execute_dependency_install(
+    plan: DependencyInstallPlan,
+    *,
+    approved: bool = False,
+    owner: str = "",
+    runner: RunnerFn = _default_runner,
+) -> CommandOutcome:
+    """Run `plan` -- refuses with :class:`PermissionError` (never runs
+    anything) unless `approved` is True or an identical plan was already
+    approved for `owner`."""
+    if not approved and not plan_already_approved(owner, plan.plan_hash):
+        raise PermissionError(f"dependency install plan {plan.plan_hash} was not approved")
+    record_plan_approval(owner, plan.plan_hash)
+    command = _install_command(plan)
+    returncode, stdout, stderr = await runner(command, plan.project_root)
+    return CommandOutcome(ok=(returncode == 0), command=command, stdout=stdout, stderr=stderr, returncode=returncode)
+
+
+# =============================================================================
+# EXEC-06 — reusable scripts and remote (SSH) execution
+# =============================================================================
+#
+# ``docs/spec/v2/backlog.json`` (EXEC-06): a command saved as a script is
+# VERSIONED (saving under an existing name bumps the version, never silently
+# overwrites it) and its inputs are TYPED (declared parameter names, missing
+# or undeclared ones refused before anything runs); SSH execution requires a
+# fingerprint that was already paired for that exact alias -- a similar
+# hostname must not inherit another target's trust, and a recipe must not
+# silently change which machine it runs on.
+
+_SCRIPTS_DIRNAME = "exec06-scripts"
+_SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9_-]+")
+
+
+def _scripts_dir() -> str:
+    return os.path.join(DATA_DIR, _SCRIPTS_DIRNAME)
+
+
+def _script_path(name: str) -> str:
+    safe = _SAFE_NAME_RE.sub("_", (name or "").strip()) or "script"
+    return os.path.join(_scripts_dir(), f"{safe}.json")
+
+
+@dataclass(frozen=True)
+class SavedScript:
+    """A versioned, reusable recipe: `command_template` names its
+    placeholders (``{path}``) and `params` is the closed list of names it is
+    allowed to reference -- a template cannot use a parameter it did not
+    declare, and a caller cannot skip one it did."""
+
+    name: str
+    command_template: str
+    params: Tuple[str, ...]
+    version: int
+
+    def to_mapping(self) -> Dict[str, Any]:
+        return {
+            "name": self.name,
+            "command_template": self.command_template,
+            "params": list(self.params),
+            "version": self.version,
+        }
+
+    @classmethod
+    def from_mapping(cls, data: Mapping[str, Any]) -> "SavedScript":
+        return cls(
+            name=str(data.get("name") or ""),
+            command_template=str(data.get("command_template") or ""),
+            params=tuple(data.get("params") or ()),
+            version=int(data.get("version") or 1),
+        )
+
+
+def save_script(name: str, command_template: str, params: Sequence[str]) -> SavedScript:
+    """Save (or version-bump) a script under `name`. A second save under the
+    same name never overwrites the first version in place -- `version`
+    increments, so a recipe's history is never lost (rule 3: no capability
+    lost)."""
+    if not (name or "").strip():
+        raise ValueError("script name is required")
+    if not (command_template or "").strip():
+        raise ValueError("command_template is required")
+    path = _script_path(name)
+    version = 1
+    if os.path.isfile(path):
+        try:
+            with open(path, encoding="utf-8") as handle:
+                version = int(json.load(handle).get("version", 0)) + 1
+        except (OSError, ValueError, TypeError):
+            version = 1
+    script = SavedScript(name=name.strip(), command_template=command_template, params=tuple(params or ()), version=version)
+    os.makedirs(_scripts_dir(), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as handle:
+        json.dump(script.to_mapping(), handle)
+    os.replace(tmp, path)
+    return script
+
+
+def load_script(name: str) -> Optional[SavedScript]:
+    path = _script_path(name)
+    if not os.path.isfile(path):
+        return None
+    try:
+        with open(path, encoding="utf-8") as handle:
+            return SavedScript.from_mapping(json.load(handle))
+    except (OSError, ValueError, TypeError):
+        return None
+
+
+_PLACEHOLDER_RE = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
+
+
+def render_script_command(script: SavedScript, values: Mapping[str, str]) -> List[str]:
+    """Render `script.command_template` into an ARGV LIST (never a shell
+    string) with `values` substituted per placeholder.
+
+    Rendering into a list rather than a shell string is what makes this safe
+    regardless of what characters a value contains -- there is no shell to
+    inject into. Refuses (rather than silently ignoring) a missing
+    declared parameter or a template placeholder that was never declared in
+    `script.params`, so a script's typed-input contract cannot be bypassed
+    by a caller or drift silently when the template is edited.
+    """
+    missing = [p for p in script.params if p not in values]
+    if missing:
+        raise ValueError(f"missing required parameter(s): {', '.join(missing)}")
+    used_in_template = set(_PLACEHOLDER_RE.findall(script.command_template))
+    undeclared = used_in_template - set(script.params)
+    if undeclared:
+        raise ValueError(f"template references undeclared parameter(s): {', '.join(sorted(undeclared))}")
+    tokens = shlex.split(script.command_template)
+    rendered: List[str] = []
+    for token in tokens:
+        full_match = _PLACEHOLDER_RE.fullmatch(token)
+        if full_match:
+            rendered.append(str(values[full_match.group(1)]))
+        else:
+            rendered.append(_PLACEHOLDER_RE.sub(lambda m: str(values[m.group(1)]), token))
+    return rendered
+
+
+async def run_saved_script(
+    script: SavedScript,
+    values: Mapping[str, str],
+    *,
+    cwd: str = ".",
+    runner: RunnerFn = _default_runner,
+) -> CommandOutcome:
+    """Render and run `script` locally -- output is a plain
+    :class:`CommandOutcome` (returncode/stdout/stderr), EXEC-06's own
+    "salida verificable"."""
+    argv = tuple(render_script_command(script, values))
+    returncode, stdout, stderr = await runner(argv, cwd)
+    return CommandOutcome(ok=(returncode == 0), command=argv, stdout=stdout, stderr=stderr, returncode=returncode)
+
+
+# -- SSH pairing --------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class SSHTarget:
+    alias: str
+    host: str
+    port: int
+    fingerprint: str
+
+    def to_mapping(self) -> Dict[str, Any]:
+        return {"alias": self.alias, "host": self.host, "port": self.port, "fingerprint": self.fingerprint}
+
+
+_SSH_REGISTRY_LOCK = threading.Lock()
+
+
+def _ssh_registry_path() -> str:
+    return os.path.join(DATA_DIR, "exec06-ssh-targets.json")
+
+
+def _load_ssh_registry() -> Dict[str, Dict[str, Any]]:
+    path = _ssh_registry_path()
+    if not os.path.isfile(path):
+        return {}
+    try:
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError, TypeError):
+        return {}
+
+
+def _save_ssh_registry(registry: Dict[str, Dict[str, Any]]) -> None:
+    path = _ssh_registry_path()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as handle:
+        json.dump(registry, handle)
+    os.replace(tmp, path)
+
+
+def pair_ssh_target(alias: str, host: str, fingerprint: str, *, port: int = 22) -> SSHTarget:
+    """Register `alias` -> (`host`, `fingerprint`) -- "SSH ya emparejado"
+    per this lote's own scope: this function records a pairing an operator
+    already vetted out-of-band, it does not perform key discovery/TOFU
+    itself."""
+    if not (alias or "").strip():
+        raise ValueError("alias is required")
+    if not (host or "").strip():
+        raise ValueError("host is required")
+    if not (fingerprint or "").strip():
+        raise ValueError("fingerprint is required")
+    with _SSH_REGISTRY_LOCK:
+        registry = _load_ssh_registry()
+        registry[alias.strip()] = {"host": host.strip(), "port": int(port), "fingerprint": fingerprint.strip()}
+        _save_ssh_registry(registry)
+    return SSHTarget(alias=alias.strip(), host=host.strip(), port=int(port), fingerprint=fingerprint.strip())
+
+
+def resolve_ssh_target(alias: str) -> Optional[SSHTarget]:
+    with _SSH_REGISTRY_LOCK:
+        entry = _load_ssh_registry().get((alias or "").strip())
+    if not entry:
+        return None
+    return SSHTarget(alias=alias.strip(), host=entry["host"], port=int(entry.get("port", 22)), fingerprint=entry["fingerprint"])
+
+
+def reset_ssh_registry() -> None:
+    """Test hook."""
+    with _SSH_REGISTRY_LOCK:
+        _save_ssh_registry({})
+
+
+def verify_ssh_target(alias: str, *, host: str, fingerprint: str) -> Optional[str]:
+    """``None`` when (`host`, `fingerprint`) matches the PAIRED target for
+    `alias` exactly; otherwise the reason the run is refused.
+
+    Both comparisons are exact equality, never a prefix/substring match --
+    EXEC-06's acceptance criterion is precisely that a similar hostname
+    (``prod-db`` vs ``prod-db.evil.example``) must not inherit another
+    alias's trust, and that a recipe cannot silently start running against a
+    different machine just because someone repointed the alias without
+    re-pairing.
+    """
+    target = resolve_ssh_target(alias)
+    if target is None:
+        return f"no SSH target is paired under alias {alias!r} -- pair it before running against it"
+    if target.host != host:
+        return (
+            f"alias {alias!r} is paired to host {target.host!r}, not {host!r} -- "
+            "a similar hostname does not inherit that pairing's trust"
+        )
+    if target.fingerprint != fingerprint:
+        return (
+            f"host key fingerprint for {alias!r} does not match the paired one "
+            f"(expected {target.fingerprint[:16]}..., got {fingerprint[:16]}...) -- refusing: "
+            "a recipe cannot silently change which machine it runs on"
+        )
+    return None
+
+
+async def run_remote_script(
+    script: SavedScript,
+    values: Mapping[str, str],
+    *,
+    alias: str,
+    presented_host: str,
+    presented_fingerprint: str,
+    runner: RunnerFn = _default_runner,
+) -> CommandOutcome:
+    """Verify the SSH pairing, then run `script` on the paired host.
+
+    Secrets stay out of the prompt: this builds an `ssh` argv relying on the
+    caller's existing key-based auth (an already-paired target, per this
+    lote's scope) -- no password is ever accepted as a parameter here.
+    """
+    reason = verify_ssh_target(alias, host=presented_host, fingerprint=presented_fingerprint)
+    if reason:
+        raise PermissionError(reason)
+    target = resolve_ssh_target(alias)
+    assert target is not None  # verify_ssh_target already confirmed this
+    remote_argv = render_script_command(script, values)
+    remote_command = " ".join(shlex.quote(part) for part in remote_argv)
+    ssh_argv: Tuple[str, ...] = (
+        "ssh", "-p", str(target.port),
+        "-o", "BatchMode=yes",  # never prompt for (or accept) a password interactively
+        target.host, remote_command,
+    )
+    returncode, stdout, stderr = await runner(ssh_argv, ".")
+    return CommandOutcome(ok=(returncode == 0), command=ssh_argv, stdout=stdout, stderr=stderr, returncode=returncode)

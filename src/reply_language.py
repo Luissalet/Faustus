@@ -23,7 +23,7 @@ did, no message is built.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 import re
 
 from src.research_citations import language_signal
@@ -146,3 +146,33 @@ def context_message(
         # the object itself makes the helper safe outside agent_loop too.
         "_agent_injected": "context",
     }
+
+
+# ---------------------------------------------------------------------------
+# LANG-02 — editing conserves language and accents
+# ---------------------------------------------------------------------------
+#
+# ``docs/spec/v2/backlog.json`` (LANG-02): a search normalized for matching
+# (accent/case-insensitive, so a user who types "movil" still finds "móvil")
+# must not corrupt the ORIGINAL text it edits or shift where a caller thinks
+# a match sits. `services.search.lang_normalize` is the actual normalization
+# authority (rule 4 -- one, not a second copy here); this is the seam an
+# editing caller in THIS lote's scope uses it through, returning offsets
+# into the untouched original text so an edit lands exactly where the real
+# (accented) text is, and the document itself is never rewritten by the
+# lookup.
+
+
+def locate_for_edit(document_text: str, needle: str) -> Optional[Tuple[int, int]]:
+    """Where `needle` is in `document_text` for an edit, tolerant of
+    diacritic/case differences between the two -- ``None`` when there is no
+    match at all.
+
+    The returned ``(start, end)`` are offsets into `document_text` EXACTLY
+    as given (its own accents, its own case, untouched): normalizing for the
+    comparison never normalizes the text an edit will actually touch, and
+    never shifts those offsets (LANG-02's own acceptance criterion).
+    """
+    from services.search.lang_normalize import locate_normalized
+
+    return locate_normalized(document_text, needle)

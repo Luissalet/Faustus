@@ -11,8 +11,9 @@ import json
 import logging
 import re
 import time
+from dataclasses import dataclass
 from datetime import datetime
-from typing import Callable, Dict, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 from src.research_utils import strip_thinking, is_low_quality
 
@@ -574,6 +575,189 @@ class ResearchFailed(RuntimeError):
         self.causes = list(causes or [])
 
 
+# ---------------------------------------------------------------------------
+# RES-02 — reasoned stopping
+# ---------------------------------------------------------------------------
+#
+# ``docs/spec/v2/backlog.json`` (RES-02): the loop must stop for an explicit,
+# nameable reason (coverage, marginal novelty, budget) -- not merely because
+# it ran out of rounds -- and the run must be able to SAY why it stopped.
+# `research()` already has several real stopping paths (cancelled, time
+# limit, no queries generated, `max_empty_rounds` consecutive rounds with no
+# new evidence, the LLM's own "YES" to `_should_stop`, plain `max_rounds`
+# exhaustion); this gives each of them a stable, machine-readable code and a
+# human sentence instead of only a log line, WITHOUT changing which path
+# fires when (rule 3 -- no existing behaviour narrows).
+
+STOP_REASON_CANCELLED = "cancelled"
+STOP_REASON_TIME_BUDGET = "time_budget_exhausted"
+STOP_REASON_NO_QUERIES = "no_further_queries"
+STOP_REASON_SATURATED = "novelty_saturated"  # max_empty_rounds consecutive rounds with nothing new
+STOP_REASON_SEARCH_DOWN = "search_unavailable"
+STOP_REASON_LLM_COVERAGE = "coverage_judged_sufficient"  # the model's own _should_stop
+STOP_REASON_MAX_ROUNDS = "max_rounds_reached"
+
+_STOP_REASON_TEXT: Dict[str, str] = {
+    STOP_REASON_CANCELLED: "the run was cancelled",
+    STOP_REASON_TIME_BUDGET: "the time budget ran out",
+    STOP_REASON_NO_QUERIES: "no further queries could be generated",
+    STOP_REASON_SATURATED: "repeated rounds returned no new evidence (novelty saturated)",
+    STOP_REASON_SEARCH_DOWN: "the search provider stopped returning usable results",
+    STOP_REASON_LLM_COVERAGE: "the question's coverage was judged sufficient",
+    STOP_REASON_MAX_ROUNDS: "the maximum number of rounds was reached",
+}
+
+
+def classify_stop_reason(
+    code: str,
+    *,
+    round_num: int,
+    max_rounds: int,
+    urls_fetched: int,
+    findings: int,
+) -> Dict[str, Any]:
+    """A stable, explainable record of why a research run stopped.
+
+    `code` names WHICH of the loop's existing stopping paths fired (see the
+    ``STOP_REASON_*`` constants above); this function only turns that into
+    the explicit, visible shape RES-02 asks for -- it does not decide
+    whether to stop (the loop's own conditions, unchanged, still do that).
+    """
+    text = _STOP_REASON_TEXT.get(code, code)
+    return {
+        "code": code,
+        "reason": text,
+        "rounds_completed": f"{round_num} of {max_rounds}",
+        "sources_gathered": urls_fetched,
+        "findings_gathered": findings,
+    }
+
+
+def stop_rationale_text(stop_reason: Optional[Mapping[str, Any]]) -> str:
+    """One line a caller can show/append to explain a run's stop -- RES-02's
+    frontend requirement ("mostrar ... por qué se detiene") made a plain
+    string so an ajeno caller (a route, a UI) can use it without knowing this
+    module's internal shape."""
+    if not stop_reason:
+        return ""
+    return (
+        f"Stopped after {stop_reason.get('rounds_completed', '?')} rounds "
+        f"({stop_reason.get('sources_gathered', 0)} source(s), "
+        f"{stop_reason.get('findings_gathered', 0)} finding(s)): {stop_reason.get('reason', '')}."
+    )
+
+
+# ---------------------------------------------------------------------------
+# RES-06 — evidence quality, configurable per profile
+# ---------------------------------------------------------------------------
+#
+# ``docs/spec/v2/backlog.json`` (RES-06): general/technical/academic/clinical
+# profiles need DIFFERENT source requirements, and the resulting "grade" must
+# be more than a raw citation count -- the acceptance criterion is explicit
+# that a percentage of cited sentences must never, by itself, declare a
+# clinical or technical report correct.
+
+
+@dataclass(frozen=True)
+class EvidenceQualityProfile:
+    name: str
+    min_sources_per_claim: int = 1
+    preferred_domains: Tuple[str, ...] = ()
+    blocked_domains: Tuple[str, ...] = ()
+    require_date: bool = False
+
+
+DEFAULT_QUALITY_PROFILES: Dict[str, EvidenceQualityProfile] = {
+    "general": EvidenceQualityProfile("general", min_sources_per_claim=1),
+    "technical": EvidenceQualityProfile(
+        "technical", min_sources_per_claim=2,
+        preferred_domains=("github.com", "docs.", ".readthedocs.io", "developer.", "learn.microsoft.com"),
+    ),
+    "academic": EvidenceQualityProfile(
+        "academic", min_sources_per_claim=2, require_date=True,
+        preferred_domains=(".edu", ".gov", "scholar.google", "doi.org", "arxiv.org", "pubmed.ncbi.nlm.nih.gov"),
+    ),
+    "clinical": EvidenceQualityProfile(
+        "clinical", min_sources_per_claim=3, require_date=True,
+        preferred_domains=("who.int", ".gov", "nih.gov", "cdc.gov", "cochrane.org", "pubmed.ncbi.nlm.nih.gov"),
+        blocked_domains=("pinterest.", "quora.com", "reddit.com"),
+    ),
+}
+
+_YEAR_RE = re.compile(r"\b(19|20)\d{2}\b")
+_ISO_DATE_RE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
+
+
+def _finding_domain(finding: Mapping[str, Any]) -> str:
+    url = str(finding.get("url") or "")
+    m = re.match(r"^[a-zA-Z]+://([^/]+)", url)
+    return (m.group(1).lower() if m else url.lower())
+
+
+def _domain_matches(domain: str, patterns: Sequence[str]) -> bool:
+    return any(p and p.lower() in domain for p in patterns)
+
+
+def _finding_has_date_evidence(finding: Mapping[str, Any]) -> bool:
+    text = f"{finding.get('title', '')} {finding.get('content', '')}"
+    return bool(_ISO_DATE_RE.search(text) or _YEAR_RE.search(text))
+
+
+def assess_evidence_quality(findings: Sequence[Mapping[str, Any]], profile: EvidenceQualityProfile) -> Dict[str, Any]:
+    """Grade `findings` under `profile` -- separate from a bare citation
+    count (RES-06's own acceptance criterion).
+
+    Findings from a `blocked_domains` match are excluded from the usable
+    count entirely (never merely down-weighted); `require_date` failing for
+    EVERY usable finding caps the grade at "low" regardless of how many
+    sources there are -- a clinical/technical report with plenty of citations
+    but no dated evidence must not read as "high" on citation count alone.
+    """
+    usable: List[Mapping[str, Any]] = []
+    blocked_excluded = 0
+    preferred_count = 0
+    dated_count = 0
+    for finding in findings:
+        domain = _finding_domain(finding)
+        if profile.blocked_domains and _domain_matches(domain, profile.blocked_domains):
+            blocked_excluded += 1
+            continue
+        usable.append(finding)
+        if profile.preferred_domains and _domain_matches(domain, profile.preferred_domains):
+            preferred_count += 1
+        if _finding_has_date_evidence(finding):
+            dated_count += 1
+
+    meets_min_sources = len(usable) >= profile.min_sources_per_claim
+    meets_date_requirement = (not profile.require_date) or dated_count > 0
+
+    if not usable:
+        grade = "none"
+    elif not meets_date_requirement:
+        grade = "low"  # RES-06 acceptance: undated evidence never grades "high", however many sources
+    elif not meets_min_sources:
+        grade = "low"
+    elif preferred_count >= max(1, len(usable) // 2):
+        grade = "high"
+    else:
+        grade = "medium"
+
+    return {
+        "profile": profile.name,
+        "usable_sources": len(usable),
+        "blocked_excluded": blocked_excluded,
+        "preferred_count": preferred_count,
+        "dated_count": dated_count,
+        "meets_min_sources": meets_min_sources,
+        "meets_date_requirement": meets_date_requirement,
+        "grade": grade,
+        "note": (
+            "grade reflects source count, domain quality and date coverage together -- "
+            "never citation percentage alone"
+        ),
+    }
+
+
 class DeepResearcher:
     """
     Iterative research engine following the IterResearch pattern.
@@ -603,6 +787,7 @@ class DeepResearcher:
         checkpoint_callback: Optional[Callable] = None,
         search_provider: Optional[str] = None,
         category: Optional[str] = None,
+        quality_profile: Optional[str] = None,
     ):
         self.llm_endpoint = llm_endpoint
         self.llm_model = llm_model
@@ -657,6 +842,22 @@ class DeepResearcher:
         # round two still resolves in the report written after round eight.
         self.citations = SourceRegistry()
         self.citation_audit = None
+        # RES-02: why the run actually stopped, filled in at the loop's exit
+        # point (see the STOP_REASON_* constants above) -- None until then.
+        self.stop_reason: Optional[Dict[str, Any]] = None
+        # RES-02: rounds in a row that found nothing new, mirrored from the
+        # loop's own local counter so `_generate_queries` can see it too
+        # (query strategy must change after a stalled round, not just stop
+        # the run once the limit is hit).
+        self._consecutive_empty_rounds: int = 0
+        # RES-06: which evidence-quality profile this run grades against.
+        # Unknown/omitted names fall back to "general" rather than raising --
+        # a caller passing a bad profile name should not lose the whole run
+        # over it.
+        self.quality_profile: EvidenceQualityProfile = DEFAULT_QUALITY_PROFILES.get(
+            (quality_profile or "general").strip().lower(), DEFAULT_QUALITY_PROFILES["general"]
+        )
+        self.evidence_quality: Optional[Dict[str, Any]] = None
 
     def cancel(self):
         """Request cooperative cancellation of the research loop."""
@@ -728,9 +929,17 @@ class DeepResearcher:
             self.round_count = round_num
             if self._cancelled:
                 logger.info(f"Research cancelled after {round_num - 1} rounds")
+                self.stop_reason = classify_stop_reason(
+                    STOP_REASON_CANCELLED, round_num=round_num - 1, max_rounds=self.max_rounds,
+                    urls_fetched=len(self.urls_fetched), findings=len(findings),
+                )
                 break
             if self._time_exceeded():
                 logger.info(f"Time limit reached after {round_num - 1} rounds")
+                self.stop_reason = classify_stop_reason(
+                    STOP_REASON_TIME_BUDGET, round_num=round_num - 1, max_rounds=self.max_rounds,
+                    urls_fetched=len(self.urls_fetched), findings=len(findings),
+                )
                 break
 
             logger.info(f"=== Research Round {round_num} ===")
@@ -740,6 +949,10 @@ class DeepResearcher:
             queries = await self._generate_queries(question, report, round_num)
             if not queries:
                 logger.warning(f"Round {round_num}: no queries generated, stopping")
+                self.stop_reason = classify_stop_reason(
+                    STOP_REASON_NO_QUERIES, round_num=round_num, max_rounds=self.max_rounds,
+                    urls_fetched=len(self.urls_fetched), findings=len(findings),
+                )
                 break
             self._rounds_started += 1
 
@@ -754,6 +967,7 @@ class DeepResearcher:
                 for finding in round_findings:
                     self.citations.add(finding)
                 consecutive_empty_rounds = 0
+                self._consecutive_empty_rounds = 0
                 logger.info(f"Round {round_num}: extracted {len(round_findings)} findings")
                 self._emit(phase="reading", round=round_num,
                            new_sources=len(round_findings),
@@ -761,6 +975,11 @@ class DeepResearcher:
                            total_findings=len(findings))
             else:
                 consecutive_empty_rounds += 1
+                # RES-02: a round that repeated a query and got nothing new
+                # must change strategy on the NEXT round rather than just
+                # count down to the hard stop — `_generate_queries` reads
+                # this to ask for a genuinely different angle.
+                self._consecutive_empty_rounds = consecutive_empty_rounds
                 logger.info(f"Round {round_num}: no new findings ({consecutive_empty_rounds} consecutive empty)")
                 if consecutive_empty_rounds >= self.max_empty_rounds:
                     note = getattr(self, "_last_round_note", "")
@@ -776,6 +995,10 @@ class DeepResearcher:
                                 f"yielded anything usable in {round_num} rounds.",
                                 causes=self._failures + [f"search: {note}"],
                             )
+                        self.stop_reason = classify_stop_reason(
+                            STOP_REASON_SATURATED, round_num=round_num, max_rounds=self.max_rounds,
+                            urls_fetched=len(self.urls_fetched), findings=len(findings),
+                        )
                         break
                     logger.warning(f"Search appears to be down — {self.max_empty_rounds} consecutive rounds with no results")
                     err_detail = getattr(self, '_last_search_error', 'unknown error')
@@ -786,6 +1009,10 @@ class DeepResearcher:
                             "Check the search provider in Settings and that its service is running.",
                             causes=self._failures + [f"search: {err_detail}"],
                         )
+                    self.stop_reason = classify_stop_reason(
+                        STOP_REASON_SEARCH_DOWN, round_num=round_num, max_rounds=self.max_rounds,
+                        urls_fetched=len(self.urls_fetched), findings=len(findings),
+                    )
                     break
 
             # SYNTHESIZE
@@ -808,7 +1035,25 @@ class DeepResearcher:
                 should_stop = await self._should_stop(question, report, round_num)
                 if should_stop:
                     logger.info(f"LLM decided to stop after round {round_num}")
+                    self.stop_reason = classify_stop_reason(
+                        STOP_REASON_LLM_COVERAGE, round_num=round_num, max_rounds=self.max_rounds,
+                        urls_fetched=len(self.urls_fetched), findings=len(findings),
+                    )
                     break
+        else:
+            # The `for` loop ran every round without `break`ing — plain
+            # exhaustion, not any of the reasoned stops above.
+            self.stop_reason = classify_stop_reason(
+                STOP_REASON_MAX_ROUNDS, round_num=self.max_rounds, max_rounds=self.max_rounds,
+                urls_fetched=len(self.urls_fetched), findings=len(findings),
+            )
+
+        # RES-06: grade the gathered findings under this run's quality
+        # profile — computed here (findings are final) and kept on `self`
+        # rather than folded into the report text itself, so an existing
+        # caller comparing `research()`'s return value byte-for-byte is
+        # unaffected (rule 3); a caller that wants it reads `self.evidence_quality`.
+        self.evidence_quality = assess_evidence_quality(findings, self.quality_profile)
 
         # FINAL REPORT
         self._emit(phase="writing", total_sources=len(self.urls_fetched),
@@ -1142,6 +1387,19 @@ class DeepResearcher:
                 "queries to fill gaps, verify claims, or explore specific aspects "
                 "that the report doesn't yet cover well."
             )
+            # RES-02 acceptance: "repeating a query without new evidence
+            # triggers a strategy change" — the previous round(s) found
+            # nothing new, so asking for another rephrasing of the same
+            # angle would likely hit the same already-read pages again.
+            stalled = getattr(self, "_consecutive_empty_rounds", 0)
+            if stalled > 0:
+                round_instruction += (
+                    f" The last {stalled} round(s) returned pages already read and no new "
+                    "evidence: change strategy now — use different search terms, a different "
+                    "source type (official docs, forums, academic, news), or a narrower/broader "
+                    "framing than the queries already tried. Do not repeat a query similar to "
+                    "one already used."
+                )
 
         prompt = current_date_context() + QUERY_GEN_PROMPT.format(
             question=question,

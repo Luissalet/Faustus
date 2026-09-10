@@ -11,6 +11,15 @@ from .content import fetch_webpage_content
 from .providers import searxng_search, searxng_search_api, PROVIDER_INFO
 from .analytics import get_search_stats, SearchEngineError, NetworkError, ParseError, RateLimitError
 from .service import SearchService, SearchResult, SearchResponse
+from .lang_normalize import (
+    contains_normalized,
+    detect_query_language,
+    find_all_normalized,
+    locate_normalized,
+    multilingual_query_variants,
+    should_try_english_variant,
+    strip_diacritics,
+)
 
 __all__ = [
     # Service interface (preferred)
@@ -32,4 +41,12 @@ __all__ = [
     "NetworkError",
     "ParseError",
     "RateLimitError",
+    # LANG-02 — Unicode-normalized, accent-insensitive search
+    "contains_normalized",
+    "detect_query_language",
+    "find_all_normalized",
+    "locate_normalized",
+    "multilingual_query_variants",
+    "should_try_english_variant",
+    "strip_diacritics",
 ]

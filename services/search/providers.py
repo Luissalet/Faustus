@@ -15,6 +15,7 @@ from src.constants import SEARXNG_INSTANCE, REQUEST_TIMEOUT, WEB_FETCH_USER_AGEN
 from .analytics import RateLimitError, error_logger
 from .diversity import diversity_report as _diversity_report
 from .query import build_enhanced_query
+from . import lang_normalize
 
 logger = logging.getLogger(__name__)
 
@@ -519,7 +520,25 @@ def searxng_search_api(query: str, count: Optional[int] = None, categories: str 
                 "SearXNG pinned engines returned 0 results for %r; retrying default engines",
                 query,
             )
-            parsed, data = _run(fallback)
+            active_params = fallback
+            parsed, data = _run(active_params)
+        # LANG-02 (Lote 50 wiring): last resort, only reached when every
+        # language/engine fallback above still came back empty. A
+        # diacritic-folded variant of the same `q` — never a translation, and
+        # never touching `language`/`engines` (the anti-spam pins above stay
+        # exactly as they are) — catches the case where the index has the
+        # page but only under its unaccented spelling.
+        if not parsed:
+            for variant in lang_normalize.multilingual_query_variants(query)[1:]:
+                fallback = dict(active_params)
+                fallback["q"] = variant
+                logger.info(
+                    "SearXNG query %r returned 0 results; retrying diacritic-folded variant %r",
+                    query, variant,
+                )
+                parsed, data = _run(fallback)
+                if parsed:
+                    break
         logger.info(f"SearXNG JSON API returned {len(parsed)} results for: {query}")
         if not parsed:
             unresponsive = data.get("unresponsive_engines") if isinstance(data, dict) else None
