@@ -5483,7 +5483,25 @@ async def _stream_agent_loop_body(
     # Both halves matter: the read-only file tools because a bound workspace is
     # itself the signal, and the retrieval because a "vague" message can still
     # name a tool out loud.
+    #
+    # But a low-signal turn matched no domain by definition (`low_signal =
+    # not continuation and not domains`, above), so nothing upstream seeded
+    # `_relevant_tools` on purpose here -- whatever privileged tool shows up
+    # at this point came from raw semantic retrieval alone, which is noisy
+    # on a short, topic-free query (observed live: "look at the local
+    # project" ranks `bash` among its nearest neighbours purely off token
+    # overlap with "local"/"project", never real intent to run a command).
+    # The floor's own design already says "write/shell tools do NOT surface
+    # on a vague message" (WORKSPACE_TOOL_FLOOR's docstring: "bash, python
+    # and write_file are the privileged trio... NOT floored"); that rule has
+    # to hold for whatever retrieval brought in too, not just for what the
+    # floor itself would have added.
     if _low_signal_readonly_floor and _relevant_tools is not None:
+        _low_signal_privileged = {"bash", "python", "write_file"} | WORKSPACE_TOOL_FLOOR_EDIT
+        _withheld = sorted(set(_relevant_tools) & _low_signal_privileged)
+        if _withheld:
+            _relevant_tools = set(_relevant_tools) - _low_signal_privileged
+            logger.info("[tool-rag] Low-signal turn; retrieval's privileged picks withheld: %s", _withheld)
         _added = sorted(_low_signal_readonly_floor - set(_relevant_tools))
         _relevant_tools = set(_relevant_tools) | _low_signal_readonly_floor
         if _added:
