@@ -114,7 +114,7 @@ genuinamente abierto, sin fingir que está cerrado por tener una fila
   IDX-03, UX-03, PERF-01, WRITE-02, WRITE-04; solo TASK-05 sigue ausente de
   verdad). `docs/spec/v2/MAPA_P1.md` recontado y corregido: el total real es
   84 IDs P1/P2/LAB, no 87 (cifra que llevaba sin recontar desde el Lote 50).
-  `tsc`/`vite build`/`i18n --check` limpios. Suite entera en Windows (11-09, 00:20, `2bf5a45`): **15.234 correctas, 6 fallos** (los 3 preexistentes de siempre —marca, doblaje real, suite_collects— más tres corregidos a continuación: límites de subida troceada en los compose, `docs/api/` como material de ingeniería, y `test_session_image_cleanup`, pendiente de leer su traza en Windows). En la nube (`-m "not slow"`, `e6d15f9`): **15.270 correctas, 13 fallos**, ninguno nuevo (8 preexistentes del entorno + 4 flaky bajo xdist que pasan en serie + el de docs ya corregido).
+  `tsc`/`vite build`/`i18n --check` limpios. Suite entera en Windows (11-09, 00:20, `2bf5a45`): **15.234 correctas, 6 fallos** (los 3 preexistentes de siempre —marca, doblaje real, suite_collects— más tres corregidos a continuación: límites de subida troceada en los compose, `docs/api/` como material de ingeniería, y `test_session_image_cleanup`, que pasa en serie: contención de xdist). En la nube (`-m "not slow"`, `e6d15f9`): **15.270 correctas, 13 fallos**, ninguno nuevo (8 preexistentes del entorno + 4 flaky bajo xdist que pasan en serie + el de docs ya corregido).
 
 
 - 10-09, 09:30 (spec v2, M1): en el 7001 con `qwen3.8:27b-q4_K_M`, sesión
