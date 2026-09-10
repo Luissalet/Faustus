@@ -5845,3 +5845,29 @@ Runs without asking except for irreversible effects; higher budgets.	No pregunta
 Only read tools are offered — nothing changes on disk or anywhere else; low budgets.	Solo se ofrecen herramientas de lectura — nada cambia en disco ni en ningún otro sitio; presupuestos bajos.
 How far this turn may go before it must stop and check in.	Hasta dónde puede llegar este turno antes de tener que detenerse y avisar.
 Autonomy	Autonomía
+Change model	Cambiar de modelo
+Check the resource	Comprobar el recurso
+Connection problem	Problema de conexión
+Could not verify	No se pudo verificar
+Fix and retry	Corregir y reintentar
+Invalid request	Solicitud no válida
+Needs permission	Necesita permiso
+Not found	No encontrado
+Not supported by this model	No admitido por este modelo
+Out of date	Desactualizado
+Reload and reconcile	Recargar y conciliar
+Report the issue	Informar del problema
+Request permission	Pedir permiso
+Something went wrong	Algo salió mal
+Timed out	Se agotó el tiempo de espera
+Verify again	Verificar de nuevo
+{n} step completed	{n} paso completado
+{n} steps completed	{n} pasos completados
+{title}: {message} — {action}	{title}: {message} — {action}
+Expires {time}	Caduca {time}
+Or write your own answer	O escribe tu propia respuesta
+Question awaiting an answer	Pregunta esperando respuesta
+Questions	Preguntas
+The agent is waiting for you — pick all that apply.	El agente te espera — marca todas las que apliquen.
+The agent is waiting for you.	El agente te espera.
+questions	preguntas

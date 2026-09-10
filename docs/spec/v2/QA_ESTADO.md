@@ -9,7 +9,7 @@ prueba contra el codigo real. **xfail**: el mecanismo no existe todavia
 hardware/navegador real (microfono, zoom interactivo) y no puede ejecutarse en
 pytest; el test esta `skip` con los pasos manuales documentados.
 
-Resumen: **27 verde**, **19 xfail**, **2 manual** — 48 de 48.
+Resumen: **30 verde**, **16 xfail**, **2 manual** — 48 de 48.
 
 | ID | Estado | Test | Que falta |
 |---|---|---|---|
@@ -36,9 +36,9 @@ Resumen: **27 verde**, **19 xfail**, **2 manual** — 48 de 48.
 | QA-21 | verde | test_qa_21_citas_vacias.py | — |
 | QA-22 | verde | test_qa_22_brief_largo.py | — |
 | QA-23 | verde | test_qa_23_buscadores_degradados.py | — |
-| QA-24 | xfail | test_qa_24_modelos_simultaneos.py | Reserva atomica (Lock) entre admit() concurrentes de VRAM (HW-01) |
+| QA-24 | verde | test_qa_24_modelos_simultaneos.py | — |
 | QA-25 | verde | test_qa_25_kv_desconocida.py | — |
-| QA-26 | xfail | test_qa_26_presion_de_commit.py | Vigilante de presion de RAM/commit del propio proceso (EXEC-04/PERF-04) |
+| QA-26 | verde | test_qa_26_presion_de_commit.py | — |
 | QA-27 | xfail | test_qa_27_caida_de_nodo.py | remote_worker no es un backend implementado (HW-06) |
 | QA-28 | xfail | test_qa_28_cambio_de_modelo.py | Recalculo de capacidades + reconstruccion de estado al cambiar de modelo (MOD-06) |
 | QA-29 | xfail | test_qa_29_privacidad_transitiva.py | Perfil local-only unico que cubra reranker/resumen remoto (SEC-04/MOD-05) |
@@ -46,8 +46,8 @@ Resumen: **27 verde**, **19 xfail**, **2 manual** — 48 de 48.
 | QA-31 | verde | test_qa_31_ssrf_y_redireccion.py | — |
 | QA-32 | verde | test_qa_32_preview_malicioso.py | — |
 | QA-33 | verde | test_qa_33_aislamiento_de_dueno.py | — |
-| QA-34 | xfail | test_qa_34_olvido_e_incognito.py | Tombstones que sobrevivan a un reindex/import (MEM-02) |
-| QA-35 | xfail | test_qa_35_borrador_persistente.py | Persistir attachments del composer junto al texto del borrador (UX-01) |
+| QA-34 | verde | test_qa_34_olvido_e_incognito.py | — |
+| QA-35 | verde | test_qa_35_borrador_persistente.py | L29: attachments del composer persistidos y restaurados por sesion (readAttachmentsFor/writeAttachmentsFor, Studio.tsx), excluyendo incognito (UX-01) |
 | QA-36 | xfail | test_qa_36_regenerar_con_efectos.py | Endpoint de regenerar dedicado que no repita efectos externos (UX-03) |
 | QA-37 | xfail | test_qa_37_lectura_bajo_stream.py | Virtualizacion de listas largas en Studio (PERF-01) |
 | QA-38 | verde | test_qa_38_historia_y_tarjeta.py | — |
