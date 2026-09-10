@@ -3408,6 +3408,125 @@ def _build_base_prompt(
 
 
 
+#: FAUSTUS_TOOL_ARG_VALIDATION: 'strict' (default) blocks execution on an
+#: unrepairable schema error and returns a localized error to the model;
+#: 'warn' never blocks, only annotates the event/log; 'off' skips
+#: validation entirely (pre-lote-6 behavior). Any other value falls back to
+#: 'strict' rather than silently disabling the check.
+_TOOL_ARG_VALIDATION_MODES = ("strict", "warn", "off")
+
+#: Error kinds a caller cannot just ignore — the argument's *value* is
+#: wrong, not merely undeclared. `unknown_field` is deliberately excluded:
+#: CALL-02/CALL-03's own contract is that an unknown field is a warning the
+#: tool still runs with, in every mode.
+_BLOCKING_ARG_ERROR_KINDS = {"wrong_type", "enum", "missing_required", "path_scope"}
+
+#: ArgumentError.kind -> contracts/errors.py subcode under the "schema"
+#: category (CALL-02/CALL-03 is exactly a tool-argument-schema problem).
+#: `path_scope` and `unknown_field` are minted here rather than reused from
+#: ERROR_SUBCODES — see that module's own docstring: a caller may mint a
+#: new subcode under a known category.
+_ARG_ERROR_SUBCODE = {
+    "missing_required": "contract_violation",
+    "wrong_type": "type_mismatch",
+    "enum": "type_mismatch",
+    "path_scope": "path_scope",
+    "unknown_field": "unknown_field",
+}
+
+
+def _tool_arg_validation_mode() -> str:
+    import os
+    mode = os.environ.get("FAUSTUS_TOOL_ARG_VALIDATION", "strict").strip().lower()
+    return mode if mode in _TOOL_ARG_VALIDATION_MODES else "strict"
+
+
+def _validate_native_tool_call(tc_name: str, tc_args, block: ToolBlock):
+    """CALL-02/CALL-03: check one converted native call's arguments against
+    its FUNCTION_TOOL_SCHEMAS entry, right where the call becomes a
+    ToolBlock (the one place `function_call_to_tool_call` — text-fenced
+    calls from `parse_tool_blocks` never reach this branch at all, so they
+    are never validated here).
+
+    Returns `(block, meta)`. `block` is the SAME instance when nothing
+    needed fixing, or a freshly rebuilt one when a repair changed the
+    effective arguments (so execution actually uses the repaired value, not
+    the original string). `meta` is `None` when there is nothing to report
+    (validation off, or a clean call) — a caller should treat that exactly
+    like "not present" in whatever it keys by `id(block)`. Otherwise it is
+    `{"errors": [...], "repairs": [...], "blocked": bool}`; `blocked` is
+    only ever true in 'strict' mode, and only when `repair_tool_arguments`
+    could not resolve every blocking error.
+    """
+    mode = _tool_arg_validation_mode()
+    if mode == "off":
+        return block, None
+    try:
+        args = json.loads(tc_args) if isinstance(tc_args, str) else (tc_args or {})
+    except (TypeError, ValueError):
+        # Malformed JSON is function_call_to_tool_block's own concern (it
+        # already logged/handled it to build `block` in the first place);
+        # nothing more to check here.
+        return block, None
+    if not isinstance(args, dict):
+        return block, None
+
+    from src.tool_schemas import repair_tool_arguments, validate_tool_arguments
+
+    errors = validate_tool_arguments(tc_name, args)
+    if not errors:
+        return block, None
+
+    blocking = [e for e in errors if e.kind in _BLOCKING_ARG_ERROR_KINDS]
+    applied: list = []
+    remaining = blocking
+    if blocking:
+        repaired_args, applied = repair_tool_arguments(tc_name, args, blocking)
+        if applied:
+            remaining = [
+                e for e in validate_tool_arguments(tc_name, repaired_args)
+                if e.kind in _BLOCKING_ARG_ERROR_KINDS
+            ]
+            if not remaining:
+                rebuilt = function_call_to_tool_block(tc_name, json.dumps(repaired_args))
+                if rebuilt is not None:
+                    block = rebuilt
+                    logger.info(
+                        "[tool-args] repaired %s argument(s) for %s: %s",
+                        len(applied), tc_name, applied,
+                    )
+
+    blocked = bool(remaining) and mode == "strict"
+    if remaining and mode == "warn":
+        logger.warning(
+            "[tool-args] argument error(s) for %s (warn mode, executing anyway): %s",
+            tc_name, [str(e) for e in remaining],
+        )
+    meta = {
+        "errors": [{"field": e.field, "kind": e.kind, "detail": e.detail} for e in errors],
+        "repairs": applied,
+        "blocked": blocked,
+    }
+    return block, meta
+
+
+def _tool_arg_error_result(errors: list) -> Dict[str, Any]:
+    """The localized, model-facing error for a call `_validate_native_tool_call`
+    marked blocked: field, what was expected, what was seen, and the
+    contracts/errors.py taxonomy code for each remaining problem — never a
+    bare 'invalid arguments'."""
+    parts = []
+    for e in errors:
+        code = "schema." + _ARG_ERROR_SUBCODE.get(e["kind"], "contract_violation")
+        parts.append(f'{e["field"]}: {e["detail"]} ({code})')
+    return {
+        "error": "Tool call rejected: " + "; ".join(parts),
+        "exit_code": 1,
+        "blocked": True,
+        "policy": "tool_argument_validation",
+    }
+
+
 def _resolve_tool_blocks(
     round_response: str,
     native_tool_calls: list,
@@ -3415,9 +3534,14 @@ def _resolve_tool_blocks(
     is_api_model: bool = False,
     allow_fenced_for_api: bool = False,
 ):
-    """Choose native function calls or fenced code block parsing. Returns (tool_blocks, used_native)."""
+    """Choose native function calls or fenced code block parsing. Returns
+    (tool_blocks, used_native, converted_calls, arg_validation) — see
+    `_validate_native_tool_call` for `arg_validation`'s shape (keyed by
+    `id(block)`, entries only for a native call that had something to
+    report)."""
     used_native = False
     converted_calls = []  # native calls that converted, ALIGNED with tool_blocks
+    arg_validation: Dict[int, Dict[str, Any]] = {}
     if native_tool_calls:
         tool_blocks = []
         for tc in native_tool_calls:
@@ -3425,6 +3549,9 @@ def _resolve_tool_blocks(
             tc_args = tc.get("arguments", "{}")
             block = function_call_to_tool_block(tc_name, tc_args)
             if block:
+                block, arg_meta = _validate_native_tool_call(tc_name, tc_args, block)
+                if arg_meta is not None:
+                    arg_validation[id(block)] = arg_meta
                 tool_blocks.append(block)
                 converted_calls.append(tc)
                 logger.info(f"  -> converted: {tc_name} -> {block.tool_type}")
@@ -3456,7 +3583,7 @@ def _resolve_tool_blocks(
                 f"{len(native_tool_calls)} native calls, "
                 f"{len(tool_blocks)} tool blocks. Preview: {resp_preview}")
 
-    return tool_blocks, used_native, converted_calls
+    return tool_blocks, used_native, converted_calls, arg_validation
 
 
 _TOOL_IMAGE_SOURCE_PREFIX = "tool result: "
@@ -6926,7 +7053,7 @@ async def stream_agent_loop(
             if _ody_doc_finetune_mode
             else round_response
         )
-        tool_blocks, used_native, converted_calls = _resolve_tool_blocks(
+        tool_blocks, used_native, converted_calls, _arg_validation = _resolve_tool_blocks(
             _normalized_doc_round,
             native_tool_calls,
             round_num,
@@ -7956,6 +8083,13 @@ async def stream_agent_loop(
             else:
                 cmd_display = full_command
 
+            # CALL-02/CALL-03: an unrepairable native-call argument error
+            # (FAUSTUS_TOOL_ARG_VALIDATION=strict, the default) is refused
+            # before any policy/approval check runs — the call never had a
+            # legitimate shape to begin with, so there's nothing for those
+            # checks to reason about.
+            _arg_meta = _arg_validation.get(id(block))
+
             security_decision = run_security.decision_for(
                 block.tool_type,
                 block.content,
@@ -7976,7 +8110,14 @@ async def stream_agent_loop(
                     denial_origin=_denial_origin,
                 )
             )
-            if _denial is not None:
+            if _arg_meta and _arg_meta.get("blocked"):
+                desc = f"{block.tool_type}: INVALID ARGUMENTS"
+                result = _tool_arg_error_result(_arg_meta["errors"])
+                logger.info(
+                    "Tool blocked before execution: invalid arguments for %s: %s",
+                    block.tool_type, _arg_meta["errors"],
+                )
+            elif _denial is not None:
                 reason = _denial.reason
                 desc = f"{block.tool_type}: BLOCKED"
                 result = {
@@ -8175,6 +8316,18 @@ async def stream_agent_loop(
                             await _tool_task
                         except (asyncio.CancelledError, Exception):
                             pass
+
+            # CALL-02/CALL-03: annotate the result with whatever the argument
+            # check found — even when it did not block execution (a repaired
+            # call, or `warn`/leftover `unknown_field` notices) — so the
+            # tool_output/tool_event built below can carry it. `setdefault`:
+            # the blocked branch above already crafted its own result and
+            # must not be second-guessed by this generic pass.
+            if _arg_meta:
+                if _arg_meta.get("errors"):
+                    result.setdefault("argument_errors", _arg_meta["errors"])
+                if _arg_meta.get("repairs"):
+                    result.setdefault("repairs", _arg_meta["repairs"])
 
             run_security.observe_tool_result(block.tool_type, result, block.content)
 
@@ -8437,6 +8590,13 @@ async def stream_agent_loop(
                 for _key in ("policy", "policy_name", "policy_origin", "policy_matched"):
                     if result.get(_key):
                         tool_output_data[_key] = result[_key]
+            # CALL-02/CALL-03: what the argument check found, whether or not
+            # it blocked execution — Studio's tool trace can show "this ran,
+            # but a field was unknown" as readily as "this didn't run".
+            if result.get("argument_errors"):
+                tool_output_data["argument_errors"] = result["argument_errors"]
+            if result.get("repairs"):
+                tool_output_data["repairs"] = result["repairs"]
             if is_doc_tool and "action" in result:
                 tool_output_data.update({
                     "doc_id": result.get("doc_id"),
@@ -8659,6 +8819,12 @@ async def stream_agent_loop(
                 "output": output_text,
                 "exit_code": result.get("exit_code"),
             }
+            # CALL-02/CALL-03: persist the same argument-check annotation the
+            # live tool_output carried, so a history reload shows it too.
+            if result.get("argument_errors"):
+                tool_event["argument_errors"] = result["argument_errors"]
+            if result.get("repairs"):
+                tool_event["repairs"] = result["repairs"]
             if result.get("image_url"):
                 for ik in ("image_url", "image_prompt", "image_model", "image_size", "image_quality"):
                     if result.get(ik):

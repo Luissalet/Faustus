@@ -19,16 +19,39 @@ This test drives the real producer (_append_tool_results) into the sanitizer.
 import sys
 from unittest.mock import MagicMock
 
-# Mock heavy dependencies before importing (mirrors tests/test_agent_loop.py).
-for mod in [
+# Mock heavy dependencies for the DURATION OF THIS IMPORT ONLY (mirrors
+# tests/test_agent_loop.py's module list). The old version of this left a
+# bare `sys.modules[mod] = MagicMock()` in place forever — sys.modules is
+# process-global, so every OTHER test file that runs later in the same
+# pytest process and does a real `import src.agent_tools` got this mock
+# back instead of the real module, silently breaking whatever it tested
+# (14 tests across test_misfenced_read_file_tool_call.py,
+# test_odysseus_doc_fence_normalization.py,
+# test_plain_ui_control_open_panel.py and test_redos_xml_tool_parsers.py —
+# each imports `src.agent_tools`/`src.tool_parsing` directly and needs the
+# real thing). Saving and restoring the previous sys.modules entry around
+# just this import — the module-level equivalent of monkeypatch.setitem,
+# which cannot be used here since there is no test function/fixture yet at
+# import time — keeps the mock scoped to loading `src.agent_loop` and
+# leaves every later import of these modules alone.
+_HEAVY_DEPS = [
     'sqlalchemy', 'sqlalchemy.orm', 'sqlalchemy.ext', 'sqlalchemy.ext.declarative',
     'sqlalchemy.ext.hybrid', 'sqlalchemy.sql', 'sqlalchemy.sql.expression',
     'src.database', 'src.agent_tools', 'core.models', 'core.database',
-]:
-    if mod not in sys.modules:
-        sys.modules[mod] = MagicMock()
+]
+_prev_modules = {mod: sys.modules.get(mod) for mod in _HEAVY_DEPS}
+for _mod in _HEAVY_DEPS:
+    if _mod not in sys.modules:
+        sys.modules[_mod] = MagicMock()
+try:
+    from src.agent_loop import _append_tool_results
+finally:
+    for _mod, _was in _prev_modules.items():
+        if _was is None:
+            sys.modules.pop(_mod, None)
+        else:
+            sys.modules[_mod] = _was
 
-from src.agent_loop import _append_tool_results
 from src.llm_core import _sanitize_llm_messages
 
 

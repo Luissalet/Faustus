@@ -860,13 +860,31 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "update_plan",
-            "description": "Write back to the ACTIVE PLAN: mark steps done or revise them. Use this while executing an approved plan — after you finish a step, call update_plan with the full checklist and that step marked `- [x]`; when the user asks to change the plan, call it with the revised checklist. The user's docked plan window updates live. Pass the COMPLETE checklist every time (not a diff). No effect if there is no active plan.",
+            "description": "Write back to the ACTIVE PLAN: mark steps done or revise them. Use this while executing an approved plan — after you finish a step, call update_plan with the full checklist and that step marked `- [x]`; when the user asks to change the plan, call it with the revised checklist. The user's docked plan window updates live. Pass the COMPLETE checklist every time (not a diff), as EITHER `plan` (markdown) OR `steps` (structured) — never both empty. No effect if there is no active plan.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "plan": {"type": "string", "description": "The full updated plan as a GitHub-style markdown checklist — one step per line, `- [ ]` for pending and `- [x]` for done. Always send the whole list."}
+                    "plan": {"type": "string", "description": "The full updated plan as a GitHub-style markdown checklist — one step per line, `- [ ]` for pending and `- [x]` for done. Always send the whole list. Alternative to `steps`."},
+                    "steps": {
+                        "type": "array",
+                        "description": "Alternative to `plan`: the full updated checklist as structured steps (send the whole list every time, not a diff). Each item is either a plain title string, or an object with status/dependency/evidence detail.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {"type": "string", "description": "Stable step id from a prior update_plan/plan_update; omit for a new step."},
+                                "title": {"type": "string", "description": "The step's text."},
+                                "status": {"type": "string", "enum": ["pending", "done", "blocked"]},
+                                "depends_on": {"type": "array", "items": {"type": "string"}, "description": "Ids of steps this one is nested under / blocked by."},
+                                "evidence_refs": {"type": "array", "items": {"type": "string"}, "description": "What proves this step is actually done (a test name, a file, a command)."},
+                                "notes": {"type": "string"},
+                                "verified": {"type": "boolean", "description": "Whether a done step's evidence has actually been checked, not just claimed."}
+                            },
+                            "required": ["title"]
+                        }
+                    },
+                    "revision": {"type": "integer", "minimum": 1, "description": "Optional revision number for the whole plan, with `steps`."}
                 },
-                "required": ["plan"]
+                "required": []
             }
         }
     },

@@ -97,18 +97,36 @@ def test_llm_call_content_wins_over_reasoning_content(monkeypatch):
 import sys
 from unittest.mock import MagicMock
 
-# Mock heavy DB/tool deps before importing agent_loop
-for _mod in [
+# Mock heavy DB/tool deps for the DURATION OF THIS IMPORT ONLY. The old
+# bare `sys.modules[mod] = MagicMock()` never got undone — sys.modules is
+# process-global, so any test file that ran later in the same pytest
+# process and did a real `import src.agent_tools` got this mock back
+# instead of the real module (14 tests across test_misfenced_read_file_
+# tool_call.py, test_odysseus_doc_fence_normalization.py,
+# test_plain_ui_control_open_panel.py and test_redos_xml_tool_parsers.py
+# — each needs the real `src.agent_tools`/`src.tool_parsing`). Saving and
+# restoring the previous sys.modules entry around just this import is the
+# module-level equivalent of monkeypatch.setitem (no test function/fixture
+# exists yet at import time), and leaves every later import alone.
+_HEAVY_DEPS = [
     "sqlalchemy", "sqlalchemy.orm", "sqlalchemy.ext",
     "sqlalchemy.ext.declarative", "sqlalchemy.ext.hybrid",
     "sqlalchemy.sql", "sqlalchemy.sql.expression",
     "src.database", "src.agent_tools",
     "core.models", "core.database",
-]:
+]
+_prev_modules = {_mod: sys.modules.get(_mod) for _mod in _HEAVY_DEPS}
+for _mod in _HEAVY_DEPS:
     if _mod not in sys.modules:
         sys.modules[_mod] = MagicMock()
-
-from src.agent_loop import _empty_response_fallback  # noqa: E402
+try:
+    from src.agent_loop import _empty_response_fallback  # noqa: E402
+finally:
+    for _mod, _was in _prev_modules.items():
+        if _was is None:
+            sys.modules.pop(_mod, None)
+        else:
+            sys.modules[_mod] = _was
 
 
 # ---------------------------------------------------------------------------
