@@ -108,6 +108,20 @@ def assess(root: str, model: str) -> Dict[str, Any]:
 
     out: Dict[str, Any] = {"model": model, "root": root, "fits": None, "residents": [],
                            "suggestion": [], "measured": False}
+    # Every chat turn passes through here (10-09-2026). The common case — the
+    # model is already inside — must cost one /api/ps and nothing else: no
+    # nvidia-smi, no /api/tags.
+    try:
+        quick = _get(root, "/api/ps", 2.5).get("models") or []
+        want = str(model).strip().lower()
+        for m in quick:
+            names = {str(m.get("name") or "").lower(), str(m.get("model") or "").lower()}
+            if want in names or (":" not in want and f"{want}:latest" in names):
+                out["fits"] = True
+                out["already_resident"] = True
+                return out
+    except Exception:  # noqa: BLE001 - fall through to the full reading, which reports it
+        pass
     vram = gpu_shared_memory.vram_snapshot()
     if not vram.get("supported"):
         out["reason"] = str(vram.get("reason") or "no GPU reading")
