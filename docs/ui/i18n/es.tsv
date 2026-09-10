@@ -5771,3 +5771,7 @@ Loading anyway would put {spill} in system RAM, and only {free} of {total} is fr
 The server restarted while this research was running. Retry starts it again.	El servidor se reinició mientras esta investigación estaba en marcha. Reintentar la vuelve a empezar.
 The connection to the server dropped mid-turn. What arrived is kept; if the server restarted, send the message again.	Se perdió la conexión con el servidor a mitad del turno. Lo que llegó se conserva; si el servidor se reinició, envía el mensaje otra vez.
 The turn ended with an error.	El turno terminó con un error.
+Marked done — not yet verified	Marcado como hecho — aún sin verificar
+Plan steps	Pasos del plan
+Some lines could not be parsed as steps.	Algunas líneas no se pudieron interpretar como pasos.
+This message's outcome is uncertain — checking…	El resultado de este mensaje es incierto: comprobando…

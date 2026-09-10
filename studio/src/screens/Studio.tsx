@@ -10,6 +10,7 @@ import {
   listSessions,
   loadHistory,
   metricsFrom,
+  pendingOutboxFor,
   resumeTurn,
   streamFailureMessage,
   sendTurn,
@@ -779,6 +780,74 @@ export function StudioScreen() {
    *
    * Yields nothing when there is no live run, which is the usual case.
    */
+  /**
+   * Retries a send this tab never learned the outcome of — a reload or a
+   * dropped connection between the POST and its response, not a live run
+   * (that's `rejoin`, below, and it always runs first).
+   *
+   * Reuses the outbox's id, never a new one: the server's own outbox
+   * (src/chat_outbox.py) recognises it and answers from what it already has
+   * — a reconnect to a run still going, or the saved result of one that
+   * finished without this tab ever hearing about it — rather than opening a
+   * second turn. Either way `turnsFromHistory` below is what actually
+   * settles the bubble: the server's saved record is the truth, this
+   * screen's reconstruction of it is only what shows while checking.
+   */
+  const reconcileOutbox = useCallback(
+    async (sid: string) => {
+      const pending = pendingOutboxFor(sid);
+      if (!pending || !pending.text.trim()) return;
+      const controller = new AbortController();
+      controllerRef.current = controller;
+      setBusy(true);
+      pinnedRef.current = true;
+      panelDispatch({ type: 'turn-start' });
+      setNotice({ text: t("This message's outcome is uncertain — checking…"), tone: 'info' });
+      const user = blankTurn('user', pending.text);
+      setTurns((list) => [...(list ?? []), user, blankTurn('assistant')]);
+      try {
+        for await (const event of sendTurn({
+          sessionId: sid,
+          message: pending.text,
+          mode: 'chat',
+          clientMessageId: pending.id,
+          attachments: pending.attachments,
+          onRunId: (id) => {
+            if (controller.signal.aborted || controllerRef.current !== controller) return;
+            runIdRef.current = id;
+          },
+          signal: controller.signal,
+        })) {
+          if (controller.signal.aborted || controllerRef.current !== controller) break;
+          patchLast((t) => apply(t, event));
+          panelDispatch({ type: 'event', event, busy: true });
+        }
+      } catch (error) {
+        if (!controller.signal.aborted && controllerRef.current === controller) {
+          patchLast((t) => apply(t, { type: 'error', message: streamFailureMessage(error) }));
+          patchLast((t) => apply(t, { type: 'done' }));
+        }
+      } finally {
+        if (controllerRef.current === controller) {
+          controllerRef.current = null;
+          runIdRef.current = null;
+          setBusy(false);
+          panelDispatch({ type: 'turn-end' });
+        }
+        if (!controller.signal.aborted) {
+          refreshSessions();
+          refreshActivity();
+          turnsFromHistory(sid)
+            .then((result) => {
+              if (!controller.signal.aborted && visibleSession.current === sid && !controllerRef.current) setTurns(result.turns);
+            })
+            .catch(() => undefined);
+        }
+      }
+    },
+    [patchLast, refreshSessions, refreshActivity, turnsFromHistory, panelDispatch],
+  );
+
   const rejoin = useCallback(
     async (sid: string) => {
       const controller = new AbortController();
@@ -825,10 +894,16 @@ export function StudioScreen() {
               if (!controller.signal.aborted && visibleSession.current === sid && !controllerRef.current) setTurns(result.turns);
             })
             .catch(() => undefined);
+        } else if (!controller.signal.aborted) {
+          // No live run for this session — the ordinary case. But an
+          // unacknowledged send (this tab reloaded, or the connection
+          // dropped, between the POST and its response) is still sitting in
+          // the outbox, and THAT is worth retrying with its own id.
+          void reconcileOutbox(sid);
         }
       }
     },
-    [patchLast, refreshSessions, turnsFromHistory],
+    [patchLast, refreshSessions, refreshActivity, turnsFromHistory, reconcileOutbox],
   );
   rejoinRef.current = (sid: string) => void rejoin(sid);
 

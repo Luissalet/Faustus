@@ -396,6 +396,92 @@ export async function listModels(signal?: AbortSignal, refresh = false): Promise
  *  and the one `/api/chat/stop` demands before it cancels anything. */
 export const RUN_ID_HEADER = 'X-Odysseus-Run-Id';
 
+/** Set on a `/api/chat_stream` response that answered a duplicate
+ *  `client_message_id` from the outbox instead of starting a new turn
+ *  (UX-02/TASK-03) — a live reconnect or a replayed final state, never a
+ *  fresh generation. */
+export const IDEMPOTENT_REPLAY_HEADER = 'X-Faustus-Idempotent-Replay';
+
+// ---------------------------------------------------------------------------
+// client_message_id outbox (UX-02/TASK-03)
+//
+// A send is a promise the server hasn't answered yet: the fetch can be lost
+// to a dropped connection, and a reload mid-send loses the in-memory guard
+// that stops a double click. Both look identical from here — "I sent this
+// and do not know whether it landed" — so both get the same answer: an entry
+// in localStorage, keyed by session, written BEFORE the request goes out and
+// cleared the moment a response comes back (the server received it, whatever
+// the stream does after that). An entry still `sending` after a reload is
+// exactly the case worth retrying, and it retries with the SAME id — never a
+// new one, so the server's outbox (src/chat_outbox.py) recognises it as the
+// same turn instead of starting a second one.
+// ---------------------------------------------------------------------------
+
+export interface OutboxEntry {
+  id: string;
+  text: string;
+  /** Upload ids already on the server (`/api/upload`), not full Attachment
+   *  objects — enough to resend the same turn, not to redraw its thumbnails. */
+  attachments: string[];
+  status: 'sending' | 'acked';
+}
+
+function outboxKey(sessionId: string): string {
+  return `faustus_chat_outbox_${sessionId}`;
+}
+
+function readOutbox(sessionId: string): OutboxEntry | null {
+  try {
+    const raw = localStorage.getItem(outboxKey(sessionId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<OutboxEntry> | null;
+    if (!parsed || typeof parsed.id !== 'string' || typeof parsed.text !== 'string') return null;
+    return {
+      id: parsed.id,
+      text: parsed.text,
+      attachments: Array.isArray(parsed.attachments) ? parsed.attachments.map(String) : [],
+      status: parsed.status === 'acked' ? 'acked' : 'sending',
+    };
+  } catch {
+    return null; // private mode, or corrupted JSON — treat as nothing pending
+  }
+}
+
+function writeOutbox(sessionId: string, entry: OutboxEntry): void {
+  try {
+    localStorage.setItem(outboxKey(sessionId), JSON.stringify(entry));
+  } catch {
+    /* private mode: retry-on-reload becomes best-effort, not the send itself */
+  }
+}
+
+/** Drop the session's outbox entry, if any — a response arrived (acked), or
+ *  the send was cancelled on purpose (Stop), so there is nothing to retry. */
+export function clearOutboxFor(sessionId: string): void {
+  try {
+    localStorage.removeItem(outboxKey(sessionId));
+  } catch {
+    /* private mode */
+  }
+}
+
+/** An unacknowledged send left over from a reload or a dropped connection —
+ *  the "still checking" case a screen retries with the SAME id, never a new
+ *  one. `null` in the ordinary case: nothing pending. */
+export function pendingOutboxFor(sessionId: string): OutboxEntry | null {
+  const entry = readOutbox(sessionId);
+  return entry && entry.status === 'sending' ? entry : null;
+}
+
+function newClientMessageId(): string {
+  try {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  } catch {
+    /* fall through to the timestamp form below */
+  }
+  return `cid_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
 export interface SendOptions {
   sessionId: string;
   message: string;
@@ -432,6 +518,10 @@ export interface SendOptions {
   /** The run's opaque id, as soon as the server answers: Stop needs it. */
   onRunId?: (runId: string | null) => void;
   signal?: AbortSignal;
+  /** Reuse an existing id instead of minting one — retrying an
+   *  unacknowledged send from `pendingOutboxFor` MUST pass its id back here;
+   *  a fresh one would start a second turn instead of reconnecting to it. */
+  clientMessageId?: string;
 }
 
 export interface DelegationTask {
@@ -847,10 +937,28 @@ async function* streamEvents(body: ReadableStream<Uint8Array>): AsyncGenerator<C
  * stream on our side, and `stopChat` tells the server to stop generating.
  */
 export async function* sendTurn(options: SendOptions): AsyncGenerator<ChatEvent> {
+  // Approvals, delegations and compare panes are not "a message the user
+  // typed" in the sense a reload should retry: an approval is single-use at
+  // the server regardless, a delegation has no plain-text form to resend,
+  // and a compare pane is explicitly not resumable (routes/chat_routes.py —
+  // "there's nothing to resume" for compare_mode). Only a plain send gets an
+  // outbox entry and the id that comes with one.
+  const trackOutbox = !options.approval && !options.delegateTasks && !options.compare;
+  const clientMessageId = options.clientMessageId ?? (trackOutbox ? newClientMessageId() : '');
+  if (trackOutbox && clientMessageId) {
+    writeOutbox(options.sessionId, {
+      id: clientMessageId,
+      text: options.message,
+      attachments: options.attachments ?? [],
+      status: 'sending',
+    });
+  }
+
   const fd = new FormData();
   fd.append('message', options.approval ? '' : options.message);
   fd.append('session', options.sessionId);
   fd.append('mode', options.mode);
+  if (clientMessageId) fd.append('client_message_id', clientMessageId);
   if (options.planMode) fd.append('plan_mode', 'true');
   if (options.allowBash) fd.append('allow_bash', 'true');
   if (options.allowWebSearch) fd.append('allow_web_search', 'true');
@@ -882,13 +990,28 @@ export async function* sendTurn(options: SendOptions): AsyncGenerator<ChatEvent>
     fd.append('no_documents', 'true');
   }
 
-  const response = await fetch('/api/chat_stream', {
-    method: 'POST',
-    body: fd,
-    headers: timezoneHeaders(),
-    credentials: 'same-origin',
-    signal: options.signal,
-  });
+  let response: Response;
+  try {
+    response = await fetch('/api/chat_stream', {
+      method: 'POST',
+      body: fd,
+      headers: timezoneHeaders(),
+      credentials: 'same-origin',
+      signal: options.signal,
+    });
+  } catch (error) {
+    // A deliberate Stop (aborted on purpose) has nothing left to retry — but
+    // any OTHER failure here means the browser never learned whether the
+    // server saw this POST at all, which is exactly what the outbox entry
+    // is for: it stays `sending` so a reload retries with this SAME id.
+    if (trackOutbox && options.signal?.aborted) clearOutboxFor(options.sessionId);
+    throw error;
+  }
+  // A response — any response — means the server received the send. What
+  // happens to the STREAM from here is a separate question (resumeTurn's
+  // job); the send itself is no longer in doubt, so the outbox entry is done.
+  if (trackOutbox) clearOutboxFor(options.sessionId);
+
   if (!response.ok || !response.body) {
     yield { type: 'error', message: await responseReason(response, '/api/chat_stream') };
     yield { type: 'done' };

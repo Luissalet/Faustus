@@ -61,6 +61,7 @@ from routes.chat_helpers import (
     _allowed_models_for_request,
     _enforce_chat_privileges,
 )
+from src import chat_outbox
 from src.action_intents import ToolIntent, classify_tool_intent as _classify_tool_intent
 from src.image_model_ids import looks_like_image_generation_model
 from src.tool_policy import (
@@ -290,6 +291,28 @@ def _stream_set(session_id: str, **fields) -> None:
     if rec is None:
         return
     rec.update(fields)
+
+
+async def _idempotent_replay_stream(session_id: str) -> AsyncGenerator[str, None]:
+    """What a duplicate `/api/chat_stream` POST (same `client_message_id`) is
+    answered with, instead of starting a second turn.
+
+    `agent_runs.subscribe` already replays a run's whole buffer — including
+    its own terminal `[DONE]` — before returning, whether that run is still
+    going or only just finished (a finished run lingers briefly for exactly
+    this kind of reconnect; see `_schedule_evict` in src/agent_runs.py). So
+    reusing it here IS "reenganchar al stream vivo" for a live run and "return
+    the final result" for one that just settled, with no separate case to
+    get wrong. Nothing comes back at all once the run has aged out of that
+    grace window — the turn's own POST already saved the assistant message,
+    so a bare `[DONE]` is enough: the caller's history is already correct.
+    """
+    replayed = False
+    async for chunk in agent_runs.subscribe(session_id):
+        replayed = True
+        yield chunk
+    if not replayed:
+        yield "data: [DONE]\n\n"
 
 
 def _message_plain_text(content: Any) -> str:
@@ -1146,6 +1169,15 @@ def setup_chat_routes(
         use_research = chat_request.use_research
         time_filter = chat_request.time_filter
         preset_id = chat_request.preset_id
+        # Not a ChatRequest field (older/other clients must keep working
+        # unchanged), so it is read off the raw body instead of extending the
+        # pydantic model. FastAPI already parsed and cached this body to build
+        # `chat_request`; re-reading it here is free.
+        try:
+            _raw_body = await request.json()
+        except Exception:
+            _raw_body = {}
+        client_message_id = str((_raw_body or {}).get("client_message_id") or "").strip()[:128]
 
         # Verify the caller owns this session before loading it.
         # Without this, any authenticated user can post into another user's chat.
@@ -1190,137 +1222,171 @@ def setup_chat_routes(
             allowed_models=_allowed_models_for_request(request),
         )
 
+        # client_message_id (UX-02/TASK-03): a second POST for a turn already
+        # accepted must not persist a second user message or call the model
+        # again. Optional — with none of this runs, exactly as before.
+        _outbox_id = None
+        if client_message_id:
+            existing = chat_outbox.get(owner=owner, session_id=session, client_message_id=client_message_id)
+            if existing is not None:
+                if existing["status"] in ("finished", "failed") and existing.get("result"):
+                    return {**existing["result"], "idempotent_replay": True}
+                # Still open (accepted/running, or finished with nothing kept
+                # to replay verbatim): say so rather than fake a terminal
+                # error or silently redo the turn.
+                return {
+                    "idempotent_replay": True, "status": existing["status"],
+                    "response": (existing.get("result") or {}).get("response", ""),
+                }
+            # Registered BEFORE the turn does anything — the "intent" half of
+            # TASK-03's "intent before, result after".
+            chat_outbox.record_intent(owner=owner, session_id=session, client_message_id=client_message_id)
+            _outbox_id = client_message_id
+
         # Build shared context (preset, preprocess, preface, compact)
-        ctx = await build_chat_context(
-            sess, request, chat_handler, chat_processor,
-            message=message,
-            session_id=session,
-            preset_id=preset_id,
-            att_ids=att_ids,
-            use_web=use_web,
-            time_filter=time_filter,
-            webhook_manager=webhook_manager,
-            allow_tool_preprocessing=allow_tool_preprocessing,
-            defer_context_shaping=foreground_policy.enabled,
-        )
-
-        # Research injection
-        research_blocked_by_policy = (
-            tool_policy.blocks("trigger_research")
-            or tool_policy.blocks("manage_research")
-        )
-        if use_research and not research_blocked_by_policy:
-            try:
-                _r_ep, _r_model, _r_headers = _resolve_research_endpoint(sess)
-                research_ctx = await research_handler.call_research_service(
-                    message, _r_ep, _r_model, llm_headers=_r_headers
-                )
-                research_message = untrusted_context_message("research context", research_ctx)
-                ctx.messages.insert(len(ctx.preface), research_message)
-                if foreground_policy.enabled:
-                    getattr(ctx, "route_messages", ctx.messages).insert(
-                        len(ctx.preface),
-                        research_message,
-                    )
-            except Exception as e:
-                logger.error(f"Research failed: {e}")
-
-        foreground_candidates = build_foreground_model_candidates(
-            sess.endpoint_url,
-            sess.model,
-            sess.headers,
-            owner=owner,
-            policy=foreground_policy,
-        )
-        route_descriptors = build_foreground_route_descriptors(
-            sess.endpoint_url,
-            sess.model,
-            sess.headers,
-            owner=owner,
-            policy=foreground_policy,
-            selected_endpoint_id=chat_request.selected_endpoint_id,
-        )
-        candidate_request_factory = None
-        selected_context_length = getattr(ctx, "context_length", 0)
-        candidate_request_state = {
-            "context_lengths": {0: selected_context_length},
-            "requests": {0: ctx.messages},
-            "trim_stats": {},
-        }
-        request_messages = ctx.messages
-        if foreground_policy.enabled:
-            request_messages = getattr(ctx, "route_messages", ctx.messages)
-            candidate_request_factory, candidate_request_state = _chat_candidate_request_factory(
-                request_messages,
-                selected_context_length,
-                session=sess,
-                owner=owner,
+        result: Optional[Dict[str, Any]] = None
+        try:
+            ctx = await build_chat_context(
+                sess, request, chat_handler, chat_processor,
+                message=message,
+                session_id=session,
+                preset_id=preset_id,
+                att_ids=att_ids,
+                use_web=use_web,
+                time_filter=time_filter,
+                webhook_manager=webhook_manager,
+                allow_tool_preprocessing=allow_tool_preprocessing,
+                defer_context_shaping=foreground_policy.enabled,
             )
-        requested_model = sess.model
-        reply, actual_candidate, actual_model = await llm_call_async_with_route_fallback(
-            foreground_candidates,
-            request_messages,
-            fallback_statuses=foreground_policy.eligible_statuses,
-            candidate_request_factory=candidate_request_factory,
-            temperature=ctx.preset.temperature,
-            max_tokens=ctx.preset.max_tokens,
-            prompt_type=preset_id,
-            session_id=session,
-        )
-        actual_index = _candidate_index(foreground_candidates, actual_candidate)
-        apply_compaction_state(
-            sess,
-            candidate_request_state.get("compactions", {}).get(actual_index),
-        )
-        requested_route = route_descriptors[0]
-        actual_route = route_descriptors[actual_index]
-        actual_trim = candidate_request_state.get("trim_stats", {}).get(actual_index, {})
-        _clean_reply, _clean_md = clean_thinking_for_save(
-            reply,
-            {
-                "model": actual_model,
+
+            # Research injection
+            research_blocked_by_policy = (
+                tool_policy.blocks("trigger_research")
+                or tool_policy.blocks("manage_research")
+            )
+            if use_research and not research_blocked_by_policy:
+                try:
+                    _r_ep, _r_model, _r_headers = _resolve_research_endpoint(sess)
+                    research_ctx = await research_handler.call_research_service(
+                        message, _r_ep, _r_model, llm_headers=_r_headers
+                    )
+                    research_message = untrusted_context_message("research context", research_ctx)
+                    ctx.messages.insert(len(ctx.preface), research_message)
+                    if foreground_policy.enabled:
+                        getattr(ctx, "route_messages", ctx.messages).insert(
+                            len(ctx.preface),
+                            research_message,
+                        )
+                except Exception as e:
+                    logger.error(f"Research failed: {e}")
+
+            foreground_candidates = build_foreground_model_candidates(
+                sess.endpoint_url,
+                sess.model,
+                sess.headers,
+                owner=owner,
+                policy=foreground_policy,
+            )
+            route_descriptors = build_foreground_route_descriptors(
+                sess.endpoint_url,
+                sess.model,
+                sess.headers,
+                owner=owner,
+                policy=foreground_policy,
+                selected_endpoint_id=chat_request.selected_endpoint_id,
+            )
+            candidate_request_factory = None
+            selected_context_length = getattr(ctx, "context_length", 0)
+            candidate_request_state = {
+                "context_lengths": {0: selected_context_length},
+                "requests": {0: ctx.messages},
+                "trim_stats": {},
+            }
+            request_messages = ctx.messages
+            if foreground_policy.enabled:
+                request_messages = getattr(ctx, "route_messages", ctx.messages)
+                candidate_request_factory, candidate_request_state = _chat_candidate_request_factory(
+                    request_messages,
+                    selected_context_length,
+                    session=sess,
+                    owner=owner,
+                )
+            requested_model = sess.model
+            reply, actual_candidate, actual_model = await llm_call_async_with_route_fallback(
+                foreground_candidates,
+                request_messages,
+                fallback_statuses=foreground_policy.eligible_statuses,
+                candidate_request_factory=candidate_request_factory,
+                temperature=ctx.preset.temperature,
+                max_tokens=ctx.preset.max_tokens,
+                prompt_type=preset_id,
+                session_id=session,
+            )
+            actual_index = _candidate_index(foreground_candidates, actual_candidate)
+            apply_compaction_state(
+                sess,
+                candidate_request_state.get("compactions", {}).get(actual_index),
+            )
+            requested_route = route_descriptors[0]
+            actual_route = route_descriptors[actual_index]
+            actual_trim = candidate_request_state.get("trim_stats", {}).get(actual_index, {})
+            _clean_reply, _clean_md = clean_thinking_for_save(
+                reply,
+                {
+                    "model": actual_model,
+                    "requested_model": requested_model,
+                    "endpoint_id": actual_route.get("endpoint_id"),
+                    "endpoint_label": actual_route.get("endpoint_label"),
+                    "requested_endpoint_id": requested_route.get("endpoint_id"),
+                    "requested_endpoint_label": requested_route.get("endpoint_label"),
+                    "context_length": candidate_request_state["context_lengths"].get(
+                        actual_index,
+                        selected_context_length,
+                    ),
+                    "context_trimmed": bool(
+                        actual_trim
+                        and (
+                            actual_trim.get("messages_after") < actual_trim.get("messages_before")
+                            or actual_trim.get("tokens_after") < actual_trim.get("tokens_before")
+                        )
+                    ),
+                },
+            )
+            sess.add_message(ChatMessage("assistant", _clean_reply, metadata=_clean_md))
+
+            from core.database import update_session_last_accessed
+            update_session_last_accessed(session)
+            session_manager.save_sessions()
+
+            # Background tasks (memory, webhook, auto-name)
+            run_post_response_tasks(
+                sess, session_manager, session, message, reply, None,
+                ctx.uprefs, memory_manager, memory_vector, webhook_manager,
+                character_name=ctx.preset.character_name,
+                owner=ctx.user,
+                allow_background_extraction=not tool_policy.block_all_tool_calls,
+            )
+
+            result = {
+                "response": reply,
                 "requested_model": requested_model,
-                "endpoint_id": actual_route.get("endpoint_id"),
-                "endpoint_label": actual_route.get("endpoint_label"),
+                "model": actual_model,
                 "requested_endpoint_id": requested_route.get("endpoint_id"),
                 "requested_endpoint_label": requested_route.get("endpoint_label"),
-                "context_length": candidate_request_state["context_lengths"].get(
-                    actual_index,
-                    selected_context_length,
-                ),
-                "context_trimmed": bool(
-                    actual_trim
-                    and (
-                        actual_trim.get("messages_after") < actual_trim.get("messages_before")
-                        or actual_trim.get("tokens_after") < actual_trim.get("tokens_before")
-                    )
-                ),
-            },
-        )
-        sess.add_message(ChatMessage("assistant", _clean_reply, metadata=_clean_md))
-
-        from core.database import update_session_last_accessed
-        update_session_last_accessed(session)
-        session_manager.save_sessions()
-
-        # Background tasks (memory, webhook, auto-name)
-        run_post_response_tasks(
-            sess, session_manager, session, message, reply, None,
-            ctx.uprefs, memory_manager, memory_vector, webhook_manager,
-            character_name=ctx.preset.character_name,
-            owner=ctx.user,
-            allow_background_extraction=not tool_policy.block_all_tool_calls,
-        )
-
-        return {
-            "response": reply,
-            "requested_model": requested_model,
-            "model": actual_model,
-            "requested_endpoint_id": requested_route.get("endpoint_id"),
-            "requested_endpoint_label": requested_route.get("endpoint_label"),
-            "endpoint_id": actual_route.get("endpoint_id"),
-            "endpoint_label": actual_route.get("endpoint_label"),
-        }
+                "endpoint_id": actual_route.get("endpoint_id"),
+                "endpoint_label": actual_route.get("endpoint_label"),
+            }
+        finally:
+            # Result after intent, the other half of TASK-03 — written even on
+            # an exception (as "failed"), so a stuck "accepted" row can never
+            # block every retry of this id until the cleanup TTL catches up.
+            if _outbox_id:
+                chat_outbox.mark_finished(
+                    owner=owner, session_id=session, client_message_id=_outbox_id,
+                    status="finished" if result is not None else "failed",
+                    result=result,
+                )
+        return result
 
     # ------------------------------------------------------------------ #
     # POST /api/chat_stream
@@ -1362,6 +1428,13 @@ def setup_chat_routes(
             or (body or {}).get("selected_endpoint_id")
             or ""
         ).strip()
+        # UX-02/TASK-03: optional idempotency key for this send. Absent, every
+        # part of this route behaves exactly as before.
+        client_message_id = str(
+            form_data.get("client_message_id")
+            or (body or {}).get("client_message_id")
+            or ""
+        ).strip()[:128]
         # Issue #3229: API callers send JSON, not FormData.  Read from the
         # JSON body as fallback so callers who send {"allow_bash": true}
         # actually get bash enabled.
@@ -1812,6 +1885,29 @@ def setup_chat_routes(
             owner=owner,
             allowed_models=_allowed_models_for_request(request),
         )
+
+        # client_message_id (UX-02/TASK-03): a duplicate POST for a turn
+        # already accepted must reconnect to it instead of starting a second
+        # one. Skipped for a tool-approval continuation — that has its own
+        # single-use guard in tool_approval_store, and is not a new message.
+        if client_message_id and not tool_approval_id:
+            _existing_outbox = chat_outbox.get(
+                owner=owner, session_id=session, client_message_id=client_message_id,
+            )
+            if _existing_outbox is not None:
+                _replay_run_id = agent_runs.get_run_id(session) or _existing_outbox.get("run_id") or ""
+                _replay_headers = {"X-Faustus-Idempotent-Replay": "1"}
+                if _replay_run_id:
+                    _replay_headers["X-Odysseus-Run-Id"] = _replay_run_id
+                return StreamingResponse(
+                    _idempotent_replay_stream(session),
+                    media_type="text/event-stream",
+                    headers=_replay_headers,
+                )
+            # Registered BEFORE the turn does anything — the "intent" half of
+            # TASK-03's "intent before, result after"; `_safe_stream` below
+            # writes the "result after" half once the turn actually ends.
+            chat_outbox.record_intent(owner=owner, session_id=session, client_message_id=client_message_id)
 
         # Build shared context (stream path uses enhanced_message for context preface)
         ctx = await build_chat_context(
@@ -3195,11 +3291,40 @@ def setup_chat_routes(
         async def _safe_stream() -> AsyncGenerator[str, None]:
             """Wrapper that guarantees _active_streams cleanup even if stream_with_save
             raises before reaching a mode-specific finally block."""
+            # Each mode branch below pops `_active_streams[session]` in its OWN
+            # finally as soon as its generator is exhausted -- which happens
+            # while THIS async for is asking it for its next item, strictly
+            # before this wrapper's own finally runs. So the entry is already
+            # gone by the time this function's finally could read it; the
+            # status has to be captured chunk by chunk, on the way through,
+            # instead. `_stream_set(session, status=...)` always runs just
+            # before the chunk that follows it is yielded, so the value seen
+            # here on the last chunk is the same one that finally would have
+            # read, had it still been there to read.
+            _final_stream_status = None
             try:
                 async for chunk in stream_with_save():
+                    _rec = _active_streams.get(session)
+                    if _rec is not None and _rec.get("status"):
+                        _final_stream_status = _rec["status"]
                     yield chunk
             finally:
                 _active_streams.pop(session, None)
+                # Result after intent, the other half of TASK-03. Runs exactly
+                # once per turn regardless of how it ends (this generator is
+                # what agent_runs drains in the background — see `start()`
+                # below — so a client disconnecting does not skip this).
+                if client_message_id and not tool_approval_id:
+                    try:
+                        chat_outbox.mark_finished(
+                            owner=owner, session_id=session, client_message_id=client_message_id,
+                            status="finished" if _final_stream_status == "done" else "failed",
+                        )
+                    except Exception:
+                        logger.debug(
+                            "chat_outbox: could not close out client_message_id=%s",
+                            client_message_id,
+                        )
 
         # Compare panes are short-lived, single-shot generations whose sessions
         # exist only to drive that one pane — there's nothing to "resume" and
@@ -3243,6 +3368,14 @@ def setup_chat_routes(
         _detached_run = agent_runs.start(session, _safe_stream(), lane=_lane, label=_run_label[:80],
                                          model=str(getattr(sess, "model", "") or ""),
                                          endpoint_url=str(getattr(sess, "endpoint_url", "") or ""))
+        if client_message_id and not tool_approval_id:
+            try:
+                chat_outbox.mark_running(
+                    owner=owner, session_id=session, client_message_id=client_message_id,
+                    run_id=_detached_run.run_id,
+                )
+            except Exception:
+                logger.debug("chat_outbox: could not mark client_message_id=%s running", client_message_id)
         return StreamingResponse(
             agent_runs.subscribe(session, _detached_run),
             media_type="text/event-stream",
