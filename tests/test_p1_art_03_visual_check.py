@@ -38,6 +38,7 @@ def _make_table_cut_pdf(path):
 
 
 def test_normal_pdf_passes_visual_check(tmp_path):
+    pytest.importorskip("pdfplumber")  # optional dependency (requirements-optional.txt)
     path = tmp_path / "normal.pdf"
     _make_normal_pdf(path)
     report = da.detect_page_overflow(str(path))
@@ -48,6 +49,7 @@ def test_normal_pdf_passes_visual_check(tmp_path):
 
 
 def test_text_past_the_margin_fails_visual_check(tmp_path):
+    pytest.importorskip("pdfplumber")  # optional dependency (requirements-optional.txt)
     path = tmp_path / "overflow.pdf"
     _make_overflow_text_pdf(path)
     report = da.detect_page_overflow(str(path))
@@ -60,6 +62,7 @@ def test_text_past_the_margin_fails_visual_check(tmp_path):
 
 
 def test_table_cut_off_at_the_edge_fails_visual_check(tmp_path):
+    pytest.importorskip("pdfplumber")  # optional dependency (requirements-optional.txt)
     path = tmp_path / "table_cut.pdf"
     _make_table_cut_pdf(path)
     report = da.detect_page_overflow(str(path))
@@ -89,6 +92,7 @@ def test_missing_pdfplumber_reports_a_declared_error_not_a_silent_pass(tmp_path,
 # ---- route wiring: GET /api/document/{doc_id}/visual-check ----------------
 
 def test_visual_check_route_flags_overflow_pdf(tmp_path, monkeypatch):
+    pytest.importorskip("pdfplumber")  # optional dependency (requirements-optional.txt)
     from unittest.mock import MagicMock
     from fastapi import FastAPI
     from fastapi.testclient import TestClient

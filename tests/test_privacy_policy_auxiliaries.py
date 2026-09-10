@@ -104,6 +104,13 @@ class TestChromaClientPrivacyGate:
         monkeypatch.setenv("CHROMADB_HOST", "localhost")
         monkeypatch.setenv("CHROMADB_PORT", "8100")
         monkeypatch.setattr(pp, "get_privacy_profile", lambda project=None, owner=None: pp.PROFILE_LOCAL_ONLY)
+        # Luis's machine may well have something listening locally; what this
+        # test is about is the gate, so the connection itself is made to fail.
+        import chromadb
+
+        def _refuse(*a, **k):
+            raise RuntimeError("not reachable (test)")
+        monkeypatch.setattr(chromadb, "HttpClient", _refuse, raising=False)
 
         with pytest.raises(RuntimeError) as exc_info:
             chroma_client.get_chroma_client()

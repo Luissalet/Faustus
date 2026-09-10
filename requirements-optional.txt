@@ -61,3 +61,6 @@ markitdown[docx,pptx,xlsx,xls]==0.1.6
 #   pyautogui — mouse/keyboard input on macOS (Windows/Linux do not need it)
 mss
 pyautogui
+# ART-03: visual page-overflow check of PDFs (src/document_actions.py::detect_page_overflow).
+# Pure Python (pdfminer); the route answers 503 "pdfplumber is not installed" without it.
+pdfplumber

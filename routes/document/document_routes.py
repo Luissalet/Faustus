@@ -1216,19 +1216,29 @@ def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
         preserve (comments, tracked changes, numbering, images) WITHOUT
         importing or converting it — the frontend shows this report and lets
         the user cancel before any conversion happens (ART-02)."""
+        import os
         import tempfile
         from src.document_actions import analyze_docx_preservation, DocumentActionError
 
         from src.auth_helpers import require_privilege
         require_privilege(request, "can_use_documents")
 
-        with tempfile.NamedTemporaryFile(suffix=".docx") as tmp:
+        # Written, closed, then reopened by path: on Windows a file that is
+        # still open cannot be opened again by python-docx ("Package not
+        # found"), which is what the first run on Luis's machine reported.
+        tmp = tempfile.NamedTemporaryFile(suffix=".docx", delete=False)
+        try:
             tmp.write(await file.read())
-            tmp.flush()
+            tmp.close()
             try:
                 report = analyze_docx_preservation(tmp.name)
             except DocumentActionError as exc:
                 raise HTTPException(400, str(exc))
+        finally:
+            try:
+                os.unlink(tmp.name)
+            except OSError:
+                pass
         return report
 
     # ---- POST /api/documents/pdf/split — ART-07, budgeted split ----
