@@ -92,7 +92,9 @@ def test_pages_site_owns_its_entrypoint_and_media():
     # are the two subtrees under docs/ that may hold Markdown. docs/spec/ is
     # the third: the integral specification package (requirements, schemas,
     # QA scenarios and the reuse map) that implementation lots are cut from.
-    ENGINEERING = ("docs/ui/", "docs/design/", "docs/spec/")
+    # docs/api/ is the versioned API contract (OPS-06): client guide,
+    # deprecations, versioning — engineering material too.
+    ENGINEERING = ("docs/ui/", "docs/design/", "docs/spec/", "docs/api/")
     stray = [
         p for p in docs_files
         if p.suffix.lower() in VIDEO_EXTS | {".md"}
