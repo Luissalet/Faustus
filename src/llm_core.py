@@ -12,7 +12,7 @@ import os
 import math
 from contextlib import asynccontextmanager
 from fastapi import HTTPException
-from typing import Optional, Dict, List, Tuple, Callable
+from typing import Optional, Dict, List, Tuple, Callable, Mapping
 from src.model_context import get_context_length, DEFAULT_CONTEXT, is_local_endpoint
 from src.tool_call_assembler import ToolCallAssembler
 from src.retry_policy import (
@@ -3185,12 +3185,140 @@ def _route_for_gen_overrides(url: str, gen_overrides: Optional[Dict], model: str
     return url
 
 
+def _stream_error_chunk(status: int, message: str, *, error_class: str,
+                         attempts: int, retryable: bool,
+                         partial: bool = False,
+                         fallback_eligible: Optional[bool] = None) -> str:
+    """Typed `event: error` SSE chunk for a streaming transport failure
+    (CALL-06, spec §34.5), used by the retry loops in `_stream_llm_inner`.
+
+    Carries the same `error_class`/`attempts`/`retryable` fields the
+    non-streaming loop attaches to its raised HTTPException (see
+    `llm_call_async`'s local `_annotate`), so a caller already reading those
+    off a non-streaming failure finds the same vocabulary here.
+
+    `partial=True` marks a cut that happened AFTER at least one delta was
+    already forwarded to the client this attempt: some of the answer is
+    already on screen, so this is `outcome_unknown` in the streaming sense
+    — this loop itself never retries such a cut (that would resend the
+    prompt and duplicate the visible text), and the caller must not treat
+    the turn as if nothing happened.
+    """
+    payload = {
+        "error": message,
+        "status": status,
+        "error_class": error_class,
+        "attempts": attempts,
+        "retryable": retryable,
+    }
+    if partial:
+        payload["partial"] = True
+    if fallback_eligible is not None:
+        payload["fallback_eligible"] = fallback_eligible
+    return f'event: error\ndata: {json.dumps(payload)}\n\n'
+
+
+def _stream_status_error_chunk(status: int, friendly: str, raw: str, *,
+                                error_class: str, attempts: int, retryable: bool) -> str:
+    """`event: error` chunk for a non-2xx stream response (CALL-06).
+
+    Keeps the existing status/text/raw shape callers already parse
+    (`_stream_error_status`, the frontend's error banner) and only adds the
+    §34.5 fields `_stream_error_chunk` also carries. A definite HTTP status
+    is never `outcome_unknown` — the request WAS answered, just with an
+    error — so there is no `partial` field here.
+    """
+    payload = {
+        "status": status, "text": friendly, "raw": raw[:500],
+        "error_class": error_class, "attempts": attempts, "retryable": retryable,
+    }
+    return f'event: error\ndata: {json.dumps(payload)}\n\n'
+
+
+def _stream_refusal_event(text: str = "", *, stop_reason: Optional[str] = None) -> str:
+    """Typed SSE event for a provider-issued refusal (MOD-03), instead of
+    letting it masquerade as ordinary answer text: OpenAI-compatible's
+    `delta.refusal` field carries incremental refusal text directly (`text`);
+    Anthropic signals it only via `stop_reason: "refusal"` on the already-
+    streamed text, so `stop_reason` is passed through instead. Kept on its
+    own `type` so the frontend never renders or animates it as if it were
+    the model's normal reply."""
+    payload = {"type": "refusal"}
+    if text:
+        payload["text"] = text
+    if stop_reason:
+        payload["stop_reason"] = stop_reason
+    return f'data: {json.dumps(payload)}\n\n'
+
+
+def _stream_retry_decision(*, status: Optional[int] = None,
+                            exc: Optional[BaseException] = None,
+                            headers: Optional[Mapping] = None,
+                            attempt: int, max_retries: int,
+                            budget: RetryBudget,
+                            delta_emitted: bool,
+                            fail_fast: bool = False) -> Tuple[bool, float, RetryClass, bool]:
+    """Classify one failed streaming attempt and decide what happens next
+    (CALL-06, spec §34.5) — the streaming-loop counterpart of the inline
+    decisions `llm_call_async` makes for the non-streaming path, returning a
+    decision instead of raising/sleeping directly (a generator must `yield`
+    its failure, not raise it, and must additionally never resend after
+    `delta_emitted`).
+
+    Returns `(should_retry, wait_seconds, classification, retryable)`. A cut
+    classified `outcome_unknown` (a read timeout or reset once bytes were
+    already exchanged) is retried ONLY when nothing has been forwarded to
+    the client yet — once `delta_emitted` is True, retrying would resend the
+    prompt and duplicate the text already on screen, so the caller must stop
+    and emit a `partial` error instead.
+
+    `fail_fast` mirrors `llm_call_async`'s `availability_only_transport`:
+    a caller juggling its OWN fallback chain across candidates (see
+    `stream_llm_with_fallback`) wants a single fast, definitive failure per
+    candidate rather than this loop burning `max_retries` in place before
+    the chain can move on — pass it for exactly the exception classes that
+    function gates the same way (pool/write/protocol/network), never for a
+    connect-phase failure (already bounded by the dead-host cooldown) or a
+    read timeout (already its own outcome_unknown special case).
+    """
+    classification = classify_http(status=status, headers=headers, exc=exc)
+    retryable = classification is not RetryClass.NO_RETRY
+    if fail_fast:
+        return False, 0.0, classification, False
+    if classification is RetryClass.OUTCOME_UNKNOWN and delta_emitted:
+        return False, 0.0, classification, retryable
+    can_retry = classification in (RetryClass.RETRY_NOW, RetryClass.RETRY_BACKOFF) or (
+        classification is RetryClass.OUTCOME_UNKNOWN and not delta_emitted
+    )
+    if can_retry and attempt < max_retries and not budget.exhausted():
+        retry_after = parse_retry_after(headers) if status is not None else None
+        return True, _retry_delay(attempt, retry_after=retry_after), classification, retryable
+    return False, 0.0, classification, retryable
+
+
+async def _stream_retry_or_fail(*, should_retry: bool, wait: float,
+                                 error_chunk: str, retry_call):
+    """Shared tail for every streaming except-clause / non-2xx-status branch
+    in `_stream_llm_inner` (CALL-06): either sleep and tail-recurse into the
+    next attempt via `retry_call` (a zero-arg callable returning the retried
+    attempt's async generator), or yield the already-built terminal
+    `error_chunk` (from `_stream_error_chunk`/`_stream_status_error_chunk`).
+    """
+    if should_retry:
+        await asyncio.sleep(wait)
+        async for chunk in retry_call():
+            yield chunk
+        return
+    yield error_chunk
+
+
 async def stream_llm(url: str, model: str, messages: List[Dict], temperature: float = LLMConfig.DEFAULT_TEMPERATURE,
                      max_tokens: int = LLMConfig.DEFAULT_MAX_TOKENS, headers: Optional[Dict] = None,
                      timeout: int = LLMConfig.STREAM_TIMEOUT, prompt_type: Optional[str] = None,
                      tools: Optional[List[Dict]] = None, session_id: Optional[str] = None,
                      tool_choice_none: bool = False, workload: str = "foreground",
-                     gen_overrides: Optional[Dict] = None):
+                     gen_overrides: Optional[Dict] = None, max_retries: int = LLMConfig.MAX_RETRIES,
+                     availability_only_transport: bool = False):
     if str(url or '').startswith('faustus-cli://'):
         from src.cli_model import stream
         async for chunk in stream(url, model, messages, headers, timeout, tools=tools):
@@ -3228,6 +3356,8 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
             session_id=session_id,
             tool_choice_none=tool_choice_none,
             gen_overrides=gen_overrides,
+            max_retries=max_retries,
+            availability_only_transport=availability_only_transport,
         ):
             yield chunk
 
@@ -3236,16 +3366,45 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                             max_tokens: int = LLMConfig.DEFAULT_MAX_TOKENS, headers: Optional[Dict] = None,
                             timeout: int = LLMConfig.STREAM_TIMEOUT, prompt_type: Optional[str] = None,
                             tools: Optional[List[Dict]] = None, session_id: Optional[str] = None,
-                            tool_choice_none: bool = False, gen_overrides: Optional[Dict] = None):
+                            tool_choice_none: bool = False, gen_overrides: Optional[Dict] = None,
+                            max_retries: int = LLMConfig.MAX_RETRIES,
+                            availability_only_transport: bool = False,
+                            _attempt: int = 1, _budget: Optional[RetryBudget] = None):
     _overrides = _clean_gen_overrides(gen_overrides)
     """Stream LLM responses with improved error handling.
 
     Yields SSE chunks:
       - data: {"delta": "text"}           — text content
       - data: {"type": "tool_calls", ...}  — accumulated native tool calls (before DONE)
+      - data: {"type": "refusal", ...}     — provider refusal (MOD-03), never disguised as text
       - event: error                       — errors
       - data: [DONE]                       — end of stream
+
+    Retries (CALL-06, spec §34.5) use the same `src.retry_policy` classes as
+    `llm_call_async`: 429/503 honour Retry-After, other 5xx and connect-phase
+    transport errors use jittered backoff, 4xx never retries. Each provider
+    branch below retries by tail-recursing into a fresh attempt (`_attempt`/
+    `_budget` are internal — never pass them from outside) rather than
+    looping in place, so none of the SSE parsing logic has to be reindented.
+    A cut that happens AFTER at least one delta was already yielded to the
+    caller this attempt is `outcome_unknown` in the streaming sense and is
+    NEVER retried here (that would resend the prompt and duplicate the text
+    already on screen): the branch instead yields a typed error with
+    `partial: true` and stops. A cut before any delta was sent behaves like
+    the non-streaming loop and retries transparently.
+
+    `availability_only_transport` mirrors `llm_call_async`'s parameter of
+    the same name: pass it when the CALLER already runs its own fallback
+    chain across candidates (`stream_llm_with_fallback`) so a pool/write/
+    protocol/network failure fails fast (one attempt, non-retryable) instead
+    of burning `max_retries` in place before the chain can move to the next
+    candidate. Connect-phase failures and read timeouts are unaffected —
+    they already have their own fast-fail mechanisms (dead-host cooldown,
+    outcome_unknown).
     """
+    if _budget is None:
+        _budget = RetryBudget(LLMConfig.RETRY_TIME_BUDGET)
+        _budget.start()
     provider = _detect_provider(url)
     messages_copy = _sanitize_llm_messages(messages)
 
@@ -3342,6 +3501,17 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
         output_tokens = 0
         _responses_actual_model = ""
         _responses_model_announced = False
+        _delta_emitted = False
+
+        def _retry(next_attempt: int):
+            return _stream_llm_inner(
+                url, model, messages, temperature=temperature, max_tokens=max_tokens,
+                headers=headers, timeout=timeout, prompt_type=prompt_type, tools=tools,
+                session_id=session_id, tool_choice_none=tool_choice_none,
+                gen_overrides=gen_overrides, max_retries=max_retries,
+                availability_only_transport=availability_only_transport,
+                _attempt=next_attempt, _budget=_budget,
+            )
         try:
             client = _get_http_client()
             async with client.stream('POST', target_url, json=payload, headers=h, timeout=stream_timeout) as r:
@@ -3349,7 +3519,26 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                 if r.status_code != 200:
                     raw = (await r.aread()).decode(errors="replace")
                     friendly = _format_chatgpt_subscription_error(r.status_code, raw)
-                    yield f'event: error\ndata: {json.dumps({"status": r.status_code, "text": friendly, "raw": raw[:500]})}\n\n'
+                    _should_retry, _wait, _classification, _retryable = _stream_retry_decision(
+                        status=r.status_code, headers=r.headers, attempt=_attempt,
+                        max_retries=max_retries, budget=_budget, delta_emitted=False,
+                    )
+                    if _should_retry and parse_retry_after(r.headers) is not None:
+                        logger.info(
+                            f"ChatGPT Subscription stream to {target_url}: server busy "
+                            f"(HTTP {r.status_code}), retrying in {_wait:.1f}s (Retry-After honoured)"
+                        )
+                    async for chunk in _stream_retry_or_fail(
+                        should_retry=_should_retry, wait=_wait,
+                        error_chunk=_stream_status_error_chunk(
+                            r.status_code, friendly, raw,
+                            error_class=_retry_error_class(status=r.status_code),
+                            attempts=_attempt,
+                            retryable=_retryable,
+                        ),
+                        retry_call=lambda: _retry(_attempt + 1),
+                    ):
+                        yield chunk
                     return
                 async for line in r.aiter_lines():
                     if not line:
@@ -3390,6 +3579,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                             if _degenerate:
                                 yield _degenerate
                                 return
+                            _delta_emitted = True
                             yield f'data: {json.dumps({"delta": delta})}\n\n'
                     elif evt == "response.completed":
                         usage = (data.get("response") or {}).get("usage") or data.get("usage") or {}
@@ -3439,22 +3629,132 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                 yield "data: [DONE]\n\n"
         except (httpx.ConnectError, httpx.ConnectTimeout) as e:
             _cooled = _mark_host_dead(target_url)
+            _should_retry, _wait, _classification, _retryable = _stream_retry_decision(
+                exc=e, attempt=_attempt, max_retries=max_retries, budget=_budget,
+                delta_emitted=_delta_emitted,
+            )
+            _should_retry = _should_retry and not _cooled
             _tail = f" — host cooled for {DEAD_HOST_COOLDOWN:.0f}s" if _cooled else " — transient, will retry"
             logger.warning(f"ChatGPT Subscription stream connect to {target_url} failed: {e}{_tail}")
-            yield f'event: error\ndata: {json.dumps({"error": f"Cannot reach {_host_key(target_url)}", "status": 503})}\n\n'
-        except httpx.ReadTimeout:
-            yield f'event: error\ndata: {json.dumps({"error": "Read timeout", "status": 504})}\n\n'
-        except httpx.PoolTimeout:
-            yield f'event: error\ndata: {json.dumps({"error": "Connection pool timeout", "status": 504})}\n\n'
-        except httpx.WriteTimeout:
-            yield f'event: error\ndata: {json.dumps({"error": "Upstream timeout", "status": 504, "fallback_eligible": False})}\n\n'
-        except httpx.ProtocolError:
-            yield f'event: error\ndata: {json.dumps({"error": "Upstream protocol error", "status": 502, "fallback_eligible": False})}\n\n'
-        except httpx.NetworkError:
-            yield f'event: error\ndata: {json.dumps({"error": "Network error", "status": 502, "fallback_eligible": False})}\n\n'
+            async for chunk in _stream_retry_or_fail(
+                should_retry=_should_retry, wait=_wait,
+                error_chunk=_stream_error_chunk(
+                    503, f"Cannot reach {_host_key(target_url)}: {e}",
+                    error_class=_retry_error_class(exc=e), attempts=_attempt,
+                    retryable=_retryable,
+                    partial=_delta_emitted,
+                ),
+                retry_call=lambda: _retry(_attempt + 1),
+            ):
+                yield chunk
+        except httpx.ReadTimeout as e:
+            _should_retry, _wait, _classification, _retryable = _stream_retry_decision(
+                exc=e, attempt=_attempt, max_retries=max_retries, budget=_budget,
+                delta_emitted=_delta_emitted,
+            )
+            logger.warning(
+                f"ChatGPT Subscription stream read timed out (attempt {_attempt}): {e} "
+                f"— the request may have completed upstream even though no full response arrived"
+            )
+            async for chunk in _stream_retry_or_fail(
+                should_retry=_should_retry, wait=_wait,
+                error_chunk=_stream_error_chunk(
+                    504,
+                    "Read timeout after partial output; outcome unknown"
+                    if _delta_emitted else
+                    f"Read timeout after {_attempt} attempt(s); outcome unknown",
+                    error_class=_retry_error_class(exc=e), attempts=_attempt,
+                    retryable=False,  # outcome_unknown: never auto-retryable for an external caller (§34.5)
+                    partial=_delta_emitted,
+                ),
+                retry_call=lambda: _retry(_attempt + 1),
+            ):
+                yield chunk
+        except httpx.PoolTimeout as e:
+            _should_retry, _wait, _classification, _retryable = _stream_retry_decision(
+                exc=e, attempt=_attempt, max_retries=max_retries, budget=_budget,
+                delta_emitted=_delta_emitted,
+                fail_fast=availability_only_transport,
+            )
+            logger.warning(f"ChatGPT Subscription stream connection pool timed out (attempt {_attempt}): {e}")
+            async for chunk in _stream_retry_or_fail(
+                should_retry=_should_retry, wait=_wait,
+                error_chunk=_stream_error_chunk(
+                    504, f"Connection pool timeout after {_attempt} attempt(s)",
+                    error_class=_retry_error_class(exc=e), attempts=_attempt,
+                    retryable=_retryable,
+                    partial=_delta_emitted,
+                ),
+                retry_call=lambda: _retry(_attempt + 1),
+            ):
+                yield chunk
+        except httpx.WriteTimeout as e:
+            _should_retry, _wait, _classification, _retryable = _stream_retry_decision(
+                exc=e, attempt=_attempt, max_retries=max_retries, budget=_budget,
+                delta_emitted=_delta_emitted,
+                fail_fast=availability_only_transport,
+            )
+            logger.warning(f"ChatGPT Subscription stream upstream timeout (attempt {_attempt}): {e}")
+            async for chunk in _stream_retry_or_fail(
+                should_retry=_should_retry, wait=_wait,
+                error_chunk=_stream_error_chunk(
+                    504, f"Upstream timeout after {_attempt} attempt(s)",
+                    error_class=_retry_error_class(exc=e), attempts=_attempt,
+                    retryable=_retryable,
+                    partial=_delta_emitted, fallback_eligible=False,
+                ),
+                retry_call=lambda: _retry(_attempt + 1),
+            ):
+                yield chunk
+        except httpx.ProtocolError as e:
+            # RemoteProtocolError (server reset/violated protocol mid-stream)
+            # classifies outcome_unknown; a local one classifies retry_backoff
+            # — see retry_policy.classify_http.
+            _should_retry, _wait, _classification, _retryable = _stream_retry_decision(
+                exc=e, attempt=_attempt, max_retries=max_retries, budget=_budget,
+                delta_emitted=_delta_emitted,
+                fail_fast=availability_only_transport,
+            )
+            logger.warning(f"ChatGPT Subscription stream protocol failure (attempt {_attempt}): {e}")
+            async for chunk in _stream_retry_or_fail(
+                should_retry=_should_retry, wait=_wait,
+                error_chunk=_stream_error_chunk(
+                    502, f"Upstream protocol error: {e}",
+                    error_class=_retry_error_class(exc=e), attempts=_attempt,
+                    retryable=_retryable,
+                    partial=_delta_emitted, fallback_eligible=False,
+                ),
+                retry_call=lambda: _retry(_attempt + 1),
+            ):
+                yield chunk
+        except httpx.NetworkError as e:
+            # ReadError (reset while reading the response) classifies
+            # outcome_unknown; WriteError/CloseError classify retry_backoff.
+            _should_retry, _wait, _classification, _retryable = _stream_retry_decision(
+                exc=e, attempt=_attempt, max_retries=max_retries, budget=_budget,
+                delta_emitted=_delta_emitted,
+                fail_fast=availability_only_transport,
+            )
+            logger.warning(f"ChatGPT Subscription stream network failure (attempt {_attempt}): {e}")
+            async for chunk in _stream_retry_or_fail(
+                should_retry=_should_retry, wait=_wait,
+                error_chunk=_stream_error_chunk(
+                    502, f"Network error: {e}",
+                    error_class=_retry_error_class(exc=e), attempts=_attempt,
+                    retryable=_retryable,
+                    partial=_delta_emitted, fallback_eligible=False,
+                ),
+                retry_call=lambda: _retry(_attempt + 1),
+            ):
+                yield chunk
         except Exception as e:
+            # Not a recognised transport failure (e.g. a bug in the parsing
+            # above): never retried, same as before this module.
             logger.error(f"ChatGPT Subscription stream error: {e}")
-            yield f'event: error\ndata: {json.dumps({"error": str(e), "status": 502, "fallback_eligible": False})}\n\n'
+            yield _stream_error_chunk(
+                502, str(e), error_class=_retry_error_class(exc=e), attempts=_attempt,
+                retryable=False, partial=_delta_emitted, fallback_eligible=False,
+            )
         return
 
     # ── Native Ollama streaming ──
@@ -3463,6 +3763,17 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
         _harmony_router = _HarmonyStreamRouter()
         _ollama_actual_model = ""
         _ollama_model_announced = False
+        _delta_emitted = False
+
+        def _retry(next_attempt: int):
+            return _stream_llm_inner(
+                url, model, messages, temperature=temperature, max_tokens=max_tokens,
+                headers=headers, timeout=timeout, prompt_type=prompt_type, tools=tools,
+                session_id=session_id, tool_choice_none=tool_choice_none,
+                gen_overrides=gen_overrides, max_retries=max_retries,
+                availability_only_transport=availability_only_transport,
+                _attempt=next_attempt, _budget=_budget,
+            )
         try:
             client = _get_http_client()
             async with client.stream('POST', target_url, json=payload, headers=h, timeout=stream_timeout) as r:
@@ -3470,7 +3781,26 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                 if r.status_code != 200:
                     raw = (await r.aread()).decode(errors="replace")
                     friendly = _format_upstream_error(r.status_code, raw, target_url)
-                    yield f'event: error\ndata: {json.dumps({"status": r.status_code, "text": friendly, "raw": raw[:500]})}\n\n'
+                    _should_retry, _wait, _classification, _retryable = _stream_retry_decision(
+                        status=r.status_code, headers=r.headers, attempt=_attempt,
+                        max_retries=max_retries, budget=_budget, delta_emitted=False,
+                    )
+                    if _should_retry and parse_retry_after(r.headers) is not None:
+                        logger.info(
+                            f"Ollama stream to {target_url}: server busy (HTTP {r.status_code}), "
+                            f"retrying in {_wait:.1f}s (Retry-After honoured)"
+                        )
+                    async for chunk in _stream_retry_or_fail(
+                        should_retry=_should_retry, wait=_wait,
+                        error_chunk=_stream_status_error_chunk(
+                            r.status_code, friendly, raw,
+                            error_class=_retry_error_class(status=r.status_code),
+                            attempts=_attempt,
+                            retryable=_retryable,
+                        ),
+                        retry_call=lambda: _retry(_attempt + 1),
+                    ):
+                        yield chunk
                     return
                 async for line in r.aiter_lines():
                     if not line:
@@ -3496,14 +3826,20 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                     message = j.get("message") or {}
                     thinking = message.get("thinking") or ""
                     if thinking:
+                        _delta_emitted = True
                         yield _stream_delta_event(thinking, thinking=True)
                     content = message.get("content") or ""
                     if content:
                         for part, is_thinking in _harmony_router.feed(content):
+                            _delta_emitted = True
                             yield _stream_delta_event(part, thinking=is_thinking)
                     for tc in message.get("tool_calls") or []:
                         fn = tc.get("function") or {}
                         if fn.get("name"):
+                            # Only accumulated locally — Ollama emits tool_calls as one
+                            # block at `done`, so nothing has reached the client yet;
+                            # this must NOT set _delta_emitted (that would needlessly
+                            # block a safe retry on a cut before `done`).
                             _ollama_tool_calls.append({
                                 "id": tc.get("id") or f"call_{len(_ollama_tool_calls)}",
                                 "name": _unalias_harmony_tool_name(fn.get("name") or "", model),
@@ -3557,22 +3893,132 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                 yield "data: [DONE]\n\n"
         except (httpx.ConnectError, httpx.ConnectTimeout) as e:
             _cooled = _mark_host_dead(target_url)
+            _should_retry, _wait, _classification, _retryable = _stream_retry_decision(
+                exc=e, attempt=_attempt, max_retries=max_retries, budget=_budget,
+                delta_emitted=_delta_emitted,
+            )
+            _should_retry = _should_retry and not _cooled
             _tail = f" — host cooled for {DEAD_HOST_COOLDOWN:.0f}s" if _cooled else " — transient, will retry"
             logger.warning(f"Ollama stream connect to {target_url} failed: {e}{_tail}")
-            yield f'event: error\ndata: {json.dumps({"error": f"Cannot reach {_host_key(target_url)}", "status": 503})}\n\n'
-        except httpx.ReadTimeout:
-            yield f'event: error\ndata: {json.dumps({"error": "Read timeout", "status": 504})}\n\n'
-        except httpx.PoolTimeout:
-            yield f'event: error\ndata: {json.dumps({"error": "Connection pool timeout", "status": 504})}\n\n'
-        except httpx.WriteTimeout:
-            yield f'event: error\ndata: {json.dumps({"error": "Upstream timeout", "status": 504, "fallback_eligible": False})}\n\n'
-        except httpx.ProtocolError:
-            yield f'event: error\ndata: {json.dumps({"error": "Upstream protocol error", "status": 502, "fallback_eligible": False})}\n\n'
-        except httpx.NetworkError:
-            yield f'event: error\ndata: {json.dumps({"error": "Network error", "status": 502, "fallback_eligible": False})}\n\n'
+            async for chunk in _stream_retry_or_fail(
+                should_retry=_should_retry, wait=_wait,
+                error_chunk=_stream_error_chunk(
+                    503, f"Cannot reach {_host_key(target_url)}: {e}",
+                    error_class=_retry_error_class(exc=e), attempts=_attempt,
+                    retryable=_retryable,
+                    partial=_delta_emitted,
+                ),
+                retry_call=lambda: _retry(_attempt + 1),
+            ):
+                yield chunk
+        except httpx.ReadTimeout as e:
+            _should_retry, _wait, _classification, _retryable = _stream_retry_decision(
+                exc=e, attempt=_attempt, max_retries=max_retries, budget=_budget,
+                delta_emitted=_delta_emitted,
+            )
+            logger.warning(
+                f"Ollama stream read timed out (attempt {_attempt}): {e} "
+                f"— the request may have completed upstream even though no full response arrived"
+            )
+            async for chunk in _stream_retry_or_fail(
+                should_retry=_should_retry, wait=_wait,
+                error_chunk=_stream_error_chunk(
+                    504,
+                    "Read timeout after partial output; outcome unknown"
+                    if _delta_emitted else
+                    f"Read timeout after {_attempt} attempt(s); outcome unknown",
+                    error_class=_retry_error_class(exc=e), attempts=_attempt,
+                    retryable=False,  # outcome_unknown: never auto-retryable for an external caller (§34.5)
+                    partial=_delta_emitted,
+                ),
+                retry_call=lambda: _retry(_attempt + 1),
+            ):
+                yield chunk
+        except httpx.PoolTimeout as e:
+            _should_retry, _wait, _classification, _retryable = _stream_retry_decision(
+                exc=e, attempt=_attempt, max_retries=max_retries, budget=_budget,
+                delta_emitted=_delta_emitted,
+                fail_fast=availability_only_transport,
+            )
+            logger.warning(f"Ollama stream connection pool timed out (attempt {_attempt}): {e}")
+            async for chunk in _stream_retry_or_fail(
+                should_retry=_should_retry, wait=_wait,
+                error_chunk=_stream_error_chunk(
+                    504, f"Connection pool timeout after {_attempt} attempt(s)",
+                    error_class=_retry_error_class(exc=e), attempts=_attempt,
+                    retryable=_retryable,
+                    partial=_delta_emitted,
+                ),
+                retry_call=lambda: _retry(_attempt + 1),
+            ):
+                yield chunk
+        except httpx.WriteTimeout as e:
+            _should_retry, _wait, _classification, _retryable = _stream_retry_decision(
+                exc=e, attempt=_attempt, max_retries=max_retries, budget=_budget,
+                delta_emitted=_delta_emitted,
+                fail_fast=availability_only_transport,
+            )
+            logger.warning(f"Ollama stream upstream timeout (attempt {_attempt}): {e}")
+            async for chunk in _stream_retry_or_fail(
+                should_retry=_should_retry, wait=_wait,
+                error_chunk=_stream_error_chunk(
+                    504, f"Upstream timeout after {_attempt} attempt(s)",
+                    error_class=_retry_error_class(exc=e), attempts=_attempt,
+                    retryable=_retryable,
+                    partial=_delta_emitted, fallback_eligible=False,
+                ),
+                retry_call=lambda: _retry(_attempt + 1),
+            ):
+                yield chunk
+        except httpx.ProtocolError as e:
+            # RemoteProtocolError (server reset/violated protocol mid-stream)
+            # classifies outcome_unknown; a local one classifies retry_backoff
+            # — see retry_policy.classify_http.
+            _should_retry, _wait, _classification, _retryable = _stream_retry_decision(
+                exc=e, attempt=_attempt, max_retries=max_retries, budget=_budget,
+                delta_emitted=_delta_emitted,
+                fail_fast=availability_only_transport,
+            )
+            logger.warning(f"Ollama stream protocol failure (attempt {_attempt}): {e}")
+            async for chunk in _stream_retry_or_fail(
+                should_retry=_should_retry, wait=_wait,
+                error_chunk=_stream_error_chunk(
+                    502, f"Upstream protocol error: {e}",
+                    error_class=_retry_error_class(exc=e), attempts=_attempt,
+                    retryable=_retryable,
+                    partial=_delta_emitted, fallback_eligible=False,
+                ),
+                retry_call=lambda: _retry(_attempt + 1),
+            ):
+                yield chunk
+        except httpx.NetworkError as e:
+            # ReadError (reset while reading the response) classifies
+            # outcome_unknown; WriteError/CloseError classify retry_backoff.
+            _should_retry, _wait, _classification, _retryable = _stream_retry_decision(
+                exc=e, attempt=_attempt, max_retries=max_retries, budget=_budget,
+                delta_emitted=_delta_emitted,
+                fail_fast=availability_only_transport,
+            )
+            logger.warning(f"Ollama stream network failure (attempt {_attempt}): {e}")
+            async for chunk in _stream_retry_or_fail(
+                should_retry=_should_retry, wait=_wait,
+                error_chunk=_stream_error_chunk(
+                    502, f"Network error: {e}",
+                    error_class=_retry_error_class(exc=e), attempts=_attempt,
+                    retryable=_retryable,
+                    partial=_delta_emitted, fallback_eligible=False,
+                ),
+                retry_call=lambda: _retry(_attempt + 1),
+            ):
+                yield chunk
         except Exception as e:
+            # Not a recognised transport failure (e.g. a bug in the parsing
+            # above): never retried, same as before this module.
             logger.error(f"Ollama stream error: {e}")
-            yield f'event: error\ndata: {json.dumps({"error": str(e), "status": 502, "fallback_eligible": False})}\n\n'
+            yield _stream_error_chunk(
+                502, str(e), error_class=_retry_error_class(exc=e), attempts=_attempt,
+                retryable=False, partial=_delta_emitted, fallback_eligible=False,
+            )
         return
 
     # ── Anthropic streaming ──
@@ -3586,6 +4032,18 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
         _anth_tool_blocks: Dict[int, Dict] = {}
         _anth_block_idx = -1
         _anth_block_type = ""
+        _anth_stop_reason = None
+        _delta_emitted = False
+
+        def _retry(next_attempt: int):
+            return _stream_llm_inner(
+                url, model, messages, temperature=temperature, max_tokens=max_tokens,
+                headers=headers, timeout=timeout, prompt_type=prompt_type, tools=tools,
+                session_id=session_id, tool_choice_none=tool_choice_none,
+                gen_overrides=gen_overrides, max_retries=max_retries,
+                availability_only_transport=availability_only_transport,
+                _attempt=next_attempt, _budget=_budget,
+            )
         try:
             client = _get_http_client()
             async with client.stream('POST', target_url, json=payload, headers=h, timeout=stream_timeout) as r:
@@ -3593,7 +4051,26 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                 if r.status_code != 200:
                     raw = (await r.aread()).decode(errors="replace")
                     friendly = _format_upstream_error(r.status_code, raw, target_url)
-                    yield f'event: error\ndata: {json.dumps({"status": r.status_code, "text": friendly, "raw": raw[:500]})}\n\n'
+                    _should_retry, _wait, _classification, _retryable = _stream_retry_decision(
+                        status=r.status_code, headers=r.headers, attempt=_attempt,
+                        max_retries=max_retries, budget=_budget, delta_emitted=False,
+                    )
+                    if _should_retry and parse_retry_after(r.headers) is not None:
+                        logger.info(
+                            f"Anthropic stream to {target_url}: server busy (HTTP {r.status_code}), "
+                            f"retrying in {_wait:.1f}s (Retry-After honoured)"
+                        )
+                    async for chunk in _stream_retry_or_fail(
+                        should_retry=_should_retry, wait=_wait,
+                        error_chunk=_stream_status_error_chunk(
+                            r.status_code, friendly, raw,
+                            error_class=_retry_error_class(status=r.status_code),
+                            attempts=_attempt,
+                            retryable=_retryable,
+                        ),
+                        retry_call=lambda: _retry(_attempt + 1),
+                    ):
+                        yield chunk
                     return
                 async for line in r.aiter_lines():
                     # SSE allows "data:value" with no space after the colon
@@ -3624,6 +4101,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                             if delta_type == "text_delta":
                                 text = delta.get("text") or ""
                                 if text:
+                                    _delta_emitted = True
                                     yield f'data: {json.dumps({"delta": text})}\n\n'
                             elif delta_type == "input_json_delta":
                                 # Accumulate tool arguments JSON
@@ -3633,6 +4111,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                                     _anth_tool_blocks[idx]["arguments"] += partial
                                     # Stream tool arg deltas for doc tools
                                     if partial and _anth_tool_blocks[idx].get("name") in ("create_document", "update_document", "edit_document"):
+                                        _delta_emitted = True
                                         yield f'data: {json.dumps({"type": "tool_call_delta", "index": idx, "name": _anth_tool_blocks[idx]["name"], "arg_delta": partial})}\n\n'
                         elif evt == "message_start":
                             message_data = j.get("message") or {}
@@ -3674,7 +4153,17 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                             if "output_tokens" in _u:
                                 _anth_usage_seen = True
                             _anth_output_tokens = _u.get("output_tokens", 0)
+                            _delta_obj = j.get("delta") or {}
+                            if isinstance(_delta_obj, dict) and _delta_obj.get("stop_reason"):
+                                _anth_stop_reason = _delta_obj.get("stop_reason")
                         elif evt == "message_stop":
+                            # MOD-03: a safety refusal is signalled only via this
+                            # stop_reason, on top of whatever text already streamed
+                            # as normal `delta` events — surface it as its own typed
+                            # event instead of letting the turn look like an
+                            # ordinary completion.
+                            if _anth_stop_reason == "refusal":
+                                yield _stream_refusal_event(stop_reason=_anth_stop_reason)
                             # Emit accumulated tool calls in OpenAI-compatible format
                             if _anth_tool_blocks:
                                 calls = []
@@ -3685,6 +4174,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                                         "name": tb["name"],
                                         "arguments": tb["arguments"],
                                     })
+                                _delta_emitted = True
                                 yield f'data: {json.dumps({"type": "tool_calls", "calls": calls})}\n\n'
                             normalized_usage = _normalize_usage_counts(
                                 _anth_input_tokens,
@@ -3710,22 +4200,132 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                 yield "data: [DONE]\n\n"
         except (httpx.ConnectError, httpx.ConnectTimeout) as e:
             _cooled = _mark_host_dead(target_url)
+            _should_retry, _wait, _classification, _retryable = _stream_retry_decision(
+                exc=e, attempt=_attempt, max_retries=max_retries, budget=_budget,
+                delta_emitted=_delta_emitted,
+            )
+            _should_retry = _should_retry and not _cooled
             _tail = f" — host cooled for {DEAD_HOST_COOLDOWN:.0f}s" if _cooled else " — transient, will retry"
             logger.warning(f"Anthropic stream connect to {target_url} failed: {e}{_tail}")
-            yield f'event: error\ndata: {json.dumps({"error": f"Cannot reach {_host_key(target_url)}", "status": 503})}\n\n'
-        except httpx.ReadTimeout:
-            yield f'event: error\ndata: {json.dumps({"error": "Read timeout", "status": 504})}\n\n'
-        except httpx.PoolTimeout:
-            yield f'event: error\ndata: {json.dumps({"error": "Connection pool timeout", "status": 504})}\n\n'
-        except httpx.WriteTimeout:
-            yield f'event: error\ndata: {json.dumps({"error": "Upstream timeout", "status": 504, "fallback_eligible": False})}\n\n'
-        except httpx.ProtocolError:
-            yield f'event: error\ndata: {json.dumps({"error": "Upstream protocol error", "status": 502, "fallback_eligible": False})}\n\n'
-        except httpx.NetworkError:
-            yield f'event: error\ndata: {json.dumps({"error": "Network error", "status": 502, "fallback_eligible": False})}\n\n'
+            async for chunk in _stream_retry_or_fail(
+                should_retry=_should_retry, wait=_wait,
+                error_chunk=_stream_error_chunk(
+                    503, f"Cannot reach {_host_key(target_url)}: {e}",
+                    error_class=_retry_error_class(exc=e), attempts=_attempt,
+                    retryable=_retryable,
+                    partial=_delta_emitted,
+                ),
+                retry_call=lambda: _retry(_attempt + 1),
+            ):
+                yield chunk
+        except httpx.ReadTimeout as e:
+            _should_retry, _wait, _classification, _retryable = _stream_retry_decision(
+                exc=e, attempt=_attempt, max_retries=max_retries, budget=_budget,
+                delta_emitted=_delta_emitted,
+            )
+            logger.warning(
+                f"Anthropic stream read timed out (attempt {_attempt}): {e} "
+                f"— the request may have completed upstream even though no full response arrived"
+            )
+            async for chunk in _stream_retry_or_fail(
+                should_retry=_should_retry, wait=_wait,
+                error_chunk=_stream_error_chunk(
+                    504,
+                    "Read timeout after partial output; outcome unknown"
+                    if _delta_emitted else
+                    f"Read timeout after {_attempt} attempt(s); outcome unknown",
+                    error_class=_retry_error_class(exc=e), attempts=_attempt,
+                    retryable=False,  # outcome_unknown: never auto-retryable for an external caller (§34.5)
+                    partial=_delta_emitted,
+                ),
+                retry_call=lambda: _retry(_attempt + 1),
+            ):
+                yield chunk
+        except httpx.PoolTimeout as e:
+            _should_retry, _wait, _classification, _retryable = _stream_retry_decision(
+                exc=e, attempt=_attempt, max_retries=max_retries, budget=_budget,
+                delta_emitted=_delta_emitted,
+                fail_fast=availability_only_transport,
+            )
+            logger.warning(f"Anthropic stream connection pool timed out (attempt {_attempt}): {e}")
+            async for chunk in _stream_retry_or_fail(
+                should_retry=_should_retry, wait=_wait,
+                error_chunk=_stream_error_chunk(
+                    504, f"Connection pool timeout after {_attempt} attempt(s)",
+                    error_class=_retry_error_class(exc=e), attempts=_attempt,
+                    retryable=_retryable,
+                    partial=_delta_emitted,
+                ),
+                retry_call=lambda: _retry(_attempt + 1),
+            ):
+                yield chunk
+        except httpx.WriteTimeout as e:
+            _should_retry, _wait, _classification, _retryable = _stream_retry_decision(
+                exc=e, attempt=_attempt, max_retries=max_retries, budget=_budget,
+                delta_emitted=_delta_emitted,
+                fail_fast=availability_only_transport,
+            )
+            logger.warning(f"Anthropic stream upstream timeout (attempt {_attempt}): {e}")
+            async for chunk in _stream_retry_or_fail(
+                should_retry=_should_retry, wait=_wait,
+                error_chunk=_stream_error_chunk(
+                    504, f"Upstream timeout after {_attempt} attempt(s)",
+                    error_class=_retry_error_class(exc=e), attempts=_attempt,
+                    retryable=_retryable,
+                    partial=_delta_emitted, fallback_eligible=False,
+                ),
+                retry_call=lambda: _retry(_attempt + 1),
+            ):
+                yield chunk
+        except httpx.ProtocolError as e:
+            # RemoteProtocolError (server reset/violated protocol mid-stream)
+            # classifies outcome_unknown; a local one classifies retry_backoff
+            # — see retry_policy.classify_http.
+            _should_retry, _wait, _classification, _retryable = _stream_retry_decision(
+                exc=e, attempt=_attempt, max_retries=max_retries, budget=_budget,
+                delta_emitted=_delta_emitted,
+                fail_fast=availability_only_transport,
+            )
+            logger.warning(f"Anthropic stream protocol failure (attempt {_attempt}): {e}")
+            async for chunk in _stream_retry_or_fail(
+                should_retry=_should_retry, wait=_wait,
+                error_chunk=_stream_error_chunk(
+                    502, f"Upstream protocol error: {e}",
+                    error_class=_retry_error_class(exc=e), attempts=_attempt,
+                    retryable=_retryable,
+                    partial=_delta_emitted, fallback_eligible=False,
+                ),
+                retry_call=lambda: _retry(_attempt + 1),
+            ):
+                yield chunk
+        except httpx.NetworkError as e:
+            # ReadError (reset while reading the response) classifies
+            # outcome_unknown; WriteError/CloseError classify retry_backoff.
+            _should_retry, _wait, _classification, _retryable = _stream_retry_decision(
+                exc=e, attempt=_attempt, max_retries=max_retries, budget=_budget,
+                delta_emitted=_delta_emitted,
+                fail_fast=availability_only_transport,
+            )
+            logger.warning(f"Anthropic stream network failure (attempt {_attempt}): {e}")
+            async for chunk in _stream_retry_or_fail(
+                should_retry=_should_retry, wait=_wait,
+                error_chunk=_stream_error_chunk(
+                    502, f"Network error: {e}",
+                    error_class=_retry_error_class(exc=e), attempts=_attempt,
+                    retryable=_retryable,
+                    partial=_delta_emitted, fallback_eligible=False,
+                ),
+                retry_call=lambda: _retry(_attempt + 1),
+            ):
+                yield chunk
         except Exception as e:
+            # Not a recognised transport failure (e.g. a bug in the parsing
+            # above): never retried, same as before this module.
             logger.error(f"Anthropic stream error: {e}")
-            yield f'event: error\ndata: {json.dumps({"error": str(e), "status": 502, "fallback_eligible": False})}\n\n'
+            yield _stream_error_chunk(
+                502, str(e), error_class=_retry_error_class(exc=e), attempts=_attempt,
+                retryable=False, partial=_delta_emitted, fallback_eligible=False,
+            )
         return
 
     # ── OpenAI-compatible streaming ──
@@ -3748,6 +4348,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
     # as a `finish` event right before [DONE] so the agent loop can tell a
     # truncated answer from a finished one instead of treating both as done.
     _finish_reason: Optional[str] = None
+    _delta_emitted = False
 
     def _emit_tool_calls():
         """Build the tool_calls event string if any were accumulated."""
@@ -3769,7 +4370,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
         return f'data: {json.dumps({"type": "finish", "finish_reason": reason})}\n\n'
 
     def _format_routed_content(parts: List[Tuple[str, bool]]) -> List[str]:
-        nonlocal _first_content_sent
+        nonlocal _first_content_sent, _delta_emitted
         events = []
         for part, is_thinking in parts:
             if is_thinking:
@@ -3782,7 +4383,19 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                 part = "<think>" + part
             _first_content_sent = True
             events.append(_stream_delta_event(part))
+        if events:
+            _delta_emitted = True
         return events
+
+    def _retry(next_attempt: int):
+        return _stream_llm_inner(
+            url, model, messages, temperature=temperature, max_tokens=max_tokens,
+            headers=headers, timeout=timeout, prompt_type=prompt_type, tools=tools,
+            session_id=session_id, tool_choice_none=tool_choice_none,
+            gen_overrides=gen_overrides, max_retries=max_retries,
+            availability_only_transport=availability_only_transport,
+            _attempt=next_attempt, _budget=_budget,
+        )
 
     try:
         client = _get_http_client()
@@ -3792,7 +4405,26 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
             if r.status_code != 200:
                 raw = (await r.aread()).decode(errors="replace")
                 friendly = _format_upstream_error(r.status_code, raw, target_url)
-                yield f'event: error\ndata: {json.dumps({"status": r.status_code, "text": friendly, "raw": raw[:500]})}\n\n'
+                _should_retry, _wait, _classification, _retryable = _stream_retry_decision(
+                    status=r.status_code, headers=r.headers, attempt=_attempt,
+                    max_retries=max_retries, budget=_budget, delta_emitted=False,
+                )
+                if _should_retry and parse_retry_after(r.headers) is not None:
+                    logger.info(
+                        f"Stream to {target_url}: server busy (HTTP {r.status_code}), "
+                        f"retrying in {_wait:.1f}s (Retry-After honoured)"
+                    )
+                async for chunk in _stream_retry_or_fail(
+                    should_retry=_should_retry, wait=_wait,
+                    error_chunk=_stream_status_error_chunk(
+                        r.status_code, friendly, raw,
+                        error_class=_retry_error_class(status=r.status_code),
+                        attempts=_attempt,
+                        retryable=_retryable,
+                    ),
+                    retry_call=lambda: _retry(_attempt + 1),
+                ):
+                    yield chunk
                 return
 
             async for line in r.aiter_lines():
@@ -3895,6 +4527,10 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                                         # Reasoning tokens (VLLM --reasoning-parser, e.g. Qwen3/DeepSeek-R1, Nemotron). vLLM 0.20.2 / NIM emit the field as `reasoning`; older builds use `reasoning_content`. Some OpenAI-compatible Ollama builds use `thinking`.
                                         reasoning = delta.get("reasoning_content") or delta.get("reasoning") or delta.get("thinking") or ""
                                         content = delta.get("content") or ""
+                                        # MOD-03: a structured refusal (OpenAI-compatible `delta.refusal`)
+                                        # streams on its own field, separate from `content` — surface it
+                                        # as its own typed event instead of leaving it unhandled/dropped.
+                                        refusal = delta.get("refusal") or ""
                                         # Mistral structured content: content is a list of typed blocks
                                         # ({"type": "thinking", ...}, {"type": "text", ...}). Split into
                                         # reasoning + text so thinking streams into the thinking panel.
@@ -3908,7 +4544,11 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                                             if _degenerate:
                                                 yield _degenerate
                                                 return
+                                            _delta_emitted = True
                                             yield _stream_delta_event(reasoning, thinking=True)
+                                        if refusal:
+                                            _delta_emitted = True
+                                            yield _stream_refusal_event(refusal)
                                         if content:
                                             content = _strip_visible_chat_template_artifacts(content)
                                             if not content:
@@ -3951,9 +4591,11 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                                                         regular_part = content[close_idx + len("</think>"):]
                                                         _in_think_tag = False
                                                         if think_part:
+                                                            _delta_emitted = True
                                                             yield f'data: {json.dumps({"delta": think_part, "thinking": True})}\n\n'
                                                         if regular_part:
                                                             _first_content_sent = True
+                                                            _delta_emitted = True
                                                             yield f'data: {json.dumps({"delta": regular_part})}\n\n'
                                                     else:
                                                         # Still inside <think>: route to thinking channel
@@ -3964,6 +4606,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                                                                 content = stripped[tag_end + 1:]
                                                             _think_open_stripped = True
                                                         if content:
+                                                            _delta_emitted = True
                                                             yield f'data: {json.dumps({"delta": content, "thinking": True})}\n\n'
                                                 else:
                                                     # Some thinking backends start normal content with a
@@ -3973,6 +4616,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                                                     if _thinking_model and not _first_content_sent and stripped.lower().startswith("</think"):
                                                         content = "<think>" + content
                                                     _first_content_sent = True
+                                                    _delta_emitted = True
                                                     yield f'data: {json.dumps({"delta": content})}\n\n'
                                         # Native tool calls — accumulate across chunks via the
                                         # assembler (index/id bookkeeping + split-safe JSON
@@ -3996,6 +4640,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                                             # internally: `func` can be {"arguments": None} (JSON
                                             # null), which must not raise or get treated as a delta.
                                             if call and call.last_appended and call.name in ("create_document", "update_document", "edit_document"):
+                                                _delta_emitted = True
                                                 yield f'data: {json.dumps({"type": "tool_call_delta", "index": call.index, "name": call.name, "arg_delta": call.last_appended})}\n\n'
                                 elif "text" in j:
                                     if j["text"]:
@@ -4022,22 +4667,132 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
 
     except (httpx.ConnectError, httpx.ConnectTimeout) as e:
         _cooled = _mark_host_dead(target_url)
+        _should_retry, _wait, _classification, _retryable = _stream_retry_decision(
+            exc=e, attempt=_attempt, max_retries=max_retries, budget=_budget,
+            delta_emitted=_delta_emitted,
+        )
+        _should_retry = _should_retry and not _cooled
         _tail = f" — host cooled for {DEAD_HOST_COOLDOWN:.0f}s" if _cooled else " — transient, will retry"
         logger.warning(f"Stream connect to {target_url} failed: {e}{_tail}")
-        yield f'event: error\ndata: {json.dumps({"error": f"Cannot reach {_host_key(target_url)}", "status": 503})}\n\n'
-    except httpx.ReadTimeout:
-        yield f'event: error\ndata: {json.dumps({"error": "Read timeout", "status": 504})}\n\n'
-    except httpx.PoolTimeout:
-        yield f'event: error\ndata: {json.dumps({"error": "Connection pool timeout", "status": 504})}\n\n'
-    except httpx.WriteTimeout:
-        yield f'event: error\ndata: {json.dumps({"error": "Upstream timeout", "status": 504, "fallback_eligible": False})}\n\n'
-    except httpx.ProtocolError:
-        yield f'event: error\ndata: {json.dumps({"error": "Upstream protocol error", "status": 502, "fallback_eligible": False})}\n\n'
-    except httpx.NetworkError:
-        yield f'event: error\ndata: {json.dumps({"error": "Network error", "status": 502, "fallback_eligible": False})}\n\n'
+        async for chunk in _stream_retry_or_fail(
+            should_retry=_should_retry, wait=_wait,
+            error_chunk=_stream_error_chunk(
+                503, f"Cannot reach {_host_key(target_url)}: {e}",
+                error_class=_retry_error_class(exc=e), attempts=_attempt,
+                retryable=_retryable,
+                partial=_delta_emitted,
+            ),
+            retry_call=lambda: _retry(_attempt + 1),
+        ):
+            yield chunk
+    except httpx.ReadTimeout as e:
+        _should_retry, _wait, _classification, _retryable = _stream_retry_decision(
+            exc=e, attempt=_attempt, max_retries=max_retries, budget=_budget,
+            delta_emitted=_delta_emitted,
+        )
+        logger.warning(
+            f"Stream read timed out (attempt {_attempt}): {e} "
+            f"— the request may have completed upstream even though no full response arrived"
+        )
+        async for chunk in _stream_retry_or_fail(
+            should_retry=_should_retry, wait=_wait,
+            error_chunk=_stream_error_chunk(
+                504,
+                "Read timeout after partial output; outcome unknown"
+                if _delta_emitted else
+                f"Read timeout after {_attempt} attempt(s); outcome unknown",
+                error_class=_retry_error_class(exc=e), attempts=_attempt,
+                retryable=False,  # outcome_unknown: never auto-retryable for an external caller (§34.5)
+                partial=_delta_emitted,
+            ),
+            retry_call=lambda: _retry(_attempt + 1),
+        ):
+            yield chunk
+    except httpx.PoolTimeout as e:
+        _should_retry, _wait, _classification, _retryable = _stream_retry_decision(
+            exc=e, attempt=_attempt, max_retries=max_retries, budget=_budget,
+            delta_emitted=_delta_emitted,
+            fail_fast=availability_only_transport,
+        )
+        logger.warning(f"Stream connection pool timed out (attempt {_attempt}): {e}")
+        async for chunk in _stream_retry_or_fail(
+            should_retry=_should_retry, wait=_wait,
+            error_chunk=_stream_error_chunk(
+                504, f"Connection pool timeout after {_attempt} attempt(s)",
+                error_class=_retry_error_class(exc=e), attempts=_attempt,
+                retryable=_retryable,
+                partial=_delta_emitted,
+            ),
+            retry_call=lambda: _retry(_attempt + 1),
+        ):
+            yield chunk
+    except httpx.WriteTimeout as e:
+        _should_retry, _wait, _classification, _retryable = _stream_retry_decision(
+            exc=e, attempt=_attempt, max_retries=max_retries, budget=_budget,
+            delta_emitted=_delta_emitted,
+            fail_fast=availability_only_transport,
+        )
+        logger.warning(f"Stream upstream timeout (attempt {_attempt}): {e}")
+        async for chunk in _stream_retry_or_fail(
+            should_retry=_should_retry, wait=_wait,
+            error_chunk=_stream_error_chunk(
+                504, f"Upstream timeout after {_attempt} attempt(s)",
+                error_class=_retry_error_class(exc=e), attempts=_attempt,
+                retryable=_retryable,
+                partial=_delta_emitted, fallback_eligible=False,
+            ),
+            retry_call=lambda: _retry(_attempt + 1),
+        ):
+            yield chunk
+    except httpx.ProtocolError as e:
+        # RemoteProtocolError (server reset/violated protocol mid-stream)
+        # classifies outcome_unknown; a local one classifies retry_backoff
+        # — see retry_policy.classify_http.
+        _should_retry, _wait, _classification, _retryable = _stream_retry_decision(
+            exc=e, attempt=_attempt, max_retries=max_retries, budget=_budget,
+            delta_emitted=_delta_emitted,
+            fail_fast=availability_only_transport,
+        )
+        logger.warning(f"Stream protocol failure (attempt {_attempt}): {e}")
+        async for chunk in _stream_retry_or_fail(
+            should_retry=_should_retry, wait=_wait,
+            error_chunk=_stream_error_chunk(
+                502, f"Upstream protocol error: {e}",
+                error_class=_retry_error_class(exc=e), attempts=_attempt,
+                retryable=_retryable,
+                partial=_delta_emitted, fallback_eligible=False,
+            ),
+            retry_call=lambda: _retry(_attempt + 1),
+        ):
+            yield chunk
+    except httpx.NetworkError as e:
+        # ReadError (reset while reading the response) classifies
+        # outcome_unknown; WriteError/CloseError classify retry_backoff.
+        _should_retry, _wait, _classification, _retryable = _stream_retry_decision(
+            exc=e, attempt=_attempt, max_retries=max_retries, budget=_budget,
+            delta_emitted=_delta_emitted,
+            fail_fast=availability_only_transport,
+        )
+        logger.warning(f"Stream network failure (attempt {_attempt}): {e}")
+        async for chunk in _stream_retry_or_fail(
+            should_retry=_should_retry, wait=_wait,
+            error_chunk=_stream_error_chunk(
+                502, f"Network error: {e}",
+                error_class=_retry_error_class(exc=e), attempts=_attempt,
+                retryable=_retryable,
+                partial=_delta_emitted, fallback_eligible=False,
+            ),
+            retry_call=lambda: _retry(_attempt + 1),
+        ):
+            yield chunk
     except Exception as e:
+        # Not a recognised transport failure (e.g. a bug in the parsing
+        # above): never retried, same as before this module.
         logger.error(f"Stream error: {e}")
-        yield f'event: error\ndata: {json.dumps({"error": str(e), "status": 502, "fallback_eligible": False})}\n\n'
+        yield _stream_error_chunk(
+            502, str(e), error_class=_retry_error_class(exc=e), attempts=_attempt,
+            retryable=False, partial=_delta_emitted, fallback_eligible=False,
+        )
 
 
 def _summarize_stream_error(err_chunk: Optional[str]) -> str:
@@ -4277,7 +5032,10 @@ async def stream_llm_with_fallback(candidates, messages, **kwargs):
             model,
             candidate_messages,
             headers=headers,
-            **candidate_kwargs,
+            **{
+                **candidate_kwargs,
+                "availability_only_transport": True,
+            },
         )
         try:
             async for chunk in candidate_stream:
