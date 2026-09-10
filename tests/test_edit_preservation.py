@@ -39,7 +39,8 @@ async def test_edit_file_preserves_crlf_and_bom_and_only_touches_the_changed_lin
     out = p.read_bytes()
     assert out.startswith(BOM)                                   # BOM survives
     assert out == BOM + b"line one\r\nLINE TWO\r\nline three\r\n"  # CRLF survives, only line 2 changed
-    assert stat.S_IMODE(os.stat(p).st_mode) == 0o754              # permissions survive
+    if os.name != "nt":  # Windows has no POSIX mode bits to preserve
+        assert stat.S_IMODE(os.stat(p).st_mode) == 0o754          # permissions survive
 
 
 @pytest.mark.asyncio
@@ -71,6 +72,7 @@ async def test_apply_patch_update_preserves_crlf_and_bom(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(os.name == "nt", reason="no executable bit on Windows")
 async def test_executable_bit_survives_an_edit(tmp_path):
     p = tmp_path / "script.sh"
     p.write_text("#!/bin/sh\necho one\n")
@@ -86,6 +88,7 @@ async def test_executable_bit_survives_an_edit(tmp_path):
 # is exactly the bug EDIT-03 guards against — it silently rewrites every
 # CRLF to LF. Demonstrate that mode on the same fixture to show the assertion
 # above is real, not tautological. ─────────────────────────────────────────
+@pytest.mark.skipif(os.name == "nt", reason="text mode on Windows re-emits CRLF, so the demonstration reads differently")
 def test_naive_text_mode_would_have_destroyed_the_crlf_convention(tmp_path):
     p, raw = _crlf_bom_file(tmp_path)
     with open(p, "r", encoding="utf-8") as f:     # universal newlines: the bug
