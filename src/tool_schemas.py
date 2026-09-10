@@ -10,7 +10,8 @@ tool parsing / execution logic.
 
 import json
 import logging
-from typing import Optional
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Tuple
 
 from src.agent_tools import ToolBlock, TOOL_TAGS
 from src.tool_parsing import _TOOL_NAME_MAP
@@ -2033,3 +2034,231 @@ def function_call_to_tool_block(name: str, arguments: str) -> Optional[ToolBlock
         content = json.dumps(args)
 
     return ToolBlock(tool_type, content)
+
+# ---------------------------------------------------------------------------
+# Argument validation and bounded repair (CALL-02 / CALL-03)
+# ---------------------------------------------------------------------------
+#
+# validate_tool_arguments() checks a fully-parsed `arguments` dict against
+# the matching entry in FUNCTION_TOOL_SCHEMAS (top-level properties only —
+# it does not recurse into nested object/array schemas). repair_tool_arguments()
+# then fixes only the *form* of a value the schema already accepts in
+# principle (a number sent as its exact string form); it never invents a
+# missing required field, drops/renames a key, or touches a path/scope
+# value — a path error found by validate_tool_arguments is never
+# "repaired away".
+
+# Fields marked here as path-scoped are contractually confined to an
+# allowed workspace/root by their tool's docstring (see FUNCTION_TOOL_SCHEMAS
+# above) — "inside the allowed workspace", "existing authorized folder",
+# "confined to the allowed roots". A `..` traversal segment or an absolute
+# path is out of scope for these. Deliberately NOT included: read_file,
+# write_file, edit_file, apply_patch and the folder/file-manager tools —
+# their own schemas explicitly allow "any real path" (absolute, outside a
+# single workspace), so an absolute path there is a legitimate argument, not
+# a scope violation; those tools are confined at execution time instead, by
+# `_resolve_tool_path`'s allowlist (src/tool_execution.py), which is out of
+# this module's reach (it needs live filesystem/workspace state, not just
+# the static schema).
+PATH_ARGUMENT_FIELDS = {
+    "plan_media_transform": {"source", "path"},
+    "transform_media": {"source", "path"},
+    "inspect_media": {"path"},
+    "grep": {"path"},
+    "glob": {"path"},
+    "ls": {"path"},
+}
+
+_JSON_SCALAR_TYPES = {
+    "string": str,
+    "boolean": bool,
+    "object": dict,
+    "array": list,
+}
+
+
+def _schema_for_tool(tool_name: str) -> Optional[dict]:
+    """Look up a tool's `parameters` JSON schema by name. Returns None for a
+    tool not in FUNCTION_TOOL_SCHEMAS (nothing to validate against — callers
+    should treat that as "no errors", not as a validation failure of its
+    own: an unknown tool name is caught earlier in the call pipeline)."""
+    for entry in FUNCTION_TOOL_SCHEMAS:
+        fn = entry.get("function") or {}
+        if fn.get("name") == tool_name:
+            return fn.get("parameters") or {}
+    return None
+
+
+def _type_matches(value: Any, expected: str) -> bool:
+    """JSON-Schema type check. `bool` is deliberately excluded from
+    "integer"/"number" — Python's `isinstance(True, int)` is True, but a
+    boolean is never an acceptable substitute for a numeric argument."""
+    if expected == "integer":
+        return isinstance(value, int) and not isinstance(value, bool)
+    if expected == "number":
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if expected == "null":
+        return value is None
+    scalar = _JSON_SCALAR_TYPES.get(expected)
+    if scalar is None:
+        return True  # unknown/unlisted type keyword: nothing to check
+    return isinstance(value, scalar)
+
+
+def _path_out_of_scope(value: Any) -> bool:
+    """A path-scoped argument may not escape its tool's workspace: no `..`
+    traversal segment, and not an absolute path (POSIX `/...` or a
+    `C:\\...`-style drive path)."""
+    if not isinstance(value, str) or not value:
+        return False
+    if value.startswith("/") or value.startswith("\\"):
+        return True
+    if len(value) >= 2 and value[1] == ":" and value[0].isalpha():
+        return True
+    return ".." in value.replace("\\", "/").split("/")
+
+
+@dataclass
+class ArgumentError:
+    """One localized problem found by validate_tool_arguments().
+
+    `field` is the argument's JSON path (currently always a bare top-level
+    key — see the module note on nesting). `kind` is one of "unknown_field",
+    "wrong_type", "enum", "path_scope", "missing_required". `detail` is a
+    human-readable "what was seen" message; `seen` carries the raw offending
+    value for a caller that wants to render it itself.
+    """
+
+    field: str
+    kind: str
+    detail: str
+    seen: Any = None
+
+    def __str__(self) -> str:
+        return f"{self.field}: {self.detail}"
+
+
+def validate_tool_arguments(tool_name: str, args: Any) -> List[ArgumentError]:
+    """Validate a fully-parsed tool-call `arguments` object against its
+    schema in FUNCTION_TOOL_SCHEMAS. Checks (CALL-02): wrong type, unknown
+    field, enum value out of range, and — for fields FUNCTION_TOOL_SCHEMAS
+    marks in PATH_ARGUMENT_FIELDS as path-scoped — a `..` traversal or an
+    absolute path. Does not execute or resolve anything; a pure, read-only
+    check usable regardless of how `args` was produced (native function
+    call, repaired text, ToolCallAssembler's parsed_arguments, ...).
+    """
+    errors: List[ArgumentError] = []
+    schema = _schema_for_tool(tool_name)
+    if schema is None:
+        return errors
+    if not isinstance(args, dict):
+        errors.append(ArgumentError("$", "wrong_type", f"expected an object, saw {type(args).__name__}", args))
+        return errors
+
+    properties = schema.get("properties") or {}
+    for required in schema.get("required") or []:
+        if required not in args:
+            errors.append(ArgumentError(required, "missing_required", "required field is missing"))
+
+    path_fields = PATH_ARGUMENT_FIELDS.get(tool_name, frozenset())
+    for key, value in args.items():
+        prop_schema = properties.get(key)
+        if prop_schema is None:
+            errors.append(ArgumentError(key, "unknown_field", f"not declared in the {tool_name} schema", value))
+            continue
+
+        expected_types = prop_schema.get("type")
+        if isinstance(expected_types, str):
+            expected_types = [expected_types]
+        if expected_types and not any(_type_matches(value, t) for t in expected_types):
+            errors.append(ArgumentError(
+                key, "wrong_type",
+                f"expected {'/'.join(expected_types)}, saw {type(value).__name__} ({value!r})",
+                value,
+            ))
+            continue  # a value of the wrong type can't be enum/path-checked meaningfully
+
+        enum = prop_schema.get("enum")
+        if enum is not None and value not in enum:
+            errors.append(ArgumentError(key, "enum", f"{value!r} is not one of {enum}", value))
+
+        if key in path_fields and _path_out_of_scope(value):
+            errors.append(ArgumentError(key, "path_scope", f"{value!r} escapes the allowed scope (.. or absolute)", value))
+
+    return errors
+
+
+def repair_tool_arguments(
+    tool_name: str, args: Dict[str, Any], errors: List[ArgumentError]
+) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+    """Bounded repair (CALL-03): fix only the *form* of a value the schema
+    already accepts, never its meaning. Today that means exactly one thing —
+    a number sent as a string that is an exact textual representation of
+    that number ("90" -> 90 for an integer field, "1.5" -> 1.5 for a number
+    field) — because that is the only ambiguity that is unambiguously safe
+    to resolve without guessing intent.
+
+    Never: adds a missing required field, drops or renames a key, changes
+    which tool is being called, or touches a value flagged as a path/scope
+    problem — repair_tool_arguments MUST NOT remove a `path_scope` error;
+    the caller decides whether to surface original-vs-corrected to the
+    model/user, this function only ever narrows toward "same meaning,
+    stricter shape".
+
+    Returns (repaired_args, applied_repairs) where `applied_repairs` is a
+    list of `{"field", "from", "to", "reason"}` describing each change made,
+    so a caller can show "original -> correction". `args` itself is never
+    mutated; a shallow copy is returned even when no repair applies.
+    """
+    repaired = dict(args)
+    applied: List[Dict[str, Any]] = []
+    schema = _schema_for_tool(tool_name)
+    if schema is None:
+        return repaired, applied
+
+    properties = schema.get("properties") or {}
+    path_fields = PATH_ARGUMENT_FIELDS.get(tool_name, frozenset())
+    fixable_kinds = {"wrong_type"}
+    for err in errors:
+        if err.kind not in fixable_kinds or err.field in path_fields:
+            continue
+        prop_schema = properties.get(err.field)
+        if prop_schema is None or err.field not in repaired:
+            continue
+        expected_types = prop_schema.get("type")
+        if isinstance(expected_types, str):
+            expected_types = [expected_types]
+        if not expected_types:
+            continue
+        value = repaired[err.field]
+        if not isinstance(value, str):
+            continue
+        stripped = value.strip()
+        new_value = None
+        if "integer" in expected_types:
+            try:
+                candidate = int(stripped)
+            except ValueError:
+                candidate = None
+            if candidate is not None and str(candidate) == stripped:
+                new_value = candidate
+        if new_value is None and "number" in expected_types:
+            try:
+                candidate = float(stripped)
+            except ValueError:
+                candidate = None
+            # Exact round-trip only: "1.5" -> 1.5, but not "1.50" or "1e0",
+            # which read back differently from how they were written and so
+            # are not an unambiguous "this string IS that number".
+            if candidate is not None and str(candidate) == stripped:
+                new_value = candidate
+        if new_value is not None:
+            repaired[err.field] = new_value
+            applied.append({
+                "field": err.field,
+                "from": value,
+                "to": new_value,
+                "reason": "numeric string coerced to the schema's declared number type",
+            })
+
+    return repaired, applied
