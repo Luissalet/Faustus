@@ -166,6 +166,75 @@ def _makefile_has_test(workspace: str) -> bool:
     return False
 
 
+def _npm_script_named(workspace: str, name: str) -> Optional[str]:
+    """Like `_npm_test_script` but for an arbitrary package.json script name.
+    Kept as a separate function (not a shared helper the two funnel through)
+    so `_npm_test_script`/`detect_test_command` stay byte-for-byte what they
+    were — VER-02 (`detect_command` below) is additive, not a refactor of the
+    "tests" path every existing caller already depends on."""
+    p = os.path.join(workspace, "package.json")
+    if not os.path.isfile(p):
+        return None
+    try:
+        with open(p, "r", encoding="utf-8", errors="replace") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return None
+    script = (data.get("scripts") or {}).get(name) if isinstance(data, dict) else None
+    if not isinstance(script, str) or not script.strip():
+        return None
+    return script.strip()
+
+
+def _makefile_target(workspace: str, name: str) -> bool:
+    """Like `_makefile_has_test` but for an arbitrary target name."""
+    pattern = re.compile(r"^" + re.escape(name) + r"\s*:", re.M)
+    for fname in ("Makefile", "makefile", "GNUmakefile"):
+        p = os.path.join(workspace, fname)
+        try:
+            if os.path.isfile(p):
+                with open(p, "r", encoding="utf-8", errors="replace") as f:
+                    if pattern.search(f.read(200_000)):
+                        return True
+        except OSError:
+            continue
+    return False
+
+
+#: The four kinds VER-02 asks `run_verifier` (src/verification.py) to cover.
+VERIFIER_KINDS = ("tests", "lint", "build", "typecheck")
+
+
+def detect_command(kind: str, workspace: str, override: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """VER-02's single "what command proves `kind`" front door.
+
+    "tests" is exactly `detect_test_command` (unchanged — every existing
+    caller of that function is untouched by this one). For "lint"/"build"/
+    "typecheck" there is no equivalent of pytest's config-file sniffing to
+    fall back on, so detection stays deliberately narrow: an explicit
+    `override`, or an npm script / Makefile target NAMED after the kind. No
+    heuristic guesses a project's lint command from file extensions or
+    installed linters — a wrong guess here would silently "verify" nothing.
+    """
+    if kind not in VERIFIER_KINDS:
+        raise ValueError(f"unknown verifier kind {kind!r}; expected one of {VERIFIER_KINDS}")
+    if kind == "tests":
+        return detect_test_command(workspace, override)
+    if not workspace or not os.path.isdir(workspace):
+        return None
+    override = (override or "").strip()
+    if override:
+        return {"kind": "custom", "shell": override, "label": f"{kind}: {override}"}
+    script = _npm_script_named(workspace, kind)
+    if script:
+        npm = shutil.which("npm.cmd") if os.name == "nt" else shutil.which("npm")
+        npm = npm or ("npm.cmd" if os.name == "nt" else "npm")
+        return {"kind": "npm", "argv": [npm, "run", kind, "--silent"], "label": f"npm run {kind} ({script[:60]})"}
+    if _makefile_target(workspace, kind) and shutil.which("make"):
+        return {"kind": "make", "argv": ["make", kind], "label": f"make {kind}"}
+    return None
+
+
 def detect_test_command(workspace: str, override: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """Return {"kind", "argv"|"shell", "label", "python"} or None when no runner
     is recognised. `override` is a user-provided shell command (project or
@@ -604,8 +673,12 @@ def compare_with_baseline(workspace: str, checkpoint_sha: Optional[str], spec: D
             return res
         before = {_failure_id(f) for f in (base.get("failures") or [])}
         cur = list(res.get("failures") or [])
+        cur_ids = {_failure_id(f) for f in cur}
         res["pre_existing"] = [f for f in cur if _failure_id(f) in before]
         res["new_failures"] = [f for f in cur if _failure_id(f) not in before]
+        # Additive (VER-02): the baseline failures that do NOT reappear now —
+        # what this turn actually fixed, not just what it left broken.
+        res["fixed"] = [f for f in (base.get("failures") or []) if _failure_id(f) not in cur_ids]
         exempt = [f for f in res["pre_existing"]
                   if not _name_related_test(_failure_id(f).split("::", 1)[0], changed)]
         res["exempt"] = exempt
@@ -676,7 +749,7 @@ def compact(res: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         return None
     keys = ("ran", "kind", "label", "scope", "ok", "exit_code", "output_matched", "timed_out", "duration_s",
             "summary", "failures", "inconclusive", "command", "related_files",
-            "new_failures", "pre_existing", "pre_existing_only", "exempt", "baseline")
+            "new_failures", "pre_existing", "pre_existing_only", "exempt", "baseline", "fixed")
     out = {k: res.get(k) for k in keys if k in res}
     out["output_tail"] = (res.get("output_tail") or "")[-1500:]
     return out
