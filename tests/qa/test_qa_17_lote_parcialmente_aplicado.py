@@ -6,29 +6,61 @@ alcance aplicado registrado."
 
 Requisitos: EDIT-02.
 
-Estado: xfail estricto. `src/agent_tools/filesystem_tools.py::ApplyPatchTool`
-escribe archivo a archivo sin ningun journal ni compensacion automatica: si
-el disco falla a mitad de un lote multiarchivo, los archivos ya escritos se
-quedan escritos y los que faltan no, sin que nada registre "que alcance se
-aplico" ni dispare una compensacion. `src/workspace_checkpoints.py` solo
-ofrece `checkpoint()`/`restore()` de todo el turno (invocado por
-`src/dispatch.py` antes del job) - una restauracion manual posterior, no una
-compensacion automatica por lote (EDIT-02 parcial segun
-docs/spec/v2/MAPA_REUTILIZACION.md: "no hay journal/compensacion por archivo
-dentro de un lote... solo checkpoint/restore de todo el turno").
+Estado: GREEN (lote 20, integrando el trabajo real del lote 19).
+`src/edit_journal.py::EditJournal`/`apply_batch` registra la intencion de un
+lote multiarchivo (ruta y bytes previos de cada objetivo) ANTES de escribir
+nada, aplica cada operacion en orden y, ante el primer `OSError`, compensa
+cada archivo ya aplicado devolviendolo a sus bytes previos (o borrandolo, si
+no existia antes del lote). `ApplyPatchTool`
+(src/agent_tools/filesystem_tools.py) ejecuta su fase de escritura a traves
+de este journal, asi que un fallo de disco a mitad de un patch multiarchivo
+deja un recibo con exactamente que se aplico, donde se detuvo y si el propio
+rollback tuvo exito — nunca una escritura parcial silenciosa. La suite real
+esta en tests/test_edit_journal.py (`EditJournal.apply_batch` en aislado, mas
+el escenario end-to-end de `ApplyPatchTool` reproduciendo justo el estimulo
+de este QA); este test reutiliza ese mismo escenario end-to-end para no
+duplicar la logica de fallo simulado.
 """
 import pytest
 
-from src.agent_tools.filesystem_tools import ApplyPatchTool
+from src.agent_tools import filesystem_tools as ft
+from tests.test_edit_journal import _PATCH_3_FILES, _write3
 
-pytestmark = pytest.mark.qa_state("xfail")
+pytestmark = pytest.mark.qa_state("green")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="ApplyPatchTool no lleva journal ni compensacion por archivo dentro "
-           "de un lote multiarchivo; un fallo de disco a mitad de la escritura "
-           "no deja registro del alcance aplicado ni dispara rollback automatico.",
-)
-def test_apply_patch_tool_journals_partial_scope_on_a_multi_file_failure():
-    assert hasattr(ApplyPatchTool, "journal") or hasattr(ApplyPatchTool, "applied_scope")
+@pytest.mark.asyncio
+async def test_apply_patch_tool_journals_and_compensates_a_mid_batch_disk_failure(tmp_path, monkeypatch):
+    """QA-17's literal stimulus: a disk failure partway through a multi-file
+    write. The receipt must say what landed (`applied`), where it stopped
+    (`failed_at`), and whether the compensation itself succeeded
+    (`rolled_back`) — EDIT-02's required shape."""
+    monkeypatch.chdir(tmp_path)
+    files = _write3(tmp_path)
+
+    calls = {"n": 0}
+    orig_write = ft._write_text_lf
+
+    def failing_write(path, text, crlf):
+        calls["n"] += 1
+        if calls["n"] == 3:
+            raise OSError("simulated disk failure on third file")
+        return orig_write(path, text, crlf)
+
+    monkeypatch.setattr(ft, "_write_text_lf", failing_write)
+
+    res = await ft.ApplyPatchTool().execute(_PATCH_3_FILES, {})
+
+    assert res["exit_code"] == 1
+    assert res["status"] == "partial"
+    journal = res["journal"]
+    # "alcance aplicado registrado": the receipt says exactly what happened,
+    # not a generic failure.
+    assert set(journal.keys()) >= {"applied", "failed_at", "rolled_back"}
+    assert journal["failed_at"] == str(files["c.txt"])
+    # "rollback/compensacion claros": the two files already written before
+    # the failure were put back to their pre-batch content.
+    assert journal["rolled_back"] is True
+    assert journal["applied"] == []
+    assert files["a.txt"].read_text() == "A1\n"
+    assert files["b.txt"].read_text() == "B1\n"

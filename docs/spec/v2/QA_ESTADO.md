@@ -29,8 +29,8 @@ Resumen: **27 verde**, **19 xfail**, **2 manual** — 48 de 48.
 | QA-14 | verde | test_qa_14_respuesta_vieja.py | — |
 | QA-15 | verde | test_qa_15_edicion_concurrente.py | — |
 | QA-16 | verde | test_qa_16_dos_agentes_escritores.py | — |
-| QA-17 | xfail | test_qa_17_lote_parcialmente_aplicado.py | Journal/compensacion por archivo dentro de un lote multiarchivo (EDIT-02) |
-| QA-18 | xfail | test_qa_18_rollback_fuera_de_alcance.py | workspace_checkpoints.status() no reporta exclusiones/efectos irreversibles (EDIT-04) |
+| QA-17 | verde | test_qa_17_lote_parcialmente_aplicado.py | — |
+| QA-18 | verde | test_qa_18_rollback_fuera_de_alcance.py | — |
 | QA-19 | verde | test_qa_19_no_todo_verde_es_correcto.py | — |
 | QA-20 | verde | test_qa_20_fallo_preexistente.py | — |
 | QA-21 | verde | test_qa_21_citas_vacias.py | — |

@@ -151,7 +151,7 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "read_file",
-            "description": "Read a file from disk. Optionally read a line range with offset/limit for large files.",
+            "description": "Read a file from disk. Optionally read a line range with offset/limit for large files. The result carries a `revision` (the file's current content hash) — pass it back as `base_revision` to write_file/edit_file/apply_patch so the edit is refused instead of silently applied if the file changed since this read.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -227,7 +227,8 @@ FUNCTION_TOOL_SCHEMAS = [
                 "type": "object",
                 "properties": {
                     "path": {"type": "string", "description": "File path to write to"},
-                    "content": {"type": "string", "description": "File content to write"}
+                    "content": {"type": "string", "description": "File content to write"},
+                    "base_revision": {"type": "string", "description": "Optional: the `revision` a prior read_file of this exact path returned. If the file changed since then, the write is refused instead of overwriting the newer content."}
                 },
                 "required": ["path", "content"]
             }
@@ -244,7 +245,8 @@ FUNCTION_TOOL_SCHEMAS = [
                     "path": {"type": "string", "description": "File path to edit"},
                     "old_string": {"type": "string", "description": "Exact text to replace (must match the file, including indentation)"},
                     "new_string": {"type": "string", "description": "Replacement text"},
-                    "replace_all": {"type": "boolean", "description": "Replace all occurrences instead of requiring a unique match"}
+                    "replace_all": {"type": "boolean", "description": "Replace all occurrences instead of requiring a unique match"},
+                    "base_revision": {"type": "string", "description": "Optional: the `revision` a prior read_file of this exact path returned. If the file changed since then, the edit is refused instead of applying on top of the newer content."}
                 },
                 "required": ["path", "old_string", "new_string"]
             }
@@ -261,7 +263,8 @@ FUNCTION_TOOL_SCHEMAS = [
                     "patch_text": {
                         "type": "string",
                         "description": "Patch text beginning with *** Begin Patch and ending with *** End Patch"
-                    }
+                    },
+                    "base_revision": {"type": "string", "description": "Optional: the `revision` a prior read_file returned for the file(s) this patch updates or deletes. Anchors every Update/Delete section in the patch — if any of those files changed since, the whole patch is refused before anything is touched. Not meaningful for a pure Add File."}
                 },
                 "required": ["patch_text"]
             }

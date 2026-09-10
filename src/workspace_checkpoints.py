@@ -26,6 +26,7 @@ Stdlib only.
 """
 from __future__ import annotations
 
+import fnmatch
 import hashlib
 import json
 import logging
@@ -35,7 +36,7 @@ import shutil
 import subprocess
 import threading
 import time
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Mapping, Optional
 
 from src.git_invariants import check_preconditions
 from src.native_env import native_host_environment
@@ -463,6 +464,69 @@ def restore(workspace: str, sha: str, paths: Optional[Iterable[str]] = None) -> 
         _h.invalidate_index(root)
     except Exception:
         pass
+    # EDIT-04 / QA-18: a restore only ever puts back what the shadow repo
+    # tracked. It must say so rather than read as "reverted" plain — vendored/
+    # oversized files it never snapshotted, and any external effect the
+    # caller names, are named here instead of silently implied to be undone.
+    result["coverage"] = checkpoint_coverage(root, sha)
+    return result
+
+
+def checkpoint_coverage(workspace: str, sha: str, *,
+                         external_effects: Optional[Iterable[Mapping[str, Any]]] = None) -> Dict[str, Any]:
+    """What a `restore(workspace, sha)` would put back, and what it would not
+    (EDIT-04). Never claims a restore reverted something it cannot see:
+
+    * ``covered``: paths the shadow repo tracks whose bytes differ from `sha`
+      right now — exactly `restore()`'s own targets.
+    * ``uncovered``: paths `restore()` cannot touch, each with why — a
+      vendored/build directory or an oversized/binary-glob match that
+      `info/exclude` keeps out of every checkpoint (`_write_exclude`), found
+      to have changed on disk more recently than `sha` itself. This is a
+      best-effort mtime probe, not a hash comparison: the shadow repo has no
+      record of these paths at all, so "unchanged since the checkpoint"
+      cannot be proven, only "cannot be ruled out".
+    * ``external_effects``: irreversible side effects for this window (an
+      email sent, a webhook fired…) that no filesystem restore undoes.
+      Supplied by the caller — this module has no visibility outside the
+      workspace, so nothing is fabricated here; an empty list means "none
+      were reported", not "none happened".
+    """
+    result: Dict[str, Any] = {"covered": [], "uncovered": [],
+                              "external_effects": list(external_effects or [])}
+    if not workspace or not sha or not git_available():
+        result["uncovered"].append({"path": workspace or "", "reason": "checkpoints_unavailable"})
+        return result
+    root = _norm_root(workspace)
+    if not has_checkpoint(root, sha):
+        result["uncovered"].append({"path": root, "reason": "unknown_checkpoint"})
+        return result
+    result["covered"] = [c["path"] for c in changed_since(root, sha)]
+    cp_ts: Optional[float] = None
+    for c in list_checkpoints(root, 500):
+        if c["sha"] == sha:
+            cp_ts = float(c["ts"])
+            break
+    excluded_dirs = set(EXCLUDED_DIRS)
+    for d in EXCLUDED_DIRS:
+        if os.path.isdir(os.path.join(root, d)):
+            result["uncovered"].append({"path": d + "/", "reason": "excluded_dir_never_snapshotted"})
+    try:
+        for dirpath, dirnames, filenames in os.walk(root):
+            dirnames[:] = [d for d in dirnames if d not in excluded_dirs]
+            for fn in filenames:
+                if not any(fnmatch.fnmatch(fn, pat) for pat in EXCLUDED_GLOBS):
+                    continue
+                full = os.path.join(dirpath, fn)
+                try:
+                    mtime = os.path.getmtime(full)
+                except OSError:
+                    continue
+                if cp_ts is None or mtime > cp_ts:
+                    rel = os.path.relpath(full, root).replace(os.sep, "/")
+                    result["uncovered"].append({"path": rel, "reason": "excluded_glob_never_snapshotted"})
+    except OSError as e:
+        logger.debug("[checkpoint] coverage scan of %s failed: %s", root, e)
     return result
 
 
