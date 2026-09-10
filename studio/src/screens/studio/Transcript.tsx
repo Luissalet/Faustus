@@ -7,7 +7,7 @@ import { Rich } from '../rich';
 import { splitMentions } from '../../lib/mentions';
 import { safeExternal } from '../../lib/markdown';
 import { stripExecutedFences, toolFenceRegex } from '../../lib/fences';
-import { formatMetrics, liveTps, type LiveRate, type Step, type Turn } from './model';
+import { formatMetrics, liveTps, type LiveRate, type PlanStepView, type Step, type Turn } from './model';
 import { t, tn } from '../../i18n';
 import { getDisplay } from '../../shell/display';
 
@@ -598,6 +598,45 @@ function UserTurn({
   );
 }
 
+/**
+ * TASK-01: the plan by structured steps, foldable, with a step the MODEL
+ * marked done but nobody verified shown as such rather than as a plain
+ * checkmark. Only populated on history restore today (see `PlanStepView`'s
+ * doc comment in model.ts for why a still-streaming turn doesn't have it) —
+ * additive to the existing `<Harness plan={turn.plan} .../>` markdown card
+ * above it, which keeps rendering exactly as before either way.
+ */
+function PlanStepsCard({ steps, revision, warnings }: { steps: PlanStepView[]; revision?: number; warnings?: string[] }) {
+  const done = steps.filter((step) => step.status === 'done').length;
+  return (
+    <details className="fs-studio__thinking" data-testid="plan-steps-card">
+      <summary>
+        {t('Plan steps')} ({done}/{steps.length}){typeof revision === 'number' ? ` · rev ${revision}` : ''}
+      </summary>
+      <ul style={{ listStyle: 'none', margin: '6px 0 0', padding: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
+        {steps.map((step) => (
+          <li
+            key={step.id}
+            style={{ display: 'flex', alignItems: 'baseline', gap: 6, paddingLeft: step.dependsOn.length ? 16 : 0 }}
+          >
+            <span aria-hidden="true">{step.status === 'done' ? '☑' : step.status === 'blocked' ? '⛔' : '☐'}</span>
+            <span style={{ textDecoration: step.status === 'done' ? 'line-through' : undefined }}>{step.title}</span>
+            {step.status === 'done' && !step.verified && (
+              <span style={{ opacity: 0.7, fontSize: '0.85em' }}>{t('Marked done — not yet verified')}</span>
+            )}
+            {step.status === 'blocked' && <span style={{ opacity: 0.7, fontSize: '0.85em' }}>{t('Blocked')}</span>}
+          </li>
+        ))}
+      </ul>
+      {warnings && warnings.length > 0 && (
+        <p className="fs-prose" style={{ opacity: 0.7, fontSize: '0.85em', marginTop: 6 }}>
+          {t('Some lines could not be parsed as steps.')}
+        </p>
+      )}
+    </details>
+  );
+}
+
 function AssistantTurn({
   turn,
   busy,
@@ -648,6 +687,9 @@ function AssistantTurn({
               onNotice={onNotice}
             />
           </Suspense>
+        )}
+        {turn.planSteps && turn.planSteps.length > 0 && (
+          <PlanStepsCard steps={turn.planSteps} revision={turn.planRevision} warnings={turn.planWarnings} />
         )}
         {turn.steps.length > 0 && <ToolRail steps={turn.steps} live={turn.streaming} onOpenFile={onOpenFile} onOpenDoc={onOpenDoc} />}
         {turn.workers.length > 0 && (

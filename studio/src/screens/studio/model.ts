@@ -40,6 +40,25 @@ export interface Step {
   docId?: string;
 }
 
+/**
+ * One structured plan step (TASK-01), as the backend's `plan_state.Plan`
+ * serializes it inside `plan_update.steps`. `chat.ts`'s live SSE mapping
+ * (`case 'plan_update'`) does not carry these fields through yet — today
+ * they only reach the frontend via history restore, which reads the raw
+ * persisted `tool_events` entry directly (see `planUpdateFromMeta` below)
+ * rather than going through `ChatEvent`. A turn still in progress therefore
+ * shows the plain `plan` markdown only, same as before this existed.
+ */
+export interface PlanStepView {
+  id: string;
+  title: string;
+  status: 'pending' | 'done' | 'blocked';
+  dependsOn: string[];
+  evidenceRefs: string[];
+  notes: string;
+  verified: boolean;
+}
+
 /** One sub-agent (delegate_agents worker), folded from its stream events —
  *  the legacy board's state, field for field, so nothing it showed is lost. */
 export interface Worker {
@@ -130,6 +149,11 @@ export interface Turn {
   summary?: HarnessSummary;
   todos?: Todo[];
   plan?: string;
+  /** The same plan, structured (TASK-01) — set on history restore today;
+   *  see `PlanStepView`'s doc comment for why live turns don't have it yet. */
+  planSteps?: PlanStepView[];
+  planRevision?: number;
+  planWarnings?: string[];
   contextPercent?: number;
   /** Where the context went, when the server says (`context_ledger`). */
   ledger?: ContextLedger;
@@ -652,6 +676,59 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
   }
 }
 
+export function planStepFromRaw(raw: unknown): PlanStepView | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  const title = s(r.title);
+  if (!title) return null;
+  const status: PlanStepView['status'] = r.status === 'done' || r.status === 'blocked' ? r.status : 'pending';
+  const strings = (v: unknown): string[] => (Array.isArray(v) ? v.map((x) => s(x)).filter(Boolean) : []);
+  return {
+    id: s(r.id) || uid('plan-step'),
+    title,
+    status,
+    dependsOn: strings(r.depends_on),
+    evidenceRefs: strings(r.evidence_refs),
+    notes: s(r.notes),
+    verified: r.verified !== false,
+  };
+}
+
+/**
+ * TASK-01 / QA-38: `plan_update` was never saved before — only streamed live
+ * — so reloading a session lost the docked plan window entirely. The server
+ * now persists the tool event's `plan_update` field (src/agent_loop.py, the
+ * same place `ask_user` is persisted); this reads it back directly off the
+ * raw `tool_events` array rather than through `toolEventsFrom` (adapters/
+ * chat.ts), which strips `plan_update` down to a bare markdown string for
+ * the live `ChatEvent` union. Restoring from history therefore can show the
+ * structured steps; a turn still streaming live only has `plan` (the
+ * markdown), same as before this existed — see `PlanStepView`'s doc comment.
+ * The LAST plan_update in the turn wins, same as the live reducer (`case
+ * 'plan'`), which always replaces the whole plan rather than merging.
+ */
+export function planUpdateFromMeta(meta: Record<string, unknown>):
+  { plan: string; steps?: PlanStepView[]; revision?: number; warnings?: string[] } | undefined {
+  const raw = Array.isArray(meta.tool_events) ? (meta.tool_events as Record<string, unknown>[]) : [];
+  let found: Record<string, unknown> | undefined;
+  for (const ev of raw) {
+    if (ev && typeof ev === 'object' && ev.plan_update && typeof ev.plan_update === 'object') {
+      found = ev.plan_update as Record<string, unknown>;
+    }
+  }
+  if (!found) return undefined;
+  const plan = s(found.plan);
+  if (!plan) return undefined;
+  const steps = Array.isArray(found.steps)
+    ? (found.steps as unknown[]).map(planStepFromRaw).filter((x): x is PlanStepView => x !== null)
+    : undefined;
+  const revision = n(found.revision) ?? undefined;
+  const warnings = Array.isArray(found.warnings)
+    ? (found.warnings as unknown[]).map((x) => s(x)).filter(Boolean)
+    : undefined;
+  return { plan, steps, revision, warnings };
+}
+
 /**
  * What history keeps of an agent turn, back into the turn: the tool rail
  * (`tool_events`, with diffs, screenshots and sub-agent records), the
@@ -660,6 +737,7 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
  */
 export function restoreFromMetadata(turn: Turn, meta: Record<string, unknown>): Turn {
   const events = toolEventsFrom(meta);
+  const planUpdate = planUpdateFromMeta(meta);
   const speaker = typeof meta.group_model === 'string' && meta.group_model ? meta.group_model : undefined;
   if (!events.length && !meta.harness && !meta.web_sources && !meta.research_sources) return speaker ? { ...turn, speaker } : turn;
   const steps: Step[] = [];
@@ -716,6 +794,10 @@ export function restoreFromMetadata(turn: Turn, meta: Record<string, unknown>): 
     approval: approval ?? turn.approval,
     summary: approval?.decision === 'superseded' && !ask ? undefined : harness ? summaryFrom(harness) : turn.summary,
     sources,
+    plan: planUpdate?.plan ?? turn.plan,
+    planSteps: planUpdate?.steps ?? turn.planSteps,
+    planRevision: planUpdate?.revision ?? turn.planRevision,
+    planWarnings: planUpdate?.warnings ?? turn.planWarnings,
   };
 }
 
