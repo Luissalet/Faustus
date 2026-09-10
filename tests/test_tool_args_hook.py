@@ -106,7 +106,11 @@ def test_unknown_field_never_blocks_but_is_reported(monkeypatch):
     assert new_block is block
 
 
-def test_missing_required_field_blocks_in_strict_mode(monkeypatch):
+def test_missing_required_field_is_reported_but_the_tool_still_answers(monkeypatch):
+    """A missing argument is the tool's own error to give (it always was),
+    and the offer/execute coherence suite drives every offered tool with
+    `{}`: refusing here would turn "offered" into "blocked". So strict mode
+    reports it and lets the call through."""
     monkeypatch.delenv("FAUSTUS_TOOL_ARG_VALIDATION", raising=False)
     args = {}
     block = function_call_to_tool_block("grep", json.dumps(args))
@@ -115,11 +119,9 @@ def test_missing_required_field_blocks_in_strict_mode(monkeypatch):
     new_block, meta = agent_loop._validate_native_tool_call("grep", json.dumps(args), block)
 
     assert meta is not None
-    assert meta["blocked"] is True
+    assert meta["blocked"] is False
     assert any(e["field"] == "pattern" and e["kind"] == "missing_required" for e in meta["errors"])
-
-    result = agent_loop._tool_arg_error_result(meta["errors"])
-    assert "schema.contract_violation" in result["error"]
+    assert new_block is block
 
 
 def test_path_scope_error_is_never_repaired_and_blocks(monkeypatch):
@@ -179,8 +181,11 @@ def test_resolve_tool_blocks_keys_arg_validation_by_block_id(monkeypatch):
         _native_call("web_search", {"query": "x", "time_filter": "century"}),  # blocked
         _native_call("read_file", {"path": "app.py"}),  # clean
     ]
-    tool_blocks, used_native, converted_calls, arg_validation = agent_loop._resolve_tool_blocks(
-        "", native_calls, round_num=1,
+    # The return stays the three values every older caller unpacks; what
+    # validation found travels through the dict the caller hands in.
+    arg_validation = {}
+    tool_blocks, used_native, converted_calls = agent_loop._resolve_tool_blocks(
+        "", native_calls, round_num=1, arg_validation=arg_validation,
     )
 
     assert used_native is True

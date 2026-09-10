@@ -3418,8 +3418,13 @@ _TOOL_ARG_VALIDATION_MODES = ("strict", "warn", "off")
 #: Error kinds a caller cannot just ignore — the argument's *value* is
 #: wrong, not merely undeclared. `unknown_field` is deliberately excluded:
 #: CALL-02/CALL-03's own contract is that an unknown field is a warning the
-#: tool still runs with, in every mode.
-_BLOCKING_ARG_ERROR_KINDS = {"wrong_type", "enum", "missing_required", "path_scope"}
+#: tool still runs with, in every mode. `missing_required` is excluded too:
+#: every tool already answers a missing argument with its own, more specific
+#: error (and the offer/execute coherence suite drives each offered tool with
+#: `{}` to prove the turn does not refuse what it offered), so refusing here
+#: would turn "offered" into "blocked" for a call the tool could have
+#: explained itself.
+_BLOCKING_ARG_ERROR_KINDS = {"wrong_type", "enum", "path_scope"}
 
 #: ArgumentError.kind -> contracts/errors.py subcode under the "schema"
 #: category (CALL-02/CALL-03 is exactly a tool-argument-schema problem).
@@ -3533,15 +3538,20 @@ def _resolve_tool_blocks(
     round_num: int,
     is_api_model: bool = False,
     allow_fenced_for_api: bool = False,
+    arg_validation: Optional[Dict[int, Dict[str, Any]]] = None,
 ):
     """Choose native function calls or fenced code block parsing. Returns
-    (tool_blocks, used_native, converted_calls, arg_validation) — see
-    `_validate_native_tool_call` for `arg_validation`'s shape (keyed by
-    `id(block)`, entries only for a native call that had something to
-    report)."""
+    (tool_blocks, used_native, converted_calls) — the same three values it
+    always returned, so every caller and test that unpacks three keeps
+    working. What argument validation had to say about a native call goes
+    into `arg_validation` when the caller passes a dict (keyed by
+    `id(block)`, entries only for a call that had something to report; see
+    `_validate_native_tool_call`). A `ToolBlock` is a namedtuple, so it
+    cannot carry the note itself."""
     used_native = False
     converted_calls = []  # native calls that converted, ALIGNED with tool_blocks
-    arg_validation: Dict[int, Dict[str, Any]] = {}
+    if arg_validation is None:
+        arg_validation = {}
     if native_tool_calls:
         tool_blocks = []
         for tc in native_tool_calls:
@@ -3583,7 +3593,7 @@ def _resolve_tool_blocks(
                 f"{len(native_tool_calls)} native calls, "
                 f"{len(tool_blocks)} tool blocks. Preview: {resp_preview}")
 
-    return tool_blocks, used_native, converted_calls, arg_validation
+    return tool_blocks, used_native, converted_calls
 
 
 _TOOL_IMAGE_SOURCE_PREFIX = "tool result: "
@@ -7053,12 +7063,14 @@ async def stream_agent_loop(
             if _ody_doc_finetune_mode
             else round_response
         )
-        tool_blocks, used_native, converted_calls, _arg_validation = _resolve_tool_blocks(
+        _arg_validation: Dict[int, Dict[str, Any]] = {}
+        tool_blocks, used_native, converted_calls = _resolve_tool_blocks(
             _normalized_doc_round,
             native_tool_calls,
             round_num,
             is_api_model=(_is_api_model and not guide_only),
             allow_fenced_for_api=_ody_doc_finetune_mode,
+            arg_validation=_arg_validation,
         )
         if _ody_doc_stream_create_mode and tool_blocks:
             create_idx = next(
@@ -8083,11 +8095,9 @@ async def stream_agent_loop(
             else:
                 cmd_display = full_command
 
-            # CALL-02/CALL-03: an unrepairable native-call argument error
-            # (FAUSTUS_TOOL_ARG_VALIDATION=strict, the default) is refused
-            # before any policy/approval check runs — the call never had a
-            # legitimate shape to begin with, so there's nothing for those
-            # checks to reason about.
+            # CALL-02/CALL-03: what argument validation found for this native
+            # call (None for fenced blocks and clean calls). Consumed below,
+            # after the policy gate.
             _arg_meta = _arg_validation.get(id(block))
 
             security_decision = run_security.decision_for(
@@ -8110,14 +8120,7 @@ async def stream_agent_loop(
                     denial_origin=_denial_origin,
                 )
             )
-            if _arg_meta and _arg_meta.get("blocked"):
-                desc = f"{block.tool_type}: INVALID ARGUMENTS"
-                result = _tool_arg_error_result(_arg_meta["errors"])
-                logger.info(
-                    "Tool blocked before execution: invalid arguments for %s: %s",
-                    block.tool_type, _arg_meta["errors"],
-                )
-            elif _denial is not None:
+            if _denial is not None:
                 reason = _denial.reason
                 desc = f"{block.tool_type}: BLOCKED"
                 result = {
@@ -8160,6 +8163,18 @@ async def stream_agent_loop(
                         "tool this turn refuses to run",
                         _denial.tool, _denial.source, _denial.policy, _denial.origin,
                     )
+            elif _arg_meta and _arg_meta.get("blocked"):
+                # After the policy gate, before the approval gate: a denied
+                # tool is reported as denied (the model must not learn the
+                # schema of what it may not run), and an allowed call with an
+                # objectively wrong value is refused here rather than being
+                # sent to a human for approval with a shape it never had.
+                desc = f"{block.tool_type}: INVALID ARGUMENTS"
+                result = _tool_arg_error_result(_arg_meta["errors"])
+                logger.info(
+                    "Tool blocked before execution: invalid arguments for %s: %s",
+                    block.tool_type, _arg_meta["errors"],
+                )
             elif not security_decision.allowed:
                 approval_document = (
                     active_document

@@ -142,11 +142,23 @@ def _register(exc_type: Type[BaseException], category: str, subcode: str) -> Non
     _EXCEPTION_CATEGORY[exc_type] = (category, subcode)
 
 
+_DEFAULTS_INSTALLED = False
+
+
 def _install_default_mapping() -> None:
     """Map the exceptions that already exist rather than adding new ones —
     `core/exceptions.py` stays the single definition (`src/exceptions.py` is
     already only a re-export shim of it), this just gives each class a second,
-    closed name for what it means."""
+    closed name for what it means.
+
+    Runs on first use, not at import: importing `core.exceptions` pulls the
+    whole `core` package (SQLAlchemy, the database) behind it, and
+    `src.contracts` is imported by places that must stay light — the State
+    Mirror adapters have a test that fails if they load the database."""
+    global _DEFAULTS_INSTALLED
+    if _DEFAULTS_INSTALLED:
+        return
+    _DEFAULTS_INSTALLED = True
     from core.exceptions import (
         InvalidFileUploadError, LLMServiceError, SessionNotFoundError, WebSearchError,
     )
@@ -157,9 +169,6 @@ def _install_default_mapping() -> None:
     _register(WebSearchError, "transport", "web_search_error")
 
 
-_install_default_mapping()
-
-
 def from_exception(exc: BaseException, *, next_action: str = "",
                     retryable: Optional[bool] = None) -> ErrorInfo:
     """Turn one of the repo's own exceptions into the OBS-03 shape.
@@ -168,6 +177,7 @@ def from_exception(exc: BaseException, *, next_action: str = "",
     it comes back as `unknown.unmapped_exception`, which is itself the
     correct signal that this map is missing an entry rather than a report
     that nothing went wrong."""
+    _install_default_mapping()
     for exc_type, (category, subcode) in _EXCEPTION_CATEGORY.items():
         if isinstance(exc, exc_type):
             default_retryable, default_action = _DEFAULTS[category]
