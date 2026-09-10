@@ -493,7 +493,13 @@ class ToolResult:
 
 # ── evidence_ref ─────────────────────────────────────────────────────────────
 
-EVIDENCE_SOURCE_TYPES = ("file", "web", "tool", "artifact", "test", "receipt", "memory", "media")
+EVIDENCE_SOURCE_TYPES = (
+    "file", "web", "tool", "artifact", "test", "receipt", "memory", "media",
+    # L18/CTX: evidence that lives only in the turn's own transcript, not a
+    # tool call's output — src/context_compactor.py::compact_with_integrity
+    # points at a folded conversation span with this.
+    "conversation",
+)
 EVIDENCE_LOCATOR_KINDS = ("lines", "page", "cells", "time", "byte_range", "whole")
 EVIDENCE_RETENTION = ("ephemeral", "task", "project", "pinned")
 

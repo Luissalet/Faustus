@@ -15,6 +15,8 @@ from src.model_context import get_context_length, estimate_tokens
 from src.llm_core import llm_call_async
 from src.endpoint_resolver import resolve_endpoint
 from src.settings import get_setting
+from src.contracts.base import now_iso
+from src.contracts.tool import EvidenceLocator, EvidenceRef
 from core.models import ChatMessage
 
 logger = logging.getLogger(__name__)
@@ -1023,3 +1025,263 @@ def _update_session_history(session, summary: str,
             return True
     session.history = new_history
     return True
+
+
+# ---------------------------------------------------------------------------
+# CTX-02: compression with semantic integrity (docs/spec/v2 backlog)
+#
+# ``maybe_compact`` above is an LLM self-summary: a model call, prose output,
+# and a real chance that a path, hash or exact number simply is not in the
+# summary the model chose to write. It stays exactly as it is (rule 3, no
+# capability lost) for when a model is available and approximate prose is
+# acceptable.
+#
+# ``compact_with_integrity`` is a second, DETERMINISTIC compaction path —
+# no model call, no paraphrase — for the content CTX-02 says must never be
+# summarized away: identifiers (paths, IDs, hashes, URLs, numbers-with-unit),
+# code the user pasted, the user's own decisions (answers to ``ask_user``),
+# and the current user message. Everything else in an "older" span is folded
+# into one ``[compactado: N mensajes, M tokens → K]`` marker that still
+# carries every identifier found in that span verbatim, plus an
+# ``EvidenceRef`` at the untouched originals (stamped on the marker's own
+# ``metadata["evidence_refs"]`` — see ``context_ledger.evidence_index`` for
+# how that shows up as "in window").
+# ---------------------------------------------------------------------------
+
+#: File/module paths: at least one path separator, word-ish segments.
+#: Matches both POSIX (``src/context_budget.py``) and Windows
+#: (``C:\Users\x\file.py``) forms the repo's own paths take.
+_PATH_RE = re.compile(r'(?:[A-Za-z]:[\\/]|\.{1,2}/|~/|/)?(?:[\w.\-]+[\\/]){1,}[\w.\-]+')
+_URL_RE = re.compile(r'https?://[^\s)>\]"\']+')
+#: A run of 7-64 hex chars. Filtered afterwards for at least one a-f letter
+#: so a plain decimal number (all-digit) is never misread as a hash.
+_HASH_RE = re.compile(r'\b[0-9a-fA-F]{7,64}\b')
+_NUMBER_UNIT_RE = re.compile(
+    r'\b\d[\d,]*(?:\.\d+)?\s?(?:tokens?|ms|s|secs?|seconds?|min|mins?|minutes?'
+    r'|h|hrs?|hours?|KB|MB|GB|TB|px|%|USD|\$|GHz|MHz)\b',
+    re.IGNORECASE,
+)
+_CODE_BLOCK_RE = re.compile(r'```.*?```', re.DOTALL)
+
+
+def extract_protected_strings(text: str) -> List[str]:
+    """Identifiers that CTX-02 says must survive compaction verbatim.
+
+    Finds URLs, file/module paths, hex hashes (>=7 chars, at least one
+    a-f letter), and numbers-with-unit, in that order. Order-preserving and
+    NOT deduplicated — a caller counting occurrences needs the real count;
+    dedupe (e.g. before building a marker message) is the caller's job.
+    """
+    if not isinstance(text, str) or not text:
+        return []
+    found: List[str] = []
+    consumed: List[Tuple[int, int]] = []
+
+    def _take(pattern: "re.Pattern[str]", predicate=None, strip_trailing_punct=False) -> None:
+        for m in pattern.finditer(text):
+            span = m.span()
+            if any(span[0] < e and s < span[1] for s, e in consumed):
+                continue  # already claimed by an earlier, higher-priority pattern
+            candidate = m.group(0)
+            if strip_trailing_punct:
+                # A path/URL that ends a sentence picks up the sentence's own
+                # punctuation (".", ",", ...) because those characters are
+                # otherwise legal inside one — trim it back off.
+                candidate = candidate.rstrip('.,;:!?')
+                if not candidate:
+                    continue
+            if predicate and not predicate(candidate):
+                continue
+            found.append(candidate)
+            consumed.append((span[0], span[0] + len(candidate)))
+
+    _take(_URL_RE, strip_trailing_punct=True)
+    _take(_PATH_RE, lambda c: "/" in c or "\\" in c, strip_trailing_punct=True)
+    _take(_HASH_RE, lambda c: re.search(r'[a-fA-F]', c) is not None)
+    _take(_NUMBER_UNIT_RE)
+    # Restore document order — each pass above is already ordered within
+    # itself, but interleaving across passes is not, and a caller comparing
+    # this to the original text reads more naturally left-to-right.
+    found_with_pos = sorted(
+        zip(found, consumed), key=lambda item: item[1][0]
+    )
+    return [s for s, _ in found_with_pos]
+
+
+def _dedupe_preserve_order(items: List[str]) -> List[str]:
+    seen = set()
+    out: List[str] = []
+    for item in items:
+        if item not in seen:
+            seen.add(item)
+            out.append(item)
+    return out
+
+
+def _tool_call_names(msg: Dict[str, Any]) -> List[str]:
+    calls = msg.get("tool_calls") if isinstance(msg, dict) else None
+    if not isinstance(calls, list):
+        return []
+    names: List[str] = []
+    for tc in calls:
+        if not isinstance(tc, dict):
+            continue
+        fn = tc.get("function") if isinstance(tc.get("function"), dict) else tc
+        name = fn.get("name") if isinstance(fn, dict) else None
+        if name:
+            names.append(str(name))
+    return names
+
+
+def _is_ask_user_decision(messages: List[Dict[str, Any]], index: int) -> bool:
+    """Is ``messages[index]`` (a user turn) the user's answer to ``ask_user``?
+
+    True when the nearest preceding assistant turn with ``tool_calls`` named
+    ``ask_user`` among them — the tool's own description in
+    ``src/agent_loop.py`` is exact: "Calling this ENDS your turn and their
+    answer comes back as your next message", so the user message that
+    follows (through any intervening ``tool`` result rows) is that decision.
+    """
+    if not (0 <= index < len(messages)):
+        return False
+    if not isinstance(messages[index], dict) or messages[index].get("role") != "user":
+        return False
+    for j in range(index - 1, -1, -1):
+        msg = messages[j]
+        if not isinstance(msg, dict):
+            continue
+        role = msg.get("role")
+        if role == "user":
+            return False  # an earlier turn — not this message's prompt
+        if role == "assistant" and msg.get("tool_calls"):
+            return "ask_user" in _tool_call_names(msg)
+    return False
+
+
+def _has_pasted_code_block(msg: Dict[str, Any]) -> bool:
+    if not isinstance(msg, dict):
+        return False
+    return bool(_CODE_BLOCK_RE.search(_content_as_text(msg.get("content"))))
+
+
+def _last_convo_user_index(convo: List[Dict[str, Any]]) -> Optional[int]:
+    for i in range(len(convo) - 1, -1, -1):
+        msg = convo[i]
+        if isinstance(msg, dict) and msg.get("role") == "user":
+            return i
+    return None
+
+
+def compact_with_integrity(
+    messages: List[Dict[str, Any]],
+    *,
+    owner_id: str = "system",
+    session_id: str = "",
+    keep_recent: int = 4,
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Deterministic, model-free compaction that never paraphrases identifiers away.
+
+    Kept verbatim, as their own untouched messages:
+      - the last ``keep_recent`` conversation turns;
+      - the very last user message (today's real question), always;
+      - any message carrying a fenced ``` code block (the user's own paste);
+      - a user message that is the direct answer to an ``ask_user`` question.
+
+    Every other conversation message ("older") is folded into ONE marker
+    message, ``[compactado: N mensajes, M tokens → K]``, that still lists
+    every identifier ``extract_protected_strings`` found in the folded span,
+    verbatim, plus an ``EvidenceRef`` at the untouched originals (stamped on
+    the marker's ``metadata["evidence_refs"]``).
+
+    Returns ``(new_messages, evidence_refs)``; ``messages`` itself is never
+    mutated. A no-op (returns ``messages`` unchanged, no evidence) when there
+    are ``keep_recent`` or fewer conversation turns, or when everything
+    present is protected.
+    """
+    if not messages:
+        return list(messages or []), []
+
+    system_msgs = [m for m in messages if isinstance(m, dict) and m.get("role") == "system"]
+    convo = [m for m in messages if not (isinstance(m, dict) and m.get("role") == "system")]
+    if len(convo) <= max(0, keep_recent):
+        return list(messages), []
+
+    last_user_idx = _last_convo_user_index(convo)
+    protected_idx = set(range(max(0, len(convo) - keep_recent), len(convo)))
+    if last_user_idx is not None:
+        protected_idx.add(last_user_idx)
+    for i, msg in enumerate(convo):
+        if not isinstance(msg, dict):
+            protected_idx.add(i)  # never fold a malformed entry silently
+            continue
+        if _has_pasted_code_block(msg) or _is_ask_user_decision(convo, i):
+            protected_idx.add(i)
+
+    older_idx = [i for i in range(len(convo)) if i not in protected_idx]
+    if not older_idx:
+        return list(messages), []
+
+    older = [convo[i] for i in older_idx]
+    older_text = "\n".join(
+        f"{m.get('role', 'user').upper()}: {_content_as_text(m.get('content'))}"
+        for m in older if isinstance(m, dict)
+    )
+    protected_strings = _dedupe_preserve_order(extract_protected_strings(older_text))
+    tokens_before = estimate_tokens(older)
+
+    marker_lines = [f"[compactado: {len(older)} mensajes, {tokens_before} tokens \u2192 0]"]
+    if protected_strings:
+        marker_lines.append("Identifiers preserved verbatim: " + ", ".join(protected_strings))
+    provisional_text = "\n".join(marker_lines)
+    tokens_after = estimate_tokens([{"role": "system", "content": provisional_text}])
+    marker_text = provisional_text.replace(
+        f"tokens \u2192 0]", f"tokens \u2192 {tokens_after}]"
+    )
+
+    digest = hashlib.sha256(older_text.encode("utf-8", "replace")).hexdigest()
+    evidence_id = "evi_ctx02_" + hashlib.sha256(
+        f"{session_id}:{older_idx[0]}:{older_idx[-1]}:{digest}".encode("utf-8", "replace")
+    ).hexdigest()[:24]
+    evidence = EvidenceRef(
+        evidence_id=evidence_id,
+        owner_id=owner_id or "system",
+        project_id=None,
+        # L18/CTX: evidence that lives only in the turn's own transcript
+        # (src/contracts/tool.py's EVIDENCE_SOURCE_TYPES) — this pointer is
+        # at the folded conversation span, not a tool call's output.
+        source_type="conversation",
+        source_ref=f"session:{session_id or 'unknown'}",
+        source_revision=digest[:16],
+        content_sha256=digest,
+        captured_at=now_iso(),
+        # "lines" repurposed as a message-index range (no message-range
+        # locator kind exists either); same convention as
+        # context_ledger.evidence_for_read uses for real file line ranges.
+        locator=EvidenceLocator(kind="lines", value=f"{older_idx[0]}-{older_idx[-1]}"),
+        derived_from=(),
+        retention="task",
+    )
+    evidence_mapping = evidence.to_mapping()
+
+    marker_msg = {
+        "role": "system",
+        "content": marker_text,
+        "metadata": {
+            "compacted": True,
+            "ctx02_compacted": True,
+            "evidence_refs": [evidence_mapping],
+        },
+    }
+
+    new_convo: List[Dict[str, Any]] = []
+    inserted = False
+    older_idx_set = set(older_idx)
+    for i, msg in enumerate(convo):
+        if i in older_idx_set:
+            if not inserted:
+                new_convo.append(marker_msg)
+                inserted = True
+            continue
+        new_convo.append(msg)
+
+    return system_msgs + new_convo, [evidence_mapping]

@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import os
 import re
@@ -73,18 +74,87 @@ def _unified_diff(old: str, new: str, path: str) -> Optional[Dict[str, Any]]:
 
 def _read_text_lf(path: str):
     """Read a text file without newline translation and return
-    (text with LF line endings, had_crlf). Models quote text with "\\n";
-    Windows files carry "\\r\\n" — matching happens on the LF form and the
-    file is written back with its own convention (see _write_text_lf)."""
+    (text with LF line endings, had_crlf, revision). Models quote text with
+    "\\n"; Windows files carry "\\r\\n" — matching happens on the LF form and
+    the file is written back with its own convention (see _write_text_lf).
+    `revision` (EDIT-01, format `sha256:<hex>` per spec §34.2) is the hash of
+    the exact bytes on disk at read time, re-derived from the decoded text
+    rather than a second binary read — the file was just opened as UTF-8, so
+    encoding it back reproduces the same bytes without racing the first read."""
     with open(path, "r", encoding="utf-8", newline="") as f:
         raw = f.read()
     crlf = "\r\n" in raw
-    return (raw.replace("\r\n", "\n") if crlf else raw), crlf
+    revision = sha256_revision(raw.encode("utf-8"))
+    return (raw.replace("\r\n", "\n") if crlf else raw), crlf, revision
 
 
 def _write_text_lf(path: str, text_lf: str, crlf: bool) -> None:
     with open(path, "w", encoding="utf-8", newline="") as f:
         f.write(text_lf.replace("\n", "\r\n") if crlf else text_lf)
+
+
+def sha256_revision(data: bytes) -> str:
+    """EDIT-01 `base_revision` / anchor format, per spec §34.2: `sha256:<hex>`."""
+    return "sha256:" + hashlib.sha256(data).hexdigest()
+
+
+_REVISION_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+#: How much of each side of a base/current/proposed conflict report to keep.
+#: "recortado" (trimmed) per EDIT-01 — enough to reconcile by eye, not a full
+#: file dump.
+_CONFLICT_EXCERPT_CHARS = 4000
+
+
+def _excerpt(text: Optional[str]) -> Optional[str]:
+    if text is None:
+        return None
+    if len(text) <= _CONFLICT_EXCERPT_CHARS:
+        return text
+    return text[:_CONFLICT_EXCERPT_CHARS] + f"\n... [truncated at {_CONFLICT_EXCERPT_CHARS} chars]"
+
+
+def _base_revision_conflict(tool: str, path: str, base_revision: str,
+                             current_revision: Optional[str], current_text: str,
+                             base_text: Optional[str], proposed_text: str) -> Optional[Dict[str, Any]]:
+    """EDIT-01: refuse a write whose `base_revision` no longer matches the
+    file on disk, before touching it. Returns a `conflict` result carrying a
+    trimmed base/current/proposed diff so the caller can reconcile instead of
+    silently overwriting whatever changed underneath it; `None` when
+    `base_revision` is empty (today's unverified behavior — kept for
+    compatibility) or still matches.
+
+    `base_text` is only ever text this call itself supplied (the `old_string`
+    it quoted, a patch hunk's context) — nothing is stored between calls, so
+    when there is no such text (a whole-file `write_file`) the three-way
+    report says so rather than inventing content."""
+    if not base_revision:
+        return None
+    if current_revision == base_revision:
+        return None
+    diff = _unified_diff(base_text, current_text, path) if base_text is not None else None
+    result: Dict[str, Any] = {
+        "error": f"{tool}: {path} changed since base_revision was read "
+                 f"(expected {base_revision}, current is "
+                 f"{current_revision or 'missing — the file no longer exists'})",
+        "exit_code": 1,
+        "status": "conflict",
+        "error_code": "BASE_REVISION_MISMATCH",
+        "next_action": "read_current_and_reconcile",
+        "base_revision": base_revision,
+        "current_revision": current_revision,
+        "three_way": {
+            "base": _excerpt(base_text),
+            "current": _excerpt(current_text),
+            "proposed": _excerpt(proposed_text),
+        },
+    }
+    if base_text is None:
+        result["three_way"]["base_unavailable_reason"] = (
+            "only the base's hash was recorded, not its text; nothing is "
+            "stored between tool calls")
+    if diff:
+        result["three_way_diff"] = diff
+    return result
 
 
 class EditFileTool:
@@ -98,6 +168,7 @@ class EditFileTool:
         old = args.get("old_string", "")
         new = args.get("new_string", "")
         replace_all = bool(args.get("replace_all", False))
+        base_revision = str(args.get("base_revision") or "").strip()
         if not raw_path:
             return {"error": "edit_file: path required", "exit_code": 1}
         try:
@@ -108,6 +179,8 @@ class EditFileTool:
             return {"error": "edit_file: old_string required (use write_file to create a file)", "exit_code": 1}
         if old == new:
             return {"error": "edit_file: old_string and new_string are identical", "exit_code": 1}
+        if base_revision and not _REVISION_RE.match(base_revision):
+            return {"error": "edit_file: base_revision must look like 'sha256:<hex>'", "exit_code": 1}
 
         # Models quote text with "\n"; Windows files carry "\r\n". Match on
         # LF-normalized text and write the file back with the line endings it
@@ -116,8 +189,16 @@ class EditFileTool:
         new_lf = new.replace("\r\n", "\n")
 
         def _apply():
-            """Helper function that performs the actual string replacement and file writing logic."""
-            original, crlf = _read_text_lf(path)
+            """Read, check the base_revision precondition (EDIT-01), replace
+            and write — all inside one thread call so nothing else can slip a
+            write in between the check and the write of this process."""
+            original, crlf, revision_now = _read_text_lf(path)
+            if base_revision:
+                conflict = _base_revision_conflict(
+                    "edit_file", path, base_revision, revision_now,
+                    current_text=original, base_text=old_lf, proposed_text=new_lf)
+                if conflict is not None:
+                    return original, conflict, "conflict"
             count = original.count(old_lf)
             if count == 0:
                 return original, None, "not_found"
@@ -125,7 +206,8 @@ class EditFileTool:
                 return original, None, f"not_unique:{count}"
             updated = original.replace(old_lf, new_lf) if replace_all else original.replace(old_lf, new_lf, 1)
             _write_text_lf(path, updated, crlf)
-            return original, updated, "ok"
+            written = updated.replace("\n", "\r\n") if crlf else updated
+            return original, (updated, sha256_revision(written.encode("utf-8"))), "ok"
 
         try:
             original, updated, status = await asyncio.to_thread(_apply)
@@ -145,6 +227,8 @@ class EditFileTool:
         except OSError as e:
             return {"error": f"edit_file: {path}: {e}", "exit_code": 1}
 
+        if status == "conflict":
+            return updated  # `updated` holds the conflict payload for this status
         if status == "not_found":
             # Local models mostly miss by whitespace/indentation or by quoting a
             # paraphrase. Point at the closest real region so the retry can copy
@@ -177,8 +261,14 @@ class EditFileTool:
             return {"error": f"edit_file: old_string is not unique in {path} ({n} matches). Add surrounding context or set replace_all=true.", "exit_code": 1}
 
         n = original.count(old_lf)
-        result = {"output": f"Edited {path} ({n} replacement{'s' if n != 1 else ''})", "exit_code": 0}
-        diff = _unified_diff(original, updated, path)
+        updated_text, new_revision = updated
+        result = {"output": f"Edited {path} ({n} replacement{'s' if n != 1 else ''})", "exit_code": 0,
+                  "revision": new_revision}
+        if base_revision:
+            result["base_revision"] = base_revision
+        else:
+            result["unverified_base"] = True
+        diff = _unified_diff(original, updated_text, path)
         if diff:
             result["diff"] = diff
         return result
@@ -230,15 +320,17 @@ class ReadFileTool:
                             if budget <= 0:
                                 out.append(f"\n... [truncated at {MAX_READ_CHARS} chars]")
                                 break
-                    return "".join(out), MAX_READ_CHARS
+                    # end=start when n==0 (offset past EOF): an empty, still
+                    # well-formed one-line locator rather than an inverted range.
+                    return "".join(out), MAX_READ_CHARS, start, start + n - 1 if n else start
                 plan = read_plan.plan(path, window_tokens, display_path=raw_path or path)
                 if plan.output is not None:
-                    return plan.output, plan.budget_chars
+                    return plan.output, plan.budget_chars, 1, None
                 # The file fits, or the outline is switched off: read it exactly
                 # as before, under the cap this plan settled on.
                 with open(path, "r", encoding="utf-8", errors="replace") as f:
-                    return f.read(plan.budget_chars + 1), plan.budget_chars
-            data, cap = await asyncio.to_thread(_read)
+                    return f.read(plan.budget_chars + 1), plan.budget_chars, 1, None
+            data, cap, start_line, end_line = await asyncio.to_thread(_read)
         except FileNotFoundError:
             from src.agent_harness import not_found_error
             from src.tool_execution import get_active_workspace
@@ -255,7 +347,31 @@ class ReadFileTool:
             return {"error": f"read_file: {path}: {e}", "exit_code": 1}
         if not ranged and len(data) > cap:
             data = data[:cap] + f"\n... [truncated at {cap} chars]"
-        return {"output": data, "exit_code": 0}
+        if end_line is None:
+            # Unranged (whole file, or read_plan's outline): the line count of
+            # what actually made it into `data`, after truncation.
+            end_line = len(data.splitlines()) or start_line
+        result: Dict[str, Any] = {"output": data, "exit_code": 0}
+        # CTX-03/EDIT-01 (lote 18/19 integration): pin what was actually shown
+        # as evidence, and hash the file as it stands right now so the model
+        # can pass this back as `base_revision` on its next write_file/
+        # edit_file/apply_patch — the same format edit_file's own `revision`
+        # already returns. Best-effort: a read that succeeded must not be
+        # turned into a failure by evidence bookkeeping (mirrors
+        # question_store.open_question's try/except in src/agent_loop.py).
+        try:
+            from src.context_ledger import evidence_for_read
+            evidence = evidence_for_read(
+                raw_path or path, start_line, end_line, data,
+                owner_id=str(ctx.get("owner") or "") or "system",
+                project_id=(str(ctx.get("project_id") or "") or None),
+            )
+            result["evidence_refs"] = [evidence.to_mapping()]
+            _, _, revision_now = await asyncio.to_thread(_read_text_lf, path)
+            result["revision"] = revision_now
+        except Exception:
+            pass
+        return result
 
 class WriteFileTool:
     async def execute(self, content: str, ctx: dict) -> dict:
@@ -269,6 +385,7 @@ class WriteFileTool:
         # path and the file is written under a garbage name. This is the live
         # path: there is no filesystem MCP server, so write_file always runs
         # here via _direct_fallback, not through _build_mcp_args.
+        base_revision = ""
         _stripped = content.strip()
         if _stripped.startswith("{"):
             try:
@@ -276,34 +393,51 @@ class WriteFileTool:
                 if isinstance(_a, dict) and "path" in _a:
                     raw_path = str(_a.get("path", "")).strip()
                     body = str(_a.get("content", ""))
+                    base_revision = str(_a.get("base_revision") or "").strip()
             except (json.JSONDecodeError, TypeError, ValueError):
                 pass
+        if base_revision and not _REVISION_RE.match(base_revision):
+            return {"error": "write_file: base_revision must look like 'sha256:<hex>'", "exit_code": 1}
         try:
             path = _resolve_tool_path(raw_path)
         except ValueError as e:
             return {"error": f"write_file: {e}", "exit_code": 1}
         try:
             def _write():
-                old, crlf = "", False
+                old, crlf, revision_now = "", False, None
                 try:
-                    old, crlf = _read_text_lf(path)
+                    old, crlf, revision_now = _read_text_lf(path)
                 except (FileNotFoundError, IsADirectoryError, UnicodeDecodeError, OSError):
-                    old, crlf = "", False
+                    old, crlf, revision_now = "", False, None
+                if base_revision:
+                    conflict = _base_revision_conflict(
+                        "write_file", path, base_revision, revision_now,
+                        current_text=old, base_text=None, proposed_text=body)
+                    if conflict is not None:
+                        return conflict, None, "conflict"
                 d = os.path.dirname(path)
                 if d:
                     os.makedirs(d, exist_ok=True)
                 # Overwriting keeps the file's existing line-ending convention;
                 # a new file is written exactly as the model produced it (no
                 # platform translation), so the diff shows content changes only.
-                _write_text_lf(path, body.replace("\r\n", "\n"), crlf)
-                return old, len(body)
-            old_content, size = await asyncio.to_thread(_write)
+                written_lf = body.replace("\r\n", "\n")
+                _write_text_lf(path, written_lf, crlf)
+                written = written_lf.replace("\n", "\r\n") if crlf else written_lf
+                return old, len(body), sha256_revision(written.encode("utf-8"))
+            old_content, size, status_or_revision = await asyncio.to_thread(_write)
         except PermissionError:
             return {"error": f"write_file: {path}: permission denied", "exit_code": 1}
         except OSError as e:
             return {"error": f"write_file: {path}: {e}", "exit_code": 1}
+        if size is None:
+            return old_content  # conflict payload (see `_write`'s "conflict" branch)
         diff = _unified_diff(old_content, body, path)
-        result = {"output": f"Wrote {size} bytes to {path}", "exit_code": 0}
+        result = {"output": f"Wrote {size} bytes to {path}", "exit_code": 0, "revision": status_or_revision}
+        if base_revision:
+            result["base_revision"] = base_revision
+        else:
+            result["unverified_base"] = True
         if diff:
             result["diff"] = diff
         return result
@@ -318,18 +452,23 @@ class ApplyPatchTool:
         corruption when the model patches stale context.
         """
         from src.tool_execution import _resolve_tool_path
+        from src import edit_journal
 
         patch_text = content or ""
+        base_revision = ""
         stripped = patch_text.strip()
         if stripped.startswith("{"):
             try:
                 args = json.loads(stripped)
                 if isinstance(args, dict):
                     patch_text = str(args.get("patch_text") or args.get("patchText") or args.get("patch") or "")
+                    base_revision = str(args.get("base_revision") or "").strip()
             except (json.JSONDecodeError, TypeError):
                 pass
         if not patch_text.strip():
             return {"error": "apply_patch: patch_text required", "exit_code": 1}
+        if base_revision and not _REVISION_RE.match(base_revision):
+            return {"error": "apply_patch: base_revision must look like 'sha256:<hex>'", "exit_code": 1}
 
         try:
             ops = _parse_agent_patch(patch_text)
@@ -340,6 +479,7 @@ class ApplyPatchTool:
                 path = _resolve_tool_path(op["path"])
                 kind = op["kind"]
                 crlf = False
+                revision_now = None
                 if kind == "add":
                     if os.path.exists(path):
                         return {"error": f"apply_patch: {op['path']}: already exists", "exit_code": 1}
@@ -348,29 +488,92 @@ class ApplyPatchTool:
                 elif kind == "delete":
                     if not os.path.isfile(path):
                         return {"error": f"apply_patch: {op['path']}: not found", "exit_code": 1}
-                    old, _crlf = _read_text_lf(path)
+                    old, _crlf, revision_now = _read_text_lf(path)
                     new = ""
                 else:
                     if not os.path.isfile(path):
                         return {"error": f"apply_patch: {op['path']}: not found", "exit_code": 1}
-                    old, crlf = _read_text_lf(path)
+                    old, crlf, revision_now = _read_text_lf(path)
                     new = _apply_patch_hunks(old, op["hunks"], op["path"])
+                # EDIT-01: one base_revision anchors every update/delete op in
+                # the patch (they were necessarily read together, as part of
+                # preparing this one call) — refuse the WHOLE patch before any
+                # file is touched, matching this tool's existing all-or-nothing
+                # validation. "add" never carries a base: there is nothing on
+                # disk yet for a base_revision to describe.
+                if base_revision and kind in ("update", "delete"):
+                    conflict = _base_revision_conflict(
+                        "apply_patch", path, base_revision, revision_now,
+                        current_text=old, base_text=_hunk_base_text(op) if kind == "update" else old,
+                        proposed_text=new)
+                    if conflict is not None:
+                        return conflict
                 prepared.append((kind, path, old, new, crlf))
-
-            diffs = []
-            for kind, path, old, new, crlf in prepared:
-                if kind == "delete":
-                    os.remove(path)
-                else:
-                    directory = os.path.dirname(path)
-                    if directory:
-                        os.makedirs(directory, exist_ok=True)
-                    _write_text_lf(path, new, crlf)
-                diff = _unified_diff(old, new, path)
-                if diff:
-                    diffs.append(diff)
         except (ValueError, UnicodeDecodeError, PermissionError, OSError) as e:
             return {"error": f"apply_patch: {e}", "exit_code": 1}
+
+        # EDIT-02: the write phase is journaled (src/edit_journal.py) — every
+        # target's pre-batch bytes are snapshotted before any write, and a
+        # mid-batch OSError compensates (writes back / deletes) every file
+        # already applied instead of leaving a silent partial write.
+        journal_ops = [{"path": path, "kind": kind, "new": new, "crlf": crlf}
+                       for kind, path, old, new, crlf in prepared]
+
+        def _read_bytes(p: str) -> Optional[bytes]:
+            try:
+                with open(p, "rb") as f:
+                    return f.read()
+            except OSError:
+                return None
+
+        def _write_bytes(p: str, data: bytes) -> None:
+            d = os.path.dirname(p)
+            if d:
+                os.makedirs(d, exist_ok=True)
+            with open(p, "wb") as f:
+                f.write(data)
+
+        def _delete_path(p: str) -> None:
+            if os.path.isfile(p) or os.path.islink(p):
+                os.remove(p)
+
+        def _apply_op(p: str, op: Dict[str, Any], _pre: Optional[bytes]) -> Optional[bytes]:
+            if op["kind"] == "delete":
+                os.remove(p)
+                return None
+            d = os.path.dirname(p)
+            if d:
+                os.makedirs(d, exist_ok=True)
+            _write_text_lf(p, op["new"], op["crlf"])
+            written = op["new"].replace("\n", "\r\n") if op["crlf"] else op["new"]
+            return written.encode("utf-8")
+
+        try:
+            receipt = await asyncio.to_thread(
+                edit_journal.apply_batch, journal_ops, read_bytes=_read_bytes,
+                write_bytes=_write_bytes, delete_path=_delete_path, apply_op=_apply_op)
+        except (PermissionError, OSError) as e:
+            return {"error": f"apply_patch: {e}", "exit_code": 1}
+
+        applied_paths = set(receipt["applied"])
+        if receipt["failed_at"] is not None:
+            # Partial batch: report exactly what the journal says landed,
+            # rather than the generic "already exists"-style error — this is
+            # the QA-17 shape (`applied`, `failed_at`, `rolled_back`).
+            return {
+                "error": f"apply_patch: {receipt['failed_at']}: {receipt['failure']} "
+                         f"(batch stopped; {len(applied_paths)} of {len(prepared)} file(s) "
+                         f"{'rolled back' if receipt['rolled_back'] else 'left applied — rollback itself failed'})",
+                "exit_code": 1,
+                "status": "partial",
+                "journal": receipt,
+            }
+
+        diffs = []
+        for kind, path, old, new, crlf in prepared:
+            diff = _unified_diff(old, new, path)
+            if diff:
+                diffs.append(diff)
 
         added = sum(int(d.get("added") or 0) for d in diffs)
         removed = sum(int(d.get("removed") or 0) for d in diffs)
@@ -382,6 +585,13 @@ class ApplyPatchTool:
             "output": f"Applied patch ({len(prepared)} file{'s' if len(prepared) != 1 else ''}, +{added}/-{removed})",
             "exit_code": 0,
         }
+        if base_revision:
+            result["base_revision"] = base_revision
+        else:
+            result["unverified_base"] = True
+        revisions = {f["path"]: f["post_revision"] for f in receipt["files"] if f["applied"]}
+        if revisions:
+            result["revisions"] = revisions
         if diffs:
             result["diff"] = {
                 "text": diff_text,
@@ -391,6 +601,18 @@ class ApplyPatchTool:
                 "file": "patch",
             }
         return result
+
+
+def _hunk_base_text(op: Dict[str, Any]) -> str:
+    """The context+removed lines of every hunk in an `update` op — the only
+    text this call itself supplied about the file's prior state, and so the
+    only honest `base` for a three-way conflict report (see
+    `_base_revision_conflict`)."""
+    parts = []
+    for hunk in op.get("hunks", []):
+        old_lines = [line[1:] for line in hunk if line[:1] in (" ", "-")]
+        parts.append("\n".join(old_lines))
+    return "\n...\n".join(parts)
 
 def _parse_agent_patch(patch_text: str) -> List[Dict[str, Any]]:
     lines = patch_text.replace("\r\n", "\n").replace("\r", "\n").split("\n")

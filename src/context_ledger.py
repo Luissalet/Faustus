@@ -16,10 +16,13 @@ the model sees, it costs one pass over the list, and it unit-tests with no
 model, no endpoint and no network.
 """
 
+import hashlib
 import json
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from src.model_context import estimate_tokens
+from src.contracts.base import now_iso
+from src.contracts.tool import EvidenceLocator, EvidenceRef
 
 # Display order — roughly "fixed cost first, your actual question last", which
 # is also the order in which the numbers are damning.
@@ -184,6 +187,10 @@ def build_ledger(messages: Optional[List[Dict[str, Any]]],
         "tool_count": tool_count,
         "sections": sections,
         "advice": _advice(by_key, total, int(context_length or 0), tool_count),
+        # CTX-03: which EvidenceRefs (exact read windows, compaction sources —
+        # see evidence_for_read / context_compactor.compact_with_integrity)
+        # are actually part of THIS round's context, keyed by evidence_id.
+        "evidence": evidence_index(messages),
     }
 
 
@@ -215,3 +222,102 @@ def should_emit(previous: Optional[Dict[str, Any]],
         return True
     prev_total = previous.get("total") or 0
     return bool(prev_total and ledger.get("total", 0) >= prev_total * growth)
+
+
+# ---------------------------------------------------------------------------
+# CTX-03: working window + exact evidence (docs/spec/v2 backlog)
+#
+# For a file the agent just read, ``evidence_for_read`` pins WHAT was in the
+# window: the exact line range plus a hash of the content actually read, so
+# EDIT-01 can later demand a matching ``base_revision`` instead of trusting
+# that the file has not moved since. The file on disk is the authority the
+# hash is checked against — there is no separate evidence store to keep in
+# sync (rule 4: reuse existing authorities, never a second store for the
+# same thing). ``evidence_index`` is the ledger-side answer to "which of
+# those evidence refs are actually in THIS round's context" — built fresh
+# from the messages about to be sent, exactly like ``build_ledger`` itself;
+# it is a snapshot of one request, not a store, so an evidence_id missing
+# from it is not gone, only not part of what the model sees this round.
+# ---------------------------------------------------------------------------
+
+
+def _sha256_text(content: Any) -> str:
+    text_ = content if isinstance(content, str) else str(content or "")
+    return hashlib.sha256(text_.encode("utf-8", "replace")).hexdigest()
+
+
+def evidence_for_read(path: str, start: int, end: int, content: str,
+                       *, owner_id: str = "system",
+                       project_id: Optional[str] = None) -> EvidenceRef:
+    """``EvidenceRef`` for a file window the agent just read (CTX-03).
+
+    ``start``/``end`` are the 1-based inclusive line range actually shown to
+    the model (matching ``src/read_plan.py``'s own paging), and
+    ``content_sha256`` hashes exactly the ``content`` passed in — the text of
+    that range, not the whole file — so a caller can tell whether the window
+    it is holding is still what the file says today (``verify_read_evidence``)
+    before trusting it as a ``base_revision``.
+    """
+    digest = _sha256_text(content)
+    start_i, end_i = int(start), int(end)
+    evidence_id = "evi_read_" + hashlib.sha256(
+        f"{path}:{start_i}:{end_i}:{digest}".encode("utf-8", "replace")
+    ).hexdigest()[:24]
+    return EvidenceRef(
+        evidence_id=evidence_id,
+        owner_id=owner_id or "system",
+        project_id=project_id,
+        source_type="file",
+        source_ref=str(path),
+        source_revision=digest[:16],
+        content_sha256=digest,
+        captured_at=now_iso(),
+        locator=EvidenceLocator(kind="lines", value=f"{start_i}-{end_i}"),
+        derived_from=(),
+        retention="task",
+    )
+
+
+def verify_read_evidence(evidence: EvidenceRef, content: str) -> bool:
+    """Does ``content`` still match what ``evidence`` was captured from?
+
+    The file is the authority: this recomputes the same hash
+    ``evidence_for_read`` used and compares, so a caller (an EDIT-01
+    ``base_revision`` check, or a "show me the original" request) can tell a
+    stale read from a still-good one without a second store that could drift
+    from the file on its own.
+    """
+    if not isinstance(evidence, EvidenceRef):
+        return False
+    return _sha256_text(content) == evidence.content_sha256
+
+
+def evidence_index(messages: Optional[List[Dict[str, Any]]]) -> Dict[str, Dict[str, Any]]:
+    """Which EvidenceRefs are actually present in this round's context (CTX-03).
+
+    A message that carries evidence stamps it at
+    ``metadata["evidence_refs"]`` — a list of ``EvidenceRef.to_mapping()``
+    dicts, as produced by ``evidence_for_read`` and
+    ``context_compactor.compact_with_integrity``. Returns
+    ``{evidence_id: {"evidence": <mapping>, "message_index": i, "section": key}}``.
+    """
+    out: Dict[str, Dict[str, Any]] = {}
+    for i, msg in enumerate(messages or []):
+        if not isinstance(msg, dict):
+            continue
+        meta = msg.get("metadata")
+        refs = meta.get("evidence_refs") if isinstance(meta, dict) else None
+        if not isinstance(refs, list):
+            continue
+        for ref in refs:
+            if not isinstance(ref, dict):
+                continue
+            eid = ref.get("evidence_id")
+            if not eid:
+                continue
+            out[str(eid)] = {
+                "evidence": ref,
+                "message_index": i,
+                "section": classify(msg),
+            }
+    return out
