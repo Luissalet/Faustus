@@ -196,6 +196,8 @@ def observe(backend_id: str, *, fresh: bool = False) -> Observation:
         observation = _probe_docker(stamp)
     elif backend_id == "media_worker":
         observation = _probe_comfyui(stamp)
+    elif backend_id == "remote_worker":
+        observation = _probe_remote_worker(stamp)
     else:
         observation = Observation(backend_id, "unknown", "no probe implemented yet", stamp)
     _probe_cache[backend_id] = (time.monotonic(), observation)
@@ -242,8 +244,40 @@ def _probe_comfyui(stamp: str) -> Observation:
                        f"{gate['reason']}: {gate['detail']}", stamp)
 
 
+def _probe_remote_worker(stamp: str) -> Observation:
+    """HW-06: at least one PAIRED node that answered a health probe recently.
+
+    Reachable code, currently dead: `observe()` returns "declared but not
+    implemented" for `remote_worker` before this is ever called, because
+    `DECLARATIONS`' `implemented=False` for it is a promise this lot does
+    NOT flip — see the module docstring note below the declaration and this
+    lot's report for exactly why (flipping it would desync several other
+    lots' tests that hard-assert `implemented is False` today, which is a
+    change to files outside this lot). What DOES exist, real and tested,
+    is src/remote_worker_registry.py — registration (gated on
+    src.ssh_trust.is_paired, no second pairing mechanism), health, reserve
+    and reconcile — this probe is how `observe()` would answer once a future
+    lot makes that flip alongside the matching test updates."""
+    from src import remote_worker_registry as rwr
+    nodes = rwr.list_nodes()
+    if not nodes:
+        return Observation("remote_worker", "unavailable", "no remote node registered", stamp)
+    healthy = [n for n in nodes if n.get("status") == "healthy"]
+    if healthy:
+        return Observation("remote_worker", "available", f"{len(healthy)} node(s) healthy", stamp)
+    return Observation("remote_worker", "unavailable", "no registered node is currently healthy", stamp)
+
+
 def observe_all(*, fresh: bool = False) -> Tuple[Observation, ...]:
     return tuple(observe(d.id, fresh=fresh) for d in DECLARATIONS)
+
+
+def declared_backends() -> Dict[str, Any]:
+    """The same `DECLARATIONS` this module already exposes via
+    `declarations()`/`declaration()`, shaped as `{"backends": [...]}` of
+    plain dicts for callers (QA tooling, a future admin panel) that want a
+    flat, JSON-ready catalogue rather than the dataclass tuple."""
+    return {"backends": [d.to_dict() for d in DECLARATIONS]}
 
 
 def docker_evidence() -> Dict[str, Any]:

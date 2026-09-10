@@ -355,6 +355,63 @@ def setup_upload_routes(upload_handler):
             logger.error(f"Failed to get upload stats: {e}")
             raise HTTPException(500, "Failed to get upload statistics")
 
+    # ── PERF-05: chunked, resumable uploads ─────────────────────────────────
+    #
+    # Placed before `/{file_id}` on purpose: a two/three-segment path
+    # (`/chunked/{id}/status`) never collides with the single-segment
+    # `{file_id}` route regardless of declaration order, but keeping every
+    # `/chunked/...` route together, above it, is what a reader expects.
+
+    @router.post("/chunked/start")
+    async def api_chunked_start(request: Request):
+        """`{"filename", "total_size", "chunk_size"?, "expected_sha256"?}` ->
+        `{"session_id", "chunk_size", "total_chunks", "received_chunks": []}`."""
+        try:
+            body = await request.json()
+        except Exception:
+            raise HTTPException(400, "JSON body required")
+        if not isinstance(body, dict):
+            raise HTTPException(400, "JSON object required")
+        owner = effective_user(request)
+        return upload_handler.start_chunked_upload(
+            filename=str(body.get("filename") or ""),
+            total_size=int(body.get("total_size") or 0),
+            chunk_size=int(body.get("chunk_size") or 0),
+            expected_sha256=str(body.get("expected_sha256") or ""),
+            owner=owner,
+        )
+
+    @router.get("/chunked/{session_id}/status")
+    async def api_chunked_status(session_id: str):
+        """Which chunk indices are already on disk — what a reconnecting
+        client resumes from instead of re-sending the whole file."""
+        return upload_handler.chunked_upload_status(session_id)
+
+    @router.put("/chunked/{session_id}/chunk/{index}")
+    async def api_chunked_chunk(session_id: str, index: int, request: Request):
+        """The raw chunk bytes as the request body (not multipart) — one
+        PUT per chunk, so a dropped connection only loses that one chunk."""
+        owner = effective_user(request)
+        data = await request.body()
+        return upload_handler.write_chunk(session_id, index, data, owner=owner)
+
+    @router.post("/chunked/{session_id}/complete")
+    async def api_chunked_complete(request: Request, session_id: str):
+        owner = effective_user(request)
+        client_ip = request.client.host if request.client else "unknown"
+        meta = upload_handler.complete_chunked_upload(session_id, client_ip, owner=owner)
+        return {
+            "id": meta["id"], "name": meta["name"], "mime": meta["mime"], "size": meta["size"],
+            "hash": meta["hash"], "checksum_sha256": meta.get("checksum_sha256") or meta["hash"],
+            "uploaded_at": meta["uploaded_at"], "is_duplicate": meta.get("is_duplicate", False),
+        }
+
+    @router.delete("/chunked/{session_id}")
+    async def api_chunked_cancel(session_id: str):
+        if not upload_handler.cancel_chunked_upload(session_id):
+            raise HTTPException(404, "No such upload session")
+        return {"ok": True}
+
     @router.get("/{file_id}")
     async def download_file(request: Request, file_id: str, thumb: int = 0):
         """Serve an uploaded file by its ID. `?thumb=1` returns a small cached

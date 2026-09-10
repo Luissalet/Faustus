@@ -100,6 +100,15 @@ _LOAD_TIMEOUT = 600.0
 _PULL_KEEP_SECONDS = 3600.0
 _PULL_KEEP_MAX = 50
 
+# HW-04: a network link is shared. Nothing here throttles bytes/sec (Ollama
+# does not expose a knob for that), but an unbounded number of concurrent
+# `/api/pull` streams to the SAME endpoint both saturates its link and
+# multiplies the chance of a layer failing mid-transfer. A pull beyond the
+# cap is queued (`status="queued"`, `status_text="queued: ..."`) and starts
+# the moment a slot frees, same as it always could by re-clicking pull later.
+MAX_CONCURRENT_PULLS_PER_ENDPOINT = 2
+_PULL_QUEUE_POLL_SECONDS = 0.5
+
 
 def _client_factory(timeout: float = 10.0) -> httpx.Client:
     """One place to build the client so tests can swap in a MockTransport."""
@@ -656,6 +665,19 @@ class PullJob:
 
     def run(self) -> None:
         """Consume Ollama's NDJSON /api/pull stream until done / cancel."""
+        # HW-04: a network is a shared resource -- queue behind the cap
+        # instead of piling every requested pull onto the same endpoint at
+        # once. `pulls` (the module-level PullManager) is resolved at call
+        # time, safe even though this method is defined above it.
+        self.update(status="queued", status_text="queued: waiting for a network slot")
+        while pulls.active_pulling_count(self.endpoint_id, exclude=self.id) >= MAX_CONCURRENT_PULLS_PER_ENDPOINT:
+            if self._cancel.is_set():
+                self._finish("cancelled", "cancelled")
+                return
+            time.sleep(_PULL_QUEUE_POLL_SECONDS)
+        if self._cancel.is_set():
+            self._finish("cancelled", "cancelled")
+            return
         self.update(status="pulling", status_text="connecting")
         disk_free = None
         if self.same_machine:
@@ -691,15 +713,23 @@ class PullJob:
                         completed = int(ev.get("completed") or 0)
                         if digest and total:
                             self._layers[digest] = (completed, total)
-                        if disk_free is not None and total and total > disk_free:
-                            self._finish(
-                                "error", "failed",
-                                f"Not enough free disk for this model: a layer needs "
-                                f"{total / 1e9:.1f} GB and only {disk_free / 1e9:.1f} GB are free.",
-                            )
-                            return
                         agg_total = sum(t for _, t in self._layers.values())
                         agg_done = sum(c for c, _ in self._layers.values())
+                        # HW-04: checked against the RUNNING total of every
+                        # layer seen so far, not just this one. A model with
+                        # several multi-GB layers can pass a per-layer check
+                        # on each one individually while their sum still
+                        # blows the disk that was free when the pull began --
+                        # earlier layers do not un-consume their bytes just
+                        # because Ollama has moved on to the next one.
+                        if disk_free is not None and agg_total and agg_total > disk_free:
+                            self._finish(
+                                "error", "failed",
+                                f"Not enough free disk for this model: {agg_total / 1e9:.1f} GB "
+                                f"needed so far and only {disk_free / 1e9:.1f} GB were free when "
+                                f"the pull started.",
+                            )
+                            return
                         self.update(
                             status_text=status or self.status_text,
                             digest=digest or self.digest,
@@ -737,6 +767,16 @@ class PullManager:
                           key=lambda j: j.finished_at or 0)
         while len(finished) > _PULL_KEEP_MAX:
             self._jobs.pop(finished.pop(0).id, None)
+
+    def active_pulling_count(self, endpoint_id: str, *, exclude: Optional[str] = None) -> int:
+        """How many jobs are actually streaming (not just queued) against
+        this endpoint right now -- what MAX_CONCURRENT_PULLS_PER_ENDPOINT
+        caps. A snapshot read: no lock needed beyond what dict iteration in
+        CPython already gives a status field that only ever moves forward."""
+        return sum(
+            1 for j in self._jobs.values()
+            if j.id != exclude and j.endpoint_id == endpoint_id and j.status == "pulling"
+        )
 
     def start(self, endpoint: Dict[str, Any], name: str) -> tuple:
         """(job, created). An active pull of the same model on the same
@@ -1103,6 +1143,61 @@ def setup_local_models_routes() -> APIRouter:
             raise HTTPException(409, "That question was already answered")
         return {"ok": True, "ticket": t.id, "action": action, "names": t.decision.get("names", [])}
 
+    @router.get("/residency")
+    async def api_residency(request: Request, endpoint_id: Optional[str] = Query(None)):
+        """HW-03: who is resident right now, with pin + last-active, for the
+        "fix this one resident / one interactive priority" panel. Read-only
+        and cheap -- the same /api/ps + /api/tags `assess()` already pays for
+        on every chat turn, not an extra probe of its own."""
+        from src import vram_admission
+        require_user(request)
+        ep = _pick_endpoint(endpoint_id, _endpoints_for(request))
+        root = vram_admission_root(ep["root"])
+        if not root:
+            return {"endpoint_id": ep["id"], "root": ep["root"], "residents": [], "supported": False}
+        try:
+            loaded = await asyncio.to_thread(_ps, root)
+            tags = await asyncio.to_thread(_tags, root)
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(502, f"Could not reach {ep['name']}: {e}")
+        digests = {str(t.get("name") or t.get("model") or ""): str(t.get("digest") or "") for t in tags}
+        residents = []
+        for m in loaded:
+            n = str(m.get("name") or m.get("model") or "")
+            if not n:
+                continue
+            total = int(m.get("size") or 0)
+            in_vram = int(m.get("size_vram") or 0)
+            residents.append({
+                "name": n, "key": digests.get(n) or n, "total_bytes": total,
+                "in_vram_bytes": in_vram, "spill_bytes": max(0, total - in_vram) if in_vram else 0,
+                "ctx": int(m.get("context_length") or 0), "expires_at": str(m.get("expires_at") or ""),
+            })
+        return {
+            "endpoint_id": ep["id"], "root": root, "supported": True,
+            "residents": vram_admission.residency_status(root, residents),
+            "grace_seconds": vram_admission.RESIDENCY_GRACE_SECONDS,
+        }
+
+    @router.put("/{name:path}/pin")
+    async def api_set_pin(request: Request, name: str, endpoint_id: Optional[str] = Query(None)):
+        """`{"pinned": true|false}` -- HW-03: keep a resident model out of
+        eviction suggestions. Advisory only, same as the rest of admission:
+        it never forces a load and never blocks someone from unloading the
+        model by hand."""
+        from src import vram_admission
+        require_user(request)
+        name = validate_model_name(name)
+        ep = _pick_endpoint(endpoint_id, _endpoints_for(request))
+        root = vram_admission_root(ep["root"]) or ep["root"]
+        body = await _body(request)
+        pinned = bool(body.get("pinned"))
+        if pinned:
+            vram_admission.pin_model(root, name)
+        else:
+            vram_admission.unpin_model(root, name)
+        return {"model": name, "endpoint_id": ep["id"], "pinned": vram_admission.is_pinned(root, name)}
+
     @router.get("/placement")
     async def api_placement(request: Request):
         """The GPU placement policy: -1 Auto, N = fill card N first."""
@@ -1319,6 +1414,46 @@ def setup_local_models_routes() -> APIRouter:
         tested = await asyncio.to_thread(_run)
         manifest = mcal.save_tested(key, tested, announced=announced)
         return {"model": name, "endpoint_id": ep["id"], "stable_model_id": key, **manifest}
+
+    # ── SET-02: cost + privacy, per endpoint (the model picker's informative
+    # badges — capabilities and VRAM fit are their own existing endpoints
+    # above / `/api/models/fit`) ──────────────────────────────────────────
+    @caps_router.get("/api/models/endpoint-profile")
+    async def api_models_endpoint_profile(request: Request) -> Dict[str, Any]:
+        """`is_local`/`cost` for every endpoint the caller can see, owner-scoped
+        the same way `GET /api/models` itself is. Privacy is never guessed
+        from the endpoint's declared `endpoint_kind` (an admin-set label a
+        remote box could still be mislabelled "local" under) — it is read
+        straight off the base URL through `privacy_policy.is_local_destination`,
+        the one shared authority this repo already uses to answer "does this
+        leave the machine" everywhere else (COMUN rule 4)."""
+        require_user(request)
+        from src import privacy_policy
+        owner = effective_user(request) or ""
+        is_admin = True
+        try:
+            auth_mgr = getattr(request.app.state, "auth_manager", None)
+            if owner and auth_mgr is not None and getattr(auth_mgr, "is_admin", None):
+                is_admin = bool(auth_mgr.is_admin(owner))
+        except Exception:  # noqa: BLE001
+            is_admin = False
+        db = SessionLocal()
+        try:
+            q = db.query(ModelEndpoint).filter(ModelEndpoint.is_enabled == True)  # noqa: E712
+            if owner and not is_admin:
+                q = owner_filter(q, ModelEndpoint, owner)
+            endpoints = q.all()
+            profiles: Dict[str, Dict[str, Any]] = {}
+            for ep in endpoints:
+                is_local = privacy_policy.is_local_destination(ep.base_url or "")
+                has_key = bool(getattr(ep, "api_key", None))
+                cost = ("free_local" if is_local else
+                        "paid" if has_key else
+                        "unconfigured")  # a cloud endpoint with no key stored — calls will likely fail
+                profiles[ep.id] = {"is_local": is_local, "cost": cost, "has_api_key": has_key}
+            return {"endpoints": profiles}
+        finally:
+            db.close()
 
     parent = APIRouter()
     parent.include_router(router)

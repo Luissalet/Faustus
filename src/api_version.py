@@ -23,7 +23,7 @@ parse.
 """
 from __future__ import annotations
 
-from typing import Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 #: Bump when the wire shape changes in a way an old client cannot safely
 #: ignore (a renamed/removed field, a changed meaning of an existing one).
@@ -85,3 +85,90 @@ def upgrade_required_detail(client_version: Optional[str]) -> str:
         f"server supports ({MIN_CLIENT_VERSION}). Reload the app to pick up "
         f"a compatible build."
     )
+
+
+# ---------------------------------------------------------------------------
+# OPS-06: OpenAPI version stamp, announced deprecations, and a soft
+# adaptation notice for a client that is old but still supported.
+#
+# `is_supported`/`upgrade_required_detail` above already answer the hard
+# case — a client too old to speak to at all gets 426. OPS-06's acceptance
+# criterion is the other half: a client that is OLD but not below the floor
+# must get a legible signal too ("adaptación, no un fallo ambiguo tras
+# ejecutar media acción"), not silence until something it doesn't understand
+# breaks it midway through a request.
+# ---------------------------------------------------------------------------
+
+#: Announced, backward-compatible deprecations. Each entry documents a wire
+#: shape or route that a client may still rely on today but that will change
+#: after `sunset`. Nothing here removes the old shape immediately — COMUN
+#: rule 3 (no capability lost) — it only makes the deprecation discoverable
+#: instead of a silent, undocumented risk for whoever hasn't migrated yet.
+#: `replacement` is None when a feature is being retired outright rather than
+#: replaced by something else.
+DEPRECATIONS: Tuple[Dict[str, Any], ...] = (
+    # Example shape for a future lot to append to, not an active deprecation
+    # today — this lot introduces the registry with nothing yet scheduled
+    # for removal. See docs/api/deprecations.md.
+)
+
+
+def active_deprecations() -> List[Dict[str, Any]]:
+    """Every entry in `DEPRECATIONS`, as plain dicts — the shape a route or
+    an OpenAPI extension can hand back verbatim."""
+    return [dict(d) for d in DEPRECATIONS]
+
+
+def deprecation_headers(route: str) -> Dict[str, str]:
+    """RFC 8594-shaped headers (`Deprecation`, `Sunset`, `Link`) for any
+    announced deprecation whose `route` matches, or `{}` when none applies —
+    additive-only, so a route that adds this never changes what an unaware
+    client already parses out of a 200."""
+    headers: Dict[str, str] = {}
+    for entry in DEPRECATIONS:
+        if entry.get("route") != route:
+            continue
+        headers["Deprecation"] = "true"
+        if entry.get("sunset"):
+            headers["Sunset"] = str(entry["sunset"])
+        if entry.get("replacement"):
+            headers["Link"] = f'<{entry["replacement"]}>; rel="successor-version"'
+        break
+    return headers
+
+
+def client_adaptation_notice(client_version: Optional[str]) -> Optional[str]:
+    """A soft, actionable notice for a client that IS supported
+    (`is_supported()` is True) but older than the server's current
+    `API_VERSION` — the "adaptación, no un fallo ambiguo" half of OPS-06's
+    acceptance criterion. Returns None for a client with no version (predates
+    the scheme, nothing to compare), for the current version, or for one
+    already rejected by `is_supported` (that case gets the 426 instead).
+    """
+    raw = (client_version or "").strip()
+    if not raw or not is_supported(raw):
+        return None
+    parsed = _parse(raw)
+    current = _parse(API_VERSION)
+    if parsed is None or current is None or parsed >= current:
+        return None
+    return (
+        f"This client identifies as API version {raw}; the server is now on "
+        f"{API_VERSION}. Requests will still work, but reload the app when "
+        f"convenient to pick up features this version may be missing."
+    )
+
+
+def openapi_version_extension() -> Dict[str, Any]:
+    """`x-*` fields meant to be merged into a FastAPI app's generated
+    OpenAPI document (`app.openapi()["info"]`), so the published schema
+    itself states the negotiated-version contract instead of leaving it only
+    in this module's docstring. Wiring this into the actual `app.openapi()`
+    override lives outside this lot's owned files — see this lot's report."""
+    return {
+        "x-api-version": API_VERSION,
+        "x-min-client-version": MIN_CLIENT_VERSION,
+        "x-api-version-header": API_VERSION_HEADER,
+        "x-client-version-header": CLIENT_VERSION_HEADER,
+        "x-deprecations": active_deprecations(),
+    }

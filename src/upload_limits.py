@@ -1,6 +1,7 @@
 """Small helpers for route-local upload size caps."""
 
 import os
+import re
 
 from fastapi import HTTPException, UploadFile
 
@@ -59,6 +60,30 @@ STT_MAX_AUDIO_BYTES = read_byte_limit_env(
 ICS_MAX_BYTES = read_byte_limit_env(
     "ODYSSEUS_ICS_MAX_BYTES", 10 * 1024 * 1024
 )
+
+# PERF-05: chunked/resumable uploads exist specifically for attachments
+# bigger than the plain single-POST chat cap above — a dedicated, larger
+# ceiling, not a reuse of DEFAULT_CHAT_UPLOAD_MAX_BYTES (10 MB, too small for
+# the videos/archives this path is for).
+CHUNKED_UPLOAD_MAX_BYTES = read_byte_limit_env(
+    "ODYSSEUS_CHUNKED_UPLOAD_MAX_BYTES", 2 * 1024 * 1024 * 1024,
+)
+CHUNKED_UPLOAD_DEFAULT_CHUNK_BYTES = read_byte_limit_env(
+    "ODYSSEUS_CHUNKED_UPLOAD_DEFAULT_CHUNK_BYTES", 8 * 1024 * 1024,
+)
+CHUNKED_UPLOAD_MAX_CHUNK_BYTES = read_byte_limit_env(
+    "ODYSSEUS_CHUNKED_UPLOAD_MAX_CHUNK_BYTES", 32 * 1024 * 1024,
+)
+
+_CHUNKED_SESSION_ID_RE = re.compile(r"^[a-f0-9]{32}$")
+
+
+def is_valid_chunked_session_id(session_id: str) -> bool:
+    """Session ids are `uuid.uuid4().hex` (src.upload_handler.start_chunked_
+    upload) — a fixed 32-hex-char shape, checked before it ever touches a
+    filesystem path so a request can't walk a session dir outside
+    `<upload_dir>/.chunked/`."""
+    return bool(_CHUNKED_SESSION_ID_RE.fullmatch(str(session_id or "")))
 
 
 async def read_upload_limited(upload: UploadFile, limit: int, label: str = "Upload") -> bytes:

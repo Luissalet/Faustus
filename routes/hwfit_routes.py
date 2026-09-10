@@ -5,7 +5,7 @@ import shlex
 import subprocess
 from copy import deepcopy
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
 from core.platform_compat import run_ssh_command
 from routes._validators import validate_remote_host, validate_ssh_port
@@ -451,5 +451,60 @@ def setup_hwfit_routes():
             system["gpu_only"] = True if single_vram > 0 else False
         results = rank_image_models(system, search=search or None, sort=sort)
         return {"system": system, "models": results}
+
+    # ── HW-05: measured hardware profiles (src/hardware_profiles.py) ────────
+
+    @router.get("/hardware-profile")
+    def get_hardware_profile(host: str = "", ssh_port: str = "", save: bool = False, label: str = ""):
+        """The current (or remote, via host=) machine's measured profile —
+        GPU/VRAM/RAM/disk from the same cached detector /system uses, plus
+        whatever per-model speeds this process has actually observed. Never
+        starts a benchmark: `save=true` just persists the snapshot."""
+        from src import hardware_profiles as hwp
+        host, ssh_port = _validate_detection_target(host, ssh_port)
+        profile = hwp.collect_profile(host=host, ssh_port=ssh_port, label=label)
+        if save:
+            profile = hwp.save_profile(profile)
+        return profile
+
+    @router.get("/hardware-profiles")
+    def list_hardware_profiles():
+        from src import hardware_profiles as hwp
+        return {"profiles": hwp.list_profiles()}
+
+    @router.get("/hardware-profiles/{profile_id}")
+    def get_saved_hardware_profile(profile_id: str):
+        from src import hardware_profiles as hwp
+        profile = hwp.get_profile(profile_id)
+        if profile is None:
+            raise HTTPException(404, "No such hardware profile")
+        return profile
+
+    @router.delete("/hardware-profiles/{profile_id}")
+    def delete_hardware_profile(profile_id: str):
+        from src import hardware_profiles as hwp
+        if not hwp.delete_profile(profile_id):
+            raise HTTPException(404, "No such hardware profile")
+        return {"ok": True}
+
+    @router.post("/hardware-profiles/import")
+    async def import_hardware_profile(request: Request):
+        from src import hardware_profiles as hwp
+        try:
+            data = await request.json()
+        except Exception:
+            raise HTTPException(400, "JSON body required")
+        try:
+            return hwp.import_profile(data)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+    @router.get("/hardware-profiles/compare/{a_id}/{b_id}")
+    def compare_hardware_profiles(a_id: str, b_id: str):
+        from src import hardware_profiles as hwp
+        a, b = hwp.get_profile(a_id), hwp.get_profile(b_id)
+        if a is None or b is None:
+            raise HTTPException(404, "No such hardware profile")
+        return hwp.compare_profiles(a, b)
 
     return router

@@ -146,6 +146,103 @@ def reservations_snapshot() -> List[Dict[str, Any]]:
         return [dict(r, id=rid) for rid, r in _RESERVATIONS.items()]
 
 
+# -- Residency: pins and last-active (HW-03) --------------------------------
+#
+# `assess()`'s `suggestion` used to be pure biggest-first: whichever resident
+# frees the shortfall fastest, with no notion of "in the middle of a job" or
+# "the person asked to keep this one loaded". That is exactly the failure
+# HW-03 names: a quick conversation on a small model suggests evicting the
+# big one a slow job is mid-generation on, or a router alternates between two
+# models and each `assess()` call proposes unloading whichever is not the
+# current pick -- a model that was resident a second ago gets suggested again
+# a second later, purely because nothing here remembers it was just in use.
+#
+# Two protections, both keyed the same way reservations are (`root|model`),
+# both advisory to `suggestion` only -- they never change `fits`/`shortfall`,
+# so a caller that ignores them still gets a correct fit/no-fit verdict:
+#
+#   * a PIN never appears in `suggestion` unless every unpinned resident
+#     combined still cannot free the shortfall (then it is offered anyway,
+#     with `protected_used` naming it -- silently starving a load nobody can
+#     ever admit would be worse than one honest pin override);
+#   * a model observed resident within `RESIDENCY_GRACE_SECONDS` of "now" is
+#     treated the same way: recently-active residents are the last ones
+#     picked, not the first, so a job mid-generation on model A does not get
+#     A suggested away the instant model B's chat asks whether B fits.
+RESIDENCY_GRACE_SECONDS = 20.0
+
+_PIN_LOCK = threading.Lock()
+_PINS: Dict[str, set] = {}          # root -> {model, ...}
+_LAST_ACTIVE: Dict[str, float] = {}  # "root|model" -> time.time()
+
+
+def _active_key(root: str, name: str) -> str:
+    return f"{root}|{str(name or '').strip().lower()}"
+
+
+def _note_active(root: str, name: str) -> None:
+    if not name:
+        return
+    with _PIN_LOCK:
+        _LAST_ACTIVE[_active_key(root, name)] = time.time()
+
+
+def _seconds_since_active(root: str, name: str, *, now: Optional[float] = None) -> Optional[float]:
+    with _PIN_LOCK:
+        seen = _LAST_ACTIVE.get(_active_key(root, name))
+    if seen is None:
+        return None
+    return max(0.0, (now if now is not None else time.time()) - seen)
+
+
+def pin_model(root: str, model: str) -> None:
+    """Keep `model` out of eviction suggestions on `root` until unpinned."""
+    name = str(model or "").strip()
+    if not name:
+        raise ValueError("model is required")
+    with _PIN_LOCK:
+        _PINS.setdefault(root, set()).add(name.lower())
+
+
+def unpin_model(root: str, model: str) -> None:
+    name = str(model or "").strip().lower()
+    with _PIN_LOCK:
+        pins = _PINS.get(root)
+        if pins:
+            pins.discard(name)
+            if not pins:
+                _PINS.pop(root, None)
+
+
+def is_pinned(root: str, model: str) -> bool:
+    name = str(model or "").strip().lower()
+    with _PIN_LOCK:
+        return name in _PINS.get(root, set())
+
+
+def pinned_models(root: str) -> List[str]:
+    with _PIN_LOCK:
+        return sorted(_PINS.get(root, set()))
+
+
+def residency_status(root: str, residents: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """`residents` (as returned inside `assess()`) enriched with pin/last-active
+    for a status panel -- never fetched on its own, always derived from a
+    reading `assess()` already took, so this never costs an extra /api/ps."""
+    now = time.time()
+    out = []
+    for r in residents:
+        name = r.get("name", "")
+        age = _seconds_since_active(root, name, now=now)
+        out.append({
+            **r,
+            "pinned": is_pinned(root, name),
+            "seconds_since_active": age,
+            "in_grace": age is not None and age < RESIDENCY_GRACE_SECONDS,
+        })
+    return out
+
+
 # â”€â”€ Where the model would load â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def ollama_root(endpoint_url: str) -> Optional[str]:
@@ -230,6 +327,11 @@ def assess(root: str, model: str) -> Dict[str, Any]:
                 # the instant residency is observed, TTL only for the case
                 # where this call never comes (the load crashed first).
                 release_reservations_for_model(root, model)
+                # HW-03: this IS the "every chat turn passes through here"
+                # signal the residency grace period is built on -- a model
+                # answered from is a model in use, whether or not it shows up
+                # in any `suggestion` list computed elsewhere this second.
+                _note_active(root, model)
                 return out
     except Exception:  # noqa: BLE001 - fall through to the full reading, which reports it
         pass
@@ -285,6 +387,7 @@ def assess(root: str, model: str) -> Dict[str, Any]:
         out["fits"] = True
         out["already_resident"] = True
         release_reservations_for_model(root, model)
+        _note_active(root, model)  # HW-03: this turn is using it right now
         return out
 
     size = sizes.get(model) or 0
@@ -348,16 +451,53 @@ def assess(root: str, model: str) -> Dict[str, Any]:
         # Smallest set of residents, biggest first, that frees the shortfall.
         # Biggest first is not a preference, it is arithmetic: one 33 GB model
         # gone beats three small ones and leaves the small ones for later.
-        freed = 0
-        pick: List[str] = []
-        for r in residents:
-            if freed >= shortfall:
-                break
-            pick.append(r["name"])
-            freed += r["in_vram_bytes"]
+        #
+        # HW-03: split residents into free-to-suggest and protected (pinned,
+        # or seen active within RESIDENCY_GRACE_SECONDS) *before* applying
+        # that rule. Protected residents are tried only if the unprotected
+        # ones cannot cover the shortfall on their own -- suggesting an
+        # unrelated model over one that answered a turn a moment ago is the
+        # whole point; refusing to ever suggest it, even as a last resort,
+        # would silently strand a load nobody could ever admit.
+        now = time.time()
+
+        def _protected(r: Dict[str, Any]) -> bool:
+            if is_pinned(root, r["name"]):
+                return True
+            age = _seconds_since_active(root, r["name"], now=now)
+            return age is not None and age < RESIDENCY_GRACE_SECONDS
+
+        free_residents = [r for r in residents if not _protected(r)]
+        protected_residents = [r for r in residents if _protected(r)]
+
+        def _fill(pool: List[Dict[str, Any]], already_freed: int) -> tuple:
+            freed = already_freed
+            picked: List[str] = []
+            for r in pool:
+                if freed >= shortfall:
+                    break
+                picked.append(r["name"])
+                freed += r["in_vram_bytes"]
+            return picked, freed
+
+        pick, freed = _fill(free_residents, 0)
+        protected_used: List[str] = []
+        if freed < shortfall and protected_residents:
+            # Least-recently-active first among the protected set: whichever
+            # was NOT just used is the least bad one to name, still biggest
+            # first only among ties old enough to matter equally.
+            protected_by_age = sorted(
+                protected_residents,
+                key=lambda r: (_seconds_since_active(root, r["name"], now=now) or 0.0),
+                reverse=True,
+            )
+            more, freed = _fill(protected_by_age, freed)
+            pick.extend(more)
+            protected_used = more
         out["suggestion"] = pick
         out["suggestion_frees_bytes"] = freed
         out["suggestion_enough"] = freed >= shortfall
+        out["suggestion_protected_used"] = protected_used
     return out
 
 

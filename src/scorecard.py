@@ -230,10 +230,12 @@ def _rate(num: int, den: int) -> Optional[float]:
     return round(100.0 * num / den, 1) if den else None
 
 
-def aggregate(entries: Iterable[Dict[str, Any]], *, only_workspace: bool = False) -> List[Dict[str, Any]]:
-    """Per-model table. `only_workspace` keeps turns that had a workspace (coding
-    work), which is what the scorecard is for."""
-    by: Dict[str, List[Dict[str, Any]]] = {}
+def _group_worthy(entries: Iterable[Dict[str, Any]], *, only_workspace: bool,
+                  key_fn) -> Dict[Any, List[Dict[str, Any]]]:
+    """The filtering `aggregate()` always applied, factored out so OBS-05's
+    model+endpoint breakdown (`aggregate_by`) shares it instead of a second
+    copy that could drift from what `aggregate()` excludes."""
+    by: Dict[Any, List[Dict[str, Any]]] = {}
     for e in entries:
         if only_workspace and not e.get("workspace"):
             continue
@@ -244,7 +246,15 @@ def aggregate(entries: Iterable[Dict[str, Any]], *, only_workspace: bool = False
             # Lines written before approval stops were tagged: a gate stop
             # shows as awaiting_user + one blocked (failed) call + no files.
             continue
-        by.setdefault(str(e.get("model") or "?"), []).append(e)
+        by.setdefault(key_fn(e), []).append(e)
+    return by
+
+
+def aggregate(entries: Iterable[Dict[str, Any]], *, only_workspace: bool = False) -> List[Dict[str, Any]]:
+    """Per-model table. `only_workspace` keeps turns that had a workspace (coding
+    work), which is what the scorecard is for."""
+    by = _group_worthy(entries, only_workspace=only_workspace,
+                       key_fn=lambda e: str(e.get("model") or "?"))
     rows: List[Dict[str, Any]] = []
     for model, items in by.items():
         n = len(items)
@@ -314,3 +324,123 @@ def render_table(rows: List[Dict[str, Any]], language: str = "en") -> str:
             str(r["avg_tok_s"]) if r["avg_tok_s"] else "—",
         ]) + " |")
     return "\n".join(lines)
+
+
+# ── OBS-05: linked to model+harness, and a regression panel ────────────────
+#
+# `aggregate()` already keeps quality (verified_rate), cost (avg_duration_s,
+# failed_call_rate) and speed (avg_tok_s) as separate fields instead of one
+# blended score — the acceptance criterion ("a tok/s win is not presented as
+# a quality win if errors or total time went up") was already true of the
+# SHAPE of a row; nothing here changes that. What was missing is comparing
+# two periods explicitly, so a viewer does not have to eyeball two tables to
+# notice the one case this exists to catch.
+
+
+def aggregate_by(
+    entries: Iterable[Dict[str, Any]], *, only_workspace: bool = False,
+    key_fields: tuple = ("model", "endpoint"),
+) -> List[Dict[str, Any]]:
+    """Same rows as `aggregate()`, grouped by `key_fields` instead of model
+    alone — "endpoint" is the closest thing a scorecard row carries to which
+    hardware answered (HW-05's per-machine profile lives in
+    src/hardware_profiles.py; this only tags rows with the endpoint label
+    already recorded, it does not join against that profile). Comparing a
+    27B-on-a-4070-Ti row against the same model on a bare-metal A100 as if
+    they were one workload is exactly the "do not compare different
+    workloads as equal" mistake this splits apart."""
+    def key(e: Dict[str, Any]) -> tuple:
+        return tuple(str(e.get(f) or "?") for f in key_fields)
+
+    by = _group_worthy(entries, only_workspace=only_workspace, key_fn=key)
+    rows: List[Dict[str, Any]] = []
+    for group_key, items in by.items():
+        for row in aggregate(items, only_workspace=False):
+            # `aggregate()` re-groups by model; since every item here already
+            # shares this group's key_fields, one call over `items` yields at
+            # most one row per distinct model value inside the group (always
+            # exactly one when "model" is itself part of key_fields).
+            row.update(dict(zip(key_fields, group_key)))
+            rows.append(row)
+    rows.sort(key=lambda r: (-(r["verified_rate"] or 0), r["avg_duration_s"]))
+    return rows
+
+
+def regression_flags(
+    entries: Iterable[Dict[str, Any]], *, recent_days: float = 7.0, min_samples: int = 3,
+) -> List[Dict[str, Any]]:
+    """Per model: the last `recent_days` against everything older. A flag
+    names exactly the failure the acceptance criterion warns about — tok/s
+    improved while quality dropped, turns got slower, or failures rose —
+    never folded into a single "better" verdict.
+
+    Silent for a model without `min_samples` turns on BOTH sides: comparing
+    3 turns against 300 (or 3 against 1) is noise dressed up as a trend, not
+    a regression anyone should act on — the "samples and limitations" half
+    of the acceptance criterion, enforced here rather than left to the panel
+    to remember to check."""
+    entries = list(entries)
+    now = time.time()
+    cutoff = now - float(recent_days) * 86400.0
+    recent = [e for e in entries if float(e.get("ts") or 0) >= cutoff]
+    baseline = [e for e in entries if float(e.get("ts") or 0) < cutoff]
+
+    def counts(items: List[Dict[str, Any]]) -> Dict[str, int]:
+        out: Dict[str, int] = {}
+        for e in items:
+            out[str(e.get("model") or "?")] = out.get(str(e.get("model") or "?"), 0) + 1
+        return out
+
+    recent_n, baseline_n = counts(recent), counts(baseline)
+    recent_rows = {r["model"]: r for r in aggregate(recent)}
+    baseline_rows = {r["model"]: r for r in aggregate(baseline)}
+
+    flags: List[Dict[str, Any]] = []
+    for model, r in recent_rows.items():
+        b = baseline_rows.get(model)
+        if b is None:
+            continue
+        if recent_n.get(model, 0) < min_samples or baseline_n.get(model, 0) < min_samples:
+            continue
+        tok_s_recent, tok_s_baseline = r.get("avg_tok_s"), b.get("avg_tok_s")
+        if not tok_s_recent or not tok_s_baseline or tok_s_recent <= tok_s_baseline:
+            continue  # nothing to warn about unless speed actually improved
+        quality_worse = (r["verified_rate"] is not None and b["verified_rate"] is not None
+                         and r["verified_rate"] < b["verified_rate"])
+        slower = r["avg_duration_s"] > b["avg_duration_s"]
+        more_failures = (r["failed_call_rate"] or 0) > (b["failed_call_rate"] or 0)
+        if not (quality_worse or slower or more_failures):
+            continue
+        why = []
+        if quality_worse:
+            why.append("verified_rate")
+        if slower:
+            why.append("avg_duration_s")
+        if more_failures:
+            why.append("failed_call_rate")
+        flags.append({
+            "model": model,
+            "tok_s_recent": tok_s_recent, "tok_s_baseline": tok_s_baseline,
+            "verified_rate_recent": r["verified_rate"], "verified_rate_baseline": b["verified_rate"],
+            "avg_duration_s_recent": r["avg_duration_s"], "avg_duration_s_baseline": b["avg_duration_s"],
+            "failed_call_rate_recent": r["failed_call_rate"], "failed_call_rate_baseline": b["failed_call_rate"],
+            "samples_recent": recent_n[model], "samples_baseline": baseline_n[model],
+            "worsened": why,
+        })
+    flags.sort(key=lambda f: f["model"])
+    return flags
+
+
+def reset_local_telemetry() -> bool:
+    """OBS-05: "restablecer telemetría local" — delete the local scorecard
+    log. Nothing in it ever left the machine (COMUN/SEC posture for this
+    file throughout), so resetting it is just removing the file; a fresh
+    turn recreates it on the next `record()`. Best effort, never raises."""
+    path = _path()
+    try:
+        if os.path.isfile(path):
+            os.remove(path)
+        return True
+    except OSError as e:
+        logger.debug("[scorecard] reset failed: %s", e)
+        return False

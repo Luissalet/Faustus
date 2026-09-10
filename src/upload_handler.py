@@ -13,7 +13,11 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
 from fastapi import HTTPException, UploadFile
 
-from src.upload_limits import format_byte_limit, get_chat_upload_max_bytes
+from src.upload_limits import (
+    format_byte_limit, get_chat_upload_max_bytes,
+    CHUNKED_UPLOAD_MAX_BYTES, CHUNKED_UPLOAD_DEFAULT_CHUNK_BYTES, CHUNKED_UPLOAD_MAX_CHUNK_BYTES,
+    is_valid_chunked_session_id,
+)
 
 
 def secure_filename(filename: str) -> str:
@@ -1340,8 +1344,16 @@ class UploadHandler:
             logger.error(f"Failed to get upload stats: {e}")
             return {"error": str(e)}
     
-    def save_upload(self, u: UploadFile, client_ip: str, owner: str = None) -> dict:
-        """Save uploaded file with enhanced security and organization."""
+    def save_upload(self, u: UploadFile, client_ip: str, owner: str = None,
+                    max_size_override: Optional[int] = None) -> dict:
+        """Save uploaded file with enhanced security and organization.
+
+        `max_size_override`: PERF-05's `complete_chunked_upload` is the only
+        caller that sets this — the whole-file cap for a chunked upload is
+        CHUNKED_UPLOAD_MAX_BYTES (already enforced once, at
+        `start_chunked_upload`), not the single-POST chat cap
+        (`self.max_upload_size`) every other caller of this method still
+        gets by leaving this at its default `None`."""
         # Rate limiting
         now = time.time()
         with self._upload_rate_lock:
@@ -1373,11 +1385,12 @@ class UploadHandler:
         
         if file_size == 0:
             raise HTTPException(400, "File is empty")
-            
-        if file_size > self.max_upload_size:
+
+        size_limit = self.max_upload_size if max_size_override is None else max_size_override
+        if file_size > size_limit:
             raise HTTPException(
                 status_code=400,
-                detail=f"File size exceeds {format_byte_limit(self.max_upload_size)} limit"
+                detail=f"File size exceeds {format_byte_limit(size_limit)} limit"
             )
         
         # Get original filename and sanitize it
@@ -1529,3 +1542,187 @@ class UploadHandler:
         
         logger.info(f"File uploaded successfully: {original_filename} ({file_size} bytes)")
         return file_metadata
+
+    # ── PERF-05: chunked, resumable uploads for large attachments ──────────
+    #
+    # A single POST with the whole file (save_upload, above) means a
+    # connection drop at 95% starts over from zero, and the browser holds
+    # the entire file in the request body at once. A chunked session writes
+    # each chunk straight to its own file as it arrives (never assembling in
+    # memory), so `GET .../status` can tell a reconnecting client exactly
+    # which indices are already on disk — resume, not restart. `complete()`
+    # concatenates the parts in order, verifies the whole-file hash if the
+    # caller supplied one, and then hands the assembled file to
+    # `save_upload()` — the SAME validation/dedup/index pipeline every other
+    # upload goes through, not a second store for chunked ones.
+
+    def _chunked_root(self) -> str:
+        path = os.path.join(self.upload_dir, ".chunked")
+        os.makedirs(path, exist_ok=True)
+        return path
+
+    def _chunked_session_dir(self, session_id: str) -> str:
+        if not is_valid_chunked_session_id(session_id):
+            raise HTTPException(400, "Invalid upload session id")
+        path = os.path.join(self._chunked_root(), session_id)
+        if not self.inside_base_dir(path):
+            raise HTTPException(403, "Access denied")
+        return path
+
+    def _chunked_manifest_path(self, session_id: str) -> str:
+        return os.path.join(self._chunked_session_dir(session_id), "manifest.json")
+
+    def _read_chunked_manifest(self, session_id: str) -> Dict[str, Any]:
+        path = self._chunked_manifest_path(session_id)
+        if not os.path.isfile(path):
+            raise HTTPException(404, "No such upload session")
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (OSError, ValueError) as e:
+            raise HTTPException(500, f"Upload session manifest is unreadable: {e}")
+
+    def _write_chunked_manifest(self, session_id: str, manifest: Dict[str, Any]) -> None:
+        self._atomic_write_json(self._chunked_manifest_path(session_id), manifest)
+
+    def cleanup_expired_chunked_sessions(self, *, max_age_seconds: int = 24 * 3600) -> int:
+        """Abandoned sessions (browser closed mid-upload, never completed or
+        cancelled) do not accumulate on disk forever. Best effort, called
+        opportunistically from `start_chunked_upload` rather than needing a
+        background scheduler entry of its own."""
+        root = self._chunked_root()
+        removed = 0
+        now = time.time()
+        try:
+            entries = os.listdir(root)
+        except OSError:
+            return 0
+        for name in entries:
+            session_dir = os.path.join(root, name)
+            try:
+                if now - os.path.getmtime(session_dir) > max_age_seconds:
+                    shutil.rmtree(session_dir, ignore_errors=True)
+                    removed += 1
+            except OSError:
+                continue
+        return removed
+
+    def start_chunked_upload(self, *, filename: str, total_size: int, chunk_size: int = 0,
+                             expected_sha256: str = "", owner: Optional[str] = None) -> Dict[str, Any]:
+        try:
+            self.cleanup_expired_chunked_sessions()
+        except Exception as e:  # noqa: BLE001 - pruning is best-effort, never blocks a start
+            logger.debug(f"chunked upload: expiry sweep failed: {e}")
+
+        if total_size <= 0:
+            raise HTTPException(400, "total_size must be greater than 0")
+        if total_size > CHUNKED_UPLOAD_MAX_BYTES:
+            raise HTTPException(400, f"File size exceeds {format_byte_limit(CHUNKED_UPLOAD_MAX_BYTES)} limit")
+        safe_filename = secure_filename(filename or f"upload_{int(time.time())}")
+        chunk_size = int(chunk_size) if chunk_size else CHUNKED_UPLOAD_DEFAULT_CHUNK_BYTES
+        chunk_size = max(1, min(chunk_size, CHUNKED_UPLOAD_MAX_CHUNK_BYTES))
+        total_chunks = (total_size + chunk_size - 1) // chunk_size
+
+        session_id = uuid.uuid4().hex
+        session_dir = os.path.join(self._chunked_root(), session_id)
+        os.makedirs(session_dir, exist_ok=True)
+        manifest = {
+            "session_id": session_id, "filename": safe_filename, "original_filename": filename,
+            "total_size": int(total_size), "chunk_size": chunk_size, "total_chunks": int(total_chunks),
+            "expected_sha256": (expected_sha256 or "").lower() or None,
+            "owner": owner, "created_at": time.time(), "received_chunks": [],
+        }
+        self._write_chunked_manifest(session_id, manifest)
+        return {
+            "session_id": session_id, "chunk_size": chunk_size, "total_chunks": total_chunks,
+            "received_chunks": [],
+        }
+
+    def chunked_upload_status(self, session_id: str) -> Dict[str, Any]:
+        manifest = self._read_chunked_manifest(session_id)
+        return {
+            "session_id": session_id, "filename": manifest["filename"],
+            "total_size": manifest["total_size"], "chunk_size": manifest["chunk_size"],
+            "total_chunks": manifest["total_chunks"],
+            "received_chunks": sorted(manifest.get("received_chunks") or []),
+        }
+
+    def write_chunk(self, session_id: str, index: int, data: bytes, owner: Optional[str] = None) -> Dict[str, Any]:
+        manifest = self._read_chunked_manifest(session_id)
+        if owner is not None and manifest.get("owner") not in (None, owner):
+            raise HTTPException(403, "Access denied")
+        if index < 0 or index >= manifest["total_chunks"]:
+            raise HTTPException(400, f"chunk index out of range (0..{manifest['total_chunks'] - 1})")
+        expected_len = manifest["chunk_size"]
+        is_last = index == manifest["total_chunks"] - 1
+        if is_last:
+            expected_len = manifest["total_size"] - manifest["chunk_size"] * (manifest["total_chunks"] - 1)
+        if len(data) != expected_len:
+            raise HTTPException(400, f"chunk {index} is {len(data)} bytes, expected {expected_len}")
+        session_dir = self._chunked_session_dir(session_id)
+        chunk_path = os.path.join(session_dir, f"chunk_{index:06d}.part")
+        tmp_path = f"{chunk_path}.tmp.{uuid.uuid4().hex}"
+        with open(tmp_path, "wb") as f:
+            f.write(data)
+        os.replace(tmp_path, chunk_path)
+        received = set(manifest.get("received_chunks") or [])
+        received.add(index)
+        manifest["received_chunks"] = sorted(received)
+        self._write_chunked_manifest(session_id, manifest)
+        return {
+            "session_id": session_id, "index": index,
+            "received_chunks": manifest["received_chunks"],
+            "complete_ready": len(received) == manifest["total_chunks"],
+        }
+
+    def cancel_chunked_upload(self, session_id: str) -> bool:
+        session_dir = self._chunked_session_dir(session_id)
+        if not os.path.isdir(session_dir):
+            return False
+        shutil.rmtree(session_dir, ignore_errors=True)
+        return True
+
+    def complete_chunked_upload(self, session_id: str, client_ip: str, owner: Optional[str] = None) -> Dict[str, Any]:
+        """Concatenate every chunk in order (streamed, never all in memory
+        at once), verify the whole-file hash when one was declared at
+        `start_chunked_upload`, then hand the assembled file to
+        `save_upload` — the one real upload pipeline, reused not
+        duplicated."""
+        manifest = self._read_chunked_manifest(session_id)
+        received = set(manifest.get("received_chunks") or [])
+        total_chunks = manifest["total_chunks"]
+        if received != set(range(total_chunks)):
+            missing = sorted(set(range(total_chunks)) - received)
+            raise HTTPException(409, f"upload incomplete: missing chunk(s) {missing[:10]}"
+                                    f"{'…' if len(missing) > 10 else ''}")
+        session_dir = self._chunked_session_dir(session_id)
+        assembled_path = os.path.join(session_dir, "assembled.bin")
+        hasher = hashlib.sha256()
+        with open(assembled_path, "wb") as out:
+            for i in range(total_chunks):
+                chunk_path = os.path.join(session_dir, f"chunk_{i:06d}.part")
+                with open(chunk_path, "rb") as cf:
+                    while chunk := cf.read(1024 * 1024):
+                        out.write(chunk)
+                        hasher.update(chunk)
+        digest = hasher.hexdigest()
+        expected = manifest.get("expected_sha256")
+        if expected and expected != digest:
+            shutil.rmtree(session_dir, ignore_errors=True)
+            raise HTTPException(409, f"assembled file hash mismatch: expected {expected}, got {digest}")
+
+        class _AssembledUpload:
+            """Duck-typed just enough for save_upload(): `.file`, `.filename`."""
+            def __init__(self, path: str, filename: str) -> None:
+                self.file = open(path, "rb")  # noqa: SIM115 - closed in finally below
+                self.filename = filename
+
+        assembled = _AssembledUpload(assembled_path, manifest["filename"])
+        try:
+            result = self.save_upload(assembled, client_ip, owner=owner,
+                                      max_size_override=CHUNKED_UPLOAD_MAX_BYTES)
+        finally:
+            assembled.file.close()
+            shutil.rmtree(session_dir, ignore_errors=True)
+        result["checksum_sha256"] = result.get("checksum_sha256") or digest
+        return result
