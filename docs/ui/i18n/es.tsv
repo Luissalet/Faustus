@@ -512,6 +512,7 @@ Beyond the request. A failure here is a bonus that failed, and the two are never
 Bigger than any one card: Ollama split the weights across {n} GPUs.	Más grande que cualquier tarjeta: Ollama repartió los pesos en {n} GPUs.
 Biggest first	Más grandes primero
 Biggest pool	Grupo más grande
+Billed by the provider	Facturado por el proveedor
 Bills	Facturas
 Blank follows the text colour.	En blanco sigue el color del texto.
 Blank makes the account read-only.	En blanco, la cuenta es solo de lectura.
@@ -886,6 +887,7 @@ Could not cancel.	No se ha podido cancelar.
 Could not change it	No se ha podido cambiar
 Could not change it.	No he podido cambiarlo.
 Could not change the favourite.	No he podido cambiar la favorita.
+Could not change this item’s priority	No se ha podido cambiar la prioridad de este elemento
 Could not check local video tools.	No se pudieron comprobar las herramientas locales de vídeo.
 Could not check the client. Check your connection to Faustus and retry.	No se pudo comprobar el cliente. Comprueba tu conexión con Faustus y reintenta.
 Could not check the recipe ({status}).	No se ha podido comprobar la receta ({status}).
@@ -1023,6 +1025,7 @@ Could not scan the folder.	No se ha podido revisar la carpeta.
 Could not schedule.	No se ha podido programar.
 Could not send the message.	No he podido enviar el mensaje.
 Could not send.	No se ha podido enviar.
+Could not set the reminder	No se ha podido crear el recordatorio
 Could not sort them	No se han podido ordenar
 Could not start	No he podido arrancar
 Could not start the group.	No se ha podido empezar el grupo.
@@ -1851,6 +1854,7 @@ I did not hear anything.	No he oído nada.
 I did not hear anything. Try again closer to the microphone.	No he oído nada. Prueba de nuevo más cerca del micrófono.
 I did not understand it: open the form.	No lo he entendido: abre el formulario.
 I did not understand that as an event. The Calendar has a form.	No lo he entendido como un evento. El Calendario tiene un formulario.
+I did not understand when to remind you. Try "/reminder tomorrow 9am …", or use /note for one with no time.	No he entendido cuándo recordártelo. Prueba «/reminder tomorrow 9am …», o usa /note si no lleva hora.
 I do not know /{name}. Type /help to see the commands.	No conozco /{name}. Escribe /help para ver los comandos.
 I'm away until {date} and will answer when I'm back.	Estoy fuera hasta el {date} y responderé a la vuelta.
 IANA timezone, for example Europe/Madrid. Recurring jobs keep their local time through daylight-saving changes.	Zona horaria IANA, por ejemplo Europe/Madrid. Las tareas recurrentes mantienen su hora local con los cambios de horario de verano e invierno.
@@ -2199,6 +2203,7 @@ Loading {name} anyway…	Cargando {name} de todos modos…
 Loading {name}…	Cargando {name}…
 Loading…	Cargando…
 Local	Local
+Local — no per-token cost	Local — sin coste por token
 Local model speed for research (tokens/s)	Velocidad del modelo local para research (tokens/s)
 Local models	Modelos locales
 Local tools:	Herramientas locales:
@@ -2479,6 +2484,7 @@ Next 60 days	Próximos 60 días
 Next run	Próxima ejecución
 Next week	Semana que viene
 No	No
+No API key stored — calls will likely fail	Sin clave de API guardada — las llamadas probablemente fallarán
 No CUDA graph	Sin CUDA graph
 No GGUF files listed for this repo; the whole repo is downloaded.	Este repo no lista archivos GGUF; se descarga entero.
 No GGUF source is configured for {name}. Pick a row with a GGUF source, or paste the GGUF repo in Download.	{name} no tiene fuente GGUF configurada. Elige una fila con fuente GGUF o pega el repo GGUF en Descargar.
@@ -3040,6 +3046,7 @@ Point this project at a new folder — refuses one that does not exist, and keep
 Point to a change	Señalar un cambio
 Port	Puerto
 Portrait 1024 × 1536	Vertical 1024 × 1536
+Position {n}	Posición {n}
 Possibly not worth keeping	Puede que no merezca la pena conservarla
 Pot	Bolsa
 Power	Potencia
@@ -3065,6 +3072,7 @@ Previous interface	Interfaz anterior
 Previous versions of this chat (what an edit or a regenerate removed).	Versiones anteriores de este chat (lo que borró una edición o un regenerar).
 Print	Imprimir
 Print A4 300 dpi	Impresión A4 300 ppp
+Prioritize	Priorizar
 Priority	Prioridad
 Priority of the new objective	Prioridad del nuevo objetivo
 Priority of {id}	Prioridad de {id}
@@ -4589,6 +4597,9 @@ Undo (Ctrl+Z)	Deshacer (Ctrl+Z)
 Undo / Redo	Deshacer / Rehacer
 Undo stroke	Deshacer trazo
 Undo the last change on the pages	Deshacer el último cambio en las páginas
+Undone — the event was deleted.	Deshecho — el evento se ha eliminado.
+Undone — the note was deleted.	Deshecho — la nota se ha eliminado.
+Undone — the reminder was deleted.	Deshecho — el recordatorio se ha eliminado.
 Unfavourite	Quitar de favoritos
 Unified	Unificada
 Unified memory	Memoria unificada
@@ -4667,6 +4678,7 @@ Usage: /note what you want to remember	Uso: /note lo que quieres recordar
 Usage: /open path/to/file (relative to the working folder).	Uso: /open ruta/al/fichero (relativa a la carpeta de trabajo).
 Usage: /rag add /path/to/folder	Uso: /rag add /ruta/a/la/carpeta
 Usage: /rag remove /path/to/folder	Uso: /rag remove /ruta/a/la/carpeta
+Usage: /reminder when + what — e.g. "tomorrow 9am call the dentist"	Uso: /reminder cuándo + qué — p. ej. «tomorrow 9am call the dentist»
 Usage: /rename new name	Uso: /rename nombre nuevo
 Usage: /restore ID (the IDs come from /versions).	Uso: /restore ID (los ID salen con /versions).
 Usage: /sh command	Uso: /sh comando

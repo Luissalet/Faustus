@@ -63,7 +63,59 @@ No contar planes de inspiración o notas de implementación como otra cola de ta
   del selector como modelo por defecto de sesiones viejas: el selector
   debería marcar «no instalado».
 
+## Spec v2 · P1 (lotes 45-55, `docs/spec/v2/MAPA_P1.md`)
+
+Estado real (Lote 55, cruzado 1:1 contra `docs/spec/v2/backlog.json`): **84
+IDs P1/P2/LAB, 74 existentes, 9 parciales, 1 ausente.** Lo que sigue
+genuinamente abierto, sin fingir que está cerrado por tener una fila
+"existente" en alguna parte:
+
+- **TASK-05 (ausente)** — steering y cambios del usuario: nadie invalida los
+  pasos de un plan en curso cuando llega una restricción nueva. El steering
+  de UX-04 (`agent_runs.queue_steer`) cubre "encolar y aplicar en un punto
+  seguro"; la mitad de "invalidar pasos afectados" no tiene ningún caller.
+  Exigiría tocar `agent_loop.py`/`src/plan_state.py`.
+- **Proceso Playwright MCP por sesión (arquitectónico, WEB-03)** —
+  `src/builtin_mcp.py` sigue lanzando el navegador con el perfil global; una
+  sesión de agente no tiene su propio proceso Playwright aislado. Sin
+  cambios desde el Lote 44 que lo dejó anotado.
+- **QA manual pendiente**: voz física en español e inglés (ver
+  "Comprobaciones pendientes" arriba) y los tres huecos intermitentes de
+  QA-44 (dialog/diff en viewport a 200%, Escape que flaquea) — ninguno tiene
+  evidencia de ser un bug de UI real y no de temporización del entorno de
+  pruebas, pero ninguno se ha investigado a fondo tampoco.
+- **Los 9 IDs "parcial" de `MAPA_P1.md`** (primitiva real y probada, sin el
+  último cableado a un caller de producción, o con alcance más estrecho que
+  el ID original): OPS-06 (`openapi_version_extension`/
+  `client_adaptation_notice` sin cablear a ninguna ruta de `app.py`), OPS-07
+  (`remote_cost_report()` siempre "unknown_period": ningún caller escribe
+  todavía el evento de coste), DESK-02 (el runner de recorridos de
+  navegador solo se probó con fixtures falsas; falta un dev server +
+  Playwright real), TOOL-05 (sampling MCP nunca llega a invocar un modelo
+  real — sin contexto owner/turno alcanzable desde un callback de
+  conexión), TOOL-06 (gobernanza de skills sin caller real; el vocabulario
+  `obsolete`/`deprecated`/`superseded` no existe aún en `Skill.status`),
+  SEC-08 (política de seguridad/consentimiento sin caller real al
+  instalar/actualizar un plugin o servidor MCP), UX-06 (compositor rápido:
+  el Lote 55 cerró menciones/comandos/adjuntos bajo 16 ms/pulsación;
+  formato rico, atajos y el backend de adjuntos con MIME/dedupe siguen sin
+  auditar), MEDIA-05 (subtítulos: solo exportación de lo ya transcrito, sin
+  UI de descarga en Studio), HW-06 (nodos remotos: `DECLARATIONS
+  ["remote_worker"].implemented` en `False` a propósito — cuatro tests
+  ajenos lo afirman explícitamente, cambiarlo los rompería).
+
 ## Última evidencia
+
+- 10-09: Lote 55 — integración de la ola 8 (MEDIA-03/CONN-01/ACT-05
+  cableados en `app.py`; UX-06 con `frameBatcher` reusado de PERF-01 +
+  recorte defensivo de menciones + lista de adjuntos memoizada) y auditoría
+  de los ocho P1 que llevaban desde el Lote 50 sin tocar (siete ya
+  implementados por lotes anteriores sin fila en el mapa: MOD-05, IDX-02,
+  IDX-03, UX-03, PERF-01, WRITE-02, WRITE-04; solo TASK-05 sigue ausente de
+  verdad). `docs/spec/v2/MAPA_P1.md` recontado y corregido: el total real es
+  84 IDs P1/P2/LAB, no 87 (cifra que llevaba sin recontar desde el Lote 50).
+  `tsc`/`vite build`/`i18n --check` limpios. Tanda de tests: <<SUITE>>.
+
 
 - 10-09, 09:30 (spec v2, M1): en el 7001 con `qwen3.8:27b-q4_K_M`, sesión
   nueva en modo Agente: «Impleméntame un sistema de notificaciones…» → tarjeta

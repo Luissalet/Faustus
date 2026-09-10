@@ -150,7 +150,17 @@ export const COMMANDS: SlashCommand[] = [
       { name: 'search', aliases: ['grep'], usage: '/memory search q', help: 'Searches the memories.' },
     ],
   },
-  { name: 'note', aliases: ['n'], category: 'Memory', usage: '/note text', help: 'Saves a quick note in Notes.' },
+  { name: 'note', aliases: ['n', 'nota'], category: 'Memory', usage: '/note text', help: 'Saves a quick note in Notes.' },
+  {
+    name: 'reminder',
+    // UX-09: `/recordatorio` is the name most people actually type for this
+    // one — `remind`/`rem` stay as the English-typing equivalents of the
+    // `n`/`nota` pattern `note` already has above.
+    aliases: ['recordatorio', 'remind', 'rem'],
+    category: 'Memory',
+    usage: '/reminder tomorrow 9am call the dentist',
+    help: 'Creates a reminder for that time (a note with a due date — see Notes).',
+  },
   { name: 'skills', aliases: ['skill'], category: 'Memory', usage: '/skills [query]', help: 'The skills; with a query, the ones that match.' },
   { name: 'reload-skills', aliases: ['reload_skills'], category: 'Memory', usage: '/reload-skills', help: 'Re-reads the skills folder.' },
   {
@@ -185,7 +195,7 @@ export const COMMANDS: SlashCommand[] = [
   { name: 'compare', category: 'Tools', usage: '/compare', help: 'Compare: the same prompt to several models side by side, blind, with a vote.', route: '/compare' },
   { name: 'cookbook', aliases: ['cook'], category: 'Tools', usage: '/cookbook', help: 'Cookbook: what fits this machine, download and launch local models.', route: '/cookbook' },
   { name: 'todo', aliases: ['td'], category: 'Tools', usage: '/todo text', help: 'Adds a task to Notes.' },
-  { name: 'event', aliases: ['ev'], category: 'Tools', usage: '/event tomorrow 14:00 Team call', help: 'Creates a calendar event in your words.' },
+  { name: 'event', aliases: ['ev', 'evento'], category: 'Tools', usage: '/event tomorrow 14:00 Team call', help: 'Creates a calendar event in your words.' },
 
   /* ── Settings ── */
   { name: 'settings', aliases: ['cfg', 'preferences', 'config'], category: 'Settings', usage: '/settings [tab]', help: 'Go to Settings.', route: '/settings' },

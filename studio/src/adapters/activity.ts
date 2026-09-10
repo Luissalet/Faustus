@@ -1,5 +1,5 @@
 import type { RunStatus } from '../components';
-import { ApiError, asArray, getJson } from './api';
+import { ApiError, asArray, getJson, responseReason } from './api';
 import { chatActivity, createSession, listModels, listSessions, sendTurn, type AskOption, type ChatActivity, type ChatSession, type RunActivityDetail } from './chat';
 import { sessionActivity } from '../lib/activity';
 import { t } from '../i18n';
@@ -573,4 +573,69 @@ export async function openRunInChat(run: ActivityRun): Promise<string> {
 
 export function reportUrl(run: ActivityRun): string {
   return run.task?.researchId ? `/api/research/report/${encodeURIComponent(run.task.researchId)}` : '';
+}
+
+/**
+ * ACT-05: `GET /api/queue` (routes/queue_routes.py) — everything currently
+ * queued or running across agent turns, background shell jobs, research and
+ * media renders, in one owner-scoped list. A separate small feed from
+ * `loadActivity` on purpose: those are finished-and-in-progress WORK items
+ * (tasks/renders/approvals/conversations, each with its own rich detail
+ * pane above); this is the narrower "what is waiting on what, and in which
+ * order" queue view ACT-05 asks for, and reuses the run's own id — a queue
+ * row for a `chat`/`render` activity row is the same run, not a new record.
+ */
+export interface QueueItem {
+  kind: 'agent_run' | 'bg_job' | 'research' | 'media_run';
+  id: string;
+  sessionId: string;
+  label: string;
+  status: string;
+  position: number | null;
+  etaSeconds: number | null;
+  startedAt: number | null;
+  elapsedS: number | null;
+  reorderable: boolean;
+}
+
+interface RawQueueItem {
+  kind: QueueItem['kind'];
+  id: string;
+  session_id?: string;
+  label?: string;
+  status: string;
+  position?: number | null;
+  eta_seconds?: number | null;
+  started_at?: number | null;
+  elapsed_s?: number | null;
+  reorderable?: boolean;
+}
+
+export async function loadQueue(signal?: AbortSignal): Promise<QueueItem[]> {
+  const body = await getJson<{ ok: boolean; items: RawQueueItem[] }>('/api/queue', signal);
+  return (body.items ?? []).map((item) => ({
+    kind: item.kind,
+    id: item.id,
+    sessionId: item.session_id ?? '',
+    label: item.label ?? item.id,
+    status: item.status,
+    position: item.position ?? null,
+    etaSeconds: item.eta_seconds ?? null,
+    startedAt: item.started_at ?? null,
+    elapsedS: item.elapsed_s ?? null,
+    reorderable: item.reorderable ?? false,
+  }));
+}
+
+/**
+ * Only `agent_run` items are actually reorderable (see routes/queue_routes.py's
+ * module docstring for why the other three kinds have no ordered queue to
+ * reorder); calling this on one of them surfaces the server's 409 as a
+ * normal `ApiError` rather than pretending to have moved it.
+ */
+export async function prioritizeQueueItem(kind: QueueItem['kind'], id: string): Promise<void> {
+  const response = await post(`/api/queue/${encodeURIComponent(kind)}/${encodeURIComponent(id)}/priority`);
+  if (!response.ok) {
+    throw new ApiError(await responseReason(response, '/api/queue', t('Could not change this item’s priority')), response.status);
+  }
 }

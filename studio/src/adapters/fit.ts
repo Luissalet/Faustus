@@ -169,6 +169,94 @@ export function fitSummary(fit?: ModelFit): string {
 }
 
 /**
+ * SET-02: privacy + cost, per endpoint (`GET /api/models/endpoint-profile`,
+ * routes/local_models_routes.py — the picker's other two informative
+ * badges, next to fit above and capabilities below). Same "read once when
+ * the picker opens, keep the last answer on a failed refresh" shape as
+ * `useFitHints`.
+ */
+export type ModelCost = 'free_local' | 'paid' | 'unconfigured';
+
+export interface EndpointProfile {
+  isLocal: boolean;
+  cost: ModelCost;
+  hasApiKey: boolean;
+}
+
+let profileCached: Promise<Record<string, EndpointProfile>> | null = null;
+
+export function endpointProfiles(refresh = false): Promise<Record<string, EndpointProfile>> {
+  if (refresh) profileCached = null;
+  if (!profileCached) {
+    profileCached = getJson<{ endpoints?: Record<string, { is_local?: boolean; cost?: ModelCost; has_api_key?: boolean }> }>('/api/models/endpoint-profile')
+      .then((raw) => {
+        const out: Record<string, EndpointProfile> = {};
+        for (const [id, p] of Object.entries(raw.endpoints ?? {})) {
+          out[id] = { isLocal: Boolean(p.is_local), cost: p.cost ?? 'unconfigured', hasApiKey: Boolean(p.has_api_key) };
+        }
+        return out;
+      })
+      .catch(() => ({}));
+  }
+  return profileCached;
+}
+
+export function useEndpointProfiles(active: boolean): Record<string, EndpointProfile> {
+  const [profiles, setProfiles] = useState<Record<string, EndpointProfile>>({});
+  useEffect(() => {
+    if (!active) return;
+    let alive = true;
+    void endpointProfiles().then((p) => {
+      if (alive) setProfiles(p);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [active]);
+  return profiles;
+}
+
+/** "no per-token cost" / "billed by the provider" / "no key stored — calls will likely fail". */
+export function costLabel(cost: ModelCost): string {
+  if (cost === 'free_local') return t('Local — no per-token cost');
+  if (cost === 'paid') return t('Billed by the provider');
+  return t('No API key stored — calls will likely fail');
+}
+
+/**
+ * SET-02: tested capabilities (`GET /api/models/{name}/capabilities`,
+ * routes/local_models_routes.py — MOD-01/MOD-02's manifest). Deliberately
+ * NOT fetched for every row when the picker opens: each call is a live
+ * round trip to that model's endpoint (an `/api/show`), so this is exposed
+ * as a plain on-demand function — the picker calls it once per row, on
+ * hover/focus, and caches the answer (see ModelPalette.tsx) — rather than a
+ * hook that would fire it for every row the moment the palette mounts.
+ */
+export interface TestedCapability {
+  ok: boolean | null;
+  testedAt?: string;
+}
+
+export interface ModelCapabilityManifest {
+  /** Present only for a key this install has actually run a probe for. */
+  tested: Partial<Record<'tool_calling' | 'vision' | 'json_mode', TestedCapability>>;
+}
+
+const TESTED_KEYS = ['tool_calling', 'vision', 'json_mode'] as const;
+
+export async function fetchModelCapabilities(model: string, endpointId: string): Promise<ModelCapabilityManifest> {
+  const raw = await getJson<{ tested?: Record<string, { ok?: boolean | null; tested_at?: string }> }>(
+    `/api/models/${encodeURIComponent(model)}/capabilities?endpoint_id=${encodeURIComponent(endpointId)}`,
+  );
+  const tested: ModelCapabilityManifest['tested'] = {};
+  for (const key of TESTED_KEYS) {
+    const entry = raw.tested?.[key];
+    if (entry && entry.ok !== undefined) tested[key] = { ok: entry.ok ?? null, testedAt: entry.tested_at };
+  }
+  return { tested };
+}
+
+/**
  * The other tags that are the same weights as this one.
  *
  * Empty when there is no digest: not knowing is the honest answer, and

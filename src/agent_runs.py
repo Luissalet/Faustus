@@ -823,6 +823,25 @@ class _Lane:
                 _publish(r, "data: " + json.dumps({"type": "queue_status", "queued": True, "position": pos,
                                                    "lane": self.name, "active": self.active}) + "\n\n")
 
+    async def prioritize(self, run_id: str) -> bool:
+        """ACT-05: move a still-waiting run to the front of this lane's FIFO
+        queue. Reuses `waiting` — the same list `acquire()` already treats as
+        the queue's one authority — instead of a parallel priority store
+        (COMUN rule 4). A run no longer in `waiting` (already admitted, or
+        finished/stopped) has nothing left to reorder, so this returns False
+        rather than inventing an effect for it."""
+        cond = self._condition()
+        async with cond:
+            for i, r in enumerate(self.waiting):
+                if r.run_id == run_id:
+                    if i > 0:
+                        self.waiting.pop(i)
+                        self.waiting.insert(0, r)
+                        self._broadcast_positions()
+                        cond.notify_all()
+                    return True
+            return False
+
     async def release(self, run: _Run) -> None:
         if self.limit <= 0 and self.active == 0:
             return
@@ -851,6 +870,20 @@ def queue_snapshot() -> Dict[str, Any]:
         out[name] = {"active": lane.active, "limit": lane.limit,
                      "waiting": [{"run_id": r.run_id, "label": r.label, "position": i + 1} for i, r in enumerate(lane.waiting)]}
     return out
+
+
+async def prioritize_run(run_id: str) -> bool:
+    """ACT-05: bump a queued run to the front of its lane. Looked up by
+    `run_id` (opaque per-turn identity), not session id, because a session
+    id is reused across turns and a stale one could silently prioritize the
+    wrong run. Returns False for a run that is not currently waiting (running
+    already, or unknown) — see `_Lane.prioritize`."""
+    for run in list(_RUNS.values()):
+        if run.run_id == run_id and run.status == "running" and run.lane:
+            lane = _lane(run.lane)
+            if lane is not None:
+                return await lane.prioritize(run_id)
+    return False
 
 
 async def _drain(session_id: str, run: _Run, agen: AsyncGenerator[str, None],

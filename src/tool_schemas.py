@@ -1791,6 +1791,160 @@ FUNCTION_TOOL_SCHEMAS = [
             }
         }
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "rename_symbol",
+            "description": "Structure-assisted rename (EDIT-06): uses the code index to touch only lines that actually reference the symbol, never an unrelated string/comment/doc that happens to share the name. action='plan' (default) returns every definition/caller/test site with nothing written (the impact view); action='apply' performs the rename and returns the ChangeSet. Refuses (rather than falling back to a workspace-wide text substitution) when the symbol is not indexed.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "old_name": {"type": "string", "description": "The current identifier name"},
+                    "new_name": {"type": "string", "description": "The new identifier name (must be a valid identifier)"},
+                    "action": {"type": "string", "enum": ["plan", "apply"], "description": "plan (default, no writes) | apply"},
+                    "path": {"type": "string", "description": "Workspace/project root (optional; defaults to the project root)"},
+                    "project_id": {"type": "string", "description": "Optional project scope"}
+                },
+                "required": ["old_name", "new_name"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "install_dependencies",
+            "description": "Install project dependencies WITH CONTROL (EXEC-05): detects the manager from the project's lockfile/manifest, validates every package name (rejects a URL/path/shell fragment), and never installs globally (project-local target / active virtualenv only). action='plan' (default) returns the plan and a plan_hash without running anything; action='install' only runs when the caller ALSO passes approved=true (after the user reviewed the plan) — a changed plan hashes differently and must be approved again.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "packages": {"type": "array", "items": {"type": "string"}, "description": "Package names/specs to install"},
+                    "action": {"type": "string", "enum": ["plan", "install"], "description": "plan (default) | install"},
+                    "project_root": {"type": "string", "description": "Project root containing the lockfile/manifest (optional; defaults to the project root)"},
+                    "approved": {"type": "boolean", "description": "Required (true) to actually run action='install' once the plan has been reviewed"}
+                },
+                "required": ["packages"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "manage_scripts",
+            "description": "Save and run reusable, VERSIONED command recipes (EXEC-06). action='save' saves/version-bumps a script under `name` (never overwrites a prior version). action='run' renders declared `params` into the saved argv (a plain list, never a shell string — no injection surface) and runs it locally. action='run_remote' does the same over SSH to an alias PAIRED earlier out-of-band; `host`/`fingerprint` must match the paired target EXACTLY, so a similar hostname never inherits another target's trust.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["save", "run", "run_remote"], "description": "save | run | run_remote"},
+                    "name": {"type": "string", "description": "The script's saved name"},
+                    "command_template": {"type": "string", "description": "save: the argv template, e.g. 'grep {pattern} {path}'"},
+                    "params": {"type": "array", "items": {"type": "string"}, "description": "save: the declared parameter names the template may reference"},
+                    "values": {"type": "object", "description": "run/run_remote: {param: value} for the saved script's declared params"},
+                    "cwd": {"type": "string", "description": "run: working directory (optional; defaults to the project root)"},
+                    "alias": {"type": "string", "description": "run_remote: the paired SSH target alias"},
+                    "host": {"type": "string", "description": "run_remote: the host presented for alias (must match the paired one exactly)"},
+                    "fingerprint": {"type": "string", "description": "run_remote: the host key fingerprint presented for alias (must match the paired one exactly)"}
+                },
+                "required": ["action", "name"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "manage_desktop_control",
+            "description": "DESK-01 safety policy for THIS chat session's desktop control: an allowlist of windows/apps desktop_* tools may act on, and an opt-in audit trail (before/after screen hash per action). Both are opt-in — a session that never calls this keeps the default unrestricted behaviour. action='set_allowlist' with `titles` (substrings) pauses any desktop_click/type/key/scroll the moment focus moves to a window not on the list.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["get_allowlist", "set_allowlist", "clear_allowlist", "enable_audit", "disable_audit", "audit_log"], "description": "Which policy operation to perform"},
+                    "titles": {"type": "array", "items": {"type": "string"}, "description": "set_allowlist: window-title substrings authorized for desktop control"}
+                },
+                "required": ["action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "capture_evidence",
+            "description": "Turn a screenshot (from desktop_screenshot or any browser capture already taken this turn) into WEB-05 evidence: resolution/scale/viewport/timestamp recorded, and a pixel region/point as the edit reference (never a fabricated line of code). action='build' (default) records a capture and its EvidenceRef; action='compare' diffs two prior `capture` results (same_page/image_changed/dom_changed); action='check_stale' answers whether a prior capture may still be used as an edit point for the CURRENT page (WEB-05's acceptance criterion) — never assume yes.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["build", "compare", "check_stale"], "description": "build (default) | compare | check_stale"},
+                    "url": {"type": "string", "description": "build: the page URL the screenshot was taken on"},
+                    "title": {"type": "string", "description": "build: the page title"},
+                    "width": {"type": "integer", "description": "build: captured image width in pixels"},
+                    "height": {"type": "integer", "description": "build: captured image height in pixels"},
+                    "scale": {"type": "number", "description": "build: device/scale factor applied to the capture (default 1.0)"},
+                    "viewport_width": {"type": "integer", "description": "build: browser viewport width, if different from the image"},
+                    "viewport_height": {"type": "integer", "description": "build: browser viewport height, if different from the image"},
+                    "image_b64": {"type": "string", "description": "build: base64 image data (from the prior screenshot tool's result)"},
+                    "dom_hash": {"type": "string", "description": "build: a fingerprint of the page's DOM/accessibility snapshot at capture time, for staleness checks"},
+                    "region": {"type": "object", "description": "build: optional crop {x,y,width,height,selector?} in pixels of the captured image"},
+                    "annotation": {"type": "object", "description": "build: optional annotated point {x,y,label?} in pixels of the captured image"},
+                    "before": {"type": "object", "description": "compare: a prior `capture` result"},
+                    "after": {"type": "object", "description": "compare: a later `capture` result"},
+                    "capture": {"type": "object", "description": "check_stale: a prior `capture` result"},
+                    "current_url": {"type": "string", "description": "check_stale: the URL of the page as it is right now"},
+                    "current_dom_hash": {"type": "string", "description": "check_stale: a fresh DOM fingerprint of the page as it is right now"}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browser_extract",
+            "description": "Complex navigation/extraction with declared limits (WEB-06): pagination stops at max_pages/max_items and says WHY (truncated/reason), a restricted-access page is reported as restricted rather than scraped around, a download target is always a single sandboxed file (never a folder), and a download is verified complete (hash/size) before it may be treated as finished — a transfer cut short must never be reported complete.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["paginate", "detect_restricted_access", "check_form_fill", "select_download_target", "verify_download", "check_login_reuse"], "description": "Which extraction operation to perform"},
+                    "pages": {"type": "array", "items": {"type": "object"}, "description": "paginate: already-fetched pages, each {items: [...], has_next: bool}"},
+                    "max_pages": {"type": "integer", "description": "paginate: page limit (default 20)"},
+                    "max_items": {"type": "integer", "description": "paginate: item limit (default 2000)"},
+                    "page_text": {"type": "string", "description": "detect_restricted_access: the page's visible text"},
+                    "fields": {"type": "object", "description": "check_form_fill: {field_name: value} to validate against limits"},
+                    "max_fields": {"type": "integer", "description": "check_form_fill: field-count limit (default 50)"},
+                    "max_value_chars": {"type": "integer", "description": "check_form_fill: per-value character limit (default 4000)"},
+                    "sandbox_root": {"type": "string", "description": "select_download_target: the confined root directory (optional; defaults to the project root)"},
+                    "filename": {"type": "string", "description": "select_download_target: the file name offered by the site (any directory component is discarded)"},
+                    "path": {"type": "string", "description": "verify_download: the path the file was actually written to"},
+                    "expected_sha256": {"type": "string", "description": "verify_download: the expected sha256, if known in advance"},
+                    "expected_bytes": {"type": "integer", "description": "verify_download: the expected exact size in bytes, if known in advance"},
+                    "expected_total_bytes": {"type": "integer", "description": "verify_download: the total size the transfer reported it would send"},
+                    "task_id": {"type": "string", "description": "check_login_reuse: the browser session's task id (from the browser tool that opened it)"}
+                },
+                "required": ["action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "manage_spreadsheet",
+            "description": "Reliable CSV/XLSX handling (ART-04): typed CSV import/export (IDs, dates and formulas are classified, never silently mangled), formula-injection is blocked on export unless explicitly allowed, and an XLSX preview flags which formula cells have NO cached value (need recalculation) before their value is trusted. action='import_csv'|'export_csv'|'read_workbook'|'write_range'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["import_csv", "export_csv", "read_workbook", "write_range"], "description": "Which spreadsheet operation to perform"},
+                    "text": {"type": "string", "description": "import_csv: the raw CSV/TSV text"},
+                    "dialect": {"type": "string", "description": "import_csv: CSV dialect hint if sniffing should be skipped (default 'excel')"},
+                    "rows": {"type": "array", "items": {"type": "array"}, "description": "export_csv: rows to export, each a list of cell values"},
+                    "allow_formulas": {"type": "boolean", "description": "export_csv: keep leading =/+/-/@ live instead of neutralizing it (only for a sheet that legitimately has formulas)"},
+                    "path": {"type": "string", "description": "read_workbook/write_range: path to the .xlsx file"},
+                    "max_rows": {"type": "integer", "description": "read_workbook: rows to preview per sheet (default 200)"},
+                    "sheet_name": {"type": "string", "description": "read_workbook: one sheet only (optional, defaults to all); write_range: the sheet to write into"},
+                    "start_cell": {"type": "string", "description": "write_range: top-left cell of the block, e.g. 'B2'"},
+                    "values": {"type": "array", "items": {"type": "array"}, "description": "write_range: a 2D block of values to write, starting at start_cell"},
+                    "save_as": {"type": "string", "description": "write_range: save to a different path instead of writing in place (optional)"}
+                },
+                "required": ["action"]
+            }
+        }
+    },
 ]
 
 
@@ -2143,6 +2297,10 @@ PATH_ARGUMENT_FIELDS = {
     "find_symbol": {"path"},
     "callers": {"path"},
     "tests_for": {"path"},
+    "rename_symbol": {"path"},
+    "install_dependencies": {"project_root"},
+    "manage_scripts": {"cwd"},
+    "browser_extract": {"sandbox_root"},
 }
 
 _JSON_SCALAR_TYPES = {

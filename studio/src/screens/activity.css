@@ -197,6 +197,42 @@
   color: inherit;
 }
 
+/* ── ACT-05: the Queue section, above the work list/filters ── */
+
+.fs-act__queue {
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-1);
+  padding: var(--fs-space-2) var(--fs-space-3);
+}
+
+.fs-act__queue-title {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  margin: 0 0 var(--fs-space-2);
+  font-size: var(--fs-label-size);
+  font-weight: var(--fs-label-weight);
+  letter-spacing: 0.02em;
+  color: var(--fs-text-2);
+}
+
+.fs-act__queue-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.fs-act__queue-row {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-3);
+}
+
+.fs-act__queue-row .fs-run__main {
+  gap: 0;
+}
+
 .fs-act__layout {
   display: grid;
   grid-template-columns: minmax(320px, 1fr) minmax(0, 1fr);

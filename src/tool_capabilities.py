@@ -347,6 +347,77 @@ _register(
     ToolEffect.EXTERNAL_SIDE_EFFECT,
     result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
 )
+# Lote 54 — tools wired onto libraries that already existed (Lote 47/48),
+# classified against the closest existing sibling rather than invented from
+# scratch (rule 9: match neighbouring style).
+_register(
+    # rename_symbol writes only the lines the code index names (never a
+    # workspace-wide substitution) — same class as apply_patch/edit_file:
+    # a workspace write whose result can echo arbitrary existing content
+    # (the renamed lines) back into the next round.
+    {"rename_symbol"},
+    ToolEffect.WRITE_WORKSPACE,
+    result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
+)
+_register(
+    # install_dependencies runs an installer (pip/npm/yarn/pnpm) that can
+    # execute arbitrary setup code from the resolved package — same class as
+    # download_model/serve_model (ADMIN_CHANGE: changes what is available to
+    # run), plus the write to the project's own lockfile/vendor directory.
+    {"install_dependencies"},
+    ToolEffect.ADMIN_CHANGE,
+    ToolEffect.WRITE_WORKSPACE,
+    result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
+)
+_register(
+    # manage_scripts: `save`/list-shaped actions never run anything, but
+    # `run`/`run_remote` execute an arbitrary rendered command (locally or
+    # over SSH) — same class as bash/python, the effect a single
+    # classification has to cover conservatively for the whole tool.
+    {"manage_scripts"},
+    ToolEffect.EXECUTE_CODE,
+    ToolEffect.WRITE_PRIVATE,
+    result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
+)
+_register(
+    # manage_desktop_control only writes this session's own allowlist/audit
+    # policy (src/desktop_control_session.py) — never the desktop itself —
+    # but it is a SAFETY setting for the desktop_* control tools, so it is
+    # classed with the other policy/settings managers (ADMIN_CHANGE) rather
+    # than an ordinary private write: widening or clearing the allowlist
+    # deserves the same gate as any other admin change.
+    {"manage_desktop_control"},
+    ToolEffect.ADMIN_CHANGE,
+    result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
+)
+_register(
+    # capture_evidence never takes a screenshot itself — it processes image
+    # data/metadata the caller already has — but that data is screen pixels
+    # rendered by arbitrary applications/pages, exactly as untrusted as
+    # desktop_screenshot's own result; same class.
+    {"capture_evidence"},
+    ToolEffect.READ_PRIVATE,
+    result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
+)
+_register(
+    # browser_extract's actions are pagination bookkeeping over
+    # already-fetched pages, restricted-access/form-limit checks and
+    # download verification against a file already on disk — a workspace
+    # read whose result quotes page text and file paths an attacker-served
+    # page could have shaped, same class as grep/glob/find_symbol.
+    {"browser_extract"},
+    ToolEffect.READ_WORKSPACE,
+    result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
+)
+_register(
+    # manage_spreadsheet reads/writes workbook files under the workspace —
+    # same class as transform_media (READ_WORKSPACE + WRITE_WORKSPACE): a
+    # pure in-memory CSV import/export never touches disk, but write_range
+    # does, and one classification has to cover the whole tool.
+    {"manage_spreadsheet"},
+    ToolEffect.READ_WORKSPACE, ToolEffect.WRITE_WORKSPACE,
+    result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
+)
 
 
 TOOL_CAPABILITIES: Mapping[str, ToolCapabilities] = MappingProxyType(dict(_REGISTRY))

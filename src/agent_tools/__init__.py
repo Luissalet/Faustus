@@ -24,7 +24,7 @@ from .web_tools import WebSearchTool, WebFetchTool
 from .filesystem_tools import ReadFileTool, WriteFileTool, EditFileTool, ApplyPatchTool, LsTool, GlobTool, GrepTool, GetWorkspaceTool
 from .coding_tools import TodoWriteTool
 from .subagent_tools import DelegateAgentsTool
-from .code_tools import FindSymbolTool, CallersTool, TestsForTool
+from .code_tools import FindSymbolTool, CallersTool, TestsForTool, RenameSymbolTool
 from .document_tools import CreateDocumentTool, UpdateDocumentTool, EditDocumentTool, SuggestDocumentTool, ManageDocumentTool
 from .interaction_tools import AskUserTool, UpdatePlanTool
 from .model_interaction_tools import ChatWithModelTool, AskTeacherTool, ListModelsTool
@@ -36,7 +36,10 @@ from .admin_tools import (
     do_manage_endpoints, do_manage_mcp, do_manage_webhooks,
     do_manage_tokens, do_manage_settings,
 )
-from .desktop_tools import DESKTOP_TOOL_HANDLERS, DESKTOP_TOOLS
+from .desktop_tools import DESKTOP_TOOL_HANDLERS, DESKTOP_TOOLS, ManageDesktopControlTool
+from .exec_tools import InstallDependenciesTool, ManageScriptsTool
+from .browser_tools import CaptureEvidenceTool, BrowserExtractTool
+from .spreadsheet_tools import ManageSpreadsheetTool
 
 TOOL_HANDLERS = {
     "bash": BashTool().execute,
@@ -58,6 +61,13 @@ TOOL_HANDLERS = {
     "find_symbol": FindSymbolTool().execute,
     "callers": CallersTool().execute,
     "tests_for": TestsForTool().execute,
+    "rename_symbol": RenameSymbolTool().execute,
+    "install_dependencies": InstallDependenciesTool().execute,
+    "manage_scripts": ManageScriptsTool().execute,
+    "manage_desktop_control": ManageDesktopControlTool().execute,
+    "capture_evidence": CaptureEvidenceTool().execute,
+    "browser_extract": BrowserExtractTool().execute,
+    "manage_spreadsheet": ManageSpreadsheetTool().execute,
     "create_document": CreateDocumentTool().execute,
     "update_document": UpdateDocumentTool().execute,
     "edit_document": EditDocumentTool().execute,
@@ -92,7 +102,16 @@ PYTHON_TIMEOUT = 30
 TOOL_TAGS = {"bash", "python", "web_search", "web_fetch", "read_file", "inspect_media", "write_file", "edit_file",
              "plan_media_transform", "transform_media",
              "apply_patch", "todowrite", "delegate_agents",
-             "grep", "glob", "ls", "find_symbol", "callers", "tests_for",
+             "grep", "glob", "ls", "find_symbol", "callers", "tests_for", "rename_symbol",
+             # Lote 54 — cableado de tools sobre librerías ya existentes:
+             # EXEC-05/06 (src/tool_execution.py), DESK-01
+             # (src/desktop_control_session.py), WEB-05/06
+             # (src/browser_evidence.py / src/browser_extraction.py) y ART-04
+             # (src/spreadsheet.py). Sin estas entradas, function_call_to_tool_block
+             # (src/tool_schemas.py) rechaza la llamada nativa como "Unknown
+             # function call" antes de llegar al TOOL_HANDLERS de arriba.
+             "install_dependencies", "manage_scripts", "manage_desktop_control",
+             "capture_evidence", "browser_extract", "manage_spreadsheet",
              "get_workspace", "manage_bg_jobs",
              "create_document", "update_document", "edit_document",
              "search_chats", "search_project_chats", "project_context",

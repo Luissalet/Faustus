@@ -820,6 +820,17 @@ app.include_router(setup_local_video_routes())
 from routes.artifact_routes import setup_artifact_routes
 app.include_router(setup_artifact_routes())
 
+# MEDIA-03: non-destructive image editing (layers/ops/export) on top of
+# src/media_edit_projects.py. A separate router from media_routes on purpose
+# (see routes/media_edit_routes.py's module docstring).
+from routes.media_edit_routes import setup_media_edit_routes
+app.include_router(setup_media_edit_routes())
+
+# CONN-01: the connection center's HTTP surface (scopes/revoke/call) on top
+# of the existing src/integrations.py credential store.
+from routes.integrations_routes import setup_integrations_routes
+app.include_router(setup_integrations_routes())
+
 # "Prove it": a change set is assembled from records Faustus already keeps and
 # judged by src/prove.py. Nothing is stored — asking twice about the same job
 # gives the same fingerprint, which is what makes it a report.
@@ -843,6 +854,12 @@ app.include_router(setup_chat_routes(
 # Research (background deep-research tasks)
 from routes.research.research_routes import setup_research_routes
 app.include_router(setup_research_routes(research_handler, session_manager=session_manager))
+
+# ACT-05: GET /api/queue merges agent-run/bg-job/research/media-render queues
+# into one owner-scoped list; POST .../priority reorders the one of them
+# (agent runs) that actually has an ordered queue to reorder.
+from routes.queue_routes import setup_queue_routes
+app.include_router(setup_queue_routes(research_handler, session_manager=session_manager))
 
 # History
 from routes.history.history_routes import setup_history_routes

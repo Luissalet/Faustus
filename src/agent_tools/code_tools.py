@@ -109,3 +109,55 @@ class TestsForTool:
                     "exit_code": 0, "tests": []}
         lines = [f"{h['path']}:{h['line']} ({h['reason']})" for h in hits]
         return {"output": "\n".join(lines), "exit_code": 0, "tests": hits}
+
+
+class RenameSymbolTool:
+    """`rename_symbol` (EDIT-06, Lote 54): structure-assisted rename over
+    `src.refactor_tools`, itself already built on the code index (IDX-02) so
+    a rename only ever touches a line the index says references the symbol —
+    never an unrelated string or comment that happens to share the name.
+
+    ``action: "plan"`` (default) is EDIT-06's "vista de impacto": every
+    definition/caller/test site, with nothing written. ``action: "apply"``
+    performs the rename and returns the ChangeSet it produced.
+    """
+
+    async def execute(self, content: str, ctx: dict) -> dict:
+        from src import refactor_tools
+
+        args = _args(content, first_key="old_name")
+        old_name = str(args.get("old_name") or args.get("name") or "").strip()
+        new_name = str(args.get("new_name") or "").strip()
+        if not old_name or not new_name:
+            return {"error": "rename_symbol: `old_name` and `new_name` are required", "exit_code": 1}
+        try:
+            root = _root(str(args.get("path") or args.get("workspace") or ""))
+        except ValueError as exc:
+            return {"error": f"rename_symbol: {exc}", "exit_code": 1}
+        project_id = str(args.get("project_id") or "")
+        code_index.refresh(root, project_id=project_id)
+        action = str(args.get("action") or "plan").strip().lower()
+        try:
+            if action == "plan":
+                plan = refactor_tools.plan_rename(old_name, new_name, workspace=root, project_id=project_id)
+                out = (
+                    f"{plan['reference_count']} reference(s) in {len(plan['files'])} file(s)"
+                    if plan["indexed"] else plan["reason"]
+                )
+                return {"output": out, "exit_code": 0 if plan["indexed"] else 1, **plan}
+            if action != "apply":
+                return {"error": f"rename_symbol: unknown action {action!r} (use \"plan\" or \"apply\")",
+                        "exit_code": 1}
+            result = refactor_tools.apply_rename(
+                old_name, new_name, workspace=root, project_id=project_id,
+                owner=str((ctx or {}).get("owner") or ""), run_id=str((ctx or {}).get("session_id") or ""),
+                title=f"rename {old_name} -> {new_name}",
+            )
+            d = result.to_dict()
+            out = (
+                f"Renamed {old_name} -> {new_name} in {len(d['files_changed'])} file(s)."
+                if d["applied"] else d["reason"] or "rename was not applied"
+            )
+            return {"output": out, "exit_code": 0 if d["applied"] else 1, **d}
+        except refactor_tools.RefactorError as exc:
+            return {"error": f"rename_symbol: {exc}", "exit_code": 1}

@@ -1,8 +1,8 @@
-import { Activity as ActivityIcon, Check, CircleStop, Copy, Download, ExternalLink, FileText, MessageSquare, Play, RefreshCw, Search, Trash2, Workflow, X } from 'lucide-react';
+import { Activity as ActivityIcon, ArrowUpToLine, Check, CircleStop, Copy, Download, ExternalLink, FileText, ListOrdered, MessageSquare, Play, RefreshCw, Search, Trash2, Workflow, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { Button, EmptyState, friendlyError, Skeleton, StatusBadge, Toast, type RunStatus } from '../components';
-import { answerQuestion, artifactLinks, cancelRender, changeWorkflow, decideApproval, duration, loadActivity, normaliseStatus, openRunInChat, reportUrl, retainUnavailableRuns, type ActivityRun, type ArtifactLink, type QuestionDetail } from '../adapters/activity';
+import { answerQuestion, artifactLinks, cancelRender, changeWorkflow, decideApproval, duration, loadActivity, loadQueue, normaliseStatus, openRunInChat, prioritizeQueueItem, reportUrl, retainUnavailableRuns, type ActivityRun, type ArtifactLink, type QuestionDetail, type QueueItem } from '../adapters/activity';
 import { CACHE_LABELS, clearAutomationCache, runAutomation, stopAutomation } from '../adapters/automations';
 import { relativeTime } from '../adapters/home';
 import { stopChat } from '../adapters/chat';
@@ -115,6 +115,68 @@ function QuestionAnswerPanel({
   );
 }
 
+const QUEUE_KIND_LABEL: Record<QueueItem['kind'], string> = {
+  agent_run: t('Chat'),
+  bg_job: t('Command'),
+  research: t('Research'),
+  media_run: t('Render'),
+};
+
+/**
+ * ACT-05: everything currently queued or running, across the four systems
+ * that each keep their own queue (routes/queue_routes.py's module docstring
+ * has the detail). A thin list next to — not folded into — the work list
+ * above: a queue row and its matching activity row are the same run, this
+ * is only the "what order" view of it, and it disappears on its own once
+ * nothing is waiting rather than sitting there empty.
+ */
+function QueuePanel({
+  items, busyId, onPrioritize,
+}: {
+  items: QueueItem[];
+  busyId: string | null;
+  onPrioritize: (item: QueueItem) => void;
+}) {
+  if (items.length === 0) return null;
+  return (
+    <section className="fs-act__queue" aria-labelledby="fs-act-queue-title" data-testid="activity-queue">
+      <h2 id="fs-act-queue-title" className="fs-act__queue-title">
+        <ListOrdered size={14} aria-hidden="true" /> {t('Queue')} <span className="fs-act__chip-n">{items.length}</span>
+      </h2>
+      <ul className="fs-list fs-act__queue-list">
+        {items.map((item) => {
+          const key = `${item.kind}-${item.id}`;
+          const { status, label } = normaliseStatus(item.status);
+          return (
+            <li className="fs-run fs-act__queue-row" key={key} data-testid="activity-queue-row">
+              <span className="fs-run__kind" data-kind={item.kind}>{QUEUE_KIND_LABEL[item.kind]}</span>
+              <span className="fs-run__main">
+                <span className="fs-row__name">{item.label}</span>
+                <span className="fs-row__meta">
+                  {[item.position ? t('Position {n}', { n: item.position }) : null, relativeTime(item.startedAt)].filter(Boolean).join(' · ')}
+                </span>
+              </span>
+              <StatusBadge status={status} label={label} size="sm" />
+              {item.reorderable && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon={ArrowUpToLine}
+                  label={t('Prioritize')}
+                  disabled={busyId === key || item.position === 1}
+                  loading={busyId === key}
+                  onClick={() => onPrioritize(item)}
+                  testId="activity-queue-prioritize"
+                />
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
 export function ActivityScreen() {
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
@@ -137,6 +199,12 @@ export function ActivityScreen() {
   // only about not spending a network round trip every 5s poll tick for the
   // same still-pending approval).
   const notifiedRuns = useRef(new Set<string>());
+
+  // ACT-05: the Queue section (QueuePanel below) — polled separately from
+  // the work feed since it changes on its own faster cadence and a failure
+  // to read it should never blank out the rest of the activity screen.
+  const [queue, setQueue] = useState<QueueItem[]>([]);
+  const [queueBusy, setQueueBusy] = useState<string | null>(null);
 
   const say = useCallback((msg: string) => {
     setNotice(msg);
@@ -166,15 +234,43 @@ export function ActivityScreen() {
   }), []);
   const reload = poller.refresh;
 
+  const queuePoller = useMemo(() => createActivityPoller({
+    load: loadQueue,
+    live: (items) => items.length > 0,
+    visible: () => document.visibilityState === 'visible',
+    data: setQueue,
+    error: () => {}, // ACT-05 is supplementary; a failed poll just leaves the last known queue showing
+    refreshing: () => {},
+    schedule: (fn, delay) => window.setTimeout(fn, delay),
+    clear: (id) => window.clearTimeout(id),
+  }), []);
+
   useEffect(() => {
     poller.start();
+    queuePoller.start();
     document.addEventListener('visibilitychange', poller.visibilityChanged);
+    document.addEventListener('visibilitychange', queuePoller.visibilityChanged);
     return () => {
       poller.dispose();
+      queuePoller.dispose();
       if (noticeTimer.current) window.clearTimeout(noticeTimer.current);
       document.removeEventListener('visibilitychange', poller.visibilityChanged);
+      document.removeEventListener('visibilitychange', queuePoller.visibilityChanged);
     };
-  }, [poller]);
+  }, [poller, queuePoller]);
+
+  const prioritizeQueued = useCallback(async (item: QueueItem) => {
+    const key = `${item.kind}-${item.id}`;
+    setQueueBusy(key);
+    try {
+      await prioritizeQueueItem(item.kind, item.id);
+      await queuePoller.refresh();
+    } catch (e) {
+      say((e as Error).message);
+    } finally {
+      setQueueBusy(null);
+    }
+  }, [queuePoller, say]);
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -272,6 +368,8 @@ export function ActivityScreen() {
         </p>
       )}
       {updatedAt && <p className="fs-act__freshness">{t('Last checked {time}', { time: new Date(updatedAt).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit', second: '2-digit' }) })}</p>}
+
+      <QueuePanel items={queue} busyId={queueBusy} onPrioritize={(item) => void prioritizeQueued(item)} />
 
       <div className="fs-tabs" role="tablist" aria-label={t('Filter activity')}>
         {FILTERS.map((entry) => (

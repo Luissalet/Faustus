@@ -60,7 +60,7 @@ import { relativeTime } from '../adapters/home';
 import { getKeybinds, KEYBIND_LABELS, matchesCombo } from '../adapters/settings';
 import { listCheckpoints } from '../adapters/workspace';
 import { addMemory, deleteMemory, listMemories } from '../adapters/memory';
-import { createNote } from '../adapters/notes';
+import { createNote, deleteNote } from '../adapters/notes';
 import { startTour } from '../shell/store';
 import { refreshActivity } from '../shell/activity';
 import { TOURS, resetTours, seenTours } from '../lib/tours';
@@ -86,7 +86,7 @@ import { Vitals } from './studio/Vitals';
 import './projects.css';
 import './home.css';
 import './studio.css';
-import { t, tn } from '../i18n';
+import { locale, t, tn } from '../i18n';
 import { useDisplay } from '../shell/display';
 
 /* Rare, and the eager bundle has a budget: the folder picker and the side
@@ -257,6 +257,8 @@ interface Notice {
   rich?: boolean;
   /** A hidden command's answer, drawn by `studio/Egg.tsx`. */
   egg?: EggData;
+  /** UX-09: the confirmation's own "deshacer" — /note, /reminder, /event. */
+  action?: { label: string; onClick: () => void };
 }
 
 /**
@@ -379,13 +381,13 @@ export function StudioScreen() {
   const [voiceSession, setVoiceSession] = useState<string | null>(null);
   useEffect(() => { setVoiceSession(id => id === sessionId ? id : null); }, [sessionId]);
 
-  const say = useCallback((text: string, tone: Notice['tone'] = 'info') => {
-    setNotice({ text, tone });
+  const say = useCallback((text: string, tone: Notice['tone'] = 'info', action?: Notice['action']) => {
+    setNotice({ text, tone, action });
   }, []);
 
   /** A command's answer, as Markdown. */
-  const report = useCallback((markdown: string, tone: Notice['tone'] = 'info') => {
-    setNotice({ text: markdown, tone, rich: true });
+  const report = useCallback((markdown: string, tone: Notice['tone'] = 'info', action?: Notice['action']) => {
+    setNotice({ text: markdown, tone, rich: true, action });
   }, []);
 
   /** Runs an adapter call and reports whichever of the two it produces. */
@@ -1594,10 +1596,47 @@ export function StudioScreen() {
             return true;
           }
           try {
-            await createNote({ content: args });
-            report(t('Saved in [Notes](/notes).'));
+            const created = await createNote({ content: args });
+            report(t('Saved in [Notes](/notes).'), 'info', {
+              label: t('Undo'),
+              onClick: () => void reportFrom(async () => {
+                await deleteNote(created.id);
+                return t('Undone — the note was deleted.');
+              }),
+            });
           } catch (error) {
             say(`${t('Could not save the note')}: ${(error as Error).message}`, 'danger');
+          }
+          return true;
+        }
+        // UX-09: a reminder is a note with a due date (`due_date`, the same
+        // field `src/task_scheduler.py` already polls to fire one — no new
+        // store, COMUN rule 4). `/reminder`'s own natural-language time
+        // parsing reuses `/event`'s `quickParse` below rather than a second
+        // date parser.
+        case 'reminder': {
+          if (!args) {
+            say(t('Usage: /reminder when + what — e.g. "tomorrow 9am call the dentist"'), 'warning');
+            return true;
+          }
+          try {
+            const { quickParse } = await import('../adapters/calendar');
+            const parsed = await quickParse(args);
+            if (!parsed?.dtstart) {
+              say(t('I did not understand when to remind you. Try "/reminder tomorrow 9am …", or use /note for one with no time.'), 'warning');
+              return true;
+            }
+            const title = (parsed.summary || args).slice(0, 60);
+            const created = await createNote({ title, content: args, dueDate: parsed.dtstart });
+            say(t('Reminder set for {when}.', { when: new Date(parsed.dtstart).toLocaleString(locale(), { dateStyle: 'medium', timeStyle: 'short' }) }), 'info', {
+              label: t('Undo'),
+              onClick: () => void reportFrom(async () => {
+                await deleteNote(created.id);
+                return t('Undone — the reminder was deleted.');
+              }),
+            });
+          } catch (error) {
+            say(`${t('Could not set the reminder')}: ${(error as Error).message}`, 'danger');
           }
           return true;
         }
@@ -1627,7 +1666,7 @@ export function StudioScreen() {
               navigate('/calendar');
               return true;
             }
-            await createEvent({
+            const uid = await createEvent({
               summary: parsed.summary || args,
               dtstart: parsed.allDay ? parsed.dtstart.slice(0, 10) : parsed.dtstart,
               dtend: parsed.allDay ? null : parsed.dtend || null,
@@ -1635,7 +1674,14 @@ export function StudioScreen() {
               location: parsed.location,
               description: parsed.description,
             });
-            say(`${t('Created')}: ${parsed.summary || args}${parsed.confidence < 0.6 ? t(' (check it)') : ''}`);
+            say(`${t('Created')}: ${parsed.summary || args}${parsed.confidence < 0.6 ? t(' (check it)') : ''}`, 'info', uid ? {
+              label: t('Undo'),
+              onClick: () => void reportFrom(async () => {
+                const { deleteEvent } = await import('../adapters/calendar');
+                await deleteEvent(uid);
+                return t('Undone — the event was deleted.');
+              }),
+            } : undefined);
           } catch (error) {
             say(`${(error as Error).message}. ${t('The Calendar has a form.')}`, 'warning');
           }
@@ -2369,6 +2415,9 @@ export function StudioScreen() {
               </div>
             ) : (
               <pre className="fs-studio__notice-text">{notice.text}</pre>
+            )}
+            {notice.action && (
+              <Button variant="ghost" size="sm" label={notice.action.label} onClick={notice.action.onClick} testId="studio-notice-undo" />
             )}
             <IconButton icon={X} label={t('Dismiss notice')} size="sm" onClick={() => setNotice(null)} />
           </div>

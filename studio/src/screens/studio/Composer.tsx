@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import type { Dictation } from '../../adapters/speech';
 import {
+  memo,
   useCallback,
   useEffect,
   useRef,
@@ -51,7 +52,9 @@ import {
   type GenOverrides,
   type WorkspaceFile,
 } from '../../adapters/composer';
-import { matchCommands, type Suggestion } from './commands';
+import type { Suggestion } from './commands';
+import { capMentionItems, resolveSuggestionIntent } from './composer-suggest';
+import { frameBatcher } from '../../lib/frame-batch';
 import { clipboardFiles, insertPastedText } from '../../lib/clipboard-attachments';
 import {REFERENCE_ROLES} from '../../lib/image-references';
 import {MediaRecipes} from './MediaRecipes';
@@ -225,42 +228,54 @@ export function Composer({
     }
   };
 
-  /* ── Suggestions: `@` files or `/` commands ── */
+  /* ── Suggestions: `@` files or `/` commands ──
+   * UX-06: the actual matching (resolveSuggestionIntent, composer-suggest.ts)
+   * runs behind a frameBatcher (studio/src/lib/frame-batch.ts — the same
+   * coalescing Transcript.tsx already uses to cap streaming repaints at one
+   * per frame) instead of directly on every keystroke, so several keystrokes
+   * landing in one animation frame run the match pass once, not once each —
+   * what keeps a long draft under a 16ms-per-keystroke budget. */
   const [mention, setMention] = useState<{ query: string; items: WorkspaceFile[] } | null>(null);
   const [commands, setCommands] = useState<Suggestion[] | null>(null);
   const [active, setActive] = useState(0);
   const mentionAbort = useRef<AbortController | null>(null);
+  const suggestionCtx = useRef({ workspace });
+  suggestionCtx.current = { workspace };
 
-  const refreshSuggestions = useCallback(
-    (value: string, caret: number) => {
-      const before = value.slice(0, caret);
-      const m = MENTION.exec(before);
-      if (m && workspace) {
-        const query = m[2];
-        mentionAbort.current?.abort();
-        const controller = new AbortController();
-        mentionAbort.current = controller;
-        searchWorkspaceFiles(workspace, query, controller.signal)
-          .then((items) => {
-            if (controller.signal.aborted) return;
-            setMention({ query, items });
-            setActive(0);
-          })
-          .catch(() => undefined);
-        setCommands(null);
-        return;
-      }
-      setMention(null);
-      // A slash line, possibly with a subcommand word: `/chats ex`.
-      if (/^\/[a-z0-9?_-]*(?:\s+[a-z0-9?_-]*)?$/i.test(value)) {
-        setCommands(matchCommands(value));
-        setActive(0);
-        return;
-      }
+  const applySuggestionIntent = useCallback((value: string, caret: number) => {
+    const intent = resolveSuggestionIntent(value, caret);
+    if (intent.kind === 'mention' && suggestionCtx.current.workspace) {
+      mentionAbort.current?.abort();
+      const controller = new AbortController();
+      mentionAbort.current = controller;
+      searchWorkspaceFiles(suggestionCtx.current.workspace, intent.query, controller.signal)
+        .then((items) => {
+          if (controller.signal.aborted) return;
+          setMention({ query: intent.query, items: capMentionItems(items) });
+          setActive(0);
+        })
+        .catch(() => undefined);
       setCommands(null);
-    },
-    [workspace],
-  );
+      return;
+    }
+    setMention(null);
+    if (intent.kind === 'commands') {
+      setCommands(intent.items);
+      setActive(0);
+      return;
+    }
+    setCommands(null);
+  }, []);
+
+  const suggestBatcher = useRef<ReturnType<typeof frameBatcher<{ value: string; caret: number }>> | null>(null);
+  if (!suggestBatcher.current) {
+    suggestBatcher.current = frameBatcher(({ value, caret }) => applySuggestionIntent(value, caret));
+  }
+  useEffect(() => () => suggestBatcher.current?.cancel(), []);
+
+  const refreshSuggestions = useCallback((value: string, caret: number) => {
+    suggestBatcher.current?.push({ value, caret });
+  }, []);
 
   const onChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
     const el = event.target;
@@ -449,52 +464,15 @@ export function Composer({
       )}
 
       {(attachments.length > 0 || pendingFiles.length > 0) && (
-        <ul className="fs-studio__attachments" aria-label={t('Attachments')}>
-          {pendingFiles.map((entry) => (
-            <li key={entry.id} className="fs-studio__attachment" data-state={entry.state} data-testid="studio-pending-attachment">
-              {entry.preview ? <img src={entry.preview} alt="" width={36} height={36} /> : <FileText size={16} aria-hidden="true" />}
-              <span className="fs-studio__attachment-info">
-                <span className="fs-studio__attachment-name" title={entry.file.name}>{entry.file.name || t('Screenshot')}</span>
-                <span role={entry.state === 'failed' ? 'alert' : 'status'} className="fs-studio__attachment-status">
-                  {entry.state === 'failed' ? entry.error : entry.state === 'queued' ? t('Waiting to upload…') : t('Uploading…')}
-                </span>
-              </span>
-              {entry.state === 'failed' && <button type="button" className="fs-studio__attachment-x" aria-label={t('Retry {name}', {name:entry.file.name})} onClick={() => uploads.retry(entry.id)}><RefreshCw size={13} aria-hidden="true" /></button>}
-              <button type="button" className="fs-studio__attachment-x" aria-label={t('Remove {name}', {name:entry.file.name})} onClick={() => uploads.remove(entry.id)}><X size={12} aria-hidden="true" /></button>
-            </li>
-          ))}
-          {attachments.map((a) => (
-            <li key={a.id} className="fs-studio__attachment" data-image={isImage(a.mime)||undefined} data-testid="studio-attachment">
-              {isImage(a.mime) ? (
-                <a href={`/library/edit?attachment=${encodeURIComponent(a.id)}&name=${encodeURIComponent(a.name)}${sessionId ? `&chat=${encodeURIComponent(sessionId)}` : ''}`} target="_blank" rel="noopener noreferrer"
-                  className="fs-studio__attachment-edit" aria-label={t('Edit image and masks: {name}', {name:a.name})}
-                  title={t('Open the image editor in another tab. Your chat draft stays here.')}>
-                  <img src={attachmentUrl(a.id)} alt="" width={36} height={36} />
-                </a>
-              ) : (
-                <FileText size={16} aria-hidden="true" />
-              )}
-              <span className="fs-studio__attachment-info">
-                <span className="fs-studio__attachment-name" title={a.name}>{a.name}</span>
-                {isImage(a.mime) && <select className="fs-studio__reference-role"
-                  aria-label={t('Reference role for {name}', {name:a.name})}
-                  title={t('Adds visible guidance to your message. The image model determines how closely it can follow it.')}
-                  value={a.referenceRole || ''}
-                  onChange={event=>{const role=REFERENCE_ROLES.find(role=>role.value===event.target.value)?.value;
-                    setAttachments(list=>list.map(item=>item.id===a.id?{...item,referenceRole:role}:item));}}
-                ><option value="">{t('Attachment only')}</option>{REFERENCE_ROLES.map(role=><option key={role.value} value={role.value}>{t(role.label)}</option>)}</select>}
-              </span>
-              <button
-                type="button"
-                className="fs-studio__attachment-x"
-                aria-label={t('Remove {name}', { name: a.name })}
-                onClick={() => setAttachments((list) => list.filter((x) => x.id !== a.id))}
-              >
-                <X size={12} aria-hidden="true" />
-              </button>
-            </li>
-          ))}
-        </ul>
+        <AttachmentList
+          pendingFiles={pendingFiles}
+          attachments={attachments}
+          sessionId={sessionId}
+          onRetry={uploads.retry}
+          onRemovePending={uploads.remove}
+          onSetReferenceRole={(id, role) => setAttachments((list) => list.map((item) => (item.id === id ? { ...item, referenceRole: role } : item)))}
+          onRemoveAttachment={(id) => setAttachments((list) => list.filter((x) => x.id !== id))}
+        />
       )}
 
       <ContextPanel
@@ -730,6 +708,82 @@ export function Composer({
   );
 }
 
+/**
+ * UX-06: the attachment strip, split out and `memo`-ed so it only
+ * re-renders when an attachment actually changes — not on every keystroke.
+ * `Composer` re-renders on every `draft` change (a controlled textarea has
+ * no other way to work); with 200 attachments the old inline `.map()` sat
+ * in that same render and reconciled 200 `<li>`s per keystroke for no
+ * reason, since none of them depend on the draft text. `pendingFiles` and
+ * `attachments` only change on an actual upload event, so `memo`'s default
+ * shallow-prop comparison skips this subtree on every other render.
+ */
+const AttachmentList = memo(function AttachmentList({
+  pendingFiles,
+  attachments,
+  sessionId,
+  onRetry,
+  onRemovePending,
+  onSetReferenceRole,
+  onRemoveAttachment,
+}: {
+  pendingFiles: PendingAttachment[];
+  attachments: Attachment[];
+  sessionId: string | null;
+  onRetry: (id: string) => void;
+  onRemovePending: (id: string) => void;
+  onSetReferenceRole: (id: string, role: Attachment['referenceRole']) => void;
+  onRemoveAttachment: (id: string) => void;
+}) {
+  return (
+    <ul className="fs-studio__attachments" aria-label={t('Attachments')}>
+      {pendingFiles.map((entry) => (
+        <li key={entry.id} className="fs-studio__attachment" data-state={entry.state} data-testid="studio-pending-attachment">
+          {entry.preview ? <img src={entry.preview} alt="" width={36} height={36} /> : <FileText size={16} aria-hidden="true" />}
+          <span className="fs-studio__attachment-info">
+            <span className="fs-studio__attachment-name" title={entry.file.name}>{entry.file.name || t('Screenshot')}</span>
+            <span role={entry.state === 'failed' ? 'alert' : 'status'} className="fs-studio__attachment-status">
+              {entry.state === 'failed' ? entry.error : entry.state === 'queued' ? t('Waiting to upload…') : t('Uploading…')}
+            </span>
+          </span>
+          {entry.state === 'failed' && <button type="button" className="fs-studio__attachment-x" aria-label={t('Retry {name}', {name:entry.file.name})} onClick={() => onRetry(entry.id)}><RefreshCw size={13} aria-hidden="true" /></button>}
+          <button type="button" className="fs-studio__attachment-x" aria-label={t('Remove {name}', {name:entry.file.name})} onClick={() => onRemovePending(entry.id)}><X size={12} aria-hidden="true" /></button>
+        </li>
+      ))}
+      {attachments.map((a) => (
+        <li key={a.id} className="fs-studio__attachment" data-image={isImage(a.mime)||undefined} data-testid="studio-attachment">
+          {isImage(a.mime) ? (
+            <a href={`/library/edit?attachment=${encodeURIComponent(a.id)}&name=${encodeURIComponent(a.name)}${sessionId ? `&chat=${encodeURIComponent(sessionId)}` : ''}`} target="_blank" rel="noopener noreferrer"
+              className="fs-studio__attachment-edit" aria-label={t('Edit image and masks: {name}', {name:a.name})}
+              title={t('Open the image editor in another tab. Your chat draft stays here.')}>
+              <img src={attachmentUrl(a.id)} alt="" width={36} height={36} />
+            </a>
+          ) : (
+            <FileText size={16} aria-hidden="true" />
+          )}
+          <span className="fs-studio__attachment-info">
+            <span className="fs-studio__attachment-name" title={a.name}>{a.name}</span>
+            {isImage(a.mime) && <select className="fs-studio__reference-role"
+              aria-label={t('Reference role for {name}', {name:a.name})}
+              title={t('Adds visible guidance to your message. The image model determines how closely it can follow it.')}
+              value={a.referenceRole || ''}
+              onChange={event=>{const role=REFERENCE_ROLES.find(role=>role.value===event.target.value)?.value;
+                onSetReferenceRole(a.id, role);}}
+            ><option value="">{t('Attachment only')}</option>{REFERENCE_ROLES.map(role=><option key={role.value} value={role.value}>{t(role.label)}</option>)}</select>}
+          </span>
+          <button
+            type="button"
+            className="fs-studio__attachment-x"
+            aria-label={t('Remove {name}', { name: a.name })}
+            onClick={() => onRemoveAttachment(a.id)}
+          >
+            <X size={12} aria-hidden="true" />
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+});
 
 // TASK-06: per-turn autonomy budget preset (src/autonomy_budget.py). Unlike
 // ApprovalSelector this is NOT a saved setting — it travels with this one

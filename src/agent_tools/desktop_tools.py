@@ -1117,3 +1117,80 @@ class DesktopTool:
 
 
 DESKTOP_TOOL_HANDLERS = {name: DesktopTool(name).execute for name in sorted(DESKTOP_TOOLS)}
+
+
+# ---------------------------------------------------------------------------
+# DESK-01 (Lote 54) — manage_desktop_control: the policy primitives already
+# lived in src/desktop_control_session.py (Lote 48: allowlist + audit) but
+# had no tool the model could call, so a chat could only ever run with the
+# default "no policy" state. This wraps that existing authority — no second
+# store, per rule 4 — the same way ManageBgJobsTool wraps src/bg_jobs.py:
+# one action-dispatched tool over library functions that already have their
+# own tests (tests/test_p1_desk_01_control.py).
+# ---------------------------------------------------------------------------
+
+MANAGE_DESKTOP_CONTROL_ACTIONS = frozenset(
+    {"get_allowlist", "set_allowlist", "clear_allowlist", "enable_audit", "disable_audit", "audit_log"}
+)
+
+
+class ManageDesktopControlTool:
+    """`manage_desktop_control`: the DESK-01 safety policy for THIS session —
+    which windows desktop input is authorised to touch, and whether every
+    action leaves a before/after audit entry.
+
+    Both are opt-in and per-session (``src/desktop_control_session.py``): a
+    session that never calls this keeps the exact behaviour it always had —
+    unrestricted focus, no audit trail — so adding this tool changes nothing
+    for a chat that does not use it.
+    """
+
+    async def execute(self, content: Any, ctx: dict) -> Dict[str, Any]:
+        from src import desktop_control_session as policy
+
+        args = _parse_args(content)
+        action = str(args.get("action") or "").strip().lower()
+        if action not in MANAGE_DESKTOP_CONTROL_ACTIONS:
+            return {
+                "error": f"manage_desktop_control: `action` must be one of "
+                         f"{sorted(MANAGE_DESKTOP_CONTROL_ACTIONS)}, got {action!r}",
+                "exit_code": 1,
+            }
+        session = str((ctx or {}).get("session_id") or "")
+        try:
+            if action == "get_allowlist":
+                allowlist = policy.get_allowlist(session)
+                return {"output": f"Allowlist: {', '.join(allowlist) or '(none — all windows authorized)'}",
+                        "exit_code": 0, "allowlist": allowlist}
+            if action == "set_allowlist":
+                titles = args.get("titles") or args.get("allowlist") or []
+                if isinstance(titles, str):
+                    titles = [t.strip() for t in titles.split(",") if t.strip()]
+                if not isinstance(titles, list):
+                    return {"error": "manage_desktop_control: `titles` must be a list of window-title substrings",
+                            "exit_code": 1}
+                policy.set_allowlist(session, titles)
+                allowlist = policy.get_allowlist(session)
+                return {"output": f"Allowlist set: {', '.join(allowlist) or '(cleared — all windows authorized)'}",
+                        "exit_code": 0, "allowlist": allowlist}
+            if action == "clear_allowlist":
+                policy.clear_allowlist(session)
+                return {"output": "Allowlist cleared — desktop control is authorized for any window again.",
+                        "exit_code": 0, "allowlist": []}
+            if action == "enable_audit":
+                policy.enable_audit(session)
+                return {"output": "Desktop-control audit trail enabled for this session "
+                                   "(before/after screen hash per action, data/runtime/desktop-audit.log).",
+                        "exit_code": 0, "audit_enabled": True}
+            if action == "disable_audit":
+                policy.disable_audit(session)
+                return {"output": "Desktop-control audit trail disabled for this session.",
+                        "exit_code": 0, "audit_enabled": False}
+            # action == "audit_log"
+            entries = policy.audit_log(session)
+            return {"output": f"{len(entries)} audited desktop action(s) this session."
+                               if entries else "No audited desktop actions yet (audit may be disabled).",
+                    "exit_code": 0, "entries": entries[-200:]}
+        except Exception as exc:  # noqa: BLE001 - tools never raise
+            logger.warning("manage_desktop_control failed: %s", exc, exc_info=True)
+            return {"error": f"manage_desktop_control: {type(exc).__name__}: {exc}", "exit_code": 1}

@@ -315,6 +315,17 @@ class DispatchJob:
         self.changes: Optional[Dict[str, Any]] = None        # observed by Faustus, not claimed by a worker
         self.verification: Optional[Dict[str, Any]] = None
         self.checkpoint: Optional[str] = None
+        # PLAN-02: the JOB's own acceptance criteria (docs/spec/v2/backlog.json
+        # PLAN-02 — "objetivo acotado ... con evidencias requeridas"), distinct
+        # from a task's per-child `criteria` (src/agent_tools/subagent_tools.py,
+        # verify_criteria — already checked per worker by SubagentRun.report()).
+        # A job can pass every worker and still not have delivered what the
+        # COORDINATOR actually asked for across the whole job (e.g. two workers
+        # each touch their own file but neither the one the criterion names);
+        # `_settle` verifies this against the job's own OBSERVED diff, never a
+        # worker's claim. `None` while the caller declared no job-level
+        # criteria — that is the common case and leaves `to_dict()` unchanged.
+        self.criteria_check: Optional[Dict[str, Any]] = None
         # Convergence of the fix loop (src/convergence.py) and, when the loop
         # ended for a reason other than "the rounds ran out", which one.
         self.convergence: Optional[Dict[str, Any]] = None
@@ -378,11 +389,17 @@ class DispatchJob:
             d["expected_output_contains"] = self.expected_output
         if self.task_order is not None:
             d["task_order"] = self.task_order
+        if self.args.get("criteria"):
+            # Declared alongside `expected_output_contains` above: what the
+            # job was pinned to prove, visible even on a brief/queued view.
+            d["criteria"] = self.args["criteria"]
         if include_result:
             d["result"] = self.result
             d["changes"] = self.changes
             d["verification"] = self.verification
             d["checkpoint"] = self.checkpoint
+            if self.criteria_check is not None:
+                d["criteria_check"] = self.criteria_check
             if self.convergence is not None:
                 d["convergence"] = self.convergence
             if self.stopped_by:
@@ -1052,6 +1069,15 @@ def build_args(body: Dict[str, Any]) -> Dict[str, Any]:
         args["timeout_s"] = _DEFAULT_TIMEOUT_S
     _attach_runners(args, body)
     _select_dispatch_agents(args, str(body.get("workspace") or "") or None)
+    job_criteria = body.get("criteria") or body.get("success_criteria") or body.get("acceptance")
+    if isinstance(job_criteria, str):
+        job_criteria = [job_criteria]
+    if isinstance(job_criteria, (list, tuple)) and job_criteria:
+        # Same normalization `parse_delegation_args` already applies to a
+        # task's own `criteria` (src/agent_tools/subagent_tools.py) — one
+        # vocabulary for "acceptance criterion text", at the job level here
+        # instead of per task.
+        args["criteria"] = [str(c).strip()[:300] for c in job_criteria if str(c).strip()][:20]
     return args
 
 
@@ -1628,6 +1654,33 @@ def _build_proof(job: "DispatchJob") -> Optional[Dict[str, Any]]:
         return None
 
 
+def _build_job_criteria_check(job: "DispatchJob") -> Optional[Dict[str, Any]]:
+    """PLAN-02, job level: verify `job.args["criteria"]` against what THIS job
+    itself observed — never a worker's claim (`verify_criteria` already
+    refuses to trust that; reused as-is, no second checker). A job can pass
+    every worker (each one's own `criteria` already checked by
+    `SubagentRun.report()`) and still miss what the COORDINATOR asked of the
+    job as a whole, e.g. two workers each touch their own file but neither
+    touches the one the job's own criterion names.
+
+    Returns ``None`` when the job declared no job-level criteria — the common
+    case, and what keeps every job without one byte-identical to before this
+    existed.
+    """
+    criteria = job.args.get("criteria")
+    if not criteria:
+        return None
+    from src.agent_tools.subagent_tools import verify_criteria
+    changes = job.changes or {}
+    mutations = list(changes.get("added") or ()) + list(changes.get("modified") or ())
+    tool_calls = sum(
+        int(r.get("tool_calls") or 0)
+        for r in (job.result or {}).get("subagents") or []
+        if isinstance(r, dict)
+    )
+    return verify_criteria(criteria, mutations=mutations, tool_calls=tool_calls, error=job.error)
+
+
 def _settle(job: DispatchJob) -> None:
     """The honest top-level answer, from the worker set and the verification —
     never from `exit_code` alone (a stalled or stopped worker has no error)."""
@@ -1644,6 +1697,17 @@ def _settle(job: DispatchJob) -> None:
             job.status = "partial"
         else:
             job.status = "done"
+    try:
+        job.criteria_check = _build_job_criteria_check(job)
+    except Exception as e:  # noqa: BLE001 - the settle path never fails over this
+        logger.debug("dispatch %s: job-level criteria check unavailable: %s", job.id, e)
+        job.criteria_check = None
+    if job.criteria_check is not None and not job.criteria_check.get("complete") and job.status == "done":
+        # Same rule SubagentRun.report() already applies per worker: text (or
+        # even a passing verification) alone does not satisfy a criterion the
+        # job's own diff never backs — "no se declara éxito por haber
+        # producido texto" is PLAN-02's literal acceptance test.
+        job.status = "partial"
     job.proof = _build_proof(job)
     parts = []
     n = len(statuses)
@@ -1679,6 +1743,8 @@ def _settle(job: DispatchJob) -> None:
                 parts.append(proof_line)
         except Exception as e:  # noqa: BLE001
             logger.debug("dispatch %s: proof line unavailable: %s", job.id, e)
+    if job.criteria_check is not None and job.criteria_check.get("unmet"):
+        parts.append("job criteria unmet: " + "; ".join(job.criteria_check["unmet"][:3]))
     if job.task_order:
         # Only when it actually changed something (task_order is None
         # otherwise): the human reading the line must be able to see that the

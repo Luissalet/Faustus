@@ -268,3 +268,50 @@
     display: none;
   }
 }
+
+/* SET-02: privacy (local/cloud, plus a coin when it is billed) and tested
+   capabilities. Icons only, quiet by default — the fit verdict already
+   carries the row's one loud color; these are read on demand, not glanced
+   at in a list of forty. */
+.fs-palette__privacy {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--fs-text-3);
+}
+
+.fs-palette__privacy[data-local] {
+  color: var(--fs-success);
+}
+
+.fs-palette__caps {
+  flex: none;
+  display: inline-flex;
+  gap: 3px;
+}
+
+.fs-palette__cap {
+  padding: 0 5px;
+  border-radius: var(--fs-radius-pill);
+  border: 1px solid var(--fs-border);
+  font-size: 10px;
+  color: var(--fs-text-3);
+  white-space: nowrap;
+}
+
+.fs-palette__cap[data-ok='true'] {
+  border-color: color-mix(in srgb, var(--fs-success) 45%, transparent);
+  color: var(--fs-success);
+}
+
+.fs-palette__cap[data-ok='false'] {
+  border-color: color-mix(in srgb, var(--fs-danger) 45%, transparent);
+  color: var(--fs-danger);
+}
+
+@media (max-width: 640px) {
+  .fs-palette__caps {
+    display: none;
+  }
+}
